@@ -75,7 +75,7 @@ class ReleaseGateTest(unittest.TestCase):
 
     # Every tool that can touch the GPU.  ``guard`` runs tests only.
     MEASURING_TOOLS = ("loop", "dispatch", "cooldown", "aa", "model-loop", "codegen", "roofline", "fusion")
-    NON_MEASURING_TOOLS = ("guard",)
+    NON_MEASURING_TOOLS = ("guard", "evidence")
 
     def test_the_two_groups_cover_every_registered_tool(self) -> None:
         self.assertEqual(
@@ -163,6 +163,27 @@ class SharedPreconditionTest(unittest.TestCase):
 
     def test_refusal_is_a_systemexit_not_a_silent_pass(self) -> None:
         self.assertTrue(issubclass(self.shared.PowerError, SystemExit))
+
+
+class ResearchEvidenceContractTest(unittest.TestCase):
+    """Every H1/H2 tool shares persistence and the same hardware-budget guard."""
+
+    EVIDENCE_TOOLS = {
+        "dispatch", "cooldown", "loop", "model-loop", "codegen", "roofline", "fusion"
+    }
+
+    def test_registry_matches_every_h1_h2_measuring_tool(self) -> None:
+        from friday_evidence.registry import RAW_REPORT_FIELDS, REGISTERED_TOOLS
+
+        self.assertEqual(set(REGISTERED_TOOLS), self.EVIDENCE_TOOLS)
+        self.assertEqual(set(RAW_REPORT_FIELDS), self.EVIDENCE_TOOLS)
+
+    def test_every_h1_h2_tool_uses_shared_budget_and_persistence(self) -> None:
+        for tool in sorted(self.EVIDENCE_TOOLS):
+            with self.subTest(tool=tool):
+                module = cli._load(cli.TOOLS_DIR / cli.TOOLS[tool][0])
+                self.assertEqual(module.BudgetGuard.__module__, "friday_evidence.budget")
+                self.assertEqual(module.run_persisted.__module__, "friday_evidence.run")
 
 
 if __name__ == "__main__":

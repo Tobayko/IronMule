@@ -1,5 +1,15 @@
 # Ergebnisse
 
+> **Evidenz-Audit (21.08.2026):** H0/H0.1 besitzen verifizierbare Rohdaten in
+> ihren SQLite-Domänen. Für die unten beschriebenen H1/H2-Läufe existieren dagegen
+> nur historische Zusammenfassungen: Das formale A/A-Gate war nicht abgeschlossen,
+> die MDE nicht vor dem ersten A/B-Lauf versiegelt und die Rohmessungen wurden
+> nicht persistent gespeichert. Diese Zahlen sind deshalb **explorative
+> Legacy-Beobachtungen**, auch wenn einzelne Läufe intern gepaart, repliziert und
+> correctness-geprüft waren. Sie belegen weder formales H1/H2 noch Cross-Device-
+> Übertragbarkeit. Die Korrektur ist nicht rückwirkend heilbar; siehe
+> [`FORSCHUNGSENTSCHEID_2026-08-21.md`](FORSCHUNGSENTSCHEID_2026-08-21.md).
+
 > **Das wichtigste Ergebnis zuerst:** Auf diesem Gerät ist ein *ungepaarter*
 > Performancevergleich nahezu wertlos — die Streuung zwischen Läufen übertrifft
 > die meisten realen Effekte. Gepaart gemessen liegt die Nachweisgrenze bei
@@ -7,12 +17,13 @@
 > vorab eingefrorene Schwelle.
 
 
-Kompakte Übersicht aller belastbaren Befunde. Die vollständige Herleitung samt
+Kompakte Übersicht der Beobachtungen mit ihrem heutigen Evidenzgrad. Die vollständige Herleitung samt
 Fehlversuchen steht in [`ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md); dieses Dokument
 ist der Einstieg.
 
 **Gerät:** Apple M1 Max, 32 GB Unified Memory, 32-Core GPU, macOS.
-**Stand:** 21. August 2026. Alle Zahlen sind auf diesem einen Gerät gemessen.
+**Stand:** 21. August 2026. Alle Zahlen stammen von diesem einen Gerät; H1/H2
+liegen nur als explizit herabgestufte Zusammenfassungen vor.
 
 ---
 
@@ -42,7 +53,7 @@ Blocks und verlangen, dass ein Effekt eine **vor** dem Lauf festgelegte Schwelle
 
 ---
 
-## Bestätigte Optimierung: Dispatch-Batching
+## Explorative Legacy-Beobachtung: Dispatch-Batching
 
 `N` Matmuls mit **einer** Synchronisation statt `N` einzelnen. Identische
 Arithmetik, bytegleiches Ergebnis, nur der Ausführungsplan unterscheidet sich.
@@ -58,17 +69,21 @@ Hauptlauf bei `N=8`: `R = 0,8531`, `95%-KI [0,8263, 0,8777]`, fünf Replikate,
 Correctness bytegleich. Das Optimum liegt bei `N ≈ 4`–`8`; darüber ist der
 Synchronisations-Overhead amortisiert.
 
+**Evidenzgrad:** technisch plausibel, aber kein formaler H1-Nachweis; Rohblöcke
+fehlen und die verwendete `5-%`-Schwelle war nicht prospektiv versiegelt.
+
 **Reichweite, ehrlich:** Das ist keine Kernel-Optimierung — der Matmul-Kernel
 bleibt unverändert. Es entfernt vermeidbare Synchronisation und gilt für
 **unabhängige** Operationen. Die serielle Baseline ist ein realer Anti-Pattern
 (jedes `mx.eval` in einer Schleife erzeugt sie), den erfahrener MLX-Code ohnehin
 vermeidet.
 
-Reproduzieren: `python tools/friday.py dispatch --execute --n 8`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Messung:
+`python tools/friday.py dispatch --execute --n 8`
 
 ---
 
-## Der Loop findet Optimierungen selbst
+## Explorative Legacy-Beobachtung: der Loop findet Kandidaten
 
 Ein geschlossener Mess-Entscheidungs-Kreis: explorieren, um den Überlebenden herum
 verfeinern, den eigenen Sieger unabhängig bestätigen. Vier Läufe:
@@ -81,13 +96,13 @@ verfeinern, den eigenen Sieger unabhängig bestätigen. Vier Läufe:
 | 4 | `N=16` | `−11,08 %` | bestätigt |
 
 `N=6` und `N=7` kamen in der manuellen Suche nicht vor; der Loop hat sie selbst
-vorgeschlagen und einen davon bestätigt.
+vorgeschlagen und einen davon im damaligen explorativen Protokoll erneut gemessen.
 
 **Dass die gewählte Batchgröße zwischen Läufen wechselt, ist kein Mangel.** Das
 Optimum ist ein breites Plateau: `N = 4` bis `16` liegen alle im Bereich
 `−11 %` bis `−17 %`, und der Loop landet je nach Rauschen an unterschiedlichen
-Stellen darauf. Stabil ist der *Effekt*, nicht der genaue Punkt. Was in allen vier
-Läufen gleich blieb: ein bestätigter Gewinn in dieser Größenordnung.
+Stellen darauf. Historisch wiederholte sich der Effekt, aber ohne formales Gate
+darf daraus kein bestätigter H1-Gewinn abgeleitet werden.
 
 **Eine Fallgrube, die dokumentiert bleiben soll:** Zunächst bestätigte der Loop nur
 in `1` von `3` Läufen. Ursache war der *Winner's Curse* — der Beste aus mehreren
@@ -97,11 +112,12 @@ Nachmessung auf `0,87`–`0,96` regressierte. Die Lösung war, nach der
 **Konfidenzobergrenze** zu ranken statt nach dem Punktschätzer: nicht „was sah
 einmal am besten aus", sondern „was ist zuverlässig gut". Danach `4` von `4`.
 
-Reproduzieren: `python tools/friday.py loop --execute`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Messung:
+`python tools/friday.py loop --execute`
 
 ---
 
-## H2: ein lokales Modell schlägt die Pläne vor
+## Explorative H2-Vorstufe: ein lokales Modell schlägt Parameter vor
 
 `gemma-3-4b-it-4bit` erhält die bisherigen Messungen und die gemessenen
 Gerätefakten und schlägt ungetestete Kandidaten vor. Über drei Runden sieht es die
@@ -113,11 +129,11 @@ Ergebnisse seiner eigenen Vorschläge.
 | 2 | `[5, 12, 13]` | alle drei bestehen |
 | 3 | `[7, 14, 15]` | alle drei bestehen |
 
-Neun Werte vorgeschlagen, alle gültig und ungetestet. Bestätigt `N=13` mit
+Neun Werte vorgeschlagen, alle gültig und ungetestet. Explorativ erneut gemessen wurde `N=13` mit
 `−11,53 %`, `95%-KI [0,8552, 0,8957]`.
 
-**Das Modell schlägt Parameter vor, niemals Code.** Modellgenerierten Code auf der
-GPU auszuführen ist ein eigenes Sicherheitsproblem und nicht Teil dieses Werkzeugs.
+**`model-loop` schlägt Parameter vor, niemals Code.** Modellgenerierter Code ist
+ein separates Sicherheitsproblem und gehört nur zum nachfolgenden `codegen`-Werkzeug.
 Prosa, Shell-Fragmente, Floats, Booleans und Werte außerhalb `2..16` führen
 sämtlich zu null ausgeführten Kandidaten — abgesichert durch `21` Tests.
 
@@ -125,26 +141,32 @@ sämtlich zu null ausgeführten Kandidaten — abgesichert durch `21` Tests.
 Konfidenzobergrenze `0,954` die Schwelle `0,95` verfehlte. Das Modell schlägt vor,
 es entscheidet nicht.
 
-Reproduzieren: `python tools/friday.py model-loop --execute`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Modell-/GPU-Messung:
+`python tools/friday.py model-loop --execute`
 
 ---
 
-## H2 vollständig: das Modell schreibt den Plan selbst
+## Explorative Codegen-Beobachtung: das Modell schreibt den Plan selbst
 
 `codegen` lässt `gemma-3-4b-it-4bit` den Ausführungsplan als Python schreiben.
 Drei Schutzschichten stehen zwischen generiertem String und berichtetem Ergebnis:
 
-1. **AST-Allowlist** — genau eine Funktion `plan(mx, a, operands)`, nur bekannte
-   Namen, Attributzugriff nur als `mx.<Operation>` aus einer Zwölferliste plus
-   `append`/`extend` auf Akkumulatorlisten. Keine Importe, Dunder, String-Literale
-   oder Lambdas. `29` adversariale Tests.
-2. **Prozessisolation** — frischer Subprozess mit Wall-Timeout, CPU-Zeit-Grenze,
-   bereinigter Umgebung und MLX-Speicherlimit.
+1. **AST-Allowlist** — genau eine Funktion `plan(mx, a, operands)`, nur die MLX-
+   Operationen `matmul`, `eval`, `synchronize`, kleine Ganzzahlliterale und
+   operandengebundene Schleifen plus `append`/`extend` auf Akkumulatorlisten.
+   Keine Importe, Dunder, String-Literale, freien Allokationsprimitiven oder Lambdas.
+2. **Prozessisolation** — frischer Subprozess mit Wall-Timeout, Kernel-CPU-Grenze
+   und bereinigter Umgebung. `mx.set_memory_limit` ist nur zusätzliche
+   Best-Effort-Abwehr, keine harte RAM-Isolation.
 3. **Correctness** — ein Ergebnis je Operand, jedes bytegleich zur Referenz.
 
 Ergebnis: fünf Pläne geschrieben, fünf gemessen, drei über der Schwelle.
-Bestätigt mit `R = 0,8838`, **`−11,62 %`**, `95%-KI [0,8676, 0,8975]`,
+Historisch als explorativer Treffer klassifiziert: `R = 0,8838`, **`−11,62 %`**,
+`95%-KI [0,8676, 0,8975]`,
 Replikate `0,8742 / 0,8970 / 0,8838`.
+
+Auch dieser Befund ist wegen der fehlenden formalen H1-Basis, nicht versiegelten
+MDE und fehlenden Rohpersistenz kein formaler H2-Nachweis.
 
 Der vom Modell geschriebene Gewinnerplan:
 
@@ -168,7 +190,8 @@ Erweiterung ist eng gefasst und durch fünf Tests begrenzt.
 **Der Harness blieb streng:** zwei Pläne, die `mx.synchronize` aus der Schleife
 zogen aber `mx.eval` darin beließen, wurden verworfen (`0,982` und `0,989`).
 
-Reproduzieren: `python tools/friday.py codegen --execute`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Modell-/GPU-Messung:
+`python tools/friday.py codegen --execute`
 
 ---
 
@@ -195,7 +218,8 @@ Modell-Inferenz widerlegt (zwei Varianten, beide Konfidenzintervalle enthalten
 verwerfen, verzerrt ein 80-Sample-Mittel um bis zu `5,8 %` — mehr als die
 Nachweisschwelle von `5 %`.
 
-Reproduzieren: `python tools/friday.py cooldown --execute`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Messung:
+`python tools/friday.py cooldown --execute`
 
 ---
 
@@ -226,7 +250,8 @@ Der Befund ist damit ein Negativergebnis mit klarer Ursache: Die naheliegende
 Layer greift ins Leere, weil die fusionierbaren Teile schon fusioniert sind und
 der Rest am mutablen Cache-Zustand scheitert.
 
-Reproduzieren: `python tools/friday.py fusion --execute` — misst weiterhin den
+Ein neuer, separat freizugebender Aufruf `python tools/friday.py fusion --execute`
+misst weiterhin den
 cache-freien Forward-Pass und ist als solcher zu lesen, **nicht** als
 Generierungsgewinn.
 
@@ -254,7 +279,7 @@ aus der empirischen Beobachtung „gepaart ist besser" ein Mechanismus.
 
 ---
 
-## Wo die Zeit wirklich hingeht: speicherbegrenzt, nicht rechenbegrenzt
+## Explorative Roofline-Einordnung: speicherbegrenzt auf dem beobachteten Lauf
 
 | | Gemma 3 1B | Gemma 3 4B |
 | --- | ---: | ---: |
@@ -264,7 +289,7 @@ aus der empirischen Beobachtung „gepaart ist besser" ein Mechanismus.
 | Urteil | `memory_bound` | `memory_bound` |
 
 Rund **Faktor 13** Abstand. Die Rechenwerke sind bei echter Inferenz praktisch
-untätig — sie warten auf Daten. Der Prefill-Vergleich bestätigt das über einen
+untätig — sie warten auf Daten. Der historische Prefill-Vergleich stützt das über einen
 unabhängigen Weg: Dort werden die Gewichte einmal für viele Token gelesen.
 
 **Was daraus folgt.** Die Übersetzungskette Python → MLX → Metal → GPU-ISA ist vor
@@ -284,11 +309,12 @@ Alles darüber verlangt kleinere Gewichte, nicht besseren Code.
 Die Spitzenwerte `400 GB/s` und `21 TFLOPS` sind Herstellerangaben, nicht selbst
 gemessen; sie begrenzen die Verhältnisse, sind aber keine eigene Evidenz.
 
-Reproduzieren: `python tools/friday.py roofline --execute`
+Ein neuer Aufruf wäre eine neue, separat freizugebende Modell-/GPU-Messung:
+`python tools/friday.py roofline --execute`
 
 ---
 
-## Modelltests: Gemma 3
+## Explorative Modelltests: Gemma 3
 
 | | 1B (4bit) | 4B (4bit) |
 | --- | ---: | ---: |

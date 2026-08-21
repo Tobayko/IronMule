@@ -37,7 +37,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 import importlib.util  # noqa: E402
 
@@ -83,7 +83,7 @@ def _self_check() -> int:
     return 0
 
 
-def measure_model(model_id: str, label: str) -> dict[str, object]:
+def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, object]:
     import mlx.core as mx
     import numpy as np
     from mlx_lm import load
@@ -95,8 +95,10 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
     tokens = mx.array(
         encoded if isinstance(encoded, list) else tokenizer.encode(encoded)
     )[None]
+    gpu_started = time.perf_counter()
     mx.eval(tokens)
     mx.synchronize()
+    guard.record_gpu(time.perf_counter() - gpu_started)
 
     def eager(batch):
         return model(batch)
@@ -106,11 +108,14 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
     regimes = {"prefill": tokens, "single_token": tokens[:, -1:]}
     results = []
     for regime, batch in regimes.items():
+        guard.required_break()
         # Correctness before timing: the wrapper may fuse, never alter.
+        gpu_started = time.perf_counter()
         plain = eager(batch)
         fused = compiled(batch)
         mx.eval(plain, fused)
         mx.synchronize()
+        guard.record_gpu(time.perf_counter() - gpu_started)
         # Convert through MLX: numpy has no bfloat16, which some models use.
         plain_host = np.array(plain.astype(mx.float32), copy=False)
         fused_host = np.array(fused.astype(mx.float32), copy=False)
@@ -124,14 +129,20 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
             continue
 
         for _ in range(WARMUP):
+            gpu_started = time.perf_counter()
             mx.eval(eager(batch))
             mx.eval(compiled(batch))
             mx.synchronize()
+            guard.record_gpu(time.perf_counter() - gpu_started)
 
         replicates: list[list[float]] = []
         eager_ms: list[float] = []
+        eager_ns_samples: list[list[int]] = []
+        fused_ns_samples: list[list[int]] = []
         for _ in range(REPLICATES):
             log_ratios = []
+            replicate_eager_ns: list[int] = []
+            replicate_fused_ns: list[int] = []
             for _ in range(BLOCKS):
                 start = time.perf_counter_ns()
                 mx.eval(eager(batch))
@@ -141,9 +152,14 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
                 mx.eval(compiled(batch))
                 mx.synchronize()
                 fused_ns = time.perf_counter_ns() - start
+                guard.record_gpu((plain_ns + fused_ns) / 1e9)
                 log_ratios.append(math.log(fused_ns / plain_ns))
                 eager_ms.append(plain_ns / 1e6)
+                replicate_eager_ns.append(plain_ns)
+                replicate_fused_ns.append(fused_ns)
             replicates.append(log_ratios)
+            eager_ns_samples.append(replicate_eager_ns)
+            fused_ns_samples.append(replicate_fused_ns)
 
         aggregate = _PLAN.hierarchical_bootstrap(replicates, seed=BOOTSTRAP_SEED)
         aggregate["clears_mde"] = _PLAN.clears_threshold(aggregate, MDE)
@@ -160,6 +176,9 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
                 "replicate_ratios": [
                     round(math.exp(statistics.median(logs)), 4) for logs in replicates
                 ],
+                "replicate_log_ratios": replicates,
+                "eager_ns_samples": eager_ns_samples,
+                "fused_ns_samples": fused_ns_samples,
                 "correctness": "bit_identical",
             }
         )
@@ -170,8 +189,8 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
 
 
 def run() -> dict[str, object]:
-    started = time.monotonic()
-    measured = [measure_model(model_id, label) for model_id, label in MODELS]
+    guard = BudgetGuard()
+    measured = [measure_model(model_id, label, guard) for model_id, label in MODELS]
     generation = [
         regime
         for entry in measured
@@ -179,6 +198,7 @@ def run() -> dict[str, object]:
         if regime["regime"] == "single_token" and not regime.get("rejected")
     ]
     confirmed = [r for r in generation if r["clears_mde"]]
+    budget = guard.summary()
     return {
         "models": measured,
         "mde": MDE,
@@ -189,7 +209,9 @@ def run() -> dict[str, object]:
             if confirmed and len(confirmed) == len(generation)
             else "not_confirmed"
         ),
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "wall_seconds": budget["wall_seconds"],
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "budget": budget,
     }
 
 
@@ -204,8 +226,13 @@ def main(argv: list[str] | None = None) -> int:
         return gated
 
     power = require_ac_power()
-    report = run()
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run()
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("fusion", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0 if report["verdict"] == "layer_confirmed" else 1
 

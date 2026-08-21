@@ -8,6 +8,15 @@ zuverlässig als solche melden.
 Forschungsprototyp für Apple Silicon. Kein Ersatz für CUDA, XLA, TorchInductor oder
 einen GPU-Compiler.
 
+> **Evidenz-Audit vom 21. August 2026:** Die früher als „bestätigt“ bezeichneten
+> H1/H2-Läufe waren intern gepaart, repliziert und correctness-geprüft, erfüllen
+> aber den formalen Projektvertrag nicht: Das A/A-Gate war nicht geschlossen und
+> die MDE nicht vor dem ersten A/B-Lauf versiegelt. Zudem blieben nur
+> Zusammenfassungen, keine Rohmessungen. Sie werden daher ausschließlich als
+> **explorative Legacy-Beobachtungen** geführt. Formale H1-, H2-, Cross-Device-
+> oder Phase-1B-Claims: **keine**. Siehe
+> [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
+
 ## Der Kernbefund in einem Absatz
 
 Auf diesem Gerät ist ein **ungepaarter** Performancevergleich nahezu wertlos: Die
@@ -17,27 +26,28 @@ Gewinn — gepaart gemessen blieben `+0,2 %` mit Konfidenzintervall
 `[0,999, 1,005]`, also **kein Effekt**. Derselbe Datensatz liefert je nach
 Auswertung eine Nachweisgrenze von `33 %` oder `2,2 %`, ein Faktor `15`.
 
-Deshalb vergleichen alle Werkzeuge hier beide Arme **innerhalb desselben Blocks**
-und verlangen, dass ein Effekt eine **vor** dem Lauf festgelegte Schwelle
-überschreitet.
+Die aktuellen Werkzeuge vergleichen deshalb beide Arme **innerhalb desselben
+Blocks**, verlangen eine prospektiv versiegelte Schwelle und speichern neue
+Rohmessungen mit Git-/Code-/Spec-/Umgebungsprovenienz. Das wertet die historischen
+Läufe nicht rückwirkend auf.
 
 Alle Befunde kompakt: **[`docs/ERGEBNISSE.md`](docs/ERGEBNISSE.md)**
 
-## Der zweite Kernbefund: die Inferenz ist speicherbegrenzt
+## Zweiter explorativer Befund: die Inferenz wirkt speicherbegrenzt
 
 | | Gemma 3 1B | Gemma 3 4B |
 | --- | ---: | ---: |
 | Bandbreite genutzt | `31,9 %` | `51,2 %` |
 | Rechenwerke genutzt | `2,4 %` | `3,9 %` |
 
-**Faktor `13`.** Die Rechenwerke laufen bei echter Inferenz fast leer — sie warten
-auf Daten. Das entscheidet, welche Optimierungen überhaupt helfen können: Code
+**Faktor `13` in der historischen Ein-Gerät-Zusammenfassung.** Die Beobachtung
+deutet darauf, dass die Rechenwerke bei dieser Inferenz auf Daten warten. Code
 „näher an der Maschinensprache" optimiert den Anteil, der ohnehin leerläuft.
 Wirksam sind nur **weniger Bytes** (Quantisierung, bei 4-bit-Modellen schon
 eingelöst) und **weniger Durchgänge** (Kernel-Fusion).
 
-Daraus folgt eine harte Obergrenze: Bei `51,2 %` Bandbreitenauslastung bringt
-selbst eine perfekte Optimierung ohne Gewichtsverkleinerung höchstens rund `2x`.
+Daraus ergibt sich für genau diesen beobachteten Lauf eine rechnerische Obergrenze
+von rund `2x`; mangels Rohdaten und zweitem Gerät ist das keine allgemeine Grenze.
 
 Die naheliegende Fusions-Layer über ein unverändertes Modell wurde geprüft und
 **verworfen** — `mlx-lm` fusioniert bereits selbst, und der KV-Cache verhindert
@@ -45,11 +55,11 @@ den Rest. Details in `docs/ERGEBNISSE.md`.
 
 ## Was der Loop selbst findet
 
-`loop` sucht ohne Zutun: Er exploriert Ausführungspläne, verfeinert um den
-Überlebenden und bestätigt seinen eigenen Sieger unabhängig. Vier Läufe, vier
-bestätigte Optimierungen im Bereich `−11 %` bis `−14 %`, mit Kandidaten, die in
-der manuellen Suche nicht vorkamen. `codegen` geht einen Schritt weiter: Dort
-schreibt ein lokales Modell den Plan als Python, sandboxed und geprüft.
+`loop` exploriert Ausführungspläne, verfeinert um den Überlebenden und misst den
+eigenen Sieger erneut. Die historischen vier Läufe beobachteten explorativ
+`−11 %` bis `−14 %`; sie sind heute Legacy-Zusammenfassungen, kein formaler H1-
+Nachweis. `codegen` erprobt separat eine stark eingeschränkte modellgeschriebene
+Plansprache.
 
 
 ## Schnellstart
@@ -64,7 +74,7 @@ und sagt, was fehlt.
 
 ```bash
 .venv/bin/python tools/friday.py list             # verfügbare Werkzeuge
-.venv/bin/python tools/friday.py loop --execute   # Optimierungen selbst suchen
+.venv/bin/python tools/friday.py evidence snapshot # lokale Evidenzhistorie, read-only
 ```
 
 **Netzbetrieb ist Pflicht, nicht Komfort:** Auf Akku begrenzt macOS das
@@ -75,15 +85,16 @@ verweigern den Start auf Batterie.
 
 | Kommando | Zweck |
 | --- | --- |
-| `loop` | Sucht selbst: exploriert Ausführungspläne, verfeinert, bestätigt den eigenen Sieger |
+| `loop` | Exploriert Ausführungspläne, verfeinert und misst den Sieger erneut |
 | `dispatch` | Misst einen Plan gegen eine Baseline, gepaart, gegen feste Schwelle |
 | `cooldown` | Charakterisiert, wie eine Leerlaufpause die nächste Operation verlangsamt |
 | `aa` | Vorregistrierte A/A-Nullkontrolle (Kalibrierung, keine Optimierung) |
-| `model-loop` | **H2:** ein lokales Modell schlägt Ausführungspläne vor, der Harness bewertet sie (benötigt `mlx-lm`) |
-| `codegen` | **H2 vollständig:** ein Modell *schreibt* Ausführungspläne, sandboxed und bewertet (benötigt `mlx-lm`) |
+| `model-loop` | **H2-explorativ:** ein lokales Modell schlägt Parameter vor, der Harness bewertet sie (benötigt `mlx-lm`) |
+| `codegen` | **H2-explorativ:** ein Modell schreibt einen begrenzten Dispatch-Plan; kein formaler H2-Nachweis (benötigt `mlx-lm`) |
 | `roofline` | Misst, ob Inferenz speicher- oder rechenbegrenzt ist — entscheidet, welche Optimierung überhaupt helfen kann |
 | `fusion` | Misst `mx.compile` über den cache-freien Forward-Pass — **kein** Generierungsgewinn, siehe ERGEBNISSE |
 | `guard` | Belegt, dass der H0.1-Analysekern stdlib-only bleibt |
+| `evidence` | Verifiziert/liest die append-only H1/H2-Historie ohne GPU (`tools/evidence.py`) |
 
 Jedes messende Werkzeug hat zwei Sicherungen:
 
@@ -91,15 +102,23 @@ Jedes messende Werkzeug hat zwei Sicherungen:
   und Exit `78`, **bevor** MLX importiert oder die GPU berührt wird.
 - **`--self-check`** prüft die Statistik offline, ohne GPU und ohne MLX.
 
+Die sieben H1/H2-Werkzeuge speichern einen Bericht erst dann als native Evidenz,
+wenn der Root-Checkout sauber ist und Git-, Code-, Spec-, Paket- und
+Hardwareidentität vor und nach dem Lauf übereinstimmen. Architektur und
+Historien-UI: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
+Auch native Schema-v1-Berichte tragen ausdrücklich `formal_claim=false`; ein
+formaler H1-v2-Lauf benötigt einen neuen versiegelten Vertrag.
+
 ### H2: das Modell schlägt vor, der Harness entscheidet
 
 `model-loop` gibt einem lokalen Gemma-3-Modell die bisherigen Messungen und die
 gemessenen Gerätefakten und lässt es Kandidaten vorschlagen. Über mehrere Runden
 sieht es die Ergebnisse seiner eigenen Vorschläge und kann darauf reagieren.
 
-**Das Modell schlägt Parameter vor, niemals Code.** Modellgenerierten Code auf der
-GPU auszuführen ist ein eigenes Sicherheitsproblem und ausdrücklich nicht Teil
-dieses Werkzeugs. Jeder Vorschlag wird als einfache Ganzzahl geparst und verworfen,
+**`model-loop` schlägt Parameter vor, niemals Code.** Modellgenerierter Code ist
+ein separates Sicherheitsproblem und wird ausschließlich vom experimentellen
+`codegen`-Werkzeug in einer stark begrenzten Plansprache behandelt. In
+`model-loop` wird jeder Vorschlag als einfache Ganzzahl geparst und verworfen,
 wenn er außerhalb des registrierten Bereichs liegt. Antwortet das Modell mit Prosa,
 einem Shell-Kommando oder `900`, wird nichts davon ausgeführt — die Runde ist
 verloren, mehr nicht.
@@ -126,9 +145,11 @@ Sechs Regeln, jede aus einem konkreten Fehlschlag entstanden:
 
 ## Hardwareschonung
 
-Verbindliche Budgets, fail-closed: GPU-Arbeit `≤ 120 s` je Lauf, ununterbrochene
-Last `≤ 6 s`, Wall `≤ 20`–`30 min`, Netzbetrieb verpflichtend. Jede Überschreitung
-bricht ab und **verwirft** den Lauf, statt ihn zu kürzen. Zum Vergleich: die
+Verbindliche Budgets, fail-closed für die Berichterstattung: GPU-Arbeit `≤ 120 s`
+je Lauf, ununterbrochene Last `≤ 6 s`, reale Pflichtpause `≥ 4 s`, höchstens
+`25 %` Duty-Cycle im gleitenden `60-s`-Fenster, Wall `≤ 20 min` und bei
+Kandidatensuche `≥ 60 s` Cooldown. Netzbetrieb ist verpflichtend. Eine
+Überschreitung verwirft den Lauf. Zum Vergleich: die
 sechs-Session-H0.1-Studie belastete das Gerät mit `5,26 s` GPU-Arbeit über
 `6,6 min`, einem Duty-Cycle von `1,33 %`.
 
@@ -139,7 +160,8 @@ die Ursache des Wärmeeintrags.
 
 ## Modelltests
 
-Optional, benötigt `mlx-lm`:
+Optional, benötigt `mlx-lm` und **vor Installation/Download eine ausdrückliche
+Nutzerfreigabe**:
 
 ```bash
 VIRTUAL_ENV=.venv uv pip install mlx-lm
@@ -157,12 +179,14 @@ früheren Läufe wären nicht mehr vergleichbar.
 ```
 friday_h0/    H0: Messsystem für eine feste FP16-2048²-Matmul, SQLite v1, Worker
 friday_h01/   H0.1: vorregistrierte Stationaritätsstudie, stdlib-only Analysekern
+friday_evidence/ H1/H2: provenancegebundene SQLite-v1-Evidenz und Historien-UI
 tools/        Messwerkzeuge, Einstieg über friday.py
 tests/        vollständige Suite; läuft ohne GPU und ohne Netz
 docs/         Spezifikationen, Ergebnisse, Arbeitsjournal
 ```
 
-Tests: `.venv/bin/python -m pytest` — läuft parallel und braucht rund `31 s`.
+Tests: `.venv/bin/python -m pytest` — zuletzt `429` Tests plus `2.443` Subtests
+in `31,86 s` parallel.
 Für besser lesbare Fehlerausgaben sequenziell: `pytest -n 0` (rund `90 s`).
 
 ## Weiterführend
@@ -177,11 +201,17 @@ Für besser lesbare Fehlerausgaben sequenziell: `pytest -n 0` (rund `90 s`).
   vorregistriertes H0.1-Design
 - [`docs/TECHNISCHES_KONZEPT.md`](docs/TECHNISCHES_KONZEPT.md) — was auf Apple
   Silicon messbar ist und was nicht
+- [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md) —
+  Persistenz-, Provenienz-, Budget- und UI-Vertrag
+- [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md) —
+  aktueller Go/No-Go-Entscheid
 
 ## Grenzen
 
-Alle Zahlen stammen von **einem** Gerät (M1 Max, 32 GB). Der Loop sucht in einem
-festen, von Hand definierten Raum von Ausführungsplänen; er generiert keinen Code
-und schreibt keine Kernel. Die H0.1-Stationaritätsstudie blieb **ungelöst** —
+Alle historischen Zahlen stammen von **einem** Gerät (M1 Max, 32 GB) und liegen
+für H1/H2 nur als Legacy-Zusammenfassungen vor. `loop` sucht in einem festen, von
+Hand definierten Raum; `codegen` darf nur `matmul`, `eval` und `synchronize` in
+einer begrenzten Plansprache kombinieren und schreibt keine Kernel. Die
+H0.1-Stationaritätsstudie blieb **ungelöst** —
 `16,7 %` aller Samples liegen über dem `1,5`-fachen Median, und diese Ausreißer
 sind der größte offene Punkt des Projekts.

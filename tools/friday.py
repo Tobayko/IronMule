@@ -65,6 +65,10 @@ TOOLS = {
         "run_h01_guard.py",
         "Verify the H0.1 analysis core stays stdlib-only (no MLX, NumPy or sockets)",
     ),
+    "evidence": (
+        "evidence.py",
+        "Verify or display the append-only H1/H2 evidence history (no GPU)",
+    ),
 }
 
 
@@ -86,7 +90,8 @@ def cmd_list() -> int:
     width = max(len(name) for name in TOOLS)
     for name, (script, description) in TOOLS.items():
         print(f"  {name:<{width}}  {description}")
-    print(f"\nRun one with:  python tools/friday.py <tool> --execute")
+    print(f"\nRun a measurement with:  python tools/friday.py <tool> --execute")
+    print("Read history with:       python tools/friday.py evidence snapshot")
     print("Add --self-check to any measuring tool to verify its statistics offline.")
     return 0
 

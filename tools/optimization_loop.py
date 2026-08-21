@@ -37,7 +37,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # tools/ is loaded as loose scripts, not a package.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 _SPEC = importlib.util.spec_from_file_location(
     "measure_dispatch_plan", Path(__file__).resolve().parent / "measure_dispatch_plan.py"
@@ -59,9 +59,6 @@ EXPLORE_BLOCKS = 20
 CONFIRM_BLOCKS = 25
 CONFIRM_REPLICATES = 3
 BOOTSTRAP_SEED = 0x10091_2026
-GPU_WORK_BUDGET_S = 120.0
-WALL_BUDGET_S = 30 * 60
-COOLDOWN_BETWEEN_CANDIDATES_S = 2.0
 # Measured on this device: the first samples after a pause are inflated.
 WARMUP_DISCARD = 3
 
@@ -81,9 +78,10 @@ def neighbours(batch_size: int, tried: set[int]) -> list[int]:
     )
 
 
-def summarize(log_ratios: list[float]) -> dict[str, float]:
+def summarize(log_ratios: list[float]) -> dict[str, object]:
     summary = paired_ratio(log_ratios)
     summary["clears_mde"] = clears_threshold(summary, MDE)
+    summary["log_ratios"] = list(log_ratios)
     return summary
 
 
@@ -159,30 +157,38 @@ def _self_check() -> int:
 class Harness:
     """Owns the operands and turns a batch size into a measurable plan."""
 
-    def __init__(self) -> None:
+    def __init__(self, guard: BudgetGuard | None = None) -> None:
         import mlx.core as mx
         import numpy as np
 
         sys.path.insert(0, str(PROJECT_ROOT))
         from friday_h0.benchmark import _generate_fixture
 
+        self.guard = guard or BudgetGuard()
         self.mx = mx
         self.np = np
         fixture = _generate_fixture(np, FIXTURE_SEED, shape=SHAPE)
         self.a = mx.array(fixture.a)
+        gpu_started = time.perf_counter()
         mx.eval(self.a)
+        mx.synchronize()
+        self.guard.record_gpu(time.perf_counter() - gpu_started)
         rng = np.random.Generator(np.random.PCG64(OPERAND_POOL_SEED))
         self.pool = [
             mx.array(rng.uniform(-1.0, 1.0, (SHAPE, SHAPE)).astype(np.float16))
             for _ in range(MAX_OPERANDS)
         ]
+        gpu_started = time.perf_counter()
         mx.eval(*self.pool)
         mx.synchronize()
-        self.references = [
-            np.array(mx.matmul(self.a, operand), copy=False).astype(np.float32)
-            for operand in self.pool
-        ]
-        self.gpu_seconds = 0.0
+        self.guard.record_gpu(time.perf_counter() - gpu_started)
+        self.references = []
+        for operand in self.pool:
+            gpu_started = time.perf_counter()
+            self.references.append(
+                np.array(mx.matmul(self.a, operand), copy=False).astype(np.float32)
+            )
+            self.guard.record_gpu(time.perf_counter() - gpu_started)
 
     def _serial(self, n: int) -> list:
         produced = []
@@ -203,7 +209,10 @@ class Harness:
         """An execution plan may reorder work; it may not change one bit."""
 
         for plan in (self._serial, self._batched):
-            for index, value in enumerate(plan(n)):
+            gpu_started = time.perf_counter()
+            values = plan(n)
+            self.guard.record_gpu(time.perf_counter() - gpu_started)
+            for index, value in enumerate(values):
                 observed = self.np.array(value, copy=False).astype(self.np.float32)
                 if float(self.np.abs(observed - self.references[index]).max()) != 0.0:
                     return False
@@ -213,8 +222,10 @@ class Harness:
         """Paired log-ratios of batched against serial for one batch size."""
 
         for _ in range(WARMUP_DISCARD):
+            gpu_started = time.perf_counter()
             self._serial(n)
             self._batched(n)
+            self.guard.record_gpu(time.perf_counter() - gpu_started)
         log_ratios = []
         for _ in range(blocks):
             start = time.perf_counter_ns()
@@ -223,30 +234,30 @@ class Harness:
             start = time.perf_counter_ns()
             self._batched(n)
             batched_ns = time.perf_counter_ns() - start
-            self.gpu_seconds += (serial_ns + batched_ns) / 1e9
-            if self.gpu_seconds > GPU_WORK_BUDGET_S:
-                raise SystemExit("refused: GPU work budget exceeded")
+            self.guard.record_gpu((serial_ns + batched_ns) / 1e9)
             log_ratios.append(math.log(batched_ns / serial_ns))
         return log_ratios
 
 
 def run(explore_blocks: int, confirm_blocks: int) -> dict[str, object]:
-    harness = Harness()
-    started = time.monotonic()
+    guard = BudgetGuard()
+    harness = Harness(guard)
     rounds: list[dict] = []
     tried: set[int] = set()
 
     def evaluate(batch_size: int, blocks: int) -> dict:
-        if time.monotonic() - started > WALL_BUDGET_S:
-            raise SystemExit("refused: wall budget exceeded")
-        time.sleep(COOLDOWN_BETWEEN_CANDIDATES_S)
-        if not harness.correctness_holds(batch_size):
-            return {"name": f"batched_{batch_size}", "batch_size": batch_size,
-                    "rejected": "correctness", "clears_mde": False, "ratio": 1.0}
-        summary = summarize(harness.measure(batch_size, blocks))
-        summary.update({"name": f"batched_{batch_size}", "batch_size": batch_size,
-                        "rejected": None})
-        return summary
+        guard.before_candidate()
+        try:
+            if not harness.correctness_holds(batch_size):
+                return {"name": f"batched_{batch_size}", "batch_size": batch_size,
+                        "rejected": "correctness", "clears_mde": False, "ratio": 1.0,
+                        "log_ratios": []}
+            summary = summarize(harness.measure(batch_size, blocks))
+            summary.update({"name": f"batched_{batch_size}", "batch_size": batch_size,
+                            "rejected": None})
+            return summary
+        finally:
+            guard.finish_candidate()
 
     # Round 1 -- explore
     explored = [evaluate(size, explore_blocks) for size in EXPLORE_BATCH_SIZES]
@@ -273,20 +284,29 @@ def run(explore_blocks: int, confirm_blocks: int) -> dict[str, object]:
     # Round 3 -- confirm the leader independently, or report nothing
     confirmation = None
     if leader is not None:
-        replicate_logs = [
-            harness.measure(leader["batch_size"], confirm_blocks)
-            for _ in range(CONFIRM_REPLICATES)
-        ]
+        guard.before_candidate()
+        try:
+            replicate_logs = []
+            for replicate in range(CONFIRM_REPLICATES):
+                if replicate:
+                    guard.required_break()
+                replicate_logs.append(
+                    harness.measure(leader["batch_size"], confirm_blocks)
+                )
+        finally:
+            guard.finish_candidate()
         aggregate = hierarchical_bootstrap(replicate_logs, seed=BOOTSTRAP_SEED)
         aggregate["clears_mde"] = clears_threshold(aggregate, MDE)
         aggregate["replicate_ratios"] = [
             round(math.exp(statistics.median(logs)), 4) for logs in replicate_logs
         ]
+        aggregate["replicate_log_ratios"] = replicate_logs
         confirmation = aggregate
         rounds.append({"round": "confirm", "batch_size": leader["batch_size"],
                        "result": aggregate})
 
     accepted = bool(confirmation and confirmation["clears_mde"])
+    budget = guard.summary()
     return {
         "mde": MDE,
         "rounds": rounds,
@@ -299,8 +319,9 @@ def run(explore_blocks: int, confirm_blocks: int) -> dict[str, object]:
         "effect_percent": (
             round(100.0 * (confirmation["ratio"] - 1.0), 2) if accepted else None
         ),
-        "gpu_work_seconds": round(harness.gpu_seconds, 2),
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "wall_seconds": budget["wall_seconds"],
+        "budget": budget,
     }
 
 
@@ -315,10 +336,19 @@ def main(argv: list[str] | None = None) -> int:
     gated = release_gate(args, _self_check)
     if gated is not None:
         return gated
+    if not 2 <= args.explore_blocks <= 100:
+        raise SystemExit("explore-blocks must be between 2 and 100")
+    if not 2 <= args.confirm_blocks <= 100:
+        raise SystemExit("confirm-blocks must be between 2 and 100")
 
     power = require_ac_power()
-    report = run(args.explore_blocks, args.confirm_blocks)
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run(args.explore_blocks, args.confirm_blocks)
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("loop", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0 if report["verdict"] == "optimization_confirmed" else 1
 

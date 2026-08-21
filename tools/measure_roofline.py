@@ -33,7 +33,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 # Published Apple M1 Max figures.  Not measured here; used only to form ratios.
 PEAK_BANDWIDTH_GB_S = 400.0
@@ -116,7 +116,7 @@ def _self_check() -> int:
     return 0
 
 
-def measure_model(model_id: str, label: str) -> dict[str, object]:
+def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, object]:
     import mlx.core as mx
     from mlx.utils import tree_flatten
     from mlx_lm import load
@@ -132,8 +132,10 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
     prompt_tokens = len(text) if isinstance(text, list) else len(tokenizer.encode(text))
 
     for _ in range(WARMUP):
+        gpu_started = time.perf_counter()
         for _ in stream_generate(model, tokenizer, text, max_tokens=4):
             pass
+        guard.record_gpu(time.perf_counter() - gpu_started)
 
     prefill_s: list[float] = []
     per_token_s: list[float] = []
@@ -147,6 +149,7 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
             last = time.perf_counter_ns()
             if first is None:
                 first = last - started
+        guard.record_gpu((last - started) / 1e9)
         if produced < 2 or first is None:
             raise SystemExit("generation produced too few tokens to measure")
         prefill_s.append(first / 1e9)
@@ -164,6 +167,8 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
         "generation_ms_per_token": round(per_token * 1000, 3),
         "generation_tokens_per_second": round(1 / per_token, 1),
         "prefill_speedup_per_token": round((prompt_tokens / prefill) * per_token, 1),
+        "prefill_seconds_samples": prefill_s,
+        "generation_seconds_per_token_samples": per_token_s,
         **shares,
         "verdict": classify(shares),
     }
@@ -173,16 +178,23 @@ def measure_model(model_id: str, label: str) -> dict[str, object]:
 
 
 def run() -> dict[str, object]:
-    started = time.monotonic()
-    results = [measure_model(model_id, label) for model_id, label in MODELS]
+    guard = BudgetGuard()
+    results = []
+    for index, (model_id, label) in enumerate(MODELS):
+        if index:
+            guard.required_break()
+        results.append(measure_model(model_id, label, guard))
     verdicts = {entry["verdict"] for entry in results}
+    budget = guard.summary()
     return {
         "peak_bandwidth_gb_s": PEAK_BANDWIDTH_GB_S,
         "peak_fp16_tflops": PEAK_FP16_TFLOPS,
         "peak_source": "published vendor figures, not measured here",
         "models": results,
         "verdict": verdicts.pop() if len(verdicts) == 1 else "mixed",
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "wall_seconds": budget["wall_seconds"],
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "budget": budget,
     }
 
 
@@ -197,8 +209,13 @@ def main(argv: list[str] | None = None) -> int:
         return gated
 
     power = require_ac_power()
-    report = run()
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run()
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("roofline", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0
 

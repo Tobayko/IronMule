@@ -1,5 +1,14 @@
 # Phase 1A — H0-Messsystem-Preflight (Matmul)
 
+> **Auditnachtrag vom 21.08.2026:** Der H0-Vertrag und seine Rohhistorie bleiben
+> unverändert. Die in späteren Abschnitten vorgesehene formale A/A→H1-Brücke wurde
+> für die historischen H1/H2-Läufe jedoch nicht vertragskonform abgeschlossen:
+> Die append-only DB enthält mehrere `aa_gpu`-Generationen, mindestens einen
+> relevanten ungültigen Prozess, und die MDE war vor dem ersten A/B-Lauf nicht
+> versiegelt. Historische Dispatch-/Loop-/Modellwerte validieren daher weder
+> Abschnitt 8.1/9.1 noch Phase 1B. Ein neuer formaler Lauf braucht neue IDs und
+> eine prospektive H1-Spezifikation.
+
 **Status:** H0-Messsystem-Preflight; Offline-Harness, SQLite v1, fester Worker Option A und
 read-only-Loopback-Dashboard sind implementiert. Bisherige Live-Läufe waren ungültig oder
 fail-closed; es gibt noch keine gültige abgeschlossene H0-Performanceentscheidung.

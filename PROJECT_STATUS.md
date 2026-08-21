@@ -1,20 +1,49 @@
 # Projektstatus
 
-**Stand:** 20. August 2026  
+**Stand:** 21. August 2026
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
-> **Aktueller Forschungsentscheid (19.08.2026):**
-> `JA — Ich gebe den Forschungspivot H0 → H1 → H2 und die Implementierung von Phase 1A/H0 mit SQLite v1, read-only Loopback-Dashboard und festem Worker Option A frei. Keine Downloads, Installationen, Custom-Metal-Kernels oder Modellgewichte.`
-> Phase 1A ist damit als `approved/implemented-offline` reklassifiziert. Das autorisiert
-> noch keinen realen MLX-/GPU-Lauf und keine Performance-, Correctness-, Memory- oder
-> Safety-Aussage.
+## Auditierter aktueller Stand
 
-Am 20.08.2026 autorisierte der Nutzer die begrenzte W1v3-/Output-Fix-Umsetzung und genau
-einen `eager_baseline`-Canary. Es gab keine Installation, keinen Download und keine
-Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weitere Runs,
-`aa_gpu` und Optimierung benötigen eine neue ausdrückliche Freigabe.
+| Bereich | Verifizierbarer Stand | Zulässige Aussage |
+| --- | --- | --- |
+| Root-Provenienz | Root-Git-Repository mit Baseline-Commit `4095d26`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | künftige native Läufe können erstmals an eine Root-Revision gebunden werden |
+| H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
+| H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
+| H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
+| H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert | Infrastruktur-Go; **keine** neue Performanceaussage |
 
-## Aktueller H0-Implementierungsstand
+Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen,
+`0` native Zeilen und `0` Zeilen mit Rohmessungen. Datei: `73.728 B`, Modus
+`0600`, SHA-256 `4489e6114229f386a74f2066833846fa58a211789dc25e7ad8ded20939ecd74a`,
+Snapshot-Revision `715f7e723081c4ec0fecd4caac20824da33fa6a493145175f3b852275cadce90`.
+Ein zweiter Import war idempotent (`0` neu, `10` bereits vorhanden) und ließ den
+Dateihash unverändert. Der vollständige Offline-Testlauf bestand mit `429` Tests
+und `2.443` Subtests in `31,86 s`.
+
+Das Evidenzaudit korrigiert die frühere Statussprache: Der dokumentierte formale
+A/A-Loader verlangt global genau sechs kompatible Prozesse, die append-only H0-DB
+enthält aber neun `aa_gpu`-Runs aus mehreren Generationen. Mindestens ein relevanter
+Prozess war `warmup_unstable`; zudem fehlte allen historischen Runs eine Root-Git-
+Revision. Unmittelbar vor dem ersten A/B-Lauf waren hierarchischer Bootstrap,
+formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
+H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
+vorregistriert werden.
+
+Aktueller Entscheid: Phase 1B/Custom Metal **NO-GO**, Cross-Device
+**NO-CLAIM**, breiterer Live-Suchraum **NO-GO**, Offline-Protokoll- und Testarbeit
+**GO**. Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
+Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
+Dieser Auditlauf installierte nichts, lud nichts herunter und führte keinen GPU-
+oder Modelllauf aus.
+
+## Historisches Arbeitsprotokoll
+
+Die folgenden Abschnitte erhalten die damaligen Messungen und Entscheidungen. Wo
+sie „bestätigt“ sagen, ist das die **historische explorative Klassifikation**, nicht
+der aktuelle formale Evidenzgrad.
+
+## Historischer H0-Implementierungsstand
 
 - H0 ist eine einzelne FP16-`2048²`-Matmul-Workload, kein Modelltest und kein
   Self-Optimization- oder Hardware-Generalisation-Nachweis.
@@ -39,7 +68,7 @@ Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weiter
   es liegt kein Produktfehler vor.
 - H0-Baseline läuft. Weder `aa_gpu` noch Optimierung oder Self-Optimization sind bewiesen.
 
-## Aktueller H0.1-Stand — separate Stationaritätsforschung
+## Historischer H0.1-Stand — separate Stationaritätsforschung
 
 - H0.1 ist strikt von H0 getrennt. Es besitzt einen vorregistrierten Paced-Trajectory-
   Vertrag mit exakt sechs vorgesehenen Sessions `C0,V0,C1,V1,C2,V2`, einen
@@ -129,15 +158,17 @@ Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weiter
   letzteres misst ausdrücklich den cache-freien Forward-Pass, **nicht** einen
   Generierungsgewinn.
 
-## H2 vollständig — modellgeschriebene Ausführungspläne (21.08.2026)
+## Historische explorative H2-Codegen-Beobachtung (21.08.2026)
 
 - Nutzerfreigabe für Ausführung modellgenerierten Codes und erhöhtes GPU-Budget
   erteilt. Kein zweites Gerät, Cross-Device bleibt offen.
 - **Bestätigt: `R = 0,8838`, `−11,62 %`, `95%-KI [0,8676, 0,8975]`**, drei
   Replikate. Fünf Pläne geschrieben, fünf gemessen, drei über der Schwelle.
-- Drei Schutzschichten: AST-Allowlist (`29` adversariale Tests), Prozessisolation
-  mit Timeout/CPU-Grenze/bereinigter Umgebung/MLX-Speicherlimit, und ein
-  Correctness-Gate auf bytegleiche Ergebnisse.
+- Drei Schutzschichten: heute semantisch begrenzte AST-Plansprache (ein
+  Iterationslevel, höchstens `32` statisch gewichtete Matmuls, keine freien
+  Allokationsprimitive), Prozessisolation mit Timeout/CPU-Grenze/bereinigter
+  Umgebung sowie ein Correctness-Gate. Die MLX-Speichereinstellung ist nur eine
+  Richtlinie, kein hartes OS-Limit.
 - Zwei Anläufe scheiterten an eigenen Fehlern: Der Prompt zeigte die Baseline zu
   prominent (Modell kopierte sie viermal), und der Validator blockierte
   `out.append(x)` — genau die gesuchte Optimierung. Beides korrigiert und
@@ -185,7 +216,7 @@ Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weiter
   Release-Gates, Self-Checks und dass jeder Dokumentationslink auflöst.
 - Gesamtsuite `326` Tests / `2.312` Subtests grün, H0.1-Guard `pass`.
 
-## Self-Optimization-Loop — bestätigt (21.08.2026)
+## Historische explorative Self-Optimization-Loop-Beobachtung (21.08.2026)
 
 - **`3` von `3` Läufen: `optimization_confirmed`.** Gewählt `N=8` (`−13,60 %`),
   `N=6` (`−11,13 %`), `N=6` (`−14,11 %`). Der Loop konvergiert auf `N=6`–`8`.
@@ -204,7 +235,7 @@ Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weiter
 - Grenze: fester, von Hand definierter Suchraum. Kein Codegenerieren, keine
   Kernel — das bleibt H2 mit eigener Sicherheitsfreigabe.
 
-## H2-Vorstufe — reale Modelltests Gemma 3 (21.08.2026)
+## Historische explorative H2-Vorstufe — Modelltests Gemma 3 (21.08.2026)
 
 - Nutzerfreigabe für Download und Installation erteilt, Auflage Projektordner
   eingehalten: `HF_HOME` auf `.friday-data/models`, Pakete im lokalen `.venv`.
@@ -258,7 +289,7 @@ Freigabe für `aa_gpu`. Run22 ist dieser eine abgeschlossene Canary-Lauf; weiter
 - Werkzeuge: `tools/measure_cooldown_effect.py` (`--execute`-Gate, Netzbetrieb,
   GPU-/Wall-Budget, `--self-check`) und `tests/test_cooldown_effect.py` (`15` Tests).
 
-## H1 — erste bestätigte Optimierung (21.08.2026)
+## Historische explorative H1-Beobachtung — Dispatch-Plan (21.08.2026)
 
 - **Ergebnis: `−14,7 %` bei `N = 8`, Optimum `−17,4 %` bei `N = 4`.** Gepaart
   gemessen, über fünf Replikate repliziert, `95%-KI [0,8263, 0,8777]`, Correctness

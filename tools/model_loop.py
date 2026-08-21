@@ -33,7 +33,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 import importlib.util  # noqa: E402
 
@@ -151,26 +151,33 @@ def _self_check() -> int:
 
 
 def run(rounds: int) -> dict[str, object]:
+    guard = BudgetGuard()
     from mlx_lm import generate, load
 
-    started = time.monotonic()
     model, tokenizer = load(MODEL_ID)
-    harness = _LOOP.Harness()
+    harness = _LOOP.Harness(guard)
     evidence: list[dict] = []
     tried: set[int] = set()
     history: list[dict] = []
 
     def measure(batch_size: int) -> dict:
-        if not harness.correctness_holds(batch_size):
-            return {"batch_size": batch_size, "rejected": "correctness",
-                    "clears_mde": False, "ratio": 1.0, "ci_high": 1.0}
-        summary = _LOOP.summarize(harness.measure(batch_size, EXPLORE_BLOCKS))
-        summary["batch_size"] = batch_size
-        summary["rejected"] = None
-        return summary
+        guard.before_candidate()
+        try:
+            if not harness.correctness_holds(batch_size):
+                return {"batch_size": batch_size, "rejected": "correctness",
+                        "clears_mde": False, "ratio": 1.0, "ci_high": 1.0,
+                        "log_ratios": []}
+            summary = _LOOP.summarize(harness.measure(batch_size, EXPLORE_BLOCKS))
+            summary["batch_size"] = batch_size
+            summary["rejected"] = None
+            return summary
+        finally:
+            guard.finish_candidate()
 
     for round_index in range(rounds):
+        guard.required_break()
         prompt = build_prompt(evidence, tried)
+        gpu_started = time.perf_counter()
         answer = generate(
             model,
             tokenizer,
@@ -180,6 +187,8 @@ def run(rounds: int) -> dict[str, object]:
             max_tokens=MAX_MODEL_TOKENS,
             verbose=False,
         )
+        guard.record_gpu(time.perf_counter() - gpu_started)
+        guard.required_break()
         proposals = parse_proposals(answer, already_tried=tried)
         measured = [measure(size) for size in proposals]
         tried.update(proposals)
@@ -205,20 +214,30 @@ def run(rounds: int) -> dict[str, object]:
 
     confirmation = None
     if leader is not None:
-        replicates = [
-            harness.measure(leader["batch_size"], CONFIRM_BLOCKS)
-            for _ in range(CONFIRM_REPLICATES)
-        ]
+        guard.before_candidate()
+        try:
+            replicates = []
+            for replicate in range(CONFIRM_REPLICATES):
+                if replicate:
+                    guard.required_break()
+                replicates.append(
+                    harness.measure(leader["batch_size"], CONFIRM_BLOCKS)
+                )
+        finally:
+            guard.finish_candidate()
         confirmation = _LOOP.hierarchical_bootstrap(replicates, seed=BOOTSTRAP_SEED)
         confirmation["clears_mde"] = _LOOP.clears_threshold(confirmation, MDE)
         confirmation["replicate_ratios"] = [
             round(math.exp(statistics.median(logs)), 4) for logs in replicates
         ]
+        confirmation["replicate_log_ratios"] = replicates
 
     accepted = bool(confirmation and confirmation["clears_mde"])
+    budget = guard.summary()
     return {
         "model": MODEL_ID,
         "rounds": history,
+        "candidate_measurements": evidence,
         "candidates_measured": len(evidence),
         "proposed_by_model": sorted(tried),
         "selected_batch_size": leader["batch_size"] if leader else None,
@@ -228,8 +247,9 @@ def run(rounds: int) -> dict[str, object]:
             round(100.0 * (confirmation["ratio"] - 1.0), 2) if accepted else None
         ),
         "mde": MDE,
-        "gpu_work_seconds": round(harness.gpu_seconds, 2),
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "wall_seconds": budget["wall_seconds"],
+        "budget": budget,
     }
 
 
@@ -247,8 +267,13 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("rounds must be between 1 and 10")
 
     power = require_ac_power()
-    report = run(args.rounds)
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run(args.rounds)
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("model-loop", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0 if report["verdict"] == "optimization_confirmed" else 1
 

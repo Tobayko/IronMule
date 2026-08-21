@@ -1,6 +1,36 @@
 # Implementierungsplan
 
-## Aktueller H0-Pivot und Freigabestatus — 20.08.2026
+## Auditierter Planstand — 21.08.2026
+
+Die frühere Abfolge wurde durch den Evidenzaudit enger gefasst. Historische
+Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
+`legacy_summary`-Beobachtungen: Das formale A/A-Gate war nicht geschlossen, die
+MDE vor A/B nicht versiegelt und H1/H2-Rohblöcke nicht persistent. Sie dürfen
+keinen Phasenfortschritt zu Phase 1B, Cross-Device oder einem breiteren Suchraum
+begründen.
+
+Aktuelle Reihenfolge:
+
+1. **Root-Provenienz und H1/H2-Evidenzschicht — umgesetzt und offline
+   verifiziert.** Root-Git, geschlossenes SQLite-v1-Schema, native/Legacy-
+   Trennung, gemeinsame Budgets, fail-closed Persistenz und read-only Historien-
+   UI. Historische Werte werden ohne erfundene Rohdaten herabgestuft importiert.
+   Produktionsstand: `10` Legacy-Zusammenfassungen, `0` native Messungen,
+   idempotenter Import und bytegleicher read-only Snapshot.
+2. **Neuen prospektiven H1-Vertrag erstellen — nächster wissenschaftlicher
+   Schritt, noch nicht live freigegeben.** Genau eine Tensoroperation; neue,
+   konfliktfreie Study-ID; A/A-Generation, MDE-Ableitung, Kandidatenfamilie,
+   Splits, Warmup, Correctness und Abbruchregeln vor der ersten GPU-Zeit
+   versiegeln.
+3. **A/A und danach A/B nur nach separater Nutzerfreigabe ausführen.** Keine
+   Installation oder kein Download impliziert; jeder native Lauf muss einen
+   sauberen Git-Stand und vollständige Rohpersistenz besitzen.
+4. **Erst danach neu entscheiden.** Phase 1B/Custom Metal ist aktuell
+   **NO-GO**, Cross-Device **NO-CLAIM**, breiterer Live-Suchraum **NO-GO**.
+   Der aktuelle Entscheid steht in
+   [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
+
+## Historischer H0-Pivot und Freigabestatus — 20.08.2026
 
 `JA — Ich gebe den Forschungspivot H0 → H1 → H2 und die Implementierung von Phase 1A/H0 mit SQLite v1, read-only Loopback-Dashboard und festem Worker Option A frei. Keine Downloads, Installationen, Custom-Metal-Kernels oder Modellgewichte.`
 
@@ -30,7 +60,7 @@ Schwellenänderung ausgeführt, vollständiger Study-Replay bytegleich. Ergebnis
 Envelope wird deutlich verfehlt, dominierend über die Tail-Ratio `2,53`–`3,13` bei
 Grenze `1,20`.
 
-Nächste offene Entscheidung ist damit H1. Sie ist ohne neue Nutzerfreigabe nicht zu
+Die damals als nächste offene Entscheidung bezeichnete H1-Stufe ist ohne neue Nutzerfreigabe nicht zu
 treffen, weil ein nicht stationärer Messuntergrund jede Vorher/Nachher-Aussage
 begrenzt: Eine Optimierung müsste einen Effekt zeigen, der größer ist als die
 beobachtete Streuung derselben unveränderten Operation. `aa_gpu`, H2-Modelle und
