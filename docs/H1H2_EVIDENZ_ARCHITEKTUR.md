@@ -142,6 +142,9 @@ Alle sieben H1/H2-Messwerkzeuge importieren exakt denselben `BudgetGuard`:
 Pflichtpause. Die Cooldown-Charakterisierung ist eine einzelne Studie, keine
 Kandidatensuche; ihre vorgegebenen Pausen werden dennoch durch dieselbe
 GPU-/Duty-/Wall-Buchführung erfasst.
+`roofline` trennt jede Modellgenerierung nach der ersten durch eine verifizierte
+Pflichtpause; Warmups und Messwiederholungen dürfen nicht zu einem einzigen
+kontinuierlichen GPU-Intervall zusammenfallen.
 
 Der Codegen-Worker ist zusätzlich begrenzt: AST-Allowlist, erneute Validierung an
 der Ausführungsgrenze, nur `matmul`/`eval`/`synchronize`, kleine Literale, ein
