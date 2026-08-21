@@ -1,8 +1,9 @@
-# H1/H2-Evidenzarchitektur — SQLite v1, Provenienz und Historien-UI
+# H1/H2-Evidenzarchitektur — exploratives SQLite v1 und formales H1-v2
 
-**Status:** implementiert, produktiv initialisiert und offline verifiziert. Diese Architektur autorisiert keinen
-GPU-, Modell- oder Custom-Metal-Lauf. Sie schließt ausschließlich die bisherige Lücke,
-dass H1/H2-Werkzeuge ihre Berichte nur auf stdout ausgaben.
+**Status:** SQLite v1 ist implementiert und produktiv initialisiert. Der getrennte
+formale H1-v2-Pfad ist implementiert und durch den Nutzer für die eine vorregistrierte
+Dispatch-Studie freigegeben. Custom Metal, Cross-Device-Aussagen und freie
+Modell-/Codesuche bleiben nicht freigegeben.
 
 ## 1. Forschungsgrenze
 
@@ -11,6 +12,11 @@ Datei `.friday-data/research.sqlite3` ist eine dritte, unabhängige Evidenzdomä
 Werkzeuge `dispatch`, `cooldown`, `loop`, `model-loop`, `codegen`, `roofline` und
 `fusion`. Es gibt absichtlich keine Cross-DB-Transaktion und keine nachträgliche
 Umschreibung alter H0/H0.1-Befunde.
+
+Die formale Studie verwendet zusätzlich `.friday-data/h1-v2.sqlite3` als vierte,
+eigenständige Domäne. Sie migriert oder ergänzt v1 ausdrücklich nicht: v1 bleibt
+explorative Historie, während H1-v2 eine neue Study-ID, eine neue Protokollversion und
+frische Messdaten verlangt.
 
 Die Architektur unterscheidet zwei Evidenzklassen strikt:
 
@@ -124,7 +130,44 @@ böswilligen Dateieigentümer: Wer die lokale Datei und den Code kontrolliert, k
 beides ersetzen. Für externe Unveränderbarkeit wäre zusätzlich ein außerhalb des
 Arbeitsplatzes verankerter Signatur-/Archivdienst nötig; er ist nicht Teil von v1.
 
-## 5. Gemeinsame Hardwareschutzbudgets
+## 5. Formale H1-v2-Studienebene
+
+`friday_h1/` implementiert ausschließlich die Studie
+`h1v2-dispatch-n8-20260821-01`. Der maschinenlesbare Studienvertrag und
+`docs/H1_VORREGISTRIERUNG_V2.md` frieren Workload, Kandidatenzahl, Seeds,
+Armreihenfolge, Session-Splits, Statistik, MDE-Ableitung, Budgets und
+Entscheidungsregeln vor der ersten Messung ein.
+
+Der Lebenszyklus ist geschlossen:
+
+```text
+Präregistrierung
+  -> C0,V0,C1,V1,C2,V2 A/A
+  -> Kalibrierungs-Replay und MDE
+  -> separates Bestätigungssiegel
+  -> C0,V0,C1,V1,C2,V2 A/B
+  -> terminaler Studienentscheid
+```
+
+Jede Session läuft in einem frischen Prozess. A/B kann ohne bestandene A/A-
+Kalibrierung und ohne daraus erzeugtes Siegel nicht beginnen. Ein fehlgeschlagener
+Live-Versuch ist terminal und darf nicht wiederholt werden. Nur der terminale
+Studienentscheid trägt `formal_claim=true`; Sessionwerte und Zwischenberichte sind
+keine eigenständigen Claims.
+
+SQLite v2 sperrt Update, Delete und Ersetzen per Trigger. Jede Zeile bindet
+kanonische Payload- und Provenienzbytes sowie daraus abgeleitete Record-IDs. Beim
+Lesen werden Schema-Snapshot, Metadaten, Zeilenprojektionen, Hashes und die gesamte
+Zustandsmaschine erneut berechnet; dadurch werden unter anderem fehlende,
+vertauschte oder nachträglich veränderte Sessions abgelehnt. Die Datei wird mit
+Modus `0600` angelegt, Symlinks werden abgelehnt und die UI nutzt `mode=ro` plus
+`query_only=ON`.
+
+Diese Studienebene ist keine allgemeine H1/H2-Plattform. Ein weiterer Kandidat,
+eine andere Operation, ein anderes Gerät oder ein Modellloop benötigt eine neue
+Study-ID und eine neue prospektive Spezifikation.
+
+## 6. Gemeinsame Hardwareschutzbudgets
 
 Alle sieben H1/H2-Messwerkzeuge importieren exakt denselben `BudgetGuard`:
 
@@ -168,7 +211,7 @@ aktuellen Phase-1B-NO-GO-Entscheid. MLX nutzt auf Apple Silicon
 [`Unified Memory`](https://ml-explore.github.io/mlx/build/html/usage/unified_memory.html),
 sodass GPU- und CPU-Speicher nicht als unabhängige Budgets behauptet werden.
 
-## 6. Lokale UI und Betrieb
+## 7. Lokale UI und Betrieb
 
 Historie verifizieren bzw. lesen:
 
@@ -202,7 +245,18 @@ Produktiver Auditstand vom 21.08.2026: `10` `legacy_summary`, `0` `native`,
 Der Replay-Import meldete `10` bereits vorhandene Zeilen und änderte den Dateihash
 nicht. Ein read-only Snapshot änderte die Datei ebenfalls nicht.
 
-## 7. Grenzen und Wiederherstellung
+Der formale H1-v2-Store wird getrennt bedient:
+
+```bash
+.venv/bin/python tools/run_h1_v2.py self-check
+.venv/bin/python tools/run_h1_v2.py snapshot
+.venv/bin/python tools/run_h1_v2.py dashboard --port 8768
+```
+
+Auch diese UI bindet nur Loopback, akzeptiert nur Lesezugriffe und replayt die
+vollständige formale Historie vor der Ausgabe.
+
+## 8. Grenzen und Wiederherstellung
 
 - Die ignorierte produktive SQLite-Datei ist lokale Evidenz und kein Backup. Für
   Archivierung muss sie bei gestopptem Writer als Ganzes kopiert und anschließend

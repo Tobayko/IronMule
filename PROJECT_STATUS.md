@@ -12,6 +12,7 @@
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; drei native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
+| H1-v2 formal | neue Study-ID, getrennter append-only SQLite-v2-Store, versiegeltes A/A→MDE→A/B-Protokoll, sechs Sessions je Stufe, Split-Gates und read-only Metrikhistorie implementiert | Architektur und GPU-Nutzung freigegeben; noch keine H1-v2-Messung, daher noch kein formaler Ergebnis-Claim |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `3` native Ereignisse: zwei gültige Berichte mit Rohmessungen sowie einen
@@ -20,7 +21,9 @@ sanitisierten Guard-Abbruch. Datei: `106.496 B`, Modus `0600`, SHA-256
 Snapshot-Revision `eb23ae5d6d72b32c2c595a04e85ea9cf3a7e1bd5aac19be26359a41ac7546cb0`.
 Ein zweiter Import war idempotent (`0` neu, `10` bereits vorhanden) und ließ den
 damaligen Dateihash unverändert. Der aktuelle vollständige Offline-Testlauf
-bestand mit `439` Tests und `2.447` Subtests in `31,64 s`.
+bestand nach Implementierung von H1-v2 mit `455` Tests und `2.447` Subtests in
+`33,04 s`; die unmittelbar zuvor gemessene Baseline lag bei `439` Tests in
+`32,01 s`.
 
 Das Evidenzaudit korrigiert die frühere Statussprache: Der dokumentierte formale
 A/A-Loader verlangt global genau sechs kompatible Prozesse, die append-only H0-DB
@@ -31,9 +34,10 @@ formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
 H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
-Aktueller Entscheid: Phase 1B/Custom Metal **NO-GO**, Cross-Device
-**NO-CLAIM**, breiterer Live-Suchraum **NO-GO**, Offline-Protokoll- und Testarbeit
-**GO**. Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
+Aktueller Entscheid: H1-v2-A/A und der bei bestandenem Gate automatisch
+versiegelte einzelne A/B-Kandidat sind **GO**. Phase 1B/Custom Metal bleibt
+**NO-GO**, Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
+Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
 GPU- oder Modelllauf aus. Nach späterer ausdrücklicher Rechenfreigabe wurden die
@@ -76,8 +80,9 @@ Lücke.
 
 Die neue Rohmessung reproduziert die Richtung der historischen Roofline-
 Zusammenfassung, wertet sie aber nicht formal auf. Phase 1B/Custom Metal bleibt
-**NO-GO**; ein formaler H1-Schritt benötigt weiterhin Schema/Protokoll v2 mit
-versiegelter Study-ID, A/A, MDE, Familien- und Splitvertrag.
+**NO-GO**. Das zuvor fehlende Schema/Protokoll v2 ist inzwischen unter
+`friday_h1/` implementiert und offline verifiziert; der produktive Store wird erst
+auf einem sauberen Commit versiegelt, bevor die erste A/A-Session GPU-Zeit erhält.
 
 ## Historisches Arbeitsprotokoll
 

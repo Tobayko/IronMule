@@ -1,4 +1,10 @@
-# H1 — Vorregistrierung (ENTWURF, nicht freigegeben)
+# H1 — historischer Vorregistrierungsentwurf (nicht freigegeben)
+
+> **Nachfolger:** Dieser historische Entwurf bleibt unverändert als Auditspur der
+> nicht prospektiven Legacy-Läufe erhalten. Die neue, freigegebene und prospektive
+> Studie ist `docs/H1_VORREGISTRIERUNG_V2.md` mit der neuen Study-ID
+> `h1v2-dispatch-n8-20260821-01`. Keine Zahl aus den Legacy-Läufen wurde in deren
+> Bestätigungsdaten übernommen.
 
 > **Auditnachtrag vom 21.08.2026:** Dieser Entwurf wurde vor den historischen
 > H1/H2-Läufen weder vollständig ausgefüllt noch freigegeben. Insbesondere waren
