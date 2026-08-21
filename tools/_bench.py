@@ -10,7 +10,6 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -28,15 +27,25 @@ class LocalModelError(RuntimeError):
     """Raised when a registered local model snapshot is absent or inconsistent."""
 
 
-@dataclass(frozen=True)
 class LocalModelSnapshot:
     """Validated identity of one project-local Hugging Face snapshot."""
 
-    model_id: str
-    revision: str
-    path: Path
-    weight_files: tuple[str, ...]
-    weight_bytes: int
+    __slots__ = ("model_id", "revision", "path", "weight_files", "weight_bytes")
+
+    def __init__(
+        self,
+        *,
+        model_id: str,
+        revision: str,
+        path: Path,
+        weight_files: tuple[str, ...],
+        weight_bytes: int,
+    ) -> None:
+        self.model_id = model_id
+        self.revision = revision
+        self.path = path
+        self.weight_files = weight_files
+        self.weight_bytes = weight_bytes
 
     def report_identity(self) -> dict[str, object]:
         """Return reproducibility fields without exposing an absolute local path."""

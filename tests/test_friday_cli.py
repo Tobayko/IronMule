@@ -10,6 +10,7 @@ from __future__ import annotations
 import importlib.util
 import io
 import json
+import sys
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -138,6 +139,15 @@ class SharedPreconditionTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self.shared = cli._shared()
+
+    def test_shared_loader_does_not_depend_on_prior_bench_import(self) -> None:
+        previous = sys.modules.pop("_bench", None)
+        try:
+            shared = cli._shared()
+            self.assertTrue(callable(shared.require_ac_power))
+        finally:
+            if previous is not None:
+                sys.modules["_bench"] = previous
 
     def test_power_source_is_one_of_three_known_states(self) -> None:
         self.assertIn(
