@@ -44,13 +44,20 @@ Aktuelle Reihenfolge:
    (`11,045 µs` Median, `11,078 µs` p95) und gepaarte MLX/GPU-Validierung
    (`R=0,879209`, `−12,079 %`, byte-identisch) alle Gates. Die Vorregistrierung
    steht in [`docs/RUNTIME_PROTOTYPE_SPEC.md`](docs/RUNTIME_PROTOTYPE_SPEC.md).
-6. **Kleinsten geschlossenen H2-Vorschlagslauf ausführen — GO für eine
-   explorative Runde.** Das bereits lokale Gemma 3 4B darf höchstens drei noch
+6. **Kleinsten geschlossenen H2-Vorschlagslauf ausführen — abgeschlossen.**
+   Das bereits lokale Gemma 3 4B durfte höchstens drei noch
    ungetestete ganzzahlige Batchgrößen aus `2..16` vorschlagen. Parser und Harness
    behalten die Ausführungsautorität; Modellcode, freie Parameter, Download und
-   Installation bleiben ausgeschlossen. Das Ergebnis bleibt Schema-v1-Evidenz
-   mit `formal_claim=false`. Phase 1B/Custom Metal ist **NO-GO**,
-   Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
+   Installation blieben ausgeschlossen. Eine Runde schlug `3,10,16` vor und
+   bestätigte explorativ `N=10` mit `R=0,671573`, 95%-Intervall
+   `[0,648895; 0,731190]`; das Ergebnis bleibt Schema-v1-Evidenz mit
+   `formal_claim=false`.
+7. **Vor einer Runtime-Erweiterung neu freigeben.** `N=10` darf erst nach einer
+   neuen prospektiven Ein-Kandidaten-Studie mit frischen Charakterisierungs- und
+   Validierungsdaten in eine eigene Runtime-Policy aufgenommen werden. Bis dahin
+   bleibt `N=8` der einzige autorisierte Scope. Phase 1B/Custom Metal ist
+   **NO-GO**, Cross-Device **NO-CLAIM**, weitere Modellrunden und ein breiterer
+   Live-Suchraum sind **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 
