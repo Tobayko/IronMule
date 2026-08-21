@@ -3442,3 +3442,51 @@ gezielte CLI-/Resolver-Scope, der vollständige H0.1-Guard (`57` Tests,
 grün. **Aktuell maßgeblicher Volltest:** `439 passed`, `2.447 subtests passed in
 31,64 s`, Exit `0`. Die vorherigen `438`-Test-Läufe bleiben korrekte
 Zwischenstände; der zusätzliche Test schließt den Importreihenfolgepfad.
+
+### 2026-08-21 — H1-v2-Architektur, prospektive Versiegelung und Offline-Gates
+
+**Freigabe und Entscheidung.** Der Nutzer gab die vorgeschlagene formale
+H1-v2-Architektur, weitere Tests und kreative Lösungsfindung frei. v1 bleibt
+unverändert explorativ. Für die neue Study
+`h1v2-dispatch-n8-20260821-01` wurde deshalb eine getrennte append-only
+SQLite-v2-Domäne entworfen: genau ein FP16-`2048²`-Dispatch-Kandidat mit acht
+Matmuls, sechs A/A-Sessions, deterministische MDE-Ableitung, separates
+Bestätigungssiegel und sechs frische A/B-Sessions mit getrennten
+Charakterisierungs-/Validierungsgates. Custom Metal, Cross-Device und freie
+Modell-/Codesuche bleiben NO-GO.
+
+**Implementierung.** `friday_h1/` enthält geschlossenen kanonischen JSON-Vertrag,
+SHA-256-Schedule und hierarchischen Bootstrap, vollständigen History-Replay,
+saubere Git-/Code-/Spec-/Environment-/Hardware-Provenienz, sicheren Store,
+kontrollierten MLX-Runner, CLI und read-only Loopback-Dashboard. Das Dashboard
+zeigt neben Status und Historie auch Ratio, Intervalle, Effekt und MDE. Die
+Vorregistrierung steht in `docs/H1_VORREGISTRIERUNG_V2.md`; der historische
+Entwurf bleibt als nicht freigegebene Auditspur erhalten. Ohne `--execute` endet
+der Sessionpfad mit Exit `78` vor einem MLX-Import.
+
+**Baseline und Regression.** Der erste Baseline-Aufruf verwendete versehentlich
+das Homebrew-System-Python `3.14` ohne Pytest und endete nach `0,03 s` mit
+`No module named pytest`; es wurde nichts installiert. Der korrigierte Aufruf
+über `.venv/bin/python` bestand in `32,01 s`. Nach H1-v2 bestanden alle 16 neuen
+Tests sowie die vollständige Suite mit `455` Tests und `2.447` Subtests in
+`33,04 s` (User `131,47 s`, System `2,30 s`, Exit `0`). `git diff --check` und
+`compileall` waren grün. Ruff, Pyflakes und Black sind in der vorhandenen
+Umgebung nicht installiert; entsprechend der Download-/Installationsregel wurden
+sie nicht nachinstalliert.
+
+**Gefundene und gelöste Fehler.** Die ersten neuen Tests fanden drei reine
+Fixture-/Grenzprobleme: synthetische Sessions waren an einen festen statt den
+jeweiligen Provenienz-Hash gebunden, ein UI-Test war von der Wortstellung
+abhängig, und ein doppelter Session-Append wurde vor SQLite als allgemeiner
+Protokollfehler statt als `StorageConflict` klassifiziert. Alle drei Ursachen
+wurden korrigiert. Der vollständige Replay führte denselben 10.000er Bootstrap
+bei einem Append zunächst dreimal aus; die Persistenz validiert nun jede alte
+Zeile und replayt die kombinierte alte-plus-neue Historie genau einmal vor dem
+atomaren Insert. Öffentliche Lesezugriffe replayen weiterhin immer vollständig.
+Der entsprechende Vollhistorientest sank reproduzierbar von `49,60 s` auf
+`22,58 s`, ohne den Integritätsvertrag zu lockern.
+
+**Messstatus.** Es gab in diesem Schritt noch keinen H1-v2-GPU-Lauf, keinen
+Download und keine Installation. Nächster Zustand ist ein lokaler sauberer
+Implementierungscommit; erst dieser darf die Präregistrierung und anschließend
+A/A versiegeln.

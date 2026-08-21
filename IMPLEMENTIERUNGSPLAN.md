@@ -18,17 +18,24 @@ Aktuelle Reihenfolge:
    Produktionsstand: `10` Legacy-Zusammenfassungen und `3` native Ereignisse
    (zwei mit Rohmessungen, ein sanitisiertes Guard-Fehlerereignis),
    idempotenter Import und verifizierter read-only Snapshot.
-2. **Neuen prospektiven H1-Vertrag erstellen — nächster wissenschaftlicher
-   Schritt, noch nicht als v2 implementiert.** Genau eine Tensoroperation; neue,
-   konfliktfreie Study-ID; A/A-Generation, MDE-Ableitung, Kandidatenfamilie,
-   Splits, Warmup, Correctness und Abbruchregeln vor der ersten GPU-Zeit
-   versiegeln.
+2. **Neuen prospektiven H1-Vertrag erstellen — implementiert und offline
+   verifiziert.** Genau eine Tensoroperation; neue Study-ID
+   `h1v2-dispatch-n8-20260821-01`; sechs getrennte A/A-Sessions,
+   deterministische MDE-Ableitung, genau ein A/B-Kandidat, getrennte
+   Charakterisierungs-/Validierungssplits, symmetrisches Warmup, Byteidentität,
+   Ressourcenbudgets und terminale Fehlerregeln. Die 16 neuen Offline-Tests und
+   die vollständige Suite sind grün.
 3. **Aktuelle Rechenfreigabe wurde für begrenzte v1-Exploration genutzt.** Ein
    Dispatch-Lauf und ein offline erzwungener Gemma-1B/4B-Roofline-Lauf sind mit
    Rohdaten persistiert; sie ersetzen den fehlenden v2-Vertrag nicht. Vor einer
    neuen formalen A/A→A/B-Studie wird die versiegelte Spezifikation zur
    Bestätigung vorgelegt. Keine Installation und kein Download erfolgten.
-4. **Erst danach neu entscheiden.** Phase 1B/Custom Metal ist aktuell
+4. **H1-v2 jetzt auf sauberem Commit ausführen.** Präregistrierung persistieren,
+   sechs A/A-Prozesse ausführen, MDE und Kalibrierung replayen, das daraus
+   deterministisch erzeugte A/B-Siegel prüfen und nur bei bestandenem Gate die
+   sechs frischen A/B-Prozesse starten. Erst der terminale Split-Entscheid darf
+   `formal_claim=true` tragen.
+5. **Erst danach neu entscheiden.** Phase 1B/Custom Metal ist aktuell
    **NO-GO**, Cross-Device **NO-CLAIM**, breiterer Live-Suchraum **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
