@@ -94,6 +94,15 @@ def classify(shares: dict[str, float], factor: float = 3.0) -> str:
     return "inconclusive"
 
 
+def pace_generation(guard: BudgetGuard, run_index: int) -> None:
+    """Separate every generation after the first with a verified guard break."""
+
+    if run_index < 0:
+        raise ValueError("generation run index must be non-negative")
+    if run_index:
+        guard.required_break()
+
+
 def _self_check() -> int:
     """Offline checks of the arithmetic and the verdict rule; no GPU, no model."""
 
@@ -118,7 +127,24 @@ def _self_check() -> int:
         pass
     else:  # pragma: no cover
         raise AssertionError("zero time per token must be refused")
-    print(json.dumps({"self_check": "pass", "checks": 8}))
+    class FakeGuard:
+        breaks = 0
+
+        def required_break(self) -> None:
+            self.breaks += 1
+
+    fake = FakeGuard()
+    pace_generation(fake, 0)
+    assert fake.breaks == 0
+    pace_generation(fake, 1)
+    assert fake.breaks == 1
+    try:
+        pace_generation(fake, -1)
+    except ValueError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("negative generation index must be refused")
+    print(json.dumps({"self_check": "pass", "checks": 11}))
     return 0
 
 
@@ -138,7 +164,10 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
     )
     prompt_tokens = len(text) if isinstance(text, list) else len(tokenizer.encode(text))
 
+    generation_index = 0
     for _ in range(WARMUP):
+        pace_generation(guard, generation_index)
+        generation_index += 1
         gpu_started = time.perf_counter()
         for _ in stream_generate(model, tokenizer, text, max_tokens=4):
             pass
@@ -147,6 +176,8 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
     prefill_s: list[float] = []
     per_token_s: list[float] = []
     for _ in range(REPETITIONS):
+        pace_generation(guard, generation_index)
+        generation_index += 1
         started = time.perf_counter_ns()
         first = None
         produced = 0

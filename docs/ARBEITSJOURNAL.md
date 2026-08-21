@@ -3344,3 +3344,24 @@ davon eine native mit Rohmessungen; Snapshot-Revision
 `6d91752999e8c456efc8e793dbc413079d7bc551f90437e4b8da427a641b4eae`,
 Datei-SHA-256
 `4d352ca890fbe3d232661edd9f5c06b4951f2aedd59b07ac0e64d66e4bd96b02`.
+
+#### Guard-Abbruch des ersten Offline-Modelllaufs und Roofline-Korrektur
+
+Der erste `roofline --execute`-Aufruf auf dem sauberen Commit `29a2b74` lud den
+validierten lokalen 1B-Snapshot, wurde dann aber korrekt mit
+`BudgetError: continuous GPU work budget exceeded` abgebrochen. Ursache: zwei
+Warmups und fünf Messgenerierungen waren jeweils einzeln gebucht, zwischen ihnen
+fehlte jedoch die reale Vier-Sekunden-Pflichtpause; ihre GPU-Zeiten addierten sich
+deshalb über die harte `6-s`-Kontinuierlichkeitsgrenze. Es entstand keine gültige
+Teilmetrik, und Gemma 3 4B wurde nicht gestartet. Das sanitisiert persistierte
+Fehlerereignis trägt ID
+`ffe98ffa5473dedd495684edf5badbf28c66d01c7b00e788e60f48847c1a0ac4`.
+Der read-only Check bestätigte danach zwölf konsistente Zeilen; Datei-SHA-256
+`f492b4afc850f860f049d3c455a554a3da6b248006f45844ec58b4169fd7611d`.
+
+`pace_generation` fordert nun vor jeder Warmup-/Messgenerierung nach der ersten
+eine durch den gemeinsamen Guard verifizierte Pause. Negative Laufindizes werden
+abgelehnt. Drei neue Offline-Regressionstests prüfen ersten Lauf, alle späteren
+Läufe und den Fehlerpfad; der Roofline-Self-Check umfasst nun elf Prüfungen.
+Vollständige Suite: `438 passed`, `2.447 subtests passed in 32,77 s`. Erst nach
+Commit dieses reproduzierbaren Fixes darf der Modelllauf neu beginnen.
