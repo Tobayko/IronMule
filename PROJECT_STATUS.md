@@ -13,7 +13,7 @@
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; drei native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
-| Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, separate Hash-Ketten-Historie und read-only UI implementiert; 13 neue Offline-Tests grün | Live-Policy-/GPU-Gates noch nicht gemessen; Batch bleibt bis zum sauberen Implementierungscommit gesperrt |
+| Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `3` native Ereignisse: zwei gültige Berichte mit Rohmessungen sowie einen
@@ -37,10 +37,12 @@ formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
 H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
-Aktueller Entscheid: Der terminale H1-v2-Entscheid erlaubt den **begrenzten
-Runtime-Prototyp**. Dessen vorregistrierte CPU-Overhead- und MLX/GPU-Gates sind
-der nächste Schritt. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device
-**NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
+Aktueller Entscheid: Der **begrenzte Runtime-Prototyp** hat seine
+vorregistrierten CPU-Overhead- und MLX/GPU-Gates bestanden. Ein kleinster
+explorativer H2-Schritt mit dem bereits lokalen Gemma darf nun ausschließlich
+geschlossene ganzzahlige Batchgrößen vorschlagen; der Harness bleibt alleinige
+Ausführungs- und Messautorität. Phase 1B/Custom Metal bleibt **NO-GO**,
+Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
@@ -82,6 +84,30 @@ sondern verriegelt alle Folgeaufrufe seriell. Im absichtlich schmutzigen
 Entwicklungsstand verifizierte der reale Preflight alle `16` H1-Records und fiel
 korrekt mit `worktree_dirty` auf seriell zurück. Eine Live-Messung erfolgte vor
 dem sauberen Runtime-Commit bewusst noch nicht.
+
+Auf dem anschließend sauberen Commit
+`0b0a893f58e9c757a0aa7b49565a8b1c1eb2a561` autorisierte derselbe Preflight den
+exakten Scope. Das CPU-Gate (5 Warmups, 21 balancierte Blöcke, je 20.000 Aufrufe)
+ergab Policy-Median `11.045 ns`, p95 `11.078 ns` und gepaarten zusätzlichen
+Median `11.017 ns`; Record
+`a9c08e2b4d79590e1cfa1d5270c53a80a69b1ff1f39507f003fcd6d8d2be1815`.
+Alle Grenzen von `25/50/20 µs` bestanden.
+
+Die anschließende MLX/GPU-Validierung (2 Warmup-Paare, 12 balancierte Blöcke)
+ergab seriell `20,360 ms`, Runtime-Batch `17,643 ms`, gepaartes
+`R=0,879209` und Effekt `−12,079 %`. Die acht Outputs waren byte-identisch,
+maximaler absoluter Fehler `0,0`; Circuit Breaker blieb offen. GPU-Arbeit
+`0,667252 s`, Wall im Guard `1,059850 s`, maximale kontinuierliche Last
+`0,667252 s`, MLX-Peak `209.715.200 B`, RSS-Peak `440.401.920 B`. Record:
+`643af8606c83cbcd0a591ba63bebb8745ddf5d4a346971c1d733c8d2b566c2dc`.
+Der Policy-Median entspricht rund `0,063 %` der Kandidatenlaufzeit.
+
+`.friday-data/runtime.sqlite3` enthält damit zwei vollständig replaybare,
+hashverkettete Records, Modus `0600`, `45.056 B`, SHA-256
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`;
+Snapshot-Revision
+`a53e6b31c8266b1881ebebfc4dca8c28e9a4177d7648496863fc2b6d4cd6eb3f`.
+Read-only UI-Snapshot und H1-Readback änderten keine Datei.
 
 ## Neue native v1-Exploration nach Rechenfreigabe
 

@@ -3588,3 +3588,79 @@ Es gab in diesem Implementierungsschritt keinen neuen GPU-Messlauf, keinen
 Modelllauf, keinen Download und keine Installation. ProjectAtlas wurde vor der
 Arbeit benutzt und nach den neuen Dateien mit `atlas_watch_once` erfolgreich auf
 Generation 191 aktualisiert.
+
+### 2026-08-21 — Runtime-Gates bestanden und H2-Minimalschritt freigegeben
+
+**Sauberer Implementierungsstand.** Der evidenzgebundene Runtime-Prototyp wurde
+lokal auf `main` als Commit
+`0b0a893f58e9c757a0aa7b49565a8b1c1eb2a561` gespeichert (`feat: add
+evidence-bound runtime prototype`), ohne Push. Der Root-Worktree war danach
+sauber. `xcodebuild -checkFirstLaunchStatus` endete mit Exit `0`; ProjectAtlas
+meldete Runtime `0.4.5-rc1`, Major `3`, MCP/SQLite/TOON und die korrekte absolute
+projektlokale MCP-Konfiguration. Die vorbestehenden ungetrackten Gradle-Caches im
+verschachtelten ProjectAtlas-Repository blieben unberührt.
+
+**Realer Policy-Preflight.** Auf dem sauberen Commit replayte die Runtime alle
+16 H1-Records, prüfte terminale Record-/Decision-/Preregistration-Identitäten
+sowie identische H1-Code-, Spec-, Environment- und Hardware-Fingerprints und
+wechselte von der zuvor beobachteten Dirty-Fallback-Entscheidung auf
+`formal_h1_gain_exact_scope`, Strategie `batched`. Die formale H1-Datei blieb
+SHA-256
+`141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`.
+
+**CPU-Policy-Gate.** Fünf Warmup-Blöcke und 21 Messblöcke mit alternierendem
+A/B-/B/A-Order verglichen je 20.000 direkte Planlesevorgänge mit vollständiger,
+gecachter Tensorbeobachtung plus Policy-Auswahl. Baseline-Median `28 ns`,
+Policy-Median `11.045 ns`, Policy-MAD `14 ns`, p95 `11.078 ns`, gepaarter
+zusätzlicher Median `11.017 ns`. Damit bestanden die vorregistrierten Grenzen
+`25.000/50.000/20.000 ns`; Circuit Breaker blieb offen. Record:
+`a9c08e2b4d79590e1cfa1d5270c53a80a69b1ff1f39507f003fcd6d8d2be1815`.
+Außenmessung: `9,72 s` Wall, `9,41/0,22 s` User/System, Peak-RSS
+`33.751.040 B`. Der Aufwand wird nicht weiter auf Kosten der Metadatenprüfung
+optimiert: Gegen die später gemessene Kandidatenlaufzeit entspricht er nur rund
+`0,063 %`; die Scope-Prüfung ist die wichtigere Eigenschaft.
+
+**MLX/GPU-Engineering-Gate.** Am Netzteil liefen eine ungemessene
+Korrektheitsprüfung, zwei Warmup-Paare und zwölf alternierende Messblöcke auf dem
+exakten H1-Fixture. Serieller Median `20.359.666,5 ns`, MAD `614.208,5 ns`;
+Runtime-Batch-Median `17.643.354 ns`, MAD `372.812 ns`; gepaarter Median
+`R=0,8792085596`, Effekt `−12,079144 %`. Referenz- und Kandidatendigest waren
+identisch
+`3efa90dae9c0025c31365b90a01a518e7df540a23f836446f78aef1b973faf54`,
+maximaler absoluter Fehler `0,0`. Das `R≤0,95`-Gate bestand, die Policy blieb
+`batched`, Circuit Breaker offen. Record:
+`643af8606c83cbcd0a591ba63bebb8745ddf5d4a346971c1d733c8d2b566c2dc`.
+
+Der Guard verbuchte `0,667252 s` GPU-Arbeit, maximal `0,667252 s`
+kontinuierlich, `1,059850 s` Wall und keine notwendige Pause; alle Grenzen
+blieben eingehalten. MLX aktiv/cache/peak: `142.606.336/67.108.864/209.715.200 B`,
+RSS-Peak im Bericht `440.401.920 B`. Außen: `5,09 s` Wall,
+`4,16/0,28 s` User/System, Peak-RSS `440.909.824 B`. Das Verhältnis reproduziert
+den formalen H1-Effekt praktisch (`0,879718`) und ist dennoch ausdrücklich nur
+Engineering-Validierung mit `formal_claim=false`.
+
+**Runtime-Historie und UI.** `.friday-data/runtime.sqlite3` enthält zwei
+vollständig replaybare Records; Record 2 bindet Record 1 als Vorgänger. Datei:
+Modus `0600`, `45.056 B`, SHA-256
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`;
+UI-Snapshot-Revision
+`a53e6b31c8266b1881ebebfc4dca8c28e9a4177d7648496863fc2b6d4cd6eb3f`.
+Read-only Snapshot und vollständiger History-Replay ließen den Dateihash
+unverändert; beide Provenienzen tragen `git_dirty=false` und Commit `0b0a893`.
+
+**Nächster Entscheid.** Beide Runtime-Gates sind bestanden. Freigegeben ist nun
+nur der kleinste bereits implementierte H2-Pfad: eine explorative Runde mit dem
+lokal vorhandenen Gemma 3 4B, höchstens drei Integer-Vorschläge aus `2..16`,
+keine Codegenerierung, Harness/Allowlist als alleinige Ausführungsautorität,
+BudgetGuard und Schema-v1-Persistenz mit `formal_claim=false`. Offline-Variablen
+und der projektlokale Snapshotresolver schließen Netzwerkfallback aus. Weitere
+Runden, freier Suchraum, Custom Metal, Download oder Installation bleiben nicht
+freigegeben. Vor diesem Modelllauf werden die Runtime-Ergebnisse auf einem
+separaten Dokumentationscommit festgehalten.
+
+Nach dem Runtime-Commit meldete ProjectAtlas einmal
+`dependency_closure_limit`; der exakt empfohlene `atlas_watch_once`-Pass stellte
+Generation 193 erfolgreich her. Die erste Query priorisierte danach wegen des
+mehrdeutigen Wortes „runtime“ eine ProjectAtlas-interne Datei; die anschließend
+auf Dokumentation und den exakten Forschungsentscheid begrenzte Suche führte zum
+richtigen Artefakt. Es erfolgten weiterhin weder Download noch Installation.
