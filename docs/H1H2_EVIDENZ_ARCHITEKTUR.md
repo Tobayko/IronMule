@@ -71,6 +71,15 @@ Messcode ist; seine Commit-ID ist bereits im Root-Commit gebunden. Lokale Modell
 Datenbanken und Atlas-Indizes liegen in ignorierten Pfaden und gehen nicht in den
 Repository-Scan ein.
 
+Modellgestützte Werkzeuge dürfen eine Repository-ID nicht direkt an einen
+Downloader/Resolver übergeben. `resolve_local_model_snapshot` löst ausschließlich
+den projektlokalen Hugging-Face-Cache auf, validiert Ref und 40-stellige
+Snapshot-Revision, Config, Tokenizer sowie die vom installierten nichtverteilten
+MLX-LM-Loader tatsächlich gelesenen `model*.safetensors`-Dateien. Bericht und
+Evidenz enthalten Repository-ID, Snapshot-Revision, Gewichtsdateinamen und
+Gewichtsumfang, aber keinen absoluten lokalen Pfad. Ein fehlender oder
+inkonsistenter Snapshot bricht fail-closed ab; es gibt keinen Netzwerk-Fallback.
+
 ## 4. SQLite-v1-Vertrag
 
 Die Migration `friday_evidence/migrations/0001_initial.sql` definiert eine

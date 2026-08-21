@@ -3276,3 +3276,71 @@ der Evidenz-Check verwendete `--db` statt des dokumentierten globalen Arguments
 `--database`. Beide Fehler traten erst nach erfolgreicher Datenerhebung bzw. vor
 dem Datenbankzugriff auf und hatten keine Seiteneffekte. Die korrigierten Aufrufe
 lieferten anschließend die oben dokumentierten Ergebnisse.
+
+### Neue Rechenfreigabe und prospektiver Explorationslauf (21.08.2026)
+
+Der Nutzer hat CPU-/GPU-Nutzung und Tests mit bereits vorhandenen Gemma-Modellen
+ausdrücklich freigegeben. Die Freigabe umfasst keinen neuen Download und keine
+Installation; beides blieb aus. Gemäß kleinstem ersten Versuch wurde vor jedem
+Modelllauf genau eine registrierte Matmul-Operation geprüft. Hardware-Preflight:
+`MacBookPro18,2`, Apple M1 Max, `32 GiB`, Netzbetrieb. Vor dem Lauf war der
+Root-Checkout sauber; die Evidenz-DB enthielt zehn Legacy-Zeilen, null native
+Zeilen und hatte weiterhin SHA-256 `4489e611…ecd74a`.
+
+**Vorhandene Modelle.** Der projektlokale Cache enthält die ausführungsrelevanten
+Dateien beider festgelegten Stufen:
+
+- `mlx-community/gemma-3-1b-it-4bit`, Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`, eine MLX-Gewichtsdatei mit
+  `732.577.304 B`;
+- `mlx-community/gemma-3-4b-it-4bit`, Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, eine MLX-Gewichtsdatei mit
+  `3.400.569.562 B`.
+
+`mlx 0.32.0`, `mlx-lm 0.31.3` und `numpy 2.5.2` waren bereits installiert.
+Die Offline-Self-Checks für `dispatch`, `model-loop`, `codegen`, `roofline` und
+`fusion` bestanden mit `4`, `13`, `14`, `8` beziehungsweise `7` Prüfungen.
+
+**Kleinster GPU-Lauf.** `dispatch`, Shape `2048²`, FP16, acht Matmuls, drei
+Replikate mit je 25 gepaarten Blöcken: byte-identische Ergebnisse, aggregiertes
+`R=0,780054`, hierarchisches 95%-Intervall `[0,765530; 0,877456]`, Effekt
+`−21,995 %`, `2,803 s` GPU-Arbeit und `11,468 s` Wall. Alle Guard-Limits wurden
+eingehalten. Native Evidenz-ID:
+`b866022ae4775c550dd21451e3aa0a7d435f0a8fce515459846835407fa92eb6`.
+Das gesamte Intervall liegt unter der versiegelten praktischen Schwelle `0,95`;
+Schema v1 kennzeichnet den Befund dennoch korrekt mit `formal_claim=false`.
+
+**Offline-Modellvertrag.** `snapshot_download(..., local_files_only=True)`
+verwarf beide Caches als formal unvollständig, weil bewusst nicht benötigte
+Repository-Dateien (`README.md`, `.gitattributes`) fehlen. Es wurde nichts
+nachgeladen. Der erste eigene Resolver behandelte danach den vorhandenen
+4B-Index fälschlich als ausführungsautoritativ; dieser beschreibt zwei nicht
+vorhandene ursprüngliche Shards mit zusammen `8.600.158.944 B`, während der
+installierte nichtverteilte MLX-LM-Loader tatsächlich direkt
+`model*.safetensors` globbt und die vorhandene monolithische MLX-Datei lädt. Nach
+Prüfung des installierten Loadercodes wurde der Vertrag an genau diese reale
+Dateiauswahl gebunden. Der Resolver validiert nun lokalen Ref, Snapshot,
+Metadaten, Tokenizer und MLX-Gewichte und persistiert ID, Revision und Umfang;
+ein Netzwerk-Fallback ist ausgeschlossen.
+
+**Weitere Diagnosekorrekturen.** Ein Pytest-Aufruf über das Konsolenskript ließ
+in xdist-Workern den Projektroot aus `sys.path`; derselbe Scope war über
+`.venv/bin/python -m pytest` grün. Eine erste Suche im ignorierten `.venv` fand
+ohne `--hidden --no-ignore` erwartungsgemäß keine Loaderquelle; mit diesen Flags
+wurde die relevante MLX-LM-Stelle gefunden. Ein großer atomarer Patch passte
+nicht auf die tatsächliche `codegen_loop.run(rounds)`-Signatur und wurde ohne
+Teiländerung abgelehnt; anschließend wurden kleine, exakt gebundene Patches
+verwendet. ProjectAtlas meldete nach den Änderungen einen
+`dependency_closure_limit`-Freshnessblocker; der exakt empfohlene
+`atlas_watch_once`-Refresh schloss ihn erfolgreich.
+
+**Regression und Evidenz-Readback vor Modellstart.** Die vollständige Offline-
+Suite bestand final mit `435 passed`, `2.447 subtests passed in 32,07 s`. Darin
+sind sechs neue Resolver-/Routingtests für einen dokumentfreien, aber
+ausführungsfähigen Snapshot, Pfadtraversal, stalen Upstream-Index, fehlende
+MLX-Gewichte, eine ungültige Revision und den lokalen Ladepfad aller vier
+Modellwerkzeuge enthalten. Der read-only DB-Check bestätigt elf Zeilen,
+davon eine native mit Rohmessungen; Snapshot-Revision
+`6d91752999e8c456efc8e793dbc413079d7bc551f90437e4b8da427a641b4eae`,
+Datei-SHA-256
+`4d352ca890fbe3d232661edd9f5c06b4951f2aedd59b07ac0e64d66e4bd96b02`.

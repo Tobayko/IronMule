@@ -39,7 +39,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
+from _bench import (  # noqa: E402
+    BudgetGuard,
+    release_gate,
+    require_ac_power,
+    resolve_local_model_snapshot,
+    run_persisted,
+)
 from plan_sandbox import (  # noqa: E402
     ALLOWED_MX_ATTRS,
     PlanRejected,
@@ -208,7 +214,8 @@ def run(rounds: int) -> dict[str, object]:
     guard = BudgetGuard()
     from mlx_lm import generate, load
 
-    model, tokenizer = load(MODEL_ID)
+    snapshot = resolve_local_model_snapshot(MODEL_ID)
+    model, tokenizer = load(str(snapshot.path))
     history: list[dict] = []
     attempts: list[dict] = []
     survivors: list[dict] = []
@@ -320,6 +327,7 @@ def run(rounds: int) -> dict[str, object]:
     budget = guard.summary()
     return {
         "model": MODEL_ID,
+        **snapshot.report_identity(),
         "operands": OPERANDS,
         "attempts": attempts,
         "written": len(attempts),

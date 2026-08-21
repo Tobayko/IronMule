@@ -33,7 +33,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
+from _bench import (  # noqa: E402
+    BudgetGuard,
+    release_gate,
+    require_ac_power,
+    resolve_local_model_snapshot,
+    run_persisted,
+)
 
 # Published Apple M1 Max figures.  Not measured here; used only to form ratios.
 PEAK_BANDWIDTH_GB_S = 400.0
@@ -122,7 +128,8 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
     from mlx_lm import load
     from mlx_lm.generate import stream_generate
 
-    model, tokenizer = load(model_id)
+    snapshot = resolve_local_model_snapshot(model_id)
+    model, tokenizer = load(str(snapshot.path))
     weight_bytes = sum(p.size * p.dtype.size for _, p in tree_flatten(model.parameters()))
 
     prompt = "Explain neural networks in detail. " * PROMPT_REPEATS
@@ -160,6 +167,7 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
     shares = utilization(weight_bytes, per_token)
     result = {
         "model": label,
+        **snapshot.report_identity(),
         "weight_bytes": weight_bytes,
         "prompt_tokens": prompt_tokens,
         "prefill_seconds": round(prefill, 4),

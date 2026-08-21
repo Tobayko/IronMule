@@ -37,7 +37,13 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
+from _bench import (  # noqa: E402
+    BudgetGuard,
+    release_gate,
+    require_ac_power,
+    resolve_local_model_snapshot,
+    run_persisted,
+)
 
 import importlib.util  # noqa: E402
 
@@ -88,7 +94,8 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
     import numpy as np
     from mlx_lm import load
 
-    model, tokenizer = load(model_id)
+    snapshot = resolve_local_model_snapshot(model_id)
+    model, tokenizer = load(str(snapshot.path))
     encoded = tokenizer.apply_chat_template(
         [{"role": "user", "content": PROMPT}], add_generation_prompt=True
     )
@@ -185,7 +192,7 @@ def measure_model(model_id: str, label: str, guard: BudgetGuard) -> dict[str, ob
 
     del model, tokenizer
     mx.clear_cache()
-    return {"model": label, "regimes": results}
+    return {"model": label, **snapshot.report_identity(), "regimes": results}
 
 
 def run() -> dict[str, object]:
