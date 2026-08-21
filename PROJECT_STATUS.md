@@ -7,12 +7,13 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository mit Baseline-Commit `4095d26`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | künftige native Läufe können erstmals an eine Root-Revision gebunden werden |
+| Root-Provenienz | Root-Git-Repository; formaler H1-v2-Code auf sauberem Commit `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; drei native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
-| H1-v2 formal | neue Study-ID, getrennter append-only SQLite-v2-Store, versiegeltes A/A→MDE→A/B-Protokoll, sechs Sessions je Stufe, Split-Gates und read-only Metrikhistorie implementiert | Architektur und GPU-Nutzung freigegeben; noch keine H1-v2-Messung, daher noch kein formaler Ergebnis-Claim |
+| H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
+| Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, separate Hash-Ketten-Historie und read-only UI implementiert; 13 neue Offline-Tests grün | Live-Policy-/GPU-Gates noch nicht gemessen; Batch bleibt bis zum sauberen Implementierungscommit gesperrt |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `3` native Ereignisse: zwei gültige Berichte mit Rohmessungen sowie einen
@@ -20,10 +21,12 @@ sanitisierten Guard-Abbruch. Datei: `106.496 B`, Modus `0600`, SHA-256
 `f646ac7df8f6034114b808a0b6a5223bab78e977c9f8470f2894b46ce28e656b`,
 Snapshot-Revision `eb23ae5d6d72b32c2c595a04e85ea9cf3a7e1bd5aac19be26359a41ac7546cb0`.
 Ein zweiter Import war idempotent (`0` neu, `10` bereits vorhanden) und ließ den
-damaligen Dateihash unverändert. Der aktuelle vollständige Offline-Testlauf
-bestand nach Implementierung von H1-v2 mit `455` Tests und `2.447` Subtests in
-`33,04 s`; die unmittelbar zuvor gemessene Baseline lag bei `439` Tests in
-`32,01 s`.
+damaligen Dateihash unverändert. Der vollständige Offline-Testlauf nach
+Implementierung des Runtime-Prototyps bestand mit `468` Tests und `2.463`
+Subtests in `34,58 s` (Wall des umgebenden Prozesses `34,87 s`, User `135,36 s`,
+System `3,38 s`, Exit `0`). Der letzte H1-v2-Implementierungsstand davor lag bei
+`455` Tests und `2.447` Subtests in `33,04 s`; die H1-v2-Baseline bei `439`
+Tests in `32,01 s`.
 
 Das Evidenzaudit korrigiert die frühere Statussprache: Der dokumentierte formale
 A/A-Loader verlangt global genau sechs kompatible Prozesse, die append-only H0-DB
@@ -34,15 +37,51 @@ formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
 H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
-Aktueller Entscheid: H1-v2-A/A und der bei bestandenem Gate automatisch
-versiegelte einzelne A/B-Kandidat sind **GO**. Phase 1B/Custom Metal bleibt
-**NO-GO**, Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
+Aktueller Entscheid: Der terminale H1-v2-Entscheid erlaubt den **begrenzten
+Runtime-Prototyp**. Dessen vorregistrierte CPU-Overhead- und MLX/GPU-Gates sind
+der nächste Schritt. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device
+**NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
 GPU- oder Modelllauf aus. Nach späterer ausdrücklicher Rechenfreigabe wurden die
 unten dokumentierten lokalen Läufe ausgeführt; auch dabei gab es weder Download
 noch Installation.
+
+## Formales H1-v2-Ergebnis und Runtime-Pre-Live-Stand
+
+Die formale Studie lief vollständig auf dem sauberen Commit
+`1fbe73c69cedeb69284a264c5e3f45e3e393b822`. Die Präregistrierung bindet Code,
+Spezifikation, Python/MLX-Umgebung und Apple-M1-Max-Hardware; alle zwölf Sessions
+liefen am Netzteil in getrennten Prozessen mit realem Inter-Session-Cooldown.
+
+Die sechs A/A-Sessions ergaben ein aggregiertes Verhältnis `1,000109` mit
+95%-Intervall `[0,999193; 1,000540]`. Die rohe kalibrierte MDE war rund
+`0,0752 %`; prospektiv blieb deshalb der konservative Floor von `5 %` maßgeblich.
+Alle vier Kalibrierungsgates bestanden. Die sechs anschließenden A/B-Sessions
+waren byte-identisch und ergaben insgesamt `R=0,879718`, 95%-Intervall
+`[0,877045; 0,880403]`, Effekt `−12,028 %`. Charakterisierung
+(`R=0,879415`) und Validierung (`R=0,880044`) bestanden das Gain-Gate getrennt.
+Der terminale Record
+`f508fc9e2b1f44a1b60084bdbeca581024f1f3599535b3dd662a9305c99a9357`
+trägt als einziger `formal_claim=true` und erlaubt nur
+`permit_bounded_runtime_prototype`.
+
+Die formale Datei `.friday-data/h1-v2.sqlite3` enthält `16` vollständig
+replaybare Records, Modus `0600`, Größe `163.840 B`, SHA-256
+`141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`.
+Ein erneuter read-only Runtime-Preflight ließ diesen Hash unverändert.
+
+Der getrennte Prototyp ist in `friday_runtime/` und
+[`docs/RUNTIME_PROTOTYPE_SPEC.md`](docs/RUNTIME_PROTOTYPE_SPEC.md) definiert.
+Er autorisiert Batching nur bei exakt derselben terminalen H1-Entscheidung,
+unverändertem H1-Code/Spec-Fingerprint, derselben Umgebung/Hardware, sauberem
+Worktree und aus tatsächlichen Tensoren abgeleitetem Workload. Alle anderen
+Fälle wählen seriell. Ein Batch-Fehler wird nicht im selben Aufruf wiederholt,
+sondern verriegelt alle Folgeaufrufe seriell. Im absichtlich schmutzigen
+Entwicklungsstand verifizierte der reale Preflight alle `16` H1-Records und fiel
+korrekt mit `worktree_dirty` auf seriell zurück. Eine Live-Messung erfolgte vor
+dem sauberen Runtime-Commit bewusst noch nicht.
 
 ## Neue native v1-Exploration nach Rechenfreigabe
 
@@ -80,9 +119,9 @@ Lücke.
 
 Die neue Rohmessung reproduziert die Richtung der historischen Roofline-
 Zusammenfassung, wertet sie aber nicht formal auf. Phase 1B/Custom Metal bleibt
-**NO-GO**. Das zuvor fehlende Schema/Protokoll v2 ist inzwischen unter
-`friday_h1/` implementiert und offline verifiziert; der produktive Store wird erst
-auf einem sauberen Commit versiegelt, bevor die erste A/A-Session GPU-Zeit erhält.
+**NO-GO**. Das zuvor fehlende Schema/Protokoll v2 wurde anschließend unter
+`friday_h1/` implementiert, offline verifiziert und auf dem sauberen Commit
+`1fbe73c` formal ausgeführt; das Ergebnis steht im vorherigen Abschnitt.
 
 ## Historisches Arbeitsprotokoll
 
