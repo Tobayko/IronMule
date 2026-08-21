@@ -3254,3 +3254,25 @@ Kommandos hatten keine Seiteneffekte und enthielten keine sensitiven Werte. Die
 Suche wurde mit einem einfach quotierten Muster wiederholt und fand die alten
 „bestätigt“-/Speicherlimit-Formulierungen nur noch in den bewusst unveränderten
 historischen Journalabschnitten; die späteren Auditnachträge korrigieren sie.
+
+#### Abschlussaudit nach dem Implementierungscommit
+
+Der Implementierungsstand wurde als `3c48a9b` committed. Der Root-Worktree war
+danach sauber, und die Clean-Git-Provenienzprüfung band den vollständigen Commit
+`3c48a9b978d759985b012f54ae71252641450bf5` mit `git_dirty=false`. Die produktive
+Evidenzdatenbank bestand den URI-read-only-Check weiterhin mit exakt zehn Zeilen;
+ihr SHA-256 blieb
+`4489e6114229f386a74f2066833846fa58a211789dc25e7ad8ded20939ecd74a`.
+
+Der separate ProjectAtlas-Status zeigte zwei unversionierte Gradle-Cachebäume in
+den Groovy-/Kotlin-Fixtures. Ihre Zeitstempel liegen am `2026-08-20 13:01` und
+damit vor diesem Audit; sie wurden als vorbestehende Nutzerdaten weder gelöscht
+noch ignoriert. Der getrackte ProjectAtlas-Baum und der gepinnte Gitlink blieben
+unverändert auf `1f576921f2c824976a591d57be53e871dcd19cd8`.
+
+Zwei reine Abschlussdiagnosen wurden zunächst mit falschen CLI-Namen aufgerufen:
+Der kompakte Provenienz-Ausdruck fragte `code_hash` statt `code_sha256` ab, und
+der Evidenz-Check verwendete `--db` statt des dokumentierten globalen Arguments
+`--database`. Beide Fehler traten erst nach erfolgreicher Datenerhebung bzw. vor
+dem Datenbankzugriff auf und hatten keine Seiteneffekte. Die korrigierten Aufrufe
+lieferten anschließend die oben dokumentierten Ergebnisse.
