@@ -15,16 +15,19 @@ Aktuelle Reihenfolge:
    verifiziert.** Root-Git, geschlossenes SQLite-v1-Schema, native/Legacy-
    Trennung, gemeinsame Budgets, fail-closed Persistenz und read-only Historien-
    UI. Historische Werte werden ohne erfundene Rohdaten herabgestuft importiert.
-   Produktionsstand: `10` Legacy-Zusammenfassungen, `0` native Messungen,
-   idempotenter Import und bytegleicher read-only Snapshot.
+   Produktionsstand: `10` Legacy-Zusammenfassungen und `3` native Ereignisse
+   (zwei mit Rohmessungen, ein sanitisiertes Guard-Fehlerereignis),
+   idempotenter Import und verifizierter read-only Snapshot.
 2. **Neuen prospektiven H1-Vertrag erstellen — nächster wissenschaftlicher
-   Schritt, noch nicht live freigegeben.** Genau eine Tensoroperation; neue,
+   Schritt, noch nicht als v2 implementiert.** Genau eine Tensoroperation; neue,
    konfliktfreie Study-ID; A/A-Generation, MDE-Ableitung, Kandidatenfamilie,
    Splits, Warmup, Correctness und Abbruchregeln vor der ersten GPU-Zeit
    versiegeln.
-3. **A/A und danach A/B nur nach separater Nutzerfreigabe ausführen.** Keine
-   Installation oder kein Download impliziert; jeder native Lauf muss einen
-   sauberen Git-Stand und vollständige Rohpersistenz besitzen.
+3. **Aktuelle Rechenfreigabe wurde für begrenzte v1-Exploration genutzt.** Ein
+   Dispatch-Lauf und ein offline erzwungener Gemma-1B/4B-Roofline-Lauf sind mit
+   Rohdaten persistiert; sie ersetzen den fehlenden v2-Vertrag nicht. Vor einer
+   neuen formalen A/A→A/B-Studie wird die versiegelte Spezifikation zur
+   Bestätigung vorgelegt. Keine Installation und kein Download erfolgten.
 4. **Erst danach neu entscheiden.** Phase 1B/Custom Metal ist aktuell
    **NO-GO**, Cross-Device **NO-CLAIM**, breiterer Live-Suchraum **NO-GO**.
    Der aktuelle Entscheid steht in
