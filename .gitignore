@@ -1,0 +1,17 @@
+# Local ProjectAtlas state and generated host configs
+.projectatlas/
+
+# Local Python environments and experiment output
+.venv/
+.friday-data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+experiments/*.jsonl
+experiments/*.sqlite*
+experiments/raw/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/

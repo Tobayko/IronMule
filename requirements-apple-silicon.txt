@@ -1,0 +1,15 @@
+# Reproduzierbarer Startstand für den lokalen Apple-Silicon-PoC.
+# Python 3.12 verwenden; Versionen erst nach einem kontrollierten Upgrade ändern.
+mlx==0.32.0
+mlx-metal==0.32.0
+numpy==2.5.2
+scipy==1.18.0
+psutil==7.2.2
+pytest==9.1.1
+torch==2.13.0
+
+# Optional, nur für Modelltests (docs/ERGEBNISSE.md, Abschnitt Modelltests).
+# Vor der Installation `uv pip install --dry-run mlx-lm` prüfen: würde dabei
+# mlx oder numpy hochgezogen, ändert sich die Umgebungsidentität und frühere
+# Läufe wären nicht mehr vergleichbar.
+# mlx-lm==0.31.3
