@@ -37,18 +37,20 @@ Aktuelle Reihenfolge:
    frische A/B-Prozesse und terminaler Split-Entscheid wurden auf dem sauberen
    Commit `1fbe73c` ohne Retry ausgeführt. Nur der terminale Record trägt
    `formal_claim=true`.
-5. **Begrenzten Runtime-Prototyp validieren — implementiert, Live-Gates offen.**
+5. **Begrenzten Runtime-Prototyp validieren — abgeschlossen.**
    Exakte H1-/Workload-/Hardwarebindung, serieller Fallback, latched Circuit
    Breaker, separate append-only Hash-Ketten-Historie und read-only UI sind
-   implementiert. Nach dem sauberen Implementierungscommit werden zuerst der
-   gecachte CPU-Policy-Overhead und danach ein kleiner gepaarter MLX/GPU-Lauf
-   gegen die serielle Baseline gemessen. Die Vorregistrierung steht in
-   [`docs/RUNTIME_PROTOTYPE_SPEC.md`](docs/RUNTIME_PROTOTYPE_SPEC.md).
-6. **Erst nach beiden Runtime-Gates H2 neu entscheiden.** Ein bereits lokal
-   vorhandenes Gemma darf dann nur einen geschlossenen Kandidatenraum bewerten;
-   es erhält keine Installations-, Download- oder direkte Ausführungsautorität.
-   Phase 1B/Custom Metal ist aktuell **NO-GO**, Cross-Device **NO-CLAIM** und ein
-   breiterer Live-Suchraum **NO-GO**.
+   implementiert. Auf Commit `0b0a893` bestanden CPU-Policy-Overhead
+   (`11,045 µs` Median, `11,078 µs` p95) und gepaarte MLX/GPU-Validierung
+   (`R=0,879209`, `−12,079 %`, byte-identisch) alle Gates. Die Vorregistrierung
+   steht in [`docs/RUNTIME_PROTOTYPE_SPEC.md`](docs/RUNTIME_PROTOTYPE_SPEC.md).
+6. **Kleinsten geschlossenen H2-Vorschlagslauf ausführen — GO für eine
+   explorative Runde.** Das bereits lokale Gemma 3 4B darf höchstens drei noch
+   ungetestete ganzzahlige Batchgrößen aus `2..16` vorschlagen. Parser und Harness
+   behalten die Ausführungsautorität; Modellcode, freie Parameter, Download und
+   Installation bleiben ausgeschlossen. Das Ergebnis bleibt Schema-v1-Evidenz
+   mit `formal_claim=false`. Phase 1B/Custom Metal ist **NO-GO**,
+   Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 
