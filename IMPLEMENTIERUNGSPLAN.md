@@ -18,25 +18,37 @@ Aktuelle Reihenfolge:
    Produktionsstand: `10` Legacy-Zusammenfassungen und `3` native Ereignisse
    (zwei mit Rohmessungen, ein sanitisiertes Guard-Fehlerereignis),
    idempotenter Import und verifizierter read-only Snapshot.
-2. **Neuen prospektiven H1-Vertrag erstellen — implementiert und offline
-   verifiziert.** Genau eine Tensoroperation; neue Study-ID
+2. **Neuen prospektiven H1-Vertrag erstellen — implementiert, offline
+   verifiziert und formal ausgeführt.** Genau eine Tensoroperation; neue Study-ID
    `h1v2-dispatch-n8-20260821-01`; sechs getrennte A/A-Sessions,
    deterministische MDE-Ableitung, genau ein A/B-Kandidat, getrennte
    Charakterisierungs-/Validierungssplits, symmetrisches Warmup, Byteidentität,
    Ressourcenbudgets und terminale Fehlerregeln. Die 16 neuen Offline-Tests und
-   die vollständige Suite sind grün.
+   die vollständige Suite sind grün. Die terminale 16-Record-Studie endete mit
+   `h1_gain_confirmed`, `R=0,879718`, 95%-Intervall
+   `[0,877045; 0,880403]`, Byteidentität und bestandenem 5%-MDE-Gate.
 3. **Aktuelle Rechenfreigabe wurde für begrenzte v1-Exploration genutzt.** Ein
    Dispatch-Lauf und ein offline erzwungener Gemma-1B/4B-Roofline-Lauf sind mit
    Rohdaten persistiert; sie ersetzen den fehlenden v2-Vertrag nicht. Vor einer
    neuen formalen A/A→A/B-Studie wird die versiegelte Spezifikation zur
    Bestätigung vorgelegt. Keine Installation und kein Download erfolgten.
-4. **H1-v2 jetzt auf sauberem Commit ausführen.** Präregistrierung persistieren,
-   sechs A/A-Prozesse ausführen, MDE und Kalibrierung replayen, das daraus
-   deterministisch erzeugte A/B-Siegel prüfen und nur bei bestandenem Gate die
-   sechs frischen A/B-Prozesse starten. Erst der terminale Split-Entscheid darf
-   `formal_claim=true` tragen.
-5. **Erst danach neu entscheiden.** Phase 1B/Custom Metal ist aktuell
-   **NO-GO**, Cross-Device **NO-CLAIM**, breiterer Live-Suchraum **NO-GO**.
+4. **H1-v2-Ausführung — abgeschlossen.** Präregistrierung, sechs A/A-Prozesse,
+   Kalibrierungs-Replay, konservativer MDE-Floor, Bestätigungssiegel, sechs
+   frische A/B-Prozesse und terminaler Split-Entscheid wurden auf dem sauberen
+   Commit `1fbe73c` ohne Retry ausgeführt. Nur der terminale Record trägt
+   `formal_claim=true`.
+5. **Begrenzten Runtime-Prototyp validieren — implementiert, Live-Gates offen.**
+   Exakte H1-/Workload-/Hardwarebindung, serieller Fallback, latched Circuit
+   Breaker, separate append-only Hash-Ketten-Historie und read-only UI sind
+   implementiert. Nach dem sauberen Implementierungscommit werden zuerst der
+   gecachte CPU-Policy-Overhead und danach ein kleiner gepaarter MLX/GPU-Lauf
+   gegen die serielle Baseline gemessen. Die Vorregistrierung steht in
+   [`docs/RUNTIME_PROTOTYPE_SPEC.md`](docs/RUNTIME_PROTOTYPE_SPEC.md).
+6. **Erst nach beiden Runtime-Gates H2 neu entscheiden.** Ein bereits lokal
+   vorhandenes Gemma darf dann nur einen geschlossenen Kandidatenraum bewerten;
+   es erhält keine Installations-, Download- oder direkte Ausführungsautorität.
+   Phase 1B/Custom Metal ist aktuell **NO-GO**, Cross-Device **NO-CLAIM** und ein
+   breiterer Live-Suchraum **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 

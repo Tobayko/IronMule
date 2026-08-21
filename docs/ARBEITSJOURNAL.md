@@ -3490,3 +3490,101 @@ Der entsprechende Vollhistorientest sank reproduzierbar von `49,60 s` auf
 Download und keine Installation. Nächster Zustand ist ein lokaler sauberer
 Implementierungscommit; erst dieser darf die Präregistrierung und anschließend
 A/A versiegeln.
+
+### 2026-08-21 — Formales H1-v2-Ergebnis und begrenzter Runtime-Prototyp
+
+**Versiegelung und A/A.** Die Präregistrierung wurde auf dem sauberen Commit
+`1fbe73c69cedeb69284a264c5e3f45e3e393b822` vor jeder neuen Messung in
+`.friday-data/h1-v2.sqlite3` gespeichert. Code-, Spec-, Environment-, Hardware-
+und Gesamtprovenienz waren
+`4377814e4eafe6171535a5723b90a79f517e5bd64aa5a00ba4f4f52bad4f296c`,
+`045b8b38c0f02337acba3a4d05de60b648093733f25f8dc2c9c2c7d7e2ad196f`,
+`6ef07ef1a2976e4dfc5a0fb7a65b1535a28372c145f8d488c7cd5d0a33ff6624`,
+`ee157aaa01de24f2fcb3057bf6cacbfbc361257d2a192eadc3fd75f33f3133b3`
+und `e08732640516712818fd1872411acdcbfdf7fb91849a588ee1101a8007e7d7e3`.
+Sechs getrennte A/A-Prozesse (`C0,V0,C1,V1,C2,V2`) liefen am Netzteil mit
+mindestens 20 Sekunden Inter-Session-Cooldown. Das aggregierte Verhältnis war
+`1,0001085273`, 95%-Intervall `[0,9991934290; 1,0005400282]`; Session-SD
+`0,0004606442`. Die rohe MDE war `0,0007522288`, deshalb blieb der
+vorregistrierte konservative Floor `0,05` maßgeblich. Alle Kalibrierungsgates
+bestanden. Summary-Record:
+`e7968f129774e514d74a92865e02c0cde516f600557c4e0a0b79012b270bc396`;
+Bestätigungssiegel:
+`5b44b847f95b162ada893ba19201b6ed170cc7f503885ab54d6df950b18c8c07`.
+
+**Frische A/B-Bestätigung.** Sechs weitere getrennte Prozesse verwendeten den
+einzigen versiegelten Kandidaten. Alle Outputs waren byte-identisch. Gesamt:
+`R=0,8797176292`, 95%-Intervall `[0,8770453580; 0,8804029998]`, Effekt
+`−12,028237 %`. Charakterisierung: `R=0,8794152406`, Intervall
+`[0,8780015537; 0,8805123814]`; Validierung: `R=0,8800439669`, Intervall
+`[0,8750561199; 0,8809031162]`. Alle drei Gain-Gates lagen vollständig unter
+`0,95`; Regression und Äquivalenz wurden verworfen. Der terminale Record
+`f508fc9e2b1f44a1b60084bdbeca581024f1f3599535b3dd662a9305c99a9357`
+trägt `h1_gain_confirmed`, `formal_claim=true` und ausschließlich die Aktion
+`permit_bounded_runtime_prototype`. Scope bleibt ein Gerät, ein Workload, ein
+Ausführungsplan; kein Modell- oder Cross-Device-Claim.
+
+**Ressourcen und unveränderte Evidenz.** A/A verbrauchte kumuliert
+`6,105916 s` gebuchte GPU-Arbeit und `8,650735 s` Wall; A/B `5,680047 s` GPU
+und `8,168236 s` Wall. Maximale kontinuierliche Last blieb bei `1,041439 s`
+bzw. `0,954798 s`, MLX-Peak bei rund `411 MB`, RSS bei rund `506 MB`. Die
+kleinsten beobachteten Record-Abstände waren `21,719319 s` und `25,070576 s`.
+Die DB enthält `16` replaybare Records, eine formale Aussage, Modus `0600`,
+`163.840 B`, SHA-256
+`141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`.
+Ein späterer read-only Policy-Preflight änderte diesen Hash nicht.
+
+**Bekannte Restgrenze des formalen Replays.** Der Session-Runner erzwang den
+20-Sekunden-Cooldown und die tatsächlichen Record-Abstände belegen ihn. Das
+H1-v2-Protokoll replayt den Zeitabstand jedoch nicht als eigene Zeileninvariante.
+Diese Lücke wird nicht rückwirkend im versiegelten Studiencode verändert; eine
+künftige Study-Version soll den Mindestabstand zusätzlich im Protokoll prüfen.
+Sie entwertet die tatsächlich eingehaltene Prozedur nicht, begrenzt aber, was
+der DB-Replay allein beweist.
+
+**Runtime-Architektur.** Die neue prospektive Spezifikation
+`docs/RUNTIME_PROTOTYPE_SPEC.md` friert vor Live-Messungen eine exakte
+H1-/Workload-/Hardwarebindung ein. `friday_runtime/` lädt die 16-Record-Historie
+einmal read-only, vergleicht H1-Code, H1-Spec, Environment und Hardware und
+autorisiert Batching nur für aus den tatsächlichen Tensoren abgeleitetes
+FP16-`2048²`-Matmul mit acht RHS. Jede Unsicherheit wählt seriell. Ein
+Batch-Fehler wird im laufenden Aufruf nicht wiederholt und verriegelt einen
+prozessweiten Circuit Breaker für alle Folgeaufrufe. Relevante Messungen landen
+in einer getrennten privaten, append-only SQLite-Datei mit Hash-Kette; die
+read-only UI ist für `127.0.0.1:8769` vorgesehen. Die formale
+H1-Architekturdatei wurde nicht nachträglich umgeschrieben, weil ihr exakter Hash
+Teil der versiegelten H1-Provenienz ist.
+
+**Offline-Verifikation vor Runtime-Live-Lauf.** 13 neue Tests decken exakte und
+fremde Evidenz, Dirty-/Code-/Spec-/Environment-/Hardware-Fallback, unbekannte
+Workloads, einzelnen Batch-Eval, seriellen Fallback, keinen impliziten Retry,
+Circuit Breaker, private Dateimodi, Symlink-Ablehnung, SQLite-Defensive-Controls,
+Update/Delete-Sperren, Hash-Kette, read-only UI, CPU-Messdesign und vorbereitete
+Korrektheit ab. Zielscope: `13/13`. Vollsuite: `468` Tests, `2.463` Subtests,
+`34,58 s` Pytest-Wall (`34,87 s` außen), User `135,36 s`, System `3,38 s`,
+Exit `0`; Peak-RSS außen `78.413.824 B`. `compileall` und `git diff --check`
+bestanden. Ruff, Pyflakes und Black bleiben lokal nicht vorhanden und wurden
+nicht installiert.
+
+**Diagnosefehler und Lösungen.** Eine erste read-only H1-Projektion nahm
+irrtümlich ein Feld `sequence` im von `verified_records()` gelieferten Objekt an
+und endete mit `KeyError`; die DB war bereits vollständig verifiziert und
+unverändert. Die korrigierte Abfrage verwendete `rowid`/lokale Enumeration und
+bestätigte alle 16 Records. Ein großer Dokumentationspatch traf wegen eines
+abweichenden bestehenden Zeilenumbruchs seinen Kontext nicht und wurde atomar
+ohne Teiländerung verworfen; kleine, exakt verankerte Patches ersetzten ihn. Im
+absichtlich schmutzigen Entwicklungs-Worktree verifizierte der reale
+Runtime-Preflight die Historie, sperrte Batching aber korrekt mit
+`worktree_dirty` (Exit `2`). Erst nach einem neuen sauberen Commit dürfen
+CPU-Policy- und GPU-Engineering-Validierung laufen.
+
+Ein minimaler, nicht als Performance-Messung verwendeter MLX-API-Smoke mit einem
+`1×1`-FP16-Tensor bestätigte die reale Metadatenform: `shape` ist ein Tupel aus
+Python-`int`, `dtype` wird als `mlx.core.float16` dargestellt und vom
+Scope-Normalisierer zu `float16` reduziert. Damit ist die Offline-Fixture-Annahme
+vor dem großen Tensorlauf gegen die installierte MLX-API geprüft.
+
+Es gab in diesem Implementierungsschritt keinen neuen GPU-Messlauf, keinen
+Modelllauf, keinen Download und keine Installation. ProjectAtlas wurde vor der
+Arbeit benutzt und nach den neuen Dateien mit `atlas_watch_once` erfolgreich auf
+Generation 191 aktualisiert.
