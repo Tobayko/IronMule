@@ -11,15 +11,16 @@
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
-| H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; drei native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
+| H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; vier native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
+| H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
-`3` native Ereignisse: zwei gültige Berichte mit Rohmessungen sowie einen
-sanitisierten Guard-Abbruch. Datei: `106.496 B`, Modus `0600`, SHA-256
-`f646ac7df8f6034114b808a0b6a5223bab78e977c9f8470f2894b46ce28e656b`,
-Snapshot-Revision `eb23ae5d6d72b32c2c595a04e85ea9cf3a7e1bd5aac19be26359a41ac7546cb0`.
+`4` native Ereignisse: drei gültige Berichte mit Rohmessungen sowie einen
+sanitisierten Guard-Abbruch. Datei: `118.784 B`, Modus `0600`, SHA-256
+`70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`,
+Snapshot-Revision `c3d1310e7b41ffb984e46cb8759018b9f52d0637cb2474a8d731ad9e52134e2b`.
 Ein zweiter Import war idempotent (`0` neu, `10` bereits vorhanden) und ließ den
 damaligen Dateihash unverändert. Der vollständige Offline-Testlauf nach
 Implementierung des Runtime-Prototyps bestand mit `468` Tests und `2.463`
@@ -37,12 +38,13 @@ formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
 H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
-Aktueller Entscheid: Der **begrenzte Runtime-Prototyp** hat seine
-vorregistrierten CPU-Overhead- und MLX/GPU-Gates bestanden. Ein kleinster
-explorativer H2-Schritt mit dem bereits lokalen Gemma darf nun ausschließlich
-geschlossene ganzzahlige Batchgrößen vorschlagen; der Harness bleibt alleinige
-Ausführungs- und Messautorität. Phase 1B/Custom Metal bleibt **NO-GO**,
-Cross-Device **NO-CLAIM** und ein breiterer Live-Suchraum **NO-GO**.
+Aktueller Entscheid: Der **begrenzte Runtime-Prototyp** hat seine Gates bestanden;
+die genau eine freigegebene H2-Gemma-Runde ist ebenfalls abgeschlossen. `N=10`
+ist ein vielversprechender, aber explorativ selektierter Kandidat. Er wird nicht
+in die auf `N=8` versiegelte Runtime übernommen. Nächster möglicher Schritt ist
+eine neue prospektive Ein-Kandidaten-Studie mit frischen Daten und eigener
+Architekturfreigabe. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device
+**NO-CLAIM**, weitere Modellrunden und breiterer Live-Suchraum **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
@@ -108,6 +110,46 @@ hashverkettete Records, Modus `0600`, `45.056 B`, SHA-256
 Snapshot-Revision
 `a53e6b31c8266b1881ebebfc4dca8c28e9a4177d7648496863fc2b6d4cd6eb3f`.
 Read-only UI-Snapshot und H1-Readback änderten keine Datei.
+
+## Geschlossener H2-Gemma-Minimallauf
+
+Auf dem sauberen Dokumentationscommit
+`99267d3422f5a8573cad0f53e7009a4cf8f52198` lief genau eine Runde des bereits
+implementierten `model-loop`. `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` und
+der projektlokale Resolver schlossen einen Netzwerkfallback aus; geladen wurde
+ausschließlich der vorhandene Snapshot
+`mlx-community/gemma-3-4b-it-4bit` Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, eine MLX-Gewichtsdatei mit
+`3.400.569.562 B`. Es gab keinen Download und keine Installation.
+
+Die Modellantwort war ausschließlich `[3, 10, 16]`; Parser und Allowlist ließen
+genau diese drei Integer-Kandidaten zu. Explorative 20-Block-Messungen:
+
+| Batchgröße | B/A-Ratio | 95%-Intervall |
+| ---: | ---: | ---: |
+| `3` | `0,849019` | `[0,797567; 0,903789]` |
+| `10` | `0,784921` | `[0,741686; 0,830676]` |
+| `16` | `0,889566` | `[0,881424; 0,897784]` |
+
+Der Harness wählte `N=10` und bestätigte es separat mit drei Replikaten
+`0,6649/0,6716/0,7014`: hierarchisch `R=0,671573`, 95%-Intervall
+`[0,648895; 0,731190]`, explorativer Effekt `−32,84 %`. Korrektheitsgates und
+5%-Schwelle bestanden. Der Bericht bleibt explizit `formal_claim=false`, weil
+das Modell drei Kandidaten aus vorhandener Evidenz auswählte und diese Studie
+nicht prospektiv als formale N=10-Bestätigung registriert war. Die produktive
+Runtime bleibt deshalb auf `N=8`; `N=10` fällt dort seriell zurück.
+
+Der Guard verbuchte `9,908610 s` GPU-Arbeit, maximal `1,730481 s`
+kontinuierlich, `180,024674 s` Kandidaten-Cooldown, `16,022076 s` Pflichtpausen
+und `212,268826 s` Wall. Evidenz-ID:
+`5d104d15eea14e82d6d90dc6d28de543858dcc73826a87f4e4c717ee1f24c26a`.
+Die Research-DB enthält nun `14` verifizierte Zeilen, davon `4` native und eine
+native `model-loop`-Zeile mit Rohdaten; Modus `0600`, `118.784 B`, SHA-256
+`70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`,
+Snapshot-Revision
+`c3d1310e7b41ffb984e46cb8759018b9f52d0637cb2474a8d731ad9e52134e2b`.
+Der read-only Replay ließ den Hash unverändert. Es wurde keine zweite Runde
+gestartet.
 
 ## Neue native v1-Exploration nach Rechenfreigabe
 

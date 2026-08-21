@@ -3664,3 +3664,123 @@ Generation 193 erfolgreich her. Die erste Query priorisierte danach wegen des
 mehrdeutigen Wortes „runtime“ eine ProjectAtlas-interne Datei; die anschließend
 auf Dokumentation und den exakten Forschungsentscheid begrenzte Suche führte zum
 richtigen Artefakt. Es erfolgten weiterhin weder Download noch Installation.
+
+### 2026-08-21 — Eine geschlossene H2-Gemma-Runde
+
+**Freigabegrenze und Preflight.** Nach bestandenem Runtime-Gate wurde genau die
+im Forschungsentscheid erlaubte einzelne H2-Runde gestartet. Der Root-Worktree
+war auf dem Dokumentationscommit
+`99267d3422f5a8573cad0f53e7009a4cf8f52198` sauber. Der Offline-Self-Check des
+Modellloops bestand `13/13`: Allowlist `2..16`, höchstens drei Integer,
+Duplikat-/Already-tried-Filter sowie Verwerfung von Prosa, Shelltext, Floats,
+Boolwerten und Strings. Die Research-DB hatte vorher 13 verifizierte Zeilen,
+davon drei native, Modus `0600`, SHA-256
+`f646ac7df8f6034114b808a0b6a5223bab78e977c9f8470f2894b46ce28e656b`.
+
+**Lokaler Modellvertrag.** Der Prozess setzte `HF_HUB_OFFLINE=1`,
+`TRANSFORMERS_OFFLINE=1`, `HF_HUB_DISABLE_TELEMETRY=1` und
+`TOKENIZERS_PARALLELISM=false`. Der projektlokale Resolver übergab einen
+absoluten validierten Snapshotpfad an MLX-LM; es gab keinen Repository-ID-
+Downloader und keinen Netzwerkfallback. Modell:
+`mlx-community/gemma-3-4b-it-4bit`, Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, eine vorhandene
+`model.safetensors` mit `3.400.569.562 B`. Es wurde nichts heruntergeladen oder
+installiert.
+
+**Modelloutput und Exploration.** Die einzige Antwort war der JSON-Inhalt
+`[3, 10, 16]`; alle drei Werte lagen in der Allowlist. Der Harness führte nur
+die bereits bekannte serielle und gebatchte Matmul-Planfamilie aus, niemals
+Modellcode. Je Kandidat wurden 20 gepaarte Blöcke ausgewertet:
+
+| N | Ratio | 95%-Intervall | exploratives 5%-Gate |
+| ---: | ---: | ---: | --- |
+| 3 | `0,8490185242` | `[0,7975674989; 0,9037886515]` | bestanden |
+| 10 | `0,7849208913` | `[0,7416857628; 0,8306763275]` | bestanden |
+| 16 | `0,8895659839` | `[0,8814235380; 0,8977836485]` | bestanden |
+
+Der Ranking-Harness wählte `N=10`. Die getrennte Bestätigung bestand aus drei
+Replikaten mit Ratios `0,6649`, `0,6716`, `0,7014`; der hierarchische Bootstrap
+mit 10.000 Draws ergab `R=0,6715729996`, 95%-Intervall
+`[0,6488949358; 0,7311898038]`, explorativer Effekt `−32,84 %`. Verdict:
+`optimization_confirmed`. Dieser starke Befund ist dennoch **kein** formaler
+H2-/Runtime-Claim: Drei Kandidaten wurden modellgestützt aus Vorwissen gewählt,
+das Schema bleibt v1 und der Bericht trägt korrekt `formal_claim=false`.
+
+**Ressourcen.** Der gemeinsame Guard verbuchte `9,908610 s` GPU-Arbeit,
+maximal `1,730481 s` kontinuierlich, `180,024674 s` Kandidaten-Cooldown,
+`16,022076 s` reale Pflichtpausen und `212,268826 s` Wall. Außen:
+`213,11 s` Wall, `5,29/3,13 s` User/System, maximales Resident Set
+`3.766.992.896 B`, Peak-Memory-Footprint `4.109.553.360 B`; keine Swaps.
+Alle registrierten GPU-, Last-, Duty- und Wall-Grenzen blieben eingehalten.
+
+**Persistenz und Readback.** Native Evidenz-ID:
+`5d104d15eea14e82d6d90dc6d28de543858dcc73826a87f4e4c717ee1f24c26a`,
+Status `optimization_confirmed`, Rohmessungen vorhanden, Provenienz
+`git_dirty=false` auf Commit `99267d3`. Die Research-DB enthält danach 14
+verifizierte Zeilen, vier native und genau eine native `model-loop`-Zeile;
+Modus `0600`, `118.784 B`, SHA-256
+`70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`,
+Snapshot-Revision
+`c3d1310e7b41ffb984e46cb8759018b9f52d0637cb2474a8d731ad9e52134e2b`.
+Der vollständige read-only Replay ließ den Hash unverändert. H1- und Runtime-DB
+blieben ebenfalls bytegleich (`141f010b…b101e78a4c4` und
+`ad4f0ef7…9676473d82`).
+
+**Entscheid und Stopp.** Es wurde keine zweite Modellrunde gestartet. `N=10`
+liegt außerhalb der formal versiegelten N=8-Runtime und fällt dort weiterhin
+seriell zurück. Ein produktiver oder formaler N=10-Pfad benötigt eine neue
+prospektive Ein-Kandidaten-Studie mit frischen A/A-/A/B-Splits; Gemma darf an
+dieser Bestätigung nicht erneut selektieren. Das ist eine neue Architektur- und
+Studienentscheidung und wird nicht ohne ausdrückliche Nutzerfreigabe umgesetzt.
+Phase 1B/Custom Metal, Cross-Device, weitere Modellrunden und freier Suchraum
+bleiben NO-GO/NO-CLAIM.
+
+Ein erster kombinierter Dokumentationspatch adressierte `PROJECT_STATUS.md`
+zweimal in getrennten Patchoperationen und wurde deshalb vor jeder Änderung vom
+Patchwerkzeug abgelehnt. Die Korrektur verwendete genau eine Operation je Datei;
+Messdaten und Evidenz waren davon unberührt.
+
+**HTTP-Abschlussprüfung der Runtime-UI.** Der echte Loopback-Server lief auf
+`127.0.0.1:8769`. `GET /api/snapshot?limit=2` antwortete mit `200`,
+`application/json`, `1.683 B`, `total=2`, zwei Recent-Records und unveränderter
+Revision `a53e6b31c8266b1881ebebfc4dca8c28e9a4177d7648496863fc2b6d4cd6eb3f`.
+`HEAD /` antwortete mit `200` und lieferte unter anderem `Cache-Control:
+no-store`, restriktive CSP-, Frame-, Origin-, Referrer- und MIME-Sicherheitsheader;
+`POST /` wurde mit `405` verworfen. Ein erster unbeschränkter Abruf gab den
+Snapshot vollständig an die Agentenausgabe weiter und überschritt dort nur das
+Ausgabelimit; die korrigierte Prüfung begrenzte die Ausgabe auf Status und
+ausgewählte JSON-Felder. Der Server wurde anschließend per `SIGINT` beendet;
+der dabei sichtbare `KeyboardInterrupt` und Exitcode `1` sind die erwartete
+Folge dieses manuellen Stopps. Kein Prozess lauschte danach mehr auf Port 8769.
+Die Runtime-DB blieb bei Modus `0600`, `45.056 B` und SHA-256
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`.
+
+Bei der anschließenden ProjectAtlas-Befehlsprüfung traf eine zu breite
+Textsuche zusätzlich eine sehr große einzeilige Benchmark-JSONL-Datei und
+überschritt das Ausgabelimit. Ein erster Pfadversuch auf `.mcp.json` war zudem
+falsch; die projektlokale Konfiguration liegt unter
+`.projectatlas/projectatlas.mcp.json`. Die Korrektur las nur diese kleine Datei
+und führte den dort gebundenen CLI-Fallback `watch --once` aus. Der Refresh
+bestand mit 714 Kandidaten, 695 indexierten Textdateien sowie 557
+Symbolkandidaten (`1` neu geparst, `556` unverändert); beide Diagnosefehler
+änderten weder Quellcode noch Messdaten.
+
+Der Abschlussaudit fand im Einleitungsblock von `PROJECT_STATUS.md` noch die
+vor dem H2-Lauf gültigen Research-DB-Zähler, Größe, Hash und Snapshot-Revision.
+Der weiter unten bereits korrekte neue Stand und der DB-Readback belegten die
+Ursache als übersehene Dokumentationsstelle; der Block wurde auf 14 Zeilen,
+davon vier native, und die verifizierten Nachlaufwerte korrigiert.
+
+**Abschlussaudit vor dem Ergebniscommit.** `git diff --check` bestand. Die drei
+Evidenzdateien blieben auf Modus `0600`; H1-v2 hatte `163.840 B` und SHA-256
+`141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`,
+Runtime `45.056 B` und
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`,
+Research `118.784 B` und
+`70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`.
+Seit der vollständigen Suite mit 468 Tests und 2.463 Subtests wurde kein
+Programmcode verändert; die anschließende echte HTTP-Prüfung deckte den
+geänderten Betriebszustand ab. Das verschachtelte `ProjectAtlas/` blieb
+unverändert; sichtbar waren ausschließlich die bereits vorhandenen
+ungetrackten Gradle-Caches in zwei Sprach-Fixtures. Der abschließende Atlas-
+Refresh nach allen Dokumentationskorrekturen bestand erneut.
