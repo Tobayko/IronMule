@@ -11,15 +11,16 @@
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
-| H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert | Infrastruktur-Go; **keine** neue Performanceaussage |
+| H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; drei native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 
-Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen,
-`0` native Zeilen und `0` Zeilen mit Rohmessungen. Datei: `73.728 B`, Modus
-`0600`, SHA-256 `4489e6114229f386a74f2066833846fa58a211789dc25e7ad8ded20939ecd74a`,
-Snapshot-Revision `715f7e723081c4ec0fecd4caac20824da33fa6a493145175f3b852275cadce90`.
+Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
+`3` native Ereignisse: zwei gültige Berichte mit Rohmessungen sowie einen
+sanitisierten Guard-Abbruch. Datei: `106.496 B`, Modus `0600`, SHA-256
+`f646ac7df8f6034114b808a0b6a5223bab78e977c9f8470f2894b46ce28e656b`,
+Snapshot-Revision `eb23ae5d6d72b32c2c595a04e85ea9cf3a7e1bd5aac19be26359a41ac7546cb0`.
 Ein zweiter Import war idempotent (`0` neu, `10` bereits vorhanden) und ließ den
-Dateihash unverändert. Der vollständige Offline-Testlauf bestand mit `429` Tests
-und `2.443` Subtests in `31,86 s`.
+damaligen Dateihash unverändert. Der aktuelle vollständige Offline-Testlauf
+bestand mit `439` Tests und `2.447` Subtests in `31,64 s`.
 
 Das Evidenzaudit korrigiert die frühere Statussprache: Der dokumentierte formale
 A/A-Loader verlangt global genau sechs kompatible Prozesse, die append-only H0-DB
@@ -34,8 +35,49 @@ Aktueller Entscheid: Phase 1B/Custom Metal **NO-GO**, Cross-Device
 **NO-CLAIM**, breiterer Live-Suchraum **NO-GO**, Offline-Protokoll- und Testarbeit
 **GO**. Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
-Dieser Auditlauf installierte nichts, lud nichts herunter und führte keinen GPU-
-oder Modelllauf aus.
+Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
+GPU- oder Modelllauf aus. Nach späterer ausdrücklicher Rechenfreigabe wurden die
+unten dokumentierten lokalen Läufe ausgeführt; auch dabei gab es weder Download
+noch Installation.
+
+## Neue native v1-Exploration nach Rechenfreigabe
+
+Alle folgenden Läufe waren an einen sauberen Root-Commit gebunden, liefen am
+Netzteil unter dem gemeinsamen Guard und wurden vor stdout append-only
+persistiert. Schema v1 erzwingt weiterhin `formal_claim=false`.
+
+**Einzeloperation vor dem Modelltest:** FP16-Matmul `2048²`, acht Operationen,
+drei Replikate mit je 25 gepaarten Blöcken. Batched Dispatch war byte-identisch
+und erreichte `R=0,780054`, hierarchisches 95%-Intervall
+`[0,765530; 0,877456]`, Effekt `−21,995 %`. GPU-Arbeit `2,803 s`, Wall
+`11,468 s`; Evidenz-ID `b866022a…a92eb6`. Das überschreitet explorativ die
+fixierte 5%-Schwelle, ist aber noch kein formaler H1-v2-Nachweis.
+
+**Lokaler Gemma-Roofline-Lauf:** Die Werkzeuge lösen ausschließlich validierte
+Snapshots im Projektcache auf; Repository-ID, Revision und Gewichtsumfang stehen
+im Bericht. Fünf Messwiederholungen je Modell, 369 Prompt-Token:
+
+| native v1 | Gemma 3 1B | Gemma 3 4B |
+| --- | ---: | ---: |
+| Snapshot | `2d44e83d…` | `93724907…` |
+| Folge-Token | `5,012 ms` / `199,5 Token/s` | `10,949 ms` / `91,3 Token/s` |
+| Prefill | `0,3271 s` / `1.128,0 Token/s` | `0,8735 s` / `422,4 Token/s` |
+| geschätzte Bandbreitennutzung | `36,53 %` | `58,47 %` |
+| geschätzte FP16-Rechennutzung | `2,78 %` | `4,45 %` |
+| exploratives Roofline-Urteil | speicherbegrenzt | speicherbegrenzt |
+
+Gesamtbudget: `10,360 s` GPU-Arbeit, maximal `1,129 s` kontinuierlich,
+`52,123 s` verifizierte Pausen und `68,111 s` Wall. Evidenz-ID
+`31c20b1e…647c36`, Commit `faa4f88`. Ein erster Versuch auf Commit `29a2b74`
+wurde korrekt vor 4B abgebrochen, weil Warmups/Wiederholungen ohne Zwischenpause
+die `6-s`-Kontinuierlichkeitsgrenze überschritten; Fehler-ID
+`ffe98ffa…1a0ac4`. `pace_generation` und drei Regressionstests schließen diese
+Lücke.
+
+Die neue Rohmessung reproduziert die Richtung der historischen Roofline-
+Zusammenfassung, wertet sie aber nicht formal auf. Phase 1B/Custom Metal bleibt
+**NO-GO**; ein formaler H1-Schritt benötigt weiterhin Schema/Protokoll v2 mit
+versiegelter Study-ID, A/A, MDE, Familien- und Splitvertrag.
 
 ## Historisches Arbeitsprotokoll
 

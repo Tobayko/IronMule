@@ -23,7 +23,43 @@ ist der Einstieg.
 
 **Gerät:** Apple M1 Max, 32 GB Unified Memory, 32-Core GPU, macOS.
 **Stand:** 21. August 2026. Alle Zahlen stammen von diesem einen Gerät; H1/H2
-liegen nur als explizit herabgestufte Zusammenfassungen vor.
+historisch liegen nur als explizit herabgestufte Zusammenfassungen vor. Zwei neue
+native Schema-v1-Berichte besitzen Rohmessungen, bleiben aber ausdrücklich
+`formal_claim=false`.
+
+---
+
+## Neue native v1-Exploration nach ausdrücklicher Rechenfreigabe
+
+Kein Download und keine Installation: Gemma 3 1B/4B wurden ausschließlich aus
+dem validierten projektlokalen Cache geladen. Jeder Lauf war an einen sauberen
+Commit gebunden, lief am Netzteil unter dem gemeinsamen BudgetGuard und wurde
+vor stdout append-only gespeichert.
+
+| Messung | Ergebnis | Evidenz-ID |
+| --- | --- | --- |
+| Dispatch, 8× FP16-Matmul `2048²` | byte-identisch; `R=0,780054`, 95%-KI `[0,765530; 0,877456]`, `−21,995 %` | `b866022a…a92eb6` |
+| Gemma 3 1B Roofline | `5,012 ms/Token`, `199,5 Token/s`, Bandbreite `36,53 %`, Compute `2,78 %` | `31c20b1e…647c36` |
+| Gemma 3 4B Roofline | `10,949 ms/Token`, `91,3 Token/s`, Bandbreite `58,47 %`, Compute `4,45 %` | `31c20b1e…647c36` |
+
+Roofline-Budget insgesamt: `10,360 s` GPU-Arbeit, `68,111 s` Wall, maximal
+`1,129 s` kontinuierliche GPU-Arbeit und `52,123 s` verifizierte Pausen. Beide
+Modelle werden durch die festgelegte Faktor-3-Regel explorativ als
+`memory_bound` klassifiziert. Die Modellrevisionen
+`2d44e83dc9e80843d22fb941d3d699a0b1351aa6` und
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2` sind im Bericht gebunden.
+
+Ein erster Roofline-Aufruf wurde korrekt als `measurement_failed` persistiert,
+bevor 4B startete: Zwischen Warmups und Wiederholungen fehlten Guard-Pausen, so
+dass die `6-s`-Kontinuierlichkeitsgrenze griff (`ffe98ffa…1a0ac4`). Nach Fix,
+drei neuen Pacing-Tests und vollständiger Regression (`439` Tests,
+`2.447` Subtests) war der identische Wiederholungslauf erfolgreich.
+
+**Evidenzgrenze:** Die Dispatch-MDE ist in diesem Werkzeug eingefroren und die
+Roofline-Rohsamples sind vollständig gespeichert. Schema v1 validiert jedoch
+keine formale Study-ID, A/A-Generation oder Familien-/Splitverträge. Deshalb sind
+beide Ergebnisse prospektive Exploration, kein formaler H1/H2-, Cross-Device-
+oder Phase-1B-Nachweis.
 
 ---
 

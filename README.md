@@ -29,25 +29,32 @@ Auswertung eine Nachweisgrenze von `33 %` oder `2,2 %`, ein Faktor `15`.
 Die aktuellen Werkzeuge vergleichen deshalb beide Arme **innerhalb desselben
 Blocks**, verlangen eine prospektiv versiegelte Schwelle und speichern neue
 Rohmessungen mit Git-/Code-/Spec-/Umgebungsprovenienz. Das wertet die historischen
-Läufe nicht rückwirkend auf.
+Läufe nicht rückwirkend auf. Nach ausdrücklicher Rechenfreigabe liegen inzwischen
+zwei native v1-Berichte mit Rohmessungen vor; v1 kennzeichnet sie weiterhin
+explizit mit `formal_claim=false`.
 
 Alle Befunde kompakt: **[`docs/ERGEBNISSE.md`](docs/ERGEBNISSE.md)**
 
 ## Zweiter explorativer Befund: die Inferenz wirkt speicherbegrenzt
 
-| | Gemma 3 1B | Gemma 3 4B |
-| --- | ---: | ---: |
-| Bandbreite genutzt | `31,9 %` | `51,2 %` |
-| Rechenwerke genutzt | `2,4 %` | `3,9 %` |
+Ein neuer offline erzwungener Lauf verwendete ausschließlich die bereits im
+Projektcache vorhandenen Gemma-Snapshots, je fünf Wiederholungen:
 
-**Faktor `13` in der historischen Ein-Gerät-Zusammenfassung.** Die Beobachtung
+| native v1 | Gemma 3 1B | Gemma 3 4B |
+| --- | ---: | ---: |
+| Folge-Token | `199,5 Token/s` | `91,3 Token/s` |
+| Bandbreite genutzt | `36,53 %` | `58,47 %` |
+| Rechenwerke genutzt | `2,78 %` | `4,45 %` |
+
+**Faktor rund `13` zwischen Bandbreiten- und Rechenanteil.** Die Beobachtung
 deutet darauf, dass die Rechenwerke bei dieser Inferenz auf Daten warten. Code
 „näher an der Maschinensprache" optimiert den Anteil, der ohnehin leerläuft.
 Wirksam sind nur **weniger Bytes** (Quantisierung, bei 4-bit-Modellen schon
 eingelöst) und **weniger Durchgänge** (Kernel-Fusion).
 
-Daraus ergibt sich für genau diesen beobachteten Lauf eine rechnerische Obergrenze
-von rund `2x`; mangels Rohdaten und zweitem Gerät ist das keine allgemeine Grenze.
+Die vollständigen Rohsamples sind jetzt append-only gespeichert. Wegen nur eines
+Geräts, veröffentlichten Peakwerten und Schema v1 bleibt die Klassifikation
+explorativ und ist keine allgemeine Hardwaregrenze oder formale H2-Aussage.
 
 Die naheliegende Fusions-Layer über ein unverändertes Modell wurde geprüft und
 **verworfen** — `mlx-lm` fusioniert bereits selbst, und der KV-Cache verhindert
@@ -185,8 +192,8 @@ tests/        vollständige Suite; läuft ohne GPU und ohne Netz
 docs/         Spezifikationen, Ergebnisse, Arbeitsjournal
 ```
 
-Tests: `.venv/bin/python -m pytest` — zuletzt `429` Tests plus `2.443` Subtests
-in `31,86 s` parallel.
+Tests: `.venv/bin/python -m pytest` — zuletzt `439` Tests plus `2.447` Subtests
+in `31,64 s` parallel.
 Für besser lesbare Fehlerausgaben sequenziell: `pytest -n 0` (rund `90 s`).
 
 ## Weiterführend

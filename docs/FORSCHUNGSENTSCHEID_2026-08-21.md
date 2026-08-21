@@ -34,7 +34,7 @@
 
 Nicht Phase 1B und nicht mehr Kandidaten. Zuerst ist eine neue, prospektive
 H1-Studie für weiterhin genau **eine** Tensoroperation zu registrieren. Sie muss
-vor jeder neuen GPU-Zeit festlegen:
+vor jeder GPU-Zeit, die formalen H1-Phasenfortschritt begründen soll, festlegen:
 
 - welche A/A-Generation aus einer neuen, konfliktfreien Study-ID stammt;
 - wie `MDE`, Kandidatenzahl und Familien/Splits aus der Kalibrierung abgeleitet
@@ -43,15 +43,23 @@ vor jeder neuen GPU-Zeit festlegen:
 - welche Abbruch-, Duty-, Cooldown- und Correctness-Gates gelten;
 - welche Aussage bei negativem oder nicht reproduzierbarem Ergebnis zulässig ist.
 
-Erst nach dieser Schließung kann ein neuer Live-Lauf separat angekündigt und
-freigegeben werden. Dieser Entscheid selbst führte keinen GPU-, Modell-, Worker-,
-Download- oder Installationslauf aus.
+Erst nach dieser Schließung kann ein neuer Live-Lauf, der formalen H1-
+Phasenfortschritt begründen soll, separat angekündigt und freigegeben werden.
+Dieser Entscheid selbst führte keinen GPU-, Modell-, Worker-, Download- oder
+Installationslauf aus.
 
 ## Umsetzungsstand des Audits
 
 Die freigegebene Offline-Arbeit ist abgeschlossen: Root-Provenienz, gemeinsame
 H1/H2-Budgets, SQLite-v1-Persistenz, expliziter Legacy-Import und read-only
-Historien-UI sind implementiert. Die produktive Research-DB enthält ausschließlich
-zehn herabgestufte Legacy-Zusammenfassungen (`native=0`, Rohmessungen `=0`). Die
-vollständige Suite bestand mit `429` Tests und `2.443` Subtests. Diese Umsetzung
-ändert keinen der obigen NO-GO-/NO-CLAIM-Entscheide.
+Historien-UI sind implementiert. Nach einer späteren ausdrücklichen
+Rechenfreigabe enthält die produktive Research-DB zusätzlich drei native
+Schema-v1-Ereignisse: einen Dispatch-Rohbericht, einen sanitisierten
+Roofline-Guard-Abbruch und einen erfolgreichen Gemma-1B/4B-Rohbericht. Die
+vollständige Suite bestand danach mit `439` Tests und `2.447` Subtests.
+
+Die neuen Messungen sind durch Schema v1 ausdrücklich `formal_claim=false`. Der
+Dispatch-Befund liegt explorativ jenseits der 5%-Schwelle; die neue Roofline-
+Messung klassifiziert beide vorhandenen Gemma-Modelle erneut als
+speicherbegrenzt. Damit steigt die technische Evidenzqualität, aber keiner der
+obigen NO-GO-/NO-CLAIM-Entscheide ändert sich.

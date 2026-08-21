@@ -3365,3 +3365,80 @@ abgelehnt. Drei neue Offline-Regressionstests prüfen ersten Lauf, alle spätere
 Läufe und den Fehlerpfad; der Roofline-Self-Check umfasst nun elf Prüfungen.
 Vollständige Suite: `438 passed`, `2.447 subtests passed in 32,77 s`. Erst nach
 Commit dieses reproduzierbaren Fixes darf der Modelllauf neu beginnen.
+
+#### Erfolgreicher offline erzwungener Gemma-1B/4B-Lauf
+
+Der identische Roofline-Lauf wurde erst auf dem sauberen Fix-Commit
+`faa4f882702dcf7113f4f662697b96454925e41c` wiederholt. Zusätzlich waren
+`HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1` und das projektlokale `HF_HOME`
+gesetzt; beide Loader erhielten ohnehin ausschließlich den vom neuen Resolver
+validierten absoluten Snapshotpfad. Es fand kein Netzwerkzugriff, Download oder
+keine Installation statt.
+
+Fünf Messwiederholungen je Modell nach zwei Warmups, 369 Prompt-Token:
+
+| native Roofline v1 | Gemma 3 1B | Gemma 3 4B |
+| --- | ---: | ---: |
+| Revision | `2d44e83d…b1351aa6` | `93724907…a65abf2` |
+| geladene Gewichte | `732.498.176 B` | `2.560.756.736 B` |
+| Snapshot-Gewichtsdatei | `732.577.304 B` | `3.400.569.562 B` |
+| Prefill-Median | `0,3271 s` | `0,8735 s` |
+| Prefill-Durchsatz | `1.128,0 Token/s` | `422,4 Token/s` |
+| Folge-Token-Median | `5,012 ms` | `10,949 ms` |
+| Folge-Durchsatz | `199,5 Token/s` | `91,3 Token/s` |
+| effektive Bandbreite | `146,1 GB/s` | `233,9 GB/s` |
+| Anteil publiziertes Bandbreitenpeak | `36,53 %` | `58,47 %` |
+| geschätzte FP16-Leistung | `0,5846 TFLOPS` | `0,9355 TFLOPS` |
+| Anteil publiziertes FP16-Peak | `2,78 %` | `4,45 %` |
+| Faktor-3-Urteil | `memory_bound` | `memory_bound` |
+
+Der Guard protokollierte `10,359679 s` GPU-Arbeit, maximal `1,128991 s`
+kontinuierlich, `52,1227 s` reale Pflichtpausen und `68,111323 s` Wall. Alle
+Grenzen wurden eingehalten. Gültige Evidenz-ID:
+`31c20b1e756b8f7a3c7118e2fe0f142added2ab359c02bdadda7f0f58a647c36`.
+Die Klassifikation verwendet publizierte Peakwerte und nur ein Gerät; sie ist
+deshalb eine native Rohbeobachtung mit `formal_claim=false`, kein formaler H2-
+oder Cross-Device-Nachweis.
+
+Die produktive DB enthält danach `13` verifizierte Zeilen: zehn Legacy, drei
+native, davon zwei mit Rohmessungen und ein sanitisiertes Fehlerereignis.
+Snapshot-Revision
+`eb23ae5d6d72b32c2c595a04e85ea9cf3a7e1bd5aac19be26359a41ac7546cb0`,
+Dateigröße `106.496 B`, Modus `0600`, SHA-256
+`f646ac7df8f6034114b808a0b6a5223bab78e977c9f8470f2894b46ce28e656b`.
+
+Ein abschließender Detailaufruf übergab die Record-ID zunächst positional; die
+CLI verlangt `detail --id`. Der Aufruf brach vor der Abfrage ab und hatte keine
+Seiteneffekte. Mit `--id` wurden danach alle drei nativen Provenienzbindungen
+read-only verifiziert: Dispatch `eabdbd3`, Guard-Abbruch `29a2b74`, erfolgreicher
+Roofline-Lauf `faa4f88`, jeweils `git_dirty=false`.
+
+**Entscheid:** Die neue Roofline-Rohmessung reproduziert die Richtung der alten
+explorativen Zusammenfassung und stärkt das praktische Argument gegen einen
+reinen Custom-ISA-/Custom-Metal-Pfad. Sie ändert den formalen Entscheid nicht:
+Phase 1B bleibt **NO-GO**; der nächste wissenschaftliche Schritt ist weiterhin
+ein versiegelter H1-v2-Vertrag für eine einzelne Tensoroperation.
+
+**Finale Regression nach Aktualisierung aller Einstiegstexte:** `438 passed`,
+`2.447 subtests passed in 32,18 s`, Exit `0`; `git diff --check` war davor grün.
+Der frühere `32,77-s`-Lauf bleibt als korrekter Zwischenstand im append-only
+Journal erhalten.
+
+**Nachgelagerter Frischprozess-Loaderfehler und Schlusskorrektur.** Der gezielte
+Einzeldatei-Test `tests/test_friday_cli.py` lief erstmals in Workern, in denen
+`_bench` noch nicht in `sys.modules` lag. `friday.py::_shared()` führt das Modul
+über `exec_module` aus, ohne es dort vorab einzutragen; die neu eingeführte
+`dataclass` wertete wegen `from __future__ import annotations` ihre Stringtypen
+gegen diesen fehlenden Moduleintrag aus und scheiterte mit `AttributeError`.
+Die vollständige Suite hatte das durch eine günstigere Importreihenfolge
+verdeckt. Der reine Datencontainer ist deshalb jetzt eine explizite Slot-Klasse,
+die keinerlei globale Modulregistrierung voraussetzt. Ein neuer Regressionstest
+entfernt `_bench` bewusst aus `sys.modules` und prüft den gemeinsamen Loader.
+
+Der erste neue Testlauf scheiterte seinerseits vor der Assertion, weil im
+Testmodul `import sys` fehlte; der Import wurde ergänzt. Danach waren der
+gezielte CLI-/Resolver-Scope, der vollständige H0.1-Guard (`57` Tests,
+`2.244` Subtests, keine MLX-/NumPy-Importe oder Sockets) und die Gesamtsuite
+grün. **Aktuell maßgeblicher Volltest:** `439 passed`, `2.447 subtests passed in
+31,64 s`, Exit `0`. Die vorherigen `438`-Test-Läufe bleiben korrekte
+Zwischenstände; der zusätzliche Test schließt den Importreihenfolgepfad.
