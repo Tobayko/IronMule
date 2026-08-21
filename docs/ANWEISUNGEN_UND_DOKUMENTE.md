@@ -7,6 +7,14 @@ zu schreiben, ProjectAtlas von `https://github.com/styler-ai/ProjectAtlas` zu in
 weitere Codex-Arbeiten zu verwenden. Xcode ist auf dem Zielgerät installiert. Das Forschungsziel bleibt
 ein skeptisch geprüfter, sicherer Hardware-Optimization-Loop.
 
+Am 21.08.2026 beauftragte der Nutzer die vier Auditfolgen — Root-Provenienz und
+persistente H1/H2-Evidenz samt Historien-UI, Dokumentkonsistenz, gepinnte
+`pytest-xdist`-Verifikation und Forschungsentscheid — ausdrücklich ohne
+Subagenten. Er erlaubte bei Bedarf Internetrecherche nach formalen Architektur-
+und sonstigen Dokumenten. Diese Erlaubnis autorisiert keine Installation, keinen
+Download lokaler KI/Software und keinen GPU-/Modelllauf; solche Schritte bleiben
+separat freigabepflichtig.
+
 ## Von uns für dieses Projekt erstellte Arbeitsanweisungen
 
 - [`../AGENTS.md`](../AGENTS.md) steuert Codex im Project-Friday-Root.

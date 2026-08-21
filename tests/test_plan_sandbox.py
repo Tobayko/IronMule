@@ -38,18 +38,18 @@ class AcceptsLegitimatePlansTest(unittest.TestCase):
         x = mx.matmul(a, b)
         mx.eval(x)
         mx.synchronize()
-        out = out + [x]
+        out.append(x)
     return out
 """
         self.assertIsNotNone(sandbox.validate_plan_source(source))
 
-    def test_a_chunked_plan_is_accepted(self) -> None:
+    def test_an_indexed_plan_is_accepted(self) -> None:
         source = """def plan(mx, a, operands):
     out = []
-    for i in range(0, len(operands), 4):
-        chunk = [mx.matmul(a, b) for b in operands[i:i + 4]]
-        mx.eval(chunk)
-        out = out + chunk
+    for i in range(len(operands)):
+        x = mx.matmul(a, operands[i])
+        out.append(x)
+    mx.eval(out)
     mx.synchronize()
     return out
 """
@@ -95,6 +95,69 @@ class RejectsCodeExecutionTest(unittest.TestCase):
         # Strings are the usual carrier for smuggled code; plans need none.
         self.reject('def plan(mx, a, operands):\n    return mx.array("x")\n')
 
+    def test_allocation_primitives_are_not_available(self) -> None:
+        for operation in ("zeros", "ones", "array", "empty"):
+            with self.subTest(operation=operation):
+                self.reject(
+                    f"def plan(mx, a, operands):\n    return mx.{operation}((16, 16))\n"
+                )
+
+    def test_large_or_unbound_ranges_are_rejected(self) -> None:
+        for expression in ("range(17)", "range(1000000000)", "range(n)"):
+            with self.subTest(expression=expression):
+                self.reject(
+                    "def plan(mx, a, operands):\n"
+                    "    out = []\n"
+                    f"    for i in {expression}:\n"
+                    "        out.append(a)\n"
+                    "    return out\n"
+                )
+
+    def test_input_bindings_cannot_be_reassigned(self) -> None:
+        for name in ("mx", "a", "operands"):
+            with self.subTest(name=name):
+                self.reject(
+                    f"def plan(mx, a, operands):\n    {name} = []\n    return operands\n"
+                )
+
+    def test_self_growing_or_nested_iteration_is_rejected(self) -> None:
+        payloads = (
+            """def plan(mx, a, operands):
+    out = [a]
+    for b in out:
+        out.append(b)
+    return out
+""",
+            """def plan(mx, a, operands):
+    out = []
+    for b in operands:
+        for i in range(16):
+            out.append(mx.matmul(a, b))
+    return out
+""",
+            """def plan(mx, a, operands):
+    out = [a]
+    out.extend(out)
+    return out
+""",
+        )
+        for payload in payloads:
+            with self.subTest(payload=payload[:40]):
+                self.reject(payload)
+
+    def test_static_matmul_allocation_budget_is_enforced(self) -> None:
+        self.reject(
+            """def plan(mx, a, operands):
+    out = []
+    for b in operands:
+        x = mx.matmul(a, b)
+        result = mx.matmul(a, b)
+        chunk = mx.matmul(a, b)
+        out.extend([x, result, chunk])
+    return out
+"""
+        )
+
     def test_lambda_is_rejected(self) -> None:
         self.reject("def plan(mx, a, operands):\n    return (lambda: 1)()\n")
 
@@ -129,6 +192,15 @@ class RejectsMalformedPlansTest(unittest.TestCase):
 
     def test_varargs_are_rejected(self) -> None:
         self.reject("def plan(mx, a, operands, *args):\n    return operands\n")
+
+    def test_keyword_only_positional_only_and_annotated_signatures_are_rejected(self) -> None:
+        for signature in (
+            "mx, a, operands, *, n=1",
+            "mx, a, operands, /",
+            "mx: list, a, operands",
+        ):
+            with self.subTest(signature=signature):
+                self.reject(f"def plan({signature}):\n    return operands\n")
 
     def test_extra_top_level_statements_are_rejected(self) -> None:
         self.reject(VALID + "\nplan = None\n")
@@ -171,6 +243,10 @@ class AllowlistIntegrityTest(unittest.TestCase):
     def test_allowlist_stays_small(self) -> None:
         # Growth here widens the attack surface; it should be a deliberate act.
         self.assertLessEqual(len(sandbox.ALLOWED_MX_ATTRS), 16)
+
+    def test_worker_revalidates_and_uses_restricted_builtins(self) -> None:
+        self.assertIn("validate_plan_source(plan_source)", sandbox._WORKER)
+        self.assertIn('"__builtins__":', sandbox._WORKER)
 
 
 if __name__ == "__main__":

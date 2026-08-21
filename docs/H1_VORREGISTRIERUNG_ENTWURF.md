@@ -1,13 +1,22 @@
 # H1 — Vorregistrierung (ENTWURF, nicht freigegeben)
 
+> **Auditnachtrag vom 21.08.2026:** Dieser Entwurf wurde vor den historischen
+> H1/H2-Läufen weder vollständig ausgefüllt noch freigegeben. Insbesondere waren
+> das formale A/A-Gate, der hierarchische Bootstrap und die MDE vor dem ersten
+> A/B-Lauf nicht versiegelt. Die damaligen Ergebnisse können dieses Dokument
+> nicht rückwirkend erfüllen und werden nur als explorative Legacy-
+> Zusammenfassungen geführt. Für einen künftigen formalen H1-Lauf ist eine neue,
+> prospektive Version mit neuer Study-ID erforderlich.
+
 **Status:** Entwurf. Dieses Dokument ist **nicht** freigegeben und autorisiert keinen
 Lauf, keine Installation und keinen Download. Es friert die Zahlen ein, die *vor* der
 ersten H1-Messung feststehen müssen. Eine Freigabe durch den Nutzer ist erforderlich,
 bevor irgendetwas davon ausgeführt wird.
 
-**Zweck:** H0.1 hat gezeigt, dass der naheliegende Messmodus für H1 untauglich ist.
-Ohne vorab eingefrorene Mindest-Effektgröße wäre jedes H1-Ergebnis nachträglich
-interpretierbar. Dieses Dokument schließt diese Lücke, bevor Daten existieren.
+**Historischer Zweck:** H0.1 hatte gezeigt, dass der naheliegende Messmodus für H1
+untauglich ist. Die beabsichtigte Schließung vor Sichtung von H1-Daten gelang nicht;
+dieser Entwurf dokumentiert den Zielvertrag, ist aber keine Vorregistrierung der
+bereits ausgeführten Läufe.
 
 **Forschungsgrenze:** H1 prüft, ob eine agentengesteuerte Änderung an einer festen
 Operation einen *messbaren* Effekt erzeugt. H1 ist kein Nachweis von

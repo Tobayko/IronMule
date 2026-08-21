@@ -3051,3 +3051,206 @@ Kasten „wichtigstes Ergebnis" mit den `12`–`15 %` ist entfernt. Das Werkzeug
 `tools/measure_fusion_layer.py` bleibt bestehen, ist aber ausdrücklich als
 Messung des cache-freien Forward-Pass gekennzeichnet und **nicht** als
 Generierungsgewinn zu lesen.
+
+### Evidenzaudit, Root-Provenienz und persistente H1/H2-Historie (21.08.2026)
+
+**Auftrag und Grenze.** Der Nutzer beauftragte die vier Auditfolgen vollständig:
+Root-Git/Provenienz und persistente H1/H2-Evidenz samt kleiner Historien-UI,
+Konsistenz von Status/Plan/Vorregistrierung, Pin und vollständiger Test von
+`pytest-xdist` sowie ein Evidenzentscheid zu Phase 1B, Cross-Device und breiterer
+Suche. Ausdrückliche Zusatzregel: keine Subagenten. Internetrecherche nach
+formalen Architekturquellen war erlaubt. Dieser Arbeitsgang führte keinen GPU-,
+MLX-Mess-, Modell-, Download- oder Installationslauf aus.
+
+**ProjectAtlas zuerst.** Der fokussierte Atlas-Kontext wurde vor der
+Repository-Arbeit abgerufen. Nach den Änderungen lief ein Index-Refresh mit
+`projectatlas watch --once .`: `679` Textkandidaten, `660` indexiert, `19`
+übersprungen; `522` Symbolkandidaten, `32` neu geparst, `490` unverändert,
+`0` Timeouts. Runtime `0.4.5-rc1`, Root-Bindung `verified=true`, keine
+Mismatches. Die generierte Codex-MCP-Konfiguration ist byteinhaltlich zur lokalen
+Konfiguration äquivalent: gepinnte Runtime, absolute DB-/Configpfade und korrektes
+Projekt-CWD. Die Ignore-Policy übernimmt `.gitignore`; dadurch bleiben
+`.friday-data/`, `.venv/`, `.projectatlas/` und lokale Modellgewichte außerhalb
+des Atlas-Index.
+
+**Orientierungsfehler und Lösung.** Der erste Refresh-Versuch adressierte
+irrtümlich `ProjectAtlas/target/release/projectatlas`; dort liegt in diesem
+Checkout kein Binary. `command -v projectatlas` identifizierte die gepinnte
+Runtime unter `/Users/tobiasburandt/.local/bin/projectatlas`. Der CLI kennt
+`atlas_session_brief` nur als MCP-Tool, nicht als `session-brief`-Subcommand;
+dieser Fehlaufruf änderte nichts. Auch `search --path-only` existiert nicht;
+Ignore-Verifikation erfolgte stattdessen über `ignore list`, `config` und die
+indexierte Dateisuche. Diese Fehler waren reine Diagnose-/CLI-Fehler ohne
+Repository- oder Evidenzmutation.
+
+**Root-Provenienz hergestellt.** Vor dem Audit war das Forschungsroot nicht als
+eigenes Git-Repository revisionsgebunden. Ein Root-Baseline-Commit
+`4095d26` wurde angelegt. `ProjectAtlas/` ist darin als gepinntes Gitlink
+`1f576921…` registriert und bleibt unverändert; Root-Projekt und Upstream-
+Repository sind damit getrennt. `.gitignore` schließt lokale Atlas-Laufzeitdaten,
+virtuelle Umgebung, Research-DBs, Modelle und Rohoutput aus. Künftige native
+Evidenz kann dadurch erstmals auf einen sauberen Root-Commit zeigen.
+
+**Dateninventar.** Read-only SQLite-Abfragen ergaben:
+
+- H0: `28` Runs; Modi `aa_gpu=9`, `eager_baseline=4`, sechs weitere Modi je
+  `3`. Alle `28` haben keine Root-Revision. Von den neun A/A-Runs sind sieben
+  `completed`, zwei `invalid`; mehrere A/A-Generationen teilen sich dieselbe
+  append-only DB.
+- H0.1: `3` `legacy_h0_warmup_observation`, `6` vollständige Paced-Sessions und
+  `1` Study `h01_complete_unresolved`.
+- Historische H1/H2-Rohblöcke wurden nie persistent gespeichert. Rekonstruierbar
+  sind nur zehn Zusammenfassungen aus Journal und Ergebnisdokument.
+
+**Formale Korrektur.** Unmittelbar vor dem ersten historischen A/B-Lauf waren das
+formale A/A-Gate, der hierarchische Bootstrap und die MDE nicht geschlossen. Der
+registrierte H0-Loader verlangt global exakt sechs kompatible A/A-Prozesse; die
+DB enthält neun aus mehreren Generationen und mindestens einen relevanten
+`warmup_unstable`-Prozess. Die später verwendete `5-%`-Schwelle kann deshalb
+nicht rückwirkend vorregistriert werden. Dispatch-, Loop-, Modell- und Codegen-
+Zahlen bleiben technisch plausible, gepaarte und teils replizierte Beobachtungen,
+sind aber kein formaler H1/H2-Nachweis. Status, README, Ergebnisse,
+Implementierungsplan, H1-Entwurf und Phase-1-Spezifikation tragen diese
+Herabstufung jetzt prominent; die historischen Journalabschnitte bleiben
+append-only unverändert.
+
+**Neue Research-Evidenzdomäne.** `friday_evidence/` implementiert ein
+geschlossenes SQLite-v1-Schema für sieben Werkzeuge: `dispatch`, `cooldown`,
+`loop`, `model-loop`, `codegen`, `roofline`, `fusion`. Native Berichte binden
+Git-Revision, leeren Diff, Hash aller registrierten Code-/SQL-/Spec-Dateien,
+Paketumgebung und nicht-sensitive Hardwareidentität vor und nach dem Lauf.
+Persistenz erfolgt vor stdout; ein gestarteter Fehler wird sanitisiert als
+`measurement_failed` gespeichert. Native Provenienz muss sauber und in ihren
+Code-/Spec-/Environment-/Hardwareprojektionen selbstkonsistent sein.
+
+Legacy-Werte verwenden eine getrennte Klasse `legacy_summary`, behaupten
+explizit `formal_claim=false` und `raw_measurements_available=false`, binden aber
+den SHA-256 des versionierten Importmanifests. Es werden keine Rohzeiten,
+historischen Git-Revisionen oder Beobachtungszeitpunkte erfunden. Quellidentitäten
+sind idempotent; dieselbe ID mit anderen Bytes wird verworfen.
+
+**SQLite-Härtung nach Primärquellenprüfung.** SQLite dokumentiert `mode=ro` als
+echten read-only URI-Modus, während `query_only` allein eine Verbindung nicht
+wirklich read-only macht. Deshalb verwendet die UI beides. Zusätzlich werden
+`SQLITE_DBCONFIG_DEFENSIVE=ON`, `TRUSTED_SCHEMA=OFF`, DQS DDL/DML aus und
+Extension-Loading aus gesetzt und zurückgelesen; Nichtverfügbarkeit ist
+fail-closed. `integrity_check(1)` ersetzt `quick_check`, weil letzterer laut
+SQLite UNIQUE- und Indexkonsistenz nicht vollständig prüft. DB und Parent müssen
+private, nutzereigene reale Pfade sein; die Datei wird atomar `0600` angelegt.
+Primärquellen:
+`https://www.sqlite.org/uri.html`,
+`https://www.sqlite.org/pragma.html`,
+`https://www.sqlite.org/c3ref/c_dbconfig_defensive.html` und
+`https://docs.python.org/3/library/sqlite3.html`.
+
+**Gemeinsame Hardwarebudgets.** Alle sieben Werkzeuge verwenden denselben
+`BudgetGuard`: höchstens `120 s` kumulierte GPU-Arbeit, `6 s` kontinuierlich,
+reale Pflichtpause mindestens `4 s`, höchstens `25 %` Duty-Cycle in jedem
+gleitenden `60-s`-Fenster, Wall höchstens `20 min` und mindestens `60 s`
+Kandidatencooldown. Schlafaufrufe werden gegen die monotone Uhr geprüft; ein
+vorzeitig zurückkehrender Sleeper setzt die Last nicht zurück. Setup,
+Correctness, Warmups, Kandidatenblöcke und Bestätigungsreplikate werden
+mitgerechnet. Erfolgreiche Berichte enthalten ihre Roharrays sowie die
+Budgetzusammenfassung.
+
+**Codegen-Sicherheitskorrektur.** Die offizielle MLX-Dokumentation bezeichnet
+`mx.set_memory_limit` als *guideline*: Eine Ausnahme ist erst garantiert, wenn
+das Limit überschritten ist und kein RAM einschließlich Swap mehr verfügbar ist.
+Die frühere Bezeichnung als hartes `8-GiB`-Speicherlimit war daher falsch und ist
+hiermit korrigiert. Quelle:
+`https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.set_memory_limit.html`.
+MLX Unified Memory trennt GPU- und CPU-RAM nicht in unabhängige Budgets.
+
+Der Worker besitzt weiterhin hartes `30-s`-Wall-Timeout und `25-s`-Kernel-CPU-
+Limit. Speicher wird stattdessen primär über eine geschlossene Plansprache
+begrenzt: nur `matmul`, `eval`, `synchronize`, kleine Ganzzahlliterale, maximal
+ein Iterationslevel, an höchstens `16` Operanden gebundene Iteration und maximal
+`32` statisch gewichtete Matmuls. Freie Allokationsprimitive, selbstwachsende
+Listen, verschachtelte Schleifen, ungebundene Ranges, freie Subskription,
+Annotationen und Keyword-/Default-Signaturen werden abgelehnt. Der Worker
+revalidiert den Quelltext und führt ihn mit explizit eingeschränkten Builtins
+aus. Ein eigener Test deckte zunächst einen `KeyError` auf, weil die Arity-Prüfung
+einen nicht erlaubten `mx`-Namen vor der Allowlist-Prüfung nachschlug; eine
+explizite Membership-Prüfung schloss den Fehler. Danach wurden auch die
+semantischen Speicherpfade adversarial getestet.
+
+**Historien-UI.** `tools/evidence.py`/`friday evidence` bietet `verify`,
+`snapshot`, `detail` und einen Server ausschließlich auf `127.0.0.1:8767`.
+Schreibbefehle `init` und `import-legacy` benötigen zusätzlich `--apply`.
+Der echte HTTP-Grenztest bestätigte GET/HEAD, Security-Header, 405 für mutierende
+Methoden, 400 für unbekannte Parameter sowie bytegleiche DB vor/nach der Abfrage.
+
+**Produktiver Import.** `.friday-data/research.sqlite3` enthält nun exakt zehn
+verifizierte Legacy-Zeilen, null native Zeilen und null Zeilen mit Rohmessungen.
+Größe `73.728 B`, Mode `0600`, SHA-256
+`4489e6114229f386a74f2066833846fa58a211789dc25e7ad8ded20939ecd74a`,
+Snapshot-Revision
+`715f7e723081c4ec0fecd4caac20824da33fa6a493145175f3b852275cadce90`.
+Der zweite Import meldete `inserted=0`, `already_present=10`; der Dateihash blieb
+identisch. Auch `verify` und `snapshot` im URI-read-only-Modus änderten kein Byte.
+
+**Dependency und Verifikation.** `pytest-xdist==3.8.0` ist jetzt im Apple-
+Requirements-Lock gepinnt; es wurde nicht installiert, weil exakt diese Version
+bereits in `.venv` vorhanden war. Vollständige Standard-Suite mit dem in
+`pytest.ini` registrierten xdist-Pfad: `425 passed`, `2.443 subtests passed`,
+Wall `31,84 s`. Der gezielte Evidenz-/CLI-/Sandbox-Scope und `git diff --check`
+waren ebenfalls grün. H0.1-Guard: `57/57` Tests, `2.244/2.244` Subtests, Wall
+`19,414 s`, `0` Errors/Failures/Skips, keine NumPy-/MLX-Importe und keine
+Socketkonstruktion. `xcodebuild -checkFirstLaunchStatus` endete mit Exit `0`.
+
+Ein erster vollständiger Testaufruf erreichte sichtbar `100 %`, aber der
+Orchestrierungswrapper gab die laufende Session-ID nicht aus; das Endergebnis war
+dadurch nicht abrufbar. Die Ursache lag im Diagnosewrapper, nicht in Pytest. Der
+Lauf wurde einmal kontrolliert wiederholt und diesmal über die explizit ausgegebene
+Session-ID abgeholt; nur dieses vollständige Ergebnis wird oben berichtet. Ein
+separater `git diff --check` fand davor genau ein Markdown-Zeilenende mit
+Trailing-Whitespace; es wurde entfernt und der Check danach grün wiederholt.
+
+**Forschungsentscheid.** Phase 1B/Custom MLX-Metal bleibt **NO-GO**: formaler H1-
+Unterbau und harte RAM-Isolation fehlen, und die explorative Roofline motiviert
+keinen reinen ISA-Pfad. Cross-Device bleibt **NO-CLAIM**, weil nur ein M1 Max
+vorliegt. Ein breiterer Live-Suchraum bleibt **NO-GO**, weil er Multiple-Testing-
+und Winner's-Curse-Risiken erhöht. **GO** ist ausschließlich weitere Offline-
+Protokoll-/Testarbeit. Der kleinste nächste wissenschaftlich zulässige Schritt ist
+eine neue prospektive H1-v2-Spezifikation für weiterhin genau eine Tensoroperation
+mit neuer Study-ID; jeder spätere GPU-Lauf benötigt erneut ausdrückliche Freigabe.
+
+#### Nachhärtung und finale Regression desselben Audits
+
+Das anschließende Eigenreview fand vier Verträge, die für eine spätere formale
+Nutzung noch zu implizit waren:
+
+1. `native` hätte als „formal H1“ missverstanden werden können. Schema v1
+   erzwingt nun in Report und Storage `formal_claim=false`; ein formaler Claim
+   benötigt bewusst Schema/Protokoll v2.
+2. Der Bool `raw_measurements_available=true` war nicht an einen sichtbaren
+   Rohcontainer gebunden. Für jedes der sieben Werkzeuge ist jetzt ein
+   nichtleeres Top-Level-Rohfeld registriert und vor Persistenz verpflichtend.
+3. Ein idempotenter Replay verglich zunächst nur Report- und Provenienz-Hash.
+   Gleiche Quell-ID mit verändertem Status, Raw-Flag oder Beobachtungszeitpunkt
+   hätte fälschlich als identisch gegolten. Der Vergleich umfasst jetzt alle
+   semantischen Metadaten; ein Regressionstest deckt den Konflikt ab.
+4. Die Cooldown-Studie speicherte den geplanten, aber nicht den tatsächlich
+   verstrichenen Pausenwert. `verified_pause` misst die monotone Realzeit,
+   verwirft frühe Rückkehr und persistiert `observed_pause_seconds`. Die
+   Wall-Zeit aller Werkzeuge stammt nun einheitlich aus dem Guard und beginnt vor
+   den jeweiligen Laufzeitimports/Setups.
+
+Weitere Storage-Prüfungen binden Provenienz-Schemaversion, verbieten eine
+Nullrevision bei nativer Evidenz und vergleichen beim Readback auch
+`git_dirty` und den geschlossenen Workload-Key. Die produktiven zehn Legacy-
+Zeilen bestehen diese strengere Verifikation unverändert.
+
+**Finaler Volltest nach diesen Änderungen:** `429 passed`, `2.443 subtests
+passed in 31,86 s`, Exit `0`. Damit ersetzt dieser Wert den weiter oben
+dokumentierten Zwischenstand `425/2.443`; jener Lauf bleibt als zeitlich
+korrekter Zwischencheck im append-only Journal stehen. Es gab weiterhin keinen
+GPU-, Modell-, Download- oder Installationslauf.
+
+**Letzter Diagnosefehler.** Ein `rg`-Suchmuster wurde in der Shell irrtümlich in
+doppelte Anführungszeichen gesetzt; darin enthaltene Markdown-Backticks wurden
+von `zsh` als Command-Substitution interpretiert. Die resultierenden unbekannten
+Kommandos hatten keine Seiteneffekte und enthielten keine sensitiven Werte. Die
+Suche wurde mit einem einfach quotierten Muster wiederholt und fand die alten
+„bestätigt“-/Speicherlimit-Formulierungen nur noch in den bewusst unveränderten
+historischen Journalabschnitten; die späteren Auditnachträge korrigieren sie.

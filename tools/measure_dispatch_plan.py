@@ -36,8 +36,6 @@ CANDIDATE_POOL_SEED = 20260821
 SHAPE = 2048
 DEFAULT_BLOCKS = 25
 DEFAULT_REPLICATES = 3
-COOLDOWN_BETWEEN_REPLICATES_S = 5.0
-GPU_WORK_BUDGET_S = 120.0
 # Frozen before measuring: an effect must clear this to count as real.
 MDE = 0.05
 BOOTSTRAP_SEED = 0xB0025_2026
@@ -46,7 +44,7 @@ BOOTSTRAP_SEED = 0xB0025_2026
 # tools/ is loaded as loose scripts, not a package, so make the directory
 # importable before pulling in the shared preconditions.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 
 def paired_ratio(log_ratios: list[float]) -> dict[str, float]:
@@ -149,24 +147,35 @@ def _self_check() -> int:
 
 
 def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
+    guard = BudgetGuard()
     import mlx.core as mx
     import numpy as np
 
     sys.path.insert(0, str(PROJECT_ROOT))
     from friday_h0.benchmark import _generate_fixture
 
+    guard.before_candidate()
     fixture = _generate_fixture(np, FIXTURE_SEED, shape=SHAPE)
     a = mx.array(fixture.a)
+    gpu_started = time.perf_counter()
     mx.eval(a)
+    mx.synchronize()
+    guard.record_gpu(time.perf_counter() - gpu_started)
     rng = np.random.Generator(np.random.PCG64(CANDIDATE_POOL_SEED))
     operands = [
         mx.array(rng.uniform(-1.0, 1.0, (SHAPE, SHAPE)).astype(np.float16)) for _ in range(n)
     ]
+    gpu_started = time.perf_counter()
     mx.eval(*operands)
     mx.synchronize()
-    references = [
-        np.array(mx.matmul(a, operand), copy=False).astype(np.float32) for operand in operands
-    ]
+    guard.record_gpu(time.perf_counter() - gpu_started)
+    references = []
+    for operand in operands:
+        gpu_started = time.perf_counter()
+        references.append(
+            np.array(mx.matmul(a, operand), copy=False).astype(np.float32)
+        )
+        guard.record_gpu(time.perf_counter() - gpu_started)
 
     def serial() -> list[object]:
         produced = []
@@ -185,7 +194,9 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
 
     # Correctness gate: an execution-plan change may not alter one bit.
     for name, plan in (("serial", serial), ("batched", batched)):
+        gpu_started = time.perf_counter()
         produced = plan()
+        guard.record_gpu(time.perf_counter() - gpu_started)
         worst = max(
             float(np.abs(np.array(value, copy=False).astype(np.float32) - reference).max())
             for value, reference in zip(produced, references)
@@ -193,17 +204,18 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
         if worst != 0.0:
             raise SystemExit(f"{name} plan changed the result by {worst}; refusing to report timing")
 
-    gpu_seconds = 0.0
     results = []
     collected: list[list[float]] = []
     for replicate in range(replicates):
         if replicate:
-            time.sleep(COOLDOWN_BETWEEN_REPLICATES_S)
+            guard.required_break()
+        gpu_started = time.perf_counter()
         serial()
         batched()
+        guard.record_gpu(time.perf_counter() - gpu_started)
         log_ratios: list[float] = []
-        serial_ms: list[float] = []
-        batched_ms: list[float] = []
+        serial_ns_values: list[int] = []
+        batched_ns_values: list[int] = []
         for _ in range(blocks):
             start = time.perf_counter_ns()
             serial()
@@ -211,19 +223,20 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
             start = time.perf_counter_ns()
             batched()
             batched_ns = time.perf_counter_ns() - start
-            gpu_seconds += (serial_ns + batched_ns) / 1e9
-            if gpu_seconds > GPU_WORK_BUDGET_S:
-                raise SystemExit("refused: GPU work budget exceeded")
+            guard.record_gpu((serial_ns + batched_ns) / 1e9)
             log_ratios.append(math.log(batched_ns / serial_ns))
-            serial_ms.append(serial_ns / 1e6 / n)
-            batched_ms.append(batched_ns / 1e6 / n)
+            serial_ns_values.append(serial_ns)
+            batched_ns_values.append(batched_ns)
         summary = paired_ratio(log_ratios)
         summary.update(
             {
                 "replicate": replicate,
-                "serial_ms_per_op": statistics.median(serial_ms),
-                "batched_ms_per_op": statistics.median(batched_ms),
+                "serial_ms_per_op": statistics.median(serial_ns_values) / 1e6 / n,
+                "batched_ms_per_op": statistics.median(batched_ns_values) / 1e6 / n,
                 "clears_mde": clears_threshold(summary),
+                "log_ratios": log_ratios,
+                "serial_ns": serial_ns_values,
+                "batched_ns": batched_ns_values,
             }
         )
         results.append(summary)
@@ -233,6 +246,8 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
     aggregate["clears_mde"] = clears_threshold(aggregate)
     serial_per_op = statistics.median([entry["serial_ms_per_op"] for entry in results])
     batched_per_op = statistics.median([entry["batched_ms_per_op"] for entry in results])
+    guard.finish_candidate()
+    budget = guard.summary()
     return {
         "n_matmuls": n,
         "blocks_per_replicate": blocks,
@@ -244,7 +259,9 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
         "batched_ms_per_op": batched_per_op,
         "verdict": "effect_confirmed" if aggregate["clears_mde"] else "not_beyond_threshold",
         "mde": MDE,
-        "gpu_work_seconds": gpu_seconds,
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "wall_seconds": budget["wall_seconds"],
+        "budget": budget,
         "correctness": "byte_identical",
     }
 
@@ -263,10 +280,19 @@ def main(argv: list[str] | None = None) -> int:
         return gated
     if not 2 <= args.n <= 16:
         raise SystemExit("n must be between 2 and 16")
+    if not 2 <= args.blocks <= 100:
+        raise SystemExit("blocks must be between 2 and 100")
+    if not 2 <= args.replicates <= 10:
+        raise SystemExit("replicates must be between 2 and 10")
 
     power = require_ac_power()
-    report = run(args.n, args.blocks, args.replicates)
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run(args.n, args.blocks, args.replicates)
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("dispatch", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0 if report["aggregate"]["clears_mde"] else 1
 

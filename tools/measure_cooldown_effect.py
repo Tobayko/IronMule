@@ -35,14 +35,12 @@ DEFAULT_PAUSES = (0.0, 0.05, 0.25, 0.75, 2.0, 5.0, 20.0)
 DEFAULT_REPS = 8
 # One-sided: only a slower-than-steady sample counts as contaminated.
 STEADY_TOLERANCE = 0.10
-GPU_WORK_BUDGET_S = 120.0
-WALL_BUDGET_S = 30 * 60
 
 
 # tools/ is loaded as loose scripts, not a package, so make the directory
 # importable before pulling in the shared preconditions.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 
 
 def shuffled_plan(pauses: tuple[float, ...], reps: int) -> list[tuple[float, int]]:
@@ -51,6 +49,22 @@ def shuffled_plan(pauses: tuple[float, ...], reps: int) -> list[tuple[float, int
     plan = [(pause, index) for pause in pauses for index in range(reps)]
     plan.sort(key=lambda item: hashlib.sha256(f"{item[0]}:{item[1]}".encode()).hexdigest())
     return plan
+
+
+def verified_pause(
+    seconds: float,
+    *,
+    clock=time.monotonic,
+    sleeper=time.sleep,
+) -> float:
+    """Wait for a treatment pause and refuse to mislabel an early return."""
+
+    before = clock()
+    sleeper(seconds)
+    elapsed = clock() - before
+    if elapsed + 1e-6 < seconds:
+        raise RuntimeError("scheduled cooldown pause did not elapse")
+    return elapsed
 
 
 def normalize(burst: list[int]) -> list[float]:
@@ -125,6 +139,7 @@ def _self_check() -> int:
 
 
 def run(pauses: tuple[float, ...], reps: int) -> dict[str, object]:
+    guard = BudgetGuard()
     import mlx.core as mx
     import numpy as np
 
@@ -134,9 +149,13 @@ def run(pauses: tuple[float, ...], reps: int) -> dict[str, object]:
     fixture = _generate_fixture(np, FIXTURE_SEED, shape=SHAPE)
     a = mx.array(fixture.a)
     b = mx.array(fixture.b)
+    gpu_started = time.perf_counter()
     mx.eval(a, b)
     mx.synchronize()
+    guard.record_gpu(time.perf_counter() - gpu_started)
+    gpu_started = time.perf_counter()
     reference = np.array(mx.matmul(a, b), copy=False).astype(np.float32)
+    guard.record_gpu(time.perf_counter() - gpu_started)
 
     def burst() -> list[int]:
         timings = []
@@ -146,29 +165,36 @@ def run(pauses: tuple[float, ...], reps: int) -> dict[str, object]:
             mx.eval(value)
             mx.synchronize()
             timings.append(time.perf_counter_ns() - start)
+        guard.record_gpu(sum(timings) / 1e9)
         return timings
 
+    gpu_started = time.perf_counter()
     produced = mx.matmul(a, b)
     mx.eval(produced)
+    mx.synchronize()
+    guard.record_gpu(time.perf_counter() - gpu_started)
     if float(np.abs(np.array(produced, copy=False).astype(np.float32) - reference).max()) != 0.0:
         raise SystemExit("workload is not reproducible; refusing to report timing")
 
     for _ in range(3):
         burst()
 
-    gpu_seconds = 0.0
-    started = time.monotonic()
     profiles: dict[float, list[list[float]]] = {pause: [] for pause in pauses}
-    for pause, _index in shuffled_plan(pauses, reps):
-        if time.monotonic() - started > WALL_BUDGET_S:
-            raise SystemExit("refused: wall budget exceeded")
-        if pause > 0:
-            time.sleep(pause)
+    raw_timings: list[dict[str, object]] = []
+    execution_plan = shuffled_plan(pauses, reps)
+    for pause, index in execution_plan:
+        guard.check_wall()
+        observed_pause = verified_pause(pause)
         timings = burst()
-        gpu_seconds += sum(timings) / 1e9
-        if gpu_seconds > GPU_WORK_BUDGET_S:
-            raise SystemExit("refused: GPU work budget exceeded")
         profiles[pause].append(normalize(timings))
+        raw_timings.append(
+            {
+                "pause_seconds": pause,
+                "observed_pause_seconds": observed_pause,
+                "repetition_index": index,
+                "timings_ns": timings,
+            }
+        )
 
     results = []
     for pause in pauses:
@@ -190,14 +216,21 @@ def run(pauses: tuple[float, ...], reps: int) -> dict[str, object]:
         )
 
     worst = max(entry["excess_sample_equivalents"] for entry in results)
+    budget = guard.summary()
     return {
         "samples_per_burst": SAMPLES_PER_BURST,
         "steady_from_sample": STEADY_FROM,
         "steady_tolerance": STEADY_TOLERANCE,
         "by_pause": results,
         "worst_excess_sample_equivalents": worst,
-        "gpu_work_seconds": round(gpu_seconds, 3),
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "wall_seconds": budget["wall_seconds"],
+        "execution_plan": [
+            {"pause_seconds": pause, "repetition_index": index}
+            for pause, index in execution_plan
+        ],
+        "raw_timings": raw_timings,
+        "budget": budget,
     }
 
 
@@ -215,8 +248,13 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("reps must be between 2 and 50")
 
     power = require_ac_power()
-    report = run(DEFAULT_PAUSES, args.reps)
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run(DEFAULT_PAUSES, args.reps)
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("cooldown", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0
 

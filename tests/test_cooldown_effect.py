@@ -85,6 +85,22 @@ class ShuffledPlanTest(unittest.TestCase):
         self.assertNotEqual(plan, sorted(plan))
 
 
+class VerifiedPauseTest(unittest.TestCase):
+    def test_observed_pause_is_returned(self) -> None:
+        now = [10.0]
+
+        def sleep(seconds: float) -> None:
+            now[0] += seconds + 0.01
+
+        self.assertAlmostEqual(
+            cooldown.verified_pause(2.0, clock=lambda: now[0], sleeper=sleep), 2.01
+        )
+
+    def test_early_return_is_rejected(self) -> None:
+        with self.assertRaises(RuntimeError):
+            cooldown.verified_pause(2.0, clock=lambda: 10.0, sleeper=lambda _seconds: None)
+
+
 class ReleaseGateTest(unittest.TestCase):
     def test_measurement_is_locked_without_the_execute_flag(self) -> None:
         self.assertEqual(cooldown.main([]), 78)

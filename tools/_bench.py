@@ -9,6 +9,14 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from friday_evidence.budget import BudgetError, BudgetGuard  # noqa: E402
+from friday_evidence.run import run_persisted  # noqa: E402
 
 
 class PowerError(SystemExit):
@@ -73,4 +81,12 @@ def release_gate(args, self_check) -> int | None:
     return None
 
 
-__all__ = ["PowerError", "read_power_source", "release_gate", "require_ac_power"]
+__all__ = [
+    "BudgetError",
+    "BudgetGuard",
+    "PowerError",
+    "read_power_source",
+    "release_gate",
+    "require_ac_power",
+    "run_persisted",
+]

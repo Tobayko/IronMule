@@ -12,8 +12,9 @@ Three gates stand between a generated string and a reported result:
      imports, dunder access, string literals, unknown names and every MLX call
      outside a small fixed set.  Nothing executes until this passes.
   2. **Process isolation**: what passes runs in a fresh subprocess with a
-     wall-clock timeout, a CPU-time ceiling, a scrubbed environment and an MLX
-     memory limit.
+     wall-clock timeout, a CPU-time ceiling and a scrubbed environment. The
+     plan language bounds iteration and matmul allocation; MLX's memory setting is
+     additional best-effort defense, not a hard memory limit.
   3. **Correctness**: the plan must produce one result per operand, each
      byte-identical to the reference.  A faster plan that changes a single bit is
      discarded, not reported.
@@ -38,7 +39,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _bench import release_gate, require_ac_power  # noqa: E402
+from _bench import BudgetGuard, release_gate, require_ac_power, run_persisted  # noqa: E402
 from plan_sandbox import (  # noqa: E402
     ALLOWED_MX_ATTRS,
     PlanRejected,
@@ -72,7 +73,7 @@ def plan(mx, a, operands):
         x = mx.matmul(a, b)
         mx.eval(x)
         mx.synchronize()
-        out = out + [x]
+        out.append(x)
     return out"""
 
 
@@ -83,7 +84,7 @@ BASELINE_SOURCE = """def plan(mx, a, operands):
         x = mx.matmul(a, b)
         mx.eval(x)
         mx.synchronize()
-        out = out + [x]
+        out.append(x)
     return out"""
 
 
@@ -204,15 +205,17 @@ def _self_check() -> int:
 
 
 def run(rounds: int) -> dict[str, object]:
+    guard = BudgetGuard()
     from mlx_lm import generate, load
 
-    started = time.monotonic()
     model, tokenizer = load(MODEL_ID)
     history: list[dict] = []
     attempts: list[dict] = []
     survivors: list[dict] = []
 
     for index in range(rounds):
+        guard.required_break()
+        gpu_started = time.perf_counter()
         answer = generate(
             model,
             tokenizer,
@@ -223,6 +226,7 @@ def run(rounds: int) -> dict[str, object]:
             max_tokens=MAX_MODEL_TOKENS,
             verbose=False,
         )
+        guard.record_gpu(time.perf_counter() - gpu_started)
         label = f"plan_{index + 1}"
         source = extract_plan(answer)
         record: dict[str, object] = {"round": index, "label": label,
@@ -247,10 +251,19 @@ def run(rounds: int) -> dict[str, object]:
             history.append({"outcome": "rejected", "label": label, "reason": str(exc)})
             continue
 
-        outcome = run_plan_isolated(
-            source, n=OPERANDS, blocks=EXPLORE_BLOCKS,
-            fixture_seed=FIXTURE_SEED, pool_seed=POOL_SEED,
-        )
+        guard.required_break()
+        guard.before_candidate()
+        try:
+            outcome = run_plan_isolated(
+                source, n=OPERANDS, blocks=EXPLORE_BLOCKS,
+                fixture_seed=FIXTURE_SEED, pool_seed=POOL_SEED,
+            )
+            if isinstance(outcome.get("gpu_work_seconds"), (int, float)):
+                guard.record_gpu(float(outcome["gpu_work_seconds"]))
+        finally:
+            guard.finish_candidate()
+        if outcome.get("fatal"):
+            raise SystemExit("isolated worker containment failure; measurement aborted")
         if not outcome.get("ok"):
             record.update(outcome="failed", reason=outcome.get("reason"), source=source[:400])
             attempts.append(record)
@@ -260,6 +273,8 @@ def run(rounds: int) -> dict[str, object]:
 
         summary = _PLAN.paired_ratio(outcome["log_ratios"])
         summary["clears_mde"] = _PLAN.clears_threshold(summary, MDE)
+        summary["log_ratios"] = outcome["log_ratios"]
+        summary["gpu_work_seconds"] = outcome.get("gpu_work_seconds")
         record.update(outcome="measured", source=source, **summary)
         attempts.append(record)
         history.append({"outcome": "measured", "label": label,
@@ -274,21 +289,35 @@ def run(rounds: int) -> dict[str, object]:
     confirmation = None
     if leader is not None:
         replicates = []
-        for _ in range(CONFIRM_REPLICATES):
-            outcome = run_plan_isolated(
-                leader["source"], n=OPERANDS, blocks=CONFIRM_BLOCKS,
-                fixture_seed=FIXTURE_SEED, pool_seed=POOL_SEED,
-            )
-            if outcome.get("ok"):
-                replicates.append(outcome["log_ratios"])
+        guard.before_candidate()
+        try:
+            for replicate in range(CONFIRM_REPLICATES):
+                if replicate:
+                    guard.required_break()
+                outcome = run_plan_isolated(
+                    leader["source"], n=OPERANDS, blocks=CONFIRM_BLOCKS,
+                    fixture_seed=FIXTURE_SEED, pool_seed=POOL_SEED,
+                )
+                if isinstance(outcome.get("gpu_work_seconds"), (int, float)):
+                    guard.record_gpu(float(outcome["gpu_work_seconds"]))
+                if outcome.get("fatal"):
+                    raise SystemExit(
+                        "isolated worker containment failure; measurement aborted"
+                    )
+                if outcome.get("ok"):
+                    replicates.append(outcome["log_ratios"])
+        finally:
+            guard.finish_candidate()
         if len(replicates) >= 2:
             confirmation = _PLAN.hierarchical_bootstrap(replicates, seed=BOOTSTRAP_SEED)
             confirmation["clears_mde"] = _PLAN.clears_threshold(confirmation, MDE)
             confirmation["replicate_ratios"] = [
                 round(math.exp(statistics.median(logs)), 4) for logs in replicates
             ]
+            confirmation["replicate_log_ratios"] = replicates
 
     accepted = bool(confirmation and confirmation["clears_mde"])
+    budget = guard.summary()
     return {
         "model": MODEL_ID,
         "operands": OPERANDS,
@@ -304,7 +333,9 @@ def run(rounds: int) -> dict[str, object]:
             round(100.0 * (confirmation["ratio"] - 1.0), 2) if accepted else None
         ),
         "mde": MDE,
-        "wall_seconds": round(time.monotonic() - started, 1),
+        "wall_seconds": budget["wall_seconds"],
+        "gpu_work_seconds": budget["gpu_work_seconds"],
+        "budget": budget,
     }
 
 
@@ -322,8 +353,13 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit("rounds must be between 1 and 10")
 
     power = require_ac_power()
-    report = run(args.rounds)
-    report["power_source"] = power
+
+    def operation() -> dict[str, object]:
+        report = run(args.rounds)
+        report["power_source"] = power
+        return report
+
+    report = run_persisted("codegen", operation)
     print(json.dumps(report, ensure_ascii=False, sort_keys=True, indent=1))
     return 0 if report["verdict"] == "optimization_confirmed" else 1
 

@@ -6,6 +6,7 @@ numpy==2.5.2
 scipy==1.18.0
 psutil==7.2.2
 pytest==9.1.1
+pytest-xdist==3.8.0
 torch==2.13.0
 
 # Optional, nur für Modelltests (docs/ERGEBNISSE.md, Abschnitt Modelltests).
