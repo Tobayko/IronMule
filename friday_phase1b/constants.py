@@ -1,0 +1,102 @@
+"""Frozen contract constants for the Phase-1B experiment."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+EXPERIMENT_ID = "friday-phase1b-residual-rmsnorm-20260822-01"
+CONTRACT_ID = "phase1b-residual-rmsnorm-v1"
+WORKLOAD_ID = "residual_rmsnorm:r1024:h2560:f16:eps1e-6:v1"
+SCHEMA_VERSION = 1
+SQLITE_APPLICATION_ID = 0x46524B31  # ASCII FRK1
+
+QUALIFICATION_RUN_ID = "phase1b-qualify-20260822-01"
+BENCHMARK_RUN_ID = "phase1b-benchmark-20260822-01"
+DEFAULT_DATABASE_PATH = PROJECT_ROOT / ".friday-data" / "phase1b-rmsnorm.sqlite3"
+DEFAULT_DASHBOARD_PORT = 8774
+
+BASELINE_NAMES = (
+    "eager_transparent",
+    "compiled_transparent",
+    "fast_rms_norm",
+    "compiled_fast_rms_norm",
+)
+BASELINE_PRECEDENCE = (
+    "fast_rms_norm",
+    "compiled_fast_rms_norm",
+    "compiled_transparent",
+    "eager_transparent",
+)
+
+QUALIFICATION_MODE = "qualification"
+CHARACTERIZE_MODE = "characterize"
+AA_MODE = "aa"
+AB_MODE = "ab"
+WORKER_MODES = frozenset(
+    {QUALIFICATION_MODE, CHARACTERIZE_MODE, AA_MODE, AB_MODE}
+)
+
+QUALIFICATION_CASES = (
+    "zeros",
+    "cancellation",
+    "constant",
+    "visible_normal",
+    "visible_bounded",
+    "holdout_normal",
+)
+CASE_SEEDS = {
+    "cancellation": 0xB16B0001,
+    "visible_normal": 0xB16B0002,
+    "visible_bounded": 0xB16B0003,
+    "holdout_normal": 0xB16B4001,
+}
+CHARACTERIZE_FIXTURE_SEEDS = (0xB16B1000, 0xB16B1001, 0xB16B1002)
+CHARACTERIZE_ORDER_SEEDS = (0xB16B1100, 0xB16B1101, 0xB16B1102)
+AA_FIXTURE_SEEDS = (0xB16B2000, 0xB16B2001, 0xB16B2002)
+AA_ORDER_SEEDS = (0xB16B2100, 0xB16B2101, 0xB16B2102)
+AB_FIXTURE_SEEDS = (0xB16B3000, 0xB16B3001, 0xB16B3002)
+AB_ORDER_SEEDS = (0xB16B3100, 0xB16B3101, 0xB16B3102)
+AA_BOOTSTRAP_SEED = 0xB16B2AA0
+AB_BOOTSTRAP_SEED = 0xB16B3AB0
+
+WARMUPS = 20
+CHARACTERIZE_BLOCKS = 15
+CONFIRM_BLOCKS = 31
+OPERATIONS_PER_BLOCK = 50
+MEMORY_PROBE_OPERATIONS = 20
+BOOTSTRAP_REPETITIONS = 10_000
+BASELINE_TIE_FRACTION = 0.005
+MINIMUM_IMPROVEMENT_FRACTION = 0.05
+
+ABS_MAX_CAP = 0.0078125
+REL_Q99_CAP = 0.005
+RELATIVE_ORACLE_FLOOR = 0.125
+NORMALIZED_L2_CAP = 0.0015
+PAIR_ATOL = 0.00390625
+PAIR_RTOL = 0.001953125
+
+WORKER_TIMEOUT_SECONDS = 120.0
+CONTROLLER_TIMEOUT_SECONDS = 900.0
+CLEANUP_TIMEOUT_SECONDS = 3.0
+RSS_POLL_SECONDS = 0.02
+CPU_LIMIT_SECONDS = 90
+CORE_LIMIT_BYTES = 0
+FILE_LIMIT_BYTES = 16 * 1024 * 1024
+NOFILE_LIMIT = 64
+MLX_MEMORY_LIMIT_BYTES = 512 * 1024 * 1024
+MLX_CACHE_LIMIT_BYTES = 64 * 1024 * 1024
+WORKER_RSS_LIMIT_BYTES = 2 * 1024 * 1024 * 1024
+MEMORY_REGRESSION_ALLOWANCE_BYTES = 16 * 1024 * 1024
+STREAM_LIMIT_BYTES = 256 * 1024
+RESULT_LIMIT_BYTES = 2 * 1024 * 1024
+
+MAX_CANONICAL_BYTES = 4 * 1024 * 1024
+MAX_DATABASE_BYTES = 64 * 1024 * 1024
+MAX_HISTORY_ROWS = 16
+MAX_DASHBOARD_BYTES = 8 * 1024 * 1024
+HISTORY_KINDS = frozenset({"qualification", "benchmark", "failure"})
+
+EXPECTED_MLX_VERSION = "0.32.0"
+EXPECTED_DEVICE_NAME = "Apple M1 Max"
