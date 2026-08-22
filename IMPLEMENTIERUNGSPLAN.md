@@ -1,6 +1,6 @@
 # Implementierungsplan
 
-## Auditierter Planstand — 21.08.2026
+## Auditierter Planstand — 22.08.2026
 
 Die frühere Abfolge wurde durch den Evidenzaudit enger gefasst. Historische
 Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
@@ -15,8 +15,8 @@ Aktuelle Reihenfolge:
    verifiziert.** Root-Git, geschlossenes SQLite-v1-Schema, native/Legacy-
    Trennung, gemeinsame Budgets, fail-closed Persistenz und read-only Historien-
    UI. Historische Werte werden ohne erfundene Rohdaten herabgestuft importiert.
-   Produktionsstand: `10` Legacy-Zusammenfassungen und `3` native Ereignisse
-   (zwei mit Rohmessungen, ein sanitisiertes Guard-Fehlerereignis),
+   Produktionsstand: `10` Legacy-Zusammenfassungen und `4` native Ereignisse
+   (drei mit Rohmessungen, ein sanitisiertes Guard-Fehlerereignis),
    idempotenter Import und verifizierter read-only Snapshot.
 2. **Neuen prospektiven H1-Vertrag erstellen — implementiert, offline
    verifiziert und formal ausgeführt.** Genau eine Tensoroperation; neue Study-ID
@@ -52,12 +52,20 @@ Aktuelle Reihenfolge:
    bestätigte explorativ `N=10` mit `R=0,671573`, 95%-Intervall
    `[0,648895; 0,731190]`; das Ergebnis bleibt Schema-v1-Evidenz mit
    `formal_claim=false`.
-7. **Vor einer Runtime-Erweiterung neu freigeben.** `N=10` darf erst nach einer
-   neuen prospektiven Ein-Kandidaten-Studie mit frischen Charakterisierungs- und
-   Validierungsdaten in eine eigene Runtime-Policy aufgenommen werden. Bis dahin
-   bleibt `N=8` der einzige autorisierte Scope. Phase 1B/Custom Metal ist
-   **NO-GO**, Cross-Device **NO-CLAIM**, weitere Modellrunden und ein breiterer
-   Live-Suchraum sind **NO-GO**.
+7. **Prospektive N10-Ein-Kandidaten-Studie — ausdrücklich freigegeben,
+   implementiert und noch nicht ausgeführt.** Der Vertrag friert genau den aus
+   Vorwissen selektierten Kandidaten `N=10` ein, schließt Gemma aus der
+   Bestätigung aus und verlangt frische sechs A/A- sowie sechs A/B-Prozesse mit
+   getrennten Charakterisierungs-/Validierungssplits. Code, SQLite-v1-Store,
+   read-only UI und Offline-Tests liegen vor; vor dem sauberen
+   Implementierungscommit und dem persistierten Präregistrierungssiegel sind
+   keine N10-Messungen zulässig. Bis zu einem positiven terminalen Entscheid
+   bleibt `N=8` der einzige autorisierte Runtime-Scope.
+8. **AVO-lite nur evidenzabhängig prüfen.** Ein positives N10-Ergebnis darf
+   einen begrenzten N10-Runtime-Prototyp mit fester Allowlist und vollständiger
+   Provenienz eröffnen. Es autorisiert weder freie Codegenerierung noch Custom
+   Metal. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**,
+   weitere Modellrunden und ein breiterer Live-Suchraum bleiben **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 
