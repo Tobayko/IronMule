@@ -4059,3 +4059,93 @@ getrennten, allowlist-basierten N10-Runtime-/AVO-lite-Prototyp mit seriellem
 Fallback, Circuit Breaker, eigener Historie und reproduzierbaren CPU-/GPU-Gates.
 Freie Codegenerierung, Custom Metal, weitere Modellrunden, Cross-Device-Claims
 und ein breiterer Suchraum bleiben geschlossen.
+
+### 2026-08-22 — N10-Runtime-/AVO-lite-Prototyp vor Live-Gates
+
+**Atlas-first und Baseline.** Vor der neuen Phase lieferte der fokussierte
+ProjectAtlas-Brief `friday_runtime/executor.py`, `tests/test_runtime_policy.py`
+und `tests/test_runtime_history.py` als engsten bestehenden Referenzscope. Die
+unveränderte N8-Runtime-Baseline bestand `13` Tests und `9` Subtests in
+`0,11 s` (`0,34 s` außen, maximales RSS `54.984.704 B`, keine Swaps).
+`.friday-data/runtime.sqlite3` blieb bei
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`,
+der formale N10-v2-Store bei `54e9c57c…fc4f`; eine
+`.friday-data/runtime-n10.sqlite3` existierte nicht.
+
+**Gebundene Spec wiederhergestellt.** Der Ergebnisnachtrag hatte nach dem
+formalen Lauf vorübergehend die an N10-v2-Provenienz gebundene Datei
+`docs/N10_VORREGISTRIERUNG_V2.md` erweitert. Die Pre-Runtime-Prüfung erkannte,
+dass dies eine korrekte Runtime absichtlich mit `n10_spec_mismatch` sperren
+würde. Der Nachtrag wurde aus genau dieser Datei entfernt; die Ergebnisse
+bleiben in Projektstatus, Forschungsentscheid und diesem Journal erhalten. Die
+Datei ist nun wieder bytegleich zum Seal bei
+`5b283ce8629b5b802dabc68dccd1396157d739f2796b76d02ce4fdf97563087b`;
+Code-, Spec-, Umgebungs- und Hardwareprojektion stimmen wieder mit der formalen
+Provenienz überein. Im noch schmutzigen Arbeitsstand bleibt Live-Ausführung
+korrekt gesperrt.
+
+**Architektur und Implementierung.** Der neue Vertrag steht in
+`docs/N10_RUNTIME_PROTOTYPE_SPEC.md`. Die bestehende N8-Runtime wurde nicht
+geändert. Das getrennte Paket `friday_runtime_n10/` samt Tool
+`tools/run_n10_runtime.py` verwendet Runtime-ID
+`n10-runtime-dispatch-20260822-01`, Application-ID `FRN1`, DB
+`.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. AVO-lite ist eine
+geschlossene Zustandsmaschine: reale Tensoren beobachten, exakten formalen
+Store plus V1-Vorgänger und aktuelle versiegelte Identität verifizieren, genau
+einen Plan auswählen, CPU/GPU/Korrektheit validieren und bei Unsicherheit
+seriell zurückfallen. Es gibt kein Modell, keine freie Aktion und keine
+Codegenerierung.
+
+Der Policy-Load bindet den exakten N10-v2-Dateihash, die Snapshot-Revision,
+16 Recordtypen, den einzigen formalen Decision-Record, Decision-/Prereg-/
+Provenienz-Hashes, Workload, Gates und die vier aktuellen formalen
+Fingerprint-Projektionen. Er replayt zusätzlich N10-v1 read-only. Die Projektion
+wird einmalig gecacht; jeder Bericht zeigt DB-Hash und Snapshot sichtbar. Der
+Hot Path autorisiert nur FP16-`2048²` mit genau zehn RHS-Tensoren. Batchfehler
+werden im aktuellen Aufruf nicht wiederholt und verriegeln den Circuit Breaker.
+Cold Load ist mit `10 s`, Policy-Median mit `25 µs`, p95 mit `50 µs`,
+zusätzlicher Median mit `20 µs` und GPU-B/A mit `0,95` begrenzt. Die eigene
+History ist privat, append-only und hashverkettet; die read-only UI behandelt
+`Ctrl-C` ohne Traceback.
+
+**Offline-Verifikation.** Die fokussierte Suite bestand nach der finalen
+Nachweisprojektion `17/17` Tests und `9/9` Subtests in `3,54 s` (`3,72 s`
+außen, maximales RSS `58.376.192 B`, keine Swaps). Sie prüft unter anderem
+den echten 16-Record-Store, eine byteverschiedene Ersatzdatei, alle
+Identitätsfehler, exakten N=10-Scope, Circuit Breaker ohne impliziten Retry,
+Cold-Load-Gate, gepaarte Messungen, private Hashkette, read-only UI und
+graceful `KeyboardInterrupt`. Eine Zwischen-Vollsuite bestand `525/525` Tests
+und `2.489/2.489` Subtests in `210,99 s` (`211,20 s` außen, User `199,59 s`,
+System `1,53 s`, maximales RSS `90.652.672 B`, keine Swaps). Der reale
+Policy-Load replayte im absichtlich schmutzigen Pre-Commit-Stand alle 16
+Records in `3,57 s` außen und fiel exakt auf `worktree_dirty` zurück. Beide
+Live-Kommandos endeten ohne `--execute` mit Exit `78`; es entstand keine neue
+Runtime-DB und keine GPU-Arbeit.
+
+Nach der zusätzlichen sichtbaren DB-/Snapshot-Projektion in jedem
+Policy-Evidenzobjekt wurde die Vollsuite abschließend wiederholt: `525/525`
+Tests und `2.489/2.489` Subtests in `211,66 s` (`211,90 s` außen, User
+`200,22 s`, System `1,62 s`, maximales RSS `90.832.896 B`, keine Swaps).
+
+**Gefundene Werkzeugfehler.** Der mechanische Kopieraufruf enthielt zunächst
+die nicht vorhandene Quelle `friday_runtime/canonical.py`; `cp` meldete Exit
+`1`, kopierte aber alle tatsächlich vorhandenen expliziten Quellen. Die
+Dateiliste wurde danach vollständig kontrolliert. Ein mehrdeutiger Patch fügte
+`N10_DECISION_RECORD_ID` zunächst zusätzlich hinter `__all__` statt nur in die
+Importliste ein; die unmittelbare Quellprüfung fand und entfernte die Zeile vor
+dem ersten Compile-/Testlauf. Ein kombinierter Status-/Plan-Patch traf einen
+nicht exakt vorhandenen Kontext und wurde atomar verworfen; die Korrektur
+erfolgte dateigenau. Keiner dieser Fehler veränderte Messdaten oder bestehende
+Runtime-Dateien.
+Ein späterer kombinierter Abschlusszahlenpatch verfehlte wegen eines
+Zeilenumbruchs den Journal-Kontext und wurde ebenfalls atomar verworfen; die
+zwei dateigenauen Korrekturen wurden danach erfolgreich angewendet.
+
+**ProjectAtlas und Pre-Live-Zustand.** Der Refresh nach den neuen Dateien
+bestand mit 764 Kandidaten, 745 indexierten Textdateien und 607
+Symbolkandidaten; 17 Dateien wurden neu geparst, 590 blieben unverändert, kein
+Timeout. Der Abschlussrefresh nach Dokumentation blieb bei denselben
+Kandidatenzahlen; 4 Dateien wurden neu geparst, 603 blieben unverändert, kein
+Timeout. Live bleibt bis zu einem sauberen lokalen Commit geschlossen. Danach
+ist genau ein Policy-/CPU-Lauf zulässig; nur bei bestandenem Gate folgt genau
+ein MLX/GPU-Lauf.

@@ -7,6 +7,7 @@
 | Begrenzte evidenzgebundene Runtime | **GO im exakten H1-Scope** | formales H1-v2-Gain-Gate sowie CPU-Overhead- und MLX/GPU-Runtime-Gates bestanden; Korrektheit byte-identisch | jede Evidenz-, Code-, Spec-, Environment-, Hardware- oder Workload-Abweichung fällt weiterhin seriell zurück |
 | Geschlossener H2-Modellvorschlag | **eine Runde abgeschlossen; kein weiterer Lauf** | Gemma schlug `3,10,16` vor; Harness bestätigte explorativ `N=10`, aber Kandidatenselektion und Ergebnis sind Schema v1 mit `formal_claim=false` | vor weiterer Runde oder Runtime-Erweiterung neue prospektive Studie und explizite Architekturfreigabe |
 | Prospektive N10-Bestätigung | **V1 terminal; V2-Gain formal bestätigt** | V1 stoppte vor Timing; V2 lief auf sauberem Commit mit registrierter Fixture, frischen Seeds, sechs A/A- und sechs A/B-Sessions bis `n10_gain_confirmed` | genau ein begrenzter N10-Runtime-Prototyp mit fester Allowlist und eigenen Engineering-Gates; keine direkte Produktivänderung |
+| N10-Runtime / AVO-lite | **Offline-GO; Live erst nach sauberem Commit** | getrennte exakte Evidenzbindung, Tensor-Allowlist, serieller Fallback, Circuit Breaker, Cold-Load-/CPU-/GPU-Gates und eigene Historie/UI sind implementiert; Tests grün | einmaliger CPU-Lauf, nur bei Erfolg ein GPU-Lauf; negatives Gate sperrt N10, N8 bleibt unverändert |
 | Phase 1B / Custom MLX-Metal | **NO-GO** | formales H1 bestätigt nur Dispatch-Amortisation; reale Roofline deutet weiter auf Speicherlimit, und eine separate Custom-Kernel-Sicherheits-/Architekturfreigabe fehlt | freigegebene isolierte Worker-/Rollback-Architektur, eigener prospektiver Vertrag und neuer expliziter Nutzerentscheid |
 | Cross-Device | **NO-CLAIM / derzeit blockiert** | es existiert Evidenz von genau einem M1 Max; ein zweites Zielgerät ist nicht verfügbar | mindestens ein unabhängiges Gerät, identischer versiegelter Workload und vollständige Provenienz |
 | breiterer Live-Suchraum | **NO-GO** | mehr Kandidaten würden den explorativen Charakter und Multiple-Testing-/Winner's-Curse-Risiken vergrößern | neue H1-Vorregistrierung mit Familien/Splits, Kandidatenbudget, Powerplanung und frischen IDs |
@@ -68,7 +69,11 @@ Freigegeben ist jetzt genau ein getrennter N10-Runtime-/AVO-lite-Prototyp:
   Codegenerierung und kein Custom Metal.
 
 Die bestehende N8-Runtime bleibt unverändert, bis der getrennte N10-Prototyp
-seine eigenen Engineering-Gates bestanden hat.
+seine eigenen Engineering-Gates bestanden hat. Der Prototyp ist inzwischen
+offline implementiert: `17` fokussierte Tests plus `9` Subtests und die
+Zwischen-Vollsuite mit `525` Tests/`2.489` Subtests bestanden; im schmutzigen
+Pre-Commit-Zustand fiel der reale Policy-Load korrekt auf `worktree_dirty`
+zurück und beide Live-Kommandos blieben ohne Freigabeflag geschlossen.
 
 Die explizite Nutzerfreigabe für Vertrag, lokale CPU-/GPU-Tests und Ausführung
 liegt seit 22.08.2026 vor. Commit, Seal und terminale Bestätigung sind
