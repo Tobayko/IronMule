@@ -4252,3 +4252,128 @@ alle sechs Evidenzdateien behielten ihre oben dokumentierten SHA-256-Werte und
 ProjectAtlas-Refresh blieb bei 764/745 Textdateien und 607 Symbolkandidaten;
 eine Datei wurde neu geparst, 606 blieben unverändert und kein Timeout trat
 auf. Der Worktree war auch danach leer.
+
+### 2026-08-22 — Nächste Runde: Shadow-Router und sicherer Kernelpfad geöffnet
+
+**Explizite Freigabe und Grenze.** Der Nutzer erlaubt notwendige lokale
+Softwareinstallationen und die weitere Arbeit bis hin zu Kernelversuchen unter
+hohen Sicherheitsanforderungen. Neue Modelle sind ausdrücklich ausgeschlossen.
+Vorhandene Modelle werden in dieser Runde ebenfalls nicht benötigt. Die
+Reihenfolge bleibt: zuerst ein rein beobachtender N8/N10-Shadow-Router; erst
+nach dessen grünen Gates ein einzelner statischer Custom-Metal-Kandidat in
+einem getrennten, kontrollierten Worker.
+
+**Atlas-first.** Vor Projektquellen wurde der versionierte ProjectAtlas-Skill
+vollständig gelesen und danach Runtime `0.4.5-rc1` sowie ein fokussierter
+`atlas_session_brief` über MCP aufgerufen. Der Brief rankte zunächst drei
+Dateien des eingebundenen ProjectAtlas-Repositories; die vorgeschriebene erste
+Summary bestätigte, dass diese Treffer ausschließlich ProjectAtlas selbst
+betreffen und unangetastet bleiben. Eine anschließende begrenzte Atlas-Suche
+führte zu `friday_runtime/`, `friday_runtime_n10/`, ihren Tests und den
+bestehenden Architekturtexten. Ein erster Skill-Leseaufruf ließ im expandierten
+Alias versehentlich eine Paketebene aus und endete read-only mit `No such file`;
+der korrigierte Pfad wurde danach vollständig gelesen.
+
+**Unveränderte Baseline.** Ausgangspunkt ist der saubere lokale `main`-Commit
+`25bf6513c279900dfde31cefd6015cff58d4c11a`. H1-v2, N8-Runtime, N10-v1,
+N10-v2 und N10-Runtime blieben bei den dokumentierten SHA-256-Werten
+`141f010b…e78a4c4`, `ad4f0ef7…6473d82`, `e0b5f4af…a3f0d5`,
+`54e9c57c…91fc4f` und `81286ffa…22cd5`; Xcode-First-Launch bestand.
+Die acht bestehenden N8/N10-Runtime-Testmodule bestanden zusammen `30/30`
+Tests in `3,458 s` (`3,73 s` außen, `3,55 s` User, `0,05 s` System,
+maximales RSS `45.498.368 B`, keine Swaps). Beide formalen Policy-Loader
+autorisierten read-only; N8 benötigte `3,58 s`, N10 `3,63 s` außen.
+
+MLX `0.32.0` stellt lokal bereits `mx.fast.metal_kernel` und Metal bereit;
+eine Installation ist daher derzeit nicht notwendig. Der vorhandene lokale
+Gemma-3-4B-Konfigurationssnapshot bestätigt `hidden_size=2560`; es wurde nur
+dieses JSON-Feld gelesen, kein Modell geladen. Die aktuelle offizielle MLX-
+Dokumentation bestätigt JIT-kompilierte Custom-Metal-Kernel, einmalige
+Kernelkonstruktion, standardmäßig sicheren Math-Modus und die mögliche
+Contiguous-Kopie. Apples Dokumentation bestätigt die Thread-/Threadgroup- und
+SIMD-Synchronisationsgrenzen. Diese Quellen bestimmen die späteren
+Kernelkontrollen.
+
+**Diagnosefehler.** Ein ergänzender N8-Policy-Aufruf verwendete zunächst den
+nicht vorhandenen Launcher `tools/run_runtime.py`; Python endete vor jeder
+Projektaktion mit Exit `2`. Die Dateisuche löste den tatsächlichen read-only
+Launcher `tools/run_runtime_prototype.py` auf, dessen Wiederholung bestand.
+
+**Vorregistrierung.** Der neue Vertrag
+[`AVO_SHADOW_ROUTER_SPEC.md`](AVO_SHADOW_ROUTER_SPEC.md) friert vor jedem neuen
+Router-Code und Timingwert die reine Shadow-Semantik, beide exakten
+Evidenzbindungen, CPU-Gates, echte Tensor-Negativfälle, eigene private
+Hashketten-DB und read-only UI ein. Weder N8 noch N10 noch ProjectAtlas werden
+für den Router verändert.
+
+**Implementierung und frühe Fehlerclosure.** Der neue Namespace
+`friday_avo_router/` komponiert die unveränderten N8-/N10-Controller, besitzt
+absichtlich keine `execute`-Methode, erzwingt immer `serial_shadow_only` und
+speichert ausschließlich die drei vorregistrierten Record-Arten. Der erste
+Compile-Lauf fand ein nicht-ASCII-Mittelpunktzeichen in einem Python-Bytestring;
+es wurde durch die semantisch identische HTML-Entity `&middot;` ersetzt. Der erste
+History-Testlauf übergab `strict_json_loads` irrtümlich `str` statt `bytes` und
+erzeugte zwei Fehler. ProjectAtlas verlangte wegen der neuen Dateien einen
+Refresh; danach bestätigte ein exakter Slice den Bytes-Vertrag und die
+Korrektur verwendet nun UTF-8-Bytes plus feste Größenobergrenze. Die fokussierte
+Suite bestand anschließend zunächst `11/11`, nach CLI- und Härtungstests
+`16/16` Tests. `ruff` ist in der bestehenden Umgebung nicht vorhanden; da
+Compile- und Tests keine Installation erfordern, wurde nichts installiert.
+
+**Vor-Commit-Ausführungssperren.** Beide Messkommandos endeten ohne `--execute`
+mit Exit `78` und legten keine DB an. Mit `--execute` sperrte der schmutzige
+Worktree die Policy-Messung bereits an der Provenienz; die Shadow-Validierung
+ohne vorherigen Policy-Record sperrte ebenfalls vor einer DB-Anlage. Der
+read-only Policy-Status meldete erwartungsgemäß für beide Policies
+`worktree_dirty`, der Router war nicht bereit. `git diff --check` bestand und
+`.friday-data/avo-router.sqlite3` blieb abwesend.
+
+**Hochsicherheits-Diff-Review.** Wegen der Nutzeranforderung „unter hoher
+Sicherheit“ wurde zusätzlich der lokale `codex-security:security-diff-scan`
+verwendet. Sein Capability-Preflight war bereit; fehlende delegierte Worker
+sind aufgrund der bindenden Einzelagentenregel erwartet. Der advisory
+Trusted-Access-Status war `not_granted` und blockiert die lokale Analyse nicht.
+Eine zunächst angenommene globale Referenzposition für
+`threat-model-guidance.md` sowie später für `final-report.md` war falsch und
+endete jeweils read-only mit `No such file`; `rg --files` löste die
+versionierten skill-lokalen beziehungsweise Plugin-Root-Pfade auf, die danach
+vollständig gelesen wurden. ProjectAtlas meldete während dieser Analyse eine
+zu große inkrementelle Closure (`10001` Pfade); der vorgeschriebene vollständige
+MCP-Watcherlauf endete nach rund 14 Sekunden erfolgreich und indexierte wieder
+779 Dateien. ProjectAtlas selbst blieb unverändert.
+
+Der Security-Inventarhelfer erfasste die zehn neuen Produktionsdateien. Ein
+erster `resolve_security_md --list`-Aufruf kombinierte unzulässig `--scope` und
+endete mit Exit `2`; die dokumentierte Form ohne `--scope` bestätigte, dass nur
+`ProjectAtlas/SECURITY.md` existiert und nicht für Friday-Root-Code gilt. Der
+ältere Rank-Input-Helfer lieferte bei ausschließlich untracked neuen Dateien
+null Zeilen, während der maßgebliche Local-Patch-Inventarhelfer alle zehn
+Produktionsdateien korrekt erfasste. Tests und die neue Spezifikation wurden
+deshalb zusätzlich manuell vollständig gelesen und in der Coverage erfasst.
+
+Eine erste Snapshot-Hash-Pipeline verwendete in `zsh` versehentlich den
+reservierten Arraynamen `path`; dadurch war der Suchpfad nur in dieser
+Subshell-Schleife überschrieben, `stat`/`shasum` wurden nicht gefunden und der
+resultierende Digest wurde ausdrücklich verworfen. Die Wiederholung mit
+`relative_file` und absoluten Binärpfaden bestand. Ein späterer read-only
+Hashlistenaufruf verwies einmal auf eine nicht gesetzte
+`SECURITY_INVENTORY`-Variable und endete ohne Dateizugriff; der explizite
+Scanpfad korrigierte ihn.
+
+**Review-Fixes vor jeder Messung.** Die vollständige Quellprüfung fand keinen
+aktiven optimierten Ausführungspfad, aber vier zu schließende Vertrags- und
+Integritätslücken. Erstens meldeten falsche Form oder falscher Datentyp trotz
+serieller Policy noch `route=n8/n10`; sie melden nun auch auf Routerebene
+`route=serial`. Zweitens akzeptierte der CLI die erste Messung unter einer
+abweichenden Run-ID; beide Befehle prüfen nun vor DB-Anlage exakt die
+vorregistrierte ID. Drittens sind alle Provenienzdateien jetzt größenbegrenzt,
+per `O_NOFOLLOW` geöffnet und gegen stabile File-Deskriptor- sowie Pfadidentität
+geprüft; Git-Revision und Status werden doppelt gelesen und eine saubere
+Freigabe vergleicht Code-/Spec-Hashes zusätzlich mit den HEAD-Blobs. Viertens
+prüft die History alle inneren Provenienz-Digests und bindet
+`created_at_unix_ns` in jeden Recordhash. Restriktivere CSP-, Frame-, Referrer-
+und Cross-Origin-Header härten zusätzlich die Loopback-UI. Neue Regressionstests
+decken Serialroute, fremde Run-ID, Zeitstempeltampering und inkonsistente innere
+Provenienz ab. Compileall sowie die fokussierte Suite bestanden danach `19/19`
+Tests in `0,135 s` (`0,23 s` außen, `0,13 s` User, `0,08 s` System,
+maximales RSS `35.241.984 B`, keine Swaps).
