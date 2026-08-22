@@ -4377,3 +4377,75 @@ decken Serialroute, fremde Run-ID, Zeitstempeltampering und inkonsistente innere
 Provenienz ab. Compileall sowie die fokussierte Suite bestanden danach `19/19`
 Tests in `0,135 s` (`0,23 s` außen, `0,13 s` User, `0,08 s` System,
 maximales RSS `35.241.984 B`, keine Swaps).
+
+**Versiegelter Security-Abschluss und Vollregression.** Der terminale
+Security-Diff-Scan band den Working-Tree-Snapshot
+`362ae329e5eab1e4cd640bc60e0bc3e95002e4fc4fc8040e543ffc3a26faca9b`,
+prüfte zehn deterministisch inventarisierte Produktionsdateien plus vier
+vollständig gelesene Tests, Spezifikation und Journal-Hunk, normalisierte null
+Kandidaten und wurde mit kompletter Coverage sowie null reportablen Findings
+erfolgreich finalisiert und erneut validiert. Der generierte Report hat SHA-256
+`0c5a558d908d45b9e6561a5caf90e8bc5d929856ba4e441ecda44ccb282d983b`.
+Die vollständige Friday-Suite bestand danach `544/544` Tests in `210,574 s`
+(`210,84 s` außen, `199,23 s` User, `1,47 s` System,
+maximales RSS `76.496.896 B`, keine Swaps).
+
+Xcode-First-Launch blieb grün. ProjectAtlas meldete Runtime `0.4.5-rc1`,
+Schema v18/current, gültigen Publikationsfingerprint und die projektlokale
+MCP-Datei `.projectatlas/projectatlas.mcp.json`; der abschließende Refresh
+indexierte `760/779` Textkandidaten und parste zehn geänderte Symbolquellen ohne
+Timeout. Ein Hashcheck verwendete für die N10-Runtime zunächst versehentlich
+`.friday-data/n10-runtime.sqlite3`; nur dieser nicht vorhandene Pfad erzeugte
+`No such file`. Das deterministische `.friday-data`-Inventar löste die richtige
+Datei `.friday-data/runtime-n10.sqlite3` auf. Danach bestätigten alle fünf
+Bestandsdateien unverändert ihre dokumentierten SHA-256-Werte, einschließlich
+`81286ffa…22cd5` für N10-Runtime.
+
+**Sauberer Router-Commit und Readiness.** Die Implementierung wurde lokal auf
+`main` als Commit `70bc451f764d36e75de0a1c9ac61849717e577e8`
+versiegelt; kein Push erfolgte. Auf genau diesem sauberen Commit autorisierte
+der read-only Routerstatus N8 mit Record `f508fc9e…9a9357` und N10 mit Record
+`47283e73…5e1249`; Cold Load des Statusprozesses betrug außen `7,13 s`, die neue
+Router-DB war weiterhin abwesend.
+
+**Einmaliger CPU-Lauf.** Der exakt vorregistrierte Lauf
+`avo-router-policy-20260822-01` wurde genau einmal ausgeführt und bestand alle
+sechs Gates. Über fünf Warmup- und 21 balancierte Messblöcke mit je 10.000
+Entscheidungen pro Arm ergaben sich direkter Median `12,138946 µs`, MAD
+`0,042467 µs`, Router-Median `13,719000 µs`, MAD `0,044638 µs`, p95
+`13,815279 µs` und gepaarter zusätzlicher Median `1,585208 µs`. Cold Load war
+`7,176239584 s`; beide Evidenzpfade und jede Entscheidung stimmten überein.
+Prozess-Wall war `13,896576666 s`, CPU `13,772746 s`, Peak-RSS `34.471.936 B`,
+Netzteilbetrieb. Der terminale Record ist
+`a1a1c1a08eb22c41e442becfe7d6a6a2feb67c2322596eaf1d9fc0a595b253fd`.
+
+**Einmalige echte Shadow-Validierung.** Erst nach dem bestandenen CPU-Record
+wurde `avo-router-shadow-20260822-01` genau einmal ausgeführt. Exakt acht und
+zehn reale MLX-FP16-`2048²`-RHS-Referenzen empfahlen N8/N10. Operandenzahl neun,
+falsche Form und FP32 meldeten korrekt `route=serial`; die direkte Policy und
+der Router stimmten in allen Fällen überein, der erzwungene Plan blieb immer
+`serial_shadow_only` und `no_matmul_executed=true`. Alle fünf Gates bestanden.
+MLX meldete `33.554.432 B` aktiv, `33.554.436 B` Peak und `8 B` Cache;
+Prozess-Wall `7,232409250 s`, CPU `6,970062 s`, Peak-RSS `51.560.448 B`,
+Netzteilbetrieb. Terminaler Record:
+`19e36e7b32209d62afa5eae54973e2dc326a1bd0efaa0d8b8a73737463384c6c`.
+
+**Persistenz- und UI-Abschluss.** Die Router-Historie enthält genau diese zwei
+Records, ist vollständig replaybar und endet bei Snapshot-Revision
+`b1c0832c0957e5a2d0e88bda1409f8d4b04be036a5edd32a20ea8c2d57b2c758`.
+Datei: Modus `0600`, Größe `36.864 B`, SHA-256
+`128c090de37a79606f35c564d19035f0bcffedcea4b4018fa618cffedc58c6f8`.
+Die echte UI auf `127.0.0.1:8773` lieferte für HTML und API GET `200`, für HEAD
+`200`, wies POST mit `405` ab und sendete CSP, `X-Frame-Options: DENY`,
+`Cross-Origin-Resource-Policy: same-origin`, `Referrer-Policy: no-referrer` und
+`Cache-Control: no-store`. `Ctrl-C` beendete sie mit Exit `0` ohne Traceback;
+der DB-Hash blieb exakt bytegleich. Der Worktree war danach sauber. Es lief
+kein Modell, keine Matmul und kein Custom-Metal-Kernel; nichts wurde installiert
+oder heruntergeladen.
+
+**Promotion.** Der Shadow-Router ist damit `shadow_router_validated`. Das ist
+kein produktives Routing-GO. Gemäß Nutzerfreigabe und Vorregistrierung darf als
+nächster, getrennt zu dokumentierender Schritt genau ein statischer
+Residual-Add-plus-RMSNorm-Metal-Kandidat in einem kontrollierten Worker
+vorregistriert und geprüft werden. Adaptive Suche, neue Modelle, produktive
+Aktivierung und Cross-Device-Claims bleiben ausgeschlossen.

@@ -8,14 +8,20 @@ entwickeln. Der erste Nachweis soll zeigen oder widerlegen, dass ein Agent aus r
 Kandidatenkonfiguration auswählt, numerisch validiert, statistisch korrekt mit der Baseline vergleicht
 und ein Ergebnis wiederverwendbar speichert.
 
-## Aktueller Übergabestand — 19.08.2026
+## Aktueller Übergabestand — 22.08.2026
 
-`JA — Ich gebe den Forschungspivot H0 → H1 → H2 und die Implementierung von Phase 1A/H0 mit SQLite v1, read-only Loopback-Dashboard und festem Worker Option A frei. Keine Downloads, Installationen, Custom-Metal-Kernels oder Modellgewichte.`
+H1-v2 und N10-v2 haben den festen N8-/N10-Batch-Dispatch jeweils formal im
+exakten FP16-`2048²`-Scope bestätigt. Beide begrenzten Runtimes sowie der
+darüberliegende N8/N10-Shadow-Router haben ihre vorregistrierten CPU-, MLX-,
+Correctness-, Persistenz- und UI-Gates bestanden. Der Router ist auf Commit
+`70bc451` gebunden, besitzt keine `execute`-Methode und erzwingt immer
+`serial_shadow_only`; seine DB enthält genau zwei terminale Engineering-Records.
 
-H0 ist offline implementiert als einzelne FP16-`2048²`-Matmul mit SQLite v1, festem
-Worker Option A und read-only Dashboard auf `127.0.0.1`. Das ist kein Modelltest und
-belegt noch keine reale MLX-/GPU-Performance, Correctness, Memory- oder Safety-Gate;
-`mlx-run` bleibt `EXIT_MLX_LOCKED=78`/`not_released`.
+Der Nutzer hat die nächste Runde ausdrücklich freigegeben: notwendige Software
+und ein sicher isolierter Kernelversuch sind erlaubt, neue Modelle bleiben
+verboten. Der aktuelle Stand benötigt keine Installation. Das bestandene
+Shadow-Gate erlaubt ausschließlich die getrennte Vorregistrierung und Prüfung
+eines statischen Custom-Metal-Kandidaten; es ist kein produktives Routing-GO.
 
 ## Reihenfolge für den nächsten kontrollierten Lauf
 
@@ -24,13 +30,21 @@ belegt noch keine reale MLX-/GPU-Performance, Correctness, Memory- oder Safety-G
 2. **Zuerst immer ProjectAtlas** für eine fokussierte Übersicht des Project-Friday-Roots verwenden;
    die verschachtelte Upstream-Codebasis nicht breit öffnen. Falls MCP nicht geladen ist, den
    versionierten CLI-Fallback verwenden und den Grund im Status vermerken.
-3. finalen Gesamttest und danach die Offline-Control-Historie/UI abschließen.
-4. Einen separat angekündigten MLX-H0-Go/No-Go-Lauf für dieselbe einzelne Operation
-   durchführen; bis dahin keine produktiven Rohdaten behaupten.
-5. A/A mit 3 Charakterisierungs- und 3 Bestätigungsprozessen aggregieren.
-6. Erst nach A/A-Pilot und vor jeder Kandidatensichtung die H1-Powerplanung einfrieren.
-7. H2-Modelle und ein begrenzter Custom-MLX-Metal-Kandidat bleiben spätere, separat
-   freizugebende Schritte.
+3. Die finale Shadow-Router-Historie read-only replayen; keine der beiden
+   terminalen Messungen wiederholen.
+4. Vor jeder Kernelkompilierung eine neue Spezifikation für genau einen
+   statischen Fusionskandidaten `residual_add + RMSNorm` einfrieren: feste
+   Gemma-nahe Shape/Precision, starke MLX-Baseline, Toleranzen, Warmup,
+   Wiederholungen, A/A- und A/B-Gates, Speicherbudget und Abbruchregel.
+5. Den Kandidaten ausschließlich in einem kontrollierten Worker mit Timeout,
+   CPU-/Adressraumgrenzen, fester Quellkonstante, Correctness-Oracle und harter
+   Prozessgruppenbeendigung implementieren. Kein freier Quelltext-Input.
+6. Offline- und Negativtests sowie einen sauberen Implementierungscommit
+   abschließen. Erst danach den vorregistrierten A/A-/A/B-Lauf genau einmal
+   ausführen; ein negatives Gate ist terminal und gültig.
+7. Rohwerte, Median, Streuung, Correctness, Speicher, Runtime, DB-Hash und UI-
+   Historie dokumentieren. Eine Promotion darf nur den exakt getesteten Scope
+   betreffen.
 
 ## Architekturentscheidung
 
@@ -55,4 +69,6 @@ bleiben getrennt.
 - keine direkte Neural-Engine-Programmierung;
 - keine Änderung an ProjectAtlas ohne separaten Auftrag;
 - keine Performancebehauptung ohne gespeicherte Messdaten;
+- keine neuen Modelle oder Modellgewichte;
+- keine adaptive Kernel- oder Codesuche, keine GPU-ISA und kein eigener Compiler;
 - keine globale Installation oder Löschung außerhalb des Projekts ohne Rückfrage.
