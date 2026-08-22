@@ -52,23 +52,25 @@ Aktuelle Reihenfolge:
    bestätigte explorativ `N=10` mit `R=0,671573`, 95%-Intervall
    `[0,648895; 0,731190]`; das Ergebnis bleibt Schema-v1-Evidenz mit
    `formal_claim=false`.
-7. **Prospektive N10-Ein-Kandidaten-Studie — V1 terminal, korrigierter V2-Vertrag
-   noch nicht ausgeführt.** N10-v1 wurde auf Commit `c3e582c` versiegelt und
+7. **Prospektive N10-Ein-Kandidaten-Studie — abgeschlossen, Gain bestätigt.**
+   N10-v1 wurde auf Commit `c3e582c` versiegelt und
    stoppte beim ersten C0-Versuch vor jeder Timingmessung am korrekt arbeitenden
    H0-Fixture-Guard: Der neu abgeleitete Fixture-Seed hatte keine registrierte
    Produktionsidentität. Die zwei V1-Records bleiben unverändert; es gibt keinen
    Retry. N10-v2 ist eine neue Study-ID/DB mit registrierter H0-Fixture-
    Identität, frischen Operand-/Session-/Bootstrap-Seeds und eigener
-   Vorgängerprüfung. Echte `2048²`-CPU-Fixture, `22` fokussierte Tests und die
-   vollständige Suite mit `508` Tests und `2.480` Subtests bestanden; vor
-   sauberem V2-Commit und
-   neuem Seal bleibt die V2-GPU-Ausführung geschlossen. Bis zu einem positiven
-   terminalen Entscheid bleibt `N=8` der einzige autorisierte Runtime-Scope.
-8. **AVO-lite nur evidenzabhängig prüfen.** Ein positives N10-Ergebnis darf
-   einen begrenzten N10-Runtime-Prototyp mit fester Allowlist und vollständiger
-   Provenienz eröffnen. Es autorisiert weder freie Codegenerierung noch Custom
-   Metal. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**,
-   weitere Modellrunden und ein breiterer Live-Suchraum bleiben **NO-GO**.
+   Vorgängerprüfung. Nach `508` Tests und `2.480` Subtests wurde V2 auf Commit
+   `959df09` versiegelt. Sechs A/A-Sessions kalibrierten die konservative MDE
+   auf `5 %`; sechs byteidentische A/B-Sessions bestätigten
+   `R=0,874912`, 95%-KI `[0,871768; 0,875614]`. Der 16-Record-Store endet mit
+   `n10_gain_confirmed` und genau einem formalen Claim.
+8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — freigegeben, noch nicht
+   umgesetzt.** Der positive N10-Entscheid erlaubt einen getrennten Prototyp
+   mit fester Allowlist, seriellem Fallback, Circuit Breaker, vollständiger
+   Provenienz und eigener Baseline-/Nachher-Messung. Die bestehende N8-Runtime
+   bleibt unverändert. Freie Codegenerierung und Custom Metal sind nicht
+   autorisiert; Phase 1B bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
+   Modellrunden und ein breiterer Live-Suchraum bleiben **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 

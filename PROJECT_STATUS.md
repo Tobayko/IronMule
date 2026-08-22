@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; N10-v1-Vorregistrierungsstand auf sauberem Commit `c3e582c`, formaler H1-v2-Code auf Commit `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; N10-v2 auf sauberem Commit `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -15,7 +15,7 @@
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
-| N10-v1 / N10-v2 formal | V1 auf `c3e582c` versiegelt, dann C0 vor jeder Timingmessung terminal am nicht registrierten Fixture-Seed gestoppt; V2 als neue Study-ID/DB mit registrierter Fixture-Identität implementiert und offline vollständig grün | V1 wird nicht wiederholt; V2 darf erst nach eigenem sauberem Commit und Seal laufen; bis zu einem positiven terminalen Entscheid keine N10-Runtime |
+| N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `4` native Ereignisse: drei gültige Berichte mit Rohmessungen sowie einen
@@ -40,13 +40,14 @@ H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
 Aktueller Entscheid: Der **begrenzte N8-Runtime-Prototyp** hat seine Gates
-bestanden; die genau eine H2-Gemma-Runde ist abgeschlossen. N10-v1 ist ein
+bestanden; die genau eine H2-Gemma-Runde ist abgeschlossen. N10-v1 bleibt ein
 gültiger terminaler Engineering-Negativlauf ohne Timingdaten und wird nicht
-wiederholt. Der separate korrigierte N10-v2-Vertrag übernimmt eine bereits
-registrierte H0-Fixture-Identität, verwendet für Operanden, Sessions und
-Bootstrap frische Seeds und bindet den unveränderten V1-Fehlerzustand. Gemma ist
-aus der Bestätigung ausgeschlossen. Bis zu einem positiven terminalen
-V2-Entscheid wird `N=10` nicht in die auf `N=8` versiegelte Runtime übernommen.
+wiederholt. Der separate korrigierte N10-v2-Vertrag band diesen V1-Endzustand,
+lief ohne Gemma oder adaptive Auswahl vollständig durch und bestätigte den
+festen N10-Dispatch-Plan formal. Damit ist ausschließlich ein begrenzter,
+allowlist-basierter N10-Runtime-Prototyp als nächster Engineering-Schritt
+freigegeben; die bestehende N8-Runtime bleibt bis zu dessen eigenen Gates
+unverändert.
 Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
 Modellrunden und breiterer Live-Suchraum bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
@@ -68,8 +69,27 @@ abschließenden Dateihash- und Mutationsgrenzen-Hardening wiederholte
 vollständige Suite bestand mit `508` Tests und `2.480` Subtests in `207,82 s`.
 V2-Spec-Fingerprint:
 `66a01028b5c7ba6cd7b05faef1f3100413d793c6b4d7e3982bea671fb9bba6cd`.
-`.friday-data/n10-v2.sqlite3` existiert noch nicht; während V2-Implementierung
-und Offlineprüfung liefen weder GPU-Timings noch ein Modell.
+Auf dem sauberen Commit `959df09b9d197edbd0a0984eda25092997b4ab23` band der
+Seal die Provenienz `17d0dd505e349a4bbb7ffde3c291a3a44226d0fce79c235ce2ce890289e0c9ef`.
+Die sechs A/A-Sessions ergaben `R=0,999586`, 95%-KI
+`[0,998764; 1,000443]`; rohe MDE `0,0857 %`, konservativ eingefroren auf `5 %`.
+Die sechs A/B-Sessions waren byteidentisch und ergaben insgesamt
+`R=0,874912`, 95%-KI `[0,871768; 0,875614]`, entsprechend `12,509 %` weniger
+Zeit. Charakterisierung (`R=0,875216`) und Validierung (`R=0,874608`)
+bestanden das Gain-Gate getrennt. Der terminale Record `47283e73…e1249`
+trägt als einziger `formal_claim=true` und erlaubt
+`permit_bounded_n10_runtime_prototype`.
+
+`.friday-data/n10-v2.sqlite3` enthält 16 vollständig replaybare Records, Modus
+`0600`, Größe `180.224 B`, SHA-256
+`54e9c57ca6b76fa671b94f748b7ee471575b7dd7445bad00ae3cab38f691fc4f`,
+Snapshot-Revision
+`9c9a94a8f799f2eb29b9e03c4e1b6e681aa945199753158cf8fc8c317b06090d`.
+Die UI auf Port 8771 lieferte GET/HEAD `200` und wies POST mit `405` ab; der
+vollständige Replay kostet derzeit `3,42–3,44 s` je Snapshot. Ein manueller
+`Ctrl-C`-Stop beendet den Server, erzeugt aber noch einen sichtbaren
+`KeyboardInterrupt`/Exit `1`. Während N10-v2 lief kein Modell und es gab weder
+Download noch Installation.
 
 ## Formales H1-v2-Ergebnis und Runtime-Pre-Live-Stand
 
