@@ -4449,3 +4449,190 @@ nächster, getrennt zu dokumentierender Schritt genau ein statischer
 Residual-Add-plus-RMSNorm-Metal-Kandidat in einem kontrollierten Worker
 vorregistriert und geprüft werden. Adaptive Suche, neue Modelle, produktive
 Aktivierung und Cross-Device-Claims bleiben ausgeschlossen.
+
+### 2026-08-22 — Phase 1B: statischer Residual-Add+RMSNorm-Kandidat vorregistriert
+
+**Atlas-first und Freigabegrenze.** Vor Phase 1B wurde erneut ein fokussierter
+ProjectAtlas-Session-Brief abgerufen und die erste empfohlene Datei
+`tests/test_worker.py` über Atlas zusammengefasst. Die relevanten
+Architekturslices bestätigten die bereits dokumentierte Reihenfolge: genau eine
+reale Tensoroperation, starke MLX-Baselines, statischer Templatekandidat und
+opferbarer Worker. Der Nutzer hat den nächsten isolierten Kernelversuch und die
+Nutzung vorhandener CPU/GPU ausdrücklich freigegeben; neue Modelle bleiben
+ausgeschlossen. Es war keine Installation und kein Download erforderlich.
+
+**Read-only API-Prüfung und korrigierter Fehlversuch.** Ein erster Docstring-
+Check verwendete versehentlich `/opt/homebrew/bin/python3` statt des lexikalischen
+Projektlaunchers und endete vor jeder MLX-Aktion mit
+`ModuleNotFoundError: No module named 'mlx'`. Die Wiederholung mit
+`.venv/bin/python` bestätigte MLX `0.32.0`, `mx.fast.rms_norm`, `mx.compile`,
+`mx.fast.metal_kernel`, die Memory-/Cache-/Peak-APIs sowie
+`mx.device_info()`. Das Zielgerät meldete Apple M1 Max, Architektur
+`applegpu_g13s`, `34.359.738.368 B` Speicher und einen empfohlenen maximalen
+Working Set von `26.800.603.136 B`. Dieser Schritt konstruierte oder kompilierte
+keinen Kernel und führte keine Timingoperation aus.
+
+**Formale und lokale Quellenprüfung.** Die offizielle MLX-Dokumentation
+bestätigte Body-only-Custom-Kernel, generierte Signaturen aus Input-/Outputdtype,
+Metal-Attributen, `dispatchThreads`-Grid/Threadgroup und Safe-Math als Default.
+Die spezialisierte `mx.fast.rms_norm`-API wurde als zwingende starke Baseline
+gebunden. Für die lokal betroffene MLX-Version 0.32.0 ist öffentlich ein Fehler
+dokumentiert, bei dem verschiedene Quellen mit gleichem Kernelnamen innerhalb
+einer Eval-Batch stale Code ausführen können; der offizielle Workaround ist ein
+Quellhashsuffix. Daher enthält der Friday-Kernelname zwingend die ersten zwölf
+Hexzeichen seines vollständigen SHA-256 und der Worker darf den Kernel nur
+einmal konstruieren.
+
+**Eingefrorener Vertrag vor Compilation.** Die neue Vorregistrierung
+`docs/PHASE1B_RESIDUAL_RMSNORM_SPEC.md` bindet exakt `(1024,2560)` FP16,
+`epsilon=1e-6`, eine 256er-Threadgroup, Safe-Math, FP32-Reduktion, FP16-
+Materialisierung des Residuals, sechs volle Correctnessfixtures, unabhängige
+FP64-Hard-Caps, vier starke MLX-Baselines, drei frische Prozesse je
+Charakterisierung/A/A/A/B, Warmup, 31 gepaarte Bestätigungsblöcke,
+hierarchisches 10.000er-Bootstrap, 5-%-Mindestgewinn, Speichergrenzen und harte
+Abbruchregeln. Qualification und Benchmark besitzen verschiedene once-only-
+Run-IDs; ein negatives Gate ist terminal und darf nicht durch Retry oder
+Schwellenänderung umgedeutet werden.
+
+Die einzige statische Quelle liegt als reine Konstante in
+`friday_phase1b/kernel_source.py`. Ihr SHA-256 lautet
+`33b626c16c79819d6995d6bb78745eb1fd81face648b59f505a924d3125da6f6`,
+der gebundene Name
+`friday_rrms_f16_r1024_h2560_33b626c16c79`. Ein read-only Python-Check
+bestätigte Quelle, Geometrie, Hash und Namen. Bis zu diesem Journalpunkt wurde
+der Kernel weder mit MLX konstruiert noch kompiliert oder auf der GPU ausgeführt.
+
+**Darwin-Limit-Preflight vor finaler Versiegelung.** Zwei kurzlebige Prozesse
+versuchten ohne Kernelkonstruktion, `RLIMIT_AS=24 GiB` beziehungsweise
+`RLIMIT_DATA=4 GiB` zu setzen. Darwin/Python meldete in beiden Fällen sowohl für
+Hard- als auch Soft-Limit `ValueError: current limit exceeds maximum limit`;
+dies entspricht der bereits in der Phase-1A-Architektur dokumentierten
+Plattformgrenze. `RLIMIT_CPU=90 s`, `RLIMIT_CORE=0`, `RLIMIT_FSIZE=16 MiB` und
+`RLIMIT_NOFILE=64` ließen sich dagegen in einem separaten Prozess setzen. Die
+Spezifikation wurde deshalb noch vor jeder Compilation wahrheitsgemäß
+versiegelt: kein behauptetes Adressraumgate, stattdessen feste kleine Shapes,
+512-MiB-MLX-Guideline, 2-GiB-Parent-RSS-Watchdog sowie CPU-, Datei-, FD- und
+Wall-Clock-Prozessgruppenlimits. Eine harte Unified-Memory- oder native
+GPU-Sandboxgarantie bleibt ausdrücklich NO-GO.
+
+**Geschlossener Offline-Unterbau.** Danach wurden ausschließlich statischer
+Code und Fakes implementiert: vier feste MLX-Baselineadapter, die einzige
+quellhashgebundene Metal-Quelle, deterministische PCG64-Fixtures mit FP64-
+Oracle, balancierte Blockreihenfolgen, hierarchische Statistik, ein fester
+Worker-Entrypoint, Prozessgruppen-Watchdog mit begrenzten Streams und
+RSS-Polling, strikt validiertes kanonisches JSON, unveränderliche
+Git-/Environment-/Hardwareprovenienz, append-only SQLite mit Hashkette und eine
+read-only Loopback-UI. CLI und HTTP akzeptieren keinen Datenbank-, Source-,
+Tensor-, Command- oder Compilerpfad. Qualification und Benchmark sind
+unterschiedliche once-only-IDs; auch die Storage-Schicht verweigert dieselbe ID
+unter einem anderen Recordtyp.
+
+Der erste Syntaxwrapper setzte nach erfolgreichem `compileall` versehentlich die
+in zsh read-only reservierte Variable `status` und endete dort mit
+`read-only variable: status`. Die Wiederholung mit `task_exit` bestätigte Exit
+`0`; Metal war an keinem dieser Checks beteiligt.
+
+**Früh gefundener Layout-Contractfehler.** Ein realer, nicht getimter
+MLX-Array-API-Check zeigte, dass MLX 0.32.0 kein öffentliches
+`array.strides`-Attribut anbietet; der erste Prüflauf endete deshalb mit
+`AttributeError`, bevor die nachfolgende Host-Fixture erzeugt wurde. Der Worker
+behauptet nun keine nicht belegbare MLX-Stride-Introspektion: Er akzeptiert nur
+intern erzeugte C-kontiguierliche NumPy-Fixtures, prüft deren Flags vor der
+Konvertierung und setzt beim geschlossenen Kerneladapter zusätzlich
+`ensure_row_contiguous=True`. Die Vorregistrierung wurde vor jeder
+Kernelcompilation entsprechend präzisiert. Eine Wiederholung bestätigte
+Shape `(2,3)`, FP16 und das fehlende öffentliche Stridefeld sowie für die volle
+Cancellation-Fixture `(1024,2560)` vier C-kontiguierliche Arrays, bitgenau
+positiven Null-Oracle und den reproduzierbaren Digest
+`92f76cb32c546a26d1c7a67ee6fa1717b617237bdf28f803083d1302381cc440`
+in `84.021.459 ns` für zwei Erzeugungen.
+
+**Offline-Verifikation vor Security-Review.** Compileall sowie `17/17`
+fokussierte Tests für Quellhash/Geometrie, geschlossene Kernelargumente,
+Statistik, vollständige Host-Fixture, Supervisorprotokoll, once-only CLI,
+SQLite-Integrität/Tampererkennung und read-only Dashboard bestanden in
+`0,479 s` (`0,61 s` außen, `0,54 s` User, `0,05 s` System,
+maximales RSS `153.452.544 B`, Peak Memory Footprint `137.953.832 B`, keine
+Swaps). Der reale CLI-Status meldete null Records; `qualify` ohne `--execute`
+endete mit Exit `78`, und die Phase-1B-DB blieb vor und nach beiden Aufrufen
+abwesend. Bis hier wurde kein Custom-Metal-Kernel konstruiert, kompiliert oder
+ausgeführt und keine Performanceprobe gestartet.
+
+**Security-Härtung vor dem ersten GPU-Lauf.** Die Review des geschlossenen
+Unterbaus fand zwei reale Kandidaten, die vor dem finalen Snapshot behoben
+wurden. Erstens erbte die Git-Provenienz noch Umgebungsvariablen und lokale
+Git-Konfiguration; damit hätten insbesondere `GIT_DIR` oder ein konfigurierter
+FSMonitor die Identitätsprüfung beeinflussen beziehungsweise einen Prozess
+starten können. Git läuft nun mit festem Minimalenvironment, ohne System- oder
+Globalconfig, Hooks, FSMonitor, Untracked-Cache, externen Diff, Pager und
+Prompting. Zweitens prüfte die Loopback-UI den HTTP-Host noch nicht und war
+damit prinzipiell für DNS-Rebinding erreichbar. Sie akzeptiert nun ausschließlich
+`127.0.0.1:<port>` oder `localhost:<port>`. Ergänzende Tests prüfen beide
+Grenzen.
+
+Zusätzlich bindet der Supervisor jeden registrierten Worker an die vollständige
+kanonische Provenienz. Derselbe saubere Git-/Dateisnapshot wird unmittelbar vor
+dem Spawn und nach dem Prozessende erneut geprüft; Drift invalidiert das
+Ergebnis. Ein leerer temporärer `PYTHONPYCACHEPREFIX` verhindert, dass ignorierte
+Workspace-Bytecodes als Importquelle dienen. Nach diesen Änderungen bestanden
+Compileall und `22/22` fokussierte Tests in `0,486 s`. Ein echter, weiterhin
+nicht ausführender Provenienzcheck bestätigte MLX `0.32.0`, Source-SHA
+`33b626c…da6f6` und Code-Snapshot-SHA
+`6bcab3f6c1711e3ca98445f8381bcf603f9ba68fd5b433f73cf70745708fd0d3`;
+der Worktree war dabei erwartungsgemäß noch dirty.
+
+**Versiegelter Phase-1B-Security-Diff.** Der vollständige terminale Scan prüfte
+alle 16 deterministisch inventarisierten Produktionsdateien über acht
+Sicherheitsflächen. Snapshot:
+`codex-security-snapshot/v1:sha256:2e20f9d59bce00e8eec4ee25ef2f0751787cacb5af3ee8aaa6e3f36c2983ec9c`.
+Coverage ist vollständig, Deferred Work `0`, reportable Findings `0`; beide
+zuvor erkannten Kandidaten sind im versiegelten Snapshot bereits geschlossen.
+Der generierte Report liegt unter
+`/private/tmp/codex-security-scans/Project_Friday/4db9066_worktree_20260822T094428Z/report.md`
+und hat SHA-256
+`2abe7b3dfea33b80ce199ebc9d2b636299f8b05fbff918084835a1aee68e57e4`.
+
+Der erste Finalizeraufruf verwendete den auf macOS symbolischen Pfad `/tmp`
+und verweigerte korrekt mit
+`scan directory: expected a canonical non-symlink directory`. Ursache war
+`/tmp -> /private/tmp`, nicht ein Scan- oder Quellfehler. Die Fortsetzung prüfte
+die vorhandenen unversiegelten Artefakte bytegenau und finalisierte einmalig
+über den kanonischen `/private/tmp/...`-Pfad mit Exit `0`. ProjectAtlas wurde
+vor der Fortsetzung inkrementell aktualisiert: 27 geänderte Pfade, 784/803
+Textkandidaten und 25 geänderte Symbolquellen ohne Timeout. Bis zum versiegelten
+Security-Abschluss wurde weiterhin kein Custom-Metal-Kernel konstruiert,
+kompiliert oder ausgeführt.
+
+**Vollregression vor Commit.** Auf dem security-geprüften Working-Tree-Snapshot
+bestand die vollständige Friday-Suite `566/566` Tests in `212,552 s`
+(`212,85 s` außen, `200,95 s` User, `1,53 s` System,
+maximales RSS `186.433.536 B`, Peak Memory Footprint `161.055.344 B`, keine
+Swaps). Sämtliche ausführbaren Studienpfade blieben ohne `--execute` gesperrt;
+insbesondere wurde noch kein Phase-1B-Live-Record erzeugt.
+
+**Readiness vor Versiegelung.** `xcodebuild -checkFirstLaunchStatus` endete mit
+Exit `0`; Phase-1B-Status meldete null Records und die feste DB war abwesend.
+Source-Hash und Kernelname blieben unverändert. Der erste Runtime-CLI-Check
+nahm irrtümlich `.projectatlas/bin/projectatlas` an und meldete
+`no such file or directory`; dieser Projektpfad existiert nicht. Der bereits
+von Atlas gemeldete kanonische Launcher
+`/Users/tobiasburandt/.local/bin/projectatlas` bestätigte anschließend Runtime
+`0.4.5-rc1`, Major `3`, MCP/SQLite/TOON sowie die erwarteten Fähigkeiten; die
+projektlokale MCP-JSON-Datei ließ sich fehlerfrei parsen. `git diff --check`
+blieb grün.
+
+**Finaler Commit-Snapshot.** Das erste vollständige Staging deckte in sieben
+neu angelegten Dateien jeweils eine überflüssige Leerzeile am Dateiende auf.
+Sie wurde entfernt; `git diff --cached --check` und danach erneut `22/22`
+fokussierte Tests (`0,483 s`) bestanden. Weil davon fünf Produktionsdateien
+betroffen waren, wurde der vorherige Security-Abschluss trotz ausschließlich
+formaler Byteänderungen nicht als Commit-Freigabe wiederverwendet. Ein zweiter
+kanonischer Security-Diff band exakt den finalen Produktionssnapshot
+`codex-security-snapshot/v1:sha256:232c04fe0b4cfbb896120961d91f779b582e04c71b54cbad6bedcaca4c88fa26`,
+verglich die fünf Byteänderungen mit der vollständigen Vorprüfung und wurde mit
+kompletter Coverage, acht geprüften Flächen, null Deferred Work und null
+Findings finalisiert. Finaler Report:
+`/private/tmp/codex-security-scans/Project_Friday/4db9066_worktree_20260822T095956Z/report.md`,
+SHA-256 `e38a8091d8152810e2de2f628f0b165a32d4d1ce439ab7a65a878ab1033eba50`.
+Die erste versiegelte Fassung bleibt als Auditspur erhalten, ist aber nicht die
+Freigabegrundlage des Commits.
