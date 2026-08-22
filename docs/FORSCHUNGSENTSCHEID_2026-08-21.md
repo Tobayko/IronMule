@@ -6,7 +6,7 @@
 | --- | --- | --- | --- |
 | Begrenzte evidenzgebundene Runtime | **GO im exakten H1-Scope** | formales H1-v2-Gain-Gate sowie CPU-Overhead- und MLX/GPU-Runtime-Gates bestanden; Korrektheit byte-identisch | jede Evidenz-, Code-, Spec-, Environment-, Hardware- oder Workload-Abweichung fällt weiterhin seriell zurück |
 | Geschlossener H2-Modellvorschlag | **eine Runde abgeschlossen; kein weiterer Lauf** | Gemma schlug `3,10,16` vor; Harness bestätigte explorativ `N=10`, aber Kandidatenselektion und Ergebnis sind Schema v1 mit `formal_claim=false` | vor weiterer Runde oder Runtime-Erweiterung neue prospektive Studie und explizite Architekturfreigabe |
-| Prospektive N10-Bestätigung | **V1 terminal; V2 GO erst nach eigenem sauberem Commit und Seal** | V1 stoppte vor Timing am Fixture-Identitätsguard; V2 behebt ausschließlich diese Vorabgrenze mit registrierter Fixture und neuer Study-ID/DB | V1 nicht wiederholen; positiver terminaler V2-Entscheid darf nur einen begrenzten N10-Runtime-Prototyp eröffnen |
+| Prospektive N10-Bestätigung | **V1 terminal; V2-Gain formal bestätigt** | V1 stoppte vor Timing; V2 lief auf sauberem Commit mit registrierter Fixture, frischen Seeds, sechs A/A- und sechs A/B-Sessions bis `n10_gain_confirmed` | genau ein begrenzter N10-Runtime-Prototyp mit fester Allowlist und eigenen Engineering-Gates; keine direkte Produktivänderung |
 | Phase 1B / Custom MLX-Metal | **NO-GO** | formales H1 bestätigt nur Dispatch-Amortisation; reale Roofline deutet weiter auf Speicherlimit, und eine separate Custom-Kernel-Sicherheits-/Architekturfreigabe fehlt | freigegebene isolierte Worker-/Rollback-Architektur, eigener prospektiver Vertrag und neuer expliziter Nutzerentscheid |
 | Cross-Device | **NO-CLAIM / derzeit blockiert** | es existiert Evidenz von genau einem M1 Max; ein zweites Zielgerät ist nicht verfügbar | mindestens ein unabhängiges Gerät, identischer versiegelter Workload und vollständige Provenienz |
 | breiterer Live-Suchraum | **NO-GO** | mehr Kandidaten würden den explorativen Charakter und Multiple-Testing-/Winner's-Curse-Risiken vergrößern | neue H1-Vorregistrierung mit Familien/Splits, Kandidatenbudget, Powerplanung und frischen IDs |
@@ -46,30 +46,34 @@
    Bestätigungsreplikate ergaben `R=0,671573`, 95%-Intervall
    `[0,648895; 0,731190]`. Der persistierte Bericht enthält Rohdaten, bleibt aber
    wegen Modellselektion und Schema v1 ausdrücklich `formal_claim=false`.
+9. N10-v2 wurde anschließend prospektiv auf Commit `959df09` geschlossen.
+   Sechs A/A-Sessions ergaben `R=0,999586`, 95%-Intervall
+   `[0,998764; 1,000443]`; sechs frische A/B-Sessions bestätigten
+   byteidentisch `R=0,874912`, 95%-Intervall `[0,871768; 0,875614]`.
+   Charakterisierung und Validierung bestanden die 5%-Gewinngrenze getrennt.
+   Der terminale Record `47283e73…e1249` ist der einzige formale Claim.
 
 ## Freigegebener nächster wissenschaftlicher Schritt
 
-Nicht Phase 1B, keine zweite Modellrunde und keine direkte Runtime-Erweiterung.
-Freigegeben ist die prospektive Ein-Kandidaten-Studie für `N=10`. N10-v1
-stoppte terminal vor den ersten Timingdaten. Der eigenständige Nachfolger
-N10-v2 ist offline implementiert, aber noch nicht committed oder versiegelt:
+Nicht Phase 1B, keine zweite Modellrunde und keine direkte Änderung der
+bestehenden Runtime. Die N10-Ein-Kandidaten-Studie ist positiv terminal.
+Freigegeben ist jetzt genau ein getrennter N10-Runtime-/AVO-lite-Prototyp:
 
-- `N=10` wird als einziger aus Vorwissen ausgewählter Kandidat vor frischen Daten
-  eingefroren; Gemma nimmt an dieser Bestätigung nicht mehr teil.
-- Eine neue Study-ID trennt Modellselektion, Charakterisierung und Validierung;
-  MDE, Splits, Seeds, Armreihenfolge, Cooldowns, Budgets und terminale Fehler
-  werden vorab versiegelt.
-- Frische A/A- und A/B-Daten müssen Korrektheit und Effekt unabhängig von der
-  hier beobachteten Winner's-Curse-/Multiple-Testing-Auswahl bestätigen.
-- Erst ein positiver terminaler Entscheid dürfte eine **eigene** N=10-Policy
-  autorisieren. Die bestehende N=8-Runtime bleibt unverändert und fällt für
-  N=10 weiterhin seriell zurück.
+- feste Allowlist für exakt FP16-`2048²`, zehn Matmuls und den bestätigten
+  Batch-Dispatch-Plan;
+- exakte Bindung an den 16-Record-N10-v2-Store und dessen terminalen Claim;
+- serieller Fallback, Circuit Breaker, read-only Historie und eigene
+  Baseline-/Nachher-Gates für Policy-Overhead, GPU-Effekt und Korrektheit;
+- kein freier Kandidatensuchraum, keine weitere Modellaktion, keine
+  Codegenerierung und kein Custom Metal.
+
+Die bestehende N8-Runtime bleibt unverändert, bis der getrennte N10-Prototyp
+seine eigenen Engineering-Gates bestanden hat.
 
 Die explizite Nutzerfreigabe für Vertrag, lokale CPU-/GPU-Tests und Ausführung
-liegt seit 22.08.2026 vor. Vor dem sauberen Implementierungscommit und dem
-persistierten Präregistrierungssiegel bleibt der Live-Pfad geschlossen. Weitere
-Modellrunden, Custom Metal, freie Codegenerierung und ein breiterer Suchraum
-bleiben NO-GO.
+liegt seit 22.08.2026 vor. Commit, Seal und terminale Bestätigung sind
+abgeschlossen. Weitere Modellrunden, Custom Metal, freie Codegenerierung und
+ein breiterer Suchraum bleiben NO-GO.
 
 ## Umsetzungsstand des Audits
 
@@ -92,9 +96,11 @@ H0-Produktionsvertrag nicht registriert. Die V1-DB bleibt mit zwei Records
 unverändert. N10-v2 verwendet eine bereits registrierte Fixture-Identität,
 frische übrige Seeds sowie eine read-only Bindung an den exakten V1-Endzustand.
 Der echte `2048²`-CPU-Fixture-Replay, `22` fokussierte Tests und die vollständige
-Suite mit `508` Tests und `2.480` Subtests bestanden. Eine V2-Datenbank oder
-V2-GPU-Timingmessung
-existiert zu diesem Stand noch nicht.
+Suite mit `508` Tests und `2.480` Subtests bestanden. V2 lief danach auf Commit
+`959df09` bis zum positiven terminalen Entscheid durch: `R=0,874912`, 95%-KI
+`[0,871768; 0,875614]`, byteidentisch, formaler Claim genau einmal. Der
+16-Record-Store hat SHA-256 `54e9c57c…fc4f`; die N8-Runtime wurde dabei nicht
+verändert.
 
 Die neuen Messungen sind durch Schema v1 ausdrücklich `formal_claim=false`. Der
 Dispatch-Befund liegt explorativ jenseits der 5%-Schwelle; die neue Roofline-

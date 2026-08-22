@@ -3979,3 +3979,83 @@ danach ein eigener V2-Präregistrierungsrecord und erst dann frische A/A-Daten.
 Der abschließende Refresh nach Dokumentation und Dateihash-Hardening blieb bei
 748 Kandidaten, 729 indexierten Textdateien und 591 Symbolkandidaten; 7 Dateien
 wurden neu geparst, 584 blieben unverändert, kein Timeout.
+
+### 2026-08-22 — N10-v2 formal abgeschlossen; begrenzter Runtime-Pfad geöffnet
+
+**Clean Commit und Seal.** Der vollständig geprüfte V2-Stand wurde lokal auf
+`main` als Commit `959df09b9d197edbd0a0984eda25092997b4ab23`
+(`feat: preregister corrected N10 v2 study`) gespeichert; es erfolgte kein
+Push. Root-Worktree und Root-Diff waren danach leer, Xcode-First-Launch bestand,
+das Gerät lief am Netzteil und MLX war `0.32.0` auf
+`MacBookPro18,2`/Apple M1 Max/`arm64`. Die saubere Provenienz lautet
+`17d0dd505e349a4bbb7ffde3c291a3a44226d0fce79c235ce2ce890289e0c9ef`.
+Der V2-Seal schrieb genau den Präregistrierungsrecord
+`343bbbd14f3551a8c56a4fb16103db7490402a3c2d1361a636bb9c901f556f94`;
+die damalige Snapshot-Revision war
+`b852b3b347be3b918defaca5c8ace5cd84175ee4abf90f9ee8a3f201f5eddbad`.
+
+**A/A-Kalibrierung.** C0, V0, C1, V1, C2 und V2 liefen in sechs getrennten
+Prozessen mit fünf verifizierten 20-Sekunden-Cooldowns. Der Stage-Lauf benötigte
+`114,26 s` außen; alle sechs Ausgaben waren byteidentisch, alle Budgets
+bestanden. Die einzelnen B/A-Verhältnisse lagen zwischen `0,998708` und
+`1,000060`. Aggregiert ergaben sich `R=0,999586`, 95%-KI
+`[0,998764; 1,000443]`, rohe MDE `0,0857 %`; der konservative Floor blieb
+`5 %`. Gebuchte GPU-Arbeit: `7,556211 s`, Session-Wall zusammen `10,567263 s`,
+maximales Session-RSS `590.168.064 B`, MLX-Peak `511.705.088 B`. Die
+Kalibrierungszusammenfassung ist Record `3cd3e93b…e2b28b`. Nach mehr als
+38 Sekunden Abstand schrieb der separate Confirmation-Seal Record
+`d6402bb9…5404487` mit
+`confirmation_seal_sha256=7ad8e46102013f238663486eb14b125c405a64ab46798449b02dac97881a7813`.
+
+**A/B-Bestätigung und Entscheid.** Die sechs Confirmation-Sessions liefen
+ebenfalls getrennt und ohne Retry oder Fehlerrecord; Stage-Wall einschließlich
+Cooldowns und Bootstrap `139,80 s`. Alle Resultate waren byteidentisch bei
+`max_abs_error=0`, alle Budgets bestanden. Die Ratios lagen zwischen
+`0,870074` und `0,875557`; gebuchte GPU-Arbeit `6,980186 s`, Session-Wall
+zusammen `9,912920 s`, maximales Session-RSS `590.725.120 B`, MLX-Peak
+`511.705.088 B`, keine Swaps. Der terminale Entscheid lautet:
+
+- gesamt `R=0,874912`, 95%-KI `[0,871768; 0,875614]`, Effekt `-12,509 %`;
+- Charakterisierung `R=0,875216`, 95%-KI `[0,869739; 0,876217]`;
+- Validierung `R=0,874608`, 95%-KI `[0,871695; 0,875607]`;
+- alle Gain-Splits `true`, alle Ausgaben byteidentisch, Status
+  `n10_gain_confirmed`;
+- Record `47283e73eb6eefa01dc0f2e1760a2a2d350ca51019b8ddfa3a297d4b695e1249`
+  trägt als einziger `formal_claim=true` und erlaubt nur
+  `permit_bounded_n10_runtime_prototype`.
+
+**Terminaler Store und UI.** `.friday-data/n10-v2.sqlite3` enthält genau 16
+vollständig replaybare Records, Modus `0600`, `180.224 B`, SHA-256
+`54e9c57ca6b76fa671b94f748b7ee471575b7dd7445bad00ae3cab38f691fc4f`,
+Snapshot-Revision
+`9c9a94a8f799f2eb29b9e03c4e1b6e681aa945199753158cf8fc8c317b06090d`.
+Ein kompletter read-only Replay ließ den Hash bytegleich. Die echte UI auf
+`127.0.0.1:8771` lieferte für Root-GET und Snapshot-GET/HEAD `200` und wies
+POST mit `405` ab; danach war der DB-Hash weiterhin unverändert. Weil jeder
+Request alle Records und drei 10.000-Draw-Bootstraps validiert, benötigte ein
+sequenzieller Snapshot `3,42–3,44 s`. Zwei parallele Requests überschritten
+deshalb zunächst das zu knappe 5-Sekunden-Clientlimit. `Ctrl-C` schloss den
+Server und Port zuverlässig, erzeugte aber einen sichtbaren
+`KeyboardInterrupt`/Exit `1`; beides ist für eine Nachfolge-UI dokumentiert und
+wird am versiegelten Studiencode nicht nachträglich geändert.
+
+**Integrität und Fehlerprotokoll.** V1, H1, Runtime und Research blieben
+bytegleich bei `e0b5f4af…a3f0d5`, `141f010b…e78a4c4`,
+`ad4f0ef7…6473d82` und `70cbe45b…a0a6d91`; der Root-Worktree blieb während
+der formalen Ausführung sauber. Zwei erste Curl-Aufrufe erreichten die UI nicht,
+weil das ungequotete `?` im zsh-Argument als Glob behandelt wurde; die korrekt
+quotierten Wiederholungen lieferten die oben genannten Ergebnisse. Die danach
+parallel angesetzten 5-Sekunden-Requests liefen in das Clienttimeout, während
+der Server den vollständigen Replay korrekt weiterbearbeitete; die sequenzielle
+Wiederholung mit 20-Sekunden-Limit bestand. Es gab keine Installation, keinen
+Download, keine Modellaktion, keine Custom-Metal-Ausführung und keine Änderung
+der bestehenden N8-Runtime. Der ProjectAtlas-Refresh des Ergebnisstands
+bestand mit 748 Kandidaten, 729 indexierten Textdateien und 591
+Symbolkandidaten; 5 Dateien wurden neu geparst, 586 blieben unverändert, kein
+Timeout.
+
+**Nächster zulässiger Schritt.** Der positive formale Claim öffnet genau einen
+getrennten, allowlist-basierten N10-Runtime-/AVO-lite-Prototyp mit seriellem
+Fallback, Circuit Breaker, eigener Historie und reproduzierbaren CPU-/GPU-Gates.
+Freie Codegenerierung, Custom Metal, weitere Modellrunden, Cross-Device-Claims
+und ein breiterer Suchraum bleiben geschlossen.

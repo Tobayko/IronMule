@@ -205,3 +205,38 @@ self-check
 
 Vor dem persistierten Seal ist keine neue N10-Messung zulässig. Nach einem
 terminalen Fehler oder Entscheid sind keine weiteren Records zulässig.
+
+## 9. Nachtrag nach terminalem Abschluss
+
+Dieser Abschnitt entstand **nach** dem formalen Lauf und ist nicht Teil der
+versiegelten Provenienz. Die exakt ausgeführte Fassung dieses Dokuments liegt im
+Root-Commit `959df09b9d197edbd0a0984eda25092997b4ab23`; der dort berechnete
+Provenienz-Hash lautet
+`17d0dd505e349a4bbb7ffde3c291a3a44226d0fce79c235ce2ce890289e0c9ef`.
+
+Die autorisierte Reihenfolge wurde vollständig eingehalten. Der
+Präregistrierungsrecord lautet `343bbbd1…f556f94`. Die sechs A/A-Sessions
+ergaben aggregiert `R=0,999586`, 95%-KI `[0,998764; 1,000443]`; die rohe MDE
+war `0,0857 %`, der vorregistrierte Floor blieb `5 %`. Der Confirmation-Seal
+lautet `d6402bb9…5404487` und bindet
+`confirmation_seal_sha256=7ad8e461…a7813`.
+
+Alle sechs A/B-Sessions waren byteidentisch und bestanden ihre Budgets. Der
+terminale Entscheid ergab insgesamt `R=0,874912`, 95%-KI
+`[0,871768; 0,875614]`, entsprechend `12,509 %` weniger Zeit. Die getrennten
+Splits bestanden ebenfalls: Charakterisierung `R=0,875216`, 95%-KI
+`[0,869739; 0,876217]`; Validierung `R=0,874608`, 95%-KI
+`[0,871695; 0,875607]`. Record `47283e73…e1249` trägt als einziger
+`formal_claim=true`, Status `n10_gain_confirmed`, und erlaubt ausschließlich
+`permit_bounded_n10_runtime_prototype`.
+
+Der terminale Store enthält 16 replaybare Records, Modus `0600`, Größe
+`180.224 B`, SHA-256
+`54e9c57ca6b76fa671b94f748b7ee471575b7dd7445bad00ae3cab38f691fc4f`
+und Snapshot-Revision
+`9c9a94a8f799f2eb29b9e03c4e1b6e681aa945199753158cf8fc8c317b06090d`.
+Die read-only UI lieferte GET/HEAD `200`, wies POST mit `405` ab und ließ den
+Dateihash unverändert. Ihr vollständiger Replay benötigte `3,42–3,44 s` je
+Snapshot; ein manueller `Ctrl-C`-Stop beendet den Prozess zwar, zeigt derzeit
+aber einen `KeyboardInterrupt` und Exit `1`. Diese UI-Lifecycle-/Latenzbefunde
+werden erst außerhalb des versiegelten Studiencodes bearbeitet.
