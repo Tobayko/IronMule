@@ -8,6 +8,9 @@ Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
 MDE vor A/B nicht versiegelt und H1/H2-Rohblöcke nicht persistent. Sie dürfen
 keinen Phasenfortschritt zu Phase 1B, Cross-Device oder einem breiteren Suchraum
 begründen.
+Die danach prospektiv geschlossenen H1-/N10-/Runtime-/Shadow-Gates und die neue
+explizite Nutzerfreigabe erlauben inzwischen genau den in Punkt 10 beschriebenen
+statischen Ein-Kernel-Versuch; sie erlauben weiterhin keine breite Phase 1B.
 
 Aktuelle Reihenfolge:
 
@@ -81,6 +84,30 @@ Aktuelle Reihenfolge:
    Live-Suchraum bleiben **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
+9. **Evidenzgebundenen N8/N10-Shadow-Router prüfen — abgeschlossen; alle Gates
+   bestanden.** Der getrennte Router wurde auf dem sauberen Commit `70bc451`
+   versiegelt. Er verlangt gleichzeitig die exakte N8- und N10-Evidenz,
+   beobachtet reale Tensor-Metadaten, besitzt keine `execute`-Methode und
+   erzwingt immer `serial_shadow_only`. `19` fokussierte Tests sowie die
+   Vollsuite mit `544` Tests bestanden; ein vollständiger Security-Diff-Scan
+   endete mit kompletter Coverage und null reportablen Findings. Das einmalige
+   CPU-Gate bestand mit `13,719 µs` Router-Median, `13,815 µs` p95 und
+   `1,585 µs` zusätzlichem Median. Die danach einmalig ausgeführte
+   MLX-Shadow-Validierung bestand alle fünf Gates; N8/N10 wurden nur empfohlen,
+   drei Negativfälle routeten seriell und es wurde keine Matmul ausgeführt.
+   Die eigene DB enthält genau zwei hashverkettete Engineering-Records; Port
+   `8773` wurde read-only geprüft. Das ist ein **GO ausschließlich für die
+   nächste getrennte Vorregistrierung**, nicht für produktive Aktivierung.
+10. **Einen statischen Custom-Metal-Kandidaten vorregistrieren — als Nächstes.**
+   Nach der ausdrücklichen Nutzerfreigabe und dem bestandenen Shadow-Router darf
+   genau ein statischer Fusionskandidat für Residual-Add plus RMSNorm gegen die
+   starke MLX-Referenz spezifiziert werden. Vor jeder Kompilierung oder
+   Timingmessung werden Shape, Precision, Correctness-Grenzen, A/A-Gate,
+   A/B-Reihenfolge, Warmup, Wiederholungen, Timeout, Ressourcenlimits und
+   terminale Abbruchregeln eingefroren. Ausführung ist nur in einem
+   kontrollierten Worker zulässig. Eine Installation oder ein neues Modell ist
+   dafür nicht freigegeben oder erforderlich; produktive Integration und
+   adaptive Kernelsuche bleiben **NO-GO**.
 
 ## Historischer H0-Pivot und Freigabestatus — 20.08.2026
 

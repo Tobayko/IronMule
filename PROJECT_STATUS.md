@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; N10-Runtime auf sauberem Commit `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; N8/N10-Shadow-Router auf sauberem Commit `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -15,6 +15,7 @@
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
 | N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | **Engineering-GO nur im exakten N10-Scope**; jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert |
+| N8/N10-Shadow-Router | getrenntes Paket `friday_avo_router/`; beide versiegelten Policies müssen autorisieren, reale Tensor-Metadaten bestimmen die Empfehlung, erzwungener Plan bleibt `serial_shadow_only`; CPU-, MLX-Metadaten-, History-, UI- und Security-Gates auf sauberem Commit bestanden | **Shadow-GO** nur für Beobachtung und als Gate zur getrennten Ein-Kernel-Vorregistrierung; keine optimierte Ausführung, keine produktive Integration und kein neuer formaler Claim |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
@@ -47,12 +48,16 @@ wiederholt. Der separate korrigierte N10-v2-Vertrag band diesen V1-Endzustand,
 lief ohne Gemma oder adaptive Auswahl vollständig durch und bestätigte den
 festen N10-Dispatch-Plan formal. Der davon getrennte, allowlist-basierte
 N10-Runtime-/AVO-lite-Prototyp hat nun auch sein Cold-Load-/CPU-Gate und sein
-gepaartes MLX/GPU-Gate bestanden. Das ist ein Engineering-GO ausschließlich im
-exakten N10-Scope, keine produktive Integration und kein allgemeiner
-Agenten-, Modell- oder Hardwareclaim. Die bestehende N8-Runtime blieb
-unverändert.
-Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
-Modellrunden und breiterer Live-Suchraum bleiben **NO-GO**.
+gepaartes MLX/GPU-Gate bestanden. Der danach getrennt implementierte N8/N10-
+Shadow-Router hat ebenfalls alle vorregistrierten CPU-, reale Tensor-,
+Persistenz-, UI- und Sicherheitsgates bestanden. Das ist weiterhin keine
+produktive Integration und kein allgemeiner Agenten-, Modell- oder
+Hardwareclaim. Die bestehenden N8-/N10-Runtimes blieben unverändert.
+Nach neuer ausdrücklicher Nutzerfreigabe ist ausschließlich die
+Vorregistrierung und isolierte Prüfung **eines statischen** Custom-Metal-
+Kandidaten zulässig. Produktive Phase 1B, adaptive Kernelsuche und breiterer
+Live-Suchraum bleiben **NO-GO**, Cross-Device bleibt **NO-CLAIM** und weitere
+Modellrunden bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
@@ -126,6 +131,54 @@ Der read-only Replay ließ den Dateihash unverändert. Die echte UI lieferte auf
 Port `8772` GET/HEAD `200`, wies POST mit `405` ab und beendete sich per
 `Ctrl-C` mit Exit `0` ohne Traceback. Es lief kein Modell; weder Download noch
 Installation fanden statt.
+
+## Evidenzgebundener N8/N10-Shadow-Router
+
+Der neue Router verwendet ID `avo-shadow-router-20260822-01`, Application-ID
+`FRR1`, DB `.friday-data/avo-router.sqlite3` und UI-Port `8773`. Er lädt die
+unveränderten N8-/N10-Policies, autorisiert eine Empfehlung nur, wenn beide
+exakten Evidenzpfade autorisieren, und leitet den Scope ausschließlich aus
+realen Tensor-Metadaten ab. Der Router besitzt keine `execute`-Methode. Auch bei
+einer N8-/N10-Empfehlung bleibt der tatsächlich erzwungene Plan
+`serial_shadow_only`; falsche Form, falscher Datentyp und nicht registrierte
+Operandenzahl melden auch auf Routerebene `route=serial`.
+
+Die Implementierung wurde lokal auf `main` als Commit
+`70bc451f764d36e75de0a1c9ac61849717e577e8` versiegelt; es erfolgte kein Push.
+`19` fokussierte Tests bestanden in `0,135 s`. Die vollständige Regression
+bestand mit `544` Tests in `210,574 s` (`210,84 s` außen, `199,23 s` User,
+`1,47 s` System, maximales RSS `76.496.896 B`, keine Swaps). Der zusätzlich
+versiegelte Security-Diff-Scan prüfte zehn Produktionsdateien sowie Tests und
+Dokumentation als manuelle Add-backs mit kompletter Coverage und null
+reportablen Findings. Sein lesbarer Report hat SHA-256
+`0c5a558d908d45b9e6561a5caf90e8bc5d929856ba4e441ecda44ccb282d983b`.
+
+Der einmalige CPU-Lauf bestand alle sechs Gates: Cold Load `7,176239584 s`,
+direkter Policy-Median `12,138946 µs` (MAD `0,042467 µs`), Router-Median
+`13,719000 µs` (MAD `0,044638 µs`), Router-p95 `13,815279 µs` und gepaarter
+zusätzlicher Median `1,585208 µs`. Alle `21` balancierten Blöcke verwendeten
+je `10.000` Entscheidungen pro Arm; beide direkten Policies und der Router
+stimmten überein. Der terminale Record lautet
+`a1a1c1a08eb22c41e442becfe7d6a6a2feb67c2322596eaf1d9fc0a595b253fd`.
+
+Die genau einmal zulässige MLX-Shadow-Validierung bestand danach alle fünf
+Gates. Exakt acht beziehungsweise zehn FP16-`2048²`-RHS-Tensorreferenzen
+empfahlen N8/N10, während Operandenzahl neun, falsche Form und FP32 seriell
+blieben. Direkte Policy und Router stimmten in allen Fällen überein;
+`no_matmul_executed=true`. MLX meldete `33.554.432 B` aktiven Speicher,
+`33.554.436 B` Peak und `8 B` Cache; maximales Prozess-RSS war `51.560.448 B`.
+Der Record lautet
+`19e36e7b32209d62afa5eae54973e2dc326a1bd0efaa0d8b8a73737463384c6c`.
+
+Die finale Router-Datei enthält genau diese zwei vollständig replaybaren,
+hashverketteten Engineering-Records, Modus `0600`, Größe `36.864 B`, SHA-256
+`128c090de37a79606f35c564d19035f0bcffedcea4b4018fa618cffedc58c6f8`
+und Snapshot-Revision
+`b1c0832c0957e5a2d0e88bda1409f8d4b04be036a5edd32a20ea8c2d57b2c758`.
+Die echte UI lieferte GET/HEAD `200`, POST `405`, die vorregistrierten
+Security-Header und beendete sich per `Ctrl-C` mit Exit `0`. Ihr Replay ließ
+den DB-Hash bytegleich. Es lief kein Modell, keine Matmul und kein Custom-
+Metal-Kernel; es gab weder Download noch Installation.
 
 ## Formales H1-v2-Ergebnis und begrenzte N8-Runtime
 
@@ -261,8 +314,8 @@ die `6-s`-Kontinuierlichkeitsgrenze überschritten; Fehler-ID
 Lücke.
 
 Die neue Rohmessung reproduziert die Richtung der historischen Roofline-
-Zusammenfassung, wertet sie aber nicht formal auf. Phase 1B/Custom Metal bleibt
-**NO-GO**. Das zuvor fehlende Schema/Protokoll v2 wurde anschließend unter
+Zusammenfassung, wertet sie aber nicht formal auf. **Auf diesem damaligen Stand**
+blieb Phase 1B/Custom Metal **NO-GO**. Das zuvor fehlende Schema/Protokoll v2 wurde anschließend unter
 `friday_h1/` implementiert, offline verifiziert und auf dem sauberen Commit
 `1fbe73c` formal ausgeführt; das Ergebnis steht im vorherigen Abschnitt.
 
@@ -834,14 +887,16 @@ Der `177`-er Scope ist historisch und anders enumeriert; er ist mit dem aktuelle
   append-only Arbeitsjournal vermerkt. Es wurden keine Modelle ausgewählt oder
   festgeschrieben.
 
-## Offen: Phase 1B und vollständiger Phase-1-DoD
+## Offen: isolierter Ein-Kernel-Versuch und vollständiger Phase-1-DoD
 
 Der vollständige DoD aus `IMPLEMENTIERUNGSPLAN.md` ist mit Phase 1A/H0 nicht erfüllt. Offen
 bleiben eine separate Phase 1B mit begrenztem Custom-MLX-Metal-Kandidaten sowie dessen
 Ausführung in einem isolierten Worker-Prozess mit Timeout, Ressourcenlimits, Correctness-
-Test und Rollback. Phase 1B ist nicht implementiert und benötigt vorab eine separate
-Sicherheits- und Architekturfreigabe. Die H1-Workload-/Shape-Familienaufteilung und eine
-cluster-level Powerplanung nach A/A-Pilot sind ebenfalls offen.
+Test und Rollback. Die separate Sicherheits-/Architekturfreigabe und das vorgeschaltete
+Shadow-Router-Gate liegen inzwischen vor; Vorregistrierung, Worker-Implementierung und
+Messung des genau einen statischen Kandidaten sind noch offen. Eine breitere Phase 1B ist
+nicht freigegeben. Die H1-Workload-/Shape-Familienaufteilung und eine cluster-level
+Powerplanung bleiben ebenfalls offen.
 
 ## Grenzen dieses Status
 
