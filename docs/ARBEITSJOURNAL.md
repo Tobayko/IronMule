@@ -4636,3 +4636,64 @@ Findings finalisiert. Finaler Report:
 SHA-256 `e38a8091d8152810e2de2f628f0b165a32d4d1ce439ab7a65a878ab1033eba50`.
 Die erste versiegelte Fassung bleibt als Auditspur erhalten, ist aber nicht die
 Freigabegrundlage des Commits.
+
+**Sauberer Phase-1B-Commit und Provenienz.** Der freigegebene Stand wurde lokal
+auf `main` als Commit `ea8f95980ac6da513c374aa658b4d2d4cc4a9d20`
+versiegelt; kein Push erfolgte. Der unmittelbar danach leere Rootstatus band
+Code-SHA `3d7b3707a2df57c49bc98231a13d778643739d5f9a4b4b71fbf01a3a4b8b70db`,
+Spec-SHA `2638a9fbcd1db3b48a7f38af2d3d3bbd1f203774fbc7c633b18907dc6edfaf41`
+und Gesamtprovenienz
+`ed17935733b2a96cafa8bec8f67fd928cf8e3f6d6917af9633ecfb61cc762a91`.
+MLX blieb `0.32.0`, Gerät `MacBookPro18,2` / Apple M1 Max. Qualification und
+Benchmark liefen ohne getrackte Änderung unter exakt derselben Provenienz.
+
+**Einmalige Custom-Metal-Qualifikation.** Der erste reale Compile-/GPU-Lauf
+`phase1b-qualify-20260822-01` bestand alle Gates. Alle sechs Fixtures sowie
+Kandidat, vier Baselines und sämtliche Pairchecks waren korrekt. Der Kandidat
+hatte über alle Fixtures maximal `0,001953125` absoluten Fehler,
+`rel_q99=0` und maximal normalisiertes L2
+`6,662275251620369e-06`. Erste Compilation plus Eval dauerte
+`193.043.625 ns`. MLX meldete `26.224.648 B` aktiv, `62.934.024 B` Cache und
+`89.153.552 B` Peak; Worker/Parent-RSS erreichten maximal `298.926.080 B`.
+Worker-Wall war `1,653064500 s`, Controller-Wall `2,314143750 s`, der äußere
+Prozess `2,71 s`; stderr war leer und Netzbetrieb bestätigt. Terminaler Record:
+`1ff03f1b7b2377c9c2c69f2f3550960b3523249d882d2d5381f2c712de456d6e`.
+
+**Einmaliger kontrollierter Benchmark und gültiger Negativbefund.** Drei
+Charakterisierungsprozesse ließen `fast_rms_norm` und
+`compiled_fast_rms_norm` innerhalb der vorregistrierten `0,5 %`-Tiezone; die
+festgelegte Präzedenz wählte `fast_rms_norm`. Das anschließende A/A-Gate
+bestand vollständig: Verhältnis `1,0034448058`, 95-%-KI
+`[0,9977671648; 1,0092399450]`, Sessionratios
+`[1,0063780365; 1,0034448058; 1,0011522733]`.
+
+Alle drei A/B-Prozesse bestanden Correctness, Pair-, Speicher- und
+Einzelsession-Gates. Der hierarchische Kandidat/Baseline-Quotient war
+`0,9812981009`, 95-%-KI `[0,9721235180; 0,9859002169]`, mit Sessionratios
+`[0,9812981009; 0,9731865910; 0,9825570960]`. Damit ist der Kandidat zwar
+reproduzierbar rund `1,870 %` schneller und das Intervall schließt `1` aus,
+er verfehlt aber klar die vorregistrierte Mindestverbesserung von `5 %`.
+Flattened Mediane waren `326.383,34 ns` für die Baseline und `319.930,82 ns`
+für den Kandidaten. Beide Arme meldeten in jeder Speichersession denselben
+MLX-Peak von `15.733.760 B`; maximales Worker-RSS war `237.617.152 B`.
+
+Der Controller endete nach `20,074599083 s`; der äußere Prozess nach `20,46 s`
+mit dem vertraglich erwarteten Exit `2`. Der terminale Status ist
+`candidate_inconclusive`, Aktion `baseline_fallback`, `formal_claim=false`.
+Kein Retry, keine Schwellenänderung und keine Runtimeaktivierung sind zulässig.
+Benchmarkrecord:
+`f051b1f8ca08d3e7adf68f06cf095c3d961a243f100717a6a7b87dcc965595a6`.
+
+**Persistenz- und UI-Abschluss.** `.friday-data/phase1b-rmsnorm.sqlite3`
+enthält genau beide einmaligen Records unter identischer Provenienz, Modus
+`0600`, Größe `86.016 B`, SHA-256
+`4ba0cbd679083683b2504dbf174691402aa851967b88befadeb4035145558452`
+und Snapshot-Revision
+`45a65df53f27ad8c79cfb6583be3566a1b4bb41f160e68e530bfeec5a1ab031b`.
+Die echte read-only UI auf Port `8774` lieferte GET/HEAD `200`, POST `405`,
+wies einen DNS-Rebinding-Host mit `421` ab und sendete CSP,
+`X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-origin`,
+`Referrer-Policy: no-referrer` sowie `Cache-Control: no-store`. Der API-Snapshot
+verifizierte Hashkette, beide Statuswerte und dieselbe Revision; der DB-Hash
+blieb bytegleich. `Ctrl-C` beendete die UI mit Exit `0`. Es wurde kein Modell
+geladen, nichts heruntergeladen oder installiert.

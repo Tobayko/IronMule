@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; N8/N10-Shadow-Router auf sauberem Commit `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; Phase 1B auf sauberem Commit `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -16,6 +16,7 @@
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
 | N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | **Engineering-GO nur im exakten N10-Scope**; jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert |
 | N8/N10-Shadow-Router | getrenntes Paket `friday_avo_router/`; beide versiegelten Policies müssen autorisieren, reale Tensor-Metadaten bestimmen die Empfehlung, erzwungener Plan bleibt `serial_shadow_only`; CPU-, MLX-Metadaten-, History-, UI- und Security-Gates auf sauberem Commit bestanden | **Shadow-GO** nur für Beobachtung und als Gate zur getrennten Ein-Kernel-Vorregistrierung; keine optimierte Ausführung, keine produktive Integration und kein neuer formaler Claim |
+| Phase 1B Residual+RMSNorm | statischer, quellhashgebundener Custom-Metal-Kandidat auf Commit `ea8f959`; Security-Diff, 566er Vollsuite, Qualification, A/A, A/B, Persistenz und UI abgeschlossen | Correctness und Messsystem bestanden; nur `1,870 %` Gain bei vorregistrierten `5 %` Mindestgewinn: **keine Promotion**, `baseline_fallback`, gültiger Negativbefund |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
@@ -53,11 +54,12 @@ Shadow-Router hat ebenfalls alle vorregistrierten CPU-, reale Tensor-,
 Persistenz-, UI- und Sicherheitsgates bestanden. Das ist weiterhin keine
 produktive Integration und kein allgemeiner Agenten-, Modell- oder
 Hardwareclaim. Die bestehenden N8-/N10-Runtimes blieben unverändert.
-Nach neuer ausdrücklicher Nutzerfreigabe ist ausschließlich die
-Vorregistrierung und isolierte Prüfung **eines statischen** Custom-Metal-
-Kandidaten zulässig. Produktive Phase 1B, adaptive Kernelsuche und breiterer
-Live-Suchraum bleiben **NO-GO**, Cross-Device bleibt **NO-CLAIM** und weitere
-Modellrunden bleiben **NO-GO**.
+Der ausdrücklich freigegebene einzelne statische Custom-Metal-Kandidat wurde
+inzwischen isoliert geprüft. Er bestand Correctness, Speicher und A/A, erreichte
+gegen `fast_rms_norm` aber nur `1,870 %` statt der vorregistrierten `5 %` und
+wurde deshalb nicht promoviert. Produktive Phase 1B, adaptive Kernelsuche und
+breiterer Live-Suchraum bleiben **NO-GO**, Cross-Device bleibt **NO-CLAIM** und
+weitere Modellrunden bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
@@ -179,6 +181,40 @@ Die echte UI lieferte GET/HEAD `200`, POST `405`, die vorregistrierten
 Security-Header und beendete sich per `Ctrl-C` mit Exit `0`. Ihr Replay ließ
 den DB-Hash bytegleich. Es lief kein Modell, keine Matmul und kein Custom-
 Metal-Kernel; es gab weder Download noch Installation.
+
+## Phase 1B: statischer Residual-Add-plus-RMSNorm-Kandidat
+
+Der einzelne Kandidat wurde vor jeder Compilation in
+[`docs/PHASE1B_RESIDUAL_RMSNORM_SPEC.md`](docs/PHASE1B_RESIDUAL_RMSNORM_SPEC.md)
+gebunden, durch zwei vollständige Security-Diff-Snapshots geprüft und lokal als
+Commit `ea8f95980ac6da513c374aa658b4d2d4cc4a9d20` versiegelt. Maßgeblicher
+Security-Snapshot:
+`codex-security-snapshot/v1:sha256:232c04fe0b4cfbb896120961d91f779b582e04c71b54cbad6bedcaca4c88fa26`;
+komplette Coverage, acht Flächen, null Findings. Die vollständige Regression
+bestand `566/566` Tests in `212,552 s`. Es erfolgte kein Push.
+
+Die einmalige Qualification bestand sechs vollständige Correctnessfixtures und
+alle Vergleiche gegen vier MLX-Baselines. Der maximale Kandidatenfehler war
+`0,001953125`, die erste Compilation plus Eval dauerte `193,044 ms`, MLX-Peak
+war `89.153.552 B`. Record: `1ff03f1b…56d6e`.
+
+Die drei A/A-Prozesse bestanden mit `R=1,003445`, 95%-KI
+`[0,997767; 1,009240]`. Die feste Tie-Regel wählte `fast_rms_norm` aus den zwei
+innerhalb `0,5 %` liegenden spezialisierten Baselines. Drei frische A/B-Prozesse
+ergaben `R=0,981298`, 95%-KI `[0,972124; 0,985900]`, also rund `1,870 %`
+Gewinn. Correctness, jede Einzelsession und Speicher bestanden, aber das
+vorregistrierte 5-%-Gate scheiterte. Terminaler Record: `f051b1f8…595a6`;
+Status `candidate_inconclusive`, Aktion `baseline_fallback`, kein formaler Claim
+und keine Aktivierung.
+
+Die Phase-1B-Historie enthält genau diese zwei Records, Modus `0600`, Größe
+`86.016 B`, SHA-256
+`4ba0cbd679083683b2504dbf174691402aa851967b88befadeb4035145558452`,
+Snapshot-Revision
+`45a65df53f27ad8c79cfb6583be3566a1b4bb41f160e68e530bfeec5a1ab031b`.
+Die read-only UI auf Port `8774` lieferte GET/HEAD `200`, POST `405`, wies einen
+fremden Host mit `421` ab und ließ den DB-Hash unverändert. Es lief kein Modell;
+nichts wurde heruntergeladen oder installiert.
 
 ## Formales H1-v2-Ergebnis und begrenzte N8-Runtime
 
