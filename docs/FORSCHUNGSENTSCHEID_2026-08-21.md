@@ -7,7 +7,7 @@
 | Begrenzte evidenzgebundene Runtime | **GO im exakten H1-Scope** | formales H1-v2-Gain-Gate sowie CPU-Overhead- und MLX/GPU-Runtime-Gates bestanden; Korrektheit byte-identisch | jede Evidenz-, Code-, Spec-, Environment-, Hardware- oder Workload-Abweichung fällt weiterhin seriell zurück |
 | Geschlossener H2-Modellvorschlag | **eine Runde abgeschlossen; kein weiterer Lauf** | Gemma schlug `3,10,16` vor; Harness bestätigte explorativ `N=10`, aber Kandidatenselektion und Ergebnis sind Schema v1 mit `formal_claim=false` | vor weiterer Runde oder Runtime-Erweiterung neue prospektive Studie und explizite Architekturfreigabe |
 | Prospektive N10-Bestätigung | **V1 terminal; V2-Gain formal bestätigt** | V1 stoppte vor Timing; V2 lief auf sauberem Commit mit registrierter Fixture, frischen Seeds, sechs A/A- und sechs A/B-Sessions bis `n10_gain_confirmed` | genau ein begrenzter N10-Runtime-Prototyp mit fester Allowlist und eigenen Engineering-Gates; keine direkte Produktivänderung |
-| N10-Runtime / AVO-lite | **Offline-GO; Live erst nach sauberem Commit** | getrennte exakte Evidenzbindung, Tensor-Allowlist, serieller Fallback, Circuit Breaker, Cold-Load-/CPU-/GPU-Gates und eigene Historie/UI sind implementiert; Tests grün | einmaliger CPU-Lauf, nur bei Erfolg ein GPU-Lauf; negatives Gate sperrt N10, N8 bleibt unverändert |
+| N10-Runtime / AVO-lite | **Engineering-GO im exakten N10-Scope** | getrennte exakte Evidenzbindung, Tensor-Allowlist, serieller Fallback und Circuit Breaker; einmaliges CPU- und anschließendes MLX/GPU-Gate auf sauberem Commit bestanden, byteidentisch | jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert; jede Scope-Erweiterung erfordert einen neuen Entscheid |
 | Phase 1B / Custom MLX-Metal | **NO-GO** | formales H1 bestätigt nur Dispatch-Amortisation; reale Roofline deutet weiter auf Speicherlimit, und eine separate Custom-Kernel-Sicherheits-/Architekturfreigabe fehlt | freigegebene isolierte Worker-/Rollback-Architektur, eigener prospektiver Vertrag und neuer expliziter Nutzerentscheid |
 | Cross-Device | **NO-CLAIM / derzeit blockiert** | es existiert Evidenz von genau einem M1 Max; ein zweites Zielgerät ist nicht verfügbar | mindestens ein unabhängiges Gerät, identischer versiegelter Workload und vollständige Provenienz |
 | breiterer Live-Suchraum | **NO-GO** | mehr Kandidaten würden den explorativen Charakter und Multiple-Testing-/Winner's-Curse-Risiken vergrößern | neue H1-Vorregistrierung mit Familien/Splits, Kandidatenbudget, Powerplanung und frischen IDs |
@@ -53,12 +53,18 @@
    byteidentisch `R=0,874912`, 95%-Intervall `[0,871768; 0,875614]`.
    Charakterisierung und Validierung bestanden die 5%-Gewinngrenze getrennt.
    Der terminale Record `47283e73…e1249` ist der einzige formale Claim.
+10. Der daraus erlaubte getrennte N10-Runtime-Prototyp bestand auf Commit
+    `5eaad38` sein CPU-Gate (`12,372 µs` Policy-Median, `12,448 µs` p95) und
+    anschließend sein gepaartes MLX/GPU-Gate (`R=0,875753`, `−12,425 %`,
+    byteidentisch, `max_abs_error=0`). Die zwei Engineering-Records sind
+    getrennt hashverkettet und erweitern den formalen N10-Claim nicht.
 
-## Freigegebener nächster wissenschaftlicher Schritt
+## Abgeschlossener N10-Engineering-Schritt und aktuelle Grenze
 
 Nicht Phase 1B, keine zweite Modellrunde und keine direkte Änderung der
 bestehenden Runtime. Die N10-Ein-Kandidaten-Studie ist positiv terminal.
-Freigegeben ist jetzt genau ein getrennter N10-Runtime-/AVO-lite-Prototyp:
+Freigegeben und ausgeführt wurde genau ein getrennter
+N10-Runtime-/AVO-lite-Prototyp:
 
 - feste Allowlist für exakt FP16-`2048²`, zehn Matmuls und den bestätigten
   Batch-Dispatch-Plan;
@@ -68,12 +74,20 @@ Freigegeben ist jetzt genau ein getrennter N10-Runtime-/AVO-lite-Prototyp:
 - kein freier Kandidatensuchraum, keine weitere Modellaktion, keine
   Codegenerierung und kein Custom Metal.
 
-Die bestehende N8-Runtime bleibt unverändert, bis der getrennte N10-Prototyp
-seine eigenen Engineering-Gates bestanden hat. Der Prototyp ist inzwischen
-offline implementiert: `17` fokussierte Tests plus `9` Subtests und die
-Zwischen-Vollsuite mit `525` Tests/`2.489` Subtests bestanden; im schmutzigen
-Pre-Commit-Zustand fiel der reale Policy-Load korrekt auf `worktree_dirty`
-zurück und beide Live-Kommandos blieben ohne Freigabeflag geschlossen.
+Die bestehende N8-Runtime blieb unverändert. Der getrennte N10-Prototyp ist auf
+Commit `5eaad38` implementiert und hat seine eigenen Engineering-Gates
+bestanden: `17` fokussierte Tests plus `9` Subtests, die Vollsuite mit `525`
+Tests/`2.489` Subtests, Cold Load, CPU-Overhead, gepaarter GPU-Effekt und exakte
+Korrektheit. Der reale Policy-Load fiel im schmutzigen Pre-Commit-Zustand
+korrekt auf `worktree_dirty` zurück; ohne Freigabeflag blieben beide
+Live-Kommandos mit Exit `78` geschlossen. Die danach genau einmal ausgeführten
+CPU- und GPU-Läufe erzeugten eine private, hashverkettete Zwei-Record-Historie.
+
+Damit ist der versiegelte Plan als begrenzter Prototyp technisch verwendbar,
+aber nicht automatisch in eine produktive Runtime integriert. Produktive
+Integration, ein anderer Tensor-Scope, adaptive Suche oder allgemeine
+Agentenarchitektur wären neue Architekturentscheidungen mit neuer
+Baseline-/Nachher-Evidenz.
 
 Die explizite Nutzerfreigabe für Vertrag, lokale CPU-/GPU-Tests und Ausführung
 liegt seit 22.08.2026 vor. Commit, Seal und terminale Bestätigung sind
@@ -107,9 +121,19 @@ Suite mit `508` Tests und `2.480` Subtests bestanden. V2 lief danach auf Commit
 16-Record-Store hat SHA-256 `54e9c57c…fc4f`; die N8-Runtime wurde dabei nicht
 verändert.
 
-Die neuen Messungen sind durch Schema v1 ausdrücklich `formal_claim=false`. Der
-Dispatch-Befund liegt explorativ jenseits der 5%-Schwelle; die neue Roofline-
-Messung klassifiziert beide vorhandenen Gemma-Modelle erneut als
+Der getrennte N10-Runtime-Code wurde auf Commit `5eaad38` versiegelt. Die
+abschließende Vollsuite bestand `525` Tests und `2.489` Subtests. Das CPU-Gate
+bestand mit Cold Load `3,482664083 s`, Policy-Median `12,372 µs`, p95
+`12,448 µs` und zusätzlichem Median `12,343 µs`. Das GPU-Gate bestand über
+zwölf balancierte Blöcke mit Baseline-Median `20,797459 ms`,
+Kandidaten-Median `18,220750 ms`, `R=0,875753`, `−12,425 %`, Byteidentität und
+`max_abs_error=0`. Die Zwei-Record-DB hat SHA-256
+`81286ffa2af11a814ffe4e11cdd67ce7fa5804ff42f4efd094cf161dbae22cd5`;
+ihre UI bestand GET/HEAD/POST- und graceful-Stop-Prüfungen auf Port `8772`.
+
+Die vier nativen Research-Messungen sind durch Schema v1 ausdrücklich
+`formal_claim=false`. Deren Dispatch-Befund liegt explorativ jenseits der
+5%-Schwelle; die Roofline-Messung klassifiziert beide vorhandenen Gemma-Modelle erneut als
 speicherbegrenzt. Der formale H1- und der bestandene Runtime-Befund ändern
 deshalb nur den eng begrenzten Runtime-/H2-Vorschlagspfad; Phase 1B,
 Cross-Device und breiterer Live-Suchraum bleiben NO-GO/NO-CLAIM.

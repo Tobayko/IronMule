@@ -4149,3 +4149,106 @@ Kandidatenzahlen; 4 Dateien wurden neu geparst, 603 blieben unverändert, kein
 Timeout. Live bleibt bis zu einem sauberen lokalen Commit geschlossen. Danach
 ist genau ein Policy-/CPU-Lauf zulässig; nur bei bestandenem Gate folgt genau
 ein MLX/GPU-Lauf.
+
+### 2026-08-22 — N10-Runtime-/AVO-lite-Live-Gates abgeschlossen
+
+**Sauberer Commit und Provenienz.** Der vollständig geprüfte Runtime-Stand
+wurde lokal auf `main` als Commit
+`5eaad38ec0f5da4b01bd9d64237d3736f548ff14`
+(`feat: add evidence-bound N10 runtime`) gespeichert; es erfolgte kein Push.
+Die bestehende `friday_runtime/` blieb bytegleich. Root-Worktree und Root-Diff
+waren vor beiden Live-Läufen leer, Xcode-First-Launch bestand, das Gerät lief
+am Netzteil und MLX war `0.32.0` auf `MacBookPro18,2`/Apple M1 Max/`arm64`.
+Die saubere Runtime-Provenienz lautet
+`02784bd7108767008c9951724421cc3f841390d463a8c6b153b059c5c497e22c`;
+Code- und Spec-Fingerprint sind
+`c3edf267519af02585ae7634c1ad809a183ac05561bbbec9a3ba5c1387c2dbcc`
+und `d4e855fc1f3d878fb2a9cf0209b4da69dabeb8a9b4e12594138a59637d933502`.
+Der erste saubere read-only Policy-Load replayte den exakten 16-Record-Store
+und autorisierte ausschließlich den registrierten N10-Plan; außen dauerte er
+`3,59 s`.
+
+**Einmaliges CPU-/Policy-Gate.** Genau der vorregistrierte Befehl
+`benchmark-policy --run-id n10-policy-overhead-20260822-01 --execute` lief
+einmal und bestand mit Exit `0`. Cold Load: `3.482.664.083 ns`; Baseline-Median:
+`28 ns`; Policy-Median: `12.372 ns`; Policy-MAD: `39 ns`; Policy-p95:
+`12.448 ns`; zusätzlicher Median: `12.343 ns`. Damit bestanden die Grenzen
+`10 s`, `25 µs`, `50 µs` und `20 µs`. Der äußere Prozess benötigte `10,15 s`
+Wall, `10,01 s` User, `0,12 s` System, maximales RSS `33.800.192 B` und keine
+Swaps. Der append-only Record lautet
+`f140083d80ad1d557e03e8370ee5b2eb0ce2923fe3752006c2d8466d92689306`.
+
+**Einmaliges MLX/GPU-Gate.** Weil das CPU-Gate bestand, lief danach genau
+`validate-gpu --run-id n10-runtime-validation-20260822-01 --execute` einmal.
+Alle zwölf balancierten Blöcke bestanden. Baseline-Median:
+`20.797.458,5 ns`; Kandidaten-Median: `18.220.750 ns`; Baseline-MAD:
+`27.604 ns`; Kandidaten-MAD: `19.354,5 ns`; Verhältnis `0,8757526334`, Effekt
+`−12,4247367 %`. Beide Arme waren byteidentisch, `max_abs_error=0`, mit demselben
+Digest
+`2443f000817522f2ce376d1f311b05540a17b6f14b4e23caa52f5e12e3d29462`.
+GPU-Arbeit und maximale kontinuierliche GPU-Zeit lagen jeweils bei `0,667235 s`,
+Wall des Messvertrags bei `1,095774 s`, Prozess-CPU bei `0,148294 s`; alle
+Budgets bestanden. MLX meldete `176.160.768 B` aktiv, `83.886.080 B` Cache und
+`260.046.848 B` Peak. Der äußere Prozess endete mit Exit `0` nach `4,87 s`
+Wall, `4,02 s` User, `0,22 s` System, maximalem RSS `508.313.600 B` und ohne
+Swaps. Record und Kettenspitze lauten
+`d6143fcada07018968b9f17aeeb0137a76dee5baeaeef76da12e514d6c4c979f`;
+der Circuit Breaker blieb offen.
+
+**Persistenz und echte UI.** `.friday-data/runtime-n10.sqlite3` enthält genau
+die zwei Status `policy_overhead_passed` und `runtime_validation_passed`; der
+zweite Record verweist auf den ersten und der vollständige Hashketten-Replay
+bestand. Datei: Modus `0600`, `53.248 B`, SHA-256
+`81286ffa2af11a814ffe4e11cdd67ce7fa5804ff42f4efd094cf161dbae22cd5`,
+Snapshot-Revision
+`a7b9352b913e62b9faf1e59cec2f5531435121d716e08cf2e7f8f24075f6327e`.
+Ein vollständiger read-only Replay ließ den Dateihash bytegleich. Die echte UI
+auf `127.0.0.1:8772` lieferte für `/` GET `200` (`1.698 B`, `0,003143 s`),
+für `/api/snapshot?limit=2` HEAD/GET `200` und beide Records, wies POST mit
+`405` ab und beendete sich per `Ctrl-C` mit Exit `0` ohne Traceback. Danach war
+der Port geschlossen; der DB-Hash blieb unverändert.
+
+Ein ergänzender manueller read-only SQL-Zählcheck fragte zunächst irrtümlich
+die nicht vorhandene Tabelle `runtime_records` statt `records` ab und endete
+mit `no such table`, ohne eine Datei zu verändern. Die anschließende
+Schemaabfrage bestätigte `metadata` und `records`; die korrigierte Abfrage fand
+genau zwei Zeilen, je einen bestandenen CPU- und GPU-Status, mit korrektem
+Vorgängerzeiger. Der DB-Hash blieb auch danach unverändert.
+
+**Integrität und Entscheid.** H1-v2, N8-Runtime, Research, N10-v1 und N10-v2
+blieben bytegleich bei
+`141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`,
+`ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`,
+`70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`,
+`e0b5f4af62c128938e1e12e388c16b344a66e18eebf9e0568c7ebe34c5a4f0d5`
+und `54e9c57ca6b76fa671b94f748b7ee471575b7dd7445bad00ae3cab38f691fc4f`.
+Es gab keine Installation, keinen Download, keine Modellaktion, keine freie
+Codegenerierung und kein Custom Metal. Ergebnis ist ein Engineering-GO nur für
+exakt FP16-`2048²`, zehn Matmuls und den versiegelten Batch-Dispatch-Plan. Die
+Messung erweitert weder den formalen N10-Claim noch den Scope; produktive
+Integration, andere Tensoren, Cross-Device, weitere Modellrunden und ein
+breiterer Suchraum bleiben ohne neuen Architekturentscheid geschlossen.
+
+**Abschlussprüfung der Dokumentation und ProjectAtlas.** `git diff --check`
+bestand. Der ergänzende Runtime-Replay bestätigte erneut zwei Records, die
+vollständige Hashkette und Snapshot-Revision
+`a7b9352b913e62b9faf1e59cec2f5531435121d716e08cf2e7f8f24075f6327e`;
+alle sechs oben genannten Evidenzdateien waren vor und nach dem Replay
+bytegleich. `xcodebuild -checkFirstLaunchStatus` bestand. Ein erster
+ProjectAtlas-Runtime-Info-Aufruf übergab fälschlich den nicht erlaubten
+Positionsparameter `.` und endete read-only mit einem CLI-Nutzungsfehler. Die
+korrekte Wiederholung meldete ProjectAtlas `0.4.5-rc1` mit CLI-/MCP-/SQLite-/
+Symbolindex-Fähigkeiten. `projectatlas watch --once .` bestand anschließend
+mit 764 Textkandidaten, 745 indexierten Textdateien und 607 Symbolkandidaten;
+5 Dateien wurden neu geparst, 602 blieben unverändert und kein Parser lief in
+ein Timeout.
+
+**Post-Commit-Replay.** Nach dem Ergebniscommit war der Root-Worktree leer.
+Der echte read-only Policy-Aufruf autorisierte am neuen sauberen HEAD weiterhin
+exakt den 16-Record-N10-v2-Claim mit Decision-Record
+`47283e73eb6eefa01dc0f2e1760a2a2d350ca51019b8ddfa3a297d4b695e1249`;
+alle sechs Evidenzdateien behielten ihre oben dokumentierten SHA-256-Werte und
+`xcodebuild -checkFirstLaunchStatus` bestand erneut. Der abschließende
+ProjectAtlas-Refresh blieb bei 764/745 Textdateien und 607 Symbolkandidaten;
+eine Datei wurde neu geparst, 606 blieben unverändert und kein Timeout trat
+auf. Der Worktree war auch danach leer.

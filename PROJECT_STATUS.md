@@ -7,14 +7,14 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; N10-v2 auf sauberem Commit `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; N10-Runtime auf sauberem Commit `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; vier native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
-| N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI offline implementiert | Live-Auswahl bleibt bis sauberem Commit sowie bestandenem CPU- und GPU-Gate geschlossen; N8 bleibt unverändert |
+| N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | **Engineering-GO nur im exakten N10-Scope**; jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
@@ -45,11 +45,12 @@ bestanden; die genau eine H2-Gemma-Runde ist abgeschlossen. N10-v1 bleibt ein
 gültiger terminaler Engineering-Negativlauf ohne Timingdaten und wird nicht
 wiederholt. Der separate korrigierte N10-v2-Vertrag band diesen V1-Endzustand,
 lief ohne Gemma oder adaptive Auswahl vollständig durch und bestätigte den
-festen N10-Dispatch-Plan formal. Damit ist ausschließlich ein begrenzter,
-allowlist-basierter N10-Runtime-Prototyp als nächster Engineering-Schritt
-freigegeben. Dieser ist inzwischen getrennt offline implementiert, aber noch
-nicht live gemessen oder in eine produktive Runtime übernommen; die bestehende
-N8-Runtime bleibt bis zu seinen eigenen Gates unverändert.
+festen N10-Dispatch-Plan formal. Der davon getrennte, allowlist-basierte
+N10-Runtime-/AVO-lite-Prototyp hat nun auch sein Cold-Load-/CPU-Gate und sein
+gepaartes MLX/GPU-Gate bestanden. Das ist ein Engineering-GO ausschließlich im
+exakten N10-Scope, keine produktive Integration und kein allgemeiner
+Agenten-, Modell- oder Hardwareclaim. Die bestehende N8-Runtime blieb
+unverändert.
 Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
 Modellrunden und breiterer Live-Suchraum bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
@@ -93,7 +94,7 @@ vollständige Replay kostet derzeit `3,42–3,44 s` je Snapshot. Ein manueller
 `KeyboardInterrupt`/Exit `1`. Während N10-v2 lief kein Modell und es gab weder
 Download noch Installation.
 
-Der getrennte N10-Runtime-/AVO-lite-Pre-Live-Stand verwendet Runtime-ID
+Der getrennte N10-Runtime-/AVO-lite-Pfad verwendet Runtime-ID
 `n10-runtime-dispatch-20260822-01`, Application-ID `FRN1`, DB
 `.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. Der Controller prüft den
 exakten formalen DB-Hash und Snapshot, replayt N10-v1 als Vorgänger, vergleicht
@@ -102,12 +103,31 @@ reale Tensoren und cached danach nur die unveränderliche Policy. Unsicherheit
 fällt seriell zurück; ein Batchfehler wird nicht wiederholt und verriegelt den
 Circuit Breaker. `17` fokussierte Tests und `9` Subtests bestanden in `3,54 s`;
 die abschließende vollständige Regression bestand mit `525` Tests und `2.489`
-Subtests in `211,66 s`. Im absichtlich schmutzigen Pre-Commit-Zustand replayte
-der reale Store 16 Records und fiel korrekt auf `worktree_dirty` zurück.
-Beide Live-Kommandos blieben ohne `--execute` bei Exit `78`; die neue DB
-existiert noch nicht und es gab keine neue GPU-Messung.
+Subtests in `211,66 s`. Der Implementierungsstand wurde lokal auf `main` als
+Commit `5eaad38ec0f5da4b01bd9d64237d3736f548ff14` versiegelt; es erfolgte kein
+Push. Die saubere Runtime-Provenienz lautet
+`02784bd7108767008c9951724421cc3f841390d463a8c6b153b059c5c497e22c`.
 
-## Formales H1-v2-Ergebnis und Runtime-Pre-Live-Stand
+Der einmalige CPU-Lauf bestand alle Gates: Cold Load `3,482664083 s`,
+Policy-Median `12,372 µs`, p95 `12,448 µs` und zusätzlicher Median
+`12,343 µs`. Der danach zulässige einmalige MLX/GPU-Lauf bestand ebenfalls:
+zwölf balancierte Blöcke, Baseline-Median `20,797459 ms`, Kandidaten-Median
+`18,220750 ms`, `R=0,875753`, Effekt `−12,425 %`, byteidentisch und
+`max_abs_error=0`. Die zwei Engineering-Records
+`f140083d…89306` und `d6143fca…c979f` sind append-only hashverkettet und
+erweitern den formalen Studienclaim nicht.
+
+Die finale Runtime-Datei enthält genau zwei Records, Modus `0600`, Größe
+`53.248 B`, SHA-256
+`81286ffa2af11a814ffe4e11cdd67ce7fa5804ff42f4efd094cf161dbae22cd5`,
+Snapshot-Revision
+`a7b9352b913e62b9faf1e59cec2f5531435121d716e08cf2e7f8f24075f6327e`.
+Der read-only Replay ließ den Dateihash unverändert. Die echte UI lieferte auf
+Port `8772` GET/HEAD `200`, wies POST mit `405` ab und beendete sich per
+`Ctrl-C` mit Exit `0` ohne Traceback. Es lief kein Modell; weder Download noch
+Installation fanden statt.
+
+## Formales H1-v2-Ergebnis und begrenzte N8-Runtime
 
 Die formale Studie lief vollständig auf dem sauberen Commit
 `1fbe73c69cedeb69284a264c5e3f45e3e393b822`. Die Präregistrierung bindet Code,

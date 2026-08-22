@@ -413,3 +413,46 @@ gegangen werden:
    gemessene Zeitskala von rund `340 ms`. Liegen die Vergleichsarme weiter
    auseinander, sehen sie unterschiedliche Störungen und die Paarung verliert
    ihren Vorteil.
+
+---
+
+## Prospektives N10-Ergebnis und begrenzte AVO-lite-Runtime
+
+Die explorative Gemma-Auswahl wurde nicht noch einmal verwendet. Stattdessen
+wurde `N=10` als einziger Kandidat in einer neuen prospektiven Studie geprüft.
+V1 stoppte korrekt vor jedem Timing an einer nicht registrierten
+Fixture-Identität und wurde nicht wiederholt. Der eigenständige V2-Vertrag
+verwendete eine registrierte Fixture, frische übrige Seeds und einen eigenen
+16-Record-Store.
+
+| Messung | Ergebnis |
+| --- | ---: |
+| N10 A/A, 6 Sessions | `R=0,999586`, 95%-KI `[0,998764; 1,000443]` |
+| eingefrorene MDE | `5 %` |
+| N10 A/B, 6 Sessions | **`R=0,874912`, `−12,509 %`**, 95%-KI `[0,871768; 0,875614]` |
+| Charakterisierung / Validierung | `R=0,875216` / `R=0,874608` |
+| Korrektheit | byteidentisch |
+
+Damit ist der feste Batch-Dispatch-Plan formal nur für einen M1 Max,
+FP16-`2048²` und genau zehn Matmuls bestätigt. Der terminale Record ist der
+einzige formale Claim; er erlaubt ausschließlich einen begrenzten
+Runtime-Prototyp.
+
+Dieser getrennte N10-Runtime-/AVO-lite-Prototyp bestand anschließend seine
+eigenen Engineering-Gates auf sauberem Commit `5eaad38`:
+
+| Runtime-Gate | Ergebnis | Grenze |
+| --- | ---: | ---: |
+| Cold Load | `3,482664 s` | `≤10 s` |
+| Policy-Median | `12,372 µs` | `≤25 µs` |
+| Policy-p95 | `12,448 µs` | `≤50 µs` |
+| zusätzlicher Policy-Median | `12,343 µs` | `≤20 µs` |
+| MLX/GPU, 12 Blöcke | **`R=0,875753`, `−12,425 %`** | `R≤0,95` |
+| Runtime-Korrektheit | byteidentisch, `max_abs_error=0` | exakt |
+
+AVO-lite bedeutet hier bewusst keine allgemeine autonome Architektur: Der
+Controller beobachtet reale Tensoren, verifiziert die versiegelte Evidenz,
+wählt genau einen bekannten Plan und fällt sonst seriell zurück. Es gibt keine
+freie Suche, keine Codegenerierung, keine Modellaktion und kein Custom Metal.
+Die zwei Runtime-Messungen sind Engineering-Evidenz und erweitern den formalen
+N10-Claim nicht.

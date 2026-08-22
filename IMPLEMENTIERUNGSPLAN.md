@@ -64,14 +64,18 @@ Aktuelle Reihenfolge:
    auf `5 %`; sechs byteidentische A/B-Sessions bestätigten
    `R=0,874912`, 95%-KI `[0,871768; 0,875614]`. Der 16-Record-Store endet mit
    `n10_gain_confirmed` und genau einem formalen Claim.
-8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — offline implementiert,
-   Live-Gates noch geschlossen.** Der positive N10-Entscheid erlaubt einen getrennten Prototyp
-   mit fester Allowlist, seriellem Fallback, Circuit Breaker, vollständiger
-   Provenienz und eigener Baseline-/Nachher-Messung. Die bestehende N8-Runtime
-   bleibt unverändert. Paket, Tests, eigene Persistenz/UI und Vorregistrierung
-   sind vorhanden; `17` fokussierte Tests sowie die Zwischen-Vollsuite mit
-   `525` Tests bestanden. Nach sauberem Commit folgen einmalig
-   Cold-Load-/CPU-Overhead- und danach nur bei Erfolg GPU-Gate. Freie
+8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — abgeschlossen; exakter
+   Scope bestanden.** Der getrennte Prototyp mit fester Allowlist, seriellem
+   Fallback, Circuit Breaker, vollständiger Provenienz und eigener
+   Baseline-/Nachher-Messung wurde auf Commit `5eaad38` versiegelt. `17`
+   fokussierte Tests sowie die Vollsuite mit `525` Tests bestanden. Das
+   einmalige CPU-Gate bestand mit `12,372 µs` Policy-Median und `12,448 µs`
+   p95; der danach zulässige einmalige MLX/GPU-Lauf bestand mit
+   `R=0,875753`, `−12,425 %`, Byteidentität und `max_abs_error=0`. Die eigene
+   Historie enthält genau zwei gültige, hashverkettete Engineering-Records;
+   ihre read-only UI wurde auf Port `8772` geprüft. Die bestehende N8-Runtime
+   blieb unverändert. Das Ergebnis ist ein Engineering-GO nur für exakt
+   FP16-`2048²`, zehn Matmuls und den versiegelten Batch-Plan. Freie
    Codegenerierung und Custom Metal sind nicht autorisiert; Phase 1B bleibt
    **NO-GO**, Cross-Device **NO-CLAIM**, weitere Modellrunden und ein breiterer
    Live-Suchraum bleiben **NO-GO**.
