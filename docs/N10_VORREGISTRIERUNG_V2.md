@@ -1,19 +1,22 @@
-# N10-v1 — prospektive Ein-Kandidaten-Vorregistrierung
+# N10-v2 — prospektive Ein-Kandidaten-Vorregistrierung
 
 **Freigabe:** 22. August 2026
 
-**Study-ID:** `h2n10-dispatch-confirmation-20260822-01`
+**Study-ID:** `h2n10-dispatch-confirmation-20260822-02`
 
 **Status dieses Dokuments:** Designvertrag; eine Messung ist erst nach sauberem
 Implementierungscommit und persistiertem `preregistration`-Record zulässig.
 
-**Ausführungsergebnis:** Auf Commit `c3e582c` wurde der Vertrag versiegelt. Der
-erste C0-Versuch stoppte terminal vor jeder Timingmessung mit `BenchmarkError`,
-weil der neu abgeleitete Fixture-Seed im wiederverwendeten H0-Produktionsvertrag
-nicht registriert war. Fehlerrecord:
-`3ce4477adf3ca13d30207f37d98f21e36c316c82e3d102abfacf61c091492e49`.
-Diese Study-ID wird nicht fortgesetzt oder wiederholt; der korrigierte Nachfolger
-ist N10-v2.
+**Vorgänger:** N10-v1 ist terminal beendet und wird weder fortgesetzt noch
+überschrieben. Dessen C0-Versuch stoppte vor jeder Timingmessung am korrekt
+arbeitenden H0-Fixture-Guard, weil der dort eingefrorene neue Seed keine
+registrierte Produktionsidentität besaß. Der unveränderte Fehlerrecord ist
+`3ce4477adf3ca13d30207f37d98f21e36c316c82e3d102abfacf61c091492e49`,
+der terminale DB-Hash
+`e0b5f4af62c128938e1e12e388c16b344a66e18eebf9e0568c7ebe34c5a4f0d5`
+und die Snapshot-Revision
+`bbc75d60b5cfc61a1037c0a104e117a89561ec63e13240ca9b84f1bc98c08976`.
+N10-v2 ist eine neue Study-ID mit neuer DB und frischen Seeds, kein Retry.
 
 ## 1. Forschungsfrage und Abgrenzung
 
@@ -72,25 +75,29 @@ N8-Policy nicht automatisch.
 | LHS/RHS/Output | jeweils `[2048,2048]` |
 | Dtype | `float16` |
 | Anzahl RHS/Operationen | `10` |
-| Fixture-Seed | `8754882193294599646` |
-| Operand-Seed | `7421913553926890024` |
+| Fixture-Seed | `4051312678` (`0xF17A2026`) |
+| Fixture-A-SHA-256 | `33043be0345487a8a41b522df292e5288914b9c6c6c4dc823dbec72b9146bf86` |
+| Fixture-Identität | registrierter H0-Produktionsvertrag; alle vier Digests werden fail-closed geprüft |
+| Operand-Seed | `8108914365621233760` |
 | Arm A | jede Operation einzeln `eval` + `synchronize` |
 | Arm B | zehn Operationen enqueue, dann ein `eval` + `synchronize` |
 | Korrektheit | Referenz, A und B müssen byte-identisch sein; max. Fehler `0` |
 
-Die Seeds wurden vor Messbeginn deterministisch aus SHA-256 über die Domain
-`project-friday:h2-n10-v1:<label>` abgeleitet: Die ersten acht Digest-Bytes
+Der Fixture-Seed wird bewusst aus dem bereits kryptographisch registrierten
+H0-Produktionsvertrag übernommen. Alle übrigen Seeds wurden vor Messbeginn
+deterministisch aus SHA-256 über die Domain
+`project-friday:h2-n10-v2:<label>` abgeleitet: Die ersten acht Digest-Bytes
 werden als Big-Endian-Integer gelesen und das höchstwertige Bit gelöscht. Die
 Ergebnisse sind danach als 63-Bit-Konstanten eingefroren. Die Labels lauten
-`fixture`, `operands`, `session:C0` bis `session:V2`,
+`operands`, `session:C0` bis `session:V2`,
 `bootstrap:calibration`, `bootstrap:characterization`,
 `bootstrap:validation` und `bootstrap:all`.
 
 Versiegelte Session-Seeds:
 
-- `C0`: `5060361785459989569`; `V0`: `883950215809699703`;
-- `C1`: `2323802873345837297`; `V1`: `483519612603395666`;
-- `C2`: `5893687926320354209`; `V2`: `5188879407004767969`.
+- `C0`: `5694182798642334346`; `V0`: `4016037479549399342`;
+- `C1`: `4702616514600041353`; `V1`: `5448993668583962080`;
+- `C2`: `6937834284092508076`; `V2`: `3319947694069614818`.
 
 ## 4. Zweistufiges Studiendesign
 
@@ -132,10 +139,10 @@ Alle sechs Sessions sind für den terminalen Entscheid erforderlich.
 
 Versiegelte Bootstrap-Seeds:
 
-- Kalibrierung gesamt: `777255143216008523`;
-- Bestätigung Charakterisierung: `7159943182929271886`;
-- Bestätigung Validierung: `8989465731481879185`;
-- Bestätigung gesamt: `4114342224181825282`.
+- Kalibrierung gesamt: `3420748623931472299`;
+- Bestätigung Charakterisierung: `968347539867383741`;
+- Bestätigung Validierung: `2471101842785840228`;
+- Bestätigung gesamt: `1603501775215485335`.
 
 ## 6. Ressourcen-, Sicherheits- und Fehlervertrag
 
@@ -145,10 +152,19 @@ Die gemeinsame BudgetGuard-Policy verlangt bei Bedarf vier Sekunden Pause und
 kennt einen 60-Sekunden-Kandidaten-Cooldown. CPU-Zeit, RSS sowie verfügbare
 MLX-Speicherzähler werden gespeichert.
 
+Bereits Self-Check, Seal und jeder Session-Preflight prüfen, dass Fixture-Seed
+und alle vier erwarteten Digests im H0-Produktionsvertrag registriert sind.
+Seal, jeder Session-Preflight und jede Mutation eines abgeleiteten Records
+(Kalibrierungszusammenfassung, Confirmation-Seal und terminaler Entscheid)
+prüfen außerdem N10-v1 read-only vollständig gegen dessen terminalen DB-Hash,
+Snapshot-Revision, zwei Records und null Timing-Sessions; jede Abweichung
+sperrt V2.
 Jeder Fehler nach bestandenem Preflight erzeugt – soweit die versiegelte
 Provenienz noch unverändert ist – einen terminalen `session_failure`-Record.
-Fehlgeschlagene Sessions werden nicht wiederholt. Änderungen an Code, Spec,
-Umgebung, Hardwareidentität oder Git-Revision schließen den Lauf fail-closed.
+Ein vorhandener stabiler Benchmark-Fehlercode wird ohne Fehlermeldung im
+begrenzten Typfeld erhalten. Fehlgeschlagene Sessions werden nicht wiederholt.
+Änderungen an Code, Spec, Umgebung, Hardwareidentität oder Git-Revision
+schließen den Lauf fail-closed.
 
 Nicht Bestandteil dieser Studie sind Custom Metal, generierter Code, freie
 Modellaktionen, ein Kandidatensuchraum, AVO-Supervision oder eine Änderung der
@@ -160,15 +176,18 @@ eigenen Vertrag.
 Die Vorregistrierung bindet:
 
 - den sauberen Root-Git-Commit und einen leeren Root-Diff;
-- alle Python-/SQL-Dateien unter `friday_n10/`;
-- `tools/run_n10_v1.py`, den Budgetvertrag und den Fixture-Generator;
+- alle Python-/SQL-Dateien unter `friday_n10_v2/`;
+- den unveränderten N10-v1-Reader und dessen Vorregistrierungsdokument zur
+  vollständigen Vorgängerprüfung;
+- `tools/run_n10_v2.py`, den Budgetvertrag, den Fixture-Generator und dessen
+  unveränderliche Korrektheitsidentitäten;
 - dieses Dokument, `docs/PHASE1_MATMUL_SPEC.md`,
   `docs/H1H2_EVIDENZ_ARCHITEKTUR.md` und die eingefrorenen Requirements;
 - Python- und Paketversionen sowie öffentliche Hardware-/macOS-Merkmale.
 
-Die separate Datei `.friday-data/n10-v1.sqlite3` verwendet eine eigene
+Die separate Datei `.friday-data/n10-v2.sqlite3` verwendet eine eigene
 Application-ID, Modus `0600`, ein festes Schema, append-only Trigger und einen
-vollständigen Replay vor jedem Insert. Die UI auf Loopback-Port 8770 öffnet die
+vollständigen Replay vor jedem Insert. Die UI auf Loopback-Port 8771 öffnet die
 Datenbank ausschließlich read-only.
 
 ## 8. Autorisierte Reihenfolge

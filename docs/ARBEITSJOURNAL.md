@@ -3864,3 +3864,118 @@ Dateien bestand mit 731 Kandidaten, 712 indexierten Textdateien, 574
 Symbolkandidaten, 20 neu geparsten und 554 unveränderten Dateien ohne Timeout.
 Der nächste zulässige Schritt ist ein sauberer lokaler Implementierungscommit,
 danach das persistierte Präregistrierungssiegel und erst dann A/A.
+
+### 2026-08-22 — N10-v1 terminal vor Timing; eigenständiger N10-v2-Nachfolger
+
+**Sauberer V1-Seal.** Der vollständig geprüfte N10-v1-Stand wurde lokal auf
+`main` als Commit `c3e582c33899049ff96ef6a664fb87eb63c58284`
+(`feat: preregister formal N10 study`) gespeichert; es erfolgte kein Push. Der
+Root-Worktree war danach sauber, `git_diff_sha256` entsprach dem leeren SHA-256,
+MLX war Version `0.32.0`, Gerät `MacBookPro18,2`/`arm64`, Netzbetrieb lag an und
+`xcodebuild -checkFirstLaunchStatus` bestand. Die versiegelte Provenienz hatte
+`provenance_sha256=04ba25dd70bfbddba2f00d0bee5d371728a1ba96b4611b41fe6f91ac09d03f65`.
+Der erste und zunächst einzige V1-Record war die Präregistrierung
+`3233c5ee0c1d79facb08b6900abebfd7f5570ca6d852e15674c6a18ead58985b`;
+der read-only Snapshot hatte Revision
+`6cb4661e1ecbc07c76312e44ab432611b06a2aad384ef705bffe91f46998bbc2`.
+
+**Terminaler C0-Stopp.** Der freigegebene A/A-Stage-Launcher startete genau den
+nächsten vorregistrierten Prozess C0. Er endete nach `0,47 s` außen mit
+`BenchmarkError`, bevor ein Warmup- oder Timingblock entstehen konnte; der
+Stage-Launcher brach sofort ab und startete weder V0 noch einen Retry. Der
+append-only Fehlerrecord lautet
+`3ce4477adf3ca13d30207f37d98f21e36c316c82e3d102abfacf61c091492e49`,
+Status `measurement_failed_terminal`, `formal_claim=false`. Die terminale
+N10-v1-DB enthält genau zwei Records, null Timing-Sessions und null formale
+Claims; Modus `0600`, `40.960 B`, SHA-256
+`e0b5f4af62c128938e1e12e388c16b344a66e18eebf9e0568c7ebe34c5a4f0d5`,
+Snapshot-Revision
+`bbc75d60b5cfc61a1037c0a104e117a89561ec63e13240ca9b84f1bc98c08976`.
+Maximales Prozess-RSS außen war `175.931.392 B`, es gab keine Swaps. MLX wurde
+initialisiert, aber der Fehler trat bei der CPU-Fixture-Prüfung vor
+`backend.from_host`, GPU-Timing oder GPU-Arbeitsverbuchung auf.
+
+**Ursache.** `friday_n10.runner._load_real_workload` verwendete den bewährten
+H0-Generator mit einem neuen, korrekt vorab abgeleiteten Fixture-Seed. Für
+Produktionsform `2048²` akzeptiert dieser Generator absichtlich nur Seeds mit
+vollständig registrierter A-/B-/Metadaten-/Fixture-Identität. Der V1-Seed
+`8754882193294599646` war dort nicht registriert; der Test-Backend-Pfad hatte
+mit `2×2` gearbeitet und umging deshalb genau diese Produktionsgrenze. Eine
+direkte read-only Vertragsprüfung reproduzierte
+`CorrectnessContractError: performance fixture identity is not registered`.
+Der Guard verhielt sich korrekt; die Lücke lag im V1-Pre-Seal-Testvertrag.
+
+**Kein Retry, sondern V2.** V1 bleibt unverändert terminal. Der eigenständige
+Nachfolger `h2n10-dispatch-confirmation-20260822-02` verwendet Paket
+`friday_n10_v2/`, Tool `tools/run_n10_v2.py`, DB
+`.friday-data/n10-v2.sqlite3`, Application-ID `N10W` und UI-Port `8771`. Er
+übernimmt bewusst die bereits registrierte H0-Produktions-Fixture
+`0xF17A2026` samt allen vier festen Digests. Operand-, Session- und
+Bootstrap-Seeds sind neu aus der V2-Domain abgeleitet. Spezifikation und
+Runner binden V1-Study-ID, Fehlerrecord, DB-Hash, Snapshot-Revision, genau zwei
+Records und null Timing-Sessions. Seal, jeder Session-Preflight und jede
+abgeleitete Record-Mutation replayen diesen Vorgänger read-only; jede
+Abweichung sperrt V2. Die letzte Grenze entstand aus der unabhängigen
+Pre-Commit-Prüfung und verhindert insbesondere einen terminalen Claim nach
+einer zwischenzeitlichen Vorgängeränderung. Ein stabiler interner
+Benchmark-Fehlercode wird künftig begrenzt zusammen mit dem Fehlertyp, aber
+ohne Fehlermeldung, persistiert.
+
+**Produktions-Fixture- und Offline-Verifikation.** Der echte CPU-Generator
+erzeugte die registrierte `2048²`-Fixture in `0,20 s` außen, Peak RSS
+`152.633.344 B`, ohne Swap und reproduzierte exakt:
+
+- A: `33043be0345487a8a41b522df292e5288914b9c6c6c4dc823dbec72b9146bf86`;
+- B: `dd40817873b24c2e6117e4e6eeebddccf89775bd4ee4453e7d5456a911670ac2`;
+- Metadaten:
+  `1e26b28978e01ad0faaf296b48043e63803488cdb59e3aa84e79b9ab48a3bb20`;
+- Fixture:
+  `4776038d9500bad4374410fe2e4a167a6f834e80f0e4d19336592f4ff455dfa4`.
+
+Nach einer zusätzlichen Härtung akzeptiert der V2-Vorgängerhash nur eine private,
+begrenzte reguläre Datei, öffnet sie soweit verfügbar mit `O_NOFOLLOW` und prüft
+Dateideskriptor, Inode und Größe vor und nach dem Streaming-Hash. Ein neuer Test
+weist Symlinks und zu breite Dateirechte ab. Der nach Dateihash- und
+Mutationsgrenzen-Hardening wiederholte fokussierte V2-Lauf bestand `22/22`
+Tests und `10/10` Subtests in `40,28 s` (`40,54 s` außen, maximales RSS
+`57.950.208 B`, keine Swaps). Die danach wiederholte vollständige Suite bestand
+`508/508` Tests und `2.480/2.480` Subtests in `207,82 s` (`208,03 s` außen,
+User `196,21 s`, System `1,53 s`, maximales RSS `91.357.184 B`, keine Swaps).
+Self-Check, Bytecode-Kompilation und `git diff --check` bestanden; der
+V2-Study-Spec-Hash lautet
+`66a01028b5c7ba6cd7b05faef1f3100413d793c6b4d7e3982bea671fb9bba6cd`.
+Ein absichtlich im schmutzigen Pre-Commit-Stand aufgerufener V2-Seal stoppte
+mit `ProvenanceError`, Exit `1`, bevor eine V2-Datei angelegt wurde; der
+V1-Hash blieb unverändert.
+Der read-only V1-Vorgänger-Replay ließ dessen Dateihash unverändert. H1,
+Runtime und Research blieben ebenfalls bytegleich bei `141f010b…e78a4c4`,
+`ad4f0ef7…6473d82` und `70cbe45b…a0a6d91`.
+
+**Werkzeugfehler während der Reparatur.** Ein kombinierter Patch erwartete die
+SQLite-Application-ID im Migrationsfile dezimal, tatsächlich stand sie dort
+hexadezimal; der gesamte Patch scheiterte atomar und wurde anschließend mit dem
+exakten Kontext angewendet. Eine zu breite Seed-Suche traf außerdem große
+einzeilige JSON-Fixtures und überschritt nur das Ausgabelimit; die Korrektur
+beschränkte die Diagnose auf `correctness_contract.py` und kleine Ausschnitte.
+Beim Abruf des ersten abschließenden Gesamtlaufs war dessen Prozess-ID nach
+einem Kontextwechsel bereits geschlossen; weil damit der Abschlussblock nicht
+mehr beweisbar war, wurde derselbe sequenzielle Lauf vollständig wiederholt und
+oben protokolliert. Eine anschließende `rg`-Suche verwendete Backticks in einem
+doppelt quotierten Shell-Argument, wodurch die Shell zwei harmlose, nicht
+vorhandene Kommandos zu starten versuchte; die Suche blieb read-only und wurde
+nicht als Verifikation gewertet. Keiner dieser Werkzeugfehler änderte
+Datenbank oder Messzustand.
+Ein späterer kombinierter Dokumentationspatch suchte einen Journalabschnitt
+versehentlich im Forschungsentscheid; `apply_patch` verwarf deshalb den
+gesamten Patch atomar. Die Korrektur wurde anschließend mit den exakten
+Dateikontexten angewendet, ohne einen Teilstand zu hinterlassen.
+
+**Pre-Seal-Zustand V2.** Der ProjectAtlas-Refresh nach dem neuen Paket bestand
+mit 748 Kandidaten, 729 indexierten Textdateien und 591 Symbolkandidaten; 19
+Dateien wurden neu geparst, 572 blieben unverändert, kein Timeout. Es existiert
+noch keine `.friday-data/n10-v2.sqlite3`, keine V2-GPU-Timingmessung und kein
+neuer Modelllauf. Der nächste zulässige Schritt ist der saubere V2-Commit,
+danach ein eigener V2-Präregistrierungsrecord und erst dann frische A/A-Daten.
+Der abschließende Refresh nach Dokumentation und Dateihash-Hardening blieb bei
+748 Kandidaten, 729 indexierten Textdateien und 591 Symbolkandidaten; 7 Dateien
+wurden neu geparst, 584 blieben unverändert, kein Timeout.
