@@ -14,6 +14,7 @@
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; vier native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
+| N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI offline implementiert | Live-Auswahl bleibt bis sauberem Commit sowie bestandenem CPU- und GPU-Gate geschlossen; N8 bleibt unverändert |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
@@ -46,8 +47,9 @@ wiederholt. Der separate korrigierte N10-v2-Vertrag band diesen V1-Endzustand,
 lief ohne Gemma oder adaptive Auswahl vollständig durch und bestätigte den
 festen N10-Dispatch-Plan formal. Damit ist ausschließlich ein begrenzter,
 allowlist-basierter N10-Runtime-Prototyp als nächster Engineering-Schritt
-freigegeben; die bestehende N8-Runtime bleibt bis zu dessen eigenen Gates
-unverändert.
+freigegeben. Dieser ist inzwischen getrennt offline implementiert, aber noch
+nicht live gemessen oder in eine produktive Runtime übernommen; die bestehende
+N8-Runtime bleibt bis zu seinen eigenen Gates unverändert.
 Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
 Modellrunden und breiterer Live-Suchraum bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
@@ -90,6 +92,20 @@ vollständige Replay kostet derzeit `3,42–3,44 s` je Snapshot. Ein manueller
 `Ctrl-C`-Stop beendet den Server, erzeugt aber noch einen sichtbaren
 `KeyboardInterrupt`/Exit `1`. Während N10-v2 lief kein Modell und es gab weder
 Download noch Installation.
+
+Der getrennte N10-Runtime-/AVO-lite-Pre-Live-Stand verwendet Runtime-ID
+`n10-runtime-dispatch-20260822-01`, Application-ID `FRN1`, DB
+`.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. Der Controller prüft den
+exakten formalen DB-Hash und Snapshot, replayt N10-v1 als Vorgänger, vergleicht
+die versiegelten N10-Code-/Spec-/Umgebungs-/Hardwarefingerprints, beobachtet
+reale Tensoren und cached danach nur die unveränderliche Policy. Unsicherheit
+fällt seriell zurück; ein Batchfehler wird nicht wiederholt und verriegelt den
+Circuit Breaker. `17` fokussierte Tests und `9` Subtests bestanden in `3,54 s`;
+die abschließende vollständige Regression bestand mit `525` Tests und `2.489`
+Subtests in `211,66 s`. Im absichtlich schmutzigen Pre-Commit-Zustand replayte
+der reale Store 16 Records und fiel korrekt auf `worktree_dirty` zurück.
+Beide Live-Kommandos blieben ohne `--execute` bei Exit `78`; die neue DB
+existiert noch nicht und es gab keine neue GPU-Messung.
 
 ## Formales H1-v2-Ergebnis und Runtime-Pre-Live-Stand
 

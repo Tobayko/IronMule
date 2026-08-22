@@ -64,13 +64,17 @@ Aktuelle Reihenfolge:
    auf `5 %`; sechs byteidentische A/B-Sessions bestätigten
    `R=0,874912`, 95%-KI `[0,871768; 0,875614]`. Der 16-Record-Store endet mit
    `n10_gain_confirmed` und genau einem formalen Claim.
-8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — freigegeben, noch nicht
-   umgesetzt.** Der positive N10-Entscheid erlaubt einen getrennten Prototyp
+8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — offline implementiert,
+   Live-Gates noch geschlossen.** Der positive N10-Entscheid erlaubt einen getrennten Prototyp
    mit fester Allowlist, seriellem Fallback, Circuit Breaker, vollständiger
    Provenienz und eigener Baseline-/Nachher-Messung. Die bestehende N8-Runtime
-   bleibt unverändert. Freie Codegenerierung und Custom Metal sind nicht
-   autorisiert; Phase 1B bleibt **NO-GO**, Cross-Device **NO-CLAIM**, weitere
-   Modellrunden und ein breiterer Live-Suchraum bleiben **NO-GO**.
+   bleibt unverändert. Paket, Tests, eigene Persistenz/UI und Vorregistrierung
+   sind vorhanden; `17` fokussierte Tests sowie die Zwischen-Vollsuite mit
+   `525` Tests bestanden. Nach sauberem Commit folgen einmalig
+   Cold-Load-/CPU-Overhead- und danach nur bei Erfolg GPU-Gate. Freie
+   Codegenerierung und Custom Metal sind nicht autorisiert; Phase 1B bleibt
+   **NO-GO**, Cross-Device **NO-CLAIM**, weitere Modellrunden und ein breiterer
+   Live-Suchraum bleiben **NO-GO**.
    Der aktuelle Entscheid steht in
    [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md).
 

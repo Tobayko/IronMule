@@ -1,0 +1,57 @@
+"""Closed identities and resource bounds for the N10-derived runtime prototype."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_N10_DATABASE_PATH = PROJECT_ROOT / ".friday-data" / "n10-v2.sqlite3"
+DEFAULT_RUNTIME_DATABASE_PATH = PROJECT_ROOT / ".friday-data" / "runtime-n10.sqlite3"
+
+SCHEMA_VERSION = 1
+SQLITE_APPLICATION_ID = 0x46524E31  # ASCII "FRN1"
+RUNTIME_ID = "n10-runtime-dispatch-20260822-01"
+
+# These values bind the prototype to the single terminal N10-v2 result that
+# authorized it. A different successful-looking database is not interchangeable.
+N10_STUDY_ID = "h2n10-dispatch-confirmation-20260822-02"
+N10_DATABASE_SHA256 = "54e9c57ca6b76fa671b94f748b7ee471575b7dd7445bad00ae3cab38f691fc4f"
+N10_SNAPSHOT_REVISION = "9c9a94a8f799f2eb29b9e03c4e1b6e681aa945199753158cf8fc8c317b06090d"
+N10_DECISION_RECORD_ID = "47283e73eb6eefa01dc0f2e1760a2a2d350ca51019b8ddfa3a297d4b695e1249"
+N10_DECISION_SHA256 = "99f08dbb92730ec68a8867f15b4aeff4297a06284e7ffde4a63a76152420adf2"
+N10_PREREGISTRATION_SHA256 = "771c715520d3289cd2fbf051d469228d5686ae921eed1104e154914ac2a85ac8"
+N10_PROVENANCE_SHA256 = "17d0dd505e349a4bbb7ffde3c291a3a44226d0fce79c235ce2ce890289e0c9ef"
+N10_CODE_SHA256 = "727f1faa52f22595ef506b8194588a49a9f2bbd07355adb52a01cbe465660efe"
+N10_SPEC_SHA256 = "9c9e28f0d36213051654746b386a77e00eb116a8ae503a99ef1d2c987312ea65"
+N10_ENVIRONMENT_SHA256 = "6ef07ef1a2976e4dfc5a0fb7a65b1535a28372c145f8d488c7cd5d0a33ff6624"
+N10_HARDWARE_SHA256 = "ee157aaa01de24f2fcb3057bf6cacbfbc361257d2a192eadc3fd75f33f3133b3"
+
+OPERATION = "matmul"
+DTYPE = "float16"
+SHAPE = (2048, 2048)
+OUTPUT_SHAPE = (2048, 2048)
+RHS_COUNT = 10
+SERIAL_PLAN = "serial_per_op_eval_and_sync"
+BATCHED_PLAN = "enqueue_all_then_single_eval_and_sync"
+
+POLICY_WARMUP_BLOCKS = 5
+POLICY_MEASUREMENT_BLOCKS = 21
+POLICY_ITERATIONS_PER_ARM = 20_000
+POLICY_MAX_MEDIAN_NS = 25_000
+POLICY_MAX_P95_NS = 50_000
+POLICY_MAX_INCREMENTAL_NS = 20_000
+POLICY_MAX_LOAD_NS = 10_000_000_000
+
+GPU_WARMUP_PAIRS = 2
+GPU_MEASUREMENT_BLOCKS = 12
+GPU_MAX_RATIO = 0.95
+
+MAX_CANONICAL_BYTES = 4 * 1024 * 1024
+MAX_HISTORY_ROWS = 256
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_TARGET_BYTES = 2048
+DEFAULT_DASHBOARD_PORT = 8772
+
+HISTORY_KINDS = frozenset(
+    {"policy_overhead", "runtime_validation", "runtime_failure"}
+)
