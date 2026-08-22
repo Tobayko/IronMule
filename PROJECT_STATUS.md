@@ -1,13 +1,13 @@
 # Projektstatus
 
-**Stand:** 21. August 2026
+**Stand:** 22. August 2026
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 ## Auditierter aktueller Stand
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; formaler H1-v2-Code auf sauberem Commit `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; aktueller sauberer Ausgangsstand `2862b7f`, formaler H1-v2-Code auf Commit `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -15,6 +15,7 @@
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
+| N10-v1 formal | prospektiver Ein-Kandidaten-Vertrag, eigener append-only SQLite-v1-Store, getrennte A/A-/A/B-Splits und read-only UI implementiert; ausdrückliche Ausführungsfreigabe liegt vor, aber noch kein Seal und keine Messung | nach sauberem Implementierungscommit darf die vorregistrierte Studie ohne Gemma-Selektion ausgeführt werden; bis zum positiven terminalen Entscheid keine N10-Runtime |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `4` native Ereignisse: drei gültige Berichte mit Rohmessungen sowie einen
@@ -38,19 +39,30 @@ formales A/A-Gate und MDE noch nicht geschlossen. Spätere gepaarte, replizierte
 H1/H2-Zahlen bleiben technisch wertvoll, können aber nicht rückwirkend
 vorregistriert werden.
 
-Aktueller Entscheid: Der **begrenzte Runtime-Prototyp** hat seine Gates bestanden;
-die genau eine freigegebene H2-Gemma-Runde ist ebenfalls abgeschlossen. `N=10`
-ist ein vielversprechender, aber explorativ selektierter Kandidat. Er wird nicht
-in die auf `N=8` versiegelte Runtime übernommen. Nächster möglicher Schritt ist
-eine neue prospektive Ein-Kandidaten-Studie mit frischen Daten und eigener
-Architekturfreigabe. Phase 1B/Custom Metal bleibt **NO-GO**, Cross-Device
-**NO-CLAIM**, weitere Modellrunden und breiterer Live-Suchraum **NO-GO**.
+Aktueller Entscheid: Der **begrenzte N8-Runtime-Prototyp** hat seine Gates
+bestanden; die genau eine H2-Gemma-Runde ist abgeschlossen. Der Nutzer hat am
+22.08.2026 die neue prospektive N10-Ein-Kandidaten-Studie und umfassende lokale
+CPU-/GPU-Tests ausdrücklich freigegeben. Der Vertrag wird vor allen neuen Daten
+auf einem sauberen Commit versiegelt; Gemma ist aus der Bestätigung ausgeschlossen.
+Bis zu einem positiven terminalen Entscheid wird `N=10` nicht in die auf `N=8`
+versiegelte Runtime übernommen. Phase 1B/Custom Metal bleibt **NO-GO**,
+Cross-Device **NO-CLAIM**, weitere Modellrunden und breiterer Live-Suchraum
+bleiben **NO-GO**.
 Details: [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](docs/FORSCHUNGSENTSCHEID_2026-08-21.md),
 Persistenzvertrag: [`docs/H1H2_EVIDENZ_ARCHITEKTUR.md`](docs/H1H2_EVIDENZ_ARCHITEKTUR.md).
 Der initiale Auditlauf installierte nichts, lud nichts herunter und führte keinen
 GPU- oder Modelllauf aus. Nach späterer ausdrücklicher Rechenfreigabe wurden die
 unten dokumentierten lokalen Läufe ausgeführt; auch dabei gab es weder Download
 noch Installation.
+
+Der neue N10-v1-Implementierungsstand bestand vor dem Seal `18` fokussierte
+Tests in `40,539 s` sowie die vollständige Suite mit `486` Tests in `168,276 s`.
+Self-Check, Bytecode-Kompilation und `git diff --check` bestanden; der
+Study-Spec-Fingerprint ist
+`d0da9729e76a1c3df700b1ef70532a7411c000c40b0bca8ec195b88e6b62ab23`.
+Der absichtlich schmutzige Pre-Seal-Stand wurde vom Provenienzgate verworfen.
+`.friday-data/n10-v1.sqlite3` existiert noch nicht; während dieser
+Implementierungsprüfung liefen weder GPU- noch Modellmessungen.
 
 ## Formales H1-v2-Ergebnis und Runtime-Pre-Live-Stand
 

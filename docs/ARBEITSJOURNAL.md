@@ -3784,3 +3784,83 @@ geänderten Betriebszustand ab. Das verschachtelte `ProjectAtlas/` blieb
 unverändert; sichtbar waren ausschließlich die bereits vorhandenen
 ungetrackten Gradle-Caches in zwei Sprach-Fixtures. Der abschließende Atlas-
 Refresh nach allen Dokumentationskorrekturen bestand erneut.
+
+### 2026-08-22 — Prospektiver N10-Vertrag vor dem ersten Messdatum
+
+**Freigabe und Grenze.** Der Nutzer eröffnete ausdrücklich den vorgeschlagenen
+Weg: eine prospektive Ein-Kandidaten-Bestätigung für `N=10`, umfassende lokale
+CPU-/GPU-Tests und — nur bei positivem Ergebnis — die anschließende Prüfung
+eines begrenzten Runtime-/AVO-lite-Pfads. Vorhandene lokale Modelle dürfen
+verwendet werden. Die bindende Installationsgrenze bleibt bestehen: Ohne eine
+weitere ausdrückliche Freigabe erfolgen weder Download noch Installation. Freie
+Kernel-/Codegenerierung und Custom Metal bleiben außerhalb dieser Studie.
+
+**Atlas-first und Baseline.** Vor Quellarbeit wurde der fokussierte
+ProjectAtlas-Session-Brief verwendet. Ausgangspunkt war der saubere Root-Commit
+`2862b7f`; das verschachtelte `ProjectAtlas/` blieb unangetastet. Vor allen
+N10-Arbeiten existierte `.friday-data/n10-v1.sqlite3` nicht. Die drei
+Bestandsdatenbanken waren bytegleich zum dokumentierten Stand:
+
+- H1-v2:
+  `141f010bf4946ec39f5f87d2c8fbc50daf57305fa3d4772a7b962b101e78a4c4`;
+- Runtime:
+  `ad4f0ef703d1426c85853eb00a5f50ea8b1bd73a25fb121b13570d9676473d82`;
+- Research:
+  `70cbe45b846f3f06da57d5a7dd0a56270aab656dd1269df5737151053a0a6d91`.
+
+**Implementierung.** Der bewährte formale H1-Unterbau wurde mechanisch in das
+neue, getrennte Paket `friday_n10/` übertragen und danach auf eine eigene
+Study-ID, Application-ID, SQLite-v1-Datei, Hashdomain, Seeds, UI-Port `8770` und
+den exakten Zehn-Matmul-Workload verengt. Dadurch blieb `friday_h1/` vollständig
+unverändert. Hinzu kamen `tools/run_n10_v1.py`, vier fokussierte Testmodule und
+[`N10_VORREGISTRIERUNG_V1.md`](N10_VORREGISTRIERUNG_V1.md). Der Vertrag friert
+den einzigen Kandidaten an Research-Record
+`5d104d15eea14e82d6d90dc6d28de543858dcc73826a87f4e4c717ee1f24c26a`,
+Research-DB-Hash, Snapshot-Revision und lokale Gemma-Revision. Gemma ist aus
+Kalibrierung und Bestätigung ausgeschlossen; alte Selektionsdaten gehen in
+keine Schätzung ein. Vorgesehen sind sechs getrennte A/A- und sechs getrennte
+A/B-Prozesse, je zwei Warmup- und 24 balancierte Messpaare, reale 20-s-Pausen,
+hierarchischer Bootstrap mit 10.000 Draws, 5-%-MDE-Floor, Split-Gates,
+Byteidentität und terminale Fehler ohne Retry.
+
+**Gefundene und behobene Fehler.** Eine unabhängige Nachrechnung zeigte vor dem
+Seal, dass die eingefrorenen Seedwerte nicht zu der zunächst dokumentierten
+Formulierung „untere 63 Bit“ passten. Die Konstanten waren korrekt aus den
+ersten acht SHA-256-Bytes als Big-Endian-Wert mit gelöschtem höchstwertigem Bit
+abgeleitet. Dokument und formale Spezifikation benennen nun exakt Algorithmus,
+Domain, Labels und alle Session-Seeds; ein neuer Test rekonstruiert Fixture-,
+Operand-, Session- und Bootstrap-Seeds. Es wurden keine Seeds nach Messdaten
+geändert — es gab noch keine Messung. Zwei kombinierte Mehrdatei-Patches
+scheiterten wegen jeweils eines nicht passenden Dokumentkontexts atomar und
+änderten nichts; die Korrekturen wurden in kleine, einzeln passende Patches
+aufgeteilt. Beim Differenzreview fiel außerdem eine übernommene UI-Bezeichnung
+„SQLite v2“ auf; sie wurde vor dem Testlauf auf den tatsächlichen N10-Schemawert
+`v1` korrigiert. Ein erster langer Testaufruf lief zwar erfolgreich weiter,
+seine abschließende Ausgabe war nach einem zu knapp gewählten Tool-Yield nicht
+mehr gebunden; derselbe fokussierte Lauf wurde deshalb vollständig und mit
+erhaltener Session-ID wiederholt. Der erste gestagte `git diff --check` fand
+zwei Markdown-Zeilen mit beabsichtigten, aber unerwünschten nachgestellten
+Leerzeichen; Blankzeilen ersetzen nun diese Darstellung. Mess- und
+Datenbankzustand blieben von allen Korrekturen unberührt.
+
+**Offline-Verifikation.** Der fokussierte Lauf bestand `18/18` Tests in
+`40,539 s` (`40,65 s` außen, Peak RSS `41.713.664 B`). Die vollständige Suite
+bestand `486/486` Tests in `168,276 s` (`168,50 s` außen, User `157,07 s`,
+System `1,39 s`, Peak RSS `76.496.896 B`, keine Swaps). Self-Check,
+`compileall` und `git diff --check` bestanden. Der finale Offline-Spec-Hash vor
+dem Implementierungscommit lautet
+`d0da9729e76a1c3df700b1ef70532a7411c000c40b0bca8ec195b88e6b62ab23`.
+`black` ist in der bestehenden virtuellen Umgebung nicht installiert; gemäß
+Installationsgrenze wurde es nicht nachinstalliert. Der explizite
+Clean-Provenienztest und der Live-Preflight stoppten im schmutzigen Worktree
+korrekt mit `ProvenanceError`; die Ausführungssperre ohne `--execute` ist
+ebenfalls getestet.
+
+**Pre-Seal-Zustand.** Nach den Tests existiert weiterhin keine
+`.friday-data/n10-v1.sqlite3`; H1-, Runtime- und Research-DB behielten die oben
+genannten Hashes. Es gab in diesem Schritt keine GPU-, CPU-Performance- oder
+Modellmessung und keinen Download. Der ProjectAtlas-Refresh nach den neuen
+Dateien bestand mit 731 Kandidaten, 712 indexierten Textdateien, 574
+Symbolkandidaten, 20 neu geparsten und 554 unveränderten Dateien ohne Timeout.
+Der nächste zulässige Schritt ist ein sauberer lokaler Implementierungscommit,
+danach das persistierte Präregistrierungssiegel und erst dann A/A.

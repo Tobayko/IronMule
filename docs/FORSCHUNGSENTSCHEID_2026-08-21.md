@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | Begrenzte evidenzgebundene Runtime | **GO im exakten H1-Scope** | formales H1-v2-Gain-Gate sowie CPU-Overhead- und MLX/GPU-Runtime-Gates bestanden; Korrektheit byte-identisch | jede Evidenz-, Code-, Spec-, Environment-, Hardware- oder Workload-Abweichung fällt weiterhin seriell zurück |
 | Geschlossener H2-Modellvorschlag | **eine Runde abgeschlossen; kein weiterer Lauf** | Gemma schlug `3,10,16` vor; Harness bestätigte explorativ `N=10`, aber Kandidatenselektion und Ergebnis sind Schema v1 mit `formal_claim=false` | vor weiterer Runde oder Runtime-Erweiterung neue prospektive Studie und explizite Architekturfreigabe |
+| Prospektive N10-Bestätigung | **GO nach sauberem Implementierungscommit und Präregistrierungssiegel** | Nutzerfreigabe vom 22.08.2026; genau ein vorab eingefrorener Kandidat, frische A/A-/A/B-Daten und getrennte Splits | positiver terminaler Entscheid darf nur einen begrenzten N10-Runtime-Prototyp eröffnen |
 | Phase 1B / Custom MLX-Metal | **NO-GO** | formales H1 bestätigt nur Dispatch-Amortisation; reale Roofline deutet weiter auf Speicherlimit, und eine separate Custom-Kernel-Sicherheits-/Architekturfreigabe fehlt | freigegebene isolierte Worker-/Rollback-Architektur, eigener prospektiver Vertrag und neuer expliziter Nutzerentscheid |
 | Cross-Device | **NO-CLAIM / derzeit blockiert** | es existiert Evidenz von genau einem M1 Max; ein zweites Zielgerät ist nicht verfügbar | mindestens ein unabhängiges Gerät, identischer versiegelter Workload und vollständige Provenienz |
 | breiterer Live-Suchraum | **NO-GO** | mehr Kandidaten würden den explorativen Charakter und Multiple-Testing-/Winner's-Curse-Risiken vergrößern | neue H1-Vorregistrierung mit Familien/Splits, Kandidatenbudget, Powerplanung und frischen IDs |
@@ -46,11 +47,11 @@
    `[0,648895; 0,731190]`. Der persistierte Bericht enthält Rohdaten, bleibt aber
    wegen Modellselektion und Schema v1 ausdrücklich `formal_claim=false`.
 
-## Nächster kleinster wissenschaftlich zulässiger Schritt
+## Freigegebener nächster wissenschaftlicher Schritt
 
 Nicht Phase 1B, keine zweite Modellrunde und keine direkte Runtime-Erweiterung.
-Der nächste wissenschaftlich saubere Schritt wäre eine neue prospektive
-Ein-Kandidaten-Studie für `N=10`:
+Freigegeben und vor den ersten Messdaten implementiert ist eine neue
+prospektive Ein-Kandidaten-Studie für `N=10`:
 
 - `N=10` wird als einziger aus Vorwissen ausgewählter Kandidat vor frischen Daten
   eingefroren; Gemma nimmt an dieser Bestätigung nicht mehr teil.
@@ -63,9 +64,11 @@ Ein-Kandidaten-Studie für `N=10`:
   autorisieren. Die bestehende N=8-Runtime bleibt unverändert und fällt für
   N=10 weiterhin seriell zurück.
 
-Dieser neue Architektur-/Studienvertrag benötigt vor Implementierung eine
-explizite Nutzerfreigabe. Weitere Runden, Custom Metal und Modellcode bleiben
-bis dahin NO-GO.
+Die explizite Nutzerfreigabe für Vertrag, lokale CPU-/GPU-Tests und Ausführung
+liegt seit 22.08.2026 vor. Vor dem sauberen Implementierungscommit und dem
+persistierten Präregistrierungssiegel bleibt der Live-Pfad geschlossen. Weitere
+Modellrunden, Custom Metal, freie Codegenerierung und ein breiterer Suchraum
+bleiben NO-GO.
 
 ## Umsetzungsstand des Audits
 
@@ -80,6 +83,12 @@ vollständige Suite bestand nach H1-v2 und Runtime-Prototyp mit `468` Tests und
 `2.463` Subtests. Der formale H1-Store enthält 16 Records; die getrennte
 Runtime-Historie zwei bestandene, hashverkettete Engineering-Records. Die
 Research-DB umfasst 14 verifizierte Zeilen und ist read-only replaybar.
+
+Der freigegebene prospektive N10-v1-Vertrag wurde anschließend vor neuen Daten
+implementiert. `18` fokussierte Tests und die vollständige Suite mit `486` Tests
+bestanden; der Pre-Seal-Provenienzcheck verweigerte den schmutzigen Worktree wie
+vorgesehen. Eine N10-Datenbank oder N10-GPU-Messung existiert zu diesem Stand
+noch nicht.
 
 Die neuen Messungen sind durch Schema v1 ausdrücklich `formal_claim=false`. Der
 Dispatch-Befund liegt explorativ jenseits der 5%-Schwelle; die neue Roofline-
