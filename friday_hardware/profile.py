@@ -84,6 +84,15 @@ class HardwareProfile:
     # the 1B's flatter curve and hit rate pays there more than hit quality does.
     lookup_ngram: int = 3
     lookup_draft: int = 2
+    # How far a match has to extend backwards before its continuation is reliable,
+    # and the acceptance to expect on either side of that. Measured on the 4B over
+    # real project text: matches of three to eight tokens were accepted 53.6% of the
+    # time, matches of nine or more 48 times out of 48. The window used to *find* a
+    # match and the depth to draft from it are therefore different questions, and
+    # treating them as one costs both hit rate and accuracy.
+    long_match_tokens: int = 9
+    short_match_acceptance: float = 0.55
+    long_match_acceptance: float = 0.98
     measured_at: str = ""
     notes: str = ""
     # Safety headroom when sizing a segment against a continuous-load limit. Step
@@ -108,6 +117,17 @@ class HardwareProfile:
             )
         if self.lookup_draft < 0:
             raise ProfileError("draft length must be non-negative")
+        if self.long_match_tokens <= self.lookup_ngram:
+            raise ProfileError(
+                "the reliable-match threshold must exceed the search window, "
+                "or every match would count as reliable"
+            )
+        for name, value in (("short", self.short_match_acceptance),
+                            ("long", self.long_match_acceptance)):
+            if not 0.0 <= value <= 1.0:
+                raise ProfileError(f"{name}-match acceptance must lie in [0, 1]")
+        if self.long_match_acceptance < self.short_match_acceptance:
+            raise ProfileError("a longer match cannot be the less reliable one")
         unknown = set(self.regression_widths) - set(self.width_ms)
         if unknown:
             raise ProfileError(f"regression widths were never measured: {sorted(unknown)}")
@@ -322,6 +342,25 @@ class HardwareProfile:
                 best = k
         return best
 
+    def depth_for_match(self, match_length: int, limit: int | None = None) -> int:
+        """Draft depth justified by how far the match extends backwards.
+
+        A three-token match and a thirty-token match are not the same evidence, and
+        spending the same depth on both is what makes speculation lose on prose: the
+        short matches are drafted four deep, rejected, and paid for anyway.
+        """
+
+        if match_length < 0:
+            raise ProfileError("match length cannot be negative")
+        if match_length == 0:
+            return 0
+        expected = (
+            self.long_match_acceptance
+            if match_length >= self.long_match_tokens
+            else self.short_match_acceptance
+        )
+        return self.draft_length_for(expected, limit=limit)
+
     # -- persistence --------------------------------------------------------
 
     def as_dict(self) -> dict[str, object]:
@@ -339,6 +378,9 @@ class HardwareProfile:
             "prefill_ms_per_position": self.prefill_ms_per_position,
             "lookup_ngram": self.lookup_ngram,
             "lookup_draft": self.lookup_draft,
+            "long_match_tokens": self.long_match_tokens,
+            "short_match_acceptance": self.short_match_acceptance,
+            "long_match_acceptance": self.long_match_acceptance,
             "measured_at": self.measured_at,
             "notes": self.notes,
             "segment_safety": self.segment_safety,
@@ -365,6 +407,9 @@ class HardwareProfile:
                 ),
                 lookup_ngram=int(raw.get("lookup_ngram", 3)),
                 lookup_draft=int(raw.get("lookup_draft", 2)),
+                long_match_tokens=int(raw.get("long_match_tokens", 9)),
+                short_match_acceptance=float(raw.get("short_match_acceptance", 0.55)),
+                long_match_acceptance=float(raw.get("long_match_acceptance", 0.98)),
                 measured_at=str(raw.get("measured_at", "")),
                 notes=str(raw.get("notes", "")),
                 segment_safety=float(raw.get("segment_safety", 0.75)),
