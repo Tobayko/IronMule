@@ -1,0 +1,215 @@
+{
+  "accuracy": 0.2917,
+  "accuracy_ci95": [
+    0.1491,
+    0.4917
+  ],
+  "backend": "batch",
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 37.259955,
+    "max_continuous_gpu_seconds": 1.576608,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 288.616862,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 329.187906
+  },
+  "chunk": 1,
+  "correct": 7,
+  "coverage": 0.625,
+  "difficulty": "hard",
+  "generation_seconds": 37.26,
+  "load_seconds": 1.371,
+  "max_tokens": 288,
+  "mean_distinct_answers": 0.625,
+  "model": "1b",
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "model_revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+  "model_snapshot_weight_bytes": 732577304,
+  "model_snapshot_weight_files": [
+    "model.safetensors"
+  ],
+  "model_source": "validated_project_local_snapshot",
+  "peak_memory_gb": 0.8848,
+  "per_problem": [
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 69
+    },
+    {
+      "answer": 1227,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 1227
+    },
+    {
+      "answer": 24,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 99
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 610
+    },
+    {
+      "answer": 120,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 360
+    },
+    {
+      "answer": 240,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 240
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 38
+    },
+    {
+      "answer": 10,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 414
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 3194
+    },
+    {
+      "answer": 85,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 255
+    },
+    {
+      "answer": 0,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 800
+    },
+    {
+      "answer": 378,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 378
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 49
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 81
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 52
+    },
+    {
+      "answer": 300,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 300
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 57
+    },
+    {
+      "answer": 550,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 550
+    },
+    {
+      "answer": null,
+      "correct": false,
+      "distinct_answers": 0,
+      "parsed_votes": 0,
+      "truth": 80
+    },
+    {
+      "answer": 66,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 1550
+    },
+    {
+      "answer": 662,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 662
+    },
+    {
+      "answer": 432,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 3447
+    },
+    {
+      "answer": 670,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 670
+    },
+    {
+      "answer": 171,
+      "correct": false,
+      "distinct_answers": 1,
+      "parsed_votes": 1,
+      "truth": 1851
+    }
+  ],
+  "power_source": "ac_power",
+  "problem_offset": 24,
+  "problems": 24,
+  "samples_per_problem": 1,
+  "seconds_per_problem": 1.5525,
+  "steps_per_segment": null,
+  "temperature": 0.7
+}
