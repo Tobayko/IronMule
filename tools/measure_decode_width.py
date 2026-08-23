@@ -48,7 +48,10 @@ from _bench import (  # noqa: E402
     resolve_local_model_snapshot,
 )
 
-MODEL = "mlx-community/gemma-3-4b-it-4bit"
+MODELS = {
+    "4b": "mlx-community/gemma-3-4b-it-4bit",
+    "1b": "mlx-community/gemma-3-1b-it-4bit",
+}
 PASS_WIDTHS = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 24, 32, 48, 64)
 BATCH_SIZES = (1, 2, 4, 8, 16, 32)
 CONTEXT_TOKENS = 256
@@ -380,11 +383,11 @@ def measure_generation(model, tokenizer, guard: BudgetGuard) -> dict[str, object
     }
 
 
-def measure(guard: BudgetGuard) -> dict[str, object]:
+def measure(guard: BudgetGuard, *, model_key: str = "4b") -> dict[str, object]:
     import mlx.core as mx
     from mlx_lm import load
 
-    snapshot = resolve_local_model_snapshot(MODEL)
+    snapshot = resolve_local_model_snapshot(MODELS[model_key])
     started = time.perf_counter()
     model, tokenizer = load(str(snapshot.path))
     load_seconds = time.perf_counter() - started
@@ -398,6 +401,7 @@ def measure(guard: BudgetGuard) -> dict[str, object]:
     realised = generation["best_throughput_vs_batch_1"]
     headroom = forward["best_throughput_vs_width_1"]
     result = {
+        "model": model_key,
         **snapshot.report_identity(),
         "load_seconds": round(load_seconds, 3),
         "context_tokens": CONTEXT_TOKENS,
@@ -420,6 +424,8 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true", help="actually run the measurement")
     parser.add_argument("--self-check", action="store_true", help="offline checks only")
     parser.add_argument("--out", type=Path, default=None, help="write the JSON report here")
+    parser.add_argument("--model", choices=sorted(MODELS), default="4b",
+                        help="the width curve is model-specific; each needs its own policy")
     args = parser.parse_args()
 
     gate = release_gate(args, _self_check)
@@ -428,7 +434,7 @@ def main() -> int:
 
     power = require_ac_power()
     guard = BudgetGuard()
-    report = measure(guard)
+    report = measure(guard, model_key=args.model)
     report["power_source"] = power
     report["budget"] = guard.summary()
     payload = json.dumps(report, indent=2, sort_keys=True)
