@@ -311,3 +311,73 @@ sinnvoll, wenn der wahrscheinliche Ausgang `bw1_correctness_failed` als Ergebnis
 akzeptiert wird.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 5 — 24.08.2026
+
+**Kandidat:** `persistent-process-20260824-02`. Vorregistrierung vorab:
+`experiments/persistent/PREREGISTRATION.md`. Ersetzt den Zyklus-3-Kandidaten mit
+korrigierter Schwelle und einem Korrektheitsgate.
+
+### H1 — Korrektheit: hält
+
+Arm A: frischer Prozess, Prompt `P`. Arm B: ein Prozess, Reihenfolge `P Q R` mit
+`P` dreimal. Frischer KV-Cache je Anfrage; Präfix-Wiederverwendung ausdrücklich aus.
+
+| # | Anfrage | TTFT s | RSS GB | tokenidentisch zu kalt |
+| ---: | :--- | ---: | ---: | :--- |
+| 0 | `P` | `1,747` | `3,77` | **ja** |
+| 1 | `Q` | `1,752` | `3,77` | – |
+| 2 | `P` | `1,771` | `3,77` | **ja** |
+| 3 | `R` | `1,747` | `3,77` | – |
+| 4 | `P` | `1,755` | `3,77` | **ja** |
+
+Drei von drei. Keine Zustandsverschleppung durch die eingeschobenen `Q` und `R`, RSS
+über alle fünf Anfragen unverändert.
+
+Das ist bemerkenswert vor dem Hintergrund der Zyklen 1, 2 und 4: dreimal veränderte
+eine formabhängige Numerik die Ausgabe still. Hier ändert sich die Form nicht — nur,
+wie oft der Prozess startet — und die Ausgabe bleibt bitgleich.
+
+### H2 — Wirkung: hält
+
+| Anteil | s |
+| :--- | ---: |
+| Importe (Zyklus 3, Median dreier frischer Prozesse) | `1,881` |
+| Snapshot-Auflösung und Modellladen | `1,426` |
+| Prefill bis erstes Token | `1,747` |
+| **`cold_process` TTFT** | **`5,053`** |
+| **warm TTFT** | **`1,747`** |
+| **entfernt** | **`65,4 %`** |
+
+Schwelle war `50 %`.
+
+**Einschränkung, offen benannt:** Das Messskript hat die eigene Vorregistrierung
+unvollständig umgesetzt — der Zeitzähler startete **nach** den Importen, obwohl die
+Spezifikation sie ausdrücklich verlangt. Die fehlende Größe wurde aus Zyklus 3
+übernommen, gemessen mit identischer Methode auf derselben Maschine. Der Gegencheck
+stützt die Ersetzung: `5,053` s gegen dort unabhängig gemessene `5,094` s, `0,8 %`
+Abweichung. Ein erneuter Lauf nach Sicht eines knappen Ergebnisses wäre genau das,
+wovor diese Messreihe wiederholt gewarnt hat, und unterblieb deshalb.
+
+### Entscheid
+
+Nach der vorab festgelegten Tabelle (`H1` hält, `H2` hält):
+**`candidate_recommended_for_preregistration`**.
+
+Der erste Kandidat in fünf Zyklen, der ein Korrektheitsgate besteht. Er ist es genau
+deshalb, weil er als einziger **nichts an der Numerik ändert** — keine Blockgröße,
+keine Batchbreite, keine Cache-Struktur.
+
+### Was das nicht ist
+
+Keine Empfehlung zur Produktivaktivierung und kein `formal_claim`. Eine belastbare
+Bestätigung verlangt eine eigene versiegelte Studie mit A/A-Gate und eingefrorener
+MDE, wie N8, N10 und Phase 1B sie hatten.
+
+Und es verschiebt den Engpass nur: nach Entfernen der `3,31` s bleibt der Prefill mit
+`1,747` s stehen, und dessen wirksamste Optimierung ist die Präfix-Wiederverwendung —
+in Zyklus 1 am Korrektheitsgate gescheitert und in Zyklus 4 endgültig gesperrt.
+
+**`formal_claim=false`.**
