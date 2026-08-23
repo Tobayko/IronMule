@@ -93,3 +93,22 @@ class ProfileLookupTests(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class RewindReportingTests(unittest.TestCase):
+    def test_fallback_steps_are_reported(self):
+        # Speculation needs the rejected tokens taken back out of the cache. Gemma 3
+        # keeps most layers in a rotating cache that stops being rewindable past its
+        # window (512 tokens on the 1B, 1024 on the 4B), and the generator falls back
+        # to plain decoding there rather than corrupting the answer. The count has to
+        # surface, or a run that never drafted looks the same as one that chose not to.
+        g = Generation(tokens=[1, 2, 3], seconds=0.3, steps=3, drafted=0, accepted=0,
+                       ngram=3, draft_length=2, unrewindable_steps=3)
+        self.assertEqual(g.unrewindable_steps, 3)
+        self.assertIsNone(g.acceptance)
+
+    def test_a_run_that_could_draft_reports_no_fallbacks(self):
+        g = Generation(tokens=[1, 2, 3], seconds=0.3, steps=2, drafted=2, accepted=2,
+                       ngram=3, draft_length=2)
+        self.assertEqual(g.unrewindable_steps, 0)
+        self.assertAlmostEqual(g.acceptance, 1.0)
