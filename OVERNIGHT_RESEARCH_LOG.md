@@ -89,3 +89,70 @@ solange die Ausgabe eine andere ist.
 die Tokenidentität erhält. Ob eine solche Größe längenunabhängig existiert, ist offen.
 
 **Alles aus diesem Zyklus:** `formal_claim=false`.
+
+---
+
+## Zyklus 2 — 24.08.2026
+
+**Kandidat:** `chunk-identity-20260824-01`. Vorregistrierung vor der Messung
+geschrieben: `experiments/chunk_identity/PREREGISTRATION.md`.
+
+**Frage.** Existiert eine Prefill-Blockgröße, unter der ein zerteiltes Prefill
+tokenidentisch zum Einzelblock bleibt? Vier Kandidaten der Liste hängen daran.
+
+### Phase A — Matrix
+
+Vier Promptlängen × fünf Blockgrößen, `16` Ausgabetoken, greedy:
+
+| Prompt | 64 | 128 | 256 | 512 | 1024 |
+| ---: | :--- | :--- | :--- | :--- | :--- |
+| `303` | ✓ | ✓ | ✓ | – | – |
+| `677` | ✓ | **✗** | ✓ | **✗** | – |
+| `1205` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `1997` | **✗** | ✓ | ✓ | **✗** | ✓ |
+
+Die Fehlschläge sind **sporadisch, nicht systematisch**: `64` scheitert nur bei
+`1997`, `128` nur bei `677`. Kein Muster nach Blockanzahl, Zweierpotenz oder
+Fenstergrenze.
+
+`256` hielt 4/4 — aber bei einer Ausfallrate von rund `29 %` je Zelle hat eine von
+fünf Blockgrößen mit Wahrscheinlichkeit `0,71⁴ ≈ 25 %` zufällig vier Treffer. Das
+allein rechtfertigt keine Regel.
+
+### Phase B — Bestätigung
+
+Sechs weitere Längen für `256` und `1024`. Der Lauf endete vorzeitig: eine
+**Einzelblock-Referenz über rund `2600` Token überschreitet das `6`-s-Continuous-Limit**.
+Das ist eine echte Messgrenze der Policy, kein Fehler. Teilergebnis persistiert, kein
+Retry im selben Prozess.
+
+| Blockgröße | identisch | Längen |
+| ---: | ---: | :--- |
+| **`256`** | **`7/8`** | `303`–`2503`, **Fehlschlag bei `1513`** |
+| `1024` | `4/4` | `1205`–`2503` |
+
+**`256` scheitert bei `1513` Token.** Der 4/4-Befund aus Phase A war Glück, wie
+vorab vermutet.
+
+### Entscheid
+
+Über beide Phasen: **`6` Fehlschläge auf `23` Zellen, rund `26 %`**.
+
+`candidate_correctness_failed`. Das ist der in der Vorregistrierung als Ausgang 2
+festgelegte Fall: **keine Blockgröße erhält die Tokenidentität zuverlässig.** Die
+Deutung wird nicht nachträglich geändert.
+
+### Folgen
+
+Vier Kandidaten bleiben blockiert, weil alle die Blockstruktur verändern:
+Präfix-Wiederverwendung, Prefill-Step-Size-Sweep, Microbatching, Continuous Batching.
+
+Der Korrektheitsvertrag des Auftrags — identische Token-IDs — ist damit für jede
+Optimierung, die die Prefill-Zerteilung ändert, auf dieser Plattform **nicht
+erfüllbar**. Das ist eine Entscheidung, die dem Nutzer gehört, nicht eine, die ich
+durch Aufweichen des Kriteriums treffe.
+
+Übrig bleiben nur Kandidaten, die die Numerik gar nicht berühren: persistenter
+Modellprozess und deterministischer Warm-up.
+
+**`formal_claim=false`.**
