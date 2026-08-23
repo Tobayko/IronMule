@@ -71,6 +71,8 @@ class Generation:
     accepted: int
     ngram: int
     draft_length: int
+    # Steps that could not draft because the cache had stopped being rewindable.
+    unrewindable_steps: int = 0
 
     @property
     def acceptance(self) -> float | None:
@@ -103,7 +105,11 @@ def speculative_generate(
     """
 
     import mlx.core as mx
-    from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
+    from mlx_lm.models.cache import (
+        can_trim_prompt_cache,
+        make_prompt_cache,
+        trim_prompt_cache,
+    )
 
     if max_tokens < 1:
         raise ProfileError("generation needs at least one token")
@@ -125,9 +131,21 @@ def speculative_generate(
     context.append(first)
     generated = [first]
 
-    steps = drafted_total = accepted_total = 0
+    steps = drafted_total = accepted_total = unrewindable = 0
     while len(generated) < max_tokens:
-        drafted = find_continuation(context, ngram, draft_length)
+        # Speculation is only safe where the rejected tokens can be taken back out
+        # of the cache. Gemma 3 keeps most layers in a rotating cache that stops
+        # being rewindable once the context passes its window -- 512 tokens on the
+        # 1B, 1024 on the 4B -- and trim_prompt_cache reports that by returning
+        # zero rather than raising. Drafting anyway leaves rejected tokens in the
+        # cache and quietly changes every later token, which is exactly what it did
+        # before this check existed.
+        rewindable = can_trim_prompt_cache(cache)
+        drafted = (
+            find_continuation(context, ngram, draft_length) if rewindable else []
+        )
+        if not rewindable:
+            unrewindable += 1
         window = [context[-1]] + drafted
         logits = model(mx.array([window]), cache=cache)
         picks = sampler(logits[0].astype(mx.float32)).tolist()
@@ -146,7 +164,15 @@ def speculative_generate(
         # or the next step would attend to tokens the model rejected.
         surplus = len(window) - (keep + 1)
         if surplus > 0:
-            trim_prompt_cache(cache, surplus)
+            removed = trim_prompt_cache(cache, surplus)
+            if removed != surplus:
+                # The pre-check said this was rewindable, so a short trim means the
+                # cache changed its mind mid-step. Continuing would silently corrupt
+                # the answer; there is no safe way to carry on from here.
+                raise ProfileError(
+                    f"cache rollback removed {removed} of {surplus} tokens; "
+                    "the generated text would no longer match greedy decoding"
+                )
 
         for token in emitted:
             context.append(int(token))
@@ -164,4 +190,5 @@ def speculative_generate(
         accepted=accepted_total,
         ngram=ngram,
         draft_length=draft_length,
+        unrewindable_steps=unrewindable,
     )

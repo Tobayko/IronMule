@@ -1,0 +1,14 @@
+Test output from the project:
+
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0
+rootdir: /Users/tobiasburandt/Project_Friday
+configfile: pytest.ini
+plugins: xdist-3.8.0, anyio-4.14.2
+collected 28 items
+
+tests/test_hardware_profile.py ............................              [100%]
+
+============================== 28 passed in 0.03s ==============================
+
+Which test names cover the width choice, and what does each of them check? List them.
