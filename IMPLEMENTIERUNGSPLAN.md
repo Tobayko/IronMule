@@ -67,7 +67,7 @@ Aktuelle Reihenfolge:
    auf `5 %`; sechs byteidentische A/B-Sessions bestätigten
    `R=0,874912`, 95%-KI `[0,871768; 0,875614]`. Der 16-Record-Store endet mit
    `n10_gain_confirmed` und genau einem formalen Claim.
-8. **Begrenzten N10-Runtime-/AVO-lite-Pfad prüfen — abgeschlossen; exakter
+8. **Begrenzten N10-Runtime-/Runtime-lite-Pfad prüfen — abgeschlossen; exakter
    Scope bestanden.** Der getrennte Prototyp mit fester Allowlist, seriellem
    Fallback, Circuit Breaker, vollständiger Provenienz und eigener
    Baseline-/Nachher-Messung wurde auf Commit `5eaad38` versiegelt. `17`

@@ -145,7 +145,7 @@ läuft weit unter dem, was Breite `32` auf derselben Hardware zeigt. Ob das ein
 MLX-Kernelpfad, eine Gruppengrößenwahl oder eine Dispatchgrenze ist, ist hier **nicht**
 geklärt und wäre der nächste isolierte Versuch.
 
-## 7. Anschluss an den bestehenden AVO-Router
+## 7. Anschluss an den bestehenden Shadow-Router
 
 `friday_avo_router/` wählt bereits evidenzgebunden zwischen seriellem und gebündeltem
 Plan und erzwingt `serial_shadow_only`. Die dort gebaute Struktur — reale

@@ -416,7 +416,7 @@ gegangen werden:
 
 ---
 
-## Prospektives N10-Ergebnis und begrenzte AVO-lite-Runtime
+## Prospektives N10-Ergebnis und begrenzte Runtime-lite-Runtime
 
 Die explorative Gemma-Auswahl wurde nicht noch einmal verwendet. Stattdessen
 wurde `N=10` als einziger Kandidat in einer neuen prospektiven Studie geprüft.
@@ -438,7 +438,7 @@ FP16-`2048²` und genau zehn Matmuls bestätigt. Der terminale Record ist der
 einzige formale Claim; er erlaubt ausschließlich einen begrenzten
 Runtime-Prototyp.
 
-Dieser getrennte N10-Runtime-/AVO-lite-Prototyp bestand anschließend seine
+Dieser getrennte N10-Runtime-/Runtime-lite-Prototyp bestand anschließend seine
 eigenen Engineering-Gates auf sauberem Commit `5eaad38`:
 
 | Runtime-Gate | Ergebnis | Grenze |
@@ -450,7 +450,7 @@ eigenen Engineering-Gates auf sauberem Commit `5eaad38`:
 | MLX/GPU, 12 Blöcke | **`R=0,875753`, `−12,425 %`** | `R≤0,95` |
 | Runtime-Korrektheit | byteidentisch, `max_abs_error=0` | exakt |
 
-AVO-lite bedeutet hier bewusst keine allgemeine autonome Architektur: Der
+Runtime-lite bedeutet hier bewusst keine allgemeine autonome Architektur: Der
 Controller beobachtet reale Tensoren, verifiziert die versiegelte Evidenz,
 wählt genau einen bekannten Plan und fällt sonst seriell zurück. Es gibt keine
 freie Suche, keine Codegenerierung, keine Modellaktion und kein Custom Metal.

@@ -14,7 +14,7 @@
 | H1/H2 künftig | SQLite-v1-Evidenz, saubere Git-/Code-/Spec-/Environment-Bindung, gemeinsame Budgets und read-only Historien-UI implementiert; vier native Ereignisse vorhanden | prospektive Exploration möglich; formale Claims bleiben in v1 ausdrücklich `false` |
 | H1-v2 formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, MDE `5 %`, sechs frische A/B-Sessions und Split-Entscheid `h1_gain_confirmed` | für genau ein Gerät, FP16-`2048²`, acht Matmuls und den Batch-Dispatch-Plan ist der Gain jenseits der MDE formal bestätigt; kein Modell-/Cross-Device-Claim |
 | Begrenzte Runtime | exakte H1-Bindung, tensorbasierte Scope-Prüfung, serieller Fallback, Circuit Breaker, Hash-Ketten-Historie und read-only UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | Batch ist nur für den exakt registrierten Workload freigegeben; Policy-/Runtime-Befund ist Engineering-Validierung, kein neuer formaler oder Modell-Claim |
-| N10-Runtime / AVO-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | **Engineering-GO nur im exakten N10-Scope**; jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert |
+| N10-Runtime / Runtime-lite | getrenntes Paket `friday_runtime_n10/` mit exaktem 16-Record-/DB-/Snapshot-Claim, N=10-Allowlist, Cold-Load-Gate, Circuit Breaker und eigener DB/UI; CPU- und MLX/GPU-Gates auf sauberem Commit bestanden | **Engineering-GO nur im exakten N10-Scope**; jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert |
 | N8/N10-Shadow-Router | getrenntes Paket `friday_avo_router/`; beide versiegelten Policies müssen autorisieren, reale Tensor-Metadaten bestimmen die Empfehlung, erzwungener Plan bleibt `serial_shadow_only`; CPU-, MLX-Metadaten-, History-, UI- und Security-Gates auf sauberem Commit bestanden | **Shadow-GO** nur für Beobachtung und als Gate zur getrennten Ein-Kernel-Vorregistrierung; keine optimierte Ausführung, keine produktive Integration und kein neuer formaler Claim |
 | Phase 1B Residual+RMSNorm | statischer, quellhashgebundener Custom-Metal-Kandidat auf Commit `ea8f959`; Security-Diff, 566er Vollsuite, Qualification, A/A, A/B, Persistenz und UI abgeschlossen | Correctness und Messsystem bestanden; nur `1,870 %` Gain bei vorregistrierten `5 %` Mindestgewinn: **keine Promotion**, `baseline_fallback`, gültiger Negativbefund |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
@@ -48,7 +48,7 @@ gültiger terminaler Engineering-Negativlauf ohne Timingdaten und wird nicht
 wiederholt. Der separate korrigierte N10-v2-Vertrag band diesen V1-Endzustand,
 lief ohne Gemma oder adaptive Auswahl vollständig durch und bestätigte den
 festen N10-Dispatch-Plan formal. Der davon getrennte, allowlist-basierte
-N10-Runtime-/AVO-lite-Prototyp hat nun auch sein Cold-Load-/CPU-Gate und sein
+N10-Runtime-/Runtime-lite-Prototyp hat nun auch sein Cold-Load-/CPU-Gate und sein
 gepaartes MLX/GPU-Gate bestanden. Der danach getrennt implementierte N8/N10-
 Shadow-Router hat ebenfalls alle vorregistrierten CPU-, reale Tensor-,
 Persistenz-, UI- und Sicherheitsgates bestanden. Das ist weiterhin keine
@@ -101,7 +101,7 @@ vollständige Replay kostet derzeit `3,42–3,44 s` je Snapshot. Ein manueller
 `KeyboardInterrupt`/Exit `1`. Während N10-v2 lief kein Modell und es gab weder
 Download noch Installation.
 
-Der getrennte N10-Runtime-/AVO-lite-Pfad verwendet Runtime-ID
+Der getrennte N10-Runtime-/Runtime-lite-Pfad verwendet Runtime-ID
 `n10-runtime-dispatch-20260822-01`, Application-ID `FRN1`, DB
 `.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. Der Controller prüft den
 exakten formalen DB-Hash und Snapshot, replayt N10-v1 als Vorgänger, vergleicht
@@ -135,6 +135,27 @@ Port `8772` GET/HEAD `200`, wies POST mit `405` ab und beendete sich per
 Installation fanden statt.
 
 ## Evidenzgebundener N8/N10-Shadow-Router
+
+### Benennung: warum `avo` in Bezeichnern stehen bleibt
+
+Der Konzeptname wurde am 23.08.2026 durchgängig auf **Runtime-lite** und
+**Shadow-Router** geändert. Drei Klassen von Vorkommen blieben bewusst unverändert:
+
+- **Bezeichner in versiegelten Records**: `avo-shadow-router-20260822-01`,
+  `avo-router-policy-20260822-01`, `avo-router-shadow-20260822-01`. Sie stehen so in
+  `metadata.router_id` und `records.entity_key` der append-only Datei und beschreiben,
+  was tatsächlich gespeichert ist.
+- **Pfade in `provenance_json.code_files`**: die zehn Dateien unter
+  `friday_avo_router/` sowie `tools/run_avo_router.py`. Der Record bindet Pfad *und*
+  Inhalt an `code_sha256`; ein Umbenennen ließe die Provenienzprüfung ins Leere laufen
+  und der Router fiele dauerhaft seriell zurück.
+- **Gebundene Spezifikationen**: `docs/AVO_SHADOW_ROUTER_SPEC.md` steht in
+  `spec_files` mit `spec_sha256`, `docs/N10_RUNTIME_PROTOTYPE_SPEC.md` ebenso für die
+  N10-Runtime. Auch eine reine Textänderung darin bricht den Hash.
+
+Eine vollständige Umbenennung ist damit kein Suchen-und-Ersetzen, sondern eine neue
+Vorregistrierung mit neuer ID, neuer Datei und wiederholten Gates. Sie würde die
+bestehenden terminalen Records entwerten und ist **nicht** erfolgt.
 
 Der neue Router verwendet ID `avo-shadow-router-20260822-01`, Application-ID
 `FRR1`, DB `.friday-data/avo-router.sqlite3` und UI-Port `8773`. Er lädt die
