@@ -182,19 +182,20 @@
     {
       "id": "persistent_process",
       "priority": 3,
-      "state": "candidate_characterized",
+      "state": "candidate_recommended_for_preregistration",
       "note": "import mlx_lm kostet mehr als das Modellladen; USE_TORCH=0 half nicht",
       "measured": {
-        "cold_ttft_s": 5.094,
-        "import_mlx_lm_s": 1.881,
-        "model_load_s": 1.41,
-        "prefill_s": 1.712,
-        "warmup_s": 0.05,
-        "removable_by_persistence_s": 3.382,
-        "removable_share": 0.664
+        "cold_process_ttft_s": 5.053,
+        "warm_ttft_s": 1.747,
+        "removed_share": 0.654,
+        "threshold": 0.5,
+        "token_identity": "3/3, auch nach zwischengeschobenen Anfragen",
+        "rss_stable_gb": 3.77
       },
       "preregistered_gate": "load+warmup >= 30% of cold TTFT",
-      "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst"
+      "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst",
+      "cycle": 5,
+      "caveat": "Importzeit aus Zyklus 3 uebernommen; Gegencheck 0,8 % Abweichung"
     },
     {
       "id": "divergence_impact",
