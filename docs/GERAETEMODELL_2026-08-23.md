@@ -155,3 +155,42 @@ abrufbar. Der Preis ist verworfene Attention-Arbeit über dem maskierten Bereich
 bei `f_attention` von `12`–`17 %` vermutlich tragbar, aber **nicht gemessen**.
 
 Prüfskript: `experiments/device_model/check_compiled_decode.py`.
+
+## 8. Wie weit der Dispatch-Hebel von außen erreichbar ist
+
+Abschnitt 7 schloss mit dem Vorschlag, ein KV-Cache fester Form würde Kompilierung
+gültig machen und die gemessenen `−23,8 %` Dispatch-Kosten echt abrufbar. Das wurde
+geprüft, in drei Stufen, und endet an einer klaren Grenze.
+
+**Stufe 1 — RoPE.** Der Offset wird an `mx.fast.rope` übergeben; als Python-Integer
+würde ihn ein Trace einbacken. Geprüft: RoPE akzeptiert auch einen `mx.array` als
+Offset. Diese Hürde fällt weg.
+
+**Stufe 2 — feste Formen.** Der Offset wurde eingefroren, sodass jeder Schritt in
+denselben Platz schreibt und dieselbe Ausdehnung zurückliest — genau das Formprofil,
+das ein Fenster-Cache hätte. **MLX verweigert die Kompilierung** mit
+`Attempting to eval an array without a primitive … make sure all the inputs and
+outputs are captured`.
+
+Das ist bemerkenswert im Vergleich zu Abschnitt 7: dort **warnte MLX nicht** und
+lieferte still falsche Token. Sobald die Formen konstant sind, greift der Schutz.
+
+**Stufe 3 — Zustand deklarieren.** Die Cache-Tensoren wurden als
+`inputs`/`outputs` übergeben. Weiterhin verweigert. Der Grund steht in
+`KVCache.update_and_fetch`: die Methode **bindet `self.keys` neu**, statt den
+bestehenden Puffer zu mutieren. Eine von außen erfasste Liste zeigt danach auf die
+alten Arrays, und MLX kann den Zustand nicht verfolgen.
+
+**Ergebnis:** Der Dispatch-Hebel ist **von außen nicht erreichbar**. Er verlangt eine
+Cache-Implementierung, deren Puffer in einem verfolgbaren Container liegen und die
+in-place schreibt statt neu zu binden — also eine Änderung im Framework- oder
+Modell-Layer, kein Konfigurationsschalter.
+
+**Der Befund aus Abschnitt 3 bleibt unberührt.** `48 %` der Einzelanfrage-Latenz sind
+Kernel-Starts. Das ist weiterhin das größte Latenzziel auf diesem Gerät, und es ist
+jetzt genau beziffert, was es kosten würde, es zu heben: einen neuen Cache, keinen
+Einzeiler. Ob die `−23,8 %` dann tatsächlich anfallen, ist **nicht gezeigt** — die
+einzige Messung dazu stammt aus einer Konfiguration, die falsche Ergebnisse lieferte.
+
+Prüfskripte: `experiments/device_model/check_compiled_decode.py`,
+`experiments/device_model/check_fixed_shape_compile.py`.
