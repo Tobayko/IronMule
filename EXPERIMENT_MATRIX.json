@@ -1,0 +1,218 @@
+{
+  "version": 1,
+  "date": "2026-08-24",
+  "formal_claim": false,
+  "device": {
+    "model": "Apple M1 Max",
+    "unified_memory_gb": 32,
+    "peak_bandwidth_gb_s": 400,
+    "measured_effective_gb_s": 358.4
+  },
+  "backend": {
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "python": "3.12.13",
+    "macos": "26.5.2",
+    "available": [
+      "mlx"
+    ],
+    "absent": [
+      "vllm",
+      "llama.cpp"
+    ]
+  },
+  "models": {
+    "gemma-3-4b-it-4bit": {
+      "layers": 34,
+      "weight_gb": 2.183177,
+      "sliding_window": 1024,
+      "rotating_layers": 29,
+      "profile": "profiles/m1max_gemma-3-4b-4bit-g64.json"
+    },
+    "gemma-3-1b-it-4bit": {
+      "layers": 26,
+      "weight_gb": 0.562629,
+      "sliding_window": 512,
+      "rotating_layers": 22,
+      "profile": "profiles/m1max_gemma-3-1b-4bit-g64.json"
+    }
+  },
+  "workloads": [
+    {
+      "id": "short",
+      "prompt_tokens": 17,
+      "output_tokens": 96,
+      "shared_prefix": 0
+    },
+    {
+      "id": "medium",
+      "prompt_tokens": 169,
+      "output_tokens": 96,
+      "shared_prefix": 0
+    },
+    {
+      "id": "long",
+      "prompt_tokens": 898,
+      "output_tokens": 96,
+      "shared_prefix": 886
+    },
+    {
+      "id": "repeated_prefix",
+      "prompt_tokens": 898,
+      "output_tokens": 96,
+      "shared_prefix": 886,
+      "note": "Gemma 3 hat keine eigene System-Rolle; das Praefix ist das gemeinsame Token-Praefix der gerenderten Prompts"
+    },
+    {
+      "id": "code_rewrite",
+      "prompt_tokens": 859,
+      "output_tokens": 64,
+      "overlap": "hoch"
+    },
+    {
+      "id": "json_struct",
+      "prompt_tokens": 159,
+      "output_tokens": 64,
+      "overlap": "mittel"
+    },
+    {
+      "id": "concurrent_32",
+      "requests": 32,
+      "prompt_tokens": 64,
+      "output_tokens": 64
+    }
+  ],
+  "candidates": [
+    {
+      "id": "prefix_reuse",
+      "priority": 4,
+      "state": "candidate_correctness_failed",
+      "measured": {
+        "ttft_uncached_ms": 1702.86,
+        "ttft_prefix_hit_ms": 131.02,
+        "ratio": 13.0
+      },
+      "gate_failed": "token_identity",
+      "cause": "prefill chunk width changes numerics"
+    },
+    {
+      "id": "chunk_identity_policy",
+      "priority": 1,
+      "state": "open",
+      "blocks": [
+        "prefix_reuse",
+        "prefill_step_sweep",
+        "microbatch",
+        "continuous_batch"
+      ]
+    },
+    {
+      "id": "shape_buckets",
+      "priority": 10,
+      "state": "candidate_characterized",
+      "measured": {
+        "best_batch_4b": 64,
+        "ratio_4b": 5.98,
+        "best_batch_1b": 256,
+        "ratio_1b": 13.74,
+        "regressions_4b": [
+          6,
+          7,
+          8,
+          9,
+          48
+        ],
+        "regressions_1b": [
+          48
+        ]
+      }
+    },
+    {
+      "id": "ngram_speculative",
+      "priority": 13,
+      "state": "candidate_characterized",
+      "measured": {
+        "code_rewrite": 1.097,
+        "journal": 1.029,
+        "test_output": 0.994
+      }
+    },
+    {
+      "id": "draft_speculative",
+      "priority": 14,
+      "state": "candidate_rejected",
+      "measured": {
+        "ratio": 0.56
+      }
+    },
+    {
+      "id": "compiled_single",
+      "priority": 9,
+      "state": "candidate_correctness_failed",
+      "measured": {
+        "dispatch_reduction": 0.238
+      },
+      "gate_failed": "token_identity"
+    },
+    {
+      "id": "vllm_metal",
+      "priority": 15,
+      "state": "permission_required"
+    },
+    {
+      "id": "llama_cpp",
+      "priority": 16,
+      "state": "permission_required"
+    }
+  ],
+  "endpoints": {
+    "primary": [
+      "ttft_ms",
+      "tpot_ms",
+      "aggregate_output_tokens_per_second"
+    ],
+    "secondary": [
+      "prefill_tokens_per_second",
+      "peak_unified_memory_gb",
+      "process_rss_bytes",
+      "swap_delta",
+      "itl_p50",
+      "itl_p95",
+      "itl_p99"
+    ],
+    "ttft_classes": [
+      "cold_process",
+      "warm_uncached",
+      "warm_prefix_hit",
+      "warm_full_cache_hit"
+    ]
+  },
+  "gates": {
+    "correctness": {
+      "sampling": "greedy",
+      "temperature": 0.0,
+      "requires": [
+        "identical_token_ids",
+        "identical_finish_reason",
+        "no_truncation",
+        "no_silent_fallback"
+      ],
+      "on_failure": "correctness_failed_terminal"
+    },
+    "budget": {
+      "gpu_seconds_per_process": 120,
+      "continuous_gpu_seconds": 6,
+      "duty_cycle": 0.25,
+      "duty_window_seconds": 60,
+      "wall_seconds": 1200,
+      "candidate_cooldown_seconds": 60,
+      "ac_power_required": true,
+      "swap_growth_allowed": false
+    },
+    "limits": {
+      "max_cycles": 12,
+      "max_failed_attempts_per_candidate": 1,
+      "max_hardware_runs_per_candidate": 6
+    }
+  }
+}
