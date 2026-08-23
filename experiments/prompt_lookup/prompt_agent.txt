@@ -1,0 +1,27 @@
+You are helping with a code change. Here is the relevant context.
+
+$ ls friday_hardware/
+__init__.py
+profile.py
+
+$ cat friday_hardware/profile.py | head -20
+class ProfileError(RuntimeError):
+    """A profile was missing, malformed, or asked about something it never saw."""
+
+@dataclass(frozen=True)
+class Plan:
+    width: int
+    requested_width: int
+    steps_per_segment: int
+    segments: int
+    estimated_seconds: float
+    reason: str
+
+$ python -m pytest tests/test_hardware_profile.py
+tests/test_hardware_profile.py::ProfileIdentityTests::test_refuses_a_configuration_it_never_saw PASSED
+tests/test_hardware_profile.py::WidthChoiceTests::test_avoids_measured_regressions PASSED
+tests/test_hardware_profile.py::SegmentationTests::test_plan_covers_every_requested_token PASSED
+
+Task: add a field `notes: str` to the `Plan` dataclass in friday_hardware/profile.py,
+with a default of empty string. Show the complete updated `Plan` dataclass and state
+which file it goes in.

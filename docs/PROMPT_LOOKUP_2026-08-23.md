@@ -113,3 +113,95 @@ hier nicht.
 
 Der `3`-Gramm-Nachschlag ist die einfachste denkbare Variante. Größere Fenster,
 mehrere Kandidaten gleichzeitig oder ein Baum statt einer Kette sind ungeprüft.
+
+---
+
+# Nachtrag: das Nachschlagfenster, und wo „nie langsamer" nicht gilt
+
+**Ergänzt:** 23. August 2026. **Dieser Abschnitt schränkt Abschnitt 4 ein.**
+
+## 8. Agentenkontext
+
+Der bisherige Code-Fall lässt eine Funktion nahezu unverändert zurückgeben — die
+freundlichste denkbare Aufgabe für einen Nachschlag. Ein realistischerer Kontext
+(Verzeichnislisting, Quelltextauszug, Testausgabe, dann eine Änderung an einer
+Dataclass) fällt schwächer aus, aber positiv:
+
+| Modell | Fenster | `k` | Token/Schritt | Akzeptanz | Speedup |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 4B | 3 | 4 | `1,746` | `76,9 %` | `1,098` |
+| 4B | 8 | 4 | `1,600` | `97,2 %` | `1,133` |
+
+Die Akzeptanz ist hoch, die Trefferhäufigkeit niedriger als beim reinen Umschreiben:
+weniger von der Ausgabe stand schon im Kontext.
+
+## 9. Das Fenster ist der wichtigste Parameter — und `n=1` schadet
+
+Sweep über die Fensterlänge, Agentenkontext, 4B, jeweils bestes `k`:
+
+| Fenster | `k` | Akzeptanz | Speedup |
+| ---: | ---: | ---: | ---: |
+| **1** | 1 | `45,5 %` | **`0,987`** |
+| 2 | 3 | `59,1 %` | `1,076` |
+| 3 | 4 | `76,9 %` | `1,092` |
+| 4 | 2 | `88,9 %` | `1,105` |
+| 5 | 3 | `89,7 %` | `1,123` |
+| 6 | 4 | `90,0 %` | `1,125` |
+| **8** | 4 | **`97,2 %`** | **`1,133`** |
+
+**Bei `n=1` ist das Verfahren langsamer als gar nicht zu spekulieren.** Ein einzelnes
+Token trifft überall und sagt fast nichts; die Akzeptanz von `45,5 %` liegt unter der
+Break-even-Schwelle von `0,47`, die die gemessene Breitenkurve für `k=1` setzt.
+
+Damit ist die Aussage aus Abschnitt 4 einzuschränken: **"nie langsamer" gilt nicht
+unbedingt, sondern nur bei ausreichend langem Fenster.** Ein zu kurzes Fenster kauft
+Entwürfe, die man verwirft, und bezahlt sie trotzdem.
+
+## 10. Das beste Fenster hängt vom Modell ab
+
+| Fall | `n=3` | `n=8` |
+| :--- | ---: | ---: |
+| Code umschreiben, 4B | `1,215` | **`1,274`** |
+| Code umschreiben, 1B | **`1,695`** | `1,538` |
+
+Das längere Fenster hilft dem 4B und **schadet** dem 1B. Der Grund steht in der
+Breitenkurve: beim 1B kostet Tiefe wenig (Breite `2` nur `1,24x`), also zahlt sich
+dort Trefferhäufigkeit mehr aus als Treffergenauigkeit. Beim steileren 4B ist es
+umgekehrt.
+
+Das Fenster gehört damit in dieselbe Kategorie wie die Breiten-Policy: **je Modell zu
+messen, nicht zu setzen.**
+
+## 11. Kein Treffer, keine Kosten — sauber gezeigt
+
+Das 1B fand im Agentenkontext bei Fenster `8` über `96` Token **keinen einzigen**
+Treffer:
+
+| `k` | gedraftet | Speedup |
+| ---: | ---: | ---: |
+| 0 | `0` | `1,000` |
+| 1 | `0` | `0,979` |
+| 2 | `0` | `1,020` |
+| 3 | `0` | `1,004` |
+| 4 | `0` | `0,999` |
+
+Null Entwürfe, und die Zeiten streuen um `1,0` ohne Richtung. Die Streuung von
+`±2 %` ist Messrauschen. Der Fall, in dem der Nachschlag nichts findet, kostet
+nichts — was bei `n=1` gerade **nicht** gilt, weil dort etwas gefunden und verworfen
+wird.
+
+## 12. Warum kein Kandidatenbaum gebaut wurde
+
+Naheliegend wäre, mehrere Fortsetzungen gleichzeitig zu prüfen: das Breitenplateau
+macht `32` Positionen kaum teurer als `8`. Gerechnet lohnt es hier trotzdem nicht.
+
+Der Gewinn eines Baums ist am größten, wenn die Akzeptanz **niedrig** ist — er hedgt
+gegen falsche Entwürfe. Ein längeres Fenster hebt die Akzeptanz im Agentenfall aber
+bereits von `76,9 %` auf `97,2 %`, und gegen `97 %` hat ein zweiter Kandidat kaum noch
+etwas zu gewinnen. Gleichzeitig kostet ein Baum von `32` Knoten auf dem 4B `5,97x`
+eines einfachen Schritts und müsste rund sechs Token je Schritt liefern; gemessen sind
+`2,34`.
+
+Das längere Fenster ist damit der billigere Hebel für dasselbe Ziel, und er ist
+gemessen. Ein Baum bleibt **ungeprüft**, nicht widerlegt — die Rechnung spricht nur
+nicht dafür, ihn als Nächstes zu bauen.
