@@ -1,0 +1,84 @@
+{
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 0.477807,
+    "max_continuous_gpu_seconds": 0.176472,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 24.045922,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 36.079633
+  },
+  "device_model": {
+    "effective_bandwidth_gb_s": 358.4,
+    "ms_per_gigabyte": 2.79005,
+    "per_layer_ms": 0.16669,
+    "share_of_peak_bandwidth": 0.896
+  },
+  "fit_points": [
+    {
+      "fraction": 1.0,
+      "layers": 34,
+      "layers_total": 34,
+      "model": "4b",
+      "ms": 11.7585,
+      "weight_gb": 2.183177
+    },
+    {
+      "fraction": 1.0,
+      "layers": 26,
+      "layers_total": 26,
+      "model": "1b",
+      "ms": 5.9036,
+      "weight_gb": 0.562629
+    }
+  ],
+  "held_out": [
+    {
+      "error_percent": 6.05,
+      "fraction": 0.5,
+      "layers": 17,
+      "layers_total": 34,
+      "model": "4b",
+      "ms": 6.0403,
+      "predicted_ms": 6.406,
+      "weight_gb": 1.280381
+    },
+    {
+      "error_percent": 15.5,
+      "fraction": 0.25,
+      "layers": 8,
+      "layers_total": 34,
+      "model": "4b",
+      "ms": 3.093,
+      "predicted_ms": 3.5723,
+      "weight_gb": 0.80243
+    },
+    {
+      "error_percent": 0.89,
+      "fraction": 0.5,
+      "layers": 13,
+      "layers_total": 26,
+      "model": "1b",
+      "ms": 3.1606,
+      "predicted_ms": 3.1888,
+      "weight_gb": 0.36625
+    },
+    {
+      "error_percent": -5.92,
+      "fraction": 0.25,
+      "layers": 6,
+      "layers_total": 26,
+      "model": "1b",
+      "ms": 1.8357,
+      "predicted_ms": 1.7269,
+      "weight_gb": 0.260508
+    }
+  ],
+  "peak_bandwidth_gb_s": 400.0,
+  "power_source": "ac_power",
+  "worst_holdout_error_percent": 15.5
+}
