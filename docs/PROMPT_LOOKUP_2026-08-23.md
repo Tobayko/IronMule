@@ -357,3 +357,31 @@ Es werden nicht weniger Treffer benutzt — es wird weniger auf sie gesetzt.
 Damit ist `by_match_length` die Voreinstellung, und die Profile suchen mit Fenster `3`
 statt `8`. Der frühere Befund "Fenster `8` ist besser als `3`" galt nur, solange das
 Fenster auch die Tiefe bestimmte.
+
+## 20. Auch die Trefferschwellen sind modellabhängig
+
+Die Werte aus Abschnitt 17 stammen vom 4B und standen zunächst in **beiden** Profilen.
+Das ist derselbe Fehler, den diese Messreihe an vier eigenen Konstanten bereits
+gefunden hatte, und er wurde nachgemessen:
+
+| Länge der Übereinstimmung | 4B | 1B |
+| :--- | ---: | ---: |
+| 3–8 Token | `0,545` | `0,472` |
+| ab 9 Token | `1,000` | `0,897` |
+
+Das kleinere Modell akzeptiert auch bei starken Kontexthinweisen seltener — bei
+Übereinstimmungen von `16` und mehr Token `0,875` gegen `1,000`. Es weicht eher ab,
+selbst wo der Kontext eindeutig ist.
+
+Zusammen mit den unterschiedlichen Break-even-Werten ergibt das gegenläufige
+Entscheidungen bei derselben Beobachtung:
+
+| | Break-even `k=1`…`4` | kurzer Treffer | langer Treffer |
+| :--- | :--- | ---: | ---: |
+| 4B | `0,470` / `0,647` / `0,715` / `0,748` | Tiefe `1` | Tiefe `4` |
+| 1B | `0,237` / `0,354` / `0,474` / `0,541` | Tiefe **`2`** | Tiefe `4` |
+
+Die flachere 1B-Kurve rechtfertigt selbst bei schwachem Treffer zwei Entwurfstoken.
+Mit den 4B-Werten im 1B-Profil wäre dort dauerhaft zu vorsichtig entworfen worden —
+kein Fehler, den man an einem falschen Ergebnis bemerkt, sondern einer, der still
+Leistung liegen lässt.
