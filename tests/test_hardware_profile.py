@@ -18,8 +18,9 @@ def profile(**overrides):
         weight_gb=2.1832,
         per_layer_ms=0.16669,
         ms_per_gigabyte=2.79005,
-        width_ms={1: 14.503, 4: 36.372, 5: 42.004, 6: 78.744, 8: 82.009,
-                  16: 87.752, 32: 86.517, 48: 150.701, 64: 146.064},
+        width_ms={1: 14.503, 2: 21.611, 3: 27.753, 4: 36.372, 5: 42.004,
+                  6: 78.744, 8: 82.009, 16: 87.752, 32: 86.517,
+                  48: 150.701, 64: 146.064},
         regression_widths=(6, 8, 48),
         measured_at="2026-08-23",
     )
@@ -194,3 +195,46 @@ class SampleBudgetTests(unittest.TestCase):
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
+
+
+class SpeculationTests(unittest.TestCase):
+    def test_break_even_rises_with_draft_length(self):
+        p = profile()
+        bars = [p.speculation_break_even(k) for k in (1, 2, 3, 4)]
+        self.assertEqual(bars, sorted(bars), bars)
+        # Measured 4B curve: one drafted token needs about half, four about
+        # three quarters.
+        self.assertTrue(0.4 < bars[0] < 0.55, bars)
+        self.assertTrue(0.7 < bars[3] < 0.8, bars)
+
+    def test_a_flatter_curve_lowers_the_bar(self):
+        steep = profile(width_ms={1: 10.0, 2: 20.0}, regression_widths=())
+        flat = profile(width_ms={1: 10.0, 2: 11.0}, regression_widths=())
+        self.assertGreater(
+            steep.speculation_break_even(1), flat.speculation_break_even(1)
+        )
+
+    def test_a_free_wider_pass_needs_no_acceptance_at_all(self):
+        free = profile(width_ms={1: 10.0, 2: 9.5}, regression_widths=())
+        self.assertEqual(free.speculation_break_even(1), 0.0)
+
+    def test_an_impossible_curve_reports_impossible(self):
+        hopeless = profile(width_ms={1: 10.0, 2: 30.0}, regression_widths=())
+        self.assertEqual(hopeless.speculation_break_even(1), 1.0)
+
+    def test_speedup_agrees_with_the_break_even_it_reports(self):
+        p = profile()
+        for k in (1, 2, 3, 4):
+            bar = p.speculation_break_even(k)
+            self.assertGreater(p.speculation_speedup(k, min(1.0, bar + 0.05)), 1.0)
+            self.assertLess(p.speculation_speedup(k, max(0.0, bar - 0.05)), 1.0)
+
+    def test_speculation_refuses_unmeasured_and_nonsensical_input(self):
+        p = profile()
+        with self.assertRaises(ProfileError):
+            p.speculation_break_even(0)
+        with self.assertRaises(ProfileError):
+            p.speculation_break_even(11)   # width 12 was never measured
+        with self.assertRaises(ProfileError):
+            p.speculation_speedup(1, 1.5)
+        self.assertEqual(p.speculation_speedup(0, 0.9), 1.0)
