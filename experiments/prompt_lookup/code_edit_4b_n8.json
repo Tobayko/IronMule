@@ -1,0 +1,88 @@
+{
+  "all_identical_to_greedy": true,
+  "arms": [
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 0,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 1.586,
+      "speedup": 1.0,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    },
+    {
+      "acceptance": 0.9714,
+      "accepted": 34,
+      "draft_length": 1,
+      "drafted": 35,
+      "identical_to_greedy": true,
+      "seconds": 1.354,
+      "speedup": 1.1713,
+      "steps": 61,
+      "tokens_per_step": 1.5738
+    },
+    {
+      "acceptance": 0.9583,
+      "accepted": 46,
+      "draft_length": 2,
+      "drafted": 48,
+      "identical_to_greedy": true,
+      "seconds": 1.3346,
+      "speedup": 1.1884,
+      "steps": 50,
+      "tokens_per_step": 1.92
+    },
+    {
+      "acceptance": 0.9444,
+      "accepted": 51,
+      "draft_length": 3,
+      "drafted": 54,
+      "identical_to_greedy": true,
+      "seconds": 1.2445,
+      "speedup": 1.2744,
+      "steps": 44,
+      "tokens_per_step": 2.1818
+    },
+    {
+      "acceptance": 0.9167,
+      "accepted": 55,
+      "draft_length": 4,
+      "drafted": 60,
+      "identical_to_greedy": true,
+      "seconds": 1.2906,
+      "speedup": 1.2289,
+      "steps": 41,
+      "tokens_per_step": 2.3415
+    }
+  ],
+  "best_draft_length": 3,
+  "best_speedup": 1.2744,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 7.243068,
+    "max_continuous_gpu_seconds": 1.585989,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 48.086615,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 59.361787
+  },
+  "generate_tokens": 96,
+  "model": "4b",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "model_snapshot_weight_bytes": 3400569562,
+  "model_snapshot_weight_files": [
+    "model.safetensors"
+  ],
+  "model_source": "validated_project_local_snapshot",
+  "ngram": 8,
+  "peak_memory_gb": 2.8962,
+  "power_source": "ac_power",
+  "prompt_tokens": 150
+}

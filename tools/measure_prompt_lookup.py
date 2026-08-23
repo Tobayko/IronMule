@@ -246,7 +246,8 @@ def generate(model, sampler, prompt_ids, *, draft_length, max_tokens, guard, ngr
     }
 
 
-def measure(model_key: str, prompt: str, guard: BudgetGuard) -> dict[str, object]:
+def measure(model_key: str, prompt: str, guard: BudgetGuard, *,
+            ngram: int = NGRAM) -> dict[str, object]:
     import mlx.core as mx
     from mlx_lm import load
     from mlx_lm.sample_utils import make_sampler
@@ -259,7 +260,7 @@ def measure(model_key: str, prompt: str, guard: BudgetGuard) -> dict[str, object
     )
     ids = list(text if isinstance(text, list) else tokenizer.encode(text))
 
-    generate(model, sampler, ids, draft_length=0, max_tokens=8, guard=guard)
+    generate(model, sampler, ids, draft_length=0, max_tokens=8, guard=guard, ngram=ngram)
 
     arms = []
     baseline_tokens = None
@@ -268,6 +269,7 @@ def measure(model_key: str, prompt: str, guard: BudgetGuard) -> dict[str, object
         run = generate(
             model, sampler, ids,
             draft_length=draft_length, max_tokens=GENERATE_TOKENS, guard=guard,
+            ngram=ngram,
         )
         if baseline_tokens is None:
             baseline_tokens, baseline_seconds = run["tokens"], run["seconds"]
@@ -288,7 +290,7 @@ def measure(model_key: str, prompt: str, guard: BudgetGuard) -> dict[str, object
     result = {
         "model": model_key,
         **snapshot.report_identity(),
-        "ngram": NGRAM,
+        "ngram": ngram,
         "generate_tokens": GENERATE_TOKENS,
         "prompt_tokens": len(ids),
         "arms": arms,
@@ -309,6 +311,8 @@ def main() -> int:
     parser.add_argument("--model", choices=sorted(MODELS), default="4b")
     parser.add_argument("--prompt", type=str, required=False)
     parser.add_argument("--prompt-file", type=Path, default=None)
+    parser.add_argument("--ngram", type=int, default=NGRAM,
+                        help="lookup window: longer matches less often but more exactly")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -324,7 +328,9 @@ def main() -> int:
 
     power = require_ac_power()
     guard = BudgetGuard()
-    report = measure(args.model, prompt, guard)
+    if args.ngram < 1:
+        raise SystemExit("the lookup window must be at least one token")
+    report = measure(args.model, prompt, guard, ngram=args.ngram)
     report["power_source"] = power
     report["budget"] = guard.summary()
     payload = json.dumps(report, indent=2, sort_keys=True)

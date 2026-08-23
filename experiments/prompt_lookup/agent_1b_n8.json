@@ -1,0 +1,88 @@
+{
+  "all_identical_to_greedy": true,
+  "arms": [
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 0,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 0.7825,
+      "speedup": 1.0,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    },
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 1,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 0.7994,
+      "speedup": 0.9788,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    },
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 2,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 0.7668,
+      "speedup": 1.0204,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    },
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 3,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 0.7791,
+      "speedup": 1.0044,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    },
+    {
+      "acceptance": null,
+      "accepted": 0,
+      "draft_length": 4,
+      "drafted": 0,
+      "identical_to_greedy": true,
+      "seconds": 0.7832,
+      "speedup": 0.999,
+      "steps": 95,
+      "tokens_per_step": 1.0105
+    }
+  ],
+  "best_draft_length": 2,
+  "best_speedup": 1.0204,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 4.07684,
+    "max_continuous_gpu_seconds": 0.799393,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 44.097438,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 51.860691
+  },
+  "generate_tokens": 96,
+  "model": "1b",
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "model_revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+  "model_snapshot_weight_bytes": 732577304,
+  "model_snapshot_weight_files": [
+    "model.safetensors"
+  ],
+  "model_source": "validated_project_local_snapshot",
+  "ngram": 8,
+  "peak_memory_gb": 1.1592,
+  "power_source": "ac_power",
+  "prompt_tokens": 284
+}
