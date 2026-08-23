@@ -35,7 +35,13 @@ import time
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from friday_hardware import (  # noqa: E402
+    accepted_prefix,
+    find_continuation,
+    speculative_generate,
+)
 from _bench import (  # noqa: E402
     BudgetGuard,
     release_gate,
@@ -54,46 +60,9 @@ DUTY_TARGET = 0.15
 BREAK_SECONDS = 4.0
 
 
-def find_continuation(tokens: list[int], ngram: int, draft_length: int) -> list[int]:
-    """Longest-recent match: what followed the last `ngram` tokens the last time.
-
-    Searched from the end backwards, because the most recent occurrence is the one
-    most likely to continue the same way -- an identifier repeated three lines ago
-    beats the same identifier in a different function forty lines up.
-
-    Returns fewer than `draft_length` tokens near the end of the context, and none
-    at all when nothing matches. Proposing nothing is a normal decode step, which is
-    why a miss costs nothing.
-    """
-
-    if ngram < 1 or draft_length < 0:
-        raise ValueError("ngram must be positive and draft length non-negative")
-    if draft_length == 0 or len(tokens) <= ngram:
-        return []
-    needle = tokens[-ngram:]
-    # Stop before the trailing occurrence, which is the needle itself.
-    for start in range(len(tokens) - ngram - 1, -1, -1):
-        if tokens[start : start + ngram] == needle:
-            proposal = tokens[start + ngram : start + ngram + draft_length]
-            if proposal:
-                return list(proposal)
-    return []
-
-
-def accepted_prefix(drafted: list[int], produced: list[int]) -> int:
-    """How many drafted tokens the model would have produced anyway.
-
-    Acceptance stops at the first disagreement. Keeping a later match after an
-    earlier miss would splice a continuation onto a different prefix and silently
-    change the answer, which is the one thing this must not do.
-    """
-
-    count = 0
-    for want, got in zip(drafted, produced):
-        if want != got:
-            break
-        count += 1
-    return count
+# find_continuation and accepted_prefix live in friday_hardware.speculate: the
+# generator and the measurement must agree on them exactly, and two copies of a
+# correctness argument is one copy too many.
 
 
 def expected_speedup(acceptance: float, draft_length: int, verify_cost: float) -> float:
@@ -188,61 +157,21 @@ def _self_check() -> int:
 
 
 def generate(model, sampler, prompt_ids, *, draft_length, max_tokens, guard, ngram=NGRAM):
-    """Greedy decode, drafting from the context when a match exists."""
+    """Run the shipped generator and charge its GPU time to the guard."""
 
-    import mlx.core as mx
-    from mlx_lm.models.cache import make_prompt_cache, trim_prompt_cache
-
-    cache = make_prompt_cache(model)
-    context = list(prompt_ids)
-
-    started = time.perf_counter()
-    logits = model(mx.array([context]), cache=cache)
-    token = int(sampler(logits[:, -1, :].astype(mx.float32))[0])
-    mx.eval(token)
-    context.append(token)
-    generated = [token]
-
-    steps = drafted_total = accepted_total = 0
-    while len(generated) < max_tokens:
-        drafted = find_continuation(context, ngram, draft_length)
-        window = [context[-1]] + drafted
-        logits = model(mx.array([window]), cache=cache)
-        picks = sampler(logits[0].astype(mx.float32)).tolist()
-        mx.eval(logits)
-
-        keep = accepted_prefix(drafted, picks[:-1]) if drafted else 0
-        # picks[i] is what the model produces after position i, so the accepted run
-        # plus one bonus token is exactly picks[:keep + 1].
-        new = picks[: keep + 1]
-        steps += 1
-        drafted_total += len(drafted)
-        accepted_total += keep
-
-        # The pass wrote len(window) positions into the cache; everything past the
-        # accepted run plus its bonus token never happened and has to be rolled back.
-        surplus = len(window) - (keep + 1)
-        if surplus > 0:
-            trim_prompt_cache(cache, surplus)
-
-        for t in new:
-            context.append(int(t))
-            generated.append(int(t))
-            if len(generated) >= max_tokens:
-                break
-
-    mx.eval(mx.array(generated))
-    mx.synchronize()
-    worked = time.perf_counter() - started
-    account(guard, worked)
+    result = speculative_generate(
+        model, sampler, prompt_ids,
+        max_tokens=max_tokens, ngram=ngram, draft_length=draft_length,
+    )
+    account(guard, result.seconds)
     return {
-        "tokens": generated[:max_tokens],
-        "seconds": worked,
-        "steps": steps,
-        "drafted": drafted_total,
-        "accepted": accepted_total,
-        "acceptance": (accepted_total / drafted_total) if drafted_total else None,
-        "tokens_per_step": len(generated[:max_tokens]) / steps if steps else None,
+        "tokens": result.tokens,
+        "seconds": result.seconds,
+        "steps": result.steps,
+        "drafted": result.drafted,
+        "accepted": result.accepted,
+        "acceptance": result.acceptance,
+        "tokens_per_step": result.tokens_per_step,
     }
 
 

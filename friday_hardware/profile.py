@@ -78,6 +78,12 @@ class HardwareProfile:
     # already achieved. Never schedule onto one of these.
     regression_widths: tuple[int, ...] = ()
     prefill_ms_per_position: float | None = None
+    # Context-lookup speculation, measured per model. Both matter and neither
+    # transfers: an eight-token window took the 4B from 1.215x to 1.274x on the same
+    # task where it took the 1B from 1.695x down to 1.538x, because depth is cheap on
+    # the 1B's flatter curve and hit rate pays there more than hit quality does.
+    lookup_ngram: int = 3
+    lookup_draft: int = 2
     measured_at: str = ""
     notes: str = ""
     # Safety headroom when sizing a segment against a continuous-load limit. Step
@@ -96,6 +102,12 @@ class HardwareProfile:
             raise ProfileError("measured widths and times must be positive")
         if not 0.0 < self.segment_safety <= 1.0:
             raise ProfileError("segment safety must lie in (0, 1]")
+        if self.lookup_ngram < 2:
+            raise ProfileError(
+                "a one-token lookup window measured slower than not drafting at all"
+            )
+        if self.lookup_draft < 0:
+            raise ProfileError("draft length must be non-negative")
         unknown = set(self.regression_widths) - set(self.width_ms)
         if unknown:
             raise ProfileError(f"regression widths were never measured: {sorted(unknown)}")
@@ -303,6 +315,8 @@ class HardwareProfile:
             "width_ms": {str(k): v for k, v in sorted(self.width_ms.items())},
             "regression_widths": list(self.regression_widths),
             "prefill_ms_per_position": self.prefill_ms_per_position,
+            "lookup_ngram": self.lookup_ngram,
+            "lookup_draft": self.lookup_draft,
             "measured_at": self.measured_at,
             "notes": self.notes,
             "segment_safety": self.segment_safety,
@@ -327,6 +341,8 @@ class HardwareProfile:
                     None if raw.get("prefill_ms_per_position") is None
                     else float(raw["prefill_ms_per_position"])
                 ),
+                lookup_ngram=int(raw.get("lookup_ngram", 3)),
+                lookup_draft=int(raw.get("lookup_draft", 2)),
                 measured_at=str(raw.get("measured_at", "")),
                 notes=str(raw.get("notes", "")),
                 segment_safety=float(raw.get("segment_safety", 0.75)),

@@ -37,6 +37,31 @@ Profil erzeugen, aus vorhandenen Messberichten:
   --out profiles/m1max_gemma-3-4b-4bit-g64.json
 ```
 
+## Schneller generieren
+
+`speculative_generate` entwirft die nächsten Token aus dem Kontext und prüft sie in
+einem Pass. Fenster und Tiefe kommen aus dem Profil, weil beide modellabhängig
+gemessen wurden:
+
+```python
+from friday_hardware import HardwareProfile, speculative_generate
+
+p = HardwareProfile.load(Path("profiles/m1max_gemma-3-1b-4bit-g64.json"))
+out = speculative_generate(model, sampler, prompt_ids, max_tokens=96, profile=p)
+# out.tokens ist Token für Token identisch zu greedy
+```
+
+Gemessen beim Umschreiben einer Funktion, `96` Token:
+
+| Modell | Profil | greedy | mit Entwurf | Speedup | identisch |
+| :--- | :--- | ---: | ---: | ---: | :--- |
+| 4B | Fenster `8`, Tiefe `3` | `1561,6` ms | `1277,1` ms | `1,223x` | ja |
+| 1B | Fenster `3`, Tiefe `2` | `694,2` ms | `472,3` ms | **`1,470x`** | ja |
+
+Das Profil verweigert ein Fenster von `1`: gemessen war das mit `0,987x` **langsamer**
+als gar nicht zu entwerfen, weil ein einzelnes Token überall trifft und fast nichts
+vorhersagt.
+
 ## Drei Verweigerungen, keine Funktionen
 
 Der Entwurf besteht im Wesentlichen aus dem, was das Profil **nicht** tut.

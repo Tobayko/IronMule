@@ -37,7 +37,8 @@ def _load(path: Path) -> dict:
 
 
 def build(width_report: Path, device_report: Path, model_key: str, *,
-          prefill_report: Path | None = None) -> HardwareProfile:
+          prefill_report: Path | None = None,
+          lookup_ngram: int = 3, lookup_draft: int = 2) -> HardwareProfile:
     width = _load(width_report)
     device = _load(device_report)
 
@@ -82,6 +83,8 @@ def build(width_report: Path, device_report: Path, model_key: str, *,
         width_ms=width_ms,
         regression_widths=regressions,
         prefill_ms_per_position=prefill,
+        lookup_ngram=lookup_ngram,
+        lookup_draft=lookup_draft,
         measured_at=str(width.get("model_revision", ""))[:12],
         notes=(
             "Assembled from measurement reports; see docs/DECODE_WIDTH_BEFUND and "
@@ -96,12 +99,17 @@ def main() -> int:
     parser.add_argument("--width-report", type=Path, required=True)
     parser.add_argument("--device-report", type=Path, required=True)
     parser.add_argument("--prefill-report", type=Path, default=None)
+    parser.add_argument("--lookup-ngram", type=int, default=3,
+                        help="measured lookup window; see measure_prompt_lookup.py")
+    parser.add_argument("--lookup-draft", type=int, default=2,
+                        help="measured draft depth at that window")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
     built = build(
         args.width_report, args.device_report, args.model,
         prefill_report=args.prefill_report,
+        lookup_ngram=args.lookup_ngram, lookup_draft=args.lookup_draft,
     )
     built.save(args.out)
     plan = built.plan(items=8, max_new_tokens=240, continuous_limit_s=6.0)
@@ -114,6 +122,7 @@ def main() -> int:
         "single_token_ms": round(built.single_token_ms(), 3),
         "dispatch_share": round(shares["dispatch_share"], 4),
         "regression_widths": list(built.regression_widths),
+        "lookup": {"ngram": built.lookup_ngram, "draft": built.lookup_draft},
         "example_plan_for_8_items": plan.as_dict(),
     }, indent=2))
     return 0
