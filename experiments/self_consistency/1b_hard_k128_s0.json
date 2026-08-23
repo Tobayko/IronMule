@@ -1,0 +1,75 @@
+{
+  "accuracy": 0.5,
+  "accuracy_ci95": [
+    0.15,
+    0.85
+  ],
+  "backend": "segmented",
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 64.7133,
+    "max_continuous_gpu_seconds": 3.658868,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 460.940655,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 529.792107
+  },
+  "chunk": 128,
+  "correct": 2,
+  "coverage": 1.0,
+  "difficulty": "hard",
+  "generation_seconds": 46.688,
+  "load_seconds": 1.381,
+  "max_tokens": 224,
+  "mean_distinct_answers": 2.75,
+  "model": "1b",
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "model_revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+  "model_snapshot_weight_bytes": 732577304,
+  "model_snapshot_weight_files": [
+    "model.safetensors"
+  ],
+  "model_source": "validated_project_local_snapshot",
+  "peak_memory_gb": 2.6778,
+  "per_problem": [
+    {
+      "answer": 57,
+      "correct": true,
+      "distinct_answers": 4,
+      "parsed_votes": 20,
+      "truth": 57
+    },
+    {
+      "answer": 64,
+      "correct": true,
+      "distinct_answers": 1,
+      "parsed_votes": 10,
+      "truth": 64
+    },
+    {
+      "answer": 48,
+      "correct": false,
+      "distinct_answers": 3,
+      "parsed_votes": 7,
+      "truth": 49
+    },
+    {
+      "answer": 66,
+      "correct": false,
+      "distinct_answers": 3,
+      "parsed_votes": 18,
+      "truth": 54
+    }
+  ],
+  "power_source": "ac_power",
+  "problem_offset": 0,
+  "problems": 4,
+  "samples_per_problem": 128,
+  "seconds_per_problem": 11.6721,
+  "steps_per_segment": 50,
+  "temperature": 0.7
+}
