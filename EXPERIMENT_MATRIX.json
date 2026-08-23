@@ -195,6 +195,19 @@
       },
       "preregistered_gate": "load+warmup >= 30% of cold TTFT",
       "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst"
+    },
+    {
+      "id": "divergence_impact",
+      "priority": 0,
+      "state": "candidate_characterized",
+      "measured": {
+        "token_divergence_rate": 0.7,
+        "answer_same_among_diverged": 0.286,
+        "max_differing_tokens": 153,
+        "generate_tokens": 160,
+        "problems": 10
+      },
+      "note": "Zerteilungs-Divergenz aendert die Antwort, nicht nur die Formulierung"
     }
   ],
   "endpoints": {
@@ -230,7 +243,8 @@
         "no_silent_fallback"
       ],
       "on_failure": "correctness_failed_terminal",
-      "known_limit": "Prefill-Zerteilung veraendert erzeugte Token in rund 26 % der geprueften Konfigurationen; keine Blockgroesse haelt zuverlaessig (Zyklus 2)"
+      "known_limit": "Prefill-Zerteilung veraendert erzeugte Token in rund 26 % der geprueften Konfigurationen; keine Blockgroesse haelt zuverlaessig (Zyklus 2)",
+      "decision": "Vertrag haelt. Zyklus 4: unter abweichenden Faellen stimmten nur 28,6 % der Antworten ueberein; die Abweichungen sind inhaltlich, nicht kosmetisch."
     },
     "budget": {
       "gpu_seconds_per_process": 120,
