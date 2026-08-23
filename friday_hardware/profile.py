@@ -240,6 +240,54 @@ class HardwareProfile:
             reason=reason,
         )
 
+    # -- speculation --------------------------------------------------------
+
+    def speculation_break_even(self, draft_length: int) -> float:
+        """Acceptance a free draft needs before speculating `draft_length` pays.
+
+        Verifying k drafted tokens costs one pass at width k+1 and yields at most
+        k+1 tokens, so the question is whether the expected yield beats that cost.
+        The answer comes from the measured width curve rather than from theory,
+        because the curve is a step function: the same k is a bargain on one model
+        and a loss on another. On this device three drafted tokens need about 0.72
+        acceptance on the 4B and far less on the flatter 1B.
+
+        Returns 0.0 when even a never-accepted draft would pay, and 1.0 when no
+        acceptance rate could.
+        """
+
+        if draft_length < 1:
+            raise ProfileError("speculation needs at least one drafted token")
+        width = draft_length + 1
+        if width not in self.width_ms:
+            raise ProfileError(f"width {width} was never measured")
+        cost = self.width_ms[width] / self.width_ms[min(self.width_ms)]
+        if cost <= 1.0:
+            return 0.0
+        if cost > draft_length + 1:
+            return 1.0
+        low, high = 0.0, 1.0
+        for _ in range(60):
+            mid = (low + high) / 2.0
+            if sum(mid**i for i in range(draft_length + 1)) < cost:
+                low = mid
+            else:
+                high = mid
+        return high
+
+    def speculation_speedup(self, draft_length: int, acceptance: float) -> float:
+        """Expected speedup from a free draft at a given acceptance rate."""
+
+        if not 0.0 <= acceptance <= 1.0:
+            raise ProfileError("acceptance must lie in [0, 1]")
+        if draft_length < 1:
+            return 1.0
+        width = draft_length + 1
+        if width not in self.width_ms:
+            raise ProfileError(f"width {width} was never measured")
+        yielded = sum(acceptance**i for i in range(draft_length + 1))
+        return yielded * self.width_ms[min(self.width_ms)] / self.width_ms[width]
+
     # -- persistence --------------------------------------------------------
 
     def as_dict(self) -> dict[str, object]:
