@@ -1,0 +1,62 @@
+[
+  {
+    "model": "4B",
+    "prompt": "code",
+    "fest": 1.153,
+    "adaptiv": 1.148,
+    "akzeptanz": 1.0,
+    "abgelehnt": 0,
+    "zurueck": 0,
+    "identisch": true
+  },
+  {
+    "model": "4B",
+    "prompt": "journal",
+    "fest": 1.004,
+    "adaptiv": 1.0,
+    "akzeptanz": 0.455,
+    "abgelehnt": 33,
+    "zurueck": 0,
+    "identisch": true
+  },
+  {
+    "model": "4B",
+    "prompt": "tests",
+    "fest": 0.98,
+    "adaptiv": 0.979,
+    "akzeptanz": 0.333,
+    "abgelehnt": 0,
+    "zurueck": 0,
+    "identisch": true
+  },
+  {
+    "model": "1B",
+    "prompt": "code",
+    "fest": 1.013,
+    "adaptiv": 0.859,
+    "akzeptanz": null,
+    "abgelehnt": 0,
+    "zurueck": 95,
+    "identisch": true
+  },
+  {
+    "model": "1B",
+    "prompt": "journal",
+    "fest": 1.539,
+    "adaptiv": 1.507,
+    "akzeptanz": null,
+    "abgelehnt": 0,
+    "zurueck": 95,
+    "identisch": true
+  },
+  {
+    "model": "1B",
+    "prompt": "tests",
+    "fest": 1.246,
+    "adaptiv": 1.213,
+    "akzeptanz": 0.893,
+    "abgelehnt": 0,
+    "zurueck": 0,
+    "identisch": true
+  }
+]

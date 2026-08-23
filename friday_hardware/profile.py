@@ -300,6 +300,28 @@ class HardwareProfile:
         yielded = sum(acceptance**i for i in range(draft_length + 1))
         return yielded * self.width_ms[min(self.width_ms)] / self.width_ms[width]
 
+    def draft_length_for(self, acceptance: float, limit: int | None = None) -> int:
+        """Deepest draft that still pays at an observed acceptance rate.
+
+        The break-even rises with depth, so an acceptance that justifies one drafted
+        token need not justify four. Returning zero means do not draft: below the
+        shallowest break-even, speculation is a measured loss rather than a wash,
+        because the wider verification pass is paid for whether or not it is used.
+        """
+
+        if not 0.0 <= acceptance <= 1.0:
+            raise ProfileError("acceptance must lie in [0, 1]")
+        ceiling = self.lookup_draft if limit is None else limit
+        if ceiling < 1:
+            return 0
+        best = 0
+        for k in range(1, ceiling + 1):
+            if (k + 1) not in self.width_ms:
+                break
+            if acceptance > self.speculation_break_even(k):
+                best = k
+        return best
+
     # -- persistence --------------------------------------------------------
 
     def as_dict(self) -> dict[str, object]:

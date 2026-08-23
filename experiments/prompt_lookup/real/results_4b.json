@@ -1,0 +1,50 @@
+{
+  "reps": 2,
+  "tokens": 64,
+  "rows": [
+    {
+      "model": "4B",
+      "prompt": "code",
+      "prompt_tokens": 859,
+      "greedy_ms": 2482.8,
+      "fixed_speedup": 1.096,
+      "adaptive_speedup": 1.092,
+      "acceptance": 1.0,
+      "declined_steps": 0,
+      "unrewindable_steps": 0,
+      "greedy_spread_pct": 0.57
+    },
+    {
+      "model": "4B",
+      "prompt": "journal",
+      "prompt_tokens": 749,
+      "greedy_ms": 2296.4,
+      "fixed_speedup": 0.992,
+      "adaptive_speedup": 0.995,
+      "acceptance": 0.455,
+      "declined_steps": 1,
+      "unrewindable_steps": 0,
+      "greedy_spread_pct": 0.17
+    },
+    {
+      "model": "4B",
+      "prompt": "tests",
+      "prompt_tokens": 159,
+      "greedy_ms": 1168.9,
+      "fixed_speedup": 0.974,
+      "adaptive_speedup": 0.986,
+      "acceptance": 0.333,
+      "declined_steps": 0,
+      "unrewindable_steps": 0,
+      "greedy_spread_pct": 1.81
+    }
+  ],
+  "budget": {
+    "gpu_work_seconds": 38.935747,
+    "max_continuous_gpu_seconds": 2.489856,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 268.551148,
+    "wall_seconds": 309.282763,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

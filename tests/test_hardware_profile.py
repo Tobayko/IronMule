@@ -238,3 +238,33 @@ class SpeculationTests(unittest.TestCase):
         with self.assertRaises(ProfileError):
             p.speculation_speedup(1, 1.5)
         self.assertEqual(p.speculation_speedup(0, 0.9), 1.0)
+
+
+class AdaptiveDepthTests(unittest.TestCase):
+    def test_depth_grows_with_acceptance(self):
+        p = profile(lookup_draft=4)
+        depths = [p.draft_length_for(a) for a in (0.3, 0.5, 0.7, 0.9, 1.0)]
+        self.assertEqual(depths, sorted(depths), depths)
+        self.assertEqual(depths[0], 0, "below every break-even, do not draft")
+        self.assertEqual(depths[-1], 4, "perfect acceptance earns the full depth")
+
+    def test_depth_respects_the_profile_ceiling(self):
+        p = profile(lookup_draft=2)
+        self.assertLessEqual(p.draft_length_for(1.0), 2)
+        self.assertLessEqual(p.draft_length_for(1.0, limit=1), 1)
+
+    def test_a_chosen_depth_actually_pays_at_that_acceptance(self):
+        p = profile(lookup_draft=4)
+        for acceptance in (0.5, 0.6, 0.75, 0.9, 0.95):
+            k = p.draft_length_for(acceptance)
+            if k:
+                self.assertGreater(p.speculation_speedup(k, acceptance), 1.0,
+                                   (acceptance, k))
+
+    def test_zero_or_negative_ceiling_declines(self):
+        p = profile()
+        self.assertEqual(p.draft_length_for(1.0, limit=0), 0)
+
+    def test_refuses_an_impossible_acceptance(self):
+        with self.assertRaises(ProfileError):
+            profile().draft_length_for(1.5)
