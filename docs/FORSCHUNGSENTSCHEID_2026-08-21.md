@@ -7,7 +7,7 @@
 | Begrenzte evidenzgebundene Runtime | **GO im exakten H1-Scope** | formales H1-v2-Gain-Gate sowie CPU-Overhead- und MLX/GPU-Runtime-Gates bestanden; Korrektheit byte-identisch | jede Evidenz-, Code-, Spec-, Environment-, Hardware- oder Workload-Abweichung fällt weiterhin seriell zurück |
 | Geschlossener H2-Modellvorschlag | **eine Runde abgeschlossen; kein weiterer Lauf** | Gemma schlug `3,10,16` vor; Harness bestätigte explorativ `N=10`, aber Kandidatenselektion und Ergebnis sind Schema v1 mit `formal_claim=false` | vor weiterer Runde oder Runtime-Erweiterung neue prospektive Studie und explizite Architekturfreigabe |
 | Prospektive N10-Bestätigung | **V1 terminal; V2-Gain formal bestätigt** | V1 stoppte vor Timing; V2 lief auf sauberem Commit mit registrierter Fixture, frischen Seeds, sechs A/A- und sechs A/B-Sessions bis `n10_gain_confirmed` | genau ein begrenzter N10-Runtime-Prototyp mit fester Allowlist und eigenen Engineering-Gates; keine direkte Produktivänderung |
-| N10-Runtime / AVO-lite | **Engineering-GO im exakten N10-Scope** | getrennte exakte Evidenzbindung, Tensor-Allowlist, serieller Fallback und Circuit Breaker; einmaliges CPU- und anschließendes MLX/GPU-Gate auf sauberem Commit bestanden, byteidentisch | jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert; jede Scope-Erweiterung erfordert einen neuen Entscheid |
+| N10-Runtime / Runtime-lite | **Engineering-GO im exakten N10-Scope** | getrennte exakte Evidenzbindung, Tensor-Allowlist, serieller Fallback und Circuit Breaker; einmaliges CPU- und anschließendes MLX/GPU-Gate auf sauberem Commit bestanden, byteidentisch | jede Evidenz-, Code-, Spec-, Umgebungs-, Hardware- oder Workload-Abweichung fällt seriell zurück; N8 bleibt unverändert; jede Scope-Erweiterung erfordert einen neuen Entscheid |
 | Phase 1B / Custom MLX-Metal | **NO-GO** | formales H1 bestätigt nur Dispatch-Amortisation; reale Roofline deutet weiter auf Speicherlimit, und eine separate Custom-Kernel-Sicherheits-/Architekturfreigabe fehlt | freigegebene isolierte Worker-/Rollback-Architektur, eigener prospektiver Vertrag und neuer expliziter Nutzerentscheid |
 | Cross-Device | **NO-CLAIM / derzeit blockiert** | es existiert Evidenz von genau einem M1 Max; ein zweites Zielgerät ist nicht verfügbar | mindestens ein unabhängiges Gerät, identischer versiegelter Workload und vollständige Provenienz |
 | breiterer Live-Suchraum | **NO-GO** | mehr Kandidaten würden den explorativen Charakter und Multiple-Testing-/Winner's-Curse-Risiken vergrößern | neue H1-Vorregistrierung mit Familien/Splits, Kandidatenbudget, Powerplanung und frischen IDs |
@@ -64,7 +64,7 @@
 Nicht Phase 1B, keine zweite Modellrunde und keine direkte Änderung der
 bestehenden Runtime. Die N10-Ein-Kandidaten-Studie ist positiv terminal.
 Freigegeben und ausgeführt wurde genau ein getrennter
-N10-Runtime-/AVO-lite-Prototyp:
+N10-Runtime-/Runtime-lite-Prototyp:
 
 - feste Allowlist für exakt FP16-`2048²`, zehn Matmuls und den bestätigten
   Batch-Dispatch-Plan;

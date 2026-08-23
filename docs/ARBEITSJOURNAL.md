@@ -3790,7 +3790,7 @@ Refresh nach allen Dokumentationskorrekturen bestand erneut.
 **Freigabe und Grenze.** Der Nutzer eröffnete ausdrücklich den vorgeschlagenen
 Weg: eine prospektive Ein-Kandidaten-Bestätigung für `N=10`, umfassende lokale
 CPU-/GPU-Tests und — nur bei positivem Ergebnis — die anschließende Prüfung
-eines begrenzten Runtime-/AVO-lite-Pfads. Vorhandene lokale Modelle dürfen
+eines begrenzten Runtime-/Runtime-lite-Pfads. Vorhandene lokale Modelle dürfen
 verwendet werden. Die bindende Installationsgrenze bleibt bestehen: Ohne eine
 weitere ausdrückliche Freigabe erfolgen weder Download noch Installation. Freie
 Kernel-/Codegenerierung und Custom Metal bleiben außerhalb dieser Studie.
@@ -4055,12 +4055,12 @@ Symbolkandidaten; 5 Dateien wurden neu geparst, 586 blieben unverändert, kein
 Timeout.
 
 **Nächster zulässiger Schritt.** Der positive formale Claim öffnet genau einen
-getrennten, allowlist-basierten N10-Runtime-/AVO-lite-Prototyp mit seriellem
+getrennten, allowlist-basierten N10-Runtime-/Runtime-lite-Prototyp mit seriellem
 Fallback, Circuit Breaker, eigener Historie und reproduzierbaren CPU-/GPU-Gates.
 Freie Codegenerierung, Custom Metal, weitere Modellrunden, Cross-Device-Claims
 und ein breiterer Suchraum bleiben geschlossen.
 
-### 2026-08-22 — N10-Runtime-/AVO-lite-Prototyp vor Live-Gates
+### 2026-08-22 — N10-Runtime-/Runtime-lite-Prototyp vor Live-Gates
 
 **Atlas-first und Baseline.** Vor der neuen Phase lieferte der fokussierte
 ProjectAtlas-Brief `friday_runtime/executor.py`, `tests/test_runtime_policy.py`
@@ -4089,7 +4089,7 @@ korrekt gesperrt.
 geändert. Das getrennte Paket `friday_runtime_n10/` samt Tool
 `tools/run_n10_runtime.py` verwendet Runtime-ID
 `n10-runtime-dispatch-20260822-01`, Application-ID `FRN1`, DB
-`.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. AVO-lite ist eine
+`.friday-data/runtime-n10.sqlite3` und UI-Port `8772`. Runtime-lite ist eine
 geschlossene Zustandsmaschine: reale Tensoren beobachten, exakten formalen
 Store plus V1-Vorgänger und aktuelle versiegelte Identität verifizieren, genau
 einen Plan auswählen, CPU/GPU/Korrektheit validieren und bei Unsicherheit
@@ -4150,7 +4150,7 @@ Timeout. Live bleibt bis zu einem sauberen lokalen Commit geschlossen. Danach
 ist genau ein Policy-/CPU-Lauf zulässig; nur bei bestandenem Gate folgt genau
 ein MLX/GPU-Lauf.
 
-### 2026-08-22 — N10-Runtime-/AVO-lite-Live-Gates abgeschlossen
+### 2026-08-22 — N10-Runtime-/Runtime-lite-Live-Gates abgeschlossen
 
 **Sauberer Commit und Provenienz.** Der vollständig geprüfte Runtime-Stand
 wurde lokal auf `main` als Commit
