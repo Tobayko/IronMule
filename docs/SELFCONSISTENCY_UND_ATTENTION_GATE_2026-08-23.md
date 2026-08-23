@@ -517,3 +517,60 @@ den Greedy nimmt, ist bereits aufgegeben. Beides zusammen ergibt genau das Tal.
 
 Die Vorhersage war ein Fehlschlag, und ein nützlicher: ohne den Kontrollarm wäre die
 falsche Empfehlung "einfach mit Temperatur dekodieren" stehen geblieben.
+
+---
+
+# Nachtrag: hört es bei 32 Stimmen auf?
+
+**Ergänzt:** 23. August 2026.
+
+## 29. Die Frage
+
+Das 1B erreicht bei Batch `256` einen Durchsatz von `3093` Sample-Token/s, das
+`13,74`-fache seines Einzelstroms. Es hat also erhebliche ungenutzte
+Parallelkapazität. Bisher wurde Self-Consistency nur bis `k=32` gemessen, wo die
+Mehrheitswahl gerade zu tragen begann.
+
+Wenn die Genauigkeit darüber hinaus weiterklettert, könnte das kleine Modell das
+große **allein durch Durchsatz** einholen — ein `0,73`-GB-Modell auf dem Niveau eines
+`2,56`-GB-Modells, weil die Hardware Parallelität fast verschenkt.
+
+## 30. Gemessen
+
+Gemma 3 1B, schwere Aufgaben, `n=16`, `max_tokens=224`, segmentierter Loop:
+
+| `k` | korrekt | Genauigkeit | 95%-KI | Coverage | verschiedene Antworten | s/Aufgabe |
+| ---: | ---: | ---: | :--- | ---: | ---: | ---: |
+| 32 | `9/16` | `56,2 %` | `[0,332; 0,769]` | `0,938` | `2,62` | `3,9` |
+| 128 | `11/16` | `68,8 %` | `[0,444; 0,858]` | `1,000` | `5,62` | `11,0` |
+
+`+12,5` Punkte bei `p = 0,465`. **Nicht signifikant.** Für einen Effekt dieser Größe
+bei `80 %` Teststärke wären rund `n = 250` je Arm nötig; gemessen sind `16`.
+
+Der Streuungsbefund passt zum Mechanismus: die Zahl verschiedener vorgeschlagener
+Antworten steigt von `2,62` auf `5,62`, und die Mehrheit trifft trotzdem etwas öfter.
+Mehr Stimmen erkunden mehr, nicht nur dasselbe häufiger.
+
+## 31. Die Antwort
+
+**Nein, und die Steigung trägt auch nicht dorthin.**
+
+`68,8 %` bei `k=128` gegen `81,2 %` für das 4B greedy — bei `11,0` s gegen `1,97` s,
+also **`5,6x` der Zeit**. Schreibt man den gemessenen Zuwachs optimistisch fort
+(nochmals viermal so viele Stimmen für nochmals rund zehn Punkte), läge Parität bei
+etwa `k=512` und rund **`22x`** der Kosten des größeren Modells.
+
+Damit steht die Regel aus Abschnitt 20 unverändert: **Kapazität ist billiger als
+Stimmen.** Test-Time-Compute kauft Genauigkeit dort, wo Kapazität fehlt, aber es kauft
+sie nicht bis zur Parität, und schon gar nicht günstiger.
+
+Das Plateau bestätigt sich dabei ein weiteres Mal: `4x` Stimmen kosteten `2,83x` Zeit.
+Die Parallelität ist tatsächlich fast geschenkt — sie kauft nur nicht genug.
+
+## 32. Warum das trotzdem eine gute Frage war
+
+Ein Nein mit einer Zahl daran ist mehr wert als ein Bauchgefühl. Die Rechnung
+"Parität bei rund `22x`" ist jetzt da, und sie schließt den Weg für dieses Modellpaar
+sichtbar statt stillschweigend. Bei einem Gerät, auf dem das größere Modell **nicht**
+in den Speicher passt, ändert sich die Frage — dann konkurriert `k=128` nicht mehr mit
+`81,2 %`, sondern mit gar keiner Antwort.
