@@ -112,3 +112,62 @@ class RewindReportingTests(unittest.TestCase):
                        ngram=3, draft_length=2)
         self.assertEqual(g.unrewindable_steps, 0)
         self.assertAlmostEqual(g.acceptance, 1.0)
+
+
+class MatchLengthTests(unittest.TestCase):
+    def test_reports_how_far_the_agreement_reaches(self):
+        from friday_hardware import find_match
+        # The whole nine-token block repeats, so the agreement is nine long even
+        # though the search window was three.
+        length, cont = find_match([1, 2, 3, 4, 5, 6, 7, 8, 9] * 2, 3, 2)
+        self.assertEqual(length, 9)
+        self.assertEqual(cont, [1, 2])
+
+    def test_a_coincidental_short_match_reports_its_true_length(self):
+        from friday_hardware import find_match
+        length, cont = find_match([9, 9, 9, 1, 2, 3, 7, 7, 1, 2, 3], 3, 2)
+        self.assertEqual(length, 3)
+        self.assertEqual(cont, [7, 7])
+
+    def test_no_match_reports_nothing(self):
+        from friday_hardware import find_match
+        self.assertEqual(find_match([5, 6, 7, 8], 3, 2), (0, []))
+
+    def test_extension_is_capped(self):
+        from friday_hardware import find_match
+        length, _ = find_match(list(range(20)) * 2, 3, 1, max_extend=6)
+        self.assertEqual(length, 6)
+
+    def test_refuses_nonsensical_arguments(self):
+        from friday_hardware import find_match
+        for bad in ((0, 2, 40), (3, -1, 40), (3, 2, 2)):
+            with self.assertRaises(ValueError):
+                find_match([1, 2, 3, 4], *bad)
+
+
+class MatchDepthPolicyTests(unittest.TestCase):
+    def test_a_long_agreement_earns_more_depth_than_a_short_one(self):
+        p = profile(lookup_ngram=3, lookup_draft=4)
+        self.assertGreater(p.depth_for_match(20), p.depth_for_match(4))
+
+    def test_no_match_earns_no_draft(self):
+        self.assertEqual(profile(lookup_ngram=3).depth_for_match(0), 0)
+
+    def test_depth_respects_the_ceiling(self):
+        p = profile(lookup_ngram=3, lookup_draft=4)
+        self.assertLessEqual(p.depth_for_match(30, limit=2), 2)
+
+    def test_the_threshold_must_exceed_the_search_window(self):
+        # Otherwise every match found would count as a reliable one.
+        with self.assertRaises(ProfileError):
+            profile(lookup_ngram=8, long_match_tokens=8)
+
+    def test_a_longer_match_cannot_be_less_reliable(self):
+        with self.assertRaises(ProfileError):
+            profile(short_match_acceptance=0.9, long_match_acceptance=0.5)
+
+    def test_refuses_impossible_acceptances_and_lengths(self):
+        with self.assertRaises(ProfileError):
+            profile(long_match_acceptance=1.5)
+        with self.assertRaises(ProfileError):
+            profile().depth_for_match(-1)

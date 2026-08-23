@@ -10,6 +10,7 @@ from .speculate import (
     Generation,
     accepted_prefix,
     find_continuation,
+    find_match,
     speculative_generate,
 )
 
@@ -21,5 +22,6 @@ __all__ = [
     "Generation",
     "accepted_prefix",
     "find_continuation",
+    "find_match",
     "speculative_generate",
 ]

@@ -1,0 +1,29 @@
+[
+  {
+    "prompt": "code",
+    "fest_n8": 1.099,
+    "trefferlaenge": 1.097,
+    "akz_fest": 1.0,
+    "akz_neu": 0.97,
+    "tok_schritt_neu": 2.065,
+    "identisch": true
+  },
+  {
+    "prompt": "journal",
+    "fest_n8": 0.997,
+    "trefferlaenge": 1.029,
+    "akz_fest": 0.417,
+    "akz_neu": 0.682,
+    "tok_schritt_neu": 1.333,
+    "identisch": true
+  },
+  {
+    "prompt": "tests",
+    "fest_n8": 0.976,
+    "trefferlaenge": 0.994,
+    "akz_fest": 0.333,
+    "akz_neu": 0.375,
+    "tok_schritt_neu": 1.067,
+    "identisch": true
+  }
+]

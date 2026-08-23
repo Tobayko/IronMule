@@ -3,7 +3,9 @@
   "device": "arm64 / Darwin 25.5.0",
   "group_size": 64,
   "layers": 26,
-  "lookup_draft": 2,
+  "long_match_acceptance": 0.98,
+  "long_match_tokens": 9,
+  "lookup_draft": 4,
   "lookup_ngram": 3,
   "measured_at": "2d44e83dc9e8",
   "model_id": "mlx-community/gemma-3-1b-it-4bit",
@@ -15,6 +17,7 @@
     48
   ],
   "segment_safety": 0.75,
+  "short_match_acceptance": 0.55,
   "weight_gb": 0.562629,
   "width_ms": {
     "1": 6.477,

@@ -298,3 +298,62 @@ im ungünstigsten gemessenen Fall.
 Das ist erheblich weniger, als Abschnitt 3 nahelegte, und es ist die Zahl, die zählt —
 die synthetischen Prompts waren von mir so gebaut, dass sie dem Verfahren
 entgegenkamen.
+
+---
+
+# Nachtrag: die Länge der Übereinstimmung sagt die Akzeptanz vorher
+
+**Ergänzt:** 23. August 2026.
+`experiments/prompt_lookup/real/measure_match_length_signal.py`.
+
+## 17. Das Signal
+
+Bisher entschied ein festes Fenster beides: **ob** ein Entwurf gemacht wird und **wie
+tief**. Das sind zwei verschiedene Fragen. Ein kurzes Fenster findet mehr Treffer; wie
+weit die Übereinstimmung sich rückwärts fortsetzt, sagt, wie sehr man ihr trauen darf.
+
+Gemessen auf den drei echten Projekt-Prompts, 4B, Suchfenster `3`, Entwurfstiefe `4`:
+
+| Länge der Übereinstimmung | gedraftet | akzeptiert | Akzeptanz |
+| :--- | ---: | ---: | ---: |
+| 3–4 Token | `84` | `45` | `0,536` |
+| 5–8 Token | `28` | `16` | `0,571` |
+| 9–15 Token | `4` | `4` | **`1,000`** |
+| 16+ Token | `44` | `44` | **`1,000`** |
+
+**Übereinstimmungen ab neun Token wurden 48 von 48 Mal akzeptiert.** Kurze knapp zur
+Hälfte. Das ist kein schwacher Zusammenhang, den man statistisch herausarbeiten müsste.
+
+## 18. Die Regel, die daraus folgt
+
+Kurzes Fenster suchen, Tiefe aus der gemessenen Trefferlänge. Bei den Break-even-Werten
+des 4B (`0,47` für einen Entwurfstoken, `0,715` für drei) bedeutet das:
+
+| Übereinstimmung | erwartete Akzeptanz | Tiefe |
+| :--- | ---: | ---: |
+| keine | – | `0` |
+| 3–8 Token | `0,55` | `1` |
+| ab 9 Token | `0,98` | `4` |
+
+Eine Suche, zwei Entscheidungen.
+
+## 19. Gemessen gegen das feste Fenster
+
+Echte Projekt-Prompts, 4B, Median aus zwei Wiederholungen nach Aufwärmlauf:
+
+| Prompt | festes Fenster `8` | **Trefferlänge** | Akzeptanz fest | Akzeptanz neu |
+| :--- | ---: | ---: | ---: | ---: |
+| Quelldatei | `1,099` | `1,097` | `1,000` | `0,970` |
+| Journal | `0,997` | **`1,029`** | `0,417` | **`0,682`** |
+| Testausgabe | `0,976` | **`0,994`** | `0,333` | `0,375` |
+
+Die beiden Verlustfälle werden zu einem Gewinn und einem Fast-Nullsummenspiel, ohne
+dass der gute Fall etwas abgibt (`1,099` gegen `1,097` liegt in der Streuung).
+
+Der Journalfall zeigt den Mechanismus am deutlichsten: die Akzeptanz steigt von
+`0,417` auf `0,682`, weil kurze Treffer jetzt einen Entwurfstoken bekommen statt drei.
+Es werden nicht weniger Treffer benutzt — es wird weniger auf sie gesetzt.
+
+Damit ist `by_match_length` die Voreinstellung, und die Profile suchen mit Fenster `3`
+statt `8`. Der frühere Befund "Fenster `8` ist besser als `3`" galt nur, solange das
+Fenster auch die Tiefe bestimmte.
