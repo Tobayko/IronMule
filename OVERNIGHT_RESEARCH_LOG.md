@@ -156,3 +156,89 @@ durch Aufweichen des Kriteriums treffe.
 Modellprozess und deterministischer Warm-up.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 3 — 24.08.2026
+
+**Kandidat:** `persistent-process-20260824-01`. Vorregistrierung vorab:
+`experiments/cold_start/PREREGISTRATION.md`. Dieser Zyklus **misst nur** und ändert
+den Ausführungspfad nicht.
+
+### Zerlegung des Kaltstarts
+
+Drei frische Prozesse, Mediane, `897`-Token-Prompt:
+
+| Anteil | s | Anteil an `cold_process`-TTFT |
+| :--- | ---: | ---: |
+| Interpreterstart | `0,025` | `0,5 %` |
+| stdlib-Importe | `0,002` | `0,0 %` |
+| `import mlx.core` | `0,005` | `0,1 %` |
+| **`import mlx_lm`** | **`1,881`** | **`36,9 %`** |
+| Snapshot-Auflösung | `0,009` | `0,2 %` |
+| **Modellladen** | **`1,410`** | `27,7 %` |
+| Warm-up, erster Forward | `0,050` | `1,0 %` |
+| **Prefill bis erstes Token** | **`1,712`** | `33,6 %` |
+| **Summe** | **`5,094`** | |
+
+Zweiter Forward: `0,016` s. Der Warm-up-Aufwand beträgt also rund `0,034` s —
+klein, aber real. RSS nach dem Laden: `3,77` GB.
+
+### Hypothese widerlegt
+
+Vorhergesagt war, das **Modellladen** dominiere den Kaltstart. Tatsächlich kostet
+`import mlx_lm` mit `1,881` s **mehr** als das Laden des Modells mit `1,410` s.
+
+Ursache über `python -X importtime` eindeutig:
+
+```
+mlx_lm 1,89 s
+ └ mlx_lm.convert
+    └ mlx_lm.utils
+       └ mlx_lm.tokenizer_utils
+          └ transformers
+             └ torch  (0,52 s, davon torch.distributed.fsdp 0,27 s)
+```
+
+`mlx_lm/__init__.py` importiert `convert` unbedingt, und über diese Kette wird die
+vollständige PyTorch-Distributed-Trainingsmaschinerie geladen — in einem Projekt, das
+Torch nie benutzt.
+
+### Versuchte Abhilfe — negativ
+
+`transformers` wertet `USE_TORCH` aus. Gemessen, je drei Läufe:
+
+| Konfiguration | Importzeit |
+| :--- | :--- |
+| normal | `1,887` / `1,896` / `1,873` s |
+| `USE_TORCH=0` | `1,943` / `1,969` / `1,875` s |
+
+**Kein Gewinn.** Die Variable verhindert den Torch-Import auf diesem Pfad nicht. Die
+Importzeit ist von Anwendercode aus **nicht** behebbar; sie sitzt im
+`__init__` des Pakets.
+
+### Mein vorab festgelegtes Kriterium war zu eng gefasst
+
+Die Vorregistrierung nannte als Schwelle: **Modellladen plus Warm-up ≥ `30 %`** der
+`cold_process`-TTFT. Gemessen sind es `1,460` s von `5,094` s = **`28,7 %`** — knapp
+**verfehlt**.
+
+Das Kriterium bildet den Kandidaten allerdings falsch ab. Ein persistenter Prozess
+entfernt **auch die Importe**, nicht nur Laden und Warm-up. Tatsächlich entfällt
+alles außer dem Prefill: `3,382` s von `5,094` s = **`66,4 %`**.
+
+Ich berichte beide Zahlen. Die Schwelle nachträglich auf die günstigere Größe
+umzudeuten wäre genau das, was der Auftrag untersagt; sie war schlecht formuliert, und
+das ist ein Mangel der Vorregistrierung, kein Ergebnis.
+
+### Entscheid
+
+`candidate_characterized`, gemäß der vorab festgelegten Abbruchbedingung: Importe
+dominieren statt des Modellladens.
+
+Der Kandidat bleibt trotzdem der aussichtsreichste verbliebene — nicht weil das Laden
+teuer wäre, sondern weil die **nicht behebbare** Importzeit nur durch einen
+persistenten Prozess vermeidbar ist. Eine belastbare Empfehlung verlangt eine neue
+Vorregistrierung mit korrekt gefasster Schwelle.
+
+**`formal_claim=false`.**

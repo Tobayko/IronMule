@@ -80,6 +80,12 @@
       "requests": 32,
       "prompt_tokens": 64,
       "output_tokens": 64
+    },
+    {
+      "id": "cold_start_probe",
+      "prompt_tokens": 897,
+      "output_tokens": 1,
+      "note": "drei frische Prozesse, Kaltstart zerlegt"
     }
   ],
   "candidates": [
@@ -176,8 +182,19 @@
     {
       "id": "persistent_process",
       "priority": 3,
-      "state": "open",
-      "note": "beruehrt die Numerik nicht; 1,47-1,76 s Ladezeit je Anfrage entfielen"
+      "state": "candidate_characterized",
+      "note": "import mlx_lm kostet mehr als das Modellladen; USE_TORCH=0 half nicht",
+      "measured": {
+        "cold_ttft_s": 5.094,
+        "import_mlx_lm_s": 1.881,
+        "model_load_s": 1.41,
+        "prefill_s": 1.712,
+        "warmup_s": 0.05,
+        "removable_by_persistence_s": 3.382,
+        "removable_share": 0.664
+      },
+      "preregistered_gate": "load+warmup >= 30% of cold TTFT",
+      "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst"
     }
   ],
   "endpoints": {
