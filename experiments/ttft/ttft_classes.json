@@ -1,0 +1,35 @@
+{
+  "model_load_s": 1.4869,
+  "prompt_tokens": 898,
+  "shared_prefix_tokens": 886,
+  "warm_uncached_ttft_ms": 1702.86,
+  "warm_prefix_hit": [
+    {
+      "rest_tokens": 12,
+      "ttft_ms": 107.6
+    },
+    {
+      "rest_tokens": 11,
+      "ttft_ms": 132.19
+    },
+    {
+      "rest_tokens": 13,
+      "ttft_ms": 129.86
+    },
+    {
+      "rest_tokens": 10,
+      "ttft_ms": 134.57
+    }
+  ],
+  "warm_prefix_hit_median_ms": 131.02,
+  "peak_gb": 4.005,
+  "budget": {
+    "gpu_work_seconds": 13.872472,
+    "max_continuous_gpu_seconds": 1.713321,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 112.239648,
+    "wall_seconds": 127.624333,
+    "candidate_cooldown_seconds": 60.0
+  },
+  "prefix_hit_speedup": 13.0
+}
