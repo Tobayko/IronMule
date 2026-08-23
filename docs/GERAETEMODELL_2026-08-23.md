@@ -107,3 +107,51 @@ Annahmen, keine Herstellerangaben; das Werkzeug nimmt jeden Wert entgegen.
 
 Das Modell beschreibt **Batch `1`**. Bei größerer Breite verteilt sich der feste Term,
 was das Breitenplateau erzeugt und hier nicht abgebildet ist.
+
+## 7. Ein widerlegter Versuch: `mx.compile` auf dem Decode-Schritt
+
+Aus Abschnitt 3 folgt eine naheliegende Vorhersage: wenn `48 %` der Latenz
+Kernel-Starts sind, muss Kernel-Fusion den **je-Layer-Term** senken und den
+Bandbreiten-Term unberührt lassen. Gemessen sah das zunächst nach einem Treffer aus:
+
+| | je Layer | je GB | 4B gesamt | 1B gesamt |
+| :--- | ---: | ---: | ---: | ---: |
+| eager | `0,16561` | `2,7695` | `11,677` ms | `5,864` ms |
+| `mx.compile` | `0,12615` | `2,9896` | `10,816` ms | `4,962` ms |
+| Änderung | **`−23,8 %`** | `+7,9 %` | `−7,4 %` | `−15,4 %` |
+
+Genau der vorhergesagte Term bewegte sich, und das stärker dispatch-gebundene 1B
+gewann mehr. Das Modell schien bestätigt.
+
+**Der Korrektheitstest widerlegt es.** Über `48` Token wich die Ausgabe ab
+Position `2` ab; der Text war ein anderer. Der gemessene Gewinn ist der Preis einer
+Rechnung, die nicht dasselbe tut.
+
+Die Ursache ist strukturell und liegt in `KVCache.update_and_fetch`:
+
+```python
+self.keys[..., prev : self.offset, :] = keys      # mutiert bestehenden Speicher
+return self.keys[..., : self.offset, :], ...      # Rückgabeform wächst je Token
+```
+
+`mx.compile` tracet auf Formen und setzt reine Funktionen voraus. Der Cache ist
+gefangener, mutierender Zustand, **dessen Form mit jedem Token um eins wächst**. Ein
+korrekt deklarierter Zustand hieße deshalb Neukompilierung je Token — langsamer, nicht
+schneller. Ohne Deklaration wird ein veralteter Trace mit falschem Cache-Ausschnitt
+wiederverwendet, was genau die beobachtete Abweichung erzeugt.
+
+`mlx_lm` kompiliert den Forward-Pass folgerichtig nicht; die Sampler dagegen schon,
+mit ausdrücklich deklariertem RNG-Zustand
+(`sample_utils.py`, `@partial(mx.compile, inputs=mx.random.state, ...)`).
+
+**Der Befund aus Abschnitt 3 bleibt bestehen**: `48 %` der Einzelanfrage-Latenz sind
+Kernel-Starts, und das ist weiterhin das richtige Ziel. Nur ist der Hebel keine
+Codezeile.
+
+Der konkrete Weg wäre ein **KV-Cache fester Form mit Maskierung** statt eines
+wachsenden Ausschnitts. Damit blieben die Formen über viele Token konstant,
+Kompilierung würde gültig, und der gemessene `−23,8 %`-Dispatch-Effekt wäre echt
+abrufbar. Der Preis ist verworfene Attention-Arbeit über dem maskierten Bereich —
+bei `f_attention` von `12`–`17 %` vermutlich tragbar, aber **nicht gemessen**.
+
+Prüfskript: `experiments/device_model/check_compiled_decode.py`.
