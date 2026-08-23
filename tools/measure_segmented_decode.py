@@ -41,7 +41,10 @@ from _bench import (  # noqa: E402
     resolve_local_model_snapshot,
 )
 
-MODEL = "mlx-community/gemma-3-4b-it-4bit"
+MODELS = {
+    "4b": "mlx-community/gemma-3-4b-it-4bit",
+    "1b": "mlx-community/gemma-3-1b-it-4bit",
+}
 WIDE, NARROW = 32, 2
 GENERATE_TOKENS = 240
 CORRECTNESS_TOKENS = 48
@@ -73,7 +76,7 @@ PROMPT = "Explain in a few sentences how a CPU cache line works and why it matte
 # Widths past 32 were unreachable before the segmented loop existed: a single
 # generate call at that width overran the continuous ceiling, so the earlier width
 # policy stopped where the measurement stopped, not where the hardware did.
-BATCH_SWEEP = (8, 16, 32, 48, 64, 96, 128)
+BATCH_SWEEP = (8, 16, 32, 48, 64, 96, 128, 192, 256)
 SWEEP_TOKENS = 64
 # Refuse a batch whose peak footprint would crowd the machine. Unified memory is
 # shared with everything else running; filling it is not a measurement, it is an
@@ -427,12 +430,13 @@ def sweep(model, tokenizer, ids, sampler, guard: BudgetGuard) -> dict[str, objec
     }
 
 
-def measure(guard: BudgetGuard, *, do_sweep: bool = False) -> dict[str, object]:
+def measure(guard: BudgetGuard, *, do_sweep: bool = False,
+            model_key: str = "4b") -> dict[str, object]:
     import mlx.core as mx
     from mlx_lm import load
     from mlx_lm.sample_utils import make_sampler
 
-    snapshot = resolve_local_model_snapshot(MODEL)
+    snapshot = resolve_local_model_snapshot(MODELS[model_key])
     model, tokenizer = load(str(snapshot.path))
     sampler = make_sampler(temp=0.0)
     text = tokenizer.apply_chat_template(
@@ -459,6 +463,7 @@ def measure(guard: BudgetGuard, *, do_sweep: bool = False) -> dict[str, object]:
     if do_sweep:
         swept = sweep(model, tokenizer, ids, sampler, guard)
         result = {
+            "model": model_key,
             **snapshot.report_identity(),
             "correctness": {
                 "segmented_matches_unsegmented": identical,
@@ -534,6 +539,7 @@ def main() -> int:
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--out", type=Path, default=None)
+    parser.add_argument("--model", choices=sorted(MODELS), default="4b")
     parser.add_argument("--sweep", action="store_true",
                         help="scan batch widths instead of the wide/narrow comparison")
     args = parser.parse_args()
@@ -544,7 +550,7 @@ def main() -> int:
 
     power = require_ac_power()
     guard = BudgetGuard()
-    report = measure(guard, do_sweep=args.sweep)
+    report = measure(guard, do_sweep=args.sweep, model_key=args.model)
     report["power_source"] = power
     report["budget"] = guard.summary()
     payload = json.dumps(report, indent=2, sort_keys=True)
