@@ -3,6 +3,8 @@
   "device": "arm64 / Darwin 25.5.0",
   "group_size": 64,
   "layers": 34,
+  "lookup_draft": 3,
+  "lookup_ngram": 8,
   "measured_at": "93724907d4ed",
   "model_id": "mlx-community/gemma-3-4b-it-4bit",
   "ms_per_gigabyte": 2.79005,

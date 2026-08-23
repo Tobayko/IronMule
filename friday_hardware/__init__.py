@@ -6,5 +6,20 @@ from .profile import (
     Plan,
     sample_budget,
 )
+from .speculate import (
+    Generation,
+    accepted_prefix,
+    find_continuation,
+    speculative_generate,
+)
 
-__all__ = ["HardwareProfile", "ProfileError", "Plan", "sample_budget"]
+__all__ = [
+    "HardwareProfile",
+    "ProfileError",
+    "Plan",
+    "sample_budget",
+    "Generation",
+    "accepted_prefix",
+    "find_continuation",
+    "speculative_generate",
+]
