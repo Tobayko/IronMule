@@ -583,3 +583,55 @@ rollendes Duty-Fenster (Runde 7), Prefill in Positionen (Runde 7), Kalibriersond
 Aufwärmung (Runde 8), und dieser. Alle waren zu meinen Ungunsten oder harmlos, keiner
 hat eine Sicherheitsgrenze verletzt — der Guard hat in dieser Reihe fünf Läufe
 fail-closed gestoppt, jedes Mal auf einen echten Fehler.
+
+---
+
+# Nachtrag: die 1B-Kurve zu Ende gemessen
+
+**Ergänzt:** 23. August 2026.
+`tools/measure_segmented_decode.py --execute --sweep --model 1b`,
+Bericht: `experiments/segmented_decode/sweep_1b.json`.
+
+## 32. Das kleinere Modell sättigt viel später
+
+Der Batch-Sweep war bisher nur für das 4B gefahren, das bei `64` sättigte. Das 1B
+läuft weiter:
+
+| Batch | ms/Schritt | ms je Sample-Token | Sample-Token/s | Peak | vs. Batch 8 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 8 | `15,05` | `1,941` | `515,3` | `1,07` GB | `1,00` |
+| 16 | `16,05` | `1,005` | `995,5` | `1,32` GB | `1,93` |
+| 32 | `16,00` | `0,501` | `1996,2` | `1,89` GB | `3,87` |
+| **48** | `25,42` | `0,544` | **`1836,8`** | `2,21` GB | `3,57` |
+| 64 | `25,84` | `0,402` | `2485,6` | `2,54` GB | `4,82` |
+| 96 | `34,97` | `0,362` | `2764,9` | `2,49` GB | `5,37` |
+| 128 | `44,05` | `0,343` | `2914,1` | `2,59` GB | `5,66` |
+| 192 | `63,94` | `0,330` | `3029,9` | `2,91` GB | `5,88` |
+| **256** | `82,37` | `0,323` | **`3093,0`** | `3,60` GB | **`6,00`** |
+
+Batch `8`, `16` und `32` kosten alle rund `16` ms je Schritt — dasselbe Plateau wie
+beim 4B, nur breiter. Und **Batch `48` bricht wieder ein**, auf `1836,8` gegen
+`1996,2` bei Batch `32`. Nach Batch `8`, dem Lauf aus Abschnitt 18 und dem
+4B-Sweep ist das die **vierte unabhängige Bestätigung** derselben Vorhersage aus der
+Policy.
+
+Von `192` auf `256` bringt nur noch `2 %`. Die Kurve ist damit ausgemessen.
+
+## 33. Beide Modelle nebeneinander
+
+Gegen den jeweiligen Steady-State-Einzelstrom:
+
+| Modell | Einzelstrom | bester Batch | Sample-Token/s | Faktor | Peak |
+| :--- | ---: | ---: | ---: | ---: | ---: |
+| 4B | `82,4` tok/s | `64` | `493,0` | `5,98x` | `6,55` GB |
+| **1B** | `225,1` tok/s | `256` | **`3093,0`** | **`13,74x`** | `3,60` GB |
+
+Das kleinere Modell gewinnt mehr als doppelt so viel aus dem Batching und braucht
+dabei **weniger** Speicher als das größere. Der Grund steht im Gerätemodell: das 1B
+ist bei Breite `1` zu `73 %` dispatch-gebunden, das 4B nur zu `48 %`, und Batching
+verteilt genau diesen festen Anteil.
+
+Für einen Dienst, der viele Anfragen gleichzeitig bedient, ist das 1B damit nicht
+einfach das schwächere Modell, sondern das mit dem deutlich besseren Durchsatzprofil —
+was die gemessene Genauigkeitslücke (`27,1 %` gegen `81,2 %` auf schweren Aufgaben)
+allerdings nicht aufhebt.
