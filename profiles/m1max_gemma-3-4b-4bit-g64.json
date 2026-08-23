@@ -21,7 +21,7 @@
     48
   ],
   "segment_safety": 0.75,
-  "short_match_acceptance": 0.55,
+  "short_match_acceptance": 0.545,
   "weight_gb": 2.183177,
   "width_ms": {
     "1": 14.184,

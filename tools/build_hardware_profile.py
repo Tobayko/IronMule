@@ -38,7 +38,9 @@ def _load(path: Path) -> dict:
 
 def build(width_report: Path, device_report: Path, model_key: str, *,
           prefill_report: Path | None = None,
-          lookup_ngram: int = 3, lookup_draft: int = 2) -> HardwareProfile:
+          lookup_ngram: int = 3, lookup_draft: int = 2,
+          short_match_acceptance: float = 0.55,
+          long_match_acceptance: float = 0.98) -> HardwareProfile:
     width = _load(width_report)
     device = _load(device_report)
 
@@ -85,6 +87,8 @@ def build(width_report: Path, device_report: Path, model_key: str, *,
         prefill_ms_per_position=prefill,
         lookup_ngram=lookup_ngram,
         lookup_draft=lookup_draft,
+        short_match_acceptance=short_match_acceptance,
+        long_match_acceptance=long_match_acceptance,
         measured_at=str(width.get("model_revision", ""))[:12],
         notes=(
             "Assembled from measurement reports; see docs/DECODE_WIDTH_BEFUND and "
@@ -103,6 +107,10 @@ def main() -> int:
                         help="measured lookup window; see measure_prompt_lookup.py")
     parser.add_argument("--lookup-draft", type=int, default=2,
                         help="measured draft depth at that window")
+    parser.add_argument("--short-match-acceptance", type=float, default=0.55,
+                        help="measured acceptance for agreements below the threshold")
+    parser.add_argument("--long-match-acceptance", type=float, default=0.98,
+                        help="measured acceptance for agreements at or above it")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -110,6 +118,8 @@ def main() -> int:
         args.width_report, args.device_report, args.model,
         prefill_report=args.prefill_report,
         lookup_ngram=args.lookup_ngram, lookup_draft=args.lookup_draft,
+        short_match_acceptance=args.short_match_acceptance,
+        long_match_acceptance=args.long_match_acceptance,
     )
     built.save(args.out)
     plan = built.plan(items=8, max_new_tokens=240, continuous_limit_s=6.0)
@@ -122,7 +132,9 @@ def main() -> int:
         "single_token_ms": round(built.single_token_ms(), 3),
         "dispatch_share": round(shares["dispatch_share"], 4),
         "regression_widths": list(built.regression_widths),
-        "lookup": {"ngram": built.lookup_ngram, "draft": built.lookup_draft},
+        "lookup": {"ngram": built.lookup_ngram, "draft": built.lookup_draft,
+                   "short_acceptance": built.short_match_acceptance,
+                   "long_acceptance": built.long_match_acceptance},
         "example_plan_for_8_items": plan.as_dict(),
     }, indent=2))
     return 0

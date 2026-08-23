@@ -3,7 +3,7 @@
   "device": "arm64 / Darwin 25.5.0",
   "group_size": 64,
   "layers": 26,
-  "long_match_acceptance": 0.98,
+  "long_match_acceptance": 0.897,
   "long_match_tokens": 9,
   "lookup_draft": 4,
   "lookup_ngram": 3,
@@ -17,7 +17,7 @@
     48
   ],
   "segment_safety": 0.75,
-  "short_match_acceptance": 0.55,
+  "short_match_acceptance": 0.472,
   "weight_gb": 0.562629,
   "width_ms": {
     "1": 6.477,
