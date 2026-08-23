@@ -205,3 +205,96 @@ eines einfachen Schritts und müsste rund sechs Token je Schritt liefern; gemess
 Das längere Fenster ist damit der billigere Hebel für dasselbe Ziel, und er ist
 gemessen. Ein Baum bleibt **ungeprüft**, nicht widerlegt — die Rechnung spricht nur
 nicht dafür, ihn als Nächstes zu bauen.
+
+---
+
+# Korrektur: echter Projektinhalt, saubere Methodik, nüchternere Zahlen
+
+**Ergänzt:** 23. August 2026. **Dieser Abschnitt hebt die Zahlen aus Abschnitt 3
+und 10 auf.** Sie bleiben stehen, damit die Korrektur nachvollziehbar ist.
+
+## 13. Zwei Fehler, beide meine
+
+**Ein Korrektheitsfehler.** `trim_prompt_cache` meldet mit einem Rückgabewert von
+`0`, dass es nicht zurückrollen konnte — es wirft nicht. Dieser Rückgabewert wurde
+ignoriert. Verworfene Entwurfstoken blieben damit im Cache stehen und jeder folgende
+Token wurde gegen einen Kontext gerechnet, den es nie gab.
+
+Sichtbar wurde er erst an echtem Inhalt. Gemma 3 hält die meisten Layer in einem
+rotierenden Cache; `RotatingKVCache.is_trimmable` ist `offset < max_size`, und das
+Fenster misst **`512`** beim 1B und **`1024`** beim 4B. Die synthetischen Prompts
+lagen bei `150`–`284` Token und damit innerhalb beider Fenster. Die echten liegen bei
+`749` und `859` — beim 1B außerhalb. Genau dieses Muster zeigten die Läufe: das 1B wich
+bei den beiden langen Prompts ab und stimmte beim `159`-Token-Prompt.
+
+Es war **kein numerischer Gleichstand**. An der ersten abweichenden Stelle führte das
+gewinnende Logit um `0,344`, und zwei greedy-Läufe desselben Prompts stimmten
+miteinander überein.
+
+Der Generator prüft jetzt vor jedem Entwurf, ob der Cache zurückrollbar ist, und macht
+sonst einen gewöhnlichen Schritt. Ein zu kurzer Rückrollvorgang nach bestandener
+Prüfung wirft, statt weiterzurechnen.
+
+**Ein Messfehler.** Die erste Messung auf echtem Inhalt hatte **keinen Aufwärmlauf**.
+Der erste Lauf nach dem Modellladen zahlt Allokation und Kernelaufbau, und das kam als
+`1,539x` Speedup heraus — in einem Lauf, in dem wegen des rotierenden Caches
+**überhaupt nicht spekuliert wurde**. Ein Speedup ohne Spekulation ist ein Messfehler
+und nichts sonst.
+
+## 14. Echter Projektinhalt, korrigiert
+
+Aufwärmlauf, zwei Wiederholungen, Median, Arme abwechselnd. Prompts aus dem Repository
+selbst: eine Quelldatei mit Änderungswunsch, echte Testausgabe mit Rückfrage, ein
+Abschnitt des Arbeitsjournals mit Extraktionsauftrag.
+
+| Modell | Prompt | Kontext | Akzeptanz | fest | adaptiv | zurückgefallen |
+| :--- | :--- | ---: | ---: | ---: | ---: | ---: |
+| 4B | Quelldatei | `859` | `1,000` | **`1,096`** | `1,092` | `0` |
+| 4B | Journal | `749` | `0,455` | `0,992` | `0,995` | `0` |
+| 4B | Testausgabe | `159` | `0,333` | `0,974` | `0,986` | `0` |
+| 1B | Quelldatei | `859` | – | `1,008` | `1,009` | **`63`** |
+| 1B | Journal | `749` | – | `1,006` | `1,000` | **`63`** |
+| 1B | Testausgabe | `159` | `0,700` | **`1,079`** | `1,070` | `0` |
+
+Streuung zwischen Wiederholungen: `0,12`–`1,83 %`.
+
+Drei Dinge stehen darin, und keines davon ist so gut wie Abschnitt 3 nahelegte.
+
+**Der Gewinn ist kleiner.** Auf echtem Inhalt `1,096x` beim 4B statt der `1,215x`
+aus dem konstruierten Beispiel. Jener Prompt bat darum, eine Funktion nahezu
+unverändert zurückzugeben — die günstigste denkbare Aufgabe.
+
+**Das 1B kann jenseits von `512` Kontext-Token nicht spekulieren.** Bei zwei der drei
+echten Prompts fiel es in **jedem** Schritt zurück. Das gemessene `1,695x` aus
+Abschnitt 3 stammt von einem `150`-Token-Prompt und gilt nicht für Agentenkontexte,
+die typischerweise länger sind. Immerhin kostet der Rückfall nichts: `1,006`–`1,008x`.
+
+**"Nie langsamer" ist endgültig widerlegt.** Bei Akzeptanz `0,333` misst der feste
+Entwurf `0,974x`. Die Laufzeitanpassung holt davon einen Teil zurück (`0,986x`), aber
+nicht alles.
+
+## 15. Laufzeitanpassung der Entwurfstiefe
+
+`speculative_generate(..., adapt=True)` führt einen exponentiell gewichteten
+Akzeptanzschätzer und wählt je Schritt die tiefste Entwurfslänge, die bei diesem Wert
+laut gemessener Breitenkurve noch bezahlt. Fällt der Schätzer unter jede
+Break-even-Schwelle, wird gar nicht entworfen.
+
+Der Horizont ist kurz gewählt (`memory=0,7`). Bei `0,9` brauchte der Schätzer rund
+dreißig Entwurfsschritte, um von seinem optimistischen Start zu fallen — bei einer
+kurzen Antwort ist das der ganze Lauf. Mit dem kürzeren Horizont lehnte er im
+Journalfall `33` von rund `85` Schritten ab.
+
+Der Gewinn daraus ist klein: `0,974` auf `0,986`, `0,992` auf `0,995`. Er ist dort
+positiv, wo er gebraucht wird, und kostet dort nichts, wo Akzeptanz hoch ist
+(`1,096` gegen `1,092`, innerhalb der Streuung).
+
+## 16. Wofür es sich jetzt noch lohnt
+
+Nach diesen Zahlen: für **Aufgaben, die Bestehendes umschreiben**, und dort mit rund
+`10 %`. Für alles andere ist es ungefähr neutral, mit einem Verlust von bis zu `2,6 %`
+im ungünstigsten gemessenen Fall.
+
+Das ist erheblich weniger, als Abschnitt 3 nahelegte, und es ist die Zahl, die zählt —
+die synthetischen Prompts waren von mir so gebaut, dass sie dem Verfahren
+entgegenkamen.

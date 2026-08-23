@@ -73,6 +73,9 @@ class Generation:
     draft_length: int
     # Steps that could not draft because the cache had stopped being rewindable.
     unrewindable_steps: int = 0
+    # Steps where the running acceptance had fallen below every break-even, so the
+    # generator chose a plain step instead.
+    declined_steps: int = 0
 
     @property
     def acceptance(self) -> float | None:
@@ -92,6 +95,9 @@ def speculative_generate(
     profile: HardwareProfile | None = None,
     ngram: int | None = None,
     draft_length: int | None = None,
+    adapt: bool = True,
+    warmup_drafts: int = 4,
+    memory: float = 0.7,
 ) -> Generation:
     """Greedy decode, drafting from the context where the profile says it pays.
 
@@ -102,6 +108,13 @@ def speculative_generate(
 
     With `draft_length` zero this is ordinary greedy decoding, which makes it the
     baseline its own speedup is measured against.
+
+    With `adapt` set and a profile given, the draft depth follows the acceptance the
+    run is actually seeing rather than the one the profile was measured at. That
+    matters because acceptance is a property of the text, not of the model: the same
+    4B accepted every drafted token while rewriting a function and 44% of them while
+    summarising prose, where a fixed depth measured 0.980x. Depth is only spent while
+    it is being repaid.
     """
 
     import mlx.core as mx
@@ -131,8 +144,14 @@ def speculative_generate(
     context.append(first)
     generated = [first]
 
-    steps = drafted_total = accepted_total = unrewindable = 0
+    can_adapt = adapt and profile is not None
+    running = 1.0            # optimistic until the run has evidence of its own
+    seen = 0
+    steps = drafted_total = accepted_total = unrewindable = declined = 0
     while len(generated) < max_tokens:
+        depth = draft_length
+        if can_adapt and seen >= warmup_drafts:
+            depth = profile.draft_length_for(running, limit=draft_length)
         # Speculation is only safe where the rejected tokens can be taken back out
         # of the cache. Gemma 3 keeps most layers in a rotating cache that stops
         # being rewindable once the context passes its window -- 512 tokens on the
@@ -141,11 +160,14 @@ def speculative_generate(
         # cache and quietly changes every later token, which is exactly what it did
         # before this check existed.
         rewindable = can_trim_prompt_cache(cache)
-        drafted = (
-            find_continuation(context, ngram, draft_length) if rewindable else []
-        )
         if not rewindable:
             unrewindable += 1
+            drafted = []
+        elif depth < 1:
+            declined += 1
+            drafted = []
+        else:
+            drafted = find_continuation(context, ngram, depth)
         window = [context[-1]] + drafted
         logits = model(mx.array([window]), cache=cache)
         picks = sampler(logits[0].astype(mx.float32)).tolist()
@@ -158,6 +180,15 @@ def speculative_generate(
         steps += 1
         drafted_total += len(drafted)
         accepted_total += keep
+        if drafted:
+            observed = keep / len(drafted)
+            # Exponential memory: acceptance drifts as the text moves between
+            # quoting and inventing, and a plain average would still be reacting to
+            # the opening paragraph a hundred tokens later. The horizon is short on
+            # purpose -- at 0.9 the estimate needed about thirty drafted steps to
+            # fall from its optimistic start, which is most of a short answer.
+            running = memory * running + (1.0 - memory) * observed
+            seen += len(drafted)
 
         # The pass wrote len(window) positions into the cache. Everything past the
         # accepted run and its bonus token never happened and must be rolled back,
@@ -191,4 +222,5 @@ def speculative_generate(
         ngram=ngram,
         draft_length=draft_length,
         unrewindable_steps=unrewindable,
+        declined_steps=declined,
     )
