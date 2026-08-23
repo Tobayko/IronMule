@@ -1,0 +1,173 @@
+{
+  "candidate_id": "chunk-identity-20260824-01",
+  "formal_claim": false,
+  "generate_tokens": 16,
+  "rows": [
+    {
+      "prompt_tokens": 303,
+      "chunk": 64,
+      "blocks": 5,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 303,
+      "chunk": 128,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 303,
+      "chunk": 256,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 303,
+      "chunk": 512,
+      "blocks": 1,
+      "identical": true,
+      "first_diff": null,
+      "note": "Block groesser als Prompt, entspricht Einzelblock"
+    },
+    {
+      "prompt_tokens": 303,
+      "chunk": 1024,
+      "blocks": 1,
+      "identical": true,
+      "first_diff": null,
+      "note": "Block groesser als Prompt, entspricht Einzelblock"
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 64,
+      "blocks": 11,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 128,
+      "blocks": 6,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 256,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 512,
+      "blocks": 2,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 1024,
+      "blocks": 1,
+      "identical": true,
+      "first_diff": null,
+      "note": "Block groesser als Prompt, entspricht Einzelblock"
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 64,
+      "blocks": 19,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 128,
+      "blocks": 10,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 256,
+      "blocks": 5,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 512,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 64,
+      "blocks": 32,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 128,
+      "blocks": 16,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 256,
+      "blocks": 8,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 512,
+      "blocks": 4,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    }
+  ],
+  "holds_across_all_lengths": {
+    "64": false,
+    "128": false,
+    "256": true,
+    "512": false,
+    "1024": true
+  },
+  "lengths_actually_tested": {
+    "64": 4,
+    "128": 4,
+    "256": 4,
+    "512": 3,
+    "1024": 2
+  },
+  "peak_gb": 4.431,
+  "budget": {
+    "gpu_work_seconds": 55.80721,
+    "max_continuous_gpu_seconds": 4.903629,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 316.673541,
+    "wall_seconds": 374.232697,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

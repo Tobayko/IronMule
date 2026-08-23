@@ -98,13 +98,22 @@
     {
       "id": "chunk_identity_policy",
       "priority": 1,
-      "state": "open",
+      "state": "candidate_correctness_failed",
       "blocks": [
         "prefix_reuse",
         "prefill_step_sweep",
         "microbatch",
         "continuous_batch"
-      ]
+      ],
+      "measured": {
+        "cells": 23,
+        "failures": 6,
+        "failure_rate": 0.26,
+        "chunk_256": "7/8, faellt bei 1513 Token",
+        "chunk_1024": "4/4, nur 4 Laengen"
+      },
+      "gate_failed": "token_identity",
+      "note": "kein Blockgroesse haelt zuverlaessig; vier Kandidaten bleiben blockiert"
     },
     {
       "id": "shape_buckets",
@@ -163,6 +172,12 @@
       "id": "llama_cpp",
       "priority": 16,
       "state": "permission_required"
+    },
+    {
+      "id": "persistent_process",
+      "priority": 3,
+      "state": "open",
+      "note": "beruehrt die Numerik nicht; 1,47-1,76 s Ladezeit je Anfrage entfielen"
     }
   ],
   "endpoints": {
@@ -197,7 +212,8 @@
         "no_truncation",
         "no_silent_fallback"
       ],
-      "on_failure": "correctness_failed_terminal"
+      "on_failure": "correctness_failed_terminal",
+      "known_limit": "Prefill-Zerteilung veraendert erzeugte Token in rund 26 % der geprueften Konfigurationen; keine Blockgroesse haelt zuverlaessig (Zyklus 2)"
     },
     "budget": {
       "gpu_seconds_per_process": 120,

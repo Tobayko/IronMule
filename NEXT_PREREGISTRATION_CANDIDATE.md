@@ -1,61 +1,68 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026. Genau einer. Noch **kein** `formal_claim=true`.
+Stand: 24. August 2026, nach Zyklus 2. Genau einer. Noch **kein** `formal_claim=true`.
 
-## Empfehlung: Blockgrößen-Policy für Tokenidentität
+## Vorbemerkung: die Liste ist kürzer geworden
 
-**Nicht** der Präfix-Cache, obwohl er mit `13,0x` die größte gemessene Wirkung dieser
-Sitzung hat. Er ist in Zyklus 1 am Korrektheitsgate gescheitert, und die Ursache liegt
-nicht in ihm, sondern unter ihm.
+Zyklus 2 hat den Kandidaten `chunk_identity_policy` terminal beendet. Über `23`
+geprüfte Zellen veränderte die Prefill-Zerteilung in `26 %` der Fälle die erzeugten
+Token, und **keine** Blockgröße hielt zuverlässig — `256` hielt sieben von acht
+Längen und fiel bei `1513`.
 
-## Warum dieser zuerst
+Damit bleiben vier Kandidaten blockiert, weil alle die Blockstruktur verändern:
+Präfix-Wiederverwendung (`13,0x` TTFT), Prefill-Step-Size-Sweep, Microbatching,
+Continuous Batching.
 
-Gemessen, ohne jeden Präfix-Cache: dieselben `677` Token, nur anders gestückelt,
-erzeugen unterschiedliche Ausgaben.
+## Empfehlung: persistenter Modellprozess
 
-| Zerteilung | identisch zum Einzelblock |
-| :--- | :--- |
-| `512` + `165` | **nein**, ab Position 10 |
-| `666` + `11` | ja |
-| `256`er | ja |
-| `128`er | **nein**, ab Position 10 |
+Der einzige verbliebene Kandidat mit messbarer Wirkung, der die Numerik **gar nicht
+berührt**.
 
-Vier Kandidaten der Liste hängen daran, weil alle die Blockstruktur verändern:
-Präfix-Wiederverwendung, Prefill-Step-Size-Sweep, Microbatching, Continuous Batching.
-Solange offen ist, welche Zerteilungen die Ausgabe erhalten, kann keiner von ihnen den
-Korrektheitsvertrag erfüllen.
+**Mechanismus.** Das Modell wird einmal geladen und über viele Anfragen gehalten.
+Gemessen kostet das Laden `1,47`–`1,76` s. Bei einer Anfrage mit `898` Token und
+`1,70` s Prefill verdoppelt ein Kaltstart die Zeit bis zum ersten Token annähernd.
 
-## Zu klärende Frage
+**Warum die Korrektheit hier nicht in Gefahr ist.** Es ändert sich weder Blockgröße
+noch Batchbreite noch Cache-Struktur — nur, wie oft der Prozess startet. Die
+Tokenidentität ist trivialerweise gegeben, und genau das macht ihn nach zwei
+gescheiterten Korrektheitsgates zum richtigen nächsten Schritt.
 
-Existiert eine Blockgröße — oder eine von der Gesamtlänge abhängige Regel —, unter der
-das Prefill in mehreren Blöcken tokenidentisch zum Einzelblock bleibt?
+**Erwarteter Endpunkt.** `cold_process`-TTFT gegen `warm_uncached`-TTFT. Erwartung
+aus vorhandenen Messungen: rund `1,5` s Unterschied, also grob eine Halbierung der
+TTFT bei kurzen bis mittleren Prompts. Die Zahl ist **abzuleiten, nicht zu
+behaupten** — Prozessstart, Import und Speicherlage sind bisher nicht getrennt
+gemessen.
 
-Drei mögliche Ausgänge, alle verwertbar:
+**Aufwand.** Gering. Der Messteil existiert; es fehlt eine saubere Trennung von
+Prozessstart, Import, Modellladen und Warm-up.
 
-1. **Es gibt eine.** Dann bekommt die Architektur eine harte Regel, und die vier
-   blockierten Kandidaten werden wieder zugänglich.
-2. **Es gibt keine.** Dann ist Tokenidentität über verschiedene Prefill-Zerteilungen
-   auf dieser Plattform grundsätzlich nicht herstellbar, und der Korrektheitsvertrag
-   des Auftrags braucht eine bewusste Entscheidung des Nutzers — nicht eine stille
-   Aufweichung durch mich.
-3. **Sie hängt vom Modell ab.** Dann gehört sie ins Profil, wie Breite, Sample-Zahl
-   und Nachschlagfenster zuvor.
+**Abbruchbedingung.** Wenn die Trennung zeigt, dass der Import und nicht das
+Modellladen dominiert, ist der Kandidat für die Runtime uninteressant und endet als
+`candidate_characterized`.
 
-Ausgang 3 ist nach dem bisherigen Muster der wahrscheinlichste: viermal in dieser
-Sitzung erwies sich ein für konstant gehaltener Wert als modellabhängig.
+## Die Entscheidung, die dem Nutzer gehört
 
-## Warum noch keine versiegelte Vorregistrierung
+Der Korrektheitsvertrag verlangt identische Token-IDs. Zyklus 2 zeigt, dass dieser
+Vertrag für jede Optimierung, die die Prefill-Zerteilung verändert, auf dieser
+Plattform **nicht erfüllbar** ist.
 
-Die bisherige Evidenz ist ein einziger Prompt bei einer Länge, fünf Zerteilungen, ein
-Modell. Das reicht, um ein Problem zu belegen, nicht um eine Regel zu registrieren.
-Vor einer Versiegelung fehlen mindestens: mehrere Promptlängen, beide lokalen Modelle,
-und eine Prüfung, ob die abweichenden Breiten mit den bereits bekannten
-Kernel-Regressionen (`6`–`9`, `48`) zusammenfallen.
+Drei Wege, und keiner davon ist meiner:
+
+1. **Vertrag halten.** Dann bleiben Präfix-Cache, Microbatching und Continuous
+   Batching dauerhaft gesperrt, und die `13,0x` TTFT sind nicht abrufbar.
+2. **Vertrag präzisieren.** Etwa: Identität nur innerhalb einer festen
+   Ausführungskonfiguration verlangen, nicht zwischen verschiedenen. Dann wären die
+   Kandidaten zugänglich, aber zwei Läufe derselben Anfrage in verschiedenen Modi
+   könnten verschiedene Texte liefern.
+3. **Vertrag durch eine Verteilungsaussage ersetzen.** Etwa: gleiche Verteilung statt
+   gleicher Token. Das ist bei greedy Sampling schwer zu prüfen und öffnet genau die
+   Tür, die der Auftrag ausdrücklich schließen wollte.
+
+Ich empfehle keine dieser Optionen. Ich habe das Problem vermessen und lege es vor.
 
 ## Verhältnis zu BW1
 
-Der Entwurf `docs/BW1_VORREGISTRIERUNG.md` (Batch-Decode) bleibt gültig und
-unversiegelt. Zyklus 1 stärkt allerdings ausdrücklich seinen Abschnitt 3: Bündelung
-verändert Kernelformen, und dass genau das die Ausgabe verändern kann, ist jetzt
-unabhängig vom Batching belegt. Das Korrektheitsgate von BW1 ist damit nicht eine
-Formalie, sondern der wahrscheinlichste Ausgang.
+`docs/BW1_VORREGISTRIERUNG.md` bleibt unversiegelt und gültig. Zyklus 2 verschärft
+seine Lage: dass formabhängige Numerik die Ausgabe verändert, ist jetzt zweifach
+belegt — beim Prefill (Zyklus 2) und bei `mx.compile` (frühere Runde). Das
+Korrektheitsgate von BW1 ist damit der wahrscheinliche Ausgang, nicht das Risiko.

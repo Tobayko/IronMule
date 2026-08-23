@@ -1,0 +1,158 @@
+{
+  "candidate_id": "chunk-identity-20260824-01",
+  "phase": "confirmation_partial",
+  "formal_claim": false,
+  "abort_reason": "Einzelblock-Referenz ueber ~2600 Token ueberschreitet das 6-s-Continuous-Limit",
+  "rows": [
+    {
+      "prompt_tokens": 457,
+      "chunk": 256,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 457,
+      "chunk": 1024,
+      "identical": true,
+      "note": "=Einzelblock"
+    },
+    {
+      "prompt_tokens": 897,
+      "chunk": 256,
+      "blocks": 4,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 897,
+      "chunk": 1024,
+      "identical": true,
+      "note": "=Einzelblock"
+    },
+    {
+      "prompt_tokens": 1513,
+      "chunk": 256,
+      "blocks": 6,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 1513,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 2503,
+      "chunk": 256,
+      "blocks": 10,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 2503,
+      "chunk": 1024,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    }
+  ],
+  "combined": [
+    {
+      "prompt_tokens": 303,
+      "chunk": 256,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 677,
+      "chunk": 256,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 256,
+      "blocks": 5,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1205,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 256,
+      "blocks": 8,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1997,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 457,
+      "chunk": 256,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 897,
+      "chunk": 256,
+      "blocks": 4,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 1513,
+      "chunk": 256,
+      "blocks": 6,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prompt_tokens": 1513,
+      "chunk": 1024,
+      "blocks": 2,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 2503,
+      "chunk": 256,
+      "blocks": 10,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prompt_tokens": 2503,
+      "chunk": 1024,
+      "blocks": 3,
+      "identical": true,
+      "first_diff": null
+    }
+  ],
+  "summary": {
+    "256": {
+      "tested": 8,
+      "identical": 7
+    },
+    "1024": {
+      "tested": 4,
+      "identical": 4
+    }
+  }
+}
