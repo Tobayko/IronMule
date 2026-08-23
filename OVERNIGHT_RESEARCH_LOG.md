@@ -242,3 +242,72 @@ persistenten Prozess vermeidbar ist. Eine belastbare Empfehlung verlangt eine ne
 Vorregistrierung mit korrekt gefasster Schwelle.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 4 — 24.08.2026
+
+**Kandidat:** `divergence-impact-20260824-01`. Vorregistrierung vorab:
+`experiments/divergence/PREREGISTRATION.md`.
+
+**Warum.** Zyklus 2 legte dem Nutzer eine Vertragsentscheidung vor — Tokenidentität
+halten und vier Kandidaten sperren, oder den Vertrag präzisieren. Diese Entscheidung
+wurde **ohne Daten** vorgelegt: die einzige beobachtete Abweichung war ein Satzzeichen.
+Dieser Zyklus beschafft die fehlende Zahl. Er schlägt **keine** Lockerung vor.
+
+### Aufbau
+
+`10` maschinell erzeugte Rechenaufgaben mit eindeutiger ganzzahliger Lösung, langer
+identischer Vorspann auf `~1200` Prompt-Token, `160` Ausgabetoken, greedy.
+Einzelblock gegen Blockgröße `512` — letztere wich in Zyklus 2 bei zwei von drei
+Längen ab, erzeugt also zuverlässig Fälle.
+
+### Ergebnis
+
+| Größe | Wert |
+| :--- | ---: |
+| Token-Divergenzrate | **`0,70`** (`7` von `10`) |
+| **Antwort gleich unter den Abweichenden** | **`0,286`** (`2` von `7`) |
+| abweichende Token, Maximum | `153` von `160` |
+| erste Abweichung, Median | Position `5` |
+
+Einzelfall zur Illustration: Wahrheit `54`, Referenzarm antwortet `54`, der zerteilte
+Arm antwortet `32`.
+
+**Die Abweichungen sind nicht oberflächlich.** Die Hypothese dieses Zyklus ist
+widerlegt. Es geht nicht um Formulierung, sondern um die Antwort.
+
+Die höhere Divergenzrate gegenüber Zyklus 2 (`0,70` statt `0,26`) erklärt sich aus
+längeren Prompts und zehnmal längerer Ausgabe: eine frühe Abweichung wirkt sich mit
+zunehmender Länge weiter aus.
+
+### Nicht zu lesen als Qualitätsaussage
+
+Die Trefferquoten der beiden Arme lauteten `0,3` und `0,5`. Das ist **kein** Befund:
+`n=10`, und die Trefferquote war nicht der Endpunkt. Der zerteilte Arm ist nicht
+„besser"; er ist **anders**, und genau das ist das Problem.
+
+### Entscheid
+
+`candidate_characterized`. Die vorab festgelegte Deutung greift ohne Auslegung:
+
+> Antwortzahl weicht häufig ab → **Vertrag halten; jede Lockerung ist ausgeschlossen.**
+
+Damit ist die in Zyklus 2 offene Frage **beantwortet, und zwar mit Daten**. Die vier
+blockierten Kandidaten — Präfix-Wiederverwendung (`13,0x` TTFT), Prefill-Step-Sweep,
+Microbatching, Continuous Batching — bleiben auf dieser Plattform unter diesem Vertrag
+dauerhaft gesperrt.
+
+Das ist ein korrektes Nullergebnis und wiegt schwerer als ein nicht reproduzierbarer
+Geschwindigkeitsgewinn.
+
+### Folge für BW1
+
+`docs/BW1_VORREGISTRIERUNG.md` bleibt unversiegelt. Sein Korrektheitsgate ist nun
+dreifach belastet: formabhängige Numerik verändert die Ausgabe beim Prefill
+(Zyklus 2), bei `mx.compile` (frühere Runde), und die Abweichungen ändern die
+**Antwort**, nicht nur die Formulierung (dieser Zyklus). Ein Start der Studie ist nur
+sinnvoll, wenn der wahrscheinliche Ausgang `bw1_correctness_failed` als Ergebnis
+akzeptiert wird.
+
+**`formal_claim=false`.**
