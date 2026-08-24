@@ -297,6 +297,21 @@
       "priority": 15,
       "state": "candidate_rejected",
       "reason": "Zyklus 9: kein Kernelengpass nachweisbar; Ursache ist Praezision ueber alle Schichten"
+    },
+    {
+      "id": "logsumexp_skip",
+      "priority": 6,
+      "cycle": 10,
+      "state": "candidate_characterized",
+      "measured": {
+        "normalised_ms_per_token": 14.3003,
+        "raw_ms_per_token": 14.5226,
+        "saving_pct": -1.555,
+        "isolated_logsumexp_ms": 0.4086,
+        "isolated_share_of_step_pct": 2.857,
+        "token_identity": true
+      },
+      "conclusion": "isoliert 0,41 ms, im Loop wirkungslos -- MLX ueberlappt sie mit dem GPU-gebundenen Forward; isolierte Kosten sind nicht Grenzkosten"
     }
   ],
   "endpoints": {
