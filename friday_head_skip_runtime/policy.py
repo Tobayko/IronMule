@@ -320,12 +320,21 @@ def _validate_cpu_gate(row: Mapping[str, Any]) -> None:
         raise PolicyError("runtime_cpu_record_invalid")
     metrics = report.get("metrics")
     thresholds = report.get("thresholds")
+    workload = report.get("workload")
+    resources = report.get("resources")
+    guard = resources.get("guard") if isinstance(resources, Mapping) else None
     if (
         report.get("kind") != "policy_overhead"
         or report.get("run_id") != POLICY_RUN_ID
         or report.get("status") != "policy_overhead_passed"
         or report.get("qualification_id") != QUALIFICATION_ID
         or not _formal_policy_projection(report)
+        or not isinstance(workload, Mapping)
+        or workload.get("power_source") != "ac_power"
+        or not isinstance(guard, Mapping)
+        or guard.get("duty_cycle_limit") != 0.15
+        or not _finite_number(guard.get("gpu_work_seconds"))
+        or float(guard["gpu_work_seconds"]) != 0.0
         or not isinstance(metrics, Mapping)
         or metrics.get("gate_passed") is not True
         or metrics.get("policy_load_gate_passed") is not True
@@ -367,6 +376,9 @@ def _validate_gpu_gate(row: Mapping[str, Any]) -> None:
     correctness = report.get("correctness")
     workload = report.get("workload")
     blocks = report.get("blocks")
+    thresholds = report.get("thresholds")
+    resources = report.get("resources")
+    guard = resources.get("guard") if isinstance(resources, Mapping) else None
     if (
         report.get("kind") != "runtime_validation"
         or report.get("run_id") != GPU_RUN_ID
@@ -381,6 +393,13 @@ def _validate_gpu_gate(row: Mapping[str, Any]) -> None:
         or workload.get("output_tokens") != OUTPUT_TOKENS
         or workload.get("prefill_chunk") != PREFILL_CHUNK
         or workload.get("power_source") != "ac_power"
+        or not isinstance(thresholds, Mapping)
+        or thresholds.get("max_ratio") != GPU_MAX_RATIO
+        or thresholds.get("max_extra_peak_bytes") != GPU_MAX_EXTRA_PEAK_BYTES
+        or thresholds.get("duty_cycle") != 0.15
+        or not isinstance(guard, Mapping)
+        or guard.get("duty_cycle_limit") != 0.15
+        or not _finite_number(guard.get("gpu_work_seconds"), positive=True)
         or not isinstance(metrics, Mapping)
         or metrics.get("gate_passed") is not True
         or metrics.get("policy_load_gate_passed") is not True

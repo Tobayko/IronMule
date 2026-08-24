@@ -102,6 +102,10 @@ def benchmark_policy_overhead(
         if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
             raise BenchmarkError(f"{name} must be a positive integer")
 
+    power_source = require_ac_power()
+    guard = BudgetGuard(_POLICY)
+    guard.before_candidate()
+
     def direct() -> str:
         return "lm_head_last_position_of_final_prefill_block_only"
 
@@ -141,8 +145,10 @@ def benchmark_policy_overhead(
         and controller.circuit_reason is None
         and policy() == direct()
     )
+    guard.finish_candidate()
     return {
         "policy": asdict(controller.evidence),
+        "workload": {"power_source": power_source},
         "thresholds": {
             "policy_max_median_ns": POLICY_MAX_MEDIAN_NS,
             "policy_max_p95_ns": POLICY_MAX_P95_NS,
@@ -157,6 +163,7 @@ def benchmark_policy_overhead(
             "gate_passed": gate,
         },
         "blocks": blocks,
+        "resources": {"guard": guard.summary()},
     }
 
 
