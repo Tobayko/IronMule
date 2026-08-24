@@ -145,6 +145,21 @@
       "fixed_candidate_ids": 4,
       "formal_claim": false,
       "note": "geschlossener Planungsfall; Gemma 4B darf nur eine feste Kandidaten-ID als striktes JSON vorschlagen"
+    },
+    {
+      "id": "dual_model_evidence_planner",
+      "prompt_tokens": 322,
+      "max_output_tokens": 32,
+      "expected_response": "{\"candidate_id\":\"persistent_service_qualification\"}",
+      "balanced_pairs": 6,
+      "fresh_processes": 12,
+      "model_runs": {
+        "1b": 6,
+        "4b": 6
+      },
+      "formal_claim": false,
+      "study_id": "dual-model-evidence-planner-20260824-01",
+      "note": "sechs Paare, 1b→4b in Paaren 1–3 und 4b→1b in Paaren 4–6; Modelle strikt seriell"
     }
   ],
   "candidates": [
@@ -490,6 +505,100 @@
       "gate_failed": "strict_json_without_markdown",
       "result_sha256": "64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975",
       "conclusion": "Die inhaltlich erwartete ID stand in allen drei Antworten, aber jeweils in einem Markdown-Codeblock; keine automatische Auswahl oder Aktivierung"
+    },
+    {
+      "id": "dual_model_evidence_planner",
+      "priority": 0,
+      "cycle": 15,
+      "state": "no_planner_qualified",
+      "formal_claim": false,
+      "study_id": "dual-model-evidence-planner-20260824-01",
+      "models": {
+        "1b": {
+          "id": "mlx-community/gemma-3-1b-it-4bit",
+          "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6"
+        },
+        "4b": {
+          "id": "mlx-community/gemma-3-4b-it-4bit",
+          "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+        }
+      },
+      "measured": {
+        "balanced_pairs": 6,
+        "fresh_serial_processes": 12,
+        "contract_1b": "0/6",
+        "contract_4b": "0/6",
+        "output_tokens_1b": 32,
+        "finish_reason_1b": "length",
+        "output_tokens_4b": 23,
+        "finish_reason_4b": "stop",
+        "parser_1b": "0/6",
+        "parser_4b": "0/6",
+        "candidate_id_1b": "0/6",
+        "candidate_id_4b": "0/6",
+        "determinism_1b": "6/6",
+        "determinism_4b": "6/6",
+        "cross_model_decoded_text_equality": "0/6",
+        "ttft_median_mad_s": {
+          "1b": [0.295451312, 0.0005528535],
+          "4b": [0.796846125, 0.0088023125]
+        },
+        "model_work_median_mad_s": {
+          "1b": [0.4608839165, 0.000574333],
+          "4b": [1.0487644165, 0.0092854165]
+        },
+        "process_wall_median_mad_s": {
+          "1b": [4.2468557705, 0.0059329165],
+          "4b": [4.883630417, 0.0182606455]
+        },
+        "peak_rss_bytes": {
+          "1b": 1937965056,
+          "4b": 3765420032
+        },
+        "peak_mlx_bytes": {
+          "1b": 1012548526,
+          "4b": 3021085374
+        },
+        "swap_delta_bytes": 0,
+        "guard_model_work_s": 9.205052,
+        "guard_max_continuous_s": 1.151402,
+        "guard_wall_s": 178.475444,
+        "duty_factor": 0.15,
+        "resource_or_budget_aborts": 0
+      },
+      "calculated": {
+        "pairwise_ratio_1b_over_4b": {
+          "ttft_median": 0.373014193,
+          "ttft_bootstrap95": [0.365603946, 0.377539933],
+          "model_work_median": 0.439069434,
+          "model_work_bootstrap95": [0.434598134, 0.444460794],
+          "process_wall_median": 0.872042394,
+          "process_wall_bootstrap95": [0.864987297, 0.939562889],
+          "token_rate_median": 3.168801108,
+          "token_rate_bootstrap95": [3.130352029, 3.201472197]
+        },
+        "walltime_reduction_percent": 12.8,
+        "peak_rss_reduction_percent": 48.5,
+        "bootstrap_resamples": 10000,
+        "note": "Verhältnisse, Konfidenzintervalle und Prozentwerte sind aus den Rohdaten berechnet; keine zusätzlichen Messungen"
+      },
+      "gate_status": {
+        "resource": "passed",
+        "budget": "passed",
+        "snapshot": "passed",
+        "pairing": "passed",
+        "fresh_process": "passed",
+        "functional": "failed_for_both_models"
+      },
+      "failure_causes": {
+        "1b": "Markdown, falscher Schlüssel persistent_service_id statt candidate_id, end_of_turn-Trailer",
+        "4b": "Markdown-Codeblock trotz inhaltlich richtiger candidate_id"
+      },
+      "decision": "no_planner_qualified",
+      "preregistration_sha256": "246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe",
+      "result_sha256": "7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d",
+      "marker_sha256": "ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327",
+      "conclusion": "Beide Modelle verfehlten den festen Vertragsfall; keine automatische Präferenz, Kandidatenausführung oder Aktivierung"
     }
   ],
   "endpoints": {
@@ -539,8 +648,8 @@
       "swap_growth_allowed": false
     },
     "limits": {
-      "max_cycles": 14,
-      "cycles_completed": 14,
+      "max_cycles": 15,
+      "cycles_completed": 15,
       "max_failed_attempts_per_candidate": 1,
       "max_hardware_runs_per_candidate": 6
     }

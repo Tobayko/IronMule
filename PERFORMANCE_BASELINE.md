@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 14 und begrenzter Runtime-Qualifikation,
+Stand: 24. August 2026, nach Zyklus 15 und begrenzter Runtime-Qualifikation,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -92,6 +92,65 @@ Markdown-Codeblock. Die vorab festgelegte Entscheidung lautet deshalb
 `planner_contract_failed`. Der zusätzliche Rahmen wird nachträglich nicht
 akzeptiert oder entfernt. Der Lauf bestätigt weder Selbstlernen noch eine neue
 Performanceverbesserung und aktiviert nichts; `formal_claim=false`.
+
+## Zyklus 15 — Zwei-Modell-Planner: gemessene Baseline
+
+Die Studie `dual-model-evidence-planner-20260824-01` lief genau einmal mit sechs
+balancierten Paaren und zwölf frischen seriellen Prozessen am Netzteil. Paare
+`1–3` liefen `1b → 4b`, Paare `4–6` `4b → 1b`; jedes Modell wurde sechsmal
+geladen. Der feste Vertrag verlangte ausschließlich
+`{"candidate_id":"persistent_service_qualification"}`. Die Entscheidung ist
+`no_planner_qualified`, `formal_claim=false`.
+
+| Messgröße | Gemma 3 1B 4-bit | Gemma 3 4B 4-bit |
+| --- | ---: | ---: |
+| strikter Vertrag / Parser / erkannte ID | `0/6 / 0/6 / 0/6` | `0/6 / 0/6 / 0/6` |
+| deterministische Token/Textläufe | `6/6` | `6/6` |
+| Ausgabe / Abschlussgrund | `32 Token / length` | `23 Token / stop` |
+| TTFT Median / MAD | `0,295451312 / 0,0005528535 s` | `0,796846125 / 0,0088023125 s` |
+| Modellarbeit Median / MAD | `0,4608839165 / 0,0005743330 s` | `1,0487644165 / 0,0092854165 s` |
+| Prozess-Walltime Median / MAD | `4,2468557705 / 0,0059329165 s` | `4,883630417 / 0,0182606455 s` |
+| Peak-RSS | `1.937.965.056 B` | `3.765.420.032 B` |
+| MLX-Peak | `1.012.548.526 B` | `3.021.085.374 B` |
+| Swap-Delta | `0 B` | `0 B` |
+
+Die 1B-Antwort verletzte den Vertrag mit Markdown, dem falschen Schlüssel
+`persistent_service_id` und `<end_of_turn>`-Trailern. Die 4B-Antwort enthielt
+die richtige ID, aber einen Markdown-Codeblock. In `0/6` Paaren waren die
+dekodierten Modelltexte bytegleich. Diese Punkte sind rein formale Vertrags-
+und Gleichheitsbefunde, keine qualitative Modellkritik.
+
+Ressourcen-, Snapshot-, Pairing- und Budget-Gates bestanden. Gemessen wurden
+`9,205052 s` Gesamt-Modellarbeit, maximal `1,151402 s` zusammenhängend und
+`178,475444 s` Prozess-Walltime bei Duty-Faktor `0,15`; alle Swap-Deltas waren
+`0` und es gab keinen Abbruch. Die folgenden Paarquotienten und Intervalle sind
+berechnet (Bootstrap, `10.000` Resamples), nicht weitere Messungen:
+
+| 1B / 4B | Median | Bootstrap-95-%-KI |
+| --- | ---: | ---: |
+| TTFT | `0,373014193` | `[0,365603946; 0,377539933]` |
+| Modellarbeit | `0,439069434` | `[0,434598134; 0,444460794]` |
+| Prozess-Walltime | `0,872042394` | `[0,864987297; 0,939562889]` |
+| Tokenrate | `3,168801108` | `[3,130352029; 3,201472197]` |
+
+Daraus sind ungefähr `12,8 %` kürzere 1B-Walltime und `48,5 %` weniger
+1B-Peak-RSS berechnet. Diese Zahlen erlauben keine Präferenz, weil 1B und 4B
+beide das Funktions-Gate verfehlten.
+
+Evidenz: `experiments/dual_model_planner/results.json`, SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`; private
+Startmarke SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327`; die
+Präregistrierung SHA-256
+`246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`.
+
+Die UI blieb read-only (GET/HEAD `200`, Schreibmethoden `405`, fremde Hosts
+`421`) und änderte die Hashes nicht. Zyklus 15 speichert JSON-Rohdaten, keine
+eigene Evidence-DB. Es gibt keinen echten Gemma-Matmul-Schalter und keinen
+vollständigen „mit/ohne Matmul“-A/B-Pfad; dieser Vergleich wurde nicht gemessen
+und bleibt ein separater künftiger vorregistrierungspflichtiger Kandidat.
+Multi-Turn, parallele Requests, allgemeine Modellqualität, allgemeine
+Planner-Fähigkeit, selbstlernende Runtime und Produktaktivierung bleiben offen.
 
 ## Prefill
 

@@ -1,8 +1,8 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, nach Zyklus 14. Das registrierte Zykluslimit `14` ist
-erreicht; ohne neuen expliziten Studienvertrag wird kein weiterer Hardwarelauf
-gestartet.
+Stand: 24. August 2026, nach Zyklus 15. Das registrierte Zykluslimit `15` ist
+erreicht; die Freigabe für Zyklus 15 ist verbraucht. Ohne neue ausdrückliche
+Freigabe und einen neuen Studienvertrag wird kein weiterer Hardwarelauf gestartet.
 
 ## Abgeschlossene Priorität: LM-Head beim Prefill überspringen
 
@@ -17,13 +17,18 @@ bestand ihre vorregistrierte Runtime-Qualifikation mit `R=0,845836`, Effekt
 Repository-Aufrufpunkt und nur im registrierten Fall zulässig; eine allgemeine
 Produktaktivierung ist weiterhin nicht erlaubt.
 
-## Abgeschlossener 4B-Planertest: Formatvertrag verfehlt
+## Abgeschlossene Zwei-Modell-Studie: kein Planer qualifiziert
 
-Gemma 4B wurde in Zyklus 14 genau einmal als eng begrenzter Planer geprüft. Drei
-frische Prozesse nannten inhaltlich jeweils die hier ohnehin erwartete nächste ID
-`persistent_service_qualification` und erzeugten exakt dieselben Token. Alle drei
-Antworten enthielten aber einen nicht erlaubten Markdown-Codeblock. Damit gilt
-`planner_contract_failed`, nicht ein Erfolg. Die Auswahl wurde nicht ausgeführt.
+In Zyklus 15 wurden Gemma 3 1B und 4B in sechs balancierten Paaren und zwölf
+frischen seriellen Prozessen genau einmal geprüft. Beide Modelle waren innerhalb
+des Modells `6/6` deterministisch, erfüllten den strikten Vertrag aber jeweils
+`0/6`; die direkte Textgleichheit zwischen den Modellen lag bei `0/6`. Beim 1B
+verursachten Markdown, der falsche Schlüssel `persistent_service_id` und
+`<end_of_turn>`-Trailer den Vertragsfehler. Beim 4B war die ID inhaltlich richtig,
+aber ebenfalls von einem unerlaubten Markdown-Codeblock umgeben. Die Entscheidung
+lautet `no_planner_qualified`, `formal_claim=false`; die Auswahl wurde nicht
+ausgeführt. Zyklus 14 bleibt davon getrennt und unverändert
+`planner_contract_failed`.
 
 ## Abgeschlossene Priorität: persistenter Prozess
 
@@ -68,11 +73,17 @@ vermischt werden.
 
 Das gewünschte selbstlernende Optimization Memory ist eine getrennte
 Architekturarbeit, kein zusätzlicher Leistungskandidat in derselben Studie. Lokale
-1B- und 4B-Snapshots sind vorhanden. Freie 4B-Textausgabe hat den Maschinenvertrag
-bereits verfehlt. Ein neuer Planerkandidat müsste deshalb die Ausgabe technisch auf
-genau eine feste ID begrenzen; ein nachträglich großzügigerer Parser wäre kein
-Wiederholen derselben Studie. Messprogramm und feste Tabelle bleiben alleinige
-Richter.
+1B- und 4B-Snapshots sind vorhanden. Zyklus 15 hat aber gezeigt, dass beide Modelle
+im engen Vertrag nicht qualifizieren. Ein neuer Planerkandidat müsste deshalb die
+Ausgabe technisch auf genau eine feste ID begrenzen; ein nachträglich großzügigerer
+Parser wäre kein Wiederholen derselben Studie. Messprogramm und feste Tabelle
+bleiben alleinige Richter. Allgemeine Modellqualität, allgemeine Planner-Fähigkeit,
+selbstlernende Runtime und Produktaktivierung sind nicht belegt.
+
+Ein echter Gemma-Pfad mit einem „mit/ohne Matmul“-Schalter oder vollständigem
+Matmul-A/B-Vergleich existiert derzeit nicht. Er wurde nicht gemessen und bleibt
+als separater, vorregistrierungspflichtiger Kandidat offen. Multi-Turn-Fortsetzung
+und mehrere parallele Requests fehlen weiterhin als Baselines.
 
 ## Was blockiert bleibt
 

@@ -1145,3 +1145,96 @@ abschließenden Refresh `0` neu zu indexierende Dateien und bestätigte Runtime
 `xcodebuild -checkFirstLaunchStatus` bestand. Python `3.12.13`, `arm64`, MLX
 `0.32.0`, mlx-lm `0.31.3`, `Device(gpu, 0)`, Apple M1 Max, `32 GiB`, Netzbetrieb
 sowie alle drei Evidenz-SHAs wurden erneut bestätigt.
+
+---
+
+## Zyklus 15 — 24.08.2026: Zwei-Modelle-Planer, reales Ergebnis
+
+**Studie:** `dual-model-evidence-planner-20260824-01`;
+**Kandidat:** Einsatz des 1B-Modells anstelle des 4B-Modells für genau einen
+festen, strikt maschinenlesbaren Planungsfall. Die Studie blieb
+`formal_claim=false` und erlaubte weder Code, automatische Kandidatenausführung
+noch Produktaktivierung. Ein echter Gemma-Matmul-Schalter „mit/ohne“ und ein
+vollständiger Matmul-A/B-Pfad existieren im Repository nicht; dieser Vergleich
+wurde nicht gemessen und wird nicht aus anderen Matmul-Daten abgeleitet.
+
+### Einmalige serielle Ausführung
+
+Die Vorregistrierung wurde vor der Hardwareausführung geschrieben, getestet und
+auf dem lokalen Seal-Commit `23cff1905b2f30284f0bf6121ee48c5e0d519bac`
+versiegelt. Gebunden waren die bereits vorhandenen Snapshots
+
+- 1B: `mlx-community/gemma-3-1b-it-4bit`, Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`;
+- 4B: `mlx-community/gemma-3-4b-it-4bit`, Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`.
+
+Der Vertrag verlangte bytegenau
+`{"candidate_id":"persistent_service_qualification"}`, greedy,
+`temperature=0`, höchstens `32` Token. Es gab sechs balancierte Paare mit zwölf
+frischen Prozessen: Paare `1–3` in der Reihenfolge `1b → 4b`, Paare `4–6` in der
+Reihenfolge `4b → 1b`. Kein Prozess lud beide Modelle, kein Lauf wurde wiederholt.
+
+### Gemessene Ergebnisse
+
+| Messwert | 1B | 4B |
+| --- | ---: | ---: |
+| strikter Vertrag / Parser / erkannte ID | `0/6 / 0/6 / 0/6` | `0/6 / 0/6 / 0/6` |
+| Determinismus innerhalb des Modells | `6/6` | `6/6` |
+| TTFT Median / MAD | `0,295451312 / 0,0005528535 s` | `0,796846125 / 0,0088023125 s` |
+| Modellarbeit Median / MAD | `0,4608839165 / 0,0005743330 s` | `1,0487644165 / 0,0092854165 s` |
+| Prozess-Walltime Median / MAD | `4,2468557705 / 0,0059329165 s` | `4,883630417 / 0,0182606455 s` |
+| Peak-RSS | `1.937.965.056 B` | `3.765.420.032 B` |
+| MLX-Peak | `1.012.548.526 B` | `3.021.085.374 B` |
+| Swap-Delta | `0 B` | `0 B` |
+
+1B erzeugte in allen sechs Läufen denselben Vertragfehler: Markdown, den falschen
+Schlüssel `persistent_service_id` und `<end_of_turn>`-Trailer. 4B nannte in allen
+sechs Läufen die richtige ID, setzte sie aber in einen unerlaubten
+Markdown-Codeblock. Die direkten dekodierten Texte waren in `0/6` Paaren
+bytegleich. Das sind ausschließlich Form- und Parserbefunde, keine qualitative
+Bewertung. Beide Modelle waren jeweils intern `6/6` deterministisch.
+
+Alle Ressourcen-, Snapshot-, Pairing-, Fresh-Process- und Budget-Gates bestanden.
+Gemessen wurden `9,205052 s` Gesamt-Modellarbeit, maximal `1,151402 s`
+zusammenhängend und `178,475444 s` Walltime bei Duty-Faktor `0,15`; es gab keine
+Abbrüche und kein Swap-Wachstum. Die unveränderte Entscheidungstabelle gab
+`no_planner_qualified` zurück.
+
+### Berechnete Paarwerte und Evidenz
+
+Die folgenden Werte sind aus den sechs Paaren berechnet, nicht separat gemessen;
+das Bootstrap hatte `10.000` Resamples:
+
+| Quotient 1B / 4B | Median | Bootstrap-95-%-KI |
+| --- | ---: | ---: |
+| TTFT | `0,373014193` | `[0,365603946; 0,377539933]` |
+| Modellarbeit | `0,439069434` | `[0,434598134; 0,444460794]` |
+| Prozess-Walltime | `0,872042394` | `[0,864987297; 0,939562889]` |
+| Tokenrate | `3,168801108` | `[3,130352029; 3,201472197]` |
+
+Daraus ergeben sich berechnet ungefähr `12,8 %` kürzere 1B-Walltime und `48,5 %`
+weniger 1B-Peak-RSS. Da beide funktionalen Gates `0/6` waren, erlauben diese
+Zahlen keine automatische Präferenz. Kein Kandidat wurde ausgeführt.
+
+Rohresultat: `experiments/dual_model_planner/results.json`, SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`.
+Private Startmarke: `.friday-data/dual-model-planner/attempt.json`, SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327`.
+Präregistrierung: SHA-256
+`246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`.
+
+Die lokale read-only UI bestätigte GET und HEAD mit `200`, lehnte schreibende
+Methoden mit `405` und fremde Host-Header mit `421` ab. Ergebnis- und
+Markerhash blieben vor und nach dem UI-Test unverändert. Zyklus 15 nutzt JSON-
+Rohdaten und keine eigene SQLite-Evidence-DB.
+
+### Grenzen und nächster Schritt
+
+Allgemeine Modellqualität, allgemeine Planner-Fähigkeit, selbstlernende Runtime,
+Produktaktivierung, Multi-Turn-Fortsetzung und mehrere parallele Requests sind
+nicht belegt. Die Freigabe für den einzigen Zyklus-15-Lauf ist verbraucht; ein
+weiterer Hardwarelauf braucht neue Freigabe, neue Vorregistrierung und einen
+neuen Zyklus. Ein Matmul-A/B-Vergleich bleibt ein separater, künftig
+vorregistrierungspflichtiger Kandidat, weil der vollständige mit/ohne-Pfad nicht
+existiert.
