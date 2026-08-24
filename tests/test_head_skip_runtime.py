@@ -181,6 +181,10 @@ def _runtime_rows() -> list[dict[str, object]]:
         "qualification_id": QUALIFICATION_ID,
         "policy": _formal_projection(),
         "policy_load_ns": 1_000_000,
+        "workload": {"power_source": "ac_power"},
+        "resources": {
+            "guard": {"duty_cycle_limit": 0.15, "gpu_work_seconds": 0.0}
+        },
         "thresholds": {
             "policy_max_median_ns": POLICY_MAX_MEDIAN_NS,
             "policy_max_p95_ns": POLICY_MAX_P95_NS,
@@ -222,6 +226,10 @@ def _runtime_rows() -> list[dict[str, object]]:
         "thresholds": {
             "max_ratio": GPU_MAX_RATIO,
             "max_extra_peak_bytes": GPU_MAX_EXTRA_PEAK_BYTES,
+            "duty_cycle": 0.15,
+        },
+        "resources": {
+            "guard": {"duty_cycle_limit": 0.15, "gpu_work_seconds": 1.0}
         },
         "metrics": {
             "gate_passed": True,
@@ -326,7 +334,11 @@ class FakeGuard:
         return None
 
     def summary(self):
-        return {"gpu_work_seconds": self.gpu, "breaks": self.breaks}
+        return {
+            "gpu_work_seconds": self.gpu,
+            "breaks": self.breaks,
+            "duty_cycle_limit": 0.15,
+        }
 
 
 class RuntimePolicyTest(unittest.TestCase):
@@ -413,6 +425,10 @@ class RuntimePolicyTest(unittest.TestCase):
         rows = _runtime_rows()
         rows[-1]["report"]["metrics"]["swap_delta_bytes"] = None
         self.assertFalse(_load_runtime(rows).authorized)
+
+        rows = _runtime_rows()
+        rows[0]["report"]["workload"]["power_source"] = "battery"
+        self.assertFalse(_load_runtime(rows, gpu_only=True).authorized)
 
         rejected_path = _load_runtime(
             _runtime_rows(), runtime_path=DEFAULT_RUNTIME_DATABASE_PATH.with_name("other.sqlite3")
@@ -513,11 +529,17 @@ class RuntimeBenchmarkTest(unittest.TestCase):
             function()
             return iterations * (10 if function.__name__ == "direct" else 15)
 
-        with patch.object(benchmark, "_measure_loop", side_effect=measured):
+        with (
+            patch.object(benchmark, "BudgetGuard", FakeGuard),
+            patch.object(benchmark, "require_ac_power", return_value="ac_power"),
+            patch.object(benchmark, "_measure_loop", side_effect=measured),
+        ):
             result = benchmark.benchmark_policy_overhead(
                 controller, warmup_blocks=1, measurement_blocks=3, iterations=100
             )
         self.assertTrue(result["metrics"]["gate_passed"])
+        self.assertEqual(result["workload"]["power_source"], "ac_power")
+        self.assertEqual(result["resources"]["guard"]["gpu_work_seconds"], 0.0)
         self.assertEqual(result["metrics"]["policy_median_ns"], 15.0)
         self.assertEqual([block["order"] for block in result["blocks"]], ["ab", "ba", "ab"])
 

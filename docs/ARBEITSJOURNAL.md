@@ -4971,3 +4971,22 @@ endete vor jeder Tensor- oder GPU-Arbeit mit `AttributeError`. Die vorhandenen
 Paketversionen wurden danach über `importlib.metadata` gelesen: MLX `0.32.0`,
 `mlx-lm 0.31.3`, Maschine `arm64`; `mlx.core` ließ sich importieren. Es wurde kein
 zusätzlicher Hardwaretest ausgeführt.
+
+**Vor-CPU-Abbruch ohne Messung.** Nach dem sauberen Commit bestätigte ein read-only
+Normalaufruf erwartungsgemäß, dass ohne neue Runtime-Historie nur die Baseline
+erlaubt ist (Exit `2`, `runtime_evidence_unavailable_or_invalid`); die Datenbank
+blieb abwesend. Unmittelbar vor dem ersten CPU-Lauf zeigte der erneute Abgleich mit
+dem eingefrorenen Architekturvertrag, dass dessen Netz- und BudgetGuard-Regel für
+die gesamte Live-Qualifikation gilt, während der CPU-Harness sie nur beim späteren
+MLX-Lauf erzwang. Es war noch keine CPU- oder GPU-Messung gestartet. Der CPU-Harness
+prüft nun ebenfalls Netzbetrieb, läuft unter demselben Guard mit Duty-Grenze `0,15`
+und speichert dessen Zusammenfassung; mangels GPU-Arbeit bleibt seine GPU-Zeit `0`.
+Hypothesen, Workload, Schwellen und Entscheidungstabelle wurden nicht geändert.
+
+Der abschließende Zwei-Dateien-Sicherheitsdelta für diese Korrektur ist unter
+`/private/tmp/codex-security-scans/Project_Friday/5b17bfb_20260824T085130Z`
+versiegelt. Beide Quellzeilen wurden vollständig gelesen, die Abdeckung ist
+`complete`, es gibt keine offene Arbeit und `0` berichtspflichtige Findings. Die
+fokussierten `20` Tests und die vollständige Projektsuite bestanden nach der
+Korrektur; die Vollsuite lief `37,23 s`, maximal `189.988.864 B` RSS,
+Peak-Footprint `46.285.616 B`, keine Swaps.
