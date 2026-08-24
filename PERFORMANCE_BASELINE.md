@@ -343,3 +343,20 @@ Nur berechnet: warm `0,9829777045` (rund 1,7022 % schneller), kalt
 `1,0154895491` (rund 1,549 % langsamer), Break-even median rund 36,47
 Decode-Schritte gegenüber 31 in diesem Lauf. Matmul war stets aktiv; die Studie
 ändert nur Cacheform und MLX-Compile-Laufzeitorganisation.
+
+## Zyklus 17 — geplante Baseline vor Hardware
+
+Der Draft `fixed_compiled_batched_readback_n8_v1` vergleicht Readback `1` und
+`8` ausschließlich auf dem qualifizierten Fixed-Compiled-4B-Pfad. Sechs
+gepaarte frische Prozesse mit zwölf geplanten Arm-Ausführungen sind vorgesehen;
+Modell, Gewichte, Quantisierung und Matmul bleiben unverändert. EOS-Tail wird
+vollständig erfasst und getrimmt, exakte logische Token-/Textidentität ist
+terminales Gate. Status `draft_pending_preflight`; noch kein Marker, Resultat
+oder Modelllauf. Cycle 7 `12,98 %` ist explorativ, `formal_claim=false`.
+
+## Zyklus 17 — sealed_pre_hardware
+
+`measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
+Kein Modell-/GPU-/Hardwarelauf, Marker oder Resultat. Readback 1 versus 8 bleibt
+die einzige Variable im identischen Fixed-Compiled-4B-Pfad; sechs frische Paare
+und zwölf Arme sind geplant.

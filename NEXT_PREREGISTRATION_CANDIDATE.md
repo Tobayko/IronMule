@@ -131,3 +131,23 @@ Token und Text exakt identisch. Die gemessenen Decode-Medianen waren Standard
 Matmul blieb in allen Armen aktiv; Modell, Gewichte und Quantisierung wurden
 nicht verändert. Die Freigabe ist genau einmal verbraucht. Kein allgemeiner
 Qualitäts-, Selbstlern- oder Produktivclaim und keine automatische Aktivierung.
+
+## Zyklus 17 — nächster Draft
+
+Studie `fixed-compiled-batched-readback-20260824-01`, Kandidat
+`fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
+Die Antwort „Dann machen wir das mal“ reserviert genau einen neuen Lauf; die
+Freigabe ist reserviert und noch nicht verbraucht. Geplant: sechs gepaarte
+frische Prozesse, zwölf Arm-Ausführungen, Readback `1` versus `8` als einzige
+Variable auf identischem Fixed-Compiled-4B-Pfad. EOS-Tail wird vollständig
+getaktet und getrimmt; exakte logische Token und sichtbarer Text sind terminal.
+Noch kein Marker, Resultat oder Modelllauf. `formal_claim=false`; keine
+Aktivierung, kein Dienst, kein Multi-Turn- und kein Qualitätsclaim. Cycle 7
+`12,98 %` bleibt explorative Historie.
+
+## Zyklus 17 — sealed_pre_hardware
+
+`measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
+Kein Modell-/MLX-/Hardwarelauf, Marker oder Resultat. Readback 1 versus 8 bleibt
+die einzige Variable im identischen Fixed-Compiled-4B-Pfad; sechs frische Paare
+und zwölf Arme sind geplant.

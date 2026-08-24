@@ -5719,3 +5719,30 @@ Modus `0600` und vergleicht Hashes und Modi vor und nach dem Test. Der aktuelle
 Arbeitsbaum-Harness ist damit nicht bytegleich zum versiegelten Code; die
 Evidence bewahrt aber die Code-Fingerprints des Seal-Stands. `formal_claim=false`,
 keine automatische Aktivierung und keine neue Freigabe.
+
+## 2026-08-24 — Zyklus 17: Pre-Hardware-Draft reserviert
+
+Die Nutzerantwort „Dann machen wir das mal“ reserviert genau einen neuen Lauf,
+ohne die Freigabe bereits zu verbrauchen. Studie
+`fixed-compiled-batched-readback-20260824-01`, Kandidat
+`fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
+Geplant sind sechs gepaarte frische Prozesse und zwölf Arm-Ausführungen. Die
+einzige Variable ist Readback `1` versus `8` auf identischem Fixed-Compiled-4B;
+Modell, Gewichte, Quantisierung und Matmul bleiben unverändert. EOS-Tail wird
+vollständig getaktet und getrimmt, exakte logische Token-/Textidentität ist
+terminales Gate. Noch kein Marker, Resultat oder Modelllauf. Cycle 7 `12,98 %`
+bleibt explorativ. `formal_claim=false`; keine Aktivierung, kein Dienst, kein
+Multi-Turn- und kein Qualitätsclaim.
+
+## 2026-08-25 — Zyklus 17 sealed_pre_hardware
+
+Offline-Preflight abgeschlossen: `measured=false`, `formal_claim=false`,
+`authorization=reserved_not_consumed`; kein Modell-/MLX-/GPU-/Hardwarelauf,
+kein Marker und kein Resultat. Readback 1 versus 8 bleibt die einzige Variable
+auf identischem Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind
+geplant. Prereg `74f63c36ddd141c4b4666d9f15d7b17d3ac9294e2d63cb29f6d9e35a80db21b1`,
+Worker `fecf712b44e6d1a8c46565dda59569fa11cdc762fc49917307874435e4a2efde`,
+Harness `9c0689be97a1ee5022f7c4b4623af9bd4a9906411291d9c4295b4c16184c7ff0`,
+Dashboard `ccbaf05368f21acfa2c627a33f3ee9c5629d335d45f76abb5a74d1399fbeaaee`.
+Selfchecks und Offline-Tests (30/30, 817/817) bestanden; kein Produktivdienst
+und keine Aktivierung.

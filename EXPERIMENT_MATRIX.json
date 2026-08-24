@@ -744,6 +744,26 @@
         "measured_decode_steps": 31
       },
       "note": "Seal-Commit 83ee3ea03f9fb303b8226ab8ad3189f07daec727; sechs frische Prozesse, 18 Arm-Ausführungen (3 × 6), exakt gleiche Token/Text. Matmul aktiv in allen Armen; nur feste Cacheform und MLX-Compile-Laufzeitorganisation. Berechnete warme/kalte Projektionen sind kein zusätzlicher Messwert; Lifecycle-Selfcheck-Befund nach der Messung getrennt behoben. Keine Auto-Aktivierung; Freigabe genau einmal verbraucht"
+    },
+    {
+      "id": "fixed_compiled_batched_readback_n8_v1",
+      "study_id": "fixed-compiled-batched-readback-20260824-01",
+      "candidate_id": "fixed_compiled_batched_readback_n8_v1",
+      "status": "sealed_pre_hardware",
+      "formal_claim": false,
+      "measured": false,
+      "result": null,
+      "arms": ["fixed_compiled_readback_1", "fixed_compiled_readback_8"],
+      "paired_fresh_processes": 6,
+      "planned_arm_executions": 12,
+      "variable": "readback_interval_only",
+      "fixed_invariants": ["model", "weights", "quantization", "mathematical_matmul", "fixed_compiled_runtime"],
+      "eos_tail": "fully_timed_and_trimmed",
+      "correctness_gate": "exact_logical_tokens_and_visible_text_terminal",
+      "hardware_measured": false,
+      "authorization": "reserved_not_consumed",
+      "cycle_7_reference": "exploratory_12.98_percent_only",
+      "note": "No marker, result, model run, activation, service, multi-turn or quality claim before preflight."
     }
   ],
   "endpoints": {
