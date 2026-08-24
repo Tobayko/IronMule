@@ -1,6 +1,7 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 12, Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
+Stand: 24. August 2026, nach Zyklus 12 und begrenzter Runtime-Qualifikation,
+Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
 Prefill-Head-Skip-Studie; alle übrigen Werte dieser Baseline bleiben
@@ -75,6 +76,40 @@ Der terminale Status lautet `head_skip_gain_confirmed`, die Aktion lediglich
 **ein Gerät, einen Modell-Snapshot, einen Prompt, einen Prefill-Plan und greedy ohne
 Prompt-Logprobs**. Es gibt keine automatische Produktaktivierung und keinen
 allgemeinen TTFT-, Modell- oder Cross-Device-Claim.
+
+### Begrenzte Runtime-Qualifikation
+
+Nach ausdrücklicher Architekturfreigabe wurde der bestätigte Kandidat als
+getrennter, rückrollbarer Repository-Aufrufpunkt eingebaut. Die vorab eingefrorene
+Engineering-Qualifikation ist **kein neuer Zyklus und kein neuer formaler Claim**.
+
+| Endpunkt | Ergebnis | vorab festgelegte Grenze |
+| :--- | ---: | ---: |
+| einmaliger Evidenzload | `824,4602` ms | `< 5000` ms |
+| gecachte Auswahl, Median | `0,0008647` ms | `≤ 0,025` ms |
+| gecachte Auswahl, p95 | `0,0008725` ms | `≤ 0,050` ms |
+| Zusatz zur direkten Auswahl | `0,0008395` ms | `≤ 0,020` ms |
+| bisheriger Prefill, Median | `1806,4619` ms | – |
+| schneller Prefill, Median | `1528,2070` ms | – |
+| gepaartes Prefill-Verhältnis | **`0,845836`** | `≤ 0,95` |
+| Prefill-Effekt | **`−15,4164 %`** | mindestens `5 %` schneller |
+| Greedy-Tokenidentität | **hält** | Pflicht |
+| MLX-Peak-Delta B−A | `−97.855.968` Byte | höchstens `+134.217.728` Byte |
+| Swap-Delta | `0` Byte | kein Wachstum |
+
+Die vier unverändert gespeicherten gepaarten Verhältnisse lauten `0,847804`,
+`0,843327`, `0,843869` und `0,849053`. Korrektheitspaar und alle vier Messpaare
+erzeugten dieselben 32 Token; Hash
+`666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c`.
+Der Kandidatenpfad führte vier Prefill-Blöcke, aber genau einen LM-Head-Aufruf aus.
+
+Der Lauf war am Netzteil, nutzte Duty-Faktor `0,15`, meldete `25,346709` s
+Modellarbeit, höchstens `2,283342` s zusammenhängende Arbeit und `192,383843` s
+erzwungene Pausen. Die private drei Einträge lange Runtime-Historie hat SHA-256
+`6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567` und
+Kettenkopf `db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3`.
+Der normale Repository-Aufruf autorisiert damit nur den exakt registrierten Fall;
+jede Abweichung verwendet weiterhin den bisherigen Pfad.
 
 ## Decode-Durchsatz
 

@@ -4990,3 +4990,72 @@ versiegelt. Beide Quellzeilen wurden vollständig gelesen, die Abdeckung ist
 fokussierten `20` Tests und die vollständige Projektsuite bestanden nach der
 Korrektur; die Vollsuite lief `37,23 s`, maximal `189.988.864 B` RSS,
 Peak-Footprint `46.285.616 B`, keine Swaps.
+
+### 2026-08-24 — Head-Skip-Runtime-Qualifikation, terminales Ergebnis
+
+**Ausführungsreihenfolge.** Nach dem Korrekturcommit `a151c93` wurde zuerst genau
+der vorregistrierte CPU-Lauf
+`head-skip-policy-overhead-20260824-01` ausgeführt. Er bestand, bevor der einzige
+GPU-Lauf `head-skip-runtime-validation-20260824-01` gestartet wurde. Der
+GPU-Prozess endete mit Exit `0` und wurde nicht wiederholt. Spezifikation und
+Vorregistrierung blieben mit SHA-256
+`4f0f1a9e4d1cd419f0b7686bd5ca9db2866489c04654b93000cca8fffa45e5a9` und
+`38da7b1a180c2107ca4c6a754365c4da18bb7336f9eefe36a7c840c4c77c8306`
+bytegleich.
+
+**CPU-Messung.** Direkter Aufruf Median `25,1396 ns`, Policy-Aufruf Median
+`864,7 ns`, p95 `872,47295 ns`, inkrementeller Median `839,47295 ns`. Netzbetrieb,
+Duty-Grenze `0,15` und BudgetGuard waren aktiv; GPU-Arbeit `0`. Das CPU-Gate
+bestand. Record-ID:
+`cf17bb250cae590a5bf7c21987734599e9d85200b0b5a23a070b92a940f2171a`.
+
+**GPU-Messung und Korrektheit.** Die vier vorregistrierten gepaarten Verhältnisse
+waren `0,8478035692961657`, `0,8433268055644042`,
+`0,8438689796402571` und `0,8490529640322201`; Median
+`0,8458362744682114`. Referenzmedian `1.806.461.854,5 ns`, Kandidatenmedian
+`1.528.206.979,0 ns`, daraus berechneter Effekt `-15,416372553178858 %`.
+Alle `32` greedy Token waren in Korrektheits- und Messpaaren exakt identisch;
+Token-SHA
+`666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c`.
+Beide Pfade führten vier Blöcke aus; der Referenzpfad rief den LM-Head viermal,
+der Kandidat einmal auf.
+
+**Ressourcen und Entscheidung.** Peak-Delta `-97.855.968 B`, Swap-Delta `0`,
+maximales RSS `3.764.551.680 B`, Prozess-CPU `8.971.375.000 ns`. Der Guard
+protokollierte `25,346709 s` GPU-Arbeit, höchstens `2,283342 s` am Stück,
+`192,383843 s` Pausen und Duty-Faktor `0,15`. H1 bis H5 bestanden; die
+vorregistrierte Entscheidung ist `engineering_go_exact_scope`. Sie ist kein
+formaler Claim (`formal_claim=false`) und gilt ausschließlich für den exakten
+qualifizierten Request. Alle anderen Requests wählen weiterhin die Baseline.
+
+**Terminale Evidenz und UI.** Die private Datei
+`.friday-data/head-skip-runtime.sqlite3` hat Modus `0600`, enthält genau die drei
+erwarteten verketteten Records und SHA-256
+`6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567`.
+Der read-only UI-Test auf `127.0.0.1:8775` lieferte für
+`/api/snapshot?limit=3` HTTP `200`, bestätigte die Hashkette und ließ den
+Datenbankhash unverändert. Der normale Policy-Aufruf autorisierte danach genau den
+qualifizierten Scope mit Grund `runtime_qualification_passed_exact_scope`.
+
+**Fehler bei der Dokumentation.** Ein kombinierter Patch für Status, Nachtlog und
+Journal fand den erwarteten Kontext im Nachtlog nicht und wurde atomar ohne
+Änderung verworfen. Die Dokumente wurden danach einzeln gegen ihren tatsächlichen
+Endstand ergänzt. Dieser reine Patchfehler berührte weder Messprozess noch
+Evidenzdatei.
+
+**Gemessen, gerechnet, offen.** Gemessen wurden die gepaarten Laufzeiten,
+Ressourcen, Pfadausführung und Tokenidentität. Der Prozentwert wurde aus den
+vorregistrierten Laufzeitpaaren berechnet. Nicht gemessen und deshalb offen sind
+Multi-Turn-Fortsetzung, mehrere parallele Requests und jede Übertragung auf andere
+Prompts oder Einstellungen.
+
+**Abschlussprüfung vor Ergebniscommit.** ProjectAtlas führte nach den
+Dokumentänderungen einen einzelnen Aktualisierungslauf aus: `10` geänderte Dateien
+wurden geparst, `713` blieben unverändert, kein Timeout. Die vollständige
+Projekttestsammlung bestand erneut mit Exit `0`; äußere Laufzeit `51,39 s`, maximal
+`193.331.200 B` RSS, Peak-Footprint `46.088.984 B`, keine Swaps. `compileall`, beide
+JSON-Parserprüfungen und `git diff --check` bestanden. Ein zusätzlicher read-only
+Abgleich bestätigte exakte Übereinstimmung von Runtime-Datenbank,
+`results.json` und Experimentmatrix für Laufzeiten, Verhältnis, berechneten Effekt,
+Tokenidentität und Record-ID. Der Datenbankhash und die beiden eingefrorenen
+Spezifikationshashes blieben unverändert.

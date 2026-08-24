@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "runtime_id": "head-skip-runtime-20260824-01",
+  "qualification_id": "head-skip-runtime-qualification-20260824-01",
+  "formal_claim": false,
+  "decision": "engineering_go_exact_scope",
+  "claim_scope": "one-device-one-model-one-prompt-one-prefill-plan",
+  "formal_basis": {
+    "study_id": "head-skip-prefill-v1-20260824",
+    "decision_sha256": "99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a",
+    "database_sha256": "15ee462bbad5a8f757373f093fdf2ccfb8bdd0048c03447c1cb635acd38ec8d9",
+    "chain_head": "8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4"
+  },
+  "frozen_inputs": {
+    "runtime_spec_sha256": "4f0f1a9e4d1cd419f0b7686bd5ca9db2866489c04654b93000cca8fffa45e5a9",
+    "preregistration_sha256": "38da7b1a180c2107ca4c6a754365c4da18bb7336f9eefe36a7c840c4c77c8306"
+  },
+  "provenance": {
+    "git_revision": "a151c938241cd89ada967c56a874af79b914da29",
+    "provenance_sha256": "9c91619bd1b35ced71ab952b9fc892f9ec97f11e52635a561b0f23d391396740",
+    "code_sha256": "006f54f945de926423df52641d923469ab38c77352445d1c2d6bdf0d642568ec",
+    "spec_sha256": "debac508224a7f1f48a08ca8f7d6e284a3e232d9cf9722cf013acc7cdbfcc14d",
+    "environment_sha256": "e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4",
+    "hardware_sha256": "ee157aaa01de24f2fcb3057bf6cacbfbc361257d2a192eadc3fd75f33f3133b3"
+  },
+  "runtime_history": {
+    "path": ".friday-data/head-skip-runtime.sqlite3",
+    "mode": "0600",
+    "records": 3,
+    "kinds": [
+      "policy_overhead",
+      "runtime_validation_attempt",
+      "runtime_validation"
+    ],
+    "database_sha256": "6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567",
+    "history_revision": "19c840b3db7550e42925dc20dd646fb6d1fc6e579ee9e6ff55d60b99c1c44925",
+    "chain_head": "db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3",
+    "all_records_formal_claim_false": true
+  },
+  "cpu_gate": {
+    "record_id": "cf17bb250cae590a5bf7c21987734599e9d85200b0b5a23a070b92a940f2171a",
+    "status": "policy_overhead_passed",
+    "power_source": "ac_power",
+    "policy_load_ns": 824460209,
+    "direct_median_ns": 25.1396,
+    "policy_median_ns": 864.7,
+    "policy_p95_ns": 872.47295,
+    "incremental_median_ns": 839.47295,
+    "duty_cycle_limit": 0.15,
+    "gpu_work_seconds": 0.0,
+    "gate_passed": true
+  },
+  "gpu_gate": {
+    "attempt_record_id": "6809be650abe2b6b87c1200f8bbb7d5fc5ca6f58d041639f8516f4a6c2892a19",
+    "result_record_id": "db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3",
+    "status": "runtime_validation_passed",
+    "power_source": "ac_power",
+    "prompt_tokens": 897,
+    "output_tokens": 32,
+    "prefill_chunk": 256,
+    "measurement_orders": [
+      "ab",
+      "ba",
+      "ab",
+      "ba"
+    ],
+    "paired_ratios": [
+      0.8478035692961657,
+      0.8433268055644042,
+      0.8438689796402571,
+      0.8490529640322201
+    ],
+    "baseline_median_ns": 1806461854.5,
+    "candidate_median_ns": 1528206979.0,
+    "ratio": 0.8458362744682114,
+    "effect_percent": -15.416372553178858,
+    "token_identical": true,
+    "token_sha256": "666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c",
+    "candidate_path_exercised": true,
+    "peak_memory_delta_bytes": -97855968,
+    "swap_delta_bytes": 0,
+    "rss_peak_bytes": 3764551680,
+    "gpu_work_seconds": 25.346709,
+    "max_continuous_gpu_seconds": 2.283342,
+    "required_break_seconds": 192.383843,
+    "wall_seconds": 221.779693,
+    "duty_cycle_limit": 0.15,
+    "gate_passed": true
+  },
+  "decision_gates": {
+    "H1_token_identity_and_path": true,
+    "H2_exact_selection_and_fallback": true,
+    "H3_ratio_at_most_0_95": true,
+    "H4_policy_overhead": true,
+    "H5_resources": true
+  },
+  "operational_policy": {
+    "authorized": true,
+    "reason": "runtime_qualification_passed_exact_scope",
+    "all_other_requests": "baseline"
+  },
+  "limitations": [
+    "single_device",
+    "single_model_snapshot",
+    "single_prompt",
+    "greedy_fixed_horizon_only",
+    "no_prompt_logprobs",
+    "not_a_new_formal_claim",
+    "no_general_ttft_or_cross_model_claim"
+  ]
+}

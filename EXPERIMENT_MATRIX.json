@@ -113,6 +113,16 @@
       "confirmation_sessions": 6,
       "measurement_pairs_per_session": 4,
       "note": "versiegelte A/A- plus A/B-Studie; greedy ohne Prompt-Logprobs"
+    },
+    {
+      "id": "head_skip_runtime_qualification",
+      "prompt_tokens": 897,
+      "prefill_chunk": 256,
+      "batch": 1,
+      "output_tokens": 32,
+      "measurement_pairs": 4,
+      "formal_claim": false,
+      "note": "begrenzter Runtime-Einbau; CPU-Gate plus genau ein GPU-Prozess"
     }
   ],
   "candidates": [
@@ -320,6 +330,20 @@
         ],
         "token_identity": "12/12 session gates",
         "decision_sha256": "99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a"
+      },
+      "runtime_qualification": {
+        "qualification_id": "head-skip-runtime-qualification-20260824-01",
+        "decision": "engineering_go_exact_scope",
+        "formal_claim": false,
+        "ratio": 0.8458362744682114,
+        "effect_percent": -15.416372553178858,
+        "baseline_median_ms": 1806.4618545,
+        "candidate_median_ms": 1528.206979,
+        "token_identity": true,
+        "peak_memory_delta_bytes": -97855968,
+        "swap_delta_bytes": 0,
+        "runtime_database_sha256": "6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567",
+        "runtime_chain_head": "db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3"
       },
       "limit": "nur bei greedy ohne Logprob-Ausgabe je Prompt-Token anwendbar",
       "note": "mlx_lm wendet lm_head auf alle Prefill-Positionen an; gelesen wird eine"

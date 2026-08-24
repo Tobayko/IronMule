@@ -84,9 +84,10 @@ und `BudgetGuard`. Bis dahin wird der Kandidat übersprungen.
 **Status:** Der Nutzer hat die begrenzte Architektur am 24.08.2026 ausdrücklich
 freigegeben. Zyklus 12 bestätigte im versiegelten Scope einen Prefill-Zeitquotienten
 von `0,846385` beziehungsweise `−15,3615 %`; alle C-/V-/Gesamt-Gates und `12/12`
-Greedy-Tokenidentitätsgates bestanden. Der getrennte Prototyp ist offline
-implementiert, aber bis zum vorregistrierten CPU- und einmaligen GPU-Gate nicht zur
-Nutzung freigegeben.
+Greedy-Tokenidentitätsgates bestanden. Der getrennte Prototyp bestand anschließend
+das vorregistrierte CPU-Gate und genau einen GPU-Lauf: `R=0,845836`, Effekt
+`−15,4164 %`, identische Token, kein Swap-Wachstum und alle Engineering-Gates grün.
+Damit ist nur der exakt registrierte Repository-Aufrufpunkt freigegeben.
 
 **Nutzen:** Der Kandidat trifft den gemessenen Hauptengpass direkt und vermeidet beim
 greedy Prefill die Projektion aller Promptpositionen, obwohl nur die letzte Position
