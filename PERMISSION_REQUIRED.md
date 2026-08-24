@@ -58,3 +58,23 @@ jedoch nicht in einen Agentenlauf.
 **Risiko:** mehrere GB Download.
 
 **Benötigte Aktion:** ausdrückliche Download-Freigabe.
+
+## 5. Kausaler A/B-Test einer KV-Cache-Vorallokation
+
+**Status:** Zyklus 11 lokalisierte Reallokationen an Decodeschritt `1` und `4` und
+maß `4,4263 %` korrelierten Decodeanteil. Der große Ausschlag fällt zugleich auf den
+ersten Decodeschritt; die Beobachtungsstudie kann ihn deshalb nicht kausal der Kopie
+allein zuschreiben.
+
+**Nutzen:** Ein A/B-Pfad mit vorallokiertem Cache könnte prüfen, welcher Anteil der
+`31,8821` ms tatsächlich entfernbar ist. Erst damit ließe sich entscheiden, ob ein
+Cache-Umbau lohnt.
+
+**Risiko:** Der Kandidat greift in Cacheform, Allokationszeitpunkt und Speicherbedarf
+von `mlx_lm` ein. Er kann Tokenidentität, Peak Unified Memory und Fallbackverhalten
+ändern; die beobachteten `4,4263 %` dürfen nicht als erwarteter Gewinn übernommen
+werden.
+
+**Benötigte Aktion:** ausdrückliche Architekturfreigabe für einen isolierten,
+rückrollbaren A/B-Messpfad mit eigenem Cachetyp, Correctness-Gate, Speichergrenzen
+und `BudgetGuard`. Bis dahin wird der Kandidat übersprungen.

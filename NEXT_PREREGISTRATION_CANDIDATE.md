@@ -1,10 +1,10 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, nach Zyklus 8. Noch **kein** `formal_claim=true`.
+Stand: 24. August 2026, nach Zyklus 11. Noch **kein** `formal_claim=true`.
 
 ## Empfehlung: LM-Head beim Prefill überspringen
 
-Vier Kandidaten stehen inzwischen auf `candidate_recommended_for_preregistration`.
+Fünf Kandidaten stehen inzwischen auf `candidate_recommended_for_preregistration`.
 Dieser hat Vorrang, weil er als einziger den **gemessenen Engpass** trifft.
 
 | Kandidat | Zyklus | Wirkung | trifft |
@@ -13,6 +13,7 @@ Dieser hat Vorrang, weil er als einziger den **gemessenen Engpass** trifft.
 | Persistenter Prozess | 5 | `65,4 %` der `cold`-TTFT | Kaltstart |
 | Gebündelter Readback | 7 | `12,98 %` je Token | Decode |
 | Host-Readback (Obergrenze) | 6 | `15,3 %` | Decode, nicht abrufbar |
+| KV-Cache-Reallokationen | 11 | `4,4263 %` korrelierter Decodeanteil | Decode, erster Schritt konfundiert |
 
 Die Zyklen 1 bis 4 haben gezeigt, dass der Engpass der **Prefill** ist: `1,76` s
 gegen `12,1` ms je Ausgabetoken. Ein Kandidat, der dort `15 %` holt, wiegt schwerer
@@ -27,12 +28,14 @@ mit `formal_claim`. Endpunkt sind Prefill-Sekunden bei identischen Token.
 Logprob-Ausgabe je Prompt-Token. Sobald Perplexität, Bewertung oder Logprobs verlangt
 werden, ist der Kandidat nicht anwendbar.
 
-## Die drei anderen empfohlenen Kandidaten
+## Die vier anderen empfohlenen Kandidaten
 
 Sie schließen sich nicht aus und wirken an verschiedenen Stellen — Kaltstart, Prefill,
 Decode. Eine gemeinsame Studie wäre allerdings **falsch**: sie würden sich in einem
 gemeinsamen Endpunkt vermischen, und der Auftrag verlangt genau einen Kandidaten je
-Studie.
+Studie. Der Zyklus-11-Kandidat benötigt für einen kausalen A/B-Test außerdem einen
+Cache-/Framework-Eingriff und wartet deshalb auf die in `PERMISSION_REQUIRED.md`
+beschriebene Architekturfreigabe.
 
 ## Was blockiert bleibt
 

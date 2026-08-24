@@ -1,7 +1,8 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
-mlx-lm `0.31.3`. Alle Werte gemessen, keiner geschätzt. Alles `formal_claim=false`.
+Stand: 24. August 2026, nach Zyklus 11, Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
+mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
+markiert sind. Alles `formal_claim=false`.
 
 ## Gerätemodell
 
@@ -52,6 +53,34 @@ Breitenkurve ist eine Treppenfunktion. Regressionen 4B: `6,7,8,9,48`; 1B: `48`.
 Breite `48` regressiert in allen sechs geprüften Quantisierungskonfigurationen und ist
 der einzige als konstant behandelbare Wert.
 
+## Inter-Token-Latenz und KV-Reallokationen
+
+Zyklus 11: `765` Prompt-Token, `48` Decodeschritte, Batch `1`, acht
+Wiederholungen nach einem verworfenen Aufwärmlauf. Es wurden keine Ausreißer
+verworfen.
+
+| Endpunkt | ms |
+| :--- | ---: |
+| ITL p50 | `14,2670` |
+| ITL p95 | `15,1385` |
+| ITL p99 | `46,7879` |
+| Minimum | `13,8230` |
+| Maximum | `49,4430` |
+
+Die Cacheformen änderten sich in allen acht Wiederholungen an denselben Stellen:
+
+| Decodeschritt | Cacheklasse | Layer | gemessener Überschuss | vorab gerechnet |
+| ---: | :--- | ---: | ---: | ---: |
+| `1` | rotierend | `29` | `31,5853` ms | `0,7616` ms |
+| `4` | global | `5` | `0,2968` ms | `0,1317` ms |
+
+Die Summe der gemessenen Überschüsse entspricht `4,4263 %` der Decodezeit und
+überschreitet die vorregistrierte `1-%`-Schwelle. Die vorhergesagten `0,13 %` waren
+eine Bandbreitenrechnung, kein Messwert. Der große Ausschlag an Schritt `1` erklärt
+den p99, ist aber zugleich mit sonstigen Kosten des ersten Decodeschritts konfundiert.
+Die Messung lokalisiert daher einen Kandidaten; sie beweist noch nicht, dass eine
+Cache-Änderung `4,4263 %` gewinnt. `formal_claim=false`.
+
 ## Kontextbasierte Spekulation
 
 Auf echtem Projektinhalt, Median aus Wiederholungen nach Aufwärmlauf:
@@ -79,4 +108,7 @@ der Prefill die wahrgenommene Latenz um mehr als zwei Größenordnungen je Anfra
 - `warm_full_cache_hit` ungemessen.
 - Energie je Token ungemessen (benötigt Freigabe).
 - Wired Memory, Memory Compression und Thermal State bisher nicht erfasst.
+- Multi-Turn-Fortsetzung bisher nicht als Baseline gemessen.
+- Mehrere parallele Requests bisher nicht als Baseline gemessen; `concurrent_32` in
+  `EXPERIMENT_MATRIX.json` definiert nur den Workload.
 - Alle Werte gelten für **ein** Gerät, **ein** Modell, **eine** Quantisierung.

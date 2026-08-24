@@ -709,3 +709,73 @@ reproduzierbaren Gewinn, und hier ist es zusätzlich nützlich: es benennt eine
 Messfalle, in die spätere Zyklen sonst laufen würden.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 11 — 24.08.2026
+
+**Kandidat:** `kv-cache-realloc-20260824-01`. Vorregistrierung vorab und vor jeder
+Hardwaredatei versiegelt: `experiments/kv_realloc/PREREGISTRATION.md`. Der Lauf
+erfolgte einmalig und unverändert über `BudgetGuard` bei Netzbetrieb und Duty-Faktor
+`0,15`; Exit `0`. Acht Wiederholungen nach einem verworfenen Aufwärmlauf, keine
+Ausreißer verworfen.
+
+### Lokalisierung
+
+`765` Prompt-Token, Prefill-Blöcke zu `256`, `48` Decodeschritte. Die Cacheformen
+änderten sich in allen acht Wiederholungen an exakt den vorab erwarteten Schritten:
+
+| Schritt | Cacheklasse | Layer | Überschuss gegen Median ohne Reallokation | vorab gerechnet |
+| ---: | :--- | ---: | ---: | ---: |
+| `1` | `RotatingKVCache` | `29` | **`31,5853` ms** | `0,7616` ms |
+| `4` | `KVCache` | `5` | `0,2968` ms | `0,1317` ms |
+
+Median der Schritte ohne Reallokation: `14,2671` ms. Der mittlere Überschuss der
+beiden beobachteten Reallokationsschritte beträgt abgeleitet `15,9411` ms; ihre
+Summe `31,8821` ms beziehungsweise **`4,4263 %`** der Decodezeit.
+
+Die Vorhersage von `0,13 %` wurde klar widerlegt. Sie war aus Cachebreite und
+effektiver Bandbreite gerechnet, nicht gemessen. Insbesondere der erste
+Decodeschritt enthält deutlich mehr als die reine, so berechnete Kopierzeit.
+
+### Inter-Token-Latenz
+
+| Quantil | ms |
+| :--- | ---: |
+| p50 | `14,2670` |
+| p95 | `15,1385` |
+| p99 | `46,7879` |
+| min / max | `13,8230` / `49,4430` |
+
+Der p99 wird durch das Ereignis am ersten Decodeschritt getragen. Das mediane
+Rauschband je Schritt betrug `0,5566` ms, das maximale `30,5072` ms. Diese Werte
+bleiben vollständig im Ergebnis; kein Lauf und kein Schritt wurde entfernt.
+
+### Hypothesen und Entscheid
+
+**H3 hält:** alle acht Wiederholungen erzeugten identische Token-IDs.
+
+**H1 hält auf dem vorregistrierten Gruppenendpunkt:** Reallokationsschritte liegen
+im Mittel `15,9411` ms über dem Median der übrigen Schritte; das vorab als Grundlage
+der `0,30-ms`-Schwelle benannte große Ereignis liegt `31,5853` ms darüber. Das kleine
+Ereignis allein liegt mit `0,2968` ms um `0,0032` ms unter der Schwelle. Diese
+Randlage wird berichtet, ohne die Schwelle zu ändern.
+
+**H2 hält:** `4,4263 %` sind größer als die vorregistrierten `1 %`.
+
+Nach der vorab festgelegten Tabellenzeile (`H3` hält, `H1` hält, `H2` hält):
+**`candidate_recommended_for_preregistration`**.
+
+### Grenze des Befunds
+
+Schritt `1` ist zugleich der erste Decodeschritt. Die Beobachtungsstudie kann dessen
+sonstige einmalige Grenzkosten nicht von der `RotatingKVCache`-Reallokation trennen.
+Die `4,4263 %` sind deshalb **kein behaupteter Optimierungsgewinn**. Eine versiegelte
+A/B-Studie müsste die Cacheallokation ändern, Tokenidentität erneut gaten und den
+kausalen Gewinn messen. Das wäre ein Framework-/Architektureingriff und ist hier
+nicht erfolgt.
+
+Guard-Bilanz: `21,086457` s GPU-Arbeit, maximal `1,270024` s kontinuierlich,
+`116,119931` s Pflichtpausen, `139,595394` s Wall-Zeit.
+
+**`formal_claim=false`.**
