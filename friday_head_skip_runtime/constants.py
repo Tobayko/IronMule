@@ -1,0 +1,92 @@
+"""Closed identities and bounds for the prefilling head-skip runtime."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_FORMAL_DATABASE_PATH = PROJECT_ROOT / ".friday-data" / "head-skip-v1.sqlite3"
+DEFAULT_RUNTIME_DATABASE_PATH = (
+    PROJECT_ROOT / ".friday-data" / "head-skip-runtime.sqlite3"
+)
+APPROVAL_SPEC_PATH = PROJECT_ROOT / "docs" / "HEAD_SKIP_RUNTIME_SPEC.md"
+
+SCHEMA_VERSION = 1
+SQLITE_APPLICATION_ID = 0x48535231  # ASCII "HSR1"
+RUNTIME_ID = "head-skip-runtime-20260824-01"
+QUALIFICATION_ID = "head-skip-runtime-qualification-20260824-01"
+POLICY_RUN_ID = "head-skip-policy-overhead-20260824-01"
+GPU_RUN_ID = "head-skip-runtime-validation-20260824-01"
+
+FORMAL_STUDY_ID = "head-skip-prefill-v1-20260824"
+FORMAL_CANDIDATE_ID = "prefill-head-skip-20260824-02"
+FORMAL_DATABASE_SHA256 = (
+    "15ee462bbad5a8f757373f093fdf2ccfb8bdd0048c03447c1cb635acd38ec8d9"
+)
+FORMAL_CHAIN_HEAD = (
+    "8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4"
+)
+FORMAL_DECISION_SHA256 = (
+    "99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a"
+)
+FORMAL_PREREGISTRATION_SHA256 = (
+    "175a7238520d2a01a5c1c24898ff34773eb1b7a1cbbd6324b988d11fe8bc9cc6"
+)
+FORMAL_PROVENANCE_SHA256 = (
+    "66a62e506c16294ab0034efed17b51b37f602eaedaf8ddde8f6b7b473f2a2453"
+)
+FORMAL_CONFIRMATION_SEAL_SHA256 = (
+    "2571670a87fc5bd536d4ccee40d4c889afa30c37e65110e18f70607fd6caf11e"
+)
+FORMAL_SCRIPT_SHA256 = (
+    "b39bd6be0768173d293647d45cc7f0d3b1c469fd234375c8f0d46ce3c227dc14"
+)
+FORMAL_PREREGISTRATION_DOCUMENT_SHA256 = (
+    "8f7a9a854639824d337aa9ff3ef97ae2255c804291577c5021af2e93abbbeec6"
+)
+APPROVAL_SPEC_SHA256 = (
+    "4f0f1a9e4d1cd419f0b7686bd5ca9db2866489c04654b93000cca8fffa45e5a9"
+)
+QUALIFICATION_PREREGISTRATION_SHA256 = (
+    "38da7b1a180c2107ca4c6a754365c4da18bb7336f9eefe36a7c840c4c77c8306"
+)
+
+MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
+MODEL_REVISION = "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+PROMPT_CONTENT_SHA256 = (
+    "73675a7043bd40e61586757d8252cf1fb69bfb53b8747ff47f1c08d5fb8f69e5"
+)
+PROMPT_TOKENS = 897
+PREFILL_CHUNK = 256
+BATCH_SIZE = 1
+OUTPUT_TOKENS = 32
+BASELINE_PLAN = "full_lm_head_all_prefill_positions"
+HEAD_SKIP_PLAN = "lm_head_last_position_of_final_prefill_block_only"
+
+POLICY_WARMUP_BLOCKS = 5
+POLICY_MEASUREMENT_BLOCKS = 21
+POLICY_ITERATIONS_PER_ARM = 20_000
+POLICY_MAX_MEDIAN_NS = 25_000
+POLICY_MAX_P95_NS = 50_000
+POLICY_MAX_INCREMENTAL_NS = 20_000
+POLICY_MAX_LOAD_NS = 5_000_000_000
+
+GPU_WARMUP_PAIRS = 1
+GPU_MEASUREMENT_ORDERS = ("ab", "ba", "ab", "ba")
+GPU_MAX_RATIO = 0.95
+GPU_MAX_EXTRA_PEAK_BYTES = 128 * 1024 * 1024
+
+MAX_CANONICAL_BYTES = 4 * 1024 * 1024
+MAX_HISTORY_ROWS = 64
+MAX_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_TARGET_BYTES = 2048
+DEFAULT_DASHBOARD_PORT = 8775
+
+HISTORY_KINDS = frozenset(
+    {
+        "policy_overhead",
+        "runtime_validation_attempt",
+        "runtime_validation",
+        "runtime_failure",
+    }
+)

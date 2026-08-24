@@ -81,10 +81,12 @@ und `BudgetGuard`. Bis dahin wird der Kandidat übersprungen.
 
 ## 6. Begrenzte Integration des formal bestätigten Prefill-Head-Skips
 
-**Status:** Zyklus 12 bestätigte im versiegelten Scope einen Prefill-Zeitquotienten
+**Status:** Der Nutzer hat die begrenzte Architektur am 24.08.2026 ausdrücklich
+freigegeben. Zyklus 12 bestätigte im versiegelten Scope einen Prefill-Zeitquotienten
 von `0,846385` beziehungsweise `−15,3615 %`; alle C-/V-/Gesamt-Gates und `12/12`
-Greedy-Tokenidentitätsgates bestanden. Der terminale Entscheid erlaubt nur eine
-begrenzte Architekturprüfung, keine Aktivierung.
+Greedy-Tokenidentitätsgates bestanden. Der getrennte Prototyp ist offline
+implementiert, aber bis zum vorregistrierten CPU- und einmaligen GPU-Gate nicht zur
+Nutzung freigegeben.
 
 **Nutzen:** Der Kandidat trifft den gemessenen Hauptengpass direkt und vermeidet beim
 greedy Prefill die Projektion aller Promptpositionen, obwohl nur die letzte Position
@@ -96,8 +98,8 @@ lokale Runtime-Verzweigung verändert Architektur, API-Grenzen, Fehlerbehandlung
 Fallback. Der formale Einzelprompt-Claim belegt weder allgemeine TTFT-Wirkung noch
 andere Promptlängen, Modelle, Quantisierungen oder Geräte.
 
-**Benötigte Aktion:** ausdrückliche Architekturfreigabe für einen kleinen,
-rückrollbaren Runtime-Prototyp mit enger Scope-Prüfung (`greedy`, keine
-Prompt-Logprobs), unverändertem Referenzpfad, fail-closed Fallback,
-Tokenidentitäts-Regressionsgate, Speichergrenze und eigener Historie. Bis dahin bleibt
-der bestätigte Kandidat deaktiviert.
+**Erteilte Aktion:** begrenzter, rückrollbarer Runtime-Prototyp mit enger
+Scope-Prüfung (`greedy`, keine Prompt-Logprobs), unverändertem Referenzpfad,
+fail-closed Fallback, Tokenidentitäts-Regressionsgate, Speichergrenze und eigener
+Historie. Die Freigabe umfasst keine breitere Aktivierung, Installation, Downloads
+oder Erweiterung des formalen Claims.

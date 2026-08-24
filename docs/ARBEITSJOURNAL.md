@@ -4827,3 +4827,147 @@ Top-Level-Feld und endete mit `KeyError`; in der tatsächlichen Matrix liegt es 
 Status, Zykluszahl, Quotient, Decision-SHA und Recordzahlen zwischen Matrix und
 Ergebnisdatei und bestand. Keine Datei oder Evidenz wurde durch den Fehlversuch
 verändert.
+
+### 2026-08-24 — Head-Skip-Runtime-Prototyp vor Live-Gates
+
+**Freigabe und Grenze.** Auf die einfache Zwischenbilanz, dass der Head-Skip im
+engen Versuch rund `15,4 %` Prefill-Zeit sparte, aber noch nicht in das Programm
+eingebaut war, erteilte der Nutzer ausdrücklich die angeforderte
+Architekturfreigabe. Sie gilt nur für den kleinen, rückrollbaren Prototyp und die
+einmalige vorregistrierte Qualifikation. Installation, Download, Systemänderung,
+breitere Produktaktivierung und Erweiterung des formalen Einzelworkload-Claims
+bleiben ausgeschlossen. Es wurden keine Subagenten verwendet.
+
+**Atlas-first und unveränderte Baseline.** Vor Quellarbeit wurden der vollständig
+gelesene ProjectAtlas-Skill, Runtime `0.4.5-rc1`, ein fokussierter MCP-Session-Brief
+und anschließend nur begrenzte Atlas-Suchen/Summaries/Slices verwendet. Der Brief
+rankte zunächst irrelevante Dateien des eingebundenen ProjectAtlas-Repositories;
+die erste Summary bestätigte deren Upstream-Zugehörigkeit, und die Suche wurde auf
+die vorhandenen Friday-Runtimes, Tests und Architekturtexte verengt. Die relevante
+Bestandsbaseline aus vier bestehenden Runtime-Testmodulen bestand mit Exit `0` in
+`4,44 s` außen, `11,08 s` User und `0,58 s` System; maximales RSS
+`50.380.800 B`, Peak-Footprint `34.308.912 B`, keine Swaps.
+
+**Vor Messung eingefrorener Vertrag.** `docs/HEAD_SKIP_RUNTIME_SPEC.md` hat SHA-256
+`4f0f1a9e4d1cd419f0b7686bd5ca9db2866489c04654b93000cca8fffa45e5a9`, die
+Mini-Vorregistrierung `experiments/head_skip_runtime/PREREGISTRATION.md` SHA-256
+`38da7b1a180c2107ca4c6a754365c4da18bb7336f9eefe36a7c840c4c77c8306`.
+Qualification-ID `head-skip-runtime-qualification-20260824-01`, durchgehend
+`formal_claim=false`, kein Zyklus 13. Vorab festgelegt wurden H1 Tokenidentität und
+Pfadmarker, H2 exakte Auswahl/Fallback, H3 Zeitquotient höchstens `0,95`, H4
+gecachter Policy-Median höchstens `25.000 ns`, p95 höchstens `50.000 ns`, Zusatz
+höchstens `20.000 ns` und Load unter `5 s`, H5 höchstens `128 MiB` zusätzlicher
+MLX-Peak. CPU: fünf Warmup-, 21 Messblöcke, je 20.000 Aufrufe pro Arm. GPU: ein
+Prozess mit Correctness-Paar, einem B/A-Warmup-Paar und vier Messpaaren A/B, B/A,
+A/B, B/A. Duty `0,15`, Messende vor Guard-Charge, keine Ausreißer, kein
+Hardware-Retry.
+
+**Implementierung.** Das getrennte Paket `friday_head_skip_runtime/` enthält eine
+byte- und hashgebundene Prüfung der unveränderten formalen 16-Record-Evidenz, eine
+exakte Scopeentscheidung, gecachte Policy, sichtbaren Baseline-Rückfall, Circuit
+Breaker ohne Same-Call-Retry, den aus der formalen Studie abgeleiteten MLX-Body/Head-
+Pfad, die kontrollierte Qualifikation, private SQLite-v1-Historie und eine nur an
+`127.0.0.1:8775` gebundene read-only UI. Der Adapter löst ausschließlich den lokal
+gebundenen Gemma-Snapshot auf. Unklare Typen, ungültige Backend-Metadaten oder
+unplausible Ausgaben können den schnellen Pfad nicht autorisieren. Die vollständige
+Anfrage wird an den Referenzpfad weitergereicht; der enge Qualifikationsadapter
+lehnt nicht unterstützte Semantik sichtbar ab, statt sie still zu ignorieren.
+
+**Offline-Verifikation.** `20` neue fokussierte Tests für Evidenzreplay,
+Scopeabweichungen, Typverwechslungen, Circuit Breaker, Ausgabevertrag, Messreihen,
+Budget, private Hashkette, read-only UI und Ausführungssperren bestanden mit Exit
+`0`. Bytecode-Kompilation und `git diff --check` bestanden. Ein absichtlich im
+schmutzigen Pre-Commit-Stand ausgeführter read-only Policy-Load replayte alle `16`
+formalen Records in `0,94 s` außen und fiel korrekt mit `worktree_dirty` und Exit
+`2` auf die Baseline zurück; maximales RSS `37.961.728 B`, Peak-Footprint
+`26.411.464 B`, keine Swaps. Es entstand keine
+`.friday-data/head-skip-runtime.sqlite3` und keine GPU-Arbeit.
+
+**Fehler, Ursachen und Korrekturen vor Live.** Eine Atlas-Abfrage mit
+Inhaltsklassifizierung scheiterte an der Fehlklassifikation von
+`tests/0001_initial.sql`; die unklassifizierte, weiterhin begrenzte Wiederholung
+bestand. Zwei read-only Diagnoseannahmen über die formale Storage-API waren falsch:
+Sie besitzt kein `close()`, sondern einen Context Manager, und
+`verified_records()` liefert Payloads mit `kind`, nicht Wrapper mit
+`record_kind`; beide Aufrufe wurden entsprechend korrigiert, ohne DB-Mutation. Der
+erste neue Testlauf fand `DEFAULT_LIMIT=100` bei einem Historienmaximum von `64`;
+der Default wurde auf `64` korrigiert und alle Tests wiederholt. Die vertiefte
+Codeprüfung fand außerdem, dass Python-Werte `0/1` als Bool-Werte hätten
+durchrutschen und dass der erste Entwurf abweichende Requestsemantik nicht an den
+Referenzpfad weiterreichte; strikte Typprüfung, vollständige Requestweitergabe und
+Ausgabevalidierung schließen beides. `ruff` ist in der bestehenden Umgebung nicht
+installiert; gemäß Installationsgrenze wurde es nicht nachinstalliert. Ein zunächst
+angenommener Security-Referenzpfad unterhalb des Skill-Verzeichnisses existierte
+nicht; `rg --files` löste die tatsächliche Datei unter dem Plugin-Root auf. Mehrere
+zu große kombinierte Skill-Leseausgaben wurden nur in der Anzeige gekürzt; alle
+Pflichtdateien wurden danach einzeln bis zum Ende gelesen. Ein kombinierter
+Dokumentationspatch nahm den Journal-Schlusshunk fälschlich auch für
+`PROJECT_STATUS.md` an und scheiterte atomar; die dateigenauen Patches bestanden.
+Ein erster Log-Patch traf wegen eines abweichenden Zeilenumbruchs nicht und wurde
+mit dem tatsächlichen Kontext wiederholt. Diese Fehler erzeugten keine Mess- oder
+Hardwareevidenz.
+
+**Sicherheitsstand und nächster Schritt.** Der lokale Security-Preflight war
+`ready`; die nicht verfügbare Worker-Delegation wird durch vollständige
+Elternprüfung jeder Datei kompensiert. Der zusätzliche Codex-Sicherheitszugang ist
+nicht freigeschaltet; die Prüfung läuft deshalb lokal weiter. Vor dem sauberen
+Implementierungscommit folgen vollständige Diff-Sicherheitsprüfung und Friday-
+Vollsuite. Danach ist genau der vorregistrierte CPU-Lauf zulässig; nur bei seinem
+Bestehen folgt genau ein MLX/GPU-Qualifikationsprozess. Bis dahin ist noch keine
+neue Runtime-Geschwindigkeitsverbesserung gemessen.
+
+**Zusätzliche Schutzprüfung vor Live.** Die vollständige Elternprüfung fand drei
+relevante Schutzlücken im ersten Integrationsentwurf. Erstens hätte bereits die
+formale Studie den schnellen normalen Aufruf autorisiert, obwohl die neue CPU- und
+GPU-Qualifikation noch fehlte. Zweitens erlaubten frei wählbare Lauf-IDs und
+Datenbankpfade einen neuen Hardwareversuch. Drittens behandelte das Ressourcengate
+einen nicht lesbaren Swap-Wert wie einen Erfolg. Der normale Aufruf verlangt nun
+die exakte dreiteilige Historie aus bestandenem CPU-Gate, vor Hardwarearbeit
+gespeicherter Startmarke und bestandenem GPU-Gate; Lauf-IDs und Datenbankpfad sind
+eingefroren, und unbekannter Swap-Verbrauch scheitert geschlossen. Gegenproben
+decken fehlende, zusätzliche und veränderte Records, falsche Pfade und unbekannten
+Swap ab. Kein Hardwarelauf fand während dieser Korrektur statt.
+
+Die vier bestehenden Runtime-Testmodule bestanden nach dem Einbau erneut mit Exit
+`0` in `0,90 s`, maximal `56.508.416 B` RSS, Peak-Footprint `34.538.312 B` und ohne
+Swaps. Die vollständige Projekttestsammlung bestand mit Exit `0` in `38,50 s`,
+maximal `192.921.600 B` RSS, Peak-Footprint `46.007.136 B` und ohne Swaps. Der erste
+Vollsuite-Aufruf endete genau an der Werkzeug-Ausgabegrenze; der Prozess war danach
+beendet, aber sein Rückgabecode nicht mehr verfügbar. Da dies ausschließlich
+Softwaretests und kein Hardwarelauf waren, wurde die Suite einmal mit gespeicherter
+Sitzungskennung wiederholt und lieferte den dokumentierten Exit `0`.
+
+Der gehostete Sicherheitslauf konnte den absichtlich fremd verschmutzten
+`ProjectAtlas`-Unterbaum nicht als sauberen Snapshot übernehmen. Dieser fremde
+Unterbaum blieb unverändert; die Prüfung wurde nach dem vorgesehenen lokalen
+Diff-Verfahren fortgesetzt. Ein erster lokaler Rangierlauf sah neue, noch nicht im
+Index erfasste Dateien nicht; das explizite Staging ausschließlich der eigenen
+Dateien stellte den vollständigen Quellumfang her. Eine Diagnose suchte außerdem
+zunächst eine nicht vorhandene `results/DECISION.json` der formalen Studie; die
+tatsächliche terminale Evidenz wurde stattdessen read-only über ihre versiegelte
+SQLite-Historie und den vorhandenen Budgetcode geprüft. Diese Diagnosefehler
+änderten weder Quellcode noch Evidenz.
+
+**Abgeschlossene lokale Sicherheitsprüfung.** Der endgültige Quell-Diff wurde als
+deterministische 12-Dateien-Liste erfasst und jede Datei vollständig durch den
+Elternagenten geprüft. Die versiegelten kanonischen Artefakte liegen unter
+`/private/tmp/codex-security-scans/Project_Friday/c7db74f_20260824T084223Z`;
+Snapshot-Digest
+`codex-security-snapshot/v1:sha256:b8c9cf2187a21b5413cf1e4a57b0c230f7cfb0fc0ec0c185a7553288f40c9d95`,
+Abdeckung `complete`, keine Deferred Rows und `0` berichtspflichtige Findings. Der
+lokale read-only UI-Zugriff wurde unter dem dokumentierten Single-User-
+Loopback-Threat-Model als nicht berichtspflichtig verworfen. Beim Erzeugen der
+Deep-Review-Liste wurde zunächst fälschlich `--input` statt der vom vorhandenen
+Tool verlangten Option `--rank-input` verwendet; der Aufruf brach vor dem Schreiben
+der Zielliste ab, die korrigierte Option erzeugte danach exakt dieselben `12`
+Pfade wie das Rangierinventar. Der Finalizer wurde nach allen Vorprüfungen genau
+einmal ausgeführt und bestand mit Exit `0`.
+
+**Abschließende Umgebungsprüfung vor Commit.** ProjectAtlas wurde nach den
+Änderungen einmal kontrolliert aktualisiert; Runtime `0.4.5-rc1`, projektlokale
+MCP-JSON gültig. `xcodebuild -checkFirstLaunchStatus` bestand mit Exit `0`.
+Der erste reine Import-/Versionscheck nahm fälschlich `mlx.__version__` an und
+endete vor jeder Tensor- oder GPU-Arbeit mit `AttributeError`. Die vorhandenen
+Paketversionen wurden danach über `importlib.metadata` gelesen: MLX `0.32.0`,
+`mlx-lm 0.31.3`, Maschine `arm64`; `mlx.core` ließ sich importieren. Es wurde kein
+zusätzlicher Hardwaretest ausgeführt.
