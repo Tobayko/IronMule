@@ -1,6 +1,6 @@
 # Kandidatenliste
 
-Stand: 24. August 2026, nach Zyklus 15 und begrenzter Runtime-Qualifikation.
+Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16, nach Zyklus 15 und begrenzter Runtime-Qualifikation.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
 
@@ -17,7 +17,7 @@ bereits gemessen ist.
 | 9 | Continuous Batching | Anfragen laufend ein- und ausklinken | hoch, Zustandsverwaltung | blockiert durch Zyklus 2 und 4 |
 | 10 | N-Gram Speculative Decoding | Entwurf aus dem Kontext, kostenlos | Tokenidentität geprüft | `candidate_characterized`, umgesetzt |
 | 11 | Draft-Model Speculative Decoding | 1B entwirft für 4B | – | **verworfen**: `0,560x` gemessen |
-| 12 | `mx.compile` für Decode-Teilgraphen | `−23,8 %` Dispatch | **falsche Token** | **verworfen**, Ursache dokumentiert |
+| 12 | `mx.compile` für Decode-Teilgraphen | `−23,8 %` Dispatch | **falsche Token ab Position 2** | **verworfen**; alte Device-Model-Compile-Messungen ungültig |
 | 13 | KV-Cache fester Form | macht `mx.compile` gültig | Framework-Eingriff | offen, benötigt Cache-Neubau und Architekturfreigabe |
 | 14 | Custom Metal Kernel | – | – | **verworfen**: Zyklus 9 lokalisiert keinen einzelnen Kernelengpass |
 | 15 | vLLM-Metal-Vergleich | Paged KV, Prefix-Cache | – | `permission_required` |
@@ -29,6 +29,7 @@ bereits gemessen ist.
 | 21 | KV-Cache-Reallokationen | Wachstumskopien im Decode vermeiden | erster Decodeschritt konfundiert; Cache-Neubau wäre Architekturänderung | **`candidate_recommended_for_preregistration`** (Zyklus 11) |
 | 22 | lernendes Optimization Memory mit lokalem Planner | nutzt alle positiven und negativen Messungen für den nächsten Vorschlag | Selbstbestätigung und falsche Aktivierung | **`no_planner_qualified`** (Zyklus 15); 1B und 4B jeweils `0/6` im strikten Vertrag |
 | 23 | Gemma-Matmul-A/B „mit/ohne“ | vollständigen Matmul-Optimierungspfad gegen unveränderten Pfad vergleichen | kein echter Schalter oder vollständiger A/B-Pfad vorhanden | **`open_future_preregistration`**; bisher nicht gemessen, neue Studie erforderlich |
+| 24 | Fixed-Cache/Compile-Decode-A/B | Laufzeitumgebung mit festem KV-Cache vergleichen | Tokenidentität, Cache- und Compile-Vertrag | **`sealed_pending_hardware`** (Zyklus 16; noch nicht gemessen) |
 
 ## Begründung der Reihenfolge
 
@@ -44,6 +45,20 @@ bestätigte `R=0,845836`, Effekt `−15,4164 %`, exakte Tokenidentität und alle
 Engineering-Gates. Der getrennte Repository-Aufruf ist nur für diesen exakten Fall
 freigegeben; eine allgemeine oder automatische Produktaktivierung bleibt
 ausgeschlossen.
+
+## Zyklus 16 — finaler Vor-Hardware-Stand
+
+Der Kandidat `fixed_cache_compiled_decode_v1` ist mit der eingefrorenen
+Präregistrierung im lokalen Seal-Commit auf `sealed_pending_hardware` gesetzt.
+SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
+Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.
+
+Die Vor-Hardware-Review behob drei P1-Ursachen: lazy Compile-/Fixed-Eager-Fehler
+werden bis zur Synchronisierung korrekt als Kandidatenfehler klassifiziert,
+Worker-Timeouts beachten die verbleibende Gesamt-Walltime, und beobachtete
+Armzeit wird von akzeptierter Budgetbuchung getrennt. Keine dieser Korrekturen
+ist ein Messergebnis oder eine Performanceaussage.
 
 Der **persistente Prozess** ist in Zyklus 13 prospektiv bestätigt. Über sechs
 vorgegebene Paare lag `warm/kalt` im Median bei `0,346968`, entsprechend einem aus
@@ -92,3 +107,21 @@ eine Workload-Definition, kein Messergebnis.
 
 Kandidat 14 bleibt gesperrt: der Engpass ist Prefill, nicht ein Kernel-Hotspot, und der
 Auftrag verbietet Kerneloptimierung ohne Profilerbeleg.
+
+Zyklus 16 ist mit der Studie `matmul-compile-ab-20260824-01` und dem Kandidaten
+`fixed_cache_compiled_decode_v1` genau für diesen runtime-only Vergleich
+vorregistriert. Die mathematische Matmul bleibt in `standard_eager`,
+`fixed_eager` und `fixed_compiled` aktiv; Modell, Gewichte und Quantisierung
+bleiben unverändert. Exakte greedy Token- und Textidentität ist Pflicht,
+`formal_claim=false`. Die Präregistrierung ist im lokalen Seal-Commit eingefroren
+und es gibt noch keine Messung. Ein negatives Ergebnis zählt als gültiger Abschluss. Die
+alten Device-Model-Compile-Werte werden wegen falscher Token ab Position 2
+ausgeschlossen.
+
+## Zyklus 16 — finaler Seal-Stand
+
+Der lokale Commit mit dem final geprüften Stand ist der Seal-Commit; der Status
+lautet `sealed_pending_hardware`. Präregistrierungs-SHA-256:
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
+Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.

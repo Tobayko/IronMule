@@ -5587,3 +5587,70 @@ Entscheidung `no_planner_qualified` und `formal_claim=false`.
 ProjectAtlas hatte keine getrackten Änderungen. Bestehende untracked Fixture-
 `.gradle`-Verzeichnisse wurden nicht angefasst und gehören nicht zu diesem
 Nachtrag.
+
+## 2026-08-24 — Zyklus 16: Vor-Hardware-Status des runtime-only Matmul-A/B-Tests
+
+Der Nutzer erteilte am 24.08.2026 genau eine neue Freigabe für die Studie
+`matmul-compile-ab-20260824-01` mit dem Kandidaten
+`fixed_cache_compiled_decode_v1`. Die Studie ist auf die Laufzeitumgebung
+begrenzt: Modell, Gewichte und Quantisierung bleiben unverändert.
+
+Die mathematische Matmul bleibt in allen Armen aktiv. Verglichen werden
+`standard_eager`, `fixed_eager` und `fixed_compiled`; „Matmul-A/B“ bedeutet hier
+nicht, dass Matmul ausgeschaltet wird. Exakte greedy Token- und Textidentität
+ist ein Pflicht-Gate. Die alten Device-Model-Compile-Messungen sind wegen
+falscher Token ab Position 2 ungültig und werden nicht als Baseline verwendet.
+
+Die Präregistrierung ist im Arbeitsbaum vorhanden, aber noch nicht versiegelt
+(kein lokaler Seal-Commit) und noch nicht gemessen. Es gibt deshalb keine neuen
+Hardwarewerte, keine Ergebnisdatei und keinen Performanceclaim.
+`formal_claim=false`. Ein negatives Ergebnis ist gültig; automatische
+Kandidatenausführung oder Produktaktivierung ist nicht freigegeben.
+
+## 2026-08-24 — Zyklus 16 versiegelt, noch vor Hardware
+
+Die finale Präregistrierung der lokalen runtime-only Studie
+`matmul-compile-ab-20260824-01` wurde technisch geprüft und im lokalen Seal-Commit
+eingefroren. Status: `sealed_pending_hardware`; SHA-256
+`b2487240f926fa95d9b9933c28c57bc616886efb82ee0503a524d4f24f1da6bf`.
+Es gibt noch keine Hardwaremessung, keine `results.json` und keine private
+Startmarke. `formal_claim=false`. Modellgewichte, Quantisierung und mathematische
+Matmul bleiben unverändert; die drei Arme sind `standard_eager`, `fixed_eager`
+und `fixed_compiled`.
+
+Vor-Hardware-Review: Lazy MLX-Materialisierung wurde bis `mx.eval`/Synchronisierung
+in die Kandidatenfehlerklassifikation einbezogen; der Parent-Timeout folgt nun der
+verbleibenden harten Gesamt-Walltime; beobachtete Armzeit, akzeptierte Buchung und
+theoretische Duty-Pause werden getrennt belegt. Damit werden Budgetablehnungen
+nicht als erfolgreiche Buchung dargestellt. Arm-Längen, Abschlussgrund und
+Fehler-Teilereignisse werden zusätzlich streng geprüft.
+
+Verifikation: fokussierte Tests 34 passed/Exit 0, vollständige Suite/Exit 0,
+compileall/Exit 0, Worker-Selfcheck 21/Exit 0, Harness-Selfcheck 18/Exit 0,
+UI-Selfcheck/Exit 0, Standardaufruf/Exit 78 ohne Marker oder Ergebnisse,
+`git diff --check`/Exit 0 und `xcodebuild -checkFirstLaunchStatus`/Exit 0.
+ProjectAtlas 0.4.5-rc1 mit MCP, M1 Max/32 GiB/AC, `Device(gpu,0)`, MLX 0.32.0,
+mlx-lm 0.31.3, Snapshot-SHA `e6edcd46...eda` und Gewicht-SHA
+`94d3d701...74af3` wurden verifiziert. Keine Ergebniswerte wurden erzeugt.
+
+## 2026-08-24 — Zyklus 16: finaler Review-Nachtrag vor Hardware
+
+Nach dem vorherigen Eintrag wurden die letzten evidenzrelevanten Restursachen
+behoben. Die Lazy-Konvertierung von Standard- zu Fixed-Cache wird jetzt über
+`slice_update`, sämtliche `mx.eval`-Aufrufe und Synchronisierung hinweg korrekt
+als `candidate_not_runnable` oder Ressourcenfehler klassifiziert. Worker,
+Outputreader, Join und Abbruch teilen eine monotone `worker_deadline`; 15 Sekunden
+der Gesamtfrist bleiben als Finalisierungsreserve frei.
+
+Die Guard-Buchung wird vor und nach `record_gpu` erfasst. Dadurch bleiben auch
+Budgetablehnungen als echte Teil-Evidenz erhalten, ohne eine nicht akzeptierte
+Charge als Erfolg auszugeben. Für die Rolling-Duty-Regel sind nach jedem
+akzeptierten Arm mindestens 13 Blöcke à 4 Sekunden vorregistriert. Das Budgetgate
+meldet einen terminalen `resource_or_budget_failed`-Status nicht mehr als
+bestanden, auch wenn die Rohzusammenfassung formal gültig wirkt.
+
+Finale Offline-Verifikation: fokussierte Tests `39 passed, 55 subtests`, Exit 0;
+P0/P1-Befunde `0`; weiterhin keine `results.json`, keine Startmarke und keine
+Hardwaremessung. `formal_claim=false`. Der aktuelle Zyklus-16-Status bleibt
+`sealed_pending_hardware`; finaler Präregistrierungs-SHA-256:
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.

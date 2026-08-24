@@ -1,6 +1,6 @@
 # Projektstatus
 
-**Stand:** 24. August 2026, nach Zyklus 15
+**Stand:** 24. August 2026, Vor-Hardware-Status Zyklus 16
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 ## Auditierter aktueller Stand
@@ -1316,3 +1316,52 @@ Der normale Policy-Aufruf autorisiert den schnellen Pfad jetzt nur im exakten
 registrierten Fall; die reale read-only Loopback-Abfrage lieferte HTTP `200` und
 die verifizierte Dreierhistorie. Ungeprüfte Prompts, Modelle, Logprob-Anfragen,
 Multi-Turn- und Parallel-Workloads bleiben auf der Baseline.
+
+## Zyklus 16 — Vor-Hardware-Status: runtime-only Matmul-Umgebungs-A/B
+
+Am 24.08.2026 wurde genau eine neue lokale Studie freigegeben:
+`matmul-compile-ab-20260824-01` mit dem Kandidaten
+`fixed_cache_compiled_decode_v1`. Die Freigabe betrifft ausschließlich die
+Laufzeitumgebung. Modellgewichte, Modellarchitektur und Quantisierung werden
+nicht geändert.
+
+Die mathematische Matmul-Operation bleibt in allen drei Armen aktiv. Verglichen
+werden nur `standard_eager`, `fixed_eager` und `fixed_compiled` — also der
+Standardpfad, ein fester KV-Cache ohne Compile und ein fester KV-Cache mit
+Compile. Es gibt keinen echten Matmul-Aus-Schalter und keinen Vergleich mit
+veränderten Gewichten.
+
+Die Präregistrierung ist im lokalen Seal-Commit eingefroren und noch nicht
+gemessen. Exakte greedy Token- und
+Textidentität ist ein Pflicht-Gate; ein Unterschied ist ein terminaler
+Korrektheitsfehler. Die alten Device-Model-Compile-Messungen sind wegen falscher
+Token ab Position 2 ungültig und werden nicht als Baseline oder Gewinn verwendet.
+`formal_claim=false`. Es gibt noch keine Zyklus-16-Ergebnisdatei oder
+Hardwareevidenz. Ein negatives Ergebnis ist gültig; bis zum Seal und den
+vorgesehenen Messungen wird nichts automatisch ausgeführt oder aktiviert.
+
+## Zyklus 16 — final geprüfter Seal-Stand vor Hardware
+
+Der lokale Commit, der diesen final geprüften Stand enthält, ist der Seal-Commit.
+Status danach: `sealed_pending_hardware`. Die Präregistrierung der Studie
+`matmul-compile-ab-20260824-01` ist unverändert eingefroren; SHA-256
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Es gibt weiterhin keine Messung, keine `results.json` und keine private
+Startmarke. `formal_claim=false`.
+
+Vor-Hardware-Fixes aus dem Review: (1) lazy MLX-Fehler im kalten Compiled- und
+Fixed-Eager-Pfad werden bis zur Materialisierung als `candidate_not_runnable`
+erfasst, außer Ressourcen-/OOM-Fehlern; (2) der Parent begrenzt jeden Worker
+auf die verbleibende harte Gesamt-Walltime und bricht sicher ab; (3) beobachtete
+Armzeit und akzeptierte/gebuchte GPU-Zeit sind getrennt, einschließlich der
+theoretischen Duty-Pause, sodass Budgetablehnungen als Teil-Evidenz erhalten
+bleiben. Zusätzlich werden Arm-Längen, Finish-Grund und Messstatistiken streng
+geprüft; minimale Worker-Fehler bleiben als bereinigtes Terminalereignis erhalten.
+
+Verifikation: fokussiert `34 passed` (Exit 0), vollständige Pytest-Suite (Exit 0),
+Compileall (Exit 0), Worker-Selfcheck 21 (Exit 0), Harness-Selfcheck 18 (Exit 0),
+UI-Selfcheck (Exit 0), Standardaufruf ohne Hardware (Exit 78; keine Artefakte),
+`git diff --check` (Exit 0), `xcodebuild -checkFirstLaunchStatus` (Exit 0).
+ProjectAtlas 0.4.5-rc1 und MCP sind verfügbar. Gerät: Apple M1 Max, 32 GiB,
+Netzbetrieb, `Device(gpu,0)`; MLX 0.32.0 und mlx-lm 0.31.3. Snapshot-SHA
+`e6edcd46...eda`, Gewicht-SHA `94d3d701...74af3`.

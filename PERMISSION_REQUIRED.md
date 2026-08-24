@@ -271,3 +271,33 @@ unverändert; ebenso alle DB-Hashes. Die Verifikation meldete leere
 Abweichungen, `no_planner_qualified` und `formal_claim=false`. ProjectAtlas
 hatte keine getrackten Änderungen; bestehende untracked Fixture-`.gradle`-
 Verzeichnisse wurden nicht angefasst.
+
+## 10. Zyklus 16 — runtime-only Matmul-Umgebungs-A/B (Nutzerfreigabe 2026-08-24)
+
+Die Nutzerfreigabe vom 24.08.2026 gilt genau für die Studie
+`matmul-compile-ab-20260824-01` und den Kandidaten
+`fixed_cache_compiled_decode_v1`. Sie erlaubt keinen Download, keine
+Installation, keine Änderung an Modellgewichten, Modellarchitektur oder
+Quantisierung und keine Produktaktivierung.
+
+In allen drei Armen bleibt die mathematische Matmul aktiv. Verglichen werden
+`standard_eager`, `fixed_eager` und `fixed_compiled`; der Name „Matmul-A/B“
+bezeichnet hier die Laufzeitumgebung, nicht einen ausgeschalteten Matmul.
+Exakte greedy Token- und Textidentität ist zwingend. Die früheren
+Device-Model-Compile-Messungen sind wegen falscher Token ab Position 2 ungültig
+und dürfen nicht als Vergleichswert dienen.
+
+Die Präregistrierung ist im lokalen Seal-Commit eingefroren und noch nicht
+gemessen. `formal_claim=false`; ein negatives Ergebnis ist
+vollständig gültig. Jede weitere Studie, ein echter Matmul-Aus-Pfad oder eine
+Aktivierung benötigt eine neue ausdrückliche Freigabe.
+
+## Aktueller Freigabestand Zyklus 16
+
+Die erteilte Freigabe wurde ausschließlich für die eine lokale runtime-only
+Studie `matmul-compile-ab-20260824-01` verwendet. Die Präregistrierung ist im
+lokalen Seal-Commit eingefroren (`sealed_pending_hardware`), SHA-256
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Hardwarelauf, Modellstart, `results.json` und Startmarke existieren noch nicht;
+`formal_claim=false`. Eine neue Studie, ein echter Matmul-Aus-Pfad oder eine
+Produktaktivierung benötigt weiterhin eine neue ausdrückliche Freigabe.
