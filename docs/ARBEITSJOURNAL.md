@@ -5254,3 +5254,41 @@ Mehrteilige Dokumentations-Patches trafen wegen inzwischen verschobener
 Kontextzeilen nicht zu und wurden vom Patchwerkzeug atomar ohne Teiländerung
 abgelehnt. Die Dateien wurden danach mit kleinen, exakt passenden Patches
 aktualisiert; `git diff --check` und der JSON-Abgleich prüfen den Endzustand.
+
+## 2026-08-24 — Unabhängiges Dokumentationsaudit von Zyklus 14
+
+Der Zyklus-14-Abschluss wurde nachträglich nur lesend gegen die gespeicherten
+Artefakte geprüft. Die getrennte lokale Git-Provenienz ist konsistent: Der
+Vor-Hardware-Stand war
+`8067dc6c1fb175f0df539394b2e4dad5894b14b8`; der Ergebnis- und
+Dokumentationsabschluss ist der separate Commit
+`8923467c57d61d3599c430687b949052e397a95c`. Die Präregistrierung blieb
+bytegleich, SHA-256
+`0fa346db7985cdd4dfa49015b395ee0f9d56a097a06f3828b0c161c45e53e5ec`; die
+Ergebnisdatei blieb bei
+`64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975`; die
+private Startmarke blieb bei
+`6e741162f6d02ec69ee74ad7670b8e1a5046a3bc1430b946d7511b1248a6d573`.
+
+Die drei gespeicherten Läufe belegen verschiedene PIDs, je einen Load, denselben
+4B-Snapshot, `3/3` identische Tokenfolgen und identischen Rohtext. Alle Antworten
+enthielten die richtige ID `persistent_service_qualification`, aber jeweils einen
+unerlaubten Markdown-Codeblock. Der Parser wurde nicht gelockert; die
+unveränderte Entscheidung ist `planner_contract_failed`, durchgehend
+`formal_claim=false`.
+
+Unabhängig wiederholt wurden nur nicht-hardwarebezogene Prüfungen: 17 fokussierte
+Offline-Tests mit Exit `0`, Worker-Selbsttest `11/11`, Harness-Selbsttest `9/9`,
+AST-/JSON-Parsing, `git diff --check` mit Exit `0` und
+`xcodebuild -checkFirstLaunchStatus` mit Exit `0`. Die lokale read-only UI lieferte
+GET `200`, Snapshot-GET `200` und für einen fremden Host `421`; die Ergebnis-SHA
+blieb vor und nach dem UI-Test identisch. HEAD wurde nicht als erfolgreich
+behauptet und antwortete mit `501`.
+
+Offene Punkte bleiben unverändert: Das alte `results.json` enthält keinen
+Gewichts-SHA. Der lokale Gewichts-SHA
+`94d3d701367d78584a9334ca00672b1c86e4aefa6a94167556c0485381e74af3` wurde nur
+separat verifiziert und nicht rückwirkend in die Evidenz geschrieben. Die drei
+absichtlichen Markdown-Trailing-Spaces in der versiegelten Präregistrierung
+werden wegen des eingefrorenen Hashes nicht geändert. Dieser Auditlauf startete
+weder Hardware noch Modell erneut und führte keinen Security-Check aus.
