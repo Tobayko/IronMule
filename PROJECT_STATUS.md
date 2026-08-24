@@ -1013,7 +1013,7 @@ als Harnessfehler klassifiziert, nicht als Projektfehler. Konvergenzregel: Harne
 werden nur nach reproduzierbarer Wiederholung und unabhängigem Readback bewertet; sie ändern
 keine wissenschaftliche Schwelle und ersetzen keinen Canary.
 
-## Begrenzter Head-Skip-Runtime-Prototyp vor Live-Gates — 24.08.2026
+## Begrenzter Head-Skip-Runtime-Prototyp qualifiziert — 24.08.2026
 
 Der Nutzer hat den zuvor in `PERMISSION_REQUIRED.md` blockierten kleinen
 Runtime-Prototyp ausdrücklich freigegeben. Der Vertrag
@@ -1051,7 +1051,25 @@ Die vollständige lokale Quellprüfung ist unter
 `/private/tmp/codex-security-scans/Project_Friday/c7db74f_20260824T084223Z`
 versiegelt: alle `12` Quellzeilen wurden vollständig geprüft, Abdeckung
 `complete`, keine offene Arbeit und `0` berichtspflichtige Sicherheitsbefunde.
-Noch offen sind der saubere lokale Implementierungscommit, das vorregistrierte
-CPU-Gate und — nur bei dessen Bestehen — genau ein GPU-Qualifikationsprozess.
-Deshalb gibt es aus dem Runtime-Einbau noch keinen neuen gemessenen
-Geschwindigkeitswert und noch kein `engineering_go_exact_scope`.
+Der nachgeschaltete Zwei-Dateien-Delta nach Ergänzung des CPU-BudgetGuards ist unter
+`/private/tmp/codex-security-scans/Project_Friday/5b17bfb_20260824T085130Z`
+ebenfalls mit vollständiger Abdeckung und `0` Befunden versiegelt.
+
+Das CPU-Gate bestand mit Policy-Median `864,7 ns`, p95 `872,473 ns`, Zusatz
+`839,473 ns` und Evidenzload `824,460209 ms`. Danach wurde genau ein, nicht
+wiederholter MLX-Prozess gestartet. Baseline und Kandidat erzeugten im
+Korrektheitspaar und in allen vier Messpaaren dieselben `32` Token. Der gemessene
+Prefill-Median sank von `1806,4618545 ms` auf `1528,206979 ms`; das vorab
+festgelegte gepaarte Verhältnis beträgt `0,8458362745`, entsprechend gerechnet
+`−15,4164 %`. Peak-Delta `−97.855.968 B`, Swap-Delta `0`, Netzbetrieb und Duty
+`0,15` hielten. Alle H1–H5-Gates bestanden; Entscheidung
+`engineering_go_exact_scope`, weiterhin `formal_claim=false`.
+
+Die Runtime-Historie enthält genau CPU-Record, Startmarke und GPU-Record, Modus
+`0600`, SHA-256
+`6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567`,
+Kettenkopf `db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3`.
+Der normale Policy-Aufruf autorisiert den schnellen Pfad jetzt nur im exakten
+registrierten Fall; die reale read-only Loopback-Abfrage lieferte HTTP `200` und
+die verifizierte Dreierhistorie. Ungeprüfte Prompts, Modelle, Logprob-Anfragen,
+Multi-Turn- und Parallel-Workloads bleiben auf der Baseline.

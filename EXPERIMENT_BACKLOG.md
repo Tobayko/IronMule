@@ -1,7 +1,8 @@
 # Kandidatenliste
 
-Stand: 24. August 2026, nach Zyklus 12. Priorität nach erwarteter Wirkung je Aufwand, unter
-Berücksichtigung dessen, was bereits gemessen ist.
+Stand: 24. August 2026, nach Zyklus 12 und begrenzter Runtime-Qualifikation.
+Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
+bereits gemessen ist.
 
 | # | Kandidat | Mechanismus | Risiko | Status |
 | ---: | :--- | :--- | :--- | :--- |
@@ -23,7 +24,7 @@ Berücksichtigung dessen, was bereits gemessen ist.
 | 16 | llama.cpp-Vergleich | zweite Referenz | andere Quantisierung | `permission_required` |
 | 17 | Host-Readback aufschieben | vollständigen Token-Readback aus dem kritischen Pfad nehmen | kann ohne Readback nicht stoppen | **`candidate_recommended_for_preregistration`**, nur Obergrenze (Zyklus 6) |
 | 18 | gebündelter Readback | Stop-Token nur alle `N` Schritte zum Host lesen | Überlauf bis `N-1` Token | **`candidate_recommended_for_preregistration`** (Zyklus 7) |
-| 19 | LM-Head beim Prefill überspringen | nur die tatsächlich gelesene letzte Promptposition projizieren | unzulässig bei Prompt-Logprobs | **`formal_gain_confirmed`** (`−15,3615 %`, Zyklus 12); Integration `permission_required` |
+| 19 | LM-Head beim Prefill überspringen | nur die tatsächlich gelesene letzte Promptposition projizieren | unzulässig bei Prompt-Logprobs | **`engineering_go_exact_scope`** nach formalem Gewinn (`−15,3615 %`) und Runtime-Gate (`−15,4164 %`) |
 | 20 | `logsumexp` bei greedy überspringen | argmax-invariante Normalisierung entfernen | isolierte Kosten sind nicht Grenzkosten | `candidate_characterized`, kein Gewinn (Zyklus 10) |
 | 21 | KV-Cache-Reallokationen | Wachstumskopien im Decode vermeiden | erster Decodeschritt konfundiert; Cache-Neubau wäre Architekturänderung | **`candidate_recommended_for_preregistration`** (Zyklus 11) |
 
@@ -36,9 +37,11 @@ Die vier Kandidaten bleiben deshalb unter dem bestehenden Vertrag gesperrt.
 Die priorisierte versiegelte Studie für **LM-Head beim Prefill überspringen** ist in
 Zyklus 12 abgeschlossen: `R=0,846385`, 95-%-KI gesamt
 `[0,843147; 0,851284]`, Effekt `−15,3615 %`, alle C-/V-/Gesamt-Gates und alle zwölf
-Tokenidentitätsgates bestanden. Der formale Scope bleibt auf einen Prompt, ein Modell,
-ein Gerät und greedy ohne Prompt-Logprobs begrenzt. Eine produktive Aktivierung ist
-nicht freigegeben und steht in `PERMISSION_REQUIRED.md`.
+Tokenidentitätsgates bestanden. Die anschließende begrenzte Runtime-Qualifikation
+bestätigte `R=0,845836`, Effekt `−15,4164 %`, exakte Tokenidentität und alle fünf
+Engineering-Gates. Der getrennte Repository-Aufruf ist nur für diesen exakten Fall
+freigegeben; eine allgemeine oder automatische Produktaktivierung bleibt
+ausgeschlossen.
 
 Unter den noch unbestätigten empfohlenen Kandidaten folgt der **persistente Prozess**,
 weil er `65,4 %` der Kaltstart-TTFT adressiert. Die Readback-Kandidaten treffen nur

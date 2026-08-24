@@ -948,3 +948,41 @@ Die lokale Quellprüfung wurde anschließend vollständig versiegelt: `12/12`
 Quellzeilen mit vollständigem Lesebeleg, Abdeckung `complete`, keine offene Arbeit
 und `0` berichtspflichtige Sicherheitsbefunde. Der versiegelte Bericht liegt unter
 `/private/tmp/codex-security-scans/Project_Friday/c7db74f_20260824T084223Z`.
+
+---
+
+## Head-Skip-Runtime-Qualifikation abgeschlossen — 24.08.2026
+
+Die vorab festgelegte CPU-Prüfung wurde genau einmal ausgeführt und bestand. Die
+zusätzliche Entscheidung kostete im Median `839,47295 ns` pro Aufruf; die
+vorregistrierte Obergrenze wurde damit eingehalten. Netzbetrieb, BudgetGuard und
+Duty-Faktor `0,15` wurden auch für diesen Lauf protokolliert.
+
+Danach lief genau ein GPU-Qualifikationsprozess; er wurde nicht wiederholt. Der
+Median der vier gepaarten Verhältnisse betrug `0,8458362744682114`. Der
+Referenzpfad benötigte im Median `1.806.461.854,5 ns`, der begrenzte schnelle Pfad
+`1.528.206.979,0 ns`. Daraus ergibt sich für den gemessenen Prefill eine
+Verbesserung um `15,416372553178858 %`. Alle `32` greedy erzeugten Token waren in
+jedem Korrektheits- und Messpaar exakt identisch. Der Pfadnachweis bestätigte vier
+Transformer-Blöcke bei beiden Varianten und nur einen statt vier LM-Head-Aufrufen
+im Kandidaten.
+
+Die festgelegten Ressourcenregeln wurden eingehalten: kein Swap-Anstieg,
+`25,346709 s` GPU-Arbeit, längster zusammenhängender GPU-Abschnitt
+`2,283342 s`, `192,383843 s` Guard-Pausen und Duty-Faktor `0,15`. Alle fünf
+vorregistrierten Hürden bestanden. Die Entscheidung lautet deshalb
+`engineering_go_exact_scope`; `formal_claim` bleibt ausdrücklich `false`.
+
+Die betriebliche Freigabe gilt nur für den exakt qualifizierten lokalen
+Modell-Snapshot, Prompt, `897` Prompt-Token, Chunk `256`, Batch `1`, greedy ohne
+Prompt-Logprobs und genau `32` Ausgabetoken. Jede Abweichung bleibt auf dem
+Referenzpfad. Die private Runtime-Historie enthält exakt drei verkettete Records;
+ihre Datei-SHA ist
+`6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567`.
+Die read-only Loopback-UI lieferte die drei Records mit HTTP `200`, bestätigte die
+Hashkette und veränderte die Datenbank nicht.
+
+Offen bleiben die geforderten Workloads Multi-Turn-Fortsetzung und mehrere
+parallele Requests sowie jede Verallgemeinerung auf andere Prompts oder
+Einstellungen. Gemessen sind die Laufzeiten und die Tokenidentität; der
+Prozentwert ist aus den vorregistrierten gepaarten Laufzeiten berechnet.

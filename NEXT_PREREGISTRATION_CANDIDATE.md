@@ -11,8 +11,11 @@ Prefill-Kandidaten formal: `R=0,846385`, Effekt `−15,3615 %`, Gesamt-95-%-KI
 `[0,843147; 0,851284]`, Charakterisierung und Validierung getrennt bestanden und
 Greedy-Tokenidentität in `12/12` Sessiongates. Der Claim gilt nur für ein Gerät,
 einen lokalen Modell-Snapshot, einen 897-Token-Prompt, Prefill-Chunk `256`, Batch `1`
-und greedy ohne Prompt-Logprobs. Die produktive Integration wartet auf die in
-`PERMISSION_REQUIRED.md` beschriebene Architekturfreigabe.
+und greedy ohne Prompt-Logprobs. Die begrenzte Integration wurde freigegeben und
+bestand ihre vorregistrierte Runtime-Qualifikation mit `R=0,845836`, Effekt
+`−15,4164 %` und identischen Token. Sie ist nur über den getrennten
+Repository-Aufrufpunkt und nur im registrierten Fall zulässig; eine allgemeine
+Produktaktivierung ist weiterhin nicht erlaubt.
 
 ## Empfehlung bei einem neuen Zyklusvertrag: persistenter Prozess
 
