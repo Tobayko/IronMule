@@ -779,3 +779,132 @@ Guard-Bilanz: `21,086457` s GPU-Arbeit, maximal `1,270024` s kontinuierlich,
 `116,119931` s Pflichtpausen, `139,595394` s Wall-Zeit.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 12 — 24.08.2026
+
+**Kandidat:** `prefill-head-skip-20260824-02`; Studie
+`head-skip-prefill-v1-20260824`. Genau ein Kandidat wurde geprüft: Beim greedy
+Prefill ohne Prompt-Logprobs projiziert der Kandidatenarm nur die tatsächlich
+gelesene letzte Promptposition durch den LM-Head.
+
+### Prospektive Versiegelung
+
+Präregistrierung und Harness wurden vor der ersten Hardwaredatei auf dem sauberen
+Commit `9466bb9f9f01813bcbd86b6d16837e90ad2523da` versiegelt. Gebunden waren:
+
+- lokaler Modell-Snapshot `mlx-community/gemma-3-4b-it-4bit` auf Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`;
+- Dokument-SHA `8f7a9a854639824d337aa9ff3ef97ae2255c804291577c5021af2e93abbbeec6`,
+  Script-SHA `b39bd6be0768173d293647d45cc7f0d3b1c469fd234375c8f0d46ce3c227dc14`,
+  versiegelter Präregistrierungs-Payload
+  `175a7238520d2a01a5c1c24898ff34773eb1b7a1cbbd6324b988d11fe8bc9cc6`;
+- `897` Prompt-Token, Prefill-Chunk `256`, Batch `1`, `32` greedy
+  Correctness-Token;
+- sechs A/A- und danach sechs A/B-Sessionprozesse, je zwei Warmup- und vier
+  Messpaare, balancierte Reihenfolge;
+- getrennte Charakterisierung C und Validierung V, jeweils vorab festgelegter
+  hierarchischer Bootstrap mit `10.000` Ziehungen;
+- MDE `max(5 %, 2 × Session-SD × sqrt(2/3))`, gedeckelt bei `15 %`, sowie die
+  unveränderliche Entscheidungstabelle.
+
+Das Harness sperrte Ausführung ohne `--execute`, verwendete eine eigene
+append-only SQLite-Hashkette und führte jeden Hardwarelauf in einem frischen Prozess
+über `BudgetGuard` bei Netzbetrieb, Duty-Policy `0,15` und Pacing-Ziel `0,14` aus.
+Es gab keinen Retry eines Hardwareprozesses.
+
+### A/A-Kalibrierung
+
+Die sechs gemessenen Sessionquotienten waren:
+
+`[0,998498; 1,004692; 0,994007; 1,005769; 1,004463; 1,001198]`.
+
+Die vorregistrierte Auswertung ergab `R=1,002829`, 95-%-KI
+`[0,994931; 1,005964]` und Session-SD `0,004526`. Die daraus gerechnete rohe MDE
+war `0,7391 %`; gemäß Vertrag wurde der konservative Boden `5 %` für die
+Bestätigungsphase eingefroren. Alle A/A-, Correctness-, Budget- und
+Provenienzgates bestanden. Der anschließende Confirmation-Seal band den Payload
+`2571670a87fc5bd536d4ccee40d4c889afa30c37e65110e18f70607fd6caf11e`.
+
+### A/B-Bestätigung
+
+Alle sechs einmalig ausgeführten Sessions waren erfolgreich:
+
+| Session | Quotient Kandidat/Baseline |
+| :--- | ---: |
+| C0 | `0,845257` |
+| V0 | `0,846173` |
+| C1 | `0,843401` |
+| V1 | `0,847653` |
+| C2 | `0,846596` |
+| V2 | `0,852478` |
+
+Die versiegelte Entscheidungsrechnung ergab:
+
+| Split | Quotient | 95-%-KI |
+| :--- | ---: | :--- |
+| Charakterisierung | `0,845257` | `[0,840544; 0,848452]` |
+| Validierung | `0,847653` | `[0,842683; 0,854941]` |
+| Gesamt | **`0,846385`** | **`[0,843147; 0,851284]`** |
+
+Alle drei oberen Intervallgrenzen liegen unter dem vorab eingefrorenen Gain-Gate
+`0,95`. Der daraus gerechnete Effekt ist **`−15,3615 %`**. Alle zwölf Sessiongates
+meldeten identische greedy Token-IDs; der gemeinsame Token-SHA ist
+`666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c`.
+Tokenmismatches, verworfene Ausreißer und Schwellenänderungen gab es nicht.
+
+Aus den gemessenen A/B-Sessionmedianen abgeleitet lagen die Armmediane bei
+`1995,444239` ms und `1688,116333` ms. Beide Arme meldeten jeweils
+`3.213.903.666` Byte MLX-Peak; das Prozess-RSS lag zwischen `3.768.795.136` und
+`3.769.696.256` Byte. Über alle zwölf Sessions wurden `332,277940` s GPU-Arbeit,
+`3.077,978881` s Guard-Pausen und `3.430,234516` s Session-Wall-Zeit summiert.
+Diese Summen sind Rechnungen aus den gespeicherten Sessionrecords, keine neuen
+Messläufe.
+
+### Terminaler Entscheid und Evidenz
+
+Nach der unveränderten Tabellenzeile lautet der Status
+**`head_skip_gain_confirmed`**, Aktion
+**`permit_bounded_architecture_review`**, `formal_claim=true`. Der formale Claim
+gilt ausschließlich für **ein Gerät, einen Modell-Snapshot, einen Prompt, einen
+Prefill-Plan und greedy ohne Prompt-Logprobs**. Er aktiviert keinen Produktpfad und
+belegt weder allgemeine TTFT-Wirkung noch andere Promptlängen, Modelle oder Geräte.
+
+Der Decision-Payload hat SHA-256
+`99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a`.
+`.friday-data/head-skip-v1.sqlite3` enthält `16` hashverkettete Records, genau einen
+formalen Claim, Modus `0600`, Größe `77.824` Byte, Datei-SHA
+`15ee462bbad5a8f757373f093fdf2ccfb8bdd0048c03447c1cb635acd38ec8d9` und
+Kettenkopf `8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4`.
+Read-only Replay und reale GET-Abfrage der Historien-UI bestanden; der DB-Hash blieb
+unverändert.
+
+### Fehler, Ursachen und Lösungen
+
+- Vor Versiegelung und vor Hardware schlug der erste Offline-Selbsttest fehl, weil
+  `canonical_json` aus `friday_h1.canonical` statt aus
+  `friday_evidence.canonical` importiert wurde. Der Import wurde korrigiert, alle
+  Offline-Tests wurden erneut bestanden und erst danach sauber committed und
+  versiegelt. Es entstand weder DB- noch Hardwareevidenz aus dem Fehler.
+- Ein UI-Probeversuch verwendete `HEAD` und erhielt `501`, weil der neue read-only
+  Server nur `GET` implementiert. Die korrekte GET-Abfrage lieferte `200` und den
+  realen Verlauf. Dies war ein Diagnosefehler, kein Studien- oder DB-Fehler.
+- Das manuelle `Ctrl-C` beendete den UI-Prozess mit sichtbarem
+  `KeyboardInterrupt`/Exit `1`. Die UI war bereits read-only verifiziert; der
+  versiegelte Code wurde nach dem terminalen Studienentscheid nicht verändert.
+
+Es wurde nichts installiert, nichts heruntergeladen, keine versiegelte Spezifikation
+oder Evidenz-DB verändert, kein Kandidat automatisch integriert und nichts gepusht.
+
+### Abschlussverifikation
+
+Nach der Dokumentation erreichte `.venv/bin/python -m pytest -q` `100 %` und Exit
+`0` (äußere Wall-Zeit `41,86` s). `xcodebuild -checkFirstLaunchStatus` endete mit
+Exit `0`. MLX `0.32.0` und mlx-lm `0.31.3` meldeten auf `arm64` das Standardgerät
+`Device(gpu, 0)` und `Apple M1 Max`. ProjectAtlas wurde inkrementell aktualisiert
+(`7` geänderte Symbolquellen, kein Timeout) und bestätigte Runtime `0.4.5-rc1`;
+die projektlokale MCP-JSON-Datei war gültig. Der abschließende read-only Replay
+bestätigte erneut `16` Records, genau einen formalen Claim und denselben DB-Hash vor
+und nach der Prüfung. Dokument- und Script-SHA der versiegelten Studie blieben
+bytegleich; beide Ergebnis-JSON-Dateien und `git diff --check` waren fehlerfrei.

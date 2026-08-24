@@ -1,8 +1,10 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 11, Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
+Stand: 24. August 2026, nach Zyklus 12, Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
-markiert sind. Alles `formal_claim=false`.
+markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
+Prefill-Head-Skip-Studie; alle übrigen Werte dieser Baseline bleiben
+`formal_claim=false`.
 
 ## Gerätemodell
 
@@ -41,6 +43,38 @@ Klassen werden **nicht** in einem gemeinsamen Schätzer vermischt.
 
 Sättigt ab `1024`. Chat-Template und Tokenisierung liegen bei `0,044`–`0,649` ms und
 sind kein Faktor.
+
+## Formal bestätigter Prefill-Head-Skip
+
+Zyklus 12 prüfte prospektiv genau einen Kandidaten: Beim greedy Prefill ohne
+Prompt-Logprobs wird der LM-Head nur auf die tatsächlich gelesene letzte
+Promptposition angewendet. Die versiegelte Studie verwendete einen lokalen,
+revisionsgebundenen Modell-Snapshot, `897` Prompt-Token, Prefill-Chunk `256`, Batch
+`1`, sechs A/A- und sechs A/B-Sessionprozesse sowie vier Messpaare je Session.
+
+| Vorregistrierter Endpunkt | Ergebnis |
+| :--- | ---: |
+| A/A-Verhältnis | `1,002829` |
+| A/A-95-%-KI | `[0,994931; 1,005964]` |
+| eingefrorene MDE | `5 %` |
+| A/B-Verhältnis gesamt | **`0,846385`** |
+| Effekt | **`−15,3615 %`** |
+| Charakterisierung, 95-%-KI | `[0,840544; 0,848452]` |
+| Validierung, 95-%-KI | `[0,842683; 0,854941]` |
+| Gesamt, 95-%-KI | `[0,843147; 0,851284]` |
+| Greedy-Tokenidentität | **`12/12` Sessiongates** |
+
+Das Verhältnis, der Effekt und die Intervalle sind die vorregistrierte Auswertung
+der unverändert gespeicherten Messblöcke. Aus den gemessenen Sessionmedianen
+abgeleitet lagen die Armmediane bei `1995,444239` ms und `1688,116333` ms. Beide
+Arme meldeten denselben MLX-Peak von `3.213.903.666` Byte; der beobachtete RSS-Bereich
+war `3.768.795.136` bis `3.769.696.256` Byte.
+
+Der terminale Status lautet `head_skip_gain_confirmed`, die Aktion lediglich
+`permit_bounded_architecture_review`. `formal_claim=true` gilt ausschließlich für
+**ein Gerät, einen Modell-Snapshot, einen Prompt, einen Prefill-Plan und greedy ohne
+Prompt-Logprobs**. Es gibt keine automatische Produktaktivierung und keinen
+allgemeinen TTFT-, Modell- oder Cross-Device-Claim.
 
 ## Decode-Durchsatz
 

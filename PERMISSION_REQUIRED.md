@@ -78,3 +78,26 @@ werden.
 **Benötigte Aktion:** ausdrückliche Architekturfreigabe für einen isolierten,
 rückrollbaren A/B-Messpfad mit eigenem Cachetyp, Correctness-Gate, Speichergrenzen
 und `BudgetGuard`. Bis dahin wird der Kandidat übersprungen.
+
+## 6. Begrenzte Integration des formal bestätigten Prefill-Head-Skips
+
+**Status:** Zyklus 12 bestätigte im versiegelten Scope einen Prefill-Zeitquotienten
+von `0,846385` beziehungsweise `−15,3615 %`; alle C-/V-/Gesamt-Gates und `12/12`
+Greedy-Tokenidentitätsgates bestanden. Der terminale Entscheid erlaubt nur eine
+begrenzte Architekturprüfung, keine Aktivierung.
+
+**Nutzen:** Der Kandidat trifft den gemessenen Hauptengpass direkt und vermeidet beim
+greedy Prefill die Projektion aller Promptpositionen, obwohl nur die letzte Position
+für den ersten Ausgabetoken gelesen wird.
+
+**Risiko:** Der Pfad ist unzulässig, sobald Prompt-Logprobs, Perplexität oder andere
+Ausgaben pro Promptposition verlangt werden. Eine Integration in `mlx_lm` oder eine
+lokale Runtime-Verzweigung verändert Architektur, API-Grenzen, Fehlerbehandlung und
+Fallback. Der formale Einzelprompt-Claim belegt weder allgemeine TTFT-Wirkung noch
+andere Promptlängen, Modelle, Quantisierungen oder Geräte.
+
+**Benötigte Aktion:** ausdrückliche Architekturfreigabe für einen kleinen,
+rückrollbaren Runtime-Prototyp mit enger Scope-Prüfung (`greedy`, keine
+Prompt-Logprobs), unverändertem Referenzpfad, fail-closed Fallback,
+Tokenidentitäts-Regressionsgate, Speichergrenze und eigener Historie. Bis dahin bleibt
+der bestätigte Kandidat deaktiviert.
