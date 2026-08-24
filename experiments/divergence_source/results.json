@@ -1,0 +1,504 @@
+{
+  "candidate_id": "divergence-source-20260824-01",
+  "formal_claim": false,
+  "prompt_tokens": 677,
+  "splits_compared": [
+    [
+      677
+    ],
+    [
+      512,
+      165
+    ]
+  ],
+  "first_layer_with_difference": 0,
+  "layers": [
+    {
+      "layer": 0,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.25,
+        "mean_abs": 0.0005078466492705047,
+        "max_rel": 0.004878048785030842
+      },
+      "values": {
+        "max_abs": 2.0,
+        "mean_abs": 0.003666008822619915,
+        "max_rel": 0.007042253389954567
+      }
+    },
+    {
+      "layer": 1,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.25,
+        "mean_abs": 0.001090983976610005,
+        "max_rel": 0.008888889104127884
+      },
+      "values": {
+        "max_abs": 0.125,
+        "mean_abs": 0.001961540663614869,
+        "max_rel": 0.006849315017461777
+      }
+    },
+    {
+      "layer": 2,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 1.0,
+        "mean_abs": 0.0014892148319631815,
+        "max_rel": 0.008928571827709675
+      },
+      "values": {
+        "max_abs": 0.25,
+        "mean_abs": 0.003133809193968773,
+        "max_rel": 0.008888889104127884
+      }
+    },
+    {
+      "layer": 3,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.125,
+        "mean_abs": 0.0017219149740412831,
+        "max_rel": 0.008438818156719208
+      },
+      "values": {
+        "max_abs": 0.3671875,
+        "mean_abs": 0.0032886317931115627,
+        "max_rel": 0.019847972318530083
+      }
+    },
+    {
+      "layer": 4,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.25,
+        "mean_abs": 0.001561895594932139,
+        "max_rel": 0.00800000037997961
+      },
+      "values": {
+        "max_abs": 0.21875,
+        "mean_abs": 0.0036265056114643812,
+        "max_rel": 0.010479042306542397
+      }
+    },
+    {
+      "layer": 5,
+      "type": "KVCache",
+      "keys": {
+        "max_abs": 0.375,
+        "mean_abs": 0.0026134697254747152,
+        "max_rel": 0.010791366919875145
+      },
+      "values": {
+        "max_abs": 0.15625,
+        "mean_abs": 0.00213148957118392,
+        "max_rel": 0.004464285913854837
+      }
+    },
+    {
+      "layer": 6,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.21875,
+        "mean_abs": 0.002539703855291009,
+        "max_rel": 0.00935828872025013
+      },
+      "values": {
+        "max_abs": 0.1875,
+        "mean_abs": 0.0032211318612098694,
+        "max_rel": 0.014084506779909134
+      }
+    },
+    {
+      "layer": 7,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.25,
+        "mean_abs": 0.0025341534055769444,
+        "max_rel": 0.011627906933426857
+      },
+      "values": {
+        "max_abs": 0.1875,
+        "mean_abs": 0.003127404022961855,
+        "max_rel": 0.01604278013110161
+      }
+    },
+    {
+      "layer": 8,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.3125,
+        "mean_abs": 0.003236195771023631,
+        "max_rel": 0.014970059506595135
+      },
+      "values": {
+        "max_abs": 0.2265625,
+        "mean_abs": 0.003446397138759494,
+        "max_rel": 0.00939119141548872
+      }
+    },
+    {
+      "layer": 9,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.375,
+        "mean_abs": 0.004357358440756798,
+        "max_rel": 0.02469135820865631
+      },
+      "values": {
+        "max_abs": 0.46875,
+        "mean_abs": 0.005753029603511095,
+        "max_rel": 0.0009084302582778037
+      }
+    },
+    {
+      "layer": 10,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 0.765625,
+        "mean_abs": 0.005539662204682827,
+        "max_rel": 0.03828125074505806
+      },
+      "values": {
+        "max_abs": 0.486328125,
+        "mean_abs": 0.0040895682759583,
+        "max_rel": 0.012550403364002705
+      }
+    },
+    {
+      "layer": 11,
+      "type": "KVCache",
+      "keys": {
+        "max_abs": 2.78125,
+        "mean_abs": 0.010645296424627304,
+        "max_rel": 0.09156378358602524
+      },
+      "values": {
+        "max_abs": 0.3828125,
+        "mean_abs": 0.003929794766008854,
+        "max_rel": 0.000814494676887989
+      }
+    },
+    {
+      "layer": 12,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 2.84375,
+        "mean_abs": 0.010278812609612942,
+        "max_rel": 0.1812749058008194
+      },
+      "values": {
+        "max_abs": 4.75,
+        "mean_abs": 0.010054145939648151,
+        "max_rel": 0.011642157100141048
+      }
+    },
+    {
+      "layer": 13,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 5.3603515625,
+        "mean_abs": 0.01182273868471384,
+        "max_rel": 0.2176792472600937
+      },
+      "values": {
+        "max_abs": 3.4375,
+        "mean_abs": 0.01125444658100605,
+        "max_rel": 0.013221153989434242
+      }
+    },
+    {
+      "layer": 14,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 5.625,
+        "mean_abs": 0.01547623798251152,
+        "max_rel": 0.2542372941970825
+      },
+      "values": {
+        "max_abs": 1.994140625,
+        "mean_abs": 0.01139138638973236,
+        "max_rel": 0.035139042884111404
+      }
+    },
+    {
+      "layer": 15,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 6.0625,
+        "mean_abs": 0.018437867984175682,
+        "max_rel": 0.21748879551887512
+      },
+      "values": {
+        "max_abs": 1.71875,
+        "mean_abs": 0.009637863375246525,
+        "max_rel": 0.02161949686706066
+      }
+    },
+    {
+      "layer": 16,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 4.4296875,
+        "mean_abs": 0.017930755391716957,
+        "max_rel": 0.18361398577690125
+      },
+      "values": {
+        "max_abs": 2.4375,
+        "mean_abs": 0.011795577593147755,
+        "max_rel": 0.01919291354715824
+      }
+    },
+    {
+      "layer": 17,
+      "type": "KVCache",
+      "keys": {
+        "max_abs": 11.0625,
+        "mean_abs": 0.030820487067103386,
+        "max_rel": 0.19843049347400665
+      },
+      "values": {
+        "max_abs": 1.03125,
+        "mean_abs": 0.0042245457880198956,
+        "max_rel": 0.01611328125
+      }
+    },
+    {
+      "layer": 18,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 4.625,
+        "mean_abs": 0.01571282558143139,
+        "max_rel": 0.19680851697921753
+      },
+      "values": {
+        "max_abs": 4.625,
+        "mean_abs": 0.013904734514653683,
+        "max_rel": 0.01806640625
+      }
+    },
+    {
+      "layer": 19,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 12.015625,
+        "mean_abs": 0.01826384849846363,
+        "max_rel": 0.12850935757160187
+      },
+      "values": {
+        "max_abs": 3.5,
+        "mean_abs": 0.009859160520136356,
+        "max_rel": 0.01977401040494442
+      }
+    },
+    {
+      "layer": 20,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 5.75,
+        "mean_abs": 0.019364481791853905,
+        "max_rel": 0.1369047611951828
+      },
+      "values": {
+        "max_abs": 4.98046875,
+        "mean_abs": 0.021450702100992203,
+        "max_rel": 0.0355747751891613
+      }
+    },
+    {
+      "layer": 21,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 4.75,
+        "mean_abs": 0.016578873619437218,
+        "max_rel": 0.15079365670681
+      },
+      "values": {
+        "max_abs": 3.25,
+        "mean_abs": 0.015155639499425888,
+        "max_rel": 0.020700637251138687
+      }
+    },
+    {
+      "layer": 22,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 7.5390625,
+        "mean_abs": 0.013992750085890293,
+        "max_rel": 0.287202388048172
+      },
+      "values": {
+        "max_abs": 2.7109375,
+        "mean_abs": 0.0155488271266222,
+        "max_rel": 0.02420479990541935
+      }
+    },
+    {
+      "layer": 23,
+      "type": "KVCache",
+      "keys": {
+        "max_abs": 8.9296875,
+        "mean_abs": 0.024519577622413635,
+        "max_rel": 0.16017377376556396
+      },
+      "values": {
+        "max_abs": 1.8125,
+        "mean_abs": 0.009100540541112423,
+        "max_rel": 0.01125776395201683
+      }
+    },
+    {
+      "layer": 24,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 5.09375,
+        "mean_abs": 0.016150295734405518,
+        "max_rel": 0.28496503829956055
+      },
+      "values": {
+        "max_abs": 2.65625,
+        "mean_abs": 0.017246272414922714,
+        "max_rel": 0.020123105496168137
+      }
+    },
+    {
+      "layer": 25,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 4.37109375,
+        "mean_abs": 0.014414351433515549,
+        "max_rel": 0.1869986653327942
+      },
+      "values": {
+        "max_abs": 5.703125,
+        "mean_abs": 0.028708895668387413,
+        "max_rel": 0.038276005536317825
+      }
+    },
+    {
+      "layer": 26,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 5.23828125,
+        "mean_abs": 0.014609002508223057,
+        "max_rel": 0.2555259168148041
+      },
+      "values": {
+        "max_abs": 1.140625,
+        "mean_abs": 0.009387652389705181,
+        "max_rel": 0.01107402890920639
+      }
+    },
+    {
+      "layer": 27,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 3.25,
+        "mean_abs": 0.011280535720288754,
+        "max_rel": 0.17931035161018372
+      },
+      "values": {
+        "max_abs": 1.490234375,
+        "mean_abs": 0.010283631272614002,
+        "max_rel": 0.01655815914273262
+      }
+    },
+    {
+      "layer": 28,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 3.35107421875,
+        "mean_abs": 0.010527532547712326,
+        "max_rel": 0.1971220076084137
+      },
+      "values": {
+        "max_abs": 1.9375,
+        "mean_abs": 0.012465362437069416,
+        "max_rel": 0.012663398869335651
+      }
+    },
+    {
+      "layer": 29,
+      "type": "KVCache",
+      "keys": {
+        "max_abs": 6.328125,
+        "mean_abs": 0.017639897763729095,
+        "max_rel": 0.16330644488334656
+      },
+      "values": {
+        "max_abs": 0.7265625,
+        "mean_abs": 0.0050956690683960915,
+        "max_rel": 0.014903846196830273
+      }
+    },
+    {
+      "layer": 30,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 2.78125,
+        "mean_abs": 0.010905420407652855,
+        "max_rel": 0.16984732449054718
+      },
+      "values": {
+        "max_abs": 1.2109375,
+        "mean_abs": 0.010734038427472115,
+        "max_rel": 0.02632472850382328
+      }
+    },
+    {
+      "layer": 31,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 3.9375,
+        "mean_abs": 0.010563497431576252,
+        "max_rel": 0.21724137663841248
+      },
+      "values": {
+        "max_abs": 3.7109375,
+        "mean_abs": 0.026597801595926285,
+        "max_rel": 0.028113162145018578
+      }
+    },
+    {
+      "layer": 32,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 2.3125,
+        "mean_abs": 0.009488392621278763,
+        "max_rel": 0.0764462798833847
+      },
+      "values": {
+        "max_abs": 0.89453125,
+        "mean_abs": 0.007826780900359154,
+        "max_rel": 0.038268715143203735
+      }
+    },
+    {
+      "layer": 33,
+      "type": "RotatingKVCache",
+      "keys": {
+        "max_abs": 2.51953125,
+        "mean_abs": 0.008121447637677193,
+        "max_rel": 0.07356295734643936
+      },
+      "values": {
+        "max_abs": 1.109375,
+        "mean_abs": 0.009948254562914371,
+        "max_rel": 0.10028248280286789
+      }
+    }
+  ],
+  "final_logit_max_abs_diff": 1.1875,
+  "top1_top2_logit_gap": 1.75,
+  "difference_can_flip_choice": false,
+  "budget": {
+    "gpu_work_seconds": 2.644177,
+    "max_continuous_gpu_seconds": 1.284028,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 12.026138,
+    "wall_seconds": 16.26825,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

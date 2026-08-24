@@ -274,6 +274,29 @@
       },
       "limit": "nur bei greedy ohne Logprob-Ausgabe je Prompt-Token anwendbar",
       "note": "mlx_lm wendet lm_head auf alle Prefill-Positionen an; gelesen wird eine"
+    },
+    {
+      "id": "divergence_source",
+      "priority": 0,
+      "cycle": 9,
+      "state": "candidate_characterized",
+      "measured": {
+        "first_differing_layer": 0,
+        "kv_dtype": "bfloat16",
+        "relative_diff_layer0": 0.00488,
+        "relative_diff_layer17": 0.198,
+        "bfloat16_ulp": 0.00391,
+        "final_logit_diff": 1.1875,
+        "top1_top2_gap": 1.75,
+        "flipped_here": false
+      },
+      "conclusion": "Divergenz ist ein bfloat16-ULP bei Schicht 0, ueber 34 Schichten rund 40-fach verstaerkt; kein Kernel-Hotspot"
+    },
+    {
+      "id": "custom_metal_kernel",
+      "priority": 15,
+      "state": "candidate_rejected",
+      "reason": "Zyklus 9: kein Kernelengpass nachweisbar; Ursache ist Praezision ueber alle Schichten"
     }
   ],
   "endpoints": {

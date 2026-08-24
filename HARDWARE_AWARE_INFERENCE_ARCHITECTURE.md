@@ -85,3 +85,23 @@ dieser Architektur ein Gate vor jeder Zeitmessung, nicht eine Prüfung danach.
 
 Weitere Risiken: Speicherdruck bei großen Batches, thermische Drift über lange Läufe,
 und die Versuchung, eine Qualitätsmetrik als Ersatz für Tokenidentität zu nehmen.
+
+## 8. Der Mechanismus hinter dem Hauptrisiko
+
+Zyklus 9 hat die Ursache lokalisiert. Der KV-Cache liegt in `bfloat16` mit `8`
+Mantissenbits. Verschiedene Breiten wählen verschiedene Kernelpfade, die in
+verschiedener Reihenfolge summieren, und das erzeugt bereits in **Schicht `0`** einen
+Unterschied von einem ULP (`4,88e-03` relativ gegen `2⁻⁸ = 0,00391`). Über `34`
+Schichten verstärkt er sich auf `1,98e-01`, und an den Logits erreicht er Werte in der
+Größenordnung typischer Abstände zwischen den beiden führenden Token.
+
+Daraus folgen zwei Dinge für diese Architektur:
+
+**Kein einzelner Kernel ist das Ziel.** Die Ursache ist über jede Schicht verteilt.
+Custom-Metal-Arbeit ist damit nicht mangels Beleg gesperrt, sondern begründet
+ausgeschlossen.
+
+**Jeder Modus, der Formen ändert, trägt dieses Risiko.** Das ist kein Implementierungs-
+mangel, den man beheben könnte, sondern eine Eigenschaft der Rechengenauigkeit. Ein
+Controller darf zwischen solchen Modi deshalb nur wechseln, wenn die Tokenidentität
+für die konkrete Konfiguration gemessen wurde — nicht, weil sie plausibel erscheint.
