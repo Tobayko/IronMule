@@ -1,6 +1,6 @@
 # Implementierungsplan
 
-## Auditierter Planstand — 22.08.2026
+## Auditierter Planstand — 24.08.2026, Zyklus 16 vor Hardware
 
 Die frühere Abfolge wurde durch den Evidenzaudit enger gefasst. Historische
 Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
@@ -411,3 +411,40 @@ Readback, bevor ein Harnessbefund die Bewertung beeinflusst; insbesondere wird k
 Threshold nachträglich angepasst. Der statische Dashboard-Check bestätigt automatische
 read-only-Historienlektüre und Sichtbarkeit des `invalid`-Status; Server/Sockets wurden in
 diesem Dokumentationsnachweis nicht gestartet.
+
+## Zyklus 16 — Vor-Hardware-Schritt: runtime-only Fixed-Cache/Compile-A/B
+
+Für den am 24.08.2026 ausdrücklich freigegebenen Einzelversuch ist die Studie
+`matmul-compile-ab-20260824-01` mit dem Kandidaten
+`fixed_cache_compiled_decode_v1` vorregistriert. Die Studie ändert weder
+Modellgewichte noch Modellarchitektur noch Quantisierung. Die mathematische
+Matmul bleibt in allen Armen aktiv; gemessen werden ausschließlich die drei
+Laufzeitpfade `standard_eager`, `fixed_eager` und `fixed_compiled`.
+
+Vor dem Hardwarelauf muss die Präregistrierung noch lokal versiegelt werden.
+Der aktuelle Stand ist daher: im Arbeitsbaum vorregistriert, noch nicht
+versiegelt und noch nicht gemessen. Greedy Token- und Textidentität müssen exakt
+gleich bleiben; die alten Device-Model-Compile-Werte sind wegen falscher Token
+ab Position 2 ungültig. `formal_claim=false`. Ein negatives Ergebnis beendet
+den Kandidaten gültig und führt nicht zu einer automatischen Aktivierung.
+
+## Zyklus 16 — Seal vor Hardware
+
+Der lokale Commit mit diesem final geprüften Stand ist der Seal-Commit; der
+Status lautet `sealed_pending_hardware`. Die Präregistrierung
+`matmul-compile-ab-20260824-01` ist mit SHA-256
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf` eingefroren.
+Es bleiben keine Ergebnisdatei und keine Startmarke vorhanden; `formal_claim=false`.
+
+Die drei behobenen P1-Ursachen waren lazy MLX-Materialisierung außerhalb der
+Fehlerklassifikation, ein Worker-Timeout ohne Bezug zur verbleibenden Gesamt-Walltime
+und die Vermischung von beobachteter Armzeit mit akzeptierter Budgetbuchung. Die
+Vor-Hardware-Lösung klassifiziert Materialisierungsfehler korrekt, verwendet eine
+harte Deadline und speichert observed/charged/accepted getrennt. Arm- und
+Fehlerfelder bleiben dabei streng validiert.
+
+Verifiziert: fokussierte Tests 34 passed/Exit 0, vollständige Suite/Exit 0,
+compileall/Exit 0, Worker-Selfcheck 21/Exit 0, Harness-Selfcheck 18/Exit 0,
+UI-Selfcheck/Exit 0, Default ohne Ausführung/Exit 78 ohne Marker oder Ergebnisse,
+`git diff --check`/Exit 0, Xcode-Check/Exit 0. Atlas 0.4.5-rc1 mit MCP,
+M1 Max/32 GiB/AC, `Device(gpu,0)`, MLX 0.32.0 und mlx-lm 0.31.3 sind verifiziert.

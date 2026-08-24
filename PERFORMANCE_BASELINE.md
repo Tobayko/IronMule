@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 15 und begrenzter Runtime-Qualifikation,
+Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16, nach Zyklus 15 und begrenzter Runtime-Qualifikation,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -300,3 +300,21 @@ der Prefill die wahrgenommene Latenz um mehr als zwei Größenordnungen je Anfra
 - Mehrere parallele Requests bisher nicht als Baseline gemessen; `concurrent_32` in
   `EXPERIMENT_MATRIX.json` definiert nur den Workload.
 - Alle Werte gelten für **ein** Gerät, **ein** Modell, **eine** Quantisierung.
+
+## Zyklus 16 — Versiegelte Vor-Hardware-Nulllinie (noch keine Messung)
+
+Für die am 24.08.2026 freigegebene Studie
+`matmul-compile-ab-20260824-01` ist der Kandidat
+`fixed_cache_compiled_decode_v1` ist im lokalen Seal-Commit versiegelt, aber noch
+nicht gemessen. Die geplanten Arme sind
+`standard_eager`, `fixed_eager` und `fixed_compiled`. In jedem Arm bleibt die
+mathematische Matmul aktiv; nur Cache-Form und Compile-Umgebung werden verglichen.
+Es gibt deshalb keinen Matmul-Aus-Pfad und noch keinen Geschwindigkeitswert.
+
+Modell, Gewichte und Quantisierung bleiben unverändert. Greedy Token- und
+Textidentität muss exakt sein. Die alten Device-Model-Compile-Messungen sind
+wegen falscher Token ab Position 2 ungültig und werden aus der Baseline
+ausgeschlossen. `formal_claim=false`; ein negatives Ergebnis ist gültig.
+Präregistrierungs-SHA-256:
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`. Es gibt
+keine Ergebnisdatei und keine Startmarke.

@@ -1,8 +1,10 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, nach Zyklus 15. Das registrierte Zykluslimit `15` ist
-erreicht; die Freigabe für Zyklus 15 ist verbraucht. Ohne neue ausdrückliche
-Freigabe und einen neuen Studienvertrag wird kein weiterer Hardwarelauf gestartet.
+Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16. Die frühere Freigabe für
+Zyklus 15 ist verbraucht. Für genau eine neue runtime-only Studie wurde am
+24.08.2026 ausdrücklich freigegeben; ihre Präregistrierung ist im Arbeitsbaum
+im lokalen Seal-Commit eingefroren. Der Hardwarelauf bleibt bis zum nächsten
+autorisierten Schritt ausstehend.
 
 ## Abgeschlossene Priorität: LM-Head beim Prefill überspringen
 
@@ -65,6 +67,22 @@ Erfolgsschwelle übernommen.
 | Gebündelter Readback | 7 | `12,98 %` je Token | Decode |
 | Host-Readback (Obergrenze) | 6 | `15,3 %` | Decode, nicht direkt abrufbar |
 | KV-Cache-Reallokationen | 11 | `4,4263 %` korrelierter Decodeanteil | Decode, erster Schritt konfundiert |
+
+## Aktiver Zyklus 16 — runtime-only Matmul-Umgebungs-A/B
+
+Studie: `matmul-compile-ab-20260824-01`
+Kandidat: `fixed_cache_compiled_decode_v1`
+Status: sealed_pending_hardware; noch nicht gemessen
+Claim: `formal_claim=false`
+
+Präregistrierungs-SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Es gibt noch keine `results.json` und keine Startmarke.
+
+Der Test ändert keine Modellgewichte, kein Modell und keine Quantisierung. Die
+mathematische Matmul bleibt in allen Armen aktiv; verglichen werden nur
+`standard_eager`, `fixed_eager` und `fixed_compiled`. Exakte greedy Token- und
+Textidentität ist Pflicht. Alte Device-Model-Compile-Messungen werden wegen
+falscher Token ab Position 2 nicht verwendet. Ein negatives Ergebnis ist gültig.
 
 Die zwei Readback-Kandidaten betreffen nur den Decode. Der KV-Kandidat benötigt für
 einen kausalen A/B-Test einen Cache-/Framework-Eingriff und bleibt bis zur expliziten
