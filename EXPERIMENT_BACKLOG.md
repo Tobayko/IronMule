@@ -1,6 +1,6 @@
 # Kandidatenliste
 
-Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16, nach Zyklus 15 und begrenzter Runtime-Qualifikation.
+Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation, nach Zyklus 15.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
 
@@ -29,7 +29,7 @@ bereits gemessen ist.
 | 21 | KV-Cache-Reallokationen | Wachstumskopien im Decode vermeiden | erster Decodeschritt konfundiert; Cache-Neubau wäre Architekturänderung | **`candidate_recommended_for_preregistration`** (Zyklus 11) |
 | 22 | lernendes Optimization Memory mit lokalem Planner | nutzt alle positiven und negativen Messungen für den nächsten Vorschlag | Selbstbestätigung und falsche Aktivierung | **`no_planner_qualified`** (Zyklus 15); 1B und 4B jeweils `0/6` im strikten Vertrag |
 | 23 | Gemma-Matmul-A/B „mit/ohne“ | vollständigen Matmul-Optimierungspfad gegen unveränderten Pfad vergleichen | kein echter Schalter oder vollständiger A/B-Pfad vorhanden | **`open_future_preregistration`**; bisher nicht gemessen, neue Studie erforderlich |
-| 24 | Fixed-Cache/Compile-Decode-A/B | Laufzeitumgebung mit festem KV-Cache vergleichen | Tokenidentität, Cache- und Compile-Vertrag | **`sealed_pending_hardware`** (Zyklus 16; noch nicht gemessen) |
+| 24 | Fixed-Cache/Compile-Decode-A/B | Laufzeitumgebung mit festem KV-Cache vergleichen | Tokenidentität, Cache- und Compile-Vertrag | **`runtime_compile_wins_exact_scope`** (Zyklus 16; 18 Arm-Ausführungen gemessen) |
 
 ## Begründung der Reihenfolge
 
@@ -53,6 +53,23 @@ Präregistrierung im lokalen Seal-Commit auf `sealed_pending_hardware` gesetzt.
 SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
 Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
 Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.
+
+## Zyklus 16 — reales Ergebnis
+
+`fixed_cache_compiled_decode_v1` erreicht im exakt begrenzten Fall die Entscheidung
+`runtime_compile_wins_exact_scope`: sechs frische Prozesse, 18 Arm-Ausführungen
+(3 × 6), identische Token und Texte. Gemessen wurden Decode-Medianen Standard
+`0,399939187 s`,
+Fixed-Eager `0,3999597295 s`, Fixed-Compiled `0,371848789 s`; die Ratios gegen
+Standard und Fixed-Eager sind `0,9295921887` bzw. `0,9296309524` mit den
+vorregistrierten Bootstrap-KIs. Peak-RSS `3.771.564.032 B`, MLX-Peak
+`3.476.049.782 B`, Swap-Delta `0 B`.
+
+Die warme/kalt-Projektion (`0,9829777045`/`1,0154895491`) und Break-even rund
+`36,47` Schritte sind berechnet, nicht separat gemessen. Matmul blieb aktiv;
+kein Gewichts-, Modell- oder Quantisierungswechsel. Kein allgemeiner Qualitäts-,
+Selbstlern- oder Produktivclaim, keine automatische Aktivierung. Freigabe genau
+einmal verbraucht; kein zweiter Lauf.
 
 Die Vor-Hardware-Review behob drei P1-Ursachen: lazy Compile-/Fixed-Eager-Fehler
 werden bis zur Synchronisierung korrekt als Kandidatenfehler klassifiziert,

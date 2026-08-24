@@ -105,3 +105,19 @@ ausgeschlossen.
 mangel, den man beheben könnte, sondern eine Eigenschaft der Rechengenauigkeit. Ein
 Controller darf zwischen solchen Modi deshalb nur wechseln, wenn die Tokenidentität
 für die konkrete Konfiguration gemessen wurde — nicht, weil sie plausibel erscheint.
+
+## Zyklus 16 — gemessene Runtime-Organisation
+
+Die Studie `matmul-compile-ab-20260824-01` belegt einen engen Runtime-Befund:
+Der Fixed-Compiled-Arm erzielte eine gemessene Decode-Zeit von `0,371848789 s`
+gegenüber `0,399939187 s` Standard und `0,3999597295 s` Fixed-Eager. Die
+gepaarten Ratios lagen bei `0,9295921887` bzw. `0,9296309524`; Token und Text
+blieben in allen 18 Arm-Ausführungen (3 × 6) exakt gleich.
+
+Das ist keine Abschaltung von Matmul. Modell, Gewichte und Quantisierung blieben
+unverändert; der Unterschied liegt ausschließlich in fester Cacheform und
+MLX-Compile-Laufzeitorganisation. Die warme und kalte End-to-End-Zahl
+`0,9829777045` bzw. `1,0154895491` sowie der Break-even von rund 36,47 Schritten
+sind berechnet, nicht separat gemessen. Der Architektur-Befund gilt nur für den
+registrierten lokalen Fall und aktiviert keinen selbstlernenden oder produktiven
+Controller. `formal_claim=false`.

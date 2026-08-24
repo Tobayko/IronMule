@@ -287,17 +287,29 @@ Exakte greedy Token- und Textidentität ist zwingend. Die früheren
 Device-Model-Compile-Messungen sind wegen falscher Token ab Position 2 ungültig
 und dürfen nicht als Vergleichswert dienen.
 
-Die Präregistrierung ist im lokalen Seal-Commit eingefroren und noch nicht
-gemessen. `formal_claim=false`; ein negatives Ergebnis ist
-vollständig gültig. Jede weitere Studie, ein echter Matmul-Aus-Pfad oder eine
-Aktivierung benötigt eine neue ausdrückliche Freigabe.
+Die Präregistrierung ist im lokalen Seal-Commit eingefroren und die Studie ist
+gemessen. `formal_claim=false`; ein negatives Ergebnis wäre vollständig gültig.
+Jede weitere Studie, ein echter Matmul-Aus-Pfad oder eine Aktivierung benötigt
+eine neue ausdrückliche Freigabe.
 
 ## Aktueller Freigabestand Zyklus 16
 
 Die erteilte Freigabe wurde ausschließlich für die eine lokale runtime-only
 Studie `matmul-compile-ab-20260824-01` verwendet. Die Präregistrierung ist im
-lokalen Seal-Commit eingefroren (`sealed_pending_hardware`), SHA-256
+lokalen Seal-Commit eingefroren (`runtime_compile_wins_exact_scope`), SHA-256
 `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
-Hardwarelauf, Modellstart, `results.json` und Startmarke existieren noch nicht;
-`formal_claim=false`. Eine neue Studie, ein echter Matmul-Aus-Pfad oder eine
-Produktaktivierung benötigt weiterhin eine neue ausdrückliche Freigabe.
+Der einmalige Hardwarelauf ist abgeschlossen; `formal_claim=false`. Eine neue
+Studie, ein echter Matmul-Aus-Pfad oder eine Produktaktivierung benötigt
+weiterhin eine neue ausdrückliche Freigabe.
+
+## Zyklus 16 — Freigabe verbraucht
+
+Die einmalige Freigabe für `matmul-compile-ab-20260824-01` wurde im Seal-Commit
+`83ee3ea03f9fb303b8226ab8ad3189f07daec727` genau einmal verwendet. Die Studie
+endete mit `runtime_compile_wins_exact_scope`, bleibt `formal_claim=false` und
+ändert weder Matmul-Mathematik noch Modell, Gewichte oder Quantisierung. Kein
+zweiter Lauf, keine automatische Aktivierung und kein Produktivdienst sind
+freigegeben. Jede weitere Studie braucht eine neue ausdrückliche Freigabe.
+
+Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt entdeckt und behoben;
+er ist kein nachträglich umgedeutetes Messergebnis.

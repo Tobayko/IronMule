@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16, nach Zyklus 15 und begrenzter Runtime-Qualifikation,
+Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation, nach Zyklus 15,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -301,20 +301,45 @@ der Prefill die wahrgenommene Latenz um mehr als zwei Größenordnungen je Anfra
   `EXPERIMENT_MATRIX.json` definiert nur den Workload.
 - Alle Werte gelten für **ein** Gerät, **ein** Modell, **eine** Quantisierung.
 
-## Zyklus 16 — Versiegelte Vor-Hardware-Nulllinie (noch keine Messung)
+## Zyklus 16 — Versiegelte Baseline und reales Ergebnis
 
 Für die am 24.08.2026 freigegebene Studie
 `matmul-compile-ab-20260824-01` ist der Kandidat
-`fixed_cache_compiled_decode_v1` ist im lokalen Seal-Commit versiegelt, aber noch
-nicht gemessen. Die geplanten Arme sind
+`fixed_cache_compiled_decode_v1` ist im lokalen Seal-Commit versiegelt und
+gemessen. Die Arme waren
 `standard_eager`, `fixed_eager` und `fixed_compiled`. In jedem Arm bleibt die
 mathematische Matmul aktiv; nur Cache-Form und Compile-Umgebung werden verglichen.
-Es gibt deshalb keinen Matmul-Aus-Pfad und noch keinen Geschwindigkeitswert.
+Es gibt deshalb keinen Matmul-Aus-Pfad; die folgenden Werte betreffen nur die
+Runtime-Organisation.
 
 Modell, Gewichte und Quantisierung bleiben unverändert. Greedy Token- und
 Textidentität muss exakt sein. Die alten Device-Model-Compile-Messungen sind
 wegen falscher Token ab Position 2 ungültig und werden aus der Baseline
-ausgeschlossen. `formal_claim=false`; ein negatives Ergebnis ist gültig.
+ausgeschlossen. `formal_claim=false`; ein negatives Ergebnis wäre gültig.
 Präregistrierungs-SHA-256:
 `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`. Es gibt
-keine Ergebnisdatei und keine Startmarke.
+Ergebnis-Hash: `fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`;
+Marker-Hash: `8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`.
+
+## Zyklus 16 — gemessene Runtime-Baseline und Kandidat
+
+Seal `83ee3ea03f9fb303b8226ab8ad3189f07daec727`, Entscheidung
+`runtime_compile_wins_exact_scope`, `formal_claim=false`. Sechs frische Prozesse
+und 18 Arm-Ausführungen (3 × 6) erzeugten exakt gleiche Tokens und Texte.
+Gemessene Decode-Mediane:
+
+| Arm | Decode gesamt | Tokenrate | TTFT |
+|---|---:|---:|---:|
+| Standard | 0,399939187 s | 77,5131895/s | 0,638376521 s |
+| Fixed-Eager | 0,3999597295 s | 77,5078153/s | 0,638425813 s |
+| Fixed-Compiled | 0,371848789 s | 83,3672240/s | 0,6385446665 s |
+
+Gemessene gepaarte Ratios: Fixed-Compiled/Standard `0,9295921887`, KI
+`[0,9128789083; 0,9348209684]`; Fixed-Compiled/Fixed-Eager `0,9296309524`,
+KI `[0,9256302629; 0,9327708433]`. Peak-RSS `3.771.564.032 B`, MLX-Peak
+`3.476.049.782 B`, Swap-Delta `0 B`.
+
+Nur berechnet: warm `0,9829777045` (rund 1,7022 % schneller), kalt
+`1,0154895491` (rund 1,549 % langsamer), Break-even median rund 36,47
+Decode-Schritte gegenüber 31 in diesem Lauf. Matmul war stets aktiv; die Studie
+ändert nur Cacheform und MLX-Compile-Laufzeitorganisation.

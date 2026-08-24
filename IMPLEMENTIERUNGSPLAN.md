@@ -1,6 +1,6 @@
 # Implementierungsplan
 
-## Auditierter Planstand — 24.08.2026, Zyklus 16 vor Hardware
+## Auditierter Planstand — 24.08.2026, Zyklus 16 nach Hardwaremessung
 
 Die frühere Abfolge wurde durch den Evidenzaudit enger gefasst. Historische
 Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
@@ -448,3 +448,58 @@ compileall/Exit 0, Worker-Selfcheck 21/Exit 0, Harness-Selfcheck 18/Exit 0,
 UI-Selfcheck/Exit 0, Default ohne Ausführung/Exit 78 ohne Marker oder Ergebnisse,
 `git diff --check`/Exit 0, Xcode-Check/Exit 0. Atlas 0.4.5-rc1 mit MCP,
 M1 Max/32 GiB/AC, `Device(gpu,0)`, MLX 0.32.0 und mlx-lm 0.31.3 sind verifiziert.
+
+## Zyklus 16 — Ergebnis, Scope und Abschluss
+
+Seal-Commit: `83ee3ea03f9fb303b8226ab8ad3189f07daec727`; Studie:
+`matmul-compile-ab-20260824-01`; Entscheidung:
+`runtime_compile_wins_exact_scope`; `formal_claim=false`. Evidence-Commit
+`cc6d2ea012a0cd6a858acc9a66d4754e95c421b7`, Result
+`fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`, Verification
+`09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038`, Marker
+`8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`, Präregistrierung
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Die Freigabe ist genau einmal verbraucht.
+
+Gemessen: sechs Prozesse, 18 Arm-Ausführungen (3 × 6), exakt gleiche Tokens und
+Texte. Decode-Median/
+TTFT: Standard `0,399939187 s`/`0,638376521 s`, Fixed-Eager
+`0,3999597295 s`/`0,638425813 s`, Fixed-Compiled `0,371848789 s`/
+`0,6385446665 s`. Die gemessenen Decode-Ratios sind `0,9295921887`
+(`[0,9128789083; 0,9348209684]`) gegen Standard und `0,9296309524`
+(`[0,9256302629; 0,9327708433]`) gegen Fixed-Eager.
+
+Berechnet: warm `0,9829777045`, kalt `1,0154895491`, Break-even median rund
+`36,47` Decode-Schritte bei 31 gemessenen Schritten. Matmul blieb aktiv;
+Modell, Gewichte und Quantisierung blieben unverändert. Die Aussage gilt nur
+für diesen lokalen Runtime-Fall und aktiviert keinen Produktivpfad.
+
+## Zyklus 16 — Post-Hardware-Verifikation
+
+Nach dem einmaligen Lauf wurde die Evidenz unabhängig geprüft; ein weiterer
+Hardware- oder Modelllauf fand nicht statt. Die vollständige Suite bestand mit
+`787 Tests in 71 Dateien`, Exit 0. Der fokussierte Test
+`test_matmul_compile_ab` bestand mit `43 passed, 60 subtests`, Exit 0. Compileall,
+Worker-Selfcheck 21, Harness-Selfcheck 18, Dashboard-Selfcheck 0,
+`xcodebuild -checkFirstLaunchStatus`, `jq` und `git diff --check` endeten mit
+Exit 0. Der Standardaufruf lieferte erwartungsgemäß Exit 78 ohne Mutation;
+Der Harness-`--show`-Aufruf lief einmal mit Exit 0, stderr blieb leer und er
+lieferte genau eine gültige JSON-Zeile.
+
+Die read-only UI antwortete auf GET/HEAD mit `200`, auf Schreibmethoden mit
+`405` und auf einen fremden Host mit `421`; `no-store` war gesetzt und kein
+unbereinigter Modelltext wurde gerendert. Cycle-16- und Cycle-15-Evidence sowie
+12 SQLite-Datenbanken waren vor und nach dem Test identisch; die private
+Startmarke blieb `0600`, und alle geprüften Hashes blieben unverändert.
+
+ProjectAtlas wurde genau einmal inkrementell per `watch_once` aktualisiert:
+ein Zyklus, 967 indexierte Textkandidaten, 11 geparste und 732 unveränderte
+Symbole. Runtime `0.4.5-rc1` und die projektlokale MCP-Konfiguration waren gültig.
+Getrackte ProjectAtlas-Dateien wurden nicht verändert; ein bereits vorhandenes
+verschachteltes `.gradle`-Untracked blieb unberührt.
+
+Ursache des Lifecycle-Selfcheck-Fehlers war die falsche Annahme, Evidence müsse
+fehlen. Die Korrektur prüft fehlende und vorhandene Evidence read-only, verlangt
+reguläre Dateien ohne Symlink, Marker-Modus `0600` sowie unveränderte Hashes und
+Dateimodi. Der Arbeitsbaum-Harness weicht deshalb vom versiegelten Code ab; die
+Evidence erhält die Code-Fingerprints des Seal-Stands. `formal_claim=false`.

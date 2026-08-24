@@ -1,10 +1,10 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, Vor-Hardware-Status Zyklus 16. Die frühere Freigabe für
+Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation. Die frühere Freigabe für
 Zyklus 15 ist verbraucht. Für genau eine neue runtime-only Studie wurde am
 24.08.2026 ausdrücklich freigegeben; ihre Präregistrierung ist im Arbeitsbaum
-im lokalen Seal-Commit eingefroren. Der Hardwarelauf bleibt bis zum nächsten
-autorisierten Schritt ausstehend.
+im lokalen Seal-Commit eingefroren. Die Freigabe ist verbraucht; ein weiterer
+Lauf benötigt eine neue ausdrückliche Freigabe.
 
 ## Abgeschlossene Priorität: LM-Head beim Prefill überspringen
 
@@ -72,11 +72,12 @@ Erfolgsschwelle übernommen.
 
 Studie: `matmul-compile-ab-20260824-01`
 Kandidat: `fixed_cache_compiled_decode_v1`
-Status: sealed_pending_hardware; noch nicht gemessen
+Status: `runtime_compile_wins_exact_scope`; 18 Arm-Ausführungen gemessen (3 × 6)
 Claim: `formal_claim=false`
 
 Präregistrierungs-SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
-Es gibt noch keine `results.json` und keine Startmarke.
+Ergebnis-Hash: `fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`;
+Marker-Hash: `8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`.
 
 Der Test ändert keine Modellgewichte, kein Modell und keine Quantisierung. Die
 mathematische Matmul bleibt in allen Armen aktiv; verglichen werden nur
@@ -114,3 +115,19 @@ und mehrere parallele Requests fehlen weiterhin als Baselines.
 | Custom Metal | kein Profilerbeleg für einen Kernelengpass |
 | KV-Cache fester Form | Framework-Eingriff |
 | vLLM, llama.cpp, Energie, dichtes 7–9B | `permission_required` |
+
+## Zyklus 16 — abgeschlossen im engen Runtime-Scope
+
+Die Studie `matmul-compile-ab-20260824-01` ist mit Seal-Commit
+`83ee3ea03f9fb303b8226ab8ad3189f07daec727` abgeschlossen:
+`runtime_compile_wins_exact_scope`, `formal_claim=false`. In 18 Arm-Ausführungen
+(3 × 6) waren
+Token und Text exakt identisch. Die gemessenen Decode-Medianen waren Standard
+`0,399939187 s`, Fixed-Eager `0,3999597295 s` und Fixed-Compiled
+`0,371848789 s`; warm/kalt insgesamt sind nur berechnete Projektionen
+`0,9829777045`/`1,0154895491`. Break-even: berechnet rund 36,47 Schritte bei
+31 ausgeführten Schritten.
+
+Matmul blieb in allen Armen aktiv; Modell, Gewichte und Quantisierung wurden
+nicht verändert. Die Freigabe ist genau einmal verbraucht. Kein allgemeiner
+Qualitäts-, Selbstlern- oder Produktivclaim und keine automatische Aktivierung.
