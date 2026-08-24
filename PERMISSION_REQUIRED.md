@@ -313,3 +313,22 @@ freigegeben. Jede weitere Studie braucht eine neue ausdrückliche Freigabe.
 
 Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt entdeckt und behoben;
 er ist kein nachträglich umgedeutetes Messergebnis.
+
+## 11. Zyklus 17 — Nutzerreservierung, Freigabe noch nicht verbraucht
+
+„Dann machen wir das mal“ reserviert genau einen Lauf für
+`fixed-compiled-batched-readback-20260824-01` /
+`fixed_compiled_batched_readback_n8_v1`; Status `draft_pending_preflight`.
+Die Freigabe ist reserviert, aber noch nicht verbraucht. Scope: Readback `1`
+versus `8` auf identischem Fixed-Compiled-Gemma-4B mit sechs gepaarten frischen
+Prozessen und zwölf geplanten Arm-Ausführungen. Modell, Gewichte, Quantisierung
+und Matmul bleiben unverändert. EOS-Tail wird vollständig getaktet und
+getrimmt; exakte logische Token-/Textidentität ist terminal. Noch kein Marker,
+Resultat oder Modelllauf; `formal_claim=false`, keine Aktivierung, kein Dienst,
+kein Multi-Turn- und kein Qualitätsclaim.
+
+## Zyklus 17 — sealed_pre_hardware
+
+Die reservierte Freigabe ist noch nicht verbraucht. `measured=false`,
+`formal_claim=false`, `authorization=reserved_not_consumed`; kein Modell,
+keine Hardware, kein Marker, kein Resultat, kein Dienst und keine Aktivierung.

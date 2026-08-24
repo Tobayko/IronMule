@@ -503,3 +503,23 @@ fehlen. Die Korrektur prüft fehlende und vorhandene Evidence read-only, verlang
 reguläre Dateien ohne Symlink, Marker-Modus `0600` sowie unveränderte Hashes und
 Dateimodi. Der Arbeitsbaum-Harness weicht deshalb vom versiegelten Code ab; die
 Evidence erhält die Code-Fingerprints des Seal-Stands. `formal_claim=false`.
+
+## Zyklus 17 — Draft vor Preflight
+
+`fixed-compiled-batched-readback-20260824-01` /
+`fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
+„Dann machen wir das mal“ reserviert genau einen neuen Lauf; die Freigabe ist
+noch nicht verbraucht. Readback `1` versus `8` ist die einzige Variable auf
+identischem Fixed-Compiled-4B-Pfad. Sechs gepaarte frische Prozesse und zwölf
+Arm-Ausführungen sind geplant; Modell, Gewichte, Quantisierung und Matmul bleiben
+invariant. EOS-Tail wird vollständig getaktet und getrimmt, exakte logische
+Token/Textidentität ist terminal. Noch kein Marker, Resultat oder Modelllauf;
+`formal_claim=false`, keine Aktivierung, kein Dienst, kein Multi-Turn- oder
+Qualitätsclaim.
+
+## Zyklus 17 — sealed_pre_hardware
+
+Offline-Preflight abgeschlossen: `measured=false`, `formal_claim=false`,
+`authorization=reserved_not_consumed`; kein Modell-/MLX-/Hardwarelauf, Marker
+oder Resultat. Readback 1 versus 8 bleibt die einzige Variable im identischen
+Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind geplant.

@@ -121,3 +121,23 @@ MLX-Compile-Laufzeitorganisation. Die warme und kalte End-to-End-Zahl
 sind berechnet, nicht separat gemessen. Der Architektur-Befund gilt nur für den
 registrierten lokalen Fall und aktiviert keinen selbstlernenden oder produktiven
 Controller. `formal_claim=false`.
+
+## Zyklus 17 — geplanter Readback-Grenztest
+
+Der Draft `fixed_compiled_batched_readback_n8_v1` untersucht ausschließlich
+Readback `1` versus `8` im qualifizierten Fixed-Compiled-Gemma-4B-Pfad. Sechs
+gepaarte frische Prozesse und zwölf Arm-Ausführungen sind geplant. Modell,
+Gewichte, Quantisierung und mathematische Matmul bleiben unverändert. Der
+physische EOS-Tail wird vollständig getaktet und getrimmt; logische Token und
+sichtbarer Text müssen exakt gleich bleiben. Status
+`draft_pending_preflight`; Nutzerfreigabe reserviert, noch nicht verbraucht;
+kein Marker, Resultat, Modelllauf, Dienst oder Autoaktivierung. `formal_claim=false`;
+Cycle 7 `12,98 %` bleibt explorative Historie.
+
+## Zyklus 17 — sealed_pre_hardware
+
+`measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
+Readback 1 versus 8 ist die einzige Variable; Fixed-Compiled-4B, Modell,
+Gewichte, Quantisierung und Matmul bleiben invariant. Kein Modell-/GPU- oder
+Hardwarelauf, Dienst oder Autoaktivierung; sechs frische Paare und zwölf Arme
+sind geplant.

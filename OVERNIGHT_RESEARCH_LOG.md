@@ -1268,3 +1268,26 @@ verbraucht, kein zweiter Lauf und keine automatische Aktivierung.
 Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt behoben. Die
 read-only UI lieferte GET/HEAD 200, Schreibmethoden 405 und fremden Host 421;
 die geprüften Hashes blieben unverändert.
+
+## Zyklus 17 — 24.08.2026: Pre-Hardware-Draft reserviert
+
+Mit der Nutzerantwort „Dann machen wir das mal“ wurde genau ein neuer Lauf
+reserviert, noch nicht ausgeführt: `fixed-compiled-batched-readback-20260824-01`
+(`fixed_compiled_batched_readback_n8_v1`), Status `draft_pending_preflight`.
+Geplant sind sechs gepaarte frische Prozesse und zwölf Arm-Ausführungen; einzig
+Readback `1` versus `8` ändert sich auf identischem Fixed-Compiled-4B-Pfad.
+Modell, Gewichte, Quantisierung und Matmul bleiben unverändert. EOS-Tail wird
+vollständig getaktet und getrimmt; exakte logische Token und sichtbarer Text
+sind terminales Gate. Noch kein Marker, Resultat oder Modelllauf. Cycle 7
+`12,98 %` bleibt explorativ; `formal_claim=false`, keine Aktivierung, kein
+Dienst, kein Multi-Turn- und kein Qualitätsclaim. Die Freigabe ist reserviert,
+aber noch nicht verbraucht.
+
+## Zyklus 17 — sealed_pre_hardware
+
+Der Offline-Preflight ist abgeschlossen: `measured=false`, `formal_claim=false`,
+`authorization=reserved_not_consumed`. Kein Modell-/MLX-/GPU-/Hardwarelauf,
+kein Marker, kein Resultat, kein Dienst und keine Autoaktivierung. Readback 1
+versus 8 bleibt die einzige Variable im identischen Fixed-Compiled-4B-Pfad;
+sechs gepaarte frische Prozesse und zwölf Arme sind geplant. Die Offline-
+Selfchecks sowie 30/30 und 817/817 Tests bestanden.

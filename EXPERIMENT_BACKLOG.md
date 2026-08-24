@@ -54,6 +54,24 @@ SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
 Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
 Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.
 
+## Zyklus 17 — sealed_pre_hardware
+
+Offline versiegelt: `measured=false`, `formal_claim=false`,
+`authorization=reserved_not_consumed`. Kein Modell-/Hardwarelauf, Marker oder
+Resultat. Readback 1 versus 8 bleibt die einzige Variable im identischen
+Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind geplant.
+
+## Zyklus 17 — reservierter Pre-Hardware-Draft
+
+`fixed-compiled-batched-readback-20260824-01` /
+`fixed_compiled_batched_readback_n8_v1` ist `draft_pending_preflight`.
+Die Antwort „Dann machen wir das mal“ reserviert genau einen Lauf; die Freigabe
+ist noch nicht verbraucht. Nur Readback `1` versus `8` wird auf demselben
+Fixed-Compiled-4B-Pfad variiert: sechs gepaarte frische Prozesse, zwölf geplante
+Arm-Ausführungen. EOS-Tail wird vollständig gemessen und verworfen, exakte
+logische Token-/Textidentität bleibt terminales Gate. Cycle 7 `12,98 %` bleibt
+explorativ. Noch kein Marker, Ergebnis oder Modelllauf; `formal_claim=false`.
+
 ## Zyklus 16 — reales Ergebnis
 
 `fixed_cache_compiled_decode_v1` erreicht im exakt begrenzten Fall die Entscheidung

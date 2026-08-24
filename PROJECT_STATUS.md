@@ -1440,3 +1440,35 @@ vergleicht Hashes sowie Modi vor und nach der Prüfung. Der Arbeitsbaum-Harness
 unterscheidet sich dadurch vom versiegelten Code; die Evidence bewahrt jedoch die
 Code-Fingerprints des Seal-Stands. `formal_claim=false`; die Freigabe ist
 verbraucht und es wurde nichts automatisch aktiviert.
+
+## Zyklus 17 — Pre-Hardware-Draft
+
+Studie `fixed-compiled-batched-readback-20260824-01`, Kandidat
+`fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
+Die Nutzerantwort „Dann machen wir das mal“ reserviert genau einen neuen Lauf;
+die Freigabe ist reserviert, aber noch nicht verbraucht. Noch kein Marker,
+Ergebnis oder Modelllauf.
+
+Einzige Variable ist Readback `1` versus `8` auf identischem Fixed-Compiled-4B-
+Pfad; Modell, Gewichte, Quantisierung und Matmul bleiben unverändert. Geplant
+sind sechs gepaarte frische Prozesse (zwölf Arm-Ausführungen). EOS-Tail wird
+vollständig zeitlich erfasst und getrimmt; exakte logische Token und sichtbarer
+Text sind terminales Gate. `formal_claim=false`; keine Aktivierung, kein Dienst,
+kein Multi-Turn- und kein Qualitätsclaim. Cycle 7 `12,98 %` bleibt explorativ.
+
+## Zyklus 17 — sealed_pre_hardware (25.08.2026)
+
+Offline-Preflight abgeschlossen: `measured=false`, `formal_claim=false`,
+`authorization=reserved_not_consumed`; kein Modell-/MLX-/GPU-/Hardwarelauf,
+kein Marker, kein Resultat, kein Dienst und keine Autoaktivierung. Readback 1
+versus 8 bleibt die einzige Variable auf identischem Fixed-Compiled-4B-Pfad;
+sechs gepaarte frische Prozesse und zwölf Arm-Ausführungen sind geplant.
+Prereg `74f63c36ddd141c4b4666d9f15d7b17d3ac9294e2d63cb29f6d9e35a80db21b1`,
+Worker `fecf712b44e6d1a8c46565dda59569fa11cdc762fc49917307874435e4a2efde`,
+Harness `9c0689be97a1ee5022f7c4b4623af9bd4a9906411291d9c4295b4c16184c7ff0`,
+Protocol `a58b...`, Dashboard `ccbaf05368f21acfa2c627a33f3ee9c5629d335d45f76abb5a74d1399fbeaaee`.
+Selfchecks, 30/30, 817/817 (~195 s), Compileall, 89 JSON, Xcode und Diff
+bestanden; ProjectAtlas Runtime `0.4.5-rc1` gut, Session-Brief
+`refresh_required` wegen `dependency_closure_limit`. Swap 19359465472 Bytes,
+Preflight-Delta 0; Snapshot/Gewicht/Generation-Config- und Hardware-Gates
+bestanden. Die Nutzerfreigabe bleibt reserviert und ungenutzt.
