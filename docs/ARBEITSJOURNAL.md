@@ -5173,3 +5173,29 @@ bestätigte Python `3.12.13`, `arm64`, MLX `0.32.0`, mlx-lm `0.31.3`,
 Startmarken- und Präregistrierungs-SHA blieben unverändert. Der read-only
 Matrixabgleich bestätigte Entscheidung, Verhältnis, Effekt, RSS, Swap und Zyklus
 `13` exakt gegen die Ergebnisdatei.
+
+## 2026-08-24 — Zyklus 14, 4B-Planertest: Softwarefehler vor Hardware
+
+Beim ersten rein lokalen Testlauf überschrieb die Hilfsfunktion `run` in der neuen
+Testklasse unbeabsichtigt die gleichnamige Laufmethode von `unittest.TestCase`.
+Dadurch wurden sieben Tests nicht ausgeführt und meldeten einen unerwarteten
+Parameter `result`; es wurde weder MLX noch das Modell gestartet. Die Ursache war
+allein die Namenskollision. Die Hilfsfunktion heißt nun eindeutig `sample_run`.
+Diese Lösung wird vor jedem Hardwarelauf durch die fokussierte und vollständige
+Testsuite geprüft. Die versiegelte Vorregistrierung wurde dabei nicht geändert.
+
+Der erste reine Geräte-Anzeigetest fragte danach irrtümlich `mlx.__version__` ab;
+dieses Feld stellt das installierte Paket nicht bereit. Der Befehl endete nach den
+bereits erfolgreichen Netzteil- und Xcode-Prüfungen mit `AttributeError`, ohne
+Modellarbeit. Die dauerhafte Lösung verwendet
+`importlib.metadata.version("mlx")`. Der korrigierte Check bestätigte Apple M1
+Max, `32 GiB`, `arm64`, MLX `0.32.0`, mlx-lm `0.31.3` und die MLX-GPU. Genau diese
+Geräte- und Versionswerte werden nun bereits vor der einmaligen Startmarke geprüft.
+
+`git diff --cached --check` meldete vor dem Vor-Hardware-Commit genau drei
+`trailing whitespace`-Zeilen in der versiegelten Vorregistrierung. Dabei handelt
+es sich um die schon vor der Versiegelung gesetzten doppelten Leerzeichen für
+Markdown-Zeilenumbrüche in den drei Kopfzeilen, nicht um einen Codefehler. Die
+Vorregistrierung wird deshalb bytegleich belassen; `diff --check` wird für alle
+übrigen neuen Dateien separat ohne Befund ausgeführt und die drei bekannten
+Meldungen werden zusätzlich exakt abgeglichen.
