@@ -504,7 +504,7 @@ reguläre Dateien ohne Symlink, Marker-Modus `0600` sowie unveränderte Hashes u
 Dateimodi. Der Arbeitsbaum-Harness weicht deshalb vom versiegelten Code ab; die
 Evidence erhält die Code-Fingerprints des Seal-Stands. `formal_claim=false`.
 
-## Zyklus 17 — Draft vor Preflight
+## Zyklus 17 — historischer Draft vor Preflight
 
 `fixed-compiled-batched-readback-20260824-01` /
 `fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
@@ -517,9 +517,16 @@ Token/Textidentität ist terminal. Noch kein Marker, Resultat oder Modelllauf;
 `formal_claim=false`, keine Aktivierung, kein Dienst, kein Multi-Turn- oder
 Qualitätsclaim.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 Offline-Preflight abgeschlossen: `measured=false`, `formal_claim=false`,
 `authorization=reserved_not_consumed`; kein Modell-/MLX-/Hardwarelauf, Marker
 oder Resultat. Readback 1 versus 8 bleibt die einzige Variable im identischen
 Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind geplant.
+
+## Zyklus 17 — Ergebnis
+
+`measured=true`, `consumed_exactly_once`, `no_clear_speedup_baseline_retained`,
+`formal_claim=false`. Readback 8 war in allen 6 Paaren schneller, verfehlte
+aber mit Ratio-Median `0,9581074518` die feste 5-%-Schwelle; 4,1893 % ist
+berechnet. Baseline retained, ohne Qualitäts- oder Aktivierungsclaim.

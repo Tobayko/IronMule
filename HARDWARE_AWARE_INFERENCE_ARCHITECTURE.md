@@ -122,22 +122,29 @@ sind berechnet, nicht separat gemessen. Der Architektur-Befund gilt nur für den
 registrierten lokalen Fall und aktiviert keinen selbstlernenden oder produktiven
 Controller. `formal_claim=false`.
 
-## Zyklus 17 — geplanter Readback-Grenztest
+## Zyklus 17 — historischer geplanter Readback-Grenztest
 
 Der Draft `fixed_compiled_batched_readback_n8_v1` untersucht ausschließlich
 Readback `1` versus `8` im qualifizierten Fixed-Compiled-Gemma-4B-Pfad. Sechs
-gepaarte frische Prozesse und zwölf Arm-Ausführungen sind geplant. Modell,
+gepaarte frische Prozesse und zwölf Arm-Ausführungen waren geplant. Modell,
 Gewichte, Quantisierung und mathematische Matmul bleiben unverändert. Der
 physische EOS-Tail wird vollständig getaktet und getrimmt; logische Token und
 sichtbarer Text müssen exakt gleich bleiben. Status
-`draft_pending_preflight`; Nutzerfreigabe reserviert, noch nicht verbraucht;
-kein Marker, Resultat, Modelllauf, Dienst oder Autoaktivierung. `formal_claim=false`;
-Cycle 7 `12,98 %` bleibt explorative Historie.
+Der Lauf ist inzwischen abgeschlossen mit `no_clear_speedup_baseline_retained`;
+`formal_claim=false`. Cycle 7 `12,98 %` bleibt explorative Historie.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 `measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
 Readback 1 versus 8 ist die einzige Variable; Fixed-Compiled-4B, Modell,
 Gewichte, Quantisierung und Matmul bleiben invariant. Kein Modell-/GPU- oder
 Hardwarelauf, Dienst oder Autoaktivierung; sechs frische Paare und zwölf Arme
 sind geplant.
+
+## Zyklus 17 — gemessen, Baseline retained
+
+`measured=true`, `no_clear_speedup_baseline_retained`, `formal_claim=false`,
+Freigabe exakt einmal verbraucht. Readback 8 war in allen Paaren schneller,
+aber `0,9581074518` verfehlte die feste 5-%-Schwelle. TTFT des 8er-Arms ist
+wegen der Boundary später; Modell, Gewichte, Quantisierung und Matmul blieben
+unverändert. Keine Aktivierung oder Qualitätsaussage.

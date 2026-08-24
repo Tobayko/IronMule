@@ -1,6 +1,6 @@
 # Projektstatus
 
-**Stand:** 24. August 2026, Zyklus 16 nach realer Hardwaremessung
+**Stand:** 25. August 2026, Zyklus 17 nach realer Hardwaremessung
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 ## Auditierter aktueller Stand
@@ -1441,7 +1441,7 @@ unterscheidet sich dadurch vom versiegelten Code; die Evidence bewahrt jedoch di
 Code-Fingerprints des Seal-Stands. `formal_claim=false`; die Freigabe ist
 verbraucht und es wurde nichts automatisch aktiviert.
 
-## Zyklus 17 — Pre-Hardware-Draft
+## Zyklus 17 — historischer Pre-Hardware-Draft
 
 Studie `fixed-compiled-batched-readback-20260824-01`, Kandidat
 `fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
@@ -1456,7 +1456,7 @@ vollständig zeitlich erfasst und getrimmt; exakte logische Token und sichtbarer
 Text sind terminales Gate. `formal_claim=false`; keine Aktivierung, kein Dienst,
 kein Multi-Turn- und kein Qualitätsclaim. Cycle 7 `12,98 %` bleibt explorativ.
 
-## Zyklus 17 — sealed_pre_hardware (25.08.2026)
+## Zyklus 17 — historischer sealed_pre_hardware-Stand (25.08.2026)
 
 Offline-Preflight abgeschlossen: `measured=false`, `formal_claim=false`,
 `authorization=reserved_not_consumed`; kein Modell-/MLX-/GPU-/Hardwarelauf,
@@ -1466,9 +1466,22 @@ sechs gepaarte frische Prozesse und zwölf Arm-Ausführungen sind geplant.
 Prereg `74f63c36ddd141c4b4666d9f15d7b17d3ac9294e2d63cb29f6d9e35a80db21b1`,
 Worker `fecf712b44e6d1a8c46565dda59569fa11cdc762fc49917307874435e4a2efde`,
 Harness `9c0689be97a1ee5022f7c4b4623af9bd4a9906411291d9c4295b4c16184c7ff0`,
-Protocol `a58b...`, Dashboard `ccbaf05368f21acfa2c627a33f3ee9c5629d335d45f76abb5a74d1399fbeaaee`.
+Protocol `a58b6298a22e676b9213cc0e4b8fc22ecdc7e0adb25eb07a58f663d268164c30`, Dashboard `ccbaf05368f21acfa2c627a33f3ee9c5629d335d45f76abb5a74d1399fbeaaee`.
 Selfchecks, 30/30, 817/817 (~195 s), Compileall, 89 JSON, Xcode und Diff
 bestanden; ProjectAtlas Runtime `0.4.5-rc1` gut, Session-Brief
 `refresh_required` wegen `dependency_closure_limit`. Swap 19359465472 Bytes,
 Preflight-Delta 0; Snapshot/Gewicht/Generation-Config- und Hardware-Gates
 bestanden. Die Nutzerfreigabe bleibt reserviert und ungenutzt.
+
+## Zyklus 17 — Ergebnis
+
+`measured=true`, Freigabe `consumed_exactly_once`, Entscheidung
+`no_clear_speedup_baseline_retained`, `formal_claim=false`. Alle 6 Paare/12
+Arme waren korrekt; Readback 8 war in jedem Paar schneller, aber Ratio-Median
+`0,9581074518`, KI `[0,9534714914;0,9598849359]` verfehlte die feste 5-%-
+Schwelle. Der 4,1893-%-Effekt ist berechnet; Baseline retained. Keine Modell-,
+Gewichts-, Quantisierungs- oder Matmuländerung, keine Qualitäts- oder
+Aktivierungsaussage. Evidence-Audit `evidence_valid=true`.
+Result-SHA `d2eb29fe31dcf47fe294d2b0bec2d724fe6cc6e6f6d88d2035783613338fbddd`,
+Verification-SHA `be91320e44507573601b81b90016ff0b9c8bee9458465cebff5ae438e6bf9214`,
+Marker-SHA `18801fdfca677eb1b0d6a82ac95954990ac05476876447ca1170a42e754710dc`.

@@ -1,6 +1,6 @@
 # Kandidatenliste
 
-Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation, nach Zyklus 15.
+Stand: 25. August 2026, Zyklus 17 nach realer Runtime-Qualifikation, nach Zyklus 16.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
 
@@ -23,7 +23,7 @@ bereits gemessen ist.
 | 15 | vLLM-Metal-Vergleich | Paged KV, Prefix-Cache | – | `permission_required` |
 | 16 | llama.cpp-Vergleich | zweite Referenz | andere Quantisierung | `permission_required` |
 | 17 | Host-Readback aufschieben | vollständigen Token-Readback aus dem kritischen Pfad nehmen | kann ohne Readback nicht stoppen | **`candidate_recommended_for_preregistration`**, nur Obergrenze (Zyklus 6) |
-| 18 | gebündelter Readback | Stop-Token nur alle `N` Schritte zum Host lesen | Überlauf bis `N-1` Token | **`candidate_recommended_for_preregistration`** (Zyklus 7) |
+| 18 | gebündelter Readback | Stop-Token nur alle `N` Schritte zum Host lesen | Überlauf bis `N-1` Token | **`no_clear_speedup_baseline_retained`** (Cycle 17; 4,1893 % berechnet, feste <5-%-Schwelle verfehlt) |
 | 19 | LM-Head beim Prefill überspringen | nur die tatsächlich gelesene letzte Promptposition projizieren | unzulässig bei Prompt-Logprobs | **`engineering_go_exact_scope`** nach formalem Gewinn (`−15,3615 %`) und Runtime-Gate (`−15,4164 %`) |
 | 20 | `logsumexp` bei greedy überspringen | argmax-invariante Normalisierung entfernen | isolierte Kosten sind nicht Grenzkosten | `candidate_characterized`, kein Gewinn (Zyklus 10) |
 | 21 | KV-Cache-Reallokationen | Wachstumskopien im Decode vermeiden | erster Decodeschritt konfundiert; Cache-Neubau wäre Architekturänderung | **`candidate_recommended_for_preregistration`** (Zyklus 11) |
@@ -54,14 +54,21 @@ SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
 Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
 Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — Ergebnis
+
+`measured=true`, Freigabe `consumed_exactly_once`, Entscheidung
+`no_clear_speedup_baseline_retained`, `formal_claim=false`. Readback 8 war in
+allen Paaren schneller, aber `0,9581074518` verfehlte die feste 5-%-Schwelle;
+der 4,1893-%-Effekt ist berechnet. Der negative Befund ist gültig.
+
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 Offline versiegelt: `measured=false`, `formal_claim=false`,
 `authorization=reserved_not_consumed`. Kein Modell-/Hardwarelauf, Marker oder
 Resultat. Readback 1 versus 8 bleibt die einzige Variable im identischen
 Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind geplant.
 
-## Zyklus 17 — reservierter Pre-Hardware-Draft
+## Zyklus 17 — historischer reservierter Pre-Hardware-Draft
 
 `fixed-compiled-batched-readback-20260824-01` /
 `fixed_compiled_batched_readback_n8_v1` ist `draft_pending_preflight`.
@@ -114,11 +121,11 @@ unveränderte Entscheidung ist `no_planner_qualified`; kein Kandidat wird
 gestartet und nichts aktiviert. Cycle 14 bleibt separat und unverändert
 `planner_contract_failed`.
 
-Unter den noch unbestätigten empfohlenen Leistungskandidaten bleiben die beiden
-Readback-Studien; sie treffen nur den Decode. Zyklus 11 lokalisiert außerdem
+Die Readback-Studien sind mit Cycle 17 abgeschlossen und treffen nur den Decode.
+Zyklus 11 lokalisiert außerdem
 `4,4263 %` korrelierte Decode-Grenzkosten, isoliert wegen der Überlagerung mit dem
 ersten Decodeschritt aber noch keinen kausalen Gewinn. Das registrierte Zykluslimit
-ist nun `15`; die Freigabe für Zyklus 15 ist verbraucht. Jede weitere
+ist nun `17`; die Freigabe für Zyklus 17 ist exakt einmal verbraucht. Jede weitere
 Hardwarestudie verlangt einen neuen expliziten Studien-/Zyklusvertrag und eine
 neue ausdrückliche Freigabe.
 

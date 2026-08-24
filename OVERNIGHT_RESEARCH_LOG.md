@@ -1269,7 +1269,7 @@ Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt behoben. Die
 read-only UI lieferte GET/HEAD 200, Schreibmethoden 405 und fremden Host 421;
 die geprüften Hashes blieben unverändert.
 
-## Zyklus 17 — 24.08.2026: Pre-Hardware-Draft reserviert
+## Zyklus 17 — historischer 24.08.2026: Pre-Hardware-Draft reserviert
 
 Mit der Nutzerantwort „Dann machen wir das mal“ wurde genau ein neuer Lauf
 reserviert, noch nicht ausgeführt: `fixed-compiled-batched-readback-20260824-01`
@@ -1283,7 +1283,7 @@ sind terminales Gate. Noch kein Marker, Resultat oder Modelllauf. Cycle 7
 Dienst, kein Multi-Turn- und kein Qualitätsclaim. Die Freigabe ist reserviert,
 aber noch nicht verbraucht.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 Der Offline-Preflight ist abgeschlossen: `measured=false`, `formal_claim=false`,
 `authorization=reserved_not_consumed`. Kein Modell-/MLX-/GPU-/Hardwarelauf,
@@ -1291,3 +1291,13 @@ kein Marker, kein Resultat, kein Dienst und keine Autoaktivierung. Readback 1
 versus 8 bleibt die einzige Variable im identischen Fixed-Compiled-4B-Pfad;
 sechs gepaarte frische Prozesse und zwölf Arme sind geplant. Die Offline-
 Selfchecks sowie 30/30 und 817/817 Tests bestanden.
+
+## Zyklus 17 — Ergebnis
+
+Der Lauf ist `measured=true` und endete mit
+`no_clear_speedup_baseline_retained`; die Freigabe wurde
+`consumed_exactly_once`, `formal_claim=false`. Readback 8 war in jedem Paar
+schneller, aber Ratio-Median `0,9581074518` verfehlte die feste 5-%-Schwelle;
+der 4,1893-%-Effekt ist berechnet. Kein Qualitäts-, Modell-, Gewichts-,
+Quantisierungs-, Matmul- oder Aktivierungsclaim. Evidence-Audit
+`evidence_valid=true`; der negative Befund ist gültig.
