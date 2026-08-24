@@ -5466,3 +5466,28 @@ Nach dem gesamten Preflight waren Resultat und private Startmarke weiterhin
 abwesend. Ignorierte `__pycache__`-Verzeichnisse sind vorhanden; sie sind kein
 Studienartefakt und werden nicht Bestandteil des Commits. Es gab keine
 Hardwarearbeit, keine GPU-Rechnung, keinen Modellload und keinen Commit.
+
+### 2026-08-24 — Zyklus 15: semantikneutraler Formatfix vor Hardware
+
+Ein staged Diff-Check endete nach dem Preflight mit Exit `2`, weil die
+Präregistrierung genau drei Trailing-Spaces enthielt. Noch vor jeder Hardware-
+oder Modellausführung wurden ausschließlich diese drei Formatzeichen entfernt.
+Inhalt, Modelle, Revisionen, Prompt, Schedule, Grenzwerte, Gates,
+Entscheidungstabelle und `formal_claim=false` blieben unverändert; es gab keine
+Vertragsänderung.
+
+Die dadurch aktuellen vollständigen SHA-256-Werte sind:
+
+- Präregistrierung:
+  `246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`;
+- Harness:
+  `59691f50a1f33d4930b36ccce24ec701af74ebd0f9f095912a75e15a28978470`.
+
+Worker
+`b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`
+und read-only UI
+`5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`
+blieben bytegleich. Die älteren Hashangaben bleiben als append-only Zwischenstand
+erhalten und sind durch diesen Nachtrag ausdrücklich ersetzt. Es wurden keine
+Tests, keine Hardware, keine GPU-Rechnung und kein Modell gestartet; Startmarke
+und `results.json` blieben abwesend, und es wurde kein Commit erstellt.

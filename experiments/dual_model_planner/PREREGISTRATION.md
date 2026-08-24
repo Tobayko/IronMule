@@ -1,8 +1,8 @@
 # Vorregistrierung — Zwei lokale Gemma-Modelle als evidenzgebundene Planner
 
-**Studie:** `dual-model-evidence-planner-20260824-01`  
-**Zyklus:** `15`  
-**Status:** vor jedem weiteren Studienartefakt geschrieben; nach dem Hashen unveränderlich  
+**Studie:** `dual-model-evidence-planner-20260824-01`
+**Zyklus:** `15`
+**Status:** vor jedem weiteren Studienartefakt geschrieben; nach dem Hashen unveränderlich
 **Claim:** `formal_claim=false`
 
 ## Zweck und enge Abgrenzung

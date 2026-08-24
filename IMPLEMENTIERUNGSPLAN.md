@@ -129,9 +129,9 @@ Planerwert ist `persistent_service_qualification`; die Studie misst keine
 allgemeine Qualität und bleibt `formal_claim=false`.
 
 Der Vor-Hardware-Snapshot ist über diese Dateihashes reproduzierbar gebunden:
-Präregistrierung `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`,
+Präregistrierung `246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`,
 Worker `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`,
-Harness `5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131` und
+Harness `59691f50a1f33d4930b36ccce24ec701af74ebd0f9f095912a75e15a28978470` und
 read-only UI `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
 Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`;
 auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
@@ -151,11 +151,15 @@ Die read-only Umgebungsprüfung bestätigte MLX `0.32.0`, mlx-lm `0.31.3` und
 Revision `2d44e83dc9e80843d22fb941d3d699a0b1351aa6` mit `732.577.304 B`
 Gewichten sowie den 4B-Snapshot auf Revision
 `93724907d4ed1745d2fe50baadf3b0b01a65abf2` mit `3.400.569.562 B`
-Gewichten. Die Präregistrierung blieb bei
-`77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`.
+Gewichten. Die Präregistrierung liegt nach dem reinen Formatfix bei
+`246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`.
 Ignorierte `__pycache__`-Verzeichnisse sind vorhanden, werden aber nicht Teil des
 Commits. Keine dieser Prüfungen führte Hardwarearbeit, GPU-Rechnung oder einen
 Modellload aus.
+
+Der staged Diff-Check hatte zuvor wegen genau drei Trailing-Spaces in der
+Präregistrierung Exit `2` geliefert. Diese drei Formatzeichen wurden vor Hardware
+entfernt; Semantik, Studienvertrag, Schedule, Gates und Claim änderten sich nicht.
 
 Vor Hardware gibt es noch keine Studienergebnisse, keine Startmarke und keine
 `results.json`. Der nächste zulässige Schritt ist ausschließlich die spätere,
