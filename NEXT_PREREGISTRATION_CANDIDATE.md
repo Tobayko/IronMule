@@ -1,49 +1,47 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, nach Zyklus 5. Genau einer. Noch **kein** `formal_claim=true`.
+Stand: 24. August 2026, nach Zyklus 8. Noch **kein** `formal_claim=true`.
 
-## Empfehlung: persistenter Modellprozess
+## Empfehlung: LM-Head beim Prefill überspringen
 
-`candidate_recommended_for_preregistration` seit Zyklus 5. Der **einzige** Kandidat
-dieses Auftrags, der ein Korrektheitsgate bestanden hat.
+Vier Kandidaten stehen inzwischen auf `candidate_recommended_for_preregistration`.
+Dieser hat Vorrang, weil er als einziger den **gemessenen Engpass** trifft.
 
-| Größe | Wert |
-| :--- | ---: |
-| `cold_process` TTFT | `5,053` s |
-| warm TTFT | `1,747` s |
-| entfernter Anteil | **`65,4 %`** |
-| Tokenidentität | `3/3`, auch nach zwischengeschobenen Anfragen |
-| RSS über fünf Anfragen | `3,77` GB, unverändert |
+| Kandidat | Zyklus | Wirkung | trifft |
+| :--- | ---: | ---: | :--- |
+| **LM-Head beim Prefill überspringen** | 8 | **`15,3 %` des Prefills** | **TTFT** |
+| Persistenter Prozess | 5 | `65,4 %` der `cold`-TTFT | Kaltstart |
+| Gebündelter Readback | 7 | `12,98 %` je Token | Decode |
+| Host-Readback (Obergrenze) | 6 | `15,3 %` | Decode, nicht abrufbar |
 
-**Warum er als einziger besteht.** Er ändert nichts an der Numerik — keine
-Blockgröße, keine Batchbreite, keine Cache-Struktur. Genau daran sind die drei
-anderen Kandidaten gescheitert.
+Die Zyklen 1 bis 4 haben gezeigt, dass der Engpass der **Prefill** ist: `1,76` s
+gegen `12,1` ms je Ausgabetoken. Ein Kandidat, der dort `15 %` holt, wiegt schwerer
+als einer, der im Decode dasselbe holt.
 
-**Was zu registrieren wäre.** Eine eigene versiegelte Studie nach dem Muster von
-H1-v2 und N10-v2: sechs A/A-Sessions, konservativer MDE-Boden, sechs A/B-Sessions mit
-getrennter Charakterisierung und Validierung, eigene hashverkettete Historie, genau
-ein Record mit `formal_claim`. Endpunkt ist `cold_process`-TTFT gegen `warm`-TTFT bei
-sonst identischer Anfrage.
+**Was zu registrieren wäre.** Eine versiegelte Studie nach dem Muster von H1-v2 und
+N10-v2: sechs A/A-Sessions, konservativer MDE-Boden, sechs A/B-Sessions mit getrennter
+Charakterisierung und Validierung, eigene hashverkettete Historie, genau ein Record
+mit `formal_claim`. Endpunkt sind Prefill-Sekunden bei identischen Token.
 
-**Was er nicht löst.** Nach Entfernen der `3,31` s Startkosten bleibt der Prefill mit
-`1,747` s als neuer Engpass. Dessen wirksamste Optimierung — Präfix-Wiederverwendung
-mit `13,0x` — ist in Zyklus 4 dauerhaft gesperrt worden.
+**Grenze, die mitregistriert werden muss.** Nur zulässig bei greedy Decoding ohne
+Logprob-Ausgabe je Prompt-Token. Sobald Perplexität, Bewertung oder Logprobs verlangt
+werden, ist der Kandidat nicht anwendbar.
 
-## Der Rest der Liste ist erschöpft
+## Die drei anderen empfohlenen Kandidaten
 
-| Kandidat | Zustand |
+Sie schließen sich nicht aus und wirken an verschiedenen Stellen — Kaltstart, Prefill,
+Decode. Eine gemeinsame Studie wäre allerdings **falsch**: sie würden sich in einem
+gemeinsamen Endpunkt vermischen, und der Auftrag verlangt genau einen Kandidaten je
+Studie.
+
+## Was blockiert bleibt
+
+| Kandidat | Grund |
 | :--- | :--- |
-| Präfix-Wiederverwendung | `correctness_failed` (Zyklus 1), endgültig durch Zyklus 4 |
-| Blockgrößen-Policy | `correctness_failed` (Zyklus 2) |
-| Prefill-Step-Sweep, Microbatching, Continuous Batching | gesperrt, ändern die Blockstruktur |
-| `mx.compile` | `correctness_failed`, frühere Runde |
-| Draft-Spekulation | `rejected`, `0,560x` |
-| N-Gram-Spekulation | `characterized`, umgesetzt |
-| Shape-Buckets | `characterized`, Policy vorhanden |
-| Token-Cache | `rejected`, unter `0,1 %` der TTFT |
-| Custom Metal | gesperrt, kein Profilerbeleg für Kernelengpass |
-| KV-Cache fester Form | offen, Framework-Eingriff |
-| vLLM, llama.cpp | `permission_required` |
-
-Ohne Freigabe oder Framework-Arbeit bleibt **kein** weiterer Kandidat mit erwarteter
-Wirkung, der den Korrektheitsvertrag erfüllen kann.
+| Präfix-Wiederverwendung (`13,0x`) | Korrektheit, Zyklus 1 und 4 |
+| Blockgrößen-Policy | Korrektheit, Zyklus 2 |
+| Prefill-Step-Sweep, Microbatching, Continuous Batching | ändern die Blockstruktur |
+| `mx.compile` | Korrektheit, frühere Runde |
+| Custom Metal | kein Profilerbeleg für einen Kernelengpass |
+| KV-Cache fester Form | Framework-Eingriff |
+| vLLM, llama.cpp, Energie, dichtes 7–9B | `permission_required` |

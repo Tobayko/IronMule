@@ -1,0 +1,39 @@
+{
+  "candidate_id": "prefill-head-skip-20260824-01",
+  "formal_claim": false,
+  "prompt_tokens": 897,
+  "generate_tokens": 32,
+  "reps": 2,
+  "rows": [
+    {
+      "chunk": 128,
+      "prefill_full_head_s": 1.7624,
+      "prefill_head_last_only_s": 1.5018,
+      "head_share_of_prefill": 0.1479,
+      "identical": true
+    },
+    {
+      "chunk": 256,
+      "prefill_full_head_s": 1.7614,
+      "prefill_head_last_only_s": 1.4788,
+      "head_share_of_prefill": 0.1605,
+      "identical": true
+    },
+    {
+      "chunk": 512,
+      "prefill_full_head_s": 1.705,
+      "prefill_head_last_only_s": 1.445,
+      "head_share_of_prefill": 0.1525,
+      "identical": true
+    }
+  ],
+  "identical_across_all": true,
+  "budget": {
+    "gpu_work_seconds": 27.739854,
+    "max_continuous_gpu_seconds": 1.776609,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 156.319265,
+    "wall_seconds": 185.581419,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

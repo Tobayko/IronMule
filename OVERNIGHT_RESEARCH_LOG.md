@@ -503,3 +503,71 @@ ist — Zyklus 5 verlangt eine Architekturänderung, Zyklus 6 konnte nicht anhal
 dieser hier läuft.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 8 — 24.08.2026
+
+**Kandidat:** `prefill-head-skip-20260824-01`. Vorregistrierung vorab:
+`experiments/head_skip/PREREGISTRATION.md`.
+
+**Wie er gefunden wurde.** Beim erneuten Durchgehen der Kandidatenliste des Auftrags
+fiel auf, dass Punkt 6 — „Entfernung unnötiger Kopien" — nach sieben Zyklen ungeprüft
+war. `gemma3_text.Model.__call__` wendet `lm_head` auf **alle** Positionen an:
+
+```python
+out = self.model(inputs, cache, input_embeddings)
+out = self.lm_head(out)
+```
+
+Beim Prefill wird davon genau eine Zeile gelesen. Bei einem `256`-Token-Block und
+`262208` Vokabular sind das rund `172` GFLOP, von denen `1/256` verwendet wird.
+
+### Ergebnis
+
+`~900`-Token-Prompt, zwei Wiederholungen, Median:
+
+| Blockgröße | Head auf allen | Head nur letzte | Anteil am Prefill | tokenidentisch |
+| ---: | ---: | ---: | ---: | :--- |
+| 128 | `1,7624` s | `1,5018` s | `14,79 %` | ✓ |
+| 256 | `1,7614` s | `1,4788` s | **`16,05 %`** | ✓ |
+| 512 | `1,7050` s | `1,4450` s | `15,25 %` | ✓ |
+
+**H1 hält:** identische Token bei allen drei Blockgrößen.
+**H2 hält:** `14,8`–`16,1 %`, Schwelle war `10 %`.
+
+Der Anteil ist über die Blockgrößen stabil, was zum Mechanismus passt: der Head
+skaliert linear mit der Positionszahl, und die ist unabhängig von der Zerteilung.
+
+### Warum die Korrektheit hier hält, anders als in den Zyklen 1, 2 und 4
+
+Übersprungen werden Logits, die **nie gelesen** werden. Es ändert sich keine Form
+einer Rechnung, deren Ergebnis verwendet wird — im Unterschied zu Blockgröße,
+Batchbreite und Graphform, an denen dreimal die Ausgabe still kippte. Geprüft wurde
+es trotzdem, und zwar vorab als Gate.
+
+### Bedeutung
+
+Erster Kandidat dieser Reihe, der die **TTFT** verbessert — und die Zyklen 1 bis 4
+haben gezeigt, dass genau dort der Engpass sitzt. Der Prefill sinkt von `1,76` s auf
+`1,48` s, also rund `1,18x`.
+
+Zum Vergleich: die Präfix-Wiederverwendung hätte `13,0x` gebracht und ist an der
+Korrektheit gescheitert. Dieser Gewinn ist um eine Größenordnung kleiner, aber
+**abrufbar**.
+
+### Grenze, vorab benannt und bestätigt
+
+Zulässig nur, solange niemand die übersprungenen Logits braucht — also greedy
+Decoding ohne Logprob-Ausgabe je Prompt-Token. Für Perplexität, Bewertung oder
+Logprob-Rückgabe ist der Kandidat **nicht** anwendbar. Diese Grenze gehört in jede
+Umsetzung.
+
+### Entscheid
+
+**`candidate_recommended_for_preregistration`.** Vierter in acht Zyklen.
+
+Das Muster hält auch hier: verändert wird kein Ergebnis, das gelesen wird — nur
+Arbeit, die ohnehin verworfen wurde, entfällt.
+
+**`formal_claim=false`.**
