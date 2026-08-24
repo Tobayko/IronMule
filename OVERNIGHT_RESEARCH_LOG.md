@@ -641,3 +641,71 @@ eine Framework- oder Modelländerung — außerhalb des Auftrags.
 **schließt** welche. Hier schließt sie.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 10 — 24.08.2026
+
+**Kandidat:** `logsumexp-skip-20260824-01`. Vorregistrierung vorab:
+`experiments/logsumexp/PREREGISTRATION.md`.
+
+**Beobachtung.** `mlx_lm/generate.py`, `generate_step._step` rechnet unbedingt
+`logprobs = logits - mx.logsumexp(logits, keepdims=True)`, und `make_sampler(temp=0)`
+ist danach ein reines `mx.argmax`. Argmax ist gegenüber dem Abzug einer Konstante
+invariant — bei greedy ohne Logprob-Ausgabe ist die Normalisierung wirkungslos.
+Gleiche Form wie Zyklus 8.
+
+### Ein Messfehler zuerst
+
+Der erste Lauf meldete `107,57` und `76,70` ms je Token, also das Achtfache des
+Erwarteten, und daraus `28,7 %` Ersparnis. Ursache: die Laufzeit wurde **nach**
+`charge()` festgehalten, und `charge()` schläft die Guard-Pausen. Gemessen wurde damit
+die Pausenverteilung.
+
+Der Fehler wurde behoben und der Lauf wiederholt. Das ist zulässig und nicht das, wovor
+diese Reihe warnt: das fehlerhafte Ergebnis war **günstiger** als das korrekte, die
+Korrektur also gegen das eigene Interesse.
+
+### Ergebnis
+
+`128` Decode-Schritte, drei Wiederholungen, Median:
+
+| Arm | ms je Token |
+| :--- | ---: |
+| mit Normalisierung | `14,3003` |
+| ohne Normalisierung | `14,5226` |
+| **Ersparnis** | **`−1,56 %`** |
+
+| Größe | Wert |
+| :--- | ---: |
+| logsumexp **isoliert** gemessen | `0,4086` ms |
+| davon als Anteil eines Schritts | `2,86 %` |
+| Tokenidentität | ✓ |
+
+**H1 hält. H2 verfehlt.**
+
+### Der eigentliche Befund
+
+Die Operation kostet **isoliert** `0,41` ms und im Loop **nichts**. MLX überlappt sie
+mit dem Modell-Forward, der GPU-gebunden ist; sie füllt Leerlauf, den es ohnehin gibt.
+Die `−1,56 %` liegen innerhalb der Streuung, die frühere Zyklen mit `0,4`–`1,8 %`
+gemessen haben.
+
+Das ist dieselbe Falle wie bei einem früheren Matmul-Mikrobenchmark: **isolierte
+Kosten sind nicht Grenzkosten**, sobald die Pipeline Spielraum hat. Wer nur isoliert
+misst, findet Optimierungen, die es nicht gibt.
+
+Die Vorregistrierung hatte genau diesen Ausgang als wahrscheinlich benannt
+(`unter 0,1 %` überschlägig). Die isolierte Messung fiel mit `2,86 %` höher aus als
+der Überschlag — und blieb im Loop trotzdem wirkungslos.
+
+### Entscheid
+
+Nach der vorab festgelegten Tabelle (`H1` hält, `H2` verfehlt):
+**`candidate_characterized`** — korrekt, aber unter der Messschwelle.
+
+Ein korrektes Nullergebnis. Der Auftrag wertet es höher als einen nicht
+reproduzierbaren Gewinn, und hier ist es zusätzlich nützlich: es benennt eine
+Messfalle, in die spätere Zyklen sonst laufen würden.
+
+**`formal_claim=false`.**
