@@ -381,3 +381,66 @@ Und es verschiebt den Engpass nur: nach Entfernen der `3,31` s bleibt der Prefil
 in Zyklus 1 am Korrektheitsgate gescheitert und in Zyklus 4 endgültig gesperrt.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 6 — 24.08.2026
+
+**Kandidat:** `host-sync-20260824-01`. Vorregistrierung vorab:
+`experiments/sync/PREREGISTRATION.md`.
+
+**Warum.** Der Auftrag nennt „unnötige CPU-GPU-Synchronisationen" und „vollständige
+Logit-Readbacks" unter Schritt 2. Beides war nach fünf Zyklen ungeprüft. Der heutige
+Pfad liest jedes Token zum Host (`mlx_lm/generate.py:466`, `y.item()`); der eigene
+Spekulationspfad ebenso (`friday_hardware/speculate.py:223`, `.tolist()`).
+
+Der Kandidat war attraktiv, weil er als einziger verbliebener **die Numerik nicht
+berührt** — gerechnet wird dasselbe, verschoben wird nur der Zeitpunkt des Lesens.
+
+### Ergebnis
+
+`128` Decode-Schritte nach `~900`-Token-Prefill, drei Wiederholungen, Median,
+Arme abwechselnd:
+
+| Arm | ms je Token | Verhältnis | tokenidentisch |
+| :--- | ---: | ---: | :--- |
+| `readback` (heutiger Pfad) | `14,3671` | `1,000` | ✓ |
+| **`deferred`** | **`12,1683`** | **`0,847`** | ✓ |
+| `eos_check` | `14,4429` | `1,0053` | ✓ |
+
+**H1 hält:** alle drei Arme erzeugen dieselben `129` Token.
+**H2 hält:** `15,3 %` Ersparnis, Schwelle war `3 %`.
+
+Der `eos_check`-Arm liegt bei `1,0053` — innerhalb der Streuung von `readback`. Die
+**Prüfung** des Stop-Tokens ist damit gratis; teuer ist allein das **Lesen** zum Host.
+
+### Einschränkung, die den Befund begrenzt
+
+Der `deferred`-Arm **kann nicht anhalten**. Er läuft eine feste Schrittzahl, weil er
+nie erfährt, was erzeugt wurde. Ein echter Generator braucht die Stop-Token-Prüfung,
+und die verlangt den Readback.
+
+Die `15,3 %` sind also **nicht direkt abrufbar**. Sie sind die Obergrenze dessen, was
+eine Bündelung der Lesevorgänge erreichen könnte: prüft man alle `N` Schritte statt
+jeden, fällt der Readback nur noch `1/N`-mal an, um den Preis eines Überlaufs von
+höchstens `N−1` Token über das Stop-Token hinaus. Dieselbe Abwägung wie beim
+segmentierten Decode-Loop früherer Runden.
+
+Erwartung bei `N=8`: rund `13,4 %`. **Nicht gemessen** und deshalb nicht behauptet.
+
+### Entscheid
+
+Nach der vorab festgelegten Tabelle (`H1` hält, `H2` hält):
+**`candidate_recommended_for_preregistration`**.
+
+Zweiter Kandidat in sechs Zyklen, der ein Korrektheitsgate besteht — und wieder einer,
+der die Numerik unberührt lässt. Das Muster ist inzwischen deutlich: **jeder Kandidat,
+der Formen verändert, scheitert; jeder, der nur Zeitpunkte verschiebt, besteht.**
+
+### Folgekandidat
+
+Gebündelter Readback mit Prüfintervall `N`, gemessen gegen `N=1`. Er ist die
+tatsächlich abrufbare Variante dieses Befunds und der natürliche Kandidat für
+Zyklus 7.
+
+**`formal_claim=false`.**

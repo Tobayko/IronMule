@@ -1,0 +1,36 @@
+{
+  "candidate_id": "host-sync-20260824-01",
+  "formal_claim": false,
+  "steps": 128,
+  "reps": 3,
+  "prompt_tokens": 897,
+  "ms_per_token": {
+    "readback": 14.3671,
+    "deferred": 12.1683,
+    "eos_check": 14.4429
+  },
+  "tokens_produced": {
+    "readback": 129,
+    "deferred": 129,
+    "eos_check": 129
+  },
+  "identical_to_readback": {
+    "readback": true,
+    "deferred": true,
+    "eos_check": true
+  },
+  "budget": {
+    "gpu_work_seconds": 36.024651,
+    "max_continuous_gpu_seconds": 2.214086,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 204.448718,
+    "wall_seconds": 242.27865,
+    "candidate_cooldown_seconds": 60.0
+  },
+  "ratio_vs_readback": {
+    "readback": 1.0,
+    "deferred": 0.847,
+    "eos_check": 1.0053
+  },
+  "saving_deferred_pct": 15.3
+}
