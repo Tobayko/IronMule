@@ -1,0 +1,130 @@
+{
+  "candidate_id": "kv-cache-realloc-20260824-01",
+  "formal_claim": false,
+  "prompt_tokens": 765,
+  "steps": 48,
+  "reps": 8,
+  "chunk": 256,
+  "cache_widths_after_prefill": {
+    "rotating": 765,
+    "global": 768
+  },
+  "cache_widths_after_decode": {
+    "rotating": 1021,
+    "global": 1024
+  },
+  "realloc_steps_observed": [
+    1,
+    4
+  ],
+  "realloc_steps_predicted": [
+    1,
+    4
+  ],
+  "prediction_matched": true,
+  "events_consistent_across_reps": true,
+  "observed": {
+    "1": {
+      "layers": 29,
+      "global_layers": 0,
+      "rotating_layers": 29,
+      "excess_ms": 31.5853,
+      "width_before": 765
+    },
+    "4": {
+      "layers": 5,
+      "global_layers": 5,
+      "rotating_layers": 0,
+      "excess_ms": 0.2968,
+      "width_before": null
+    }
+  },
+  "predicted": {
+    "1": {
+      "class": "rotating",
+      "layers": 29,
+      "traffic_mb": 273.0,
+      "expected_ms": 0.7616
+    },
+    "4": {
+      "class": "global",
+      "layers": 5,
+      "traffic_mb": 47.2,
+      "expected_ms": 0.1317
+    }
+  },
+  "baseline_ms_per_step": 14.2671,
+  "excess_at_realloc_ms": 31.8821,
+  "excess_share_of_decode_pct": 4.4263,
+  "noise_band_ms": {
+    "median_step_spread": 0.5566,
+    "max_step_spread": 30.5072
+  },
+  "itl_ms": {
+    "p50": 14.267,
+    "p95": 15.1385,
+    "p99": 46.7879,
+    "min": 13.823,
+    "max": 49.443
+  },
+  "median_ms_per_step": [
+    45.8524,
+    17.5549,
+    15.1163,
+    14.5639,
+    14.2735,
+    14.4647,
+    14.2775,
+    14.2463,
+    14.4128,
+    14.3148,
+    14.338,
+    14.2042,
+    14.2914,
+    14.2211,
+    14.3049,
+    14.2887,
+    14.2231,
+    14.2916,
+    14.1343,
+    14.2959,
+    14.1575,
+    14.1891,
+    14.1591,
+    14.2483,
+    14.2659,
+    14.2137,
+    14.3336,
+    14.1905,
+    14.2557,
+    14.1581,
+    14.2288,
+    14.1139,
+    14.1699,
+    14.2428,
+    14.2834,
+    14.192,
+    14.2683,
+    14.3042,
+    14.2706,
+    14.3403,
+    14.2861,
+    14.2682,
+    14.1878,
+    14.2534,
+    14.2776,
+    14.2468,
+    14.2855,
+    14.2206
+  ],
+  "token_identity": true,
+  "tokens_produced": 49,
+  "budget": {
+    "gpu_work_seconds": 21.086457,
+    "max_continuous_gpu_seconds": 1.270024,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 116.119931,
+    "wall_seconds": 139.595394,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

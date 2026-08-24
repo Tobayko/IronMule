@@ -86,6 +86,14 @@
       "prompt_tokens": 897,
       "output_tokens": 1,
       "note": "drei frische Prozesse, Kaltstart zerlegt"
+    },
+    {
+      "id": "kv_realloc_probe",
+      "prompt_tokens": 765,
+      "output_tokens": 48,
+      "repetitions": 8,
+      "prefill_chunk": 256,
+      "note": "Inter-Token-Latenz und Cacheformen je Decodeschritt; Aufwaermlauf verworfen"
     }
   ],
   "candidates": [
@@ -312,6 +320,37 @@
         "token_identity": true
       },
       "conclusion": "isoliert 0,41 ms, im Loop wirkungslos -- MLX ueberlappt sie mit dem GPU-gebundenen Forward; isolierte Kosten sind nicht Grenzkosten"
+    },
+    {
+      "id": "kv_cache_realloc",
+      "priority": 6,
+      "cycle": 11,
+      "state": "candidate_recommended_for_preregistration",
+      "measured": {
+        "prompt_tokens": 765,
+        "decode_steps": 48,
+        "repetitions": 8,
+        "realloc_steps": [
+          1,
+          4
+        ],
+        "events_consistent_across_repetitions": true,
+        "rotating_realloc_excess_ms": 31.5853,
+        "global_realloc_excess_ms": 0.2968,
+        "mean_realloc_step_excess_ms": 15.9411,
+        "excess_share_of_decode_pct": 4.4263,
+        "baseline_ms_per_step": 14.2671,
+        "itl_p50_ms": 14.267,
+        "itl_p95_ms": 15.1385,
+        "itl_p99_ms": 46.7879,
+        "token_identity": true
+      },
+      "calculated_before_measurement": {
+        "rotating_expected_ms": 0.7616,
+        "global_expected_ms": 0.1317,
+        "decode_share_pct": 0.13
+      },
+      "caveat": "Schritt 1 ist zugleich der erste Decodeschritt; die 4,4263 % lokalisieren korrelierte Grenzkosten, isolieren aber noch keinen kausalen A/B-Gewinn"
     }
   ],
   "endpoints": {
@@ -353,7 +392,7 @@
     "budget": {
       "gpu_seconds_per_process": 120,
       "continuous_gpu_seconds": 6,
-      "duty_cycle": 0.25,
+      "duty_cycle": 0.15,
       "duty_window_seconds": 60,
       "wall_seconds": 1200,
       "candidate_cooldown_seconds": 60,
