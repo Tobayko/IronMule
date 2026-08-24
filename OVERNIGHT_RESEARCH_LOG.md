@@ -571,3 +571,73 @@ Das Muster hält auch hier: verändert wird kein Ergebnis, das gelesen wird — 
 Arbeit, die ohnehin verworfen wurde, entfällt.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 9 — 24.08.2026
+
+**Kandidat:** `divergence-source-20260824-01`. Vorregistrierung vorab:
+`experiments/divergence_source/PREREGISTRATION.md`. Diagnose, keine Optimierung.
+
+**Warum.** Zyklus 2 zeigte die Zerteilungs-Divergenz, Zyklus 4 ihre Wirkung auf die
+Antwort. Keiner nannte die Ursache; „sporadisch" ist eine Beschreibung. Der Auftrag
+verlangt für Kerneloptimierung den vorherigen Nachweis eines Kernelengpasses — diese
+Diagnose liefert ihn oder schließt ihn aus.
+
+### Ergebnis
+
+`677` Token, ein Block gegen `512`+`165`, KV-Caches schichtweise verglichen:
+
+| Schicht | keys relativ | values relativ | keys absolut |
+| ---: | ---: | ---: | ---: |
+| 0 | `4,88e-03` | `7,04e-03` | `0,2500` |
+| 5 | `1,08e-02` | `4,46e-03` | `0,3750` |
+| 11 | `9,16e-02` | `8,14e-04` | `2,7812` |
+| **17** | **`1,98e-01`** | `1,61e-02` | `11,0625` |
+| 23 | `1,60e-01` | `1,13e-02` | `8,9297` |
+| 33 | `7,36e-02` | `1,00e-01` | `2,5195` |
+
+**Erste abweichende Schicht: `0`.** Nicht eine bestimmte Operation — von Anfang an.
+
+Der KV-Cache liegt in **`bfloat16`**: 8 Mantissenbits, relative Auflösung
+`2⁻⁸ = 0,00391`. Die Abweichung bei Schicht `0` beträgt `4,88e-03`, also **ein bis
+zwei ULP**. Über die Schichten verstärkt sie sich auf `1,98e-01` — rund das
+Vierzigfache.
+
+### Die Kette, geschlossen
+
+1. Verschiedene Breiten wählen verschiedene Kernelpfade, die in verschiedener
+   Reihenfolge summieren.
+2. In `bfloat16` erzeugt das sofort einen Unterschied von einem ULP.
+3. Über `34` Schichten verstärkt er sich um rund das Vierzigfache.
+4. An den Logits der letzten Position beträgt er `1,1875`.
+5. Der Abstand zwischen Top-1 und Top-2 lag hier bei `1,75`, in Zyklus 1 bei `0,344`.
+   Ist der Abstand kleiner als das Rauschen, kippt das Token.
+
+Damit ist das „Sporadische" erklärt: es ist ein Wettlauf zwischen der Verteilung der
+Logit-Abstände und dem akkumulierten Rauschen. Ob er kippt, hängt vom Inhalt ab, nicht
+von einer Fehlfunktion.
+
+Im gemessenen Fall kippte er **nicht** (`1,1875 < 1,75`) — die Prüfung
+`difference_can_flip_choice` steht auf `False`. Bei Zyklus 1 mit einem Abstand von
+`0,344` kippte er.
+
+### Was daraus folgt
+
+Nach der vorab festgelegten Deutung: **Unterschied ab Schicht `0` überall →
+Eingangsverarbeitung, kein einzelner Kernel als Ziel.**
+
+Damit ist Punkt 15 der Kandidatenliste — **Custom Metal Kernel** — nicht nur mangels
+Beleg gesperrt, sondern **begründet ausgeschlossen**. Es gibt keinen Hotspot, der die
+Divergenz verursacht; die Ursache ist Präzision, verteilt über jede Schicht.
+
+Und es schließt eine ganze Klasse: **keine reihenfolgetolerante Implementierung kann
+das in `bfloat16` beheben.** Abhilfe verlangte höhere Akkumulationspräzision, also
+eine Framework- oder Modelländerung — außerhalb des Auftrags.
+
+### Entscheid
+
+`candidate_characterized`. Eine Diagnose ist kein Kandidat; sie **begründet** oder
+**schließt** welche. Hier schließt sie.
+
+**`formal_claim=false`.**
