@@ -90,6 +90,14 @@ class HardwareProfile:
     # time, matches of nine or more 48 times out of 48. The window used to *find* a
     # match and the depth to draft from it are therefore different questions, and
     # treating them as one costs both hit rate and accuracy.
+    # Host-Readback je Decode-Schritt. Gemessen kostet er 2,199 ms von 14,367 ms,
+    # rund 15 %, und die Stop-Token-Pruefung selbst ist gratis -- teuer ist allein das
+    # Lesen. Seltener zu lesen spart das, laesst aber im Mittel (N-1)/2 Token ueber
+    # das Stop-Token hinauslaufen. Beide Groessen stehen hier, damit die Wahl von N
+    # eine Rechnung ist und keine Konvention.
+    readback_ms_per_step: float = 2.199
+    step_ms: float = 14.313
+    readback_intervals: tuple[int, ...] = (1, 2, 4, 8, 16, 32)
     long_match_tokens: int = 9
     short_match_acceptance: float = 0.55
     long_match_acceptance: float = 0.98
@@ -271,6 +279,31 @@ class HardwareProfile:
             estimated_seconds=seconds,
             reason=reason,
         )
+
+    def readback_interval(self, expected_tokens: int) -> tuple[int, str]:
+        """Groesstes Pruefintervall, das sich bei dieser Ausgabelaenge noch rechnet.
+
+        Ein Intervall spart `(1 - 1/N)` der Readback-Kosten je Schritt und kostet im
+        Mittel `(N-1)/2` verschwendete Schritte, weil das Stop-Token erst am Ende des
+        Intervalls bemerkt wird. Bei kurzen Ausgaben ueberwiegt der Verlust: gemessen
+        lohnt `N=8` erst ab rund `26` Token, `N=32` erst ab `104`.
+        """
+
+        if expected_tokens < 1:
+            raise ProfileError("expected token count must be positive")
+        if self.readback_ms_per_step <= 0 or self.step_ms <= 0:
+            raise ProfileError("readback and step costs must be positive")
+        best, reason = 1, "zu kurz, jedes Intervall wuerde mehr kosten als sparen"
+        for n in sorted(self.readback_intervals):
+            if n < 2:
+                continue
+            gain = (1.0 - 1.0 / n) * self.readback_ms_per_step * expected_tokens
+            waste = (n - 1) / 2.0 * self.step_ms
+            if gain > waste:
+                best = n
+                reason = (f"Intervall {n}: spart {gain:.0f} ms, "
+                          f"Ueberlauf kostet {waste:.0f} ms")
+        return best, reason
 
     # -- speculation --------------------------------------------------------
 
