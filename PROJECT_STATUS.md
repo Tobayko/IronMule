@@ -1012,3 +1012,46 @@ nicht wiederholt. Der `python`-Aliasfehler und der Dashboard-`self.path`-Fehler 
 als Harnessfehler klassifiziert, nicht als Projektfehler. Konvergenzregel: Harnessbefunde
 werden nur nach reproduzierbarer Wiederholung und unabhängigem Readback bewertet; sie ändern
 keine wissenschaftliche Schwelle und ersetzen keinen Canary.
+
+## Begrenzter Head-Skip-Runtime-Prototyp vor Live-Gates — 24.08.2026
+
+Der Nutzer hat den zuvor in `PERMISSION_REQUIRED.md` blockierten kleinen
+Runtime-Prototyp ausdrücklich freigegeben. Der Vertrag
+`docs/HEAD_SKIP_RUNTIME_SPEC.md` und die Mini-Vorregistrierung
+`experiments/head_skip_runtime/PREREGISTRATION.md` wurden vor jeder neuen
+Runtime-Messung bytegenau eingefroren. Die Qualifikation ist Engineering-Evidenz,
+kein Zyklus 13 und bleibt `formal_claim=false`.
+
+Das getrennte Paket `friday_head_skip_runtime/` ist offline implementiert. Es
+replayt die unveränderte formale 16-Record-Evidenz, prüft Modell, Prompt,
+Tokenizergebnis und alle erlaubten Requestwerte und wählt den schnellen Pfad nur
+im exakt bestätigten Einzelfall. Jede Unsicherheit wählt den Referenzpfad. Ein
+Fehler des schnellen Pfads wird nicht im selben Aufruf wiederholt und verriegelt
+den schnellen Pfad für den Prozess. Der MLX-Adapter lädt ausschließlich den lokal
+gebundenen Snapshot. Eine eigene private, append-only SQLite-Historie und eine
+read-only Oberfläche auf `127.0.0.1:8775` sind enthalten.
+
+Vor dem neuen Code bestand die unveränderte relevante Baseline mit Exit `0` in
+`4,44 s` außen, `11,08 s` User, `0,58 s` System, maximal `50.380.800 B` RSS,
+Peak-Footprint `34.308.912 B` und ohne Swaps. Nach der Implementierung bestanden
+die `20` neuen fokussierten Offline-Tests, die Bytecode-Kompilation und
+`git diff --check`. Der absichtlich im schmutzigen Vor-Commit-Stand aufgerufene
+Policy-Check replayte alle `16` formalen Records und fiel erwartungsgemäß auf
+`worktree_dirty` zurück; es entstand keine Runtime-Datenbank und keine GPU-Arbeit.
+
+Vor dem Live-Lauf wurde die Aktivierung zusätzlich an genau einen bestandenen
+CPU-Record, eine unveränderliche Startmarke und genau einen bestandenen GPU-Record
+gebunden. Abweichende Lauf-IDs oder Datenbankpfade können keinen zweiten Versuch
+öffnen; unbekannter Swap-Verbrauch schließt das Ressourcengate. Die vollständige
+Projekttestsammlung bestand mit Exit `0` in `38,50 s`, maximal `192.921.600 B` RSS,
+Peak-Footprint `46.007.136 B` und ohne Swaps. Diese Softwaretest-Laufzeit ist kein
+Modell-Geschwindigkeitswert.
+
+Die vollständige lokale Quellprüfung ist unter
+`/private/tmp/codex-security-scans/Project_Friday/c7db74f_20260824T084223Z`
+versiegelt: alle `12` Quellzeilen wurden vollständig geprüft, Abdeckung
+`complete`, keine offene Arbeit und `0` berichtspflichtige Sicherheitsbefunde.
+Noch offen sind der saubere lokale Implementierungscommit, das vorregistrierte
+CPU-Gate und — nur bei dessen Bestehen — genau ein GPU-Qualifikationsprozess.
+Deshalb gibt es aus dem Runtime-Einbau noch keinen neuen gemessenen
+Geschwindigkeitswert und noch kein `engineering_go_exact_scope`.

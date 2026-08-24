@@ -908,3 +908,43 @@ die projektlokale MCP-JSON-Datei war gültig. Der abschließende read-only Repla
 bestätigte erneut `16` Records, genau einen formalen Claim und denselben DB-Hash vor
 und nach der Prüfung. Dokument- und Script-SHA der versiegelten Studie blieben
 bytegleich; beide Ergebnis-JSON-Dateien und `git diff --check` waren fehlerfrei.
+
+---
+
+## Freigegebener Runtime-Einbau — 24.08.2026, vor Live-Qualifikation
+
+Der Nutzer hat die begrenzte Integration des formal bestätigten Head-Skips
+freigegeben. Dies ist kein neuer Kandidatenzyklus: Der formale Einzelworkload-Claim
+bleibt unverändert, und die neue Qualifikation trägt durchgehend
+`formal_claim=false`.
+
+Vor jeder Runtime-Messung wurden ein enger Architekturvertrag und eine
+Mini-Vorregistrierung eingefroren. Der schnelle Pfad darf nur beim exakt
+bestätigten lokalen Modell-Snapshot, Prompt, `897` Prompt-Token, Chunk `256`, Batch
+`1`, greedy ohne Prompt-Logprobs und fester Ausgabe von `32` Token laufen. Alle
+anderen oder unklaren Fälle wählen den Referenzpfad. Der getrennte Controller,
+MLX-Adapter, Circuit Breaker, die private hashverkettete Historie und die read-only
+Loopback-UI sind offline implementiert.
+
+Gemessen wurde bislang nur die unveränderte Testbaseline vor dem Einbau:
+`4,44 s` außen, `50.380.800 B` maximales RSS, keine Swaps. Nach dem Einbau bestanden
+`20` fokussierte Offline-Tests; das ist ein Korrektheits- und Schutzbefund, kein
+Geschwindigkeitsnachweis. Ein read-only Policy-Aufruf im absichtlich schmutzigen
+Arbeitsstand fiel korrekt auf `worktree_dirty` zurück. Es gab noch keinen neuen
+CPU-Overhead-Messrecord, keinen GPU-Lauf und keine Runtime-Evidenzdatei.
+
+Eine zusätzliche Prüfung vor dem Live-Lauf schloss drei Lücken: Der schnelle Pfad
+wird erst nach den bestandenen CPU- und GPU-Gates freigegeben, eine vor dem
+Modellladen gespeicherte Startmarke verhindert einen zweiten Hardwareversuch, und
+unbekannter Swap-Verbrauch zählt nicht mehr als bestanden. Die vollständige
+Projekttestsammlung bestand mit Exit `0` in `38,50 s` ohne Swaps.
+
+Nächste vorregistrierte Reihenfolge: vollständige Sicherheits- und Testsuite,
+sauberer lokaler Commit, genau ein CPU-Policy-Lauf und nur bei bestandenem Gate
+genau ein kontrollierter MLX/GPU-Prozess. Ein fehlgeschlagener Hardwareprozess wird
+nicht wiederholt.
+
+Die lokale Quellprüfung wurde anschließend vollständig versiegelt: `12/12`
+Quellzeilen mit vollständigem Lesebeleg, Abdeckung `complete`, keine offene Arbeit
+und `0` berichtspflichtige Sicherheitsbefunde. Der versiegelte Bericht liegt unter
+`/private/tmp/codex-security-scans/Project_Friday/c7db74f_20260824T084223Z`.
