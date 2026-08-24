@@ -109,7 +109,7 @@ Aktuelle Reihenfolge:
    dafür nicht freigegeben oder erforderlich; produktive Integration und
    adaptive Kernelsuche bleiben **NO-GO**.
 
-## Zyklus 15 — enge Zwei-Modell-Studie, Vor-Hardware
+## Zyklus 15 — enge Zwei-Modell-Studie, finaler Stand
 
 Die neu erteilte Nutzerfreigabe ist ausschließlich auf die vorregistrierte Studie
 `dual-model-evidence-planner-20260824-01` begrenzt. Sie erlaubt keinen allgemeinen
@@ -133,7 +133,7 @@ Präregistrierung `246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422
 Worker `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`,
 Harness `59691f50a1f33d4930b36ccce24ec701af74ebd0f9f095912a75e15a28978470` und
 read-only UI `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
-Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`;
+Der finale fokussierte Offline-Stand ist `47` Tests plus `42` Subtests, Exit `0`;
 auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
 wurde in diesem Dokumentationsschritt nicht erneut ausgeführt.
 
@@ -161,10 +161,10 @@ Der staged Diff-Check hatte zuvor wegen genau drei Trailing-Spaces in der
 Präregistrierung Exit `2` geliefert. Diese drei Formatzeichen wurden vor Hardware
 entfernt; Semantik, Studienvertrag, Schedule, Gates und Claim änderten sich nicht.
 
-Vor Hardware gibt es noch keine Studienergebnisse, keine Startmarke und keine
-`results.json`. Der nächste zulässige Schritt ist ausschließlich die spätere,
-einmalige Ausführung dieses eingefrorenen Studienvertrags nach den finalen
-unabhängigen Checks. Der Zyklus-14-Dokumentationsaudit ist auf `ee12bb5` verankert.
+Zum Zeitpunkt des Preflights gab es noch keine Studienergebnisse, keine Startmarke
+und keine `results.json`. Dieser historische Vor-Hardware-Stand wurde danach durch
+den folgenden einzigen zulässigen Lauf abgeschlossen. Der Zyklus-14-
+Dokumentationsaudit ist auf `ee12bb5` verankert.
 Die vorab geschlossenen Korrekturen (Duplicate-Paare, unvollständige Erfolgs-
 aggregation, per-Run-Content-Hashing-Bias, Snapshot-/Prompt-Bindung, fail-safe
 Partialpfade, stdout-Limit, UI-Whitelist und Ressourcenprüfungsreihenfolge) bleiben
@@ -172,6 +172,83 @@ verbindlich. Der finale Stand erhält ein bereits validiertes Event auch bei ein
 nachfolgenden Ressourcenabbruch, bindet die UI zusätzlich an die feste Run-ID und
 eine geschlossene Decision-Allowlist und behandelt einen minimalen Fehlerreport
 ohne `metrics` kontrolliert als Fehler statt als Erfolg.
+
+### Zyklus 15 — reales Ergebnis und Entscheidung
+
+Der Studienlauf `dual-model-evidence-planner-validation-20260824-01` wurde genau
+einmal am Netzteil ausgeführt: sechs balancierte Paare, zwölf frische serielle
+Prozesse, drei Paare `1b → 4b` und drei Paare `4b → 1b`. Beide Modelle wurden
+jeweils sechsmal geladen, nie gleichzeitig und nie wiederholt. Die unveränderte
+Entscheidungstabelle gab `no_planner_qualified` zurück (`formal_claim=false`),
+weil beide Modelle den strikten Maschinenvertrag in `0/6` Läufen erfüllten.
+
+| Messwert | 1B | 4B |
+| --- | ---: | ---: |
+| Vertrag / Parser / `candidate_id` | `0/6 / 0/6 / 0/6` | `0/6 / 0/6 / 0/6` |
+| Determinismus | `6/6` | `6/6` |
+| TTFT Median / MAD | `0,295451312 / 0,0005528535 s` | `0,796846125 / 0,0088023125 s` |
+| Modellarbeit Median / MAD | `0,4608839165 / 0,0005743330 s` | `1,0487644165 / 0,0092854165 s` |
+| Prozess-Walltime Median / MAD | `4,2468557705 / 0,0059329165 s` | `4,883630417 / 0,0182606455 s` |
+| Peak-RSS / MLX-Peak | `1.937.965.056 / 1.012.548.526 B` | `3.765.420.032 / 3.021.085.374 B` |
+| Swap-Delta | `0 B` | `0 B` |
+
+Die 1B-Ausgabe enthielt Markdown, den falschen Schlüssel
+`persistent_service_id` und `<end_of_turn>`-Trailer. Die 4B-Ausgabe hatte die
+richtige ID, aber einen Markdown-Codeblock. Die direkte dekodierte Textgleichheit
+zwischen den Modellen lag bei `0/6`; innerhalb jedes Modells waren Text und Token
+`6/6` deterministisch gleich. Das sind Vertragsbefunde, keine qualitative
+Bewertung der Modelle.
+
+Alle Ressourcen-, Budget-, Snapshot- und Pairing-Gates bestanden. Gemessen wurden
+`9,205052 s` Gesamt-Modellarbeit, maximal `1,151402 s` zusammenhängend und
+`178,475444 s` Walltime bei Duty-Faktor `0,15`; es gab keine Abbrüche und kein
+Swap-Wachstum. Die paarweisen Verhältnisse mit Bootstrap-95-%-KI sind berechnet:
+TTFT `0,373014193 [0,365603946; 0,377539933]`, Modellarbeit
+`0,439069434 [0,434598134; 0,444460794]`, Walltime
+`0,872042394 [0,864987297; 0,939562889]`, Tokenrate
+`3,168801108 [3,130352029; 3,201472197]`. Die daraus berechneten ungefähr
+`12,8 %` kürzere 1B-Walltime und `48,5 %` geringerer 1B-Peak-RSS können wegen des
+Funktions-Gatefehlers keine Modellpräferenz oder Aktivierung begründen.
+
+Die Rohdaten liegen unter
+`experiments/dual_model_planner/results.json` (SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`), die
+private Startmarke hat SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327`.
+Die UI-Prüfung ergab GET/HEAD `200`, Schreibmethoden `405`, fremde Hosts `421`
+und unveränderte Evidenzhashes. Zyklus 15 hat eine JSON-Datei, keine eigene
+SQLite-Evidence-DB.
+
+Es existiert weiterhin kein vollständiger Gemma-Matmul-A/B-Pfad und kein
+„mit/ohne Matmul“-Schalter. Dieser Vergleich wurde nicht gemessen und bleibt ein
+separater künftiger vorregistrierungspflichtiger Kandidat. Allgemeine
+Modellqualität, allgemeine Planner-Fähigkeit, selbstlernende Runtime,
+Produktaktivierung, Multi-Turn-Fortsetzung und parallele Requests sind durch
+diesen Zyklus nicht belegt. Die Freigabe ist verbraucht; weitere Hardwarearbeit
+braucht neue Freigabe und einen neuen Zyklus.
+
+### Zyklus-15-Postflight
+
+Nach dem einzigen Hardwarelauf bestand die fokussierte Suite mit `47` Tests und
+`42` Subtests bei Exit `0`; die vollständige Suite sammelte `744` Tests und
+endete mit Exit `0`. `compileall`, die strikte JSON-Prüfung von
+`results.json`, `verification.json` und `EXPERIMENT_MATRIX.json`, `json.tool`,
+AST, `git diff --check` und `xcodebuild -checkFirstLaunchStatus` endeten jeweils
+mit Exit `0`. ProjectAtlas meldete zunächst `refresh_required`; genau ein
+inkrementeller Refresh war erfolgreich. Runtime `0.4.5-rc1` und die
+projektlokale MCP-Konfiguration waren gültig. MLX `0.32.0`, mlx-lm `0.31.3` und
+`Device(gpu, 0)` wurden read-only geprüft; es gab keine Modell- oder GPU-Arbeit.
+
+Nach dem Postflight blieben Ergebnis-SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`,
+Verifikations-SHA-256
+`24696c679de567519e8f2b3b034f0833de8122569072b71feeae794c05bbf4e6` und
+Marker-SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327` sowie alle
+DB-Hashes unverändert. Die Verifikation hatte leere Abweichungen und bestätigte
+`no_planner_qualified` bei `formal_claim=false`. ProjectAtlas hatte keine
+getrackten Änderungen; bestehende untracked Fixture-`.gradle`-Verzeichnisse
+blieben unangetastet.
 
 ## Historischer H0-Pivot und Freigabestatus — 20.08.2026
 

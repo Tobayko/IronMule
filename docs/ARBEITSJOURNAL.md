@@ -5491,3 +5491,99 @@ blieben bytegleich. Die älteren Hashangaben bleiben als append-only Zwischensta
 erhalten und sind durch diesen Nachtrag ausdrücklich ersetzt. Es wurden keine
 Tests, keine Hardware, keine GPU-Rechnung und kein Modell gestartet; Startmarke
 und `results.json` blieben abwesend, und es wurde kein Commit erstellt.
+
+## 2026-08-24 — Zyklus 15: reales Zwei-Modell-Ergebnis
+
+Die zuvor dokumentierte Vor-Hardware-Freigabe wurde genau einmal ausgeführt. Die
+Studie `dual-model-evidence-planner-20260824-01` blieb auf den zwei bereits
+lokalen Snapshots begrenzt und lief mit sechs balancierten Paaren in zwölf frischen
+seriellen Python-Prozessen. Paare `1–3` liefen `1b → 4b`, Paare `4–6` `4b → 1b`;
+jedes Modell wurde genau sechsmal geladen, niemals gleichzeitig. Es gab keine
+Wiederholung, keinen Download, keine Installation und keinen Push.
+
+Der feste Vertrag erlaubte ausschließlich
+`{"candidate_id":"persistent_service_qualification"}`. Die Entscheidung ist
+`no_planner_qualified`, `formal_claim=false`. Beide Modelle waren innerhalb des
+jeweiligen Modells in `6/6` Läufen deterministisch, aber Vertrag, strikter Parser
+und erkannte `candidate_id` waren jeweils `0/6`. Die direkte dekodierte
+Textgleichheit zwischen den Modellen lag bei `0/6`.
+
+Die 1B-Antwort enthielt Markdown, den falschen Schlüssel
+`persistent_service_id` und `<end_of_turn>`-Trailer. Die 4B-Antwort enthielt die
+richtige ID, aber einen unerlaubten Markdown-Codeblock. Diese Angaben beschreiben
+nur den Maschinenvertrag; sie sind keine qualitative Modellbewertung.
+
+### Gemessene Hardwarewerte
+
+| Messwert | 1B | 4B |
+| --- | ---: | ---: |
+| Ausgabe / Abschlussgrund | `32 Token / length` | `23 Token / stop` |
+| TTFT Median / MAD | `0,295451312 / 0,0005528535 s` | `0,796846125 / 0,0088023125 s` |
+| Modellarbeit Median / MAD | `0,4608839165 / 0,0005743330 s` | `1,0487644165 / 0,0092854165 s` |
+| Prozess-Walltime Median / MAD | `4,2468557705 / 0,0059329165 s` | `4,883630417 / 0,0182606455 s` |
+| Peak-RSS | `1.937.965.056 B` | `3.765.420.032 B` |
+| MLX-Peak | `1.012.548.526 B` | `3.021.085.374 B` |
+| Swap-Delta | `0 B` | `0 B` |
+
+Alle Ressourcen-, Snapshot-, Pairing- und Budgetgates bestanden. Gemessen wurden
+`9,205052 s` Gesamt-Modellarbeit, maximal `1,151402 s` zusammenhängend und
+`178,475444 s` Walltime bei Duty-Faktor `0,15`; es gab keine Abbrüche.
+
+### Berechnung und Evidenz
+
+Die Paarquotienten und Bootstrap-95-%-KIs sind aus den Rohdaten berechnet, nicht
+zusätzliche Messungen (`10.000` Resamples): TTFT `0,373014193`
+`[0,365603946; 0,377539933]`, Modellarbeit `0,439069434`
+`[0,434598134; 0,444460794]`, Prozess-Walltime `0,872042394`
+`[0,864987297; 0,939562889]`, Tokenrate `3,168801108`
+`[3,130352029; 3,201472197]`. Daraus folgen berechnet ungefähr `12,8 %`
+kürzere 1B-Walltime und `48,5 %` geringerer 1B-Peak-RSS. Wegen der beiden
+fehlenden Funktionsgates entsteht keine Präferenz.
+
+Die Rohdatei
+`experiments/dual_model_planner/results.json` hat SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`; die
+private Startmarke hat SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327`; die
+Präregistrierung hat SHA-256
+`246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`.
+Die UI blieb read-only: GET/HEAD `200`, schreibende Methoden `405`, fremde Hosts
+`421`, alle Evidenzhashes vor und nachher identisch. Zyklus 15 hat JSON-Rohdaten,
+keine eigene SQLite-Evidence-DB.
+
+Die Freigabe für diesen einzelnen Lauf ist verbraucht. Multi-Turn-Fortsetzung und
+mehrere parallele Requests bleiben offen. Allgemeine Modellqualität, allgemeine
+Planner-Fähigkeit, selbstlernende Runtime und Produktaktivierung sind nicht
+belegt. Ein vollständiger Gemma-Matmul-A/B-Pfad mit „mit/ohne Matmul“-Schalter
+existiert nicht; er wurde nicht gemessen und bleibt ein separater künftig
+vorregistrierungspflichtiger Kandidat.
+
+## 2026-08-24 — Zyklus 15: Postflight-Korrektur und Verifikationsnachtrag
+
+Die früheren `46`-Angaben im bereits geschriebenen Zyklus-15-Preflight bleiben
+als historische Zwischenangabe unverändert. Der tatsächliche aktuelle
+Postflight ersetzt diese Angabe ausdrücklich durch `47` fokussierte Tests bei
+`42` Subtests, Exit `0`. Die vollständige Suite sammelte `744` Tests und endete
+mit Exit `0`.
+
+Im Postflight endeten `compileall`, die strikte JSON-Prüfung von
+`results.json`, `verification.json` und `EXPERIMENT_MATRIX.json`, `json.tool`,
+AST-Prüfung, `git diff --check` und `xcodebuild -checkFirstLaunchStatus` jeweils
+mit Exit `0`. ProjectAtlas meldete zunächst `refresh_required`; genau ein
+inkrementeller Refresh war danach erfolgreich. Runtime `0.4.5-rc1` und die
+projektlokale MCP-Konfiguration waren gültig. MLX `0.32.0`, mlx-lm `0.31.3` und
+`Device(gpu, 0)` wurden nur read-only geprüft; es gab keine Modell- oder
+GPU-Arbeit.
+
+Die Evidenz blieb nach dem Postflight bytegleich: Ergebnis-SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`,
+Verifikations-SHA-256
+`24696c679de567519e8f2b3b034f0833de8122569072b71feeae794c05bbf4e6`,
+Marker-SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327` und alle
+DB-Hashes unverändert. Die Verifikation meldete leere Abweichungen, die
+Entscheidung `no_planner_qualified` und `formal_claim=false`.
+
+ProjectAtlas hatte keine getrackten Änderungen. Bestehende untracked Fixture-
+`.gradle`-Verzeichnisse wurden nicht angefasst und gehören nicht zu diesem
+Nachtrag.

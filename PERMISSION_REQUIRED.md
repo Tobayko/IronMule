@@ -174,7 +174,7 @@ auf genau eine feste ID beschränken. Eine eigene Hardwarestudie braucht einen
 neuen Zyklusvertrag; Modelle laufen dabei nacheinander, nie gleichzeitig. Eine
 breite oder produktive Selbstaktivierung ist durch Zyklus 14 nicht freigegeben.
 
-## 9. Zyklus 15 — enge Zwei-Modell-Studie (Freigabe erteilt, Vor-Hardware)
+## 9. Zyklus 15 — enge Zwei-Modell-Studie (Freigabe verbraucht, Ergebnis)
 
 **Status:** Der Nutzer hat ausschließlich die vorregistrierte Studie
 `dual-model-evidence-planner-20260824-01` freigegeben. Sie ist auf die zwei bereits
@@ -189,11 +189,11 @@ lokal vorhandenen Snapshots und einen festen Planungsfall begrenzt:
 - einziger akzeptierter Planerwert
   `persistent_service_qualification`, weiterhin `formal_claim=false`.
 
-**Vor-Hardware-Grenze:** Es existiert keine Matmul-On/Off-Integration und kein
+**Studiengrenze:** Es existiert keine Matmul-On/Off-Integration und kein
 Matmul-On/Off-Vergleich. Die Freigabe umfasst keine neuen Modelle, Downloads,
 Installationen, allgemeine Planner-Nutzung, automatische Aktivierung oder eine
-Erweiterung des Studienclaims. Vor Hardware bestehen noch keine Ergebnisse, keine
-private Startmarke und keine `results.json`.
+Erweiterung des Studienclaims. Die frühere Vor-Hardware-Aussage, dass noch keine
+Ergebnisse vorliegen, ist durch den folgenden einzigen Lauf abgeschlossen.
 
 **Erteilte enge Aktion:** Nach abschließenden unabhängigen Offline-Checks darf nur
 dieser eingefrorene Studienvertrag einmalig ausgeführt werden. Die bindenden
@@ -208,7 +208,7 @@ der partiellen Evidenz erhalten. Die UI ist an die feste Run-ID und geschlossene
 Decision-Allowlist gebunden; ein minimaler Fehlerreport ohne `metrics` wird
 kontrolliert als Fehler verarbeitet. Diese Härtungen erweitern die erteilte enge
 Freigabe nicht.
-Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`;
+Der finale fokussierte Offline-Stand ist `47` Tests plus `42` Subtests, Exit `0`;
 auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
 wurde in diesem Dokumentationslauf nicht erneut ausgeführt. Der Zyklus-14-
 Auditcommit ist `ee12bb5`.
@@ -226,3 +226,48 @@ Geräte- und Resolverdaten wurden ausschließlich read-only geprüft. Es gab kei
 GPU-Rechnung und keinen Modellload; Startmarke und `results.json` blieben abwesend.
 Ignorierte `__pycache__`-Verzeichnisse gehören nicht zum Commit und erweitern die
 erteilte enge Aktion nicht.
+
+**Reales Ergebnis:** Der Vertrag lief genau einmal mit sechs balancierten Paaren
+und zwölf frischen seriellen Prozessen. Beide Modelle waren intern `6/6`
+deterministisch, erfüllten den strikten Vertrag aber jeweils `0/6`; 1B wegen
+Markdown, `persistent_service_id` statt `candidate_id` und
+`<end_of_turn>`-Trailern, 4B wegen eines Markdown-Codeblocks trotz richtiger ID.
+Die direkte Textgleichheit zwischen den Modellen war `0/6`. Alle Ressourcen-,
+Snapshot-, Pairing- und Budget-Gates bestanden; die Entscheidung lautet
+`no_planner_qualified`, `formal_claim=false`. Die 1B/4B-Paarquotienten und die
+ungefähr `12,8 %` geringere 1B-Walltime sowie `48,5 %` geringerer 1B-Peak-RSS
+sind berechnet, nicht zusätzliche Messungen, und führen wegen des Funktions-
+Gatefehlers zu keiner Präferenz.
+
+Die Ergebnisdatei
+`experiments/dual_model_planner/results.json` hat SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`; die
+private Startmarke hat SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327`.
+Die UI-Prüfung ergab GET/HEAD `200`, Schreibmethoden `405`, fremde Hosts `421`
+und unveränderte Hashes. Zyklus 15 hat eine JSON-Evidenzdatei, keine eigene
+SQLite-DB. Die Freigabe für diese einzelne Studie ist damit verbraucht; jeder
+weitere Hardwarelauf braucht eine neue ausdrückliche Freigabe und einen neuen
+Zyklus. Allgemeine Modellqualität, Planner-Fähigkeit, selbstlernende Runtime,
+Multi-Turn, parallele Requests und Produktaktivierung bleiben unbelegt.
+
+**Postflight:** Die fokussierte Suite bestand mit `47` Tests und `42` Subtests
+bei Exit `0`; die vollständige Suite sammelte `744` Tests und endete mit Exit
+`0`. `compileall`, strikte JSON-Prüfung von Ergebnis-, Verifikations- und
+Matrixdatei, `json.tool`, AST, `git diff --check` und
+`xcodebuild -checkFirstLaunchStatus` endeten jeweils mit Exit `0`. ProjectAtlas
+meldete zunächst `refresh_required`; genau ein inkrementeller Refresh war
+erfolgreich. Runtime `0.4.5-rc1` und MCP-Konfiguration waren gültig. MLX
+`0.32.0`, mlx-lm `0.31.3` und `Device(gpu, 0)` wurden nur read-only geprüft;
+es gab keine Modell- oder GPU-Arbeit.
+
+Ergebnis-SHA-256
+`7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d`,
+Verifikations-SHA-256
+`24696c679de567519e8f2b3b034f0833de8122569072b71feeae794c05bbf4e6` und
+Marker-SHA-256
+`ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327` blieben
+unverändert; ebenso alle DB-Hashes. Die Verifikation meldete leere
+Abweichungen, `no_planner_qualified` und `formal_claim=false`. ProjectAtlas
+hatte keine getrackten Änderungen; bestehende untracked Fixture-`.gradle`-
+Verzeichnisse wurden nicht angefasst.
