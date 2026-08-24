@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 12 und begrenzter Runtime-Qualifikation,
+Stand: 24. August 2026, nach Zyklus 13 und begrenzter Runtime-Qualifikation,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -32,6 +32,38 @@ Klassen werden **nicht** in einem gemeinsamen Schätzer vermischt.
 | `warm_uncached` | `1702,86` ms | `898`-Token-Prompt |
 | `warm_prefix_hit` | `131,02` ms | `886` Token wiederverwendet — **korrektheitsungeprüft**, siehe unten |
 | `warm_full_cache_hit` | nicht gemessen | – |
+
+## Prospektiv bestätigter persistenter Modellprozess
+
+Zyklus 13 verglich bei demselben lokalen Modell und sechs vorab festgelegten
+`897`-Token-Prompts einen neuen Python-/Modellprozess je Anfrage mit einem Prozess,
+der das Modell einmal lädt. Jede Anfrage verwendete weiterhin einen frischen
+KV-Cache; Ausgabe waren jeweils `32` greedy Token.
+
+| Endpunkt | Ergebnis | vorab festgelegte Grenze |
+| :--- | ---: | ---: |
+| A/A-Kalibrierung, Median | `0,961468` | `[0,90; 1,10]` |
+| Charakterisierung, Median `warm/kalt` | `0,346142` | `≤ 0,50` |
+| Validierung, Median `warm/kalt` | `0,347794` | `≤ 0,50` |
+| alle sechs Paare, Median `warm/kalt` | **`0,346968`** | `≤ 0,50` |
+| größtes einzelnes Verhältnis | `0,349647` | `≤ 0,65` |
+| kalte TTFT, Median der sechs Werte | `5148,7741` ms | – |
+| warme TTFT, Median der sechs Werte | `1785,1103` ms | – |
+| greedy Tokenidentität | **`6/6` exakt** | Pflicht |
+| warmes Peak-RSS | `3.763.077.120` Byte | `≤ 5 GiB` |
+| warmes RSS-Wachstum | `0` Byte | `≤ 256 MiB` |
+| Swap-Wachstum | `0` Byte | `≤ 0` |
+
+Der Effekt **`−65,3032 %`** ist aus dem vorregistrierten Median der sechs
+gepaarten Verhältnisse gerechnet; er ist kein separat gemessener Zeitwert. Kein
+Paar und kein Ausreißer wurde entfernt. Der Lauf war am Netzteil und blieb mit
+`41,586354` s Modellarbeit, höchstens `3,226913` s am Stück, Duty-Faktor `0,15`
+und `576,933889` s Gesamtzeit innerhalb aller Schutzgrenzen.
+
+Die Entscheidung lautet `engineering_gain_confirmed_exact_scope`. Sie bleibt
+`formal_claim=false` und belegt nur diesen Prozess-Lebenszyklus auf diesem Gerät,
+Modell-Snapshot und Workload. Ein normaler Dienst nutzt den Pfad noch nicht
+automatisch.
 
 ## Prefill
 

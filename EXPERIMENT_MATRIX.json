@@ -123,6 +123,18 @@
       "measurement_pairs": 4,
       "formal_claim": false,
       "note": "begrenzter Runtime-Einbau; CPU-Gate plus genau ein GPU-Prozess"
+    },
+    {
+      "id": "persistent_process_validation",
+      "prompt_tokens": 897,
+      "prefill_chunk": 256,
+      "batch": 1,
+      "output_tokens": 32,
+      "calibration_pairs": 2,
+      "characterization_pairs": 3,
+      "validation_pairs": 3,
+      "formal_claim": false,
+      "note": "prospektiver Vergleich: neuer Modellprozess je Anfrage gegen einmal geladenen Modellprozess"
     }
   ],
   "candidates": [
@@ -219,7 +231,7 @@
     {
       "id": "persistent_process",
       "priority": 3,
-      "state": "candidate_recommended_for_preregistration",
+      "state": "engineering_gain_confirmed_exact_scope",
       "note": "import mlx_lm kostet mehr als das Modellladen; USE_TORCH=0 half nicht",
       "measured": {
         "cold_process_ttft_s": 5.053,
@@ -232,7 +244,25 @@
       "preregistered_gate": "load+warmup >= 30% of cold TTFT",
       "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst",
       "cycle": 5,
-      "caveat": "Importzeit aus Zyklus 3 uebernommen; Gegencheck 0,8 % Abweichung"
+      "confirmation_cycle": 13,
+      "caveat": "Importzeit aus Zyklus 3 uebernommen; Gegencheck 0,8 % Abweichung",
+      "prospective_validation": {
+        "candidate_id": "persistent-process-20260824-03",
+        "study_id": "persistent-process-20260824-03",
+        "decision": "engineering_gain_confirmed_exact_scope",
+        "formal_claim": false,
+        "all_pair_median_ratio": 0.34696789209993684,
+        "effect_percent": -65.30321079000632,
+        "cold_ttft_median_ms": 5148.7740625,
+        "warm_ttft_median_ms": 1785.1103125,
+        "pair_ratio_min": 0.3431151327460551,
+        "pair_ratio_max": 0.3496472967134737,
+        "token_identity": "6/6 exact greedy pairs",
+        "warm_peak_rss_bytes": 3763077120,
+        "warm_rss_growth_bytes": 0,
+        "swap_delta_bytes": 0,
+        "result_sha256": "3925d83139cb6278c2b0aa103716e36a33f550f852bd30758976090fa0f7024"
+      }
     },
     {
       "id": "divergence_impact",
@@ -465,8 +495,8 @@
       "swap_growth_allowed": false
     },
     "limits": {
-      "max_cycles": 12,
-      "cycles_completed": 12,
+      "max_cycles": 13,
+      "cycles_completed": 13,
       "max_failed_attempts_per_candidate": 1,
       "max_hardware_runs_per_candidate": 6
     }

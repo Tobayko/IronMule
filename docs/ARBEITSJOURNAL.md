@@ -5059,3 +5059,117 @@ Abgleich bestätigte exakte Übereinstimmung von Runtime-Datenbank,
 `results.json` und Experimentmatrix für Laufzeiten, Verhältnis, berechneten Effekt,
 Tokenidentität und Record-ID. Der Datenbankhash und die beiden eingefrorenen
 Spezifikationshashes blieben unverändert.
+
+### 2026-08-24 — Zyklus 13: persistenter Modellprozess
+
+**Ziel und Abgrenzung.** Nach dem bestätigten Head-Skip wurde genau ein neuer
+Kandidat geprüft: Der lokale 4B-Modellprozess bleibt zwischen Anfragen geladen.
+Head-Skip, Präfixwiederverwendung, Readback-Änderungen, ein anderes Modell und jede
+Produktaktivierung waren ausgeschlossen. Es wurden keine Subagenten verwendet.
+
+**Atlas-first und lokaler Modellbestand.** Vor Quellarbeit wurden der vollständig
+gelesene ProjectAtlas-Skill, ein fokussierter MCP-Session-Brief und begrenzte
+Atlas-Slices verwendet. Der lokale Cache enthält bereits einen vollständigen
+Gemma-3-1B-4bit-Snapshot auf Revision
+`2d44e83dc9e80843d22fb941d3d699a0b1351aa6` (`736 MiB` auf Datenträger); daher
+wurde trotz der erteilten Erlaubnis nichts heruntergeladen oder installiert. Die
+Architekturtexte begrenzen ein lernendes System auf Vorschläge; reale Messgates
+bleiben Richter.
+
+**Vorab festgeschriebener Vertrag.** Kandidat und Studie
+`persistent-process-20260824-03`, Zyklus `13`, durchgehend
+`formal_claim=false`. Die Vorregistrierung wurde vor jeder Hardwaredatei geschrieben
+und blieb mit SHA-256
+`a9fa83438b7ab30fb85e8cae76a90627b908c469159141286658ac0cc7f6ad9f`
+bytegleich. Fester Scope: lokaler 4B-Snapshot Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, vier feste Prompts mit je `897`
+Token, `32` greedy Ausgabetoken, Prefill-Chunk `256`, frischer KV-Cache je Anfrage,
+zwei A/A-Paare, danach drei Charakterisierungs- und höchstens drei
+Validierungspaare. Harness und Vertrag wurden vor Hardware auf Commit
+`f9546171aea470385431c64c6318d38ffbe3aeea` gespeichert.
+
+**Fehler vor Hardware und dauerhafte Lösungen.** Die Elternprüfung des ersten
+Harnessentwurfs fand, dass ein vollständig korrektes Charakterisierungsergebnis
+ohne ausreichenden Zeitgewinn wegen der absichtlich nicht gestarteten Validierung
+fälschlich als `correctness_failed` eingestuft worden wäre. Die Pfadprüfung wertet
+nun alle tatsächlich abgeschlossenen Phasen aus; ein Tokenmismatch bleibt terminal.
+Teilmessungen werden schon beim Start jeder Phase im Ergebniszustand angelegt, und
+die Ressourcenrechnung verträgt unvollständige Phasen. Ein früh beendeter warmer
+Worker gilt nicht mehr still als sauber gestoppt. Worker-Zeit und Anfragezähler,
+Eigentümer und Modus des privaten Startverzeichnisses werden geprüft. Die
+Kindumgebung entfernt Python-Pfadinjektion und erzwingt Offlinebetrieb. Die UI baut
+Tabellen nur über Textknoten und lehnt fremde Host-Header ab. Neun neue
+Fehlerpfadtests brachten die fokussierte Suite von `11` auf `20`; alle bestanden.
+
+Der erste vorbereitende Security-Finalizer-Aufruf adressierte das Werkzeug
+irrtümlich unter `skills/security-diff-scan/scripts/` statt unter dem tatsächlichen
+Plugin-`scripts/`-Verzeichnis und endete mit Exit `2`, bevor ein Finalizer geladen
+wurde. Diese unversiegelte Akte wurde gemäß Einmalregel nicht erneut finalisiert.
+Nach den Korrekturen wurde eine neue vollständige Drei-Dateien-Prüfung unter
+`/private/tmp/codex-security-scans/Project_Friday/4e202ae_20260824T-security-final.8YP4Rn`
+erzeugt und mit dem tatsächlich per `rg --files` aufgelösten Werkzeug genau einmal
+versiegelt: Abdeckung `complete`, keine offene Zeile, `0` berichtspflichtige
+Befunde. Der zusätzliche Security-Zugang war nicht freigeschaltet; die Prüfung
+blieb lokal. Die vollständige Elternprüfung ersetzte die wegen Nutzeranweisung
+nicht zulässige Delegation.
+
+**Verifikation vor Hardware.** Worker-Selbsttest `7/7`, Harness-Selbsttest `9/9`,
+`compileall`, `20` fokussierte Tests und die vollständige Projektsuite bestanden.
+Der erste Vollsuite-Aufruf erreichte die Ausgabegrenze, und der bereits beendete
+Prozess ließ keinen Rückgabecode mehr abrufen. Da keinerlei Modell- oder
+Hardwarearbeit betroffen war, wurde nur diese Softwaresuite mit gespeicherter
+Sitzungskennung wiederholt; sie erreichte `100 %` und Exit `0`. ProjectAtlas wurde
+einmal aktualisiert (`5` geänderte Quellen geparst, `723` unverändert, kein
+Timeout), Runtime `0.4.5-rc1` und projektlokale Codex-MCP-Konfiguration wurden
+bestätigt. `xcodebuild -checkFirstLaunchStatus` bestand. Präregistrierung und
+Start-/Ergebnisdateien waren vor dem Lauf unverändert beziehungsweise abwesend.
+
+**Einmalige Messung.** Der Hardwarelauf
+`persistent-process-validation-20260824-01` lief am Netzteil genau einmal und
+endete mit Exit `0`; kein Retry. A/A-Verhältnisse `0,9224547264` und
+`1,0004816149`, Median `0,9614681706`. Charakterisierung:
+`[0,3461416900; 0,3431151327; 0,3496472967]`, Median `0,3461416900`.
+Validierung: `[0,3442225251; 0,3477940942; 0,3485124631]`, Median
+`0,3477940942`. Median aller sechs Paare `0,3469678921`, MAD
+`0,0021119878`; kein Wert wurde verworfen. Der Median der sechs gemessenen kalten
+TTFT-Werte betrug `5148,7740625` ms, der warmen `1785,1103125` ms.
+
+**Korrektheit, Ressourcen und Entscheidung.** Alle sechs Paare erzeugten exakt
+dieselben `32` greedy Token. Kalte PIDs waren jeweils neu; je Phase hatte der warme
+Arm genau eine PID und genau einen Modellload. Warmes Peak-RSS
+`3.763.077.120 B`, RSS-Wachstum `0 B`, Swap vor/nach
+`19.502.071.808 B`, also Delta `0 B`. Budget: `41,586354 s` Modellarbeit,
+maximal `3,226913 s` zusammenhängend, `368,707521 s` Pflichtpausen,
+`120,015539 s` Kandidatenabkühlung, `576,933889 s` Wall, Duty `0,15`.
+Alle Gates bestanden; Entscheidung
+`engineering_gain_confirmed_exact_scope`. Der Effekt `−65,30321079 %` ist aus
+dem vorregistrierten Median der Paarverhältnisse gerechnet, nicht direkt gemessen.
+
+**Evidenz und UI.** Ergebnis-SHA
+`3925d83139cb6278c2b0aa103716e36a33f550f852bd30758976090fa0f7024`;
+private Startmarke SHA
+`b142b91027c7d261c4753187c82b6ade6ef6aa1d7048c99499e2b8896b4f5536`,
+Modus `0600` in Verzeichnis `0700`. Die read-only UI lieferte Entscheidung,
+`formal_claim=false`, exakte Ausgabe und acht Verlaufszeilen; ein fremder
+Host-Header erhielt HTTP `421`. Der UI-Prozess wurde danach kontrolliert mit
+`Ctrl-C` und Exit `0` beendet.
+
+**Gemessen, gerechnet, offen.** Gemessen wurden TTFT, Pfad, Token, RSS, Swap und
+Budgetwerte. Das Verhältnis und `−65,3032 %` wurden aus den unveränderten Paaren
+gerechnet. Noch nicht implementiert ist der persistente normale Dienstpfad.
+Multi-Turn-Fortsetzung und parallele Requests bleiben ungemessen. Das gewünschte
+selbstlernende Optimization Memory mit kleinem lokalem 1B-Planner benötigt vor der
+Architekturänderung die enge Freigabe aus `PERMISSION_REQUIRED.md`: nur ein
+Listenvorschlag je Zyklus, keine Codeausführung, keine Schwellenänderung, kein
+Urteil über Korrektheit und keine selbständige Aktivierung.
+
+**Abschlussprüfung nach Ergebnisdokumentation.** Der erneute ProjectAtlas-Refresh
+indexierte `948/967` Textkandidaten, parste `7` geänderte Quellen, ließ `721`
+unverändert und hatte keinen Timeout. `compileall`, die `20` fokussierten Tests und
+die vollständige Projektsuite erreichten erneut Exit `0` und `100 %`.
+`xcodebuild -checkFirstLaunchStatus` bestand. Der warnungsfreie Gerätecheck
+bestätigte Python `3.12.13`, `arm64`, MLX `0.32.0`, mlx-lm `0.31.3`,
+`Device(gpu, 0)` und Apple M1 Max. Beide JSON-Dateien waren parsebar; Ergebnis-,
+Startmarken- und Präregistrierungs-SHA blieben unverändert. Der read-only
+Matrixabgleich bestätigte Entscheidung, Verhältnis, Effekt, RSS, Swap und Zyklus
+`13` exakt gegen die Ergebnisdatei.

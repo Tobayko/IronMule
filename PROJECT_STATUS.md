@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; Zyklus 13 auf `f954617`, Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -19,6 +19,7 @@
 | Phase 1B Residual+RMSNorm | statischer, quellhashgebundener Custom-Metal-Kandidat auf Commit `ea8f959`; Security-Diff, 566er Vollsuite, Qualification, A/A, A/B, Persistenz und UI abgeschlossen | Correctness und Messsystem bestanden; nur `1,870 %` Gain bei vorregistrierten `5 %` Mindestgewinn: **keine Promotion**, `baseline_fallback`, gültiger Negativbefund |
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | Prefill-Head-Skip formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, eingefrorene MDE `5 %`, sechs frische A/B-Sessions, `R=0,846385`, Gesamt-KI `[0,843147; 0,851284]`, `12/12` Tokenidentitätsgates | Gain ist nur für ein Gerät, einen gebundenen Gemma-4B-Snapshot, einen 897-Token-Prompt, Chunk `256`, Batch `1` und greedy ohne Prompt-Logprobs formal bestätigt; Integration bleibt freigabepflichtig |
+| Persistenter Modellprozess | prospektiver Zyklus 13 mit zwei bestandenen A/A-Paaren, drei Charakterisierungs- und drei Validierungspaaren; Gesamtmedian `R=0,346968`, `6/6` exakte Tokenpaare, kein RSS-/Swap-Wachstum | **Engineering-Gain nur im gemessenen Scope**, gerechnet `−65,3032 %`, `formal_claim=false`; normaler Dienstpfad und automatische Aktivierung bleiben freigabepflichtig |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
@@ -41,6 +42,14 @@ terminaler Record mit `formal_claim=true`, Modus `0600`, Größe `77.824 B`, SHA
 Kettenkopf `8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4`.
 Die UI lieferte ihren realen Verlauf per GET aus; der read-only Replay bestand und
 ließ die DB unverändert. Es wurde keine Runtime aktiviert.
+
+Die Zyklus-13-Evidenz liegt in
+`experiments/persistent_process/results.json`, SHA-256
+`3925d83139cb6278c2b0aa103716e36a33f550f852bd30758976090fa0f7024`.
+Die einmalige Startmarke liegt privat unter
+`.friday-data/persistent-process/attempt.json`; der Hardwareprozess lief genau
+einmal. Die lokale read-only UI zeigte acht Verlaufszeilen und denselben Entscheid.
+Es wurde kein persistenter normaler Dienst aktiviert.
 
 Abschlussprüfung am 24.08.2026: ProjectAtlas-Refresh ohne Timeout, Runtime
 `0.4.5-rc1`, gültige projektlokale MCP-JSON-Konfiguration,
