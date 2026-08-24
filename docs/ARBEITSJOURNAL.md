@@ -5199,3 +5199,58 @@ Markdown-Zeilenumbrüche in den drei Kopfzeilen, nicht um einen Codefehler. Die
 Vorregistrierung wird deshalb bytegleich belassen; `diff --check` wird für alle
 übrigen neuen Dateien separat ohne Befund ausgeführt und die drei bekannten
 Meldungen werden zusätzlich exakt abgeglichen.
+
+### Einmalige 4B-Messung und terminaler Negativentscheid
+
+Der Vor-Hardware-Stand wurde auf Commit
+`8067dc6c1fb175f0df539394b2e4dad5894b14b8` gespeichert. Die Vorprüfung bestätigte
+sauberen Arbeitsstand, Netzbetrieb, Apple M1 Max, `32 GiB`, `arm64`, MLX `0.32.0`,
+mlx-lm `0.31.3`, MLX-GPU sowie den ausschließlich lokal aufgelösten
+Gemma-3-4B-Snapshot Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`. Danach wurde
+`planner-4b-validation-20260824-01` genau einmal ausgeführt; Exit `1` war der
+vorregistrierte negative Entscheid und kein Grund für einen Retry.
+
+Alle drei frischen Prozesse erzeugten exakt dieselben `23` greedy Token, denselben
+Text und `stop`; die PIDs waren verschieden und jeder Prozess meldete genau einen
+Modellload. Der Rohtext enthielt dreimal die erwartete ID
+`persistent_service_qualification`, aber jeweils innerhalb eines Markdown-
+Codeblocks. Damit bestanden Tokenidentität, Ressourcen und Budget, während der
+strikte Antwortvertrag `0/3` und dadurch auch das erwartete Prioritätsgate nicht
+bestand. Terminale Entscheidung: `planner_contract_failed`, durchgehend
+`formal_claim=false`. Der Parser wurde nicht gelockert und der Lauf nicht
+wiederholt.
+
+Gemessen wurden Rechenzeiten `[1,050531834; 1,041002500; 1,047669750]` s,
+Prozesszeiten `[4,913172500; 4,856396167; 4,858676292]` s, maximales RSS
+`3.764.961.280 B`, MLX-Peak `3.021.085.374 B` und Swap-Delta `0 B`. Das Budget
+meldete `3,139204 s` Modellarbeit, `1,050532 s` längsten Abschnitt,
+`48,094525 s` Pflichtpausen, `62,730743 s` Wall und Duty `0,15`. Keine Messung
+wurde verworfen. Es wurde kein Geschwindigkeitsgewinn gerechnet, weil dieser
+Zyklus keinen Leistungsarm verglich.
+
+Ergebnis-SHA
+`64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975`;
+Startmarken-SHA
+`6e741162f6d02ec69ee74ad7670b8e1a5046a3bc1430b946d7511b1248a6d573`;
+Vorregistrierungs-SHA unverändert
+`0fa346db7985cdd4dfa49015b395ee0f9d56a097a06f3828b0c161c45e53e5ec`.
+Die reale lokale UI lieferte HTTP `200`, drei read-only Verlaufszeilen und bei
+fremdem Host HTTP `421`; der Ergebnis-Hash blieb gleich. Auf ausdrücklichen
+Nutzerwunsch wurde kein Security-Check ausgeführt. Es gab keinen Download, keine
+Installation, keine automatische Kandidatenausführung und keine Aktivierung.
+
+**Abschlussprüfung.** Nach Dokumentation bestanden die `17` fokussierten Tests,
+Worker-Selbsttest `11/11`, Harness-Selbsttest `9/9`, `compileall` und die
+vollständige Projektsuite mit `100 %` und Exit `0`. Der read-only Matrixabgleich
+bestätigte Zyklus `14`, `planner_contract_failed`, RSS, MLX-Peak und Swap exakt
+gegen `results.json`. ProjectAtlas-Refresh meldete `0` neu zu indexierende
+Dateien; Runtime `0.4.5-rc1` und die lokale Codex-MCP-Konfiguration waren gültig.
+`xcodebuild -checkFirstLaunchStatus`, Geräte-, Versions-, GPU-, Netzteil-, JSON-,
+Dateimodus-, Hash- und `git diff --check`-Prüfungen bestanden. Der 4B-Lauf wurde
+dabei nicht erneut gestartet.
+
+Mehrteilige Dokumentations-Patches trafen wegen inzwischen verschobener
+Kontextzeilen nicht zu und wurden vom Patchwerkzeug atomar ohne Teiländerung
+abgelehnt. Die Dateien wurden danach mit kleinen, exakt passenden Patches
+aktualisiert; `git diff --check` und der JSON-Abgleich prüfen den Endzustand.

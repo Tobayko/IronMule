@@ -1064,3 +1064,84 @@ Architekturänderung ist jedoch die in `PERMISSION_REQUIRED.md` beschriebene eng
 Freigabe erforderlich: Das kleine Modell schlägt nur einen Kandidaten aus einer
 festen Liste vor; unveränderliche Messregeln entscheiden, und das Modell darf nie
 selbst Korrektheit oder Aktivierung bestimmen.
+
+---
+
+## Zyklus 14 — 24.08.2026
+
+**Kandidat:** `gemma-4b-evidence-planner-20260824-01`. Genau ein Kandidat wurde
+geprüft: Ob der bereits lokale Gemma-3-4B-Snapshot aus vier festen, durch bisherige
+Evidenz beschriebenen Möglichkeiten exakt eine nächste Kandidaten-ID als reines
+JSON wählen kann. Das Modell durfte weder Code erzeugen noch eine Messung starten,
+Schwellen verändern oder etwas aktivieren.
+
+### Prospektive Versiegelung und Hardwaregrenze
+
+`experiments/planner_4b/PREREGISTRATION.md` wurde vor jeder Hardwaredatei
+geschrieben und blieb mit SHA-256
+`0fa346db7985cdd4dfa49015b395ee0f9d56a097a06f3828b0c161c45e53e5ec`
+bytegleich. Worker, Auswertung, UI, Tests und Vorregistrierung wurden vor dem Lauf
+auf Commit `8067dc6c1fb175f0df539394b2e4dad5894b14b8` gespeichert. Gebunden waren
+Apple M1 Max, `32 GiB`, MLX `0.32.0`, mlx-lm `0.31.3`, der lokale 4B-Snapshot auf
+Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, ein fester Prompt mit `322`
+Token, greedy und höchstens `32` Ausgabetoken.
+
+Vor Hardware bestanden `17` fokussierte Tests, Worker-Selbsttest `11/11`,
+Harness-Selbsttest `9/9`, `compileall`, die vollständige Projektsuite und
+`xcodebuild -checkFirstLaunchStatus`. Der Hardwarelauf
+`planner-4b-validation-20260824-01` wurde am Netzteil genau einmal gestartet und
+nicht wiederholt. Auf ausdrücklichen Nutzerwunsch wurde kein Security-Check
+ausgeführt. Es wurde nichts installiert oder heruntergeladen.
+
+### Gemessene Antworten und Ressourcen
+
+Die drei frischen Prozesse hatten verschiedene PIDs und luden das Modell jeweils
+einmal. Jeder Lauf erzeugte `23` Token und endete mit `stop`. Tokenfolge, Text und
+Hash `4cf0152fb1ada260821ddc5aada68f1d3a4cb1dec990dcf3120eeb03268bc2bd`
+waren in `3/3` Fällen exakt gleich. Die gemessenen Rechenzeiten waren
+`[1,050531834; 1,041002500; 1,047669750]` s; die gesamten Prozesszeiten
+`[4,913172500; 4,856396167; 4,858676292]` s. Kein Wert wurde verworfen.
+
+Alle drei Rohtexte nannten inhaltlich die erwartete ID
+`persistent_service_qualification`, bestanden aber nicht aus dem allein erlaubten
+JSON-Objekt. Sie waren jeweils zusätzlich mit dreifachen Backticks und der
+Kennzeichnung `json` umgeben. Der strikte Parser akzeptierte deshalb keine der
+drei Antworten; `candidate_id` blieb in der Auswertung `null`.
+
+Maximales Prozess-RSS `3.764.961.280` Byte, MLX-Peak `3.021.085.374` Byte,
+Swap vor/nach `19.493.683.200` Byte, also Delta `0`. Budget:
+`3,139204` s Modellarbeit, höchstens `1,050532` s am Stück,
+`48,094525` s Pflichtpausen und `62,730743` s Gesamtzeit bei Duty-Faktor `0,15`.
+Ressourcen- und Budgetgates bestanden.
+
+### Entscheidung, Evidenz und offene Arbeit
+
+H1 Tokenidentität bestand, H2 Antwortvertrag scheiterte, H3 galt dadurch nicht als
+bestanden; H4 Ressourcen und H5 Budget bestanden. Die unveränderliche Entscheidung
+lautet **`planner_contract_failed`**, `formal_claim=false`. Der richtige Inhalt
+ersetzt das Formatgate nicht, und der Markdown-Rahmen wird nachträglich weder
+entfernt noch erlaubt. Der Test belegt kein allgemeines Planen, kein Selbstlernen
+und keine Geschwindigkeitsverbesserung.
+
+Ergebnis-SHA
+`64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975`;
+private Startmarke SHA
+`6e741162f6d02ec69ee74ad7670b8e1a5046a3bc1430b946d7511b1248a6d573`,
+Modus `0600` im Verzeichnis `0700`. Die read-only UI lieferte HTTP `200`, drei
+Verlaufszeilen und veränderte den Ergebnis-Hash nicht; ein fremder Host-Header
+erhielt HTTP `421`. Ein neuer Planerversuch müsste ein eigener vorregistrierter
+Kandidat sein und die Auswahl technisch auf feste IDs begrenzen. Multi-Turn und
+mehrere parallele Requests bleiben ungemessen; der begrenzte persistente Dienst
+bleibt der inhaltlich priorisierte Leistungsschritt.
+
+### Abschlussverifikation
+
+Nach Ergebnisdokumentation bestanden die `17` fokussierten Tests, beide
+Selbsttests, `compileall` und die vollständige `.venv/bin/python -m pytest -q`-
+Suite erneut mit Exit `0` und `100 %`. Matrix und Rohresultat wurden read-only auf
+Entscheidung, Zyklus, RSS, MLX-Peak und Swap abgeglichen. ProjectAtlas meldete beim
+abschließenden Refresh `0` neu zu indexierende Dateien und bestätigte Runtime
+`0.4.5-rc1` samt projektlokaler Codex-MCP-Konfiguration.
+`xcodebuild -checkFirstLaunchStatus` bestand. Python `3.12.13`, `arm64`, MLX
+`0.32.0`, mlx-lm `0.31.3`, `Device(gpu, 0)`, Apple M1 Max, `32 GiB`, Netzbetrieb
+sowie alle drei Evidenz-SHAs wurden erneut bestätigt.

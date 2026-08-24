@@ -1,6 +1,6 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, nach Zyklus 13. Das registrierte Zykluslimit `13` ist
+Stand: 24. August 2026, nach Zyklus 14. Das registrierte Zykluslimit `14` ist
 erreicht; ohne neuen expliziten Studienvertrag wird kein weiterer Hardwarelauf
 gestartet.
 
@@ -16,6 +16,14 @@ bestand ihre vorregistrierte Runtime-Qualifikation mit `R=0,845836`, Effekt
 `−15,4164 %` und identischen Token. Sie ist nur über den getrennten
 Repository-Aufrufpunkt und nur im registrierten Fall zulässig; eine allgemeine
 Produktaktivierung ist weiterhin nicht erlaubt.
+
+## Abgeschlossener 4B-Planertest: Formatvertrag verfehlt
+
+Gemma 4B wurde in Zyklus 14 genau einmal als eng begrenzter Planer geprüft. Drei
+frische Prozesse nannten inhaltlich jeweils die hier ohnehin erwartete nächste ID
+`persistent_service_qualification` und erzeugten exakt dieselben Token. Alle drei
+Antworten enthielten aber einen nicht erlaubten Markdown-Codeblock. Damit gilt
+`planner_contract_failed`, nicht ein Erfolg. Die Auswahl wurde nicht ausgeführt.
 
 ## Abgeschlossene Priorität: persistenter Prozess
 
@@ -59,9 +67,12 @@ Architekturfreigabe gesperrt. Kandidaten dürfen nicht in einer gemeinsamen Stud
 vermischt werden.
 
 Das gewünschte selbstlernende Optimization Memory ist eine getrennte
-Architekturarbeit, kein zusätzlicher Leistungskandidat in derselben Studie. Der
-lokale 1B-Snapshot ist vorhanden; er darf nach Freigabe nur einen Listenkandidaten
-vorschlagen. Messprogramm und feste Tabelle bleiben alleinige Richter.
+Architekturarbeit, kein zusätzlicher Leistungskandidat in derselben Studie. Lokale
+1B- und 4B-Snapshots sind vorhanden. Freie 4B-Textausgabe hat den Maschinenvertrag
+bereits verfehlt. Ein neuer Planerkandidat müsste deshalb die Ausgabe technisch auf
+genau eine feste ID begrenzen; ein nachträglich großzügigerer Parser wäre kein
+Wiederholen derselben Studie. Messprogramm und feste Tabelle bleiben alleinige
+Richter.
 
 ## Was blockiert bleibt
 

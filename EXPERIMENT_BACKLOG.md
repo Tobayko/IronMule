@@ -1,6 +1,6 @@
 # Kandidatenliste
 
-Stand: 24. August 2026, nach Zyklus 13 und begrenzter Runtime-Qualifikation.
+Stand: 24. August 2026, nach Zyklus 14 und begrenzter Runtime-Qualifikation.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
 
@@ -27,7 +27,7 @@ bereits gemessen ist.
 | 19 | LM-Head beim Prefill überspringen | nur die tatsächlich gelesene letzte Promptposition projizieren | unzulässig bei Prompt-Logprobs | **`engineering_go_exact_scope`** nach formalem Gewinn (`−15,3615 %`) und Runtime-Gate (`−15,4164 %`) |
 | 20 | `logsumexp` bei greedy überspringen | argmax-invariante Normalisierung entfernen | isolierte Kosten sind nicht Grenzkosten | `candidate_characterized`, kein Gewinn (Zyklus 10) |
 | 21 | KV-Cache-Reallokationen | Wachstumskopien im Decode vermeiden | erster Decodeschritt konfundiert; Cache-Neubau wäre Architekturänderung | **`candidate_recommended_for_preregistration`** (Zyklus 11) |
-| 22 | lernendes Optimization Memory mit kleinem lokalem Planner | nutzt alle positiven und negativen Messungen für den nächsten Vorschlag | Selbstbestätigung und falsche Aktivierung | `permission_required`; Modell darf nur vorschlagen, Messgates entscheiden |
+| 22 | lernendes Optimization Memory mit lokalem Planner | nutzt alle positiven und negativen Messungen für den nächsten Vorschlag | Selbstbestätigung und falsche Aktivierung | **`planner_contract_failed`** mit Gemma 4B (Zyklus 14); richtige ID, aber unerlaubter Markdown-Rahmen |
 
 ## Begründung der Reihenfolge
 
@@ -51,19 +51,27 @@ exakt identisch. Der Median der gemessenen TTFT-Werte sank von `5148,7741` auf
 `1785,1103` ms; Peak-RSS `3.763.077.120` Byte, kein RSS- oder Swap-Wachstum. Das ist
 noch keine allgemeine Aktivierung und bleibt `formal_claim=false`.
 
+Der begrenzte **Gemma-4B-Planertest** in Zyklus 14 ist ein gültiges negatives
+Ergebnis. Alle drei frischen Prozesse erzeugten exakt dieselben `23` greedy Token
+und nannten inhaltlich die erwartete ID `persistent_service_qualification`. Jede
+Antwort setzte das JSON jedoch in einen Markdown-Codeblock. Der unveränderliche
+Antwortvertrag bestand deshalb `0/3`; Entscheidung `planner_contract_failed`.
+Das Modell darf daraus weder einen Kandidaten starten noch eine Aktivierung
+auslösen. Es wurde in diesem Zyklus keine Geschwindigkeitsverbesserung geprüft.
+
 Unter den noch unbestätigten empfohlenen Leistungskandidaten bleiben die beiden
 Readback-Studien; sie treffen nur den Decode. Zyklus 11 lokalisiert außerdem
 `4,4263 %` korrelierte Decode-Grenzkosten, isoliert wegen der Überlagerung mit dem
 ersten Decodeschritt aber noch keinen kausalen Gewinn. Das registrierte Zykluslimit
-ist nun `13`; jede weitere Hardwarestudie verlangt einen neuen expliziten
+ist nun `14`; jede weitere Hardwarestudie verlangt einen neuen expliziten
 Studien-/Zyklusvertrag.
 
-Für das gewünschte eigenständige Lernen ist kein Download nötig: der lokale
-Gemma-3-1B-Snapshot ist bereits vollständig vorhanden. Die sichere Trennung ist
-jedoch eine Architekturentscheidung: Das kleine Modell darf genau einen Kandidaten
-aus einer festen Liste vorschlagen; nur vorab versiegelte Messungen dürfen ihn
-bestätigen, und das Modell darf weder Schwellen ändern noch selbst aktivieren.
-Die dafür benötigte Freigabe ist in `PERMISSION_REQUIRED.md` beschrieben.
+Für das gewünschte eigenständige Lernen ist kein Download nötig: lokale 1B- und
+4B-Snapshots sind vollständig vorhanden. Zyklus 14 zeigt, dass freie Textausgabe
+selbst beim 4B-Modell den strikten Maschinenvertrag verletzt. Ein neuer Versuch
+müsste daher als eigener Kandidat eine technisch erzwungene Auswahl aus festen IDs
+vorregistrieren. Messungen bleiben alleiniger Richter; das Modell darf weder
+Schwellen ändern noch selbst aktivieren.
 
 Noch ungemessen sind die verlangten Baseline-Workloads **Multi-Turn-Fortsetzung** und
 **mehrere parallele Requests**. Der vorhandene Matrixeintrag `concurrent_32` ist nur

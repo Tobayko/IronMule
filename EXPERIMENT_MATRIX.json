@@ -135,6 +135,16 @@
       "validation_pairs": 3,
       "formal_claim": false,
       "note": "prospektiver Vergleich: neuer Modellprozess je Anfrage gegen einmal geladenen Modellprozess"
+    },
+    {
+      "id": "planner_4b_closed_case",
+      "prompt_tokens": 322,
+      "max_output_tokens": 32,
+      "observed_output_tokens": 23,
+      "fresh_processes": 3,
+      "fixed_candidate_ids": 4,
+      "formal_claim": false,
+      "note": "geschlossener Planungsfall; Gemma 4B darf nur eine feste Kandidaten-ID als striktes JSON vorschlagen"
     }
   ],
   "candidates": [
@@ -446,6 +456,40 @@
         "decode_share_pct": 0.13
       },
       "caveat": "Schritt 1 ist zugleich der erste Decodeschritt; die 4,4263 % lokalisieren korrelierte Grenzkosten, isolieren aber noch keinen kausalen A/B-Gewinn"
+    },
+    {
+      "id": "gemma_4b_evidence_planner",
+      "priority": 0,
+      "cycle": 14,
+      "state": "planner_contract_failed",
+      "formal_claim": false,
+      "study_id": "gemma-4b-evidence-planner-20260824-01",
+      "measured": {
+        "fresh_processes": 3,
+        "prompt_tokens": 322,
+        "output_tokens_each": 23,
+        "finish_reason_stop": "3/3",
+        "greedy_token_identity": "3/3 exact",
+        "strict_json_contract": "0/3",
+        "raw_text_selected_expected_id": "3/3",
+        "compute_seconds": [
+          1.050531834,
+          1.0410025,
+          1.04766975
+        ],
+        "process_wall_seconds": [
+          4.9131725,
+          4.856396167,
+          4.858676292
+        ],
+        "max_rss_bytes": 3764961280,
+        "max_mlx_peak_bytes": 3021085374,
+        "swap_delta_bytes": 0
+      },
+      "decision": "planner_contract_failed",
+      "gate_failed": "strict_json_without_markdown",
+      "result_sha256": "64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975",
+      "conclusion": "Die inhaltlich erwartete ID stand in allen drei Antworten, aber jeweils in einem Markdown-Codeblock; keine automatische Auswahl oder Aktivierung"
     }
   ],
   "endpoints": {
@@ -495,8 +539,8 @@
       "swap_growth_allowed": false
     },
     "limits": {
-      "max_cycles": 13,
-      "cycles_completed": 13,
+      "max_cycles": 14,
+      "cycles_completed": 14,
       "max_failed_attempts_per_candidate": 1,
       "max_hardware_runs_per_candidate": 6
     }
