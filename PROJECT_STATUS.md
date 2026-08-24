@@ -1,6 +1,6 @@
 # Projektstatus
 
-**Stand:** 24. August 2026, Vor-Hardware-Status Zyklus 16
+**Stand:** 24. August 2026, Zyklus 16 nach realer Hardwaremessung
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 ## Auditierter aktueller Stand
@@ -1365,3 +1365,78 @@ UI-Selfcheck (Exit 0), Standardaufruf ohne Hardware (Exit 78; keine Artefakte),
 ProjectAtlas 0.4.5-rc1 und MCP sind verfügbar. Gerät: Apple M1 Max, 32 GiB,
 Netzbetrieb, `Device(gpu,0)`; MLX 0.32.0 und mlx-lm 0.31.3. Snapshot-SHA
 `e6edcd46...eda`, Gewicht-SHA `94d3d701...74af3`.
+
+## Zyklus 16 — reales Ergebnis und unabhängige Einordnung
+
+Die Studie `matmul-compile-ab-20260824-01` wurde im Seal-Commit
+`83ee3ea03f9fb303b8226ab8ad3189f07daec727` ausgeführt. Evidence-Commit
+`cc6d2ea012a0cd6a858acc9a66d4754e95c421b7`; Ergebnis-Hash
+`fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`,
+Verifikations-Hash
+`09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038`, Marker-Hash
+`8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`,
+Präregistrierungs-Hash
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+Die Nutzerfreigabe ist damit genau einmal verbraucht; es gibt keinen zweiten Lauf.
+
+Gemessen wurden sechs frische Prozesse mit drei Armen, also 18 Arm-Ausführungen
+(3 × 6). Token und Text waren in allen 18 Arm-Ausführungen exakt gleich. Die
+Decode-Gesamtzeit-Mediane und
+Tokenraten waren:
+
+| Arm | Decode-Median | Tokenrate | TTFT-Median |
+|---|---:|---:|---:|
+| `standard_eager` | 0,399939187 s | 77,5131895/s | 0,638376521 s |
+| `fixed_eager` | 0,3999597295 s | 77,5078153/s | 0,638425813 s |
+| `fixed_compiled` | 0,371848789 s | 83,3672240/s | 0,6385446665 s |
+
+Der gemessene gepaarte Ratio `fixed_compiled/standard_eager` beträgt
+`0,9295921887`, Bootstrap-95-%-KI `[0,9128789083; 0,9348209684]` — rechnerisch
+7,0408 % schnellere Decode-Phase. Gegen `fixed_eager` beträgt der Ratio
+`0,9296309524`, KI `[0,9256302629; 0,9327708433]`. Peak-RSS war
+`3.771.564.032 B`, MLX-Peak `3.476.049.782 B`, Swap-Delta `0 B`.
+
+Berechnet, nicht separat gemessen: warme End-to-End-Projektion `0,9829777045`
+(rund 1,7022 % schneller insgesamt), kalte One-off-Projektion `1,0154895491`
+(rund 1,549 % langsamer) und Break-even median rund 36,47 Decode-Schritte;
+der Lauf umfasste 31 Schritte. Matmul wurde nie abgeschaltet. Modell, Gewichte
+und Quantisierung blieben unverändert; geändert wurden nur feste Cacheform und
+MLX-Compile-Laufzeitorganisation. Das ist kein allgemeiner Qualitäts-,
+Selbstlern- oder Produktivclaim; automatische Aktivierung bleibt verboten.
+
+Der Lifecycle-Selfcheck-Bug wurde erst nach der Messung entdeckt und getrennt
+behoben; er wird nicht rückwirkend als Messwert umgedeutet. Die read-only UI
+lieferte GET/HEAD `200`, Schreibmethoden `405`, fremden Host `421`; die Hashes
+blieben unverändert. `formal_claim=false`.
+
+## Post-Hardware-Verifikation — Zyklus 16 und historische Evidenz
+
+Die abgeschlossene Studie wurde nach dem Lauf unabhängig verifiziert; ein neuer
+Hardware- oder Modelllauf fand nicht statt. Die vollständige Suite meldete `787
+Tests in 71 Dateien`, Exit 0. Der fokussierte Lauf
+`test_matmul_compile_ab` meldete `43 passed, 60 subtests`, Exit 0. Compileall,
+Worker-Selfcheck 21, Harness-Selfcheck 18, Dashboard-Selfcheck 0, Xcode-Check,
+`jq` und `git diff --check` endeten jeweils mit Exit 0. Der Standardaufruf blieb
+bei erwarteter Exit 78 und veränderte keine Artefakte. Der Harness-`--show`-
+Aufruf lief einmal mit Exit 0, stderr blieb leer und er lieferte genau eine
+gültige JSON-Zeile.
+
+Die reale read-only UI-Verifikation ergab GET/HEAD `200`, alle Schreibmethoden
+`405`, einen fremden Host `421` und `no-store`. Unbereinigter Modelltext wurde
+nicht ausgeliefert. Die Cycle-16- und Cycle-15-Evidence sowie alle 12 SQLite-
+Datenbanken waren vor und nach der Prüfung identisch; die private Startmarke
+blieb auf Modus `0600`. Die Ergebnis- und Datenbank-Hashes blieben unverändert.
+
+ProjectAtlas wurde genau einmal inkrementell mit `watch_once` aktualisiert:
+`cycles=1`, `indexed=967` Textkandidaten, `parsed=11`, `unchanged=732` Symbole;
+Runtime `0.4.5-rc1` und die projektlokale MCP-Konfiguration waren gültig.
+Getrackte ProjectAtlas-Dateien blieben unangetastet; das bereits vorhandene
+verschachtelte `.gradle`-Untracked blieb ebenfalls unangetastet.
+
+Der nachträglich gefundene Lifecycle-Selfcheck-Fehler lag in der Annahme, die
+Evidence müsse fehlen. Die Korrektur prüft nun read-only sowohl fehlende als auch
+vorhandene Evidence, verbietet Symlinks, verlangt Modus `0600` für die Marke und
+vergleicht Hashes sowie Modi vor und nach der Prüfung. Der Arbeitsbaum-Harness
+unterscheidet sich dadurch vom versiegelten Code; die Evidence bewahrt jedoch die
+Code-Fingerprints des Seal-Stands. `formal_claim=false`; die Freigabe ist
+verbraucht und es wurde nichts automatisch aktiviert.

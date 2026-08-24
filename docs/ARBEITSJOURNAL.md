@@ -5654,3 +5654,68 @@ P0/P1-Befunde `0`; weiterhin keine `results.json`, keine Startmarke und keine
 Hardwaremessung. `formal_claim=false`. Der aktuelle Zyklus-16-Status bleibt
 `sealed_pending_hardware`; finaler Präregistrierungs-SHA-256:
 `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+
+## 2026-08-24 — Zyklus 16: reales Ergebnis und Abschluss
+
+Die einmalige lokale Studie `matmul-compile-ab-20260824-01` wurde im
+Seal-Commit `83ee3ea03f9fb303b8226ab8ad3189f07daec727` ausgeführt und mit
+`runtime_compile_wins_exact_scope` entschieden; `formal_claim=false`. Evidence-
+Commit `cc6d2ea012a0cd6a858acc9a66d4754e95c421b7`, Result-Hash
+`fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`,
+Verification-Hash `09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038`,
+Marker-Hash `8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`,
+Präregistrierungs-Hash
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+
+Sechs frische Prozesse mit drei Armen ergaben 18 abgeschlossene Arm-Ausführungen
+(3 × 6). Token und Text waren in allen 18 Arm-Ausführungen exakt gleich.
+Gemessene Decode-Medianen/TTFT waren
+Standard `0,399939187 s`/`0,638376521 s`, Fixed-Eager
+`0,3999597295 s`/`0,638425813 s` und Fixed-Compiled
+`0,371848789 s`/`0,6385446665 s`. Die gemessenen gepaarten Ratios waren
+`0,9295921887` gegen Standard mit KI `[0,9128789083; 0,9348209684]` und
+`0,9296309524` gegen Fixed-Eager mit KI `[0,9256302629; 0,9327708433]`.
+Peak-RSS `3.771.564.032 B`, MLX-Peak `3.476.049.782 B`, Swap-Delta `0 B`.
+
+Berechnet, nicht separat gemessen, wurden warme Gesamtprojektion
+`0,9829777045`, kalte One-off-Projektion `1,0154895491` und Break-even median
+rund 36,47 Decode-Schritte; der Lauf selbst maß 31 Schritte. Matmul blieb in
+allen Armen aktiv; Modell, Gewichte und Quantisierung blieben unverändert.
+Die Studie belegt keinen allgemeinen Qualitäts-, Selbstlern- oder
+Produktivclaim und aktiviert nichts automatisch. Die Freigabe ist genau einmal
+verbraucht; es gibt keinen zweiten Lauf.
+
+Der Lifecycle-Selfcheck-Bug wurde erst nach der Messung erkannt und getrennt
+behoben. Die read-only UI lieferte GET/HEAD `200`, Schreibmethoden `405`, fremden
+Host `421`; die geprüften Hashes blieben unverändert.
+
+## 2026-08-24 — Zyklus 16: Post-Hardware-Verifikation und Lifecycle-Nachtrag
+
+Die Nachprüfung blieb read-only; ein neuer Hardware- oder Modelllauf wurde nicht
+ausgeführt. Die vollständige Pytest-Suite bestand mit `787 Tests in 71 Dateien`,
+Exit 0. Der fokussierte Test `test_matmul_compile_ab` bestand mit `43 passed,
+60 subtests`, Exit 0. Compileall Exit 0, Worker-Selfcheck 21/0,
+Harness-Selfcheck 18/0, Dashboard-Selfcheck 0, `xcodebuild` Exit 0, `jq` Exit 0
+und `git diff --check` Exit 0. Der Default-Aufruf endete erwartungsgemäß mit
+Exit 78 ohne Mutation. Der Harness-`--show`-Aufruf lief einmal mit Exit 0,
+stderr blieb leer und er lieferte genau eine gültige JSON-Zeile.
+
+Die reale lokale UI lieferte GET/HEAD `200`, Schreibmethoden `405`, fremden Host
+`421` und `no-store`. Sie enthielt keinen unbereinigten Modelltext. Cycle-16-
+und Cycle-15-Evidence sowie 12 SQLite-Datenbanken waren vor und nach der UI-
+und Auditprüfung identisch; die private Startmarke blieb auf `0600`. Die
+geprüften Ergebnis-, Evidence- und Datenbank-Hashes blieben unverändert.
+
+ProjectAtlas wurde genau einmal inkrementell mit `watch_once` aktualisiert:
+ein Zyklus, 967 indexierte Textkandidaten, 11 geparste und 732 unveränderte
+Symbole. Runtime `0.4.5-rc1` und die projektlokale MCP-Konfiguration waren
+gültig. Getrackte ProjectAtlas-Dateien blieben unangetastet; das vorbestehende
+verschachtelte `.gradle`-Untracked wurde ebenfalls nicht verändert.
+
+Der Lifecycle-Bug entstand, weil der Selfcheck Evidence fälschlich immer als
+fehlend erwartete. Die Korrektur prüft fehlende und vorhandene Evidence
+read-only, akzeptiert keine Symlinks, verlangt eine reguläre Markerdatei mit
+Modus `0600` und vergleicht Hashes und Modi vor und nach dem Test. Der aktuelle
+Arbeitsbaum-Harness ist damit nicht bytegleich zum versiegelten Code; die
+Evidence bewahrt aber die Code-Fingerprints des Seal-Stands. `formal_claim=false`,
+keine automatische Aktivierung und keine neue Freigabe.

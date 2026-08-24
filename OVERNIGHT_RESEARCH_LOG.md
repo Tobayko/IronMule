@@ -1238,3 +1238,33 @@ weiterer Hardwarelauf braucht neue Freigabe, neue Vorregistrierung und einen
 neuen Zyklus. Ein Matmul-A/B-Vergleich bleibt ein separater, künftig
 vorregistrierungspflichtiger Kandidat, weil der vollständige mit/ohne-Pfad nicht
 existiert.
+
+## Zyklus 16 — 24.08.2026: Runtime-Compile-A/B, reales Ergebnis
+
+**Studie:** `matmul-compile-ab-20260824-01`; Seal-Commit
+`83ee3ea03f9fb303b8226ab8ad3189f07daec727`; Entscheidung
+`runtime_compile_wins_exact_scope`; `formal_claim=false`. Evidence-Commit
+`cc6d2ea012a0cd6a858acc9a66d4754e95c421b7`, Result
+`fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57`, Verification
+`09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038`, Marker
+`8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f`, Präregistrierung
+`dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
+
+Sechs frische Prozesse und 18 Arm-Ausführungen (3 × 6) wurden real auf dem M1 Max ausgeführt. Alle
+Token und Texte waren exakt gleich. Gemessene Decode-Medianen: Standard
+`0,399939187 s`, Fixed-Eager `0,3999597295 s`, Fixed-Compiled
+`0,371848789 s`; TTFT `0,638376521`/`0,638425813`/`0,6385446665 s`.
+Die gepaarten Decode-Ratios waren `0,9295921887` gegen Standard (KI
+`[0,9128789083; 0,9348209684]`) und `0,9296309524` gegen Fixed-Eager (KI
+`[0,9256302629; 0,9327708433]`). Peak-RSS `3.771.564.032 B`, MLX-Peak
+`3.476.049.782 B`, Swap-Delta `0 B`.
+
+Nur berechnet: warm `0,9829777045`, kalt `1,0154895491`, Break-even median rund
+36,47 Schritte bei 31 gemessenen Decode-Schritten. Matmul wurde nie abgeschaltet;
+Modell, Gewichte und Quantisierung blieben unverändert. Der Befund ist kein
+allgemeiner Qualitäts-, Selbstlern- oder Produktivclaim. Freigabe genau einmal
+verbraucht, kein zweiter Lauf und keine automatische Aktivierung.
+
+Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt behoben. Die
+read-only UI lieferte GET/HEAD 200, Schreibmethoden 405 und fremden Host 421;
+die geprüften Hashes blieben unverändert.
