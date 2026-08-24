@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; Zyklus 14 auf `8067dc6`, Zyklus 13 auf `f954617`, Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; Zyklus 14 auf Vor-Hardware-Commit `8067dc6` und separatem Ergebnis-/Dokumentations-Commit `8923467`, Zyklus 13 auf `f954617`, Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -61,6 +61,36 @@ Peak-RSS `3.764.961.280` Byte, MLX-Peak `3.021.085.374` Byte und
 Swap-Delta `0` hielten alle Gerätegrenzen. Die lokale read-only UI zeigte drei
 Verlaufszeilen und denselben negativen Entscheid. Das Ergebnis wurde nicht
 wiederholt oder nachträglich gelockert.
+
+### Unabhängiges Audit von Zyklus 14
+
+Das Audit bestätigte die getrennte lokale Provenienz: Vor dem Hardwarelauf lag
+`8067dc6c1fb175f0df539394b2e4dad5894b14b8` vor; der unveränderte Ergebnis- und
+Dokumentationsabschluss liegt in `8923467c57d61d3599c430687b949052e397a95c`.
+Die Präregistrierung blieb bei SHA-256
+`0fa346db7985cdd4dfa49015b395ee0f9d56a097a06f3828b0c161c45e53e5ec`, die
+Ergebnisdatei bei `64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975`
+und die private Startmarke bei
+`6e741162f6d02ec69ee74ad7670b8e1a5046a3bc1430b946d7511b1248a6d573`.
+Die drei PIDs waren verschieden, jeder Prozess meldete einen Modellload, und
+Tokenfolge sowie Rohtext waren `3/3` identisch. Der Rohtext enthielt die richtige
+ID, aber einen unerlaubten Markdown-Codeblock; die unveränderte Entscheidung ist
+`planner_contract_failed`, `formal_claim=false`.
+
+Unabhängig erneut geprüft wurden die 17 Offline-Tests (Exit `0`), der Worker-
+Selbsttest `11/11`, der Harness-Selbsttest `9/9`, AST-/JSON-Parsing,
+`git diff --check` (Exit `0`) und `xcodebuild -checkFirstLaunchStatus` (Exit `0`).
+Die read-only UI antwortete auf GET mit `200`, auf den Snapshot-GET mit `200`
+und auf einen fremden Host mit `421`; die Ergebnis-SHA blieb dabei unverändert.
+HEAD wurde nicht als erfolgreich dokumentiert und antwortete im Audit mit `501`.
+
+Offen und absichtlich unverändert bleibt, dass `results.json` keinen
+Gewichts-SHA speichert. Der lokal separat verifizierte SHA von
+`model.safetensors` ist `94d3d701367d78584a9334ca00672b1c86e4aefa6a94167556c0485381e74af3`,
+ist aber keine nachträgliche Ergänzung der alten Evidenz. Die drei absichtlichen
+Markdown-Trailing-Spaces in der versiegelten Präregistrierung werden wegen des
+eingefrorenen Hashes nicht entfernt. Es gab keinen erneuten Hardwarelauf und
+keinen Security-Check.
 
 Abschlussprüfung am 24.08.2026: ProjectAtlas-Refresh ohne Timeout, Runtime
 `0.4.5-rc1`, gültige projektlokale MCP-JSON-Konfiguration,
