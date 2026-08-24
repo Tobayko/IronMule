@@ -55,7 +55,7 @@ EXPECTED_MACHINE = "arm64"
 EXPECTED_MEMORY_BYTES = 32 * 1024**3
 REQUIRED_PACKAGES = {"mlx": "0.32.0", "mlx-lm": "0.31.3"}
 FROZEN_PREREGISTRATION_SHA256 = (
-    "77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1"
+    "246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe"
 )
 PREREGISTRATION = Path(__file__).with_name("PREREGISTRATION.md")
 WORKER = Path(__file__).with_name("worker.py")

@@ -47,10 +47,16 @@ Modellqualität, kein Lernen, keinen Code und keine Aktivierung. Der Claim bleib
 
 Der eingefrorene Vor-Hardware-Code ist über die folgenden SHA-256-Werte gebunden:
 
-- Präregistrierung: `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`
+- Präregistrierung: `246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`
 - Worker: `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`
-- Harness: `5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131`
+- Harness: `59691f50a1f33d4930b36ccce24ec701af74ebd0f9f095912a75e15a28978470`
 - read-only UI: `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`
+
+Der staged Diff-Check meldete vor Hardware wegen drei Trailing-Spaces in der
+Präregistrierung Exit `2`. Ausschließlich diese Formatzeichen wurden entfernt.
+Studienvertrag, Modelle, Zeitplan, Gates, Entscheidungstabelle und
+`formal_claim=false` blieben semantisch unverändert; es gab keine
+Vertragsänderung und keine Hardwareausführung.
 
 Der finale fokussierte Offline-Stand umfasst `46` Tests und `42` Subtests mit
 Exit `0`; auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-
@@ -81,8 +87,8 @@ geschlossen:
   Gewichten sowie 4B-Revision
   `93724907d4ed1745d2fe50baadf3b0b01a65abf2` mit `3.400.569.562 B`
   Gewichten; kein Snapshot wurde geladen;
-- die Präregistrierung blieb bytegleich bei SHA-256
-  `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`;
+- die Präregistrierung liegt nach dem Formatfix bei SHA-256
+  `246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`;
 - ignorierte `__pycache__`-Verzeichnisse sind vorhanden, gehören aber weder zum
   Studienartefakt noch zu einem späteren Commit.
 

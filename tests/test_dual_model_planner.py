@@ -44,7 +44,7 @@ worker = load("dual_model_planner_worker", EXPERIMENT / "worker.py")
 EXPECTED_RESPONSE = '{"candidate_id":"persistent_service_qualification"}'
 CODEBLOCK_RESPONSE = f"```json\n{EXPECTED_RESPONSE}\n```"
 PROMPT_HASH = "c746eca8644a18fc75673acb9b3dbdf03825cbfba6c76faede5d909cf3d2ea0b"
-PREREGISTRATION_HASH = "77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1"
+PREREGISTRATION_HASH = "246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe"
 EXPECTED_MODEL_SPECS = {
     "1b": {
         "model_id": "mlx-community/gemma-3-1b-it-4bit",
@@ -235,6 +235,15 @@ class FrozenProtocolTests(unittest.TestCase):
         self.assertEqual(measure.POLICY.duty_cycle_limit, 0.15)
         self.assertEqual(measure.POLICY.wall_limit_s, 1_200.0)
         self.assertEqual(measure.POLICY.candidate_cooldown_s, 60.0)
+
+    def test_preregistration_has_no_trailing_whitespace(self) -> None:
+        text = (EXPERIMENT / "PREREGISTRATION.md").read_text(encoding="utf-8")
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            self.assertEqual(
+                line,
+                line.rstrip(" \t"),
+                f"PREREGISTRATION.md:{line_number} has trailing whitespace",
+            )
 
     def test_preregistration_separates_parent_content_hashes_from_timed_child_work(self) -> None:
         text = (EXPERIMENT / "PREREGISTRATION.md").read_text(encoding="utf-8")

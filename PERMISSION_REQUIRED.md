@@ -198,9 +198,9 @@ private Startmarke und keine `results.json`.
 **Erteilte enge Aktion:** Nach abschließenden unabhängigen Offline-Checks darf nur
 dieser eingefrorene Studienvertrag einmalig ausgeführt werden. Die bindenden
 Vor-Hardware-Dateihashes sind Präregistrierung
-`77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`, Worker
+`246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe`, Worker
 `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`, Harness
-`5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131` und
+`59691f50a1f33d4930b36ccce24ec701af74ebd0f9f095912a75e15a28978470` und
 read-only UI
 `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
 Ein validiertes Event bleibt bei einem erst danach erkannten Ressourcenabbruch in
@@ -212,6 +212,11 @@ Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`
 auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
 wurde in diesem Dokumentationslauf nicht erneut ausgeführt. Der Zyklus-14-
 Auditcommit ist `ee12bb5`.
+
+Ein staged Diff-Check endete vor Hardware wegen drei Trailing-Spaces in der
+Präregistrierung mit Exit `2`. Nur diese Formatzeichen wurden entfernt; Semantik,
+Studienvertrag und Freigabegrenze blieben unverändert. Der aktuelle
+Präregistrierungs- und Harness-Hash oben bindet diesen reinen Formatfix.
 
 Der vollständige Preflight ändert die Freigabegrenze nicht: Worker `17/17`,
 Harness `25/25`, `compileall`, fokussierte und vollständige Suite, Diff-, AST-,
