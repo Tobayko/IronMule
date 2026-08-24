@@ -7,7 +7,7 @@
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
-| Root-Provenienz | Root-Git-Repository; Zyklus 13 auf `f954617`, Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
+| Root-Provenienz | Root-Git-Repository; Zyklus 14 auf `8067dc6`, Zyklus 13 auf `f954617`, Zyklus 11 auf `1dff9a5`, formale Head-Skip-Studie auf `9466bb9`, Phase 1B auf `ea8f959`, N8/N10-Shadow-Router auf `70bc451`, N10-Runtime auf `5eaad38`, N10-v2 auf `959df09`, N10-v1 auf `c3e582c`, formaler H1-v2-Code auf `1fbe73c`; `ProjectAtlas/` als gepinntes, unverändertes Gitlink | formale und native Läufe sind an konkrete Root-Revisionen gebunden |
 | H0 | `.friday-data/h0.sqlite3` mit `28` Runs, darunter `9` `aa_gpu`-Runs | H0-Rohhistorie vorhanden; **kein** formal geschlossenes A/A-Gate |
 | H0.1 | `3` Legacy-Beobachtungen, `6` Paced-Sessions, `1` Study mit `h01_complete_unresolved` | replizierte Stationarität nicht unterstützt; gültiger Negativbefund |
 | H1/H2 historisch | zehn rekonstruierbare Zusammenfassungen, keine Rohblöcke und keine vollständige historische Provenienz | ausschließlich `legacy_summary`; formale H1/H2-Claims `false` |
@@ -20,6 +20,7 @@
 | H2 Gemma-Minimallauf | eine offline erzwungene Gemma-4B-Runde schlug `N=3,10,16` vor; Harness bestätigte explorativ `N=10` mit frischen drei Replikaten | nützliche Modellselektion beobachtet, aber Schema v1 bleibt `formal_claim=false`; keine Runtime-Erweiterung und keine zweite Runde |
 | Prefill-Head-Skip formal | terminale 16-Record-Historie: versiegelte Präregistrierung, sechs bestandene A/A-Sessions, eingefrorene MDE `5 %`, sechs frische A/B-Sessions, `R=0,846385`, Gesamt-KI `[0,843147; 0,851284]`, `12/12` Tokenidentitätsgates | Gain ist nur für ein Gerät, einen gebundenen Gemma-4B-Snapshot, einen 897-Token-Prompt, Chunk `256`, Batch `1` und greedy ohne Prompt-Logprobs formal bestätigt; Integration bleibt freigabepflichtig |
 | Persistenter Modellprozess | prospektiver Zyklus 13 mit zwei bestandenen A/A-Paaren, drei Charakterisierungs- und drei Validierungspaaren; Gesamtmedian `R=0,346968`, `6/6` exakte Tokenpaare, kein RSS-/Swap-Wachstum | **Engineering-Gain nur im gemessenen Scope**, gerechnet `−65,3032 %`, `formal_claim=false`; normaler Dienstpfad und automatische Aktivierung bleiben freigabepflichtig |
+| Gemma-4B-Planer | prospektiver Zyklus 14 mit drei frischen Prozessen; `3/3` exakt gleiche greedy Antworten und richtige ID im Rohtext, aber `0/3` Antworten ohne Markdown-Rahmen | **`planner_contract_failed`**; keine Selbstoptimierung, kein Geschwindigkeitsgewinn und keine Aktivierung, `formal_claim=false` |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
@@ -50,6 +51,16 @@ Die einmalige Startmarke liegt privat unter
 `.friday-data/persistent-process/attempt.json`; der Hardwareprozess lief genau
 einmal. Die lokale read-only UI zeigte acht Verlaufszeilen und denselben Entscheid.
 Es wurde kein persistenter normaler Dienst aktiviert.
+
+Die Zyklus-14-Evidenz liegt in `experiments/planner_4b/results.json`, SHA-256
+`64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975`.
+Der Hardwarelauf lief am Netzteil genau einmal von Vor-Commit `8067dc6`; die
+private Startmarke hat SHA-256
+`6e741162f6d02ec69ee74ad7670b8e1a5046a3bc1430b946d7511b1248a6d573`.
+Peak-RSS `3.764.961.280` Byte, MLX-Peak `3.021.085.374` Byte und
+Swap-Delta `0` hielten alle Gerätegrenzen. Die lokale read-only UI zeigte drei
+Verlaufszeilen und denselben negativen Entscheid. Das Ergebnis wurde nicht
+wiederholt oder nachträglich gelockert.
 
 Abschlussprüfung am 24.08.2026: ProjectAtlas-Refresh ohne Timeout, Runtime
 `0.4.5-rc1`, gültige projektlokale MCP-JSON-Konfiguration,

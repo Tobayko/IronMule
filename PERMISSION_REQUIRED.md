@@ -128,15 +128,14 @@ Modell-Snapshot, frischem Anfrage-Cache, Speichergrenze, Fehlerzähler, sichtbar
 Fallback und eigener Qualifikation für Multi-Turn sowie parallele Anfragen. Keine
 allgemeine Aktivierung aus dem Zyklus-13-Ergebnis allein.
 
-## 8. Selbstlernendes Optimization Memory mit kleinem lokalem Planner
+## 8. Selbstlernendes Optimization Memory mit lokalem Planner — Test erfolgt
 
-**Status:** Das Nutzerziel „eigenständig optimieren“ ist erteilt; die genaue
-Architekturfreigabe steht noch aus. Ein vollständiger lokaler
-`mlx-community/gemma-3-1b-it-4bit`-Snapshot auf Revision
-`2d44e83dc9e80843d22fb941d3d699a0b1351aa6` ist bereits vorhanden. Es ist kein
-Download und keine Installation nötig. Der vorhandene `tools/model_loop.py` kann
-Messungen innerhalb eines Laufs zurückfüttern, speichert dieses Lernen aber nicht
-dauerhaft und verwendet derzeit das größere 4B-Modell.
+**Status:** Der Nutzer hat den eng begrenzten lokalen Planertest freigegeben und
+ausdrücklich Gemma 4B verlangt. Der bereits vorhandene 4B-Snapshot wurde in Zyklus
+14 ohne Download oder Installation genau einmal geprüft. Drei identische greedy
+Antworten nannten die erwartete Kandidaten-ID, setzten das JSON aber jeweils in
+einen unerlaubten Markdown-Codeblock. Entscheidung `planner_contract_failed`;
+keine Aktivierung. Auch der lokale 1B-Snapshot bleibt vorhanden und ungetestet.
 
 **Nutzen:** Das System merkt sich Gewinne, Nullergebnisse und Fehler dauerhaft,
 schlägt daraus genau den nächsten sinnvollen Versuch vor und wiederholt bekannte
@@ -150,13 +149,18 @@ ein wirklich gelerntes Rangiermodell nötig sind. Modellgenerierter Code,
 nachträglich geänderte Schwellen oder eine Aktivierung durch das Modell wären
 unsicher und wissenschaftlich wertlos.
 
-**Benötigte Aktion:** ausdrückliche Freigabe für diese enge Architektur:
+**Erteilte enge Aktion:** nur ein fester Planungsfall mit genau einer Auswahl aus
+vier IDs, ohne Code, Befehle oder automatische Ausführung. Das negative Ergebnis
+wird nicht durch einen großzügigeren Parser umgedeutet oder wiederholt.
+
+**Verbleibende Architekturgrenze:** Ein dauerhaftes selbstoptimierendes System
+benötigt weiterhin einen getrennten, rückrollbaren Aufbau mit diesen Regeln:
 
 1. lokale, private Historie mit **allen** Ergebnissen einschließlich Fehlern und
    Nullresultaten, jeweils an Hardware-, Modell-, Software- und Workload-Fingerprints
    gebunden;
-2. bis zu mehreren hundert sauberen Messungen nur feste Regeln; der lokale 1B-Planer
-   darf genau **einen** noch ungemessenen Kandidaten aus einer festen Liste als JSON
+2. bis zu mehreren hundert sauberen Messungen nur feste Regeln; ein lokaler Planer
+   darf genau **einen** noch ungemessenen Kandidaten aus einer festen Liste
    vorschlagen, niemals Code oder Befehle;
 3. weiterhin genau ein Kandidat je Zyklus, Vorregistrierung vor Hardware,
    `BudgetGuard`, Netzbetrieb, keine Wiederholung und zwingende Tokenidentität;
@@ -165,6 +169,7 @@ unsicher und wissenschaftlich wertlos.
 5. zunächst keine automatische Produktaktivierung. Ein bestätigter Kandidat erhält
    nur einen getrennten, rückrollbaren Integrationsvorschlag.
 
-Nach dieser Freigabe wird zuerst nur die Historie plus 1B-Vorschlagsweg offline
-gebaut und geprüft. Eine eigene Hardwarestudie folgt erst mit neuer
-Vorregistrierung; beide Modelle laufen dabei nacheinander, nicht gleichzeitig.
+Ein weiterer Planerversuch müsste vorab als neuer Kandidat die Ausgabe technisch
+auf genau eine feste ID beschränken. Eine eigene Hardwarestudie braucht einen
+neuen Zyklusvertrag; Modelle laufen dabei nacheinander, nie gleichzeitig. Eine
+breite oder produktive Selbstaktivierung ist durch Zyklus 14 nicht freigegeben.

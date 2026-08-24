@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, nach Zyklus 13 und begrenzter Runtime-Qualifikation,
+Stand: 24. August 2026, nach Zyklus 14 und begrenzter Runtime-Qualifikation,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -64,6 +64,34 @@ Die Entscheidung lautet `engineering_gain_confirmed_exact_scope`. Sie bleibt
 `formal_claim=false` und belegt nur diesen Prozess-Lebenszyklus auf diesem Gerät,
 Modell-Snapshot und Workload. Ein normaler Dienst nutzt den Pfad noch nicht
 automatisch.
+
+## Gemma-4B-Planertest: gültiges negatives Ergebnis
+
+Zyklus 14 war kein Geschwindigkeitstest, sondern prüfte einen einzigen festen
+Planungsfall für das gewünschte selbstoptimierende System. Drei frische Prozesse
+luden nacheinander denselben lokalen 4B-Snapshot und erhielten denselben
+`322`-Token-Prompt. Erlaubt war nur ein JSON-Objekt mit einer Kandidaten-ID.
+
+| Endpunkt | Ergebnis | vorab festgelegte Grenze |
+| :--- | ---: | :--- |
+| frische Prozesse | `3` | genau `3` |
+| Ausgabe je Prozess | `23` greedy Token | höchstens `32` |
+| Token und Text | **`3/3` exakt gleich** | Pflicht |
+| Abschluss | **`3/3 stop`** | Pflicht |
+| reines JSON ohne Zusatz | **`0/3`** | `3/3` |
+| inhaltlich genannte erwartete ID | `3/3` | nur beschreibend, kein Ersatz-Gate |
+| Rechenzeit, Median | `1,047670` s | – |
+| gesamte Prozesszeit, Median | `4,858676` s | – |
+| maximales Prozess-RSS | `3.764.961.280` Byte | höchstens `5 GiB` |
+| maximaler MLX-Speicher | `3.021.085.374` Byte | höchstens `5 GiB` |
+| Swap-Wachstum | `0` Byte | höchstens `0` |
+
+Alle drei Antworten enthielten zwar
+`persistent_service_qualification`, umgaben das Objekt aber mit einem
+Markdown-Codeblock. Die vorab festgelegte Entscheidung lautet deshalb
+`planner_contract_failed`. Der zusätzliche Rahmen wird nachträglich nicht
+akzeptiert oder entfernt. Der Lauf bestätigt weder Selbstlernen noch eine neue
+Performanceverbesserung und aktiviert nichts; `formal_claim=false`.
 
 ## Prefill
 
