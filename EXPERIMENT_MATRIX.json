@@ -256,6 +256,24 @@
         }
       },
       "implemented": "HardwareProfile.readback_interval()"
+    },
+    {
+      "id": "prefill_head_skip",
+      "priority": 6,
+      "cycle": 8,
+      "state": "candidate_recommended_for_preregistration",
+      "measured": {
+        "head_share_of_prefill": {
+          "128": 0.1479,
+          "256": 0.1605,
+          "512": 0.1525
+        },
+        "prefill_full_s": 1.7614,
+        "prefill_lean_s": 1.4788,
+        "token_identity": "identisch bei allen drei Blockgroessen"
+      },
+      "limit": "nur bei greedy ohne Logprob-Ausgabe je Prompt-Token anwendbar",
+      "note": "mlx_lm wendet lm_head auf alle Prefill-Positionen an; gelesen wird eine"
     }
   ],
   "endpoints": {
