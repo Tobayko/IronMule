@@ -314,7 +314,7 @@ freigegeben. Jede weitere Studie braucht eine neue ausdrückliche Freigabe.
 Der Lifecycle-Selfcheck-Bug wurde nach der Messung getrennt entdeckt und behoben;
 er ist kein nachträglich umgedeutetes Messergebnis.
 
-## 11. Zyklus 17 — Nutzerreservierung, Freigabe noch nicht verbraucht
+## 11. Zyklus 17 — historische Nutzerreservierung vor dem Lauf
 
 „Dann machen wir das mal“ reserviert genau einen Lauf für
 `fixed-compiled-batched-readback-20260824-01` /
@@ -327,8 +327,17 @@ getrimmt; exakte logische Token-/Textidentität ist terminal. Noch kein Marker,
 Resultat oder Modelllauf; `formal_claim=false`, keine Aktivierung, kein Dienst,
 kein Multi-Turn- und kein Qualitätsclaim.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 Die reservierte Freigabe ist noch nicht verbraucht. `measured=false`,
 `formal_claim=false`, `authorization=reserved_not_consumed`; kein Modell,
 keine Hardware, kein Marker, kein Resultat, kein Dienst und keine Aktivierung.
+
+## Zyklus 17 — Freigabe verbraucht
+
+Die Freigabe wurde exakt einmal verbraucht. Ergebnis:
+`no_clear_speedup_baseline_retained`, `measured=true`, `formal_claim=false`.
+Readback 8 war in jedem Paar schneller, aber `0,9581074518` verfehlte die
+feste 5-%-Schwelle. Keine Aktivierung, kein Qualitäts- oder Selbstlernclaim.
+Multi-Turn und begrenzte Parallel-Requests benötigen neue Architekturfreigabe
+und neue Hardware-Studie.

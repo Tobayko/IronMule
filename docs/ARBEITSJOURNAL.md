@@ -5746,3 +5746,28 @@ Harness `9c0689be97a1ee5022f7c4b4623af9bd4a9906411291d9c4295b4c16184c7ff0`,
 Dashboard `ccbaf05368f21acfa2c627a33f3ee9c5629d335d45f76abb5a74d1399fbeaaee`.
 Selfchecks und Offline-Tests (30/30, 817/817) bestanden; kein Produktivdienst
 und keine Aktivierung.
+
+## 2026-08-25 — Zyklus 17 Ergebnis
+
+Der einmalige Hardwarelauf ist abgeschlossen: `measured=true`, Freigabe
+`consumed_exactly_once`, Entscheidung `no_clear_speedup_baseline_retained`,
+`formal_claim=false`. Readback 8 war in allen sechs Paaren schneller, aber der
+Ratio-Median `0,9581074518` verfehlte die feste 5-%-Schwelle; der 4,1893-%-Effekt
+ist berechnet. Baseline retained. 6 Paare/12 Arme, exakte logische und sichtbare
+Identität, kein Qualitäts-, Modell-, Gewichts-, Quantisierungs- oder Matmulclaim.
+Independent Evidence-Audit: `evidence_valid=true`; Resultat, Verification und
+Marker blieben hash-stabil. Der negative Befund ist gültig.
+
+## 2026-08-25 — Dokumentations-Konsistenzkorrektur
+
+Aktive Zusammenfassungen wurden nach dem Ergebnislauf von Draft-/Preflight-
+Status auf `measured=true`, `consumed_exactly_once` und
+`no_clear_speedup_baseline_retained` korrigiert. Frühere Draft-/Seal-Stände
+bleiben ausdrücklich historisch markiert. Die Matrix-Grenzen wurden auf
+Zyklus 17/16 abgeschlossene Zyklen aktualisiert; die Readback-Zeile trägt den
+berechneten 4,1893-%-Effekt und die verfehlte feste 5-%-Schwelle.
+
+## 2026-08-25 — Matrix-Zählerkorrektur
+
+Die Matrix weist nun korrekt `max_cycles=17` und `cycles_completed=17` aus;
+dies ersetzt den unmittelbar vorherigen Zwischenstand `17/16`.

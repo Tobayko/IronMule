@@ -344,19 +344,30 @@ Nur berechnet: warm `0,9829777045` (rund 1,7022 % schneller), kalt
 Decode-Schritte gegenüber 31 in diesem Lauf. Matmul war stets aktiv; die Studie
 ändert nur Cacheform und MLX-Compile-Laufzeitorganisation.
 
-## Zyklus 17 — geplante Baseline vor Hardware
+## Zyklus 17 — historische Planung vor Hardware; inzwischen gemessen
 
 Der Draft `fixed_compiled_batched_readback_n8_v1` vergleicht Readback `1` und
 `8` ausschließlich auf dem qualifizierten Fixed-Compiled-4B-Pfad. Sechs
 gepaarte frische Prozesse mit zwölf geplanten Arm-Ausführungen sind vorgesehen;
 Modell, Gewichte, Quantisierung und Matmul bleiben unverändert. EOS-Tail wird
 vollständig erfasst und getrimmt, exakte logische Token-/Textidentität ist
-terminales Gate. Status `draft_pending_preflight`; noch kein Marker, Resultat
-oder Modelllauf. Cycle 7 `12,98 %` ist explorativ, `formal_claim=false`.
+terminales Gate. Der Lauf ist inzwischen gemessen und endete mit
+`no_clear_speedup_baseline_retained`; `formal_claim=false`. Cycle 7 `12,98 %`
+bleibt explorativ.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 `measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
 Kein Modell-/GPU-/Hardwarelauf, Marker oder Resultat. Readback 1 versus 8 bleibt
 die einzige Variable im identischen Fixed-Compiled-4B-Pfad; sechs frische Paare
 und zwölf Arme sind geplant.
+
+## Zyklus 17 — gemessener negativer Befund
+
+Decode-Median/MAD: Readback 1 `0,2662952915/0,0002979590 s`, Readback 8
+`0,2551394585/0,0002100205 s`; Readback `0,133416793`/`0,018026520 s`,
+TTFT `0,640586125`/`0,7182502295 s`, Prefill `0,6383028335`/`0,638542875 s`,
+Arm-Wall `1,7003978955`/`1,683269416 s`, Tokenrate `86,3702926`/`94,0662085 s⁻¹`.
+Ratio-Median `0,9581074518`, KI `[0,9534714914;0,9598849359]`; 4,1893 % ist
+berechnet. Readback 8 war stets schneller, die feste 5-%-Schwelle aber verfehlt;
+Baseline retained, `formal_claim=false`. Der 8er-TTFT ist wegen der Boundary später.

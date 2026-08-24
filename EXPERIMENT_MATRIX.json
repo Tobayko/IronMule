@@ -392,9 +392,11 @@
     {
       "id": "batched_readback",
       "priority": 7,
-      "state": "candidate_recommended_for_preregistration",
+      "state": "no_clear_speedup_baseline_retained",
       "note": "Stop-Pruefung alle N Schritte statt jeden; abrufbare Variante von host_sync_readback",
       "cycle": 7,
+      "confirmation_cycle": 17,
+      "decision": "no_clear_speedup_baseline_retained",
       "measured": {
         "ms_per_token": {
           "1": 14.3132,
@@ -749,10 +751,10 @@
       "id": "fixed_compiled_batched_readback_n8_v1",
       "study_id": "fixed-compiled-batched-readback-20260824-01",
       "candidate_id": "fixed_compiled_batched_readback_n8_v1",
-      "status": "sealed_pre_hardware",
+      "status": "no_clear_speedup_baseline_retained",
       "formal_claim": false,
-      "measured": false,
-      "result": null,
+      "measured": true,
+      "result": "experiments/batched_readback_compile/results.json",
       "arms": ["fixed_compiled_readback_1", "fixed_compiled_readback_8"],
       "paired_fresh_processes": 6,
       "planned_arm_executions": 12,
@@ -760,10 +762,15 @@
       "fixed_invariants": ["model", "weights", "quantization", "mathematical_matmul", "fixed_compiled_runtime"],
       "eos_tail": "fully_timed_and_trimmed",
       "correctness_gate": "exact_logical_tokens_and_visible_text_terminal",
-      "hardware_measured": false,
-      "authorization": "reserved_not_consumed",
+      "hardware_measured": true,
+      "authorization": "consumed_exactly_once",
       "cycle_7_reference": "exploratory_12.98_percent_only",
-      "note": "No marker, result, model run, activation, service, multi-turn or quality claim before preflight."
+      "decision": "no_clear_speedup_baseline_retained",
+      "evidence_valid": true,
+      "result_sha256": "d2eb29fe31dcf47fe294d2b0bec2d724fe6cc6e6f6d88d2035783613338fbddd",
+      "verification_sha256": "be91320e44507573601b81b90016ff0b9c8bee9458465cebff5ae438e6bf9214",
+      "marker_sha256": "18801fdfca677eb1b0d6a82ac95954990ac05476876447ca1170a42e754710dc",
+      "note": "6 pairs/12 arms; exact logical/visible output identity; readback8 faster in every pair but median ratio 0.9581074518 misses fixed <=0.95 gate. Baseline retained; no activation, quality or self-learning claim."
     }
   ],
   "endpoints": {
@@ -813,8 +820,9 @@
       "swap_growth_allowed": false
     },
     "limits": {
-      "max_cycles": 16,
-      "cycles_completed": 15,
+      "max_cycles": 17,
+      "cycles_completed": 17,
+      "cycle17_authorization": "consumed_exactly_once",
       "max_failed_attempts_per_candidate": 1,
       "max_hardware_runs_per_candidate": 6
     }

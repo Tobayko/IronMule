@@ -1,6 +1,6 @@
 # Nächster prospektiver Kandidat
 
-Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation. Die frühere Freigabe für
+Stand: 25. August 2026, Zyklus 17 nach realer Runtime-Qualifikation. Die frühere Freigabe für
 Zyklus 15 ist verbraucht. Für genau eine neue runtime-only Studie wurde am
 24.08.2026 ausdrücklich freigegeben; ihre Präregistrierung ist im Arbeitsbaum
 im lokalen Seal-Commit eingefroren. Die Freigabe ist verbraucht; ein weiterer
@@ -60,15 +60,15 @@ danach darf eine neue Vorregistrierung Schwellen, Reihenfolge, Speichergrenzen u
 Tokenidentitätsgates festschreiben. Die Zyklus-13-Werte werden dabei nicht als
 Erfolgsschwelle übernommen.
 
-## Danach verbleibende prospektive Kandidaten
+## Kandidatenstatus nach Cycle 17
 
 | Kandidat | Zyklus | bisherige Wirkung | trifft |
 | :--- | ---: | ---: | :--- |
-| Gebündelter Readback | 7 | `12,98 %` je Token | Decode |
+| Gebündelter Readback | 7/17 | Cycle 17: `4,1893 %` berechnet, feste 5-%-Schwelle verfehlt | abgeschlossen; Baseline retained |
 | Host-Readback (Obergrenze) | 6 | `15,3 %` | Decode, nicht direkt abrufbar |
 | KV-Cache-Reallokationen | 11 | `4,4263 %` korrelierter Decodeanteil | Decode, erster Schritt konfundiert |
 
-## Aktiver Zyklus 16 — runtime-only Matmul-Umgebungs-A/B
+## Abgeschlossener Zyklus 16 — runtime-only Matmul-Umgebungs-A/B
 
 Studie: `matmul-compile-ab-20260824-01`
 Kandidat: `fixed_cache_compiled_decode_v1`
@@ -85,7 +85,8 @@ mathematische Matmul bleibt in allen Armen aktiv; verglichen werden nur
 Textidentität ist Pflicht. Alte Device-Model-Compile-Messungen werden wegen
 falscher Token ab Position 2 nicht verwendet. Ein negatives Ergebnis ist gültig.
 
-Die zwei Readback-Kandidaten betreffen nur den Decode. Der KV-Kandidat benötigt für
+Der gebündelte Readback ist durch Cycle 17 abgeschlossen; nur die Host-Readback-
+Obergrenze bleibt diagnostisch und nicht direkt abrufbar. Der KV-Kandidat benötigt für
 einen kausalen A/B-Test einen Cache-/Framework-Eingriff und bleibt bis zur expliziten
 Architekturfreigabe gesperrt. Kandidaten dürfen nicht in einer gemeinsamen Studie
 vermischt werden.
@@ -132,22 +133,31 @@ Matmul blieb in allen Armen aktiv; Modell, Gewichte und Quantisierung wurden
 nicht verändert. Die Freigabe ist genau einmal verbraucht. Kein allgemeiner
 Qualitäts-, Selbstlern- oder Produktivclaim und keine automatische Aktivierung.
 
-## Zyklus 17 — nächster Draft
+## Zyklus 17 — historischer Pre-Hardware-Draft (abgeschlossen)
 
 Studie `fixed-compiled-batched-readback-20260824-01`, Kandidat
 `fixed_compiled_batched_readback_n8_v1`, Status `draft_pending_preflight`.
-Die Antwort „Dann machen wir das mal“ reserviert genau einen neuen Lauf; die
-Freigabe ist reserviert und noch nicht verbraucht. Geplant: sechs gepaarte
+Die Antwort „Dann machen wir das mal“ reservierte genau einen neuen Lauf; die
+Freigabe wurde anschließend exakt einmal verbraucht. Historisch geplant: sechs gepaarte
 frische Prozesse, zwölf Arm-Ausführungen, Readback `1` versus `8` als einzige
 Variable auf identischem Fixed-Compiled-4B-Pfad. EOS-Tail wird vollständig
 getaktet und getrimmt; exakte logische Token und sichtbarer Text sind terminal.
-Noch kein Marker, Resultat oder Modelllauf. `formal_claim=false`; keine
+Der Lauf ist inzwischen abgeschlossen; `formal_claim=false`; keine
 Aktivierung, kein Dienst, kein Multi-Turn- und kein Qualitätsclaim. Cycle 7
 `12,98 %` bleibt explorative Historie.
 
-## Zyklus 17 — sealed_pre_hardware
+## Zyklus 17 — historischer sealed_pre_hardware-Stand
 
 `measured=false`, `formal_claim=false`, `authorization=reserved_not_consumed`.
 Kein Modell-/MLX-/Hardwarelauf, Marker oder Resultat. Readback 1 versus 8 bleibt
 die einzige Variable im identischen Fixed-Compiled-4B-Pfad; sechs frische Paare
 und zwölf Arme sind geplant.
+
+## Zyklus 17 — Ergebnis und nächste Richtung
+
+Entscheidung `no_clear_speedup_baseline_retained`, `measured=true`,
+`formal_claim=false`, Freigabe exakt einmal verbraucht. Readback 8 war stets
+schneller, aber die feste 5-%-Schwelle wurde verfehlt. Als nächste Richtung
+bleiben nur Multi-Turn-Fortsetzung und begrenzte parallele Requests im
+persistenten Lifecycle/Prefill-Pfad; neue Architekturfreigabe und neue
+Hardware-Studie sind erforderlich. Nichts wird als Selbstlernen behauptet.
