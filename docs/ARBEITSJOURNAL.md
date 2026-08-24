@@ -4697,3 +4697,133 @@ wies einen DNS-Rebinding-Host mit `421` ab und sendete CSP,
 verifizierte Hashkette, beide Statuswerte und dieselbe Revision; der DB-Hash
 blieb bytegleich. `Ctrl-C` beendete die UI mit Exit `0`. Es wurde kein Modell
 geladen, nichts heruntergeladen oder installiert.
+
+### 2026-08-24 — Zyklus 11: KV-Reallokationen und fehlende ITL-Quantile
+
+**Ziel.** Die bereits vorregistrierte Beobachtungsstudie
+`kv-cache-realloc-20260824-01` unverändert und genau einmal ausführen, Cachewachstum
+im Decode lokalisieren und p50/p95/p99 der Inter-Token-Latenz ergänzen.
+
+**Provenienz und Ausführung.** Präregistrierungs-SHA
+`ce00e013f98f3c4b22a11cf0dc8d50f3206dbd2ea2151207ad6ffdac112af486`,
+Script-SHA `25f638fd414104c5902a88e8e5a49f5dd3175cbe8985f565977c301a95b7ee71`.
+Einmaliger Aufruf von
+`.venv/bin/python experiments/kv_realloc/measure_kv_realloc.py --execute`, Exit `0`,
+Netzbetrieb, `BudgetGuard`, Duty `0,15`. Kein Hardware-Retry.
+
+**Messung.** Acht Wiederholungen nach einem vorregistriert verworfenen Warmup,
+`765` Prompt-Token, `48` Decodeschritte. Cacheformänderungen lagen konsistent an
+Schritt `1` (`29` rotierende Layer, Überschuss `31,5853` ms) und Schritt `4`
+(`5` globale Layer, `0,2968` ms). Median ohne Ereignis `14,2671` ms; ITL p50
+`14,2670`, p95 `15,1385`, p99 `46,7879`, min/max `13,8230/49,4430` ms.
+Alle Token waren identisch. Guard: `21,086457` s GPU-Arbeit, `116,119931` s
+Pflichtpausen, maximal `1,270024` s kontinuierlich, `139,595394` s Wall.
+
+**Rechnung und Entscheidung.** Ereignissumme `31,8821` ms beziehungsweise
+`4,4263 %` des Decodes; mittlerer Gruppenüberschuss `15,9411` ms. Damit hielten H1,
+H2 und H3 nach der vorab festgelegten Gruppenentscheidung; Status
+`candidate_recommended_for_preregistration`, weiterhin `formal_claim=false`.
+Die zuvor gerechneten Kopierkosten (`0,7616` und `0,1317` ms, zusammen erwartete
+`0,13 %`) waren keine Grenzkostenmessung und wurden widerlegt. Der große Wert an
+Schritt `1` bleibt mit sonstigen Erstschrittkosten konfundiert; `4,4263 %` ist kein
+behaupteter Optimierungsgewinn. Ein kausaler A/B-Pfad wurde als freigabepflichtige
+Architekturänderung dokumentiert und nicht implementiert. Ergebniscommit:
+`1dff9a5ec95f0a28709ad261a7cfb2d5d8163c89`.
+
+### 2026-08-24 — Zyklus 12: formale Prefill-Head-Skip-Studie
+
+**Entscheidung.** Unter den noch empfohlenen Kandidaten wurde genau der LM-Head-Skip
+gewählt, weil er als einziger den gemessenen Hauptengpass Prefill traf. Der
+persistente Prozess und die Readback-Kandidaten blieben unangetastet. Vor Messung
+wurden Präregistrierung, Harness, acht fokussierte Tests, A/A-/A/B-Plan,
+Correctness-Gates, MDE-Regel, Abbruchregeln, eigene append-only Evidenz und read-only
+UI auf Commit `9466bb9f9f01813bcbd86b6d16837e90ad2523da` versiegelt.
+
+**Fehler vor der Versiegelung.** Ein Offline-Selbsttest importierte
+`canonical_json` zunächst aus dem falschen Modul `friday_h1.canonical`. Ursache war
+eine falsche Annahme über die bestehende API; die tatsächliche Funktion liegt in
+`friday_evidence.canonical`. Der Import wurde vor Commit und vor jeder Hardware-/DB-
+Evidenz korrigiert, fokussierte und vollständige Tests bestanden danach. Diese
+Lösung ist bei Folgearbeiten zu berücksichtigen: bestehende APIs immer aus dem
+tatsächlichen Modul importieren, keine Namensähnlichkeit als Beleg verwenden.
+
+**Versiegelter Vertrag.** Studie `head-skip-prefill-v1-20260824`, Kandidat
+`prefill-head-skip-20260824-02`, lokaler Gemma-Snapshot-Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`; Dokument-SHA
+`8f7a9a854639824d337aa9ff3ef97ae2255c804291577c5021af2e93abbbeec6`,
+Script-SHA `b39bd6be0768173d293647d45cc7f0d3b1c469fd234375c8f0d46ce3c227dc14`.
+Workload: `897` Prompt-Token, Chunk `256`, Batch `1`, greedy ohne Prompt-Logprobs,
+`32` Correctness-Token; sechs A/A- plus sechs A/B-Prozesse, je vier Messpaare nach
+zwei Warmup-Paaren. Duty-Policy `0,15`, Pacing `0,14`. Kein Hardwareprozess wurde
+wiederholt.
+
+**A/A-Messung und MDE.** Sessionquotienten
+`[0,998498; 1,004692; 0,994007; 1,005769; 1,004463; 1,001198]`, aggregiert
+`1,002829`, 95-%-KI `[0,994931; 1,005964]`, Session-SD `0,004526`; alle Gates
+bestanden. Die rohe, aus diesen Messblöcken gerechnete MDE war `0,7391 %`; gemäß
+Vorregistrierung wurde sie unverändert auf den konservativen Boden `5 %` gesetzt und
+im Confirmation-Seal eingefroren.
+
+**A/B-Messung.** C/V-Sessionquotienten:
+`C0=0,845257`, `V0=0,846173`, `C1=0,843401`, `V1=0,847653`,
+`C2=0,846596`, `V2=0,852478`. Alle zwölf Sessiongates der Gesamtstudie meldeten
+identische greedy Token-IDs; gemeinsamer Token-SHA
+`666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c`.
+Kein Ausreißer wurde verworfen. Beide Arme meldeten denselben MLX-Peak
+`3.213.903.666` Byte; RSS `3.768.795.136` bis `3.769.696.256` Byte.
+
+**Vorregistrierte Rechnung und terminale Entscheidung.** Charakterisierung
+`R=0,845257`, KI `[0,840544; 0,848452]`; Validierung `R=0,847653`, KI
+`[0,842683; 0,854941]`; gesamt `R=0,846385`, KI
+`[0,843147; 0,851284]`. Alle oberen Grenzen lagen unter `0,95`; gerechneter Effekt
+`−15,3615 %`. Status `head_skip_gain_confirmed`, Aktion
+`permit_bounded_architecture_review`, genau ein Record `formal_claim=true`.
+Der Claim ist eng auf ein Gerät, einen Modell-Snapshot, einen Prompt, einen
+Prefill-Plan und greedy ohne Prompt-Logprobs begrenzt. Keine Produktaktivierung.
+
+**Ressourcenrechnung.** Aus den zwölf Sessionrecords summiert: `332,277940` s
+GPU-Arbeit, `3.077,978881` s Pflichtpausen und `3.430,234516` s Session-Wall.
+Die Laufzeit wurde in jedem Messblock vor `charge()` gestoppt; Guard-Ruhezeiten sind
+nicht in den Prefill-Endpunkten enthalten.
+
+**Persistenz und UI.** `.friday-data/head-skip-v1.sqlite3`: `16` Records, Modus
+`0600`, `77.824` Byte, SHA-256
+`15ee462bbad5a8f757373f093fdf2ccfb8bdd0048c03447c1cb635acd38ec8d9`,
+Kettenkopf `8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4`.
+Replay bestand und ließ die Datei unverändert. Ein Diagnoseversuch per `HEAD`
+antwortete `501`, weil diese UI nur `GET` implementiert; GET lieferte anschließend
+`200` und die echte Historie. Das ist die dauerhafte Lösung für diesen Server.
+Manuelles `Ctrl-C` stoppte ihn mit sichtbarem `KeyboardInterrupt`/Exit `1`; nach dem
+terminalen Entscheid blieb der versiegelte Code bewusst unverändert.
+
+**Grenzen.** Integration ist wegen Architektur- und API-Auswirkungen in
+`PERMISSION_REQUIRED.md` eingetragen. Multi-Turn-Fortsetzung und mehrere parallele
+Requests fehlen weiterhin als Baselines. Das registrierte Maximum von zwölf Zyklen
+ist erreicht. Es gab weder Installation noch Download, Systemänderung, Push,
+Mutation einer versiegelten Spezifikation/Evidence-DB oder automatische Aktivierung.
+
+**Abschlussverifikation.** ProjectAtlas-Refresh: `925/944` Textkandidaten indexiert,
+`7` geänderte Symbolquellen geparst, `700` unverändert, kein Timeout; Runtime
+`0.4.5-rc1`. Die projektlokale MCP-JSON-Konfiguration war parsebar.
+`xcodebuild -checkFirstLaunchStatus` endete mit Exit `0`. Das erste reine
+Versionsdiagnostik-Kommando nahm irrtümlich `mlx.__version__` an und endete mit
+`AttributeError`; die belastbare Paketversion wird über
+`importlib.metadata.version("mlx")` gelesen. Ein anschließender Gerätecheck nutzte
+zunächst das als veraltet markierte `mx.metal.device_info`; der finale Check über
+`mx.device_info()` lief warnungsfrei und bestätigte MLX `0.32.0`, mlx-lm `0.31.3`,
+`Device(gpu, 0)` und Apple M1 Max. Beide Diagnosefehler erzeugten keine GPU-Arbeit
+und keine Evidenzdatei.
+
+Der read-only Studien-Replay bestand mit `16` Records, genau einem formalen Claim
+und Kettenkopf `8a568e61…a2d4`; die DB-SHA war vor und nach dem Replay identisch.
+Präregistrierungs- und Script-SHA blieben exakt versiegelt. Die vollständige Suite
+`.venv/bin/python -m pytest -q` erreichte `100 %` und Exit `0` in äußerer Wall-Zeit
+`41,86` s. Beide Ergebnis-JSON-Dateien, die MCP-JSON-Datei und `git diff --check`
+bestanden die abschließende Syntax-/Whitespace-Prüfung.
+
+Der erste read-only JSON-Quervergleich adressierte `limits` irrtümlich als
+Top-Level-Feld und endete mit `KeyError`; in der tatsächlichen Matrix liegt es unter
+`gates.limits`. Der korrigierte Check verwendete die vorhandene Struktur, verglich
+Status, Zykluszahl, Quotient, Decision-SHA und Recordzahlen zwischen Matrix und
+Ergebnisdatei und bestand. Keine Datei oder Evidenz wurde durch den Fehlversuch
+verändert.
