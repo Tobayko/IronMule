@@ -1034,6 +1034,74 @@ class MatmulCompileABTests(unittest.TestCase):
                 if path != DASHBOARD_PATH:
                     self.assertIn(b"self_check", completed.stdout)
 
+    def test_harness_self_check_accepts_absent_evidence_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = root / "results.json"
+            marker = root / "attempt.json"
+            with mock.patch.multiple(harness, RESULT_PATH=result, ATTEMPT_PATH=marker):
+                before = harness._evidence_state()
+                self.assertEqual(harness._self_check(), 0)
+                self.assertEqual(harness._evidence_state(), before)
+                self.assertFalse(result.exists())
+                self.assertFalse(marker.exists())
+
+    def test_harness_self_check_accepts_present_private_marker_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = root / "results.json"
+            marker = root / "attempt.json"
+            result.write_bytes(b"sealed result\n")
+            marker.write_bytes(b"sealed marker\n")
+            os.chmod(result, 0o644)
+            os.chmod(marker, 0o600)
+            with mock.patch.multiple(harness, RESULT_PATH=result, ATTEMPT_PATH=marker):
+                before = harness._evidence_state()
+                self.assertEqual(harness._self_check(), 0)
+                self.assertEqual(harness._evidence_state(), before)
+                self.assertEqual(result.read_bytes(), b"sealed result\n")
+                self.assertEqual(marker.read_bytes(), b"sealed marker\n")
+                self.assertEqual(stat.S_IMODE(marker.stat().st_mode), 0o600)
+
+    def test_harness_self_check_accepts_result_only_or_marker_only(self):
+        for present in ("result", "marker"):
+            with self.subTest(present=present), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                result = root / "results.json"
+                marker = root / "attempt.json"
+                if present == "result":
+                    result.write_bytes(b"sealed result\n")
+                    os.chmod(result, 0o644)
+                else:
+                    marker.write_bytes(b"sealed marker\n")
+                    os.chmod(marker, 0o600)
+                with mock.patch.multiple(harness, RESULT_PATH=result, ATTEMPT_PATH=marker):
+                    before = harness._evidence_state()
+                    self.assertEqual(harness._self_check(), 0)
+                    self.assertEqual(harness._evidence_state(), before)
+
+    def test_harness_self_check_rejects_invalid_evidence_lifecycle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = root / "results.json"
+            marker = root / "attempt.json"
+            cases = {
+                "result_symlink": lambda: (result.symlink_to(root / "target"), marker.write_bytes(b"m")),
+                "marker_directory": lambda: (result.write_bytes(b"r"), marker.mkdir()),
+                "marker_not_private": lambda: (result.write_bytes(b"r"), marker.write_bytes(b"m"), os.chmod(marker, 0o644)),
+            }
+            for label, setup in cases.items():
+                with self.subTest(label=label):
+                    for path in (result, marker):
+                        if path.is_symlink() or path.is_file():
+                            path.unlink()
+                        elif path.is_dir():
+                            path.rmdir()
+                    setup()
+                    with mock.patch.multiple(harness, RESULT_PATH=result, ATTEMPT_PATH=marker):
+                        with self.assertRaises(harness.StudyError):
+                            harness._self_check()
+
     def test_parser_and_worker_gates_can_be_checked_without_hardware(self):
         identity = _identity()
         order = harness.ARM_PERMUTATIONS[0]

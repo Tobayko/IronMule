@@ -146,6 +146,34 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _evidence_state() -> dict[str, dict[str, Any]]:
+    """Capture immutable state for the self-check evidence lifecycle gate."""
+    state: dict[str, dict[str, Any]] = {}
+    for label, path in (("result", RESULT_PATH), ("marker", ATTEMPT_PATH)):
+        try:
+            metadata = path.lstat()
+        except FileNotFoundError:
+            state[label] = {"exists": False, "regular": False, "symlink": False,
+                            "sha256": None, "mode": None}
+            continue
+        is_symlink = stat.S_ISLNK(metadata.st_mode)
+        is_regular = stat.S_ISREG(metadata.st_mode)
+        if is_symlink or not is_regular:
+            raise StudyError(f"{label} evidence path is not a regular file")
+        state[label] = {"exists": True, "regular": True, "symlink": False,
+                        "sha256": _sha256(path), "mode": stat.S_IMODE(metadata.st_mode)}
+    return state
+
+
+def _validate_evidence_state(state: dict[str, dict[str, Any]]) -> None:
+    marker = state["marker"]
+    for label, evidence in state.items():
+        if evidence["exists"] != evidence["regular"]:
+            raise StudyError(f"{label} evidence lifecycle state is invalid")
+    if marker["exists"] and marker["mode"] != 0o600:
+        raise StudyError("attempt marker is not private")
+
+
 def _git(*args: str) -> str:
     completed = subprocess.run(["git", *args], cwd=PROJECT_ROOT, check=True,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -1166,6 +1194,8 @@ def execute(run_id: str) -> dict[str, Any]:
 
 
 def _self_check() -> int:
+    before = _evidence_state()
+    _validate_evidence_state(before)
     # The sealed hash is deliberately resolved from the exact preregistration,
     # so this check stays offline and cannot mutate a study.
     assert len(ARM_PERMUTATIONS) == 6 and len(set(ARM_PERMUTATIONS)) == 6
@@ -1239,7 +1269,9 @@ def _self_check() -> int:
     assert derived["cold_setup_seconds"][0] == 50 / 1e9
     assert derived["break_even_decode_forwards"][0] == 5.0
     assert _strict_blocks([])[0] is None
-    assert not RESULT_PATH.exists() and not ATTEMPT_PATH.exists()
+    after = _evidence_state()
+    _validate_evidence_state(after)
+    assert after == before
     print(json.dumps({"checks": 18, "self_check": "pass"}, sort_keys=True))
     return 0
 
