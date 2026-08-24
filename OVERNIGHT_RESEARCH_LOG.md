@@ -444,3 +444,62 @@ tatsächlich abrufbare Variante dieses Befunds und der natürliche Kandidat für
 Zyklus 7.
 
 **`formal_claim=false`.**
+
+---
+
+## Zyklus 7 — 24.08.2026
+
+**Kandidat:** `batched-readback-20260824-01`. Vorregistrierung vorab:
+`experiments/sync/PREREGISTRATION_BATCHED.md`. Abrufbare Form des Zyklus-6-Befunds.
+
+### Ergebnis
+
+`128` Decode-Schritte, feste Schrittzahl, zwei Wiederholungen, Median:
+
+| `N` | ms je Token | Ersparnis | tokenidentisch | Break-even Länge |
+| ---: | ---: | ---: | :--- | ---: |
+| 1 | `14,3132` | – | ✓ | – |
+| 2 | `13,3041` | `7,05 %` | ✓ | `6,5` |
+| 4 | `12,6777` | `11,43 %` | ✓ | `13,0` |
+| **8** | `12,4554` | **`12,98 %`** | ✓ | `26,0` |
+| 16 | `12,2222` | `14,61 %` | ✓ | `52,1` |
+| 32 | `12,1334` | `15,23 %` | ✓ | `104,2` |
+
+**H1 hält:** alle sechs Intervalle erzeugen identische Token.
+**H2 hält:** `N=4` überschreitet die Schwelle von `8 %` bereits.
+
+`N=32` erreicht `15,23 %` und damit praktisch die in Zyklus 6 gemessene Obergrenze
+von `15,3 %`. Die Sättigung bestätigt das Modell: mehr als der Readback selbst ist
+nicht zu holen.
+
+### Die Break-even-Längen sind abgeleitet, nicht gemessen
+
+Der Lauf hatte **feste** Schrittzahl ohne vorzeitiges Anhalten. Der Überlauf über das
+Stop-Token fiel also nie an, und die Ersparnisspalte zeigt den Gewinn **ohne** seinen
+Preis.
+
+Die Break-even-Spalte korrigiert das rechnerisch: erwarteter Überlauf `(N−1)/2` Token
+zur vollen Schrittzeit gegen `(1 − 1/N)` der gesparten Readback-Kosten. Sie ist als
+Ableitung gekennzeichnet und wird nicht als Messwert geführt.
+
+Praktisch heißt das: `N=8` lohnt ab rund `26` Ausgabetoken, `N=32` erst ab `104`.
+Für eine typische Antwort von `100`–`300` Token ist `N=16` bis `32` richtig, für eine
+Einzeilenantwort keines.
+
+### Umgesetzt
+
+`HardwareProfile.readback_interval(expected_tokens)` wählt das größte Intervall, das
+sich bei der erwarteten Länge noch rechnet, und begründet die Wahl. Die beiden
+Kostengrößen (`readback_ms_per_step`, `step_ms`) stehen im Profil, damit die Wahl eine
+Rechnung ist und keine Konvention — sie sind gerätespezifisch wie Breite, Fenster und
+Trefferschwellen zuvor. Fünf neue Tests.
+
+### Entscheid
+
+Nach der vorab festgelegten Tabelle: **`candidate_recommended_for_preregistration`**.
+
+Dritter Kandidat in sieben Zyklen, und der erste, dessen Gewinn **direkt abrufbar**
+ist — Zyklus 5 verlangt eine Architekturänderung, Zyklus 6 konnte nicht anhalten,
+dieser hier läuft.
+
+**`formal_claim=false`.**

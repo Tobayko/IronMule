@@ -268,3 +268,41 @@ class AdaptiveDepthTests(unittest.TestCase):
     def test_refuses_an_impossible_acceptance(self):
         with self.assertRaises(ProfileError):
             profile().draft_length_for(1.5)
+
+
+class ReadbackIntervalTests(unittest.TestCase):
+    def test_short_generations_do_not_batch_reads(self):
+        # Der Ueberlauf ueber das Stop-Token kostet volle Schritte; bei wenigen
+        # Token uebersteigt er die gesparten Readbacks.
+        interval, reason = profile().readback_interval(5)
+        self.assertEqual(interval, 1)
+        self.assertIn("zu kurz", reason)
+
+    def test_interval_grows_with_generation_length(self):
+        p = profile()
+        lengths = (10, 30, 60, 200, 500)
+        chosen = [p.readback_interval(n)[0] for n in lengths]
+        self.assertEqual(chosen, sorted(chosen), chosen)
+        self.assertGreater(chosen[-1], chosen[0])
+
+    def test_measured_breakeven_points_are_respected(self):
+        # Gemessen: N=8 lohnt ab rund 26 Token, N=32 ab rund 104.
+        p = profile()
+        self.assertLess(p.readback_interval(20)[0], 8)
+        self.assertGreaterEqual(p.readback_interval(40)[0], 8)
+        self.assertGreaterEqual(p.readback_interval(200)[0], 32)
+
+    def test_every_chosen_interval_actually_pays(self):
+        p = profile()
+        for n in (10, 25, 50, 100, 400):
+            k, _ = p.readback_interval(n)
+            if k > 1:
+                gain = (1 - 1 / k) * p.readback_ms_per_step * n
+                waste = (k - 1) / 2 * p.step_ms
+                self.assertGreater(gain, waste, (n, k))
+
+    def test_refuses_nonsensical_input(self):
+        with self.assertRaises(ProfileError):
+            profile().readback_interval(0)
+        with self.assertRaises(ProfileError):
+            profile(readback_ms_per_step=0.0).readback_interval(100)
