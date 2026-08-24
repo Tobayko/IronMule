@@ -986,3 +986,81 @@ Offen bleiben die geforderten Workloads Multi-Turn-Fortsetzung und mehrere
 parallele Requests sowie jede Verallgemeinerung auf andere Prompts oder
 Einstellungen. Gemessen sind die Laufzeiten und die Tokenidentität; der
 Prozentwert ist aus den vorregistrierten gepaarten Laufzeiten berechnet.
+
+---
+
+## Zyklus 13 — 24.08.2026
+
+**Kandidat:** `persistent-process-20260824-03`. Genau ein Kandidat wurde geprüft:
+Dasselbe 4B-Modell bleibt zwischen Anfragen geladen. Der Referenzarm startete für
+jede Anfrage einen neuen Python-/Modellprozess; beide Arme erzeugten je Anfrage
+einen frischen KV-Cache.
+
+### Prospektive Versiegelung
+
+`experiments/persistent_process/PREREGISTRATION.md` wurde vor jeder Hardwaredatei
+geschrieben und blieb mit SHA-256
+`a9fa83438b7ab30fb85e8cae76a90627b908c469159141286658ac0cc7f6ad9f`
+unverändert. Harness und Vorregistrierung wurden vor dem Lauf auf Commit
+`f9546171aea470385431c64c6318d38ffbe3aeea` gespeichert. Gebunden waren der lokale
+4B-Snapshot auf Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, `897` Prompt-Token, `32` greedy
+Ausgabetoken, frische Anfrage-Caches, zwei A/A-Paare, drei Charakterisierungs- und
+drei Validierungspaare sowie die unveränderliche Entscheidungstabelle.
+
+### Einmaliger Lauf und Ergebnis
+
+Der Hardwareprozess
+`persistent-process-validation-20260824-01` lief genau einmal und endete mit Exit
+`0`. A/A-Verhältnisse `0,922455` und `1,000482`, Median `0,961468`; das
+Kalibrierungsgate hielt. Die sechs vorgegebenen `warm/kalt`-Verhältnisse waren:
+
+`[0,346142; 0,343115; 0,349647; 0,344223; 0,347794; 0,348512]`.
+
+Charakterisierungsmedian `0,346142`, Validierungsmedian `0,347794`, Median über
+alle Paare `0,346968`. Alle einzelnen Werte lagen deutlich unter der Grenze
+`0,65`, und beide Phasen lagen unter `0,50`. Der Median der sechs kalten
+TTFT-Werte war `5148,7741` ms, der sechs warmen Werte `1785,1103` ms. Alle sechs
+Paare lieferten exakt dieselben `32` Token und nutzten die vorgegebenen getrennten
+Prozesspfade. Keine Messung wurde verworfen.
+
+Das warme Peak-RSS lag bei `3.763.077.120` Byte; gemessenes RSS-Wachstum und
+Swap-Wachstum waren jeweils `0` Byte. Budget: `41,586354` s Modellarbeit,
+maximal `3,226913` s zusammenhängend, `368,707521` s Pflichtpausen,
+`120,015539` s Kandidatenabkühlung und `576,933889` s Wall-Zeit bei Duty-Faktor
+`0,15` und Netzbetrieb. Alle H0–H4-Gates bestanden.
+
+Die vorregistrierte Entscheidung ist
+**`engineering_gain_confirmed_exact_scope`**. Aus dem Median der gepaarten
+Verhältnisse wird **`−65,3032 %`** gerechnet. Dieser Prozentwert ist eine Rechnung,
+die TTFT-, Speicher-, Pfad- und Tokenwerte sind Messungen. `formal_claim=false`;
+der Befund aktiviert noch keinen allgemeinen Dienstpfad.
+
+### Evidenz, UI und Prüfungen
+
+`experiments/persistent_process/results.json` hat SHA-256
+`3925d83139cb6278c2b0aa103716e36a33f550f852bd30758976090fa0f7024`.
+Die einmalige private Startmarke hat Modus `0600`, ihr Elternverzeichnis `0700`.
+Die read-only UI auf `127.0.0.1:8781` lieferte acht Verlaufszeilen, denselben
+Entscheid und HTTP `421` für einen fremden Host-Header.
+
+Vor Hardware bestanden `20` fokussierte Tests, beide Selbsttests, `compileall`,
+die vollständige Projektsuite und `xcodebuild -checkFirstLaunchStatus`. Die lokale
+Sicherheitsprüfung des endgültigen Drei-Dateien-Quellumfangs ist vollständig und
+enthält `0` berichtspflichtige Befunde; der versiegelte Bericht liegt unter
+`/private/tmp/codex-security-scans/Project_Friday/4e202ae_20260824T-security-final.8YP4Rn`.
+Der erste vorbereitende Versiegelungsaufruf verwendete irrtümlich einen um eine
+Verzeichnisebene falschen Werkzeugpfad und endete vor dem Werkzeugstart. Diese
+unversiegelte Akte wurde nicht erneut finalisiert; eine neue vollständige Akte mit
+dem aufgelösten Pfad wurde genau einmal erfolgreich versiegelt.
+
+### Offen und nächster sicherer Schritt
+
+Der persistente Prozess ist noch nicht automatisch in einen normalen Dienst
+eingebaut. Multi-Turn-Fortsetzung und mehrere parallele Requests fehlen weiterhin
+als Baselines. Für den gewünschten selbstlernenden Optimierer ist bereits ein
+vollständiger lokaler 1B-Snapshot vorhanden, also kein Download nötig. Vor der
+Architekturänderung ist jedoch die in `PERMISSION_REQUIRED.md` beschriebene enge
+Freigabe erforderlich: Das kleine Modell schlägt nur einen Kandidaten aus einer
+festen Liste vor; unveränderliche Messregeln entscheiden, und das Modell darf nie
+selbst Korrektheit oder Aktivierung bestimmen.
