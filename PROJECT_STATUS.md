@@ -23,6 +23,105 @@
 | Gemma-4B-Planer | prospektiver Zyklus 14 mit drei frischen Prozessen; `3/3` exakt gleiche greedy Antworten und richtige ID im Rohtext, aber `0/3` Antworten ohne Markdown-Rahmen | **`planner_contract_failed`**; keine Selbstoptimierung, kein Geschwindigkeitsgewinn und keine Aktivierung, `formal_claim=false` |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
+## Zyklus 15 — Vor-Hardware-Stand der engen Zwei-Modell-Studie
+
+Die aktuelle Nutzerfreigabe ist exakt auf die Studie
+`dual-model-evidence-planner-20260824-01` begrenzt. Sie erlaubt ausschließlich die
+vorregistrierte Prüfung der zwei bereits lokal vorhandenen Modelle in einem festen
+Planungsfall und hebt keine früheren NO-GO-Grenzen auf. Es gibt **keine Matmul-On/Off-
+Integration**; ein solcher Vergleich wurde weder durchgeführt noch erfunden.
+
+Die Vorregistrierung bindet:
+
+| Schlüssel | Modell | Snapshot-Revision |
+| --- | --- | --- |
+| `1b` | `mlx-community/gemma-3-1b-it-4bit` | `2d44e83dc9e80843d22fb941d3d699a0b1351aa6` |
+| `4b` | `mlx-community/gemma-3-4b-it-4bit` | `93724907d4ed1745d2fe50baadf3b0b01a65abf2` |
+
+Zyklus `15` nutzt sechs feste Paare und zwölf frische, serielle Prozesse: Paare
+`1–3` laufen `1b → 4b`, Paare `4–6` `4b → 1b`; jedes Modell läuft genau sechsmal.
+Der einzige akzeptierte Planerfall ist die JSON-Auswahl
+`persistent_service_qualification`. Die Studie bewertet keine allgemeine
+Modellqualität, kein Lernen, keinen Code und keine Aktivierung. Der Claim bleibt
+`formal_claim=false`.
+
+Der eingefrorene Vor-Hardware-Code ist über die folgenden SHA-256-Werte gebunden:
+
+- Präregistrierung: `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`
+- Worker: `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`
+- Harness: `5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131`
+- read-only UI: `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`
+
+Der finale fokussierte Offline-Stand umfasst `46` Tests und `42` Subtests mit
+Exit `0`; auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-
+Verifikation wurde in diesem reinen Dokumentationsschritt nicht erneut ausgeführt.
+Der Zyklus-14-Dokumentationsaudit ist auf Commit `ee12bb5` verankert.
+
+### Vollständiger Zyklus-15-Preflight
+
+Der finale, rein lokale Preflight wurde ohne Hardware- oder Modellausführung
+geschlossen:
+
+- Worker-Selbsttest `17/17`, Exit `0`; Harness-Selbsttest `25/25`, Exit `0`;
+- Defaultaufruf ohne Ausführungsfreigabe: Exit `78`; weder private Startmarke noch
+  `results.json` wurden erzeugt;
+- `py_compile` und `compileall`: jeweils Exit `0`;
+- fokussierte Suite: `46` Tests plus `42` Subtests, Exit `0`, Wall `3,36 s`,
+  Peak-RSS `60.801.024 B`;
+- vollständige `pytest`-Suite: Exit `0`, Wall `45,43 s`, Peak-RSS
+  `200.523.776 B`;
+- `git diff --check`, AST-Parsing und `xcodebuild -checkFirstLaunchStatus`:
+  jeweils Exit `0`;
+- ProjectAtlas-Runtime- und Konfigurationsprüfung: jeweils Exit `0`, Runtime
+  `0.4.5-rc1`;
+- read-only Versions-/Geräteprüfung: MLX `0.32.0`, mlx-lm `0.31.3`, Defaultgerät
+  `Device(gpu, 0)`; dies war nur Introspektion und keine GPU-Rechnung;
+- read-only Resolverprüfung: 1B-Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6` mit `732.577.304 B`
+  Gewichten sowie 4B-Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2` mit `3.400.569.562 B`
+  Gewichten; kein Snapshot wurde geladen;
+- die Präregistrierung blieb bytegleich bei SHA-256
+  `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`;
+- ignorierte `__pycache__`-Verzeichnisse sind vorhanden, gehören aber weder zum
+  Studienartefakt noch zu einem späteren Commit.
+
+Nach allen Prüfungen blieben
+`experiments/dual_model_planner/results.json` und
+`.friday-data/dual-model-planner/attempt.json` abwesend. Es gab keine
+Hardwarearbeit, keine GPU-Rechnung, keinen Modellload und keinen Commit.
+
+Vor Hardware bleiben die Ergebnisse absichtlich leer: Es existieren noch keine
+Hardwareevidenz, keine private Startmarke und keine `results.json`. Damit gibt es
+keine Messwerte, keine Studienentscheidung und keinen Hardware- oder Modellclaim.
+
+Vorregistrierte Fehler und erfolgreiche Lösungen, die vor Folgeschritten gelten:
+
+- doppelte Paare/Run-Positionen werden durch explizite Paar- und Schedule-IDs sowie
+  Duplicate-Rejection ausgeschlossen;
+- unvollständige Läufe können nicht mehr als Erfolg aggregiert werden; partielle
+  Rohereignisse bleiben erhalten und der Entscheid bleibt fail-safe;
+- per-Run-Content-Hashing wurde aus den gemessenen Zeitfenstern entfernt und als
+  einmaliger Parent-Pre-/Post-Manifestcheck außerhalb der Messung umgesetzt;
+- Snapshot-Revision, Snapshot-/Gewichts-Hashes und der gerenderte Prompt werden
+  vom Parent an den Worker gebunden und vor/nach dem Load geprüft;
+- Partial-/Fehlerpfade speichern den Teilstand, brechen terminal ab und erzeugen
+  keinen erfolgreichen Claim;
+- ein bereits validiertes Worker-Event bleibt auch dann in der partiellen Evidenz
+  erhalten, wenn erst die anschließende Ressourcenprüfung terminal abbricht;
+- eine feste stdout-Obergrenze von `1.000.000` Byte wird vom Parent überwacht;
+- die UI akzeptiert nur die feste Run-ID sowie die geschlossenen Model-,
+  Kandidaten- und Decision-Allowlisten und bleibt read-only;
+- ein minimaler Fehlerreport ohne `metrics` wird als kontrollierte Fehlerform
+  verarbeitet und nicht als erfolgreicher Studienreport aufgewertet;
+- Ressourcen- und Budgetprüfungen laufen in fester Reihenfolge vor einer
+  erfolgreichen Aggregation; ein Ressourcenabbruch gewinnt vor Korrektheits- und
+  Vertragsauswertung.
+
+ProjectAtlas meldete beim initialen Start zunächst `refresh_required`; beim
+anschließenden Refresh trat einmalig ein SQLite-Lock auf. Der Retry war erfolgreich.
+ProjectAtlas selbst und das eingebundene Upstream-Repository wurden nicht geändert.
+
 Die produktive Research-DB enthält `10` verifizierte `legacy_summary`-Zeilen und
 `4` native Ereignisse: drei gültige Berichte mit Rohmessungen sowie einen
 sanitisierten Guard-Abbruch. Datei: `118.784 B`, Modus `0600`, SHA-256

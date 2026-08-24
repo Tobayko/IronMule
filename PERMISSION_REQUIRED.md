@@ -173,3 +173,51 @@ Ein weiterer Planerversuch müsste vorab als neuer Kandidat die Ausgabe technisc
 auf genau eine feste ID beschränken. Eine eigene Hardwarestudie braucht einen
 neuen Zyklusvertrag; Modelle laufen dabei nacheinander, nie gleichzeitig. Eine
 breite oder produktive Selbstaktivierung ist durch Zyklus 14 nicht freigegeben.
+
+## 9. Zyklus 15 — enge Zwei-Modell-Studie (Freigabe erteilt, Vor-Hardware)
+
+**Status:** Der Nutzer hat ausschließlich die vorregistrierte Studie
+`dual-model-evidence-planner-20260824-01` freigegeben. Sie ist auf die zwei bereits
+lokal vorhandenen Snapshots und einen festen Planungsfall begrenzt:
+
+- `mlx-community/gemma-3-1b-it-4bit`, Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`;
+- `mlx-community/gemma-3-4b-it-4bit`, Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`;
+- sechs feste Paare, zwölf frische serielle Prozesse, jedes Modell sechsmal,
+  mit `1b → 4b` in den Paaren `1–3` und `4b → 1b` in den Paaren `4–6`;
+- einziger akzeptierter Planerwert
+  `persistent_service_qualification`, weiterhin `formal_claim=false`.
+
+**Vor-Hardware-Grenze:** Es existiert keine Matmul-On/Off-Integration und kein
+Matmul-On/Off-Vergleich. Die Freigabe umfasst keine neuen Modelle, Downloads,
+Installationen, allgemeine Planner-Nutzung, automatische Aktivierung oder eine
+Erweiterung des Studienclaims. Vor Hardware bestehen noch keine Ergebnisse, keine
+private Startmarke und keine `results.json`.
+
+**Erteilte enge Aktion:** Nach abschließenden unabhängigen Offline-Checks darf nur
+dieser eingefrorene Studienvertrag einmalig ausgeführt werden. Die bindenden
+Vor-Hardware-Dateihashes sind Präregistrierung
+`77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`, Worker
+`b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`, Harness
+`5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131` und
+read-only UI
+`5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
+Ein validiertes Event bleibt bei einem erst danach erkannten Ressourcenabbruch in
+der partiellen Evidenz erhalten. Die UI ist an die feste Run-ID und geschlossene
+Decision-Allowlist gebunden; ein minimaler Fehlerreport ohne `metrics` wird
+kontrolliert als Fehler verarbeitet. Diese Härtungen erweitern die erteilte enge
+Freigabe nicht.
+Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`;
+auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
+wurde in diesem Dokumentationslauf nicht erneut ausgeführt. Der Zyklus-14-
+Auditcommit ist `ee12bb5`.
+
+Der vollständige Preflight ändert die Freigabegrenze nicht: Worker `17/17`,
+Harness `25/25`, `compileall`, fokussierte und vollständige Suite, Diff-, AST-,
+Xcode-, Atlas-Runtime- und Atlas-Konfigurationsprüfung bestanden mit Exit `0`;
+der gesperrte Defaultaufruf endete wie vorgesehen mit Exit `78`. MLX-/mlx-lm-,
+Geräte- und Resolverdaten wurden ausschließlich read-only geprüft. Es gab keine
+GPU-Rechnung und keinen Modellload; Startmarke und `results.json` blieben abwesend.
+Ignorierte `__pycache__`-Verzeichnisse gehören nicht zum Commit und erweitern die
+erteilte enge Aktion nicht.

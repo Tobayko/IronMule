@@ -5292,3 +5292,177 @@ separat verifiziert und nicht rückwirkend in die Evidenz geschrieben. Die drei
 absichtlichen Markdown-Trailing-Spaces in der versiegelten Präregistrierung
 werden wegen des eingefrorenen Hashes nicht geändert. Dieser Auditlauf startete
 weder Hardware noch Modell erneut und führte keinen Security-Check aus.
+
+## 2026-08-24 — Zyklus 15: Vor-Hardware-Stand der engen Zwei-Modell-Studie
+
+Die Nutzerfreigabe wurde für Zyklus 15 ausdrücklich und eng auf die Studie
+`dual-model-evidence-planner-20260824-01` begrenzt. Gegenstand ist ausschließlich
+ein fester Planungsfall mit den zwei bereits lokal vorhandenen Modellen; es gibt
+keine allgemeine Planner-Freigabe, keine automatische Aktivierung und keine
+Ausweitung früherer Studien. Eine Matmul-On/Off-Integration ist nicht vorhanden,
+und ein Matmul-On/Off-Vergleich wurde nicht durchgeführt oder erfunden. Der
+formale Claim bleibt `formal_claim=false`.
+
+### Atlas-first und Arbeitsgrenze
+
+Vor der Dokumentationsarbeit wurde der versionierte ProjectAtlas-Skill vollständig
+gelesen. `atlas_runtime_info` bestätigte ProjectAtlas `0.4.5-rc1` mit MCP,
+SQLite, TOON, Symbolindex, Textsuche und Watcher. Der initiale fokussierte
+Session-Brief meldete `refresh_required` wegen der überschrittenen
+Dependency-Closure-Grenze. Beim anschließenden Refresh trat einmalig ein
+SQLite-Lock auf; der Retry war erfolgreich und der Index danach verfügbar.
+ProjectAtlas und das eingebundene Upstream-Repository wurden nicht geändert.
+
+Diese Teilaufgabe blieb dokumentarisch: Es wurden weder Hardware noch ein Modell
+gestartet, keine Startmarke oder Ergebnisdatei erzeugt, kein Test ausgeführt,
+nichts installiert oder heruntergeladen und kein Commit erstellt. Geändert wurden
+ausschließlich `PROJECT_STATUS.md`, `IMPLEMENTIERUNGSPLAN.md`,
+`PERMISSION_REQUIRED.md` und dieses append-only Journal.
+
+### Eingefrorener Studienvertrag
+
+Die gebundenen lokalen Snapshots sind:
+
+- `1b`: `mlx-community/gemma-3-1b-it-4bit`, Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`;
+- `4b`: `mlx-community/gemma-3-4b-it-4bit`, Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`.
+
+Der feste Zeitplan umfasst sechs Paare und zwölf frische serielle Prozesse. Die
+Paare `1–3` laufen `1b → 4b`, die Paare `4–6` `4b → 1b`; jedes Modell wird genau
+sechsmal geladen. Der einzige akzeptierte Planerwert ist
+`persistent_service_qualification`. Die Studie misst weder allgemeine
+Modellqualität noch Lernen, Training, Code, Gewichtsänderung oder Aktivierung.
+
+Der Vor-Hardware-Code ist durch folgende vollständige SHA-256-Werte gebunden:
+
+- Präregistrierung:
+  `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`;
+- Worker:
+  `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`;
+- Harness:
+  `eea8f0e435456711e2c857a92dcfeb398f0ab574f9cdedb9dbe3a78e6919cd75`;
+- read-only UI:
+  `c4f132b24fdb95cd97e62763141b1e57620010ab3532081169f14813d5915735`.
+
+Der letzte gemeldete fokussierte Offline-Stand bestand aus `43` Tests und `31`
+Subtests mit Exit `0`. Das Ergebnis steht unter dem Vorbehalt der abschließenden
+unabhängigen Checks und wurde in dieser Dokumentationsaufgabe nicht erneut
+ausgeführt. Der unabhängige Zyklus-14-Dokumentationsaudit ist auf Commit
+`ee12bb5` verankert.
+
+### Vor-Hardware-Evidenz und Fehlerkorrekturen
+
+Es existieren noch keine Hardwareevidenz, keine private Startmarke und keine
+`results.json`; folglich gibt es keine Messwerte, keine Studienentscheidung und
+keinen Hardware- oder Modellclaim. Die vor Hardware gefundenen Fehler und ihre
+dauerhaften Lösungen sind:
+
+- Doppelte Paare/Run-Positionen werden mit expliziten Paar- und Schedule-IDs sowie
+  Duplicate-Rejection verhindert.
+- Unvollständige Erfolgszustände werden nicht aggregiert; partielle Rohereignisse
+  bleiben erhalten und der Pfad entscheidet fail-safe.
+- Per-Run-Content-Hashing wurde aus den gemessenen Zeitintervallen entfernt. Der
+  Parent erstellt das Ausführungsmanifest einmal vor und einmal nach dem Plan;
+  diese Hashes liegen außerhalb der Child-/GPU-Messung.
+- Snapshot-Revision, Snapshot-/Gewichts-Hashes und der gerenderte Prompt werden
+  vom Parent an jeden Worker gebunden und vor/nach dem Modellload geprüft.
+- Partial-/Fehlerpfade bleiben terminal und können keinen erfolgreichen Claim
+  erzeugen.
+- Der Parent erzwingt eine stdout-Obergrenze von `1.000.000` Byte.
+- Die read-only UI validiert die geschlossene Model-/Kandidaten-Whitelist und
+  nimmt keine Schreiboperationen an.
+- Ressourcen- und Budgetprüfungen haben eine feste Reihenfolge vor erfolgreicher
+  Aggregation; Ressourcen-/Budgetabbruch hat Vorrang vor Korrektheits- und
+  Vertragsauswertung.
+
+Der Zyklus-15-Stand ist damit ein reproduzierbar gebundener Vor-Hardware-Vertrag,
+nicht dessen Ergebnis. Ein späterer Studienlauf darf nur innerhalb dieser engen
+Freigabe und ohne Matmul-On/Off-Nebenclaim erfolgen.
+
+### 2026-08-24 — Zyklus 15: finaler Artefakt- und Härtungsnachtrag vor Hardware
+
+Nach den letzten Offline-Korrekturen bleiben Präregistrierung und Worker bytegleich:
+
+- Präregistrierung:
+  `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`;
+- Worker:
+  `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`.
+
+Die finalen SHA-256-Werte der geänderten Artefakte sind:
+
+- Harness:
+  `5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131`;
+- read-only UI:
+  `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
+
+Die letzten geschlossenen Fehlerpfade ergänzen den bestehenden Vertrag, ohne die
+Freigabe zu erweitern:
+
+- Ein vom Parent bereits validiertes Worker-Event wird in der partiellen Evidenz
+  behalten, wenn erst die nachfolgende Ressourcenprüfung terminal abbricht. Der
+  Abbruch bleibt fail-closed; das Event wird weder verworfen noch als Erfolg
+  umgedeutet.
+- Die read-only UI prüft zusätzlich die feste Studien-Run-ID und eine geschlossene
+  Decision-Allowlist.
+- Ein minimaler Fehlerreport ohne `metrics` ist ein kontrollierter Fehlerzustand
+  und kann nicht als erfolgreicher vollständiger Report erscheinen.
+
+Die dokumentierte fokussierte Testzahl bleibt bis zur unabhängigen Meldung des
+Test-Luna unverändert bei `43` Tests plus `31` Subtests, Exit `0`; in dieser
+Dokumentationsaufgabe wurde kein Test ausgeführt. Es wurden weder Hardware noch
+ein Modell gestartet, keine Startmarke oder `results.json` erzeugt und kein Commit
+erstellt. `formal_claim=false` und die Abgrenzung ohne Matmul-On/Off-Integration
+bleiben unverändert.
+
+Der anschließende `git diff --check` für die vier Dokumentationsdateien endete
+ohne Befund. Die finale Testzahl bleibt davon unberührt und wartet weiter auf die
+unabhängige Test-Luna-Meldung.
+
+**Finale unabhängige Test-Luna-Meldung.** Der fokussierte Endstand besteht aus
+`46` Tests und `42` Subtests mit Exit `0`; `py_compile` endete ebenfalls mit
+Exit `0`. Dieser Wert ersetzt als aktueller Verifikationsstand die vorstehend
+append-only erhaltene vorläufige Meldung `43` Tests plus `31` Subtests. Die
+Dokumentationsaufgabe selbst führte die Tests nicht erneut aus. Hardware,
+Modellprozesse, Startmarke, `results.json`, `formal_claim=false` und Commitstatus
+blieben unverändert.
+
+### 2026-08-24 — Zyklus 15: vollständiger finaler Preflight vor Hardware
+
+Die unabhängige Vor-Hardware-Prüfung wurde vollständig gemeldet und in diesem
+Dokumentationslauf nicht erneut ausgeführt. Alle Prüfungen blieben offline oder
+read-only:
+
+- Worker-Selbsttest: `17/17`, Exit `0`.
+- Harness-Selbsttest: `25/25`, Exit `0`.
+- Defaultaufruf ohne Ausführungsfreigabe: Exit `78`; danach waren weder
+  `.friday-data/dual-model-planner/attempt.json` noch
+  `experiments/dual_model_planner/results.json` vorhanden.
+- `py_compile` und `compileall`: jeweils Exit `0`.
+- Fokussierte Suite: `46` Tests und `42` Subtests, Exit `0`, Wall `3,36 s`,
+  Peak-RSS `60.801.024 B`.
+- Vollständige `pytest`-Suite: Exit `0`, Wall `45,43 s`, Peak-RSS
+  `200.523.776 B`.
+- `git diff --check`: Exit `0`.
+- AST-Parsing aller relevanten Python-Dateien: Exit `0`.
+- `xcodebuild -checkFirstLaunchStatus`: Exit `0`.
+- ProjectAtlas-Runtimeprüfung und projektlokale Konfigurationsprüfung: jeweils
+  Exit `0`; Runtime `0.4.5-rc1`.
+
+Die read-only Umgebungsintrospektion bestätigte MLX `0.32.0`, mlx-lm `0.31.3`
+und das Defaultgerät `Device(gpu, 0)`. Diese Anzeige führte keine GPU-Rechnung
+aus. Der lokale Resolver bestätigte ohne Modellload:
+
+- `mlx-community/gemma-3-1b-it-4bit`, Revision
+  `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`, Gewichtsumfang
+  `732.577.304 B`;
+- `mlx-community/gemma-3-4b-it-4bit`, Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, Gewichtsumfang
+  `3.400.569.562 B`.
+
+Die Vorregistrierung blieb bytegleich bei SHA-256
+`77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`.
+Nach dem gesamten Preflight waren Resultat und private Startmarke weiterhin
+abwesend. Ignorierte `__pycache__`-Verzeichnisse sind vorhanden; sie sind kein
+Studienartefakt und werden nicht Bestandteil des Commits. Es gab keine
+Hardwarearbeit, keine GPU-Rechnung, keinen Modellload und keinen Commit.

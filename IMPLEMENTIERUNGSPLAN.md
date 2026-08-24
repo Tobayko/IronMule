@@ -109,6 +109,66 @@ Aktuelle Reihenfolge:
    dafür nicht freigegeben oder erforderlich; produktive Integration und
    adaptive Kernelsuche bleiben **NO-GO**.
 
+## Zyklus 15 — enge Zwei-Modell-Studie, Vor-Hardware
+
+Die neu erteilte Nutzerfreigabe ist ausschließlich auf die vorregistrierte Studie
+`dual-model-evidence-planner-20260824-01` begrenzt. Sie erlaubt keinen allgemeinen
+Planner, keine automatische Aktivierung und keine Ausweitung früherer Studien. Es
+existiert keine Matmul-On/Off-Integration; ein Matmul-On/Off-Vergleich ist nicht
+Bestandteil dieses Zyklus und wird nicht als Ergebnis behauptet.
+
+Der geschlossene Studienvertrag bindet die bereits lokal vorhandenen Snapshots
+`mlx-community/gemma-3-1b-it-4bit` (Revision
+`2d44e83dc9e80843d22fb941d3d699a0b1351aa6`) und
+`mlx-community/gemma-3-4b-it-4bit` (Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`) an dasselbe Gerät, dieselbe
+Offline-Umgebung und denselben gerenderten Prompt. Es gibt sechs feste Paare mit
+zwölf frischen seriellen Prozessen: `1b → 4b` für die Paare `1–3`, danach
+`4b → 1b` für die Paare `4–6`; jedes Modell läuft sechsmal. Der einzige erlaubte
+Planerwert ist `persistent_service_qualification`; die Studie misst keine
+allgemeine Qualität und bleibt `formal_claim=false`.
+
+Der Vor-Hardware-Snapshot ist über diese Dateihashes reproduzierbar gebunden:
+Präregistrierung `77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`,
+Worker `b1db90d306d5de5c6ff466d046c5c617c5dd42cdaee3f6f7b4bcd5bf2a024bc0`,
+Harness `5ce1686e0782825e765371301e7099f26e4e135cbf04dc5f74ef537f5cfde131` und
+read-only UI `5db9bf832c17470c0899ee0fd4062b42d524904e1ee3224894e87a7bed049607`.
+Der finale fokussierte Offline-Stand ist `46` Tests plus `42` Subtests, Exit `0`;
+auch `py_compile` endete mit Exit `0`. Diese unabhängige Test-Luna-Verifikation
+wurde in diesem Dokumentationsschritt nicht erneut ausgeführt.
+
+Der vollständige Vor-Hardware-Preflight ist abgeschlossen: Worker `17/17` und
+Harness `25/25`, jeweils Exit `0`; Defaultaufruf Exit `78` ohne Startmarke oder
+Resultat; `compileall`, `git diff --check`, AST-Parsing und
+`xcodebuild -checkFirstLaunchStatus` jeweils Exit `0`. Die fokussierte Suite lief
+mit Exit `0` in `3,36 s` bei `60.801.024 B` Peak-RSS, die vollständige
+`pytest`-Suite mit Exit `0` in `45,43 s` bei `200.523.776 B` Peak-RSS.
+ProjectAtlas-Runtime und -Konfiguration bestanden mit Exit `0` auf Version
+`0.4.5-rc1`.
+
+Die read-only Umgebungsprüfung bestätigte MLX `0.32.0`, mlx-lm `0.31.3` und
+`Device(gpu, 0)`. Der Resolver bestätigte ohne Modellload den 1B-Snapshot auf
+Revision `2d44e83dc9e80843d22fb941d3d699a0b1351aa6` mit `732.577.304 B`
+Gewichten sowie den 4B-Snapshot auf Revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2` mit `3.400.569.562 B`
+Gewichten. Die Präregistrierung blieb bei
+`77d46d63a46065f863e3aa425d74fb2ed6dc756c54a674c8767d58c4c24f59f1`.
+Ignorierte `__pycache__`-Verzeichnisse sind vorhanden, werden aber nicht Teil des
+Commits. Keine dieser Prüfungen führte Hardwarearbeit, GPU-Rechnung oder einen
+Modellload aus.
+
+Vor Hardware gibt es noch keine Studienergebnisse, keine Startmarke und keine
+`results.json`. Der nächste zulässige Schritt ist ausschließlich die spätere,
+einmalige Ausführung dieses eingefrorenen Studienvertrags nach den finalen
+unabhängigen Checks. Der Zyklus-14-Dokumentationsaudit ist auf `ee12bb5` verankert.
+Die vorab geschlossenen Korrekturen (Duplicate-Paare, unvollständige Erfolgs-
+aggregation, per-Run-Content-Hashing-Bias, Snapshot-/Prompt-Bindung, fail-safe
+Partialpfade, stdout-Limit, UI-Whitelist und Ressourcenprüfungsreihenfolge) bleiben
+verbindlich. Der finale Stand erhält ein bereits validiertes Event auch bei einem
+nachfolgenden Ressourcenabbruch, bindet die UI zusätzlich an die feste Run-ID und
+eine geschlossene Decision-Allowlist und behandelt einen minimalen Fehlerreport
+ohne `metrics` kontrolliert als Fehler statt als Erfolg.
+
 ## Historischer H0-Pivot und Freigabestatus — 20.08.2026
 
 `JA — Ich gebe den Forschungspivot H0 → H1 → H2 und die Implementierung von Phase 1A/H0 mit SQLite v1, read-only Loopback-Dashboard und festem Worker Option A frei. Keine Downloads, Installationen, Custom-Metal-Kernels oder Modellgewichte.`
