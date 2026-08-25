@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Read-only localhost dashboard for Cycle17 batched-readback evidence.
+"""Read-only localhost dashboard for Cycle15--21 runtime evidence.
 
 The current study/run/candidate identity is strict.  The HTTP projection never
 contains prompts, decoded/raw text, token arrays, local paths, stderr, or
-arbitrary model output; Cycle15/16 remain scalar historical comparisons.
+arbitrary model output.  Cycle18--21 use a separate, strict fused-greedy
+history schema; terminal error text is never projected.
 """
 
 from __future__ import annotations
@@ -22,21 +23,34 @@ from urllib.parse import urlsplit
 ROOT = Path(__file__).resolve().parents[2]
 RESULT_PATH = Path(__file__).with_name("results.json")
 HISTORY_PATHS = {15: ROOT / "experiments/dual_model_planner/results.json",
-                 16: ROOT / "experiments/matmul_compile_ab/results.json"}
+                 16: ROOT / "experiments/matmul_compile_ab/results.json",
+                 18: ROOT / "experiments/fused_greedy_compile/results.json",
+                 19: ROOT / "experiments/fused_greedy_compile_v2/results.json",
+                 20: ROOT / "experiments/fused_greedy_compile_v3/results.json",
+                 21: ROOT / "experiments/fused_greedy_compile_v4/results.json"}
+HISTORY_CYCLES = (15, 16, 17, 18, 19, 20, 21)
 STUDY_ID = "fixed-compiled-batched-readback-20260824-01"
 RUN_ID = "fixed-compiled-batched-readback-validation-20260824-01"
 CANDIDATE_ID = "fixed_compiled_batched_readback_n8_v1"
+FUSED_CANDIDATE_ID = "fixed_compiled_fused_greedy"
+FUSED_ARMS = ("fixed_compiled_external_greedy", "fixed_compiled_fused_greedy")
 MAX_RESULT_BYTES = 8_000_000
 MAX_RESPONSE_BYTES = 64_000
 PRIVATE_KEYS = {"prompt", "prompt_tokens", "prompt_token_ids", "rendered_prompt", "text",
+                "rendered_prompt_b64", "prompt_b64", "output_b64", "base64",
                 "visible_text", "visible_output", "output_text", "raw_output", "decoded_output",
                 "raw_text", "decoded_text", "model_text", "token_ids", "tokens",
-                "physical_tokens", "logical_tokens", "visible_tokens", "stderr", "path",
+                "physical_tokens", "logical_tokens", "visible_tokens", "physical_token_ids",
+                "logical_token_ids", "visible_token_ids", "stderr", "path",
                 "snapshot_path", "weight_path", "outputs", "events", "worker_events",
                 "stderr_tail", "error", "message", "traceback"}
 SAFE_DECISIONS = {"runtime_readback8_wins_exact_scope", "readback8_regression_baseline_retained",
                   "no_clear_speedup_baseline_retained", "candidate_not_runnable",
-                  "correctness_failed", "resource_or_budget_failed", "not_available"}
+                  "correctness_failed", "resource_or_budget_failed", "not_available",
+                  "no_planner_qualified", "runtime_compile_wins_exact_scope",
+                  "fused_greedy_compile_wins_exact_scope",
+                  "fused_greedy_compile_regression_baseline_retained",
+                  "fused_greedy_compile_inconclusive", "incomplete_evidence"}
 CURRENT_KEYS = {
     "schema_version", "study_id", "run_id", "candidate_id", "formal_claim", "runs",
     "worker_events", "error", "partial_result", "completed_at_unix_ns", "decision",
@@ -55,6 +69,52 @@ HISTORY_KEYS = {
          "partial_result", "provenance", "resources", "run_id", "runs", "schema_version",
          "snapshot_postflight", "study_id", "thresholds", "worker_events"},
 }
+FUSED_KEYS = {"candidate_id", "completed_at_unix_ns", "decision", "error", "formal_claim",
+              "gates", "metrics", "partial_result", "provenance", "run_id", "runs",
+              "schema_version", "status", "study_id", "thresholds"}
+FUSED_HISTORY = {
+    18: {
+        "study_id": "fused-greedy-compile-20260825-01",
+        "run_id": "fused-greedy-compile-validation-20260825-01",
+        "decision": "resource_or_budget_failed",
+        "partial_result": True,
+        "run_status": None,
+        "terminal_events": 0,
+        "harness_cause": "environment_fingerprint_mismatch_before_model_load",
+    },
+    19: {
+        "study_id": "fused-greedy-compile-20260825-02",
+        "run_id": "fused-greedy-compile-validation-20260825-02",
+        "decision": "resource_or_budget_failed",
+        "partial_result": True,
+        "run_status": "error",
+        "terminal_events": 1,
+        "harness_cause": "own_result_dirty_state_before_model_load",
+    },
+    20: {
+        "study_id": "fused-greedy-compile-20260825-03",
+        "run_id": "fused-greedy-compile-validation-20260825-03",
+        "decision": "resource_or_budget_failed",
+        "partial_result": True,
+        "run_status": "resource_or_budget_failed",
+        "terminal_events": 1,
+        "harness_cause": "snapshot_stat_manifest_mismatch_before_model_load",
+    },
+    21: {
+        "study_id": "fused-greedy-compile-20260825-04",
+        "run_id": "fused-greedy-compile-validation-20260825-04",
+        "decision": "fused_greedy_compile_inconclusive",
+        "partial_result": False,
+        "run_status": "complete",
+        "terminal_events": 6,
+        "harness_cause": None,
+    },
+}
+FUSED_GATE_KEYS = {"all_pairs_completed", "budget_pass", "candidate_runnable",
+                   "correctness_pass", "resource_pass"}
+FUSED_THRESHOLD = {"bootstrap_resamples": 10_000, "bootstrap_seed": 20260825,
+                   "bootstrap_upper_max": 1.0, "median_ratio_max": 0.99,
+                   "no_outlier_removal": True}
 
 
 class DashboardError(RuntimeError):
@@ -111,6 +171,7 @@ DISPLAY_KEYS = {
     "fixed_compiled_div_fixed_eager", "fixed_compiled_div_standard_eager", "method", "statistic",
     "percentiles", "interpolation", "1b", "4b",
     "fixed_compiled", "fixed_eager", "standard_eager", "model_1b", "model_4b", "cross_model_text",
+    "fixed_compiled_external_greedy", "fixed_compiled_fused_greedy", "iterations", "n",
 }
 
 
@@ -178,6 +239,8 @@ def _valid_current(raw: dict[str, Any]) -> bool:
 
 
 def _valid_history(raw: dict[str, Any], cycle: int) -> bool:
+    if cycle in FUSED_HISTORY:
+        return _valid_fused_history(raw, cycle)
     expected = HISTORY_IDS[cycle]
     return (set(raw) == HISTORY_KEYS[cycle] and raw.get("schema_version") == 1
             and (raw.get("study_id"), raw.get("run_id")) == expected
@@ -187,6 +250,120 @@ def _valid_history(raw: dict[str, Any], cycle: int) -> bool:
             and isinstance(raw.get("gates"), dict)
             and isinstance(raw.get("budget"), dict)
             and isinstance(raw.get("resources"), dict))
+
+
+def _number(value: Any) -> bool:
+    return type(value) in (int, float) and math.isfinite(float(value))
+
+
+def _valid_stat(value: Any, expected_n: int) -> bool:
+    if (not isinstance(value, dict)
+            or set(value) != {"mad", "median", "n", "p50", "p95", "p99"}):
+        return False
+    if value.get("n") != expected_n:
+        return False
+    samples = (value.get("mad"), value.get("median"), value.get("p50"),
+               value.get("p95"), value.get("p99"))
+    return all(item is None for item in samples) if expected_n == 0 else all(_number(item) for item in samples)
+
+
+def _valid_fused_metrics(raw: dict[str, Any], cycle: int) -> bool:
+    metrics = raw.get("metrics")
+    if not isinstance(metrics, dict) or set(metrics) != {"arms", "paired"}:
+        return False
+    arms, paired = metrics.get("arms"), metrics.get("paired")
+    if not isinstance(arms, dict) or not isinstance(paired, dict):
+        return False
+    if cycle == 18:
+        return arms == {} and paired == {}
+    if set(arms) != set(FUSED_ARMS):
+        return False
+    expected_n = 6 if cycle == 21 else 0
+    for name in FUSED_ARMS:
+        arm = arms.get(name)
+        if not isinstance(arm, dict) or set(arm) != {"decode_critical_path", "rss_peak_bytes",
+                                                        "token_rate", "ttft"}:
+            return False
+        if not all(_valid_stat(arm.get(key), expected_n)
+                   for key in ("decode_critical_path", "token_rate", "ttft")):
+            return False
+        rss = arm.get("rss_peak_bytes")
+        if type(rss) is not int or (rss != 0 if expected_n == 0 else rss <= 0):
+            return False
+    if cycle != 21:
+        return paired == {}
+    if set(paired) != {"iterations", "lower", "median", "ratios", "seed", "upper"}:
+        return False
+    ratios = paired.get("ratios")
+    return (paired.get("iterations") == 10_000 and paired.get("seed") == 20260825
+            and isinstance(ratios, list) and len(ratios) == 6
+            and all(_number(item) for item in ratios)
+            and all(_number(paired.get(key)) for key in ("lower", "median", "upper")))
+
+
+def _valid_fused_history(raw: dict[str, Any], cycle: int) -> bool:
+    expected = FUSED_HISTORY[cycle]
+    if (set(raw) != FUSED_KEYS or raw.get("schema_version") != 1
+            or raw.get("study_id") != expected["study_id"]
+            or raw.get("run_id") != expected["run_id"]
+            or raw.get("candidate_id") != FUSED_CANDIDATE_ID
+            or raw.get("formal_claim") is not False
+            or raw.get("decision") != expected["decision"]
+            or raw.get("status") != expected["decision"]
+            or raw.get("partial_result") is not expected["partial_result"]
+            or type(raw.get("completed_at_unix_ns")) is not int
+            or not isinstance(raw.get("provenance"), dict)
+            or raw.get("thresholds") != FUSED_THRESHOLD
+            or not isinstance(raw.get("gates"), dict)
+            or set(raw["gates"]) != FUSED_GATE_KEYS
+            or not all(type(value) is bool for value in raw["gates"].values())
+            or not _valid_fused_metrics(raw, cycle)):
+        return False
+    expected_gates = ({key: True for key in FUSED_GATE_KEYS} if cycle == 21 else {
+        "all_pairs_completed": False, "budget_pass": False, "candidate_runnable": True,
+        "correctness_pass": False, "resource_pass": False,
+    })
+    if raw["gates"] != expected_gates:
+        return False
+    runs = raw.get("runs")
+    if not isinstance(runs, list) or len(runs) != expected["terminal_events"]:
+        return False
+    if cycle < 21:
+        error = raw.get("error")
+        if (not isinstance(error, dict) or set(error) != {"message", "type"}
+                or not all(isinstance(value, str) for value in error.values())):
+            return False
+        return all(isinstance(run, dict) and run.get("status") == expected["run_status"]
+                   and run.get("load_count") == 0 for run in runs)
+    if raw.get("error") is not None:
+        return False
+    for index, run in enumerate(runs, 1):
+        if not isinstance(run, dict):
+            return False
+        expected_order = FUSED_ARMS if index % 2 else tuple(reversed(FUSED_ARMS))
+        correctness = run.get("correctness")
+        arms = run.get("arms")
+        if (run.get("status") != "complete" or run.get("load_count") != 1
+                or run.get("process_index") != index or run.get("process_returncode") != 0
+                or run.get("arm_order") != list(expected_order)
+                or not isinstance(correctness, dict)
+                or set(correctness) != {"logical_identity", "pass", "physical_identity",
+                                        "text_identity", "visible_identity"}
+                or not all(value is True for value in correctness.values())
+                or not isinstance(arms, dict) or set(arms) != set(FUSED_ARMS)
+                or type(run.get("rss_peak_bytes")) is not int or run["rss_peak_bytes"] <= 0
+                or type(run.get("mlx_peak_bytes")) is not int or run["mlx_peak_bytes"] <= 0
+                or run.get("swap_delta_bytes") != 0):
+            return False
+        for name in FUSED_ARMS:
+            arm = arms[name]
+            if (not isinstance(arm, dict) or arm.get("arm") != name
+                    or arm.get("finish_reason") != "stop"
+                    or arm.get("physical_token_count") != 23
+                    or arm.get("logical_token_count") != 23
+                    or arm.get("visible_token_count") != 22):
+                return False
+    return True
 
 
 def _project_current(raw: dict[str, Any], digest: str | None) -> dict[str, Any]:
@@ -211,6 +388,8 @@ def _project_current(raw: dict[str, Any], digest: str | None) -> dict[str, Any]:
 def _project_history(raw: dict[str, Any], cycle: int, digest: str | None) -> dict[str, Any]:
     if not _valid_history(raw, cycle):
         return {"cycle": cycle, "available": False, "status": "history_schema_invalid", "sha256": digest}
+    if cycle in FUSED_HISTORY:
+        return _project_fused_history(raw, cycle, digest)
     safe = _safe(raw)
     return {"cycle": cycle, "available": True,
             "study_id": raw.get("study_id") if raw.get("study_id") in {HISTORY_IDS[cycle][0]} else "unavailable",
@@ -219,6 +398,50 @@ def _project_history(raw: dict[str, Any], cycle: int, digest: str | None) -> dic
             "measured": safe.get("metrics", safe.get("measured", {})) if isinstance(safe, dict) else {},
             "calculated": safe.get("calculated", safe.get("derived", {})) if isinstance(safe, dict) else {},
             "sha256": digest}
+
+
+def _stat_projection(value: dict[str, Any]) -> dict[str, int | float]:
+    return {key: value[key] for key in ("n", "median", "mad", "p50", "p95", "p99")}
+
+
+def _project_fused_history(raw: dict[str, Any], cycle: int,
+                           digest: str | None) -> dict[str, Any]:
+    expected = FUSED_HISTORY[cycle]
+    common = {"cycle": cycle, "available": True, "study_id": expected["study_id"],
+              "candidate_id": FUSED_CANDIDATE_ID, "formal_claim": False,
+              "decision": expected["decision"], "partial_result": expected["partial_result"],
+              "sha256": digest, "scope": "runtime_argmax_placement_only_matmul_active",
+              "completed_pairs": 0, "model_loads": 0, "performance_evidence": False}
+    if cycle < 21:
+        common["state"] = "terminal_before_model_load"
+        common["harness_cause"] = expected["harness_cause"]
+        return common
+    metrics = raw["metrics"]
+    arms = {
+        name: {"decode_critical_path_seconds": _stat_projection(metrics["arms"][name]["decode_critical_path"]),
+               "ttft_seconds": _stat_projection(metrics["arms"][name]["ttft"]),
+               "token_rate_per_second": _stat_projection(metrics["arms"][name]["token_rate"]),
+               "rss_peak_bytes": metrics["arms"][name]["rss_peak_bytes"]}
+        for name in FUSED_ARMS
+    }
+    paired = metrics["paired"]
+    common.update({
+        "state": "complete", "completed_pairs": 6, "model_loads": 6,
+        "performance_evidence": True,
+        "measured": {"arms": arms},
+        "calculated": {"candidate_over_baseline": {
+            "median": paired["median"], "bootstrap_95_ci": {"lower": paired["lower"],
+                                                               "upper": paired["upper"]},
+            "pairs": len(paired["ratios"]), "seed": paired["seed"],
+            "resamples": paired["iterations"]}},
+        "correctness": {"pairs": 6, "physical_identity": True, "logical_identity": True,
+                        "visible_identity": True, "text_identity": True},
+        "resources": {"rss_peak_bytes": max(run["rss_peak_bytes"] for run in raw["runs"]),
+                      "mlx_peak_bytes": max(run["mlx_peak_bytes"] for run in raw["runs"]),
+                      "swap_delta_bytes": max(run["swap_delta_bytes"] for run in raw["runs"])},
+        "gates": {key: raw["gates"][key] for key in sorted(FUSED_GATE_KEYS)},
+    })
+    return common
 
 
 def _project_file(path: Path, cycle: int) -> dict[str, Any]:
@@ -234,22 +457,52 @@ def snapshot() -> dict[str, Any]:
     return {"schema_version": 1, "study_id": STUDY_ID, "candidate_id": CANDIDATE_ID,
             "formal_claim": False, "current": _project_file(RESULT_PATH, 17),
             "history": [_project_file(path, cycle) for cycle, path in HISTORY_PATHS.items()],
-            "history_cycles": [15, 16, 17], "read_only": True}
+            "history_cycles": list(HISTORY_CYCLES), "read_only": True,
+            "scope": "runtime_organization_only_matmul_active_in_all_arms"}
 
 
 def _html_snapshot(value: dict[str, Any]) -> bytes:
     rows = []
-    for item in [*value["history"], value["current"]]:
-        rows.append("<tr><td>Cycle %s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
+    items = sorted([*value["history"], value["current"]], key=lambda item: item.get("cycle", 0))
+    for item in items:
+        has_performance = item.get("performance_evidence") is True or bool(item.get("measured"))
+        detail = item.get("harness_cause") if item.get("harness_cause") in {
+            row["harness_cause"] for row in FUSED_HISTORY.values() if row["harness_cause"]
+        } else ("performance_evidence" if has_performance else "historical_result")
+        rows.append("<tr><td>Cycle %s</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>" % (
             html.escape(str(item.get("cycle", ""))), html.escape(str(item.get("study_id", "unavailable"))),
             html.escape(str(item.get("decision", item.get("status", "unavailable")))),
-            "measured" if item.get("available") else "not available"))
-    return ("<!doctype html><meta charset=utf-8><title>Project Friday Readback</title>"
-            "<h1>Fixed-Compiled Batched Readback</h1>"
-            "<p>Cycle17 A/B: fixed compiled, readback interval 1 versus 8. "
-            "Only measured scalar projections are shown.</p><table>"
-            "<thead><tr><th>Cycle</th><th>Study</th><th>Decision</th><th>State</th></tr></thead>"
-            "<tbody>" + "".join(rows) + "</tbody></table>").encode()
+            "measured" if has_performance else
+            ("available_without_performance" if item.get("available") else "not_available"),
+            html.escape(detail)))
+    cycle21 = next((item for item in items if item.get("cycle") == 21 and item.get("performance_evidence")), None)
+    comparison = ""
+    if cycle21:
+        arms = cycle21["measured"]["arms"]
+        external, fused = (arms[name] for name in FUSED_ARMS)
+        paired = cycle21["calculated"]["candidate_over_baseline"]
+        resources = cycle21["resources"]
+        comparison = (
+            "<h2>Cycle 21 direct comparison</h2><table>"
+            "<thead><tr><th>Arm</th><th>Decode median s</th><th>TTFT median s</th>"
+            "<th>Tokens/s median</th><th>RSS peak bytes</th></tr></thead><tbody>"
+            "<tr><td>external greedy</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+            "<tr><td>fused greedy</td><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+            "</tbody></table><p>Paired candidate/baseline median: %s; bootstrap 95%% CI: [%s, %s]. "
+            "Decision: %s. Correctness: 6/6 exact physical, logical, visible and text identity. "
+            "MLX peak: %s bytes; swap delta: %s bytes.</p>" % (
+                external["decode_critical_path_seconds"]["median"], external["ttft_seconds"]["median"],
+                external["token_rate_per_second"]["median"], external["rss_peak_bytes"],
+                fused["decode_critical_path_seconds"]["median"], fused["ttft_seconds"]["median"],
+                fused["token_rate_per_second"]["median"], fused["rss_peak_bytes"], paired["median"],
+                paired["bootstrap_95_ci"]["lower"], paired["bootstrap_95_ci"]["upper"],
+                html.escape(cycle21["decision"]), resources["mlx_peak_bytes"], resources["swap_delta_bytes"]))
+    return ("<!doctype html><meta charset=utf-8><title>Project Friday Runtime History</title>"
+            "<h1>Project Friday Runtime History</h1>"
+            "<p>Only strict scalar projections are shown. Fused argmax changes runtime organization only; "
+            "Matmul remains active in both arms and this is not a Matmul-off test.</p><table>"
+            "<thead><tr><th>Cycle</th><th>Study</th><th>Decision</th><th>State</th><th>Evidence</th></tr></thead>"
+            "<tbody>" + "".join(rows) + "</tbody></table>" + comparison).encode()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -345,6 +598,10 @@ def _self_check() -> int:
         projected_history = _project_history(history, cycle, "0" * 64)
         history_encoded = json.dumps(projected_history, allow_nan=False).lower()
         assert "/secret" not in history_encoded and "leak" not in history_encoded
+    assert HISTORY_CYCLES == (15, 16, 17, 18, 19, 20, 21)
+    assert all(row["decision"] in SAFE_DECISIONS for row in FUSED_HISTORY.values())
+    assert all("error" not in row["harness_cause"] for row in FUSED_HISTORY.values()
+               if row["harness_cause"])
     assert not _identity({"study_id": "wrong", "run_id": RUN_ID, "candidate_id": CANDIDATE_ID, "formal_claim": False}, 17)
     return 0
 

@@ -1,6 +1,6 @@
 # Kandidatenliste
 
-Stand: 25. August 2026, Zyklus 17 nach realer Runtime-Qualifikation, nach Zyklus 16.
+Stand: 25. August 2026, Zyklus 21 nach realer Runtime-Qualifikation, nach Zyklus 20.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
 
@@ -30,6 +30,7 @@ bereits gemessen ist.
 | 22 | lernendes Optimization Memory mit lokalem Planner | nutzt alle positiven und negativen Messungen für den nächsten Vorschlag | Selbstbestätigung und falsche Aktivierung | **`no_planner_qualified`** (Zyklus 15); 1B und 4B jeweils `0/6` im strikten Vertrag |
 | 23 | Gemma-Matmul-A/B „mit/ohne“ | vollständigen Matmul-Optimierungspfad gegen unveränderten Pfad vergleichen | kein echter Schalter oder vollständiger A/B-Pfad vorhanden | **`open_future_preregistration`**; bisher nicht gemessen, neue Studie erforderlich |
 | 24 | Fixed-Cache/Compile-Decode-A/B | Laufzeitumgebung mit festem KV-Cache vergleichen | Tokenidentität, Cache- und Compile-Vertrag | **`runtime_compile_wins_exact_scope`** (Zyklus 16; 18 Arm-Ausführungen gemessen) |
+| 25 | Fused Greedy innerhalb der Compile-Umgebung | identisches greedy `argmax` innerhalb statt außerhalb des kompilierten Körpers | nur gepaarte Laufzeit entscheidet; Matmul bleibt aktiv | **`fused_greedy_compile_inconclusive`** (Zyklus 21; Baseline retained) |
 
 ## Begründung der Reihenfolge
 
@@ -53,6 +54,53 @@ Präregistrierung im lokalen Seal-Commit auf `sealed_pending_hardware` gesetzt.
 SHA-256: `dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf`.
 Es wurden keine Hardwarewerte gemessen; `results.json` und Startmarke fehlen.
 Die Matmul bleibt in allen drei Armen aktiv. `formal_claim=false`.
+
+## Zyklen 18–20 — terminale No-Load-Ergebnisse
+
+Cycle 18 (`fused-greedy-compile-20260825-01`) endete vor dem Load wegen eines
+Parent/Worker-Environment-Hash-Mismatch (`terminal provenance identity failed`),
+`resource_or_budget_failed`, `0` Läufe; Evidence-Commit
+`dc2cdced58b629e6a39cb8ed870d847d8ee16c13`, Result-SHA
+`ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035`, Marker-SHA
+`000bf298a3e03d51a84abe8087edfb51b173202451dbfed01bcac11607d3a6fd`.
+Cycle 19 (`fused-greedy-compile-20260825-02`) endete mit `load_count=0`, weil
+der Worker seine eigene Ergebnisdatei als unerlaubte Git-Änderung sah; ebenfalls
+`resource_or_budget_failed`, Evidence-Commit
+`59bbe9d698d978dcbd621fe89fb17bf98b286b8a`, Result-SHA
+`4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320`, Marker-SHA
+`59525fe94e2705f56191f6ae6b9f0eb2f53ca36fa17442cd20fad70514df03e1`.
+Cycle 20 (`fused-greedy-compile-20260825-03`) endete mit `load_count=0`, weil
+das Parent-Stat-Manifest `dev` enthielt und der Worker dieses Feld ausließ;
+Evidence-Commit `78f983c71636637b7995eb90500fe689cbe53fee`, Result-SHA
+`72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d`, Marker-SHA
+`e2bbff9fad7aa6e3a8e1e16cb2d9ec884c05a1b8bc5a2fabc1225f06d5a0b9da`. Alle drei
+bleiben `formal_claim=false` und wurden nicht wiederholt.
+
+## Zyklus 21 — Fused-Greedy-Ergebnis
+
+Der neue Kandidat `fixed_compiled_fused_greedy` wurde genau einmal mit sechs
+Paaren auf dem unveränderten Gemma-4B-Snapshot gemessen. Seal-Commit
+`ad4c92f32e608a8a0870b37e23a4dba0da1f666c`, Evidence-Commit
+`4f89e51c3933aa9c9d42563393589da3c2e4a875`, Prereg-SHA
+`a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf`, Result-SHA
+`55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e`, Marker-SHA
+`1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4`.
+Status und Entscheidung sind `fused_greedy_compile_inconclusive`; die Baseline
+bleibt retained, `formal_claim=false`. Gemessen: Decode-Median External/Fused
+`0,266399792/0,2660886875 s`, TTFT `0,641516396/0,641348646 s`, Modellzeit
+`0,2659206645/0,265599773 s`, Tokenrate `86,3365071/86,4373498 Token/s`.
+Die einzelne Fused-Medianmessung ist rund `0,117 %` niedriger, aber das ist kein
+gepaarter Gewinn. Berechnet: gepaartes Verhältnis `1,000510010` (`+0,0510 %`
+langsamer), Bootstrap-KI `[0,981178182; 1,004700679]`, 10.000 Resamples,
+Seed `20260825`. Alle 12 Arm-Ausführungen hatten identische physische,
+logische, sichtbare Tokens und identischen Text; RSS-Peak `3.769.974.784 B`,
+MLX-Peak `3.524.169.562 B`, Swap-Delta `0 B`.
+
+Matmul blieb vollständig aktiv. Der Kandidat verschiebt nur den identischen
+greedy Argmax in die Compile-Umgebung; Matmul-Aus wurde nicht getestet und wäre
+keine semantisch identische Umgebung. Nächste Einzelkandidatenarbeit soll den
+gemessenen Prefill/Kaltstart-Engpass und die fehlenden Multi-Turn- sowie
+Parallel-Request-Baselines adressieren. Keine automatische Aktivierung.
 
 ## Zyklus 17 — Ergebnis
 

@@ -31,6 +31,15 @@ WORKER_PATH = STUDY / "worker.py"
 HARNESS_PATH = STUDY / "measure_batched_readback.py"
 DASHBOARD_PATH = STUDY / "dashboard.py"
 CYCLE16 = ROOT / "experiments" / "matmul_compile_ab"
+CYCLE_RESULTS = {
+    15: ROOT / "experiments" / "dual_model_planner" / "results.json",
+    16: ROOT / "experiments" / "matmul_compile_ab" / "results.json",
+    17: STUDY / "results.json",
+    18: ROOT / "experiments" / "fused_greedy_compile" / "results.json",
+    19: ROOT / "experiments" / "fused_greedy_compile_v2" / "results.json",
+    20: ROOT / "experiments" / "fused_greedy_compile_v3" / "results.json",
+    21: ROOT / "experiments" / "fused_greedy_compile_v4" / "results.json",
+}
 
 
 def _load(path: Path, name: str):
@@ -425,9 +434,11 @@ class TestDashboardContract(unittest.TestCase):
 
     def test_dashboard_is_read_only_and_restricts_host(self):
         src = _source(DASHBOARD_PATH).lower()
-        for term in ("get", "head", "405", "421", "no-store", "host", "private_keys", "cycle15", "cycle17", "sha256", "visible_text"):
+        for term in ("get", "head", "405", "421", "no-store", "host", "private_keys",
+                     "cycle15", "cycle17", "cycle21", "sha256", "visible_text", "matmul-off"):
             self.assertIn(term, src)
-        self.assertTrue("cycle16" in src or "cycle15/16" in src)
+        self.assertIn("history_cycles", src)
+        self.assertIn("15, 16, 17, 18, 19, 20, 21", src)
         self.assertNotRegex(src, r"write_text|write_bytes|unlink|rename|mkdir")
 
     def test_dashboard_http_contract_with_synthetic_request_when_available(self):
@@ -436,11 +447,8 @@ class TestDashboardContract(unittest.TestCase):
         self.assertIn("history", _source(DASHBOARD_PATH).lower())
 
     def test_real_read_only_http_projection_and_hash_stability(self):
-        tracked = [
-            STUDY / "results.json",
-            ROOT / "experiments" / "dual_model_planner" / "results.json",
-            ROOT / "experiments" / "matmul_compile_ab" / "results.json",
-        ]
+        tracked = [CYCLE_RESULTS[cycle] for cycle in range(15, 22)]
+        tracked.extend(sorted((ROOT / ".friday-data").glob("*.sqlite*")))
         before = {str(path): _sha(path.read_bytes()) for path in tracked if path.is_file() and not path.is_symlink()}
         server = self.dashboard.make_server("127.0.0.1", 0)
         thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
@@ -461,33 +469,85 @@ class TestDashboardContract(unittest.TestCase):
             self.assertEqual(response.getheader("Cache-Control"), "no-store")
             self.assertIn("text/html", response.getheader("Content-Type", ""))
             html_body = body.decode()
-            self.assertIn("cycle 15", html_body.lower())
-            self.assertIn("cycle 16", html_body.lower())
-            self.assertIn("cycle 17", html_body.lower())
+            for cycle in range(15, 22):
+                self.assertIn(f"cycle {cycle}", html_body.lower())
+            self.assertIn("not a matmul-off test", html_body.lower())
+            self.assertIn("cycle 21 direct comparison", html_body.lower())
             response, body = request("GET", "/api/snapshot")
             self.assertEqual(response.status, 200)
             self.assertIn("application/json", response.getheader("Content-Type", ""))
             document = json.loads(body)
-            self.assertEqual(document["history_cycles"], [15, 16, 17])
+            self.assertEqual(document["history_cycles"], list(range(15, 22)))
             self.assertEqual(document["study_id"], "fixed-compiled-batched-readback-20260824-01")
-            self.assertNotIn("You choose exactly one next Project Friday experiment", body.decode())
-            self.assertNotIn(str(ROOT), body.decode())
-            self.assertNotIn("physical_tokens", body.decode())
-            self.assertNotIn("prompt_token_ids", body.decode())
-            self.assertNotIn("visible_text", body.decode())
-            self.assertNotIn("Traceback", body.decode())
-            self.assertNotIn("FileNotFoundError", body.decode())
+            by_cycle = {item["cycle"]: item for item in [document["current"], *document["history"]]}
+            self.assertEqual(set(by_cycle), set(range(15, 22)))
+            causes = {
+                18: "environment_fingerprint_mismatch_before_model_load",
+                19: "own_result_dirty_state_before_model_load",
+                20: "snapshot_stat_manifest_mismatch_before_model_load",
+            }
+            for cycle, cause in causes.items():
+                item = by_cycle[cycle]
+                self.assertTrue(item["available"])
+                self.assertEqual(item["harness_cause"], cause)
+                self.assertEqual(item["model_loads"], 0)
+                self.assertEqual(item["completed_pairs"], 0)
+                self.assertFalse(item["performance_evidence"])
+                self.assertNotIn("measured", item)
 
-            response, body = request("HEAD", "/api/snapshot")
-            self.assertEqual(response.status, 200)
-            self.assertEqual(body, b"")
-            self.assertEqual(response.getheader("Cache-Control"), "no-store")
-            for method in ("POST", "PUT", "PATCH", "DELETE"):
+            cycle21 = by_cycle[21]
+            self.assertTrue(cycle21["available"])
+            self.assertEqual(cycle21["decision"], "fused_greedy_compile_inconclusive")
+            self.assertEqual(cycle21["completed_pairs"], 6)
+            self.assertEqual(cycle21["model_loads"], 6)
+            self.assertTrue(cycle21["performance_evidence"])
+            arms = cycle21["measured"]["arms"]
+            external = arms["fixed_compiled_external_greedy"]
+            fused = arms["fixed_compiled_fused_greedy"]
+            self.assertAlmostEqual(external["decode_critical_path_seconds"]["median"], 0.266399792)
+            self.assertAlmostEqual(fused["decode_critical_path_seconds"]["median"], 0.2660886875)
+            self.assertAlmostEqual(external["ttft_seconds"]["median"], 0.641516396)
+            self.assertAlmostEqual(fused["ttft_seconds"]["median"], 0.641348646)
+            self.assertAlmostEqual(external["token_rate_per_second"]["median"], 86.33650705949903)
+            self.assertAlmostEqual(fused["token_rate_per_second"]["median"], 86.4373498460686)
+            self.assertEqual(external["rss_peak_bytes"], 3_769_974_784)
+            self.assertEqual(fused["rss_peak_bytes"], 3_769_974_784)
+            paired = cycle21["calculated"]["candidate_over_baseline"]
+            self.assertAlmostEqual(paired["median"], 1.000510009822041)
+            self.assertAlmostEqual(paired["bootstrap_95_ci"]["lower"], 0.9811781821677017)
+            self.assertAlmostEqual(paired["bootstrap_95_ci"]["upper"], 1.0047006793221342)
+            self.assertEqual(paired["pairs"], 6)
+            self.assertEqual(paired["seed"], 20260825)
+            self.assertEqual(paired["resamples"], 10_000)
+            self.assertEqual(cycle21["correctness"], {
+                "pairs": 6, "physical_identity": True, "logical_identity": True,
+                "visible_identity": True, "text_identity": True,
+            })
+            self.assertEqual(cycle21["resources"], {
+                "rss_peak_bytes": 3_769_974_784,
+                "mlx_peak_bytes": 3_524_169_562,
+                "swap_delta_bytes": 0,
+            })
+            self.assertTrue(all(cycle21["gates"].values()))
+
+            encoded = body.decode()
+            for forbidden in (
+                "You choose exactly one next Project Friday experiment", str(ROOT),
+                "physical_tokens", "logical_tokens", "visible_tokens", "prompt_token_ids",
+                "visible_text", "rendered_prompt_b64", "snapshot_path", "Traceback",
+                "FileNotFoundError", "terminal provenance identity failed",
+                "git dirty-state binding failed", "snapshot binding changed",
+            ):
+                self.assertNotIn(forbidden, encoded)
+
+            for path in ("/", "/api/snapshot"):
+                response, body = request("HEAD", path)
+                self.assertEqual(response.status, 200)
+                self.assertEqual(body, b"")
+                self.assertEqual(response.getheader("Cache-Control"), "no-store")
+            for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"):
                 response, _ = request(method)
                 self.assertEqual(response.status, 405, method)
-            for method in ("OPTIONS", "TRACE"):
-                response, _ = request(method)
-                self.assertIn(response.status, (405, 501), method)
             response, _ = request("GET", "/", host="evil.example")
             self.assertEqual(response.status, 421)
         finally:
@@ -496,6 +556,76 @@ class TestDashboardContract(unittest.TestCase):
             thread.join(timeout=3)
         after = {str(path): _sha(path.read_bytes()) for path in tracked if path.is_file() and not path.is_symlink()}
         self.assertEqual(before, after)
+
+    def test_fused_history_schema_is_strict_and_raw_errors_are_not_projected(self):
+        for cycle in range(18, 22):
+            raw = json.loads(CYCLE_RESULTS[cycle].read_text(encoding="utf-8"))
+            self.assertTrue(self.dashboard._valid_history(raw, cycle), cycle)
+            projected = self.dashboard._project_history(raw, cycle, "0" * 64)
+            encoded = json.dumps(projected, sort_keys=True)
+            self.assertNotIn("error", encoded.lower())
+            self.assertNotIn("visible_text", encoded)
+            self.assertNotIn("logical_tokens", encoded)
+            self.assertNotIn("rendered_prompt_b64", encoded)
+
+            wrong = dict(raw)
+            wrong["unexpected"] = 1
+            self.assertFalse(self.dashboard._valid_history(wrong, cycle))
+            wrong = dict(raw)
+            wrong["candidate_id"] = "unknown_candidate"
+            self.assertFalse(self.dashboard._valid_history(wrong, cycle))
+            wrong = dict(raw)
+            wrong["decision"] = "unknown_decision"
+            self.assertFalse(self.dashboard._valid_history(wrong, cycle))
+            wrong = dict(raw)
+            wrong["gates"] = dict(raw["gates"], candidate_runnable=False)
+            self.assertFalse(self.dashboard._valid_history(wrong, cycle))
+
+    def test_malicious_synthetic_model_and_error_html_never_reaches_http(self):
+        malicious = '<script>alert("raw-model")</script><img src=x onerror=alert(1)>'
+        cycle18 = json.loads(CYCLE_RESULTS[18].read_text(encoding="utf-8"))
+        cycle21 = json.loads(CYCLE_RESULTS[21].read_text(encoding="utf-8"))
+        cycle18["error"] = {"type": malicious, "message": f"/private/{malicious}"}
+        for run in cycle21["runs"]:
+            for arm in run["arms"].values():
+                arm["visible_text"] = malicious
+                arm["rendered_prompt_b64"] = malicious
+                arm["logical_tokens"] = [malicious]
+
+        with tempfile.TemporaryDirectory() as directory:
+            temp = Path(directory)
+            cycle18_path = temp / "cycle18.json"
+            cycle21_path = temp / "cycle21.json"
+            cycle18_path.write_text(json.dumps(cycle18, allow_nan=False), encoding="utf-8")
+            cycle21_path.write_text(json.dumps(cycle21, allow_nan=False), encoding="utf-8")
+            paths = dict(self.dashboard.HISTORY_PATHS)
+            paths[18] = cycle18_path
+            paths[21] = cycle21_path
+            with mock.patch.object(self.dashboard, "HISTORY_PATHS", paths):
+                server = self.dashboard.make_server("127.0.0.1", 0)
+                thread = __import__("threading").Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                port = server.server_address[1]
+                try:
+                    for path in ("/", "/api/snapshot"):
+                        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+                        connection.request("GET", path, headers={"Host": f"127.0.0.1:{port}"})
+                        response = connection.getresponse()
+                        body = response.read().decode()
+                        connection.close()
+                        self.assertEqual(response.status, 200)
+                        self.assertNotIn(malicious, body)
+                        self.assertNotIn("raw-model", body)
+                        self.assertNotIn("<script", body.lower())
+                        self.assertNotIn("<img", body.lower())
+                        self.assertNotIn("&lt;script", body.lower())
+                        self.assertNotIn("visible_text", body)
+                        self.assertNotIn("rendered_prompt_b64", body)
+                        self.assertNotIn("logical_tokens", body)
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=3)
 
 
 if __name__ == "__main__":
