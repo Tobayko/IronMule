@@ -233,6 +233,18 @@
       },
       "matmul_operation": "active_in_all_arms",
       "note": "runtime-only Cache/Compile-A/B; keine Gewichts-, Modell- oder Quantisierungsänderung; greedy Token- und Textidentität Pflicht; alte Device-Model-Compile-Messungen wegen falscher Token ab Position 2 ungültig"
+    },
+    {
+      "id": "multi_turn_continuation",
+      "status": "not_measured",
+      "formal_claim": false,
+      "note": "verlangter fehlender Baseline-Workload; nächste neue Einzelstudie erforderlich"
+    },
+    {
+      "id": "parallel_requests",
+      "status": "not_measured",
+      "formal_claim": false,
+      "note": "verlangter fehlender Baseline-Workload; concurrent_32 bleibt nur Definition"
     }
   ],
   "candidates": [
@@ -773,6 +785,80 @@
       "note": "6 pairs/12 arms; exact logical/visible output identity; readback8 faster in every pair but median ratio 0.9581074518 misses fixed <=0.95 gate. Baseline retained; no activation, quality or self-learning claim."
     }
   ],
+  "candidate_attempts": {
+    "18": {
+      "study_id": "fused-greedy-compile-20260825-01",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "parent_worker_environment_hash_mismatch",
+      "evidence_commit": "dc2cdced58b629e6a39cb8ed870d847d8ee16c13",
+      "result_sha256": "ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035",
+      "marker_sha256": "000bf298a3e03d51a84abe8087edfb51b173202451dbfed01bcac11607d3a6fd",
+      "formal_claim": false
+    },
+    "19": {
+      "study_id": "fused-greedy-compile-20260825-02",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "worker_rejected_own_result_as_git_dirty",
+      "evidence_commit": "59bbe9d698d978dcbd621fe89fb17bf98b286b8a",
+      "result_sha256": "4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320",
+      "marker_sha256": "59525fe94e2705f56191f6ae6b9f0eb2f53ca36fa17442cd20fad70514df03e1",
+      "formal_claim": false
+    },
+    "20": {
+      "study_id": "fused-greedy-compile-20260825-03",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "worker_snapshot_manifest_omitted_dev",
+      "evidence_commit": "78f983c71636637b7995eb90500fe689cbe53fee",
+      "result_sha256": "72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d",
+      "marker_sha256": "e2bbff9fad7aa6e3a8e1e16cb2d9ec884c05a1b8bc5a2fabc1225f06d5a0b9da",
+      "formal_claim": false
+    },
+    "21": {
+      "study_id": "fused-greedy-compile-20260825-04",
+      "candidate_id": "fixed_compiled_fused_greedy",
+      "status": "fused_greedy_compile_inconclusive",
+      "decision": "fused_greedy_compile_inconclusive",
+      "baseline_retained": true,
+      "hardware_measured": true,
+      "runs": 6,
+      "arm_executions": 12,
+      "exact_token_identity": true,
+      "exact_text_identity": true,
+      "decode_median_seconds": {
+        "fixed_compiled_external_greedy": 0.266399792,
+        "fixed_compiled_fused_greedy": 0.2660886875
+      },
+      "ttft_median_seconds": {
+        "fixed_compiled_external_greedy": 0.641516396,
+        "fixed_compiled_fused_greedy": 0.641348646
+      },
+      "model_time_median_seconds": {
+        "fixed_compiled_external_greedy": 0.2659206645,
+        "fixed_compiled_fused_greedy": 0.265599773
+      },
+      "token_rate_median": {
+        "fixed_compiled_external_greedy": 86.33650705949903,
+        "fixed_compiled_fused_greedy": 86.4373498460686
+      },
+      "paired_decode_ratio": 1.000510009822041,
+      "paired_bootstrap_95_ci": [0.9811781821677017, 1.0047006793221342],
+      "bootstrap_seed": 20260825,
+      "bootstrap_resamples": 10000,
+      "peak_rss_bytes": 3769974784,
+      "peak_mlx_bytes": 3524169562,
+      "swap_delta_bytes": 0,
+      "mathematical_matmul": "active_in_all_arms",
+      "evidence_commit": "4f89e51c3933aa9c9d42563393589da3c2e4a875",
+      "seal_commit": "ad4c92f32e608a8a0870b37e23a4dba0da1f666c",
+      "preregistration_sha256": "a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf",
+      "result_sha256": "55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e",
+      "marker_sha256": "1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4",
+      "formal_claim": false
+    }
+  },
   "endpoints": {
     "primary": [
       "ttft_ms",
@@ -820,9 +906,10 @@
       "swap_growth_allowed": false
     },
     "limits": {
-      "max_cycles": 17,
-      "cycles_completed": 17,
-      "cycle17_authorization": "consumed_exactly_once",
+      "max_cycles": 21,
+      "cycles_completed": 21,
+      "cycle21_authorization": "consumed_exactly_once",
+      "candidate_attempts": [18, 19, 20, 21],
       "max_failed_attempts_per_candidate": 1,
       "max_hardware_runs_per_candidate": 6
     }

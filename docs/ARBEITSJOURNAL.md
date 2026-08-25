@@ -5771,3 +5771,48 @@ berechneten 4,1893-%-Effekt und die verfehlte feste 5-%-Schwelle.
 
 Die Matrix weist nun korrekt `max_cycles=17` und `cycles_completed=17` aus;
 dies ersetzt den unmittelbar vorherigen Zwischenstand `17/16`.
+
+## 2026-08-25 — Zyklen 18–21: Fused-Greedy-Compile-Chronologie
+
+Zyklus 18 war fail-closed und ohne Modelllauf (`load_count=0`,
+`formal_claim=false`): Resultat `ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035`,
+Seal `f1383587d585620f75e3c1e9bd40a71cbd0e8af9`, Evidence
+`dc2cdced58b629e6a39cb8ed870d847d8ee16c13`. Parent und Worker hatten
+verschiedene Environment-Fingerprints; die Provenienzprüfung schlug vor Paar 0
+fehl.
+
+Zyklus 19 war ebenfalls ohne Modelllauf: Resultat
+`4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320`, Seal
+`7278bda3281161cebdcf395fd4aa50df5de5124e`, Evidence
+`59bbe9d698d978dcbd621fe89fb17bf98b286b8a`. Der Worker wertete sein eigenes,
+absichtlich erzeugtes Resultat als unerlaubten Git-Dirty-State.
+
+Zyklus 20 war ebenfalls ohne Modelllauf: Resultat
+`72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d`, Seal
+`6c0e18b17b2febf184fda0fc09552b5613c49dc0`, Evidence
+`78f983c71636637b7995eb90500fe689cbe53fee`. Das Parent-Snapshot-Manifest
+enthielt `dev`, das Worker-Manifest nicht; Snapshot-Binding scheiterte vor dem
+Laden. Diese drei Ergebnisse enthalten keine Performancewerte.
+
+Die Korrekturen sind identische Environment-Fingerprints, eine fail-closed
+Allowlist nur für das eigene Resultat und ein identischer Snapshot-Statvertrag
+mit `dev`. Kein Fehler wurde als Performancebefund umgedeutet; Matmul blieb
+aktiv.
+
+Zyklus 21 wurde mit Seal `ad4c92f32e608a8a0870b37e23a4dba0da1f666c` und Evidence
+`4f89e51c3933aa9c9d42563393589da3c2e4a875` abgeschlossen. Prereg-SHA
+`a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf`, Resultat-
+SHA `55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e`,
+Marker-SHA `1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4`.
+Sechs frische serielle 4B-Prozesse mit zwölf Armen liefen vollständig durch;
+Token und Text waren exakt gleich. Decode-Medianen: external `0,266399792 s`,
+fused `0,266088688 s`. Ratio-Median `1,000510010`, Bootstrap-95-%-KI
+`[0,981178182; 1,004700679]`, seed `20260825`, 10.000 Resamples, keine
+Ausreißerentfernung. Entscheidung: `fused_greedy_compile_inconclusive`, kein
+klarer Gewinn; Exit `1` ist für diesen Nicht-Gewinn korrekt.
+
+Ressourcen- und Budget-Gates bestanden; RSS maximal `3.769.974.784 B`,
+MLX-Peak `3.524.169.562 B`, Swap-Delta `0 B`. Rohzeiten sind gemessen;
+Mediane, Perzentile, Ratio, KI und Prozentänderungen sind berechnet. Modell,
+Gewichte, Quantisierung und Matmul blieben unverändert. Kein Qualitäts-,
+Selbstlern-, Produkt- oder Aktivierungsclaim.

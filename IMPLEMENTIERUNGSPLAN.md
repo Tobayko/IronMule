@@ -1,6 +1,6 @@
 # Implementierungsplan
 
-## Auditierter Planstand — 24.08.2026, Zyklus 16 nach Hardwaremessung
+## Auditierter Planstand — 25.08.2026, Zyklus 21 nach Hardwaremessung
 
 Die frühere Abfolge wurde durch den Evidenzaudit enger gefasst. Historische
 Dispatch-, Loop-, Modell- und Codegen-Läufe sind explorative
@@ -530,3 +530,52 @@ Fixed-Compiled-4B-Pfad; sechs frische Paare und zwölf Arme sind geplant.
 `formal_claim=false`. Readback 8 war in allen 6 Paaren schneller, verfehlte
 aber mit Ratio-Median `0,9581074518` die feste 5-%-Schwelle; 4,1893 % ist
 berechnet. Baseline retained, ohne Qualitäts- oder Aktivierungsclaim.
+
+## Zyklen 18–20 — getrennte terminale Vor-Hardwarefehler
+
+Die drei neuen Studien wurden nicht als Wiederholungen umgedeutet und lieferten
+keine Performance-Evidenz:
+
+| Zyklus | Studie | Status/Fehler | Last | Evidenz-Commit | Result-SHA | Marker-SHA |
+|---:|:---|:---|---:|:---|:---|:---|
+| 18 | `fused-greedy-compile-20260825-01` | `resource_or_budget_failed`; Parent/Worker-Environment-Hash verschieden, terminale Provenienzprüfung | `0` | `dc2cdced58b629e6a39cb8ed870d847d8ee16c13` | `ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035` | `000bf298a3e03d51a84abe8087edfb51b173202451dbfed01bcac11607d3a6fd` |
+| 19 | `fused-greedy-compile-20260825-02` | `resource_or_budget_failed`; Worker sah die eigene Ergebnisdatei als unerlaubte Git-Änderung | `0` | `59bbe9d698d978dcbd621fe89fb17bf98b286b8a` | `4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320` | `59525fe94e2705f56191f6ae6b9f0eb2f53ca36fa17442cd20fad70514df03e1` |
+| 20 | `fused-greedy-compile-20260825-03` | `resource_or_budget_failed`; Parent-Manifest enthielt `dev`, Worker nicht, daher Snapshot-Bindung vor Load abgelehnt | `0` | `78f983c71636637b7995eb90500fe689cbe53fee` | `72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d` | `e2bbff9fad7aa6e3a8e1e16cb2d9ec884c05a1b8bc5a2fabc1225f06d5a0b9da` |
+
+Alle drei blieben `formal_claim=false`; kein Modell wurde in diesen drei
+Fehlerläufen geladen. Die jeweiligen Fehler wurden nicht wiederholt.
+
+## Zyklus 21 — reales Runtime-Ergebnis
+
+Die neue Studie `fused-greedy-compile-20260825-04` wurde im Seal-Commit
+`ad4c92f32e608a8a0870b37e23a4dba0da1f666c` präregistriert und genau einmal
+ausgeführt. Evidence-Commit ist `4f89e51c3933aa9c9d42563393589da3c2e4a875`;
+Präregistrierung `a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf`,
+Result `55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e`,
+Marker `1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4`.
+Die Entscheidung lautet `fused_greedy_compile_inconclusive` (Baseline bleibt
+beibehalten), `formal_claim=false`.
+
+Gemessen wurden sechs Paare/sechs Prozesse mit je einem Load. Beide Arme waren
+greedy und semantisch exakt identisch: 23 physische/logische, 22 sichtbare
+Tokens, EOS an Position 22, gleiche Text-/Tokenhashes in allen Ausführungen.
+Decode-Median/MAD: External `0,266399792/0,0005513755 s`, Fused
+`0,2660886875/0,0001259585 s`; TTFT `0,641516396/0,000482313 s` versus
+`0,641348646/0,0006170835 s`; Modellzeit `0,2659206645/0,00050935 s` versus
+`0,265599773/0,0001226065 s`; Tokenrate `86,3365071/0,1789603` versus
+`86,4373498/0,0409238 Token/s`. Die einzelnen Fused-Decode-Medianen sind rund
+`0,117 %` niedriger, aber das ist kein gepaarter Gewinn.
+
+Berechnet aus den sechs Paaren: Fused/External `1,000510010` (rund `+0,0510 %`
+langsamer), Bootstrap-95-%-KI `[0,981178182; 1,004700679]`, `10.000`
+Resamples, Seed `20260825`. RSS-Peak `3.769.974.784 B`, MLX-Peak
+`3.524.169.562 B`, Swap-Delta `0 B`; alle Ressourcen- und Budget-Gates
+bestanden. Die Matmul war in beiden Armen vollständig aktiv; Modell, Gewichte
+und Quantisierung blieben unverändert. Nur die Position des identischen Argmax
+innerhalb der Compile-Umgebung wurde verglichen. Ein Matmul-Aus-Pfad wurde nicht
+gemessen und wäre wegen geänderter Rechnung/Outputsemantik kein zulässiger
+semantisch-identischer Kandidat.
+
+Als nächstes wird genau ein neuer Kandidat für Prefill/Kaltstart und die bisher
+fehlenden Workloads Multi-Turn-Fortsetzung sowie mehrere parallele Requests
+vorgeschlagen. Keine automatische Aktivierung und kein Selbstlern-Claim.

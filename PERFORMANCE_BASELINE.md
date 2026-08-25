@@ -1,6 +1,6 @@
 # Performance-Baseline
 
-Stand: 24. August 2026, Zyklus 16 nach realer Runtime-Qualifikation, nach Zyklus 15,
+Stand: 25. August 2026, Zyklus 21 nach realer Runtime-Qualifikation, nach Zyklus 20,
 Gemma 3 4B 4-bit g64 auf Apple M1 Max, MLX `0.32.0`,
 mlx-lm `0.31.3`. Werte sind gemessen, sofern sie nicht ausdrücklich als Rechnung
 markiert sind. Der einzige neue formale Claim ist die unten abgegrenzte
@@ -371,3 +371,51 @@ Arm-Wall `1,7003978955`/`1,683269416 s`, Tokenrate `86,3702926`/`94,0662085 s⁻
 Ratio-Median `0,9581074518`, KI `[0,9534714914;0,9598849359]`; 4,1893 % ist
 berechnet. Readback 8 war stets schneller, die feste 5-%-Schwelle aber verfehlt;
 Baseline retained, `formal_claim=false`. Der 8er-TTFT ist wegen der Boundary später.
+
+## Zyklen 18–20 — terminale No-Load-Evidenz
+
+Cycle 18 (`fused-greedy-compile-20260825-01`) lud kein Modell: Parent und Worker
+hatten unterschiedliche Environment-Fingerprints; Status und Entscheidung
+`resource_or_budget_failed`, `0` Läufe. Evidence-Commit
+`dc2cdced58b629e6a39cb8ed870d847d8ee16c13`, Result-SHA
+`ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035`, Marker-SHA
+`000bf298a3e03d51a84abe8087edfb51b173202451dbfed01bcac11607d3a6fd`.
+Cycle 19 (`fused-greedy-compile-20260825-02`) blieb bei `load_count=0`, weil
+die eigene Ergebnisdatei die Git-Bindung verletzte. Evidence-Commit
+`59bbe9d698d978dcbd621fe89fb17bf98b286b8a`, Result-SHA
+`4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320`, Marker-SHA
+`59525fe94e2705f56191f6ae6b9f0eb2f53ca36fa17442cd20fad70514df03e1`.
+Cycle 20 (`fused-greedy-compile-20260825-03`) blieb ebenfalls bei `load_count=0`,
+weil `dev` im Parent-Manifest, nicht aber im Worker-Manifest stand. Evidence-Commit
+`78f983c71636637b7995eb90500fe689cbe53fee`, Result-SHA
+`72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d`, Marker-SHA
+`e2bbff9fad7aa6e3a8e1e16cb2d9ec884c05a1b8bc5a2fabc1225f06d5a0b9da`. Alle drei
+bleiben `formal_claim=false`; es gab keinen Performancewert und keine Wiederholung.
+
+## Zyklus 21 — gemessene Fused-Greedy-Baseline
+
+Die Studie `fused-greedy-compile-20260825-04` wurde genau einmal gemessen:
+Seal-Commit `ad4c92f32e608a8a0870b37e23a4dba0da1f666c`, Evidence-Commit
+`4f89e51c3933aa9c9d42563393589da3c2e4a875`, Prereg-SHA
+`a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf`, Result-SHA
+`55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e`, Marker-SHA
+`1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4`.
+Sechs Paare und 12 Arm-Ausführungen bestanden alle Identitäts-, Ressourcen- und
+Budgetgates. Gemessen wurden:
+
+| Messgröße | External Greedy | Fused Greedy |
+| :--- | ---: | ---: |
+| Decode Median / MAD | `0,266399792 / 0,0005513755 s` | `0,2660886875 / 0,0001259585 s` |
+| TTFT Median / MAD | `0,641516396 / 0,000482313 s` | `0,641348646 / 0,0006170835 s` |
+| Modellzeit Median / MAD | `0,2659206645 / 0,00050935 s` | `0,265599773 / 0,0001226065 s` |
+| Tokenrate Median / MAD | `86,3365071 / 0,1789603` | `86,4373498 / 0,0409238 Token/s` |
+
+Die Fused-Einzelmedianmessung ist rund `0,117 %` niedriger, aber nicht das
+gepaarte Entscheidungskriterium. Berechnet: Fused/External `1,000510010`
+(`+0,0510 %` langsamer), Bootstrap-95-%-KI `[0,981178182; 1,004700679]`, Seed
+`20260825`, 10.000 Resamples. Deshalb lautet die Entscheidung
+`fused_greedy_compile_inconclusive`, Baseline retained, `formal_claim=false`.
+Peak-RSS `3.769.974.784 B`, MLX-Peak `3.524.169.562 B`, Swap-Delta `0 B`.
+Matmul blieb in allen Armen vollständig aktiv; Modell, Gewichte und Quantisierung
+blieben unverändert. Ein Matmul-Aus-Vergleich wurde nicht durchgeführt und wäre
+wegen geänderter Berechnung kein semantisch-identischer Kandidat.

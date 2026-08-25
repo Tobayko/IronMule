@@ -1485,3 +1485,40 @@ Aktivierungsaussage. Evidence-Audit `evidence_valid=true`.
 Result-SHA `d2eb29fe31dcf47fe294d2b0bec2d724fe6cc6e6f6d88d2035783613338fbddd`,
 Verification-SHA `be91320e44507573601b81b90016ff0b9c8bee9458465cebff5ae438e6bf9214`,
 Marker-SHA `18801fdfca677eb1b0d6a82ac95954990ac05476876447ca1170a42e754710dc`.
+
+## Zyklen 18–21 — Fused-Greedy-Compile: Fehlerkette und gültiger Abschluss
+
+Zyklen 18 bis 20 waren terminale Vorläufe ohne Performance-Evidence. Alle
+blieben `formal_claim=false` und luden kein Modell (`load_count=0`):
+
+| Zyklus | Resultat-SHA256 | Seal-Commit | Evidence-Commit | Ursache |
+|---|---|---|---|---|
+| 18 | `ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035` | `f1383587d585620f75e3c1e9bd40a71cbd0e8af9` | `dc2cdced58b629e6a39cb8ed870d847d8ee16c13` | Parent/Worker-Environment-Fingerprint verschieden; Provenienzprüfung vor Paar 0. |
+| 19 | `4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320` | `7278bda3281161cebdcf395fd4aa50df5de5124e` | `59bbe9d698d978dcbd621fe89fb17bf98b286b8a` | Worker sah sein eigenes absichtlich erzeugtes Resultat als unerlaubte Git-Änderung. |
+| 20 | `72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d` | `6c0e18b17b2febf184fda0fc09552b5613c49dc0` | `78f983c71636637b7995eb90500fe689cbe53fee` | Parent-Manifest enthielt `dev`, Worker-Manifest nicht; Snapshot-Binding vor dem Laden. |
+
+Die Fehler wurden fail-closed erhalten. Korrekturen waren identische
+Environment-Fingerprints, eine Allowlist nur für das eigene Resultat und ein
+gemeinsamer Snapshot-Statvertrag inklusive `dev`. Es gab keinen Matmul-
+On/Off-Nebenclaim.
+
+Zyklus 21 wurde mit Seal `ad4c92f32e608a8a0870b37e23a4dba0da1f666c` und
+Evidence `4f89e51c3933aa9c9d42563393589da3c2e4a875` abgeschlossen. Prereg-SHA
+`a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf`, Resultat-
+SHA `55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e`,
+Marker-SHA `1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4`.
+
+Gemessen wurden sechs frische serielle 4B-Prozesse und zwölf Arme. Token und
+Texte waren exakt gleich. Decode-Median: external `0,266399792 s`, fused
+`0,266088688 s`. Der gepaarte Ratio-Median ist `1,000510010`, Bootstrap-95-%-
+KI `[0,981178182; 1,004700679]`, seed `20260825`, 10.000 Resamples, ohne
+Ausreißerentfernung. Die Entscheidung lautet
+`fused_greedy_compile_inconclusive`, also kein klarer Gewinn; der erwartete
+`--execute`-Exit für diesen Nicht-Gewinn ist `1`.
+
+Ressourcen- und Budget-Gates bestanden; RSS maximal `3.769.974.784 B`,
+MLX-Peak `3.524.169.562 B`, Swap-Delta überall `0 B`. Rohzeiten und
+Identitäts-Hashes sind gemessen; Mediane, Perzentile, Prozentänderungen und
+Konfidenzintervalle sind berechnet. Modell, Gewichte, Quantisierung und
+Matmul blieben unverändert. Kein Qualitäts-, Selbstlern-, Produkt- oder
+Aktivierungsclaim.
