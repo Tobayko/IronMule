@@ -21,18 +21,13 @@ from typing import Any
 def _store() -> Path:
     """Where tuned profiles and fingerprints live.
 
-    The project was called Claude Forge before it was called IronMule. An existing
-    `~/.claude_forge` is adopted rather than orphaned, so a machine that already
-    paid for a tuning run keeps it.
+    Override with `IRONMULE_HOME` to keep the store on a different volume, or to
+    give two checkouts separate tuning results on one machine.
     """
     explicit = os.environ.get("IRONMULE_HOME")
     if explicit:
         return Path(explicit)
-    new = Path.home() / ".ironmule"
-    legacy = Path.home() / ".claude_forge"
-    if not new.exists() and legacy.is_dir():
-        return legacy
-    return new
+    return Path.home() / ".ironmule"
 
 
 STORE = _store()

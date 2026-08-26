@@ -1,211 +1,304 @@
 # IronMule License
 
-**Version 1.0** — a fair-code, source-available licence.
-Built on the Sustainable Use License 1.0, with binding clarifications added in §10.
+**Version 1.0** · a fair-code, source-available licence · effective 26 August 2026
 
 ---
 
 ## Plain-language summary
 
-*This summary is not part of the legal terms below and does not modify them. Where
-the summary and the terms differ, the terms govern.*
+*This summary is not part of the legal terms and does not modify them. Where the two
+differ, the terms govern.*
 
 | What you want to do | Free of charge? |
 | :-- | :-- |
 | Use IronMule personally, to learn, or for research | **Yes** |
 | Use it inside your company, on any number of machines, at any scale | **Yes** |
-| Use it to run inference for your own product or service | **Yes** |
+| Use it to run inference behind your own product or service | **Yes** |
 | Modify it for your own use | **Yes** |
 | Publish benchmarks, papers or blog posts about it | **Yes** |
 | Pass it on to someone else free of charge, non-commercially | **Yes** |
 | Offer IronMule itself to third parties as a hosted or managed service | **No — commercial licence** |
-| Sell it, resell it, or ship it inside a product you charge for | **No — commercial licence** |
+| Sell it, resell it, or ship it as part of what you charge for | **No — commercial licence** |
 | Remove or hide the licence and copyright notices | **No** |
 
-**In one sentence:** run your own workloads for free, at any size; pay only if
-IronMule itself is part of what you sell to others.
+**In one sentence:** run your own workloads for free, at any size; a commercial
+licence is needed only when third parties get the software itself as the thing you
+are selling.
 
 ---
 
 ## 1. Acceptance
 
-By using the software, you agree to all of the terms and conditions below.
+By using the software you agree to all of the terms below. If you do not agree, do
+not use the software.
 
 ## 2. Copyright licence
 
-The licensor grants you a non-exclusive, royalty-free, worldwide,
-non-sublicensable, non-transferable licence to use, copy, distribute, make
-available, and prepare derivative works of the software, in each case subject to the
-limitations below.
+Subject to these terms, the licensor grants you a non-exclusive, royalty-free,
+worldwide, non-sublicensable, non-transferable licence to use, copy, distribute,
+make available, and prepare derivative works of the software.
 
 ## 3. Limitations
 
-You may use or modify the software only for your own internal business purposes or
-for non-commercial or personal use.
+**3.1** You may use or modify the software only for your own internal business
+purposes, or for non-commercial or personal use.
 
-You may distribute the software or provide it to others only if you do so free of
-charge and for non-commercial purposes.
+**3.2** You may distribute the software or provide it to others only free of charge
+and for non-commercial purposes.
 
-You may not alter, remove, or obscure any licensing, copyright, or other notices of
-the licensor in the software. Any use of the licensor's trademarks is subject to
-applicable law.
+**3.3** You may not alter, remove, or obscure any licensing, copyright, or other
+notice of the licensor in the software.
+
+**3.4** Uses outside 3.1 and 3.2 require a separate commercial licence from the
+licensor. Section 10 states where the boundary lies.
 
 ## 4. Patents
 
-The licensor grants you a licence, under any patent claims the licensor can licence,
+The licensor grants you a licence, under any patent claims the licensor can licence
 or becomes able to licence, to make, have made, use, sell, offer for sale, import
-and have imported the software, in each case subject to the limitations and
-conditions in this licence. This licence does not cover any patent claims that you
-cause to be infringed by modifications or additions to the software. If you or your
-company make any written claim that the software infringes or contributes to
-infringement of any patent, your patent licence for the software ends immediately.
-If your company makes such a claim, your patent licence ends immediately for work on
-behalf of your company.
+and have imported the software, subject to the limitations in these terms.
+
+This licence does not cover patent claims you cause to be infringed by your
+modifications or additions. If you or your company assert in writing that the
+software infringes or contributes to infringement of any patent, your patent licence
+ends immediately; where your company asserts it, the patent licence ends immediately
+for work on behalf of your company.
 
 ## 5. Notices
 
-You must ensure that anyone who gets a copy of any part of the software from you
-also gets a copy of these terms.
+**5.1** Anyone who receives any part of the software from you must also receive a
+copy of these terms.
 
-If you modify the software, you must include in any modified copies prominent
-notices stating that you have modified it.
+**5.2** Modified copies must carry prominent notices stating that you modified the
+software and the date of modification.
 
 ## 6. No other rights
 
-These terms do not imply any licences other than those expressly granted here.
+These terms imply no licences beyond those expressly granted. All rights not granted
+are reserved.
 
 ## 7. Termination
 
-If you use the software in violation of these terms, such use is not licensed, and
-your licences terminate automatically. If the licensor gives you notice of your
-violation and you cease all violation no later than **30 days** after receiving that
-notice, your licences are reinstated retroactively. If you violate these terms again
-after such reinstatement, your licences terminate automatically and permanently.
+**7.1** Use in violation of these terms is unlicensed and your licences terminate
+automatically.
 
-## 8. No warranty and no liability
+**7.2** If the licensor notifies you of a violation and you cease all violation
+within **30 days** of receiving that notice, your licences are reinstated
+retroactively.
 
-***As far as the law allows, the software is provided as is, without any warranty or
-condition of any kind, and the licensor will not be liable to you for any damages
-arising out of these terms or out of the use or nature of the software, under any
-kind of legal claim.***
+**7.3** A further violation after such a reinstatement terminates your licences
+automatically and permanently.
 
-## 9. Definitions
+**7.4** Termination does not affect anyone who received a copy from you in
+compliance with these terms.
 
-**The licensor** is the entity offering these terms. **The software** is the
-software the licensor makes available under these terms, including any portion of
-it.
+## 8. No warranty
 
-**you** refers to the individual or entity agreeing to these terms.
+***To the maximum extent permitted by applicable law, the software is provided "as
+is" and "as available", without warranty or condition of any kind, whether express,
+implied or statutory, including any implied warranty of merchantability, fitness for
+a particular purpose, title, accuracy, or non-infringement.***
 
-**your company** is any legal entity, sole proprietorship, or other kind of
-organisation that you work for, plus all organisations that have control over, are
-under the control of, or are under common control with that organisation. **control**
-means ownership of substantially all the assets of an entity, or the power to direct
-its management and policies by vote, contract, or otherwise, whether direct or
-indirect.
+The licensor does not warrant that the software will be uninterrupted, error-free,
+or that any measurement reported in this repository will reproduce on your hardware.
+Measurements describe the machine and conditions stated alongside them and nothing
+beyond.
 
-**your licences** are all the licences granted to you for the software under these
-terms.
+## 9. Limitation of liability
 
-**use** means anything you do with the software requiring one of your licences.
+**9.1** ***To the maximum extent permitted by applicable law, the licensor is not
+liable for any indirect, incidental, special, consequential, exemplary or punitive
+damages, nor for lost profits, lost revenue, lost data, business interruption, or
+cost of substitute software, however caused and on any theory of liability, even if
+advised of the possibility.***
 
-**trademark** means trademarks, service marks, and similar rights.
+**9.2** Where liability cannot lawfully be excluded, the licensor's total aggregate
+liability arising out of or relating to the software and these terms is limited to
+the greater of the amounts you actually paid the licensor for the software in the
+twelve months before the event giving rise to liability, or **fifty euros (EUR 50)**.
 
-## 10. Clarifications
+**9.3** Nothing in these terms excludes or limits liability for death or personal
+injury caused by negligence, for fraud or fraudulent misrepresentation, or for any
+other liability that cannot lawfully be excluded or limited.
 
-These clarifications are part of these terms. They exist because "internal business
-purposes" is the question adopters ask most, and an ambiguous boundary serves nobody.
+**9.4** Sections 8 and 9 apply regardless of whether you paid anything, and they
+allocate risk in a licence granted free of charge. They survive termination.
+
+## 10. Where the boundary lies
+
+This section is part of these terms. It exists because "internal business purposes"
+is the question adopters ask most, and an ambiguous boundary serves nobody.
 
 **10.1 Internal business purposes, by example.** Running the software on
 infrastructure you control, to serve your own products, customers, employees or
-research, is internal use — whatever your revenue, headcount or machine count. There
-is no seat count, no node limit, no registration, no activation and no reporting
-obligation.
+research, is internal use — whatever your revenue, headcount, machine count or
+request volume. There is no seat count, node limit, registration, activation, licence
+key or reporting obligation.
 
-**10.2 The boundary is what you sell, not who benefits.** Serving your customers'
-requests *through your own product* is internal use and is free. Offering the
-software, or a derivative of it, *as* the product — an inference API, a managed
-IronMule service, a hosting plan, a paid appliance — requires a commercial licence.
-The test: **if a customer is paying, in whole or in part, for access to the software
-itself, you need a commercial licence.**
+**10.2 The test.** A commercial licence is required when third parties obtain the
+software, or its functionality, **as the thing being sold or offered** — whether or
+not money changes hands directly.
+
+*A commercial licence is required, for example, to:*
+
+- operate an inference API, a hosted or managed IronMule instance, or any service
+  whose offering is running the software for others;
+- distribute the software, or a derivative, inside a product, SDK, plug-in, image or
+  appliance that you sell, license or lease;
+- provide the software to a customer, employer of record, or affiliate outside your
+  company as defined in section 12, as a deliverable.
+
+*A commercial licence is **not** required, for example, to:*
+
+- run the software behind a product whose value to the customer is something else,
+  where the customer neither receives the software nor calls it directly;
+- use it for internal tooling, research, evaluation, or engineering work of any kind;
+- use it at unlimited scale, in production, in a company of any size.
+
+Where both descriptions could apply, section 10.7 governs.
 
 **10.3 Consultants and agencies.** You may use the software while performing work
-for a client, including on the client's infrastructure. You may not deliver it to a
-client as a paid deliverable, licence it onward, or charge for the software itself.
-The client's own use is governed by these terms directly, and is free if it is
-internal to them.
+for a client, including on the client's infrastructure. You may not deliver it as a
+paid deliverable, licence it onward, or charge for the software itself. The client's
+own use is governed by these terms directly and is free if it is internal to them.
 
 **10.4 Evaluation, benchmarking and publication are always free**, including
 comparative benchmarks published by competitors. You may publish any measurement you
-obtain, favourable or not, and no approval from the licensor is required.
+obtain, favourable or not. No approval is required and none may be demanded.
 
 **10.5 Forks and modifications.** You may fork and modify the software for internal
 use without limit. A fork may be distributed only free of charge, for non-commercial
-purposes, with the notices under §5 intact.
+purposes, with the notices under section 5 intact.
 
-**10.6 Contributions.** If you contribute to the software, you grant the licensor a
+**10.6 Contributions.** If you submit a contribution, you grant the licensor a
 perpetual, worldwide, non-exclusive, royalty-free, irrevocable licence to use,
-reproduce, modify, distribute and sublicense your contribution, including as part of
-a commercial licence. You confirm you have the right to grant this. You retain all
-other rights in your contribution, and no copyright assignment is required.
+reproduce, modify, distribute, sublicense and commercially exploit that
+contribution, including under a commercial licence, together with a patent licence on
+the same terms as section 4 for claims you own that the contribution necessarily
+infringes. You confirm you are entitled to grant this and that the contribution is
+your own work or is properly licensed. To the extent permitted by law you waive, and
+otherwise agree not to assert, moral rights in the contribution against the licensor
+and its licensees. You retain all other rights. No copyright assignment is required.
 
-**10.7 Third-party components.** The software depends on separately licensed
-components and does not redistribute model weights. Those carry their own terms and
-nothing here modifies them.
+**10.7 If in doubt, ask.** Where a use case does not clearly fall on one side of
+10.2, open an enquiry as described in [`COMMERCIAL.md`](COMMERCIAL.md). A written
+answer from the licensor may be relied upon for the case it addresses.
 
-**10.8 Versions already obtained.** A change to these terms is not retroactive. A
-version you obtained under these terms remains under these terms indefinitely.
+## 11. Trademarks and attribution
 
-**10.9 If in doubt, ask.** Where a use case does not clearly fall on one side of
-§10.2, open an enquiry as described in [`COMMERCIAL.md`](COMMERCIAL.md). A written
-answer from the licensor may be relied upon.
+**11.1** "IronMule", the project name and any project logo are trademarks of the
+licensor. These terms grant no trademark licence.
 
-## 11. Worldwide application
+**11.2** You may use the name descriptively and truthfully to refer to the software,
+including in documentation, articles, talks and benchmarks.
 
-**11.1 Worldwide grant.** The licences granted here are worldwide. These terms apply
-wherever you are, in the same way, without registration, territory restriction or
-export condition imposed by the licensor.
+**11.3** You may not use the name or logo in a way that suggests endorsement,
+affiliation, or that a modified version is the official one. A modified version
+distributed under section 10.5 must be clearly identified as modified and must not
+be presented as the original.
 
-**11.2 No choice of law imposed on you.** These terms deliberately name no
-governing law and no venue. Nothing in them displaces the law that applies where you
-are, and nothing requires you to litigate anywhere in particular. A separate
-commercial licence agreement, if you enter one, may set its own governing law; that
-agreement governs only itself.
+## 12. Definitions
 
-**11.3 Mandatory local rights are unaffected.** Consumer-protection rights,
-statutory warranties and other non-waivable rights available to you under the law of
-your country remain in force. Sections 8 and 4 apply only to the extent the law
-where you are permits.
+**licensor** — the entity offering these terms.
 
-**11.4 Severability.** If any provision is held unenforceable in a jurisdiction, it
-is limited or severed to the minimum extent necessary **in that jurisdiction only**,
-and every other provision remains in full force everywhere, including in that
-jurisdiction. The parties' intent is that the software stays licensed rather than
-that the licence fails.
+**software** — the software the licensor makes available under these terms,
+including any portion of it, in source or compiled form.
 
-**11.5 No waiver.** A failure or delay by the licensor in enforcing any provision is
-not a waiver of it, and no single or partial exercise of a right prevents any
-further exercise.
+**you** — the individual or entity agreeing to these terms.
 
-**11.6 Language.** The English text of these terms is authoritative. Any translation
-is provided for convenience only, and in the event of a conflict the English text
-governs.
+**your company** — any legal entity, sole proprietorship or other organisation you
+work for, plus all organisations that control, are controlled by, or are under common
+control with it. **control** means ownership of substantially all the assets of an
+entity, or the power to direct its management and policies by vote, contract or
+otherwise, whether direct or indirect.
 
-**11.7 Entire terms.** These terms are the entire agreement between you and the
-licensor concerning the software, and supersede any prior statement about it, except
-for a signed commercial licence agreement, which prevails over these terms to the
-extent of any conflict.
+**your licences** — all licences granted to you under these terms.
+
+**use** — anything you do with the software requiring one of your licences.
+
+**commercial licence** — a separate written agreement with the licensor permitting
+use beyond sections 3.1 and 3.2.
+
+**contribution** — any work you intentionally submit to the licensor for inclusion in
+the software.
+
+## 13. Reservation of rights and other terms
+
+**13.1** The licensor retains all ownership of the software and may licence it to
+anyone on any other terms, including commercially and including terms different from
+these.
+
+**13.2** These terms create no exclusivity, no partnership, no agency and no joint
+venture.
+
+**13.3** The licensor may publish later versions of this licence. A later version
+applies only to versions of the software released under it. Section 14.4 governs what
+happens to what you already have.
+
+## 14. General
+
+**14.1 No obligation to support.** The licensor is under no obligation to provide
+support, maintenance, updates, security fixes or backward compatibility, and may
+change or discontinue the software at any time. This does not affect licences already
+granted.
+
+**14.2 No data collection.** The software contains no telemetry, no analytics, no
+licence check and no network call to the licensor. It does not transmit your prompts,
+outputs, measurements or configuration anywhere. Anything it writes stays on the
+machine that runs it.
+
+**14.3 Export and sanctions.** You are responsible for complying with export control
+and sanctions laws that apply to you when using or distributing the software.
+
+**14.4 Versions you already have.** A change to these terms is not retroactive. A
+version of the software you obtained under these terms stays under these terms
+indefinitely, for that version.
+
+**14.5 Assignment.** You may not assign or transfer these terms or your licences
+without the licensor's written consent; any attempt to do so is void. The licensor
+may assign these terms in connection with a merger, acquisition, or sale of
+substantially all assets.
+
+**14.6 Survival.** Sections 4 (final paragraph), 6, 7.4, 8, 9, 11, 12, 13 and 14
+survive termination of your licences.
+
+## 15. Worldwide application
+
+**15.1 Worldwide grant.** The licences granted here are worldwide. These terms apply
+wherever you are, in the same way, without registration or territory restriction
+imposed by the licensor.
+
+**15.2 No governing law imposed on you.** These terms deliberately name no governing
+law and no venue, so that they apply uniformly everywhere. Nothing here displaces the
+law that applies where you are, and nothing requires you to litigate in any
+particular place. A commercial licence, if you enter one, may set its own governing
+law and governs only itself.
+
+**15.3 Mandatory local rights are unaffected.** Consumer-protection rights, statutory
+warranties and other non-waivable rights available to you under the law where you are
+remain in force. Sections 8 and 9 apply only to the extent that law permits.
+
+**15.4 Severability.** If a provision is held invalid or unenforceable in a
+jurisdiction, it is limited or severed to the minimum extent necessary **in that
+jurisdiction only**, and every other provision remains in full force everywhere,
+including in that jurisdiction. The intent is that the software stays licensed rather
+than that the licence fails.
+
+**15.5 No waiver.** A failure or delay in enforcing a provision is not a waiver of
+it, and no partial exercise of a right prevents further exercise.
+
+**15.6 Language.** The English text is authoritative. Translations are provided for
+convenience only; in the event of conflict, the English text governs.
+
+**15.7 Entire terms.** These terms are the entire agreement between you and the
+licensor concerning the software and supersede any prior statement about it, except
+that a signed commercial licence prevails to the extent of any conflict.
 
 ---
 
-Copyright © 2026 IronMule
+Copyright © 2026 IronMule. All rights reserved except as expressly granted above.
 
 **This is not an OSI-approved open-source licence.** IronMule is *fair-code*:
 source-available, free for the overwhelming majority of users, and paid only where
 someone builds a business on the software itself. See
-[`COMMERCIAL.md`](COMMERCIAL.md).
-
-> **Note.** This document was prepared with care, but not by a lawyer. It names no
-> governing law by design, so that it applies uniformly worldwide. Before selling
-> commercial licences under it, have counsel review both it and the separate
-> commercial agreement you will use.
+[`COMMERCIAL.md`](COMMERCIAL.md) for how to obtain a commercial licence.
