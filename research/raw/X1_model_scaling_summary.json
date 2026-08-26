@@ -1,0 +1,139 @@
+{
+  "id": "X1",
+  "status": "MEASURED",
+  "preregistered": false,
+  "note": "Exploratory. No preregistration was sealed before this run, so it does not carry the standing of E1-E16 and no formal claim is made. It exists to answer one question: does the grouped batch-1 gain survive a larger model on the same machine? Single run per cell, no repeats, therefore no confidence interval.",
+  "question": "Does the W=4 grouped batch-1 gain hold at 3x the parameter count?",
+  "protocol": {
+    "requests": 6,
+    "max_tokens": 48,
+    "unchanged_from": "python -m ironmule.benchmark",
+    "machine": "Apple M1 Max, 32 GB",
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3"
+  },
+  "runs": {
+    "bench_4b": {
+      "model": "gemma-3-4b-it-4bit",
+      "plan": "strict",
+      "fingerprint": {
+        "chip": "Apple M1 Max",
+        "digest": "7b18135b8d25b21c",
+        "execution_plan": "strict_one_shot",
+        "gpu_cores": 32,
+        "hardware_fingerprint": "dc652d66f24ac207",
+        "machine": "arm64",
+        "memory_bytes": 34359738368,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "model_id": "mlx-community/gemma-3-4b-it-4bit",
+        "os": "Darwin 26.5.2",
+        "power_source": "AC",
+        "quantisation": null,
+        "runtime_version": "0.1.0",
+        "service_mode": "throughput",
+        "workload": {
+          "concurrency": 6,
+          "max_tokens": 48,
+          "prompt_tokens": 16.0
+        }
+      },
+      "gain_pct": 15.96,
+      "realised_width": 4,
+      "peak_gb": null,
+      "identical": true
+    },
+    "bench_4b_reusable": {
+      "model": "gemma-3-4b-it-4bit",
+      "plan": "reusable",
+      "fingerprint": {
+        "chip": "Apple M1 Max",
+        "digest": "cf36240262526e20",
+        "execution_plan": "reusable_session",
+        "gpu_cores": 32,
+        "hardware_fingerprint": "dc652d66f24ac207",
+        "machine": "arm64",
+        "memory_bytes": 34359738368,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "model_id": "mlx-community/gemma-3-4b-it-4bit",
+        "os": "Darwin 26.5.2",
+        "power_source": "AC",
+        "quantisation": null,
+        "runtime_version": "0.1.0",
+        "service_mode": "throughput",
+        "workload": {
+          "concurrency": 6,
+          "max_tokens": 48,
+          "prompt_tokens": 475.0
+        }
+      },
+      "gain_pct": 15.31,
+      "realised_width": 3.27,
+      "peak_gb": null,
+      "identical": true
+    },
+    "bench_12b": {
+      "model": "gemma-3-12b-it-4bit",
+      "plan": "strict",
+      "fingerprint": {
+        "chip": "Apple M1 Max",
+        "digest": "9df26f1ad3cab8c3",
+        "execution_plan": "strict_one_shot",
+        "gpu_cores": 32,
+        "hardware_fingerprint": "dc652d66f24ac207",
+        "machine": "arm64",
+        "memory_bytes": 34359738368,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "model_id": "mlx-community/gemma-3-12b-it-4bit",
+        "os": "Darwin 26.5.2",
+        "power_source": "AC",
+        "quantisation": null,
+        "runtime_version": "0.1.0",
+        "service_mode": "throughput",
+        "workload": {
+          "concurrency": 6,
+          "max_tokens": 48,
+          "prompt_tokens": 16.0
+        }
+      },
+      "gain_pct": 16.31,
+      "realised_width": 4,
+      "peak_gb": null,
+      "identical": true
+    },
+    "bench_12b_reusable": {
+      "model": "gemma-3-12b-it-4bit",
+      "plan": "reusable",
+      "fingerprint": {
+        "chip": "Apple M1 Max",
+        "digest": "937927655467e3d5",
+        "execution_plan": "reusable_session",
+        "gpu_cores": 32,
+        "hardware_fingerprint": "dc652d66f24ac207",
+        "machine": "arm64",
+        "memory_bytes": 34359738368,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "model_id": "mlx-community/gemma-3-12b-it-4bit",
+        "os": "Darwin 26.5.2",
+        "power_source": "AC",
+        "quantisation": null,
+        "runtime_version": "0.1.0",
+        "service_mode": "throughput",
+        "workload": {
+          "concurrency": 6,
+          "max_tokens": 48,
+          "prompt_tokens": 475.0
+        }
+      },
+      "gain_pct": 13.78,
+      "realised_width": 3.54,
+      "peak_gb": null,
+      "identical": true
+    }
+  },
+  "reading": "Under the strict plan, where both models reached the full realised width of 4.00, the gain moved by 0.35pp (+15.96% -> +16.31%). Under the reusable plan the comparison is confounded: realised width differs between the two models (3.27 vs 3.54), so the -1.53pp difference mixes model size with group filling and is not interpretable as a model-size effect.",
+  "memory": "Peak grew 2.78 -> 7.80 GB (strict) and 3.61 -> 10.14 GB (reusable). Well inside 32 GB at this request count, which makes 27B look feasible at this protocol - untested and therefore not claimed."
+}

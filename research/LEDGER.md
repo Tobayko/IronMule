@@ -17,6 +17,25 @@ never removed.
 | E4 | Is achieved GB/s limited by matrix size? | yes, 104 -> 324 GB/s over 1.4 -> 360 MB | MEASURED |
 | E5 | Is fusion a real decode win? | running | OPEN |
 
+### Exploratory, outside the preregistered series
+
+| ID | Question | Result | Status |
+| :-- | :-- | :-- | :-- |
+| X1 | Does the `W=4` gain hold at 3x the parameter count? | `+15.96% -> +16.31%` strict, both at width 4.00 | MEASURED, not preregistered |
+
+`X1` carries an `X` rather than an `E` because no preregistration was sealed before
+it ran. It is a single run per cell with no repeats and therefore no confidence
+interval, and it makes no formal claim. Raw data in `research/raw/X1_*`.
+
+Under the strict plan both models reached the full realised width of `4.00`, so the
+`0.35pp` difference is a like-for-like comparison. Under the reusable plan realised
+width differed between the models (`3.27` against `3.54`), which mixes model size
+with group filling; that cell is reported but not interpreted.
+
+Peak memory grew `2.78 -> 7.80 GB` under strict and `3.61 -> 10.14 GB` under
+reusable. Four configurations produced four distinct fingerprints, which is the
+behaviour `docs/LIMITS.md` describes.
+
 ---
 
 ## E0a — Do the inherited mechanisms hold here?
