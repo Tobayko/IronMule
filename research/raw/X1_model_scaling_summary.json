@@ -1,139 +1,110 @@
 {
   "id": "X1",
+  "title": "Does the grouped batch-1 gain hold as the model grows?",
   "status": "MEASURED",
   "preregistered": false,
-  "note": "Exploratory. No preregistration was sealed before this run, so it does not carry the standing of E1-E16 and no formal claim is made. It exists to answer one question: does the grouped batch-1 gain survive a larger model on the same machine? Single run per cell, no repeats, therefore no confidence interval.",
-  "question": "Does the W=4 grouped batch-1 gain hold at 3x the parameter count?",
+  "supersedes": "The first version of X1, published 2026-08-26, reported +15.96% for 4B against +16.31% for 12B from ONE run each and concluded the gain held. Both figures were unrepresentative and the conclusion was wrong. With three repeats per cell the gain falls monotonically with model size. The earlier 4B figure lies outside the range of all three new 4B runs.",
   "protocol": {
     "requests": 6,
     "max_tokens": 48,
-    "unchanged_from": "python -m ironmule.benchmark",
+    "repeats_per_cell": 3,
+    "command": "python -m ironmule.benchmark --requests 6 --max-tokens 48",
     "machine": "Apple M1 Max, 32 GB",
     "mlx": "0.32.0",
-    "mlx_lm": "0.31.3"
+    "mlx_lm": "0.31.3",
+    "note": "Unchanged protocol across all three models. No knob was touched for 27B."
   },
-  "runs": {
-    "bench_4b": {
-      "model": "gemma-3-4b-it-4bit",
-      "plan": "strict",
-      "fingerprint": {
-        "chip": "Apple M1 Max",
-        "digest": "7b18135b8d25b21c",
-        "execution_plan": "strict_one_shot",
-        "gpu_cores": 32,
-        "hardware_fingerprint": "dc652d66f24ac207",
-        "machine": "arm64",
-        "memory_bytes": 34359738368,
-        "mlx": "0.32.0",
-        "mlx_lm": "0.31.3",
-        "model_id": "mlx-community/gemma-3-4b-it-4bit",
-        "os": "Darwin 26.5.2",
-        "power_source": "AC",
-        "quantisation": null,
-        "runtime_version": "0.1.0",
-        "service_mode": "throughput",
-        "workload": {
-          "concurrency": 6,
-          "max_tokens": 48,
-          "prompt_tokens": 16.0
-        }
-      },
-      "gain_pct": 15.96,
-      "realised_width": 4,
-      "peak_gb": null,
-      "identical": true
+  "cells": {
+    "4b_strict": {
+      "n": 3,
+      "mean": 19.24,
+      "min": 19.06,
+      "max": 19.41,
+      "spread": 0.35,
+      "width": 4,
+      "peak_gb": 2.78,
+      "runs": [
+        19.25,
+        19.06,
+        19.41
+      ]
     },
-    "bench_4b_reusable": {
-      "model": "gemma-3-4b-it-4bit",
-      "plan": "reusable",
-      "fingerprint": {
-        "chip": "Apple M1 Max",
-        "digest": "cf36240262526e20",
-        "execution_plan": "reusable_session",
-        "gpu_cores": 32,
-        "hardware_fingerprint": "dc652d66f24ac207",
-        "machine": "arm64",
-        "memory_bytes": 34359738368,
-        "mlx": "0.32.0",
-        "mlx_lm": "0.31.3",
-        "model_id": "mlx-community/gemma-3-4b-it-4bit",
-        "os": "Darwin 26.5.2",
-        "power_source": "AC",
-        "quantisation": null,
-        "runtime_version": "0.1.0",
-        "service_mode": "throughput",
-        "workload": {
-          "concurrency": 6,
-          "max_tokens": 48,
-          "prompt_tokens": 475.0
-        }
-      },
-      "gain_pct": 15.31,
-      "realised_width": 3.27,
-      "peak_gb": null,
-      "identical": true
+    "4b_reusable": {
+      "n": 3,
+      "mean": 18.75,
+      "min": 18.43,
+      "max": 19.39,
+      "spread": 0.96,
+      "width": 3.27,
+      "peak_gb": 3.61,
+      "runs": [
+        18.44,
+        18.43,
+        19.39
+      ]
     },
-    "bench_12b": {
-      "model": "gemma-3-12b-it-4bit",
-      "plan": "strict",
-      "fingerprint": {
-        "chip": "Apple M1 Max",
-        "digest": "9df26f1ad3cab8c3",
-        "execution_plan": "strict_one_shot",
-        "gpu_cores": 32,
-        "hardware_fingerprint": "dc652d66f24ac207",
-        "machine": "arm64",
-        "memory_bytes": 34359738368,
-        "mlx": "0.32.0",
-        "mlx_lm": "0.31.3",
-        "model_id": "mlx-community/gemma-3-12b-it-4bit",
-        "os": "Darwin 26.5.2",
-        "power_source": "AC",
-        "quantisation": null,
-        "runtime_version": "0.1.0",
-        "service_mode": "throughput",
-        "workload": {
-          "concurrency": 6,
-          "max_tokens": 48,
-          "prompt_tokens": 16.0
-        }
-      },
-      "gain_pct": 16.31,
-      "realised_width": 4,
-      "peak_gb": null,
-      "identical": true
+    "12b_strict": {
+      "n": 3,
+      "mean": 15.42,
+      "min": 15.2,
+      "max": 15.65,
+      "spread": 0.45,
+      "width": 4,
+      "peak_gb": 7.8,
+      "runs": [
+        15.41,
+        15.65,
+        15.2
+      ]
     },
-    "bench_12b_reusable": {
-      "model": "gemma-3-12b-it-4bit",
-      "plan": "reusable",
-      "fingerprint": {
-        "chip": "Apple M1 Max",
-        "digest": "937927655467e3d5",
-        "execution_plan": "reusable_session",
-        "gpu_cores": 32,
-        "hardware_fingerprint": "dc652d66f24ac207",
-        "machine": "arm64",
-        "memory_bytes": 34359738368,
-        "mlx": "0.32.0",
-        "mlx_lm": "0.31.3",
-        "model_id": "mlx-community/gemma-3-12b-it-4bit",
-        "os": "Darwin 26.5.2",
-        "power_source": "AC",
-        "quantisation": null,
-        "runtime_version": "0.1.0",
-        "service_mode": "throughput",
-        "workload": {
-          "concurrency": 6,
-          "max_tokens": 48,
-          "prompt_tokens": 475.0
-        }
-      },
-      "gain_pct": 13.78,
-      "realised_width": 3.54,
-      "peak_gb": null,
-      "identical": true
+    "12b_reusable": {
+      "n": 3,
+      "mean": 14.12,
+      "min": 11.63,
+      "max": 16.45,
+      "spread": 4.82,
+      "width": 3.54,
+      "peak_gb": 10.14,
+      "runs": [
+        14.28,
+        16.45,
+        11.63
+      ]
+    },
+    "27b_strict": {
+      "n": 3,
+      "mean": 11.81,
+      "min": 11.36,
+      "max": 12.09,
+      "spread": 0.73,
+      "width": 4,
+      "peak_gb": 16.78,
+      "runs": [
+        11.36,
+        12.09,
+        11.98
+      ]
+    },
+    "27b_reusable": {
+      "n": 3,
+      "mean": 8.83,
+      "min": 6.11,
+      "max": 10.19,
+      "spread": 4.08,
+      "width": 3.64,
+      "peak_gb": 19.8,
+      "runs": [
+        10.19,
+        6.11,
+        10.19
+      ]
     }
   },
-  "reading": "Under the strict plan, where both models reached the full realised width of 4.00, the gain moved by 0.35pp (+15.96% -> +16.31%). Under the reusable plan the comparison is confounded: realised width differs between the two models (3.27 vs 3.54), so the -1.53pp difference mixes model size with group filling and is not interpretable as a model-size effect.",
-  "memory": "Peak grew 2.78 -> 7.80 GB (strict) and 3.61 -> 10.14 GB (reusable). Well inside 32 GB at this request count, which makes 27B look feasible at this protocol - untested and therefore not claimed."
+  "finding": {
+    "strict": "Gain falls monotonically: 19.24% (4B) -> 15.42% (12B) -> 11.81% (27B). All three ran at a realised width of 4.00, so group filling does not explain it. Within-model spread is 0.35-0.73pp while the gaps between models are 3.82pp and 3.61pp, and the observed ranges do not overlap.",
+    "reusable": "Not interpretable as measured. Within-model spread reaches 4.82pp (12B) and 4.08pp (27B), comparable to the differences being compared, and realised width also differs by model (3.27 / 3.54 / 3.64). More repeats would be needed before reading anything into it.",
+    "memory": "Peak grew 2.78 -> 7.80 -> 16.78 GB under strict; 27B fits 32 GB with room left."
+  },
+  "hypothesis_not_tested": "A larger model spends more time per decode step moving weights, so the submission and synchronisation overhead that grouping removes is a smaller share of the total. That is consistent with E2 and E4 but was not measured here and is not claimed.",
+  "limits": "Exploratory. No preregistration was sealed, the threshold was not fixed in advance, and three repeats inside one process give a spread, not a confidence interval. One machine, one quantisation, one model family - 4B, 12B and 27B are all Gemma 3, so model size and model family are not separated by this run."
 }

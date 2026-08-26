@@ -20,13 +20,20 @@ No claim holds outside this box. Another model, another quantisation, another ML
 build or another machine requires re-measurement, which is what the fingerprint
 exists to force.
 
-**One model outside the box has now been measured.** Gemma 3 12B at 4 bit reached
-`+16.31%` against 4B's `+15.96%` under the strict plan, both at a realised width of
-`4.00`, on the same machine and with an unchanged protocol. That run was not
-preregistered and is a single measurement per cell, so it is an exploratory
-observation and not a second validated model. It is recorded as `X1` in the ledger
-because the alternative — leaving the domain described as one model when a second has
-been run — would be less honest, not more careful.
+**Two models outside the box have now been measured, and the gain is not
+size-independent.** Under the strict plan, with three runs each and a realised width of
+`4.00` throughout, the gain falls monotonically: `+19.24%` at 4B, `+15.42%` at 12B,
+`+11.81%` at 27B. Peak memory grew `2.78 -> 7.80 -> 16.78 GB`; 27B fits this machine
+with room to spare.
+
+Those runs were not preregistered and are recorded as `X1` in the ledger, so they are
+exploratory observations rather than validated results. They are stated here anyway
+because the alternative — describing the domain as one model while three have been run,
+and leaving the impression that the headline number travels unchanged to larger models —
+would be less honest, not more careful.
+
+All three are Gemma 3 at 4 bit on the same machine, so nothing here separates model size
+from model family, and nothing here extends to another Mac.
 
 ## Limits of the runtime itself
 
