@@ -1,0 +1,169 @@
+{
+  "bit_identical_requests": 12,
+  "capacity": 448,
+  "environment": {
+    "git_commit": "c7ee689e99335ef100643d8bb6dae9c0f0ce6004",
+    "git_dirty": true,
+    "loadavg": [
+      1.1708984375,
+      1.45849609375,
+      1.57470703125
+    ],
+    "low_power_mode": false,
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "mlx_peak_bytes": 3677374620,
+    "os": "26.5.2",
+    "power_source": "AC",
+    "python": "3.12.13",
+    "thermal": {}
+  },
+  "prefix_tokens": 276,
+  "recorded_at": 1787658085.214019,
+  "rows": [
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 696.502,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.40625,
+      "request": 0,
+      "reuse_ms": 257.4625,
+      "single_ms": 629.84025,
+      "steps": 22
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 693.731584,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.75,
+      "request": 1,
+      "reuse_ms": 258.014709,
+      "single_ms": 630.546041,
+      "steps": 21
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 689.385333,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.53125,
+      "request": 2,
+      "reuse_ms": 258.333625,
+      "single_ms": 629.315,
+      "steps": 23
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 690.958875,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.5625,
+      "request": 3,
+      "reuse_ms": 259.1455,
+      "single_ms": 628.196,
+      "steps": 22
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 692.152583,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 4.3125,
+      "request": 4,
+      "reuse_ms": 258.715625,
+      "single_ms": 631.195959,
+      "steps": 22
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 690.620667,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.625,
+      "request": 5,
+      "reuse_ms": 258.591167,
+      "single_ms": 628.757458,
+      "steps": 23
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 692.365792,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.75,
+      "request": 6,
+      "reuse_ms": 258.171208,
+      "single_ms": 628.156917,
+      "steps": 21
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 692.032375,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.3125,
+      "request": 7,
+      "reuse_ms": 258.166416,
+      "single_ms": 628.289833,
+      "steps": 21
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 688.959792,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.5,
+      "request": 8,
+      "reuse_ms": 258.385917,
+      "single_ms": 628.273667,
+      "steps": 23
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 691.79575,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.15625,
+      "request": 9,
+      "reuse_ms": 258.37625,
+      "single_ms": 628.277666,
+      "steps": 21
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 692.94175,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.375,
+      "request": 10,
+      "reuse_ms": 257.947542,
+      "single_ms": 628.253792,
+      "steps": 21
+    },
+    {
+      "argmax_chunked": 106,
+      "argmax_reuse": 106,
+      "argmax_single": 106,
+      "chunked_ms": 690.069417,
+      "max_diff_chunked_vs_reuse": 0.0,
+      "max_diff_single_vs_chunked": 3.71875,
+      "request": 11,
+      "reuse_ms": 259.105583,
+      "single_ms": 628.647625,
+      "steps": 23
+    }
+  ]
+}

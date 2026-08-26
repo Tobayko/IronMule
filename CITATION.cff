@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+title: "IronMule: a local MLX inference runtime that measures before it optimises"
+message: "If you use IronMule or its measurements, please cite this repository."
+type: software
+authors:
+  - alias: Tobayko
+    website: "https://github.com/Tobayko"
+repository-code: "https://github.com/Tobayko/IronMule"
+abstract: >-
+  IronMule is a local inference runtime for MLX on Apple silicon. It provides
+  explicit execution plans, grouped batch-1 execution at width four, a safe
+  sequential fallback, and telemetry that separates service time-to-first-token
+  from engine time-to-first-token. Every performance claim is backed by a
+  preregistered experiment with raw data, including four optimisations that were
+  measured and dropped.
+keywords:
+  - MLX
+  - Apple silicon
+  - LLM inference
+  - inference runtime
+  - KV cache
+  - prefix caching
+  - batching
+  - reproducible research
+license: "IronMule License 1.0"
+version: "0.1.0"
+date-released: "2026-08-25"

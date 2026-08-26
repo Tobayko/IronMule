@@ -1,0 +1,2724 @@
+{
+  "capacity": 448,
+  "environment": {
+    "git_commit": "c7ee689e99335ef100643d8bb6dae9c0f0ce6004",
+    "git_dirty": true,
+    "loadavg": [
+      1.45458984375,
+      1.70361328125,
+      1.673828125
+    ],
+    "low_power_mode": false,
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "mlx_peak_bytes": 3559164720,
+    "os": "26.5.2",
+    "power_source": "AC",
+    "python": "3.12.13",
+    "thermal": {}
+  },
+  "headroom_median": 52.25,
+  "headroom_min": -0.5,
+  "prefix_tokens": 276,
+  "recorded_at": 1787657955.277523,
+  "requests": 12,
+  "rows": [
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 10.75,
+          "gap_reuse": 10.25,
+          "headroom": 20.5,
+          "top1": 2717,
+          "top2": 236929
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 26.75,
+          "gap_reuse": 26.25,
+          "headroom": 52.5,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 22.0,
+          "gap_reuse": 22.25,
+          "headroom": 89.0,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 3.5,
+          "gap_reuse": 3.5,
+          "headroom": Infinity,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 7.625,
+          "gap_reuse": 7.625,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 5.75,
+          "gap_reuse": 6.0,
+          "headroom": 24.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.125,
+          "gap_reuse": 16.875,
+          "headroom": 67.5,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.25,
+          "gap_reuse": 18.5,
+          "headroom": 74.0,
+          "top1": 65127,
+          "top2": 11455
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.125,
+          "gap_reuse": 18.375,
+          "headroom": 73.5,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 22.375,
+          "gap_reuse": 22.5,
+          "headroom": 180.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 19.875,
+          "headroom": 53.0,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 15.875,
+          "gap_reuse": 15.625,
+          "headroom": 62.5,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 23465,
+          "delta_gap": 0.25,
+          "flip": true,
+          "gap_full": 0.25,
+          "gap_reuse": 0.0,
+          "headroom": 0.0,
+          "top1": 23465,
+          "top2": 152884
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.25,
+          "gap_reuse": 19.5,
+          "headroom": 78.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 500,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 26.125,
+          "gap_reuse": 26.25,
+          "headroom": 210.0,
+          "top1": 500,
+          "top2": 58134
+        },
+        {
+          "argmax_reuse": 14347,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 29.0,
+          "gap_reuse": 28.5,
+          "headroom": 57.0,
+          "top1": 14347,
+          "top2": 87074
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 15.5,
+          "gap_reuse": 15.5,
+          "headroom": Infinity,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 17.75,
+          "gap_reuse": 17.875,
+          "headroom": 143.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 25.0,
+          "gap_reuse": 24.625,
+          "headroom": 65.66666666666667,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 20.625,
+          "gap_reuse": 21.125,
+          "headroom": 42.25,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 23.75,
+          "headroom": 47.5,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 11.75,
+          "gap_reuse": 11.25,
+          "headroom": 22.5,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 1,
+      "full_ttft_ms": 627.074416,
+      "identical": false,
+      "max_delta_gap": 0.5,
+      "min_gap_reuse": 0.0,
+      "min_headroom": 0.0,
+      "request": 0,
+      "reuse_ttft_ms": 258.459417,
+      "steps": 22
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 1.25,
+          "flip": false,
+          "gap_full": 13.75,
+          "gap_reuse": 12.5,
+          "headroom": 10.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 25.5,
+          "gap_reuse": 25.5,
+          "headroom": Infinity,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 23.75,
+          "gap_reuse": 24.125,
+          "headroom": 64.33333333333333,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 6.0,
+          "gap_reuse": 5.5,
+          "headroom": 11.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 8.625,
+          "gap_reuse": 8.5,
+          "headroom": 68.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 7.5,
+          "gap_reuse": 6.75,
+          "headroom": 9.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 17.625,
+          "gap_reuse": 17.0,
+          "headroom": 27.2,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 18.0,
+          "gap_reuse": 17.25,
+          "headroom": 23.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.0,
+          "gap_reuse": 18.75,
+          "headroom": 75.0,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 24.5,
+          "gap_reuse": 23.5,
+          "headroom": 23.5,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.5,
+          "gap_reuse": 19.75,
+          "headroom": 79.0,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 19.5,
+          "headroom": 78.0,
+          "top1": 623,
+          "top2": 999
+        },
+        {
+          "argmax_reuse": 20836,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 11.125,
+          "gap_reuse": 10.5,
+          "headroom": 16.8,
+          "top1": 20836,
+          "top2": 2690
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 22.625,
+          "gap_reuse": 22.75,
+          "headroom": 182.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 84074,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 28.5,
+          "gap_reuse": 28.0,
+          "headroom": 56.0,
+          "top1": 84074,
+          "top2": 188169
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 16.25,
+          "gap_reuse": 16.125,
+          "headroom": 129.0,
+          "top1": 236775,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 19.625,
+          "gap_reuse": 19.25,
+          "headroom": 51.333333333333336,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 23.5,
+          "gap_reuse": 23.125,
+          "headroom": 61.666666666666664,
+          "top1": 236783,
+          "top2": 682
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.375,
+          "flip": false,
+          "gap_full": 21.125,
+          "gap_reuse": 19.75,
+          "headroom": 14.363636363636363,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 24.125,
+          "headroom": 193.0,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 15.25,
+          "gap_reuse": 16.25,
+          "headroom": 16.25,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 629.142667,
+      "identical": true,
+      "max_delta_gap": 1.375,
+      "min_gap_reuse": 5.5,
+      "min_headroom": 9.0,
+      "request": 1,
+      "reuse_ttft_ms": 258.560333,
+      "steps": 21
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 13.5,
+          "gap_reuse": 13.5,
+          "headroom": Infinity,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 25.75,
+          "gap_reuse": 26.5,
+          "headroom": 35.333333333333336,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 23.0,
+          "gap_reuse": 23.0,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 4.5,
+          "gap_reuse": 4.25,
+          "headroom": 17.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 7.75,
+          "gap_reuse": 7.625,
+          "headroom": 61.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 5.5,
+          "gap_reuse": 6.0,
+          "headroom": 12.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 17.0,
+          "gap_reuse": 17.5,
+          "headroom": 35.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 20.625,
+          "gap_reuse": 20.5,
+          "headroom": 164.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 18.75,
+          "gap_reuse": 18.375,
+          "headroom": 49.0,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 23.75,
+          "gap_reuse": 23.625,
+          "headroom": 189.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 23.5,
+          "gap_reuse": 24.25,
+          "headroom": 32.333333333333336,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 16.5,
+          "gap_reuse": 16.25,
+          "headroom": 65.0,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 89660,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 15.0,
+          "gap_reuse": 14.875,
+          "headroom": 119.0,
+          "top1": 89660,
+          "top2": 2834
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 21.875,
+          "gap_reuse": 21.75,
+          "headroom": 174.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 25611,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 20.0,
+          "gap_reuse": 19.5,
+          "headroom": 39.0,
+          "top1": 25611,
+          "top2": 9462
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 19.5,
+          "headroom": 78.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 12655,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 39.75,
+          "gap_reuse": 39.5,
+          "headroom": 158.0,
+          "top1": 12655,
+          "top2": 102875
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 15.75,
+          "gap_reuse": 15.875,
+          "headroom": 127.0,
+          "top1": 236775,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 18.875,
+          "gap_reuse": 18.875,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 26.0,
+          "gap_reuse": 25.875,
+          "headroom": 207.0,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 18.875,
+          "gap_reuse": 18.5,
+          "headroom": 49.333333333333336,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.5,
+          "gap_reuse": 20.25,
+          "headroom": 81.0,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 17.75,
+          "gap_reuse": 18.25,
+          "headroom": 36.5,
+          "top1": 106,
+          "top2": 965
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 628.169708,
+      "identical": true,
+      "max_delta_gap": 0.75,
+      "min_gap_reuse": 4.25,
+      "min_headroom": 12.0,
+      "request": 2,
+      "reuse_ttft_ms": 258.169375,
+      "steps": 23
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 11.75,
+          "gap_reuse": 11.25,
+          "headroom": 22.5,
+          "top1": 2717,
+          "top2": 236929
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 26.75,
+          "gap_reuse": 27.0,
+          "headroom": 108.0,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.625,
+          "flip": false,
+          "gap_full": 22.0,
+          "gap_reuse": 23.625,
+          "headroom": 14.538461538461538,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 4.75,
+          "gap_reuse": 4.5,
+          "headroom": 18.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 7.0,
+          "gap_reuse": 7.375,
+          "headroom": 19.666666666666668,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 6.5,
+          "gap_reuse": 6.25,
+          "headroom": 25.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 17.375,
+          "gap_reuse": 17.5,
+          "headroom": 140.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 19.375,
+          "gap_reuse": 19.25,
+          "headroom": 154.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 18.5,
+          "gap_reuse": 18.125,
+          "headroom": 48.333333333333336,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 23.625,
+          "gap_reuse": 23.25,
+          "headroom": 62.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 20.0,
+          "headroom": 80.0,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 15.875,
+          "gap_reuse": 15.75,
+          "headroom": 126.0,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 152884,
+          "delta_gap": 1.0,
+          "flip": true,
+          "gap_full": 0.5,
+          "gap_reuse": -0.5,
+          "headroom": -0.5,
+          "top1": 23465,
+          "top2": 152884
+        }
+      ],
+      "flips": 1,
+      "full_ttft_ms": 627.788,
+      "identical": false,
+      "max_delta_gap": 1.625,
+      "min_gap_reuse": -0.5,
+      "min_headroom": -0.5,
+      "request": 3,
+      "reuse_ttft_ms": 258.214792,
+      "steps": 13
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 14.25,
+          "gap_reuse": 14.5,
+          "headroom": 58.0,
+          "top1": 2717,
+          "top2": 236929
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 25.75,
+          "gap_reuse": 25.25,
+          "headroom": 50.5,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 22.625,
+          "gap_reuse": 23.625,
+          "headroom": 23.625,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 6.0,
+          "gap_reuse": 6.25,
+          "headroom": 25.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 7.0,
+          "gap_reuse": 7.5,
+          "headroom": 15.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 6.25,
+          "gap_reuse": 6.25,
+          "headroom": Infinity,
+          "top1": 138,
+          "top2": 236775
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.5,
+          "gap_reuse": 17.75,
+          "headroom": 71.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 17.0,
+          "gap_reuse": 17.5,
+          "headroom": 35.0,
+          "top1": 65127,
+          "top2": 20836
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 18.25,
+          "gap_reuse": 18.625,
+          "headroom": 49.666666666666664,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 25.0,
+          "gap_reuse": 25.0,
+          "headroom": Infinity,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 19.0,
+          "gap_reuse": 19.0,
+          "headroom": Infinity,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.875,
+          "flip": false,
+          "gap_full": 17.125,
+          "gap_reuse": 18.0,
+          "headroom": 20.571428571428573,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 2690,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 1.75,
+          "gap_reuse": 1.5,
+          "headroom": 6.0,
+          "top1": 2690,
+          "top2": 20836
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 19.875,
+          "headroom": 159.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 13679,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 26.5,
+          "gap_reuse": 26.25,
+          "headroom": 105.0,
+          "top1": 13679,
+          "top2": 236763
+        },
+        {
+          "argmax_reuse": 522,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 42.0,
+          "gap_reuse": 42.25,
+          "headroom": 169.0,
+          "top1": 522,
+          "top2": 55116
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 15.5,
+          "gap_reuse": 15.875,
+          "headroom": 42.333333333333336,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.625,
+          "gap_reuse": 18.375,
+          "headroom": 73.5,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 25.0,
+          "headroom": 33.333333333333336,
+          "top1": 236783,
+          "top2": 682
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.875,
+          "flip": false,
+          "gap_full": 21.375,
+          "gap_reuse": 19.5,
+          "headroom": 10.4,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 22.25,
+          "gap_reuse": 22.0,
+          "headroom": 88.0,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 13.5,
+          "gap_reuse": 12.5,
+          "headroom": 12.5,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 628.177667,
+      "identical": true,
+      "max_delta_gap": 1.875,
+      "min_gap_reuse": 1.5,
+      "min_headroom": 6.0,
+      "request": 4,
+      "reuse_ttft_ms": 258.945458,
+      "steps": 22
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 12.0,
+          "gap_reuse": 13.0,
+          "headroom": 13.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 24.75,
+          "gap_reuse": 25.75,
+          "headroom": 25.75,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 23.0,
+          "gap_reuse": 22.0,
+          "headroom": 22.0,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 4.5,
+          "gap_reuse": 5.0,
+          "headroom": 10.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 7.25,
+          "gap_reuse": 7.5,
+          "headroom": 30.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 5.75,
+          "gap_reuse": 6.25,
+          "headroom": 12.5,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.875,
+          "gap_reuse": 18.125,
+          "headroom": 72.5,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 20.75,
+          "gap_reuse": 20.875,
+          "headroom": 167.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.75,
+          "gap_reuse": 19.0,
+          "headroom": 76.0,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 25.125,
+          "gap_reuse": 25.375,
+          "headroom": 101.5,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 23.0,
+          "gap_reuse": 22.25,
+          "headroom": 29.666666666666668,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 15.875,
+          "gap_reuse": 16.625,
+          "headroom": 22.166666666666668,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 89660,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 13.25,
+          "gap_reuse": 13.25,
+          "headroom": Infinity,
+          "top1": 89660,
+          "top2": 2834
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 20.0,
+          "headroom": 80.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 25611,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 20.5,
+          "headroom": 82.0,
+          "top1": 25611,
+          "top2": 9462
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 20.125,
+          "headroom": 161.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 12655,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 43.0,
+          "gap_reuse": 43.0,
+          "headroom": Infinity,
+          "top1": 12655,
+          "top2": 102875
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 15.5,
+          "gap_reuse": 15.5,
+          "headroom": Infinity,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 18.625,
+          "gap_reuse": 18.5,
+          "headroom": 148.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 26.0,
+          "gap_reuse": 26.75,
+          "headroom": 35.666666666666664,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 21.125,
+          "gap_reuse": 20.375,
+          "headroom": 27.166666666666668,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 21.5,
+          "gap_reuse": 22.5,
+          "headroom": 22.5,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 15.5,
+          "gap_reuse": 15.5,
+          "headroom": Infinity,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 627.971625,
+      "identical": true,
+      "max_delta_gap": 1.0,
+      "min_gap_reuse": 5.0,
+      "min_headroom": 10.0,
+      "request": 5,
+      "reuse_ttft_ms": 258.116334,
+      "steps": 23
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 9.75,
+          "gap_reuse": 9.0,
+          "headroom": 12.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 26.75,
+          "gap_reuse": 27.0,
+          "headroom": 108.0,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 22.75,
+          "gap_reuse": 22.5,
+          "headroom": 90.0,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 4.5,
+          "gap_reuse": 4.0,
+          "headroom": 8.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 6.0,
+          "gap_reuse": 6.5,
+          "headroom": 13.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 5.0,
+          "gap_reuse": 4.5,
+          "headroom": 9.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 17.625,
+          "gap_reuse": 18.0,
+          "headroom": 48.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.875,
+          "gap_reuse": 19.625,
+          "headroom": 78.5,
+          "top1": 65127,
+          "top2": 11455
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 18.875,
+          "gap_reuse": 18.875,
+          "headroom": Infinity,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 24.0,
+          "gap_reuse": 23.75,
+          "headroom": 95.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 1.25,
+          "flip": false,
+          "gap_full": 19.5,
+          "gap_reuse": 20.75,
+          "headroom": 16.6,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 15.625,
+          "gap_reuse": 15.375,
+          "headroom": 61.5,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 152884,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 1.25,
+          "gap_reuse": 1.25,
+          "headroom": Infinity,
+          "top1": 152884,
+          "top2": 48578
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 25.375,
+          "gap_reuse": 25.375,
+          "headroom": Infinity,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 8114,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 26.25,
+          "gap_reuse": 26.625,
+          "headroom": 71.0,
+          "top1": 8114,
+          "top2": 164254
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 15.875,
+          "gap_reuse": 16.25,
+          "headroom": 43.333333333333336,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.75,
+          "gap_reuse": 18.5,
+          "headroom": 74.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.875,
+          "flip": false,
+          "gap_full": 23.125,
+          "gap_reuse": 24.0,
+          "headroom": 27.428571428571427,
+          "top1": 236783,
+          "top2": 682
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 19.25,
+          "gap_reuse": 19.25,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 1.5,
+          "flip": false,
+          "gap_full": 22.25,
+          "gap_reuse": 23.75,
+          "headroom": 15.833333333333334,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 2.25,
+          "flip": false,
+          "gap_full": 14.25,
+          "gap_reuse": 12.0,
+          "headroom": 5.333333333333333,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 627.684834,
+      "identical": true,
+      "max_delta_gap": 2.25,
+      "min_gap_reuse": 1.25,
+      "min_headroom": 5.333333333333333,
+      "request": 6,
+      "reuse_ttft_ms": 258.353333,
+      "steps": 21
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 13.75,
+          "gap_reuse": 14.0,
+          "headroom": 56.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 26.5,
+          "gap_reuse": 26.0,
+          "headroom": 52.0,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 22.25,
+          "gap_reuse": 22.875,
+          "headroom": 36.6,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 5.5,
+          "gap_reuse": 5.5,
+          "headroom": Infinity,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 8.125,
+          "gap_reuse": 8.25,
+          "headroom": 66.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 7.0,
+          "gap_reuse": 7.5,
+          "headroom": 15.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 18.25,
+          "gap_reuse": 17.625,
+          "headroom": 28.2,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.25,
+          "gap_reuse": 17.0,
+          "headroom": 68.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 17.375,
+          "gap_reuse": 17.75,
+          "headroom": 47.333333333333336,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 23.375,
+          "gap_reuse": 23.25,
+          "headroom": 186.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 19.5,
+          "gap_reuse": 19.5,
+          "headroom": Infinity,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 16.875,
+          "gap_reuse": 17.125,
+          "headroom": 68.5,
+          "top1": 623,
+          "top2": 999
+        },
+        {
+          "argmax_reuse": 20836,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 8.5,
+          "gap_reuse": 8.25,
+          "headroom": 33.0,
+          "top1": 20836,
+          "top2": 2690
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 22.375,
+          "gap_reuse": 22.625,
+          "headroom": 90.5,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 84074,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 25.0,
+          "gap_reuse": 25.5,
+          "headroom": 51.0,
+          "top1": 84074,
+          "top2": 188169
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 14.75,
+          "gap_reuse": 14.625,
+          "headroom": 117.0,
+          "top1": 236775,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 19.5,
+          "gap_reuse": 19.375,
+          "headroom": 155.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 22.625,
+          "gap_reuse": 23.25,
+          "headroom": 37.2,
+          "top1": 236783,
+          "top2": 682
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.5,
+          "gap_reuse": 20.75,
+          "headroom": 83.0,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 23.75,
+          "headroom": 47.5,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 13.5,
+          "gap_reuse": 14.0,
+          "headroom": 28.0,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 628.156333,
+      "identical": true,
+      "max_delta_gap": 0.625,
+      "min_gap_reuse": 5.5,
+      "min_headroom": 15.0,
+      "request": 7,
+      "reuse_ttft_ms": 258.112583,
+      "steps": 21
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 13.25,
+          "gap_reuse": 13.5,
+          "headroom": 54.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 25.5,
+          "gap_reuse": 25.5,
+          "headroom": Infinity,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 23.5,
+          "gap_reuse": 23.5,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 3.5,
+          "gap_reuse": 3.5,
+          "headroom": Infinity,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 8.0,
+          "gap_reuse": 7.75,
+          "headroom": 31.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 7.5,
+          "gap_reuse": 7.25,
+          "headroom": 29.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.5,
+          "gap_reuse": 17.75,
+          "headroom": 71.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 20.0,
+          "headroom": 80.0,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 18.25,
+          "gap_reuse": 18.875,
+          "headroom": 30.2,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 24.375,
+          "gap_reuse": 24.625,
+          "headroom": 98.5,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 25.0,
+          "gap_reuse": 25.0,
+          "headroom": Infinity,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 16.625,
+          "gap_reuse": 16.875,
+          "headroom": 67.5,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 89660,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 13.75,
+          "gap_reuse": 14.25,
+          "headroom": 28.5,
+          "top1": 89660,
+          "top2": 2834
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 18.375,
+          "gap_reuse": 18.75,
+          "headroom": 50.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 25611,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 19.0,
+          "gap_reuse": 19.0,
+          "headroom": Infinity,
+          "top1": 25611,
+          "top2": 9462
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 21.5,
+          "gap_reuse": 22.25,
+          "headroom": 29.666666666666668,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 12655,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 43.75,
+          "gap_reuse": 44.0,
+          "headroom": 176.0,
+          "top1": 12655,
+          "top2": 102875
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 15.125,
+          "gap_reuse": 15.0,
+          "headroom": 120.0,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 20.125,
+          "gap_reuse": 20.25,
+          "headroom": 162.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 26.625,
+          "gap_reuse": 26.875,
+          "headroom": 107.5,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 20.25,
+          "gap_reuse": 20.25,
+          "headroom": Infinity,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.625,
+          "flip": false,
+          "gap_full": 22.75,
+          "gap_reuse": 23.375,
+          "headroom": 37.4,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 16.5,
+          "gap_reuse": 16.75,
+          "headroom": 67.0,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 628.041208,
+      "identical": true,
+      "max_delta_gap": 0.75,
+      "min_gap_reuse": 3.5,
+      "min_headroom": 28.5,
+      "request": 8,
+      "reuse_ttft_ms": 258.148333,
+      "steps": 23
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 11.75,
+          "gap_reuse": 11.5,
+          "headroom": 46.0,
+          "top1": 2717,
+          "top2": 236929
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 26.0,
+          "gap_reuse": 26.5,
+          "headroom": 53.0,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 22.75,
+          "gap_reuse": 22.25,
+          "headroom": 44.5,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 2.75,
+          "gap_reuse": 3.25,
+          "headroom": 6.5,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 6.0,
+          "gap_reuse": 6.5,
+          "headroom": 13.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 5.5,
+          "gap_reuse": 6.5,
+          "headroom": 6.5,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 17.75,
+          "gap_reuse": 17.0,
+          "headroom": 22.666666666666668,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.875,
+          "gap_reuse": 19.625,
+          "headroom": 78.5,
+          "top1": 65127,
+          "top2": 11455
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.375,
+          "gap_reuse": 18.125,
+          "headroom": 72.5,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 23.125,
+          "gap_reuse": 23.125,
+          "headroom": Infinity,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 18.5,
+          "gap_reuse": 18.25,
+          "headroom": 73.0,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 15.5,
+          "gap_reuse": 15.75,
+          "headroom": 63.0,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 48578,
+          "delta_gap": 1.125,
+          "flip": false,
+          "gap_full": 2.5,
+          "gap_reuse": 3.625,
+          "headroom": 3.2222222222222223,
+          "top1": 48578,
+          "top2": 152884
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.375,
+          "gap_reuse": 19.125,
+          "headroom": 76.5,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 58332,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 24.5,
+          "gap_reuse": 24.25,
+          "headroom": 97.0,
+          "top1": 58332,
+          "top2": 84490
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 13.125,
+          "gap_reuse": 13.5,
+          "headroom": 36.0,
+          "top1": 236775,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 17.375,
+          "gap_reuse": 17.25,
+          "headroom": 138.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 23.25,
+          "gap_reuse": 22.5,
+          "headroom": 30.0,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 19.625,
+          "gap_reuse": 18.625,
+          "headroom": 18.625,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 23.5,
+          "gap_reuse": 23.0,
+          "headroom": 46.0,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 14.0,
+          "gap_reuse": 13.5,
+          "headroom": 27.0,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 627.779458,
+      "identical": true,
+      "max_delta_gap": 1.125,
+      "min_gap_reuse": 3.25,
+      "min_headroom": 3.2222222222222223,
+      "request": 9,
+      "reuse_ttft_ms": 257.928042,
+      "steps": 21
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 14.5,
+          "gap_reuse": 14.25,
+          "headroom": 57.0,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 25.75,
+          "gap_reuse": 26.25,
+          "headroom": 52.5,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 23.875,
+          "gap_reuse": 23.625,
+          "headroom": 94.5,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 5.25,
+          "gap_reuse": 5.0,
+          "headroom": 20.0,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.375,
+          "flip": false,
+          "gap_full": 8.125,
+          "gap_reuse": 7.75,
+          "headroom": 20.666666666666668,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 6.5,
+          "gap_reuse": 6.75,
+          "headroom": 27.0,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 17.125,
+          "gap_reuse": 17.0,
+          "headroom": 136.0,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 17.625,
+          "gap_reuse": 17.625,
+          "headroom": Infinity,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 17.875,
+          "gap_reuse": 17.875,
+          "headroom": Infinity,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 23.625,
+          "gap_reuse": 23.5,
+          "headroom": 188.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 20.0,
+          "headroom": 80.0,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 17.25,
+          "gap_reuse": 17.0,
+          "headroom": 68.0,
+          "top1": 623,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 20836,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 5.25,
+          "gap_reuse": 5.5,
+          "headroom": 22.0,
+          "top1": 20836,
+          "top2": 2690
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 22.0,
+          "gap_reuse": 22.125,
+          "headroom": 177.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 84074,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 24.5,
+          "headroom": 98.0,
+          "top1": 84074,
+          "top2": 188169
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 13.875,
+          "gap_reuse": 14.125,
+          "headroom": 56.5,
+          "top1": 236775,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 19.375,
+          "gap_reuse": 19.5,
+          "headroom": 156.0,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 23.375,
+          "gap_reuse": 23.5,
+          "headroom": 188.0,
+          "top1": 236783,
+          "top2": 682
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 20.125,
+          "gap_reuse": 20.375,
+          "headroom": 81.5,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 24.25,
+          "gap_reuse": 23.5,
+          "headroom": 31.333333333333332,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 15.0,
+          "gap_reuse": 15.75,
+          "headroom": 21.0,
+          "top1": 106,
+          "top2": 107
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 627.692958,
+      "identical": true,
+      "max_delta_gap": 0.75,
+      "min_gap_reuse": 5.0,
+      "min_headroom": 20.0,
+      "request": 10,
+      "reuse_ttft_ms": 258.435667,
+      "steps": 21
+    },
+    {
+      "detail": [
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 1.25,
+          "flip": false,
+          "gap_full": 13.5,
+          "gap_reuse": 14.75,
+          "headroom": 11.8,
+          "top1": 2717,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 3723,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 25.5,
+          "gap_reuse": 25.75,
+          "headroom": 103.0,
+          "top1": 3723,
+          "top2": 8373
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.875,
+          "flip": false,
+          "gap_full": 23.125,
+          "gap_reuse": 24.0,
+          "headroom": 27.428571428571427,
+          "top1": 107,
+          "top2": 108
+        },
+        {
+          "argmax_reuse": 236782,
+          "delta_gap": 1.0,
+          "flip": false,
+          "gap_full": 4.75,
+          "gap_reuse": 3.75,
+          "headroom": 3.75,
+          "top1": 236782,
+          "top2": 14937
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 7.75,
+          "gap_reuse": 7.5,
+          "headroom": 30.0,
+          "top1": 107,
+          "top2": 623
+        },
+        {
+          "argmax_reuse": 138,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 5.5,
+          "gap_reuse": 5.5,
+          "headroom": Infinity,
+          "top1": 138,
+          "top2": 140
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 17.25,
+          "gap_reuse": 17.75,
+          "headroom": 35.5,
+          "top1": 236775,
+          "top2": 65127
+        },
+        {
+          "argmax_reuse": 65127,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 19.75,
+          "headroom": Infinity,
+          "top1": 65127,
+          "top2": 58885
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 19.25,
+          "gap_reuse": 19.125,
+          "headroom": 153.0,
+          "top1": 236779,
+          "top2": 1083
+        },
+        {
+          "argmax_reuse": 547,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 24.0,
+          "gap_reuse": 24.25,
+          "headroom": 97.0,
+          "top1": 547,
+          "top2": 2643
+        },
+        {
+          "argmax_reuse": 1083,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 22.5,
+          "gap_reuse": 22.5,
+          "headroom": Infinity,
+          "top1": 1083,
+          "top2": 236779
+        },
+        {
+          "argmax_reuse": 623,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 16.75,
+          "gap_reuse": 16.75,
+          "headroom": Infinity,
+          "top1": 623,
+          "top2": 2303
+        },
+        {
+          "argmax_reuse": 89660,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 14.25,
+          "gap_reuse": 14.25,
+          "headroom": Infinity,
+          "top1": 89660,
+          "top2": 2834
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 23.75,
+          "gap_reuse": 23.75,
+          "headroom": Infinity,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 25611,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 19.75,
+          "gap_reuse": 19.25,
+          "headroom": 38.5,
+          "top1": 25611,
+          "top2": 9462
+        },
+        {
+          "argmax_reuse": 236779,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 22.5,
+          "gap_reuse": 22.375,
+          "headroom": 179.0,
+          "top1": 236779,
+          "top2": 19165
+        },
+        {
+          "argmax_reuse": 12655,
+          "delta_gap": 0.5,
+          "flip": false,
+          "gap_full": 40.5,
+          "gap_reuse": 41.0,
+          "headroom": 82.0,
+          "top1": 12655,
+          "top2": 16720
+        },
+        {
+          "argmax_reuse": 236775,
+          "delta_gap": 0.125,
+          "flip": false,
+          "gap_full": 16.625,
+          "gap_reuse": 16.5,
+          "headroom": 132.0,
+          "top1": 236775,
+          "top2": 827
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 0.25,
+          "flip": false,
+          "gap_full": 19.875,
+          "gap_reuse": 19.625,
+          "headroom": 78.5,
+          "top1": 107,
+          "top2": 236743
+        },
+        {
+          "argmax_reuse": 236783,
+          "delta_gap": 0.75,
+          "flip": false,
+          "gap_full": 25.625,
+          "gap_reuse": 24.875,
+          "headroom": 33.166666666666664,
+          "top1": 236783,
+          "top2": 138
+        },
+        {
+          "argmax_reuse": 107,
+          "delta_gap": 1.5,
+          "flip": false,
+          "gap_full": 19.0,
+          "gap_reuse": 20.5,
+          "headroom": 13.666666666666666,
+          "top1": 107,
+          "top2": 2717
+        },
+        {
+          "argmax_reuse": 2717,
+          "delta_gap": 0.0,
+          "flip": false,
+          "gap_full": 21.0,
+          "gap_reuse": 21.0,
+          "headroom": Infinity,
+          "top1": 2717,
+          "top2": 2629
+        },
+        {
+          "argmax_reuse": 106,
+          "delta_gap": 2.25,
+          "flip": false,
+          "gap_full": 12.5,
+          "gap_reuse": 14.75,
+          "headroom": 6.555555555555555,
+          "top1": 106,
+          "top2": 965
+        }
+      ],
+      "flips": 0,
+      "full_ttft_ms": 628.29075,
+      "identical": true,
+      "max_delta_gap": 2.25,
+      "min_gap_reuse": 3.75,
+      "min_headroom": 3.75,
+      "request": 11,
+      "reuse_ttft_ms": 258.5475,
+      "steps": 23
+    }
+  ],
+  "total_steps": 254
+}

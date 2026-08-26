@@ -1,0 +1,52 @@
+{
+  "capacity": 384,
+  "environment": {
+    "git_commit": "06a018c79dbb65db218fe893f99d0c0e121528fe",
+    "git_dirty": true,
+    "loadavg": [
+      2.025390625,
+      1.6416015625,
+      1.57763671875
+    ],
+    "low_power_mode": false,
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "mlx_peak_bytes": 3125869428,
+    "os": "26.5.2",
+    "power_source": "AC",
+    "python": "3.12.13",
+    "thermal": {}
+  },
+  "mlx_peak_bytes": 3125869428,
+  "phases_ms": {
+    "full_head": {
+      "_sum": 639.733043,
+      "argmax": 0.437084,
+      "fixed_state_build": 1.561375,
+      "make_cache": 0.049208,
+      "projection": 103.974542,
+      "trunk_forward": 533.710834
+    },
+    "head_skip": {
+      "_sum": 537.200626,
+      "argmax": 0.370375,
+      "fixed_state_build": 1.474625,
+      "make_cache": 0.046792,
+      "projection": 1.528292,
+      "trunk_forward": 533.780542
+    }
+  },
+  "prompt_tokens": 322,
+  "recorded_at": 1787656864.122056,
+  "repeats": 5,
+  "token_identity": {
+    "instrumented": [
+      "('full_head', 2717)",
+      "('head_skip', 2717)"
+    ],
+    "plain": [
+      2717
+    ]
+  },
+  "uninstrumented_ms": 537.225375
+}

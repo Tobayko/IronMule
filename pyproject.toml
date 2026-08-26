@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ironmule"
+version = "0.1.0"
+description = "Local LLM inference runtime for MLX on Apple silicon: explicit execution plans, prefix KV reuse, grouped batch-1 execution, measured rather than assumed"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "IronMule License 1.0" }
+dependencies = ["mlx>=0.32", "mlx-lm>=0.31", "numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-xdist>=3"]
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: GPU",
+  "Intended Audience :: Developers",
+  "License :: Other/Proprietary License",
+  "Operating System :: MacOS :: MacOS X",
+  "Programming Language :: Python :: 3",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+keywords = ["mlx", "apple-silicon", "llm", "inference", "kv-cache", "prefix-caching",
+            "batching", "m1", "m2", "m3", "m4", "local-llm", "gemma", "on-device"]
+
+[project.urls]
+Homepage = "https://github.com/Tobayko/IronMule"
+Documentation = "https://github.com/Tobayko/IronMule/blob/main/RUNTIME.md"
+Issues = "https://github.com/Tobayko/IronMule/issues"
+
+[tool.setuptools]
+packages = ["ironmule"]
