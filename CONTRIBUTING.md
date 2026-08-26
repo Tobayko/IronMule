@@ -2,6 +2,11 @@
 
 Issues and pull requests are welcome.
 
+For a first contribution, start with the [README](README.md), install the published
+package with `python -m pip install ironmule`, and use the checkout installation below
+when you need the test suite or source tree. Performance and correctness changes need
+the evidence described in the research ledger.
+
 ## The one rule that matters here
 
 **A performance claim needs a measurement.**
@@ -23,6 +28,10 @@ pytest tests/test_ironmule_runtime.py -q              # fast, no model needed
 pytest tests/test_ironmule_runtime_integration.py -q  # needs a local model snapshot
 python -m ironmule.benchmark --requests 6 --max-tokens 48
 ```
+
+Before opening an environment or installation issue, run `ironmule doctor` and include
+its output. To share a result from another Mac, use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md)
+and paste the complete benchmark output.
 
 A change that touches the executor, the plans or the cache must keep
 `tests/test_ironmule_runtime.py` green. Those tests cover token identity, stop
