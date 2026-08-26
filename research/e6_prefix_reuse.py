@@ -12,7 +12,7 @@ from ironmule.tune import DEFAULT_MODEL, _eos_ids, gpu_busy, load_engine
 assert gpu_busy() is None, gpu_busy()
 
 # Shared instruction block. Fixed for every request of this service.
-PREFIX = """You choose exactly one next the predecessor project experiment.
+PREFIX = """You choose exactly one next Project Friday experiment.
 
 Hardware: Apple M1 Max, 32 GB unified memory. Use only the evidence below.
 

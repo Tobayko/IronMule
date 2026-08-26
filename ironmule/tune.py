@@ -27,9 +27,10 @@ from .runtime import BASELINE, Engine, Knobs
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"
 PROFILES = STORE / "profiles.json"
 
-# The predecessor project's planner request, kept verbatim so timings stay
-# comparable with the cycles recorded in research/LEDGER.md.
-DEFAULT_PROMPT = """You choose exactly one next the predecessor project experiment.
+# The predecessor project's planner request, reproduced word for word — including
+# its internal project name — so token counts and therefore timings stay comparable
+# with the cycles recorded in research/LEDGER.md. Do not reword it.
+DEFAULT_PROMPT = """You choose exactly one next Project Friday experiment.
 
 Hardware: Apple M1 Max, 32 GB unified memory. Use only the evidence below.
 
