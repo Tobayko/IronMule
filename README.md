@@ -1,12 +1,19 @@
+<div align="center">
+  <img src="docs/assets/ironmule-logo.jpg" alt="IronMule donkey mark and IRONMULE wordmark" width="960">
+  <p><strong>MEASURE&nbsp;&middot;&nbsp;PROVE&nbsp;&middot;&nbsp;RUN</strong></p>
+</div>
+
 # IronMule
 
 IronMule is an adaptive MLX inference runtime for local LLMs on Apple Silicon. It measures optimizations on your Mac and only keeps them when they are faster and remain correct.
 
 **Measured, not assumed.** IronMule makes the execution plan and service mode explicit, measures them on the current machine, and records the evidence rather than carrying an unverified speedup from another setup. It helps you measure local LLM inference on Apple Silicon, including MLX performance, KV cache reuse, time to first token (TTFT), and batching.
 
-[![License: fair-code](https://img.shields.io/badge/license-fair--code-blue.svg)](LICENSE.md)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![Apple silicon](https://img.shields.io/badge/platform-Apple%20silicon-lightgrey.svg)](https://github.com/ml-explore/mlx)
+<p align="center">
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-fair--code-111111?style=for-the-badge" alt="License: fair-code"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/python-3.10%2B-111111?style=for-the-badge" alt="Python 3.10+"></a>
+  <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/platform-Apple%20Silicon-111111?style=for-the-badge" alt="Apple Silicon"></a>
+</p>
 
 IronMule is a local LLM inference runtime for [MLX](https://github.com/ml-explore/mlx) on Apple silicon. It includes prefix KV caching, grouped batch-1 execution, telemetry, and a correctness gate. It does not download or redistribute model weights.
 
@@ -27,9 +34,13 @@ Grouping does not make a request faster. It makes requests finish together: medi
 
 Prefix KV reuse was also measured within its declared execution plan. E10 measured a `−37.82%` end-to-end session result at a 66.8% shared prefix, and E12 measured TTFT ratios from `0.401` at prefix 276 to `0.094` at prefix 2048. Within the chunked plan, reuse was bit exact across 756 requests and 14,369 decode steps. These are separate workloads and are not interchangeable claims.
 
-## Install in under a minute
+## Try it in under a minute
 
-Requirements: Python 3.10+, an Apple silicon Mac, and a local MLX model snapshot. Install the published package with:
+Requirements: Python 3.10+, an Apple silicon Mac, and a local MLX model snapshot.
+
+### 1. Install
+
+Install the published package with:
 
 ```bash
 pip install ironmule
@@ -45,13 +56,13 @@ python -m pip install -e ".[dev]"
 
 IronMule does not ship or download model weights. Use a model snapshot whose terms permit your use.
 
-## Quickstart
-
-Check the local prerequisites first:
+### 2. Check your Mac
 
 ```bash
 ironmule doctor
 ```
+
+### 3. Run a benchmark
 
 Run the local benchmark when a compatible model is available:
 
@@ -59,7 +70,9 @@ Run the local benchmark when a compatible model is available:
 ironmule benchmark
 ```
 
-The benchmark prints the baseline and IronMule measurements for the selected workload. It does not download a model. For a small Python integration:
+The benchmark prints the baseline and IronMule measurements for the selected workload. It does not download a model.
+
+### 4. Use from Python
 
 ```python
 import ironmule
