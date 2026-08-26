@@ -6,7 +6,7 @@ Stated as measured, not as hoped. Anything not listed here was not tested.
 
 | | |
 | :-- | :-- |
-| Model | `mlx-community/gemma-3-4b-it-4bit`, revision `93724907` |
+| Model | `mlx-community/gemma-3-4b-it-4bit`, revision `93724907`, for every preregistered result. `gemma-3-12b-it-4bit` was measured once outside the preregistered series, see `X1` in the ledger |
 | Quantisation | 4 bit, group size 64 |
 | Framework | MLX `0.32.0`, mlx_lm `0.31.3` |
 | Machine | Apple M1 Max, 32 GB unified memory, 32 GPU cores |
@@ -19,6 +19,14 @@ Stated as measured, not as hoped. Anything not listed here was not tested.
 No claim holds outside this box. Another model, another quantisation, another MLX
 build or another machine requires re-measurement, which is what the fingerprint
 exists to force.
+
+**One model outside the box has now been measured.** Gemma 3 12B at 4 bit reached
+`+16.31%` against 4B's `+15.96%` under the strict plan, both at a realised width of
+`4.00`, on the same machine and with an unchanged protocol. That run was not
+preregistered and is a single measurement per cell, so it is an exploratory
+observation and not a second validated model. It is recorded as `X1` in the ledger
+because the alternative — leaving the domain described as one model when a second has
+been run — would be less honest, not more careful.
 
 ## Limits of the runtime itself
 
