@@ -174,16 +174,22 @@ can tell which side you are on without asking a lawyer.
 
 | | |
 | :-- | :-- |
-| Personal, hobby, learning, research | **free** |
-| **A company running IronMule internally, at any size** | **free** |
-| Modifying it for your own use | **free** |
+| Personal, hobby, learning | **free** |
+| Research, teaching, academic publication, benchmarking | **free** |
+| A small organisation running it in production — under 10 people **and** ≤ EUR 1M turnover | **free** |
+| Any larger company, evaluating it outside production | **free for 90 days** |
+| **Any larger company, running it in production** | needs a commercial licence |
 | Offering it to third parties as a hosted or managed service | needs a commercial licence |
 | Reselling it or embedding it in a product you sell | needs a commercial licence |
 
-**The test:** if a customer is paying, in whole or in part, for access to IronMule
-itself, you need a commercial licence. Serving your own customers through your own
-product does not count — that is free, at any scale. Details and how to get a
-licence: [`COMMERCIAL.md`](COMMERCIAL.md).
+**The two tests.** First: is your company small — fewer than 10 people *and* turnover
+of EUR 1M or less? Both limits, not either. If yes, production is free. If no, you
+get 90 days to evaluate and a licence is due once it runs in production. Second,
+independently of size: if a third party gets IronMule itself as the thing being sold,
+that needs a licence too.
+
+Individuals, learning and academic work never pay, at any scale. Details, the
+definition of production use, and how to get a licence: [`COMMERCIAL.md`](COMMERCIAL.md).
 
 IronMule does not redistribute model weights; the model you point it at carries its
 own terms.

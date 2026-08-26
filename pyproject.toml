@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Local LLM inference runtime for MLX on Apple silicon: explicit execution plans, prefix KV reuse, grouped batch-1 execution, measured rather than assumed"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "IronMule License 1.0" }
+license = { text = "IronMule License 2.0" }
 dependencies = ["mlx>=0.32", "mlx-lm>=0.31", "numpy>=1.24"]
 
 [project.optional-dependencies]

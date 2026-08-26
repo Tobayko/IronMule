@@ -1,57 +1,72 @@
 # Licensing and commercial use
 
-IronMule is **fair-code**: source-available, free for almost everyone, and paid only
-where someone builds a business *on* IronMule itself.
+IronMule is **fair-code**: source-available, free for individuals, learning,
+research and small organisations, and paid where a larger company runs it in
+production or where someone builds a business *on* IronMule itself.
+
+This page is a plain-language guide. The binding terms are in
+[`LICENSE.md`](LICENSE.md); where the two differ, the licence governs.
 
 ## Free, no payment, no registration
 
-- Personal projects, learning, research, benchmarking
-- **Companies using IronMule internally** — running it on your own infrastructure
-  for your own products and workloads, at any size
-- Modifying it for your own internal use
+- Personal projects, hobby use, learning
+- Research, teaching, academic publication and benchmarking — at any scale, forever
+- **Small organisations, including in production** — fewer than 10 people **and**
+  annual turnover of EUR 1,000,000 or less. Both limits, not either
+- Modifying it for your own permitted use
 - Redistributing it free of charge for non-commercial purposes
-- Academic use and publication
 
-If you are a company that wants to run IronMule to serve your own inference, you owe
-nothing. That is deliberate: adoption is the point.
+No seat count, no node limit, no registration, no activation, no licence key, no
+reporting obligation.
+
+## Free for 90 days: evaluation in a larger company
+
+If your company is past either limit above, you get **90 consecutive days** to
+evaluate IronMule outside production use — as many machines and people as the
+evaluation needs, no registration required.
+
+That covers benchmarking, load testing, feasibility studies, comparisons against
+other runtimes, prototypes and internal demos on test data, engineering work on the
+software itself, and security or procurement review.
 
 ## Needs a commercial licence
 
-You need one if you want to:
-
-- **Offer IronMule, or a derivative, to third parties as a hosted or managed
+- **Production use by a company that is not small.** Serving customers, users or
+  employees who depend on the result; processing real customer, personal or live
+  business data; running as a component your organisation relies on; any use that
+  contributes to revenue
+- **Offering IronMule, or a derivative, to third parties as a hosted or managed
   service** — inference-as-a-service, an API product, a SaaS platform where IronMule
-  is part of what customers pay for
-- **Resell or redistribute it commercially**, embedded in a product you sell or
-  bundled with paid hardware
-- **Remove or replace the licence terms**, or ship it without the notices
+  is part of what customers pay for. This applies at any company size
+- **Reselling or redistributing it commercially**, embedded in a product you sell or
+  bundled with paid hardware. Also at any size
+- **Removing or replacing the licence terms**, or shipping it without the notices
 
-In short: use it to run your own workloads for free; pay if IronMule is part of what
-you sell.
+## Growing past the limits
+
+Status is assessed when production use begins and again at the end of each financial
+year. A company that grows past either limit has until the end of the following
+calendar quarter to obtain a licence or stop production use. Nothing is retroactive
+and no back payment is owed for the period when you qualified.
+
+## What is deliberately free
+
+Benchmarking and publication are unconditionally free, including comparative
+benchmarks published by competitors. Publish any measurement you obtain, favourable
+or not. No approval is required and none may be demanded.
+
+Forking and modifying for permitted use is free. A fork does not change who owes a
+licence for production use.
 
 ## Getting a licence
 
-Open an issue titled `Commercial licence enquiry` on
+Pricing is set per case; there is no public price list yet. Open an issue titled
+`Commercial licence enquiry` on
 [GitHub](https://github.com/Tobayko/IronMule/issues), or contact the maintainer
 through the profile at [@Tobayko](https://github.com/Tobayko).
 
+If a use case does not clearly fall on one side of the boundary, ask. A written
+answer may be relied upon for the case it addresses.
+
 <!-- Replace with a business address once one exists:
      Commercial enquiries: licensing@your-domain.example -->
-
-Terms are negotiated case by case. Startups and small teams should say so — the
-point is a sustainable project, not a toll booth.
-
-## Why this licence and not MIT or Apache
-
-IronMule is measurement work. Sixteen preregistered experiments, forty independent
-replicate processes, and four optimisations that were dropped because the data said
-so. That is slow and it is the part that makes the numbers worth anything.
-
-A permissive licence lets a cloud provider wrap it, sell it, and contribute nothing
-back. This licence keeps it free for everyone who runs their own workloads, and asks
-only the companies selling IronMule to others to help fund it.
-
-The boundary is written out in §10 of the licence rather than left to interpretation,
-including the cases people actually hit: consultants working on a client's
-infrastructure, serving your own customers through your own product, forks, and
-benchmarking by competitors.
