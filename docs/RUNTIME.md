@@ -1,6 +1,6 @@
 # IronMule
 
-*Formerly Claude Forge. The Python package is .*
+*The Python package is `ironmule`.*
 
 A local inference runtime for MLX on Apple silicon, built from measurements rather
 than from expectations. Every performance statement below points at an experiment in
