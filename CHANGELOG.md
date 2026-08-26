@@ -9,6 +9,7 @@ Initial public release, prepared for publication.
 - **Runtime:** MLX inference runtime for local LLMs on Apple Silicon with explicit execution plans, prefix KV caching, grouped batch-1 execution, correctness checks, telemetry, and validity fingerprints.
 - **Evidence:** Includes the preregistered experiment ledger, raw result summaries, negative findings, and the narrow validity domain in [`docs/LIMITS.md`](docs/LIMITS.md).
 - **Documentation:** Adds a short install/quickstart path, measured benchmark summary, API/runtime guide, fair-code licensing explanation, and community benchmark submission workflow.
+- **Branding:** Adds the source logo asset and a validated 1280×640 GitHub social-preview image.
 - **Community:** Adds issue templates for bugs, feature requests, and benchmark submissions, plus a pull request checklist.
 
 ### Measurement note
