@@ -1,6 +1,9 @@
 # IronMule License
 
-**Version 1.0** · a fair-code, source-available licence · effective 26 August 2026
+**Version 2.0** · a fair-code, source-available licence · effective 26 August 2026
+
+*Supersedes version 1.0 for releases made under it. Copies you already received
+under version 1.0 keep the terms they came with.*
 
 ---
 
@@ -11,19 +14,21 @@ differ, the terms govern.*
 
 | What you want to do | Free of charge? |
 | :-- | :-- |
-| Use IronMule personally, to learn, or for research | **Yes** |
-| Use it inside your company, on any number of machines, at any scale | **Yes** |
-| Use it to run inference behind your own product or service | **Yes** |
-| Modify it for your own use | **Yes** |
+| Use IronMule personally, to learn, or for a hobby | **Yes** |
+| Use it for research, teaching or academic publication | **Yes** |
+| Run it in production in a small organisation (§12) | **Yes** |
+| Evaluate it in a larger company for 90 days, outside production | **Yes** |
+| **Run it in production in a larger company** | **No — commercial licence** |
+| Modify it for your own permitted use | **Yes** |
 | Publish benchmarks, papers or blog posts about it | **Yes** |
 | Pass it on to someone else free of charge, non-commercially | **Yes** |
 | Offer IronMule itself to third parties as a hosted or managed service | **No — commercial licence** |
 | Sell it, resell it, or ship it as part of what you charge for | **No — commercial licence** |
 | Remove or hide the licence and copyright notices | **No** |
 
-**In one sentence:** run your own workloads for free, at any size; a commercial
-licence is needed only when third parties get the software itself as the thing you
-are selling.
+**In one sentence:** free for individuals, learning, research and small
+organisations, including in production; a larger company gets 90 days to evaluate
+it and needs a commercial licence once it runs the software in production.
 
 ---
 
@@ -40,17 +45,27 @@ make available, and prepare derivative works of the software.
 
 ## 3. Limitations
 
-**3.1** You may use or modify the software only for your own internal business
-purposes, or for non-commercial or personal use.
+**3.1 Personal, non-commercial and academic use.** You may use and modify the
+software for personal or other non-commercial use, and for research, teaching,
+academic publication and benchmarking, without limit and without payment.
 
-**3.2** You may distribute the software or provide it to others only free of charge
+**3.2 Small organisations.** If your company is a small organisation as defined in
+section 12, you may use and modify the software for your own internal business
+purposes without limit and without payment, including in production.
+
+**3.3 Every other organisation: evaluation only.** If your company is not a small
+organisation, you may use and modify the software for your own internal business
+purposes during the evaluation period defined in section 12, and only outside
+production use. Production use requires a commercial licence.
+
+**3.4** You may distribute the software or provide it to others only free of charge
 and for non-commercial purposes.
 
-**3.3** You may not alter, remove, or obscure any licensing, copyright, or other
+**3.5** You may not alter, remove, or obscure any licensing, copyright, or other
 notice of the licensor in the software.
 
-**3.4** Uses outside 3.1 and 3.2 require a separate commercial licence from the
-licensor. Section 10 states where the boundary lies.
+**3.6** Any use outside sections 3.1 to 3.4 requires a separate commercial licence
+from the licensor. Section 10 states where the boundary lies.
 
 ## 4. Patents
 
@@ -126,20 +141,51 @@ allocate risk in a licence granted free of charge. They survive termination.
 
 ## 10. Where the boundary lies
 
-This section is part of these terms. It exists because "internal business purposes"
-is the question adopters ask most, and an ambiguous boundary serves nobody.
+This section is part of these terms. It exists because "when do we have to pay" is
+the question adopters ask most, and an ambiguous boundary serves nobody.
 
-**10.1 Internal business purposes, by example.** Running the software on
-infrastructure you control, to serve your own products, customers, employees or
-research, is internal use — whatever your revenue, headcount, machine count or
-request volume. There is no seat count, node limit, registration, activation, licence
-key or reporting obligation.
+**10.1 Two independent triggers.** A commercial licence is required when either
+applies:
 
-**10.2 The test.** A commercial licence is required when third parties obtain the
-software, or its functionality, **as the thing being sold or offered** — whether or
-not money changes hands directly.
+1. **Production use by an organisation that is not small** (section 10.2), or
+2. **Passing the software on as the thing being sold or offered** (section 10.4),
+   whatever the size of your company.
 
-*A commercial licence is required, for example, to:*
+Neither trigger applies to personal, non-commercial or academic use. Those are free
+under section 3.1, at any scale, permanently.
+
+**10.2 Production use, by size.** If your company is a small organisation under
+section 12, running the software on infrastructure you control — to serve your own
+products, customers, employees or research — is free, in production, without limit.
+There is no seat count, node limit, registration, activation, licence key or
+reporting obligation.
+
+Every other organisation may evaluate the software for **90 consecutive days**
+outside production use, and needs a commercial licence to run it in production. The
+evaluation is free, requires no registration, and covers as many machines and people
+as the evaluation needs.
+
+**10.3 What production use means, by example.**
+
+*Production use, so a commercial licence is required after the evaluation period:*
+
+- serving customers, users or employees who depend on the result in the ordinary
+  course of business;
+- processing real customer data, personal data or live business records;
+- running as a component of a system your organisation relies on to operate;
+- any use that contributes to revenue.
+
+*Not production use, so free during the evaluation period:*
+
+- benchmarking, load testing, feasibility studies and comparisons against other
+  runtimes;
+- prototypes, spikes and internal demos on test or synthetic data;
+- engineering work on the software itself, including modifications;
+- security review, procurement assessment and compliance review.
+
+**10.4 Passing it on.** Independently of size, a commercial licence is required when
+third parties obtain the software, or its functionality, **as the thing being sold
+or offered** — whether or not money changes hands directly. For example, to:
 
 - operate an inference API, a hosted or managed IronMule instance, or any service
   whose offering is running the software for others;
@@ -148,29 +194,29 @@ not money changes hands directly.
 - provide the software to a customer, employer of record, or affiliate outside your
   company as defined in section 12, as a deliverable.
 
-*A commercial licence is **not** required, for example, to:*
+Running the software behind a product whose value to the customer is something else,
+where the customer neither receives the software nor calls it directly, is not
+covered by this trigger — but it is production use, so section 10.2 still decides
+whether you pay.
 
-- run the software behind a product whose value to the customer is something else,
-  where the customer neither receives the software nor calls it directly;
-- use it for internal tooling, research, evaluation, or engineering work of any kind;
-- use it at unlimited scale, in production, in a company of any size.
+Where more than one description could apply, section 10.9 governs.
 
-Where both descriptions could apply, section 10.7 governs.
-
-**10.3 Consultants and agencies.** You may use the software while performing work
+**10.5 Consultants and agencies.** You may use the software while performing work
 for a client, including on the client's infrastructure. You may not deliver it as a
 paid deliverable, licence it onward, or charge for the software itself. The client's
 own use is governed by these terms directly and is free if it is internal to them.
 
-**10.4 Evaluation, benchmarking and publication are always free**, including
+**10.6 Evaluation, benchmarking and publication are always free**, including
 comparative benchmarks published by competitors. You may publish any measurement you
 obtain, favourable or not. No approval is required and none may be demanded.
 
-**10.5 Forks and modifications.** You may fork and modify the software for internal
+**10.7 Forks and modifications.** You may fork and modify the software for internal
 use without limit. A fork may be distributed only free of charge, for non-commercial
-purposes, with the notices under section 5 intact.
+purposes, with the notices under section 5 intact. A fork does not
+escape section 10.2: production use by a non-small organisation needs a licence
+whether the code is modified or not.
 
-**10.6 Contributions.** If you submit a contribution, you grant the licensor a
+**10.8 Contributions.** If you submit a contribution, you grant the licensor a
 perpetual, worldwide, non-exclusive, royalty-free, irrevocable licence to use,
 reproduce, modify, distribute, sublicense and commercially exploit that
 contribution, including under a commercial licence, together with a patent licence on
@@ -180,8 +226,8 @@ your own work or is properly licensed. To the extent permitted by law you waive,
 otherwise agree not to assert, moral rights in the contribution against the licensor
 and its licensees. You retain all other rights. No copyright assignment is required.
 
-**10.7 If in doubt, ask.** Where a use case does not clearly fall on one side of
-10.2, open an enquiry as described in [`COMMERCIAL.md`](COMMERCIAL.md). A written
+**10.9 If in doubt, ask.** Where a use case does not clearly fall on one side of
+10.2 or 10.4, open an enquiry as described in [`COMMERCIAL.md`](COMMERCIAL.md). A written
 answer from the licensor may be relied upon for the case it addresses.
 
 ## 11. Trademarks and attribution
@@ -216,8 +262,29 @@ otherwise, whether direct or indirect.
 
 **use** — anything you do with the software requiring one of your licences.
 
+**small organisation** — a company that, in its most recent completed financial
+year, had **both** fewer than 10 people **and** an annual turnover of **EUR 1,000,000
+or less**. Both limits must be met; failing either one means the company is not a
+small organisation. *People* counts employees, working owners and contractors
+engaged substantially full time, measured as full-time equivalents. Where your
+company belongs to a group as defined under *your company*, the whole group is
+counted together. Status is assessed when you begin production use and re-assessed
+at the end of each financial year; a company that grows past either limit has until
+the end of the following calendar quarter to obtain a commercial licence or stop
+production use.
+
+**production use** — use of the software in the ordinary course of your company's
+business: serving customers, users or employees who depend on the result, processing
+real customer, personal or live business data, running as a component your
+organisation relies on to operate, or any use contributing to revenue. Section 10.3
+gives examples on both sides. Non-commercial and academic use under section 3.1 is
+never production use, whoever performs it.
+
+**evaluation period** — 90 consecutive days beginning on your company's first use of
+the software. One evaluation period per company per major version of the software.
+
 **commercial licence** — a separate written agreement with the licensor permitting
-use beyond sections 3.1 and 3.2.
+use beyond sections 3.1 to 3.4.
 
 **contribution** — any work you intentionally submit to the licensor for inclusion in
 the software.
