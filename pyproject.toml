@@ -7,6 +7,7 @@ name = "ironmule"
 version = "0.1.0"
 description = "Adaptive MLX inference runtime for local LLMs on Apple Silicon, measured for speed and correctness"
 readme = "README.md"
+authors = [{ name = "Tobias Abenthum" }]
 requires-python = ">=3.10"
 license = "LicenseRef-IronMule-2.0"
 license-files = ["LICENSE.md"]
