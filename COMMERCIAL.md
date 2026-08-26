@@ -58,15 +58,50 @@ or not. No approval is required and none may be demanded.
 Forking and modifying for permitted use is free. A fork does not change who owes a
 licence for production use.
 
+## What a licence costs
+
+Priced by the licensee's annual turnover, because a runtime is worth a different
+amount to a 3-person team than to a group with nine figures of revenue. One licence
+covers the whole organisation: every machine, every developer, every deployment,
+worldwide.
+
+| Annual turnover | Licence, per year |
+| :-- | :-- |
+| up to EUR 1M **and** under 10 people | **free** — no licence needed, see above |
+| up to EUR 5M | EUR 1,500 |
+| up to EUR 25M | EUR 4,500 |
+| up to EUR 100M | EUR 12,000 |
+| above EUR 100M | on enquiry |
+
+Figures are indicative and quoted per case. Turnover is the licensee group's most
+recent completed financial year, the same basis section 12 of the licence uses.
+
+**What it includes.** The right to run IronMule in production for the licence term,
+and every release within the same major version.
+
+**What it does not include.** No support obligation, no response time, no uptime
+commitment and no warranty — sections 8 and 9 of the licence stand. This is a
+0.1.0 release maintained by one person; anyone who needs a service level should say
+so in the enquiry so it can be quoted separately rather than assumed.
+
+**Hosting or reselling IronMule** is priced separately and not by turnover, since
+the software is then part of what you sell rather than a tool you run.
+
 ## Getting a licence
 
-Pricing is set per case; there is no public price list yet. Open an issue titled
-`Commercial licence enquiry` on
-[GitHub](https://github.com/Tobayko/IronMule/issues), or contact the maintainer
-through the profile at [@Tobayko](https://github.com/Tobayko).
+Open an issue titled `Commercial licence enquiry` on
+[GitHub](https://github.com/Tobayko/IronMule/issues), or contact the author through
+the profile at [@Tobayko](https://github.com/Tobayko).
 
-If a use case does not clearly fall on one side of the boundary, ask. A written
-answer may be relied upon for the case it addresses.
+Useful in a first message: your organisation's turnover band from the table above,
+whether the use is internal production or hosting/resale, and roughly what the
+workload looks like.
+
+If a use case does not clearly fall on one side of the boundary, ask before assuming
+either way. A written answer from the author may be relied upon for the case it
+addresses.
+
+The licensor is **Tobias Abenthum**, author of IronMule.
 
 <!-- Replace with a business address once one exists:
      Commercial enquiries: licensing@your-domain.example -->

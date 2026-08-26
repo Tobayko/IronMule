@@ -165,4 +165,4 @@ IronMule is **fair-code** under the [IronMule Licence](LICENSE.md): source-avail
 | Larger company, production use | commercial licence required |
 | Hosted/managed service, resale, or embedding in a product you sell | commercial licence required |
 
-Individuals, learning, and academic work never pay, at any scale. See [`COMMERCIAL.md`](COMMERCIAL.md) for definitions and licensing details. IronMule does not redistribute model weights; the model you point it at carries its own terms.
+Individuals, learning, and academic work never pay, at any scale. Commercial licences are priced by the licensee's annual turnover, starting at EUR 1,500 per year for the whole organisation. See [`COMMERCIAL.md`](COMMERCIAL.md) for the price bands, definitions and licensing details. IronMule does not redistribute model weights; the model you point it at carries its own terms.

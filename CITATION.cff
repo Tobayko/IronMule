@@ -3,7 +3,9 @@ title: "IronMule: a local MLX inference runtime that measures before it optimise
 message: "If you use IronMule or its measurements, please cite this repository."
 type: software
 authors:
-  - alias: Tobayko
+  - family-names: Abenthum
+    given-names: Tobias
+    alias: Tobayko
     website: "https://github.com/Tobayko"
 repository-code: "https://github.com/Tobayko/IronMule"
 abstract: >-

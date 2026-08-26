@@ -245,7 +245,8 @@ be presented as the original.
 
 ## 12. Definitions
 
-**licensor** — the entity offering these terms.
+**licensor** — Tobias Abenthum, the author of the software and the party offering
+these terms.
 
 **software** — the software the licensor makes available under these terms,
 including any portion of it, in source or compiled form.
@@ -363,7 +364,8 @@ that a signed commercial licence prevails to the extent of any conflict.
 
 ---
 
-Copyright © 2026 IronMule. All rights reserved except as expressly granted above.
+Copyright © 2026 Tobias Abenthum. All rights reserved except as expressly granted
+above.
 
 **This is not an OSI-approved open-source licence.** IronMule is *fair-code*:
 source-available, free for the overwhelming majority of users, and paid only where
