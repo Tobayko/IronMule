@@ -21,22 +21,40 @@ never removed.
 
 | ID | Question | Result | Status |
 | :-- | :-- | :-- | :-- |
-| X1 | Does the `W=4` gain hold at 3x the parameter count? | `+15.96% -> +16.31%` strict, both at width 4.00 | MEASURED, not preregistered |
+| X1 | Does the `W=4` gain hold as the model grows? | falls monotonically, `19.24% -> 15.42% -> 11.81%` | MEASURED, not preregistered |
 
-`X1` carries an `X` rather than an `E` because no preregistration was sealed before
-it ran. It is a single run per cell with no repeats and therefore no confidence
-interval, and it makes no formal claim. Raw data in `research/raw/X1_*`.
+**Correction.** The first version of this entry, written earlier the same day, reported
+`+15.96%` for 4B against `+16.31%` for 12B from a single run each and concluded the gain
+held at three times the parameter count. That was wrong. Repeating each cell three times
+reverses it: the gain falls monotonically with model size, and the original 4B figure
+lies outside the range of all three later 4B runs. A single paired run was not enough,
+which is the same lesson the README draws about unpaired comparison, one level up.
 
-Under the strict plan both models reached the full realised width of `4.00`, so the
-`0.35pp` difference is a like-for-like comparison. Under the reusable plan realised
-width differed between the models (`3.27` against `3.54`), which mixes model size
-with group filling; that cell is reported but not interpreted.
+**Strict plan, three runs per model, unchanged protocol, realised width `4.00` throughout:**
 
-Peak memory grew `2.78 -> 7.80 GB` under strict and `3.61 -> 10.14 GB` under
-reusable. Four configurations produced four distinct fingerprints, which is the
-behaviour `docs/LIMITS.md` describes.
+| Model | mean gain | observed range | spread | peak memory |
+| :-- | --: | :-- | --: | --: |
+| Gemma 3 4B | `+19.24%` | `19.06 – 19.41%` | `0.35pp` | `2.78 GB` |
+| Gemma 3 12B | `+15.42%` | `15.20 – 15.65%` | `0.45pp` | `7.80 GB` |
+| Gemma 3 27B | `+11.81%` | `11.36 – 12.09%` | `0.73pp` | `16.78 GB` |
 
----
+The gaps between models, `3.82pp` and `3.61pp`, are five to ten times the spread inside
+any one of them, and the observed ranges do not overlap. Group filling does not explain
+the trend: all three ran at the full realised width of `4.00`.
+
+**The reusable plan is reported but not interpreted.** Its within-model spread reaches
+`4.82pp` at 12B and `4.08pp` at 27B — as large as the differences that would be compared
+— and realised width also varies by model (`3.27`, `3.54`, `3.64`). Three runs are not
+enough to say anything there.
+
+**Not tested:** a larger model spends more of each decode step moving weights, so the
+overhead grouping removes should be a smaller share of the total. That reading is
+consistent with E2 and E4 but was not measured, and no claim is made from it.
+
+**Limits.** No preregistration, no threshold fixed in advance, and three repeats inside
+one process give a spread rather than a confidence interval. One machine, one
+quantisation, and all three models are Gemma 3 — this run does not separate model size
+from model family. Raw data in `research/raw/X1_*`.
 
 ## E0a — Do the inherited mechanisms hold here?
 
