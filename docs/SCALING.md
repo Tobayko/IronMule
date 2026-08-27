@@ -49,6 +49,10 @@ written down so the next experiment can try to refute it.
 
 ## What to test next
 
+These five are the entries this finding generates directly. The full list of open
+hypotheses — twenty-four of them, plus what has already been measured and rejected —
+is in [`BACKLOG.md`](BACKLOG.md).
+
 Ordered by how much the answer would change what IronMule does. Each carries what
 would count as a negative result, because a plan that can only confirm is not a plan.
 

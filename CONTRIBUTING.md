@@ -7,6 +7,30 @@ package with `python -m pip install ironmule`, and use the checkout installation
 when you need the test suite or source tree. Performance and correctness changes need
 the evidence described in the research ledger.
 
+## Start at the backlog
+
+**[`docs/BACKLOG.md`](docs/BACKLOG.md) is the work list for anything meant to make the
+runtime faster.** Every open hypothesis is there with its mechanism, the evidence for
+and against it, a test, and the result that would close it.
+
+Read **Tier 0** before proposing an optimisation. It lists what has already been
+measured and rejected, in this project and in the one it grew out of — a draft model
+for speculation, compiling decode subgraphs on a growing cache, projection fusion as a
+decode win, a dedicated `M=1` fast path, and more. Each cost real GPU time to learn.
+
+Three conventions keep that file usable, and a pull request that touches it is expected
+to follow them:
+
+1. **Work from it.** If the work is not an entry, add it as one first. An entry needs a
+   mechanism and a kill criterion — what result would close it for good. Without a kill
+   criterion it is a wish, not a hypothesis.
+2. **Delete what is finished.** An answered entry leaves its tier in the same pull
+   request that answers it. The result moves to `research/LEDGER.md` if it shipped, or
+   to Tier 0 as one line with its number and experiment ID if it was rejected. A backlog
+   that keeps its corpses stops describing what is left to do.
+3. **Put back what you learn.** A new idea, a new dead end, a number that surprised you
+   — the same day, even half-formed, even if it is probably wrong.
+
 ## The one rule that matters here
 
 **A performance claim needs a measurement.**
