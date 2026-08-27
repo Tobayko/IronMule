@@ -35,18 +35,19 @@ labelled as one.
 | :-- | :-- | :-- | :-- | :-- |
 | `B1` | Width sweep at 27B | hours | 0 – 5% | low, gated by token identity |
 | `B2` | Group the `lm_head` only | days | 1 – 3% at 4B, less at 27B | medium |
-| `B3` | Unroll k decode steps into one graph | days | 2 – 8% | low |
+| `B3` | Unroll k decode steps into one graph | days | 2 – 8% | medium, this axis broke tokens once |
 | `B4` | Wire the weights against page pressure | hours | 0 – 10% under load | none |
 | `B5` | Fill the group on purpose | hours | 0 – 5% at short answers | none, latency cost |
 | `B6` | Cost ratio of `M=4` vs `M=1` against model size | hours | 0, it is a precondition | none |
 | `B7` | Close the gap in the scaling arithmetic | days | 0, it is understanding | none |
 | `B25` | KV cache reallocation during decode | hours | 0 – 4% | none |
+| `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
 | `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
 | `B9` | Record the decode step once, replay it | weeks | 10 – 30% absolute | low |
 | `B10` | Fewer kernels per step | weeks | 5 – 15% | low |
 | `B11` | Layer-level pipelining across the group | weeks | 5 – 15% | medium |
 | `B12` | Jump the `M=8` valley to width 16 | days | up to 40% throughput | **high** |
-| `B13` | Speculative decoding with a real draft model | weeks | 1.5 – 3x at 27B | low if verified greedily |
+| `B13` | Speculative decoding with a real draft model | weeks | 1.5 – 3x at 27B, **rejected once at 4B** | low if verified greedily |
 | `B14` | A draft head on the target model | months | 2 – 3x | low if verified greedily |
 | `B15` | Exact-but-pruned `lm_head` | weeks | up to 16% at 4B, ~5% at 27B | low if the bound is proved |
 | `B16` | Lower or mixed weight precision | days | 20 – 40% | **high**, quality |
@@ -248,6 +249,42 @@ to answer the first half.
 
 **Kill.** No reallocation happens. Likely, and worth the certainty.
 
+### `B26` — Qwen3.8 27B, to separate model size from model family
+
+**Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
+confounded and the falling gain in [`SCALING.md`](SCALING.md) has two live explanations.
+`mlx-community/Qwen3.8-27B-4bit` is the cleanest available discriminator: the same
+parameter count as the Gemma 3 27B already measured, at **4 bit, group size 64** —
+identical quantisation, so the validity box changes in one dimension instead of three.
+
+The shapes are close enough to compare and different enough to matter:
+
+| | hidden | intermediate | layers | kv heads | vocab |
+| :-- | --: | --: | --: | --: | --: |
+| Gemma 3 27B | 5376 | 21504 | 62 | 16 | 262144 |
+| Qwen3.8 27B | 5120 | 17408 | 64 | **4** | 248320 |
+
+Near-identical depth and width, and **a quarter of the KV heads**. If the gain lands on
+the Gemma line, the trend belongs to size and is worth preregistering. If it does not,
+it belongs to architecture, and the four-fold difference in KV traffic is the first
+place to look.
+
+**Test.** The standard protocol — strict plan, 6 requests, 48 max tokens, three runs —
+with no knob touched, exactly as X1 was run. Escalate the way the Gemma 27B run did: a
+two-request probe first, then half size, then full. Report peak memory separately; this
+checkpoint carries a vision tower the text path never uses, so it is not comparable with
+Gemma's `16.78 GB` without saying so.
+
+**Before starting.** The checkpoint is roughly 16 GB on disk and needs comparable
+headroom in unified memory. The Gemma 3 27B weights were deleted to make room, which
+costs nothing evidential — X1's nine raw 27B result files are in `research/raw/` — but
+it does mean a re-measurement of the Gemma side is a 16 GB download away, not a command
+away.
+
+**Kill.** Nothing. Either answer closes a confound that currently limits every
+conclusion in `SCALING.md`, which is why this sits in Tier 1 despite a guessed payoff of
+zero percent.
+
 ---
 
 ## Tier 2 — structural. Weeks, and they change the shape of the runtime.
@@ -389,6 +426,11 @@ integration. Acceptance is the whole entry.
 on the target's last hidden state proposes the next few tokens. No second set of
 weights to hold, much higher acceptance than an independent draft, same exact greedy
 verification.
+
+**A shortcut worth checking first.** `mlx-community/Qwen3.8-27B-MTP-4bit` ships a
+multi-token-prediction head already trained. If `B26` is run anyway, that variant makes
+this entry testable without training anything — measure acceptance on it before deciding
+whether the idea is worth building.
 
 **Evidence against.** It needs training, which nothing in this project currently does,
 and the head is model-specific — a new head per model, per quantisation. That fights
