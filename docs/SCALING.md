@@ -100,9 +100,12 @@ interesting finding than the first one.
 
 4B, 12B and 27B are all Gemma 3. Size and family are fully confounded.
 
-**Test.** One non-Gemma model near 12B — Qwen 2.5 14B or Llama 3.1 8B, 4-bit — under
-the identical protocol. A single point that lands far off the Gemma line separates
-the two explanations.
+**Test.** `mlx-community/Qwen3.8-27B-4bit`, under the identical protocol. It is the
+same parameter count as the Gemma 3 27B measured above and the same 4-bit group-64
+quantisation, so one dimension of the validity box changes rather than three — and it
+lands at the size where the gain is lowest, which is where the two explanations differ
+most. It carries a quarter of Gemma's KV heads (4 against 16) at near-identical depth,
+so a point far off the Gemma line also points at where to look next. Tracked as `B26`.
 
 **Negative result.** It lands on the line. Then the trend is about size, which is the
 more useful conclusion and the one worth preregistering.
