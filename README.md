@@ -28,6 +28,17 @@ These are measured results, not promises for every Mac, model, workload, or MLX 
 | homogeneous | `+16.4 … +17.2%` | `+27%` | `−16%` | ~800 → ~87 ms |
 | heterogeneous | `+15.6 … +15.8%` | `+27%` | `−15%` | ~800 → ~87 ms |
 | staggered arrivals | `+15.1%` | `+26%` | `−8%` | ~690 → ~88 ms |
+
+### How this scales to larger models
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/model-scaling-dark.svg">
+  <img alt="Throughput gain falls from 19.24% at 4B to 11.81% at 27B, while the service TTFT improvement factor stays near 5x" src="docs/assets/model-scaling-light.svg">
+</picture>
+
+The headline number does **not** carry unchanged to larger models. Measured on the same machine with an unchanged protocol, three runs each, the throughput gain falls from `+19.24%` at 4B to `+11.81%` at 27B — while the service TTFT improvement holds near `5x` and the median latency cost rises from `+48.6%` to `+60.1%`.
+
+All three ran at a realised width of `4.00`, so group filling does not explain it. These runs are **exploratory**: no preregistration was sealed, so they carry less standing than the results above. Method, the full table and what to test next: [`docs/SCALING.md`](docs/SCALING.md).
 | short answers | `+9.2%` | `+54%` | `−9%` | — |
 
 Grouping does not make a request faster. It makes requests finish together: median latency worsens while tail latency and service TTFT improve. The short-answer result is included because the gain falls when groups do not fill. E16 reports zero correctness failures across 40 processes, while its frozen verdict remains `CONFOUNDED_BY_PROCESS_STATE`; both facts matter.
@@ -151,6 +162,7 @@ Community benchmark submissions are welcome. Use the [benchmark issue template](
 | `research/raw/` | Preregistrations and result summaries |
 | [`docs/RUNTIME.md`](docs/RUNTIME.md) | Technical API and runtime documentation |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | Validity domain and known gaps |
+| [`docs/SCALING.md`](docs/SCALING.md) | How the gain scales with model size, and what to test next |
 
 ## Licence and commercial use
 
