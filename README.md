@@ -149,6 +149,8 @@ The runtime deliberately has no adaptive controller, no true tensor batching, no
 
 IronMule was developed inside a private research project and is published here as a curated subset: runtime, examples, tests, and the experiment ledger that backs every number. Local paths, personal identifiers, model weights, and third-party datasets are not included; SQuAD is fetched by a script under its own terms rather than redistributed.
 
+Contributions start at [`docs/BACKLOG.md`](docs/BACKLOG.md), which holds every open hypothesis for making the runtime faster together with the routes already measured and rejected — read the latter before proposing one of them again. [`CONTRIBUTING.md`](CONTRIBUTING.md) describes how work here is expected to run.
+
 Community benchmark submissions are welcome. Use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md) and see [`COMMUNITY_BENCHMARKS.md`](COMMUNITY_BENCHMARKS.md) for the required fields.
 
 ## Layout
@@ -163,6 +165,8 @@ Community benchmark submissions are welcome. Use the [benchmark issue template](
 | [`docs/RUNTIME.md`](docs/RUNTIME.md) | Technical API and runtime documentation |
 | [`docs/LIMITS.md`](docs/LIMITS.md) | Validity domain and known gaps |
 | [`docs/SCALING.md`](docs/SCALING.md) | How the gain scales with model size, and what to test next |
+| [`docs/BACKLOG.md`](docs/BACKLOG.md) | Every open hypothesis for making it faster, and the ones already refuted |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How work here runs: backlog first, evidence required |
 
 ## Licence and commercial use
 
