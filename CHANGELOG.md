@@ -24,6 +24,13 @@ Review follow-ups completed locally; this section is not a release or a performa
   problem and quick start ahead of research detail, links measured claims to their
   evidence, corrects the unpublished PyPI install path, and sharpens discovery
   metadata without extending the measured M1 Max validity domain.
+- **B39d completed:** publishes the exact-scope Gemma 3 12B result: `22.03%`
+  higher token rate and `18.05%` lower complete service wall time versus baseline
+  interactive, with a separate `6.58%` / `6.17%` incremental comparison under the
+  same throughput mode. No profile is activated automatically.
+- **B3-U2 pilot recorded:** 8/8 isolated processes and 240 measured requests passed
+  token/state correctness and safety gates. This is not a speed result; confirmation
+  remains blocked by missing persisted per-child host-state evidence.
 
 ## [0.1.0] — 2026-08-26
 
