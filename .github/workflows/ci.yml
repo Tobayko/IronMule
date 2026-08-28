@@ -1,0 +1,31 @@
+name: IronMule CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build --wheel
+      - name: Install wheel in a clean environment
+        run: |
+          python -m venv .ci-venv
+          .ci-venv/bin/python -m pip install --upgrade pip
+          .ci-venv/bin/python -m pip install dist/*.whl
+          .ci-venv/bin/python -m pip install "pytest>=8" "pytest-xdist>=3"
+      - name: CLI smoke (no model)
+        run: |
+          .ci-venv/bin/python -m ironmule_cli --help
+          .ci-venv/bin/python -m ironmule_cli info
+      - name: Unit tests (no real-model integration)
+        run: .ci-venv/bin/python -m pytest -n 0 -m "not integration"

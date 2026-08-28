@@ -1,7 +1,7 @@
 # Experiment Ledger
 
 Status vocabulary: MEASURED, REPRODUCED, NOT_REPRODUCED, PARTIALLY_REPRODUCED,
-HYPOTHESIS, INFERRED, REJECTED, OPEN.
+HYPOTHESIS, INFERRED, REJECTED, OPEN, COMPATIBILITY_QUALIFIED.
 
 Raw data for every entry lives in `research/raw/<ID>.json`. Negative results are
 never removed.
@@ -22,6 +22,7 @@ never removed.
 | ID | Question | Result | Status |
 | :-- | :-- | :-- | :-- |
 | X1 | Does the `W=4` gain hold as the model grows? | falls monotonically, `19.24% -> 15.42% -> 11.81%` | MEASURED, not preregistered |
+| X2 | Can IronMule preserve Qwen3.5's hybrid cache without changing Gemma? | strict/greedy compatibility qualified; no performance claim | COMPATIBILITY_QUALIFIED |
 
 **Correction.** The first version of this entry, written earlier the same day, reported
 `+15.96%` for 4B against `+16.31%` for 12B from a single run each and concluded the gain
@@ -55,6 +56,48 @@ consistent with E2 and E4 but was not measured, and no claim is made from it.
 one process give a spread rather than a confidence interval. One machine, one
 quantisation, and all three models are Gemma 3 — this run does not separate model size
 from model family. Raw data in `research/raw/X1_*`.
+
+## X2 — Qwen3.5 hybrid-cache compatibility
+
+**Question.** Can IronMule carry Qwen3.8's recurrent `ArraysCache` and attention
+`KVCache` together while retaining Gemma's established all-KV path?
+
+**Mechanism and initial failure.** The adapter classifies only known MLX-LM cache
+types, serialises KV layers as `keys`/`values` and recurrent layers as `arrays`, and
+reconstructs each native cache with fixed shapes. The pre-fix probe failed at
+`_fixed_state_from_standard` with `AttributeError: 'ArraysCache' object has no
+attribute 'keys'`.
+
+**Environment and scope.** Qwen3.8-27B-4bit, exact revision
+`3e6447f082e89cc7f0bc6e5441afd38dfce760ff`; MLX `0.32.0`, mlx-lm `0.31.3`, Apple
+M1 Max, 32 GB. Code was limited to `ironmule/runtime.py`, `ironmule/service.py`,
+focused cache-contract tests, and a local-only Qwen integration gate. Gemma's
+pre/post strict token gate was exact for both requests: q0
+`[96814,6571,17269,531,5571,496,3629,2608,528]`, q1
+`[818,1595,147121,18710,659,11628,9796,18677,580]`.
+
+**Qwen correctness.** The corrected one-shot reference tokens were q0
+`[1596,1144,4087,1156,25,328,657,799,9144]` and q1
+`[1596,1144,4087,1156,25,328,3710,1503,54102]`. All 64 layers followed the
+`AAAK` pattern (`ArraysCache`, `ArraysCache`, `ArraysCache`, `KVCache`) repeated
+16 times. Recurrent leaves retained their shapes across two decode steps and
+hybrid KV hashes were executable and distinct at each step.
+
+The staged service gates at 2 and 3 requests × 8 maximum tokens, followed by the
+final 6 requests × 48 maximum-token workload, were token-identical with
+`fallbacks=0` and `correctness_errors=0`; the
+separate tiny compiled gate was also exact. Full-run peak memory was `17.71 GB`
+for the baseline and `30.76 GB` for the compiled tiny gate. The compiled peak is a
+warning, not a performance result.
+
+**Rejected harness.** The first `generate_step` harness split the prompt before its
+last token, so it was not a one-shot-prefill reference. It was discarded as a test
+design error and yields no product finding.
+
+**Status.** COMPATIBILITY_QUALIFIED. X2 makes no performance statement and does not
+generalise beyond the stated revision, environment, strict/greedy path and tested
+workloads. The B26 family/performance study remains open and requires its planned
+three-repeat measurement.
 
 ## E0a — Do the inherited mechanisms hold here?
 
@@ -1276,3 +1319,516 @@ With three conditions attached, all measured rather than assumed:
 
 **Status** MEASURED. **Raw** `E16_preregistration.md`, `E16_results_pilot.json`,
 `E16_results_main.json`, `E16_summary.json`.
+
+### X3 — B28 native Qwen true-batch candidate rejected
+
+`qwen_native_true_batch_v1` was rejected at the correctness gate. Widths 2, 3 and
+4 preserved visible tokens and stop reasons exactly with zero fallbacks, but the
+final hybrid `kv_hash` differed from the sequential reference. Swap delta was
+`0 B`; no token-rate or performance result is claimed. The candidate is not routed.
+Raw: `B28_true_batch_correctness_failure.json`.
+
+### X4 — B29c native Qwen batch-1 pilot below target
+
+`qwen_native_b1_v1` passed correctness, final-state and 16-token continuation
+checks at widths 2, 3 and 4 with zero fallbacks and zero swap delta. The candidate
+median was `16.0722` tokens/s versus Interactive `15.6740` (`1.02541x`) and versus
+Throughput `16.0687` (`1.000219x`), below the preregistered `1.10` gate. No route
+was enabled. This is a throughput result, not a correctness failure.
+
+### B35 — Exploratory portability screen for the non-mutating core profile
+
+**Preregistration.** [`B35_preregistration.md`](raw/B35_preregistration.md) froze
+an exploratory screen of `BASELINE=Knobs()` against
+`Knobs(compiled_fixed_cache=True, head_skip_prefill=True)` with the repository
+prompt, `max_tokens=32`, two warmups, five repeats, balanced AB/BA, one model
+load per fresh OS process, exact token gates, peak-memory `+10%`, swap `256 MiB`,
+and no-crash gates. [`B35a_preregistration.md`](raw/B35a_preregistration.md)
+added only the clean-environment correction after the first 1B process overlapped
+broad filesystem searches; no arms, thresholds, or workload changed.
+
+**Scope.** Local Apple M1 Max, 32 GB unified memory, AC-power Darwin host,
+Python `3.12.13`, MLX `0.32.0`, mlx-lm `0.31.3`, NumPy `2.5.2`, greedy batch-1
+generation, fixed 322-token chat prompt. Model revisions were Gemma 3
+1B `2d44e83dc9e80843d22fb941d3d699a0b1351aa6`, 4B `93724907d4ed1745d2fe50baadf3b0b01a65abf2`,
+and 12B `86cc6a8dedbc456dd0e4af01a9d09f396f77e558`; configuration/tokenizer
+digests are recorded in each raw file.
+
+**Invalid first attempt.** The first 1B AB worker completed but ran while broad
+`find` searches were active. It is retained as
+[`B35_gemma1b_AB_20260828.json`](raw/B35_gemma1b_AB_20260828.json), marked
+`valid_for_metrics: false`, and contributes no performance number.
+
+**Clean result.** Each model completed two fresh processes (AB and BA), with
+five raw samples per arm. All six processes passed token identity and
+determinism; max swap delta was `0 B` for every model (the 12B BA baseline
+window moved `-16 MiB`, while the candidate moved `0 B`), and candidate/baseline
+peak-memory ratios were 1B `0.8794038`, 4B `0.9518492`, and 12B `0.9853990`.
+The aggregate below is the arithmetic median of the two process-level median
+ratios, with `core / baseline` (lower is faster):
+
+| Model | total ratio | prefill ratio | decode ratio | AB total | BA total |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Gemma 1B | `0.8495684` | `0.7562452` | `0.8971580` | `0.8542057` | `0.8449311` |
+| Gemma 4B | `0.8702504` | `0.8356965` | `0.9444767` | `0.8721220` | `0.8683789` |
+| Gemma 12B | `0.9840062` | `0.9638611` | `1.0149662` | `0.9040384` | `1.0639741` |
+
+The 1B output-token digest is
+`11ac58e1ae29408d9762daee4df4749281ce24459f218e78b137dd31ae5ce0f7`; the
+4B and 12B output-token digest is
+`d9818d21a6a6bef76c4091ef56ba158dfbc553a0f6c90e3d06543034be2a100f`. The
+prompt-token digest is
+`80ecf700cf0dfdc82616c73f1b6a5fccc137b68e9bb9586ca376c3f2adb260ad`.
+
+**Decision and limit.** **Exploratory candidate qualifies under gate; 12B result
+order-sensitive/inconclusive for robust performance.** The 1B/4B results are
+stable in this screen. Although the 12B aggregate is below the preregistered
+`0.995` threshold, AB is clearly faster and BA clearly slower; the same-process
+arm order may interact with thermal, allocator/cache, or compiled state. No
+shipping, routing, profile activation, or cross-model/general performance claim
+is made. Follow-up is tracked as B36: remeasure with arm-isolated fresh processes.
+
+**Raw evidence.** [`B35_gemma1b_AB_clean_20260828.json`](raw/B35_gemma1b_AB_clean_20260828.json),
+[`B35_gemma1b_BA_clean_20260828.json`](raw/B35_gemma1b_BA_clean_20260828.json),
+[`B35_gemma4b_AB_clean_20260828.json`](raw/B35_gemma4b_AB_clean_20260828.json),
+[`B35_gemma4b_BA_clean_20260828.json`](raw/B35_gemma4b_BA_clean_20260828.json),
+[`B35_gemma12b_AB_clean_20260828.json`](raw/B35_gemma12b_AB_clean_20260828.json),
+and [`B35_gemma12b_BA_clean_20260828.json`](raw/B35_gemma12b_BA_clean_20260828.json).
+
+**Review limitations (2026-08-28).** The independent review is recorded in
+[`B35_review.md`](raw/B35_review.md). The worker's per-arm swap gate starts only
+after model load and therefore does not cover load-time swap; external post-run
+swap checks found no new issue but do not repair this raw-gate gap. The worker
+also sets `hard_gates.no_crash` to constant `true`: external process-list and
+crashreport checks found no new Python crashreports after the clean runs, but
+those checks are not encoded in the raw JSON gate. Because both arms shared one
+Engine/model per process, allocator, compiled-cache and thermal state remain
+coupled to AB/BA order; this is visible in 12B total `0.9040384` (AB) versus
+`1.0639741` (BA). Finally, each raw file stores only the first repeat's token
+list, with no stop reason or per-repeat token lists, so the determinism boolean
+is less auditable than complete repeat-level token/stop records. The permitted
+claim remains: **exploratory candidate qualifies under gate for 1B/4B; 12B
+result order-sensitive/inconclusive for robust performance**; no shipping or
+general claim is made.
+
+## B37 — Phase/roofline diagnostic helper
+
+**Result (2026-08-28).** Added the pure `phase_roofline_diagnostic` calculation
+and CPU-only schema tests. It preserves prefill and decode values separately,
+uses explicit active-weight, KV and extra traffic inputs, and computes only a
+per-run diagnostic efficiency from supplied effective bandwidth. Missing inputs
+are `inconclusive`; invalid, non-finite, negative or zero-denominator inputs are
+`invalid`; zero-step decode is `not_applicable`. Efficiency above one is retained
+and marked as an input-consistency warning.
+
+**Decision and limit.** This is instrumentation, not a runtime optimization or
+performance result. It changes no correctness, swap, crash, profile or B35/B36
+gate and emits no compute-/bandwidth-bound claim. No MLX, Metal, ANE, model or
+benchmark run was performed for B37. A future producer must provide explicit
+phase units and byte semantics before the diagnostic can be populated with real
+measurements.
+
+## 2026-08-28 — B39b Benchmark-Preflight blockiert
+
+Der angeforderte B39b-Benchmark-Preflight maß `vm.swapusage` mit total
+`8192.00M`, used `7143.12M` und free `1048.88M`; `memory_pressure` meldete
+`75%` freien Speicher, und es lief kein Gemma-Prozess. Der absolute B39b-
+Pre-Spawn-Swap-Gate von `<=256 MiB` schlug deshalb fail-closed fehl. Es wurde
+kein Modell, Child oder Benchmark gestartet und keine Optimierung geändert.
+
+Die serielle CPU-Harness-Nachprüfung bestand mit `46` Tests in `7.42 s`,
+Exit `0`; Crashreport-Zähler User/System blieben vor und nach dem Lauf bei
+`64/61` (Delta `0`), und `git diff --check` war grün. Die eingefrorenen Hashes
+blieben unverändert. Ein weiterer B39b-Versuch ist erst nach Reboot und einem
+sauberen, verifizierten Systemzustand zulässig; der aktuelle Swap ist ein
+Safety-Blocker und kein Runtime-Speedbefund.
+
+## B39b Pilot — diagnostisch, INCONCLUSIVE
+
+Nach einem sauberen Preflight (System-Swap `0 B`, `93%` freier Speicher, kein
+Gemma-Prozess) liefen die vier frischen seriellen Children des Ein-Block-
+Piloten in Reihenfolge A/B/D/C. Alle vier Returncodes waren `0`; Korrektheits-,
+Environment-, Workload-, Crash- und Canonical-Gates bestanden. Je Arm liefen
+zwei Warmups und ein Mess-Repeat. Alle sechs Requests je Arm erzeugten `48`
+physische, logische und sichtbare Tokens mit Stop-Grund `length`; der
+Canonical-Output-Digest war über alle Arme identisch. Swap war `0 B`, relevante
+Crashreports und Residualprozesse waren nicht vorhanden.
+
+Der Pilot bleibt dennoch `INCONCLUSIVE`: Das Block-Peak-Gate scheiterte allein
+an RSS C/A `3.6523564` (D/B `1.0001511`). MLX-Peak-Ratios waren C/A
+`1.0064033` und D/B `1.0257863`; absolute MLX-Peaks A/B/D/C:
+`7,796,516,616`/`7,801,367,483`/`8,002,535,534`/`7,846,439,900 B`.
+RSS-Peaks A/B/D/C:
+`2,166,931,456`/`7,916,470,272`/`7,917,666,304`/`7,914,405,888 B`.
+
+Ein-Repeat-Diagnostik (kein Speedclaim): Outer-Wall ms / physische=sichtbare
+Tokens/s waren A `10308.915125`/`27.936984300`, B
+`9072.028833`/`31.745930850`, C `9805.518458`/`29.371215937`, D
+`8524.246458`/`33.785977613`. Wall-Ratios B/A, C/A, D/A, D/B, D/C:
+`0.880017802`, `0.951168803`, `0.826881040`, `0.939618537`, `0.869331540`;
+Rate-Ratios: `1.136340648`, `1.051338098`, `1.209363804`, `1.064261677`,
+`1.150309122`. Interaktion D*A/(B*C): `0.987856765`.
+
+Die RSS-Form A `2.17 -> 1.26 GB` während der Checkpoints gegenüber B/D/C nahe
+`7.9 GB`, bei identischem MLX-Active-Memory nahe `7.188 GB`, macht eine
+Prozessreihenfolge-/Page-Residency-Konfundierung plausibel. Eine Attribution
+auf einen Arm ist verboten. Raw:
+[`B39b_pilot_gemma12b_combined_20260828.json`](raw/B39b_pilot_gemma12b_combined_20260828.json).
+Finalstatus `INCONCLUSIVE`, `activation_allowed=false`; kein Main-Lauf, kein
+Retry, kein Routing/keine Aktivierung. B39c mit zwei neuen Crossover-Blöcken
+bleibt nach sauberem Zustand ausstehend; diese Pilotdaten werden nicht
+wiederverwendet oder gepoolt.
+
+## B39/B39a/B39b — Safety-only pilot chronology
+
+**B39 direct-script import failure.** The first pilot invocation used the direct
+script path and failed before parent initialization with return code `1`:
+`ModuleNotFoundError: No module named 'research'` at
+`research/b39_combined_levers.py:22`. No model or child ran, no JSON or partial
+was created, crash reports remained `30 -> 30`, and no residual process
+remained. Raw: [`B39_pilot_import_failure_20260828.json`](raw/B39_pilot_import_failure_20260828.json).
+
+**B39a module pilot.** The corrected module invocation attempted only arm A.
+The child returned `3` at `after_model_load` with
+`RuntimeError: B36 checkpoint gate failed: after_model_load`; no warmups or
+timed repeats ran, so no timing or performance evidence exists. Parent system
+Swap moved from `1,704,921,661 B` to `8,568,438,784 B`, delta
+`6,863,517,123 B` (approximately `6.39 GiB`), strongly suggesting a
+resource/swap failure. The exact child subtype (swap, memory, or instrumentation)
+is unobservable because child events were discarded. Crash delta was `0` and
+there was no residual model process. The parent then raised
+`StatisticsError: no median for empty data`, wrote no final JSON, and retained
+the partial sidecar. Raw: [`B39a_pilot_failure_20260828.json`](raw/B39a_pilot_failure_20260828.json).
+No retry and no B39 main run occurred; this is not a measurement.
+
+**B39b.** B39b is a safety/evidence-only correction with SHA-256
+`403eb1b098d49bff891a52ac16b974857b4fad3e0ed2984f554436acf0e9e7cb` and no
+hardware authorization. It preserves parent/child checkpoint events on failure,
+publishes structured `INCONCLUSIVE` for empty summaries while retaining partial
+evidence, and adds an absolute pre-spawn Swap ceiling of `268,435,456 B`
+(`256 MiB`) alongside the unchanged process-start-to-end delta gate. B39 arms,
+workload, statistics, thresholds, and no-activation rules are unchanged.
+Full safety review: [`B39_review.md`](raw/B39_review.md).
+
+## B39c — Memory-order RSS diagnostic (design only)
+
+The B39b pilot's relative RSS failure is not an arm-memory result. In its sole
+`A-B-D-C` block, A was position 0 and had RSS `2166931456 B` after load,
+falling to `1262895104 B` after warmup; B, D and C were approximately `7.9e9 B`
+at the same checkpoints. MLX active memory was `7188274696 B` after load for
+all four arms. The block therefore recorded RSS `C/A = 3.652356361381834` but
+MLX `C/A = 1.0064032806519705`; the relative peak gate failed and the result
+is `INCONCLUSIVE`.
+
+B39c is a separately sealed, diagnostic-only protocol. It executes two new
+fresh-process blocks, `A-B-D-C` and the reverse `C-D-B-A`, with one load per
+arm, two warmups and one measured repeat. It retains absolute 12-GiB
+RSS/MLX, 256-MiB Swap, correctness, identity, crash and post-state gates, but
+does not abort after a relative RSS failure so the reversed order can be
+observed. It never summarises or qualifies performance, never activates a
+route, and never reuses B39b timings. The prospective classifications are
+`RSS_ORDER_PAGE_RESIDENCY_CONFOUNDED`, `CORE_RSS_SIGNAL_REPRODUCED`, or
+`INCONCLUSIVE`; RSS remains page-residency evidence, not an allocator claim.
+
+## B39d — Performance main design
+
+B39d is a separately sealed performance-main continuation after B39c. It uses
+the eight existing balanced orders and 32 fresh one-arm serial processes,
+with one load, two warmups and five measured repeats. No conditioner, purge,
+cache mutation or pooling of B39b/B39c evidence is permitted. Absolute
+RSS/MLX/Swap/crash/correctness/identity gates remain hard; only per-block MLX
+relative `C/A` and `D/B` ratios retain the 1.10 hard gate.
+
+RSS is evaluated prospectively after all blocks using the maximum non-start RSS
+per child, two observations per arm/position, position medians, geometric arm
+means, global `C/A`/`D/B`, position residuals and matched epoch ratios. Every
+RSS comparator must remain in `[1/1.10, 1.10]`; missing or failing RSS evidence
+is `INCONCLUSIVE`, never `REJECTED`. The B39 co-primary D/A/D/B wall/rate
+medians and Bonferroni 97.5% CIs remain unchanged. Complete resource-clean
+performance misses are `REJECTED`; final-H2, RSS, resource, identity, drift or
+incomplete evidence is `INCONCLUSIVE`. No activation or automatic routing is
+allowed.
+
+## B40 — Core ThroughputMode width sweep (implementation sealed)
+
+B40 holds the B39d core profile fixed and tests only `max_width` 2, 3 and 4
+through six mirrored balanced blocks and 18 fresh serial children. The exact
+Gemma/X1 workload, one-load/two-warmup/five-repeat contract, child identity and
+absolute Swap/RSS/MLX/crash/correctness gates are new sealed protocol fields;
+no B39d timing or data is pooled.
+
+The result is `QUALIFIED` only if both candidate comparisons W2/W4 and W3/W4
+pass their preregistered wall/rate criteria and all safety gates pass; the
+lower wall median is selected. `RETAIN_WIDTH4` requires two robust practical
+candidate misses. RSS is evaluated only after all six blocks using two
+arm/position observations, geometric global ratios, position residuals and
+mirrored epoch pairs; RSS or resource failure is `INCONCLUSIVE`, never a
+performance rejection. The historical X1 `+15.42%` rate is retained only as
+descriptive ratio `1.1542` (equivalent wall ratio `0.866400970369`), not a
+threshold or gate.
+
+**Separate xdist incident.** An accidental non-`-n0` test invocation followed
+`pytest.ini`'s `xdist -n auto` path and produced `23` Python `SIGABRT` reports
+between `11:38:38` and `11:38:49` (parent PID `80772`) through MLX/`libmlx`.
+Representative reports were `Python-2026-08-28-113838.ips` and
+`Python-2026-08-28-113849.ips`. The later serial run recorded `46` passing CPU
+tests, crash count `30 -> 30`, and green `git diff --check`. This incident is
+not B39 evidence. No UI, profile activation, routing, or general performance
+claim follows.
+
+## B36 — Arm-isolated Gemma 3 12B core-profile portability
+
+**Protocol.** B36 used the exact local Gemma 3 12B snapshot at revision
+86cc6a8dedbc456dd0e4af01a9d09f396f77e558, the fixed B35 322-token prompt,
+max_tokens 32, greedy generation, baseline Knobs() and candidate
+compiled_fixed_cache=True plus head_skip_prefill=True. Sixteen serial pairs
+(eight AB/eight BA) ran one arm per fresh process; each child loaded once,
+performed two warmups and five repeats. The parent used no retries and stored
+the atomic partial sidecar. B36a is the separately sealed clarification for
+the full manifest hash/prefault scope.
+
+**Environment and gates.** The host was Apple M1 Max, 32 GB unified memory,
+32 GPU cores, Python 3.12.13, MLX 0.32.0 and mlx-lm 0.31.3 on AC power.
+Foundation reported low-power 0 and thermalState rawValue 0; free-memory
+preflight values were 74%, 75% and 66%. Wired-limit and cache-limit mutations
+were not applied. Every child recorded process-start through process-end
+swap/RSS/MLX checkpoints, full manifest hashes before and after load, all
+warmup/repeat token and stop records, and immediate/delayed external crash
+snapshots. All 32 children passed correctness, identity, resource, timeout,
+post-evidence and no-crash gates. Maximum swap delta was 0 B. Maximum MLX
+peak was 7,946,637,412 B baseline and 7,830,608,598 B candidate; maximum RSS
+was 3,692,576,768 B baseline and 4,526,096,384 B candidate. Peak ratio was
+0.985399004889189.
+
+**Results.** Independent ratio-of-five-repeat-medians audit, candidate /
+baseline:
+
+| metric | median | 95% CI |
+| --- | ---: | ---: |
+| total | 0.927147428180255 | [0.9197363534291831; 0.9303748490885659] |
+| prefill | 0.9183106745417602 | [0.9081866453423364; 0.9218801379522791] |
+| decode | 0.9540158794083631 | [0.9419388082376179; 0.9577180135679649] |
+
+The implied reductions are 7.29% total, 8.17% prefill and 4.60% decode.
+One pair has a decode ratio above 1 and remains a diagnostic observation.
+AB was 0.9250279042521969 [0.8883771936776205; 0.9283929297931295];
+BA was 0.9294847335372622 [0.925744092622901; 0.9404202103921636].
+The absolute order interaction was 0.0044568292850653.
+
+**Identity and decision.** B36 and B36a SHA-256 values are
+7bf3997b19dc55d3b75be977c0da8d42d6ab554232ce2bf40617429c478897a4 and
+ee5b3e9b250d75eb69ed6e38f9661f656da743098bef318966dc055099c9e492.
+The model manifest digest is
+3de99933cacc693c88d807c4f5e4dade6d1fe719cacc570841e222940f0a9eb2.
+The code digest is
+5566ee87f1656d9dcaceb05edf6a155ee2a35dd784c81a46fbb6dab30e499ddc, with
+the current 61-file fingerprint and commit
+f3478e07d58e3bf054b3ae0503925dbb15f7edf1 matching exactly. The earlier
+apparent code mismatch was an audit-script error caused by stripping the
+commit newline.
+
+**Decision and scope.** B36 is QUALIFIED under its preregistered rules, but
+activation_allowed remains false. No profile activation, routing, or general
+speed claim follows. The candidate's higher RSS despite lower MLX peak is
+recorded without a hidden memory interpretation. Full raw evidence is in
+research/raw/B36_gemma12b_results_20260828.json; the independent audit is
+research/raw/B36_review.md.
+
+## B37a — Phase/roofline diagnostic review hardening
+
+**Result (2026-08-28).** Hardened B37 against huge integer conversion, subnormal
+duration underflow, traffic-sum overflow, ideal-rate/efficiency overflow, and
+absurd decode-step counts. Invalid derived values are rejected before JSON output.
+Bandwidth provenance is now structured and required: `measured_effective` may
+produce per-run ideal rate and efficiency; `nominal_peak` remains explicitly
+inconclusive for those derived claims.
+
+**Decision and limit.** CPU-only validation passed with 37 tests. Zero-step
+decode and its roofline are `not_applicable`, while the overall diagnostic
+remains `inconclusive`; the helper does not infer an EOS reason. No model, MLX,
+Metal, ANE, profile, gate or performance run was performed.
+
+## B39c — Memory-Order Diagnostic Ergebnis
+
+Nach sauberem Preflight (System-Swap `0 B`, kein Residual-Modellprozess) liefen
+die zwei neuen seriellen Blöcke `ABDC` und `CDBA` mit allen acht Children und
+Returncode `0`. Correctness-, Identity-, Workload-, Crash-, Post-State-,
+absolute Memory- und Swap-Gates bestanden; Swap war `0 B`, H2 final war grün,
+und es gab keine relevanten Crashreports oder Residualprozesse.
+
+MLX-C/A-Peak-Ratios: Block 0 `1.0064022925`, Block 1 `1.0064018108`; MLX-D/B:
+`1.0257847094`/`1.0257859921`. RSS-C/A: `0.9999502092`/`1.0007563638`;
+RSS-D/B: `0.9997158295`/`0.9998923418`. Arm-Positions-Peak-Ratios:
+`A@0/C@3 = 1.0000497933`, `C@0/A@3 = 1.0007563638`. Absolute MLX-Peaks
+lagen ungefähr bei `7.80–8.00 GB`, alle RSS-Peaks bei ungefähr `7.897–7.914 GB`.
+
+Classification und Top-Status sind `INCONCLUSIVE`: Weder der preregistrierte
+RSS-Orderflip noch die reproduzierte Core-RSS-Bedingung trat ein. Der
+historische B39b-Wert RSS C/A `3.6524` reproduzierte sich ausdrücklich nicht;
+Block 0 lag bei `0.9999502`, alle RSS-Werte bei ungefähr `7.897–7.914 GB`.
+Keine Arm-Attribution. B39c setzt `valid_for_performance=false` und
+`activation_allowed=false`, summarisiert keine Timings und löst keinen B39-
+Main-Lauf, Retry, Routing oder Aktivierung aus. B39d mit positionsbalanciertem
+Performance-Hauptlauf und zwei neuen Crossover-Blöcken bleibt nach sauberem
+Preflight ausstehend; B39c wird nicht wiederverwendet oder gepoolt.
+
+## B39d — Performance Main Ergebnis (2026-08-28)
+
+Der freigegebene B39d-Hauptlauf wurde mit exakt acht frozen Orders
+`ABDC/BCAD/CDBA/DACB/DACB/CDBA/BCAD/ABDC` und 32 frischen, strikt seriellen
+OS-Children abgeschlossen. Jeder Child lud Gemma 3 12B einmal, führte zwei
+Warmups und fünf Mess-Repeats auf dem X1-strict-Workload mit sechs Requests und
+`max_tokens=48` aus. Ergebnis und Rohsamples stehen in
+[`B39d_gemma12b_combined_20260828.json`](raw/B39d_gemma12b_combined_20260828.json).
+
+**Gates und Identität.** Top- und Summary-Status sind `QUALIFIED`,
+`valid_for_performance=true`, `activation_allowed=false`; acht Blöcke und 32
+Children sind vollständig, alle Returncodes `0`, Correctness/Identity/Workload/
+Environment/Final-H2-Gates grün, keine Fallbacks oder Crashes, Swap-Deltas
+überall `0 B`, und kein relevanter neuer Crashreport oder Residualprozess. Alle
+192 gemessenen Requests lieferten exakt 48 physische/logische/sichtbare Tokens
+mit Stop-Grund `length`; es gab genau einen Canonical-Token-Digest. Maximale
+Peaks: MLX `8,002,539,246 B`, RSS `7,916,519,424 B`. RSS-Status ist `PASS`,
+global `C/A=1.000449911553665`, `D/B=1.0002091397755728`; final H2 ist `ok=true`.
+Python/MLX/mlx-lm waren `3.12.13/0.32.0/0.31.3` auf Apple M1 Max, 32 GiB,
+macOS `26.5.2`. Model-Binding-Digest:
+`e08dd84591588722a11c43d9ff7ee4b3f50d01f15371c8a4429c4f9857d37fb6`;
+Code-Digest `3adaa1bf467b0efd9fa7c06b3da628de5bbadcd3d8d1e3250c462c3c9ff49ce4`;
+B39d-Präregistrierungs-SHA `f6fcfccc14afb0535cd0d360d0b956cb6e2bb86873e6e5cfdc827784a7d0bd49`.
+
+**Absolute Endpunkte.** Wall ist `outer_wall_ns`, Rate ist physisch und sichtbar
+identisch, jeweils Median und 97.5%-Bootstrap-CI:
+
+| arm | wall median [CI] ns | rate median [CI] tok/s |
+| --- | ---: | ---: |
+| A | `11,238,261,187.5 [11,160,058,417; 11,407,090,125]` | `25.6268096092 [25.2474554723; 25.8063165298]` |
+| B | `9,804,256,146 [9,746,705,041; 9,953,182,750]` | `29.3751295028 [28.9354679035; 29.5484472741]` |
+| C | `10,647,817,688 [10,494,913,166; 10,722,052,334]` | `27.0483488952 [26.8605292185; 27.4418659254]` |
+| D | `9,206,717,688 [9,178,958,958; 9,380,620,959]` | `31.2815138465 [30.7015922782; 31.3761071727]` |
+
+**Ratios.** Lower wall is faster; higher rate is faster. Values are median and
+97.5%-CI, with the same rate ratio for physical and visible tokens:
+
+| ratio | wall median [97.5% CI] | rate median [97.5% CI] |
+| --- | ---: | ---: |
+| B/A | `0.8758819112 [0.8513996079; 0.8899192300]` | `1.1417105861 [1.1236974843; 1.1745365992]` |
+| C/A | `0.9430849603 [0.9376590283; 0.9482680892]` | `1.0603530881 [1.0545540985; 1.0664857585]` |
+| D/A | `0.8194867050 [0.8067160263; 0.8394204565]` | `1.2202787058 [1.1912981061; 1.2395935713]` |
+| D/B | `0.9383079941 [0.9222134455; 0.9588925258]` | `1.0657544693 [1.0428697410; 1.0843476690]` |
+| D/C | `0.8694078240 [0.8560822753; 0.8852142827]` | `1.1502701579 [1.1296699788; 1.1681120248]` |
+
+Der Headline-Unterschied ist wichtig: D reduziert Wall-Zeit gegenüber A/B um
+`18.05%`/`6.17%`, während die entsprechenden Raten um `22.03%`/`6.58%`
+steigen. Die Interaktion `D*A/(B*C)` hat Median `1.0027137194`, 97.5%-CI
+`[0.9619774991; 1.0185403335]`. Epoch-/Order-Drift ist nicht material; die
+kleinen Stichproben bleiben als Unsicherheit sichtbar (`order:D/B` und
+`epoch:contrasts:D/B` uncertain), ändern aber die B39d-Klassifikation nicht.
+
+**X1-Abgrenzung und Entscheidung.** Die historische X1-Angabe `+15.42%` ist
+eine Rate-Ratio `1.1542` beziehungsweise äquivalente Wall-Ratio `0.86640097`.
+Die Raw-Flags `x1 .8458` wurden als `1-.1542` geführt und sind semantisch
+ungültige deskriptive Flags; sie waren nicht gate-relevant. B39d übertrifft X1
+korrekt sowohl auf der Rate-Skala als auch auf der äquivalenten Wall-Skala.
+Das ist ausschließlich die präregistrierte B39d-12B-Evidenz: keine automatische
+Aktivierung, kein Routing und keine Generalisierung. B39 ist abgeschlossen;
+`B40` (Gemma-12B-`max_width`-Sweep 2/3/4) bleibt als nächster, noch nicht
+gestarteter Test offen.
+
+## B40 — Core ThroughputMode Width-Sweep Ergebnis (2026-08-28)
+
+Der B40-Lauf wurde mit sechs mirrored Orders
+`W2/W3/W4`, `W3/W4/W2`, `W4/W2/W3`, `W4/W2/W3`, `W3/W4/W2` und
+`W2/W3/W4` abgeschlossen. Alle 18 Children waren frische serielle
+Ein-Prozess-Läufe mit einem Model-Load, zwei Warmups und fünf Mess-Repeats auf
+dem unveränderten Gemma-12B-X1-Workload. Rohdaten:
+[`B40_gemma12b_width_sweep_20260828.json`](raw/B40_gemma12b_width_sweep_20260828.json);
+das Partial blieb wegen des inconclusive Ergebnisses erhalten.
+
+**Safety und Korrektheit.** Alle 18 Children lieferten Returncode `0`,
+vollständige Evidence, korrekte Canonical-/Workload-/Environment-Identität und
+`no_crash=true`. Jede Messanfrage erzeugte 48 Tokens mit Stop-Grund `length`;
+kein Fallback oder Tokenfehler trat auf. Swap-Delta war überall `0 B`, der
+maximale MLX-Peak `8,002,539,246 B`, der maximale RSS-Peak `7,921,287,168 B`;
+finales H2 war `ok=true`. RSS bestand nach der positionsbalancierten Auswertung
+(`PASS`): globale Ratios W2/W4 `0.9994507845985368` und W3/W4
+`0.9995676763827266`. Es gab keine relevanten neuen Crashreports oder
+Residualprozesse. Model-Digest war
+`e08dd84591588722a11c43d9ff7ee4b3f50d01f15371c8a4429c4f9857d37fb6`, der
+B40-Präreg-SHA `23d0c59d9903875a68131d1f7ac6dc902f671a48b30fa25238ff7dfda34ca0a6`;
+der aktuelle Code-Digest ist
+`473980a41d7f5d46f0bc1e76452edcc89238a31edc2bb1943313c243b3a27120`.
+
+Die Realized-Width-Gates waren exakt: W2 mean/max `2/2`, W3 `3/3`, W4
+`3.971830985915493/4`. Kandidat/W4-Ratios (n=6, 10.000 Bootstrap-Resamples,
+97.5%-CI; niedrigere Wall bzw. höhere Rate wäre besser) waren:
+
+| Vergleich | Wall median [97.5% CI] | physisch/sichtbar Rate median [97.5% CI] |
+| --- | ---: | ---: |
+| W2/W4 | `1.1033961300051331 [1.0849631490673945; 1.1335189058508615]` | `0.9062977565937032 [0.8823856803711523; 0.9218292054497783]` |
+| W3/W4 | `1.040445749841422 [1.022514206934345; 1.0723726405010425]` | `0.9611730621034691 [0.9325739636675945; 0.9779881471327478]` |
+
+Beide Width-Kandidaten waren in allen sechs Blockrichtungen langsamer als W4:
+die Wall-Ratios lagen für W2 stets über 1 und für W3 stets über 1; die
+korrespondierenden Rate-Ratios lagen stets unter 1. Das bleibt wegen des
+materialen Drift-Gates eine deskriptive Richtung, keine ausgewählte
+Performancebehauptung.
+
+**Drift und Entscheidung.** Die Position-Residuals waren klein (W2
+`[1.0038336708, 0.9883530874, 1.0131131257]`, W3
+`[1.0097000444, 0.9991497382, 0.9966448181]`, W4
+`[1.0078396313, 0.9986091166, 1.0]`). Material waren jedoch die
+pre-registered Epoch-Ratios: W3 `0->5 = 1.0313798935311982`, W4
+`1->4 = 0.9721113375197978` und W4 `2->3 = 1.0226246692862697`.
+Damit sind beide Kandidaten robuste praktische Misses
+(`robust_miss W2/W3=true`), aber `status=INCONCLUSIVE`,
+`classification=INCONCLUSIVE`, `selected_width=null` und
+`valid_for_performance=false`. `activation_allowed=false` bleibt bindend.
+W4 bleibt daher unverändert die operative Baseline; aus B40 wird keine Breite
+ausgewählt und kein Timing herausgepickt. Kein Retry und kein Pooling mit
+B39d/B40-Daten. Der nächste architektonische Pfad ist der bereits existierende
+Backlog-Eintrag B3 und benötigt eine eigene Freigabe; es wurde kein neuer
+Wunsch-Eintrag erfunden.
+
+**Public evidence boundary.** Complete local B39d/B40 raw JSON and retained
+partial sidecars are intentionally excluded from the public repository because
+they contain local process/system evidence. The path-free redacted B39d/B40
+public summaries are publication artifacts only and do not replace the local
+immutable raw evidence.
+
+## 2026-08-28 — Pre-push Sandbox-Import-Incident
+
+Ein erster versehentlicher Sandbox-Collection-Versuch endete mit Exit `134`
+und erzeugte beim MLX-Import den Crashreport
+`Python-2026-08-28-174347.ips` (`SIGABRT`). Der Raw-Report-Zähler änderte sich
+netto von `60` auf `59`, weil gleichzeitig eine Systembereinigung lief; ein
+Zählervergleich allein hätte den neuen Report daher verdeckt. Der korrekte
+serielle Non-Integration-Lauf außerhalb der Sandbox bestand mit `284 passed`,
+`14 deselected` in `20.58 s` und erzeugte keinen weiteren Report. Der
+Xcode-First-Launch-Check endete mit Returncode `0`; `git diff --check` war grün.
+
+Die Regel ist damit verstärkt: Jeder pytest-Lauf, der MLX importiert, läuft
+außerhalb der Sandbox und strikt mit `-n0`; parallele xdist-/Sandbox-MLX-Imports
+sind kein zulässiger Verifikationspfad. Keine Modell- oder Produktentscheidung
+folgt aus dem Sandbox-Vorfall.
+
+## B3-U2 — Fixed-shape two-step correctness pilot (2026-08-28)
+
+B3-U2 tests whether two dependent greedy decode steps can live in one fixed-shape
+compiled graph without changing output or cache state. It remains research-only and
+default-off.
+
+The pilot completed four balanced AB/BA pairs: eight fresh serial processes, two
+warmups and five measured repeats per process, six requests per repeat and 48 tokens
+per request. All eight children returned code `0`. Across 336 request-runs (96 warmup,
+240 measured), every request stopped at `length`; canonical token output and all 42
+comparable final-state hashes per pair matched. Candidate cache evidence contained
+only the two registered keys, exactly two prime misses, zero measured misses and zero
+evictions. Swap delta, fallback, relevant crash and residual-process counts were all
+zero. Maximum MLX peak was `8,007,886,876 B`; maximum RSS was `8,314,028,032 B`.
+
+The raw status was `PILOT_SAFE`, but `valid_for_performance=false` and
+`activation_allowed=false`. A later review found that the parent had not persisted a
+separate pre/post system-state record for every child. The pilot is therefore
+correctness/safety evidence only and is `INCONCLUSIVE_FOR_CONFIRMATION`: no retry,
+pooling, speed claim, confirmation or activation follows. Public path-free evidence:
+[`B3-U2_public_summary_20260828.json`](raw/B3-U2_public_summary_20260828.json).

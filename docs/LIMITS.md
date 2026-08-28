@@ -20,6 +20,45 @@ No claim holds outside this box. Another model, another quantisation, another ML
 build or another machine requires re-measurement, which is what the fingerprint
 exists to force.
 
+## Apple-Silicon inference claims
+
+Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and
+workload: it reports 120 -> 153 GB/s memory bandwidth and 19--27% subsequent-token
+generation improvement, while TTFT benefits from the M5 GPU Neural Accelerators.
+It must not be turned into a universal M5 or MLX multiplier:
+[Apple ML Research, MLX and the M5 GPU](https://machinelearning.apple.com/research/exploring-llms-mlx-m5).
+
+The M5 GPU Neural Accelerators are not the separate Apple Neural Engine (ANE).
+The former are reached through the GPU/Metal ML path used by that MLX report; ANE
+deployment is a separate Core ML decision. IronMule has no ANE kernel path and
+does not infer one from MLX:
+[Apple Core ML documentation](https://developer.apple.com/documentation/coreml).
+
+External BaseRT, vllm-mlx and FusionML publications are design context, not
+IronMule measurements or guarantees:
+[BaseRT](https://arxiv.org/abs/2607.00501),
+[vllm-mlx](https://arxiv.org/abs/2601.19139), and
+[FusionML](https://arxiv.org/abs/2607.22785). Their reported speedups cannot be
+copied into a runtime target without the same model, quantisation, chip,
+framework, workload and correctness protocol.
+
+The local E4/E5 results remain the relevant evidence for this repository: the
+achieved GEMV bandwidth depends on matrix size, and projection fusion did not
+produce a robust decode win. B35's 12B observation was order-sensitive and
+inconclusive; that narrow statement is superseded by B36 only for the exact
+12B revision, 322/32 workload, M1 Max host, default wired/cache policy and
+full-hash/prefault protocol. B36 qualifies the core profile under those
+conditions but does not activate it or generalize it. These are recorded in
+[`research/LEDGER.md`](../research/LEDGER.md) and
+[`research/raw/B35_review.md`](../research/raw/B35_review.md) and
+[`research/raw/B36_review.md`](../research/raw/B36_review.md).
+
+No global 60--70% bandwidth-efficiency constant is validated here. The phase
+diagnostic therefore requires per-run measured inputs and never clamps an
+efficiency above one; such a value is only an input-consistency warning. No
+zero-allocation decode-loop claim, M5 speed claim, Metal-kernel claim, or ANE
+claim follows from the diagnostic or from B35.
+
 **Two models outside the box have now been measured, and the gain is not
 size-independent.** Under the strict plan, with three runs each and a realised width of
 `4.00` throughout, the gain falls monotonically: `+19.24%` at 4B, `+15.42%` at 12B,
@@ -34,6 +73,15 @@ would be less honest, not more careful.
 
 All three are Gemma 3 at 4 bit on the same machine, so nothing here separates model size
 from model family, and nothing here extends to another Mac.
+
+**Qwen compatibility is narrowly qualified by X2.** The validated Gemma all-KV
+legacy path is retained. Qwen compatibility covers only revision
+`3e6447f082e89cc7f0bc6e5441afd38dfce760ff`, the strict/greedy path, and workloads
+up to 6 concurrent requests with the tested 2/3-request × 8-token and 6-request ×
+48-token gates. `ArraysCache` with
+non-`None` `lengths` or `left_padding` is rejected, as is hybrid speculation;
+these are fail-closed boundaries. Qwen performance is unqualified. The compiled
+tiny gate was exact, but its `30.76 GB` peak is a memory warning, not a speed claim.
 
 ## Limits of the runtime itself
 

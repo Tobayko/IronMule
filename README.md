@@ -1,13 +1,19 @@
 <div align="center">
-  <img src="docs/assets/ironmule-logo.jpg" alt="IronMule donkey mark and IRONMULE wordmark" width="960">
+  <img src="docs/assets/ironmule-logo.jpg" alt="IronMule donkey mark and wordmark" width="960">
   <p><strong>MEASURE&nbsp;&middot;&nbsp;PROVE&nbsp;&middot;&nbsp;RUN</strong></p>
 </div>
 
 # IronMule
 
-IronMule is an adaptive MLX inference runtime for local LLMs on Apple Silicon. It measures optimizations on your Mac and only keeps them when they are faster and remain correct.
+**Run and benchmark local LLMs on Apple Silicon with MLX.**
 
-**Measured, not assumed.** IronMule makes the execution plan and service mode explicit, measures them on the current machine, and records the evidence rather than carrying an unverified speedup from another setup. It helps you measure local LLM inference on Apple Silicon, including MLX performance, KV cache reuse, time to first token (TTFT), and batching.
+IronMule is a Python runtime for local LLM inference on a Mac. It helps you compare
+low-latency and high-throughput execution, reuse shared prompt prefixes, measure time
+to first token (TTFT), and keep a record of which MLX optimisations are both faster
+and correct on your machine.
+
+IronMule runs locally. It does not upload prompts, download models, or hide a cloud
+service behind the API.
 
 <p align="center">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-fair--code-111111?style=for-the-badge" alt="License: fair-code"></a>
@@ -15,170 +21,217 @@ IronMule is an adaptive MLX inference runtime for local LLMs on Apple Silicon. I
   <a href="https://github.com/ml-explore/mlx"><img src="https://img.shields.io/badge/platform-Apple%20Silicon-111111?style=for-the-badge" alt="Apple Silicon"></a>
 </p>
 
-IronMule is a local LLM inference runtime for [MLX](https://github.com/ml-explore/mlx) on Apple silicon. It includes prefix KV caching, grouped batch-1 execution, telemetry, and a correctness gate. It does not download or redistribute model weights.
+> [!IMPORTANT]
+> IronMule is designed for Apple Silicon, but the published performance evidence was
+> measured primarily on one Apple M1 Max. It is not a universal M1–M4 speed claim.
+> Read the full [validity limits](docs/LIMITS.md) before comparing results.
 
-> **Validity Domain — read before interpreting any number.** Every performance result below was measured on one `mlx-community/gemma-3-4b-it-4bit` model revision (`93724907`), 4-bit group-size 64 quantisation, MLX `0.32.0`, mlx_lm `0.31.3`, an Apple M1 Max with 32 GB unified memory on AC power, greedy decoding, contexts of 276–2048 tokens, batch 1 per execution, and up to 8 concurrent requests. Nothing outside this box is claimed. See [`docs/LIMITS.md`](docs/LIMITS.md).
+## What problem does it solve?
 
-## Key measured results
+Local AI has two different goals:
 
-These are measured results, not promises for every Mac, model, workload, or MLX build. The conditions and raw evidence are in [`research/LEDGER.md`](research/LEDGER.md).
+- A chat wants the fastest possible answer for one person.
+- A service with several waiting requests wants more total tokens per second.
 
-| Workload (E16, 40 independent OS processes) | Throughput | Median latency | Tail latency (p95) | Service TTFT |
-| :-- | --: | --: | --: | --: |
-| homogeneous | `+16.4 … +17.2%` | `+27%` | `−16%` | ~800 → ~87 ms |
-| heterogeneous | `+15.6 … +15.8%` | `+27%` | `−15%` | ~800 → ~87 ms |
-| staggered arrivals | `+15.1%` | `+26%` | `−8%` | ~690 → ~88 ms |
+One setting cannot maximise both. IronMule makes the choice explicit:
 
-### How this scales to larger models
+| Your workload | Use | What to expect |
+| :-- | :-- | :-- |
+| One chat or latency-sensitive request | `InteractiveMode` | Lowest single-request latency |
+| Several requests at the same time | `ThroughputMode` | More total throughput; one request may take longer |
+| Repeated questions about one shared document | `ReusableSessionPlan` | Reuses the declared prompt prefix |
+| Very short answers | Start with `InteractiveMode` | Groups may not fill enough to help |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/model-scaling-dark.svg">
-  <img alt="Throughput gain falls from 19.24% at 4B to 11.81% at 27B, while the service TTFT improvement factor stays near 5x" src="docs/assets/model-scaling-light.svg">
-</picture>
+In throughput mode, requests remain independent batch-1 runs. IronMule submits work
+from several requests together and waits once. It does **not** merge prompts into true
+tensor batches, and the public benchmark fails when the two modes change the output.
 
-The headline number does **not** carry unchanged to larger models. Measured on the same machine with an unchanged protocol, three runs each, the throughput gain falls from `+19.24%` at 4B to `+11.81%` at 27B — while the service TTFT improvement holds near `5x` and the median latency cost rises from `+48.6%` to `+60.1%`.
+## Quick start
 
-All three ran at a realised width of `4.00`, so group filling does not explain it. These runs are **exploratory**: no preregistration was sealed, so they carry less standing than the results above. Method, the full table and what to test next: [`docs/SCALING.md`](docs/SCALING.md).
-| short answers | `+9.2%` | `+54%` | `−9%` | — |
-
-Grouping does not make a request faster. It makes requests finish together: median latency worsens while tail latency and service TTFT improve. The short-answer result is included because the gain falls when groups do not fill. E16 reports zero correctness failures across 40 processes, while its frozen verdict remains `CONFOUNDED_BY_PROCESS_STATE`; both facts matter.
-
-Prefix KV reuse was also measured within its declared execution plan. E10 measured a `−37.82%` end-to-end session result at a 66.8% shared prefix, and E12 measured TTFT ratios from `0.401` at prefix 276 to `0.094` at prefix 2048. Within the chunked plan, reuse was bit exact across 756 requests and 14,369 decode steps. These are separate workloads and are not interchangeable claims.
-
-## Try it in under a minute
-
-Requirements: Python 3.10+, an Apple silicon Mac, and a local MLX model snapshot.
-
-### 1. Install
-
-Install the published package with:
-
-```bash
-pip install ironmule
-```
-
-For a checkout and development tools (secondary path):
+You need Python 3.10+, an Apple Silicon Mac, MLX, and a compatible model already in
+your local Hugging Face cache. The package is not currently published on PyPI, so
+install it from a checkout:
 
 ```bash
 git clone https://github.com/Tobayko/IronMule.git
 cd IronMule
-python -m pip install -e ".[dev]"
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
 ```
 
-IronMule does not ship or download model weights. Use a model snapshot whose terms permit your use.
-
-### 2. Check your Mac
+Check the machine and list local models:
 
 ```bash
 ironmule doctor
+ironmule models
 ```
 
-### 3. Run a benchmark
-
-Run the local benchmark when a compatible model is available:
+Run the balanced local benchmark with a cached model:
 
 ```bash
-ironmule benchmark
+ironmule benchmark --model mlx-community/gemma-3-4b-it-4bit --json benchmark.json
 ```
 
-The benchmark prints the baseline and IronMule measurements for the selected workload. It does not download a model.
+The benchmark compares IronMule's interactive and throughput modes. It does not
+download a model and does not claim to compare against stock `mlx_lm`.
 
-### 4. Use from Python
+### Use it from Python
 
 ```python
 import ironmule
 
-rt = ironmule.Runtime.load()  # interactive mode by default
-result = rt.generate("Explain unified memory in two sentences.", max_tokens=96)
-print(result.text, result.metrics["service_ttft_ms"])
+runtime = ironmule.Runtime.load(
+    model_id="mlx-community/gemma-3-4b-it-4bit"
+)
+result = runtime.generate(
+    "Explain unified memory in two short sentences.",
+    max_tokens=96,
+)
+
+print(result.text)
+print(result.metrics["service_ttft_ms"])
 ```
 
-See [`docs/RUNTIME.md`](docs/RUNTIME.md) for the API and [`research/LEDGER.md`](research/LEDGER.md) for reproducible experiment methods.
+`Runtime.load` uses local model files only. See the [runtime guide](docs/RUNTIME.md)
+for concurrent requests, throughput mode, and reusable sessions.
 
-## What it does
+## What IronMule includes
 
-**It refuses to guess.** Sixteen preregistered experiments decided what ships. Four optimisations that looked obvious were measured and dropped: speculative decoding (`2.9×` slower), projection fusion in decode (neutral), true tensor batching (changes tokens at batch 8), and a dispatch-overhead hypothesis that turned out to be wrong. The negative results remain in the ledger.
+- **Two service modes:** choose low single-request latency or higher aggregate
+  throughput.
+- **Prefix KV-cache reuse:** reuse a declared shared prompt without silently changing
+  the execution plan.
+- **Correctness checks and safe fallback:** failed grouped work restarts on the
+  sequential path instead of trusting partial output.
+- **Local telemetry:** record latency, TTFT, token rate, memory, fallbacks, and realised
+  group width.
+- **Reproducible benchmarks:** balanced warmups and repeats, raw JSON, token identity,
+  spread, and a paired interval.
+- **Hardware-aware profiles:** record machine, framework, model ID, plan, and workload
+  fingerprints; exact model-revision and quantisation binding remain open work.
 
-**It never changes your answer behind your back.** Two decisions stay with the caller because both alter observable behaviour:
+## Measured results, with the trade-off visible
 
-| Decision | Options | What changes |
-| :-- | :-- | :-- |
-| Execution plan | `StrictOneShotPlan`, `ReusableSessionPlan` | which tokens come out |
-| Service mode | `InteractiveMode`, `ThroughputMode` | the latency/throughput trade |
+These results are evidence for one measured setup, not promises for every Mac or
+model. The main preregistered replication used Gemma 3 4B, MLX 0.32.0,
+`mlx_lm` 0.31.3, 4-bit group-size 64 weights, greedy decoding, and an M1 Max with
+32 GB unified memory.
 
-**It tells you what it cost.** Time to first token is reported from request arrival (`service_ttft_ms`) and from model start (`engine_ttft_ms`). Under concurrency those differ by queue wait, so both remain visible. Telemetry also records latency, inter-token timing, aggregate tokens per second, realised group width, peak memory, fallbacks, correctness errors, and plan-switch attempts.
+### Latest Gemma 3 12B result
 
-## Reproduce the headline benchmark
+On the same M1 Max, a later isolated-process benchmark combined IronMule's fixed-cache
+core path with throughput mode:
 
-The command used for the compact benchmark output is:
+| Comparison | Complete service time | Total token rate |
+| :-- | --: | --: |
+| Combined path vs. baseline interactive | `−18.05%` | `+22.03%` |
+| Core path vs. the same throughput mode | `−6.17%` | `+6.58%` |
+
+This is the exact B39d workload only: Gemma 3 12B 4-bit, six concurrent greedy
+requests, 48 output tokens, 32 fresh processes, and no automatic activation. Width 4
+remains the baseline; widths 2 and 3 were slower in every B40 block, but drift kept
+that width study formally inconclusive. See the path-free
+[B39d performance summary](research/raw/B39d_public_summary_20260828.json) and
+[B40 width summary](research/raw/B40_public_summary_20260828.json).
+
+The next two-step decode idea, B3-U2, has **no speed result yet**. Its correctness
+pilot completed 8/8 isolated processes and 240 measured requests with identical
+tokens and final states, no fallback, no swap and no relevant crash. A missing
+per-child host-state record blocks confirmation, so the result is not used as a
+performance claim. See the [B3-U2 public summary](research/raw/B3-U2_public_summary_20260828.json).
+
+### Earlier service-mode results
+
+| Concurrent workload | Total throughput | Median request latency | p95 latency | Service TTFT | Evidence |
+| :-- | --: | --: | --: | --: | :-- |
+| Similar prompts | `+16.4 … +17.2%` | `+27%` | `−16%` | ~800 → ~87 ms | [E16](research/LEDGER.md#e16--replication-of-the-w4-gain-under-real-process-boundaries) |
+| Mixed prompt lengths | `+15.6 … +15.8%` | `+27%` | `−15%` | ~800 → ~87 ms | [E16](research/LEDGER.md#e16--replication-of-the-w4-gain-under-real-process-boundaries) |
+| Requests arriving at different times | `+15.1%` | `+26%` | `−8%` | ~690 → ~88 ms | [E16](research/LEDGER.md#e16--replication-of-the-w4-gain-under-real-process-boundaries) |
+| Very short answers | `+9.2%` | `+54%` | `−9%` | — | [E15](research/LEDGER.md#e15--does-async-grouped-b1-survive-a-real-service-workload) |
+
+The plain-language conclusion: throughput mode can finish a group of requests sooner,
+but an individual request may wait longer. This is useful for concurrent work, not a
+magic speed button for one chat.
+
+Exploratory measurements on the same machine found that the throughput gain fell from
+`+19.24%` at 4B to `+11.81%` at 27B. These runs were not preregistered, so they are
+reported separately in the [model-scaling study](docs/SCALING.md).
+
+Prefix reuse is a different feature with a different workload. E10 measured a
+`−37.82%` end-to-end session result at a 66.8% shared prefix, while E12 checked bit-exact
+reuse across 756 requests and 14,369 decode steps. See [E10](research/LEDGER.md#e10--the-prefix-cache-as-a-shipped-runtime-feature)
+and [E12](research/LEDGER.md#e12--falsification-test-at-the-sliding-window-boundary).
+
+## Commands
+
+| Command | Purpose |
+| :-- | :-- |
+| `ironmule doctor` | Check Apple Silicon, Python, MLX, and Metal prerequisites |
+| `ironmule models` | List cached Hugging Face model snapshots without downloading |
+| `ironmule benchmark` | Compare interactive and throughput modes locally |
+| `ironmule tune` | Measure candidates and write or inspect a local profile |
+| `ironmule revalidate` | Canary-check the stored profile against the current setup |
+| `ironmule status` | Show local hardware and profile status |
+| `ironmule info` | Show package information |
+
+Run `ironmule --help` or `ironmule <command> --help` for options.
+
+## What it deliberately does not do
+
+- It does not download or redistribute model weights.
+- It does not provide a hosted API server, streaming, or sampling mode.
+- It does not automatically select a plan that can change model output.
+- It does not use true tensor batching or claim that every model becomes faster.
+- It does not treat a single benchmark run as proof.
+
+Several attractive ideas were measured and rejected, including prompt-lookup
+speculation (`2.9×` slower), decode projection fusion (neutral), and true tensor
+batching (changed state or tokens in tested paths). Negative results remain in the
+[experiment ledger](research/LEDGER.md) and [backlog dead-ends](docs/BACKLOG.md#tier-0--already-dead-do-not-re-run-these).
+
+## Reproduce and verify
+
+The public benchmark uses two warmups and six measured repeats per mode. It alternates
+the order of both modes, measures the complete `Runtime.serve` call, stores raw samples,
+and exits nonzero when token IDs, stop reasons, or counts differ.
 
 ```bash
-python -m ironmule.benchmark
+python -m ironmule.benchmark \
+  --model mlx-community/gemma-3-4b-it-4bit \
+  --warmup 2 \
+  --repeats 6 \
+  --json benchmark.json
+
+pytest tests/test_cli.py tests/test_benchmark.py tests/test_ironmule_runtime.py -q
 ```
 
-The measured output recorded in the repository is:
+One loaded model process is shared between benchmark arms to avoid doubling peak
+memory. Fresh-process isolation and a stock `mlx_lm` comparison arm remain open work.
+The [limits](docs/LIMITS.md), [runtime guide](docs/RUNTIME.md), and
+[ledger](research/LEDGER.md) describe the exact contracts and evidence.
 
-```
-mode              wall ms        tok/s  svcTTFT p50      lat p50      lat p95
-interactive          3303         87.2       1384.9       1921.0       3367.8
-throughput           2700        106.6        246.6       2893.8       3048.3
+## Repository map
 
-throughput gain +18.24%   identical answers in both modes: True
-```
-
-Replicate with warmup, repeated runs, and the same validity-domain fingerprint before comparing another machine. A single run is not evidence of a general performance result.
-
-## Correctness
-
-Twenty-eight tests cover exact token IDs, token counts, stop reasons, KV state hashes, ragged response lengths, early-finishing requests, reversed arrival order, heterogeneous prompt lengths, staggered arrival, group widths 1 to 4, sequential fallback, and the absence of state aliasing between requests.
-
-```bash
-pytest tests/test_ironmule_runtime.py -q              # fast, no model needed
-pytest tests/test_ironmule_runtime_integration.py -q  # against a real model
-```
-
-A failed group restarts its requests from prefill and finishes them sequentially, discarding tokens the failed group produced rather than trusting them. That wastes work and is the choice that keeps output identical to a clean sequential run. It was verified on a real model with an injected device failure.
-
-## Honest limits
-
-The measured validity domain is narrow and stated in full in [`docs/LIMITS.md`](docs/LIMITS.md). Known gaps include ragged prompt lengths inside one group (untested), sustained load (untested), the quality bound of `1.14` accuracy points measured on a public benchmark the model may have been trained on, and retired kernel counts because MLX exposes no machine-readable dispatch counter. No absolute dispatch time is claimed.
-
-The runtime deliberately has no adaptive controller, no true tensor batching, no speculative decoding, and no automatic plan selection. True tensor batching diverged at batch 8 in E14b; speculative decoding accepted `0.17` drafted tokens on average and was `2.9×` slower. A latency-sensitive single-request path should stay in `InteractiveMode`, and grouping helps only when requests are concurrent and groups fill.
-
-## About this repository
-
-IronMule was developed inside a private research project and is published here as a curated subset: runtime, examples, tests, and the experiment ledger that backs every number. Local paths, personal identifiers, model weights, and third-party datasets are not included; SQuAD is fetched by a script under its own terms rather than redistributed.
-
-Contributions start at [`docs/BACKLOG.md`](docs/BACKLOG.md), which holds every open hypothesis for making the runtime faster together with the routes already measured and rejected — read the latter before proposing one of them again. [`CONTRIBUTING.md`](CONTRIBUTING.md) describes how work here is expected to run.
-
-Community benchmark submissions are welcome. Use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md) and see [`COMMUNITY_BENCHMARKS.md`](COMMUNITY_BENCHMARKS.md) for the required fields.
-
-## Layout
-
-| Path | Purpose |
+| Path | What is there |
 | :-- | :-- |
-| `ironmule/` | Runtime: plans, modes, executors, telemetry, fingerprint, autotuner |
-| `examples/` | Interactive chat, throughput service, reusable session |
-| `tests/` | Fast scripted-backend tests and real-model integration tests |
-| `research/LEDGER.md` | Every experiment, positive and negative, with method and raw data |
-| `research/raw/` | Preregistrations and result summaries |
-| [`docs/RUNTIME.md`](docs/RUNTIME.md) | Technical API and runtime documentation |
-| [`docs/LIMITS.md`](docs/LIMITS.md) | Validity domain and known gaps |
-| [`docs/SCALING.md`](docs/SCALING.md) | How the gain scales with model size, and what to test next |
-| [`docs/BACKLOG.md`](docs/BACKLOG.md) | Every open hypothesis for making it faster, and the ones already refuted |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How work here runs: backlog first, evidence required |
+| `ironmule/` | Runtime, execution plans, service modes, telemetry, and tuning |
+| `examples/` | Small interactive, throughput, and reusable-session examples |
+| `tests/` | Fast tests plus real-model integration tests |
+| `research/LEDGER.md` | Positive and negative experiments with methods and results |
+| `research/raw/` | Preregistrations and public result summaries |
+| `docs/RUNTIME.md` | API and runtime details |
+| `docs/LIMITS.md` | Measured validity domain and known gaps |
+| `docs/BACKLOG.md` | Open ideas and routes already ruled out |
 
-## Licence and commercial use
+Contributions start with [CONTRIBUTING.md](CONTRIBUTING.md). Community benchmark
+submissions use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md)
+and the fields in [COMMUNITY_BENCHMARKS.md](COMMUNITY_BENCHMARKS.md).
 
-IronMule is **fair-code** under the [IronMule Licence](LICENSE.md): source-available, not OSI open source. The licence carries a plain-language summary and clarifications so you can identify the permitted use before adopting it.
+## Licence
 
-| Use | Terms |
-| :-- | :-- |
-| Personal, hobby, learning | **free** |
-| Research, teaching, academic publication, benchmarking | **free** |
-| Small organisation in production — under 10 people **and** ≤ EUR 1M turnover | **free** |
-| Larger company, evaluation outside production | **free for 90 days** |
-| Larger company, production use | commercial licence required |
-| Hosted/managed service, resale, or embedding in a product you sell | commercial licence required |
-
-Individuals, learning, and academic work never pay, at any scale. Commercial licences are priced by the licensee's annual turnover, starting at EUR 1,500 per year for the whole organisation. See [`COMMERCIAL.md`](COMMERCIAL.md) for the price bands, definitions and licensing details. IronMule does not redistribute model weights; the model you point it at carries its own terms.
+IronMule is **fair-code** under the [IronMule Licence](LICENSE.md). The source is
+available, but it is not OSI open source. Personal, learning, academic, and some small
+organisation uses are free under the exact licence terms. Larger production use,
+hosted services, resale, and paid product embedding may require a commercial licence.
+Read [LICENSE.md](LICENSE.md) and [COMMERCIAL.md](COMMERCIAL.md) before adopting it.

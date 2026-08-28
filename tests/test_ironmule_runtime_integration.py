@@ -19,7 +19,46 @@ def _runtime(mode):
     try:
         return ironmule.Runtime.load(mode=mode, use_tuned_profile=True), ironmule
     except Exception as exc:                                  # pragma: no cover
-        pytest.skip(f"model unavailable: {type(exc).__name__}: {exc}")
+        if _is_expected_unavailable(exc):
+            pytest.skip(f"model unavailable: {type(exc).__name__}: {exc}")
+        raise
+
+
+def _is_expected_unavailable(exc: BaseException) -> bool:
+    """Only classify explicit model/access/Metal availability failures as skips."""
+    if isinstance(exc, (FileNotFoundError, PermissionError)):
+        return True
+    if isinstance(exc, ModuleNotFoundError):
+        module_name = exc.name
+        if not module_name and "'" in str(exc):
+            module_name = str(exc).split("'")[1]
+        return (module_name in {"mlx", "mlx.core", "mlx_lm", "mlx_lm.models"}
+                or str(module_name).split(".", 1)[0] in {"mlx", "mlx_lm"})
+    message = str(exc).lower()
+    availability = (
+        "model not found", "model unavailable", "model is unavailable",
+        "no such file", "permission denied", "access denied", "cannot access",
+        "metal is not available", "metal unavailable", "metal device unavailable",
+        "no metal device", "gpu is not available", "gpu unavailable",
+    )
+    return isinstance(exc, (ImportError, OSError, RuntimeError, ValueError)) and any(
+        marker in message for marker in availability
+    )
+
+
+def test_unexpected_integration_errors_are_not_classified_as_unavailable():
+    assert not _is_expected_unavailable(RuntimeError("injected programming error"))
+    assert not _is_expected_unavailable(ValueError("invalid tensor shape"))
+
+
+@pytest.mark.parametrize("error", [
+    FileNotFoundError("local model not found"),
+    RuntimeError("Metal device unavailable"),
+    RuntimeError("model unavailable on this host"),
+    ModuleNotFoundError("No module named 'mlx'"),
+])
+def test_known_environment_failures_are_skippable(error):
+    assert _is_expected_unavailable(error)
 
 
 DOC = ("The Apollo program was carried out by NASA between 1961 and 1972. "

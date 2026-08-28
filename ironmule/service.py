@@ -95,15 +95,18 @@ class MLXBackend:
 
     def reset_state(self, base_state, offset: int):
         import mlx.core as mx
+        from .runtime import _copy_state_layers
         return {"position": {"offset": mx.array(offset, dtype=mx.int32)},
-                "layers": [{"keys": l["keys"], "values": l["values"]}
-                           for l in base_state["layers"]]}
+                "layers": _copy_state_layers(base_state["layers"])}
 
     def step(self, state, token: int, capacity: int):
         import mlx.core as mx
         body = self.engine._body(capacity, 1)
         out = body(mx.array([[token]]), state)
-        pick = mx.argmax(out[0][:, -1, :].astype(mx.float32), axis=-1)
+        if getattr(getattr(self.engine, "knobs", None), "fused_argmax", False):
+            pick = out[0]
+        else:
+            pick = mx.argmax(out[0][:, -1, :].astype(mx.float32), axis=-1)
         return out, pick
 
     def complete(self, handles) -> None:
@@ -121,15 +124,54 @@ class MLXBackend:
 
     def kv_hash(self, state, offset: int) -> str:
         import hashlib
-        import mlx.core as mx
         import numpy as np
+        from .runtime import _state_layer_kind
         digest = hashlib.sha256()
-        for layer in state["layers"]:
-            for name in ("keys", "values"):
-                arr = layer[name][..., :offset, :]
-                view = {2: mx.uint16, 4: mx.uint32}[arr.dtype.size]
-                digest.update(np.asarray(arr.view(view)).tobytes())
+        kinds = [_state_layer_kind(layer) for layer in state["layers"]]
+        hybrid = "arrays" in kinds
+        for layer, kind in zip(state["layers"], kinds):
+            if kind == "kv":
+                for name in ("keys", "values"):
+                    arr = layer[name][..., :offset, :]
+                    if hybrid:
+                        digest.update(name.encode("ascii"))
+                        digest.update(str(arr.shape).encode("ascii"))
+                        digest.update(str(arr.dtype).encode("ascii"))
+                        digest.update(_raw_bit_bytes(arr))
+                    else:
+                        # Keep the established all-KV digest byte-for-byte stable.
+                        digest.update(_raw_bit_bytes(arr, legacy=True))
+            elif kind == "arrays":
+                if not hybrid:
+                    raise TypeError("unsupported cache state layer")
+                digest.update(b"arrays")
+                for index, arr in enumerate(layer["arrays"]):
+                    digest.update(str(index).encode("ascii"))
+                    if arr is None:
+                        digest.update(b"none")
+                    else:
+                        digest.update(str(arr.shape).encode("ascii"))
+                        digest.update(str(arr.dtype).encode("ascii"))
+                        digest.update(_raw_bit_bytes(arr))
+            else:
+                raise TypeError("unsupported cache state layer")
         return digest.hexdigest()
+
+
+def _raw_bit_bytes(arr, *, legacy: bool = False) -> bytes:
+    """Return MLX array bits without numeric conversion (including bfloat16)."""
+    import mlx.core as mx
+    import numpy as np
+
+    views = {1: mx.uint8, 2: mx.uint16, 4: mx.uint32}
+    try:
+        view = views[arr.dtype.size]
+    except KeyError as exc:
+        raise TypeError(f"unsupported cache dtype size: {arr.dtype.size}") from exc
+    # `legacy` documents the all-KV path's historical view-based digest.  It is
+    # intentionally the same operation as the hybrid path for supported dtypes.
+    del legacy
+    return np.asarray(arr.view(view)).tobytes()
 
 
 class Runtime:
