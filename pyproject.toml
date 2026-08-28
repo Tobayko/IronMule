@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ironmule"
-version = "0.1.0"
-description = "Adaptive MLX inference runtime for local LLMs on Apple Silicon, measured for speed and correctness"
+dynamic = ["version"]
+description = "Run and benchmark local LLM inference on Apple Silicon with MLX, correctness checks, and reproducible evidence"
 readme = "README.md"
 authors = [{ name = "Tobias Abenthum" }]
 requires-python = ">=3.10"
 license = "LicenseRef-IronMule-2.0"
 license-files = ["LICENSE.md"]
-dependencies = ["mlx>=0.32", "mlx-lm>=0.31", "numpy>=1.24"]
+dependencies = ["mlx>=0.32,<0.33", "mlx-lm>=0.31.3,<0.32", "numpy>=1.24"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: GPU",
@@ -20,8 +20,9 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-keywords = ["mlx", "apple-silicon", "local-llm", "llm-inference", "inference-runtime",
-            "kv-cache", "prefix-caching", "ttft", "batching", "on-device-ai", "gemma"]
+keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
+            "llm-inference", "ai-inference", "inference-runtime", "kv-cache",
+            "prefix-caching", "ttft", "batching", "on-device-ai", "benchmarking"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-xdist>=3"]
@@ -35,6 +36,9 @@ Repository = "https://github.com/Tobayko/IronMule"
 [tool.setuptools]
 packages = ["ironmule"]
 py-modules = ["ironmule_cli"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ironmule._version.__version__" }
 
 [project.scripts]
 ironmule = "ironmule_cli:main"

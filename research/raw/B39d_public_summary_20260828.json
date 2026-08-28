@@ -1,0 +1,92 @@
+{
+  "schema": "ironmule.public_summary.v1",
+  "experiment": "B39d",
+  "date": "2026-08-28",
+  "privacy_redacted": true,
+  "scope": {
+    "model": "Gemma 3 12B IT 4-bit",
+    "hardware": "Apple M1 Max, 32 GiB unified memory, 32 GPU cores",
+    "software": {
+      "macos": "26.5.2",
+      "python": "3.12.13",
+      "mlx": "0.32.0",
+      "mlx_lm": "0.31.3"
+    },
+    "power_source": "AC",
+    "low_power_mode": false
+  },
+  "workload": {
+    "name": "X1-strict",
+    "requests_per_run": 6,
+    "max_tokens": 48,
+    "decoding": "greedy",
+    "warmups": 2,
+    "measured_repeats": 5,
+    "blocks": 8,
+    "children": 32,
+    "measured_request_runs": 960
+  },
+  "arms": {
+    "A": "baseline_interactive",
+    "B": "baseline_throughput",
+    "C": "core_interactive",
+    "D": "core_throughput"
+  },
+  "status": {
+    "formal": "QUALIFIED",
+    "valid_for_performance": true,
+    "activation_allowed": false
+  },
+  "valid_for_performance": true,
+  "activation_allowed": false,
+  "resources": {
+    "swap_delta_max_bytes": 0,
+    "rss_peak_max_bytes": 7916519424,
+    "mlx_active_max_bytes": 7188274730,
+    "mlx_peak_max_bytes": 8002539246,
+    "crash_reports_relevant": 0,
+    "residual_model_processes": 0,
+    "final_h2": true,
+    "rss_gate": "PASS",
+    "resource_gates": "PASS"
+  },
+  "endpoints": {
+    "A": {
+      "wall_ns_median": 11238261187.5,
+      "wall_ns_ci_97_5": [11160058417, 11407090125],
+      "rate_tok_s_median": 25.62680960918648,
+      "rate_tok_s_ci_97_5": [25.247455472348168, 25.806316529785597]
+    },
+    "B": {
+      "wall_ns_median": 9804256146,
+      "wall_ns_ci_97_5": [9746705041, 9953182750],
+      "rate_tok_s_median": 29.375129502783253,
+      "rate_tok_s_ci_97_5": [28.935467903470375, 29.54844727408018]
+    },
+    "C": {
+      "wall_ns_median": 10647817688,
+      "wall_ns_ci_97_5": [10494913166, 10722052334],
+      "rate_tok_s_median": 27.048348895166722,
+      "rate_tok_s_ci_97_5": [26.86052921852862, 27.44186592539169]
+    },
+    "D": {
+      "wall_ns_median": 9206717688,
+      "wall_ns_ci_97_5": [9178958958, 9380620959],
+      "rate_tok_s_median": 31.281513846498108,
+      "rate_tok_s_ci_97_5": [30.70159227824739, 31.376107172697523]
+    }
+  },
+  "ratios": {
+    "B/A": {"wall_median": 0.8758819112229674, "wall_ci_97_5": [0.8513996078998086, 0.8899192300130093], "rate_median": 1.141710586095014, "rate_ci_97_5": [1.1236974843047063, 1.1745365991731562]},
+    "C/A": {"wall_median": 0.94308496026809, "wall_ci_97_5": [0.9376590282703671, 0.9482680892303484], "rate_median": 1.060353088076795, "rate_ci_97_5": [1.0545540985267567, 1.0664857585220813]},
+    "D/A": {"wall_median": 0.8194867049714893, "wall_ci_97_5": [0.8067160262749304, 0.8394204564601061], "rate_median": 1.2202787057758742, "rate_ci_97_5": [1.1912981060969956, 1.239593571256508]},
+    "D/B": {"wall_median": 0.9383079941009869, "wall_ci_97_5": [0.9222134455433364, 0.9588925257665503], "rate_median": 1.0657544692645153, "rate_ci_97_5": [1.042869741007302, 1.0843476690050147]},
+    "D/C": {"wall_median": 0.8694078239649196, "wall_ci_97_5": [0.8560822753022015, 0.8852142827472056], "rate_median": 1.1502701578805237, "rate_ci_97_5": [1.1296699787723308, 1.1681120248015822]}
+  },
+  "provenance": {
+    "model_binding_digest": "e08dd84591588722a11c43d9ff7ee4b3f50d01f15371c8a4429c4f9857d37fb6",
+    "code_digest": "3adaa1bf467b0efd9fa7c06b3da628de5bbadcd3d8d1e3250c462c3c9ff49ce4",
+    "preregistration_sha256": "f6fcfccc14afb0535cd0d360d0b956cb6e2bb86873e6e5cfdc827784a7d0bd49",
+    "private_raw_sha256": "3288db4fa0a5eab09b7415309f14ace1fbb5392df2d7c2a7bc5f7213712aeb71"
+  }
+}

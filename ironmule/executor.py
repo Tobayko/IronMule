@@ -65,24 +65,33 @@ class Session:
         self.stop_reason = ""
 
 
+def _accept_token(session: Session, token: int, when: int,
+                  eos_ids: Sequence[int]) -> None:
+    """Accept one physical output token and apply the generation contract."""
+    session.tokens.append(token)
+    metrics = session.metrics
+    metrics.token_times_ns.append(when)
+    if metrics.first_token_ns == 0:
+        metrics.first_token_ns = when
+    metrics.generated_tokens = len(session.tokens)
+    metrics.visible_generated_tokens = sum(
+        value not in eos_ids for value in session.tokens)
+    if token in eos_ids:
+        session.done, session.stop_reason = True, "eos"
+    elif len(session.tokens) >= session.max_tokens:
+        session.done, session.stop_reason = True, "length"
+    if session.done:
+        metrics.finished_ns = when
+        metrics.stop_reason = session.stop_reason
+
+
 class _Runner:
     def __init__(self, backend: DecodeBackend, telemetry: Telemetry):
         self.backend = backend
         self.telemetry = telemetry
 
     def _record_token(self, session: Session, token: int, when: int) -> None:
-        session.tokens.append(token)
-        session.metrics.token_times_ns.append(when)
-        if session.metrics.first_token_ns == 0:
-            session.metrics.first_token_ns = when
-        if token in self.backend.eos_ids:
-            session.done, session.stop_reason = True, "eos"
-        elif len(session.tokens) - 1 >= session.max_tokens:
-            session.done, session.stop_reason = True, "length"
-        if session.done:
-            session.metrics.finished_ns = when
-            session.metrics.stop_reason = session.stop_reason
-            session.metrics.generated_tokens = len(session.tokens) - 1
+        _accept_token(session, token, when, self.backend.eos_ids)
 
     def _finish_sequentially(self, sessions: list[Session], capacity: int) -> None:
         for session in sessions:
@@ -109,9 +118,9 @@ class SequentialExecutor(_Runner):
             wait_ms = session.arrival_ms - (now() - started) / 1e6
             if wait_ms > 0:
                 time.sleep(wait_ms / 1000.0)
-            session.metrics.engine_start_ns = now()
-            self._finish_sequentially([session], capacity)
-            self.telemetry.realised_widths.append(1)
+            if not session.done:
+                self._finish_sequentially([session], capacity)
+                self.telemetry.realised_widths.append(1)
         self.telemetry.wall_ns = now() - started
 
 
@@ -140,9 +149,11 @@ class AsyncGroupedB1Executor(_Runner):
         while pending or active:
             while pending and (now() - started) / 1e6 >= pending[0].arrival_ms:
                 admitted = pending.pop(0)
-                admitted.metrics.engine_start_ns = now()
-                active.append(admitted)
+                if not admitted.done:
+                    active.append(admitted)
             if not active:
+                if not pending:
+                    break
                 wait_ms = pending[0].arrival_ms - (now() - started) / 1e6
                 if wait_ms > 0:
                     time.sleep(wait_ms / 1000.0)
@@ -183,6 +194,9 @@ class AsyncGroupedB1Executor(_Runner):
                 session.metrics.token_times_ns = session.metrics.token_times_ns[:1]
                 session.metrics.first_token_ns = (session.metrics.token_times_ns[0]
                                                   if session.metrics.token_times_ns else 0)
+                session.metrics.generated_tokens = len(session.tokens)
+                session.metrics.visible_generated_tokens = sum(
+                    value not in self.backend.eos_ids for value in session.tokens)
         self._finish_sequentially(group, capacity)
 
 
@@ -193,12 +207,14 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
     for request in requests:
         metrics = RequestMetrics(rid=request.rid, arrival_ns=now(),
                                  prompt_tokens=len(request.prompt_ids))
+        metrics.engine_start_ns = now()
         state, first = backend.prefill(request.prompt_ids, request.plan, capacity)
         session = Session(rid=request.rid, prompt_ids=list(request.prompt_ids),
                           max_tokens=request.max_tokens, plan=request.plan,
                           arrival_ms=request.arrival_ms, base_state=state,
                           state=backend.reset_state(state, len(request.prompt_ids)),
-                          tokens=[first], metrics=metrics)
+                          metrics=metrics)
+        _accept_token(session, first, now(), backend.eos_ids)
         telemetry.requests.append(metrics)
         telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))
         sessions.append(session)

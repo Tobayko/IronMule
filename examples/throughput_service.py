@@ -29,7 +29,11 @@ def run(rt, mode, requests):
           f"p95 {snap['service_ttft_p95_ms']:7.1f} ms")
     print(f"  full latency  p50 {snap['latency_p50_ms']:7.1f} ms   "
           f"p95 {snap['latency_p95_ms']:7.1f} ms")
-    print(f"  fallbacks {snap['fallbacks']}   correctness errors {snap['correctness_errors']}")
+    if snap["correctness_check_performed"]:
+        correctness = f"correctness errors {snap['correctness_errors']}"
+    else:
+        correctness = "correctness not checked"
+    print(f"  fallbacks {snap['fallbacks']}   {correctness}")
     return results
 
 

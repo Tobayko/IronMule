@@ -17,8 +17,9 @@ from dataclasses import dataclass, field
 from typing import Sequence
 
 from .runtime import PrefixCache
+from ._version import __version__
 
-RUNTIME_VERSION = "0.1.0"
+RUNTIME_VERSION = __version__
 
 
 class ExecutionPlan:

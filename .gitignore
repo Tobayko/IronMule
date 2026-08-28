@@ -11,6 +11,11 @@ experiments/*.jsonl
 experiments/*.sqlite*
 experiments/raw/
 
+# Private benchmark raw JSON and retained partials; publish only redacted summaries
+research/raw/*.json
+research/raw/.*.partial
+!research/raw/*_public_summary_*.json
+
 # OS/editor files
 .DS_Store
 .idea/
