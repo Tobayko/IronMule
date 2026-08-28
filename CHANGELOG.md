@@ -34,7 +34,9 @@ Review follow-ups completed locally; this section is not a release or a performa
 - **B27 D1 implemented, not activated:** adds stdlib-only immutable execution-strategy,
   validity-domain, evaluator-owned evidence and trusted-profile contracts. Runtime,
   tuner, plans, modes and executors do not import D1; persistence, selection and
-  activation remain outside the approved scope.
+  activation remain outside the approved scope. The sealed post-change screen passed
+  12B but found a common-mode 4B potential regression, so its frozen result is
+  inconclusive and no performance-safety claim follows.
 
 ## [0.1.0] — 2026-08-26
 

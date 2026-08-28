@@ -1,7 +1,8 @@
 # B27 Phase D contract proposal — approval package
 
-**State:** D1 explicitly approved by the user on 2026-08-28; implemented for static
-and CPU verification; post-change model measurements not yet run.
+**State:** D1 explicitly approved and implemented on 2026-08-28. B27d post-change
+measurement completed as `INCONCLUSIVE_POTENTIAL_REGRESSION`; no activation. See
+[`B27_D1_IMPLEMENTATION.md`](B27_D1_IMPLEMENTATION.md).
 
 This document freezes the smallest architecture decision that can move IronMule
 toward an evidence-driven execution layer without changing execution. It is subordinate
