@@ -44,7 +44,7 @@ One setting cannot maximise both. IronMule makes the choice explicit:
 
 In throughput mode, requests remain independent batch-1 runs. IronMule submits work
 from several requests together and waits once. It does **not** merge prompts into true
-tensor batches, and its correctness gate rejects output changes.
+tensor batches, and the public benchmark fails when the two modes change the output.
 
 ## Quick start
 
@@ -108,8 +108,8 @@ for concurrent requests, throughput mode, and reusable sessions.
   group width.
 - **Reproducible benchmarks:** balanced warmups and repeats, raw JSON, token identity,
   spread, and a paired interval.
-- **Hardware-aware profiles:** keep tuning evidence tied to the machine, model,
-  framework, plan, and workload that produced it.
+- **Hardware-aware profiles:** record machine, framework, model ID, plan, and workload
+  fingerprints; exact model-revision and quantisation binding remain open work.
 
 ## Measured results, with the trade-off visible
 
