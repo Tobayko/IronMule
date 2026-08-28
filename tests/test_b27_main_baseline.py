@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
+import research.b27_main_baseline as baseline_module
 
 from research.b27_main_baseline import (
     classify,
@@ -70,3 +71,19 @@ def test_cached_snapshot_selection_is_exact_and_does_not_download(tmp_path):
     assert select_cached_snapshot(cache, "org/model", "abc") == snapshot.resolve()
     with pytest.raises(RuntimeError, match="found 0"):
         select_cached_snapshot(cache, "org/model", "other")
+
+
+def test_cli_propagates_explicit_experiment_id(monkeypatch, tmp_path):
+    observed = {}
+
+    def fake_run(args):
+        observed["experiment_id"] = args.experiment_id
+        return {"status": "BASELINE_CAPTURED", "failures": [], "elapsed_seconds": 0.0}
+
+    monkeypatch.setattr(baseline_module, "run", fake_run)
+    status = baseline_module.main([
+        "--model", "org/model", "--revision", "abc", "--experiment-id", "B27d",
+        "--output", str(tmp_path / "result.json"),
+    ])
+    assert status == 0
+    assert observed == {"experiment_id": "B27d"}

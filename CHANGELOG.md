@@ -31,6 +31,10 @@ Review follow-ups completed locally; this section is not a release or a performa
 - **B3-U2 pilot recorded:** 8/8 isolated processes and 240 measured requests passed
   token/state correctness and safety gates. This is not a speed result; confirmation
   remains blocked by missing persisted per-child host-state evidence.
+- **B27 D1 implemented, not activated:** adds stdlib-only immutable execution-strategy,
+  validity-domain, evaluator-owned evidence and trusted-profile contracts. Runtime,
+  tuner, plans, modes and executors do not import D1; persistence, selection and
+  activation remain outside the approved scope.
 
 ## [0.1.0] — 2026-08-26
 

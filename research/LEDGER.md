@@ -1917,3 +1917,30 @@ change. Verification artifact SHA-256:
 The exact unapproved D1 type/status/domain contract and its kill criteria are recorded
 in [`docs/B27_PHASE_D_CONTRACT_PROPOSAL.md`](../docs/B27_PHASE_D_CONTRACT_PROPOSAL.md);
 it changes no runtime behavior and still requires architecture approval.
+
+## B27 D1 — Approved evidence-contract implementation, pre-measurement (2026-08-28)
+
+The user explicitly approved D1 after the Phase-A–C commit `467d5b8`. D1 adds
+`ironmule/evidence.py`, a stdlib-only immutable contract for execution strategies,
+validity domains, evaluator-owned evidence and trusted profiles. It is not imported by
+Runtime, package root, plans, modes, executors, tuner, benchmark, telemetry or
+fingerprint and exposes no execution, persistence, selection or activation method.
+
+The implementation closes direct profile-deserialization and self-evaluation bypasses,
+requires exact model/revision/manifest/quantisation and closed workload buckets,
+separates experiment verdicts from the six lifecycle states, requires raw samples plus
+correctness/resource/uncertainty gates for `QUALIFIED`, and turns any domain mismatch
+into `REVALIDATION_REQUIRED`. The B27 public adapter is deliberately
+`INCONCLUSIVE/SUMMARY_ONLY` and does not invent missing state, crash, RSS or absolute
+swap evidence.
+
+Pre-measurement verification passed: 15 focused D1 tests, 26 final
+D1/baseline/comparison tests, the full serial non-integration suite at
+`146 passed, 11 deselected` in `5.21 s`, and the existing real Gemma-4B integration
+suite at `10/10` in `21.24 s`; pre-integration swap was `0 B`. The independent static
+review is [`B27d_review.md`](raw/B27d_review.md), SHA-256
+`9d146b69d5644a02fb40a127e8927085a47a7a70d2a92e1f6daaa991e6d4a91f`.
+The post-change experiment is sealed in
+[`B27d_preregistration.md`](raw/B27d_preregistration.md), SHA-256
+`846e09499a0eb4f9ff531a6302da9c7913e8b6f620d6ad7834dcaf7fda44de36`.
+No post-D1 model timing had been observed when this entry was written.
