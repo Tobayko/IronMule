@@ -93,3 +93,32 @@ These are diagnostics, not permission to override the frozen classification.
 Final handoff verification on the documented result state passed
 `146 passed, 11 deselected` in `5.18 s` and the real Gemma-4B integration suite
 `10/10` in `21.12 s`, with pre-integration swap `0 B` and no model process.
+
+## B27e cross-commit discriminator
+
+B27e used only new 4B samples from four fresh processes and proved the OLD/D1
+execution surfaces byte-identical. All preflights and correctness/resource gates
+passed.
+
+| Mirrored block | Interactive wall/rate D1/OLD | Throughput wall/rate D1/OLD |
+| --- | ---: | ---: |
+| OLD -> D1 | `0.9925 / 1.0076` | `0.9841 / 1.0161` |
+| D1 -> OLD | `0.9422 / 1.0613` | `0.9267 / 1.0790` |
+
+Result: `ORDER_OR_TEMPORAL_DRIFT`. D1 was never slower, so B27d's 4B slowdown did not
+reproduce as a consistent commit association. The second block exceeded the 5% band
+in the opposite direction, so the frozen rules do not permit a neutrality claim.
+B27d remains formally inconclusive; D1 remains non-imported and unactivated.
+
+The path-free B27e summary SHA-256 is
+`d80960b022f3f506f592d5e4db19a1aabda07492d5db2c09e40469ad474f4f94`
+and recomputes byte-identically from its four parent-bound child hashes.
+
+The measured harness mislabeled the private child filenames with date suffix
+`20260828`; content and parent/public bindings correctly identify B27e/2026-08-29 and
+nothing was overwritten. Raw files were preserved unchanged. The harness now requires
+an explicit validated artifact date and verifies child hashes during reanalysis.
+
+Final B27e result-state verification passed `153 passed, 11 deselected` in `5.12 s`
+and the real Gemma-4B integration suite `10/10` in `21.17 s`, with swap `0 B` and no
+model process before integration.

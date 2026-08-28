@@ -1,7 +1,9 @@
 # B27 Phase D contract proposal — approval package
 
 **State:** D1 explicitly approved and implemented on 2026-08-28. B27d post-change
-measurement completed as `INCONCLUSIVE_POTENTIAL_REGRESSION`; no activation. See
+measurement completed as `INCONCLUSIVE_POTENTIAL_REGRESSION`; B27e did not reproduce a
+consistent D1 slowdown but remained `ORDER_OR_TEMPORAL_DRIFT`. No neutrality claim or
+activation. See
 [`B27_D1_IMPLEMENTATION.md`](B27_D1_IMPLEMENTATION.md).
 
 This document freezes the smallest architecture decision that can move IronMule

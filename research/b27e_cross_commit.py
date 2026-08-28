@@ -118,6 +118,12 @@ def _memory_percent(text: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _artifact_date(value: str) -> str:
+    if not re.fullmatch(r"[0-9]{8}", value):
+        raise argparse.ArgumentTypeError("artifact-date must be YYYYMMDD")
+    return value
+
+
 def preflight(*, memory_min_percent: int, swap_ceiling_bytes: int) -> dict[str, Any]:
     swap = _command(["sysctl", "vm.swapusage"])
     memory = _command(["memory_pressure"])
@@ -388,7 +394,7 @@ def run_parent(args: argparse.Namespace) -> int:
                 memory_min_percent=args.memory_min_percent,
                 swap_ceiling_bytes=args.swap_ceiling_mib * MIB,
             )
-            child_name = f"B27e_block{block}_pos{position}_{label}_20260828.json"
+            child_name = f"B27e_block{block}_pos{position}_{label}_{args.artifact_date}.json"
             output = args.output_dir / child_name
             row = {"block": block, "position": position, "label": label, "preflight": gate,
                    "artifact_id": child_name}
@@ -454,6 +460,38 @@ def run_parent(args: argparse.Namespace) -> int:
     return 0 if len(entries) == 4 and not public["errors"] else 2
 
 
+def entries_from_parent(parent_path: Path) -> list[dict[str, Any]]:
+    parent = _load(parent_path)
+    entries = []
+    for row in parent.get("children", []):
+        if not row.get("sha256"):
+            continue
+        artifact = parent_path.parent / row["artifact_id"]
+        if not artifact.is_file() or _sha256(artifact) != row["sha256"]:
+            raise RuntimeError(f"child artifact hash mismatch: {row['artifact_id']}")
+        entries.append({
+            "block": row["block"], "position": row["position"], "label": row["label"],
+            "sha256": row["sha256"], "record": _load(artifact),
+        })
+    return entries
+
+
+def run_reanalyze(args: argparse.Namespace) -> int:
+    result = analyze(
+        entries_from_parent(args.parent_raw),
+        old_commit=args.old_commit,
+        d1_commit=args.d1_commit,
+        execution_surface_sha256=args.execution_surface_sha256,
+        threshold=args.threshold_pct / 100.0,
+    )
+    _atomic_json(args.output, result)
+    print(json.dumps({
+        "classification": result["classification"],
+        "b27d_consequence": result["b27d_consequence"],
+    }, sort_keys=True))
+    return 0 if not result["errors"] else 2
+
+
 def parser() -> argparse.ArgumentParser:
     result = argparse.ArgumentParser()
     commands = result.add_subparsers(dest="command", required=True)
@@ -480,12 +518,25 @@ def parser() -> argparse.ArgumentParser:
     parent.add_argument("--memory-min-percent", type=int, default=80)
     parent.add_argument("--swap-ceiling-mib", type=int, default=256)
     parent.add_argument("--child-timeout-seconds", type=int, default=600)
+    parent.add_argument("--artifact-date", type=_artifact_date, required=True)
+
+    reanalyze = commands.add_parser("reanalyze")
+    reanalyze.add_argument("--parent-raw", type=Path, required=True)
+    reanalyze.add_argument("--old-commit", required=True)
+    reanalyze.add_argument("--d1-commit", required=True)
+    reanalyze.add_argument("--execution-surface-sha256", required=True)
+    reanalyze.add_argument("--threshold-pct", type=float, default=5.0)
+    reanalyze.add_argument("--output", type=Path, required=True)
     return result
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    return run_child(args) if args.command == "child" else run_parent(args)
+    if args.command == "child":
+        return run_child(args)
+    if args.command == "reanalyze":
+        return run_reanalyze(args)
+    return run_parent(args)
 
 
 if __name__ == "__main__":

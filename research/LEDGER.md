@@ -2007,3 +2007,59 @@ review SHA-256
 preregistration SHA-256
 `78bec8adb2757ae833146cde0d7cd1e4ad78f8418689761e02707b3b980e32f4`.
 No B27e model timing had been observed when this entry was written.
+
+## B27e — Mirrored cross-commit control result (2026-08-29)
+
+**Binding and execution.** Two clean detached targets ran exact commits
+`467d5b8bfb187cd3dad46cc87e6ada5afbf033dc` (OLD) and
+`0b14eb6f134edc42701ebb1e1a85a1bd484d12d1` (D1). Their declared 16-file execution
+surface was byte-identical, SHA-256
+`ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385`;
+OLD had no D1 module and D1's module matched its sealed hash. Each target had a private
+ignored ProjectAtlas index.
+
+Four fresh 4B children ran serially in the frozen order OLD/D1 then D1/OLD. Every
+preflight recorded 82% free memory, AC, swap `0 B`, no model process. All four
+returncodes were zero, model/framework/protocol domains matched, token/stop/count
+identity held, and there were no correctness/resource hard failures or residual
+processes.
+
+**Frozen result:** `ORDER_OR_TEMPORAL_DRIFT`; B27d consequence
+`B27D_REMAINS_INCONCLUSIVE`.
+
+| Block/order | Arm | D1/OLD wall | D1/OLD rate | Reading |
+| --- | --- | ---: | ---: | --- |
+| 0 OLD -> D1 | Interactive | `0.9925` | `1.0076` | within 5% |
+| 0 OLD -> D1 | Throughput | `0.9841` | `1.0161` | within 5% |
+| 1 D1 -> OLD | Interactive | `0.9422` | `1.0613` | D1 appears faster |
+| 1 D1 -> OLD | Throughput | `0.9267` | `1.0790` | D1 appears faster |
+
+D1 was not slower in either block, so B27d's common-mode 4B slowdown did not reproduce
+as a consistent commit association. The mirrored magnitude changed materially with
+order/time, but the preregistered design requires every comparison inside 5% before
+calling commits indistinguishable. The result therefore cannot be upgraded to
+neutrality; it also provides no evidence for removing D1. No routing or activation
+follows.
+
+Raw SHA-256 values: parent
+`ecd2c18306083bf59f2e370c0192ef8148beac97852dacff99c0fead5cd3e20a`;
+children `2070d965…`, `63a3264e…`, `ae645093…`, `78c16b18…` in execution order.
+The path-free summary SHA-256 is
+`d80960b022f3f506f592d5e4db19a1aabda07492d5db2c09e40469ad474f4f94`
+and was recomputed byte-identically from parent-bound child hashes.
+
+**Artifact-name incident.** The measured harness hardcoded a `20260828` suffix in the
+four private child filenames although the records, parent and public artifact are
+correctly B27e/2026-08-29. No existing file was overwritten and content/hash/analysis
+is unaffected. The records were not renamed or rerun. The post-result harness now
+requires an explicit validated `YYYYMMDD` argument and its reanalysis path rejects any
+changed child hash. This is a tooling correction, not new evidence.
+
+**Decision.** B27e leaves B27d formally inconclusive and closes its own backlog entry;
+the same two-block unconditioned control is not rerun. D1 remains immutable,
+non-imported and unactivated. A further architecture or conditioned measurement stage
+requires a new explicit decision rather than inference from these data.
+
+**Final verification.** The complete serial result-state suite passed
+`153 passed, 11 deselected` in `5.12 s`; the real Gemma-4B integration suite passed
+`10/10` in `21.17 s`. Pre-integration swap was `0 B` and no model process was present.
