@@ -15,6 +15,7 @@ import os
 import platform
 import subprocess
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -42,6 +43,7 @@ def _sysctl(name: str) -> str | None:
     return value or None
 
 
+@lru_cache(maxsize=1)
 def _gpu_cores() -> int | None:
     """Apple GPU core count. system_profiler is slow, so this is cached with the rest."""
     try:

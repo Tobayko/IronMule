@@ -36,6 +36,7 @@ class RequestMetrics:
     token_times_ns: list[int] = field(default_factory=list)
     prompt_tokens: int = 0
     generated_tokens: int = 0
+    visible_generated_tokens: int = 0
     stop_reason: str = ""
     fell_back: bool = False
 
@@ -66,7 +67,12 @@ class RequestMetrics:
 
     def as_dict(self) -> dict:
         return {"rid": self.rid, "prompt_tokens": self.prompt_tokens,
-                "generated_tokens": self.generated_tokens, "stop_reason": self.stop_reason,
+                # `generated_tokens` remains the compatibility key; spell out the
+                # physical count alongside it so EOS filtering is never implicit.
+                "generated_tokens": self.generated_tokens,
+                "physical_generated_tokens": self.generated_tokens,
+                "stop_reason": self.stop_reason,
+                "visible_generated_tokens": self.visible_generated_tokens,
                 "service_ttft_ms": self.service_ttft_ms, "engine_ttft_ms": self.engine_ttft_ms,
                 "queue_wait_ms": self.queue_wait_ms, "latency_ms": self.latency_ms,
                 "inter_token_ms": self.inter_token_ms, "fell_back": self.fell_back}
@@ -82,6 +88,8 @@ class Telemetry:
     fallbacks: int = 0
     fallback_reasons: list[str] = field(default_factory=list)
     correctness_errors: int = 0
+    correctness_check_performed: bool = False
+    correctness_checked_requests: int = 0
     plan_switch_attempts: int = 0
     peak_memory_bytes: int = 0
 
@@ -91,10 +99,13 @@ class Telemetry:
         engine = [m.engine_ttft_ms for m in self.requests if m.engine_ttft_ms is not None]
         inter = [g for m in self.requests for g in m.inter_token_ms]
         generated = sum(m.generated_tokens for m in self.requests)
+        visible_generated = sum(m.visible_generated_tokens for m in self.requests)
         wall_s = self.wall_ns / 1e9 if self.wall_ns else None
         return {
             "mode": self.mode, "plan_kinds": sorted(set(self.plan_kinds)),
             "requests": len(self.requests), "generated_tokens": generated,
+            "physical_generated_tokens": generated,
+            "visible_generated_tokens": visible_generated,
             "wall_ms": self.wall_ns / 1e6 if self.wall_ns else None,
             "aggregate_tokens_per_second": (generated / wall_s) if wall_s else None,
             "service_ttft_p50_ms": _pct(service, 0.50), "service_ttft_p95_ms": _pct(service, 0.95),
@@ -108,6 +119,8 @@ class Telemetry:
             "rounds": len(self.realised_widths),
             "fallbacks": self.fallbacks, "fallback_reasons": self.fallback_reasons[:10],
             "correctness_errors": self.correctness_errors,
+            "correctness_check_performed": self.correctness_check_performed,
+            "correctness_checked_requests": self.correctness_checked_requests,
             "plan_switch_attempts": self.plan_switch_attempts,
             "peak_memory_bytes": self.peak_memory_bytes,
             "per_request": [m.as_dict() for m in self.requests],

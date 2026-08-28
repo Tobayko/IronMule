@@ -31,6 +31,150 @@ entry with no kill criterion is not a hypothesis, it is a wish.
 Effort is calendar-honest for one person on one machine. Payoff is a guess and is
 labelled as one.
 
+## Release blockers imported from the 2026-08-27 runtime review
+
+These entries are code-review hypotheses until a failing regression test or current
+source proof confirms them. They are deliberately separate from the speed tiers: the
+goal is a trustworthy `0.1.1` runtime and benchmark, not a larger headline gain.
+
+### `R2` — Make request arrival, prefill and decode one measurable lifecycle
+
+**Mechanism.** `engine_start_ns` now begins before prefill and remains nonnegative. The
+remaining defect is that all prefills still run before request arrival/admission, and
+the lifecycle lacks separate phase timestamps for admission, prefill start/finish and
+decode. Delayed arrivals can therefore receive model work before they exist in the
+simulated service timeline.
+
+**Test.** Inject a deterministic clock/backend and assert the ordered timestamps
+`request_received <= queue_entered <= engine_start <= prefill_start <= prefill_finished
+<= first_token <= finished`; assert no prefill starts before `arrival_ms`.
+
+**Kill.** The service owns admission and prefill scheduling, all durations derive from
+those timestamps, and sequential/grouped results remain token-identical. This changes
+the runtime architecture and requires the project's explicit architecture approval
+before implementation.
+
+### `R3` — Make the public benchmark balanced and end-to-end
+
+**Mechanism.** The public benchmark now uses complete service `outer_wall_ms`, balanced
+AB/BA ordering, and independent plans. Remaining gaps are one shared loaded
+process/model, no stock `mlx_lm` arm, and prefill/decode phase diagnostics that are
+planned but not yet present in snapshots.
+
+**Test.** Fresh cache/plan instances per arm, at least two warmups, alternating AB/BA
+orders in fresh processes, raw samples plus median/spread/interval, and a deliberate
+token mismatch that must produce a non-zero exit code and a structured diff.
+
+**Kill.** Primary throughput uses complete service wall time; executor/prefill/decode/
+queue times remain diagnostic; the protocol is order-balanced and fails closed on
+wrong answers. A stock `mlx_lm` arm is added only after its exact prompt/stop contract
+is defined and architecture approval is recorded.
+
+### `R6` — Refuse stale profiles and fingerprint the actual model
+
+**Mechanism.** The remaining identity gap is that the runtime fingerprint does not yet
+bind a qualified model revision and quantisation identity strongly enough for profile
+reuse. System-condition fail-closed checks and current-prompt workload drift handling
+are covered separately.
+
+**Test.** Unit profiles varying hardware/framework/model revision/quantisation/plan/
+workload fields; revalidation with a materially different prompt; fail-closed corrupt
+or incomplete profiles.
+
+**Kill.** Exact compatibility reuses a profile, workload-only drift is explicit and
+canaried, framework/model drift falls back to baseline, and a changed prompt is
+measured from its current tokenization.
+
+### `R8` — Turn correctness and packaging into automated release gates
+
+**Mechanism.** A macOS workflow now exists, but remote CI and its clean installed-wheel
+job have not run. The real-model fixture previously skipped every exception, so a
+programming error could be reported as a missing model.
+
+**Test.** CI builds and installs the wheel in a clean environment, runs unit and CLI
+smokes, and checks dependency metadata. Integration setup skips only enumerated model,
+access or unavailable-Metal failures; all other exceptions fail.
+
+**Kill.** A clean package/CLI job is green, synthetic regressions cover `R1`–`R7`, and
+an injected unexpected integration error fails instead of skipping. Apple-Silicon
+model CI remains open until runner availability and cost are explicitly approved.
+
+### `S1` — Persistent local service with an explicit overload contract
+
+**Mechanism.** A warm process with a real admission queue can expose completions and
+chat completions without making callers embed the Python runtime. Streaming,
+cancellation, queue limits, timeouts, backpressure, health/readiness and separate
+interactive/throughput lanes are one service contract, not independent decorations.
+
+**Test.** Loopback-only MVP with OpenAI-compatible request/stream shapes; bounded queue
+property tests; cancellation/disconnect and overload tests; no request prefills before
+admission; 1 h stability gate before any production claim.
+
+**Kill.** Unbounded memory/queue growth, incorrect cancellation, token divergence from
+the library path, or p95 latency outside a preregistered service budget. Architecture
+approval is required before implementation.
+
+### `C1` — Safe cache, chat and sampling expansion
+
+**Mechanism.** Capacity buckets and an LRU prefix-cache budget can reduce mixed-prompt
+memory, while multi-message templates and custom stops make the API useful. Sampling
+must remain a separate seeded mode because exact-greedy guarantees do not transfer.
+
+**Test.** Prefix mismatch rejects by default; per-bucket peak memory and hit rate;
+model-family chat-template corpus; deterministic seeded-sampling distribution tests.
+
+**Kill.** Any cross-tenant/prompt cache reuse, unbounded cache growth, exact-mode token
+change, or no material memory reduction from bucketing. Architecture approval required.
+
+### `Q1` — Expand the evidence matrix and run sustained-load gates
+
+**Mechanism.** Current evidence is narrow in chip, model family, quantisation, context,
+output length, concurrency and workload. A matrix plus smoke/1 h/6 h/24 h and burst
+profiles can separate compatibility from performance and stability.
+
+**Test.** Record exact model revision, hardware, framework, power, RSS/MLX peak/swap,
+TTFT p50/p95/p99, throughput, queue depth, fallbacks and cache hits for every cell.
+
+**Kill.** A cell without raw data, repeats, correctness gate or a comparable baseline
+cannot extend the validity domain. Hardware/model acquisition and long runs require
+explicit resource approval.
+
+### `D1` — Reproducible community bundles and release supply chain
+
+**Mechanism.** A local bundle with console output, raw JSON, fingerprints, checksums and
+privacy preview enables external replication; clean build/install, dependency scanning,
+SBOM and signed artifacts make releases inspectable.
+
+**Test.** Offline bundle round-trip and redaction tests; clean wheel install/CLI smoke;
+release dry run with tag/version equality. Submission is always opt-in.
+
+**Kill.** Hidden upload, private prompt leakage, non-reproducible metadata, or unsigned/
+unverifiable final artifacts. Publishing a tag/release requires separate user approval.
+
+### `DOC1` — Make claims, limits and entry points easy to audit
+
+**Mechanism.** A shorter README, precise “validated primarily on M1 Max” language,
+result labels (preregistered versus exploratory), decision table, complete CLI map and
+small terminal demo reduce misuse without changing the runtime.
+
+**Test.** Every number links to raw evidence and validity scope; every advertised CLI
+command has a smoke test; the demo uses current benchmark output without hand editing.
+
+**Kill.** Any statement that generalises beyond measured chips/models or presents
+service TTFT as single-request model speed is removed rather than softened.
+
+### `L1` — Clarify the source-available licence before enterprise claims
+
+**Mechanism.** Developer/company summaries and concrete SaaS, consulting, internal-use,
+fork and commercial-contact examples reduce ambiguity; independent legal review is the
+authority, not repository code.
+
+**Test.** Counsel-reviewed text and examples agree with `LICENSE.md`; no telemetry or
+phone-home enforcement is introduced.
+
+**Kill.** This entry cannot close on an engineering opinion. It closes only with the
+user-approved legal review and resulting documents.
+
 | | idea | effort | guessed payoff | correctness risk |
 | :-- | :-- | :-- | :-- | :-- |
 | `B1` | Width sweep at 27B | hours | 0 – 5% | low, gated by token identity |
@@ -42,6 +186,7 @@ labelled as one.
 | `B7` | Close the gap in the scaling arithmetic | days | 0, it is understanding | none |
 | `B25` | KV cache reallocation during decode | hours | 0 – 4% | none |
 | `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
+| `B30` | Widen Qwen grouped batch-1 groups to 5/6 | days | 0 – 10% | medium, throughput/correctness |
 | `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
 | `B9` | Record the decode step once, replay it | weeks | 10 – 30% absolute | low |
 | `B10` | Fewer kernels per step | weeks | 5 – 15% | low |
@@ -106,10 +251,41 @@ entries; everything current goes here.
   A valid negative result. It also points the wrong way for the scaling problem: a fixed
   per-step host cost is a *smaller* share of a longer step, so 27B would show less, not
   more. Do not re-run it hoping for a better draw.
+- **B28 / `qwen_native_true_batch_v1` rejected at the correctness gate.** Widths 2, 3
+  and 4 produced exact visible tokens and stop reasons with no fallbacks, but the final
+  hybrid `kv_hash` differed from the sequential reference. Swap delta was `0 B`; no
+  token-rate or other performance measurement is valid. Do not route this path.
+- **B29c / `qwen_native_b1_v1` below target.** Widths 2, 3 and 4 passed exact
+  correctness, final state and 16-token continuation with no fallback and zero swap
+  delta. Candidate `16.0722` versus Interactive `15.6740` (`1.02541x`) and versus
+  Throughput `16.0687` (`1.000219x`) remain below the `1.10` gate. No route.
+
+- **B40 width sweep (experiment B40, `INCONCLUSIVE`).** W2/W4 and W3/W4 were
+  directionally slower on all six blocks, but material epoch drift prevented a
+  valid selection; all 18 children and safety gates were clean. No retry is
+  authorized, and no W2/W3/W4 timing may be cherry-picked or treated as a
+  selected profile. W4 remains the unchanged operational baseline.
 
 ---
 
 ## Tier 1 — cheap, grounded, worth doing first
+
+### `B38` — Exact Gemma 12B core-profile activation/canary
+
+**Mechanism.** B36 qualifies the non-mutating core profile only for the exact
+Gemma 3 12B revision, prompt, host and full-hash/prefault protocol. A separate
+activation/canary decision must preserve that fingerprint scope rather than
+turning the exploratory result into automatic routing.
+
+**Test.** Obtain explicit architecture approval first. Then canary only the
+exact revision/quantisation/hardware identity, with fail-closed model/code/
+environment/workload fingerprints, correctness, memory, swap, crash and
+rollback gates. Keep activation opt-in and compare against the unchanged
+baseline under a preregistered rollout budget.
+
+**Kill.** Any identity drift, missing gate evidence, token/stop divergence,
+resource regression, inconclusive canary or unapproved architecture change
+blocks activation. No activation is allowed now.
 
 ### `B1` — Is width 4 still the ceiling at 27B?
 
@@ -284,6 +460,47 @@ away.
 **Kill.** Nothing. Either answer closes a confound that currently limits every
 conclusion in `SCALING.md`, which is why this sits in Tier 1 despite a guessed payoff of
 zero percent.
+
+**Compatibility result.** The separate X2 gate qualified the type-preserving hybrid
+adapter and leaves this performance/family study open for its preregistered,
+three-repeat measurements.
+
+### `B30` — Widen Qwen grouped batch-1 groups to five and six
+
+**Mechanism.** The simultaneous six-request Qwen workload currently forms width-4
+plus width-2 independent fixed-state batch-1 groups. A Qwen-only scheduler ceiling
+of 5/6 can submit more independent B=1 forwards before the existing barrier while
+leaving fixed cache tensors, model calls and grouping semantics unchanged. Gemma
+stays at width 4.
+
+**Success gate.** On the strict six-request, 48-token workload, candidate versus
+Interactive paired median executor/decode rate must be at least `1.10`, with no
+regression versus current Throughput. Physical/visible tokens, stops, counts and
+final `kv_hash` must match fresh Sequential and current Throughput controls; memory,
+swap and fallback gates must pass.
+
+**Test.** Run widths 4, 5 and 6 through the mandatory pre-timing gate, then the
+standard balanced two-warmup/three-repeat pilot. Keep model calls at independent
+B=1 and do not add native conversion, cache merging or compilation.
+
+**Kill.** Any divergence, state/hash mismatch, fallback, memory/swap pressure,
+candidate below `1.10`, regression versus current Throughput, or Gemma regression.
+
+**B30 correctness/resource event (2026-08-27).** The real integration gate passed
+at widths 4/5/6 with exact tokens, stops, counts and state hashes, zero fallbacks,
+exit `0`, and `152.16 s` wall time. No token-ID artifact exists, so this is not a
+product or performance claim. Swap rose from `505.75 MiB` to `2676.69 MiB`
+(`+2170.94 MiB`); free-memory telemetry moved `82%` to `87%`, with no crash.
+B30a is therefore not run until reboot/resource reset; all preregistered gates and
+thresholds remain unchanged. Raw: `B30_correctness_gate_20260827.json`.
+
+**B30a pilot result (2026-08-27).** The mandatory correctness gate again passed
+at widths 4/5/6 with exact output/state and zero fallback. Warmup 0 produced
+Interactive `15.8483`, Throughput `16.4353`, and candidate `16.4240` executor
+tokens/s. The safety checkpoint then stopped the pilot: swap delta was
+`314111427 B` and peak MLX memory `23882126950 B`. No measured repeat ran;
+classification is `INCONCLUSIVE` and no performance claim is made. B30b is
+required after reboot/resource reset; gates and thresholds remain unchanged.
 
 ---
 
@@ -595,6 +812,19 @@ Several entries above could be answered in an afternoon with a real profile, and
 of them might be answered *differently*.
 
 **Kill.** Nothing. This is the entry to do first if Tier 2 is ever seriously attempted.
+
+**B24 capture smoke (2026-08-27).** Installed MLX `0.32` exposed start/stop
+capture support and memory counters, but no public machine-readable counter or
+profile names were identified. The first tiny smoke failed because the capture
+layer was not inserted. A retry with `MTL_CAPTURE_ENABLED=1` succeeded for a
+tiny 64-element matmul and produced `/private/tmp/ironmule_b24_enabled_smoke.gputrace`;
+there was no timing/performance claim and no crash. The trace is intentionally
+not copied into the repository. B24 remains open for one model decode trace and
+Xcode analysis, using Apple's [GPU counter statistics guidance](https://developer.apple.com/documentation/xcode/analyzing-apple-gpu-performance-using-counter-statistics)
+and [Metal developer tools](https://developer.apple.com/metal/tools/); MLX's
+available [active-memory](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.get_active_memory.html)
+and [peak-memory](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.get_peak_memory.html)
+APIs remain allocation diagnostics, not GPU counter names.
 
 ---
 

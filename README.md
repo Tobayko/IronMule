@@ -17,7 +17,7 @@ IronMule is an adaptive MLX inference runtime for local LLMs on Apple Silicon. I
 
 IronMule is a local LLM inference runtime for [MLX](https://github.com/ml-explore/mlx) on Apple silicon. It includes prefix KV caching, grouped batch-1 execution, telemetry, and a correctness gate. It does not download or redistribute model weights.
 
-> **Validity Domain — read before interpreting any number.** Every performance result below was measured on one `mlx-community/gemma-3-4b-it-4bit` model revision (`93724907`), 4-bit group-size 64 quantisation, MLX `0.32.0`, mlx_lm `0.31.3`, an Apple M1 Max with 32 GB unified memory on AC power, greedy decoding, contexts of 276–2048 tokens, batch 1 per execution, and up to 8 concurrent requests. Nothing outside this box is claimed. See [`docs/LIMITS.md`](docs/LIMITS.md).
+> **Validity Domain — read before interpreting any number.** IronMule is designed for Apple Silicon and currently validated primarily on this Apple M1 Max. Every result is linked to evidence and labelled preregistered or exploratory; other chips are community evidence, not an M1–M4 general claim. The measured validity box is one `mlx-community/gemma-3-4b-it-4bit` model revision (`93724907`), 4-bit group-size 64 quantisation, MLX `0.32.0`, mlx_lm `0.31.3`, 32 GB unified memory on AC power, greedy decoding, contexts of 276–2048 tokens, batch 1 per execution, and up to 8 concurrent requests. Nothing outside this box is claimed. See [`docs/LIMITS.md`](docs/LIMITS.md).
 
 ## Key measured results
 
@@ -28,6 +28,7 @@ These are measured results, not promises for every Mac, model, workload, or MLX 
 | homogeneous | `+16.4 … +17.2%` | `+27%` | `−16%` | ~800 → ~87 ms |
 | heterogeneous | `+15.6 … +15.8%` | `+27%` | `−15%` | ~800 → ~87 ms |
 | staggered arrivals | `+15.1%` | `+26%` | `−8%` | ~690 → ~88 ms |
+| short answers | `+9.2%` | `+54%` | `−9%` | — |
 
 ### How this scales to larger models
 
@@ -39,7 +40,6 @@ These are measured results, not promises for every Mac, model, workload, or MLX 
 The headline number does **not** carry unchanged to larger models. Measured on the same machine with an unchanged protocol, three runs each, the throughput gain falls from `+19.24%` at 4B to `+11.81%` at 27B — while the service TTFT improvement holds near `5x` and the median latency cost rises from `+48.6%` to `+60.1%`.
 
 All three ran at a realised width of `4.00`, so group filling does not explain it. These runs are **exploratory**: no preregistration was sealed, so they carry less standing than the results above. Method, the full table and what to test next: [`docs/SCALING.md`](docs/SCALING.md).
-| short answers | `+9.2%` | `+54%` | `−9%` | — |
 
 Grouping does not make a request faster. It makes requests finish together: median latency worsens while tail latency and service TTFT improve. The short-answer result is included because the gain falls when groups do not fill. E16 reports zero correctness failures across 40 processes, while its frozen verdict remains `CONFOUNDED_BY_PROCESS_STATE`; both facts matter.
 
@@ -81,7 +81,14 @@ Run the local benchmark when a compatible model is available:
 ironmule benchmark
 ```
 
-The benchmark prints the baseline and IronMule measurements for the selected workload. It does not download a model.
+The benchmark compares the caller-selected `InteractiveMode` and `ThroughputMode`; it does not add a stock `mlx_lm` arm or download a model. Its primary clock surrounds the complete `Runtime.serve` call (`outer_wall_ms`), including service and prefill work.
+
+Other dependency-light CLI routes are available for the existing tuner and stored
+profile: `ironmule tune [--show]`, `ironmule revalidate [--model MODEL
+--max-tokens N]`, `ironmule status [--model MODEL]`, and the read-only local-cache
+inventory `ironmule models [--model REPO_ID]`. These commands do not add a server or
+cache-management API; runtime dependencies are loaded only after the selected command
+is dispatched.
 
 ### 4. Use from Python
 
@@ -106,7 +113,16 @@ See [`docs/RUNTIME.md`](docs/RUNTIME.md) for the API and [`research/LEDGER.md`](
 | Execution plan | `StrictOneShotPlan`, `ReusableSessionPlan` | which tokens come out |
 | Service mode | `InteractiveMode`, `ThroughputMode` | the latency/throughput trade |
 
-**It tells you what it cost.** Time to first token is reported from request arrival (`service_ttft_ms`) and from model start (`engine_ttft_ms`). Under concurrency those differ by queue wait, so both remain visible. Telemetry also records latency, inter-token timing, aggregate tokens per second, realised group width, peak memory, fallbacks, correctness errors, and plan-switch attempts.
+### Choose a mode
+
+| Situation | Recommendation | Caveat |
+| :-- | :-- | :-- |
+| Single chat or latency-critical request | `InteractiveMode` | Lowest single-caller latency; see [`docs/RUNTIME.md`](docs/RUNTIME.md#service-modes) |
+| Concurrent users or high aggregate throughput | `ThroughputMode` | Requests finish together; median per-request latency can rise |
+| Many questions over one shared document | `ReusableSessionPlan` | Plan changes the token contract; use only with a matching declared prefix |
+| Very short answers | Often `InteractiveMode` | Group filling may be weak; measure the complete workload |
+
+**It tells you what it cost.** Time to first token is reported from request arrival (`service_ttft_ms`) and from model start (`engine_ttft_ms`). Under concurrency those differ by queue wait, so both remain visible. Telemetry also records latency, inter-token timing, physical and visible token counts, and the compatibility `aggregate_tokens_per_second` rate; the benchmark derives and reports separate physical/visible rates. It also records realised group width, peak memory, fallbacks, correctness errors, and plan-switch attempts. `correctness_errors=0` means no errors were recorded; it does not by itself prove that a correctness comparison ran.
 
 ## Reproduce the headline benchmark
 
@@ -116,21 +132,24 @@ The command used for the compact benchmark output is:
 python -m ironmule.benchmark
 ```
 
-The measured output recorded in the repository is:
+The current public protocol uses two warmups and six measured repeats per arm. Measured repeats are even and alternate `InteractiveMode`/`ThroughputMode` in AB/BA order, so each arm occupies each position equally. The JSON form (`--json out.json`) retains raw warmup and repeat snapshots, raw token IDs and stop reasons, per-arm runtime fingerprints and workload, medians/spread, and a paired bootstrap interval. The primary rate is explicitly physical tokens per second (including the prefill-produced token and EOS when emitted); visible tokens exclude EOS.
 
 ```
-mode              wall ms        tok/s  svcTTFT p50      lat p50      lat p95
-interactive          3303         87.2       1384.9       1921.0       3367.8
-throughput           2700        106.6        246.6       2893.8       3048.3
+mode          outer ms p50   physical tok/s   visible tok/s
+interactive       <median>         <median>         <median>
+throughput        <median>         <median>         <median>
 
-throughput gain +18.24%   identical answers in both modes: True
+throughput gain <outer-wall ratio>   95% CI [<low>; <high>]
+identical answers in both modes: True
 ```
 
-Replicate with warmup, repeated runs, and the same validity-domain fingerprint before comparing another machine. A single run is not evidence of a general performance result.
+If token IDs, stop reasons, or counts differ, the benchmark emits a structured difference to stderr (including the first differing token position and reference/candidate values), exits nonzero, and includes that difference in the result file when `--json` is supplied. The benchmark intentionally shares one loaded runtime/model process to avoid doubling peak memory; only plan/cache state is isolated per arm, so fresh-process isolation remains an open R3 limitation. Replicate with the same validity-domain fingerprint before comparing another machine; a single run is not evidence of a general performance result.
 
 ## Correctness
 
-Twenty-eight tests cover exact token IDs, token counts, stop reasons, KV state hashes, ragged response lengths, early-finishing requests, reversed arrival order, heterogeneous prompt lengths, staggered arrival, group widths 1 to 4, sequential fallback, and the absence of state aliasing between requests.
+The test suite covers exact token IDs, token counts, stop reasons, KV state hashes, ragged response lengths, early-finishing requests, reversed arrival order, heterogeneous prompt lengths, staggered arrival, group widths 1 to 4, sequential fallback, benchmark protocol/diff gates, and the absence of state aliasing between requests.
+
+`max_tokens` is the total physical output cap: the prefill-produced first token counts toward it. If that first token is EOS, generation stops immediately with `stop_reason="eos"`; otherwise the cap yields `stop_reason="length"` when reached. Visible-token counts omit EOS.
 
 ```bash
 pytest tests/test_ironmule_runtime.py -q              # fast, no model needed

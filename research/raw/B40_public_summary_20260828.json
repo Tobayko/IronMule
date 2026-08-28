@@ -1,0 +1,74 @@
+{
+  "schema": "ironmule.public_summary.v1",
+  "experiment": "B40",
+  "date": "2026-08-28",
+  "privacy_redacted": true,
+  "scope": {
+    "model": "Gemma 3 12B IT 4-bit",
+    "hardware": "Apple M1 Max, 32 GiB unified memory, 32 GPU cores",
+    "software": {
+      "macos": "26.5.2",
+      "python": "3.12.13",
+      "mlx": "0.32.0",
+      "mlx_lm": "0.31.3"
+    },
+    "power_source": "AC",
+    "low_power_mode": false
+  },
+  "workload": {
+    "name": "X1-strict",
+    "requests_per_run": 6,
+    "max_tokens": 48,
+    "decoding": "greedy",
+    "warmups": 2,
+    "measured_repeats": 5,
+    "blocks": 6,
+    "children": 18,
+    "measured_request_runs": 540
+  },
+  "arms": {
+    "W2": {"profile": "core", "mode": "throughput", "max_width": 2},
+    "W3": {"profile": "core", "mode": "throughput", "max_width": 3},
+    "W4": {"profile": "core", "mode": "throughput", "max_width": 4}
+  },
+  "status": {
+    "formal": "INCONCLUSIVE",
+    "reason": "material_epoch_drift",
+    "valid_for_performance": false,
+    "activation_allowed": false,
+    "engineering_observation": "W4 was faster than W2 and W3 in every block, but no width selection is permitted"
+  },
+  "valid_for_performance": false,
+  "activation_allowed": false,
+  "resources": {
+    "swap_delta_max_bytes": 0,
+    "rss_peak_max_bytes": 7921287168,
+    "mlx_active_max_bytes": 7188274730,
+    "mlx_peak_max_bytes": 8002539246,
+    "crash_reports_relevant": 0,
+    "residual_model_processes": 0,
+    "final_h2": true,
+    "rss_gate": "PASS",
+    "resource_gates": "PASS"
+  },
+  "endpoints": {
+    "W2": {"wall_ns_median": 10218160333, "rate_tok_s_median": 28.18563778029018},
+    "W3": {"wall_ns_median": 9643720875, "rate_tok_s_median": 29.86402692176042},
+    "W4": {"wall_ns_median": 9226465041.5, "rate_tok_s_median": 31.21482708969217}
+  },
+  "ratios": {
+    "W2/W4": {"wall_median": 1.1033961300051331, "wall_ci_97_5": [1.0849631490673945, 1.1335189058508615], "rate_median": 0.9062977565937032, "rate_ci_97_5": [0.8823856803711523, 0.9218292054497783], "robust_miss": true},
+    "W3/W4": {"wall_median": 1.040445749841422, "wall_ci_97_5": [1.022514206934345, 1.0723726405010425], "rate_median": 0.9611730621034691, "rate_ci_97_5": [0.9325739636675945, 0.9779881471327478], "robust_miss": true}
+  },
+  "drift": {
+    "limit": 0.02,
+    "material": true,
+    "material_checks": ["epoch:0:5:W3", "epoch:1:4:W4", "epoch:2:3:W4"]
+  },
+  "provenance": {
+    "model_binding_digest": "e08dd84591588722a11c43d9ff7ee4b3f50d01f15371c8a4429c4f9857d37fb6",
+    "code_digest": "473980a41d7f5d46f0bc1e76452edcc89238a31edc2bb1943313c243b3a27120",
+    "preregistration_sha256": "23d0c59d9903875a68131d1f7ac6dc902f671a48b30fa25238ff7dfda34ca0a6",
+    "private_raw_sha256": "8094cd29d3b28a43dd52a270457fd0918a1a6f046c621abbec00ab47ff976d86"
+  }
+}
