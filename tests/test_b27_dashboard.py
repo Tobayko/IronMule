@@ -22,12 +22,35 @@ def test_dashboard_is_local_escaped_and_includes_history():
             "resources": {"mlx_peak_memory_bytes": 1_000_000_000, "swap_delta_bytes": 0},
         }],
     }
-    page = render(summary, {
-        "ok": True, "errors": [], "checked_cells": 1, "checked_failures": 1,
-    })
+    page = render(
+        summary,
+        {"ok": True, "errors": [], "checked_cells": 1, "checked_failures": 1},
+        {
+            "classification": "INCONCLUSIVE_POTENTIAL_REGRESSION",
+            "regression_kind": "POTENTIAL_CODE_REGRESSION",
+            "cells": [{
+                "model_id": "org/model",
+                "performance_misses": ["interactive.outer_wall"],
+                "comparisons": {
+                    arm: {
+                        "outer_wall_post_over_pre": {"median_ratio": 1.06, "ci_low": 1.05, "ci_high": 1.07},
+                        "physical_rate_post_over_pre": {"median_ratio": .94, "ci_low": .93, "ci_high": .95},
+                    } for arm in ("interactive", "throughput")
+                },
+            }],
+        },
+        {
+            "ok": True,
+            "byte_identical_recomputation": True,
+            "tests": {"non_integration": "146 passed"},
+        },
+    )
     assert "Bad&lt;Resolver&gt;" in page
     assert "org/&lt;model&gt;" in page
     assert "Pre-measurement" in page and "Baseline cell" in page
     assert "Evidence integrity" in page and "VERIFIED" in page
+    assert "D1 post/pre regression screen" in page
+    assert "INCONCLUSIVE_POTENTIAL_REGRESSION" in page
+    assert "D1 comparison integrity" in page and "146 passed" in page
     assert "http://" not in page and "https://" not in page
     assert "<script" not in page

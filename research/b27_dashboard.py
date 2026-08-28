@@ -21,7 +21,11 @@ def _number(value: Any, digits: int = 2) -> str:
         return "—"
 
 
-def render(summary: dict[str, Any], verification: dict[str, Any] | None = None) -> str:
+def render(
+    summary: dict[str, Any], verification: dict[str, Any] | None = None,
+    post_change: dict[str, Any] | None = None,
+    post_verification: dict[str, Any] | None = None,
+) -> str:
     if summary.get("schema") != "ironmule.main_baseline.public.v1":
         raise ValueError("unsupported public-summary schema")
     cells = summary.get("cells")
@@ -80,8 +84,64 @@ def render(summary: dict[str, Any], verification: dict[str, Any] | None = None) 
             'no qualification or activation change</small></li>'
         )
 
+    post_card = ""
+    post_section = ""
+    if post_change is not None:
+        classification = _text(post_change.get("classification", "unknown"))
+        clean = post_change.get("classification") == "NO_REGRESSION_OBSERVED"
+        css = "good" if clean else "warn"
+        post_card = (
+            '<div class="card"><small>D1 post-change screen</small>'
+            f'<strong class="{css}">{classification}</strong>'
+            f'<span>{_text(post_change.get("regression_kind", "unknown"))}</span></div>'
+        )
+        post_rows = []
+        for cell in post_change.get("cells", []):
+            comparisons = cell.get("comparisons", {})
+            interactive = comparisons.get("interactive", {})
+            throughput = comparisons.get("throughput", {})
+            iw = interactive.get("outer_wall_post_over_pre", {})
+            ir = interactive.get("physical_rate_post_over_pre", {})
+            tw = throughput.get("outer_wall_post_over_pre", {})
+            tr = throughput.get("physical_rate_post_over_pre", {})
+            misses = cell.get("performance_misses", [])
+            post_rows.append(
+                "<tr>"
+                f'<td><strong>{_text(cell.get("model_id"))}</strong></td>'
+                f'<td>{_number(iw.get("median_ratio"), 4)}<small>{_number(iw.get("ci_low"), 4)}–{_number(iw.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(ir.get("median_ratio"), 4)}<small>{_number(ir.get("ci_low"), 4)}–{_number(ir.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(tw.get("median_ratio"), 4)}<small>{_number(tw.get("ci_low"), 4)}–{_number(tw.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(tr.get("median_ratio"), 4)}<small>{_number(tr.get("ci_low"), 4)}–{_number(tr.get("ci_high"), 4)}</small></td>'
+                f'<td class="{"warn" if misses else "good"}">{_text(", ".join(misses) if misses else "all pass")}</td>'
+                "</tr>"
+            )
+        post_section = (
+            '<h2>D1 post/pre regression screen</h2><div class="table-wrap"><table>'
+            '<thead><tr><th>Model</th><th>Interactive wall</th><th>Interactive rate</th>'
+            '<th>Throughput wall</th><th>Throughput rate</th><th>5% gates</th></tr></thead>'
+            f'<tbody>{"".join(post_rows)}</tbody></table></div>'
+        )
+        timeline.append(
+            '<li class="event failed"><span>D1 post-change screen</span>'
+            f'<strong>{classification}</strong><small>frozen result; no retry or activation</small></li>'
+        )
+
     corpus = summary.get("corpus_inventory", {})
     tests = summary.get("tests", {})
+    current_test = (
+        post_verification.get("tests", {}).get("non_integration")
+        if post_verification is not None else None
+    ) or tests.get("non_integration", "—")
+    post_integrity = ""
+    if post_verification is not None:
+        verified = (post_verification.get("ok") is True
+                    and post_verification.get("byte_identical_recomputation") is True)
+        post_integrity = (
+            '<div class="card"><small>D1 comparison integrity</small>'
+            f'<strong class="{"good" if verified else "warn"}">'
+            f'{"VERIFIED" if verified else "FAILED"}</strong>'
+            '<span>byte-identical recomputation</span></div>'
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -122,14 +182,17 @@ self-contained view makes no qualification or activation claim.</p>
   <div class="card"><small>Top status</small><strong>{_text(summary.get("status"))}</strong><span class="warn">Qualification: false</span></div>
   <div class="card"><small>Unique evidence artifacts</small><strong>{_text(corpus.get("unique_artifacts", "—"))}</strong><span>{_text(corpus.get("artifacts", "—"))} source occurrences</span></div>
   <div class="card"><small>Local-only / ignored</small><strong>{_text(corpus.get("local_only_or_ignored", "—"))}</strong><span>kept out of public history</span></div>
-  <div class="card"><small>Regression suite</small><strong>{_text(tests.get("non_integration", "—"))}</strong><span>serial, no xdist</span></div>
+  <div class="card"><small>Regression suite</small><strong>{_text(current_test)}</strong><span>serial, no xdist</span></div>
   {verification_card}
+  {post_card}
+  {post_integrity}
 </section>
 <h2>Protected baseline cells</h2>
 <div class="table-wrap"><table>
 <thead><tr><th>Model / revision</th><th>Interactive ms</th><th>Throughput ms</th><th>Wall effect</th><th>Rate effect</th><th>MLX peak</th><th>Swap Δ</th></tr></thead>
 <tbody>{''.join(rows)}</tbody>
 </table></div>
+{post_section}
 <h2>History</h2><ol>{''.join(timeline)}</ol>
 <footer>Base <code>{_text(summary.get("base_commit"))}</code> · runtime tree
 <code>{_text(summary.get("runtime_tree_sha256"))}</code> · no external assets,
@@ -149,11 +212,17 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--summary", type=Path, required=True)
     parser.add_argument("--verification", type=Path)
+    parser.add_argument("--post-change", type=Path)
+    parser.add_argument("--post-verification", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     summary = json.loads(args.summary.read_text())
     verification = json.loads(args.verification.read_text()) if args.verification else None
-    _atomic_write(args.output, render(summary, verification))
+    post_change = json.loads(args.post_change.read_text()) if args.post_change else None
+    post_verification = (
+        json.loads(args.post_verification.read_text()) if args.post_verification else None
+    )
+    _atomic_write(args.output, render(summary, verification, post_change, post_verification))
     print(json.dumps({"output": str(args.output), "cells": len(summary["cells"])}, sort_keys=True))
     return 0
 

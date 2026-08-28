@@ -20,6 +20,15 @@ No claim holds outside this box. Another model, another quantisation, another ML
 build or another machine requires re-measurement, which is what the fingerprint
 exists to force.
 
+**B27 D1 is not a runtime optimization or selected profile.** It adds an immutable,
+stdlib-only evidence contract that current runtime modules do not import. The sealed
+B27d post-change engineering screen preserved exact outputs/resources and passed its
+12B regression gates, but both 4B arms were common-mode 5.7–6.4% slower and crossed the
+preregistered 5% intervals. Its result is therefore
+`INCONCLUSIVE_POTENTIAL_REGRESSION`, not proof that D1 is performance-neutral or that
+the slowdown is causal. D1 remains unactivated; B27e is the separate mirrored
+cross-commit discriminator.
+
 ## Apple-Silicon inference claims
 
 Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and

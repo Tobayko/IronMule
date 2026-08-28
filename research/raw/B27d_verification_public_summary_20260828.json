@@ -1,0 +1,20 @@
+{
+  "activation_allowed": false,
+  "after_raw_sha256": [
+    "10071669abb6c45871bf3d5eec0df3f37104341bb197394a840bf64e46a7be44",
+    "41d9bd16b179357ae1d99edf26abba135d1c2b8315bc5c47c421868f5b977a96"
+  ],
+  "byte_identical_recomputation": true,
+  "classification": "INCONCLUSIVE_POTENTIAL_REGRESSION",
+  "errors": [],
+  "ok": true,
+  "qualification_changed": false,
+  "recomputed_sha256": "ed2129005ab96df2a103808108c9c5fb0f63e871d7f33caace628e8ef7848c37",
+  "regression_kind": "POTENTIAL_CODE_REGRESSION",
+  "schema": "ironmule.post_change_verification.v1",
+  "summary_sha256": "ed2129005ab96df2a103808108c9c5fb0f63e871d7f33caace628e8ef7848c37",
+  "tests": {
+    "gemma4b_integration": "10 passed in 21.12s",
+    "non_integration": "146 passed, 11 deselected in 5.18s"
+  }
+}

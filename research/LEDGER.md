@@ -1944,3 +1944,50 @@ The post-change experiment is sealed in
 [`B27d_preregistration.md`](raw/B27d_preregistration.md), SHA-256
 `846e09499a0eb4f9ff531a6302da9c7913e8b6f620d6ad7834dcaf7fda44de36`.
 No post-D1 model timing had been observed when this entry was written.
+
+## B27d — D1 post-change regression screen (2026-08-28)
+
+**Protocol and binding.** B27d ran from clean commit
+`0b14eb6f134edc42701ebb1e1a85a1bd484d12d1`, runtime-tree SHA-256
+`d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21`.
+Exact cached Gemma 3 4B and 12B revisions used the B27a2 strict/base-knob protocol:
+six requests, 48 tokens, two warmups and six measured repeats per Interactive and
+Throughput arm. Both cells started at 83% free memory, AC, low-power false, swap `0 B`,
+with no competing model process.
+
+**Correctness/resources.** Both cells are `BASELINE_CAPTURED`: exact arm token/stop/
+count identity, zero fallback/correctness errors, zero swap delta and no residual
+process. MLX peaks were `2,784,922,186 B` (4B) and `7,801,381,947 B` (12B).
+Raw SHA-256 values are
+`10071669abb6c45871bf3d5eec0df3f37104341bb197394a840bf64e46a7be44` and
+`41d9bd16b179357ae1d99edf26abba135d1c2b8315bc5c47c421868f5b977a96`.
+
+**Frozen result:** `INCONCLUSIVE_POTENTIAL_REGRESSION`, regression kind
+`POTENTIAL_CODE_REGRESSION`. Ratios are post/pre with independent 10,000-resample
+bootstrap intervals:
+
+| Model/arm | Wall ratio [95% CI] | Physical-rate ratio [95% CI] | 5% gate |
+| --- | ---: | ---: | --- |
+| 12B Interactive | `1.0055 [0.9815; 1.0288]` | `0.9943 [0.9720; 1.0189]` | pass |
+| 12B Throughput | `0.9995 [0.9864; 1.0224]` | `1.0006 [0.9788; 1.0136]` | pass |
+| 4B Interactive | `1.0575 [1.0530; 1.0621]` | `0.9456 [0.9417; 0.9496]` | miss |
+| 4B Throughput | `1.0643 [1.0571; 1.0676]` | `0.9396 [0.9366; 0.9460]` | miss |
+
+The 4B movement is common-mode: both absolute arms slow together, while the within-cell
+grouping wall ratio changes only `0.8437 -> 0.8483` and the rate ratio
+`1.1852 -> 1.1789`. The 12B endpoints are unchanged. The post 4B process also began
+with higher load averages, and the only `ironmule/` source added between commits is the
+non-imported D1 module. Those diagnostics weaken a causal-code reading but do not
+override the preregistered result.
+
+**Decision.** D1 remains outside the runtime import/execution path and is not activated.
+No no-regression or performance-safety claim is made. B27d is not retried or pooled.
+Its path-free summary was recomputed byte-identically; SHA-256
+`ed2129005ab96df2a103808108c9c5fb0f63e871d7f33caace628e8ef7848c37`.
+The new backlog entry B27e preregisters the next mechanism-level discriminator:
+mirrored fresh-process 4B runs across the pre-D1 and D1 commits, using only new data.
+
+**Final handoff verification.** On the documented B27d result state, the full serial
+non-integration suite passed `146 passed, 11 deselected` in `5.18 s`; the existing real
+Gemma-4B integration suite passed `10/10` in `21.12 s`. Pre-integration swap was `0 B`
+and no model process was present.
