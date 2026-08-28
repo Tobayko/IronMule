@@ -215,6 +215,22 @@ prompt is the same regime and a doubled one is drift.
 `Runtime.revalidate()` compares the current identity against the last recorded one
 and returns `valid`, `valid_with_workload_drift`, or `revalidation_required`.
 
+## Evidence contracts (D1, no routing)
+
+`ironmule.evidence` is a standard-library-only, immutable contract layer for
+`ExecutionStrategy`, `ValidityDomain`, evaluator-owned `EvidenceRecord` and
+`TrustedExecutionProfile`. It rejects missing identity, unknown schema fields,
+non-finite measurements, self-qualification and domain drift. A trusted profile can
+only be constructed from supplied `QUALIFIED` records that pass exact correctness,
+resource and repeated-uncertainty gates.
+
+This module is deliberately not imported by Runtime, plans, modes, executors, tuner or
+the package root. It has no MLX import, persistence, `run()`/`select()` method,
+automatic routing or activation. D1 represents existing path IDs as data; it does not
+change which path executes. See
+[`B27_PHASE_D_CONTRACT_PROPOSAL.md`](B27_PHASE_D_CONTRACT_PROPOSAL.md) for the approved
+scope and excluded later decisions.
+
 ## Running things
 
 ```bash
@@ -241,6 +257,7 @@ python -m ironmule.plans && python -m ironmule.telemetry && python -m ironmule.f
 | `ironmule/executor.py` | sequential and grouped executors, fallback, sessions |
 | `ironmule/telemetry.py` | the two TTFT definitions and the metric set |
 | `ironmule/fingerprint.py` | identity and validity of stored decisions |
+| `ironmule/evidence.py` | immutable fail-closed strategy/domain/evidence/profile contracts; no routing |
 | `ironmule/benchmark.py` | reproducible local benchmark |
 | `ironmule/runtime.py` | `Engine`, `PrefixCache`, fixed-shape KV cache (research phase) |
 | `ironmule/tune.py`, `hw.py`, `fast.py`, `bench.py`, `ab.py` | autotuner and measurement infrastructure |

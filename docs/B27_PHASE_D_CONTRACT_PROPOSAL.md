@@ -1,21 +1,22 @@
 # B27 Phase D contract proposal — approval package
 
-**State:** proposed, not approved, not implemented.
+**State:** D1 explicitly approved by the user on 2026-08-28; implemented for static
+and CPU verification; post-change model measurements not yet run.
 
 This document freezes the smallest architecture decision that can move IronMule
 toward an evidence-driven execution layer without changing execution. It is subordinate
 to `AGENTS.md`, the B27 backlog entry, the current runtime contracts and the user's
-approval. No type, import, profile, route or model behavior follows merely from this
-proposal.
+approval. The approval covers D1 only. No persistence, profile mutation, route or
+model behavior follows from it.
 
-## Requested decision
+## Recorded decision
 
-Approve or reject **D1: a stdlib-only evidence contract** consisting of one pure
+The user approved **D1: a stdlib-only evidence contract** consisting of one pure
 module and unit tests. D1 has no MLX import, persistence, strategy selection, runtime
 integration, automatic routing, activation, model download, dependency or hardware
 measurement by itself.
 
-The recommended answer is approval of D1 only. Persistence, stock-`mlx_lm` comparison,
+The recorded approval is D1 only. Persistence, stock-`mlx_lm` comparison,
 regression promotion, shadow recommendation and runtime selection remain separate
 decisions.
 

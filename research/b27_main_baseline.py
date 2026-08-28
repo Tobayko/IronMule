@@ -22,7 +22,7 @@ from typing import Any, Iterable
 
 
 SCHEMA = "ironmule.main_baseline.v1"
-EXPERIMENT_ID = "B27a"
+DEFAULT_EXPERIMENT_ID = "B27a"
 MIB = 1024 * 1024
 
 
@@ -190,7 +190,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     before = system_state()
     result: dict[str, Any] = {
         "schema": SCHEMA,
-        "experiment_id": EXPERIMENT_ID,
+        "experiment_id": args.experiment_id,
         "captured_at": datetime.now(timezone.utc).isoformat(),
         "status": "INCONCLUSIVE",
         "valid_for_performance": False,
@@ -313,6 +313,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--experiment-id", default=DEFAULT_EXPERIMENT_ID)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--requests", type=int, default=6)
     parser.add_argument("--max-tokens", type=int, default=48)
@@ -323,6 +324,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if min(args.requests, args.max_tokens, args.warmup, args.repeats) < 1:
         parser.error("requests, max-tokens, warmup and repeats must be positive")
+    if not args.experiment_id.strip():
+        parser.error("experiment-id must be non-empty")
     try:
         result = run(args)
     except BaseException:
