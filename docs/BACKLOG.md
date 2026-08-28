@@ -192,6 +192,35 @@ user-approved legal review and resulting documents.
 | `B22` | Two processes, one GPU | days | 0, it is a control | none |
 | `B23` | Weight layout tuned for `M=1` | weeks | 0 – 20% | low |
 | `B24` | Real GPU counters instead of wall clock | days | 0, it is instrumentation | none |
+| `B27` | Evidence-bound execution strategies | audit first, then weeks | 0 immediate; prevents regressions and unsafe reuse | low for audit, medium for routing |
+
+---
+
+## Architecture track — audit first, not a performance claim
+
+### `B27` — Evidence-bound execution strategies
+
+**Mechanism.** The repository already contains qualified fast paths, fingerprints,
+raw measurements and conservative runtime fallbacks, but they are not yet expressed
+through one explicit contract equivalent to `ExecutionStrategy + ValidityDomain +
+EvidenceRecord = TrustedExecutionProfile`. Representing the existing paths through
+that contract should let the runtime select only strategies whose evidence matches the
+current hardware, model, framework and workload, while a regression gate prevents a
+cleaner architecture from silently discarding a measured gain. The first stage is
+read-only inventory and baseline capture; it changes no routing decision.
+
+**Test.** Inventory the ledger, preregistrations, raw results and all runtime selection
+boundaries; reproduce the current `main` correctness and performance baseline; produce
+a gap analysis; then, only after architecture approval, encode one existing qualified
+path without changing its observable selection or fallback behaviour. Require exact
+token/stop/count equivalence and a before/after regression comparison under the same
+fingerprint and workload.
+
+**Kill/Pivot.** If the current evidence cannot be reconstructed with raw samples and
+provenance, if the abstraction requires a parallel execution implementation, or if it
+weakens fail-closed correctness/fallback semantics, stop at the audit and keep the
+current deterministic routing. Any evidence-domain mismatch must yield
+`REVALIDATION_REQUIRED` or the baseline, never an inferred promotion.
 
 ---
 

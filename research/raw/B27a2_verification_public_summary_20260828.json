@@ -1,0 +1,18 @@
+{
+  "activation_allowed": false,
+  "checked_cells": 2,
+  "checked_failures": 2,
+  "errors": [],
+  "failure_hashes": [
+    "dd09d2e2cc4a2ad9ac95272c4d464ff029730e82dcc3475d374683e0ad1e2260",
+    "e5e7ab91218a4e7a7dcd2544efc3b44fbfdbed6fefce70cadd4f5c1c366e306a"
+  ],
+  "ok": true,
+  "qualification_changed": false,
+  "raw_hashes": [
+    "7276ee6505a58ca176561f8e66f2087616d9682aa44273d1f7ddad51a6311d98",
+    "e1e9b7ce3248b83fced553334b452404bf47931d02e2352f2aed8d96f55607a0"
+  ],
+  "schema": "ironmule.public_summary_verification.v1",
+  "summary_sha256": "c41edf419ec06084daa2edc336c1bc12226ca4368a3fb2b0f498b0baff12ea6e"
+}

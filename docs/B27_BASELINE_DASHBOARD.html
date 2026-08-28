@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IronMule B27 evidence dashboard</title>
+<style>
+:root { color-scheme: dark; --bg:#0b0d10; --panel:#15191f; --line:#2a313b;
+  --text:#f2f5f7; --muted:#9aa7b5; --green:#65d6a2; --red:#ff8e8e; --amber:#f0c66b; }
+* { box-sizing:border-box; } body { margin:0; background:var(--bg); color:var(--text);
+  font:15px/1.5 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+main { width:min(1180px,calc(100% - 32px)); margin:32px auto 64px; }
+h1 { font-size:clamp(28px,5vw,48px); margin:0; letter-spacing:-.04em; }
+h2 { margin:32px 0 12px; } .kicker { color:var(--green); font-weight:700; letter-spacing:.12em;
+  text-transform:uppercase; } .lede { color:var(--muted); max-width:760px; }
+.grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:12px; margin:24px 0; }
+.card { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:18px; }
+.card small, td small { color:var(--muted); display:block; } .card strong { font-size:25px; display:block; }
+.good { color:var(--green); font-weight:700; } .warn { color:var(--amber); }
+.table-wrap { overflow:auto; border:1px solid var(--line); border-radius:14px; }
+table { width:100%; border-collapse:collapse; min-width:900px; background:var(--panel); }
+th,td { padding:14px 16px; text-align:right; border-bottom:1px solid var(--line); }
+th:first-child,td:first-child { text-align:left; } th { color:var(--muted); font-size:12px; text-transform:uppercase; }
+tr:last-child td { border-bottom:0; } ol { list-style:none; padding:0; display:grid; gap:10px; }
+.event { position:relative; padding:14px 18px 14px 22px; background:var(--panel); border:1px solid var(--line);
+  border-radius:12px; } .event:before { content:""; position:absolute; left:8px; top:10px; bottom:10px; width:4px; border-radius:3px; }
+.event.failed:before { background:var(--red); } .event.passed:before { background:var(--green); }
+.event span,.event small { color:var(--muted); display:block; } footer { color:var(--muted); margin-top:36px; }
+code { color:#c7d6e5; }
+</style>
+</head>
+<body><main>
+<div class="kicker">Measure · Verify · Remember</div>
+<h1>IronMule B27 evidence dashboard</h1>
+<p class="lede">Current-main engineering baseline and audit history. This local,
+self-contained view makes no qualification or activation claim.</p>
+<section class="grid">
+  <div class="card"><small>Top status</small><strong>BASELINE_CAPTURED</strong><span class="warn">Qualification: false</span></div>
+  <div class="card"><small>Unique evidence artifacts</small><strong>92</strong><span>134 source occurrences</span></div>
+  <div class="card"><small>Local-only / ignored</small><strong>51</strong><span>kept out of public history</span></div>
+  <div class="card"><small>Regression suite</small><strong>124 passed, 11 deselected</strong><span>serial, no xdist</span></div>
+  <div class="card"><small>Public-summary integrity</small><strong class="good">VERIFIED</strong><span>2 cells · 2 failures</span></div>
+</section>
+<h2>Protected baseline cells</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Model / revision</th><th>Interactive ms</th><th>Throughput ms</th><th>Wall effect</th><th>Rate effect</th><th>MLX peak</th><th>Swap Δ</th></tr></thead>
+<tbody><tr><td><strong>mlx-community/gemma-3-4b-it-4bit</strong><small>93724907d4…</small></td><td>4,141.79</td><td>3,492.57</td><td><span class="good">−15.63%</span><small>0.8398–0.8489</small></td><td><span class="good">+18.52%</span><small>1.1780–1.1908</small></td><td>2.785 GB</td><td>0 B</td></tr><tr><td><strong>mlx-community/gemma-3-12b-it-4bit</strong><small>86cc6a8ded…</small></td><td>11,306.16</td><td>10,098.55</td><td><span class="good">−12.13%</span><small>0.8733–0.9146</small></td><td><span class="good">+13.80%</span><small>1.0935–1.1451</small></td><td>7.801 GB</td><td>0 B</td></tr></tbody>
+</table></div>
+<h2>History</h2><ol><li class="event failed"><span>Pre-measurement</span><strong>IncompleteSnapshotError</strong><small>model_binding; no timing used</small></li><li class="event failed"><span>Pre-measurement</span><strong>ModuleNotFoundError</strong><small>model_binding; no timing used</small></li><li class="event passed"><span>Baseline cell</span><strong>mlx-community/gemma-3-4b-it-4bit</strong><small>BASELINE_CAPTURED; tokens identical; zero fallback</small></li><li class="event passed"><span>Baseline cell</span><strong>mlx-community/gemma-3-12b-it-4bit</strong><small>BASELINE_CAPTURED; tokens identical; zero fallback</small></li><li class="event passed"><span>Evidence integrity</span><strong>VERIFIED</strong><small>0 errors; no qualification or activation change</small></li></ol>
+<footer>Base <code>d422fdb00fced3238dfaa6b5e9e993294adb72cd</code> · runtime tree
+<code>ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385</code> · no external assets,
+network calls, model downloads or runtime routing.</footer>
+</main></body></html>
