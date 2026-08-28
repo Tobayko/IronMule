@@ -185,7 +185,8 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    root = Path(__file__).resolve().parents[1]
+    root = (args.runtime_root.resolve() if getattr(args, "runtime_root", None)
+            else Path(__file__).resolve().parents[1])
     started = time.monotonic()
     before = system_state()
     result: dict[str, Any] = {
@@ -314,6 +315,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--model", required=True)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--experiment-id", default=DEFAULT_EXPERIMENT_ID)
+    parser.add_argument("--runtime-root", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--requests", type=int, default=6)
     parser.add_argument("--max-tokens", type=int, default=48)

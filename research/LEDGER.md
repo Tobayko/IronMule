@@ -1991,3 +1991,19 @@ mirrored fresh-process 4B runs across the pre-D1 and D1 commits, using only new 
 non-integration suite passed `146 passed, 11 deselected` in `5.18 s`; the existing real
 Gemma-4B integration suite passed `10/10` in `21.12 s`. Pre-integration swap was `0 B`
 and no model process was present.
+
+## B27e — Mirrored cross-commit control, pre-measurement (2026-08-29)
+
+B27e is sealed as a new control rather than a B27d retry. It uses two detached exact
+targets (`467d5b8` OLD and `0b14eb6` D1), proves their declared 16-file execution
+surfaces byte-identical, and runs four new fresh 4B processes in mirrored order
+OLD/D1 then D1/OLD. No B27a2/B27d timing is pooled.
+
+The parent/child harness passed 10 focused tests; the full serial suite passed
+`151 passed, 11 deselected` in `5.15 s`. Harness SHA-256 is
+`bde2181490389e3838c73be1ed2d6c2e58a4bdfa094ab8ee3497528133a1283d`;
+review SHA-256
+`7803639a8ebaf4ec8fa900253522aae7c5c14741059bf3e2f531f054ef2774bf`;
+preregistration SHA-256
+`78bec8adb2757ae833146cde0d7cd1e4ad78f8418689761e02707b3b980e32f4`.
+No B27e model timing had been observed when this entry was written.
