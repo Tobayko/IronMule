@@ -118,6 +118,31 @@ model. The main preregistered replication used Gemma 3 4B, MLX 0.32.0,
 `mlx_lm` 0.31.3, 4-bit group-size 64 weights, greedy decoding, and an M1 Max with
 32 GB unified memory.
 
+### Latest Gemma 3 12B result
+
+On the same M1 Max, a later isolated-process benchmark combined IronMule's fixed-cache
+core path with throughput mode:
+
+| Comparison | Complete service time | Total token rate |
+| :-- | --: | --: |
+| Combined path vs. baseline interactive | `−18.05%` | `+22.03%` |
+| Core path vs. the same throughput mode | `−6.17%` | `+6.58%` |
+
+This is the exact B39d workload only: Gemma 3 12B 4-bit, six concurrent greedy
+requests, 48 output tokens, 32 fresh processes, and no automatic activation. Width 4
+remains the baseline; widths 2 and 3 were slower in every B40 block, but drift kept
+that width study formally inconclusive. See the path-free
+[B39d performance summary](research/raw/B39d_public_summary_20260828.json) and
+[B40 width summary](research/raw/B40_public_summary_20260828.json).
+
+The next two-step decode idea, B3-U2, has **no speed result yet**. Its correctness
+pilot completed 8/8 isolated processes and 240 measured requests with identical
+tokens and final states, no fallback, no swap and no relevant crash. A missing
+per-child host-state record blocks confirmation, so the result is not used as a
+performance claim. See the [B3-U2 public summary](research/raw/B3-U2_public_summary_20260828.json).
+
+### Earlier service-mode results
+
 | Concurrent workload | Total throughput | Median request latency | p95 latency | Service TTFT | Evidence |
 | :-- | --: | --: | --: | --: | :-- |
 | Similar prompts | `+16.4 … +17.2%` | `+27%` | `−16%` | ~800 → ~87 ms | [E16](research/LEDGER.md#e16--replication-of-the-w4-gain-under-real-process-boundaries) |

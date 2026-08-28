@@ -335,6 +335,18 @@ token identity as a gate.
 **Kill.** No improvement beyond noise, or the compile cost per shape makes it a loss
 for short answers.
 
+**B3-U2 pilot (2026-08-28).** The fixed-shape two-step correctness pilot completed
+all eight isolated processes and 240 measured requests with identical tokens and
+final states, zero fallback, zero Swap delta and no relevant crash. This is not a
+performance result. The parent did not persist a separate pre/post host-state record
+for every child, so confirmation is blocked and the pilot is not retried or pooled.
+Public evidence: `research/raw/B3-U2_public_summary_20260828.json`.
+
+**B3a next gate.** Persist real parent pre/post host state and strictly validate
+request IDs and checkpoint events in a newly authorised pilot. Kill on any missing
+state/event, token or state mismatch, fallback, cache growth, resource failure or
+incomplete pair. No confirmation or activation follows automatically.
+
 ### `B4` — Wire the weights against page pressure
 
 **Mechanism.** 27B peaks at `16.78 GB` on a 32 GB machine that also runs an editor, a

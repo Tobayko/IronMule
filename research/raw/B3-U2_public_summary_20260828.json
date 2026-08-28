@@ -1,0 +1,78 @@
+{
+  "schema": "ironmule.public_summary.v1",
+  "experiment": "B3-U2",
+  "date": "2026-08-28",
+  "privacy_redacted": true,
+  "scope": {
+    "model": "Gemma 3 12B IT 4-bit",
+    "hardware": "Apple M1 Max, 32 GiB unified memory, 32 GPU cores",
+    "software": {
+      "macos": "26.5.2",
+      "python": "3.12.13",
+      "mlx": "0.32.0",
+      "mlx_lm": "0.31.3"
+    },
+    "power_source": "AC",
+    "low_power_mode": false
+  },
+  "workload": {
+    "name": "X1-strict",
+    "requests_per_run": 6,
+    "max_tokens": 48,
+    "decoding": "greedy",
+    "warmups": 2,
+    "measured_repeats": 5,
+    "pairs": 4,
+    "children": 8,
+    "total_request_runs": 336,
+    "warmup_request_runs": 96,
+    "measured_request_runs": 240
+  },
+  "arms": {
+    "control": "core fixed-cache path with throughput width 4",
+    "candidate": "same path plus research-only fixed-shape two-step decode unroll"
+  },
+  "status": {
+    "raw": "PILOT_SAFE",
+    "publication": "INCONCLUSIVE_FOR_CONFIRMATION",
+    "reason": "per-child parent pre/post host-state records were not persisted",
+    "valid_for_performance": false,
+    "activation_allowed": false
+  },
+  "valid_for_performance": false,
+  "activation_allowed": false,
+  "correctness": {
+    "children_returncode_zero": 8,
+    "physical_token_counts": [48],
+    "stop_reasons": ["length"],
+    "canonical_pair_gates_passed": 4,
+    "state_hash_gates_passed": 4,
+    "comparable_state_hashes_per_pair": 42,
+    "early_eos_state_discards": 0,
+    "fallbacks": 0
+  },
+  "compiled_cache": {
+    "registered_keys": [[128, 1, 1], [128, 1, 2]],
+    "prime_misses_per_candidate_child": 2,
+    "measured_misses": 0,
+    "evictions": 0,
+    "key_growth_during_measurement": false
+  },
+  "resources": {
+    "swap_delta_max_bytes": 0,
+    "rss_peak_max_bytes": 8314028032,
+    "mlx_peak_max_bytes": 8007886876,
+    "candidate_control_mlx_peak_ratio_range": [1.0006679816406128, 1.0006704505971156],
+    "candidate_control_rss_peak_ratio_range": [1.0009981851179672, 1.0020952851147864],
+    "crash_reports_relevant": 0,
+    "residual_model_processes": 0,
+    "final_h2": true,
+    "resource_gates": "PASS"
+  },
+  "provenance": {
+    "model_binding_digest": "e08dd84591588722a11c43d9ff7ee4b3f50d01f15371c8a4429c4f9857d37fb6",
+    "code_digest": "e217ff98418db4aa80449d2f251b3d0b0d535dbefda6d414cd9a094e7759d1c0",
+    "preregistration_sha256": "6edd466a599dec5460f6f5e7e5d89126af70c3774aec7a6c49d19a52d127260b",
+    "private_raw_sha256": "7b234b6c3464de4fcf847512243ce83f24d9dfecb9d2747d3ce3a3999e10400a"
+  }
+}

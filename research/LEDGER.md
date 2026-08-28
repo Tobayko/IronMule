@@ -1810,3 +1810,25 @@ Die Regel ist damit verstärkt: Jeder pytest-Lauf, der MLX importiert, läuft
 außerhalb der Sandbox und strikt mit `-n0`; parallele xdist-/Sandbox-MLX-Imports
 sind kein zulässiger Verifikationspfad. Keine Modell- oder Produktentscheidung
 folgt aus dem Sandbox-Vorfall.
+
+## B3-U2 — Fixed-shape two-step correctness pilot (2026-08-28)
+
+B3-U2 tests whether two dependent greedy decode steps can live in one fixed-shape
+compiled graph without changing output or cache state. It remains research-only and
+default-off.
+
+The pilot completed four balanced AB/BA pairs: eight fresh serial processes, two
+warmups and five measured repeats per process, six requests per repeat and 48 tokens
+per request. All eight children returned code `0`. Across 336 request-runs (96 warmup,
+240 measured), every request stopped at `length`; canonical token output and all 42
+comparable final-state hashes per pair matched. Candidate cache evidence contained
+only the two registered keys, exactly two prime misses, zero measured misses and zero
+evictions. Swap delta, fallback, relevant crash and residual-process counts were all
+zero. Maximum MLX peak was `8,007,886,876 B`; maximum RSS was `8,314,028,032 B`.
+
+The raw status was `PILOT_SAFE`, but `valid_for_performance=false` and
+`activation_allowed=false`. A later review found that the parent had not persisted a
+separate pre/post system-state record for every child. The pilot is therefore
+correctness/safety evidence only and is `INCONCLUSIVE_FOR_CONFIRMATION`: no retry,
+pooling, speed claim, confirmation or activation follows. Public path-free evidence:
+[`B3-U2_public_summary_20260828.json`](raw/B3-U2_public_summary_20260828.json).
