@@ -44,6 +44,18 @@ def test_dashboard_is_local_escaped_and_includes_history():
             "byte_identical_recomputation": True,
             "tests": {"non_integration": "146 passed"},
         },
+        {
+            "classification": "ORDER_OR_TEMPORAL_DRIFT",
+            "b27d_consequence": "B27D_REMAINS_INCONCLUSIVE",
+            "blocks": [{
+                "block": 0, "order": ["old", "d1"],
+                "ratios": {
+                    arm: {"d1_over_old_wall": .99, "d1_over_old_rate": 1.01}
+                    for arm in ("interactive", "throughput")
+                },
+            }],
+        },
+        {"ok": True, "byte_identical_recomputation": True},
     )
     assert "Bad&lt;Resolver&gt;" in page
     assert "org/&lt;model&gt;" in page
@@ -52,5 +64,7 @@ def test_dashboard_is_local_escaped_and_includes_history():
     assert "D1 post/pre regression screen" in page
     assert "INCONCLUSIVE_POTENTIAL_REGRESSION" in page
     assert "D1 comparison integrity" in page and "146 passed" in page
+    assert "B27e mirrored OLD/D1 control" in page
+    assert "ORDER_OR_TEMPORAL_DRIFT" in page
     assert "http://" not in page and "https://" not in page
     assert "<script" not in page

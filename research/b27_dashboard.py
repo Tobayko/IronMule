@@ -25,6 +25,8 @@ def render(
     summary: dict[str, Any], verification: dict[str, Any] | None = None,
     post_change: dict[str, Any] | None = None,
     post_verification: dict[str, Any] | None = None,
+    cross_commit: dict[str, Any] | None = None,
+    cross_verification: dict[str, Any] | None = None,
 ) -> str:
     if summary.get("schema") != "ironmule.main_baseline.public.v1":
         raise ValueError("unsupported public-summary schema")
@@ -129,6 +131,9 @@ def render(
     corpus = summary.get("corpus_inventory", {})
     tests = summary.get("tests", {})
     current_test = (
+        cross_verification.get("tests", {}).get("non_integration")
+        if cross_verification is not None else None
+    ) or (
         post_verification.get("tests", {}).get("non_integration")
         if post_verification is not None else None
     ) or tests.get("non_integration", "—")
@@ -141,6 +146,48 @@ def render(
             f'<strong class="{"good" if verified else "warn"}">'
             f'{"VERIFIED" if verified else "FAILED"}</strong>'
             '<span>byte-identical recomputation</span></div>'
+        )
+    cross_card = ""
+    cross_section = ""
+    if cross_commit is not None:
+        classification = _text(cross_commit.get("classification", "unknown"))
+        cross_card = (
+            '<div class="card"><small>B27e mirrored control</small>'
+            f'<strong class="warn">{classification}</strong>'
+            f'<span>{_text(cross_commit.get("b27d_consequence", "unknown"))}</span></div>'
+        )
+        rows = []
+        for block in cross_commit.get("blocks", []):
+            interactive = block.get("ratios", {}).get("interactive", {})
+            throughput = block.get("ratios", {}).get("throughput", {})
+            rows.append(
+                "<tr>"
+                f'<td>Block {_text(block.get("block"))}<small>{_text(" → ".join(block.get("order", [])))}</small></td>'
+                f'<td>{_number(interactive.get("d1_over_old_wall"), 4)}</td>'
+                f'<td>{_number(interactive.get("d1_over_old_rate"), 4)}</td>'
+                f'<td>{_number(throughput.get("d1_over_old_wall"), 4)}</td>'
+                f'<td>{_number(throughput.get("d1_over_old_rate"), 4)}</td>'
+                "</tr>"
+            )
+        cross_section = (
+            '<h2>B27e mirrored OLD/D1 control</h2><div class="table-wrap"><table>'
+            '<thead><tr><th>Block/order</th><th>Interactive wall</th><th>Interactive rate</th>'
+            '<th>Throughput wall</th><th>Throughput rate</th></tr></thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>'
+        )
+        timeline.append(
+            '<li class="event failed"><span>B27e mirrored control</span>'
+            f'<strong>{classification}</strong><small>B27d remains inconclusive; no activation</small></li>'
+        )
+    cross_integrity = ""
+    if cross_verification is not None:
+        verified = (cross_verification.get("ok") is True
+                    and cross_verification.get("byte_identical_recomputation") is True)
+        cross_integrity = (
+            '<div class="card"><small>B27e evidence integrity</small>'
+            f'<strong class="{"good" if verified else "warn"}">'
+            f'{"VERIFIED" if verified else "FAILED"}</strong>'
+            '<span>4 children · mirrored order</span></div>'
         )
     return f"""<!doctype html>
 <html lang="en">
@@ -186,6 +233,8 @@ self-contained view makes no qualification or activation claim.</p>
   {verification_card}
   {post_card}
   {post_integrity}
+  {cross_card}
+  {cross_integrity}
 </section>
 <h2>Protected baseline cells</h2>
 <div class="table-wrap"><table>
@@ -193,6 +242,7 @@ self-contained view makes no qualification or activation claim.</p>
 <tbody>{''.join(rows)}</tbody>
 </table></div>
 {post_section}
+{cross_section}
 <h2>History</h2><ol>{''.join(timeline)}</ol>
 <footer>Base <code>{_text(summary.get("base_commit"))}</code> · runtime tree
 <code>{_text(summary.get("runtime_tree_sha256"))}</code> · no external assets,
@@ -214,6 +264,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--verification", type=Path)
     parser.add_argument("--post-change", type=Path)
     parser.add_argument("--post-verification", type=Path)
+    parser.add_argument("--cross-commit", type=Path)
+    parser.add_argument("--cross-verification", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     summary = json.loads(args.summary.read_text())
@@ -222,7 +274,14 @@ def main(argv: list[str] | None = None) -> int:
     post_verification = (
         json.loads(args.post_verification.read_text()) if args.post_verification else None
     )
-    _atomic_write(args.output, render(summary, verification, post_change, post_verification))
+    cross_commit = json.loads(args.cross_commit.read_text()) if args.cross_commit else None
+    cross_verification = (
+        json.loads(args.cross_verification.read_text()) if args.cross_verification else None
+    )
+    _atomic_write(args.output, render(
+        summary, verification, post_change, post_verification,
+        cross_commit, cross_verification,
+    ))
     print(json.dumps({"output": str(args.output), "cells": len(summary["cells"])}, sort_keys=True))
     return 0
 

@@ -1,7 +1,16 @@
 import copy
+import json
 from pathlib import Path
 
-from research.b27e_cross_commit import analyze, execution_surface_digest
+import pytest
+
+from research.b27e_cross_commit import (
+    _sha256,
+    analyze,
+    entries_from_parent,
+    execution_surface_digest,
+    parser,
+)
 
 
 def record(*, wall=100.0, rate=10.0):
@@ -111,3 +120,35 @@ def test_domain_or_correctness_failure_precedes_timing():
     regression = analyze(failed, old_commit="old", d1_commit="d1",
                          execution_surface_sha256="s" * 64)
     assert regression["classification"] == "CODE_REGRESSION"
+
+
+def test_parent_requires_explicit_artifact_date():
+    argv = [
+        "run", "--old-root", "/old", "--d1-root", "/d1",
+        "--old-commit", "old", "--d1-commit", "d1",
+        "--d1-evidence-sha256", "a" * 64, "--model", "org/model",
+        "--revision", "rev", "--output-dir", "/out",
+        "--raw-output", "/out/raw.json", "--public-output", "/out/public.json",
+    ]
+    with pytest.raises(SystemExit):
+        parser().parse_args(argv)
+    parsed = parser().parse_args([*argv, "--artifact-date", "20260829"])
+    assert parsed.artifact_date == "20260829"
+    with pytest.raises(SystemExit):
+        parser().parse_args([*argv, "--artifact-date", "2026-08-29"])
+
+
+def test_reanalysis_rejects_changed_child_artifact(tmp_path):
+    child = tmp_path / "child.json"
+    child.write_text("{}")
+    parent = tmp_path / "parent.json"
+    parent.write_text(json.dumps({
+        "children": [{
+            "block": 0, "position": 0, "label": "old",
+            "artifact_id": child.name, "sha256": _sha256(child),
+        }],
+    }))
+    assert entries_from_parent(parent)[0]["record"] == {}
+    child.write_text('{"changed": true}')
+    with pytest.raises(RuntimeError, match="hash mismatch"):
+        entries_from_parent(parent)

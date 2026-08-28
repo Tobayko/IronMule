@@ -1,0 +1,37 @@
+{
+  "activation_allowed": false,
+  "artifact_naming_incident": {
+    "affected_private_children": 4,
+    "content_or_hash_impact": false,
+    "existing_file_overwritten": false,
+    "measured_harness_sha256": "bde2181490389e3838c73be1ed2d6c2e58a4bdfa094ab8ee3497528133a1283d",
+    "repaired_harness_sha256": "17663175daf229881b4b9f79a3ce5241fc231cdf93d6de2935653c3f88747d9d",
+    "wrong_suffix": "20260828"
+  },
+  "b27d_consequence": "B27D_REMAINS_INCONCLUSIVE",
+  "byte_identical_recomputation": true,
+  "child_sha256": [
+    "2070d96565ce17536a656bb188514ac431b7e2135eb2749628f9d57db7aff95a",
+    "63a3264ea84ded63f3884b8cd9905a460329355c147348ee61490abfa2a38df4",
+    "78c16b18dfdc5706bbaab093d9b64ff02d1b63cba8c02a04746b2e72cb216dcc",
+    "ae6450932ca5b32999237345f04482cb25ad32d351d144406102f86d646ad0db"
+  ],
+  "classification": "ORDER_OR_TEMPORAL_DRIFT",
+  "domain_drift_count": 0,
+  "errors": [],
+  "execution_surface_sha256": "ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385",
+  "hard_failure_count": 0,
+  "ok": true,
+  "parent_sha256": "ecd2c18306083bf59f2e370c0192ef8148beac97852dacff99c0fead5cd3e20a",
+  "preregistration_sha256": "78bec8adb2757ae833146cde0d7cd1e4ad78f8418689761e02707b3b980e32f4",
+  "qualification_changed": false,
+  "recomputed_sha256": "d80960b022f3f506f592d5e4db19a1aabda07492d5db2c09e40469ad474f4f94",
+  "review_sha256": "7803639a8ebaf4ec8fa900253522aae7c5c14741059bf3e2f531f054ef2774bf",
+  "schema": "ironmule.b27e_cross_commit.verification.v1",
+  "summary_sha256": "d80960b022f3f506f592d5e4db19a1aabda07492d5db2c09e40469ad474f4f94",
+  "tests": {
+    "b27e_focused": "7 passed",
+    "gemma4b_integration": "10 passed in 21.17s",
+    "non_integration": "153 passed, 11 deselected in 5.12s"
+  }
+}

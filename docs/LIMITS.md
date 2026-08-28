@@ -26,8 +26,10 @@ B27d post-change engineering screen preserved exact outputs/resources and passed
 12B regression gates, but both 4B arms were common-mode 5.7–6.4% slower and crossed the
 preregistered 5% intervals. Its result is therefore
 `INCONCLUSIVE_POTENTIAL_REGRESSION`, not proof that D1 is performance-neutral or that
-the slowdown is causal. D1 remains unactivated; B27e is the separate mirrored
-cross-commit discriminator.
+the slowdown is causal. The separate B27e mirrored cross-commit control then found D1
+within 2% in OLD/D1 order and 5.8–7.9% apparently faster in D1/OLD order. Its frozen
+class is `ORDER_OR_TEMPORAL_DRIFT`: a consistent D1 slowdown was not reproduced, but
+neutrality is still unproved. D1 remains non-imported and unactivated.
 
 ## Apple-Silicon inference claims
 

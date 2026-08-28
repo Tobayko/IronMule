@@ -36,7 +36,9 @@ Review follow-ups completed locally; this section is not a release or a performa
   tuner, plans, modes and executors do not import D1; persistence, selection and
   activation remain outside the approved scope. The sealed post-change screen passed
   12B but found a common-mode 4B potential regression, so its frozen result is
-  inconclusive and no performance-safety claim follows.
+  inconclusive and no performance-safety claim follows. A separate mirrored OLD/D1
+  4B control did not reproduce a D1 slowdown, but was order/temporal-drift sensitive;
+  it also makes no neutrality or activation claim.
 
 ## [0.1.0] — 2026-08-26
 

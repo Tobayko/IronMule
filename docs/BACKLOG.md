@@ -193,7 +193,6 @@ user-approved legal review and resulting documents.
 | `B23` | Weight layout tuned for `M=1` | weeks | 0 – 20% | low |
 | `B24` | Real GPU counters instead of wall clock | days | 0, it is instrumentation | none |
 | `B27` | Evidence-bound execution strategies | audit first, then weeks | 0 immediate; prevents regressions and unsafe reuse | low for audit, medium for routing |
-| `B27e` | Mirrored 4B cross-commit common-mode control | hours | 0, it separates code from temporal drift | none, exactness/resource gated |
 
 ---
 
@@ -227,36 +226,25 @@ current deterministic routing. Any evidence-domain mismatch must yield
 contract on commit `0b14eb6`; it has no persistence, selection or activation path.
 B27d preserved token/resource correctness and found no 12B regression, but its 4B
 post/pre screen was common-mode 5.7–6.4% slower in both Interactive and Throughput
-arms and therefore remains `INCONCLUSIVE_POTENTIAL_REGRESSION`. The D1 module is kept
-off the runtime import graph; no no-regression claim is made. B27 remains open.
-
-### `B27e` — Mirrored 4B cross-commit common-mode control
-
-**Mechanism.** Between the pre-change and D1 commits, the only `ironmule/` source
-change is the new `evidence.py`, and runtime modules do not import it. B27d's 12B
-absolute endpoints were unchanged while both 4B arms moved together and their
-within-cell grouping ratio changed by only about half a percentage point. The post
-run also began under higher load averages. A balanced old/new commit control can
-separate an inert-file/code explanation from temporal system drift without rerunning
-or pooling B27d.
-
-**Test.** In a separately preregistered study, execute the exact 4B cell from fresh
-serial processes on commits `467d5b8` and `0b14eb6` in mirrored old/new and new/old
-blocks. Verify that every imported runtime source other than the absent/present D1
-module is byte-identical; preserve token, stop, state, memory, swap and process gates.
-Use only new B27e samples and report block/order effects; do not pool B27a2 or B27d.
-
-**Kill/Pivot.** If D1 is consistently more than 5% slower in both mirrored orders,
-do not advance the evidence layer until a mechanism is found or D1 is removed. If the
-commits are indistinguishable, classify B27d as unmodelled common-mode/temporal drift
-and close B27e. Domain/resource failure is `INCONCLUSIVE`, with no retry or threshold
-change.
+arms and therefore remains `INCONCLUSIVE_POTENTIAL_REGRESSION`. B27e did not reproduce
+a consistent D1 slowdown: block 0 was within 2%, while mirrored block 1 made the
+first-running D1 appear 5.8–7.9% faster than OLD. Its frozen class is
+`ORDER_OR_TEMPORAL_DRIFT`, so B27d formally remains inconclusive. The execution
+surfaces are byte-identical and D1 stays off the runtime import graph; no neutrality,
+causality, qualification or activation claim is made. B27 remains open at the next
+architecture decision rather than rerunning the same unconditioned control.
 
 ---
 
 ## Tier 0 — already dead. Do not re-run these.
 
 Listed so the next person does not spend a week rediscovering them.
+
+- **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
+  digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
+  within 2%; mirrored D1/OLD made D1 appear 5.8–7.9% faster. Final
+  `ORDER_OR_TEMPORAL_DRIFT`; a consistent D1 slowdown was not reproduced, but B27d
+  remains formally inconclusive. Do not rerun the same two-block unconditioned design.
 
 **Two lists, one of them closed.** The entries below marked `E*` come from this
 project's ledger. The ones marked `cycle *` come from the predecessor project, whose
