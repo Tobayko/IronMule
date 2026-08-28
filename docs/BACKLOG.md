@@ -151,18 +151,6 @@ release dry run with tag/version equality. Submission is always opt-in.
 **Kill.** Hidden upload, private prompt leakage, non-reproducible metadata, or unsigned/
 unverifiable final artifacts. Publishing a tag/release requires separate user approval.
 
-### `DOC1` — Make claims, limits and entry points easy to audit
-
-**Mechanism.** A shorter README, precise “validated primarily on M1 Max” language,
-result labels (preregistered versus exploratory), decision table, complete CLI map and
-small terminal demo reduce misuse without changing the runtime.
-
-**Test.** Every number links to raw evidence and validity scope; every advertised CLI
-command has a smoke test; the demo uses current benchmark output without hand editing.
-
-**Kill.** Any statement that generalises beyond measured chips/models or presents
-service TTFT as single-request model speed is removed rather than softened.
-
 ### `L1` — Clarify the source-available licence before enterprise claims
 
 **Mechanism.** Developer/company summaries and concrete SaaS, consulting, internal-use,
