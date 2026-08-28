@@ -78,12 +78,13 @@ def test_cli_propagates_explicit_experiment_id(monkeypatch, tmp_path):
 
     def fake_run(args):
         observed["experiment_id"] = args.experiment_id
+        observed["runtime_root"] = args.runtime_root
         return {"status": "BASELINE_CAPTURED", "failures": [], "elapsed_seconds": 0.0}
 
     monkeypatch.setattr(baseline_module, "run", fake_run)
     status = baseline_module.main([
         "--model", "org/model", "--revision", "abc", "--experiment-id", "B27d",
-        "--output", str(tmp_path / "result.json"),
+        "--runtime-root", str(tmp_path), "--output", str(tmp_path / "result.json"),
     ])
     assert status == 0
-    assert observed == {"experiment_id": "B27d"}
+    assert observed == {"experiment_id": "B27d", "runtime_root": tmp_path}
