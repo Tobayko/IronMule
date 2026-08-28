@@ -12,7 +12,9 @@ from __future__ import annotations
 import argparse
 import importlib
 import importlib.metadata as metadata
+import json
 import platform
+import subprocess
 import sys
 from typing import Any, Iterable
 
@@ -28,11 +30,47 @@ def _version(distribution: str, module: Any = None) -> str:
 
 
 def _load_optional(module_name: str, distribution: str) -> tuple[bool, str, str]:
+    """Probe optional dependencies out of process so failed imports cannot leak state."""
+    probe = (
+        "import importlib,sys; "
+        "module=importlib.import_module(sys.argv[1]); "
+        "print(getattr(module, '__version__', 'unknown'))"
+    )
     try:
-        module = importlib.import_module(module_name)
-    except Exception as exc:  # MLX may fail for architecture/Metal reasons.
+        result = subprocess.run(
+            [sys.executable, "-c", probe, module_name],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
         return False, _version(distribution), f"{type(exc).__name__}: {exc}"
-    return True, _version(distribution, module), "importable"
+    if result.returncode != 0:
+        detail = (result.stderr.strip().splitlines()[-1]
+                  if result.stderr.strip() else f"probe exited {result.returncode}")
+        return False, _version(distribution), f"isolated probe failed: {detail}"
+    version = result.stdout.strip() or _version(distribution)
+    return True, version, "importable (isolated probe)"
+
+
+def _probe_metal() -> tuple[bool, str]:
+    """Check Metal in a child process for the same isolation guarantee as imports."""
+    probe = (
+        "import importlib; "
+        "module=importlib.import_module('mlx.core'); "
+        "print('available' if module.metal.is_available() else 'unavailable')"
+    )
+    try:
+        result = subprocess.run(
+            [sys.executable, "-c", probe],
+            capture_output=True, text=True, timeout=15, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, f"{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        detail = (result.stderr.strip().splitlines()[-1]
+                  if result.stderr.strip() else f"probe exited {result.returncode}")
+        return False, f"isolated probe failed: {detail}"
+    available = result.stdout.strip() == "available"
+    return available, "Metal available" if available else "Metal unavailable"
 
 
 def _cpu_name() -> str:
@@ -70,15 +108,7 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     numpy_ok, numpy_version, numpy_detail = _load_optional("numpy", "numpy")
     checks.append(("NumPy", numpy_ok, f"{numpy_version}; {numpy_detail}"))
 
-    metal_ok = False
-    metal_detail = "MLX unavailable"
-    if mlx_ok:
-        try:
-            mlx = importlib.import_module("mlx.core")
-            metal_ok = bool(mlx.metal.is_available())
-            metal_detail = "Metal available" if metal_ok else "Metal unavailable"
-        except Exception as exc:
-            metal_detail = f"Metal check failed: {type(exc).__name__}: {exc}"
+    metal_ok, metal_detail = _probe_metal() if mlx_ok else (False, "MLX unavailable")
     checks.append(("MLX Metal device", metal_ok, metal_detail))
     return checks
 
@@ -132,38 +162,199 @@ def _load_benchmark():
     return benchmark_main
 
 
+def _load_tune():
+    """Load the existing tuner only after a tune/revalidate/status command."""
+    # ``ironmule.__init__`` re-exports the tune function under this name; import the
+    # submodule explicitly so command handlers receive its parser and API.
+    return importlib.import_module("ironmule.tune")
+
+
+def _dependency_error(command: str, exc: ImportError, *, dependency: str = "MLX/MLX-LM") -> int:
+    print(
+        f"IronMule {command} requires {dependency} runtime dependencies; run `ironmule doctor` "
+        f"for details ({exc}).",
+        file=sys.stderr,
+    )
+    return 1
+
+
+def _run_tune(argv: list[str]) -> int:
+    try:
+        tune_module = _load_tune()
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("tune", exc)
+    try:
+        return int(tune_module.main(argv))
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("tune", exc)
+
+
+def _run_revalidate(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="ironmule revalidate", description="Canary-check the stored tuning profile."
+    )
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--max-tokens", type=int, default=32)
+    args = parser.parse_args(argv)
+    if args.max_tokens < 1:
+        parser.error("--max-tokens must be positive")
+    try:
+        tune_module = _load_tune()
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("revalidate", exc)
+    try:
+        model = args.model or tune_module.DEFAULT_MODEL
+        result = tune_module.revalidate(model_id=model, max_tokens=args.max_tokens)
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("revalidate", exc)
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _run_status(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="ironmule status", description="Show the local hardware and profile status."
+    )
+    parser.add_argument("--model", default=None)
+    args = parser.parse_args(argv)
+    try:
+        tune_module = _load_tune()
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("status", exc)
+    try:
+        model = args.model or tune_module.DEFAULT_MODEL
+        profile = tune_module.load_profile(model, require_compatible=False)
+        compatible = tune_module.load_profile(model, require_compatible=True)
+        status = "compatible" if compatible else "stale" if profile else "missing"
+        result = {
+            "model": model,
+            "hardware_fingerprint": tune_module.fingerprint(),
+            "profile_status": status,
+            "profile_store": str(tune_module.PROFILES),
+        }
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("status", exc)
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _load_huggingface_hub():
+    """Load the cache inspector only for the read-only models command."""
+    return importlib.import_module("huggingface_hub")
+
+
+def _is_huggingface_dependency_error(exc: ImportError) -> bool:
+    missing = getattr(exc, "name", "") or ""
+    if missing == "huggingface_hub":
+        return True
+    return "no module named 'huggingface_hub" in str(exc).lower()
+
+
+def _safe_string(value: Any) -> str:
+    try:
+        return str(value)
+    except Exception:  # pragma: no cover - defensive for third-party warning objects
+        return f"<{type(value).__name__} could not be rendered>"
+
+
+def _cached_revision(revision: Any) -> dict[str, Any]:
+    return {
+        "commit_hash": _safe_string(getattr(revision, "commit_hash", "")),
+        "snapshot_path": _safe_string(getattr(revision, "snapshot_path", "")),
+        "size_on_disk": getattr(revision, "size_on_disk", None),
+        "last_modified": getattr(revision, "last_modified", None),
+    }
+
+
+def _cached_model(repo: Any) -> dict[str, Any]:
+    revisions = [
+        _cached_revision(revision)
+        for revision in (getattr(repo, "revisions", ()) or ())
+    ]
+    revisions.sort(key=lambda item: (item["commit_hash"], item["snapshot_path"]))
+    return {
+        "repo_id": _safe_string(getattr(repo, "repo_id", "")),
+        "revisions": revisions,
+        "size_on_disk": getattr(repo, "size_on_disk", None),
+        "last_modified": getattr(repo, "last_modified", None),
+    }
+
+
+def _run_models(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="ironmule models",
+        description="List locally cached Hugging Face model snapshots without downloading.",
+    )
+    parser.add_argument("--model", default=None, help="exact Hugging Face repo id filter")
+    args = parser.parse_args(argv)
+    try:
+        huggingface_hub = _load_huggingface_hub()
+    except ImportError as exc:
+        if not _is_huggingface_dependency_error(exc):
+            raise
+        return _dependency_error("models", exc, dependency="huggingface_hub")
+    try:
+        cache = huggingface_hub.scan_cache_dir()
+        repos = []
+        for repo in (getattr(cache, "repos", ()) or ()):
+            if getattr(repo, "repo_type", None) != "model":
+                continue
+            if args.model is not None and getattr(repo, "repo_id", None) != args.model:
+                continue
+            repos.append(_cached_model(repo))
+        repos.sort(key=lambda item: item["repo_id"])
+        warnings = sorted(
+            _safe_string(warning)
+            for warning in (getattr(cache, "warnings", ()) or ())
+        )
+        result = {"models": repos, "warnings": warnings}
+    except ImportError as exc:
+        if not _is_huggingface_dependency_error(exc):
+            raise
+        return _dependency_error("models", exc, dependency="huggingface_hub")
+    print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
 def _run_benchmark(argv: list[str]) -> int:
     try:
         benchmark_main = _load_benchmark()
     except ImportError as exc:
         if not _is_runtime_dependency_error(exc):
             raise
-        print(
-            "IronMule benchmark requires MLX/MLX-LM runtime dependencies; run `ironmule doctor` "
-            f"for details ({exc}).",
-            file=sys.stderr,
-        )
-        return 1
+        return _dependency_error("benchmark", exc)
 
     try:
         return int(benchmark_main(argv))
     except ImportError as exc:
         if not _is_runtime_dependency_error(exc):
             raise
-        print(
-            "IronMule benchmark requires MLX/MLX-LM runtime dependencies; run `ironmule doctor` "
-            f"for details ({exc}).",
-            file=sys.stderr,
-        )
-        return 1
+        return _dependency_error("benchmark", exc)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {doctor|benchmark|info} [options]")
-        print("\ncommands:\n  doctor       Check Apple Silicon and MLX prerequisites")
+        print("usage: ironmule {doctor|benchmark|models|tune|revalidate|status|info} [options]")
+        print("\ncommands:")
+        print("  doctor       Check Apple Silicon and MLX prerequisites")
         print("  benchmark   Run the existing reproducible local benchmark")
+        print("  models      List locally cached Hugging Face model snapshots")
+        print("  tune        Tune or inspect the existing local profile (--show)")
+        print("  revalidate  Canary-check the stored profile")
+        print("  status       Show local hardware/profile status")
         print("  info        Show package information")
         return 0
     command, rest = args[0], args[1:]
@@ -171,6 +362,14 @@ def main(argv: list[str] | None = None) -> int:
         return doctor(rest)
     if command == "benchmark":
         return _run_benchmark(rest)
+    if command == "tune":
+        return _run_tune(rest)
+    if command == "models":
+        return _run_models(rest)
+    if command == "revalidate":
+        return _run_revalidate(rest)
+    if command == "status":
+        return _run_status(rest)
     if command == "info":
         return info(rest)
     print(f"ironmule: unknown command {command!r}; use --help", file=sys.stderr)

@@ -16,16 +16,19 @@ import statistics
 import subprocess
 import time
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 
-os.environ.setdefault("HF_HUB_OFFLINE", "1")
-os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-
+from .fast import FusionUnsupported
 from .hw import STORE, fingerprint, probe
 from .runtime import BASELINE, Engine, Knobs
 
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"
 PROFILES = STORE / "profiles.json"
+OFFLINE_ALLOW_PATTERNS = (
+    "*.safetensors", "*.json", "*.py", "tokenizer.model", "*.tiktoken",
+    "tiktoken.model", "*.txt", "*.jsonl", "*.jinja",
+)
 
 # The predecessor project's planner request, reproduced word for word — including
 # its internal project name — so token counts and therefore timings stay comparable
@@ -77,6 +80,7 @@ def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, 
     """
     from .bench import environment
     from .hw import static_facts
+    from .plans import RUNTIME_VERSION
 
     facts = static_facts()
     env = environment()
@@ -87,6 +91,7 @@ def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, 
         "gpu_cores": facts["gpu_cores"],
         "mlx": env.get("mlx"),
         "mlx_lm": env.get("mlx_lm"),
+        "runtime_version": RUNTIME_VERSION,
         "model_id": model_id,
         "power_source": env["power_source"],
         "prompt_tokens": prompt_tokens,
@@ -134,9 +139,23 @@ def gpu_busy() -> str | None:
     return None
 
 
-def load_engine(model_id: str, knobs: Knobs) -> tuple[Engine, Any]:
+def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True) -> tuple[Engine, Any]:
+    """Load a model under a caller-selectable local/offline policy.
+
+    Offline loads of a local directory pass that directory straight through.
+    An offline Hub ID is resolved to an already cached snapshot with
+    ``local_files_only=True`` before handing the path to ``mlx_lm.load``.
+    Online mode and ``None`` preserve the normal ``mlx_lm`` resolution path.
+    No environment variable or imported-module global is changed.
+    """
     from mlx_lm import load
-    model, tokenizer = load(model_id)
+
+    source: str = model_id
+    if offline is True and not Path(model_id).is_dir():
+        from huggingface_hub import snapshot_download
+        source = snapshot_download(model_id, local_files_only=True,
+                                   allow_patterns=OFFLINE_ALLOW_PATTERNS)
+    model, tokenizer = load(source)
     return Engine(model, tokenizer, knobs), tokenizer
 
 
@@ -170,6 +189,13 @@ def measure(engine: Engine, ids: list[int], max_tokens: int, eos: tuple[int, ...
     }
 
 
+def _is_unsupported_candidate(exc: BaseException) -> bool:
+    """Recognize only typed fusion or explicitly unsupported cache failures."""
+    if isinstance(exc, FusionUnsupported):
+        return True
+    return isinstance(exc, (ValueError, TypeError)) and "unsupported" in str(exc).lower()
+
+
 def confirm(model_id: str, baseline: Knobs, candidate: Knobs, prompt: str,
             max_tokens: int) -> dict[str, Any]:
     """Screening found a candidate; a paired A/B decides whether it is real."""
@@ -188,13 +214,32 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
     """
     from . import ab
 
-    profile = load_profile(model_id)
+    profile = load_profile(model_id, require_compatible=False)
     if profile is None:
         return {"verdict": "no_profile"}
-    drifted = stale(profile, model_id, profile["conditions"]["prompt_tokens"], max_tokens)
     result = ab.run({"baseline": BASELINE, "stored": Knobs(**profile["knobs"])},
                     processes=REVALIDATE_PROCESSES, repeats=5, warmup=2,
                     max_tokens=max_tokens, model=model_id, prompt=prompt)
+    # The canary's child already tokenizes the exact prompt it measures.  Use
+    # that observed length rather than the profile's old workload as the
+    # comparison input; this catches materially changed prompts reliably.
+    prompt_tokens = None
+    for child in result.get("raw", []):
+        for arm in child.get("arms", {}).values():
+            if arm.get("prompt_tokens") is not None:
+                prompt_tokens = int(arm["prompt_tokens"])
+                break
+        if prompt_tokens is not None:
+            break
+    if prompt_tokens is None:
+        # Keep compatibility with a small test/dry-run harness that omits raw
+        # child details, while still measuring the current prompt itself.
+        engine, tokenizer = load_engine(model_id, BASELINE)
+        try:
+            prompt_tokens = len(prompt_ids(tokenizer, prompt))
+        finally:
+            del engine
+    drifted = stale(profile, model_id, prompt_tokens, max_tokens)
     ratio = result["ratios"]["stored/baseline"]["total_ns"]
     if not result["token_identity"]:
         verdict = "retune_required"
@@ -232,20 +277,42 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             candidate = replace(best, **{name: value})
             if candidate == best:
                 continue
-            if Engine.needs_reload(best, candidate):
-                del engine
-                engine, tokenizer = load_engine(model_id, candidate)
-            else:
-                engine.knobs = candidate
-                engine._compiled = None
-            result = measure(engine, ids, max_tokens, eos, repeats=repeats)
+            reload_needed = Engine.needs_reload(best, candidate)
+            try:
+                if reload_needed:
+                    del engine
+                    engine, tokenizer = load_engine(model_id, candidate)
+                else:
+                    engine.knobs = candidate
+                    engine._compiled = None
+                result = measure(engine, ids, max_tokens, eos, repeats=repeats)
+            except (ValueError, RuntimeError, TypeError) as exc:
+                # FusionUnsupported is typed; cache-specific ValueError and
+                # TypeError paths must explicitly say unsupported.  Generic
+                # runtime/type/value errors remain loud so programming bugs
+                # cannot be misreported as tuning results.
+                if not _is_unsupported_candidate(exc):
+                    raise
+                trials.append({"knob": name, "value": value,
+                               "disposition": "unsupported",
+                               "verdict": "unsupported",
+                               "reason": f"{type(exc).__name__}: {exc}"})
+                print(f"  {name}={value!r:>6}  unsupported ({exc})")
+                if reload_needed:
+                    engine, tokenizer = load_engine(model_id, best)
+                else:
+                    engine.knobs = best
+                    engine._compiled = None
+                continue
             ratio = result["total_ns"] / base["total_ns"]
             identical = result["logical_tokens"] == reference
             verdict = ("rejected: tokens differ" if not identical
                        else "rejected: not deterministic" if not result["deterministic"]
                        else "kept" if ratio < best_result["total_ns"] / base["total_ns"] * KEEP_IF_RATIO_BELOW
                        else "rejected: no gain")
-            trials.append({"knob": name, "value": value, "ratio": ratio, "verdict": verdict,
+            trials.append({"knob": name, "value": value, "ratio": ratio,
+                           "disposition": "accepted" if verdict == "kept" else "rejected",
+                           "verdict": verdict,
                            "total_ns": result["total_ns"], "decode_ns": result["decode_ns"],
                            "prefill_ns": result["prefill_ns"]})
             print(f"  {name}={value!r:>6}  ratio {ratio:.4f}  {verdict}")
@@ -302,7 +369,8 @@ def _all_profiles() -> dict[str, Any]:
     if not PROFILES.is_file():
         return {}
     try:
-        return json.loads(PROFILES.read_text())
+        loaded = json.loads(PROFILES.read_text())
+        return loaded if isinstance(loaded, dict) else {}
     except (OSError, json.JSONDecodeError):
         return {}
 
@@ -314,9 +382,36 @@ def save_profile(profile: dict[str, Any]) -> None:
     PROFILES.write_text(json.dumps(profiles, indent=2, sort_keys=True))
 
 
-def load_profile(model_id: str = DEFAULT_MODEL) -> dict[str, Any] | None:
-    """The tuned profile for *this* machine, or None if this hardware is unknown."""
-    return _all_profiles().get(f"{fingerprint()}/{model_id}")
+def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = True) -> dict[str, Any] | None:
+    """Return a valid profile, rejecting current identity drift by default.
+
+    ``require_compatible=False`` is reserved for ``revalidate()``, which needs
+    to load a schema-valid but stale profile in order to report its canary
+    result rather than silently treating it as absent.
+    """
+    profile = _all_profiles().get(f"{fingerprint()}/{model_id}")
+    if not isinstance(profile, dict) or profile.get("model_id") != model_id:
+        return None
+    conditions_record = profile.get("conditions")
+    required = {"fingerprint", "model_id", "mlx", "mlx_lm", "runtime_version",
+                "prompt_tokens", "max_tokens"}
+    if (not isinstance(conditions_record, dict)
+            or not required.issubset(conditions_record)
+            or conditions_record.get("model_id") != model_id
+            or not isinstance(profile.get("knobs"), dict)):
+        return None
+    try:
+        Knobs(**profile["knobs"])
+    except (TypeError, ValueError):
+        return None
+    try:
+        prompt_tokens = int(conditions_record["prompt_tokens"])
+        max_tokens = int(conditions_record["max_tokens"])
+    except (TypeError, ValueError):
+        return None
+    if require_compatible and stale(profile, model_id, prompt_tokens, max_tokens):
+        return None
+    return profile
 
 
 def knobs_for(model_id: str = DEFAULT_MODEL) -> Knobs:

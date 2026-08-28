@@ -113,11 +113,10 @@ class PrefixCache:
             return None
         # slice_update is functional, so handing out references is safe: advancing a
         # copy of this structure never writes through to the stored arrays.
-        return [{"keys": layer["keys"], "values": layer["values"]} for layer in self._snapshot]
+        return _copy_state_layers(self._snapshot)
 
     def put(self, state, capacity: int) -> None:
-        self._snapshot = [{"keys": layer["keys"], "values": layer["values"]}
-                          for layer in state["layers"]]
+        self._snapshot = _copy_state_layers(state["layers"])
         self._capacity = capacity
 
 
@@ -140,20 +139,120 @@ def _project(model, hidden):
     return text.lm_head(hidden)
 
 
-def _empty_fixed_state(capacity: int, template: list) -> dict[str, Any]:
+def _cache_kinds(cache: list | tuple) -> list[str]:
+    """Classify the MLX-LM cache contract, rejecting unknown implementations."""
+    if not isinstance(cache, (list, tuple)):
+        raise TypeError(f"model cache must be a list or tuple, got {type(cache).__name__}")
+    from mlx_lm.models.cache import ArraysCache, KVCache, RotatingKVCache
+
+    kinds = []
+    for item in cache:
+        if isinstance(item, ArraysCache):
+            if item.lengths is not None or item.left_padding is not None:
+                raise ValueError(
+                    "ArraysCache lengths/left_padding metadata is unsupported in runtime state")
+            kinds.append("arrays")
+        elif isinstance(item, (KVCache, RotatingKVCache)):
+            kinds.append("kv")
+        else:
+            raise TypeError(f"unsupported model cache type: {type(item).__name__}")
+    return kinds
+
+
+def _state_layer_kind(layer: dict[str, Any]) -> str:
+    """Infer a state layer kind from its shape; marker leaves are forbidden."""
+    if set(layer) == {"keys", "values"}:
+        return "kv"
+    if set(layer) == {"arrays"} and isinstance(layer["arrays"], list):
+        return "arrays"
+    raise TypeError("unsupported cache state layer; expected keys/values or arrays")
+
+
+def _copy_state_layers(layers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Copy Python containers while retaining immutable MLX array leaves."""
+    copied = []
+    for layer in layers:
+        kind = _state_layer_kind(layer)
+        if kind == "kv":
+            copied.append({"keys": layer["keys"], "values": layer["values"]})
+        else:
+            copied.append({"arrays": list(layer["arrays"])})
+    return copied
+
+
+def _state_is_hybrid(state: dict[str, Any]) -> bool:
+    kinds = {_state_layer_kind(layer) for layer in state["layers"]}
+    return "arrays" in kinds
+
+
+def _cache_leaves(cache: list | tuple) -> list[Any]:
+    """Return cache arrays for evaluation without assuming every cache has keys."""
+    leaves = []
+    for item, kind in zip(cache, _cache_kinds(cache)):
+        if kind == "kv":
+            leaves.extend((item.keys, item.values))
+        else:
+            leaves.extend(value for value in item.cache if value is not None)
+    return leaves
+
+
+def _caches_from_state(state: dict[str, Any], capacity: int) -> list[Any]:
+    """Recreate MLX-LM cache objects from the marker-free runtime state tree."""
+    from mlx_lm.models.cache import ArraysCache
+
+    caches = []
+    for layer in state["layers"]:
+        kind = _state_layer_kind(layer)
+        if kind == "kv":
+            caches.append(FixedKVCache(layer, state["position"], capacity))
+        else:
+            cache = ArraysCache(size=len(layer["arrays"]))
+            cache.cache = list(layer["arrays"])
+            caches.append(cache)
+    return caches
+
+
+def _state_from_caches(caches: list[Any], position: dict[str, Any]) -> dict[str, Any]:
+    """Capture cache mutations while retaining each layer's native state shape."""
     layers = []
-    for layer in template:
-        keys = layer.keys
-        shape = (keys.shape[0], keys.shape[1], capacity, keys.shape[3])
-        layers.append({"keys": mx.zeros(shape, dtype=keys.dtype),
-                       "values": mx.zeros(shape, dtype=keys.dtype)})
+    from mlx_lm.models.cache import ArraysCache
+
+    for cache in caches:
+        if isinstance(cache, FixedKVCache):
+            layers.append({"keys": cache.keys, "values": cache.values})
+        elif isinstance(cache, ArraysCache):
+            layers.append({"arrays": list(cache.cache)})
+        else:  # defensive: cache objects are created by _caches_from_state
+            raise TypeError(f"unsupported runtime cache type: {type(cache).__name__}")
+    return {"position": position, "layers": layers}
+
+
+def _empty_fixed_state(capacity: int, template: list) -> dict[str, Any]:
+    kinds = _cache_kinds(template)
+    layers = []
+    for layer, kind in zip(template, kinds):
+        if kind == "kv":
+            keys = layer.keys
+            shape = (keys.shape[0], keys.shape[1], capacity, keys.shape[3])
+            layers.append({"keys": mx.zeros(shape, dtype=keys.dtype),
+                           "values": mx.zeros(shape, dtype=keys.dtype)})
+        else:
+            if any(value is None for value in layer.cache):
+                raise ValueError("recurrent cache must be initialized before conversion")
+            layers.append({"arrays": [mx.zeros_like(value) for value in layer.cache]})
     return {"position": {"offset": mx.array(0, dtype=mx.int32)}, "layers": layers}
 
 
 def _fixed_state_from_standard(cache: list, used: int, capacity: int) -> dict[str, Any]:
+    kinds = _cache_kinds(cache)
     layers = []
     start = mx.array((0, 0, 0, 0), dtype=mx.int32)
-    for layer in cache:
+    for layer, kind in zip(cache, kinds):
+        if kind == "arrays":
+            if any(value is None for value in layer.cache):
+                raise ValueError("recurrent cache must be initialized before conversion")
+            layers.append({"arrays": list(layer.cache)})
+            continue
         keys, values = layer.keys, layer.values
         if keys.shape[2] < used or used > capacity:
             raise ValueError("prompt does not fit the fixed capacity")
@@ -224,10 +323,19 @@ class Engine:
         model, trunk = self.model, _trunk(self.model)
 
         def body(input_ids, state):
-            caches = [FixedKVCache(layer, state["position"], capacity) for layer in state["layers"]]
+            if _state_is_hybrid(state):
+                caches = _caches_from_state(state, capacity)
+            else:
+                # Keep the established all-KV compiled graph and state tree intact.
+                caches = [FixedKVCache(layer, state["position"], capacity)
+                          for layer in state["layers"]]
             logits = _project(model, trunk(input_ids, cache=caches))
+            if _state_is_hybrid(state):
+                layers = _state_from_caches(caches, state["position"])["layers"]
+            else:
+                layers = [{"keys": c.keys, "values": c.values} for c in caches]
             new_state = {"position": {"offset": state["position"]["offset"] + input_ids.shape[1]},
-                         "layers": [{"keys": c.keys, "values": c.values} for c in caches]}
+                         "layers": layers}
             if fused:
                 return mx.argmax(logits, axis=-1), new_state
             return logits, new_state
@@ -238,16 +346,27 @@ class Engine:
 
     def _feed(self, state, ids: list[int], capacity: int):
         """One prefill chunk into an existing fixed-shape state."""
-        caches = [FixedKVCache(layer, state["position"], capacity) for layer in state["layers"]]
+        if _state_is_hybrid(state):
+            caches = _caches_from_state(state, capacity)
+        else:
+            caches = [FixedKVCache(layer, state["position"], capacity)
+                      for layer in state["layers"]]
         hidden = _trunk(self.model)(mx.array(ids)[None, :], cache=caches)
         used = int(state["position"]["offset"].item()) + len(ids)
-        return ({"position": {"offset": mx.array(used, dtype=mx.int32)},
+        position = {"offset": mx.array(used, dtype=mx.int32)}
+        if _state_is_hybrid(state):
+            return (_state_from_caches(caches, position), hidden)
+        return ({"position": position,
                  "layers": [{"keys": c.keys, "values": c.values} for c in caches]}, hidden)
 
     def _empty_state(self, capacity: int):
         probe = self.model.make_cache()
+        kinds = _cache_kinds(probe)  # validate before invoking the model with the cache
         _trunk(self.model)(mx.array([[0]]), cache=probe)
-        mx.eval([c.keys for c in probe])
+        if all(kind == "kv" for kind in kinds):
+            mx.eval([c.keys for c in probe])
+        else:
+            mx.eval(*_cache_leaves(probe))
         return _empty_fixed_state(capacity, probe)
 
     def _prefill_chunked(self, prompt_ids: list[int], capacity: int, cache: "PrefixCache"):
@@ -284,15 +403,28 @@ class Engine:
         ids = mx.array(prompt_ids)[None, :]
         if self.knobs.prefill_into_fixed:
             probe = self.model.make_cache()
+            kinds = _cache_kinds(probe)
             _ = _trunk(self.model)(mx.array([[prompt_ids[0]]]), cache=probe)
-            mx.eval([c.keys for c in probe])
+            if all(kind == "kv" for kind in kinds):
+                mx.eval([c.keys for c in probe])
+            else:
+                mx.eval(*_cache_leaves(probe))
             state = _empty_fixed_state(capacity, probe)
-            caches = [FixedKVCache(layer, state["position"], capacity) for layer in state["layers"]]
+            if all(_state_layer_kind(layer) == "kv" for layer in state["layers"]):
+                caches = [FixedKVCache(layer, state["position"], capacity)
+                          for layer in state["layers"]]
+            else:
+                caches = _caches_from_state(state, capacity)
             hidden = _trunk(self.model)(ids, cache=caches)
-            state["position"]["offset"] = mx.array(len(prompt_ids), dtype=mx.int32)
-            state["layers"] = [{"keys": c.keys, "values": c.values} for c in caches]
+            position = {"offset": mx.array(len(prompt_ids), dtype=mx.int32)}
+            if all(_state_layer_kind(layer) == "kv" for layer in state["layers"]):
+                state = {"position": position,
+                         "layers": [{"keys": c.keys, "values": c.values} for c in caches]}
+            else:
+                state = _state_from_caches(caches, position)
         else:
             cache = self.model.make_cache()
+            _cache_kinds(cache)
             hidden = _trunk(self.model)(ids, cache=cache)
 
         if self.knobs.head_skip_prefill:
@@ -334,6 +466,8 @@ class Engine:
     def _decode_speculative(self, state, token, prompt_ids, max_tokens, eos, capacity):
         """Prompt-lookup speculation. Exactly greedy: a draft token is kept only when
         it equals what the model itself chose for that position."""
+        if _state_is_hybrid(state):
+            raise ValueError("speculative decoding is unsupported for hybrid cache state")
         width = self.knobs.speculate_k + 1
         body = self._body(capacity, width)
         first = int(token.reshape((-1,)).item())
@@ -380,13 +514,17 @@ class Engine:
         state, token = self._prefill(prompt_ids, capacity)
         prefill_ns = time.perf_counter_ns() - started
 
-        started = time.perf_counter_ns()
-        if self.knobs.speculate_k > 0:
-            physical, acceptance = self._decode_speculative(
-                state, token, prompt_ids, max_tokens, eos_ids, capacity)
+        first = int(token.reshape((-1,)).item())
+        if first in eos_ids:
+            physical, acceptance, decode_ns = [first], 0.0, 0
         else:
-            physical, acceptance = self._decode(state, token, max_tokens, eos_ids, capacity)
-        decode_ns = time.perf_counter_ns() - started
+            started = time.perf_counter_ns()
+            if self.knobs.speculate_k > 0:
+                physical, acceptance = self._decode_speculative(
+                    state, token, prompt_ids, max_tokens, eos_ids, capacity)
+            else:
+                physical, acceptance = self._decode(state, token, max_tokens, eos_ids, capacity)
+            decode_ns = time.perf_counter_ns() - started
 
         logical = []
         for value in physical:

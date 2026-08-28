@@ -4,11 +4,36 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 import ironmule_cli as cli
+
+
+def test_failed_optional_probe_isolated_from_parent_import_state(monkeypatch):
+    calls = []
+
+    def failed_probe(command, **kwargs):
+        calls.append((command, kwargs))
+        return SimpleNamespace(returncode=1, stdout="", stderr="transformers import failed")
+
+    monkeypatch.setattr(cli.subprocess, "run", failed_probe)
+    parent_calls = []
+    sentinel = object()
+    monkeypatch.setattr(
+        cli.importlib, "import_module",
+        lambda name: (parent_calls.append(name), sentinel)[1],
+    )
+
+    ok, _version, detail = cli._load_optional("mlx_lm", "mlx-lm")
+    assert not ok and "isolated probe failed" in detail
+    assert calls and calls[0][0][0] == sys.executable
+    # A subsequent parent import remains usable; the failed child cannot poison it.
+    assert cli.importlib.import_module("safe_parent_module") is sentinel
+    assert parent_calls == ["safe_parent_module"]
 
 
 def test_doctor_reports_missing_prerequisites_without_runtime_import(monkeypatch, capsys):
@@ -30,6 +55,149 @@ def test_benchmark_dispatch_preserves_arguments(monkeypatch):
     monkeypatch.setattr(cli, "_run_benchmark", fake)
     assert cli.main(["benchmark", "--requests", "2", "--max-tokens", "3"]) == 7
     assert captured["args"] == ["--requests", "2", "--max-tokens", "3"]
+
+
+def test_tune_dispatch_preserves_existing_options_including_show(monkeypatch):
+    captured = {}
+
+    def fake(args):
+        captured["args"] = args
+        return 4
+
+    monkeypatch.setattr(cli, "_load_tune", lambda: SimpleNamespace(main=fake))
+    assert cli.main(["tune", "--show", "--model", "local-model"]) == 4
+    assert captured["args"] == ["--show", "--model", "local-model"]
+
+
+def test_load_tune_requests_the_submodule_not_reexported_function(monkeypatch):
+    module = SimpleNamespace(main=lambda _args: 0, DEFAULT_MODEL="model")
+    requested = []
+    monkeypatch.setattr(
+        cli.importlib, "import_module",
+        lambda name: (requested.append(name), module)[1],
+    )
+    assert cli._load_tune() is module
+    assert requested == ["ironmule.tune"]
+
+
+def test_revalidate_is_a_lazy_alias_with_explicit_arguments(monkeypatch, capsys):
+    captured = {}
+
+    def fake(*, model_id, max_tokens):
+        captured.update(model_id=model_id, max_tokens=max_tokens)
+        return {"verdict": "no_profile"}
+
+    monkeypatch.setattr(
+        cli, "_load_tune",
+        lambda: SimpleNamespace(DEFAULT_MODEL="default-model", revalidate=fake),
+    )
+    assert cli.main(["revalidate", "--model", "local-model", "--max-tokens", "17"]) == 0
+    assert captured == {"model_id": "local-model", "max_tokens": 17}
+    assert '"verdict": "no_profile"' in capsys.readouterr().out
+
+
+def test_status_reports_existing_profile_state_without_loading_a_model(monkeypatch, capsys):
+    calls = []
+
+    def fake_profile(model, *, require_compatible):
+        calls.append((model, require_compatible))
+        return {"model_id": model} if not require_compatible else None
+
+    monkeypatch.setattr(
+        cli, "_load_tune",
+        lambda: SimpleNamespace(
+            DEFAULT_MODEL="default-model", fingerprint=lambda: "hw-test",
+            load_profile=fake_profile, PROFILES=Path("/tmp/profiles.json"),
+        ),
+    )
+    assert cli.main(["status", "--model", "local-model"]) == 0
+    output = capsys.readouterr().out
+    assert '"profile_status": "stale"' in output
+    assert '"hardware_fingerprint": "hw-test"' in output
+    assert calls == [("local-model", False), ("local-model", True)]
+
+
+def test_help_lists_only_implemented_cli_commands(capsys):
+    assert cli.main(["--help"]) == 0
+    output = capsys.readouterr().out
+    assert "{doctor|benchmark|models|tune|revalidate|status|info}" in output
+    assert all(command in output for command in ("doctor", "benchmark", "models", "tune", "revalidate", "status", "info"))
+    assert "serve" not in output and "\n  cache " not in output
+
+
+def test_models_loader_requests_huggingface_hub_lazily(monkeypatch):
+    module = SimpleNamespace(scan_cache_dir=lambda: None)
+    requested = []
+    monkeypatch.setattr(
+        cli.importlib, "import_module",
+        lambda name: (requested.append(name), module)[1],
+    )
+    assert cli._load_huggingface_hub() is module
+    assert requested == ["huggingface_hub"]
+
+
+def test_models_filters_models_and_sorts_revisions_without_download(monkeypatch, capsys):
+    scanned = []
+    revisions = [
+        SimpleNamespace(commit_hash="b", snapshot_path="/cache/b", size_on_disk=2, last_modified=2.0),
+        SimpleNamespace(commit_hash="a", snapshot_path="/cache/a", size_on_disk=1, last_modified=1.0),
+    ]
+    repos = [
+        SimpleNamespace(repo_id="z/model", repo_type="model", revisions=revisions,
+                         size_on_disk=3, last_modified=3.0),
+        SimpleNamespace(repo_id="ignored/data", repo_type="dataset", revisions=[],
+                         size_on_disk=9, last_modified=9.0),
+        SimpleNamespace(repo_id="a/model", repo_type="model", revisions=[],
+                         size_on_disk=0, last_modified=None),
+    ]
+
+    class Warning:
+        def __str__(self):
+            return "cache warning"
+
+    def scan_cache_dir():
+        scanned.append(True)
+        return SimpleNamespace(repos=repos, warnings=[Warning()])
+
+    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: SimpleNamespace(scan_cache_dir=scan_cache_dir))
+    assert cli.main(["models", "--model", "z/model"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert scanned == [True]
+    assert [entry["repo_id"] for entry in payload["models"]] == ["z/model"]
+    assert [entry["commit_hash"] for entry in payload["models"][0]["revisions"]] == ["a", "b"]
+    assert payload["warnings"] == ["cache warning"]
+
+
+def test_models_empty_cache_is_deterministic(monkeypatch, capsys):
+    monkeypatch.setattr(
+        cli, "_load_huggingface_hub",
+        lambda: SimpleNamespace(scan_cache_dir=lambda: SimpleNamespace(repos=[], warnings=[])),
+    )
+    assert cli.main(["models"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"models": [], "warnings": []}
+
+
+def test_models_reports_missing_huggingface_dependency(monkeypatch, capsys):
+    error = ModuleNotFoundError("No module named 'huggingface_hub'")
+    error.name = "huggingface_hub"
+    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: (_ for _ in ()).throw(error))
+    assert cli._run_models([]) == 1
+    assert "huggingface_hub" in capsys.readouterr().err
+
+
+def test_models_does_not_swallow_unrelated_import_error(monkeypatch):
+    error = ImportError("broken cache inspector")
+    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: (_ for _ in ()).throw(error))
+    with pytest.raises(ImportError, match="broken cache inspector"):
+        cli._run_models([])
+
+
+def test_tune_reports_missing_runtime_dependencies(monkeypatch, capsys):
+    error = ModuleNotFoundError("No module named 'mlx_lm'")
+    error.name = "mlx_lm"
+    monkeypatch.setattr(cli, "_load_tune", lambda: (_ for _ in ()).throw(error))
+    assert cli._run_tune(["--show"]) == 1
+    assert "ironmule doctor" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("failure_during", [False, True])

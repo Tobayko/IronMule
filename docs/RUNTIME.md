@@ -88,7 +88,9 @@ width drops below four whenever fewer requests are ready, and that is intended.
 
 ### The measured trade
 
-E16, forty independent OS processes, five per condition:
+The following E16 table is historical research evidence from forty independent OS
+processes, five per condition. It is not the output or denominator of the current
+public benchmark protocol:
 
 | | throughput | median latency | tail latency (p95) | service TTFT |
 | :-- | --: | --: | --: | --: |
@@ -97,14 +99,68 @@ E16, forty independent OS processes, five per condition:
 | staggered arrivals | `+15.1%` | `+26%` | `−8%` | ~690 → ~88 ms |
 | short answers (terse) | `+9.2%` | `+54%` | `−9%` | — |
 
-Reproduced locally through this runtime with `python -m ironmule.benchmark`:
+The current public benchmark (`python -m ironmule.benchmark`) uses two warmups and
+six measured repeats per arm. Measured repeats are even and alternate AB/BA order;
+each arm gets its own execution plan and prefix-cache state. Its primary clock is the
+complete service wall around `Runtime.serve`, reported as `outer_wall_ms`. Executor
+`wall_ms`, TTFT, latency, queue, and group-width values remain diagnostics. The JSON
+output (`--json out.json`) preserves raw warmup/repeat snapshots, raw token IDs and
+stop reasons, workload and runtime fingerprints, medians/spread, and a paired
+bootstrap interval. It does not include a stock `mlx_lm` arm.
 
 ```
-mode              wall ms        tok/s  svcTTFT p50      lat p50      lat p95
-interactive          3303         87.2       1384.9       1921.0       3367.8
-throughput           2700        106.6        246.6       2893.8       3048.3
-throughput gain +18.24%   identical answers in both modes: True
+mode          outer ms p50   physical tok/s   visible tok/s
+interactive       <median>         <median>         <median>
+throughput        <median>         <median>         <median>
+
+throughput gain <outer-wall ratio>   95% CI [<low>; <high>]
+identical answers in both modes: True
 ```
+
+Physical token rates include the prefill-produced first token and EOS when emitted;
+visible token rates exclude EOS. A token, stop-reason, or count mismatch is emitted
+to stderr as a structured difference (including the first differing position and
+both values), exits nonzero, and is included in the result file when `--json` is
+supplied. The protocol shares one loaded runtime/model process to
+avoid doubling peak memory, so fresh-process isolation remains an open R3 limitation;
+only the plans/cache state are isolated per arm.
+
+### Phase and roofline diagnostics
+
+`ironmule.benchmark.phase_roofline_diagnostic` is a pure, diagnostic-only
+calculation over explicitly supplied measurements. It keeps prefill and decode
+separate; `decode_steps` excludes the first token produced by prefill. A roofline
+is emitted only when the effective bandwidth, active weight bytes and all KV/extra
+traffic components are present and valid:
+
+```python
+from ironmule.benchmark import phase_roofline_diagnostic
+
+diagnostic = phase_roofline_diagnostic(
+    prefill_ns=2_000_000, decode_ns=5_000_000, decode_steps=10,
+    effective_bandwidth_gbps=300.0,
+    active_weight_bytes_per_token=100_000_000,
+    kv_read_bytes_per_token=1_000,
+    kv_write_bytes_per_token=2_000,
+    extra_bytes_per_token=3_000,
+    bandwidth_source="measured_gemv_probe",
+    bandwidth_source_kind="measured_effective",
+)
+```
+
+The result uses schema `ironmule.phase_roofline.v1`. It reports
+`ideal_tokens_per_second` and a per-run `efficiency`; it does not choose a plan,
+activate a profile, or label a workload compute-/bandwidth-bound. Missing or
+invalid inputs are `inconclusive`/`invalid`, and zero decode steps are
+`not_applicable`. `effective_bandwidth_gbps` must identify a measured effective
+bandwidth, not a nominal chip specification. A nominal peak source remains
+valid provenance but is always inconclusive for efficiency. For zero decode
+steps, only the decode phase and roofline are `not_applicable`; with a measured
+prefill duration the top-level record remains `inconclusive`. The helper does not
+infer an EOS reason. The calculation is consistent with
+Apple's controlled M4/M5 observation that TTFT and subsequent-token generation
+are different regimes, but that external result is not an IronMule benchmark:
+[Apple ML Research on MLX and M5 GPU Neural Accelerators](https://machinelearning.apple.com/research/exploring-llms-mlx-m5).
 
 **Grouping does not make a request faster. It makes requests finish together.**
 Median latency worsens, tail latency and first-token latency improve. Which is
@@ -119,8 +175,16 @@ differ by the queue wait and reporting one hides the effect a service cares abou
 - `engine_ttft_ms` — from the model actually starting. What the engine owns.
 
 Also recorded: full request latency, queue wait, inter-token latency p50/p95,
-aggregate tokens per second, realised group width per round, peak memory, fallbacks
-with reasons, correctness errors, and plan-switch attempts.
+physical and visible token counts, and the compatibility `aggregate_tokens_per_second`
+rate, while the benchmark derives separate physical/visible rates. Also recorded are
+realised group width per round, peak memory, fallbacks with reasons, correctness errors,
+and plan-switch attempts. The runtime
+reports whether a correctness comparison was performed; `correctness_errors=0` alone
+means only that no recorded errors exist, not that a correctness check ran.
+
+`max_tokens` is the total physical output cap. The prefill-produced first token counts
+toward it; if that token is EOS, generation stops immediately with `stop_reason="eos"`.
+Otherwise reaching the cap reports `stop_reason="length"`. Visible counts exclude EOS.
 
 **There is no field that divides a group's wall time by its width.** That quotient
 is not a caller latency and this runtime does not compute it.
@@ -158,6 +222,10 @@ python -m pytest tests/test_ironmule_runtime.py -q                 # fast, no mo
 python -m pytest tests/test_ironmule_runtime_integration.py -q     # real model
 python -m ironmule.benchmark --requests 6 --max-tokens 48
 python -m ironmule.benchmark --plan reusable --json out.json
+ironmule tune --show
+ironmule revalidate --model MODEL --max-tokens 32
+ironmule status --model MODEL
+ironmule models --model REPO_ID       # local Hugging Face cache only; no download
 python examples/interactive_chat.py "Explain unified memory."
 python examples/throughput_service.py
 python examples/reusable_session.py
