@@ -1832,3 +1832,88 @@ separate pre/post system-state record for every child. The pilot is therefore
 correctness/safety evidence only and is `INCONCLUSIVE_FOR_CONFIRMATION`: no retry,
 pooling, speed claim, confirmation or activation follows. Public path-free evidence:
 [`B3-U2_public_summary_20260828.json`](raw/B3-U2_public_summary_20260828.json).
+
+## B27a/B27a1/B27a2 — Evidence inventory and current-main engineering baseline (2026-08-28)
+
+**Read-only corpus audit.** B27 began by inventorying the current branch and the
+preserved local unpublished evidence worktree without modifying either source. The
+snapshot contains 134 artifact occurrences and 92 unique content hashes: 40
+preregistrations, 16 preregistration checksums, 48 raw results, 14 legacy summaries,
+5 public summaries, 6 reviews and 5 retained partials. Fifty-one occurrences are
+local-only/ignored and remain local. All 72 JSON artifacts parsed, but structural
+coverage is heterogeneous: environment 43/72, workload 52/72, baseline and candidate
+25/72 each, measurements 43/72, correctness 37/72, resources 64/72 and provenance
+53/72. Presence is not semantic validation. The inventory dataset SHA-256 is
+`ee414c9ee51c6e583ada094444ce66d5e22dca6c15c197dda1d7cd004e30bf32`;
+the tracked summary is [`docs/B27_EVIDENCE_INVENTORY.md`](../docs/B27_EVIDENCE_INVENTORY.md).
+This corpus is not safe to merge into a learned dataset without per-record quality,
+replayability, missingness, censoring and leakage validation.
+
+**Two pre-measurement failures are retained.** B27a stopped in `model_binding`
+because Hugging Face's offline snapshot resolver required optional `.gitattributes`
+and `README.md` files that are not needed by the already-used local model snapshot.
+B27a1 replaced only that resolver with exact read-only cache-index selection, then
+stopped at the same stage because direct `research/...py` invocation did not place the
+repository root on `sys.path`. No model or benchmark arm ran in either attempt, system
+swap stayed `0 B`, and no timing was observed. B27a2 changed only the invocation to
+`python -m research.b27_main_baseline`. Failure-record SHA-256 values are
+`e5e7ab91218a4e7a7dcd2544efc3b44fbfdbed6fefce70cadd4f5c1c366e306a` and
+`dd09d2e2cc4a2ad9ac95272c4d464ff029730e82dcc3475d374683e0ad1e2260`.
+No result was retried or pooled.
+
+**Baseline protocol.** Base commit
+`d422fdb00fced3238dfaa6b5e9e993294adb72cd`; runtime-tree SHA-256
+`ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385`;
+Apple M1 Max, 32 GB, AC, macOS `26.5.2`, Python/MLX/mlx-lm
+`3.12.13/0.32.0/0.31.3`. Each model ran in a fresh serial process from its exact
+already-cached revision, strict plan and `BASELINE=Knobs()`, with no stored profile:
+six requests, 48 output tokens, two warmups and six alternating measured repeats per
+Interactive/Throughput arm. One model was shared between arms, so this is an
+engineering baseline rather than fresh-process-per-arm qualification. The full
+non-integration suite passed `119 passed, 11 deselected` in `7.04 s`; B27 harness and
+inventory tests passed `6`; Xcode first-launch status and IronMule doctor were green.
+
+| Model | Interactive outer p50 | Throughput outer p50 | wall ratio [95% CI] | rate ratio [95% CI] | MLX peak | Swap |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gemma 3 4B, rev `93724907…` | `4141.79 ms` | `3492.57 ms` | `0.84374 [0.83977; 0.84889]` | `1.18520 [1.17802; 1.19080]` | `2,784,918,618 B` | `0 B` |
+| Gemma 3 12B, rev `86cc6a8d…` | `11306.16 ms` | `10098.55 ms` | `0.87871 [0.87331; 0.91457]` | `1.13804 [1.09349; 1.14508]` | `7,801,383,003 B` | `0 B` |
+
+Both cells are `BASELINE_CAPTURED`: exact token/stop/count identity, zero fallbacks,
+zero correctness errors, zero swap growth, and no residual model process. Raw-record
+SHA-256 values are
+`e1e9b7ce3248b83fced553334b452404bf47931d02e2352f2aed8d96f55607a0` (4B) and
+`7276ee6505a58ca176561f8e66f2087616d9682aa44273d1f7ddad51a6311d98`
+(12B). The path-free publication artifact is
+[`B27a2_public_summary_20260828.json`](raw/B27a2_public_summary_20260828.json).
+
+**Decision and limits.** This freezes the current-main behavior and protects the
+existing grouped batch-1 path as a regression reference. It does not pool with B39d or
+B40, qualify a new speed claim, activate a profile, compare against stock `mlx_lm`, or
+generalize beyond the exact cells. The engineering observation that the same grouping
+ratio is smaller at 12B than 4B is directionally consistent with earlier scaling
+evidence but is not promoted. No model above 12B was run and nothing was downloaded or
+installed. Phase C must resolve the exact model/revision/quantisation contract,
+heterogeneous evidence statuses, stock-MLX fairness and fresh-process regression
+method before any new routing abstraction is integrated.
+
+**Final branch verification.** After the audit, documentation and static local-history
+UI and verifier were added, the serial non-integration suite passed
+`124 passed, 11 deselected` in `5.27 s`; the existing real Gemma-4B integration suite
+passed `10/10` in `20.83 s`.
+The model-test preflight again recorded system swap `0 B` and no competing model
+process. The dashboard generator/escaping checks pass and use no scripts or external
+assets. In-app visual navigation to a local `file://` URL was blocked by the browser
+security policy; no local-server or alternate-browser workaround was attempted.
+
+**Evidence-integrity follow-up.** The stdlib-only verifier
+`research/b27_verify_public_summary.py` compared the path-free B27 publication
+artifact against both immutable model raw records and both preserved pre-measurement
+failure records. It checked the exact model/revision/manifest/quantisation binding,
+runtime tree/base commit, protocol, published medians and intervals, token identity,
+resources, raw hashes, failure type/stage and local-path absence. Result: `ok=true`,
+two cells, two failures, zero errors, `activation_allowed=false`, and no qualification
+change. Verification artifact SHA-256:
+`752b01b8f20dc695ed610762e3c9f4b8774a97075c5558199704834504bf684e`.
+The exact unapproved D1 type/status/domain contract and its kill criteria are recorded
+in [`docs/B27_PHASE_D_CONTRACT_PROPOSAL.md`](../docs/B27_PHASE_D_CONTRACT_PROPOSAL.md);
+it changes no runtime behavior and still requires architecture approval.
