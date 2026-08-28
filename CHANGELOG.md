@@ -20,6 +20,10 @@ Review follow-ups completed locally; this section is not a release or a performa
   measured-effective versus nominal-peak bandwidth provenance.
 - **B36 completed:** records the arm-isolated Gemma 3 12B core-profile result as
   a narrowly scoped qualification; activation and generalization remain disabled.
+- **DOC1 completed:** rewrites the public README in plain language, moves the
+  problem and quick start ahead of research detail, links measured claims to their
+  evidence, corrects the unpublished PyPI install path, and sharpens discovery
+  metadata without extending the measured M1 Max validity domain.
 
 ## [0.1.0] — 2026-08-26
 
