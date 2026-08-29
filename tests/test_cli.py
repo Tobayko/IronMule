@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import json
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 import pytest
 
 import ironmule_cli as cli
+from ironmule import model_identity
 
 
 def test_failed_optional_probe_isolated_from_parent_import_state(monkeypatch):
@@ -125,15 +127,45 @@ def test_help_lists_only_implemented_cli_commands(capsys):
     assert "serve" not in output and "\n  cache " not in output
 
 
-def test_models_loader_requests_huggingface_hub_lazily(monkeypatch):
-    module = SimpleNamespace(scan_cache_dir=lambda: None)
-    requested = []
-    monkeypatch.setattr(
-        cli.importlib, "import_module",
-        lambda name: (requested.append(name), module)[1],
+def test_cache_scan_imports_huggingface_hub_only_when_called(monkeypatch):
+    """`ironmule --help` must not pay for the cache inspector."""
+    import sys as _sys
+
+    monkeypatch.delitem(_sys.modules, "huggingface_hub", raising=False)
+    assert "huggingface_hub" not in _sys.modules
+    model_identity.scan_local_cache()
+    assert "huggingface_hub" in _sys.modules
+
+
+def test_cache_scan_reads_a_missing_cache_directory_as_empty(monkeypatch):
+    """A machine that never downloaded a model has no cache dir; that is not an error."""
+    import huggingface_hub
+    from huggingface_hub.utils import CacheNotFound
+
+    def absent(*_args, **_kwargs):
+        raise CacheNotFound("Cache directory not found", cache_dir=Path("/nope"))
+
+    monkeypatch.setattr(huggingface_hub, "scan_cache_dir", absent)
+    cache = model_identity.scan_local_cache()
+    assert list(cache.repos) == []
+    assert list(cache.warnings) == []
+
+
+def test_models_on_a_machine_without_any_cache(tmp_path):
+    """End to end: the first command a new user runs must not raise a traceback."""
+    env = {
+        **os.environ,
+        "HF_HOME": str(tmp_path / "nothing-here"),
+        "HF_HUB_CACHE": str(tmp_path / "nothing-here" / "hub"),
+    }
+    done = subprocess.run(
+        [sys.executable, "-m", "ironmule_cli", "models"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env, capture_output=True, text=True,
     )
-    assert cli._load_huggingface_hub() is module
-    assert requested == ["huggingface_hub"]
+    assert done.returncode == 0, done.stderr
+    assert "Traceback" not in done.stderr
+    assert json.loads(done.stdout) == {"models": [], "warnings": []}
 
 
 def test_models_filters_models_and_sorts_revisions_without_download(monkeypatch, capsys):
@@ -159,7 +191,7 @@ def test_models_filters_models_and_sorts_revisions_without_download(monkeypatch,
         scanned.append(True)
         return SimpleNamespace(repos=repos, warnings=[Warning()])
 
-    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: SimpleNamespace(scan_cache_dir=scan_cache_dir))
+    monkeypatch.setattr(model_identity, "scan_local_cache", scan_cache_dir)
     assert cli.main(["models", "--model", "z/model"]) == 0
     payload = json.loads(capsys.readouterr().out)
     assert scanned == [True]
@@ -170,8 +202,8 @@ def test_models_filters_models_and_sorts_revisions_without_download(monkeypatch,
 
 def test_models_empty_cache_is_deterministic(monkeypatch, capsys):
     monkeypatch.setattr(
-        cli, "_load_huggingface_hub",
-        lambda: SimpleNamespace(scan_cache_dir=lambda: SimpleNamespace(repos=[], warnings=[])),
+        model_identity, "scan_local_cache",
+        lambda: SimpleNamespace(repos=[], warnings=[]),
     )
     assert cli.main(["models"]) == 0
     assert json.loads(capsys.readouterr().out) == {"models": [], "warnings": []}
@@ -180,14 +212,14 @@ def test_models_empty_cache_is_deterministic(monkeypatch, capsys):
 def test_models_reports_missing_huggingface_dependency(monkeypatch, capsys):
     error = ModuleNotFoundError("No module named 'huggingface_hub'")
     error.name = "huggingface_hub"
-    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(model_identity, "scan_local_cache", lambda: (_ for _ in ()).throw(error))
     assert cli._run_models([]) == 1
     assert "huggingface_hub" in capsys.readouterr().err
 
 
 def test_models_does_not_swallow_unrelated_import_error(monkeypatch):
     error = ImportError("broken cache inspector")
-    monkeypatch.setattr(cli, "_load_huggingface_hub", lambda: (_ for _ in ()).throw(error))
+    monkeypatch.setattr(model_identity, "scan_local_cache", lambda: (_ for _ in ()).throw(error))
     with pytest.raises(ImportError, match="broken cache inspector"):
         cli._run_models([])
 
@@ -248,3 +280,70 @@ def test_pyproject_metadata_and_entry_point():
     assert {"mlx", "local-llm", "ttft"}.issubset(metadata["keywords"])
     assert metadata["scripts"]["ironmule"] == "ironmule_cli:main"
     assert not any("License ::" in classifier for classifier in metadata["classifiers"])
+
+
+def test_help_and_doctor_survive_a_broken_mlx_install(tmp_path):
+    """`doctor` diagnoses a broken MLX install, so it must not import MLX to start."""
+    script = (
+        "import sys\n"
+        "for name in ('mlx', 'mlx.core', 'mlx_lm', 'ironmule'):\n"
+        "    sys.modules[name] = None\n"
+        "import ironmule_cli\n"
+        "assert ironmule_cli.main(['--help']) == 0\n"
+        "print('ok')\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parent.parent,
+        capture_output=True, text=True,
+    )
+    assert done.returncode == 0, done.stderr
+    assert "ok" in done.stdout
+
+
+def test_benchmark_reports_an_uncached_model_without_a_traceback(tmp_path):
+    env = {
+        **os.environ,
+        "HF_HOME": str(tmp_path / "nothing-here"),
+        "HF_HUB_CACHE": str(tmp_path / "nothing-here" / "hub"),
+    }
+    done = subprocess.run(
+        [sys.executable, "-m", "ironmule_cli", "benchmark",
+         "--model", "mlx-community/gemma-3-4b-it-4bit"],
+        cwd=Path(__file__).resolve().parent.parent,
+        env=env, capture_output=True, text=True,
+    )
+    assert done.returncode == 1
+    assert "Traceback" not in done.stderr
+    assert "hf download mlx-community/gemma-3-4b-it-4bit" in done.stderr
+
+
+def test_models_reports_a_broken_runtime_install_without_a_traceback(tmp_path):
+    """`models` reads the cache through `ironmule`, so a broken MLX must not traceback."""
+    script = (
+        "import sys\n"
+        "sys.modules['mlx'] = None\n"
+        "sys.modules['mlx.core'] = None\n"
+        "import ironmule_cli\n"
+        "sys.exit(ironmule_cli.main(['models']))\n"
+    )
+    done = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=Path(__file__).resolve().parent.parent,
+        capture_output=True, text=True,
+    )
+    assert done.returncode == 1
+    assert "Traceback" not in done.stderr
+    assert "ironmule doctor" in done.stderr
+
+
+def test_uncached_revision_hint_repeats_the_revision():
+    """Without it the user fetches `main`, which still will not resolve."""
+    from types import SimpleNamespace as NS
+
+    from ironmule.model_identity import ModelIdentityError, select_cached_snapshot
+
+    empty = NS(repos=(), warnings=())
+    with pytest.raises(ModelIdentityError) as caught:
+        select_cached_snapshot(empty, "org/model", revision="abc123")
+    assert "hf download org/model --revision abc123" in str(caught.value)

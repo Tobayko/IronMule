@@ -38,6 +38,7 @@ def _is_expected_unavailable(exc: BaseException) -> bool:
     message = str(exc).lower()
     availability = (
         "model not found", "model unavailable", "model is unavailable",
+        "model is not cached",
         "no such file", "permission denied", "access denied", "cannot access",
         "metal is not available", "metal unavailable", "metal device unavailable",
         "no metal device", "gpu is not available", "gpu unavailable",
@@ -53,6 +54,7 @@ def test_unexpected_integration_errors_are_not_classified_as_unavailable():
 
 
 @pytest.mark.parametrize("error", [
+    ValueError("model is not cached: expected exactly one unique cached revision"),
     FileNotFoundError("local model not found"),
     RuntimeError("Metal device unavailable"),
     RuntimeError("model unavailable on this host"),

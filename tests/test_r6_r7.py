@@ -403,3 +403,25 @@ def test_metadata_has_qualified_dependency_intervals_and_dynamic_version():
     assert "mlx>=0.32,<0.33" in project["dependencies"]
     assert "mlx-lm>=0.31.3,<0.32" in project["dependencies"]
     assert metadata["tool"]["setuptools"]["dynamic"]["version"]["attr"] == "ironmule._version.__version__"
+
+
+def test_gpu_busy_does_not_report_a_foreign_command_line(monkeypatch):
+    """Callers write this string into evidence records; other processes' args stay out."""
+    # `ironmule/__init__.py` rebinds the name `tune` to the function, so the module
+    # is only reachable through the import system, not as an attribute of the package.
+    tune_module = importlib.import_module("ironmule.tune")
+
+    # Must look like a loaded MLX job, or gpu_busy correctly ignores it.
+    secret = "/usr/bin/python3 /Users/someone/private/mlx_train.py --token hunter2"
+    line = f"4242 2000000 python {secret}"
+    monkeypatch.setattr(
+        tune_module.subprocess, "run",
+        lambda *a, **k: types.SimpleNamespace(stdout=line + "\n", stderr="", returncode=0),
+    )
+
+    busy = tune_module.gpu_busy()
+    assert busy is not None, "a 2 GB MLX python process must still be detected"
+    assert "4242" in busy
+    assert "hunter2" not in busy
+    assert "private" not in busy
+    assert "/Users/" not in busy

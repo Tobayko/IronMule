@@ -12,6 +12,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, ClassVar, Mapping
 
 
@@ -288,6 +289,23 @@ def build_model_identity(model_id: str, source: Path, revision: str | None = Non
     )
 
 
+def scan_local_cache() -> Any:
+    """Read the Hugging Face cache index read-only.
+
+    A machine that has never downloaded a model has no cache directory at all, and
+    `scan_cache_dir` raises for it. That is not an error here: no cache and an empty
+    cache both mean "this model is not available locally", and the caller's own
+    message says that far better than a traceback does.
+    """
+    from huggingface_hub import scan_cache_dir
+    from huggingface_hub.utils import CacheNotFound
+
+    try:
+        return scan_cache_dir()
+    except CacheNotFound:
+        return SimpleNamespace(repos=(), warnings=())
+
+
 def select_cached_snapshot(cache: Any, model_id: str, revision: str | None = None) -> tuple[Path, str]:
     repositories = [repo for repo in cache.repos if repo.repo_id == model_id]
     candidates = [cached for repo in repositories for cached in repo.revisions]
@@ -295,9 +313,29 @@ def select_cached_snapshot(cache: Any, model_id: str, revision: str | None = Non
         candidates = [cached for cached in candidates if cached.commit_hash == revision]
     if len(candidates) != 1:
         detail = "requested revision" if revision is not None else "unique cached revision"
-        raise ModelIdentityError(
-            f"expected exactly one {detail} for {model_id!r}, found {len(candidates)}"
+        prefix = "model is not cached: " if not candidates else ""
+        message = (
+            f"{prefix}expected exactly one {detail} for {model_id!r}, "
+            f"found {len(candidates)}"
         )
+        if not candidates:
+            # IronMule never downloads weights, so "not cached" is a dead end unless
+            # the message says how to leave it. `ironmule models` lists what is here.
+            # Repeat the revision in the hint: without it the user fetches `main`,
+            # which is not what they asked for and still will not resolve.
+            at_revision = f" --revision {revision}" if revision is not None else ""
+            message += (
+                f"\n\nIronMule does not download models. Fetch it once yourself, then "
+                f"re-run:\n"
+                f"    hf download {model_id}{at_revision}\n"
+                f"    ironmule models    # confirm it is cached"
+            )
+        elif revision is None:
+            message += (
+                f"\n\nSeveral revisions are cached. Pass the exact one you mean; "
+                f"`ironmule models --model {model_id}` lists them."
+            )
+        raise ModelIdentityError(message)
     selected = candidates[0]
     path = Path(selected.snapshot_path).resolve()
     if not path.is_dir():
@@ -323,5 +361,5 @@ def resolve_model_source(
 __all__ = [
     "ModelIdentity", "ModelIdentityError", "ResolvedModelSource", "build_model_identity",
     "canonical_json", "canonical_sha256", "resolve_model_source",
-    "select_cached_snapshot",
+    "scan_local_cache", "select_cached_snapshot",
 ]

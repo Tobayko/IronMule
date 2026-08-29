@@ -122,7 +122,7 @@ preflight; B39c data are not reused or pooled.
 ## B39d — Final performance-main result review (2026-08-28)
 
 The exact B39d module invocation completed with return code `0` and produced
-[`B39d_gemma12b_combined_20260828.json`](B39d_gemma12b_combined_20260828.json).
+`B39d_gemma12b_combined_20260828.json`.
 The result has 8/8 blocks and 32/32 fresh serial children,
 `status=QUALIFIED`, `valid_for_performance=true`, and
 `activation_allowed=false`. All child return codes were `0`; complete
@@ -180,7 +180,7 @@ no activation, routing or general claim. B39 is finished; B40's Gemma-12B
 B40 completed all six mirrored blocks and 18 fresh serial children, then
 returned `rc=2` because the preregistered drift gate classified the result as
 inconclusive. Final raw output is
-[`B40_gemma12b_width_sweep_20260828.json`](B40_gemma12b_width_sweep_20260828.json);
+`B40_gemma12b_width_sweep_20260828.json`;
 the atomic partial remains retained. All 18 children returned `0`, were
 complete and canonical-correct, passed environment/workload identity and
 `no_crash`, and produced 48 tokens per request with `stop_reason=length`.
