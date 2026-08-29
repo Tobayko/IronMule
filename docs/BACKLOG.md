@@ -163,7 +163,6 @@ user-approved legal review and resulting documents.
 | `B5` | Fill the group on purpose | hours | 0 – 5% at short answers | none, latency cost |
 | `B6` | Cost ratio of `M=4` vs `M=1` against model size | hours | 0, it is a precondition | none |
 | `B7` | Close the gap in the scaling arithmetic | days | 0, it is understanding | none |
-| `B25` | KV cache reallocation during decode | hours | 0 – 4% | none |
 | `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
 | `B30` | Widen Qwen grouped batch-1 groups to 5/6 | days | 0 – 10% | medium, throughput/correctness |
 | `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
@@ -304,6 +303,29 @@ rerunning the same control.
 ## Tier 0 — already dead. Do not re-run these.
 
 Listed so the next person does not spend a week rediscovering them.
+
+- **`B25` KV cache reallocation during decode.** Nothing reallocates. The fixed-shape
+  cache is allocated once per `serve()`: `mx.zeros` appears only in
+  `_empty_fixed_state`, and `_caches_from_state` wraps the existing arrays rather than
+  copying them. Measured, not just read: writing 56 tokens through `FixedKVCache`
+  moved active memory from `65,644 B` to `32,876 B` — it *fell* by exactly one full
+  keys+values copy (`32,768 B`), which is the warmup's double buffer being released
+  once MLX takes the `slice_update` donation. Shape constant throughout.
+  `tests/test_cache_allocation.py` holds both properties. The predecessor's `4.4263%`
+  from cache growth copies (candidate 21) is gone with the growing cache it was
+  measured on, so there is nothing here to claim.
+
+  **One caveat worth carrying, because it shapes how the tuned gain reads.**
+  `FixedKVCache.update_and_fetch` builds `mx.array(0)` and `mx.stack(...)` on every
+  call, and `make_mask` an `mx.arange(capacity)` — per layer, per decode step. Under
+  `compiled_fixed_cache=True` these are bound once when `mx.compile` traces the body,
+  so they cost nothing. Under the untuned `BASELINE` they are rebuilt every step. Part
+  of that knob's `0.9679` is therefore host work that stops happening, not GPU work
+  that got faster — which is the documented purpose of `mx.compile`, and `E5` already
+  put `3.3 ms` of host work on each step. How the ratio splits between constant rebuild
+  and kernel fusion is not measured. The tuned gain against `BASELINE` is real, because
+  `BASELINE` is what an untuned install actually runs; it is not a gain against a
+  well-optimised floor.
 
 - **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
   digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
@@ -520,23 +542,6 @@ time grows slower than the naive estimate, or both.
 **Kill.** Nothing — this one only closes by being answered. It is the highest-value
 entry in Tier 1 because every other tier depends on knowing which term dominates.
 
-### `B25` — KV cache reallocation during decode
-
-**Mechanism.** The predecessor project localised `4.4263%` of correlated marginal decode
-cost to cache growth copies, recommended it for preregistration (candidate 21), and never
-measured it — the first decode step confounded the isolation, and a cache rebuild was an
-architecture change at the time.
-
-**Why it is worth reopening now.** That architecture change has since happened: this
-runtime uses a fixed-shape cache, allocated once per `serve()` call. So either the cost
-is already gone, in which case this closes in an afternoon with a line in Tier 0, or
-something still reallocates and `4.4%` is sitting there unclaimed.
-
-**Test.** Count allocations during a decode sequence at 4B and 27B. No benchmark needed
-to answer the first half.
-
-**Kill.** No reallocation happens. Likely, and worth the certainty.
-
 ### `B26` — Qwen3.8 27B, to separate model size from model family
 
 **Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
@@ -703,7 +708,8 @@ not a ceiling — and every conclusion in this project stopped at the near side 
 
 **Evidence against, and it is serious.** This requires true tensor batching, which
 `E14b` measured producing a reproducible one-token divergence at `b = 8` — row 3,
-index 6, `1437` against `1580`, in all four processes. `E14b` also measured `C8` as
+index 6, `1437` against `1580`, in all four blocks (blocks, not OS processes — see
+`E15` limitation `M2`). `E14b` also measured `C8` as
 *worse* than `C4` on throughput. Correctness decides before speed does.
 
 **Test.** `E14b`'s arm C extended to `b = 16` and `b = 32`, correctness first: if

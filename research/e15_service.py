@@ -300,6 +300,11 @@ def build_requests(engine, tok, workload: str, plan: str):
 
 
 def run_process(model_id: str, index: int, pilot: bool) -> dict:
+    # MLX's peak is a process-wide high-water mark and these blocks share one
+    # interpreter (see E15 limitation M2). Without this reset the reported peak is
+    # the maximum over every block so far, which also makes the memory guard below
+    # fire earlier the longer a run goes.
+    mx.reset_peak_memory()
     engine, tok = load_engine(model_id, KNOBS)
     eos = _eos_ids(tok)
     rng = random.Random(SEED + index)

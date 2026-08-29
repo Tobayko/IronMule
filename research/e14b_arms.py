@@ -157,6 +157,11 @@ def generate(h, state, batch, steps):
 
 
 def run_process(model_id: str, index: int, pilot: bool) -> dict:
+    # MLX's peak is a process-wide high-water mark and these blocks share one
+    # interpreter (see E15 limitation M2). Without this reset the reported peak is
+    # the maximum over every block so far, which also makes the memory guard below
+    # fire earlier the longer a run goes.
+    mx.reset_peak_memory()
     h = Harness(model_id)
     prompts = h.prompts()
     sequences = 2 if pilot else SEQUENCES
