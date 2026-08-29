@@ -30,9 +30,9 @@ For the item-by-item completion audit, see [`docs/REVIEW_2026-08-27_COMPLETION_A
 | P0.7 `correctness_errors` | Telemetry reports whether a correctness comparison ran | — | **Completed; shadow mode remains approval-gated** |
 | P0.8 stock `mlx_lm` baseline | Missing | `R3` | Add only after exact contract/architecture approval |
 | P0.9 mismatch exit | Structured token/stop/count diff and nonzero benchmark exit | `R3` | **Completed** |
-| P0.10 profile validation on load | System conditions fail closed before profile reuse | `R6` | **Completed for system conditions; model revision/quantisation remain under P0.11** |
-| P0.11 revision/quantisation | Runtime model identity still needs the approved revision/quantisation contract | `R6` | **Open; approval required** |
-| P0.12 revalidate prompt drift | Current prompt is tokenized for drift checks | `R6` | **Completed** |
+| P0.10 profile validation on load | System and exact model identity fail closed before profile reuse | — | **Completed; D2b exact-identity/no-regression gates passed** |
+| P0.11 revision/quantisation | D2 binds exact cached revision, complete manifest, architecture, quantisation and tokenizer to Runtime/profile validity | — | **Completed; 4B/12B D2b result `NO_REGRESSION_OBSERVED`** |
+| P0.12 revalidate prompt drift | Current prompt is tokenized for drift checks | — | **Completed** |
 | P0.13 import environment mutation | Import/probe environment isolation is covered | — | **Completed** |
 | P0.14 dependency bounds | Qualified dependency bounds are enforced | — | **Completed** |
 | P0.15 unsupported candidates | Unsupported candidates have typed rejection/continuation | — | **Completed** |
@@ -99,7 +99,7 @@ mode. B28 is separate existing Qwen work and is preserved.
 
 ### 0.1.1 correctness release
 
-Close the remaining `R2`, `R3`, `R6` and `R8` items, or explicitly document
+Close the remaining `R2`, `R3` and `R8` items, or explicitly document
 approval/resource-dependent residuals. Required
 evidence: unit/CLI/package gates, real-model smoke for available local models, complete
 wall-time benchmark protocol, exact token/stop comparison, profile rejection tests,

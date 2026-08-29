@@ -1,0 +1,191 @@
+{
+  "activation_allowed": false,
+  "cells": [
+    {
+      "after_commit": "d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5",
+      "after_raw_sha256": "6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4",
+      "after_resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 7801367451,
+        "swap_delta_bytes": 0
+      },
+      "after_runtime_tree_sha256": "5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60",
+      "before_commit": "a0778e12cc0cee6d7a62523ce6b18593998fe619",
+      "before_raw_sha256": "745d63222c42937e72bfb5b32b5e5773ed727b6f3366b229dcd2c0f5c76817aa",
+      "before_runtime_tree_sha256": "d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21",
+      "comparisons": {
+        "interactive": {
+          "outer_wall_post_over_pre": {
+            "after_median": 9963.1321045,
+            "after_n": 6,
+            "before_median": 10076.321125,
+            "before_n": 6,
+            "ci_high": 1.0055390355462,
+            "ci_low": 0.9681370891376947,
+            "median_ratio": 0.9887668307613608,
+            "resamples": 10000,
+            "seed": 20260829
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 28.906572910715354,
+            "after_n": 6,
+            "before_median": 28.583008265619597,
+            "before_n": 6,
+            "ci_high": 1.0328617150450532,
+            "ci_low": 0.9944789032979872,
+            "median_ratio": 1.0113201746327363,
+            "resamples": 10000,
+            "seed": 20260831
+          }
+        },
+        "throughput": {
+          "outer_wall_post_over_pre": {
+            "after_median": 8890.3960625,
+            "after_n": 6,
+            "before_median": 8822.6904165,
+            "before_n": 6,
+            "ci_high": 1.024310214299615,
+            "ci_low": 0.9851018892063743,
+            "median_ratio": 1.0076740362410743,
+            "resamples": 10000,
+            "seed": 20260830
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 32.394874110342585,
+            "after_n": 6,
+            "before_median": 32.64447753811588,
+            "before_n": 6,
+            "ci_high": 1.0151029136267329,
+            "ci_low": 0.9763794753832321,
+            "median_ratio": 0.9923538850489534,
+            "resamples": 10000,
+            "seed": 20260832
+          }
+        }
+      },
+      "domain_drift": [],
+      "expected_model_identity": {
+        "architecture": "gemma3",
+        "identity_sha256": "2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474",
+        "manifest_bytes": 8068021302,
+        "manifest_file_count": 15,
+        "model_id": "mlx-community/gemma-3-12b-it-4bit",
+        "model_manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+        "quantisation": {
+          "bits": 4,
+          "group_size": 64
+        },
+        "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+        "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+        "schema": "ironmule.model_identity.v1",
+        "tokenizer_file_count": 6,
+        "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+      },
+      "hard_failures": [],
+      "model_id": "mlx-community/gemma-3-12b-it-4bit",
+      "model_manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+      "model_revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+      "performance_misses": []
+    },
+    {
+      "after_commit": "d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5",
+      "after_raw_sha256": "bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5",
+      "after_resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 2784918586,
+        "swap_delta_bytes": 0
+      },
+      "after_runtime_tree_sha256": "5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60",
+      "before_commit": "a0778e12cc0cee6d7a62523ce6b18593998fe619",
+      "before_raw_sha256": "c012c9a3e9b25d995e940d363137238f717a42ccae611f52354d7779cbad39d9",
+      "before_runtime_tree_sha256": "d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21",
+      "comparisons": {
+        "interactive": {
+          "outer_wall_post_over_pre": {
+            "after_median": 3930.951771,
+            "after_n": 6,
+            "before_median": 3939.533167,
+            "before_n": 6,
+            "ci_high": 0.9992686967558598,
+            "ci_low": 0.9969341949755339,
+            "median_ratio": 0.9978217226163031,
+            "resamples": 10000,
+            "seed": 20260839
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 73.26469958123758,
+            "after_n": 6,
+            "before_median": 73.10510889868218,
+            "before_n": 6,
+            "ci_high": 1.0030751530096982,
+            "ci_low": 1.0006576524931154,
+            "median_ratio": 1.002183030501693,
+            "resamples": 10000,
+            "seed": 20260841
+          }
+        },
+        "throughput": {
+          "outer_wall_post_over_pre": {
+            "after_median": 3367.1938330000003,
+            "after_n": 6,
+            "before_median": 3367.325354,
+            "before_n": 6,
+            "ci_high": 1.0031476658943559,
+            "ci_low": 0.9943441194942292,
+            "median_ratio": 0.9999609419981221,
+            "resamples": 10000,
+            "seed": 20260840
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 85.53118380531686,
+            "after_n": 6,
+            "before_median": 85.52794697260386,
+            "before_n": 6,
+            "ci_high": 1.0056880731671887,
+            "ci_low": 0.996862210817637,
+            "median_ratio": 1.0000378453222318,
+            "resamples": 10000,
+            "seed": 20260842
+          }
+        }
+      },
+      "domain_drift": [],
+      "expected_model_identity": {
+        "architecture": "gemma3",
+        "identity_sha256": "2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2",
+        "manifest_bytes": 3439894985,
+        "manifest_file_count": 12,
+        "model_id": "mlx-community/gemma-3-4b-it-4bit",
+        "model_manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+        "quantisation": {
+          "bits": 4,
+          "group_size": 64
+        },
+        "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+        "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+        "schema": "ironmule.model_identity.v1",
+        "tokenizer_file_count": 6,
+        "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+      },
+      "hard_failures": [],
+      "model_id": "mlx-community/gemma-3-4b-it-4bit",
+      "model_manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+      "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+      "performance_misses": []
+    }
+  ],
+  "classification": "NO_REGRESSION_OBSERVED",
+  "errors": [],
+  "limitations": [
+    "Separate-session engineering comparison, not a qualification experiment.",
+    "Identity is reconstructed independently from each complete post manifest.",
+    "Bootstrap intervals compare independent pre/post repeat samples.",
+    "No stock mlx_lm arm, profile activation, routing or strategy selection."
+  ],
+  "regression_kind": "NONE",
+  "regression_threshold": 0.05,
+  "schema": "ironmule.d2_post_comparison.v1",
+  "valid_for_qualification": false
+}

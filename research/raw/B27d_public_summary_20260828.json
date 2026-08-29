@@ -1,0 +1,161 @@
+{
+  "activation_allowed": false,
+  "cells": [
+    {
+      "after_commit": "0b14eb6f134edc42701ebb1e1a85a1bd484d12d1",
+      "after_raw_sha256": "41d9bd16b179357ae1d99edf26abba135d1c2b8315bc5c47c421868f5b977a96",
+      "after_resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 7801381947,
+        "swap_delta_bytes": 0
+      },
+      "after_runtime_tree_sha256": "d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21",
+      "before_commit": "d422fdb00fced3238dfaa6b5e9e993294adb72cd",
+      "before_raw_sha256": "7276ee6505a58ca176561f8e66f2087616d9682aa44273d1f7ddad51a6311d98",
+      "before_runtime_tree_sha256": "ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385",
+      "comparisons": {
+        "interactive": {
+          "outer_wall_post_over_pre": {
+            "after_median": 11368.076125,
+            "after_n": 6,
+            "before_median": 11306.1598955,
+            "before_n": 6,
+            "ci_high": 1.028778166775891,
+            "ci_low": 0.981479732701791,
+            "median_ratio": 1.005476327070577,
+            "resamples": 10000,
+            "seed": 20260828
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 25.33410404058445,
+            "after_n": 6,
+            "before_median": 25.478071353538045,
+            "before_n": 6,
+            "ci_high": 1.0188763653736597,
+            "ci_low": 0.9720266442114407,
+            "median_ratio": 0.9943493637742088,
+            "resamples": 10000,
+            "seed": 20260830
+          }
+        },
+        "throughput": {
+          "outer_wall_post_over_pre": {
+            "after_median": 10093.070895500001,
+            "after_n": 6,
+            "before_median": 10098.547479,
+            "before_n": 6,
+            "ci_high": 1.0223604101007346,
+            "ci_low": 0.9864073378648591,
+            "median_ratio": 0.9994576860175794,
+            "resamples": 10000,
+            "seed": 20260829
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 28.534785771090405,
+            "after_n": 6,
+            "before_median": 28.51895348072056,
+            "before_n": 6,
+            "ci_high": 1.0136363938903725,
+            "ci_low": 0.9787574987323951,
+            "median_ratio": 1.0005551497666474,
+            "resamples": 10000,
+            "seed": 20260831
+          }
+        }
+      },
+      "domain_drift": [],
+      "hard_failures": [],
+      "model_id": "mlx-community/gemma-3-12b-it-4bit",
+      "model_manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+      "model_revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+      "performance_misses": []
+    },
+    {
+      "after_commit": "0b14eb6f134edc42701ebb1e1a85a1bd484d12d1",
+      "after_raw_sha256": "10071669abb6c45871bf3d5eec0df3f37104341bb197394a840bf64e46a7be44",
+      "after_resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 2784922186,
+        "swap_delta_bytes": 0
+      },
+      "after_runtime_tree_sha256": "d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21",
+      "before_commit": "d422fdb00fced3238dfaa6b5e9e993294adb72cd",
+      "before_raw_sha256": "e1e9b7ce3248b83fced553334b452404bf47931d02e2352f2aed8d96f55607a0",
+      "before_runtime_tree_sha256": "ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385",
+      "comparisons": {
+        "interactive": {
+          "outer_wall_post_over_pre": {
+            "after_median": 4379.877896,
+            "after_n": 6,
+            "before_median": 4141.793646,
+            "before_n": 6,
+            "ci_high": 1.0620539216286953,
+            "ci_low": 1.0529893362050904,
+            "median_ratio": 1.0574833684024634,
+            "resamples": 10000,
+            "seed": 20260838
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 65.75529786426563,
+            "after_n": 6,
+            "before_median": 69.53509388654612,
+            "before_n": 6,
+            "ci_high": 0.9495629478612081,
+            "ci_low": 0.941688177519777,
+            "median_ratio": 0.9456418937400497,
+            "resamples": 10000,
+            "seed": 20260840
+          }
+        },
+        "throughput": {
+          "outer_wall_post_over_pre": {
+            "after_median": 3717.052646,
+            "after_n": 6,
+            "before_median": 3492.5652915,
+            "before_n": 6,
+            "ci_high": 1.067641013044073,
+            "ci_low": 1.0571136468779248,
+            "median_ratio": 1.0642757789085129,
+            "resamples": 10000,
+            "seed": 20260839
+          },
+          "physical_rate_post_over_pre": {
+            "after_median": 77.48075583453851,
+            "after_n": 6,
+            "before_median": 82.46087793622203,
+            "before_n": 6,
+            "ci_high": 0.9459720844143826,
+            "ci_low": 0.9366444183064108,
+            "median_ratio": 0.9396062444843807,
+            "resamples": 10000,
+            "seed": 20260841
+          }
+        }
+      },
+      "domain_drift": [],
+      "hard_failures": [],
+      "model_id": "mlx-community/gemma-3-4b-it-4bit",
+      "model_manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+      "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+      "performance_misses": [
+        "interactive.outer_wall",
+        "interactive.physical_rate",
+        "throughput.outer_wall",
+        "throughput.physical_rate"
+      ]
+    }
+  ],
+  "classification": "INCONCLUSIVE_POTENTIAL_REGRESSION",
+  "errors": [],
+  "limitations": [
+    "Separate-session engineering comparison, not a qualification experiment.",
+    "Bootstrap intervals compare independent pre/post repeat samples.",
+    "No stock mlx_lm arm and no runtime activation."
+  ],
+  "regression_kind": "POTENTIAL_CODE_REGRESSION",
+  "regression_threshold": 0.05,
+  "schema": "ironmule.post_change_comparison.v1",
+  "valid_for_qualification": false
+}

@@ -1,0 +1,150 @@
+{
+  "activation_allowed": false,
+  "base_commit": "d422fdb00fced3238dfaa6b5e9e993294adb72cd",
+  "cells": [
+    {
+      "comparison": {
+        "physical_rate_ratio_throughput_over_interactive": {
+          "ci_high": 1.1907981463847075,
+          "ci_low": 1.1780233906520396,
+          "median": 1.1852046121242883
+        },
+        "token_identity": true,
+        "wall_ratio_throughput_over_interactive": {
+          "ci_high": 0.8488899567242485,
+          "ci_low": 0.8397742295893478,
+          "median": 0.8437376090077495
+        }
+      },
+      "environment": {
+        "apple_chip": "Apple M1 Max",
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "os": "26.5.2",
+        "power": "AC",
+        "python": "3.12.13"
+      },
+      "interactive": {
+        "outer_wall_ms_median": 4141.793646,
+        "physical_tokens_per_second_median": 69.53509388654612
+      },
+      "model": {
+        "architecture": "gemma3",
+        "bits": 4,
+        "group_size": 64,
+        "id": "mlx-community/gemma-3-4b-it-4bit",
+        "manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+        "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+      },
+      "raw_sha256": "e1e9b7ce3248b83fced553334b452404bf47931d02e2352f2aed8d96f55607a0",
+      "resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 2784918618,
+        "swap_delta_bytes": 0
+      },
+      "status": "BASELINE_CAPTURED",
+      "throughput": {
+        "outer_wall_ms_median": 3492.5652915,
+        "physical_tokens_per_second_median": 82.46087793622203
+      }
+    },
+    {
+      "comparison": {
+        "physical_rate_ratio_throughput_over_interactive": {
+          "ci_high": 1.1450758831815704,
+          "ci_low": 1.0934887020829236,
+          "median": 1.1380406019625486
+        },
+        "token_identity": true,
+        "wall_ratio_throughput_over_interactive": {
+          "ci_high": 0.9145688450050717,
+          "ci_low": 0.8733061166106011,
+          "median": 0.8787082066220453
+        }
+      },
+      "environment": {
+        "apple_chip": "Apple M1 Max",
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "os": "26.5.2",
+        "power": "AC",
+        "python": "3.12.13"
+      },
+      "interactive": {
+        "outer_wall_ms_median": 11306.1598955,
+        "physical_tokens_per_second_median": 25.478071353538045
+      },
+      "model": {
+        "architecture": "gemma3",
+        "bits": 4,
+        "group_size": 64,
+        "id": "mlx-community/gemma-3-12b-it-4bit",
+        "manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+        "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558"
+      },
+      "raw_sha256": "7276ee6505a58ca176561f8e66f2087616d9682aa44273d1f7ddad51a6311d98",
+      "resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 7801383003,
+        "swap_delta_bytes": 0
+      },
+      "status": "BASELINE_CAPTURED",
+      "throughput": {
+        "outer_wall_ms_median": 10098.547479,
+        "physical_tokens_per_second_median": 28.51895348072056
+      }
+    }
+  ],
+  "corpus_inventory": {
+    "artifacts": 134,
+    "dataset_sha256": "ee414c9ee51c6e583ada094444ce66d5e22dca6c15c197dda1d7cd004e30bf32",
+    "local_only_or_ignored": 51,
+    "unique_artifacts": 92,
+    "valid_json": 72
+  },
+  "date": "2026-08-28",
+  "experiment_id": "B27a2",
+  "premeasurement_failures": [
+    {
+      "raw_sha256": "e5e7ab91218a4e7a7dcd2544efc3b44fbfdbed6fefce70cadd4f5c1c366e306a",
+      "stage": "model_binding",
+      "type": "IncompleteSnapshotError"
+    },
+    {
+      "raw_sha256": "dd09d2e2cc4a2ad9ac95272c4d464ff029730e82dcc3475d374683e0ad1e2260",
+      "stage": "model_binding",
+      "type": "ModuleNotFoundError"
+    }
+  ],
+  "preregistration_sha256": {
+    "B27a": "94f40041f60939dc39118ca0e6097f8f745e868608ba31f071f1d3ba9105726c",
+    "B27a1": "f90b4cc18394bd7ad15aafe1505d4c529cb66995b5702d392101f367279b3148",
+    "B27a2": "7b9e833661e865f9d60575ba4f1992ad606dff3502b9a05915f94d0183c23341"
+  },
+  "protocol": {
+    "fresh_process_per_arm": false,
+    "fresh_process_per_model": true,
+    "knobs": "BASELINE",
+    "max_tokens": 48,
+    "models_above_12b_tested": false,
+    "offline_cached_snapshots_only": true,
+    "plan": "strict_one_shot",
+    "repeats": 6,
+    "requests": 6,
+    "warmup": 2
+  },
+  "runtime_tree_sha256": "ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385",
+  "schema": "ironmule.main_baseline.public.v1",
+  "status": "BASELINE_CAPTURED",
+  "tests": {
+    "b27_focused": "10 passed",
+    "baseline_non_integration": "119 passed, 11 deselected",
+    "gemma4b_integration": "10 passed",
+    "non_integration": "124 passed, 11 deselected",
+    "xcode_first_launch_status": 0
+  },
+  "valid_for_performance": true,
+  "valid_for_qualification": false
+}

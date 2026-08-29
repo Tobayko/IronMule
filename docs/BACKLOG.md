@@ -70,34 +70,25 @@ queue times remain diagnostic; the protocol is order-balanced and fails closed o
 wrong answers. A stock `mlx_lm` arm is added only after its exact prompt/stop contract
 is defined and architecture approval is recorded.
 
-### `R6` — Refuse stale profiles and fingerprint the actual model
-
-**Mechanism.** The remaining identity gap is that the runtime fingerprint does not yet
-bind a qualified model revision and quantisation identity strongly enough for profile
-reuse. System-condition fail-closed checks and current-prompt workload drift handling
-are covered separately.
-
-**Test.** Unit profiles varying hardware/framework/model revision/quantisation/plan/
-workload fields; revalidation with a materially different prompt; fail-closed corrupt
-or incomplete profiles.
-
-**Kill.** Exact compatibility reuses a profile, workload-only drift is explicit and
-canaried, framework/model drift falls back to baseline, and a changed prompt is
-measured from its current tokenization.
-
 ### `R8` — Turn correctness and packaging into automated release gates
 
-**Mechanism.** A macOS workflow now exists, but remote CI and its clean installed-wheel
-job have not run. The real-model fixture previously skipped every exception, so a
-programming error could be reported as a missing model.
+**Mechanism.** The macOS workflow now runs remotely and its clean installed-wheel job
+is green. The real-model fixture no longer skips every exception. What is left is the
+gap this entry keeps confusing with CI: nothing asserted that a *first* run works. The
+first two commands a new clone runs, `ironmule models` and `ironmule benchmark`, both
+raised a raw `CacheNotFound` traceback on a machine with no Hugging Face cache — the
+exact machine every new user is on, and the exact machine CI is.
 
 **Test.** CI builds and installs the wheel in a clean environment, runs unit and CLI
 smokes, and checks dependency metadata. Integration setup skips only enumerated model,
-access or unavailable-Metal failures; all other exceptions fail.
+access or unavailable-Metal failures; all other exceptions fail. Subprocess tests assert
+that a cache-less machine gets an actionable message and a non-zero exit, never a
+traceback, and that `--help`/`doctor` still start when the MLX import itself is broken.
 
-**Kill.** A clean package/CLI job is green, synthetic regressions cover `R1`–`R7`, and
-an injected unexpected integration error fails instead of skipping. Apple-Silicon
-model CI remains open until runner availability and cost are explicitly approved.
+**Kill.** Remote clean package/CLI job green (done), first-run behaviour covered by
+tests (done), and synthetic regressions covering `R1`–`R7` (open — only `R6`/`R7` have
+a dedicated suite). Apple-Silicon model CI remains open until runner availability and
+cost are explicitly approved.
 
 ### `S1` — Persistent local service with an explicit overload contract
 
@@ -171,8 +162,6 @@ user-approved legal review and resulting documents.
 | `B4` | Wire the weights against page pressure | hours | 0 – 10% under load | none |
 | `B5` | Fill the group on purpose | hours | 0 – 5% at short answers | none, latency cost |
 | `B6` | Cost ratio of `M=4` vs `M=1` against model size | hours | 0, it is a precondition | none |
-| `B7` | Close the gap in the scaling arithmetic | days | 0, it is understanding | none |
-| `B25` | KV cache reallocation during decode | hours | 0 – 4% | none |
 | `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
 | `B30` | Widen Qwen grouped batch-1 groups to 5/6 | days | 0 – 10% | medium, throughput/correctness |
 | `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
@@ -192,12 +181,267 @@ user-approved legal review and resulting documents.
 | `B22` | Two processes, one GPU | days | 0, it is a control | none |
 | `B23` | Weight layout tuned for `M=1` | weeks | 0 – 20% | low |
 | `B24` | Real GPU counters instead of wall clock | days | 0, it is instrumentation | none |
+| `B27` | Evidence-bound execution strategies | audit first, then weeks | 0 immediate; prevents regressions and unsafe reuse | low for audit, medium for routing |
+
+---
+
+## Opened 2026-08-29, from making the repository usable by strangers
+
+These are not release blockers. They came out of running the project the way someone
+who just cloned it would, and out of the review that followed.
+
+### `P1` — Ask before querying the operating system
+
+**Mechanism.** Four places shell out to the OS without asking: `hw.py:39` `sysctl`,
+`hw.py:51` `system_profiler`, `bench.py:33-40` `pmset`/`sw_vers`, and `tune.py:185`
+`ps -Ao pid=,rss=,comm=,args=`. None of it leaves the machine, and `ps` sees only this
+user's own processes — but a stranger who cloned this cannot see that and has to take
+it on faith. A one-time stored opt-in plus a `--no-probe` path makes the promise
+checkable instead of asserted. The project owner has asked for this; it is wanted, but
+deliberately not a release blocker.
+
+**Test.** With no stored opt-in, no code path runs any of the four calls;
+`doctor`/`tune`/`benchmark` ask once and record the answer. A test that patches
+`subprocess.run` fails as soon as a call happens without consent.
+
+**Kill.** The gate breaks existing fingerprints or profiles, or leaves `doctor` unable
+to diagnose a fresh machine — the command that exists to answer "why does this not
+work" must not be the one that needs setup first. Then the promise is kept another
+way, by documenting the four calls instead of gating them.
+
+### `Q2` — Run the self-tuning loop once, for real
+
+**Mechanism.** `tune()` is the core of the self-optimisation the README describes, and
+it has never run end to end anywhere in this project: `~/.ironmule` does not exist on
+this machine, and `test_r6_r7.py` stubs the engine, `probe` and `gpu_busy`, so what is
+covered is the control flow, not the run. Unknown: whether the coordinate descent
+completes, whether it finds anything above baseline, and whether token identity holds
+across every candidate it tries.
+
+**Test.** A preregistered run on the M1 Max with `gemma-3-4b-it-4bit` cached and on
+mains power. Record every candidate with its knobs, time and token match; the profile
+written; the gain; total runtime. Then a second start that loads the profile instead
+of tuning again.
+
+**Kill.** The run aborts, finds no candidate above baseline, or any candidate changes
+tokens. Then self-tuning is not the feature the README advertises and that claim comes
+out before the next release.
+
+**Do not mistake a winner for a bug.** `readback_every` is the likeliest candidate to
+be kept, and that is correct behaviour. The predecessor project's cycle 17 measured it
+at ratio `0.9581`, faster in every pair, and rejected it only against that experiment's
+own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.995`
+(`tune.py:80`), so the same number qualifies here. Two knobs genuinely cannot win and
+would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
+of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
+
+### `R12` — One OS process per block: proven on `E14b`, two harnesses left
+
+**Confirmed, and the diagnosis held.** With one forked process per block, 12B reports
+`17.51 / 17.51 / 17.51 / 17.51 GB` across four blocks and no swap growth, against
+`17.51 -> 23.14 GB` and an abort at block 2 in a shared interpreter. Four distinct pids,
+590 s. The growth was allocator carry-over, not the model, so the first kill condition is
+met and the second — that per-block peaks would fail to fall — did not fire. 12B is
+measurable at four blocks for the first time. Proof:
+`R12_12b_proof.json`, archived.
+
+**What is left, and the two remaining harnesses are not the same job.**
+`e14b_arms.py` is converted, following `e16_replication.spawn`: self-invocation with
+`--child <spec>`, one `@@`-prefixed JSON line per block, a timeout that books the
+replicate as crashed rather than taking the run down.
+
+`e15_service.py` is the direct port. Its `run_process(model_id, index, pilot)` is
+character-for-character `E14b`'s, and it loads its own engine per block.
+
+`e12_window_falsification.py` is **not** a port, and the difference is the shared
+harness rather than the wall limit. Its unit is `run_case(h: Harness, prefix_kind,
+length, preamble, corpus, model_id)` — it receives a `Harness` built once before the
+loop, with the preambles and the warmup also done once outside it. Forking per case
+would load the model 26 times (13 prefix lengths × 2 types in stage 1) instead of once.
+That is a decision about granularity — per case, per type, or not at all — and there is
+no `E12` reference run to test the diagnosis against, unlike `E14b` where both the
+before and the after were measured. It should be its own entry rather than riding along
+here.
+
+Both carry a 45-minute parent-side wall limit measured across the loop
+(`e15_service.py:427`, `e12_window_falsification.py:42` and `:456`), and forking changes
+what that limit counts: not "how long this interpreter worked" but "how long the parent
+waited on N children", including N model loads instead of one.
+
+**Kill for the remainder.** Per harness: if converting one does not hold its per-block
+peak flat, the diagnosis does not transfer and that harness stays as it is. It also
+fails if the wall limit cannot be given a meaning that survives forking — measure how
+much of the 45 minutes the harness uses today, and what the extra model loads cost,
+before porting rather than after.
+
+**Why forking is the right shape, and why it does not break anything frozen.**
+`e16_replication.py:142` already does it — `spawn()` re-invokes the module with
+`--child <json spec>`, the child prints one `@@`-prefixed JSON line, the parent parses
+it. `run_process` in the remaining harnesses is already a pure function returning a
+serialisable dict of about `15 KB`, so the pattern applies rather than needing invention.
+
+The preregistration objection runs backwards, which is the part worth keeping:
+`E14b_preregistration.md:118` says "Four fresh processes", and line 124 reasons with
+them. The loop in one interpreter never provided that, and `M2` says so plainly — the
+bootstrap "has less independence than the preregistration claims". Forking delivers what
+the frozen document asked for, and `preregistration_sha256` covers that document rather
+than the harness source, so no hash moves.
+
+### `R10` — An aborted run must not look like a finished one
+
+**Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
+it with a `print` to stdout. The result file records nothing: a truncated run carries
+`runs: 1` and is otherwise shaped exactly like a complete four-block one. A reader who
+has the JSON but not the console log cannot tell a cut-short experiment from a
+deliberately short one, and the analysis that follows rests silently on a quarter of the
+intended samples. Found by living through it: the 12B leg of a scaling run aborted, and
+only the terminal output said so.
+
+**Three harnesses, three different behaviours, and the middle one is the worst.**
+
+- `e12_window_falsification.py:476` is correct: it sets `aborted = "memory_limit"`
+  before breaking, so the reason reaches `stage_aborted` in the payload. **This is the
+  shape to copy.**
+- `e15_service.py:425-437` has an `aborted` field and fills it for the wall-clock limit,
+  but the memory branch two conditions later only prints and breaks. A run killed by
+  memory therefore writes `"aborted": null`. That is worse than having no field at all:
+  a reader who checks for one finds it, sees `null`, and concludes the run finished.
+- `e14b_arms.py` has no field at all.
+
+So this is not a uniform gap to be filled the same way everywhere. Filling `E15`'s
+existing field on the memory path is a bug fix and needs no schema decision; adding one
+to `E14b` is the schema decision this entry is about.
+
+**Test.** A run that hits the guard writes a machine-readable record into its own result
+file — the reason, the block index reached, and the value that tripped it. An analysis
+helper refuses to summarise a file carrying such a record unless the caller acknowledges
+it. A synthetic run with the guard set below the first block's peak produces that record
+rather than a plain short file.
+
+**Kill.** Result files are bound to preregistration hashes, so a schema change
+invalidates the comparison the file was written for. This closes only if the record can
+be added without breaking existing readers — an additive optional key, following `E12`'s
+shape — or with an explicit decision to version the schema. If neither is acceptable,
+the fallback is that the guard raises instead of breaking, so an aborted run produces no
+result file at all rather than a plausible one. It does **not** close by adding a field
+that some code paths leave unset: `E15` shows that a present-but-empty marker is a
+stronger false signal than an absent one.
+
+**Related, and it bites before the guard's reporting bug does.** The threshold is a
+hard-coded `12 * 1024**3`. Gemma 3 12B's true per-block peak is `17.51 GB`, measured on
+block 1, which has nothing accumulated to inflate it. So 12B trips the guard honestly,
+with or without the peak reset, and a 27B 4-bit model at roughly `15 GiB` of weights
+cannot be measured either. On a 32 GB machine that holds both comfortably, this harness
+runs only the smallest of the three cached models to completion — which is also part of
+why the scaling evidence in this repository rests on 4B. Raising the number is a
+decision about swap safety and needs its own entry with a kill criterion, most usefully
+with the threshold as a parameter and direct swap monitoring as the criterion rather
+than another constant in the source.
+
+---
+
+## Architecture track — audit first, not a performance claim
+
+### `B27` — Evidence-bound execution strategies
+
+**Mechanism.** The repository already contains qualified fast paths, fingerprints,
+raw measurements and conservative runtime fallbacks, but they are not yet expressed
+through one explicit contract equivalent to `ExecutionStrategy + ValidityDomain +
+EvidenceRecord = TrustedExecutionProfile`. Representing the existing paths through
+that contract should let the runtime select only strategies whose evidence matches the
+current hardware, model, framework and workload, while a regression gate prevents a
+cleaner architecture from silently discarding a measured gain. The first stage is
+read-only inventory and baseline capture; it changes no routing decision.
+
+**Test.** Inventory the ledger, preregistrations, raw results and all runtime selection
+boundaries; reproduce the current `main` correctness and performance baseline; produce
+a gap analysis; then, only after architecture approval, encode one existing qualified
+path without changing its observable selection or fallback behaviour. Require exact
+token/stop/count equivalence and a before/after regression comparison under the same
+fingerprint and workload.
+
+**Kill/Pivot.** If the current evidence cannot be reconstructed with raw samples and
+provenance, if the abstraction requires a parallel execution implementation, or if it
+weakens fail-closed correctness/fallback semantics, stop at the audit and keep the
+current deterministic routing. Any evidence-domain mismatch must yield
+`REVALIDATION_REQUIRED` or the baseline, never an inferred promotion.
+
+**Current result.** D1 was approved and implemented as a non-imported stdlib-only
+contract on commit `0b14eb6`; it has no persistence, selection or activation path.
+B27d preserved token/resource correctness and found no 12B regression, but its 4B
+post/pre screen was common-mode 5.7–6.4% slower in both Interactive and Throughput
+arms and therefore remains `INCONCLUSIVE_POTENTIAL_REGRESSION`. B27e did not reproduce
+a consistent D1 slowdown: block 0 was within 2%, while mirrored block 1 made the
+first-running D1 appear 5.8–7.9% faster than OLD. Its frozen class is
+`ORDER_OR_TEMPORAL_DRIFT`, so B27d formally remains inconclusive. The execution
+surfaces are byte-identical and D1 stays off the runtime import graph; no neutrality,
+causality, qualification or activation claim is made.
+
+Approved D2 is complete: Runtime fingerprint v2 and tuned-profile conditions v2 bind
+exact local revision, complete manifest, architecture, quantisation and tokenizer;
+incomplete legacy profiles fail closed. The same-day D2b 4B/12B post screen had exact
+identities/outputs/resources, zero domain drift or hard failures and passed every 5%
+gate, yielding `NO_REGRESSION_OBSERVED`. D2 added no D1 persistence, strategy
+selection, routing or activation. This closes the former `R6` identity entry. B27
+remains open only at the next explicit architecture decision, not by extending D2 or
+rerunning the same control.
 
 ---
 
 ## Tier 0 — already dead. Do not re-run these.
 
 Listed so the next person does not spend a week rediscovering them.
+
+- **`B25` KV cache reallocation during decode.** Nothing reallocates. The fixed-shape
+  cache is allocated once per `serve()`: `mx.zeros` appears only in
+  `_empty_fixed_state`, and `_caches_from_state` wraps the existing arrays rather than
+  copying them. Measured, not just read: writing 56 tokens through `FixedKVCache`
+  moved active memory from `65,644 B` to `32,876 B` — it *fell* by exactly one full
+  keys+values copy (`32,768 B`), which is the warmup's double buffer being released
+  once MLX takes the `slice_update` donation. Shape constant throughout.
+  `tests/test_cache_allocation.py` holds both properties. The predecessor's `4.4263%`
+  from cache growth copies (candidate 21) is gone with the growing cache it was
+  measured on, so there is nothing here to claim.
+
+  **One caveat worth carrying, because it shapes how the tuned gain reads.**
+  `FixedKVCache.update_and_fetch` builds `mx.array(0)` and `mx.stack(...)` on every
+  call, and `make_mask` an `mx.arange(capacity)` — per layer, per decode step. Under
+  `compiled_fixed_cache=True` these are bound once when `mx.compile` traces the body,
+  so they cost nothing. Under the untuned `BASELINE` they are rebuilt every step. Part
+  of that knob's `0.9679` is therefore host work that stops happening, not GPU work
+  that got faster — which is the documented purpose of `mx.compile`, and `E5` already
+  put `3.3 ms` of host work on each step. How the ratio splits between constant rebuild
+  and kernel fusion is not measured. The tuned gain against `BASELINE` is real, because
+  `BASELINE` is what an untuned install actually runs; it is not a gain against a
+  well-optimised floor.
+
+- **`R11` measurement is gated on swap, not on a byte count.** The literal
+  `12 * 1024**3` was wrong in both directions: it refused `gemma-3-12b-it-4bit` at a
+  `17.51 GB` block that never swapped, and it passed a run that had to be discarded
+  because swap climbed `2816 MB`. `ironmule/bench.py` now carries `MemoryGate`, which
+  aborts on a *delta* against the run's own swap baseline — an absolute value would
+  refuse every run on a machine already carrying backlog — with a coarse peak backstop
+  derived from `hw.memsize` rather than typed in. Wired into `e14b_arms.py`,
+  `e15_service.py` and `e12_window_falsification.py`; `e16_replication.py` keeps its
+  per-child ceiling, which was always coherent because it forks. The self-check replays
+  both reference runs from `B7`'s recorded numbers, so the gate is tested against what
+  actually happened rather than against what sounds reasonable. A gate that can read
+  neither swap nor installed memory reports itself `inert` instead of silently passing.
+
+- **`R9` `ironmule.tune` resolves to the function, not the module.** `__init__.py:35`
+  re-exports `tune` from `.tune`, rebinding the name in the package namespace, so
+  `import ironmule.tune as m` yields the function and the module is reachable only via
+  `importlib.import_module("ironmule.tune")`. Renaming would break the public API, so
+  this is documented rather than changed — the decision its kill criterion allowed for.
+  Checked across the package: exactly one of fifteen submodules is shadowed this way.
+  `tests/test_ironmule.py` asserts that, so a second one cannot appear unnoticed; the
+  quirk stays a footnote instead of becoming a pattern.
+
+- **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
+  digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
+  within 2%; mirrored D1/OLD made D1 appear 5.8–7.9% faster. Final
+  `ORDER_OR_TEMPORAL_DRIFT`; a consistent D1 slowdown was not reproduced, but B27d
+  remains formally inconclusive. Do not rerun the same two-block unconditioned design.
 
 **Two lists, one of them closed.** The entries below marked `E*` come from this
 project's ledger. The ones marked `cycle *` come from the predecessor project, whose
@@ -390,41 +634,6 @@ multi-token-per-forward idea gets cheaper exactly where the grouping gain got wo
 **Kill.** The ratio does not fall. Then `B13` and `B14` lose most of their predicted
 advantage at scale and drop several tiers.
 
-### `B7` — The scaling arithmetic does not add up yet
-
-**Mechanism.** [`SCALING.md`](SCALING.md) explains the falling gain as fixed per-step
-overhead becoming a smaller share of a longer step. Check it quantitatively: host
-dispatch scales with kernel count, so roughly with layers (`34 -> 62`, `1.8x`). Device
-time scales with weight traffic, so roughly with parameters (`6.75x`) divided by the
-better bandwidth larger matrices achieve (`195 -> ~300 GB/s`), giving about `4.4x`.
-The recoverable share should then fall to about `0.41` of its 4B value.
-
-**Measured:** `11.81 / 19.24 = 0.61`. The simple story over-predicts the fall by half.
-
-**Test.** Instrument submission and synchronisation per step at each model size, as in
-`E14b`'s four-way split. Either host dispatch grows faster than layer count, or device
-time grows slower than the naive estimate, or both.
-
-**Kill.** Nothing — this one only closes by being answered. It is the highest-value
-entry in Tier 1 because every other tier depends on knowing which term dominates.
-
-### `B25` — KV cache reallocation during decode
-
-**Mechanism.** The predecessor project localised `4.4263%` of correlated marginal decode
-cost to cache growth copies, recommended it for preregistration (candidate 21), and never
-measured it — the first decode step confounded the isolation, and a cache rebuild was an
-architecture change at the time.
-
-**Why it is worth reopening now.** That architecture change has since happened: this
-runtime uses a fixed-shape cache, allocated once per `serve()` call. So either the cost
-is already gone, in which case this closes in an afternoon with a line in Tier 0, or
-something still reallocates and `4.4%` is sitting there unclaimed.
-
-**Test.** Count allocations during a decode sequence at 4B and 27B. No benchmark needed
-to answer the first half.
-
-**Kill.** No reallocation happens. Likely, and worth the certainty.
-
 ### `B26` — Qwen3.8 27B, to separate model size from model family
 
 **Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
@@ -524,6 +733,14 @@ which number is being reported before starting — see the warning at the top.
 **Test.** Port one decode step, measure it standalone against the Python path first.
 No integration until that microbenchmark says the premise is right.
 
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
+
 **Kill.** Under `2x` improvement on the isolated step. Then `6.41 µs` is Metal's
 enqueue cost rather than Python's, and `B9` becomes the only remaining route.
 
@@ -540,6 +757,14 @@ fingerprint mechanism was built to police, not to encourage.
 **Test.** Prototype outside IronMule: a hand-built ICB replaying one transformer
 block, timed against the same block through MLX.
 
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
+
 **Kill.** The replay is not meaningfully faster, or the shapes turn out not to be
 stable enough across steps to reuse an encoding. Highest ceiling of anything in Tier 2
 and the highest chance of being abandoned halfway.
@@ -554,6 +779,14 @@ custom kernel for the block, not a rearrangement of existing primitives.
 
 **Test.** Count kernels honestly first. `LIMITS.md` records that MLX exposes no
 machine-readable dispatch counter, so this depends on `B24`.
+
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
 
 **Kill.** Kernel count is already near the floor for the primitives available, or a
 fused block kernel underperforms the library's tuned matmuls — which is the usual
@@ -591,7 +824,8 @@ not a ceiling — and every conclusion in this project stopped at the near side 
 
 **Evidence against, and it is serious.** This requires true tensor batching, which
 `E14b` measured producing a reproducible one-token divergence at `b = 8` — row 3,
-index 6, `1437` against `1580`, in all four processes. `E14b` also measured `C8` as
+index 6, `1437` against `1580`, in all four blocks (blocks, not OS processes — see
+`E15` limitation `M2`). `E14b` also measured `C8` as
 *worse* than `C4` on throughput. Correctness decides before speed does.
 
 **Test.** `E14b`'s arm C extended to `b = 16` and `b = 32`, correctness first: if

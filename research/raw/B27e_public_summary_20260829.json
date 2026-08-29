@@ -1,0 +1,89 @@
+{
+  "activation_allowed": false,
+  "b27d_consequence": "B27D_REMAINS_INCONCLUSIVE",
+  "blocks": [
+    {
+      "block": 0,
+      "child_sha256": {
+        "d1": "63a3264ea84ded63f3884b8cd9905a460329355c147348ee61490abfa2a38df4",
+        "old": "2070d96565ce17536a656bb188514ac431b7e2135eb2749628f9d57db7aff95a"
+      },
+      "order": [
+        "old",
+        "d1"
+      ],
+      "ratios": {
+        "interactive": {
+          "d1_over_old_rate": 1.0075723630768223,
+          "d1_over_old_wall": 0.9924838219327333,
+          "d1_rate_median": 65.67924808799151,
+          "d1_wall_median": 4384.948125,
+          "old_rate_median": 65.18563876387685,
+          "old_wall_median": 4418.1557705
+        },
+        "throughput": {
+          "d1_over_old_rate": 1.016109359512245,
+          "d1_over_old_wall": 0.9841463573715852,
+          "d1_rate_median": 77.67566912880605,
+          "d1_wall_median": 3707.740729,
+          "old_rate_median": 76.44420199622223,
+          "old_wall_median": 3767.4688335
+        }
+      }
+    },
+    {
+      "block": 1,
+      "child_sha256": {
+        "d1": "ae6450932ca5b32999237345f04482cb25ad32d351d144406102f86d646ad0db",
+        "old": "78c16b18dfdc5706bbaab093d9b64ff02d1b63cba8c02a04746b2e72cb216dcc"
+      },
+      "order": [
+        "d1",
+        "old"
+      ],
+      "ratios": {
+        "interactive": {
+          "d1_over_old_rate": 1.0612854134291982,
+          "d1_over_old_wall": 0.94222654072639,
+          "d1_rate_median": 65.04761166700482,
+          "d1_wall_median": 4427.527854,
+          "old_rate_median": 61.29134617692016,
+          "old_wall_median": 4699.0056665
+        },
+        "throughput": {
+          "d1_over_old_rate": 1.0790461254543562,
+          "d1_over_old_wall": 0.9267014530383696,
+          "d1_rate_median": 76.50889403100372,
+          "d1_wall_median": 3764.2693335,
+          "old_rate_median": 70.90419234746611,
+          "old_wall_median": 4062.0086665
+        }
+      }
+    }
+  ],
+  "classification": "ORDER_OR_TEMPORAL_DRIFT",
+  "d1_commit": "0b14eb6f134edc42701ebb1e1a85a1bd484d12d1",
+  "domain_drift": [],
+  "errors": [],
+  "execution_surface_sha256": "ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385",
+  "hard_failures": [],
+  "limitations": [
+    "Two mirrored blocks are a mechanism control, not qualification evidence.",
+    "Only new B27e samples are used; B27a2/B27d values are not pooled.",
+    "No stock mlx_lm arm and no runtime activation."
+  ],
+  "old_commit": "467d5b8bfb187cd3dad46cc87e6ada5afbf033dc",
+  "orders": [
+    [
+      "old",
+      "d1"
+    ],
+    [
+      "d1",
+      "old"
+    ]
+  ],
+  "schema": "ironmule.b27e_cross_commit.public.v1",
+  "threshold": 0.05,
+  "valid_for_qualification": false
+}

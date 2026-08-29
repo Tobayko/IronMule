@@ -253,3 +253,36 @@ def test_hybrid_hash_preserves_bfloat16_raw_bits():
     changed = {"position": state["position"],
                "layers": [{"arrays": [first, second + mx.array(2, dtype=mx.bfloat16)]}]}
     assert backend.kv_hash(changed, offset=1) != original
+
+
+def test_only_tune_is_shadowed_by_a_re_export():
+    """`ironmule.tune` is the function, not the module — and must stay the only one.
+
+    `__init__.py` re-exports `tune` from `.tune`, which rebinds the name in the package
+    namespace. `import ironmule.tune as m` therefore yields the function, and the module
+    is reachable only through `importlib.import_module`. Renaming would break the public
+    API, so the quirk is documented rather than fixed (backlog `R9`) — but a second one
+    appearing silently is a different matter, and that is what this test catches.
+    """
+    import importlib
+    import pathlib
+    import types
+
+    import ironmule
+
+    package_dir = pathlib.Path(ironmule.__file__).parent
+    submodules = {p.stem for p in package_dir.glob("*.py")} - {"__init__"}
+    shadowed = {
+        name for name in submodules
+        if hasattr(ironmule, name)
+        and not isinstance(getattr(ironmule, name), types.ModuleType)
+    }
+    assert shadowed == {"tune"}, (
+        f"expected only `tune` to be shadowed by a re-export, found {sorted(shadowed)}. "
+        "Either re-export under a different name, or extend R9 to cover the new one."
+    )
+
+    assert callable(ironmule.tune) and not isinstance(ironmule.tune, types.ModuleType)
+    module = importlib.import_module("ironmule.tune")
+    assert isinstance(module, types.ModuleType)
+    assert module.tune is ironmule.tune

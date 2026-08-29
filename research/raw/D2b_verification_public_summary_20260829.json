@@ -1,0 +1,65 @@
+{
+  "activation_allowed": false,
+  "artifacts": {
+    "comparison_public_summary": {
+      "recomputed_byte_identical": true,
+      "sha256": "0a02d1fed48f742d6c169b083b98a5a6b5fd9dbfee1d43981080f44e75b8144e"
+    },
+    "post_public_summary": {
+      "recomputed_byte_identical": true,
+      "sha256": "16741c99e03ce2ab821ff7b40dd42eb105ff57855d74a75ed422882cd8603132"
+    }
+  },
+  "classification": "VERIFIED",
+  "errors": [],
+  "frozen_binding": {
+    "baseline_harness_sha256": "3456be06f80be6c4b9eaa45a1a94bc7ffed6d47627790ceb24749a3bf9567ee5",
+    "comparator_sha256": "764a8449d1628e4eaff7579cfc5cf92f427d744da2f0066eab9dd8fcef726fc7",
+    "implementation_commit": "7892810584be232cec744c0038ab9b3e069608ea",
+    "implementation_review_sha256": "a0f634a77515741db17e3205ffb827f2d318439e7294ea399eead4a890792e5f",
+    "measurement_commit": "d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5",
+    "post_runtime_tree_sha256": "5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60",
+    "pre_runtime_tree_sha256": "d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21",
+    "preregistration_sha256": "6ffc3a6714aa8ed2a2e71e1ebd6af9a5f284a171e8ba69a5e959f7802c070c1b"
+  },
+  "identity_checks": {
+    "cells": [
+      {
+        "identity_sha256": "2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474",
+        "model_id": "mlx-community/gemma-3-12b-it-4bit",
+        "runtime_identity_exact": true,
+        "runtime_v2_fingerprints_exact": true
+      },
+      {
+        "identity_sha256": "2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2",
+        "model_id": "mlx-community/gemma-3-4b-it-4bit",
+        "runtime_identity_exact": true,
+        "runtime_v2_fingerprints_exact": true
+      }
+    ],
+    "independent_manifest_reconstruction": true
+  },
+  "inputs": {
+    "post": {
+      "mlx-community/gemma-3-12b-it-4bit": "6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4",
+      "mlx-community/gemma-3-4b-it-4bit": "bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5"
+    },
+    "pre": {
+      "mlx-community/gemma-3-12b-it-4bit": "745d63222c42937e72bfb5b32b5e5773ed727b6f3366b229dcd2c0f5c76817aa",
+      "mlx-community/gemma-3-4b-it-4bit": "c012c9a3e9b25d995e940d363137238f717a42ccae611f52354d7779cbad39d9"
+    }
+  },
+  "result": {
+    "classification": "NO_REGRESSION_OBSERVED",
+    "hard_failures": 0,
+    "performance_misses": 0,
+    "regression_kind": "NONE"
+  },
+  "schema": "ironmule.d2_verification.v1",
+  "tests": {
+    "final_swap_bytes": 0,
+    "integration": "11 passed in 22.28s",
+    "non_integration": "178 passed, 12 deselected in 5.03s"
+  },
+  "valid_for_qualification": false
+}

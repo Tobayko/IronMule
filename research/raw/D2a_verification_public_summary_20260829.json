@@ -1,0 +1,21 @@
+{
+  "activation_allowed": false,
+  "byte_identical_recomputation": true,
+  "classification": "BASELINE_CAPTURED",
+  "errors": [],
+  "ok": true,
+  "preregistration_sha256": "46f69cf3441f3922cb90f2b0a098b4ac1ca41707e96ca674b0107b24b599fb3e",
+  "qualification_changed": false,
+  "raw_sha256": [
+    "745d63222c42937e72bfb5b32b5e5773ed727b6f3366b229dcd2c0f5c76817aa",
+    "c012c9a3e9b25d995e940d363137238f717a42ccae611f52354d7779cbad39d9"
+  ],
+  "review_sha256": "8327a778358314bc38a7171130dbb85a19a04f48fda6571d33e165dca5316bf5",
+  "schema": "ironmule.d2_baseline_verification.v1",
+  "summary_sha256": "6eddb942af04addb245e624b189b90e095fc6eb591abe413159541b4f1c63ea6",
+  "tests": {
+    "gemma4b_integration": "10 passed in 21.17s",
+    "non_integration": "155 passed, 11 deselected in 5.37s",
+    "summary_builder": "2 passed"
+  }
+}

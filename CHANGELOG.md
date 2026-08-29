@@ -6,12 +6,100 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **Measurement is gated on swap, not on a hard-coded byte count (`R11`).** The literal
+  `12 * 1024**3` in three research harnesses was wrong in both directions: it refused
+  `gemma-3-12b-it-4bit` at a `17.51 GB` block that never swapped, and it passed a run
+  that had to be discarded because swap climbed `2816 MB` and every cell slowed by a
+  uniform `1.10x`–`1.15x`. `ironmule/bench.py` gains `MemoryGate`, which aborts on a
+  swap *delta* against the run's own baseline — an absolute value would refuse every run
+  on a machine already carrying backlog — plus a coarse peak backstop derived from
+  `hw.memsize`. Its self-check replays both reference runs from recorded numbers rather
+  than from plausible ones, and a gate that can read neither signal reports itself
+  `inert` instead of passing silently.
+- **One OS process per block for `E14b` (`R12`).** Blocks looped in one interpreter, so
+  the allocator carried state across them: 12B peaked at `17.51 GB` on block 1 and
+  `23.14 GB` on block 2, and the machine swapped. Forked per block it reports
+  `17.51 GB` four times with no swap growth, and 12B is measurable at four blocks for
+  the first time. This follows `e16_replication.spawn`, and it delivers what
+  `E14b_preregistration.md` already asked for — "Four fresh processes" — rather than
+  departing from it. `e15_service.py` and `e12_window_falsification.py` are not
+  converted, and they are not the same job: `E15` is a direct port (its `run_process`
+  signature is `E14b`'s), while `E12` builds one shared `Harness` before its loop, so
+  forking per case would load the model 26 times instead of once. Both also carry a
+  45-minute parent-side wall limit that counts something different once children do the
+  work.
+
+- **MLX peak memory is now measured per arm, not per process.** `mx.get_peak_memory()`
+  is a process-wide high-water mark and `mx.reset_peak_memory()` was called nowhere in
+  the repository. `ironmule/ab.py` loads a fresh model for every arm inside one child
+  process and read the peak once after the arm loop, so the number filed under an arm
+  was the maximum over every arm that process had run. It now resets before each arm
+  and records `mlx_peak_bytes` per arm; the top-level value keeps its old meaning as
+  the maximum across arms. `E15` limitation `M2` already recorded this for the research
+  harnesses `E14`, `E14b` and `E15`; that it also affected the shipped library did not.
+  The same reset is added to those three harnesses, where the inflated number also feeds
+  a 12 GiB abort guard, so from the second block onward a run could be cut short by
+  arithmetic rather than by memory. That mechanism is real, but it was not what aborted
+  the 12B run that prompted this: its `17.51 GB` was measured on block 1, with nothing
+  accumulated, so 12B exceeds that guard honestly. See `R10`.
+- **`B25` closed: nothing reallocates the KV cache during decode.** Writing 56 tokens
+  through `FixedKVCache` moves active memory from `65,644 B` to `32,876 B` — it falls
+  by exactly one keys+values copy as the warmup double buffer is released, and the
+  shape never changes. `tests/test_cache_allocation.py` holds it. The predecessor's
+  `4.4263%` from cache growth copies belonged to a growing cache this runtime no longer
+  has.
+- **Two documentation corrections.** `research/LEDGER.md` said `E14b`'s token
+  divergence reproduced "in all four processes" twenty lines above limitation `M2`,
+  which states those were blocks in one interpreter; `docs/BACKLOG.md` repeated it in
+  the `B12` entry. Both now say blocks and point at `M2`.
+
+- **The stored gain now comes from the confirmation, not the screening.** `tune()`
+  computed `gain` from `best_result`, the single-process screening measurement, while
+  the six-process paired confirmation it had just run only decided accept/reject and
+  never reached the profile. `ironmule.status()` therefore reported the weaker of two
+  numbers the tuner already held, next to a `tokens identical` claim that did come from
+  the confirmation. The first real end-to-end tuning run (`Q2`, 2026-08-29) stored
+  `0.1457` from screening where the paired measurement was `0.8568`, i.e. `14.32%`.
+  `status()` also states the paired 95% interval now: for that run `[5.98%; 14.51%]`,
+  whose lower bound is nowhere near the headline number it used to print alone.
+
+- **First-run experience fixed.** On a machine with no Hugging Face cache — every new
+  clone, and every CI runner — `ironmule models` and `ironmule benchmark` raised a raw
+  `huggingface_hub` traceback. A single `scan_local_cache()` helper now reads a missing
+  cache directory as an empty one, so `models` prints an empty list and any command
+  asking for an uncached model fails with the command that fixes it (`hf download …`)
+  instead of a stack trace. The CLI reports `ModelIdentityError` as a message and exit
+  `1`. The three ways a model can fail to resolve now say different things: nothing
+  cached, cached but not at the requested revision, or several revisions cached and
+  none pinned. The middle one used to claim the model was not cached at all, which
+  sent the user to doubt their cache instead of their pin, and the last one used to
+  advise a `--revision` flag the CLI does not have. The library still raises where the
+  CLI reports. Subprocess regression tests cover both, plus the case
+  where the MLX import itself is broken and `doctor` must still start. One behaviour
+  change: `ironmule models` now reaches the cache through the shared helper in the
+  `ironmule` package, so it needs the runtime import that `huggingface_hub` alone used
+  to satisfy. A broken MLX install therefore makes `models` print the `ironmule doctor`
+  hint and exit `1` instead of listing; `doctor` itself still imports neither.
+- **Documentation links are now a test.** `tests/test_docs_links.py` walks every tracked
+  Markdown file and fails on a relative link that does not resolve. It found 18 dead
+  links: `research/LEDGER.md`, `docs/LIMITS.md` and `research/raw/B39_review.md` linked
+  to raw benchmark JSON that `.gitignore` deliberately keeps local, so those links were
+  dead for everyone who cloned. Raw files are now named as inline code, and the ledger
+  header says plainly that raw evidence is local and the redacted
+  `*_public_summary_*.json` is what ships.
+
 - **R1 completed:** prefill-produced tokens now participate in the shared token/count/stop contract, including EOS and `max_tokens=1` coverage.
 - **R4 completed:** the service backend honours both fused-token and logits output contracts.
 - **R5 completed:** telemetry distinguishes an unperformed correctness check from a checked request/error count; benchmark mismatches are structured and fail closed.
 - **R7 completed:** environment probing, version/dependency checks, unsupported tuning candidates, hardware discovery caching, and version ownership are covered by fail-closed tests.
 - **R3 partial:** the public benchmark uses complete service/outer-wall timing, independent arm plans, balanced warmups/repeats, raw evidence, and structured mismatch exits; fresh-process isolation and a stock `mlx_lm` arm remain open by design.
-- **R6 partial:** system/profile conditions fail closed and current workload drift is checked; model revision and quantisation identity remain open under approval-dependent P0.11 work.
+- **R6/D2 implemented locally:** Runtime fingerprint v2 and tuned-profile conditions
+  v2 bind the exact cached revision, complete manifest, architecture, canonical
+  quantisation and tokenizer digest. Ambiguous cache resolution, identity conflicts,
+  source changes during load, and legacy/incomplete profiles fail closed. D2 adds no
+  routing, EvidenceRecord persistence or profile activation. Its sealed same-day
+  4B/12B post-change screen preserved exact identities/outputs/resources and passed
+  every 5% gate: `NO_REGRESSION_OBSERVED`, with no qualification or activation.
 - **R8 partial:** macOS build/wheel/CLI/unit-test workflow is checked in; local wheel build/metadata/zipimport CLI smoke is green, while the clean installed-wheel job and remote CI execution remain open.
 - **B37 completed:** adds a pure, fail-closed phase/roofline diagnostic with per-run
   effective-bandwidth inputs; it does not alter runtime gates, profile selection, or
@@ -31,6 +119,14 @@ Review follow-ups completed locally; this section is not a release or a performa
 - **B3-U2 pilot recorded:** 8/8 isolated processes and 240 measured requests passed
   token/state correctness and safety gates. This is not a speed result; confirmation
   remains blocked by missing persisted per-child host-state evidence.
+- **B27 D1 implemented, not activated:** adds stdlib-only immutable execution-strategy,
+  validity-domain, evaluator-owned evidence and trusted-profile contracts. Runtime,
+  tuner, plans, modes and executors do not import D1; persistence, selection and
+  activation remain outside the approved scope. The sealed post-change screen passed
+  12B but found a common-mode 4B potential regression, so its frozen result is
+  inconclusive and no performance-safety claim follows. A separate mirrored OLD/D1
+  4B control did not reproduce a D1 slowdown, but was order/temporal-drift sensitive;
+  it also makes no neutrality or activation claim.
 
 ## [0.1.0] — 2026-08-26
 

@@ -25,7 +25,9 @@ exists to make a violation visible and is expected to stay at zero.
 ```python
 import ironmule
 
-rt = ironmule.Runtime.load()                       # interactive by default, tuned knobs
+rt = ironmule.Runtime.load(                        # interactive by default, tuned knobs
+    revision="93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+)
 
 # one request
 out = rt.generate("Explain unified memory.", max_tokens=96)
@@ -207,13 +209,43 @@ sequential reference.
 ## Fingerprint and validity
 
 `ironmule.fingerprint` records hardware, OS, MLX and mlx_lm versions, runtime version,
-model, quantisation, execution plan, service mode and workload traits. Identity
-fields — hardware, versions, model, quantisation, plan, mode — invalidate a stored
-decision when they change. Workload fields are compared in buckets, so a 10% longer
-prompt is the same regime and a doubled one is drift.
+exact model revision, complete present-file manifest, architecture, canonical
+quantisation, tokenizer artifacts, execution plan, service mode and workload traits.
+Identity fields invalidate a stored decision when any one changes. Workload fields
+are compared in buckets, so a 10% longer prompt is the same regime and a doubled one
+is drift.
+
+`Runtime.load(model_id, revision=...)` inspects the existing Hugging Face cache
+read-only and never downloads. If `revision` is omitted, exactly one cached revision
+must exist. Local directories are supported with a path-free content identity. The
+full source is hashed before load and verified again after load; hashing is a startup
+cost and is not on the timed `serve()` path. Runtime fingerprint schema v2 and tuned
+profile conditions v2 reject missing, legacy or inconsistent model identity rather
+than guessing or migrating it.
+
+A manually constructed Runtime may omit identity for execution-only use. Its
+`fingerprint()` and `revalidate()` methods then fail closed. Caller-managed online
+loading likewise cannot reuse a profile or emit a validity fingerprint without an
+exact local identity. See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
 
 `Runtime.revalidate()` compares the current identity against the last recorded one
 and returns `valid`, `valid_with_workload_drift`, or `revalidation_required`.
+
+## Evidence contracts (D1, no routing)
+
+`ironmule.evidence` is a standard-library-only, immutable contract layer for
+`ExecutionStrategy`, `ValidityDomain`, evaluator-owned `EvidenceRecord` and
+`TrustedExecutionProfile`. It rejects missing identity, unknown schema fields,
+non-finite measurements, self-qualification and domain drift. A trusted profile can
+only be constructed from supplied `QUALIFIED` records that pass exact correctness,
+resource and repeated-uncertainty gates.
+
+This module is deliberately not imported by Runtime, plans, modes, executors, tuner or
+the package root. It has no MLX import, persistence, `run()`/`select()` method,
+automatic routing or activation. D1 represents existing path IDs as data; it does not
+change which path executes. See
+[`B27_PHASE_D_CONTRACT_PROPOSAL.md`](B27_PHASE_D_CONTRACT_PROPOSAL.md) for the approved
+scope and excluded later decisions.
 
 ## Running things
 
@@ -241,6 +273,7 @@ python -m ironmule.plans && python -m ironmule.telemetry && python -m ironmule.f
 | `ironmule/executor.py` | sequential and grouped executors, fallback, sessions |
 | `ironmule/telemetry.py` | the two TTFT definitions and the metric set |
 | `ironmule/fingerprint.py` | identity and validity of stored decisions |
+| `ironmule/evidence.py` | immutable fail-closed strategy/domain/evidence/profile contracts; no routing |
 | `ironmule/benchmark.py` | reproducible local benchmark |
 | `ironmule/runtime.py` | `Engine`, `PrefixCache`, fixed-shape KV cache (research phase) |
 | `ironmule/tune.py`, `hw.py`, `fast.py`, `bench.py`, `ab.py` | autotuner and measurement infrastructure |

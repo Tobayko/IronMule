@@ -67,6 +67,13 @@ ironmule doctor
 ironmule models
 ```
 
+`ironmule models` prints an empty list on a fresh machine. IronMule never downloads
+weights, so fetch one model yourself first — about 3.4 GB for the 4B used below:
+
+```bash
+hf download mlx-community/gemma-3-4b-it-4bit
+```
+
 Run the balanced local benchmark with a cached model:
 
 ```bash
@@ -82,7 +89,8 @@ download a model and does not claim to compare against stock `mlx_lm`.
 import ironmule
 
 runtime = ironmule.Runtime.load(
-    model_id="mlx-community/gemma-3-4b-it-4bit"
+    model_id="mlx-community/gemma-3-4b-it-4bit",
+    revision="93724907d4ed1745d2fe50baadf3b0b01a65abf2",
 )
 result = runtime.generate(
     "Explain unified memory in two short sentences.",
@@ -93,8 +101,10 @@ print(result.text)
 print(result.metrics["service_ttft_ms"])
 ```
 
-`Runtime.load` uses local model files only. See the [runtime guide](docs/RUNTIME.md)
-for concurrent requests, throughput mode, and reusable sessions.
+`Runtime.load` resolves only an already-cached model snapshot. Supplying the exact
+cached commit is recommended; without it, exactly one cached revision must exist or
+loading fails closed. See the [runtime guide](docs/RUNTIME.md) for concurrent
+requests, throughput mode, reusable sessions, and exact model identity.
 
 ## What IronMule includes
 
@@ -108,8 +118,9 @@ for concurrent requests, throughput mode, and reusable sessions.
   group width.
 - **Reproducible benchmarks:** balanced warmups and repeats, raw JSON, token identity,
   spread, and a paired interval.
-- **Hardware-aware profiles:** record machine, framework, model ID, plan, and workload
-  fingerprints; exact model-revision and quantisation binding remain open work.
+- **Exact validity fingerprints:** bind hardware, framework, model revision, complete
+  manifest, architecture, quantisation, tokenizer, plan, mode, and workload; legacy
+  incomplete profiles fail closed.
 
 ## Measured results, with the trade-off visible
 

@@ -300,6 +300,11 @@ def build_requests(engine, tok, workload: str, plan: str):
 
 
 def run_process(model_id: str, index: int, pilot: bool) -> dict:
+    # MLX's peak is a process-wide high-water mark and these blocks share one
+    # interpreter (see E15 limitation M2). Without this reset the reported peak is
+    # the maximum over every block so far, which also makes the memory guard below
+    # fire earlier the longer a run goes.
+    mx.reset_peak_memory()
     engine, tok = load_engine(model_id, KNOBS)
     eos = _eos_ids(tok)
     rng = random.Random(SEED + index)
@@ -418,6 +423,7 @@ def main(argv=None) -> int:
     started = time.perf_counter()
     processes = 1 if args.stage == "pilot" else args.processes
     runs, aborted = [], None
+    gate = bench.MemoryGate()  # R11: swap, not a byte count
     for index in range(processes):
         if time.perf_counter() - started > 45 * 60:
             aborted = "wall_limit"
@@ -427,8 +433,14 @@ def main(argv=None) -> int:
         runs.append(run)
         print(f"process {index+1}/{processes} done, {len(run['runs'])} runs, "
               f"peak {run['mlx_peak_bytes']/1e9:.2f} GB", flush=True)
-        if run["mlx_peak_bytes"] > 12 * 1024**3:
-            print("ABORT memory limit")
+        stop = gate.check(index, run["mlx_peak_bytes"])
+        if stop:
+            # `aborted` exists and the wall-limit branch above sets it, but this branch
+            # did not: a memory abort wrote `"aborted": null` and the file then claimed
+            # completeness rather than merely failing to mention it. Filling the existing
+            # field is a bug fix, not the schema change R10 has to decide.
+            aborted = f"memory_gate: {stop}"
+            print(f"ABORT {stop}")
             break
 
     payload = {"experiment": "E15", "stage": args.stage, "runs": runs, "aborted": aborted,

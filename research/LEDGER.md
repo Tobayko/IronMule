@@ -3,8 +3,11 @@
 Status vocabulary: MEASURED, REPRODUCED, NOT_REPRODUCED, PARTIALLY_REPRODUCED,
 HYPOTHESIS, INFERRED, REJECTED, OPEN, COMPATIBILITY_QUALIFIED.
 
-Raw data for every entry lives in `research/raw/<ID>.json`. Negative results are
-never removed.
+Raw data for every entry lives in `research/raw/<ID>.json` **on the machine that ran
+it**. Those files can carry prompts and absolute paths, so `.gitignore` keeps them out
+of the repository; what ships is the redacted `*_public_summary_*.json` next to them.
+A raw file named here without a link is therefore local evidence, not a missing file.
+Negative results are never removed.
 
 | ID | Question | Result | Status |
 | :-- | :-- | :-- | :-- |
@@ -1012,7 +1015,9 @@ everywhere. Generated token counts equal everywhere.
 Generated token IDs: identical at `b = 2` (8/8) and `b = 4` (16/16). At `b = 8`,
 **one sequence — row 3 — differs by exactly one token**, at index 6 of 8
 (`1437` against `1580`, converging again at index 7), and it does so **in all four
-processes**. Deterministic, reproducible, confined to `b = 8`.
+blocks**. Deterministic, reproducible, confined to `b = 8`. (Blocks, not OS processes:
+see limitation `M2` below — `e14b_arms.py` loops in one interpreter, and this entry
+said "processes" before that was noticed.)
 
 Batched execution at `b = 8` is therefore **not interchangeable** with batch-1
 execution on this workload. **E14b derives no quality claim from this**; that is
@@ -1176,6 +1181,177 @@ a product decision that needs a target, not another experiment. Not built.
 **Status** MEASURED. **Raw** `E15_preregistration.md`, `E15_results_pilot.json`,
 `E15_results_main_aborted.json`, `E15_results_main.json`, `E15_summary.json`.
 
+## B7 — Which term dominates the falling grouping gain
+
+**Preregistration** written before measurement, SHA-256 of the completed document
+`1a0f6aeb…1266`. **It was not committed before the run**, unlike `E14`, `E14b`, `E15`
+and `E16`, and the hash covers a document that now also contains the results.
+
+Precisely which claim that costs, since "weaker evidence" is too vague to act on:
+
+- **Not supported:** that the four candidate outcomes, and the specific figures `1.41×`
+  and `2–3×`, were chosen before the data were seen. A reader cannot rule out that they
+  were fitted afterwards to make the result land cleanly on one of them. Every statement
+  in this entry of the form *"as predicted in advance"* rests on trust alone.
+- **Unaffected:** the finding itself. `SCALING.md`'s `0.41` prediction and the
+  layer-count and weight-traffic reasoning behind it are committed in this repository and
+  predate this run by weeks. The central claim — that both of its terms are
+  misspecified — compares measurements against a *published* prediction, not against
+  mine. That comparison stands whatever the status of my document.
+
+So the un-frozen preregistration costs the framing, not the result. The fix for the next
+run is procedural and cheap: commit the preregistration first, then measure.
+
+**Two model sizes, one machine, `0de69b6`.** `gemma-3-4b-it-4bit` and
+`gemma-3-12b-it-4bit`, AC power, swap `0.06 MB` throughout, `research/e14b_arms.py`
+unmodified. 4B: 4 blocks × 7 repeats. 12B: 1 block × 7 repeats after the memory guard
+aborted the run — see Execution.
+
+### Result `ANSWERED_BOTH_TERMS_MISSPECIFIED`
+
+`SCALING.md` predicts the recoverable share falls to `0.41` of its 4B value. The ledger
+measured `11.81 / 19.24 = 0.61`. This run measures `10.34 / 16.36 = 0.63` at batch 8,
+from an independent set of measurements, and shows why the prediction missed: **both of
+its terms are wrong, in opposite directions, and partly cancel.**
+
+| Growth, 4B → 12B, arm A | Predicted | Measured | Stability across batches 1–8 |
+| :-- | --: | --: | :-- |
+| `submission_ns` | 1.41× (layer count 34 → 48) | **3.68×** | 3.68 / 3.77 / 3.72 / 3.68 |
+| `completion_wait_ns` | 2–3× (parameters ÷ bandwidth) | **1.50×** | 1.49 / 1.49 / 1.50 / 1.50 |
+
+Host work grows 2.6× faster than the kernel-count model allows. Device time grows at
+half the low end of its estimate. Neither term is individually close.
+
+*(Reviewer's correction, kept visible rather than silently fixed: an earlier draft of
+this entry claimed the backlog's `62` layers for 27B was wrong and should be `64`. It
+is not. Gemma 3 27B has 62 layers, which is what `B7` and the model table mean. The
+only 27B in this machine's cache is `Qwen3.8-27B-4bit`, which has 64 — verified from
+`config.json`, alongside Gemma 4B at 34 and 12B at 48. The draft read the one config it
+could open and attributed it to the other family: exactly the size-versus-family
+confusion this entry's own Validity section warns about, and the reason `B26` exists.)*
+
+### The step becomes more host-bound as the model grows, not less
+
+| `submission_ns` ÷ `completion_wait_ns`, arm A | batch 1 | batch 8 |
+| :-- | --: | --: |
+| 4B | 1.02× | 1.04× |
+| 12B | 2.52× | 2.56× |
+
+At 4B the two are balanced. At 12B the submission window is `187 ms` of a `268 ms` step.
+`SCALING.md` assumes fixed host overhead becomes a *smaller* share as models grow; the
+opposite is measured. Tier 2 (`B8`, `B9`, `B10`) is therefore aimed at the term that
+dominates at scale, and is worth **more** at 12B than at the 4B where the evidence for
+it was gathered. This does not contradict the backlog's warning that those entries
+shrink the headline ratio — they would shrink it precisely by removing the largest
+absolute cost.
+
+### What remains INFERRED, and the hard dependency it creates
+
+`submission_ns` is **not** host work and must not be read as such. At 4B batch 8, arm B
+submits for `73.53 ms` then waits `10.11 ms`; arm A submits `50.85` and waits `48.79`.
+Identical work and shapes. Arm B's window is larger *because device execution happens
+inside it* — that overlap is the mechanism `E14b` identified and the product is built
+on. The split therefore measures windows on a wall clock, not host and device costs.
+
+Every comparison above survives this, because each is within one arm across model sizes.
+The next question — what fraction of the growing submission window is Python and what
+fraction is the device — is **not answerable with this instrument at all**.
+
+That makes `B24` ("Stop measuring the GPU with a wall clock") a hard prerequisite, not a
+methodological preference: **`B8`, `B9` and `B10` cannot be sized until real device
+counters exist.** Recommend recording that dependency in those three entries, not only
+in `B24`.
+
+### Execution
+
+| Model | Blocks | Repeats | Wall | Outcome |
+| :-- | :-- | --: | --: | :-- |
+| 4B pilot | 1 | — | 13 s | completed |
+| 4B main | 4 | 7 | 189 s | completed |
+| 12B main | 1 of 4 | 7 | 157 s | **aborted at the 12 GiB guard** |
+
+The 12B abort is `M2`/`M3` reproduced, not discovered. Cumulative MLX peak across 4B
+blocks was `6.37 → 7.28 → 9.36 → 11.53 GB`, against `M2`'s recorded
+`7.07 → 7.07 → 9.24 → 11.25 GB`; 12B reported `17.51 GB` and broke the loop.
+
+**Correction to an earlier reading of this abort.** A confirmation run on `7428126`,
+which resets the MLX peak counter per block, reports 4B peaks of
+`6.37 → 6.37 → 6.37 → 8.43 GB` — the accumulation is demonstrably gone — but 12B again
+reports **exactly `17.51 GB`** and aborts at the same place. Block 1 has nothing to
+accumulate, so that figure was never inflated: it is 12B's genuine per-block peak, and
+it legitimately exceeds the 12 GiB guard. The cumulative-mark defect is real and affects
+blocks 2 and later; it is **not** what truncated 12B. 12B simply does not fit under this
+guard, fix or no fix — the same situation as 27B at `14.98 GiB` of weights. Any earlier
+statement here that the guard "fired on an inflated value" applied to 4B's near-miss,
+not to 12B's abort.
+
+Two things about the abort are new. `M3` attributes its abort to a prefill cache, not to
+a guard reading a cumulative high-water mark, so the guard's early firing on later blocks
+is not on record. And the abort is **invisible in the result file**: it prints to stdout
+only, so `B7_12b.json` looks like an ordinary result with `runs: 1`. Without the console
+log this deviation would have gone unnoticed. Both are fixed or filed (`7428126`, `R10`).
+
+`M2` states that "within-block arm comparison is unaffected, since drift hits every arm
+in a block alike". Every comparison in this entry is within-block and within-arm, so the
+truncation costs sample count and bootstrap independence, neither of which this analysis
+uses. The 12B ratios are additionally stable to `±0.05` across four batch sizes.
+
+**What the truncation does cost, stated plainly.** Every ratio in this entry divides a
+median over four 4B blocks by a median over *one* 12B block, and the `±0.05` stability
+is across batch sizes inside that single block — batch sizes share a block's state, so
+that is not evidence about block-to-block variation at 12B, which is simply unmeasured.
+Recomputed from the raw files by the reviewer, the 4B side does put a bound on how much
+this is likely to matter: across its four blocks, arm A batch 8 `submission_ns` medians
+are `49.77 / 51.00 / 50.98 / 50.41 ms`, a spread of `2.5%`, and `completion_wait_ns` are
+`48.91 / 48.70 / 48.77 / 48.81 ms`, a spread of `0.4%`. Carrying the 4B spread through
+moves `submission` from `3.69×` to the range `3.67–3.76×` and leaves
+`completion_wait` at `1.49–1.50×`. Neither excursion comes near closing the gap to the
+predicted `1.41×` and `2–3×`, so the conclusion holds — but it holds on the assumption
+that 12B's block-to-block behaviour resembles 4B's, and that assumption is untested.
+
+### The confirmation run was discarded, and why that is reported rather than buried
+
+The `7428126` confirmation run above is **not evidence and none of its numbers appear in
+this entry's tables.** Preregistered kill criterion 2 reads "swap delta is nonzero at any
+model size". Swap during the original runs was `0.06 MB` throughout. During the
+confirmation run macOS grew the swap file from 1 GB to 4 GB and reached `2816 MB` in use.
+The criterion fired, so the run is discarded. It was written down in advance precisely so
+it could not be reasoned away afterwards once the numbers looked convenient.
+
+Read only as a robustness check, and labelled as coming from invalidated data, it says
+something worth recording. Every cell slowed by a uniform `1.10×`–`1.15×` — both arms,
+both model sizes, all four batch sizes — which is the signature of machine-wide memory
+pressure rather than a selective effect. Because it is uniform, it cancels in the ratios
+this entry actually uses:
+
+| `submission` 4B → 12B | batch 1 | batch 2 | batch 4 | batch 8 |
+| :-- | --: | --: | --: | --: |
+| valid run | 3.68 | 3.77 | 3.72 | 3.68 |
+| discarded run | 3.66 | 3.75 | 3.71 | 3.66 |
+
+The finding survives a 12% machine-wide slowdown intact. That is a stronger statement
+about its robustness than a clean second run would have been — but it is a remark, not a
+result, and the entry's numbers remain the swap-free ones.
+
+### Side result: `B28` reproduced on a second model family
+
+The correctness block compares true-batched decode against batch-1 singles. At batch 8,
+sequence 3, position 6: `1580` single, `1437` batched. Deterministic across all four 4B
+blocks; prefill logits bit-equal, so the divergence arises in decode.
+
+Arm C is **True Batch**, which IronMule does not route. Arm B, the shipped
+`ThroughputMode`, stays token-identical throughout. This is `B28`'s Qwen-only correctness
+rejection reproduced on Gemma, and is evidence **for** the decision not to ship true
+batching — not a defect in the runtime.
+
+### Validity
+
+One machine, two sizes, one family, one MLX build, greedy decoding. 27B was not run: at
+a true per-arm peak near 17 GB it is feasible on 32 GB only after `7428126`, and peak
+figures from before that commit are cumulative rather than per-block and must not be
+tabulated against ones from after it. Nothing here separates model size from model
+family — that remains `B26`. `docs/LIMITS.md` is unchanged by this entry.
+
 ## E16 — Replication of the W=4 gain under real process boundaries
 
 **Preregistration** `research/raw/E16_preregistration.md`, frozen at `a35cb36`,
@@ -1338,12 +1514,12 @@ was enabled. This is a throughput result, not a correctness failure.
 
 ### B35 — Exploratory portability screen for the non-mutating core profile
 
-**Preregistration.** [`B35_preregistration.md`](raw/B35_preregistration.md) froze
+**Preregistration.** `B35_preregistration.md` froze
 an exploratory screen of `BASELINE=Knobs()` against
 `Knobs(compiled_fixed_cache=True, head_skip_prefill=True)` with the repository
 prompt, `max_tokens=32`, two warmups, five repeats, balanced AB/BA, one model
 load per fresh OS process, exact token gates, peak-memory `+10%`, swap `256 MiB`,
-and no-crash gates. [`B35a_preregistration.md`](raw/B35a_preregistration.md)
+and no-crash gates. `B35a_preregistration.md`
 added only the clean-environment correction after the first 1B process overlapped
 broad filesystem searches; no arms, thresholds, or workload changed.
 
@@ -1356,7 +1532,7 @@ digests are recorded in each raw file.
 
 **Invalid first attempt.** The first 1B AB worker completed but ran while broad
 `find` searches were active. It is retained as
-[`B35_gemma1b_AB_20260828.json`](raw/B35_gemma1b_AB_20260828.json), marked
+`B35_gemma1b_AB_20260828.json`, marked
 `valid_for_metrics: false`, and contributes no performance number.
 
 **Clean result.** Each model completed two fresh processes (AB and BA), with
@@ -1388,15 +1564,15 @@ arm order may interact with thermal, allocator/cache, or compiled state. No
 shipping, routing, profile activation, or cross-model/general performance claim
 is made. Follow-up is tracked as B36: remeasure with arm-isolated fresh processes.
 
-**Raw evidence.** [`B35_gemma1b_AB_clean_20260828.json`](raw/B35_gemma1b_AB_clean_20260828.json),
-[`B35_gemma1b_BA_clean_20260828.json`](raw/B35_gemma1b_BA_clean_20260828.json),
-[`B35_gemma4b_AB_clean_20260828.json`](raw/B35_gemma4b_AB_clean_20260828.json),
-[`B35_gemma4b_BA_clean_20260828.json`](raw/B35_gemma4b_BA_clean_20260828.json),
-[`B35_gemma12b_AB_clean_20260828.json`](raw/B35_gemma12b_AB_clean_20260828.json),
-and [`B35_gemma12b_BA_clean_20260828.json`](raw/B35_gemma12b_BA_clean_20260828.json).
+**Raw evidence.** `B35_gemma1b_AB_clean_20260828.json`,
+`B35_gemma1b_BA_clean_20260828.json`,
+`B35_gemma4b_AB_clean_20260828.json`,
+`B35_gemma4b_BA_clean_20260828.json`,
+`B35_gemma12b_AB_clean_20260828.json`,
+and `B35_gemma12b_BA_clean_20260828.json`.
 
 **Review limitations (2026-08-28).** The independent review is recorded in
-[`B35_review.md`](raw/B35_review.md). The worker's per-arm swap gate starts only
+`B35_review.md`. The worker's per-arm swap gate starts only
 after model load and therefore does not cover load-time swap; external post-run
 swap checks found no new issue but do not repair this raw-gate gap. The worker
 also sets `hard_gates.no_crash` to constant `true`: external process-list and
@@ -1473,7 +1649,7 @@ Die RSS-Form A `2.17 -> 1.26 GB` während der Checkpoints gegenüber B/D/C nahe
 `7.9 GB`, bei identischem MLX-Active-Memory nahe `7.188 GB`, macht eine
 Prozessreihenfolge-/Page-Residency-Konfundierung plausibel. Eine Attribution
 auf einen Arm ist verboten. Raw:
-[`B39b_pilot_gemma12b_combined_20260828.json`](raw/B39b_pilot_gemma12b_combined_20260828.json).
+`B39b_pilot_gemma12b_combined_20260828.json`.
 Finalstatus `INCONCLUSIVE`, `activation_allowed=false`; kein Main-Lauf, kein
 Retry, kein Routing/keine Aktivierung. B39c mit zwei neuen Crossover-Blöcken
 bleibt nach sauberem Zustand ausstehend; diese Pilotdaten werden nicht
@@ -1486,7 +1662,7 @@ script path and failed before parent initialization with return code `1`:
 `ModuleNotFoundError: No module named 'research'` at
 `research/b39_combined_levers.py:22`. No model or child ran, no JSON or partial
 was created, crash reports remained `30 -> 30`, and no residual process
-remained. Raw: [`B39_pilot_import_failure_20260828.json`](raw/B39_pilot_import_failure_20260828.json).
+remained. Raw: `B39_pilot_import_failure_20260828.json`.
 
 **B39a module pilot.** The corrected module invocation attempted only arm A.
 The child returned `3` at `after_model_load` with
@@ -1498,7 +1674,7 @@ resource/swap failure. The exact child subtype (swap, memory, or instrumentation
 is unobservable because child events were discarded. Crash delta was `0` and
 there was no residual model process. The parent then raised
 `StatisticsError: no median for empty data`, wrote no final JSON, and retained
-the partial sidecar. Raw: [`B39a_pilot_failure_20260828.json`](raw/B39a_pilot_failure_20260828.json).
+the partial sidecar. Raw: `B39a_pilot_failure_20260828.json`.
 No retry and no B39 main run occurred; this is not a measurement.
 
 **B39b.** B39b is a safety/evidence-only correction with SHA-256
@@ -1679,7 +1855,7 @@ Der freigegebene B39d-Hauptlauf wurde mit exakt acht frozen Orders
 OS-Children abgeschlossen. Jeder Child lud Gemma 3 12B einmal, führte zwei
 Warmups und fünf Mess-Repeats auf dem X1-strict-Workload mit sechs Requests und
 `max_tokens=48` aus. Ergebnis und Rohsamples stehen in
-[`B39d_gemma12b_combined_20260828.json`](raw/B39d_gemma12b_combined_20260828.json).
+`B39d_gemma12b_combined_20260828.json`.
 
 **Gates und Identität.** Top- und Summary-Status sind `QUALIFIED`,
 `valid_for_performance=true`, `activation_allowed=false`; acht Blöcke und 32
@@ -1741,7 +1917,7 @@ Der B40-Lauf wurde mit sechs mirrored Orders
 `W2/W3/W4` abgeschlossen. Alle 18 Children waren frische serielle
 Ein-Prozess-Läufe mit einem Model-Load, zwei Warmups und fünf Mess-Repeats auf
 dem unveränderten Gemma-12B-X1-Workload. Rohdaten:
-[`B40_gemma12b_width_sweep_20260828.json`](raw/B40_gemma12b_width_sweep_20260828.json);
+`B40_gemma12b_width_sweep_20260828.json`;
 das Partial blieb wegen des inconclusive Ergebnisses erhalten.
 
 **Safety und Korrektheit.** Alle 18 Children lieferten Returncode `0`,
@@ -1832,3 +2008,396 @@ separate pre/post system-state record for every child. The pilot is therefore
 correctness/safety evidence only and is `INCONCLUSIVE_FOR_CONFIRMATION`: no retry,
 pooling, speed claim, confirmation or activation follows. Public path-free evidence:
 [`B3-U2_public_summary_20260828.json`](raw/B3-U2_public_summary_20260828.json).
+
+## B27a/B27a1/B27a2 — Evidence inventory and current-main engineering baseline (2026-08-28)
+
+**Read-only corpus audit.** B27 began by inventorying the current branch and the
+preserved local unpublished evidence worktree without modifying either source. The
+snapshot contains 134 artifact occurrences and 92 unique content hashes: 40
+preregistrations, 16 preregistration checksums, 48 raw results, 14 legacy summaries,
+5 public summaries, 6 reviews and 5 retained partials. Fifty-one occurrences are
+local-only/ignored and remain local. All 72 JSON artifacts parsed, but structural
+coverage is heterogeneous: environment 43/72, workload 52/72, baseline and candidate
+25/72 each, measurements 43/72, correctness 37/72, resources 64/72 and provenance
+53/72. Presence is not semantic validation. The inventory dataset SHA-256 is
+`ee414c9ee51c6e583ada094444ce66d5e22dca6c15c197dda1d7cd004e30bf32`;
+the tracked summary is [`docs/B27_EVIDENCE_INVENTORY.md`](../docs/B27_EVIDENCE_INVENTORY.md).
+This corpus is not safe to merge into a learned dataset without per-record quality,
+replayability, missingness, censoring and leakage validation.
+
+**Two pre-measurement failures are retained.** B27a stopped in `model_binding`
+because Hugging Face's offline snapshot resolver required optional `.gitattributes`
+and `README.md` files that are not needed by the already-used local model snapshot.
+B27a1 replaced only that resolver with exact read-only cache-index selection, then
+stopped at the same stage because direct `research/...py` invocation did not place the
+repository root on `sys.path`. No model or benchmark arm ran in either attempt, system
+swap stayed `0 B`, and no timing was observed. B27a2 changed only the invocation to
+`python -m research.b27_main_baseline`. Failure-record SHA-256 values are
+`e5e7ab91218a4e7a7dcd2544efc3b44fbfdbed6fefce70cadd4f5c1c366e306a` and
+`dd09d2e2cc4a2ad9ac95272c4d464ff029730e82dcc3475d374683e0ad1e2260`.
+No result was retried or pooled.
+
+**Baseline protocol.** Base commit
+`d422fdb00fced3238dfaa6b5e9e993294adb72cd`; runtime-tree SHA-256
+`ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385`;
+Apple M1 Max, 32 GB, AC, macOS `26.5.2`, Python/MLX/mlx-lm
+`3.12.13/0.32.0/0.31.3`. Each model ran in a fresh serial process from its exact
+already-cached revision, strict plan and `BASELINE=Knobs()`, with no stored profile:
+six requests, 48 output tokens, two warmups and six alternating measured repeats per
+Interactive/Throughput arm. One model was shared between arms, so this is an
+engineering baseline rather than fresh-process-per-arm qualification. The full
+non-integration suite passed `119 passed, 11 deselected` in `7.04 s`; B27 harness and
+inventory tests passed `6`; Xcode first-launch status and IronMule doctor were green.
+
+| Model | Interactive outer p50 | Throughput outer p50 | wall ratio [95% CI] | rate ratio [95% CI] | MLX peak | Swap |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Gemma 3 4B, rev `93724907…` | `4141.79 ms` | `3492.57 ms` | `0.84374 [0.83977; 0.84889]` | `1.18520 [1.17802; 1.19080]` | `2,784,918,618 B` | `0 B` |
+| Gemma 3 12B, rev `86cc6a8d…` | `11306.16 ms` | `10098.55 ms` | `0.87871 [0.87331; 0.91457]` | `1.13804 [1.09349; 1.14508]` | `7,801,383,003 B` | `0 B` |
+
+Both cells are `BASELINE_CAPTURED`: exact token/stop/count identity, zero fallbacks,
+zero correctness errors, zero swap growth, and no residual model process. Raw-record
+SHA-256 values are
+`e1e9b7ce3248b83fced553334b452404bf47931d02e2352f2aed8d96f55607a0` (4B) and
+`7276ee6505a58ca176561f8e66f2087616d9682aa44273d1f7ddad51a6311d98`
+(12B). The path-free publication artifact is
+[`B27a2_public_summary_20260828.json`](raw/B27a2_public_summary_20260828.json).
+
+**Decision and limits.** This freezes the current-main behavior and protects the
+existing grouped batch-1 path as a regression reference. It does not pool with B39d or
+B40, qualify a new speed claim, activate a profile, compare against stock `mlx_lm`, or
+generalize beyond the exact cells. The engineering observation that the same grouping
+ratio is smaller at 12B than 4B is directionally consistent with earlier scaling
+evidence but is not promoted. No model above 12B was run and nothing was downloaded or
+installed. Phase C must resolve the exact model/revision/quantisation contract,
+heterogeneous evidence statuses, stock-MLX fairness and fresh-process regression
+method before any new routing abstraction is integrated.
+
+**Final branch verification.** After the audit, documentation and static local-history
+UI and verifier were added, the serial non-integration suite passed
+`124 passed, 11 deselected` in `5.27 s`; the existing real Gemma-4B integration suite
+passed `10/10` in `20.83 s`.
+The model-test preflight again recorded system swap `0 B` and no competing model
+process. The dashboard generator/escaping checks pass and use no scripts or external
+assets. In-app visual navigation to a local `file://` URL was blocked by the browser
+security policy; no local-server or alternate-browser workaround was attempted.
+
+**Evidence-integrity follow-up.** The stdlib-only verifier
+`research/b27_verify_public_summary.py` compared the path-free B27 publication
+artifact against both immutable model raw records and both preserved pre-measurement
+failure records. It checked the exact model/revision/manifest/quantisation binding,
+runtime tree/base commit, protocol, published medians and intervals, token identity,
+resources, raw hashes, failure type/stage and local-path absence. Result: `ok=true`,
+two cells, two failures, zero errors, `activation_allowed=false`, and no qualification
+change. Verification artifact SHA-256:
+`752b01b8f20dc695ed610762e3c9f4b8774a97075c5558199704834504bf684e`.
+The exact unapproved D1 type/status/domain contract and its kill criteria are recorded
+in [`docs/B27_PHASE_D_CONTRACT_PROPOSAL.md`](../docs/B27_PHASE_D_CONTRACT_PROPOSAL.md);
+it changes no runtime behavior and still requires architecture approval.
+
+## B27 D1 — Approved evidence-contract implementation, pre-measurement (2026-08-28)
+
+The user explicitly approved D1 after the Phase-A–C commit `467d5b8`. D1 adds
+`ironmule/evidence.py`, a stdlib-only immutable contract for execution strategies,
+validity domains, evaluator-owned evidence and trusted profiles. It is not imported by
+Runtime, package root, plans, modes, executors, tuner, benchmark, telemetry or
+fingerprint and exposes no execution, persistence, selection or activation method.
+
+The implementation closes direct profile-deserialization and self-evaluation bypasses,
+requires exact model/revision/manifest/quantisation and closed workload buckets,
+separates experiment verdicts from the six lifecycle states, requires raw samples plus
+correctness/resource/uncertainty gates for `QUALIFIED`, and turns any domain mismatch
+into `REVALIDATION_REQUIRED`. The B27 public adapter is deliberately
+`INCONCLUSIVE/SUMMARY_ONLY` and does not invent missing state, crash, RSS or absolute
+swap evidence.
+
+Pre-measurement verification passed: 15 focused D1 tests, 26 final
+D1/baseline/comparison tests, the full serial non-integration suite at
+`146 passed, 11 deselected` in `5.21 s`, and the existing real Gemma-4B integration
+suite at `10/10` in `21.24 s`; pre-integration swap was `0 B`. The independent static
+review is [`B27d_review.md`](raw/B27d_review.md), SHA-256
+`9d146b69d5644a02fb40a127e8927085a47a7a70d2a92e1f6daaa991e6d4a91f`.
+The post-change experiment is sealed in
+[`B27d_preregistration.md`](raw/B27d_preregistration.md), SHA-256
+`846e09499a0eb4f9ff531a6302da9c7913e8b6f620d6ad7834dcaf7fda44de36`.
+No post-D1 model timing had been observed when this entry was written.
+
+## B27d — D1 post-change regression screen (2026-08-28)
+
+**Protocol and binding.** B27d ran from clean commit
+`0b14eb6f134edc42701ebb1e1a85a1bd484d12d1`, runtime-tree SHA-256
+`d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21`.
+Exact cached Gemma 3 4B and 12B revisions used the B27a2 strict/base-knob protocol:
+six requests, 48 tokens, two warmups and six measured repeats per Interactive and
+Throughput arm. Both cells started at 83% free memory, AC, low-power false, swap `0 B`,
+with no competing model process.
+
+**Correctness/resources.** Both cells are `BASELINE_CAPTURED`: exact arm token/stop/
+count identity, zero fallback/correctness errors, zero swap delta and no residual
+process. MLX peaks were `2,784,922,186 B` (4B) and `7,801,381,947 B` (12B).
+Raw SHA-256 values are
+`10071669abb6c45871bf3d5eec0df3f37104341bb197394a840bf64e46a7be44` and
+`41d9bd16b179357ae1d99edf26abba135d1c2b8315bc5c47c421868f5b977a96`.
+
+**Frozen result:** `INCONCLUSIVE_POTENTIAL_REGRESSION`, regression kind
+`POTENTIAL_CODE_REGRESSION`. Ratios are post/pre with independent 10,000-resample
+bootstrap intervals:
+
+| Model/arm | Wall ratio [95% CI] | Physical-rate ratio [95% CI] | 5% gate |
+| --- | ---: | ---: | --- |
+| 12B Interactive | `1.0055 [0.9815; 1.0288]` | `0.9943 [0.9720; 1.0189]` | pass |
+| 12B Throughput | `0.9995 [0.9864; 1.0224]` | `1.0006 [0.9788; 1.0136]` | pass |
+| 4B Interactive | `1.0575 [1.0530; 1.0621]` | `0.9456 [0.9417; 0.9496]` | miss |
+| 4B Throughput | `1.0643 [1.0571; 1.0676]` | `0.9396 [0.9366; 0.9460]` | miss |
+
+The 4B movement is common-mode: both absolute arms slow together, while the within-cell
+grouping wall ratio changes only `0.8437 -> 0.8483` and the rate ratio
+`1.1852 -> 1.1789`. The 12B endpoints are unchanged. The post 4B process also began
+with higher load averages, and the only `ironmule/` source added between commits is the
+non-imported D1 module. Those diagnostics weaken a causal-code reading but do not
+override the preregistered result.
+
+**Decision.** D1 remains outside the runtime import/execution path and is not activated.
+No no-regression or performance-safety claim is made. B27d is not retried or pooled.
+Its path-free summary was recomputed byte-identically; SHA-256
+`ed2129005ab96df2a103808108c9c5fb0f63e871d7f33caace628e8ef7848c37`.
+The new backlog entry B27e preregisters the next mechanism-level discriminator:
+mirrored fresh-process 4B runs across the pre-D1 and D1 commits, using only new data.
+
+**Final handoff verification.** On the documented B27d result state, the full serial
+non-integration suite passed `146 passed, 11 deselected` in `5.18 s`; the existing real
+Gemma-4B integration suite passed `10/10` in `21.12 s`. Pre-integration swap was `0 B`
+and no model process was present.
+
+## B27e — Mirrored cross-commit control, pre-measurement (2026-08-29)
+
+B27e is sealed as a new control rather than a B27d retry. It uses two detached exact
+targets (`467d5b8` OLD and `0b14eb6` D1), proves their declared 16-file execution
+surfaces byte-identical, and runs four new fresh 4B processes in mirrored order
+OLD/D1 then D1/OLD. No B27a2/B27d timing is pooled.
+
+The parent/child harness passed 10 focused tests; the full serial suite passed
+`151 passed, 11 deselected` in `5.15 s`. Harness SHA-256 is
+`bde2181490389e3838c73be1ed2d6c2e58a4bdfa094ab8ee3497528133a1283d`;
+review SHA-256
+`7803639a8ebaf4ec8fa900253522aae7c5c14741059bf3e2f531f054ef2774bf`;
+preregistration SHA-256
+`78bec8adb2757ae833146cde0d7cd1e4ad78f8418689761e02707b3b980e32f4`.
+No B27e model timing had been observed when this entry was written.
+
+## B27e — Mirrored cross-commit control result (2026-08-29)
+
+**Binding and execution.** Two clean detached targets ran exact commits
+`467d5b8bfb187cd3dad46cc87e6ada5afbf033dc` (OLD) and
+`0b14eb6f134edc42701ebb1e1a85a1bd484d12d1` (D1). Their declared 16-file execution
+surface was byte-identical, SHA-256
+`ec242cc4872014d7994c6e11cf0b32bbf145ecca4eac32088c697059e2e48385`;
+OLD had no D1 module and D1's module matched its sealed hash. Each target had a private
+ignored ProjectAtlas index.
+
+Four fresh 4B children ran serially in the frozen order OLD/D1 then D1/OLD. Every
+preflight recorded 82% free memory, AC, swap `0 B`, no model process. All four
+returncodes were zero, model/framework/protocol domains matched, token/stop/count
+identity held, and there were no correctness/resource hard failures or residual
+processes.
+
+**Frozen result:** `ORDER_OR_TEMPORAL_DRIFT`; B27d consequence
+`B27D_REMAINS_INCONCLUSIVE`.
+
+| Block/order | Arm | D1/OLD wall | D1/OLD rate | Reading |
+| --- | --- | ---: | ---: | --- |
+| 0 OLD -> D1 | Interactive | `0.9925` | `1.0076` | within 5% |
+| 0 OLD -> D1 | Throughput | `0.9841` | `1.0161` | within 5% |
+| 1 D1 -> OLD | Interactive | `0.9422` | `1.0613` | D1 appears faster |
+| 1 D1 -> OLD | Throughput | `0.9267` | `1.0790` | D1 appears faster |
+
+D1 was not slower in either block, so B27d's common-mode 4B slowdown did not reproduce
+as a consistent commit association. The mirrored magnitude changed materially with
+order/time, but the preregistered design requires every comparison inside 5% before
+calling commits indistinguishable. The result therefore cannot be upgraded to
+neutrality; it also provides no evidence for removing D1. No routing or activation
+follows.
+
+Raw SHA-256 values: parent
+`ecd2c18306083bf59f2e370c0192ef8148beac97852dacff99c0fead5cd3e20a`;
+children `2070d965…`, `63a3264e…`, `ae645093…`, `78c16b18…` in execution order.
+The path-free summary SHA-256 is
+`d80960b022f3f506f592d5e4db19a1aabda07492d5db2c09e40469ad474f4f94`
+and was recomputed byte-identically from parent-bound child hashes.
+
+**Artifact-name incident.** The measured harness hardcoded a `20260828` suffix in the
+four private child filenames although the records, parent and public artifact are
+correctly B27e/2026-08-29. No existing file was overwritten and content/hash/analysis
+is unaffected. The records were not renamed or rerun. The post-result harness now
+requires an explicit validated `YYYYMMDD` argument and its reanalysis path rejects any
+changed child hash. This is a tooling correction, not new evidence.
+
+**Decision.** B27e leaves B27d formally inconclusive and closes its own backlog entry;
+the same two-block unconditioned control is not rerun. D1 remains immutable,
+non-imported and unactivated. A further architecture or conditioned measurement stage
+requires a new explicit decision rather than inference from these data.
+
+**Final verification.** The complete serial result-state suite passed
+`153 passed, 11 deselected` in `5.12 s`; the real Gemma-4B integration suite passed
+`10/10` in `21.17 s`. Pre-integration swap was `0 B` and no model process was present.
+
+## D2a — Exact-identity pre-change baseline, pre-measurement (2026-08-29)
+
+The user explicitly approved D2: exact local revision/manifest/architecture/
+quantisation/tokenizer propagation into Runtime fingerprints and tuned-profile
+compatibility, with no strategy selection, EvidenceRecord persistence or activation.
+
+D2a is a new same-day pre-change baseline on the clean commit containing its sealed
+protocol. Runtime-tree SHA must remain `d7577a…`; baseline harness SHA-256 is
+`e6d981583384d4b526af32eb508579a79815bebabea0c64c8a2f4d99ebfe74d4`;
+contract/review SHA-256 values are `ebfb372f…` and `8327a778…`.
+Gemma 3 4B then 12B use the strict six-request/48-token, 2-warmup/6-repeat protocol
+with exact local snapshots and no stored profile. D2a never pools B27 data and creates
+no qualification. No D2a timing had been observed when this entry was written.
+
+## D2a — Exact-identity pre-change baseline result (2026-08-29)
+
+Both new same-day cells completed as `BASELINE_CAPTURED` on clean commit
+`a0778e12cc0cee6d7a62523ce6b18593998fe619`, unchanged runtime-tree SHA-256
+`d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21`.
+Preflight was 87% free memory, AC, low-power false, swap `0 B`; outputs were
+token/stop/count identical with zero fallback/correctness errors and zero swap delta.
+
+| Model | Interactive outer/rate | Throughput outer/rate | MLX peak |
+| --- | ---: | ---: | ---: |
+| Gemma 3 4B | `3939.53 ms / 73.105 tok/s` | `3367.33 ms / 85.528 tok/s` | `2,784,919,610 B` |
+| Gemma 3 12B | `10076.32 ms / 28.583 tok/s` | `8822.69 ms / 32.644 tok/s` | `7,801,366,427 B` |
+
+Raw SHA-256 values are
+`c012c9a3e9b25d995e940d363137238f717a42ccae611f52354d7779cbad39d9`
+and `745d63222c42937e72bfb5b32b5e5773ed727b6f3366b229dcd2c0f5c76817aa`.
+The path-free summary recomputes byte-identically, SHA-256
+`6eddb942af04addb245e624b189b90e095fc6eb591abe413159541b4f1c63ea6`.
+This is the only pre-change timing source allowed for D2b. No qualification or
+activation follows, and D2 source implementation had not begun at result capture.
+
+Pre-implementation verification passed `155 passed, 11 deselected` in `5.37 s`; the
+latest unchanged-runtime real Gemma-4B integration gate remained `10/10` in `21.17 s`.
+
+## D2 — Exact model identity implementation, pre-measurement (2026-08-29)
+
+D2 is implemented within its approved boundary. The new stdlib-only
+`ironmule.model_identity` resolves one exact local source and creates a path-free
+immutable identity from revision, complete present-file manifest, architecture,
+canonical quantisation and tokenizer artifacts. Runtime fingerprint v2 and
+tuned-profile conditions v2 require every identity field; missing, legacy, ambiguous
+or inconsistent identities fall back to baseline or raise before validity reuse.
+`mlx_lm.load` keeps its two-value caller shape through `load_engine`, and a second
+full identity reconstruction detects a source change during load. Hashing is outside
+the timed `Runtime.serve` path.
+
+The two exact cached identities independently reconstructed by the D2 comparison
+harness are `2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2`
+(Gemma 3 4B) and
+`2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474`
+(Gemma 3 12B). Their manifest digests remain `a405b1a7…` and `aef12412…`;
+both tokenizer and quantisation digests are respectively `afbd505b…` and
+`4952fcd6…`. No file path is serialized.
+
+Pre-D2b verification passed 39 focused identity/comparator/profile tests, the full
+serial non-integration suite at `178 passed, 12 deselected` in `4.98 s`, and the real
+cached Gemma-4B integration suite at `11/11` in `22.14 s`. Post-integration swap was
+`0 B` and no residual model process was present. The old incomplete local profile was
+not reused, including with raw revalidation access. No model or dependency was
+downloaded or installed.
+
+**Recorded execution incident.** One focused pytest command was accidentally invoked
+inside the restricted sandbox. MLX aborted during import with `SIGABRT`/exit `134`
+before any model, test or timing arm ran. Root cause was Metal/MLX initialization in
+the unsupported sandbox. The successful remedy is to run all IronMule pytest/model
+commands serially with the existing project Python outside that sandbox. The corrected
+focused suite passed; the crash is not a measurement and is neither retried as a data
+point nor pooled.
+
+D2 still contains no D1 EvidenceRecord persistence, strategy selection, plan/mode
+routing, automatic activation, download path or inference-semantic change. The
+independent D2b comparator and its 5% correctness/resource/performance gates are
+implemented, but no post-D2 timing had been observed when this entry was written.
+
+## D2b — Exact-identity post-change screen, pre-measurement (2026-08-29)
+
+D2b is sealed against implementation commit
+`7892810584be232cec744c0038ab9b3e069608ea` and runtime-tree SHA-256
+`5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60`.
+It compares only the same-day D2a raw 4B/12B records (`c012c9a3…`, `745d6322…`),
+in fixed 4B-then-12B order. Each post cell must contain the independently
+reconstructed exact Runtime identity and matching fingerprint-v2 fields before the
+correctness/resource and 5% bootstrap regression gates are evaluated.
+
+The implementation review SHA-256 is
+`a0f634a77515741db17e3205ffb827f2d318439e7294ea399eead4a890792e5f`;
+the preregistration SHA-256 is
+`6ffc3a6714aa8ed2a2e71e1ebd6af9a5f284a171e8ba69a5e959f7802c070c1b`.
+No D2b timing had been observed when these documents were sealed. There is no retry,
+pooling, threshold change, qualification, routing or activation consequence.
+
+## D2b — Exact-identity post-change result (2026-08-29)
+
+**Binding and execution.** D2b ran from clean preregistration commit
+`d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5`, with the frozen D2 runtime-tree
+SHA-256 `5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60`.
+The exact cached 4B process ran first, then 12B after memory recovered. Both preflights
+recorded 86% free memory, AC, low-power false, swap `0 B` and no competing model
+process. No download, install, network fallback, retry or sample pooling occurred.
+
+**Identity, correctness and resources.** The independently reconstructed Runtime
+identities were exactly `2730e8b1…` (4B) and `2b5b13a3…` (12B), and both Interactive
+and Throughput fingerprints matched schema v2 and every revision/manifest/
+architecture/quantisation/tokenizer/aggregate field. Both cells were
+`BASELINE_CAPTURED`; token IDs, stops and counts matched, with zero fallback,
+correctness errors or swap delta. MLX peak was `2,784,918,586 B` (4B) and
+`7,801,367,451 B` (12B). Raw SHA-256 values are
+`bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5` and
+`6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4`.
+
+**Frozen result:** `NO_REGRESSION_OBSERVED`, regression kind `NONE`. Ratios are D2b
+post / same-day D2a pre with the preregistered independent 10,000-resample intervals:
+
+| Model/arm | Wall ratio [95% CI] | Physical-rate ratio [95% CI] | 5% gates |
+| --- | ---: | ---: | --- |
+| 4B Interactive | `0.9978 [0.9969; 0.9993]` | `1.0022 [1.0007; 1.0031]` | pass |
+| 4B Throughput | `1.0000 [0.9943; 1.0031]` | `1.0000 [0.9969; 1.0057]` | pass |
+| 12B Interactive | `0.9888 [0.9681; 1.0055]` | `1.0113 [0.9945; 1.0329]` | pass |
+| 12B Throughput | `1.0077 [0.9851; 1.0243]` | `0.9924 [0.9764; 1.0151]` | pass |
+
+There was no domain drift, hard failure or performance miss. The path-free D2b post
+summary SHA-256 is
+`16741c99e03ce2ab821ff7b40dd42eb105ff57855d74a75ed422882cd8603132`;
+the comparison SHA-256 is
+`0a02d1fed48f742d6c169b083b98a5a6b5fd9dbfee1d43981080f44e75b8144e`.
+Both recomputed byte-identically from the four immutable raw records. Verification
+artifact SHA-256 is
+`19de9149ae5c697cf50c8535bc451c266986df0da81821c4669491b1b20cf221`.
+
+**Decision and limits.** D2/R6 exact identity is complete. The result supports only
+that the approved identity plumbing did not cross its frozen 5% engineering
+regression gates in these two cells. It is not a speed or quality claim, stock-MLX
+comparison, tuned-profile qualification, selection, routing or activation. D1 remains
+unpersisted and no strategy consumes it. Any next B27 architecture stage needs a new
+explicit decision.
+
+**Final verification.** The full serial non-integration suite passed
+`178 passed, 12 deselected` in `5.03 s`; the real cached Gemma-4B integration suite
+passed `11/11` in `22.28 s`. Final swap was `0 B`, memory free `85%`, and no model
+process remained. Xcode and IronMule doctor were green. ProjectAtlas `0.4.5-rc1`
+runtime and project-local MCP configuration were verified; its private index was
+fully refreshed after a dependency-closure-limit warning, and lint returned
+`ok=true`. Worktree alias enumeration reported the known shared-control-repository
+limitation and did not change Git or source files.
+
+**Post-measurement UI repair.** While adding D2b history, the dashboard generator
+revealed an older presentation-only variable-shadowing defect: B27e rows replaced the
+protected baseline table in generated HTML. The cross-control row variable was
+renamed, D2b post/comparison/verification inputs were added, and the local page was
+regenerated with the original baseline rows restored. This happened after all D2b raw
+records and the frozen comparison existed; no runtime, measurement harness, comparator
+or result changed.
+
+The first presentation regression run failed one stale assertion because it still
+expected the earlier D1 suite label (`146 passed`) after D2b correctly became the
+newest verification source (`178 passed`). Updating that expectation fixed the test;
+no rendered metric, raw record or comparison logic changed.

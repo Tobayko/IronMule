@@ -20,6 +20,28 @@ No claim holds outside this box. Another model, another quantisation, another ML
 build or another machine requires re-measurement, which is what the fingerprint
 exists to force.
 
+**B27 D1 is not a runtime optimization or selected profile.** It adds an immutable,
+stdlib-only evidence contract that current runtime modules do not import. The sealed
+B27d post-change engineering screen preserved exact outputs/resources and passed its
+12B regression gates, but both 4B arms were common-mode 5.7–6.4% slower and crossed the
+preregistered 5% intervals. Its result is therefore
+`INCONCLUSIVE_POTENTIAL_REGRESSION`, not proof that D1 is performance-neutral or that
+the slowdown is causal. The separate B27e mirrored cross-commit control then found D1
+within 2% in OLD/D1 order and 5.8–7.9% apparently faster in D1/OLD order. Its frozen
+class is `ORDER_OR_TEMPORAL_DRIFT`: a consistent D1 slowdown was not reproduced, but
+neutrality is still unproved. D1 remains non-imported and unactivated.
+
+**D2 exact model identity is a validity guard, not a speed optimization.** Runtime
+fingerprint v2 and tuned-profile conditions v2 now bind the exact local revision,
+complete manifest, architecture, canonical quantisation and tokenizer digest. Legacy
+or incomplete profiles are rejected, and model identity is hashed only during local
+resolution/load rather than `serve()`. This does not qualify or activate any profile,
+route a request, persist D1 evidence or extend a performance claim. The same-day D2a
+4B/12B pre-change baseline and sealed D2b post-change screen completed with exact
+identity/correctness/resources. D2b's frozen result is `NO_REGRESSION_OBSERVED` under
+its 5% engineering gates, not a speed, quality, qualification or activation claim.
+See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
+
 ## Apple-Silicon inference claims
 
 Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and
@@ -50,7 +72,7 @@ inconclusive; that narrow statement is superseded by B36 only for the exact
 full-hash/prefault protocol. B36 qualifies the core profile under those
 conditions but does not activate it or generalize it. These are recorded in
 [`research/LEDGER.md`](../research/LEDGER.md) and
-[`research/raw/B35_review.md`](../research/raw/B35_review.md) and
+`research/raw/B35_review.md` and
 [`research/raw/B36_review.md`](../research/raw/B36_review.md).
 
 No global 60--70% bandwidth-efficiency constant is validated here. The phase
