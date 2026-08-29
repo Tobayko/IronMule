@@ -44,8 +44,24 @@ step is smaller — which is the shape the table shows.
 
 That reading is consistent with `E2` (a ~4.5 TFLOPS ceiling, `M=8` pathological) and
 `E4` (achieved bandwidth rising from 104 to 324 GB/s as matrices grow from 1.4 to
-360 MB). **It has not been measured here, and no claim is made from it.** It is
-written down so the next experiment can try to refute it.
+360 MB). It was written down so the next experiment could try to refute it.
+
+> **Refuted, 2026-08-29 — `B7`.** It was measured, and the reading above is wrong.
+> Instrumenting submission and device wait per step across 4B and 12B found host work
+> growing `3.68x` where layer count predicts `1.41x`, and device time growing `1.50x`
+> where parameters over bandwidth predicts `2-3x`. Both terms are misspecified, in
+> opposite directions, and partly cancel — which is why the arithmetic looked plausible
+> while being wrong twice.
+>
+> The direction is the part that matters here. `submission ÷ device wait` is `1.02x` at
+> 4B and `2.52x` at 12B: the step becomes **more** host-bound as the model grows, not
+> less, so the recoverable overhead is not a fixed cost being diluted by a longer step.
+> The falling gain in the table above is real and reproduced independently
+> (`10.34 / 16.36 = 0.63` against the ledger's `0.61`), but this explanation of it does
+> not survive. See `B7` in [`../research/LEDGER.md`](../research/LEDGER.md), including
+> what its own instrument cannot answer: `submission_ns` is a wall-clock window with
+> device execution inside it, not host cost, so the split between Python and the device
+> needs real GPU counters (`B24`).
 
 ## What to test next
 
