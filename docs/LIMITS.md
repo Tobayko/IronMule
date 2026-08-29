@@ -31,6 +31,15 @@ within 2% in OLD/D1 order and 5.8–7.9% apparently faster in D1/OLD order. Its 
 class is `ORDER_OR_TEMPORAL_DRIFT`: a consistent D1 slowdown was not reproduced, but
 neutrality is still unproved. D1 remains non-imported and unactivated.
 
+**D2 exact model identity is a validity guard, not a speed optimization.** Runtime
+fingerprint v2 and tuned-profile conditions v2 now bind the exact local revision,
+complete manifest, architecture, canonical quantisation and tokenizer digest. Legacy
+or incomplete profiles are rejected, and model identity is hashed only during local
+resolution/load rather than `serve()`. This does not qualify or activate any profile,
+route a request, persist D1 evidence or extend a performance claim. The same-day D2a
+4B/12B pre-change baseline is frozen; the sealed D2b post-change comparison remains
+pending. See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
+
 ## Apple-Silicon inference claims
 
 Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and

@@ -17,18 +17,31 @@ import subprocess
 import time
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .fast import FusionUnsupported
 from .hw import STORE, fingerprint, probe
+from .model_identity import (
+    ModelIdentity, ModelIdentityError, ResolvedModelSource, build_model_identity,
+    resolve_model_source,
+)
 from .runtime import BASELINE, Engine, Knobs
 
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"
 PROFILES = STORE / "profiles.json"
-OFFLINE_ALLOW_PATTERNS = (
-    "*.safetensors", "*.json", "*.py", "tokenizer.model", "*.tiktoken",
-    "tiktoken.model", "*.txt", "*.jsonl", "*.jinja",
-)
+PROFILE_CONDITIONS_SCHEMA = "ironmule.tuned_profile.conditions.v2"
+PROFILE_CONDITION_FIELDS = {
+    "conditions_schema", "fingerprint", "chip", "memory_bytes", "gpu_cores",
+    "mlx", "mlx_lm", "runtime_version", "model_id", "model_revision",
+    "model_manifest_sha256", "model_architecture", "quantisation",
+    "quantisation_sha256", "tokenizer_sha256", "model_identity_sha256",
+    "power_source", "prompt_tokens", "max_tokens", "execution_plan", "os",
+}
+MODEL_IDENTITY_CONDITION_FIELDS = {
+    "model_id", "model_revision", "model_manifest_sha256", "model_architecture",
+    "quantisation", "quantisation_sha256", "tokenizer_sha256",
+    "model_identity_sha256",
+}
 
 # The predecessor project's planner request, reproduced word for word — including
 # its internal project name — so token counts and therefore timings stay comparable
@@ -71,7 +84,43 @@ REVALIDATE_PROCESSES = 3      # canaries are cheaper than a full confirmation
 HYSTERESIS = 0.02             # a stored winner is only dropped when it clearly lost
 
 
-def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, Any]:
+def resolve_local_model(model_id: str, revision: str | None = None) -> ResolvedModelSource:
+    """Resolve exactly one local source without downloading or changing global state."""
+    local = Path(model_id).expanduser()
+    if local.is_dir():
+        return resolve_model_source(model_id, revision=revision)
+    from huggingface_hub import scan_cache_dir
+    return resolve_model_source(model_id, revision=revision, cache=scan_cache_dir())
+
+
+def _identity_conditions(identity: ModelIdentity) -> dict[str, Any]:
+    return {
+        "model_id": identity.model_id,
+        "model_revision": identity.revision,
+        "model_manifest_sha256": identity.model_manifest_sha256,
+        "model_architecture": identity.architecture,
+        "quantisation": identity.quantisation,
+        "quantisation_sha256": identity.quantisation_sha256,
+        "tokenizer_sha256": identity.tokenizer_sha256,
+        "model_identity_sha256": identity.identity_sha256,
+    }
+
+
+def _conditions_match_identity(conditions_record: Mapping[str, Any],
+                               identity: ModelIdentity) -> bool:
+    expected = _identity_conditions(identity)
+    return all(conditions_record.get(key) == value for key, value in expected.items())
+
+
+def verify_resolved_model(model_id: str, resolved: ResolvedModelSource) -> None:
+    """Detect any source change between identity construction and actual model load."""
+    verified = build_model_identity(model_id, resolved.path, resolved.identity.revision)
+    if verified != resolved.identity:
+        raise ModelIdentityError("model source changed during load")
+
+
+def conditions(model_id: str, prompt_tokens: int, max_tokens: int, *,
+               model_identity: ModelIdentity | None = None) -> dict[str, Any]:
     """What a stored winner is actually valid for.
 
     A tuned profile is not a universal truth. It was measured on one machine, one
@@ -82,9 +131,13 @@ def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, 
     from .hw import static_facts
     from .plans import RUNTIME_VERSION
 
+    identity = model_identity or resolve_local_model(model_id).identity
+    if not Path(model_id).expanduser().is_dir() and model_id != identity.model_id:
+        raise ModelIdentityError("conditions model_id does not match exact identity")
     facts = static_facts()
     env = environment()
     return {
+        "conditions_schema": PROFILE_CONDITIONS_SCHEMA,
         "fingerprint": fingerprint(facts),
         "chip": facts["chip"],
         "memory_bytes": facts["memory_bytes"],
@@ -92,7 +145,7 @@ def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, 
         "mlx": env.get("mlx"),
         "mlx_lm": env.get("mlx_lm"),
         "runtime_version": RUNTIME_VERSION,
-        "model_id": model_id,
+        **_identity_conditions(identity),
         "power_source": env["power_source"],
         "prompt_tokens": prompt_tokens,
         "max_tokens": max_tokens,
@@ -102,12 +155,14 @@ def conditions(model_id: str, prompt_tokens: int, max_tokens: int) -> dict[str, 
 
 
 def stale(profile: dict[str, Any], model_id: str, prompt_tokens: int,
-          max_tokens: int) -> list[str]:
+          max_tokens: int, *, model_identity: ModelIdentity | None = None) -> list[str]:
     """Which recorded conditions no longer hold. Empty means the profile still applies."""
     stored = profile.get("conditions")
     if not stored:
         return ["no conditions recorded"]
-    current = conditions(model_id, prompt_tokens, max_tokens)
+    current = conditions(
+        model_id, prompt_tokens, max_tokens, model_identity=model_identity
+    )
     # Workload size is compared in buckets: a prompt 5% longer is not a new regime.
     drifted = []
     for key, value in stored.items():
@@ -139,24 +194,38 @@ def gpu_busy() -> str | None:
     return None
 
 
-def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True) -> tuple[Engine, Any]:
+def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
+                revision: str | None = None,
+                resolved_source: ResolvedModelSource | None = None) -> tuple[Engine, Any]:
     """Load a model under a caller-selectable local/offline policy.
 
-    Offline loads of a local directory pass that directory straight through.
-    An offline Hub ID is resolved to an already cached snapshot with
-    ``local_files_only=True`` before handing the path to ``mlx_lm.load``.
-    Online mode and ``None`` preserve the normal ``mlx_lm`` resolution path.
+    Offline loads resolve exactly one local source and attach its path-free identity
+    to the Engine. Online mode and ``None`` preserve legacy caller-managed loading but
+    leave identity unavailable, so fingerprints and profiles fail closed.
     No environment variable or imported-module global is changed.
     """
     from mlx_lm import load
 
+    if resolved_source is not None and offline is not True:
+        raise ValueError("resolved_source is valid only for offline loading")
+    if revision is not None and offline is not True:
+        raise ValueError("exact revision requires offline local resolution")
+    resolved = resolved_source
     source: str = model_id
-    if offline is True and not Path(model_id).is_dir():
-        from huggingface_hub import snapshot_download
-        source = snapshot_download(model_id, local_files_only=True,
-                                   allow_patterns=OFFLINE_ALLOW_PATTERNS)
+    if offline is True:
+        resolved = resolved or resolve_local_model(model_id, revision)
+        if (not Path(model_id).expanduser().is_dir()
+                and resolved.identity.model_id != model_id):
+            raise ModelIdentityError("resolved source belongs to a different model_id")
+        if revision is not None and resolved.identity.revision != revision:
+            raise ModelIdentityError("resolved source belongs to a different revision")
+        source = str(resolved.path)
     model, tokenizer = load(source)
-    return Engine(model, tokenizer, knobs), tokenizer
+    if resolved is not None:
+        verify_resolved_model(model_id, resolved)
+    engine = Engine(model, tokenizer, knobs)
+    engine.model_identity = resolved.identity if resolved is not None else None
+    return engine, tokenizer
 
 
 def _eos_ids(tokenizer) -> tuple[int, ...]:
@@ -214,7 +283,10 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
     """
     from . import ab
 
-    profile = load_profile(model_id, require_compatible=False)
+    resolved = resolve_local_model(model_id)
+    profile = load_profile(
+        model_id, require_compatible=False, model_identity=resolved.identity
+    )
     if profile is None:
         return {"verdict": "no_profile"}
     result = ab.run({"baseline": BASELINE, "stored": Knobs(**profile["knobs"])},
@@ -234,12 +306,17 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
     if prompt_tokens is None:
         # Keep compatibility with a small test/dry-run harness that omits raw
         # child details, while still measuring the current prompt itself.
-        engine, tokenizer = load_engine(model_id, BASELINE)
+        engine, tokenizer = load_engine(
+            model_id, BASELINE, resolved_source=resolved
+        )
         try:
             prompt_tokens = len(prompt_ids(tokenizer, prompt))
         finally:
             del engine
-    drifted = stale(profile, model_id, prompt_tokens, max_tokens)
+    drifted = stale(
+        profile, model_id, prompt_tokens, max_tokens,
+        model_identity=resolved.identity,
+    )
     ratio = result["ratios"]["stored/baseline"]["total_ns"]
     if not result["token_identity"]:
         verdict = "retune_required"
@@ -259,7 +336,8 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
         raise RuntimeError(f"another model process is running, refusing to measure ({busy})")
 
     hardware = probe()
-    engine, tokenizer = load_engine(model_id, BASELINE)
+    resolved = resolve_local_model(model_id)
+    engine, tokenizer = load_engine(model_id, BASELINE, resolved_source=resolved)
     ids = prompt_ids(tokenizer, prompt)
     eos = _eos_ids(tokenizer)
 
@@ -281,7 +359,9 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             try:
                 if reload_needed:
                     del engine
-                    engine, tokenizer = load_engine(model_id, candidate)
+                    engine, tokenizer = load_engine(
+                        model_id, candidate, resolved_source=resolved
+                    )
                 else:
                     engine.knobs = candidate
                     engine._compiled = None
@@ -299,7 +379,9 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                                "reason": f"{type(exc).__name__}: {exc}"})
                 print(f"  {name}={value!r:>6}  unsupported ({exc})")
                 if reload_needed:
-                    engine, tokenizer = load_engine(model_id, best)
+                    engine, tokenizer = load_engine(
+                        model_id, best, resolved_source=resolved
+                    )
                 else:
                     engine.knobs = best
                     engine._compiled = None
@@ -320,7 +402,9 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                 best, best_result = candidate, result
             elif Engine.needs_reload(candidate, best):
                 del engine
-                engine, tokenizer = load_engine(model_id, best)
+                engine, tokenizer = load_engine(
+                    model_id, best, resolved_source=resolved
+                )
             else:
                 engine.knobs = best
                 engine._compiled = None
@@ -340,12 +424,15 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
 
     gain = 1.0 - best_result["total_ns"] / base["total_ns"]
     profile = {
-        "conditions": conditions(model_id, len(ids), max_tokens),
+        "conditions": conditions(
+            model_id, len(ids), max_tokens, model_identity=resolved.identity
+        ),
         "confirmation": ({"ratio": confirmation["ratios"]["candidate/baseline"],
                           "token_identity": confirmation["token_identity"]}
                          if confirmation else None),
         "fingerprint": hardware["fingerprint"],
-        "model_id": model_id,
+        "model_id": resolved.identity.model_id,
+        "model_identity": resolved.identity.to_dict(),
         "knobs": best.as_dict(),
         "baseline_ns": base["total_ns"],
         "tuned_ns": best_result["total_ns"],
@@ -376,29 +463,51 @@ def _all_profiles() -> dict[str, Any]:
 
 
 def save_profile(profile: dict[str, Any]) -> None:
+    identity = ModelIdentity.from_dict(profile["model_identity"])
+    conditions_record = profile.get("conditions")
+    if (profile.get("model_id") != identity.model_id
+            or not isinstance(conditions_record, dict)
+            or set(conditions_record) != PROFILE_CONDITION_FIELDS
+            or conditions_record.get("conditions_schema") != PROFILE_CONDITIONS_SCHEMA
+            or not _conditions_match_identity(conditions_record, identity)):
+        raise ModelIdentityError("profile conditions do not match exact model identity")
     profiles = _all_profiles()
-    profiles[f"{profile['fingerprint']}/{profile['model_id']}"] = profile
+    profiles[f"{profile['fingerprint']}/{identity.identity_sha256}"] = profile
     STORE.mkdir(parents=True, exist_ok=True)
     PROFILES.write_text(json.dumps(profiles, indent=2, sort_keys=True))
 
 
-def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = True) -> dict[str, Any] | None:
+def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = True,
+                 revision: str | None = None,
+                 model_identity: ModelIdentity | None = None) -> dict[str, Any] | None:
     """Return a valid profile, rejecting current identity drift by default.
 
     ``require_compatible=False`` is reserved for ``revalidate()``, which needs
     to load a schema-valid but stale profile in order to report its canary
     result rather than silently treating it as absent.
     """
-    profile = _all_profiles().get(f"{fingerprint()}/{model_id}")
-    if not isinstance(profile, dict) or profile.get("model_id") != model_id:
+    identity = model_identity or resolve_local_model(model_id, revision).identity
+    if not Path(model_id).expanduser().is_dir() and model_id != identity.model_id:
+        raise ModelIdentityError("profile model_id does not match exact identity")
+    profile = _all_profiles().get(f"{fingerprint()}/{identity.identity_sha256}")
+    if not isinstance(profile, dict) or profile.get("model_id") != identity.model_id:
         return None
     conditions_record = profile.get("conditions")
-    required = {"fingerprint", "model_id", "mlx", "mlx_lm", "runtime_version",
-                "prompt_tokens", "max_tokens"}
+    required = PROFILE_CONDITION_FIELDS
     if (not isinstance(conditions_record, dict)
-            or not required.issubset(conditions_record)
-            or conditions_record.get("model_id") != model_id
+            or set(conditions_record) != required
+            or conditions_record.get("conditions_schema") != PROFILE_CONDITIONS_SCHEMA
+            or conditions_record.get("model_id") != identity.model_id
+            or conditions_record.get("model_identity_sha256") != identity.identity_sha256
+            or not _conditions_match_identity(conditions_record, identity)
+            or not isinstance(profile.get("model_identity"), dict)
             or not isinstance(profile.get("knobs"), dict)):
+        return None
+    try:
+        stored_identity = ModelIdentity.from_dict(profile["model_identity"])
+    except (ModelIdentityError, TypeError, ValueError):
+        return None
+    if stored_identity != identity:
         return None
     try:
         Knobs(**profile["knobs"])
@@ -409,7 +518,9 @@ def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = Tr
         max_tokens = int(conditions_record["max_tokens"])
     except (TypeError, ValueError):
         return None
-    if require_compatible and stale(profile, model_id, prompt_tokens, max_tokens):
+    if require_compatible and stale(
+        profile, model_id, prompt_tokens, max_tokens, model_identity=identity
+    ):
         return None
     return profile
 

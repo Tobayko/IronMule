@@ -11,7 +11,12 @@ Review follow-ups completed locally; this section is not a release or a performa
 - **R5 completed:** telemetry distinguishes an unperformed correctness check from a checked request/error count; benchmark mismatches are structured and fail closed.
 - **R7 completed:** environment probing, version/dependency checks, unsupported tuning candidates, hardware discovery caching, and version ownership are covered by fail-closed tests.
 - **R3 partial:** the public benchmark uses complete service/outer-wall timing, independent arm plans, balanced warmups/repeats, raw evidence, and structured mismatch exits; fresh-process isolation and a stock `mlx_lm` arm remain open by design.
-- **R6 partial:** system/profile conditions fail closed and current workload drift is checked; model revision and quantisation identity remain open under approval-dependent P0.11 work.
+- **R6/D2 implemented locally:** Runtime fingerprint v2 and tuned-profile conditions
+  v2 bind the exact cached revision, complete manifest, architecture, canonical
+  quantisation and tokenizer digest. Ambiguous cache resolution, identity conflicts,
+  source changes during load, and legacy/incomplete profiles fail closed. D2 adds no
+  routing, EvidenceRecord persistence or profile activation; its sealed 4B/12B
+  post-change regression result is pending.
 - **R8 partial:** macOS build/wheel/CLI/unit-test workflow is checked in; local wheel build/metadata/zipimport CLI smoke is green, while the clean installed-wheel job and remote CI execution remain open.
 - **B37 completed:** adds a pure, fail-closed phase/roofline diagnostic with per-run
   effective-bandwidth inputs; it does not alter runtime gates, profile selection, or

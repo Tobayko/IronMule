@@ -234,11 +234,13 @@ surfaces are byte-identical and D1 stays off the runtime import graph; no neutra
 causality, qualification or activation claim is made. B27 remains open at the next
 architecture decision rather than rerunning the same unconditioned control.
 
-**Next approved step.** The user approved D2 on 2026-08-29: propagate exact local
-model revision, complete manifest, architecture, quantisation and tokenizer identity
-through Runtime/fingerprint/profile compatibility, without D1 persistence, strategy
-selection or activation. D2a must freeze a new same-day 4B/12B baseline before source
-changes; incomplete legacy profiles fail closed rather than being migrated by guess.
+**Current approved step.** The user approved D2 on 2026-08-29. D2a froze its new
+same-day 4B/12B pre-change baseline; the exact local revision, complete manifest,
+architecture, quantisation and tokenizer identity are now implemented through
+Runtime/fingerprint/profile compatibility. Incomplete legacy profiles fail closed.
+No D1 persistence, strategy selection or activation was added. D2 remains open only
+until the sealed D2b 4B/12B post-change regression comparison and final documentation
+are complete.
 
 ---
 
