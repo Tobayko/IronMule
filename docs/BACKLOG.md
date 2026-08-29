@@ -236,6 +236,36 @@ own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.9
 would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
 of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
+### `R10` — An aborted run must not look like a finished one
+
+**Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
+it with a `print` to stdout. The result file records nothing: a truncated run carries
+`runs: 1` and is otherwise shaped exactly like a complete four-block one. A reader who
+has the JSON but not the console log cannot tell a cut-short experiment from a
+deliberately short one, and the analysis that follows rests silently on a quarter of the
+intended samples. Found by living through it: the 12B leg of a scaling run aborted, and
+only the terminal output said so.
+
+**Test.** A run that hits the guard writes a machine-readable record into its own result
+file — the reason, the block index reached, and the value that tripped it. An analysis
+helper refuses to summarise a file carrying such a record unless the caller acknowledges
+it. A synthetic run with the guard set below the first block's peak produces that record
+rather than a plain short file.
+
+**Kill.** Result files are bound to preregistration hashes, so a schema change
+invalidates the comparison the file was written for. This closes only if the record can
+be added without breaking existing readers — an additive optional key — or with an
+explicit decision to version the schema. If neither is acceptable, the fallback is that
+the guard raises instead of breaking, so an aborted run produces no result file at all
+rather than a plausible one.
+
+**Related.** The guard's threshold is a hard-coded `12 * 1024**3`. A 27B 4-bit model is
+about `15 GiB` of weights on its own, so that size cannot be measured with this harness
+at all, regardless of how the peak is counted. Raising the number is a decision about
+swap safety on a 32 GB machine and needs its own entry with a kill criterion — most
+usefully with the threshold as a parameter and direct swap monitoring as the criterion,
+rather than another constant in the source.
+
 ### `R9` — `ironmule.tune` is the function, not the module
 
 **Mechanism.** `__init__.py:35` rebinds the name `tune` from the submodule to the
@@ -641,6 +671,16 @@ which number is being reported before starting — see the warning at the top.
 **Test.** Port one decode step, measure it standalone against the Python path first.
 No integration until that microbenchmark says the premise is right.
 
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
+(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
+depend on the exact figures.)
+
 **Kill.** Under `2x` improvement on the isolated step. Then `6.41 µs` is Metal's
 enqueue cost rather than Python's, and `B9` becomes the only remaining route.
 
@@ -657,6 +697,16 @@ fingerprint mechanism was built to police, not to encourage.
 **Test.** Prototype outside IronMule: a hand-built ICB replaying one transformer
 block, timed against the same block through MLX.
 
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
+(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
+depend on the exact figures.)
+
 **Kill.** The replay is not meaningfully faster, or the shapes turn out not to be
 stable enough across steps to reuse an encoding. Highest ceiling of anything in Tier 2
 and the highest chance of being abandoned halfway.
@@ -671,6 +721,16 @@ custom kernel for the block, not a rearrangement of existing primitives.
 
 **Test.** Count kernels honestly first. `LIMITS.md` records that MLX exposes no
 machine-readable dispatch counter, so this depends on `B24`.
+
+**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
+run found that `submission_ns` is not host work: on identical work and shapes, arm B
+submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
+The larger window is larger *because the device runs inside it*. The four-way split
+therefore measures wall-clock windows, not host and device cost separately — so the
+question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
+answered with that instrument at all. Size these with real GPU counters or not at all.
+(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
+depend on the exact figures.)
 
 **Kill.** Kernel count is already near the floor for the primitives available, or a
 fused block kernel underperforms the library's tuned matmuls — which is the usual
