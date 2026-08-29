@@ -245,19 +245,34 @@ met and the second — that per-block peaks would fail to fall — did not fire.
 measurable at four blocks for the first time. Proof:
 `R12_12b_proof.json`, archived.
 
-**What is left.** `e14b_arms.py` is converted, following `e16_replication.spawn`:
-self-invocation with `--child <spec>`, one `@@`-prefixed JSON line per block, a timeout
-that books the replicate as crashed rather than taking the run down. `e15_service.py`
-and `e12_window_falsification.py` are not converted yet, deliberately — the proof came
-first. `e15_service.py` additionally has a 45-minute wall-clock limit measured across the
-block loop, and forking changes what that limit is counting; that needs deciding rather
-than porting.
+**What is left, and the two remaining harnesses are not the same job.**
+`e14b_arms.py` is converted, following `e16_replication.spawn`: self-invocation with
+`--child <spec>`, one `@@`-prefixed JSON line per block, a timeout that books the
+replicate as crashed rather than taking the run down.
 
-**Kill for the remainder.** Same as before per harness: if converting one does not hold
-its per-block peak flat, the diagnosis does not transfer and that harness stays as it is.
-For `E15` specifically, it also fails if the wall limit cannot be given a meaning that
-survives forking — a limit that counts parent wall time across four child processes is
-not the same instrument it was.
+`e15_service.py` is the direct port. Its `run_process(model_id, index, pilot)` is
+character-for-character `E14b`'s, and it loads its own engine per block.
+
+`e12_window_falsification.py` is **not** a port, and the difference is the shared
+harness rather than the wall limit. Its unit is `run_case(h: Harness, prefix_kind,
+length, preamble, corpus, model_id)` — it receives a `Harness` built once before the
+loop, with the preambles and the warmup also done once outside it. Forking per case
+would load the model 26 times (13 prefix lengths × 2 types in stage 1) instead of once.
+That is a decision about granularity — per case, per type, or not at all — and there is
+no `E12` reference run to test the diagnosis against, unlike `E14b` where both the
+before and the after were measured. It should be its own entry rather than riding along
+here.
+
+Both carry a 45-minute parent-side wall limit measured across the loop
+(`e15_service.py:427`, `e12_window_falsification.py:42` and `:456`), and forking changes
+what that limit counts: not "how long this interpreter worked" but "how long the parent
+waited on N children", including N model loads instead of one.
+
+**Kill for the remainder.** Per harness: if converting one does not hold its per-block
+peak flat, the diagnosis does not transfer and that harness stays as it is. It also
+fails if the wall limit cannot be given a meaning that survives forking — measure how
+much of the 45 minutes the harness uses today, and what the extra model loads cost,
+before porting rather than after.
 
 **Why forking is the right shape, and why it does not break anything frozen.**
 `e16_replication.py:142` already does it — `spawn()` re-invokes the module with
