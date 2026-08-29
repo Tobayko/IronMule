@@ -17,6 +17,8 @@ import argparse
 import json
 import os
 import random
+import subprocess
+import sys
 import statistics as st
 import time
 from dataclasses import dataclass, field
@@ -404,12 +406,50 @@ def run_process(model_id: str, index: int, pilot: bool) -> dict:
     return out
 
 
+def spawn(model_id: str, index: int, pilot: bool, timeout: int = 3600) -> dict:
+    """One block, one OS process, gone before the next begins.
+
+    R12, same shape as `e14b_arms.spawn`. `run_process` already calls `load_engine`
+    itself, so the fork adds no model load — measured on E14b at 12B it was 147 s per
+    forked block against 157 s in-interpreter, the allocator pressure costing more than
+    the process start. The 45-minute wall limit below therefore keeps its headroom:
+    this experiment measured 26.2 min for four blocks before the port.
+    """
+    spec = json.dumps({"model": model_id, "index": index, "pilot": pilot})
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--child", spec],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(HERE.parent), env={**os.environ, "PYTHONPATH": str(HERE.parent),
+                                       "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
+    except subprocess.TimeoutExpired:
+        return {"process_index": index, "crashed": True,
+                "stderr": f"timeout after {timeout}s", "mlx_peak_bytes": 0, "runs": []}
+    line = next((l for l in proc.stdout.splitlines() if l.startswith("@@")), None)
+    if line is None:
+        return {"process_index": index, "crashed": True, "stderr": proc.stderr[-2000:],
+                "mlx_peak_bytes": 0, "runs": []}
+    return json.loads(line[2:])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", choices=["pilot", "main"], required=True)
+    # Not `required`: a child is invoked with `--child` alone and carries its stage
+    # inside the spec. The parent path still insists on it, just below.
+    parser.add_argument("--stage", choices=["pilot", "main"])
     parser.add_argument("--processes", type=int, default=4)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--child", help="internal: run one block and print it as JSON")
     args = parser.parse_args(argv)
+
+    if args.child:
+        spec = json.loads(args.child)
+        run = run_process(spec["model"], spec["index"], pilot=spec["pilot"])
+        print("@@" + json.dumps(run, default=str))
+        return 0
+
+    if args.stage is None:
+        parser.error("--stage is required")
 
     busy = gpu_busy()
     if busy:
@@ -423,20 +463,31 @@ def main(argv=None) -> int:
     started = time.perf_counter()
     processes = 1 if args.stage == "pilot" else args.processes
     runs, aborted = [], None
+    gate = bench.MemoryGate()  # R11: swap, not a byte count
     for index in range(processes):
         if time.perf_counter() - started > 45 * 60:
             aborted = "wall_limit"
             print("ABORT main-run wall limit, partial evidence preserved")
             break
-        run = run_process(args.model, index, pilot=args.stage == "pilot")
+        run = spawn(args.model, index, args.stage == "pilot")
         runs.append(run)
+        if run.get("crashed"):
+            aborted = f"child_crashed: {run['stderr'][:200]}"
+            print(f"ABORT child {index} crashed:\n{run['stderr']}")
+            break
         print(f"process {index+1}/{processes} done, {len(run['runs'])} runs, "
               f"peak {run['mlx_peak_bytes']/1e9:.2f} GB", flush=True)
-        if run["mlx_peak_bytes"] > 12 * 1024**3:
-            print("ABORT memory limit")
+        stop = gate.check(index, run["mlx_peak_bytes"])
+        if stop:
+            # `aborted` exists and the wall-limit branch above sets it, but this branch
+            # did not: a memory abort wrote `"aborted": null` and the file then claimed
+            # completeness rather than merely failing to mention it. Filling the existing
+            # field is a bug fix, not the schema change R10 has to decide.
+            aborted = f"memory_gate: {stop}"
+            print(f"ABORT {stop}")
             break
 
-    payload = {"experiment": "E15", "stage": args.stage, "runs": runs, "aborted": aborted,
+    payload = {"experiment": "E15", "stage": args.stage, "runs": runs, "aborted": aborted, "memory_gate": gate.record,
                "preregistration_sha256": "939a3c40683433e6fc2e24c4409304a4a762fbae52c7b528b6a4de1216b70a92",
                "prereg_commit": "c2c8a5931cb2c67097fed9f435c5af52c7196abe",
                "wall_seconds": time.perf_counter() - started, "environment": env}
