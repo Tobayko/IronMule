@@ -1,0 +1,317 @@
+{
+  "activation_allowed": false,
+  "cells": [
+    {
+      "commit": "d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5",
+      "comparison": {
+        "primary_rate_ratio_throughput_over_interactive": {
+          "ci_high": 1.1407957643803264,
+          "ci_low": 1.112020881005258,
+          "median_ratio": 1.1270733329886924,
+          "ratios": [
+            1.1239601290759735,
+            1.1126603031696187,
+            1.1113814588408975,
+            1.1315370604109183,
+            1.130186536901411,
+            1.1500544683497347
+          ]
+        },
+        "primary_wall_ratio_throughput_over_interactive": {
+          "ci_high": 0.8992639866003431,
+          "ci_low": 0.8766388385191972,
+          "median_ratio": 0.8872604830112294,
+          "ratios": [
+            0.8897112754543322,
+            0.8987469015936986,
+            0.8997810716069877,
+            0.8837536435941827,
+            0.8848096905681266,
+            0.8695240334442118
+          ]
+        },
+        "throughput_gain": 0.1127395169887706,
+        "token_differences": [],
+        "token_identity": true
+      },
+      "environment": {
+        "low_power_mode": false,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "os": "26.5.2",
+        "power_source": "AC",
+        "python": "3.12.13"
+      },
+      "hard_failures": [],
+      "interactive": {
+        "executor_wall_ms": {
+          "max": 8818.928417,
+          "median": 8707.4298335,
+          "min": 8697.766917,
+          "n": 6,
+          "stdev": 48.53335686341635
+        },
+        "outer_wall_ms": {
+          "max": 10081.617375,
+          "median": 9963.1321045,
+          "min": 9949.398417,
+          "n": 6,
+          "stdev": 51.332686606035914
+        },
+        "physical_tokens_per_second": {
+          "max": 28.94647373934789,
+          "median": 28.906572910715354,
+          "min": 28.566844910636174,
+          "n": 6,
+          "stdev": 0.14739218994367098
+        },
+        "visible_tokens_per_second": {
+          "max": 28.94647373934789,
+          "median": 28.906572910715354,
+          "min": 28.566844910636174,
+          "n": 6,
+          "stdev": 0.14739218994367098
+        }
+      },
+      "model": {
+        "architecture": "gemma3",
+        "model_id": "mlx-community/gemma-3-12b-it-4bit",
+        "model_manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+        "quantisation": {
+          "bits": 4,
+          "group_size": 64
+        },
+        "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+        "runtime_identity": {
+          "architecture": "gemma3",
+          "identity_sha256": "2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474",
+          "manifest_bytes": 8068021302,
+          "manifest_file_count": 15,
+          "model_id": "mlx-community/gemma-3-12b-it-4bit",
+          "model_manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+          "quantisation": {
+            "bits": 4,
+            "group_size": 64
+          },
+          "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+          "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+          "schema": "ironmule.model_identity.v1",
+          "tokenizer_file_count": 6,
+          "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+        }
+      },
+      "protocol": {
+        "knobs": "BASELINE",
+        "max_tokens": 48,
+        "offline_cached_snapshot_only": true,
+        "plan": "strict",
+        "repeats": 6,
+        "requests": 6,
+        "stored_profile_reuse": false,
+        "warmup": 2
+      },
+      "raw_sha256": "6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4",
+      "resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 7801367451,
+        "swap_delta_bytes": 0
+      },
+      "runtime_tree_sha256": "5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60",
+      "status": "BASELINE_CAPTURED",
+      "system_before": {
+        "memory_free_percent": 86,
+        "swap_used_bytes": 0
+      },
+      "throughput": {
+        "executor_wall_ms": {
+          "max": 7703.013959,
+          "median": 7629.7983335,
+          "min": 7411.336083,
+          "n": 6,
+          "stdev": 107.18969790016746
+        },
+        "outer_wall_ms": {
+          "max": 8965.770375,
+          "median": 8890.3960625,
+          "min": 8662.088209,
+          "n": 6,
+          "stdev": 109.96752774581786
+        },
+        "physical_tokens_per_second": {
+          "max": 33.24833377946498,
+          "median": 32.394874110342585,
+          "min": 32.12216998140553,
+          "n": 6,
+          "stdev": 0.4083177056307927
+        },
+        "visible_tokens_per_second": {
+          "max": 33.24833377946498,
+          "median": 32.394874110342585,
+          "min": 32.12216998140553,
+          "n": 6,
+          "stdev": 0.4083177056307927
+        }
+      }
+    },
+    {
+      "commit": "d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5",
+      "comparison": {
+        "primary_rate_ratio_throughput_over_interactive": {
+          "ci_high": 1.1687322692050468,
+          "ci_low": 1.1656920158733912,
+          "median_ratio": 1.1672904300194644,
+          "ratios": [
+            1.1676962938827737,
+            1.169506929952136,
+            1.1667075577059576,
+            1.1679576084579577,
+            1.1646764740408249,
+            1.166884566156155
+          ]
+        },
+        "primary_wall_ratio_throughput_over_interactive": {
+          "ci_high": 0.8578601769243815,
+          "ci_low": 0.8556283296708941,
+          "median_ratio": 0.8566849304819804,
+          "ratios": [
+            0.8563870633474759,
+            0.8550612009121885,
+            0.8571128157995764,
+            0.8561954584295997,
+            0.8586075380491867,
+            0.8569827976164849
+          ]
+        },
+        "throughput_gain": 0.14331506951801964,
+        "token_differences": [],
+        "token_identity": true
+      },
+      "environment": {
+        "low_power_mode": false,
+        "mlx": "0.32.0",
+        "mlx_lm": "0.31.3",
+        "os": "26.5.2",
+        "power_source": "AC",
+        "python": "3.12.13"
+      },
+      "hard_failures": [],
+      "interactive": {
+        "executor_wall_ms": {
+          "max": 3468.600667,
+          "median": 3465.1903125,
+          "min": 3461.747,
+          "n": 6,
+          "stdev": 2.473811911908809
+        },
+        "outer_wall_ms": {
+          "max": 3935.951792,
+          "median": 3930.951771,
+          "min": 3927.721542,
+          "n": 6,
+          "stdev": 2.881438372754612
+        },
+        "physical_tokens_per_second": {
+          "max": 73.32495364560648,
+          "median": 73.26469958123758,
+          "min": 73.17162791103617,
+          "n": 6,
+          "stdev": 0.05367711686461019
+        },
+        "visible_tokens_per_second": {
+          "max": 73.32495364560648,
+          "median": 73.26469958123758,
+          "min": 73.17162791103617,
+          "n": 6,
+          "stdev": 0.05367711686461019
+        }
+      },
+      "model": {
+        "architecture": "gemma3",
+        "model_id": "mlx-community/gemma-3-4b-it-4bit",
+        "model_manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+        "quantisation": {
+          "bits": 4,
+          "group_size": 64
+        },
+        "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+        "runtime_identity": {
+          "architecture": "gemma3",
+          "identity_sha256": "2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2",
+          "manifest_bytes": 3439894985,
+          "manifest_file_count": 12,
+          "model_id": "mlx-community/gemma-3-4b-it-4bit",
+          "model_manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+          "quantisation": {
+            "bits": 4,
+            "group_size": 64
+          },
+          "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+          "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+          "schema": "ironmule.model_identity.v1",
+          "tokenizer_file_count": 6,
+          "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+        }
+      },
+      "protocol": {
+        "knobs": "BASELINE",
+        "max_tokens": 48,
+        "offline_cached_snapshot_only": true,
+        "plan": "strict",
+        "repeats": 6,
+        "requests": 6,
+        "stored_profile_reuse": false,
+        "warmup": 2
+      },
+      "raw_sha256": "bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5",
+      "resources": {
+        "correctness_errors": 0,
+        "fallbacks": 0,
+        "mlx_peak_memory_bytes": 2784918586,
+        "swap_delta_bytes": 0
+      },
+      "runtime_tree_sha256": "5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60",
+      "status": "BASELINE_CAPTURED",
+      "system_before": {
+        "memory_free_percent": 86,
+        "swap_used_bytes": 0
+      },
+      "throughput": {
+        "executor_wall_ms": {
+          "max": 2909.252708,
+          "median": 2900.8396035,
+          "min": 2897.839167,
+          "n": 6,
+          "stdev": 4.602370952817531
+        },
+        "outer_wall_ms": {
+          "max": 3374.994584,
+          "median": 3367.1938330000003,
+          "min": 3363.649917,
+          "n": 6,
+          "stdev": 4.423600906412693
+        },
+        "physical_tokens_per_second": {
+          "max": 85.62127662110088,
+          "median": 85.53118380531686,
+          "min": 85.33347027142963,
+          "n": 6,
+          "stdev": 0.11223578599826288
+        },
+        "visible_tokens_per_second": {
+          "max": 85.62127662110088,
+          "median": 85.53118380531686,
+          "min": 85.33347027142963,
+          "n": 6,
+          "stdev": 0.11223578599826288
+        }
+      }
+    }
+  ],
+  "classification": "BASELINE_CAPTURED",
+  "errors": [],
+  "experiment_id": "D2b",
+  "phase": "post",
+  "schema": "ironmule.d2_baseline_summary.v1",
+  "valid_for_qualification": false
+}

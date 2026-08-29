@@ -15,8 +15,9 @@ Review follow-ups completed locally; this section is not a release or a performa
   v2 bind the exact cached revision, complete manifest, architecture, canonical
   quantisation and tokenizer digest. Ambiguous cache resolution, identity conflicts,
   source changes during load, and legacy/incomplete profiles fail closed. D2 adds no
-  routing, EvidenceRecord persistence or profile activation; its sealed 4B/12B
-  post-change regression result is pending.
+  routing, EvidenceRecord persistence or profile activation. Its sealed same-day
+  4B/12B post-change screen preserved exact identities/outputs/resources and passed
+  every 5% gate: `NO_REGRESSION_OBSERVED`, with no qualification or activation.
 - **R8 partial:** macOS build/wheel/CLI/unit-test workflow is checked in; local wheel build/metadata/zipimport CLI smoke is green, while the clean installed-wheel job and remote CI execution remain open.
 - **B37 completed:** adds a pure, fail-closed phase/roofline diagnostic with per-run
   effective-bandwidth inputs; it does not alter runtime gates, profile selection, or

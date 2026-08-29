@@ -2158,3 +2158,70 @@ the preregistration SHA-256 is
 `6ffc3a6714aa8ed2a2e71e1ebd6af9a5f284a171e8ba69a5e959f7802c070c1b`.
 No D2b timing had been observed when these documents were sealed. There is no retry,
 pooling, threshold change, qualification, routing or activation consequence.
+
+## D2b — Exact-identity post-change result (2026-08-29)
+
+**Binding and execution.** D2b ran from clean preregistration commit
+`d36a6538d6c4a2a0fa4ac278511b0fefdeb82fd5`, with the frozen D2 runtime-tree
+SHA-256 `5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60`.
+The exact cached 4B process ran first, then 12B after memory recovered. Both preflights
+recorded 86% free memory, AC, low-power false, swap `0 B` and no competing model
+process. No download, install, network fallback, retry or sample pooling occurred.
+
+**Identity, correctness and resources.** The independently reconstructed Runtime
+identities were exactly `2730e8b1…` (4B) and `2b5b13a3…` (12B), and both Interactive
+and Throughput fingerprints matched schema v2 and every revision/manifest/
+architecture/quantisation/tokenizer/aggregate field. Both cells were
+`BASELINE_CAPTURED`; token IDs, stops and counts matched, with zero fallback,
+correctness errors or swap delta. MLX peak was `2,784,918,586 B` (4B) and
+`7,801,367,451 B` (12B). Raw SHA-256 values are
+`bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5` and
+`6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4`.
+
+**Frozen result:** `NO_REGRESSION_OBSERVED`, regression kind `NONE`. Ratios are D2b
+post / same-day D2a pre with the preregistered independent 10,000-resample intervals:
+
+| Model/arm | Wall ratio [95% CI] | Physical-rate ratio [95% CI] | 5% gates |
+| --- | ---: | ---: | --- |
+| 4B Interactive | `0.9978 [0.9969; 0.9993]` | `1.0022 [1.0007; 1.0031]` | pass |
+| 4B Throughput | `1.0000 [0.9943; 1.0031]` | `1.0000 [0.9969; 1.0057]` | pass |
+| 12B Interactive | `0.9888 [0.9681; 1.0055]` | `1.0113 [0.9945; 1.0329]` | pass |
+| 12B Throughput | `1.0077 [0.9851; 1.0243]` | `0.9924 [0.9764; 1.0151]` | pass |
+
+There was no domain drift, hard failure or performance miss. The path-free D2b post
+summary SHA-256 is
+`16741c99e03ce2ab821ff7b40dd42eb105ff57855d74a75ed422882cd8603132`;
+the comparison SHA-256 is
+`0a02d1fed48f742d6c169b083b98a5a6b5fd9dbfee1d43981080f44e75b8144e`.
+Both recomputed byte-identically from the four immutable raw records. Verification
+artifact SHA-256 is
+`19de9149ae5c697cf50c8535bc451c266986df0da81821c4669491b1b20cf221`.
+
+**Decision and limits.** D2/R6 exact identity is complete. The result supports only
+that the approved identity plumbing did not cross its frozen 5% engineering
+regression gates in these two cells. It is not a speed or quality claim, stock-MLX
+comparison, tuned-profile qualification, selection, routing or activation. D1 remains
+unpersisted and no strategy consumes it. Any next B27 architecture stage needs a new
+explicit decision.
+
+**Final verification.** The full serial non-integration suite passed
+`178 passed, 12 deselected` in `5.03 s`; the real cached Gemma-4B integration suite
+passed `11/11` in `22.28 s`. Final swap was `0 B`, memory free `85%`, and no model
+process remained. Xcode and IronMule doctor were green. ProjectAtlas `0.4.5-rc1`
+runtime and project-local MCP configuration were verified; its private index was
+fully refreshed after a dependency-closure-limit warning, and lint returned
+`ok=true`. Worktree alias enumeration reported the known shared-control-repository
+limitation and did not change Git or source files.
+
+**Post-measurement UI repair.** While adding D2b history, the dashboard generator
+revealed an older presentation-only variable-shadowing defect: B27e rows replaced the
+protected baseline table in generated HTML. The cross-control row variable was
+renamed, D2b post/comparison/verification inputs were added, and the local page was
+regenerated with the original baseline rows restored. This happened after all D2b raw
+records and the frozen comparison existed; no runtime, measurement harness, comparator
+or result changed.
+
+The first presentation regression run failed one stale assertion because it still
+expected the earlier D1 suite label (`146 passed`) after D2b correctly became the
+newest verification source (`178 passed`). Updating that expectation fixed the test;
+no rendered metric, raw record or comparison logic changed.

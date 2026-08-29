@@ -1,7 +1,7 @@
 # D2 — Exact model identity implementation
 
-**State:** implemented and locally verified on 2026-08-29; the sealed D2b 4B/12B
-post-change regression run is still pending.
+**State:** completed and locally verified on 2026-08-29. The sealed D2b 4B/12B
+post-change result is `NO_REGRESSION_OBSERVED`; no qualification or activation follows.
 
 ## Outcome
 
@@ -79,6 +79,40 @@ Metal/MLX initialization is not supported in that sandbox. Resolution: all IronM
 pytest/model commands are run serially outside it with the existing project Python.
 The corrected focused run passed; no timing sample from the failed command is retained
 or pooled.
+
+## D2b post-change result
+
+Both fresh serial model processes ran on clean measurement commit `d36a6538d6c4` and
+runtime-tree SHA-256
+`5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60`.
+Each emitted the exact identity above in `runtime_model_identity` and both arm
+fingerprints. Tokens, stops and counts matched; domain drift, hard failures,
+performance misses, fallback/correctness errors and swap delta were all zero.
+
+Ratios are D2b post / same-day D2a pre with frozen 10,000-resample 95% intervals:
+
+| Model/arm | Outer-wall ratio [95% CI] | Physical-rate ratio [95% CI] |
+| --- | ---: | ---: |
+| 4B Interactive | `0.9978 [0.9969; 0.9993]` | `1.0022 [1.0007; 1.0031]` |
+| 4B Throughput | `1.0000 [0.9943; 1.0031]` | `1.0000 [0.9969; 1.0057]` |
+| 12B Interactive | `0.9888 [0.9681; 1.0055]` | `1.0113 [0.9945; 1.0329]` |
+| 12B Throughput | `1.0077 [0.9851; 1.0243]` | `0.9924 [0.9764; 1.0151]` |
+
+Every wall CI high is `<=1.05` and every rate CI low is `>=0.95`. The frozen
+classification is therefore `NO_REGRESSION_OBSERVED`, regression kind `NONE`.
+Post MLX peaks were `2,784,918,586 B` (4B) and `7,801,367,451 B` (12B), with
+zero swap growth.
+
+Raw SHA-256 values are `bab01abb6e9c4aa09d7ab06fcb4074a54ec855cd46ee0310a3bff6bba04c6cf5`
+and `6ddc586d4c43c5d02cadcbecd19ece198f640dfde39276be37700152bf1746a4`.
+The path-free post summary and comparison hashes are `16741c99…` and `0a02d1fe…`;
+both recomputed byte-identically. The final verification artifact hash is recorded in
+the experiment ledger.
+
+Final gates passed `178 passed, 12 deselected` in `5.03 s` and `11/11` real cached
+Gemma-4B integration tests in `22.28 s`; final swap was `0 B`, free memory `85%`, and
+no model process remained. ProjectAtlas `0.4.5-rc1` runtime/MCP configuration was
+verified, its private index refreshed, and lint returned `ok=true`.
 
 ## Remaining limits
 
