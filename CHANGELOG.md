@@ -6,6 +6,26 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **Measurement is gated on swap, not on a hard-coded byte count (`R11`).** The literal
+  `12 * 1024**3` in three research harnesses was wrong in both directions: it refused
+  `gemma-3-12b-it-4bit` at a `17.51 GB` block that never swapped, and it passed a run
+  that had to be discarded because swap climbed `2816 MB` and every cell slowed by a
+  uniform `1.10x`–`1.15x`. `ironmule/bench.py` gains `MemoryGate`, which aborts on a
+  swap *delta* against the run's own baseline — an absolute value would refuse every run
+  on a machine already carrying backlog — plus a coarse peak backstop derived from
+  `hw.memsize`. Its self-check replays both reference runs from recorded numbers rather
+  than from plausible ones, and a gate that can read neither signal reports itself
+  `inert` instead of passing silently.
+- **One OS process per block for `E14b` (`R12`).** Blocks looped in one interpreter, so
+  the allocator carried state across them: 12B peaked at `17.51 GB` on block 1 and
+  `23.14 GB` on block 2, and the machine swapped. Forked per block it reports
+  `17.51 GB` four times with no swap growth, and 12B is measurable at four blocks for
+  the first time. This follows `e16_replication.spawn`, and it delivers what
+  `E14b_preregistration.md` already asked for — "Four fresh processes" — rather than
+  departing from it. `e15_service.py` and `e12_window_falsification.py` are not
+  converted: `E15`'s wall-clock limit counts across the block loop and forking changes
+  what it measures, which needs deciding rather than porting.
+
 - **MLX peak memory is now measured per arm, not per process.** `mx.get_peak_memory()`
   is a process-wide high-water mark and `mx.reset_peak_memory()` was called nowhere in
   the repository. `ironmule/ab.py` loads a fresh model for every arm inside one child

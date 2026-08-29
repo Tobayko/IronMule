@@ -235,109 +235,42 @@ own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.9
 would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
 of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
-### `R12` — One OS process per block, because the preregistrations already say so
+### `R12` — One OS process per block: proven on `E14b`, two harnesses left
 
-**Mechanism.** `e14_dispatch.py`, `e14b_arms.py` and `e15_service.py` run their blocks
-as `for index in range(processes)` in one interpreter. `E15` limitation `M2` records the
-consequence for the statistics. The `R11` proof run showed the other consequence, which
-is harder: memory. 12B's block 1 peaks at `17.51 GB` and block 2 at `23.14 GB` on the
-same pid, with `mx.reset_peak_memory()` correctly applied — block 1's buffers are still
-resident when block 2 loads its model, so the machine swaps and the run stops. On 32 GB
-this caps 12B at one block permanently, and no threshold policy changes it.
+**Confirmed, and the diagnosis held.** With one forked process per block, 12B reports
+`17.51 / 17.51 / 17.51 / 17.51 GB` across four blocks and no swap growth, against
+`17.51 -> 23.14 GB` and an abort at block 2 in a shared interpreter. Four distinct pids,
+590 s. The growth was allocator carry-over, not the model, so the first kill condition is
+met and the second — that per-block peaks would fail to fall — did not fire. 12B is
+measurable at four blocks for the first time. Proof:
+`R12_12b_proof.json`, archived.
 
-**This is not a new design.** `e16_replication.py` already does it: `spawn()` at line 142
-re-invokes the module with `--child <json spec>`, the child prints one `@@`-prefixed JSON
-line, the parent parses it, with a timeout and a controlled environment. `run_process` in
-all three harnesses already has the right shape for that — a pure function taking
-`(model_id, index, pilot)` and returning a JSON-serialisable dict, about `15 KB`
-serialised per block, comfortably inside a stdout line. `E16` is the pattern; the work is
-applying it, not inventing it.
+**What is left.** `e14b_arms.py` is converted, following `e16_replication.spawn`:
+self-invocation with `--child <spec>`, one `@@`-prefixed JSON line per block, a timeout
+that books the replicate as crashed rather than taking the run down. `e15_service.py`
+and `e12_window_falsification.py` are not converted yet, deliberately — the proof came
+first. `e15_service.py` additionally has a 45-minute wall-clock limit measured across the
+block loop, and forking changes what that limit is counting; that needs deciding rather
+than porting.
 
-**The preregistration objection runs backwards.** `E14b`'s preregistration says "Four
-fresh processes." The harness does not provide them, and `M2` says so plainly: the
-bootstrap "has less independence than the preregistration claims". Forking therefore does
-not break the frozen document — it is what the document asked for. `preregistration_sha256`
-covers that document, not the harness source, so no hash moves.
+**Kill for the remainder.** Same as before per harness: if converting one does not hold
+its per-block peak flat, the diagnosis does not transfer and that harness stays as it is.
+For `E15` specifically, it also fails if the wall limit cannot be given a meaning that
+survives forking — a limit that counts parent wall time across four child processes is
+not the same instrument it was.
 
-**Test.** One process per block for the three harnesses, following `E16`'s spawn/child
-split. `B7`'s 12B workload must then complete four blocks with per-block peaks near
-`17.51 GB` and no swap growth. Each block's result must be byte-identical in structure to
-today's, so existing analysis code keeps working. A child that crashes must be recorded
-as a crashed replicate rather than silently dropped, as `E16` already does.
+**Why forking is the right shape, and why it does not break anything frozen.**
+`e16_replication.py:142` already does it — `spawn()` re-invokes the module with
+`--child <json spec>`, the child prints one `@@`-prefixed JSON line, the parent parses
+it. `run_process` in the remaining harnesses is already a pure function returning a
+serialisable dict of about `15 KB`, so the pattern applies rather than needing invention.
 
-**Kill.** Model load time per block becomes the dominant cost — four loads instead of one
-is real overhead, and if it dwarfs measurement time the design is wrong for short blocks
-even if it is right for long ones. It also fails if per-block peaks do *not* fall to
-around `17.51 GB` once isolated, because then the growth is not allocator carry-over and
-this entry has misdiagnosed it. Both are answered by the first run.
-
-### `R11` — Gate measurement on swap, not on a hard-coded byte count
-
-**Mechanism.** Four harnesses abort when an MLX peak exceeds a literal `12 * 1024**3`:
-`e14b_arms.py:243` and `e15_service.py:435` per block, `e12_window_falsification.py:42`
-as `MAX_RSS_BYTES`, and `e16_replication.py:42` as `CHILD_MEMORY_CEILING`. (`E16`'s is
-the one honest instance: it forks real children, so its peak really is per process.
-`e14_dispatch.py` has no such guard — an earlier draft of this entry listed it and
-missed two others.) The number is
-doing a job it cannot do. What actually invalidates a timing run is the machine
-swapping; peak allocation is only a proxy for it, and a badly calibrated one. On this
-32 GB machine the proxy is wrong in both directions at once:
-
-- **Too strict, for block 1.** `gemma-3-12b-it-4bit` peaks at `17.51 GB` on its first
-  block and is refused, although `B7` measured that block with swap steady at
-  `0.06 MB` — the machine was never under pressure. Gemma 3 27B (`~16.78 GB` in
-  `SCALING.md`) and Qwen 27B (`14.98 GiB` of weights) are refused on the same
-  byte count without anyone checking whether they swap.
-
-  **This entry does not unblock 12B, and an earlier draft wrongly implied it would.**
-  The proof run settled it: with the swap gate in place, 12B reached block 2 at a
-  genuine `23.14 GB` and aborted on real swap, `+3059 MB` above the run's own baseline.
-  The peak counter is honest — `mx.reset_peak_memory()` runs at the top of
-  `run_process` and both blocks share one pid — so the memory itself is what does not
-  shrink: block 1 has not returned its buffers to the OS before block 2 loads a fresh
-  model. That is `M2`'s "allocator state carries over", as memory rather than as an
-  inflated number. What this entry buys is that 12B now stops for a **stated, measured
-  reason** instead of coincidentally tripping a byte count. Actually running 12B to
-  four blocks needs one OS process per block; see `R12`.
-- **Too lax.** `B7`'s confirmation run stayed *under* the guard at every block and was
-  still invalid: macOS grew the swap file from 1 GB to 4 GB and reached `2816 MB` in
-  use, and every cell slowed by a uniform `1.10x`–`1.15x`. The guard passed a run that
-  had to be discarded, because it was watching the wrong thing.
-
-Raising the constant fixes neither half. It moves the too-strict edge to the next model
-and leaves the too-lax edge exactly where it is.
-
-**Test.** Replace the literal with a measured condition. Sample `vm.swapusage` before
-the first block and after every block; abort when swap *in use* rises by more than a
-preregistered delta above the run's own starting value, and record that delta with the
-result. Keep a byte ceiling only as a coarse backstop against a genuinely unbounded
-allocation, set from the machine's installed memory rather than typed in, and make it a
-parameter with a documented default rather than a literal in three files.
-
-Verify against both known cases: `B7`'s 12B **block 1** (peak `17.51 GB`, swap flat)
-must be admitted where the byte guard refused it, and `B7`'s discarded confirmation run
-(peak under the guard, swap `+2816 MB`) must abort. A synthetic case that allocates
-without swapping must not abort. Both raw files are archived, so this is checkable
-rather than asserted. Note what must *not* be asserted: that 12B completes four blocks.
-It does not, and for a reason this entry does not address.
-
-**Scope note.** `E16`'s ceiling guards a forked child and is the one place the current
-design is coherent; it should keep a per-child byte ceiling even if the others move to a
-swap condition. The shared piece worth extracting is the condition, not one constant for
-all four call sites.
-
-**Kill.** Swap is a machine-wide signal, so an unrelated process can trip it and abort a
-valid run — the condition must therefore record what it saw rather than only failing,
-or it trades a false pass for a false abort and nothing is gained. It also closes as a
-failure if swap proves to be a lagging indicator on this platform: if timings degrade
-measurably before `vm.swapusage` moves, the gate fires after the damage and a memory
-*pressure* signal is needed instead. Both are measurable on the two runs above before
-any code changes.
-
-**Related.** `R10` records the other half of this: when a guard does fire, the abort must
-be visible in the result file rather than only on stdout. The two are worth doing
-together — a gate that fires correctly and silently is still a gate that produces a
-truncated file looking like a finished one.
+The preregistration objection runs backwards, which is the part worth keeping:
+`E14b_preregistration.md:118` says "Four fresh processes", and line 124 reasons with
+them. The loop in one interpreter never provided that, and `M2` says so plainly — the
+bootstrap "has less independence than the preregistration claims". Forking delivers what
+the frozen document asked for, and `preregistration_sha256` covers that document rather
+than the harness source, so no hash moves.
 
 ### `R10` — An aborted run must not look like a finished one
 
@@ -480,6 +413,19 @@ Listed so the next person does not spend a week rediscovering them.
   and kernel fusion is not measured. The tuned gain against `BASELINE` is real, because
   `BASELINE` is what an untuned install actually runs; it is not a gain against a
   well-optimised floor.
+
+- **`R11` measurement is gated on swap, not on a byte count.** The literal
+  `12 * 1024**3` was wrong in both directions: it refused `gemma-3-12b-it-4bit` at a
+  `17.51 GB` block that never swapped, and it passed a run that had to be discarded
+  because swap climbed `2816 MB`. `ironmule/bench.py` now carries `MemoryGate`, which
+  aborts on a *delta* against the run's own swap baseline — an absolute value would
+  refuse every run on a machine already carrying backlog — with a coarse peak backstop
+  derived from `hw.memsize` rather than typed in. Wired into `e14b_arms.py`,
+  `e15_service.py` and `e12_window_falsification.py`; `e16_replication.py` keeps its
+  per-child ceiling, which was always coherent because it forks. The self-check replays
+  both reference runs from `B7`'s recorded numbers, so the gate is tested against what
+  actually happened rather than against what sounds reasonable. A gate that can read
+  neither swap nor installed memory reports itself `inert` instead of silently passing.
 
 - **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
   digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
