@@ -1,0 +1,15 @@
+baseline 936.89 ms  (prefill 644.63, decode 292.64) 23 tokens, capacity 384
+  compiled_fixed_cache=  True  ratio 0.9679  kept
+  fused_argmax=  True  ratio 0.9707  rejected: no gain
+  head_skip_prefill=  True  ratio 0.8606  kept
+  prefill_into_fixed=  True  ratio 0.8699  rejected: no gain
+  readback_every=     2  ratio 0.8543  kept
+  readback_every=     4  ratio 0.8737  rejected: no gain
+  readback_every=     8  ratio 0.8688  rejected: no gain
+  speculate_k=     4  ratio 1.3829  rejected: no gain
+  capacity_slack=   128  ratio 0.8538  rejected: no gain
+  wired_fraction=   0.6  ratio 0.8552  rejected: no gain
+  fuse_projections=  True  ratio 0.8526  rejected: no gain
+confirming the screening winner with a paired A/B ...
+  confirmed ratio 0.8568 CI [0.8549; 0.9402] tokens identical True -> accepted
+tuned: 14.57% faster end to end, tokens identical, stored in /private/tmp/claude-501/-Users-tobiasburandt/0f74ca2e-c20d-4763-9d28-84d04b331bf8/scratchpad/ironmule-home/profiles.json

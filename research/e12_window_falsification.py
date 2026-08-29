@@ -39,7 +39,6 @@ MAX_NEW_TOKENS = 32
 WARMUP = 2
 PREFIX_LENGTHS = [276, 768, 870, 896, 1000, 1023, 1024, 1025, 1048, 1152, 1280, 1536, 2048]
 CONFIRM_LENGTHS = [1023, 1024, 1025, 1152, 1280, 2048]
-MAX_RSS_BYTES = 12 * 1024**3
 STAGE_WALL_LIMIT_S = 45 * 60
 
 KNOBS = Knobs(compiled_fixed_cache=True, fused_argmax=False, head_skip_prefill=True,
@@ -451,6 +450,7 @@ def main(argv=None) -> int:
 
     started = time.perf_counter()
     cases, aborted = [], None
+    gate = bench.MemoryGate()  # R11: swap, not a byte count
     for kind in kinds:
         for length in lengths:
             if time.perf_counter() - started > STAGE_WALL_LIMIT_S:
@@ -473,8 +473,10 @@ def main(argv=None) -> int:
                       flush=True)
                 aborted = "comparison_a_failure"
                 break
-            if case["mlx_peak_bytes"] > MAX_RSS_BYTES:
-                aborted = "memory_limit"
+            stop = gate.check(len(cases) - 1, case["mlx_peak_bytes"])
+            if stop:
+                print(f"  -> ABORT {stop}", flush=True)
+                aborted = f"memory_gate: {stop}"
                 break
         if aborted:
             break

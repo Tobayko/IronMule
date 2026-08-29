@@ -18,6 +18,8 @@ import argparse
 import json
 import os
 import random
+import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -31,6 +33,8 @@ from ironmule.runtime import _leaves
 from ironmule.tune import DEFAULT_MODEL, gpu_busy
 
 from e14_dispatch import CAPACITY, CONTEXT_TOKENS, FIXED_TOKEN, Harness, RAW, bits_equal
+
+HERE = Path(__file__).resolve().parent
 
 BATCHES = [1, 2, 4, 8]
 SEQUENCES = 8
@@ -157,10 +161,10 @@ def generate(h, state, batch, steps):
 
 
 def run_process(model_id: str, index: int, pilot: bool) -> dict:
-    # MLX's peak is a process-wide high-water mark and these blocks share one
-    # interpreter (see E15 limitation M2). Without this reset the reported peak is
-    # the maximum over every block so far, which also makes the memory guard below
-    # fire earlier the longer a run goes.
+    # Since R12 each block is its own process, so the process-wide high-water mark is
+    # already this block's alone. Kept because this function is still callable in-process
+    # and the reset costs nothing: it makes the peak correct either way rather than
+    # correct only as long as nobody calls it twice.
     mx.reset_peak_memory()
     h = Harness(model_id)
     prompts = h.prompts()
@@ -216,12 +220,53 @@ def run_process(model_id: str, index: int, pilot: bool) -> dict:
     return out
 
 
+def spawn(model_id: str, index: int, pilot: bool, timeout: int = 1800) -> dict:
+    """One block, one OS process, gone before the next begins.
+
+    R12, following `e16_replication.spawn`. The preregistration says "four fresh
+    processes" and the loop this replaces gave four blocks in one interpreter (E15
+    limitation M2), so the fork delivers the frozen document rather than departing from
+    it. It also makes each reported peak the block's own: run in one interpreter, block 2
+    of a 12B run peaked at 23.14 GB against block 1's 17.51 GB because the allocator had
+    not returned block 1's buffers, and the machine swapped.
+    """
+    spec = json.dumps({"model": model_id, "index": index, "pilot": pilot})
+    try:
+        proc = subprocess.run(
+            [sys.executable, os.path.abspath(__file__), "--child", spec],
+            capture_output=True, text=True, timeout=timeout,
+            cwd=str(HERE.parent), env={**os.environ, "PYTHONPATH": str(HERE.parent),
+                                       "HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1"})
+    except subprocess.TimeoutExpired:
+        # One slow block must not take the run down with it. `e16_replication.spawn`
+        # leaves this uncaught; a 27B block would sit closest to the limit.
+        return {"index": index, "crashed": True, "stderr": f"timeout after {timeout}s",
+                "mlx_peak_bytes": 0, "blocks": [], "correctness": []}
+    line = next((l for l in proc.stdout.splitlines() if l.startswith("@@")), None)
+    if line is None:
+        return {"index": index, "crashed": True, "stderr": proc.stderr[-2000:],
+                "mlx_peak_bytes": 0, "blocks": [], "correctness": []}
+    return json.loads(line[2:])
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--stage", choices=["pilot", "main"], required=True)
+    # Not `required`: a child is invoked with `--child` alone and carries its stage
+    # inside the spec. The parent path still insists on it, just below.
+    parser.add_argument("--stage", choices=["pilot", "main"])
     parser.add_argument("--processes", type=int, default=4)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument("--child", help="internal: run one block and print it as JSON")
     args = parser.parse_args(argv)
+
+    if args.child:
+        spec = json.loads(args.child)
+        run = run_process(spec["model"], spec["index"], pilot=spec["pilot"])
+        print("@@" + json.dumps(run, default=str))
+        return 0
+
+    if args.stage is None:
+        parser.error("--stage is required")
 
     busy = gpu_busy()
     if busy:
@@ -235,16 +280,30 @@ def main(argv=None) -> int:
     started = time.perf_counter()
     processes = 1 if args.stage == "pilot" else args.processes
     runs = []
+    # R11: the condition is swap, not a byte count. The old 12 GiB literal refused 12B
+    # at a 17.51 GB peak that measured cleanly, and passed a run that had to be
+    # discarded for swapping. `gate.record` carries what it saw; putting that into the
+    # payload is R10, which needs a schema decision this experiment cannot make alone.
+    gate = bench.MemoryGate()
     for index in range(processes):
-        run = run_process(args.model, index, pilot=args.stage == "pilot")
+        run = spawn(args.model, index, args.stage == "pilot")
         runs.append(run)
+        if run.get("crashed"):
+            print(f"ABORT child {index} crashed:\n{run['stderr']}")
+            break
         print(f"process {index+1}/{processes} done, peak {run['mlx_peak_bytes']/1e9:.2f} GB",
               flush=True)
-        if run["mlx_peak_bytes"] > 12 * 1024**3:
-            print("ABORT memory limit")
+        stop = gate.check(index, run["mlx_peak_bytes"])
+        if stop:
+            print(f"ABORT {stop}")
             break
 
+    # R10, additively: this diff already extends the schema with `crashed`/`stderr`,
+    # so withholding the abort record was inconsistent rather than careful. An
+    # unknown key costs existing readers nothing; a silent truncation costs them the
+    # difference between a short run and a stopped one.
     payload = {"experiment": "E14b", "stage": args.stage, "runs": runs,
+               "memory_gate": gate.record,
                "preregistration_sha256": "564c3906b3de856a5d641c0750a1e5493f8cc640794be1b72cd3c21fedcf8712",
                "prereg_commit": "c6e7f69", "wall_seconds": time.perf_counter() - started,
                "environment": env}
