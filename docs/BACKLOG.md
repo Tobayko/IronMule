@@ -162,7 +162,6 @@ user-approved legal review and resulting documents.
 | `B4` | Wire the weights against page pressure | hours | 0 – 10% under load | none |
 | `B5` | Fill the group on purpose | hours | 0 – 5% at short answers | none, latency cost |
 | `B6` | Cost ratio of `M=4` vs `M=1` against model size | hours | 0, it is a precondition | none |
-| `B7` | Close the gap in the scaling arithmetic | days | 0, it is understanding | none |
 | `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
 | `B30` | Widen Qwen grouped batch-1 groups to 5/6 | days | 0 – 10% | medium, throughput/correctness |
 | `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
@@ -259,12 +258,16 @@ explicit decision to version the schema. If neither is acceptable, the fallback 
 the guard raises instead of breaking, so an aborted run produces no result file at all
 rather than a plausible one.
 
-**Related.** The guard's threshold is a hard-coded `12 * 1024**3`. A 27B 4-bit model is
-about `15 GiB` of weights on its own, so that size cannot be measured with this harness
-at all, regardless of how the peak is counted. Raising the number is a decision about
-swap safety on a 32 GB machine and needs its own entry with a kill criterion — most
-usefully with the threshold as a parameter and direct swap monitoring as the criterion,
-rather than another constant in the source.
+**Related, and it bites before the guard's reporting bug does.** The threshold is a
+hard-coded `12 * 1024**3`. Gemma 3 12B's true per-block peak is `17.51 GB`, measured on
+block 1, which has nothing accumulated to inflate it. So 12B trips the guard honestly,
+with or without the peak reset, and a 27B 4-bit model at roughly `15 GiB` of weights
+cannot be measured either. On a 32 GB machine that holds both comfortably, this harness
+runs only the smallest of the three cached models to completion — which is also part of
+why the scaling evidence in this repository rests on 4B. Raising the number is a
+decision about swap safety and needs its own entry with a kill criterion, most usefully
+with the threshold as a parameter and direct swap monitoring as the criterion rather
+than another constant in the source.
 
 ### `R9` — `ironmule.tune` is the function, not the module
 
@@ -554,24 +557,6 @@ multi-token-per-forward idea gets cheaper exactly where the grouping gain got wo
 **Kill.** The ratio does not fall. Then `B13` and `B14` lose most of their predicted
 advantage at scale and drop several tiers.
 
-### `B7` — The scaling arithmetic does not add up yet
-
-**Mechanism.** [`SCALING.md`](SCALING.md) explains the falling gain as fixed per-step
-overhead becoming a smaller share of a longer step. Check it quantitatively: host
-dispatch scales with kernel count, so roughly with layers (`34 -> 62`, `1.8x`). Device
-time scales with weight traffic, so roughly with parameters (`6.75x`) divided by the
-better bandwidth larger matrices achieve (`195 -> ~300 GB/s`), giving about `4.4x`.
-The recoverable share should then fall to about `0.41` of its 4B value.
-
-**Measured:** `11.81 / 19.24 = 0.61`. The simple story over-predicts the fall by half.
-
-**Test.** Instrument submission and synchronisation per step at each model size, as in
-`E14b`'s four-way split. Either host dispatch grows faster than layer count, or device
-time grows slower than the naive estimate, or both.
-
-**Kill.** Nothing — this one only closes by being answered. It is the highest-value
-entry in Tier 1 because every other tier depends on knowing which term dominates.
-
 ### `B26` — Qwen3.8 27B, to separate model size from model family
 
 **Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
@@ -678,8 +663,6 @@ The larger window is larger *because the device runs inside it*. The four-way sp
 therefore measures wall-clock windows, not host and device cost separately — so the
 question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
 answered with that instrument at all. Size these with real GPU counters or not at all.
-(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
-depend on the exact figures.)
 
 **Kill.** Under `2x` improvement on the isolated step. Then `6.41 µs` is Metal's
 enqueue cost rather than Python's, and `B9` becomes the only remaining route.
@@ -704,8 +687,6 @@ The larger window is larger *because the device runs inside it*. The four-way sp
 therefore measures wall-clock windows, not host and device cost separately — so the
 question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
 answered with that instrument at all. Size these with real GPU counters or not at all.
-(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
-depend on the exact figures.)
 
 **Kill.** The replay is not meaningfully faster, or the shapes turn out not to be
 stable enough across steps to reuse an encoding. Highest ceiling of anything in Tier 2
@@ -729,8 +710,6 @@ The larger window is larger *because the device runs inside it*. The four-way sp
 therefore measures wall-clock windows, not host and device cost separately — so the
 question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
 answered with that instrument at all. Size these with real GPU counters or not at all.
-(`B7` numbers are provisional until its ledger entry lands; the mechanism does not
-depend on the exact figures.)
 
 **Kill.** Kernel count is already near the floor for the primitives available, or a
 fused block kernel underperforms the library's tuned matmuls — which is the usual
