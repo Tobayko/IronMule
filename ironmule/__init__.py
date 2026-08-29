@@ -78,6 +78,13 @@ def status(model_id: str = DEFAULT_MODEL) -> str:
     where = f"{facts['chip']}, {facts['memory_bytes'] // 1024**3} GB, {facts['gpu_cores']} GPU cores"
     if profile is None:
         return f"{where}: not tuned yet"
-    return (f"{where}: {profile['gain']*100:.2f}% faster than untuned "
+    line = (f"{where}: {profile['gain']*100:.2f}% faster than untuned "
             f"({profile['baseline_ns']/1e6:.1f} -> {profile['tuned_ns']/1e6:.1f} ms), "
             f"tokens identical")
+    # A point estimate on its own reads as more certain than it is, and the interval
+    # is already in the profile.
+    ratio = ((profile.get("confirmation") or {}).get("ratio") or {}).get("total_ns")
+    if ratio and "ci_low" in ratio and "ci_high" in ratio:
+        line += (f"; paired 95% CI "
+                 f"[{(1 - ratio['ci_high'])*100:.2f}%; {(1 - ratio['ci_low'])*100:.2f}%]")
+    return line

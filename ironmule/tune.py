@@ -427,7 +427,13 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
         if not ok:
             best, best_result = BASELINE, base
 
-    gain = 1.0 - best_result["total_ns"] / base["total_ns"]
+    # The screening found the candidate from one process per arm; the confirmation
+    # measured it across six paired processes. Report what was measured, not what was
+    # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
+    if confirmation is not None:
+        gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]
+    else:
+        gain = 1.0 - best_result["total_ns"] / base["total_ns"]
     profile = {
         "conditions": conditions(
             model_id, len(ids), max_tokens, model_identity=resolved.identity

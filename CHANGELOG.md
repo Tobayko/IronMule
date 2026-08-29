@@ -6,6 +6,16 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **The stored gain now comes from the confirmation, not the screening.** `tune()`
+  computed `gain` from `best_result`, the single-process screening measurement, while
+  the six-process paired confirmation it had just run only decided accept/reject and
+  never reached the profile. `ironmule.status()` therefore reported the weaker of two
+  numbers the tuner already held, next to a `tokens identical` claim that did come from
+  the confirmation. The first real end-to-end tuning run (`Q2`, 2026-08-29) stored
+  `0.1457` from screening where the paired measurement was `0.8568`, i.e. `14.32%`.
+  `status()` also states the paired 95% interval now: for that run `[5.98%; 14.51%]`,
+  whose lower bound is nowhere near the headline number it used to print alone.
+
 - **First-run experience fixed.** On a machine with no Hugging Face cache — every new
   clone, and every CI runner — `ironmule models` and `ironmule benchmark` raised a raw
   `huggingface_hub` traceback. A single `scan_local_cache()` helper now reads a missing
