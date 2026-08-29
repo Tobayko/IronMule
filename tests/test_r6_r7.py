@@ -425,3 +425,36 @@ def test_gpu_busy_does_not_report_a_foreign_command_line(monkeypatch):
     assert "hunter2" not in busy
     assert "private" not in busy
     assert "/Users/" not in busy
+
+
+def test_stored_gain_comes_from_the_confirmation_not_the_screening():
+    """The screening finds the candidate; the paired confirmation measures it.
+
+    Q2 (2026-08-29) stored 0.1457 from a single-process screening while the six-process
+    confirmation had measured 0.8568, i.e. 14.32%. Always the weaker of two numbers the
+    tuner already had.
+    """
+    ironmule = importlib.import_module("ironmule")
+
+    profile = {
+        "gain": 1 - 0.8568,
+        "baseline_ns": 936_890_000,
+        "tuned_ns": 800_000_000,
+        "confirmation": {"ratio": {"total_ns": {
+            "median_ratio": 0.8568, "ci_low": 0.8549, "ci_high": 0.9402,
+        }}, "token_identity": True},
+    }
+    monkey = pytest.MonkeyPatch()
+    try:
+        monkey.setattr(ironmule, "load_profile", lambda *a, **k: profile)
+        monkey.setattr(
+            importlib.import_module("ironmule.hw"), "static_facts",
+            lambda: {"chip": "Apple M1 Max", "memory_bytes": 32 * 1024**3, "gpu_cores": 32},
+        )
+        line = ironmule.status()
+    finally:
+        monkey.undo()
+
+    assert "14.32% faster" in line
+    # The interval must travel with the point estimate; its lower bound is ~6%.
+    assert "5.98%" in line and "14.51%" in line
