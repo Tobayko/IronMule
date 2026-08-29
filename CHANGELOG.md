@@ -14,8 +14,11 @@ Review follow-ups completed locally; this section is not a release or a performa
   and records `mlx_peak_bytes` per arm; the top-level value keeps its old meaning as
   the maximum across arms. `E15` limitation `M2` already recorded this for the research
   harnesses `E14`, `E14b` and `E15`; that it also affected the shipped library did not.
-  The same reset is added to those three harnesses, where the inflated number was also
-  driving a 12 GiB abort guard that fired earlier the longer a run went.
+  The same reset is added to those three harnesses, where the inflated number also feeds
+  a 12 GiB abort guard, so from the second block onward a run could be cut short by
+  arithmetic rather than by memory. That mechanism is real, but it was not what aborted
+  the 12B run that prompted this: its `17.51 GB` was measured on block 1, with nothing
+  accumulated, so 12B exceeds that guard honestly. See `R10`.
 - **`B25` closed: nothing reallocates the KV cache during decode.** Writing 56 tokens
   through `FixedKVCache` moves active memory from `65,644 B` to `32,876 B` — it falls
   by exactly one keys+values copy as the warmup double buffer is released, and the
