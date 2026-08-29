@@ -37,8 +37,10 @@ complete manifest, architecture, canonical quantisation and tokenizer digest. Le
 or incomplete profiles are rejected, and model identity is hashed only during local
 resolution/load rather than `serve()`. This does not qualify or activate any profile,
 route a request, persist D1 evidence or extend a performance claim. The same-day D2a
-4B/12B pre-change baseline is frozen; the sealed D2b post-change comparison remains
-pending. See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
+4B/12B pre-change baseline and sealed D2b post-change screen completed with exact
+identity/correctness/resources. D2b's frozen result is `NO_REGRESSION_OBSERVED` under
+its 5% engineering gates, not a speed, quality, qualification or activation claim.
+See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
 
 ## Apple-Silicon inference claims
 

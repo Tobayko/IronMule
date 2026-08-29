@@ -71,6 +71,45 @@ def test_dashboard_is_local_escaped_and_includes_history():
             }],
         },
         {"ok": True, "byte_identical_recomputation": True},
+        {
+            "classification": "BASELINE_CAPTURED",
+            "cells": [{
+                "model": {
+                    "model_id": "org/model", "revision": "revision",
+                    "runtime_identity": {"identity_sha256": "a" * 64},
+                },
+                "interactive": {
+                    "outer_wall_ms": {"median": 10},
+                    "physical_tokens_per_second": {"median": 20},
+                },
+                "throughput": {
+                    "outer_wall_ms": {"median": 8},
+                    "physical_tokens_per_second": {"median": 25},
+                },
+                "resources": {"mlx_peak_memory_bytes": 100, "swap_delta_bytes": 0},
+            }],
+        },
+        {
+            "classification": "NO_REGRESSION_OBSERVED",
+            "regression_kind": "NONE",
+            "cells": [{
+                "model_id": "org/model", "performance_misses": [],
+                "comparisons": {
+                    arm: {
+                        "outer_wall_post_over_pre": {
+                            "median_ratio": 1.0, "ci_low": .99, "ci_high": 1.01,
+                        },
+                        "physical_rate_post_over_pre": {
+                            "median_ratio": 1.0, "ci_low": .99, "ci_high": 1.01,
+                        },
+                    } for arm in ("interactive", "throughput")
+                },
+            }],
+        },
+        {
+            "classification": "VERIFIED", "errors": [],
+            "tests": {"non_integration": "178 passed"},
+        },
     )
     assert "Bad&lt;Resolver&gt;" in page
     assert "org/&lt;model&gt;" in page
@@ -78,10 +117,17 @@ def test_dashboard_is_local_escaped_and_includes_history():
     assert "Evidence integrity" in page and "VERIFIED" in page
     assert "D1 post/pre regression screen" in page
     assert "INCONCLUSIVE_POTENTIAL_REGRESSION" in page
-    assert "D1 comparison integrity" in page and "146 passed" in page
+    assert "D1 comparison integrity" in page
+    assert "Regression suite</small><strong>178 passed" in page
     assert "B27e mirrored OLD/D1 control" in page
     assert "ORDER_OR_TEMPORAL_DRIFT" in page
     assert "D2a same-day pre-change baseline" in page
     assert "D2a evidence integrity" in page
+    assert "D2b measured post cells" in page
+    assert "D2b exact-identity post/pre screen" in page
+    assert "NO_REGRESSION_OBSERVED" in page
+    assert "D2b evidence integrity" in page
+    protected = page.split("D1 post/pre regression screen", 1)[0]
+    assert "org/&lt;model&gt;" in protected
     assert "http://" not in page and "https://" not in page
     assert "<script" not in page

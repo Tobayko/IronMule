@@ -29,6 +29,9 @@ def render(
     cross_verification: dict[str, Any] | None = None,
     d2_pre: dict[str, Any] | None = None,
     d2_pre_verification: dict[str, Any] | None = None,
+    d2_post: dict[str, Any] | None = None,
+    d2_comparison: dict[str, Any] | None = None,
+    d2_verification: dict[str, Any] | None = None,
 ) -> str:
     if summary.get("schema") != "ironmule.main_baseline.public.v1":
         raise ValueError("unsupported public-summary schema")
@@ -133,6 +136,9 @@ def render(
     corpus = summary.get("corpus_inventory", {})
     tests = summary.get("tests", {})
     current_test = (
+        d2_verification.get("tests", {}).get("non_integration")
+        if d2_verification is not None else None
+    ) or (
         cross_verification.get("tests", {}).get("non_integration")
         if cross_verification is not None else None
     ) or (
@@ -158,11 +164,11 @@ def render(
             f'<strong class="warn">{classification}</strong>'
             f'<span>{_text(cross_commit.get("b27d_consequence", "unknown"))}</span></div>'
         )
-        rows = []
+        cross_rows = []
         for block in cross_commit.get("blocks", []):
             interactive = block.get("ratios", {}).get("interactive", {})
             throughput = block.get("ratios", {}).get("throughput", {})
-            rows.append(
+            cross_rows.append(
                 "<tr>"
                 f'<td>Block {_text(block.get("block"))}<small>{_text(" → ".join(block.get("order", [])))}</small></td>'
                 f'<td>{_number(interactive.get("d1_over_old_wall"), 4)}</td>'
@@ -175,7 +181,7 @@ def render(
             '<h2>B27e mirrored OLD/D1 control</h2><div class="table-wrap"><table>'
             '<thead><tr><th>Block/order</th><th>Interactive wall</th><th>Interactive rate</th>'
             '<th>Throughput wall</th><th>Throughput rate</th></tr></thead>'
-            f'<tbody>{"".join(rows)}</tbody></table></div>'
+            f'<tbody>{"".join(cross_rows)}</tbody></table></div>'
         )
         timeline.append(
             '<li class="event failed"><span>B27e mirrored control</span>'
@@ -234,6 +240,98 @@ def render(
             f'{"VERIFIED" if verified else "FAILED"}</strong>'
             '<span>path-free deterministic summary</span></div>'
         )
+    d2_post_card = ""
+    d2_post_section = ""
+    if d2_post is not None:
+        classification = _text(d2_post.get("classification", "unknown"))
+        d2_post_card = (
+            '<div class="card"><small>D2b exact-identity post</small>'
+            f'<strong class="good">{classification}</strong>'
+            f'<span>{_text(len(d2_post.get("cells", [])))} exact v2 cells</span></div>'
+        )
+        post_rows = []
+        for cell in d2_post.get("cells", []):
+            model = cell.get("model", {})
+            interactive = cell.get("interactive", {})
+            throughput = cell.get("throughput", {})
+            resources = cell.get("resources", {})
+            post_rows.append(
+                "<tr>"
+                f'<td><strong>{_text(model.get("model_id"))}</strong>'
+                f'<small>{_text(str(model.get("runtime_identity", {}).get("identity_sha256", ""))[:8])}…</small></td>'
+                f'<td>{_number(interactive.get("outer_wall_ms", {}).get("median"))}</td>'
+                f'<td>{_number(interactive.get("physical_tokens_per_second", {}).get("median"), 3)}</td>'
+                f'<td>{_number(throughput.get("outer_wall_ms", {}).get("median"))}</td>'
+                f'<td>{_number(throughput.get("physical_tokens_per_second", {}).get("median"), 3)}</td>'
+                f'<td>{_number(resources.get("mlx_peak_memory_bytes", 0) / 1_000_000_000, 3)} GB</td>'
+                f'<td>{_text(resources.get("swap_delta_bytes", "—"))} B</td>'
+                "</tr>"
+            )
+        d2_post_section = (
+            '<h2>D2b measured post cells</h2><div class="table-wrap"><table>'
+            '<thead><tr><th>Model</th><th>Interactive ms</th><th>Interactive rate</th>'
+            '<th>Throughput ms</th><th>Throughput rate</th><th>MLX peak</th><th>Swap Δ</th></tr></thead>'
+            f'<tbody>{"".join(post_rows)}</tbody></table></div>'
+        )
+        timeline.append(
+            '<li class="event passed"><span>D2b post cells</span>'
+            f'<strong>{classification}</strong><small>exact v2 identities; zero hard failures</small></li>'
+        )
+    d2_comparison_card = ""
+    d2_comparison_section = ""
+    if d2_comparison is not None:
+        classification = _text(d2_comparison.get("classification", "unknown"))
+        clean = d2_comparison.get("classification") == "NO_REGRESSION_OBSERVED"
+        d2_comparison_card = (
+            '<div class="card"><small>D2b regression screen</small>'
+            f'<strong class="{"good" if clean else "warn"}">{classification}</strong>'
+            f'<span>{_text(d2_comparison.get("regression_kind", "unknown"))} · 5% gates</span></div>'
+        )
+        comparison_rows = []
+        for cell in d2_comparison.get("cells", []):
+            comparisons = cell.get("comparisons", {})
+            interactive = comparisons.get("interactive", {})
+            throughput = comparisons.get("throughput", {})
+            iw = interactive.get("outer_wall_post_over_pre", {})
+            ir = interactive.get("physical_rate_post_over_pre", {})
+            tw = throughput.get("outer_wall_post_over_pre", {})
+            tr = throughput.get("physical_rate_post_over_pre", {})
+            misses = cell.get("performance_misses", [])
+            comparison_rows.append(
+                "<tr>"
+                f'<td><strong>{_text(cell.get("model_id"))}</strong></td>'
+                f'<td>{_number(iw.get("median_ratio"), 4)}<small>{_number(iw.get("ci_low"), 4)}–{_number(iw.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(ir.get("median_ratio"), 4)}<small>{_number(ir.get("ci_low"), 4)}–{_number(ir.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(tw.get("median_ratio"), 4)}<small>{_number(tw.get("ci_low"), 4)}–{_number(tw.get("ci_high"), 4)}</small></td>'
+                f'<td>{_number(tr.get("median_ratio"), 4)}<small>{_number(tr.get("ci_low"), 4)}–{_number(tr.get("ci_high"), 4)}</small></td>'
+                f'<td class="{"warn" if misses else "good"}">{_text(", ".join(misses) if misses else "all pass")}</td>'
+                "</tr>"
+            )
+        d2_comparison_section = (
+            '<h2>D2b exact-identity post/pre screen</h2><div class="table-wrap"><table>'
+            '<thead><tr><th>Model</th><th>Interactive wall</th><th>Interactive rate</th>'
+            '<th>Throughput wall</th><th>Throughput rate</th><th>5% gates</th></tr></thead>'
+            f'<tbody>{"".join(comparison_rows)}</tbody></table></div>'
+        )
+        timeline.append(
+            '<li class="event passed"><span>D2b exact-identity screen</span>'
+            f'<strong>{classification}</strong><small>frozen result; no qualification or activation</small></li>'
+        )
+    d2_verification_card = ""
+    if d2_verification is not None:
+        verified = (d2_verification.get("classification") == "VERIFIED"
+                    and not d2_verification.get("errors"))
+        d2_verification_card = (
+            '<div class="card"><small>D2b evidence integrity</small>'
+            f'<strong class="{"good" if verified else "warn"}">'
+            f'{"VERIFIED" if verified else "FAILED"}</strong>'
+            '<span>byte-identical recomputation</span></div>'
+        )
+        timeline.append(
+            '<li class="event passed"><span>D2b evidence integrity</span>'
+            f'<strong>{"VERIFIED" if verified else "FAILED"}</strong>'
+            f'<small>{_text(len(d2_verification.get("errors", [])))} errors</small></li>'
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -282,6 +380,9 @@ self-contained view makes no qualification or activation claim.</p>
   {cross_integrity}
   {d2_card}
   {d2_integrity}
+  {d2_post_card}
+  {d2_comparison_card}
+  {d2_verification_card}
 </section>
 <h2>Protected baseline cells</h2>
 <div class="table-wrap"><table>
@@ -291,6 +392,8 @@ self-contained view makes no qualification or activation claim.</p>
 {post_section}
 {cross_section}
 {d2_section}
+{d2_comparison_section}
+{d2_post_section}
 <h2>History</h2><ol>{''.join(timeline)}</ol>
 <footer>Base <code>{_text(summary.get("base_commit"))}</code> · runtime tree
 <code>{_text(summary.get("runtime_tree_sha256"))}</code> · no external assets,
@@ -316,6 +419,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cross-verification", type=Path)
     parser.add_argument("--d2-pre", type=Path)
     parser.add_argument("--d2-pre-verification", type=Path)
+    parser.add_argument("--d2-post", type=Path)
+    parser.add_argument("--d2-comparison", type=Path)
+    parser.add_argument("--d2-verification", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     summary = json.loads(args.summary.read_text())
@@ -333,9 +439,17 @@ def main(argv: list[str] | None = None) -> int:
         json.loads(args.d2_pre_verification.read_text())
         if args.d2_pre_verification else None
     )
+    d2_post = json.loads(args.d2_post.read_text()) if args.d2_post else None
+    d2_comparison = (
+        json.loads(args.d2_comparison.read_text()) if args.d2_comparison else None
+    )
+    d2_verification = (
+        json.loads(args.d2_verification.read_text()) if args.d2_verification else None
+    )
     _atomic_write(args.output, render(
         summary, verification, post_change, post_verification,
         cross_commit, cross_verification, d2_pre, d2_pre_verification,
+        d2_post, d2_comparison, d2_verification,
     ))
     print(json.dumps({"output": str(args.output), "cells": len(summary["cells"])}, sort_keys=True))
     return 0

@@ -70,21 +70,6 @@ queue times remain diagnostic; the protocol is order-balanced and fails closed o
 wrong answers. A stock `mlx_lm` arm is added only after its exact prompt/stop contract
 is defined and architecture approval is recorded.
 
-### `R6` — Refuse stale profiles and fingerprint the actual model
-
-**Mechanism.** The remaining identity gap is that the runtime fingerprint does not yet
-bind a qualified model revision and quantisation identity strongly enough for profile
-reuse. System-condition fail-closed checks and current-prompt workload drift handling
-are covered separately.
-
-**Test.** Unit profiles varying hardware/framework/model revision/quantisation/plan/
-workload fields; revalidation with a materially different prompt; fail-closed corrupt
-or incomplete profiles.
-
-**Kill.** Exact compatibility reuses a profile, workload-only drift is explicit and
-canaried, framework/model drift falls back to baseline, and a changed prompt is
-measured from its current tokenization.
-
 ### `R8` — Turn correctness and packaging into automated release gates
 
 **Mechanism.** A macOS workflow now exists, but remote CI and its clean installed-wheel
@@ -231,16 +216,16 @@ a consistent D1 slowdown: block 0 was within 2%, while mirrored block 1 made the
 first-running D1 appear 5.8–7.9% faster than OLD. Its frozen class is
 `ORDER_OR_TEMPORAL_DRIFT`, so B27d formally remains inconclusive. The execution
 surfaces are byte-identical and D1 stays off the runtime import graph; no neutrality,
-causality, qualification or activation claim is made. B27 remains open at the next
-architecture decision rather than rerunning the same unconditioned control.
+causality, qualification or activation claim is made.
 
-**Current approved step.** The user approved D2 on 2026-08-29. D2a froze its new
-same-day 4B/12B pre-change baseline; the exact local revision, complete manifest,
-architecture, quantisation and tokenizer identity are now implemented through
-Runtime/fingerprint/profile compatibility. Incomplete legacy profiles fail closed.
-No D1 persistence, strategy selection or activation was added. D2 remains open only
-until the sealed D2b 4B/12B post-change regression comparison and final documentation
-are complete.
+Approved D2 is complete: Runtime fingerprint v2 and tuned-profile conditions v2 bind
+exact local revision, complete manifest, architecture, quantisation and tokenizer;
+incomplete legacy profiles fail closed. The same-day D2b 4B/12B post screen had exact
+identities/outputs/resources, zero domain drift or hard failures and passed every 5%
+gate, yielding `NO_REGRESSION_OBSERVED`. D2 added no D1 persistence, strategy
+selection, routing or activation. This closes the former `R6` identity entry. B27
+remains open only at the next explicit architecture decision, not by extending D2 or
+rerunning the same control.
 
 ---
 
