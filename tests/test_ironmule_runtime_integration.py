@@ -5,6 +5,7 @@ produces the same token ids, counts, stop reasons and KV state hashes as sequent
 execution, under both execution plans.
 """
 
+import json
 import os
 
 import pytest
@@ -74,6 +75,24 @@ QUESTIONS = ["Which program landed humans on the Moon?",
 def pair():
     rt, ironmule = _runtime(None)
     return rt, ironmule
+
+
+def test_runtime_exposes_exact_path_free_model_identity(pair):
+    rt, ironmule = pair
+    identity = rt.model_identity
+    assert identity is not None
+    assert identity.model_id == "mlx-community/gemma-3-4b-it-4bit"
+    assert identity.revision == "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+    assert identity.model_manifest_sha256 == \
+        "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
+    assert identity.quantisation == {"bits": 4, "group_size": 64}
+    assert "/Users/" not in json.dumps(identity.to_dict())
+    record = rt.fingerprint(
+        ironmule.StrictOneShotPlan(),
+        {"prompt_tokens": 16, "max_tokens": 8, "concurrency": 1},
+    )
+    assert record["model_identity_sha256"] == identity.identity_sha256
+    assert record["model_revision"] == identity.revision
 
 
 def _requests(rt, ironmule, plan, caps):

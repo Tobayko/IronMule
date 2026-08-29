@@ -24,6 +24,7 @@ from typing import Any, Sequence
 from .executor import (MAX_GROUP_WIDTH, AsyncGroupedB1Executor, SequentialExecutor,
                        build_sessions)
 from .fingerprint import build as build_fingerprint, usable
+from .model_identity import ModelIdentity, ModelIdentityError
 from .plans import ExecutionPlan, ReusableSessionPlan, StrictOneShotPlan, plan_kind
 from .telemetry import Telemetry
 
@@ -178,29 +179,55 @@ class Runtime:
     """A loaded model plus a service mode. Plans travel with requests."""
 
     def __init__(self, engine, tokenizer, mode=None, model_id: str = "",
-                 quantisation: Any = None):
+                 quantisation: Any = None, model_identity: ModelIdentity | None = None):
         from .tune import _eos_ids
+        engine_identity = getattr(engine, "model_identity", None)
+        if (model_identity is not None and engine_identity is not None
+                and model_identity != engine_identity):
+            raise ModelIdentityError(
+                "explicit Runtime identity conflicts with loaded Engine identity"
+            )
+        identity = model_identity or engine_identity
+        if identity is not None and not isinstance(identity, ModelIdentity):
+            raise ModelIdentityError("Runtime model identity has the wrong type")
+        if identity is not None and model_id and model_id != identity.model_id:
+            local = Path(model_id).expanduser()
+            local_id = f"local:{local.resolve().name}" if local.is_dir() else None
+            if local_id != identity.model_id:
+                raise ModelIdentityError("Runtime model_id conflicts with exact model identity")
+        if identity is not None and quantisation is not None and quantisation != identity.quantisation:
+            raise ModelIdentityError("Runtime quantisation conflicts with exact model identity")
         self.engine = engine
         self.tokenizer = tokenizer
         self.mode = mode or InteractiveMode()
-        self.model_id = model_id
-        self.quantisation = quantisation
+        self.model_identity = identity
+        self.model_id = identity.model_id if identity is not None else model_id
+        self.quantisation = identity.quantisation if identity is not None else quantisation
         self.backend = MLXBackend(engine, _eos_ids(tokenizer))
         self.telemetry = Telemetry(mode=self.mode.name)
 
     # -- construction ---------------------------------------------------------
     @classmethod
-    def load(cls, model_id: str | None = None, mode=None, use_tuned_profile: bool = True):
+    def load(cls, model_id: str | None = None, mode=None, use_tuned_profile: bool = True,
+             revision: str | None = None):
         from .runtime import BASELINE, Knobs
-        from .tune import DEFAULT_MODEL, load_engine, load_profile
+        from .tune import DEFAULT_MODEL, load_engine, load_profile, resolve_local_model
         model_id = model_id or DEFAULT_MODEL
+        resolved = resolve_local_model(model_id, revision)
         knobs = BASELINE
         if use_tuned_profile:
-            profile = load_profile(model_id)
+            profile = load_profile(
+                model_id, revision=revision, model_identity=resolved.identity
+            )
             if profile:
                 knobs = Knobs(**profile["knobs"])
-        engine, tokenizer = load_engine(model_id, knobs)
-        return cls(engine, tokenizer, mode=mode, model_id=model_id)
+        engine, tokenizer = load_engine(
+            model_id, knobs, revision=revision, resolved_source=resolved
+        )
+        return cls(
+            engine, tokenizer, mode=mode, model_id=resolved.identity.model_id,
+            model_identity=resolved.identity,
+        )
 
     # -- helpers --------------------------------------------------------------
     def encode(self, text: str) -> list[int]:
@@ -265,9 +292,12 @@ class Runtime:
     # -- validity -------------------------------------------------------------
     def fingerprint(self, plan: ExecutionPlan | None = None,
                     workload: dict | None = None) -> dict:
+        if self.model_identity is None:
+            raise ModelIdentityError("Runtime fingerprint requires exact model identity")
         return build_fingerprint(self.model_id, self.quantisation,
                                  plan_kind(plan or StrictOneShotPlan()),
-                                 self.mode.name, workload)
+                                 self.mode.name, workload,
+                                 model_identity=self.model_identity)
 
     def revalidate(self, store: Path | None = None, plan: ExecutionPlan | None = None,
                    workload: dict | None = None) -> dict:

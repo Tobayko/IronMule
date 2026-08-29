@@ -2101,3 +2101,43 @@ activation follows, and D2 source implementation had not begun at result capture
 
 Pre-implementation verification passed `155 passed, 11 deselected` in `5.37 s`; the
 latest unchanged-runtime real Gemma-4B integration gate remained `10/10` in `21.17 s`.
+
+## D2 — Exact model identity implementation, pre-measurement (2026-08-29)
+
+D2 is implemented within its approved boundary. The new stdlib-only
+`ironmule.model_identity` resolves one exact local source and creates a path-free
+immutable identity from revision, complete present-file manifest, architecture,
+canonical quantisation and tokenizer artifacts. Runtime fingerprint v2 and
+tuned-profile conditions v2 require every identity field; missing, legacy, ambiguous
+or inconsistent identities fall back to baseline or raise before validity reuse.
+`mlx_lm.load` keeps its two-value caller shape through `load_engine`, and a second
+full identity reconstruction detects a source change during load. Hashing is outside
+the timed `Runtime.serve` path.
+
+The two exact cached identities independently reconstructed by the D2 comparison
+harness are `2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2`
+(Gemma 3 4B) and
+`2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474`
+(Gemma 3 12B). Their manifest digests remain `a405b1a7…` and `aef12412…`;
+both tokenizer and quantisation digests are respectively `afbd505b…` and
+`4952fcd6…`. No file path is serialized.
+
+Pre-D2b verification passed 39 focused identity/comparator/profile tests, the full
+serial non-integration suite at `178 passed, 12 deselected` in `4.98 s`, and the real
+cached Gemma-4B integration suite at `11/11` in `22.14 s`. Post-integration swap was
+`0 B` and no residual model process was present. The old incomplete local profile was
+not reused, including with raw revalidation access. No model or dependency was
+downloaded or installed.
+
+**Recorded execution incident.** One focused pytest command was accidentally invoked
+inside the restricted sandbox. MLX aborted during import with `SIGABRT`/exit `134`
+before any model, test or timing arm ran. Root cause was Metal/MLX initialization in
+the unsupported sandbox. The successful remedy is to run all IronMule pytest/model
+commands serially with the existing project Python outside that sandbox. The corrected
+focused suite passed; the crash is not a measurement and is neither retried as a data
+point nor pooled.
+
+D2 still contains no D1 EvidenceRecord persistence, strategy selection, plan/mode
+routing, automatic activation, download path or inference-semantic change. The
+independent D2b comparator and its 5% correctness/resource/performance gates are
+implemented, but no post-D2 timing had been observed when this entry was written.

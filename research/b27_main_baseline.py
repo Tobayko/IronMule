@@ -242,7 +242,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         from ironmule.benchmark import run_protocol
         from ironmule.runtime import BASELINE
         from ironmule.service import Runtime
-        from ironmule.tune import _eos_ids, gpu_busy, load_engine
+        from ironmule.tune import _eos_ids, gpu_busy, load_engine, resolve_local_model
 
         busy = gpu_busy()
         if busy:
@@ -250,13 +250,31 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             result["busy_process"] = busy
             return result
 
+        resolved = resolve_local_model(args.model, args.revision)
+        identity = resolved.identity
+        expected = {
+            "model_id": binding["model_id"], "revision": binding["revision"],
+            "model_manifest_sha256": binding["model_manifest_sha256"],
+            "architecture": binding["architecture"], "quantisation": binding["quantisation"],
+        }
+        observed = {
+            "model_id": identity.model_id, "revision": identity.revision,
+            "model_manifest_sha256": identity.model_manifest_sha256,
+            "architecture": identity.architecture, "quantisation": identity.quantisation,
+        }
+        if observed != expected or resolved.path != snapshot:
+            raise RuntimeError("runtime ModelIdentity does not match independent model binding")
+        result["runtime_model_identity"] = identity.to_dict()
         result["stage"] = "model_load"
-        engine, tokenizer = load_engine(str(snapshot), BASELINE, offline=True)
+        engine, tokenizer = load_engine(
+            args.model, BASELINE, offline=True, revision=args.revision,
+            resolved_source=resolved,
+        )
         rt = Runtime(
             engine,
             tokenizer,
-            model_id=args.model,
-            quantisation=binding.get("quantisation"),
+            model_id=identity.model_id,
+            model_identity=identity,
         )
         result["environment"] = environment()
         result["stage"] = "benchmark"
