@@ -2141,3 +2141,20 @@ D2 still contains no D1 EvidenceRecord persistence, strategy selection, plan/mod
 routing, automatic activation, download path or inference-semantic change. The
 independent D2b comparator and its 5% correctness/resource/performance gates are
 implemented, but no post-D2 timing had been observed when this entry was written.
+
+## D2b — Exact-identity post-change screen, pre-measurement (2026-08-29)
+
+D2b is sealed against implementation commit
+`7892810584be232cec744c0038ab9b3e069608ea` and runtime-tree SHA-256
+`5759506d46ee006e6f2873312f2d8a8ac857be1d1488b59cafbb09b9de7a5e60`.
+It compares only the same-day D2a raw 4B/12B records (`c012c9a3…`, `745d6322…`),
+in fixed 4B-then-12B order. Each post cell must contain the independently
+reconstructed exact Runtime identity and matching fingerprint-v2 fields before the
+correctness/resource and 5% bootstrap regression gates are evaluated.
+
+The implementation review SHA-256 is
+`a0f634a77515741db17e3205ffb827f2d318439e7294ea399eead4a890792e5f`;
+the preregistration SHA-256 is
+`6ffc3a6714aa8ed2a2e71e1ebd6af9a5f284a171e8ba69a5e959f7802c070c1b`.
+No D2b timing had been observed when these documents were sealed. There is no retry,
+pooling, threshold change, qualification, routing or activation consequence.
