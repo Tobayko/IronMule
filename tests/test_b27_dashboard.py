@@ -56,6 +56,21 @@ def test_dashboard_is_local_escaped_and_includes_history():
             }],
         },
         {"ok": True, "byte_identical_recomputation": True},
+        {
+            "classification": "BASELINE_CAPTURED",
+            "cells": [{
+                "model": {"model_id": "org/model", "revision": "revision"},
+                "interactive": {
+                    "outer_wall_ms": {"median": 10},
+                    "physical_tokens_per_second": {"median": 20},
+                },
+                "throughput": {
+                    "outer_wall_ms": {"median": 8},
+                    "physical_tokens_per_second": {"median": 25},
+                },
+            }],
+        },
+        {"ok": True, "byte_identical_recomputation": True},
     )
     assert "Bad&lt;Resolver&gt;" in page
     assert "org/&lt;model&gt;" in page
@@ -66,5 +81,7 @@ def test_dashboard_is_local_escaped_and_includes_history():
     assert "D1 comparison integrity" in page and "146 passed" in page
     assert "B27e mirrored OLD/D1 control" in page
     assert "ORDER_OR_TEMPORAL_DRIFT" in page
+    assert "D2a same-day pre-change baseline" in page
+    assert "D2a evidence integrity" in page
     assert "http://" not in page and "https://" not in page
     assert "<script" not in page

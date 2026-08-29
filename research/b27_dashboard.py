@@ -27,6 +27,8 @@ def render(
     post_verification: dict[str, Any] | None = None,
     cross_commit: dict[str, Any] | None = None,
     cross_verification: dict[str, Any] | None = None,
+    d2_pre: dict[str, Any] | None = None,
+    d2_pre_verification: dict[str, Any] | None = None,
 ) -> str:
     if summary.get("schema") != "ironmule.main_baseline.public.v1":
         raise ValueError("unsupported public-summary schema")
@@ -189,6 +191,49 @@ def render(
             f'{"VERIFIED" if verified else "FAILED"}</strong>'
             '<span>4 children · mirrored order</span></div>'
         )
+    d2_card = ""
+    d2_section = ""
+    if d2_pre is not None:
+        classification = _text(d2_pre.get("classification", "unknown"))
+        d2_card = (
+            '<div class="card"><small>D2a exact-identity baseline</small>'
+            f'<strong class="good">{classification}</strong>'
+            f'<span>{_text(len(d2_pre.get("cells", [])))} same-day cells</span></div>'
+        )
+        d2_rows = []
+        for cell in d2_pre.get("cells", []):
+            model = cell.get("model", {})
+            interactive = cell.get("interactive", {})
+            throughput = cell.get("throughput", {})
+            d2_rows.append(
+                "<tr>"
+                f'<td><strong>{_text(model.get("model_id"))}</strong><small>{_text(str(model.get("revision", ""))[:10])}…</small></td>'
+                f'<td>{_number(interactive.get("outer_wall_ms", {}).get("median"))}</td>'
+                f'<td>{_number(interactive.get("physical_tokens_per_second", {}).get("median"), 3)}</td>'
+                f'<td>{_number(throughput.get("outer_wall_ms", {}).get("median"))}</td>'
+                f'<td>{_number(throughput.get("physical_tokens_per_second", {}).get("median"), 3)}</td>'
+                "</tr>"
+            )
+        d2_section = (
+            '<h2>D2a same-day pre-change baseline</h2><div class="table-wrap"><table>'
+            '<thead><tr><th>Model</th><th>Interactive ms</th><th>Interactive rate</th>'
+            '<th>Throughput ms</th><th>Throughput rate</th></tr></thead>'
+            f'<tbody>{"".join(d2_rows)}</tbody></table></div>'
+        )
+        timeline.append(
+            '<li class="event passed"><span>D2a pre-change baseline</span>'
+            f'<strong>{classification}</strong><small>exact local snapshots; no profile reuse</small></li>'
+        )
+    d2_integrity = ""
+    if d2_pre_verification is not None:
+        verified = (d2_pre_verification.get("ok") is True
+                    and d2_pre_verification.get("byte_identical_recomputation") is True)
+        d2_integrity = (
+            '<div class="card"><small>D2a evidence integrity</small>'
+            f'<strong class="{"good" if verified else "warn"}">'
+            f'{"VERIFIED" if verified else "FAILED"}</strong>'
+            '<span>path-free deterministic summary</span></div>'
+        )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -235,6 +280,8 @@ self-contained view makes no qualification or activation claim.</p>
   {post_integrity}
   {cross_card}
   {cross_integrity}
+  {d2_card}
+  {d2_integrity}
 </section>
 <h2>Protected baseline cells</h2>
 <div class="table-wrap"><table>
@@ -243,6 +290,7 @@ self-contained view makes no qualification or activation claim.</p>
 </table></div>
 {post_section}
 {cross_section}
+{d2_section}
 <h2>History</h2><ol>{''.join(timeline)}</ol>
 <footer>Base <code>{_text(summary.get("base_commit"))}</code> · runtime tree
 <code>{_text(summary.get("runtime_tree_sha256"))}</code> · no external assets,
@@ -266,6 +314,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--post-verification", type=Path)
     parser.add_argument("--cross-commit", type=Path)
     parser.add_argument("--cross-verification", type=Path)
+    parser.add_argument("--d2-pre", type=Path)
+    parser.add_argument("--d2-pre-verification", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     summary = json.loads(args.summary.read_text())
@@ -278,9 +328,14 @@ def main(argv: list[str] | None = None) -> int:
     cross_verification = (
         json.loads(args.cross_verification.read_text()) if args.cross_verification else None
     )
+    d2_pre = json.loads(args.d2_pre.read_text()) if args.d2_pre else None
+    d2_pre_verification = (
+        json.loads(args.d2_pre_verification.read_text())
+        if args.d2_pre_verification else None
+    )
     _atomic_write(args.output, render(
         summary, verification, post_change, post_verification,
-        cross_commit, cross_verification,
+        cross_commit, cross_verification, d2_pre, d2_pre_verification,
     ))
     print(json.dumps({"output": str(args.output), "cells": len(summary["cells"])}, sort_keys=True))
     return 0

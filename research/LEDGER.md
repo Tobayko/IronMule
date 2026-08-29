@@ -2077,3 +2077,27 @@ contract/review SHA-256 values are `ebfb372f…` and `8327a778…`.
 Gemma 3 4B then 12B use the strict six-request/48-token, 2-warmup/6-repeat protocol
 with exact local snapshots and no stored profile. D2a never pools B27 data and creates
 no qualification. No D2a timing had been observed when this entry was written.
+
+## D2a — Exact-identity pre-change baseline result (2026-08-29)
+
+Both new same-day cells completed as `BASELINE_CAPTURED` on clean commit
+`a0778e12cc0cee6d7a62523ce6b18593998fe619`, unchanged runtime-tree SHA-256
+`d7577af8e83778b9753ad4bf721656a16d923a9f848040e406178b7dcffc8a21`.
+Preflight was 87% free memory, AC, low-power false, swap `0 B`; outputs were
+token/stop/count identical with zero fallback/correctness errors and zero swap delta.
+
+| Model | Interactive outer/rate | Throughput outer/rate | MLX peak |
+| --- | ---: | ---: | ---: |
+| Gemma 3 4B | `3939.53 ms / 73.105 tok/s` | `3367.33 ms / 85.528 tok/s` | `2,784,919,610 B` |
+| Gemma 3 12B | `10076.32 ms / 28.583 tok/s` | `8822.69 ms / 32.644 tok/s` | `7,801,366,427 B` |
+
+Raw SHA-256 values are
+`c012c9a3e9b25d995e940d363137238f717a42ccae611f52354d7779cbad39d9`
+and `745d63222c42937e72bfb5b32b5e5773ed727b6f3366b229dcd2c0f5c76817aa`.
+The path-free summary recomputes byte-identically, SHA-256
+`6eddb942af04addb245e624b189b90e095fc6eb591abe413159541b4f1c63ea6`.
+This is the only pre-change timing source allowed for D2b. No qualification or
+activation follows, and D2 source implementation had not begun at result capture.
+
+Pre-implementation verification passed `155 passed, 11 deselected` in `5.37 s`; the
+latest unchanged-runtime real Gemma-4B integration gate remained `10/10` in `21.17 s`.
