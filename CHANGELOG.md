@@ -6,6 +6,27 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **MLX peak memory is now measured per arm, not per process.** `mx.get_peak_memory()`
+  is a process-wide high-water mark and `mx.reset_peak_memory()` was called nowhere in
+  the repository. `ironmule/ab.py` loads a fresh model for every arm inside one child
+  process and read the peak once after the arm loop, so the number filed under an arm
+  was the maximum over every arm that process had run. It now resets before each arm
+  and records `mlx_peak_bytes` per arm; the top-level value keeps its old meaning as
+  the maximum across arms. `E15` limitation `M2` already recorded this for the research
+  harnesses `E14`, `E14b` and `E15`; that it also affected the shipped library did not.
+  The same reset is added to those three harnesses, where the inflated number was also
+  driving a 12 GiB abort guard that fired earlier the longer a run went.
+- **`B25` closed: nothing reallocates the KV cache during decode.** Writing 56 tokens
+  through `FixedKVCache` moves active memory from `65,644 B` to `32,876 B` — it falls
+  by exactly one keys+values copy as the warmup double buffer is released, and the
+  shape never changes. `tests/test_cache_allocation.py` holds it. The predecessor's
+  `4.4263%` from cache growth copies belonged to a growing cache this runtime no longer
+  has.
+- **Two documentation corrections.** `research/LEDGER.md` said `E14b`'s token
+  divergence reproduced "in all four processes" twenty lines above limitation `M2`,
+  which states those were blocks in one interpreter; `docs/BACKLOG.md` repeated it in
+  the `B12` entry. Both now say blocks and point at `M2`.
+
 - **The stored gain now comes from the confirmation, not the screening.** `tune()`
   computed `gain` from `best_result`, the single-process screening measurement, while
   the six-process paired confirmation it had just run only decided accept/reject and

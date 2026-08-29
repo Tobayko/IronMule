@@ -1015,7 +1015,9 @@ everywhere. Generated token counts equal everywhere.
 Generated token IDs: identical at `b = 2` (8/8) and `b = 4` (16/16). At `b = 8`,
 **one sequence — row 3 — differs by exactly one token**, at index 6 of 8
 (`1437` against `1580`, converging again at index 7), and it does so **in all four
-processes**. Deterministic, reproducible, confined to `b = 8`.
+blocks**. Deterministic, reproducible, confined to `b = 8`. (Blocks, not OS processes:
+see limitation `M2` below — `e14b_arms.py` loops in one interpreter, and this entry
+said "processes" before that was noticed.)
 
 Batched execution at `b = 8` is therefore **not interchangeable** with batch-1
 execution on this workload. **E14b derives no quality claim from this**; that is

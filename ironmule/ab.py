@@ -26,9 +26,15 @@ def _child(spec: dict[str, Any]) -> dict[str, Any]:
     """Runs inside the subprocess: one fresh model per arm, in the given order."""
     from .tune import DEFAULT_MODEL, DEFAULT_PROMPT, _eos_ids, load_engine, prompt_ids
 
+    import mlx.core as mx
+
     out: dict[str, Any] = {"pid": os.getpid(), "arms": {}, "order": spec["order"]}
     for name in spec["order"]:
         knobs = Knobs(**spec["arms"][name])
+        # MLX's peak is a high-water mark for the whole process. Every arm here loads
+        # its own model into the same process, so without a reset the second arm
+        # inherits the first one's peak and the number stops being about this arm.
+        mx.reset_peak_memory()
         engine, tok = load_engine(spec.get("model", DEFAULT_MODEL), knobs)
         ids = prompt_ids(tok, spec.get("prompt", DEFAULT_PROMPT))
         eos = _eos_ids(tok)
@@ -43,10 +49,12 @@ def _child(spec: dict[str, Any]) -> dict[str, Any]:
             "deterministic": all(r["logical_tokens"] == runs[0]["logical_tokens"] for r in runs),
             "decode_steps": len(runs[0]["physical_tokens"]) - 1,
             "prompt_tokens": len(ids),
+            "mlx_peak_bytes": mx.get_peak_memory(),
         }
         del engine
-    import mlx.core as mx
-    out["mlx_peak_bytes"] = mx.get_peak_memory()
+    # Kept for existing readers, and still what it always was: the high-water mark
+    # across every arm this process ran, not any single arm's peak.
+    out["mlx_peak_bytes"] = max(arm["mlx_peak_bytes"] for arm in out["arms"].values())
     return out
 
 
