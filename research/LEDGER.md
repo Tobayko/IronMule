@@ -2063,3 +2063,17 @@ requires a new explicit decision rather than inference from these data.
 **Final verification.** The complete serial result-state suite passed
 `153 passed, 11 deselected` in `5.12 s`; the real Gemma-4B integration suite passed
 `10/10` in `21.17 s`. Pre-integration swap was `0 B` and no model process was present.
+
+## D2a — Exact-identity pre-change baseline, pre-measurement (2026-08-29)
+
+The user explicitly approved D2: exact local revision/manifest/architecture/
+quantisation/tokenizer propagation into Runtime fingerprints and tuned-profile
+compatibility, with no strategy selection, EvidenceRecord persistence or activation.
+
+D2a is a new same-day pre-change baseline on the clean commit containing its sealed
+protocol. Runtime-tree SHA must remain `d7577a…`; baseline harness SHA-256 is
+`e6d981583384d4b526af32eb508579a79815bebabea0c64c8a2f4d99ebfe74d4`;
+contract/review SHA-256 values are `ebfb372f…` and `8327a778…`.
+Gemma 3 4B then 12B use the strict six-request/48-token, 2-warmup/6-repeat protocol
+with exact local snapshots and no stored profile. D2a never pools B27 data and creates
+no qualification. No D2a timing had been observed when this entry was written.
