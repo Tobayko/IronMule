@@ -338,20 +338,6 @@ decision about swap safety and needs its own entry with a kill criterion, most u
 with the threshold as a parameter and direct swap monitoring as the criterion rather
 than another constant in the source.
 
-### `R9` — `ironmule.tune` is the function, not the module
-
-**Mechanism.** `__init__.py:35` rebinds the name `tune` from the submodule to the
-function it exports. `import ironmule.tune as m` therefore yields the function; the
-module is reachable only through `importlib.import_module("ironmule.tune")`. It cost
-one debugging round while writing the `gpu_busy` regression test, and it will cost the
-same to anyone writing against the package.
-
-**Test.** One test that performs both accesses and asserts the type of each, so the
-behaviour is pinned for as long as it exists.
-
-**Kill.** Renaming breaks the public API. This closes with a major version bump, or
-with the decision to document the quirk permanently rather than change it.
-
 ---
 
 ## Architecture track — audit first, not a performance claim
@@ -441,6 +427,15 @@ Listed so the next person does not spend a week rediscovering them.
   both reference runs from `B7`'s recorded numbers, so the gate is tested against what
   actually happened rather than against what sounds reasonable. A gate that can read
   neither swap nor installed memory reports itself `inert` instead of silently passing.
+
+- **`R9` `ironmule.tune` resolves to the function, not the module.** `__init__.py:35`
+  re-exports `tune` from `.tune`, rebinding the name in the package namespace, so
+  `import ironmule.tune as m` yields the function and the module is reachable only via
+  `importlib.import_module("ironmule.tune")`. Renaming would break the public API, so
+  this is documented rather than changed — the decision its kill criterion allowed for.
+  Checked across the package: exactly one of fifteen submodules is shadowed this way.
+  `tests/test_ironmule.py` asserts that, so a second one cannot appear unnoticed; the
+  quirk stays a footnote instead of becoming a pattern.
 
 - **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
   digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
