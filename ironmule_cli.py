@@ -353,7 +353,8 @@ def main(argv: list[str] | None = None) -> int:
         # Matched by name, not by import: importing ModelIdentityError pulls in the
         # `ironmule` package, which imports MLX. `ironmule doctor` has to keep working
         # on exactly the machine where that import is the thing that is broken.
-        if type(exc).__name__ != "ModelIdentityError":
+        if (type(exc).__name__ != "ModelIdentityError"
+                or not type(exc).__module__.startswith("ironmule.")):
             raise
         # A model that is not cached is the normal first-run outcome, not a crash.
         # The exception already carries the exact command that fixes it.

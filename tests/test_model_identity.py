@@ -106,7 +106,8 @@ def test_cached_resolution_requires_one_exact_revision(tmp_path):
     resolved = resolve_model_source("org/model", revision="first", cache=cache)
     assert resolved.path == first.resolve()
     assert resolved.identity.revision == "first"
-    with pytest.raises(ModelIdentityError, match="found 0"):
+    # The model IS cached here, just not at that pin; the message must say which.
+    with pytest.raises(ModelIdentityError, match="cached, but not at revision"):
         resolve_model_source("org/model", revision="missing", cache=cache)
 
 

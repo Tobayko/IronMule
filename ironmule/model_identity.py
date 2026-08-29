@@ -313,29 +313,35 @@ def select_cached_snapshot(cache: Any, model_id: str, revision: str | None = Non
         candidates = [cached for cached in candidates if cached.commit_hash == revision]
     if len(candidates) != 1:
         detail = "requested revision" if revision is not None else "unique cached revision"
-        prefix = "model is not cached: " if not candidates else ""
-        message = (
-            f"{prefix}expected exactly one {detail} for {model_id!r}, "
-            f"found {len(candidates)}"
-        )
-        if not candidates:
-            # IronMule never downloads weights, so "not cached" is a dead end unless
-            # the message says how to leave it. `ironmule models` lists what is here.
-            # Repeat the revision in the hint: without it the user fetches `main`,
-            # which is not what they asked for and still will not resolve.
-            at_revision = f" --revision {revision}" if revision is not None else ""
-            message += (
-                f"\n\nIronMule does not download models. Fetch it once yourself, then "
+        # Three different situations reach this point and they need different advice.
+        # Saying "not cached" about a model that is cached at another revision sends the
+        # user to doubt their cache instead of their pin.
+        if not candidates and not repositories:
+            raise ModelIdentityError(
+                f"model is not cached: no local snapshot of {model_id!r}\n\n"
+                f"IronMule does not download models. Fetch it once yourself, then "
                 f"re-run:\n"
-                f"    hf download {model_id}{at_revision}\n"
+                f"    hf download {model_id}"
+                f"{f' --revision {revision}' if revision is not None else ''}\n"
                 f"    ironmule models    # confirm it is cached"
             )
-        elif revision is None:
-            message += (
-                f"\n\nSeveral revisions are cached. Pass the exact one you mean; "
-                f"`ironmule models --model {model_id}` lists them."
+        if not candidates:
+            raise ModelIdentityError(
+                f"{model_id!r} is cached, but not at revision {revision!r}\n\n"
+                f"Cached revisions:\n"
+                f"    ironmule models --model {model_id}\n"
+                f"Then either pin one of those, or fetch the one you asked for:\n"
+                f"    hf download {model_id} --revision {revision}"
             )
-        raise ModelIdentityError(message)
+        # More than one revision is cached and the caller pinned none. The CLI has no
+        # --revision flag, so do not tell a CLI user to pass one they cannot pass.
+        raise ModelIdentityError(
+            f"expected exactly one {detail} for {model_id!r}, found {len(candidates)}"
+            f"\n\nSeveral revisions are cached; `ironmule models --model {model_id}` "
+            f"lists them. Pinning an exact revision is a Python API argument "
+            f"(`Runtime.load(model_id=..., revision=...)`); the CLI has no --revision "
+            f"flag yet."
+        )
     selected = candidates[0]
     path = Path(selected.snapshot_path).resolve()
     if not path.is_dir():
