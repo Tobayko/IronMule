@@ -300,6 +300,21 @@ deliberately short one, and the analysis that follows rests silently on a quarte
 intended samples. Found by living through it: the 12B leg of a scaling run aborted, and
 only the terminal output said so.
 
+**Three harnesses, three different behaviours, and the middle one is the worst.**
+
+- `e12_window_falsification.py:476` is correct: it sets `aborted = "memory_limit"`
+  before breaking, so the reason reaches `stage_aborted` in the payload. **This is the
+  shape to copy.**
+- `e15_service.py:425-437` has an `aborted` field and fills it for the wall-clock limit,
+  but the memory branch two conditions later only prints and breaks. A run killed by
+  memory therefore writes `"aborted": null`. That is worse than having no field at all:
+  a reader who checks for one finds it, sees `null`, and concludes the run finished.
+- `e14b_arms.py` has no field at all.
+
+So this is not a uniform gap to be filled the same way everywhere. Filling `E15`'s
+existing field on the memory path is a bug fix and needs no schema decision; adding one
+to `E14b` is the schema decision this entry is about.
+
 **Test.** A run that hits the guard writes a machine-readable record into its own result
 file — the reason, the block index reached, and the value that tripped it. An analysis
 helper refuses to summarise a file carrying such a record unless the caller acknowledges
@@ -308,10 +323,12 @@ rather than a plain short file.
 
 **Kill.** Result files are bound to preregistration hashes, so a schema change
 invalidates the comparison the file was written for. This closes only if the record can
-be added without breaking existing readers — an additive optional key — or with an
-explicit decision to version the schema. If neither is acceptable, the fallback is that
-the guard raises instead of breaking, so an aborted run produces no result file at all
-rather than a plausible one.
+be added without breaking existing readers — an additive optional key, following `E12`'s
+shape — or with an explicit decision to version the schema. If neither is acceptable,
+the fallback is that the guard raises instead of breaking, so an aborted run produces no
+result file at all rather than a plausible one. It does **not** close by adding a field
+that some code paths leave unset: `E15` shows that a present-but-empty marker is a
+stronger false signal than an absent one.
 
 **Related, and it bites before the guard's reporting bug does.** The threshold is a
 hard-coded `12 * 1024**3`. Gemma 3 12B's true per-block peak is `17.51 GB`, measured on
