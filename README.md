@@ -67,6 +67,13 @@ ironmule doctor
 ironmule models
 ```
 
+`ironmule models` prints an empty list on a fresh machine. IronMule never downloads
+weights, so fetch one model yourself first — about 3.4 GB for the 4B used below:
+
+```bash
+hf download mlx-community/gemma-3-4b-it-4bit
+```
+
 Run the balanced local benchmark with a cached model:
 
 ```bash

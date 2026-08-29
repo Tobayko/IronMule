@@ -6,6 +6,26 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **First-run experience fixed.** On a machine with no Hugging Face cache — every new
+  clone, and every CI runner — `ironmule models` and `ironmule benchmark` raised a raw
+  `huggingface_hub` traceback. A single `scan_local_cache()` helper now reads a missing
+  cache directory as an empty one, so `models` prints an empty list and any command
+  asking for an uncached model fails with the command that fixes it (`hf download …`)
+  instead of a stack trace. The CLI reports `ModelIdentityError` as a message and exit
+  `1`; the library still raises. Subprocess regression tests cover both, plus the case
+  where the MLX import itself is broken and `doctor` must still start. One behaviour
+  change: `ironmule models` now reaches the cache through the shared helper in the
+  `ironmule` package, so it needs the runtime import that `huggingface_hub` alone used
+  to satisfy. A broken MLX install therefore makes `models` print the `ironmule doctor`
+  hint and exit `1` instead of listing; `doctor` itself still imports neither.
+- **Documentation links are now a test.** `tests/test_docs_links.py` walks every tracked
+  Markdown file and fails on a relative link that does not resolve. It found 18 dead
+  links: `research/LEDGER.md`, `docs/LIMITS.md` and `research/raw/B39_review.md` linked
+  to raw benchmark JSON that `.gitignore` deliberately keeps local, so those links were
+  dead for everyone who cloned. Raw files are now named as inline code, and the ledger
+  header says plainly that raw evidence is local and the redacted
+  `*_public_summary_*.json` is what ships.
+
 - **R1 completed:** prefill-produced tokens now participate in the shared token/count/stop contract, including EOS and `max_tokens=1` coverage.
 - **R4 completed:** the service backend honours both fused-token and logits output contracts.
 - **R5 completed:** telemetry distinguishes an unperformed correctness check from a checked request/error count; benchmark mismatches are structured and fail closed.

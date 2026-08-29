@@ -72,17 +72,23 @@ is defined and architecture approval is recorded.
 
 ### `R8` — Turn correctness and packaging into automated release gates
 
-**Mechanism.** A macOS workflow now exists, but remote CI and its clean installed-wheel
-job have not run. The real-model fixture previously skipped every exception, so a
-programming error could be reported as a missing model.
+**Mechanism.** The macOS workflow now runs remotely and its clean installed-wheel job
+is green. The real-model fixture no longer skips every exception. What is left is the
+gap this entry keeps confusing with CI: nothing asserted that a *first* run works. The
+first two commands a new clone runs, `ironmule models` and `ironmule benchmark`, both
+raised a raw `CacheNotFound` traceback on a machine with no Hugging Face cache — the
+exact machine every new user is on, and the exact machine CI is.
 
 **Test.** CI builds and installs the wheel in a clean environment, runs unit and CLI
 smokes, and checks dependency metadata. Integration setup skips only enumerated model,
-access or unavailable-Metal failures; all other exceptions fail.
+access or unavailable-Metal failures; all other exceptions fail. Subprocess tests assert
+that a cache-less machine gets an actionable message and a non-zero exit, never a
+traceback, and that `--help`/`doctor` still start when the MLX import itself is broken.
 
-**Kill.** A clean package/CLI job is green, synthetic regressions cover `R1`–`R7`, and
-an injected unexpected integration error fails instead of skipping. Apple-Silicon
-model CI remains open until runner availability and cost are explicitly approved.
+**Kill.** Remote clean package/CLI job green (done), first-run behaviour covered by
+tests (done), and synthetic regressions covering `R1`–`R7` (open — only `R6`/`R7` have
+a dedicated suite). Apple-Silicon model CI remains open until runner availability and
+cost are explicitly approved.
 
 ### `S1` — Persistent local service with an explicit overload contract
 
@@ -178,6 +184,72 @@ user-approved legal review and resulting documents.
 | `B23` | Weight layout tuned for `M=1` | weeks | 0 – 20% | low |
 | `B24` | Real GPU counters instead of wall clock | days | 0, it is instrumentation | none |
 | `B27` | Evidence-bound execution strategies | audit first, then weeks | 0 immediate; prevents regressions and unsafe reuse | low for audit, medium for routing |
+
+---
+
+## Opened 2026-08-29, from making the repository usable by strangers
+
+These are not release blockers. They came out of running the project the way someone
+who just cloned it would, and out of the review that followed.
+
+### `P1` — Ask before querying the operating system
+
+**Mechanism.** Four places shell out to the OS without asking: `hw.py:39` `sysctl`,
+`hw.py:51` `system_profiler`, `bench.py:33-40` `pmset`/`sw_vers`, and `tune.py:185`
+`ps -Ao pid=,rss=,comm=,args=`. None of it leaves the machine, and `ps` sees only this
+user's own processes — but a stranger who cloned this cannot see that and has to take
+it on faith. A one-time stored opt-in plus a `--no-probe` path makes the promise
+checkable instead of asserted. The project owner has asked for this; it is wanted, but
+deliberately not a release blocker.
+
+**Test.** With no stored opt-in, no code path runs any of the four calls;
+`doctor`/`tune`/`benchmark` ask once and record the answer. A test that patches
+`subprocess.run` fails as soon as a call happens without consent.
+
+**Kill.** The gate breaks existing fingerprints or profiles, or leaves `doctor` unable
+to diagnose a fresh machine — the command that exists to answer "why does this not
+work" must not be the one that needs setup first. Then the promise is kept another
+way, by documenting the four calls instead of gating them.
+
+### `Q2` — Run the self-tuning loop once, for real
+
+**Mechanism.** `tune()` is the core of the self-optimisation the README describes, and
+it has never run end to end anywhere in this project: `~/.ironmule` does not exist on
+this machine, and `test_r6_r7.py` stubs the engine, `probe` and `gpu_busy`, so what is
+covered is the control flow, not the run. Unknown: whether the coordinate descent
+completes, whether it finds anything above baseline, and whether token identity holds
+across every candidate it tries.
+
+**Test.** A preregistered run on the M1 Max with `gemma-3-4b-it-4bit` cached and on
+mains power. Record every candidate with its knobs, time and token match; the profile
+written; the gain; total runtime. Then a second start that loads the profile instead
+of tuning again.
+
+**Kill.** The run aborts, finds no candidate above baseline, or any candidate changes
+tokens. Then self-tuning is not the feature the README advertises and that claim comes
+out before the next release.
+
+**Do not mistake a winner for a bug.** `readback_every` is the likeliest candidate to
+be kept, and that is correct behaviour. The predecessor project's cycle 17 measured it
+at ratio `0.9581`, faster in every pair, and rejected it only against that experiment's
+own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.995`
+(`tune.py:80`), so the same number qualifies here. Two knobs genuinely cannot win and
+would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
+of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
+
+### `R9` — `ironmule.tune` is the function, not the module
+
+**Mechanism.** `__init__.py:35` rebinds the name `tune` from the submodule to the
+function it exports. `import ironmule.tune as m` therefore yields the function; the
+module is reachable only through `importlib.import_module("ironmule.tune")`. It cost
+one debugging round while writing the `gpu_busy` regression test, and it will cost the
+same to anyone writing against the package.
+
+**Test.** One test that performs both accesses and asserts the type of each, so the
+behaviour is pinned for as long as it exists.
+
+**Kill.** Renaming breaks the public API. This closes with a major version bump, or
+with the decision to document the quirk permanently rather than change it.
 
 ---
 

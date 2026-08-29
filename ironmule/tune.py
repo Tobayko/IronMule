@@ -23,7 +23,7 @@ from .fast import FusionUnsupported
 from .hw import STORE, fingerprint, probe
 from .model_identity import (
     ModelIdentity, ModelIdentityError, ResolvedModelSource, build_model_identity,
-    resolve_model_source,
+    resolve_model_source, scan_local_cache,
 )
 from .runtime import BASELINE, Engine, Knobs
 
@@ -89,8 +89,7 @@ def resolve_local_model(model_id: str, revision: str | None = None) -> ResolvedM
     local = Path(model_id).expanduser()
     if local.is_dir():
         return resolve_model_source(model_id, revision=revision)
-    from huggingface_hub import scan_cache_dir
-    return resolve_model_source(model_id, revision=revision, cache=scan_cache_dir())
+    return resolve_model_source(model_id, revision=revision, cache=scan_local_cache())
 
 
 def _identity_conditions(identity: ModelIdentity) -> dict[str, Any]:
@@ -175,7 +174,13 @@ def stale(profile: dict[str, Any], model_id: str, prompt_tokens: int,
 
 
 def gpu_busy() -> str | None:
-    """Another heavy local job would poison every timing. Report it instead of measuring."""
+    """Another heavy local job would poison every timing. Report it instead of measuring.
+
+    The command line is read to recognise a loaded model and then dropped: callers such
+    as `research/b27_main_baseline.py` put this string straight into an evidence record,
+    and an unrelated process's arguments are not ours to write down. PID and resident
+    size identify the offender well enough to go and stop it.
+    """
     try:
         out = subprocess.run(["ps", "-Ao", "pid=,rss=,comm=,args="], capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.SubprocessError):
@@ -190,7 +195,7 @@ def gpu_busy() -> str | None:
             continue
         lowered = args.lower()
         if "python" in lowered and ("mlx" in lowered or "worker" in lowered or "measure" in lowered):
-            return f"pid {pid} holds {int(rss)//1024} MB: {args[:80]}"
+            return f"pid {pid} holds {int(rss)//1024} MB"
     return None
 
 

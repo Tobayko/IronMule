@@ -3,8 +3,11 @@
 Status vocabulary: MEASURED, REPRODUCED, NOT_REPRODUCED, PARTIALLY_REPRODUCED,
 HYPOTHESIS, INFERRED, REJECTED, OPEN, COMPATIBILITY_QUALIFIED.
 
-Raw data for every entry lives in `research/raw/<ID>.json`. Negative results are
-never removed.
+Raw data for every entry lives in `research/raw/<ID>.json` **on the machine that ran
+it**. Those files can carry prompts and absolute paths, so `.gitignore` keeps them out
+of the repository; what ships is the redacted `*_public_summary_*.json` next to them.
+A raw file named here without a link is therefore local evidence, not a missing file.
+Negative results are never removed.
 
 | ID | Question | Result | Status |
 | :-- | :-- | :-- | :-- |
@@ -1338,12 +1341,12 @@ was enabled. This is a throughput result, not a correctness failure.
 
 ### B35 — Exploratory portability screen for the non-mutating core profile
 
-**Preregistration.** [`B35_preregistration.md`](raw/B35_preregistration.md) froze
+**Preregistration.** `B35_preregistration.md` froze
 an exploratory screen of `BASELINE=Knobs()` against
 `Knobs(compiled_fixed_cache=True, head_skip_prefill=True)` with the repository
 prompt, `max_tokens=32`, two warmups, five repeats, balanced AB/BA, one model
 load per fresh OS process, exact token gates, peak-memory `+10%`, swap `256 MiB`,
-and no-crash gates. [`B35a_preregistration.md`](raw/B35a_preregistration.md)
+and no-crash gates. `B35a_preregistration.md`
 added only the clean-environment correction after the first 1B process overlapped
 broad filesystem searches; no arms, thresholds, or workload changed.
 
@@ -1356,7 +1359,7 @@ digests are recorded in each raw file.
 
 **Invalid first attempt.** The first 1B AB worker completed but ran while broad
 `find` searches were active. It is retained as
-[`B35_gemma1b_AB_20260828.json`](raw/B35_gemma1b_AB_20260828.json), marked
+`B35_gemma1b_AB_20260828.json`, marked
 `valid_for_metrics: false`, and contributes no performance number.
 
 **Clean result.** Each model completed two fresh processes (AB and BA), with
@@ -1388,15 +1391,15 @@ arm order may interact with thermal, allocator/cache, or compiled state. No
 shipping, routing, profile activation, or cross-model/general performance claim
 is made. Follow-up is tracked as B36: remeasure with arm-isolated fresh processes.
 
-**Raw evidence.** [`B35_gemma1b_AB_clean_20260828.json`](raw/B35_gemma1b_AB_clean_20260828.json),
-[`B35_gemma1b_BA_clean_20260828.json`](raw/B35_gemma1b_BA_clean_20260828.json),
-[`B35_gemma4b_AB_clean_20260828.json`](raw/B35_gemma4b_AB_clean_20260828.json),
-[`B35_gemma4b_BA_clean_20260828.json`](raw/B35_gemma4b_BA_clean_20260828.json),
-[`B35_gemma12b_AB_clean_20260828.json`](raw/B35_gemma12b_AB_clean_20260828.json),
-and [`B35_gemma12b_BA_clean_20260828.json`](raw/B35_gemma12b_BA_clean_20260828.json).
+**Raw evidence.** `B35_gemma1b_AB_clean_20260828.json`,
+`B35_gemma1b_BA_clean_20260828.json`,
+`B35_gemma4b_AB_clean_20260828.json`,
+`B35_gemma4b_BA_clean_20260828.json`,
+`B35_gemma12b_AB_clean_20260828.json`,
+and `B35_gemma12b_BA_clean_20260828.json`.
 
 **Review limitations (2026-08-28).** The independent review is recorded in
-[`B35_review.md`](raw/B35_review.md). The worker's per-arm swap gate starts only
+`B35_review.md`. The worker's per-arm swap gate starts only
 after model load and therefore does not cover load-time swap; external post-run
 swap checks found no new issue but do not repair this raw-gate gap. The worker
 also sets `hard_gates.no_crash` to constant `true`: external process-list and
@@ -1473,7 +1476,7 @@ Die RSS-Form A `2.17 -> 1.26 GB` während der Checkpoints gegenüber B/D/C nahe
 `7.9 GB`, bei identischem MLX-Active-Memory nahe `7.188 GB`, macht eine
 Prozessreihenfolge-/Page-Residency-Konfundierung plausibel. Eine Attribution
 auf einen Arm ist verboten. Raw:
-[`B39b_pilot_gemma12b_combined_20260828.json`](raw/B39b_pilot_gemma12b_combined_20260828.json).
+`B39b_pilot_gemma12b_combined_20260828.json`.
 Finalstatus `INCONCLUSIVE`, `activation_allowed=false`; kein Main-Lauf, kein
 Retry, kein Routing/keine Aktivierung. B39c mit zwei neuen Crossover-Blöcken
 bleibt nach sauberem Zustand ausstehend; diese Pilotdaten werden nicht
@@ -1486,7 +1489,7 @@ script path and failed before parent initialization with return code `1`:
 `ModuleNotFoundError: No module named 'research'` at
 `research/b39_combined_levers.py:22`. No model or child ran, no JSON or partial
 was created, crash reports remained `30 -> 30`, and no residual process
-remained. Raw: [`B39_pilot_import_failure_20260828.json`](raw/B39_pilot_import_failure_20260828.json).
+remained. Raw: `B39_pilot_import_failure_20260828.json`.
 
 **B39a module pilot.** The corrected module invocation attempted only arm A.
 The child returned `3` at `after_model_load` with
@@ -1498,7 +1501,7 @@ resource/swap failure. The exact child subtype (swap, memory, or instrumentation
 is unobservable because child events were discarded. Crash delta was `0` and
 there was no residual model process. The parent then raised
 `StatisticsError: no median for empty data`, wrote no final JSON, and retained
-the partial sidecar. Raw: [`B39a_pilot_failure_20260828.json`](raw/B39a_pilot_failure_20260828.json).
+the partial sidecar. Raw: `B39a_pilot_failure_20260828.json`.
 No retry and no B39 main run occurred; this is not a measurement.
 
 **B39b.** B39b is a safety/evidence-only correction with SHA-256
@@ -1679,7 +1682,7 @@ Der freigegebene B39d-Hauptlauf wurde mit exakt acht frozen Orders
 OS-Children abgeschlossen. Jeder Child lud Gemma 3 12B einmal, führte zwei
 Warmups und fünf Mess-Repeats auf dem X1-strict-Workload mit sechs Requests und
 `max_tokens=48` aus. Ergebnis und Rohsamples stehen in
-[`B39d_gemma12b_combined_20260828.json`](raw/B39d_gemma12b_combined_20260828.json).
+`B39d_gemma12b_combined_20260828.json`.
 
 **Gates und Identität.** Top- und Summary-Status sind `QUALIFIED`,
 `valid_for_performance=true`, `activation_allowed=false`; acht Blöcke und 32
@@ -1741,7 +1744,7 @@ Der B40-Lauf wurde mit sechs mirrored Orders
 `W2/W3/W4` abgeschlossen. Alle 18 Children waren frische serielle
 Ein-Prozess-Läufe mit einem Model-Load, zwei Warmups und fünf Mess-Repeats auf
 dem unveränderten Gemma-12B-X1-Workload. Rohdaten:
-[`B40_gemma12b_width_sweep_20260828.json`](raw/B40_gemma12b_width_sweep_20260828.json);
+`B40_gemma12b_width_sweep_20260828.json`;
 das Partial blieb wegen des inconclusive Ergebnisses erhalten.
 
 **Safety und Korrektheit.** Alle 18 Children lieferten Returncode `0`,

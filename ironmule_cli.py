@@ -250,16 +250,22 @@ def _run_status(argv: list[str]) -> int:
     return 0
 
 
-def _load_huggingface_hub():
-    """Load the cache inspector only for the read-only models command."""
-    return importlib.import_module("huggingface_hub")
-
-
 def _is_huggingface_dependency_error(exc: ImportError) -> bool:
+    """`models` reaches the cache through `ironmule`, so MLX counts here too.
+
+    Reading the cache needs nothing but `huggingface_hub`, but the shared helper lives
+    in the `ironmule` package and importing that pulls in MLX. Either missing piece is
+    an install problem with the same answer, so both get the same message rather than a
+    traceback; `ironmule doctor` imports neither and still says which one broke.
+    """
     missing = getattr(exc, "name", "") or ""
-    if missing == "huggingface_hub":
+    if missing.split(".", 1)[0] in {"huggingface_hub", "mlx", "mlx_lm"}:
         return True
-    return "no module named 'huggingface_hub" in str(exc).lower()
+    message = str(exc).lower()
+    return any(
+        f"no module named '{name}" in message
+        for name in ("huggingface_hub", "mlx", "mlx_lm")
+    )
 
 
 def _safe_string(value: Any) -> str:
@@ -300,13 +306,9 @@ def _run_models(argv: list[str]) -> int:
     parser.add_argument("--model", default=None, help="exact Hugging Face repo id filter")
     args = parser.parse_args(argv)
     try:
-        huggingface_hub = _load_huggingface_hub()
-    except ImportError as exc:
-        if not _is_huggingface_dependency_error(exc):
-            raise
-        return _dependency_error("models", exc, dependency="huggingface_hub")
-    try:
-        cache = huggingface_hub.scan_cache_dir()
+        from ironmule.model_identity import scan_local_cache
+
+        cache = scan_local_cache()
         repos = []
         for repo in (getattr(cache, "repos", ()) or ()):
             if getattr(repo, "repo_type", None) != "model":
@@ -345,6 +347,21 @@ def _run_benchmark(argv: list[str]) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    try:
+        return _dispatch(argv)
+    except Exception as exc:  # noqa: BLE001 - the CLI reports, the library raises
+        # Matched by name, not by import: importing ModelIdentityError pulls in the
+        # `ironmule` package, which imports MLX. `ironmule doctor` has to keep working
+        # on exactly the machine where that import is the thing that is broken.
+        if type(exc).__name__ != "ModelIdentityError":
+            raise
+        # A model that is not cached is the normal first-run outcome, not a crash.
+        # The exception already carries the exact command that fixes it.
+        print(f"ironmule: {exc}", file=sys.stderr)
+        return 1
+
+
+def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
         print("usage: ironmule {doctor|benchmark|models|tune|revalidate|status|info} [options]")
