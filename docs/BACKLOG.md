@@ -235,6 +235,42 @@ own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.9
 would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
 of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
+### `R12` — One OS process per block, because the preregistrations already say so
+
+**Mechanism.** `e14_dispatch.py`, `e14b_arms.py` and `e15_service.py` run their blocks
+as `for index in range(processes)` in one interpreter. `E15` limitation `M2` records the
+consequence for the statistics. The `R11` proof run showed the other consequence, which
+is harder: memory. 12B's block 1 peaks at `17.51 GB` and block 2 at `23.14 GB` on the
+same pid, with `mx.reset_peak_memory()` correctly applied — block 1's buffers are still
+resident when block 2 loads its model, so the machine swaps and the run stops. On 32 GB
+this caps 12B at one block permanently, and no threshold policy changes it.
+
+**This is not a new design.** `e16_replication.py` already does it: `spawn()` at line 142
+re-invokes the module with `--child <json spec>`, the child prints one `@@`-prefixed JSON
+line, the parent parses it, with a timeout and a controlled environment. `run_process` in
+all three harnesses already has the right shape for that — a pure function taking
+`(model_id, index, pilot)` and returning a JSON-serialisable dict, about `15 KB`
+serialised per block, comfortably inside a stdout line. `E16` is the pattern; the work is
+applying it, not inventing it.
+
+**The preregistration objection runs backwards.** `E14b`'s preregistration says "Four
+fresh processes." The harness does not provide them, and `M2` says so plainly: the
+bootstrap "has less independence than the preregistration claims". Forking therefore does
+not break the frozen document — it is what the document asked for. `preregistration_sha256`
+covers that document, not the harness source, so no hash moves.
+
+**Test.** One process per block for the three harnesses, following `E16`'s spawn/child
+split. `B7`'s 12B workload must then complete four blocks with per-block peaks near
+`17.51 GB` and no swap growth. Each block's result must be byte-identical in structure to
+today's, so existing analysis code keeps working. A child that crashes must be recorded
+as a crashed replicate rather than silently dropped, as `E16` already does.
+
+**Kill.** Model load time per block becomes the dominant cost — four loads instead of one
+is real overhead, and if it dwarfs measurement time the design is wrong for short blocks
+even if it is right for long ones. It also fails if per-block peaks do *not* fall to
+around `17.51 GB` once isolated, because then the growth is not allocator carry-over and
+this entry has misdiagnosed it. Both are answered by the first run.
+
 ### `R11` — Gate measurement on swap, not on a hard-coded byte count
 
 **Mechanism.** Four harnesses abort when an MLX peak exceeds a literal `12 * 1024**3`:
@@ -247,11 +283,22 @@ doing a job it cannot do. What actually invalidates a timing run is the machine
 swapping; peak allocation is only a proxy for it, and a badly calibrated one. On this
 32 GB machine the proxy is wrong in both directions at once:
 
-- **Too strict.** `gemma-3-12b-it-4bit` peaks at `17.51 GB` per block and is refused,
-  although `B7` measured it with swap steady at `0.06 MB` — the machine was never under
-  pressure. 12B is therefore capped at one block, which is not a sample size, and every
-  scaling question beyond 4B is blocked. Gemma 3 27B (`~16.78 GB` in `SCALING.md`) and
-  Qwen 27B (`14.98 GiB` of weights) are refused for the same non-reason.
+- **Too strict, for block 1.** `gemma-3-12b-it-4bit` peaks at `17.51 GB` on its first
+  block and is refused, although `B7` measured that block with swap steady at
+  `0.06 MB` — the machine was never under pressure. Gemma 3 27B (`~16.78 GB` in
+  `SCALING.md`) and Qwen 27B (`14.98 GiB` of weights) are refused on the same
+  byte count without anyone checking whether they swap.
+
+  **This entry does not unblock 12B, and an earlier draft wrongly implied it would.**
+  The proof run settled it: with the swap gate in place, 12B reached block 2 at a
+  genuine `23.14 GB` and aborted on real swap, `+3059 MB` above the run's own baseline.
+  The peak counter is honest — `mx.reset_peak_memory()` runs at the top of
+  `run_process` and both blocks share one pid — so the memory itself is what does not
+  shrink: block 1 has not returned its buffers to the OS before block 2 loads a fresh
+  model. That is `M2`'s "allocator state carries over", as memory rather than as an
+  inflated number. What this entry buys is that 12B now stops for a **stated, measured
+  reason** instead of coincidentally tripping a byte count. Actually running 12B to
+  four blocks needs one OS process per block; see `R12`.
 - **Too lax.** `B7`'s confirmation run stayed *under* the guard at every block and was
   still invalid: macOS grew the swap file from 1 GB to 4 GB and reached `2816 MB` in
   use, and every cell slowed by a uniform `1.10x`–`1.15x`. The guard passed a run that
@@ -267,10 +314,12 @@ result. Keep a byte ceiling only as a coarse backstop against a genuinely unboun
 allocation, set from the machine's installed memory rather than typed in, and make it a
 parameter with a documented default rather than a literal in three files.
 
-Verify against both known cases: `B7`'s 12B run (peak `17.51 GB`, swap flat) must
-complete four blocks, and `B7`'s discarded confirmation run (peak under the guard, swap
-`+2816 MB`) must abort. A synthetic case that allocates without swapping must not abort.
-Both raw files are archived, so this is checkable rather than asserted.
+Verify against both known cases: `B7`'s 12B **block 1** (peak `17.51 GB`, swap flat)
+must be admitted where the byte guard refused it, and `B7`'s discarded confirmation run
+(peak under the guard, swap `+2816 MB`) must abort. A synthetic case that allocates
+without swapping must not abort. Both raw files are archived, so this is checkable
+rather than asserted. Note what must *not* be asserted: that 12B completes four blocks.
+It does not, and for a reason this entry does not address.
 
 **Scope note.** `E16`'s ceiling guards a forked child and is the one place the current
 design is coherent; it should keep a per-child byte ceiling even if the others move to a
