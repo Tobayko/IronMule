@@ -23,8 +23,11 @@ Review follow-ups completed locally; this section is not a release or a performa
   the first time. This follows `e16_replication.spawn`, and it delivers what
   `E14b_preregistration.md` already asked for — "Four fresh processes" — rather than
   departing from it. `e15_service.py` and `e12_window_falsification.py` are not
-  converted: `E15`'s wall-clock limit counts across the block loop and forking changes
-  what it measures, which needs deciding rather than porting.
+  converted, and they are not the same job: `E15` is a direct port (its `run_process`
+  signature is `E14b`'s), while `E12` builds one shared `Harness` before its loop, so
+  forking per case would load the model 26 times instead of once. Both also carry a
+  45-minute parent-side wall limit that counts something different once children do the
+  work.
 
 - **MLX peak memory is now measured per arm, not per process.** `mx.get_peak_memory()`
   is a process-wide high-water mark and `mx.reset_peak_memory()` was called nowhere in
