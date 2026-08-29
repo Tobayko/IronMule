@@ -12,7 +12,12 @@ Review follow-ups completed locally; this section is not a release or a performa
   cache directory as an empty one, so `models` prints an empty list and any command
   asking for an uncached model fails with the command that fixes it (`hf download …`)
   instead of a stack trace. The CLI reports `ModelIdentityError` as a message and exit
-  `1`; the library still raises. Subprocess regression tests cover both, plus the case
+  `1`. The three ways a model can fail to resolve now say different things: nothing
+  cached, cached but not at the requested revision, or several revisions cached and
+  none pinned. The middle one used to claim the model was not cached at all, which
+  sent the user to doubt their cache instead of their pin, and the last one used to
+  advise a `--revision` flag the CLI does not have. The library still raises where the
+  CLI reports. Subprocess regression tests cover both, plus the case
   where the MLX import itself is broken and `doctor` must still start. One behaviour
   change: `ironmule models` now reaches the cache through the shared helper in the
   `ironmule` package, so it needs the runtime import that `huggingface_hub` alone used

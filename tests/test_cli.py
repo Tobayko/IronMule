@@ -337,8 +337,15 @@ def test_models_reports_a_broken_runtime_install_without_a_traceback(tmp_path):
     assert "ironmule doctor" in done.stderr
 
 
-def test_uncached_revision_hint_repeats_the_revision():
-    """Without it the user fetches `main`, which still will not resolve."""
+def _cache(*revisions, repo_id="org/model"):
+    from types import SimpleNamespace as NS
+
+    revs = [NS(commit_hash=r, snapshot_path=f"/cache/{r}") for r in revisions]
+    return NS(repos=[NS(repo_id=repo_id, repo_type="model", revisions=revs)], warnings=())
+
+
+def test_nothing_cached_says_so_and_repeats_the_revision():
+    """Without the revision the user fetches `main`, which still will not resolve."""
     from types import SimpleNamespace as NS
 
     from ironmule.model_identity import ModelIdentityError, select_cached_snapshot
@@ -346,4 +353,29 @@ def test_uncached_revision_hint_repeats_the_revision():
     empty = NS(repos=(), warnings=())
     with pytest.raises(ModelIdentityError) as caught:
         select_cached_snapshot(empty, "org/model", revision="abc123")
-    assert "hf download org/model --revision abc123" in str(caught.value)
+    message = str(caught.value)
+    assert "model is not cached" in message
+    assert "hf download org/model --revision abc123" in message
+
+
+def test_wrong_revision_does_not_claim_the_model_is_missing():
+    """It is cached, just not at that pin. Saying otherwise blames the wrong thing."""
+    from ironmule.model_identity import ModelIdentityError, select_cached_snapshot
+
+    with pytest.raises(ModelIdentityError) as caught:
+        select_cached_snapshot(_cache("aaa111"), "org/model", revision="bbb222")
+    message = str(caught.value)
+    assert "model is not cached" not in message
+    assert "is cached, but not at revision 'bbb222'" in message
+    assert "ironmule models --model org/model" in message
+
+
+def test_ambiguous_revision_does_not_advise_a_flag_the_cli_lacks():
+    """`ironmule_cli` has no --revision; pinning is a Python API argument."""
+    from ironmule.model_identity import ModelIdentityError, select_cached_snapshot
+
+    with pytest.raises(ModelIdentityError) as caught:
+        select_cached_snapshot(_cache("aaa111", "bbb222"), "org/model")
+    message = str(caught.value)
+    assert "Runtime.load" in message
+    assert "--revision" not in message.split("Runtime.load")[0]
