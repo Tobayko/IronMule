@@ -354,7 +354,7 @@ class MacSystemProbe:
         runner: Callable[..., Any] | None = None,
         clock: Any = None,
         timeout_seconds: float = 1.0,
-        max_output_bytes: int = 64 * 1024,
+        max_output_bytes: int = 128 * 1024,
     ) -> None:
         if timeout_seconds <= 0 or max_output_bytes < 1024:
             raise ValueError("invalid probe bounds")
@@ -412,22 +412,34 @@ class MacSystemProbe:
                 raise ReadinessError("power_source_unknown")
             custom = self._run((self.COMMANDS["pmset"], "-g", "custom"))
             section: str | None = None
-            low_seen = 0
+            low_power_key_seen = False
+            active_low_power_values: list[str | None] = []
             for line in custom.splitlines():
                 section_match = re.match(r"^\s*(AC Power|Battery Power):\s*$", line)
                 if section_match:
                     section = section_match.group(1)
                     continue
-                if section != source:
-                    continue
-                match = re.match(r"^\s*lowpowermode\s+([01])\s*$", line, re.I)
+                match = re.match(r"^\s*lowpowermode(?:\s+(.*?))?\s*$", line, re.I)
                 if match:
-                    low_seen += 1
-                    if low_seen > 1:
-                        raise ReadinessError("low_power_ambiguous")
-                    low = match.group(1) == "1"
+                    low_power_key_seen = True
+                    if section == source:
+                        active_low_power_values.append(match.group(1))
+            if low_power_key_seen:
+                if len(active_low_power_values) != 1:
+                    raise ReadinessError("low_power_missing" if not active_low_power_values else "low_power_ambiguous")
+                value = active_low_power_values[0]
+                if value not in {"0", "1"}:
+                    raise ReadinessError("low_power_unknown")
+                low = value == "1"
+            else:
+                # Older macOS/hardware may omit the setting entirely.  There
+                # is no low-power setting to enable in that case, so represent
+                # the capability as explicitly unsupported/off.  If a key is
+                # present anywhere, however, the active profile must resolve
+                # exactly and cannot silently fall back to False.
+                low = False
         except ReadinessError as exc:
-            errors.append(str(exc) if str(exc) in {"output_truncated", "low_power_ambiguous", "power_source_ambiguous"} else "power_unreadable")
+            errors.append(str(exc) if str(exc) in {"output_truncated", "low_power_ambiguous", "low_power_missing", "low_power_unknown", "power_source_ambiguous"} else "power_unreadable")
         try:
             vm = self._run((self.COMMANDS["vm_stat"],))
             page_match = re.search(r"page size of (\d+) bytes", vm)
@@ -467,11 +479,13 @@ class MacSystemProbe:
             errors.append("load_unreadable")
         cpu: float | None = None
         try:
-            ps = self._run((self.COMMANDS["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="))
+            # ``comm`` is sufficient for known runtimes and avoids importing
+            # unbounded argv text (which may contain prompts or tokens).
+            ps = self._run((self.COMMANDS["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="))
             process_readable = True
             active_matches = 0
             cpu_values: list[float] = []
-            records: dict[int, tuple[int, str, float | None, str]] = {}
+            records: dict[int, tuple[int, int, str, float | None, str]] = {}
             malformed = False
             for line in ps.splitlines():
                 if not line.strip():
@@ -481,11 +495,11 @@ class MacSystemProbe:
                     malformed = True
                     continue
                 try:
-                    pid, ppid = int(fields[0]), int(fields[1])
+                    uid, pid, ppid = int(fields[0]), int(fields[1]), int(fields[2])
                 except ValueError:
                     malformed = True
                     continue
-                state, cpu_text, command = fields[2], fields[3], fields[5]
+                state, cpu_text, command = fields[3], fields[4], fields[5]
                 parsed_cpu: float | None = None
                 try:
                     parsed_cpu = float(cpu_text)
@@ -494,27 +508,36 @@ class MacSystemProbe:
                     cpu_values.append(parsed_cpu)
                 except (ValueError, TypeError):
                     malformed = True
-                records[pid] = (ppid, state, parsed_cpu, command)
+                records[pid] = (uid, ppid, state, parsed_cpu, command)
+            try:
+                current_uid = os.getuid()
+                if isinstance(current_uid, bool) or not isinstance(current_uid, int) or current_uid < 0:
+                    raise ValueError
+            except (AttributeError, OSError, TypeError, ValueError):
+                raise ReadinessError("current_uid_unknown")
             own_pid = os.getpid()
             ancestors: set[int] = set()
             cursor = own_pid
             seen: set[int] = set()
             while cursor in records and cursor not in seen:
                 seen.add(cursor)
-                parent = records[cursor][0]
+                parent = records[cursor][1]
                 if parent <= 0 or parent == cursor:
                     break
                 ancestors.add(parent)
                 cursor = parent
             ignored = ancestors | {own_pid}
-            for pid, (ppid, state, parsed_cpu, command) in records.items():
+            for pid, (uid, ppid, state, parsed_cpu, command) in records.items():
                 if pid in ignored:
                     continue
                 lowered = command.lower()
                 relevant = any(token in lowered for token in ("claude", "mlx", "mlx_lm", "mlx-lm", "python", "node", "model", "gemma"))
                 activity_hint = any(token in lowered for token in ("generate", "inference", "serve", "server", "gemma", "model", "mlx"))
                 active = bool(re.match(r"^[rud]", state.lower())) or (parsed_cpu is not None and parsed_cpu > 1.0) or activity_hint
-                if relevant and active:
+                # Known model/runtime names are blocked regardless of UID.
+                # Unknown active processes are foreign only for this user;
+                # system daemons are not blanket-blocked.
+                if active and (relevant or uid == current_uid):
                     active_matches += 1
                     evidence.append(command[:240])
             if malformed:

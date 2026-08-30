@@ -36,6 +36,13 @@ from .orchestrator import (
     _inventory_identity_hash,
 )
 from .readiness import MacSystemProbe
+from .collector import Collector
+from .real_session import (
+    RealSessionError,
+    build_session_plan,
+    collect_fingerprint,
+    run_session,
+)
 
 
 MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -638,6 +645,8 @@ def _status(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
 
 
 def _shadow(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    if args.write_history and not args.execute:
+        return {"command": "shadow", "schema_version": 1, "ok": False, "authorized": False, "reason": "explicit_execute_required", "error": "explicit_execute_required", "history_written": False}, ExitCode.NOT_AUTHORIZED
     request_path = _safe_existing_file(args.request, "request")
     before = _metadata_signature([request_path])
     raw = _json_file(request_path)
@@ -712,6 +721,102 @@ def _dashboard(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     return {"command": "dashboard", "schema_version": 1, "ok": True, "read_only": True, "stopped": stopped}, ExitCode.OK
 
 
+def _real_error(exc: RealSessionError) -> CLIError:
+    reason = str(exc) or "real_session_failed"
+    # Input/precondition failures are data errors; an explicit execute gate is
+    # intentionally distinct so callers can safely ask for authorization.
+    if reason == "explicit_execute_required":
+        return CLIError(ExitCode.NOT_AUTHORIZED, reason)
+    return CLIError(ExitCode.DATA, reason)
+
+
+def _fingerprint(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    model = _safe_existing_file(args.model_identity, "model_identity")
+    workload = _safe_existing_file(args.workload_contract, "workload_contract")
+    if args.out and not args.execute:
+        return {"command": "fingerprint", "schema_version": 1, "ok": False, "authorized": False, "reason": "explicit_execute_required", "written": False}, ExitCode.NOT_AUTHORIZED
+    try:
+        report = collect_fingerprint(
+            model_identity=model,
+            workload_contract=workload,
+            runtime_commit=args.runtime_commit,
+            collector=Collector(),
+        )
+    except RealSessionError as exc:
+        raise _real_error(exc) from exc
+    output: Path | None = None
+    if args.out:
+        output, _ = _target_new_file(args.out, "out")
+        try:
+            from .real_session import _atomic_new
+            _atomic_new(output, canonical_bytes(report.public_dict(), max_bytes=4 * 1024 * 1024))
+        except RealSessionError as exc:
+            raise _real_error(exc) from exc
+    payload = report.public_dict()
+    payload.update({"command": "fingerprint", "schema_version": 1, "ok": report.recommendation_allowed, "authorized": output is not None, "written": output is not None})
+    # Never serialize the caller's model/workload path; only a root-relative
+    # marker is returned for the optional output target.
+    payload["output"] = None if output is None else "<new>"
+    return payload, ExitCode.OK if report.recommendation_allowed else ExitCode.UNAVAILABLE
+
+
+def _session_plan(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    try:
+        plan = build_session_plan(
+            checkout=_existing_directory(args.checkout, "checkout"),
+            expected_head=args.expected_head,
+            interpreter=_safe_existing_file(args.interpreter, "interpreter"),
+            model_identity=_safe_existing_file(args.model_identity, "model_identity"),
+            workload_contract=_safe_existing_file(args.workload_contract, "workload_contract"),
+            runtime_commit=args.runtime_commit,
+            candidate_id=args.candidate,
+            duration_minutes=args.duration,
+            preregistration=_safe_existing_file(args.prereg, "preregistration"),
+            collector=Collector(),
+        )
+    except RealSessionError as exc:
+        raise _real_error(exc) from exc
+    payload = plan.as_dict()
+    payload.update({"command": "session-plan", "schema_version": 1, "ok": plan.ready, "authorized": False})
+    return payload, ExitCode.OK if plan.ready else ExitCode.UNAVAILABLE
+
+
+def _session(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    if not args.execute:
+        return {"command": "session", "schema_version": 1, "ok": False, "authorized": False, "reason": "explicit_execute_required", "no_activation": True}, ExitCode.NOT_AUTHORIZED
+    try:
+        plan = build_session_plan(
+            checkout=_existing_directory(args.checkout, "checkout"),
+            expected_head=args.expected_head,
+            interpreter=_safe_existing_file(args.interpreter, "interpreter"),
+            model_identity=_safe_existing_file(args.model_identity, "model_identity"),
+            workload_contract=_safe_existing_file(args.workload_contract, "workload_contract"),
+            runtime_commit=args.runtime_commit,
+            candidate_id=args.candidate,
+            duration_minutes=args.duration,
+            preregistration=_safe_existing_file(args.prereg, "preregistration"),
+            collector=Collector(),
+        )
+        execution = run_session(
+            plan=plan,
+            checkout=_existing_directory(args.checkout, "checkout"),
+            expected_head=args.expected_head,
+            interpreter=_safe_existing_file(args.interpreter, "interpreter"),
+            model_identity=_safe_existing_file(args.model_identity, "model_identity"),
+            workload_contract=_safe_existing_file(args.workload_contract, "workload_contract"),
+            runtime_commit=args.runtime_commit,
+            session_id=args.session_id,
+            memory=_safe_existing_file(args.memory, "memory", max_bytes=64 * 1024 * 1024),
+            result_out=args.result_out,
+            execute=True,
+        )
+    except RealSessionError as exc:
+        raise _real_error(exc) from exc
+    result = dict(execution.result)
+    result.update({"command": "session", "schema_version": 1, "ok": bool(result.get("run_ok")) and execution.persistence_ok, "authorized": True, "history_written": execution.history_written, "history_error": execution.history_error, "persistence_ok": execution.persistence_ok})
+    return result, ExitCode.OK if result.get("ok") else ExitCode.UNAVAILABLE
+
+
 def _emit(payload: Mapping[str, Any]) -> None:
     output_error = False
     try:
@@ -779,6 +884,42 @@ def _build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--dataset")
     dashboard.add_argument("--port", type=int, default=0)
     dashboard.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    fingerprint = sub.add_parser("fingerprint", allow_abbrev=False)
+    fingerprint.add_argument("--model-identity", required=True)
+    fingerprint.add_argument("--workload-contract", required=True)
+    fingerprint.add_argument("--runtime-commit", required=True)
+    fingerprint.add_argument("--out")
+    fingerprint.add_argument("--execute", action="store_true")
+    fingerprint.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    plan = sub.add_parser("session-plan", allow_abbrev=False)
+    plan.add_argument("--checkout", required=True)
+    plan.add_argument("--expected-head", required=True)
+    plan.add_argument("--interpreter", required=True)
+    plan.add_argument("--model-identity", required=True)
+    plan.add_argument("--workload-contract", required=True)
+    plan.add_argument("--runtime-commit", required=True)
+    plan.add_argument("--candidate", required=True)
+    plan.add_argument("--duration", "--duration-minutes", dest="duration", type=int, required=True)
+    plan.add_argument("--prereg", "--preregistration", dest="prereg", required=True)
+    plan.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    session = sub.add_parser("session", allow_abbrev=False)
+    session.add_argument("--checkout", required=True)
+    session.add_argument("--expected-head", required=True)
+    session.add_argument("--interpreter", required=True)
+    session.add_argument("--model-identity", required=True)
+    session.add_argument("--workload-contract", required=True)
+    session.add_argument("--runtime-commit", required=True)
+    session.add_argument("--candidate", required=True)
+    session.add_argument("--duration", "--duration-minutes", dest="duration", type=int, required=True)
+    session.add_argument("--prereg", "--preregistration", dest="prereg", required=True)
+    session.add_argument("--memory", required=True)
+    session.add_argument("--result-out", required=True)
+    session.add_argument("--session-id", required=True)
+    session.add_argument("--execute", action="store_true")
+    session.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -787,7 +928,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = _build_parser().parse_args(list(argv) if argv is not None else None)
         if not 0 <= args.port <= 65535 if args.command == "dashboard" else False:
             raise CLIError(ExitCode.USAGE, "invalid_port")
-        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard}[args.command]
+        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "session-plan": _session_plan, "session": _session}[args.command]
         payload, code = handler(args)
         if args.command != "dashboard":
             _emit(payload)

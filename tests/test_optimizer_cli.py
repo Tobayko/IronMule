@@ -8,9 +8,15 @@ import stat
 import subprocess
 import sys
 import io
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
+
+import friday_optimizer.cli as cli
+from friday_optimizer.collector import CollectorReport, CurrentSnapshot
+from friday_optimizer.fingerprint import EnvironmentFingerprint, ExactFingerprint, ModelFingerprint, WorkloadFingerprint
+from friday_optimizer.real_session import FingerprintReport
 
 
 PYTHON = Path(__file__).parents[1] / ".venv" / "bin" / "python"
@@ -30,6 +36,18 @@ def payload(result: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(result.stdout)
 
 
+def _fake_fingerprint_report(model_id: str) -> FingerprintReport:
+    environment = EnvironmentFingerprint("Apple M1 Max", "Apple GPU", 32 * 1024**3, 10, "26.5.2", "0.32.0", "0.31.3", "3.12", "a" * 40)
+    exact = ExactFingerprint(
+        environment,
+        ModelFingerprint(model_id, "rev", "b" * 64, "gemma", 4, 64, "c" * 64),
+        WorkloadFingerprint("default", "d" * 64, "generator", "short", 1, 1, 32, True, False, "ac", "interactive"),
+    )
+    return FingerprintReport.from_collector(
+        CollectorReport(CurrentSnapshot(environment, "AC", 32), exact, "e" * 64, "f" * 64, None)
+    )
+
+
 def test_help_and_unknown_flags_are_bounded() -> None:
     help_result = run_cli("--help")
     assert help_result.returncode == 0
@@ -38,6 +56,54 @@ def test_help_and_unknown_flags_are_bounded() -> None:
     assert unknown.returncode == 64
     assert "Traceback" not in unknown.stderr
     assert payload(unknown)["ok"] is False
+
+
+def test_fingerprint_cli_and_file_projection_redact_local_model_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    model = tmp_path / "model.json"
+    workload = tmp_path / "workload.json"
+    output = tmp_path / "fingerprint.json"
+    model.write_text("{}")
+    workload.write_text("{}")
+    exact_report = _fake_fingerprint_report("/Users/alice/models/gemma-3-4b-it")
+    monkeypatch.setattr(cli, "collect_fingerprint", lambda **_: exact_report)
+    args = SimpleNamespace(
+        model_identity=str(model), workload_contract=str(workload), runtime_commit="a" * 40,
+        out=str(output), execute=True,
+    )
+
+    result, code = cli._fingerprint(args)
+
+    assert int(code) == 0
+    assert result["report"]["fingerprint"]["model"]["model_id"] == "<local-model>"
+    assert result["fingerprint_hash"] == exact_report.fingerprint_hash
+    assert result["report_hash"] == exact_report.report_hash
+    written = json.loads(output.read_text())
+    assert written["report"]["fingerprint"]["model"]["model_id"] == "<local-model>"
+    assert "/Users/alice/models/gemma-3-4b-it" not in output.read_text()
+    assert exact_report.as_dict()["report"]["fingerprint"]["model"]["model_id"] == "/Users/alice/models/gemma-3-4b-it"
+
+
+def test_real_session_requires_explicit_execute_without_touching_targets(tmp_path: Path) -> None:
+    result = run_cli(
+        "session", "--checkout", str(tmp_path), "--expected-head", "a" * 40,
+        "--interpreter", str(tmp_path / "python"), "--model-identity", str(tmp_path / "model.json"),
+        "--workload-contract", str(tmp_path / "workload.json"), "--runtime-commit", "b" * 40,
+        "--candidate", "combined_core_profile", "--duration", "5", "--prereg", str(tmp_path / "prereg.json"),
+        "--memory", str(tmp_path / "memory.sqlite3"), "--result-out", str(tmp_path / "result.json"),
+        "--session-id", "manual-1",
+    )
+    assert result.returncode == 78
+    assert payload(result)["reason"] == "explicit_execute_required"
+    assert not (tmp_path / "result.json").exists()
+    assert not (tmp_path / ".friday-data").exists()
+
+
+def test_shadow_history_requires_explicit_execute(tmp_path: Path) -> None:
+    request = tmp_path / "request.json"
+    request.write_text("{}")
+    result = run_cli("shadow", "--request", str(request), "--write-history")
+    assert result.returncode == 78
+    assert payload(result)["error"] == "explicit_execute_required"
 
 
 def test_doctor_and_audit_do_not_change_files(tmp_path: Path) -> None:
