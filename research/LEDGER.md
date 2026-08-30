@@ -1181,6 +1181,39 @@ a product decision that needs a target, not another experiment. Not built.
 **Status** MEASURED. **Raw** `E15_preregistration.md`, `E15_results_pilot.json`,
 `E15_results_main_aborted.json`, `E15_results_main.json`, `E15_summary.json`.
 
+## R12/E15 — Fork-per-block memory follow-up (2026-08-30)
+
+This is a separate engineering follow-up to E15's historical M2 finding; the
+historical E15 values above are not overwritten. The code change is committed at
+`b700377e83b2eba39c5d66976d01332f8ab57bc6`. The frozen E15 preregistration remains
+`c2c8a5931cb2c67097fed9f435c5af52c7196abe` with SHA-256
+`939a3c40683433e6fc2e24c4409304a4a762fbae52c7b528b6a4de1216b70a92`.
+
+The in-interpreter baseline `research/raw/E15_before_fork.json` has SHA-256
+`4312e3bff94a0982711191faf3b110037d293344ccf3e127acaa9c56128b2ea6`, commit
+`5d2d2f8`, and `git_dirty=true`. Its four block peaks were
+`7067609536`, `7483569616`, `9619556792`, and `9619559548 B`; wall time was
+`1571.585 s`; its sole PID was `84078`. The forked result
+`research/raw/E15_after_fork.json` has SHA-256
+`d14875e43ee800d8f1a29af966b8adad56245a414dd204f202a48b81d1f91b5c`, commit
+`b700377`, and `git_dirty=true`. It completed four blocks with PIDs
+`15489/24645/33850/42483`, 128 runs per block, peaks
+`7067618790/7067610600/7067609606/7067609586 B`, and wall time `1664.407 s`.
+
+The after MemoryGate was active and did not abort: swap deltas were
+`-8/-16/-16/-80 MiB`, below the `256 MiB` limit, and the peak backstop was not
+reached. There were no crashes and no token, token-count, stop-reason, or KV-state
+deviations against the per-process sequential references. This satisfies the R12
+kill criterion: fresh process boundaries prevent the cumulative peak growth seen in
+the shared interpreter.
+
+The result is an engineering/memory-integrity finding only. The different commits,
+dirty environments, load and swap baselines, and the `92.822 s` longer after wall
+time prevent a clean A/B speed claim. No routing, activation, or production claim is
+authorized. The existing `research/raw/E15_summary.json` was not overwritten and is
+not the summary of this after-file; the archived artifact is
+`d1/d14875e43ee800d8f1a29af966b8adad56245a414dd204f202a48b81d1f91b5c-E15_after_fork.json`.
+
 ## B7 — Which term dominates the falling grouping gain
 
 **Preregistration** written before measurement, SHA-256 of the completed document
