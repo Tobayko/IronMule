@@ -1,43 +1,44 @@
 # Handover — branch `r11-swap-gate`
 
-Session ended mid-verification on 2026-08-30. Everything below is state, not advice:
-what is proven, what is uncommitted, what is running, and the one thing that is
-unverified. Read the **Open right now** section first — it is the only part that blocks.
+Verification completed on 2026-08-30. Everything below is state, not advice:
+what is proven, what is committed, what remains local, and what still needs the
+repository owner. The E15 fork verification is closed; only the PR remains open.
 
 Two sessions worked on this in parallel. The peer session (`tobiasburandt-ec`) owns the
 PR branch `codex/evidence-driven-execution-layer` and did every commit there. This
-branch, `r11-swap-gate`, holds work that has **not** been committed anywhere.
+branch, `r11-swap-gate`, contains the committed code at `b700377`; raw JSON evidence
+remains local and ignored by repository policy.
 
 ---
 
 ## Open right now — start here
 
-### 1. An unfinished verification run
+### 1. E15 before/after verification — completed
 
-The **E15 before/after comparison was still running when the session ended.** It is the
-one thing standing between this branch and a commit, and the peer session asked for it
-explicitly before it will merge.
+The E15 comparison is complete. The fork-per-block result satisfies the R12 memory
+criterion, but it is not a clean A/B speed comparison because the two raw files were
+recorded on different commits and both environments were dirty.
 
 - **Before** (in-interpreter, complete): `research/raw/E15_before_fork.json` —
-  peaks `7.07 → 7.48 → 9.62 → 9.62 GB` over four blocks, wall `1572 s` (26.2 min).
-- **After** (forked, **incomplete**): only block 1 had finished, at `7.07 GB`. The
-  output file may be missing or partial. Re-run it:
+  SHA-256 `4312e3bff94a0982711191faf3b110037d293344ccf3e127acaa9c56128b2ea6`,
+  commit `5d2d2f8`, `git_dirty=true`, peaks
+  `7067609536 → 7483569616 → 9619556792 → 9619559548 B`, wall `1571.585 s`.
+- **After** (forked, complete): `research/raw/E15_after_fork.json` — SHA-256
+  `d14875e43ee800d8f1a29af966b8adad56245a414dd204f202a48b81d1f91b5c`, commit
+  `b700377`, `git_dirty=true`, PIDs `15489/24645/33850/42483`, 128 runs per
+  block, peaks `7067618790/7067610600/7067609606/7067609586 B`, wall `1664.407 s`.
+- The after MemoryGate recorded swap deltas `-8/-16/-16/-80 MiB`, no abort, and
+  passed the memory kill criterion. Both files have no token, token-count, stop-reason,
+  or KV-state deviation against their sequential references; no child crashed.
+- The after wall time is `92.822 s` longer than before. Because commit, dirty state,
+  load and swap baseline differ, this is an engineering/memory result only, not a clean
+  A/B speed claim.
 
-```bash
-cd .worktrees/ironmule-b7/research
-PYTHONPATH=/Users/tobiasburandt/Project_Friday/.worktrees/ironmule-b7 \
-  python -u e15_service.py --stage main --processes 4 \
-  --model mlx-community/gemma-3-4b-it-4bit
-# then: mv raw/E15_results_main.json raw/E15_after_fork.json
-```
-
-**What decides it**: four per-block peaks staying flat near `7.07 GB`. If they climb the
-way the before-run's did, the R12 diagnosis does not transfer to E15, the E15 fork must
-come back out, and only the swap gate stays for that harness. That is the peer's own
-kill criterion in `R12` and it is currently **unfulfilled**.
-
-A one-block pilot cannot answer this: the carry-over effect begins at block 2 by
-construction. Do not accept a pilot as proof.
+The archived after artifact is
+`d1/d14875e43ee800d8f1a29af966b8adad56245a414dd204f202a48b81d1f91b5c-E15_after_fork.json`;
+the corresponding entry is recorded in the content-addressed archive manifest.
+`research/raw/E15_summary.json` was not overwritten and remains the older summary; it
+does not replace or summarize the new `E15_after_fork.json`.
 
 ### 2. The PR is not merged, and nobody in either session can merge it
 
@@ -47,12 +48,30 @@ available by moving the same action to another. PR #2 stood at 22 commits, CI gr
 `MERGEABLE`/`CLEAN`. **This needs the repository owner.** Everything else described here
 is finished and reviewed.
 
+### 3. Verification note — CPU gate and bench self-check
+
+The standalone `python -m ironmule.bench` self-check exited `0` and was green. The
+correct non-integration suite also passed:
+
+```text
+/Users/tobiasburandt/Project_Friday/.venv/bin/python -m pytest -n0 -m 'not integration'
+250 passed, 13 deselected in 6.22s
+```
+
+The unfiltered `pytest -n0` path collected 263 tests, including the 13 local-model
+integration tests. It reached 82%, remained in an active CPU/MLX end test, and was
+controlled with SIGTERM after the 30-minute limit (exit 143). That is neither a pass
+nor a fail and must not be reported as one.
+
+Permanent rule: CPU gates must exclude the `integration` marker. Model integration is
+run separately and only with explicit authorization.
+
 ---
 
-## What is on this branch, uncommitted
+## What is on this branch
 
-`git diff` against `5d2d2f8`, roughly `+270/-17` across four files. All of it reviewed by
-the peer session, all three of its review points applied.
+Commit `b700377e83b2eba39c5d66976d01332f8ab57bc6` contains the reviewed code changes
+and all three review points. Raw JSON remains ignored and local.
 
 ### `ironmule/bench.py` — the swap gate (`R11`)
 
@@ -95,12 +114,13 @@ JSON line on stdout, parent parses, controlled `env` and `cwd`. `--stage` is no 
 instead. `TimeoutExpired` books one replicate as crashed rather than taking the whole run
 down with an exception.
 
-### `research/e15_service.py` — same fork, **unproven** (see Open #1)
+### `research/e15_service.py` — same fork, **verified**
 
 Same shape, `timeout=3600` because E15 blocks run longer. Also fixes a real defect found
 during review: E15's memory branch broke **without** setting `aborted`, so a memory abort
-wrote `"aborted": null` and the file then claimed completeness. That is worse than E14b's
-missing field.
+wrote `"aborted": null` and the file then claimed completeness. The completed after-file
+now records four forked blocks, the MemoryGate record, and `aborted: null`; the result is
+an engineering memory-integrity finding, not a clean speed comparison.
 
 ### `research/e12_window_falsification.py` — swap gate only, no fork
 
@@ -172,8 +192,15 @@ for the first time.
 **The best surprise of the session**: forking is not a price paid for correctness, it is
 *cheaper*. At 12B, `147 s` per forked block against `157 s` in-interpreter. Allocator
 pressure in a shared interpreter costs more than a full process start plus a model load.
-The peer asked for this number in `R12`'s results section if the E15 run confirms it at
-4B.
+E15 now confirms the same memory-boundary behaviour at 4B, as recorded below.
+
+### `R12/E15` — fork-per-block memory follow-up completed
+
+E15 confirms the R12 diagnosis at 4B: the shared interpreter's peak rose across blocks,
+while one fresh OS process per block kept all four peaks flat near `7.07 GB`. The exact
+raw hashes, PIDs, swap deltas, wall times and provenance caveat are recorded in the
+separate follow-up in `research/LEDGER.md`. This does not authorize routing, activation,
+or a speed claim.
 
 ---
 
@@ -242,7 +269,8 @@ evidence stays local and only redacted public summaries ship. So **every `.json`
 this document is untracked** and lives in exactly two places:
 
 1. This worktree, `.worktrees/ironmule-b7/research/raw/` — `B7_4b.json`, `B7_12b.json`,
-   `R11_12b_proof.json`, `R12_12b_proof.json`, `E15_before_fork.json`, and the two
+   `R11_12b_proof.json`, `R12_12b_proof.json`, `E15_before_fork.json`,
+   `E15_after_fork.json`, and the two
    `B7fix_*_INVALIDATED_swap.json`. **Deleting this worktree destroys them.**
 2. The peer session's content-addressed archive, which has `R11_12b_proof.json` at
    SHA-256 `bf83869a39c1ba3e` and `R12_12b_proof.json` at `1cba53c4087fbade`, both with

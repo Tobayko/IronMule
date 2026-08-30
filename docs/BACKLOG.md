@@ -235,61 +235,6 @@ own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.9
 would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
 of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
-### `R11` — Gate measurement on swap, not on a hard-coded byte count
-
-**Mechanism.** Four harnesses abort when an MLX peak exceeds a literal `12 * 1024**3`:
-`e14b_arms.py:243` and `e15_service.py:435` per block, `e12_window_falsification.py:42`
-as `MAX_RSS_BYTES`, and `e16_replication.py:42` as `CHILD_MEMORY_CEILING`. (`E16`'s is
-the one honest instance: it forks real children, so its peak really is per process.
-`e14_dispatch.py` has no such guard — an earlier draft of this entry listed it and
-missed two others.) The number is
-doing a job it cannot do. What actually invalidates a timing run is the machine
-swapping; peak allocation is only a proxy for it, and a badly calibrated one. On this
-32 GB machine the proxy is wrong in both directions at once:
-
-- **Too strict.** `gemma-3-12b-it-4bit` peaks at `17.51 GB` per block and is refused,
-  although `B7` measured it with swap steady at `0.06 MB` — the machine was never under
-  pressure. 12B is therefore capped at one block, which is not a sample size, and every
-  scaling question beyond 4B is blocked. Gemma 3 27B (`~16.78 GB` in `SCALING.md`) and
-  Qwen 27B (`14.98 GiB` of weights) are refused for the same non-reason.
-- **Too lax.** `B7`'s confirmation run stayed *under* the guard at every block and was
-  still invalid: macOS grew the swap file from 1 GB to 4 GB and reached `2816 MB` in
-  use, and every cell slowed by a uniform `1.10x`–`1.15x`. The guard passed a run that
-  had to be discarded, because it was watching the wrong thing.
-
-Raising the constant fixes neither half. It moves the too-strict edge to the next model
-and leaves the too-lax edge exactly where it is.
-
-**Test.** Replace the literal with a measured condition. Sample `vm.swapusage` before
-the first block and after every block; abort when swap *in use* rises by more than a
-preregistered delta above the run's own starting value, and record that delta with the
-result. Keep a byte ceiling only as a coarse backstop against a genuinely unbounded
-allocation, set from the machine's installed memory rather than typed in, and make it a
-parameter with a documented default rather than a literal in three files.
-
-Verify against both known cases: `B7`'s 12B run (peak `17.51 GB`, swap flat) must
-complete four blocks, and `B7`'s discarded confirmation run (peak under the guard, swap
-`+2816 MB`) must abort. A synthetic case that allocates without swapping must not abort.
-Both raw files are archived, so this is checkable rather than asserted.
-
-**Scope note.** `E16`'s ceiling guards a forked child and is the one place the current
-design is coherent; it should keep a per-child byte ceiling even if the others move to a
-swap condition. The shared piece worth extracting is the condition, not one constant for
-all four call sites.
-
-**Kill.** Swap is a machine-wide signal, so an unrelated process can trip it and abort a
-valid run — the condition must therefore record what it saw rather than only failing,
-or it trades a false pass for a false abort and nothing is gained. It also closes as a
-failure if swap proves to be a lagging indicator on this platform: if timings degrade
-measurably before `vm.swapusage` moves, the gate fires after the damage and a memory
-*pressure* signal is needed instead. Both are measurable on the two runs above before
-any code changes.
-
-**Related.** `R10` records the other half of this: when a guard does fire, the abort must
-be visible in the result file rather than only on stdout. The two are worth doing
-together — a gate that fires correctly and silently is still a gate that produces a
-truncated file looking like a finished one.
-
 ### `R10` — An aborted run must not look like a finished one
 
 **Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
@@ -391,6 +336,12 @@ rerunning the same control.
 ## Tier 0 — already dead. Do not re-run these.
 
 Listed so the next person does not spend a week rediscovering them.
+
+- **`R11/R12/E15` fork-per-block memory-integrity path (b700377).** Closed by the
+  complete four-block E15 after-file (SHA-256
+  `d14875e43ee800d8f1a29af966b8adad56245a414dd204f202a48b81d1f91b5c`): four fresh
+  PIDs, flat per-block peaks, no swap growth, no correctness divergence. This is an
+  engineering memory result only, not a speed claim; do not repeat the exact attempt.
 
 - **`B25` KV cache reallocation during decode.** Nothing reallocates. The fixed-shape
   cache is allocated once per `serve()`: `mx.zeros` appears only in
