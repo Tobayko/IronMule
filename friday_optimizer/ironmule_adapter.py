@@ -26,6 +26,8 @@ import stat
 import subprocess
 import tempfile
 import secrets
+import sys
+import sysconfig
 import threading
 from dataclasses import dataclass, replace
 from types import MappingProxyType
@@ -35,6 +37,11 @@ from .candidates import CandidateError, CandidateRegistry
 from .canonical import canonical_bytes, loads_strict
 from .fingerprint import ExactFingerprint
 from .session import AdapterResult, StageSpec, SubprocessStageRunner
+from .ironmule_stage_worker import TUNE_SEARCH_CONTRACT_SHA256, WorkerError, validate_hub_model_id
+
+
+WORKER_RELATIVE_PATH = "friday_ironmule_stage_worker.py"
+SPEC_RELATIVE_PATH = "stage_spec.json"
 
 
 GIT = "/usr/bin/git"
@@ -42,8 +49,10 @@ MAX_GIT_OUTPUT = 64 * 1024
 MAX_RESULT_BYTES = 256 * 1024
 MAX_RESULT_DEPTH = 10
 MAX_RESULT_ITEMS = 10_000
+MAX_WORKER_RESOURCE_BYTES = 12 * 1024**3
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
+_EMPTY_PYTHONPATH_SHA256 = hashlib.sha256(b"").hexdigest()
 
 # This is deliberately explicit.  The active Claude checkout is never a
 # production adapter target, even when a caller forgets to pass a forbidden
@@ -79,6 +88,30 @@ DEFAULT_EXECUTION_FILES = (
 
 def _registry_hash(files: tuple[str, ...]) -> str:
     return hashlib.sha256("\n".join(files).encode("utf-8")).hexdigest()
+
+
+def _purelib_binding(interpreter: str) -> tuple[str | None, tuple[int, int, int, int] | None]:
+    """Return a verified venv purelib, or no override for system Python."""
+    if sys.prefix == sys.base_prefix:
+        return None, None
+    if os.path.realpath(sys.executable) != os.path.realpath(interpreter):
+        raise CheckoutValidationError("running interpreter does not match bound interpreter")
+    prefix = _absolute(sys.prefix, "sys.prefix")
+    purelib_raw = sysconfig.get_path("purelib")
+    if not isinstance(purelib_raw, str):
+        raise CheckoutValidationError("purelib path is unavailable")
+    purelib = _absolute(purelib_raw, "purelib")
+    _reject_symlink_ancestors(prefix)
+    _reject_symlink_ancestors(purelib)
+    try:
+        Path(purelib).relative_to(Path(prefix))
+    except ValueError as exc:
+        raise CheckoutValidationError("purelib is outside the active venv") from exc
+    _regular_file(os.path.join(prefix, "pyvenv.cfg"), "pyvenv.cfg")
+    info = os.stat(purelib)
+    if not stat.S_ISDIR(info.st_mode):
+        raise CheckoutValidationError("purelib is not a directory")
+    return purelib, (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
 
 
 EXECUTION_FILE_REGISTRY_HASH = _registry_hash(DEFAULT_EXECUTION_FILES)
@@ -499,12 +532,19 @@ class ParsedIronMuleResult:
     selected_ratio: float | None = None
     profile_id: str | None = None
     profile_version: int | None = None
+    source_digest: str | None = None
+    registry_hash: str | None = None
+    worker_sha256: str | None = None
+    session_id: str | None = None
+    status: str | None = None
+    calibration: Mapping[str, Any] | None = None
+    evidence: Mapping[str, Any] | None = None
 
     def __getitem__(self, key: str) -> Any:
         return self.as_dict()[key]
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        result = {
             "schema": "friday.ironmule.result.v1",
             "stage": self.stage,
             "commit": self.commit,
@@ -521,7 +561,16 @@ class ParsedIronMuleResult:
             "selected_ratio": self.selected_ratio,
             "profile_id": self.profile_id,
             "profile_version": self.profile_version,
+            "source_digest": self.source_digest,
+            "registry_hash": self.registry_hash,
+            "worker_sha256": self.worker_sha256,
+            "session_id": self.session_id,
+            "status": self.status,
+            "calibration": None if self.calibration is None else dict(self.calibration),
         }
+        if self.evidence is not None:
+            result.update(dict(self.evidence))
+        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -571,6 +620,11 @@ class StagedStageSpec(StageSpec):
     stage_directory: str = ""
     source_manifest: tuple[StagedSourceEntry, ...] = ()
     source_digest: str = ""
+    source_registry_hash: str = ""
+    worker_sha256: str = ""
+    spec_relative_path: str = SPEC_RELATIVE_PATH
+    spec_sha256: str = ""
+    spec_bytes: bytes = b""
 
     def __post_init__(self) -> None:
         StageSpec.__post_init__(self)
@@ -588,6 +642,16 @@ class StagedStageSpec(StageSpec):
             raise TypeError("execute_authorized must be bool")
         if not isinstance(self.source_digest, str) or not _SHA256.fullmatch(self.source_digest):
             raise ValueError("staged source digest is invalid")
+        if not isinstance(self.source_registry_hash, str) or not _SHA256.fullmatch(self.source_registry_hash):
+            raise ValueError("staged source registry hash is invalid")
+        if not isinstance(self.worker_sha256, str) or not _SHA256.fullmatch(self.worker_sha256):
+            raise ValueError("staged worker hash is invalid")
+        if self.spec_relative_path != SPEC_RELATIVE_PATH:
+            raise ValueError("staged spec path is not fixed")
+        if not isinstance(self.spec_sha256, str) or not _SHA256.fullmatch(self.spec_sha256):
+            raise ValueError("staged spec hash is invalid")
+        if not isinstance(self.spec_bytes, bytes) or len(self.spec_bytes) > 64 * 1024:
+            raise ValueError("staged spec bytes are invalid")
         if not isinstance(self.source_manifest, tuple) or not self.source_manifest:
             raise ValueError("staged source manifest is required")
         if any(not isinstance(entry, StagedSourceEntry) for entry in self.source_manifest):
@@ -626,6 +690,8 @@ def _mapping(value: Any, field: str) -> Mapping[str, Any]:
 
 def _ratio(confirmation: Mapping[str, Any]) -> float | None:
     value = confirmation.get("ratio")
+    if isinstance(value, Mapping) and isinstance(value.get("total_ns"), Mapping):
+        value = value["total_ns"]
     if isinstance(value, Mapping):
         low = value.get("ci_low")
         high = value.get("ci_high")
@@ -647,7 +713,7 @@ _RESOURCE_KEYS = (
 )
 
 
-def _validate_resources(value: Any, field: str) -> Mapping[str, Any]:
+def _validate_resources(value: Any, field: str, *, require_gate: bool = True) -> Mapping[str, Any]:
     resources = _mapping(value, field)
     for key in _RESOURCE_KEYS:
         if key not in resources:
@@ -656,8 +722,10 @@ def _validate_resources(value: Any, field: str) -> Mapping[str, Any]:
         # block), unlike negative memory/time/throughput values.
         minimum = -float("inf") if key == "swap_delta_bytes" else 0.0
         _finite_number(resources[key], f"{field}.{key}", minimum=minimum)
-    if resources.get("resource_gate_passed") is not True:
+    if require_gate and resources.get("resource_gate_passed") is not True:
         raise ResultValidationError(f"{field}.resource_gate_passed must be true")
+    if not isinstance(resources.get("resource_gate_passed"), bool):
+        raise ResultValidationError(f"{field}.resource_gate_passed must be boolean")
     return resources
 
 
@@ -666,7 +734,7 @@ class IronMuleTuneAdapter:
 
     supports_promotion = False
     _READ_ONLY_STAGES = frozenset({"doctor", "status"})
-    _EXECUTION_STAGES = frozenset({"calibrate", "test", "tune"})
+    _EXECUTION_STAGES = frozenset({"calibrate", "test"})
     # IronMule's public CLI has no flag selecting individual knobs.  ``tune``
     # therefore maps only to the preregistered combined profile it actually
     # searches; mapping every Friday candidate to the same command would make
@@ -689,6 +757,7 @@ class IronMuleTuneAdapter:
         self.binding = binding
         self.registry = CandidateRegistry()
         self._max_output_bytes = max_output_bytes
+        self._pythonpath, self._pythonpath_identity = _purelib_binding(binding.interpreter)
         if runner is not None and type(runner) is not SubprocessStageRunner:
             raise TypeError("only the controlled SubprocessStageRunner is accepted")
         self.stage_runner = runner
@@ -698,15 +767,22 @@ class IronMuleTuneAdapter:
         self._authorization_lock = threading.Lock()
         self._consumed_authorizations: set[str] = set()
 
-    def _runner_for(self, cwd: str) -> SubprocessStageRunner:
+    def _runner_for(self, cwd: str, env: Mapping[str, str] | None = None) -> SubprocessStageRunner:
+        effective_env = dict(OFFLINE_ENV)
+        if env is not None:
+            effective_env.update(dict(env))
         runner = self.stage_runner
-        if runner is not None and getattr(runner, "allowed_cwd_root", None) == os.path.abspath(cwd):
+        if (
+            runner is not None
+            and getattr(runner, "allowed_cwd_root", None) == os.path.abspath(cwd)
+            and dict(getattr(runner, "allowed_env", {})) == effective_env
+        ):
             return runner
         runner = SubprocessStageRunner(
             allowlisted_executables={self.binding.interpreter: self.binding.interpreter_sha256},
             allowed_cwd_root=cwd,
-            allowed_env=OFFLINE_ENV,
-            fixed_env=OFFLINE_ENV,
+            allowed_env=effective_env,
+            fixed_env=effective_env,
             max_output_bytes=self._max_output_bytes,
         )
         self.stage_runner = runner
@@ -721,7 +797,6 @@ class IronMuleTuneAdapter:
             "status": self.plan_stage("status", candidate_id="baseline"),
             "calibrate": self.plan_stage("calibrate", candidate_id="combined_core_profile", qualified=("fixed_compiled_cache", "head_skip_prefill")),
             "test": self.plan_stage("test", candidate_id="combined_core_profile", qualified=("fixed_compiled_cache", "head_skip_prefill")),
-            "tune": self.plan_stage("tune", candidate_id="combined_core_profile", qualified=("fixed_compiled_cache", "head_skip_prefill")),
         })
 
     @staticmethod
@@ -738,6 +813,10 @@ class IronMuleTuneAdapter:
             "candidate_id": spec.candidate_id,
             "parameters": dict(spec.parameters),
             "source_digest": spec.source_digest,
+            "source_registry_hash": spec.source_registry_hash,
+            "worker_sha256": spec.worker_sha256,
+            "spec_relative_path": spec.spec_relative_path,
+            "spec_sha256": spec.spec_sha256,
             "source_manifest": [entry.as_dict() for entry in spec.source_manifest],
             "execute_authorized": True,
         }, max_bytes=64 * 1024)
@@ -767,6 +846,17 @@ class IronMuleTuneAdapter:
         interpreter_hash, interpreter_identity = _file_digest(self.binding.interpreter, field="interpreter", executable=True)
         if interpreter_hash != self.binding.interpreter_sha256 or interpreter_identity != self.binding.interpreter_identity:
             raise CheckoutValidationError("interpreter identity changed")
+        if self._pythonpath is not None:
+            if os.path.realpath(sys.executable) != os.path.realpath(self.binding.interpreter):
+                raise CheckoutValidationError("running interpreter does not match bound interpreter")
+            try:
+                _reject_symlink_ancestors(self._pythonpath)
+                info = os.stat(self._pythonpath)
+            except (OSError, CheckoutValidationError) as exc:
+                raise CheckoutValidationError("purelib is unavailable") from exc
+            current = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+            if current != self._pythonpath_identity:
+                raise CheckoutValidationError("purelib identity changed")
         source_digest = _source_digest(checkout, self.binding.fixed_execution_files, self.binding.execution_registry_hash)
         if source_digest != self.binding.source_digest:
             raise CheckoutValidationError("fixed execution source changed")
@@ -802,11 +892,10 @@ class IronMuleTuneAdapter:
 
     def _model_id(self) -> str:
         model_id = self.binding.fingerprint.model.model_id
-        if not isinstance(model_id, str) or not model_id or len(model_id) > 256 or "\x00" in model_id:
-            raise IronMuleAdapterError("bound model id is invalid")
-        if os.path.isabs(model_id) or ".." in Path(model_id).parts:
-            raise IronMuleAdapterError("bound model id may not be a local path")
-        return model_id
+        try:
+            return validate_hub_model_id(model_id)
+        except WorkerError as exc:
+            raise IronMuleAdapterError("unsupported_model_source") from exc
 
     def _max_tokens(self) -> str:
         value = self.binding.fingerprint.workload.max_tokens
@@ -903,6 +992,121 @@ class IronMuleTuneAdapter:
             shutil.rmtree(stage_root, ignore_errors=True)
             raise
 
+    @staticmethod
+    def _write_private_file(path: str, raw: bytes, *, mode: int) -> str:
+        """Create one adapter-owned file without following a destination link."""
+        if len(raw) > 16 * 1024 * 1024:
+            raise CheckoutValidationError("staged file exceeds bound")
+        parent = os.path.dirname(path)
+        os.makedirs(parent, mode=0o700, exist_ok=True)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), mode)
+        try:
+            view = memoryview(raw)
+            while view:
+                count = os.write(fd, view)
+                if count <= 0:
+                    raise CheckoutValidationError("staged file write made no progress")
+                view = view[count:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.chmod(path, mode)
+        return hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def _replace_private_file(path: str, raw: bytes, *, mode: int) -> str:
+        """Rewrite a staged regular file without following a substituted link."""
+        if len(raw) > 64 * 1024:
+            raise CheckoutValidationError("staged file exceeds bound")
+        try:
+            _reject_symlink_ancestors(path)
+            os.chmod(path, 0o600)
+            fd = os.open(path, os.O_WRONLY | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0))
+        except OSError as exc:
+            raise CheckoutValidationError("staged file replacement failed") from exc
+        try:
+            info = os.fstat(fd)
+            if not stat.S_ISREG(info.st_mode):
+                raise CheckoutValidationError("staged replacement is not regular")
+            view = memoryview(raw)
+            while view:
+                count = os.write(fd, view)
+                if count <= 0:
+                    raise CheckoutValidationError("staged file write made no progress")
+                view = view[count:]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.chmod(path, mode)
+        return hashlib.sha256(raw).hexdigest()
+
+    def _stage_worker(self, stage_root: str) -> str:
+        """Copy this exact worker source into the private stage."""
+        source = Path(__file__).with_name("ironmule_stage_worker.py")
+        raw, digest, _ = self._read_stage_file(str(source))
+        target = os.path.join(stage_root, WORKER_RELATIVE_PATH)
+        observed = self._write_private_file(target, raw, mode=0o500)
+        if observed != digest:
+            raise CheckoutValidationError("worker source changed while staging")
+        return digest
+
+    def _worker_spec(
+        self,
+        *,
+        stage: str,
+        candidate_id: str,
+        source_digest: str,
+        worker_sha256: str,
+        source_manifest: tuple[StagedSourceEntry, ...],
+        source_registry_hash: str,
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        model = self.binding.fingerprint.model.as_dict()
+        workload = self.binding.fingerprint.workload.as_dict()
+        ram = self.binding.fingerprint.environment.ram_bytes or 1
+        return {
+            "schema": "friday.ironmule.stage-spec.v1",
+            "stage": stage,
+            "candidate": candidate_id,
+            "model": model,
+            "workload": workload,
+            "expected": {
+                "commit": self.binding.expected_head,
+                "source_digest": source_digest,
+                "registry_hash": source_registry_hash,
+                "fingerprint": self.binding.fingerprint.fingerprint_hash,
+                "worker_sha256": worker_sha256,
+                "tune_search_contract_sha256": TUNE_SEARCH_CONTRACT_SHA256,
+                "pythonpath_sha256": hashlib.sha256((self._pythonpath or "").encode("utf-8")).hexdigest(),
+            },
+            "limits": {
+                "max_seconds": 1800.0,
+                "max_output_bytes": min(self._max_output_bytes, 256 * 1024),
+                "max_rss_bytes": min(MAX_WORKER_RESOURCE_BYTES, max(ram, 1)),
+                "max_peak_memory_bytes": min(MAX_WORKER_RESOURCE_BYTES, max(ram, 1)),
+                "max_swap_delta_bytes": 0,
+                "ac_connected": self.binding.fingerprint.workload.power_mode == "ac",
+                "low_power": False,
+                "processes": 6,
+                "repeats": 7,
+                "warmup": 2,
+                "ttft_contract": "engine_prefill_to_first_token",
+            },
+            "session": {"session_id": session_id},
+            "source_manifest": [
+                {"relative_path": entry.relative_path, "sha256": entry.sha256,
+                 "size_bytes": entry.size_bytes}
+                for entry in source_manifest
+            ],
+        }
+
+    def _write_worker_spec(self, stage_root: str, spec: Mapping[str, Any]) -> str:
+        try:
+            raw = canonical_bytes(spec, max_bytes=64 * 1024)
+            return self._write_private_file(os.path.join(stage_root, SPEC_RELATIVE_PATH), raw, mode=0o400)
+        except Exception as exc:
+            raise CheckoutValidationError("worker spec could not be staged") from exc
+
     def cleanup(self) -> None:
         for spec in tuple(self._staged_specs.values()):
             spec.cleanup()
@@ -932,29 +1136,54 @@ class IronMuleTuneAdapter:
         except (CandidateError, TypeError, ValueError) as exc:
             raise IronMuleAdapterError(str(exc)) from exc
         self._validation = self.validate_checkout()
+        if stage in self._EXECUTION_STAGES:
+            # Reject local paths before creating any staged directory or
+            # reaching IronMule's cache resolver (which could otherwise fall
+            # through to a Hub/network lookup).
+            self._model_id()
         previous = self._staged_specs.pop(stage, None)
         if previous is not None:
             previous.cleanup()
         stage_root, source_manifest, source_digest = self._stage_checkout()
-        script = os.path.join(stage_root, "ironmule_cli.py")
-        # The CLI's read-only commands are the only commands currently
-        # described.  tune is intentionally executable only behind the explicit
-        # adapter authorization gate below.
-        if stage == "doctor":
-            args = (script, "doctor")
-        elif stage == "status" or command == "status":
-            args = (script, "status", "--model", self._model_id())
-        elif stage in {"calibrate", "test", "tune"} and command == "tune":
-            args = (script, "tune", "--model", self._model_id(), "--max-tokens", self._max_tokens(), "--repeats", "5")
+        # Every executable stage now enters through one fixed worker protocol.
+        # The IronMule CLI is deliberately never placed on argv: that surface
+        # accepts free flags and cannot expose the post-tune MLX peak safely.
+        worker_sha256 = ""
+        spec_bytes = b""
+        spec_sha256 = ""
+        source_registry_hash = self.binding.execution_registry_hash
+        if stage in {"calibrate", "test"}:
+            worker_sha256 = self._stage_worker(stage_root)
+            worker_spec = self._worker_spec(
+                stage=stage, candidate_id=candidate_id, source_digest=source_digest,
+                worker_sha256=worker_sha256, source_manifest=source_manifest,
+                source_registry_hash=source_registry_hash, session_id="pending",
+            )
+            spec_bytes = canonical_bytes(worker_spec, max_bytes=64 * 1024)
+            spec_sha256 = self._write_worker_spec(stage_root, worker_spec)
+            args = (WORKER_RELATIVE_PATH, "tune")
             if stage == "calibrate":
                 args += ("--no-confirm",)
+            args += ("--spec-file", SPEC_RELATIVE_PATH)
+        elif stage == "doctor":
+            # Read-only diagnostics retain their existing fixed CLI mapping.
+            args = (os.path.join(stage_root, "ironmule_cli.py"), "doctor")
+        elif stage == "status" or command == "status":
+            args = (os.path.join(stage_root, "ironmule_cli.py"), "status", "--model", self._model_id())
         else:  # pragma: no cover - guarded above
             raise UnsupportedStage(stage)
+        stage_env = dict(OFFLINE_ENV)
+        if self._pythonpath is not None:
+            stage_env["PYTHONPATH"] = self._pythonpath
         planned = StagedStageSpec(
-            self.binding.interpreter, args, cwd=stage_root, env=OFFLINE_ENV,
+            self.binding.interpreter, args, cwd=stage_root, env=stage_env,
             stage_directory=stage_root, stage=stage, candidate_id=candidate_id,
             parameters={} if parameters is None else parameters,
             source_manifest=source_manifest, source_digest=source_digest,
+            source_registry_hash=source_registry_hash, worker_sha256=worker_sha256 or hashlib.sha256(b"doctor").hexdigest(),
+            spec_relative_path=SPEC_RELATIVE_PATH,
+            spec_sha256=spec_sha256 or hashlib.sha256(b"doctor").hexdigest(),
+            spec_bytes=spec_bytes,
         )
         self._staged_specs[stage] = planned
         return planned
@@ -967,11 +1196,30 @@ class IronMuleTuneAdapter:
             raise IronMuleAdapterError("stage is already authorized")
         if not isinstance(session_id, str) or not session_id or len(session_id) > 256:
             raise ValueError("session_id is invalid")
+        # Bind the actual session id into the worker document before issuing the
+        # one-time HMAC.  A plan with the ``pending`` placeholder can never be
+        # executed directly and is not useful as an authorization token.
+        authorized_spec = spec
+        if spec.stage in {"calibrate", "test"}:
+            try:
+                worker_spec = loads_strict(spec.spec_bytes, max_bytes=64 * 1024)
+                if not isinstance(worker_spec, Mapping):
+                    raise ValueError("worker spec is not an object")
+                worker_spec = dict(worker_spec)
+                worker_spec["session"] = {"session_id": session_id}
+                updated_bytes = canonical_bytes(worker_spec, max_bytes=64 * 1024)
+                path = os.path.join(spec.stage_directory, spec.spec_relative_path)
+                updated_sha = self._replace_private_file(path, updated_bytes, mode=0o400)
+                authorized_spec = replace(
+                    spec, spec_sha256=updated_sha, spec_bytes=updated_bytes
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                raise IronMuleAdapterError("worker spec authorization failed") from exc
         nonce = secrets.token_urlsafe(32)
-        material = self._authorization_material(spec, session_id=session_id, nonce=nonce)
+        material = self._authorization_material(authorized_spec, session_id=session_id, nonce=nonce)
         tag = hmac.new(self._authorization_secret, material, hashlib.sha256).hexdigest()
         authorized = replace(
-            spec, execute_authorized=True,
+            authorized_spec, execute_authorized=True,
             authorization_session_id=session_id,
             authorization_nonce=nonce,
             authorization_tag=tag,
@@ -988,6 +1236,9 @@ class IronMuleTuneAdapter:
             if not stat.S_ISDIR(root_info.st_mode) or os.path.islink(root):
                 return False
             expected = {entry.relative_path: entry for entry in spec.source_manifest}
+            expected_paths = set(expected)
+            if spec.stage in {"calibrate", "test"}:
+                expected_paths |= {WORKER_RELATIVE_PATH, spec.spec_relative_path}
             observed: set[str] = set()
 
             def walk(directory: str, prefix: str = "") -> bool:
@@ -1009,7 +1260,7 @@ class IronMuleTuneAdapter:
                         return False
                 return True
 
-            if not walk(root) or observed != set(expected):
+            if not walk(root) or observed != expected_paths:
                 return False
             hashes: dict[str, str] = {}
             for relative, entry in expected.items():
@@ -1023,9 +1274,28 @@ class IronMuleTuneAdapter:
                     return False
                 hashes[relative] = digest
             aggregate = _compose_source_digest(self.binding.fixed_execution_files, hashes, self.binding.execution_registry_hash)
-            return aggregate == spec.source_digest
+            if aggregate != spec.source_digest:
+                return False
+            if spec.stage in {"calibrate", "test"}:
+                worker_raw, worker_digest, _ = self._read_stage_file(os.path.join(root, WORKER_RELATIVE_PATH))
+                if worker_digest != spec.worker_sha256 or not worker_raw:
+                    return False
+                spec_raw, spec_digest, _ = self._read_stage_file(os.path.join(root, spec.spec_relative_path))
+                if spec_digest != spec.spec_sha256 or spec_raw != self._expected_spec_bytes(spec):
+                    return False
+            return True
         except (OSError, CheckoutValidationError, ValueError):
             return False
+
+    @staticmethod
+    def _expected_spec_bytes(spec: StagedStageSpec) -> bytes:
+        """Read the canonical spec bytes represented by a staged immutable spec.
+
+        The spec itself is additionally covered by the authorization HMAC.  The
+        worker revalidates its semantic fields; this method only checks that the
+        file was not replaced between authorization and spawn.
+        """
+        return spec.spec_bytes
 
     def verify_and_consume_authorization(self, spec: StagedStageSpec, session_id: str) -> bool:
         """Verify an adapter-issued token and consume it exactly once."""
@@ -1071,7 +1341,7 @@ class IronMuleTuneAdapter:
             return self._blocked(spec.stage, "stage_authorization_rejected")
         if not os.path.isdir(spec.stage_directory) or os.path.islink(spec.stage_directory):
             return AdapterResult("error", reason="staged_checkout_missing")
-        return self._runner_for(spec.stage_directory).run(spec, deadline=deadline)
+        return self._runner_for(spec.stage_directory, spec.env).run(spec, deadline=deadline)
 
     def _run(self, stage: str, *, deadline: float, session_id: str, candidate_id: str, parameters: Mapping[str, Any] | None, qualified: tuple[str, ...] = ()) -> AdapterResult:
         # Revalidate the complete immutable binding immediately before any
@@ -1093,12 +1363,28 @@ class IronMuleTuneAdapter:
             return raw
         if raw.outcome in {"timeout", "error", "failed", "fail"}:
             return raw
+        # A worker that could not import MLX, re-check power, or complete its
+        # bounded preflight is already an honest inconclusive result.  Do not
+        # turn that diagnostic envelope into a parser error merely because no
+        # model evidence exists to populate correctness fields.
+        if raw.outcome == "inconclusive" and "correctness" not in raw.payload:
+            return raw
         try:
             parsed = self.parse_result(raw.payload, stage=stage, candidate_id=candidate_id)
         except ResultValidationError as exc:
             return AdapterResult("error", reason=f"invalid_result:{exc}")
-        outcome = "qualified" if parsed.confirmed else "inconclusive"
-        return AdapterResult(outcome, parsed.as_dict(), reason="" if parsed.confirmed else "confirmation_required")
+        if stage == "calibrate":
+            calibration = parsed.calibration
+            if (
+                calibration is not None
+                and calibration.get("complete") is True
+                and parsed.resources.get("resource_gate_passed") is True
+            ):
+                return AdapterResult("ok", parsed.as_dict(), reason="calibration_complete")
+            return AdapterResult("inconclusive", parsed.as_dict(), reason="calibration_incomplete")
+        outcome = "qualified" if parsed.confirmed and parsed.resources.get("resource_gate_passed") is True else "inconclusive"
+        reason = "" if outcome == "qualified" else "confirmation_or_resource_gate_required"
+        return AdapterResult(outcome, parsed.as_dict(), reason=reason)
 
     def calibrate(self, *, deadline: float, session_id: str = "", candidate_id: str = "combined_core_profile", parameters: Mapping[str, Any] | None = None, qualified: tuple[str, ...] = ("fixed_compiled_cache", "head_skip_prefill")) -> AdapterResult:
         return self._run("calibrate", deadline=deadline, session_id=session_id, candidate_id=candidate_id, parameters=parameters, qualified=qualified)
@@ -1161,7 +1447,15 @@ class IronMuleTuneAdapter:
         allowed_fields = {
             "schema", "stage", "commit", "fingerprint", "candidate", "parameters",
             "correctness", "resources", "screening", "confirmation", "confirmed",
-            "profile_id", "profile_version",
+            "profile_id", "profile_version", "source_digest", "registry_hash",
+            "worker_sha256", "session_id", "status", "profile_artifact_sha256",
+            "captured_output_bytes",
+            "calibration",
+            "tune_search_contract_sha256",
+            "baseline_samples", "candidate_samples", "aa_baseline_samples",
+            "aa_control_samples", "raw_pairs", "orders", "pair_count",
+            "evidence_sha256",
+            "baseline_correctness", "candidate_correctness",
         }
         unknown = set(data) - allowed_fields
         if unknown:
@@ -1181,7 +1475,8 @@ class IronMuleTuneAdapter:
         if candidate != candidate_id or not isinstance(candidate, str):
             raise ResultValidationError("result candidate mismatch")
         try:
-            self.registry.validate(candidate, fingerprint=self.binding.fingerprint, parameters=data.get("parameters"))
+            qualified_candidates = ("fixed_compiled_cache", "head_skip_prefill") if candidate == "combined_core_profile" else ()
+            self.registry.validate(candidate, fingerprint=self.binding.fingerprint, parameters=data.get("parameters"), qualified=qualified_candidates)
         except (CandidateError, TypeError, ValueError) as exc:
             raise ResultValidationError(f"result candidate is outside registry: {exc}") from exc
         correctness = _mapping(data.get("correctness"), "correctness")
@@ -1197,20 +1492,80 @@ class IronMuleTuneAdapter:
         response_hash = correctness.get("response_hash")
         if not isinstance(response_hash, str) or not _SHA256.fullmatch(response_hash):
             raise ResultValidationError("response_hash is invalid")
-        resources = _validate_resources(data.get("resources"), "resources")
+        resources = _validate_resources(data.get("resources"), "resources", require_gate=False)
+        source_digest = data.get("source_digest")
+        if source_digest is not None and source_digest != self.binding.source_digest:
+            raise ResultValidationError("result source digest is stale or mismatched")
+        registry_hash = data.get("registry_hash")
+        if registry_hash is not None and registry_hash != self.binding.execution_registry_hash:
+            raise ResultValidationError("result registry hash is stale or mismatched")
+        worker_sha256 = data.get("worker_sha256")
+        if worker_sha256 is not None and (not isinstance(worker_sha256, str) or not _SHA256.fullmatch(worker_sha256)):
+            raise ResultValidationError("result worker hash is invalid")
+        tune_contract_hash = data.get("tune_search_contract_sha256")
+        if tune_contract_hash is not None and tune_contract_hash != TUNE_SEARCH_CONTRACT_SHA256:
+            raise ResultValidationError("result tune search contract is stale or mismatched")
+        session_id = data.get("session_id")
+        if session_id is not None and (not isinstance(session_id, str) or not session_id or len(session_id) > 256):
+            raise ResultValidationError("result session id is invalid")
+        status = data.get("status")
+        if status is not None and (not isinstance(status, str) or not status or len(status) > 128):
+            raise ResultValidationError("result status is invalid")
         screening_raw = data.get("screening")
         confirmation_raw = data.get("confirmation")
+        calibration_raw = data.get("calibration")
         screening = None if screening_raw is None else _mapping(screening_raw, "screening")
         confirmation = None if confirmation_raw is None else _mapping(confirmation_raw, "confirmation")
+        calibration = None if calibration_raw is None else _mapping(calibration_raw, "calibration")
+        if calibration is not None:
+            required_calibration = {"complete", "trial_count", "trials", "baseline", "candidate", "evidence_sha256"}
+            if set(calibration) != required_calibration:
+                raise ResultValidationError("calibration fields are missing or unknown")
+            if not isinstance(calibration["complete"], bool):
+                raise ResultValidationError("calibration.complete must be boolean")
+            trial_count = calibration["trial_count"]
+            trials = calibration["trials"]
+            if isinstance(trial_count, bool) or not isinstance(trial_count, int) or trial_count < 1 or not isinstance(trials, (tuple, list)) or len(trials) != trial_count:
+                raise ResultValidationError("calibration trials are invalid")
+            if not isinstance(calibration["baseline"], Mapping) or not isinstance(calibration["candidate"], Mapping):
+                raise ResultValidationError("calibration diagnostics are invalid")
+            if not isinstance(calibration["evidence_sha256"], str) or not _SHA256.fullmatch(calibration["evidence_sha256"]):
+                raise ResultValidationError("calibration evidence hash is invalid")
+            if stage != "calibrate":
+                raise ResultValidationError("calibration is only valid for calibrate stage")
         ratio = None if confirmation is None else _ratio(confirmation)
         confirmed = False
-        if confirmation is not None and confirmation.get("confirmed") is True:
+        bound_worker_contract = (
+            source_digest == self.binding.source_digest
+            and registry_hash == self.binding.execution_registry_hash
+            and isinstance(worker_sha256, str)
+            and _SHA256.fullmatch(worker_sha256)
+        )
+        derived_confirmation = False
+        if confirmation is not None and not confirmation.get("confirmed"):
+            ratio_value = confirmation.get("ratio")
+            if isinstance(ratio_value, Mapping) and isinstance(ratio_value.get("total_ns"), Mapping):
+                ratio_value = ratio_value["total_ns"]
+            derived_confirmation = (
+                bound_worker_contract
+                and confirmation.get("token_identity") is True
+                and isinstance(ratio_value, Mapping)
+                and isinstance(ratio_value.get("ci_high"), (int, float))
+                and not isinstance(ratio_value.get("ci_high"), bool)
+                and math.isfinite(float(ratio_value["ci_high"]))
+                and float(ratio_value["ci_high"]) < 1.0
+            )
+        if confirmation is not None and (confirmation.get("confirmed") is True or derived_confirmation):
             if confirmation.get("token_identity") is not True:
                 raise ResultValidationError("confirmation token_identity must be true")
             if ratio is None:
                 raise ResultValidationError("confirmed result needs a confirmation ratio")
             pair_count = confirmation.get("pair_count")
             pairs = confirmation.get("pairs")
+            if not isinstance(pairs, (tuple, list)):
+                ratio_source = confirmation.get("ratio")
+                if isinstance(ratio_source, Mapping) and isinstance(ratio_source.get("total_ns"), Mapping):
+                    pairs = ratio_source["total_ns"].get("pairs")
             if isinstance(pair_count, bool) or not isinstance(pair_count, int) or pair_count < 3:
                 if not isinstance(pairs, (tuple, list)) or len(pairs) < 3:
                     raise ResultValidationError("confirmed result needs paired evidence")
@@ -1219,7 +1574,13 @@ class IronMuleTuneAdapter:
             candidate_count = confirmation.get("candidate_count", pair_count)
             if baseline_count != pair_count or candidate_count != pair_count:
                 raise ResultValidationError("confirmation pair counts do not match")
-            _validate_resources(confirmation.get("resources"), "confirmation.resources")
+            # IronMule's current profile does not repeat resource evidence in
+            # its confirmation object.  The worker-captured top-level resource
+            # record is the authority; never require a fabricated duplicate.
+            confirmation_resources = confirmation.get("resources")
+            if not isinstance(confirmation_resources, Mapping) or not confirmation_resources:
+                confirmation_resources = resources
+            _validate_resources(confirmation_resources, "confirmation.resources", require_gate=False)
             confirmed = True
         if envelope and envelope_outcome == "qualified" and not confirmed:
             raise ResultValidationError("envelope claims qualified without confirmed evidence")
@@ -1229,7 +1590,11 @@ class IronMuleTuneAdapter:
         profile_version = data.get("profile_version")
         if profile_version is not None and (isinstance(profile_version, bool) or not isinstance(profile_version, int) or profile_version < 0):
             raise ResultValidationError("profile_version is invalid")
-        return ParsedIronMuleResult(stage, commit, fingerprint, candidate, token_identity, token_count, stop_reason, response_hash, resources, screening, confirmation, confirmed, ratio, profile_id, profile_version)
+        if stage == "calibrate" and envelope and envelope_outcome == "qualified":
+            raise ResultValidationError("calibration cannot claim qualified")
+        evidence_keys = ("baseline_samples", "candidate_samples", "aa_baseline_samples", "aa_control_samples", "raw_pairs", "orders", "pair_count", "evidence_sha256", "baseline_correctness", "candidate_correctness", "tune_search_contract_sha256")
+        evidence = {key: data[key] for key in evidence_keys if key in data}
+        return ParsedIronMuleResult(stage, commit, fingerprint, candidate, token_identity, token_count, stop_reason, response_hash, resources, screening, confirmation, confirmed, ratio, profile_id, profile_version, source_digest, registry_hash, worker_sha256, session_id, status, calibration, evidence or None)
 
 
 def validate_checkout(binding: IronMuleCheckoutBinding) -> CheckoutValidation:
@@ -1258,6 +1623,10 @@ __all__ = [
     "DEFAULT_FORBIDDEN_CHECKOUTS",
     "EXECUTION_FILE_REGISTRY_HASH",
     "OFFLINE_ENV",
+    "MAX_WORKER_RESOURCE_BYTES",
+    "TUNE_SEARCH_CONTRACT_SHA256",
+    "SPEC_RELATIVE_PATH",
+    "WORKER_RELATIVE_PATH",
     "CheckoutValidation",
     "CheckoutValidationError",
     "doctor",

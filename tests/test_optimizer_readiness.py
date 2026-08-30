@@ -114,6 +114,10 @@ class MacParserTests(unittest.TestCase):
             runner=runner, max_output_bytes=max_output_bytes
         )
 
+    def test_default_command_output_bound_is_128_kib(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        self.assertEqual(MacSystemProbe()._max_output, 128 * 1024)
+
     def test_pmset_sections_match_the_actual_power_source(self):
         from friday_optimizer.readiness import MacSystemProbe
         c = MacSystemProbe.COMMANDS
@@ -123,11 +127,71 @@ class MacParserTests(unittest.TestCase):
             (c["vm_stat"],): "Mach Virtual Memory Statistics: (page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
             (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
             (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
-            (c["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="): "1 0 S 0.0 launchd /sbin/launchd\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
         })
         value = p.sample()
         self.assertEqual((value.ac_connected, value.low_power), (True, False))
         self.assertEqual(value.memory_available_bytes, 110 * 4096)
+
+    def test_missing_low_power_key_is_explicitly_unsupported_off(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n sleep 0\nBattery Power:\n sleep 1\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
+        }
+        value = self._probe(outputs).sample()
+        self.assertFalse(value.low_power)
+        self.assertNotIn("power_unreadable", value.errors)
+
+    def test_low_power_key_in_inactive_profile_requires_active_value(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n sleep 0\nBattery Power:\n lowpowermode 1\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
+        }
+        value = self._probe(outputs).sample()
+        self.assertIsNone(value.low_power)
+        self.assertIn("low_power_missing", value.errors)
+
+    def test_active_low_power_one_is_not_treated_as_off(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n lowpowermode 1\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
+        }
+        value = self._probe(outputs).sample()
+        self.assertTrue(value.low_power)
+        self.assertNotIn("low_power_unknown", value.errors)
+
+    def test_invalid_active_low_power_value_is_unknown(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n lowpowermode 2\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
+        }
+        value = self._probe(outputs).sample()
+        self.assertIsNone(value.low_power)
+        self.assertIn("low_power_unknown", value.errors)
 
     def test_stderr_is_not_measurement_and_truncation_is_unknown(self):
         from friday_optimizer.readiness import MacSystemProbe
@@ -151,7 +215,7 @@ class MacParserTests(unittest.TestCase):
             (c["vm_stat"],): "Pages free: 100.\nPages speculative: 10.\n",
             (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
             (c["sysctl"], "vm.swapusage"): "total = 1.00Z used = 0.00Z free = 1.00Z\n",
-            (c["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="): "1 0 S 0.0 launchd /sbin/launchd\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
         }
         value = self._probe(outputs).sample()
         self.assertIn("page_size_unknown", value.errors)
@@ -166,7 +230,7 @@ class MacParserTests(unittest.TestCase):
             (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
             (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
             (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
-            (c["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="): "1 0 S 0.0 launchd /sbin/launchd\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
         }
         self.assertIn("low_power_ambiguous", self._probe(outputs).sample().errors)
 
@@ -179,7 +243,7 @@ class MacParserTests(unittest.TestCase):
             (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
             (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
             (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
-            (c["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="): "1 0 S 0.0 launchd /sbin/launchd\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "0 1 0 S 0.0 launchd\n",
         }
         with patch("friday_optimizer.readiness.os.getpid", return_value=99999):
             value = self._probe(outputs).sample()
@@ -194,12 +258,67 @@ class MacParserTests(unittest.TestCase):
             (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
             (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
             (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
-            (c["ps"], "-axo", "pid=,ppid=,state=,%cpu=,comm=,args="): "100 1 R 99.0 python own.py\n1 0 R 99.0 node parent.js\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "501 100 1 R 99.0 python\n0 1 0 R 99.0 node\n",
         }
         with patch("friday_optimizer.readiness.os.getpid", return_value=100):
             value = self._probe(outputs).sample()
         self.assertFalse(value.workload_active)
         self.assertEqual(value.cpu_percent, 198.0)
+
+    def test_active_unknown_current_user_process_is_foreign_without_argv(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        current_uid = os.getuid()
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n lowpowermode 0\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): (
+                f"{current_uid} 100 1 S 0.0 python\n"
+                f"{current_uid} 200 1 R 0.0 custom_gpu_worker\n"
+            ),
+        }
+        with patch("friday_optimizer.readiness.os.getpid", return_value=100):
+            value = self._probe(outputs).sample()
+        self.assertTrue(value.workload_active)
+        self.assertEqual(value.process_evidence, ("custom_gpu_worker",))
+        self.assertNotIn("args=", value.process_evidence)
+
+    def test_active_unknown_system_process_does_not_block(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        system_uid = os.getuid() + 1
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n lowpowermode 0\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): (
+                f"{system_uid} 200 1 R 99.0 custom_daemon\n"
+            ),
+        }
+        with patch("friday_optimizer.readiness.os.getpid", return_value=100):
+            value = self._probe(outputs).sample()
+        self.assertFalse(value.workload_active)
+
+    def test_known_runtime_name_blocks_regardless_of_uid(self):
+        from friday_optimizer.readiness import MacSystemProbe
+        c = MacSystemProbe.COMMANDS
+        outputs = {
+            (c["pmset"], "-g", "batt"): "Now drawing from 'AC Power'\n",
+            (c["pmset"], "-g", "custom"): "AC Power:\n lowpowermode 0\n",
+            (c["vm_stat"],): "(page size of 4096 bytes)\nPages free: 100.\nPages speculative: 10.\n",
+            (c["sysctl"], "-n", "hw.memsize"): "104857600\n",
+            (c["sysctl"], "vm.swapusage"): "total = 1.00G used = 0.00G free = 1.00G\n",
+            (c["ps"], "-axo", "uid=,pid=,ppid=,state=,%cpu=,comm="): "999 200 1 R 0.0 mlx\n",
+        }
+        with patch("friday_optimizer.readiness.os.getpid", return_value=100):
+            value = self._probe(outputs).sample()
+        self.assertTrue(value.workload_active)
+        self.assertEqual(value.process_evidence, ("mlx",))
 
 
 class LeaseTests(unittest.TestCase):

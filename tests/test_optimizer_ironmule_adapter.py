@@ -134,6 +134,21 @@ class AdapterTests(unittest.TestCase):
         with self.assertRaises(UnsupportedStage):
             adapter.plan_stage("activate")
 
+    def test_non_hub_model_sources_block_before_staging(self) -> None:
+        from dataclasses import replace
+        for model_id in ("local:gemma", "/tmp/gemma", "gemma", "org/name/extra", "org\\name", "../name"):
+            with self.subTest(model_id=model_id):
+                model = replace(self.binding.fingerprint.model, model_id=model_id)
+                bad_fingerprint = replace(self.binding.fingerprint, model=model)
+                binding = IronMuleCheckoutBinding._for_testing(
+                    checkout=self.root, expected_head=self.head, interpreter=os.path.realpath(sys.executable),
+                    fingerprint=bad_fingerprint, fixed_execution_files=("ironmule_cli.py", "ironmule/__init__.py"), forbidden_checkouts=(),
+                )
+                adapter = IronMuleTuneAdapter(binding)
+                with self.assertRaisesRegex(IronMuleAdapterError, "unsupported_model_source"):
+                    adapter.plan_stage("test", candidate_id="combined_core_profile", qualified=("fixed_compiled_cache", "head_skip_prefill"))
+                self.assertEqual(tuple(adapter._staged_specs), ())
+
     def test_candidates_without_a_real_cli_mapping_are_blocked(self) -> None:
         adapter = self.adapter()
         for candidate in ("persistent_process", "fixed_compiled_cache", "head_skip_prefill",
@@ -153,6 +168,15 @@ class AdapterTests(unittest.TestCase):
         self.assertNotEqual(spec.cwd, str(self.root))
         self.assertEqual(baseline.args[1], "status")
         self.assertEqual(spec.args[1], "tune")
+        worker_path = Path(spec.cwd) / "friday_ironmule_stage_worker.py"
+        real_worker = Path(__file__).resolve().parents[1] / "friday_optimizer" / "ironmule_stage_worker.py"
+        self.assertEqual(worker_path.read_bytes(), real_worker.read_bytes())
+        self.assertTrue(os.stat(worker_path).st_mode & 0o111)
+        staged_spec = __import__("json").loads((Path(spec.cwd) / "stage_spec.json").read_text(encoding="utf-8"))
+        self.assertLessEqual(staged_spec["limits"]["max_peak_memory_bytes"], 12 * 1024**3)
+        self.assertLessEqual(staged_spec["limits"]["max_rss_bytes"], 12 * 1024**3)
+        self.assertLessEqual(staged_spec["limits"]["max_peak_memory_bytes"], fingerprint().environment.ram_bytes)
+        self.assertLessEqual(staged_spec["limits"]["max_rss_bytes"], fingerprint().environment.ram_bytes)
         calibration = adapter.plan_stage("calibrate", candidate_id="combined_core_profile",
                                          qualified=("fixed_compiled_cache", "head_skip_prefill"))
         self.assertIn("--no-confirm", calibration.args)
@@ -322,6 +346,24 @@ class AdapterTests(unittest.TestCase):
         value["token_identity"] = True
         with self.assertRaises(ResultValidationError):
             adapter.parse_result(value)
+
+    def test_actual_tune_confirmation_shape_uses_phase_pairs_and_worker_resources(self) -> None:
+        adapter = self.adapter()
+        phase = lambda ratio: {"median_ratio": ratio, "ci_low": ratio - 0.01,
+                               "ci_high": ratio + 0.01, "pairs": [ratio, ratio + 0.01, ratio - 0.01]}
+        value = self.valid_result()
+        value["candidate"] = "combined_core_profile"
+        value["source_digest"] = self.binding.source_digest
+        value["registry_hash"] = self.binding.execution_registry_hash
+        value["worker_sha256"] = "e" * 64
+        value["confirmation"] = {
+            "ratio": {"total_ns": phase(0.9), "prefill_ns": phase(0.95), "decode_ns": phase(0.88)},
+            "token_identity": True,
+        }
+        parsed = adapter.parse_result(value, candidate_id="combined_core_profile")
+        self.assertTrue(parsed.confirmed)
+        self.assertEqual(parsed.selected_ratio, 0.9)
+        self.assertEqual(len(parsed.confirmation["ratio"]["decode_ns"]["pairs"]), 3)  # type: ignore[index]
 
     def test_git_policy_is_explicitly_isolated_from_repo_fsmonitor(self) -> None:
         marker = self.root / "fsmonitor-ran"
