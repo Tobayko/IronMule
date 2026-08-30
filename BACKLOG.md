@@ -276,9 +276,10 @@ Memory und deterministische Suche bleiben das Ergebnis.
 
 #### L1.3 — Shadow Controller
 
-**Status:** Offline-Control-Plane, CLI, History/UI und IronMule-Adapter-Shadow
-implementiert und getestet; reale Adapterausführung, Profilpromotion und
-Produktaktivierung bleiben blockiert.
+**Status:** C0, Preregistration und Session-Plan sind abgeschlossen und geprüft;
+die reale Adapter-/Modellausführung wurde noch nicht gestartet. Der Start wartet
+weiter auf AC, stabile Idle-/Speicher-/Swap-Werte und `foreign=false`.
+Reale Adapterausführung, Profilpromotion und Produktaktivierung bleiben blockiert.
 
 - Modell empfiehlt nur; der bestehende Pfad bleibt unverändert.
 - Empfehlung, Unsicherheit, tatsächliche Baselineentscheidung und späteres
