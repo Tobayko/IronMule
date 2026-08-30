@@ -22,7 +22,7 @@ Der sichere Startwert ist die unveränderte Baseline.
 
 | Modell | Aktueller Evidenzstand | Portabilitätsregel |
 | --- | --- | --- |
-| Gemma 1B | lokaler Snapshot/Evidence vorhanden | erster kleiner Realtest nach lokalem Fingerprint und A/A |
+| Gemma 1B | in diesem Arbeitsschritt nicht verifiziert | kein Snapshotclaim; eigener Snapshot und A/A vor jedem Realtest erforderlich |
 | Gemma 4B | lokaler Snapshot und Q2-Verfahrensbeleg vorhanden | eigener A/A-/A/B-Test; Q2-Speedup nicht übernehmen |
 | Gemma 12B | getrennte Evidenz, aber kein allgemeiner Friday-Claim | eigener Snapshot, RAM-/Swap-Gate und neue Messung erforderlich |
 | Gemma 27B | kein belastbarer lokaler Gemma-27B-Messvertrag | blockiert, bis Snapshot, Identität und Ressourcenlauf vorhanden sind |
