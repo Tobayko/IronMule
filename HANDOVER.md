@@ -1,5 +1,14 @@
 # Handover — branch `r11-swap-gate`
 
+## Current 2026-08-31 — Q3/Q3a
+
+- **HEAD:** Der aktuelle Stand ist Commit `0ec9237` (`fix: read macOS 26 q3a gates`); die unmittelbar relevanten Vorläufer sind `771d133` und `7a8896f`.
+- **Korrigierter zweiter Preflight:** `research/raw/Q3a_preflight_refusal2_20260831.json` ist ignoriert und erhalten. Der Lauf endete mit `FAILED`, `BASE`, `promotion_allowed=false`, ohne Modellstart und mit `partial_children=0`. Grün: AC, Git, installierter Speicher, Low-Power-off, exakte 4B-Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2` plus Manifest `a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`, Preregistration, Zeitbudget und Thermal. Rot: Load `max=21.723`, `spread=0.699`; Swap `1641021440` Bytes und damit über 256 MiB; aktive Claude-Prozessaktivität. `research/raw/Q3a_preflight_refusal_20260831.json` ist ebenfalls erhalten; kein 27B-Modell wurde verwendet.
+- **Replay und Fortsetzung:** Offline-Replay ist nur für `BASE` freigegeben. Die Datenbasis reicht nicht für eine adaptive/RL-Aussage; RL ist nicht anwendbar. Q3a wurde wegen der Gates nicht ausgeführt. Fortsetzung ist nur bei AC, Low-Power-off, nominalem Thermal, Load `<=4` und Spread `<=1`, Swap `<=256 MiB`, ohne Modellprozess oder aktive Claude-Aktivität und mit eindeutigem neuen Outputpfad zulässig.
+- **Verifikation:** Targeted `127`, breit `336 passed, 1 skipped`, separate Integration `12`, modellfreie Q3a-Suite `26`; `ab`-/`tune`-Selfchecks erfolgreich. Der gepufferte Worker-Output-Cap bleibt der bekannte P2-Backlogpunkt. SQuAD bleibt untracked/lokal, die Lizenzfrage offen, und PR #2 ist owner-only.
+
+Der historische Satz unten, dass „only the PR remains open“, beschreibt den älteren E15/PR-Stand und ist durch diese aktuelle Q3/Q3a-Sektion superseded.
+
 Verification completed on 2026-08-30. Everything below is state, not advice:
 what is proven, what is committed, what remains local, and what still needs the
 repository owner. The E15 fork verification is closed; only the PR remains open.
