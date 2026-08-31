@@ -40,11 +40,17 @@ memory, a clean Git tree apart from `research/data/squad-dev-v1.1.json`, and a
 runtime-code hash binding parent and worker. The initial memory-pressure free
 percentage must be at least 35%. Initial swap is recorded and must be known and
 at most 4 GiB. Three load samples must be known, have max at most 8.0 and spread
-at most 2.0. Only competing inference processes containing `mlx`, `llama`,
-`ollama`, `vllm`, `gemma`, or `qwen` are hard blockers. The only Claude exception
-is the exact verified executable `/Applications/Claude.app/Contents/MacOS/Claude`;
-generic Claude CLI/server/backend processes and unknown Claude paths are hard
-blockers. The allowed desktop process still contributes to loadavg.
+at most 2.0. The process gate takes two bounded inventories,
+`pid=,rss=,%cpu=,args=` and `pid=,comm=`, and requires an exact PID map match.
+The only Claude exception is a process whose `comm` path is lexically inside
+the exact `/Applications/Claude.app/Contents/` boundary, after the complete
+bundle has passed absolute `/usr/bin/codesign --verify --deep --strict` and
+bounded `/usr/bin/codesign -dv --verbose=4` metadata checks for identifier
+`com.anthropic.claudefordesktop`, team `Q6L2SF6YDW`, and first authority
+`Developer ID Application: Anthropic PBC (Q6L2SF6YDW)`. Generic Claude
+CLI/server/backend processes, outside-bundle paths, untrusted bundles, and
+malformed inventories are hard blockers. The allowed desktop process still
+contributes to loadavg; its CPU value is not discarded from the load gate.
 
 The parent owns a monotone 180-second deadline. Each model child has a
 35-second timeout and each fresh stage worker has a 120-second cap. A bounded
