@@ -306,3 +306,45 @@
   Umgebung kein pytest installiert ist und keine Installation freigegeben war.
 - **Messgrenze:** Kein Download, keine Modellinstallation, kein Hardware-/MLX-
   Test und kein Commit.
+
+## 2026-08-31 — Q3b Canary 7 audited and Q3c preregistered
+
+- **Q3b-Audit:** `research/raw/Q3b_canary7_20260831.json` wurde read-only
+  auditiert; SHA-256 ist
+  `77ebc1ed8af5c1d5b4b064ce95605d3440b6e2fccabcd088d58f0900cdd0eb76`.
+  Das Raw-Schema ist vollständig, beide unabhängigen Stages haben je einen
+  Warmup und drei Mess-Repeats, vollständige Sampler-Arrays ohne Fehler,
+  erfolgreiche Cleanup-/Reap-Nachweise und `SAFETY_CANARY_PASS` /
+  `SAFETY_ONLY`. `performance_valid=false` und
+  `promotion_allowed=false` bleiben unverändert.
+- **Safety/Identity:** Exakte lokale Gemma-3-4B-Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, Manifest-SHA
+  `a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`,
+  Runtime-Code-SHA
+  `d4577826e46d356ecc43cbae0c94465018d202ad29593a96a5f2693d1f279e59`.
+  Start: AC, Low-Power aus, Thermal nominal, freier Speicher 49 %, Swap
+  `1,690,891,714 B`, Loadavg max 2.7905. Stage-Gates: freier Speicher
+  44 %/46 %, Swap-Delta `0 B`/`0 B`, Loadavg max 3.8555/4.2837, Child-RSS
+  `3,075,457,024 B`/`3,767,861,248 B`, MLX-Peak `3,125,869,452 B`.
+- **Exakte Werte und Geschwindigkeitskontext:** Beide Stages hatten Prompt
+  322, logisch/physisch 23 Ausgabetokens, 22 Decode-Schritte, Kapazität 384,
+  `eos`, gleiche Counts und Determinismus. Die Raw-Mediane (Total/Prefill/
+  Decode) betrugen Baseline `859.413/583.330/276.083 ms` und Kandidat
+  `849.714/574.051/275.663 ms`; Output-Rate `26.7624` vs. `27.0679` tok/s,
+  Decode-Rate `79.6862` vs. `79.8076` Schritte/s. Deskriptive Kandidaten-
+  Geschwindigkeitswerte sind Total +1.1285 %, Prefill +1.5907 %, Decode
+  +0.1521 %, Output-Rate +1.1414 % und Decode-Rate +0.1524 %. Keine CI,
+  keine Performance-Aussage und keine Multiplikation mit Q2.
+- **Q3c-Präregistrierung:** Vor jeder Implementierung und Hardware-Messung
+  wurden `research/raw/Q3c_preregistration.md` sowie der SHA-Begleiter
+  angelegt. SHA-256:
+  `411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`.
+  Festgeschrieben sind zwei unabhängige `ab.run`-Phasen mit je sechs frischen
+  Prozessen, AB/BA-Alternierung, zwei Warmups und sieben Repeats:
+  Phase R BASE gegen den exakten Q2-Incumbent, Phase N BASE gegen Incumbent
+  plus `fused_argmax`. Enthalten sind die Q3b-Safety-Gates, 600 s Gesamt-,
+  270 s Phase-, 240 s Worker- und 35 s Child-Bounds, exakte Token-/Physical-
+  /Count-/Stop-/Capacity-/Determinismus-Regel, Total/Prefill/Decode-/Rate-
+  Metriken mit 95-%-CI, historische Q2-Zielwerte, Fallback BASE/Incumbent,
+  keine Auto-Promotion und UI-Historie. Keine Q3c-Implementierung wurde
+  vorgenommen.

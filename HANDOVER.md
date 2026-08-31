@@ -299,3 +299,30 @@ licence violation, not a convenience. Fetch it with the command in
 `research/data/squad-dev-v1.1.json` is gitignored (CC BY-SA 4.0, not redistributed) and
 was **absent from this machine entirely**, so E14–E16 could not run until it was fetched.
 `research/data/README.md` documents the command; the SHA-256 matched.
+
+## Current handover — Q3b audit and Q3c preregistration (2026-08-31)
+
+Q3b Canary 7 is audited and complete as safety evidence. The retained raw file
+`research/raw/Q3b_canary7_20260831.json` has SHA-256
+`77ebc1ed8af5c1d5b4b064ce95605d3440b6e2fccabcd088d58f0900cdd0eb76` and reports
+`SAFETY_CANARY_PASS` / `SAFETY_ONLY`, with
+`performance_valid=false` and `promotion_allowed=false`. The exact local Gemma
+3 4B revision, manifest, runtime-code hash, AC/thermal/process gates,
+residual-swap history, cleanup evidence, and exact token/count/stop/capacity/
+determinism values are recorded in `research/LEDGER.md`; the same section
+records Total/Prefill/Decode medians and output/decode-step rates. Those Q3b
+timings are descriptive only and must not be multiplied with Q2.
+
+Q3c is preregistered before implementation or hardware execution:
+`research/raw/Q3c_preregistration.md`, SHA-256
+`411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`, with the
+companion `research/raw/Q3c_preregistration.sha256`. It specifies exact local
+Gemma 4B, prompt 322, max 32, two independent six-fresh-process `ab.run`
+phases, 2 warmups, 7 repeats, AB/BA alternation, Phase R BASE vs. exact Q2
+incumbent, and Phase N BASE vs. incumbent plus `fused_argmax`. It freezes the
+Q3b safety policy, `600 s` study / `270 s` phase / `240 s` worker /
+`35 s` child bounds, exact identity rule, Total/Prefill/Decode and token-rate
+metrics with 95% CIs, Q2 target `0.8568` / `[0.8549; 0.9402]`, reproduction
+and preservation bars, BASE/current-incumbent fallback, no auto-promotion,
+and timestamped local UI history. No Q3c implementation or measurement has
+started.
