@@ -47,11 +47,18 @@ LOAD_MAX = 4.0
 LOAD_SPREAD_MAX = 1.0
 PEAK_CEILING_FRACTION = 0.60
 MAX_COMMAND_OUTPUT = 64 * 1024
+MAX_PS_OUTPUT = 512 * 1024
 MAX_WORKER_OUTPUT = 512 * 1024
 CAPABILITY_MAX_BYTES = 16 * 1024
 KNOWN_MODEL_ACTIVITY = ("mlx", "llama.cpp", "ollama", "lm studio", "vllm", "gemma", "qwen", "claude")
 NATIVE_INFERENCE_ACTIVITY = ("llama-server", "llama_server", "llama-cli", "llama_cli", "llama.cpp", "mlx_lm", "mlx-lm", "ollama", "vllm", "lm studio")
-COMMANDS = {"pmset": "/usr/bin/pmset", "sysctl": "/usr/sbin/sysctl", "ps": "/bin/ps", "git": "/usr/bin/git"}
+COMMANDS = {
+    "pmset": "/usr/bin/pmset",
+    "osascript": "/usr/bin/osascript",
+    "sysctl": "/usr/sbin/sysctl",
+    "ps": "/bin/ps",
+    "git": "/usr/bin/git",
+}
 PREREGISTRATION = Path(__file__).resolve().parent / "raw" / "Q3a_preregistration.md"
 PREREGISTRATION_SHA = Path(__file__).resolve().parent / "raw" / "Q3a_preregistration.sha256"
 
@@ -87,7 +94,9 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
         completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError):
         return _CommandText("", False)
-    if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > MAX_COMMAND_OUTPUT:
+    ps_inventory = command == [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="]
+    output_limit = MAX_PS_OUTPUT if ps_inventory else MAX_COMMAND_OUTPUT
+    if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > output_limit:
         return _CommandText("", False)
     return _CommandText(completed.stdout, True)
 
@@ -171,6 +180,7 @@ def resolve_exact_local_identity(root: Path | None = None) -> dict[str, Any]:
 def _swap_bytes(text: str) -> int | None:
     if not isinstance(text, str):
         return None
+    text = text.rstrip("\r\n")
     match = re.fullmatch(r"\s*.*?used\s*=\s*([0-9]+(?:[.,][0-9]+)?)\s*([KMG]?).*", text, re.IGNORECASE)
     if not match:
         return None
@@ -181,7 +191,13 @@ def _swap_bytes(text: str) -> int | None:
 def _thermal_nominal(text: str) -> bool:
     if not isinstance(text, str):
         return False
-    raw_lines = [line.strip().lower() for line in text.splitlines() if line.strip()]
+    raw_lines = []
+    for line in text.splitlines():
+        line = line.strip()
+        if line.lower().startswith("note: "):
+            line = line[6:].strip()
+        if line:
+            raw_lines.append(line.lower())
     lines = set(raw_lines)
     if len(raw_lines) != len(lines):
         return False
@@ -193,7 +209,10 @@ def _thermal_nominal(text: str) -> bool:
         "no cpu power status is available",
         "no cpu power status available",
     }
-    zero_value = re.compile(r"^[a-z0-9 _-]*(?:speed[_ ]limit|pressure)[a-z0-9 _-]*\s*[:=]\s*0(?:\.0+)?$")
+    zero_value = re.compile(
+        r"^(?:(?:cpu|gpu)[ _](?:speed|scheduler)[ _]limit|number of prochot entries|pressure)"
+        r"\s*[:=]\s*0(?:\.0+)?$"
+    )
     for line in lines - required:
         if line in allowed_cpu_status or zero_value.fullmatch(line):
             continue
@@ -204,17 +223,24 @@ def _thermal_nominal(text: str) -> bool:
 def system_environment(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
     try:
         battery = run([_absolute("pmset"), "-g", "batt"])
-        low_power = run([_absolute("pmset"), "-g", "lowpowermode"])
+        low_power = run([
+            _absolute("osascript"),
+            "-l",
+            "JavaScript",
+            "-e",
+            'ObjC.import("Foundation"); JSON.stringify($.NSProcessInfo.processInfo.isLowPowerModeEnabled)',
+        ])
         thermal = run([_absolute("pmset"), "-g", "therm"])
         swap_text = run([_absolute("sysctl"), "-n", "vm.swapusage"])
     except Exception:
         battery = low_power = thermal = swap_text = ""
-    battery = battery if isinstance(battery, str) else ""
-    low_power = low_power if isinstance(low_power, str) else ""
-    thermal = thermal if isinstance(thermal, str) else ""
-    swap_text = swap_text if isinstance(swap_text, str) else ""
-    low_match = re.search(r"(?:lowpowermode|low\s+power\s+mode).*?\b([01])\b", low_power.lower())
-    return {"power_source": "AC" if "ac power" in battery.lower() else "battery" if battery else "unknown", "low_power_mode": False if low_match and low_match.group(1) == "0" else None, "thermal_state": "nominal" if _thermal_nominal(thermal) else "unknown", "swap_used_bytes": _swap_bytes(swap_text), "platform": platform.platform(), "python": platform.python_version()}
+    battery = battery if isinstance(battery, str) and getattr(battery, "ok", True) else ""
+    low_power = low_power if isinstance(low_power, str) and getattr(low_power, "ok", True) else ""
+    thermal = thermal if isinstance(thermal, str) and getattr(thermal, "ok", True) else ""
+    swap_text = swap_text if isinstance(swap_text, str) and getattr(swap_text, "ok", True) else ""
+    low_power_value = low_power.strip()
+    low_power_mode = False if low_power_value == "false" else True if low_power_value == "true" else None
+    return {"power_source": "AC" if "ac power" in battery.lower() else "battery" if battery else "unknown", "low_power_mode": low_power_mode, "thermal_state": "nominal" if _thermal_nominal(thermal) else "unknown", "swap_used_bytes": _swap_bytes(swap_text), "platform": platform.platform(), "python": platform.python_version()}
 
 
 def _loadavg1() -> float:
@@ -255,8 +281,10 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text) -> str 
         output = run([_absolute("ps"), "-Ao", "pid=,rss=,%cpu=,args="])
     except Exception:
         return "process inventory unavailable or command failed"
-    if not isinstance(output, str) or not output:
+    if not isinstance(output, str) or not output or not getattr(output, "ok", True):
         return "process inventory unavailable or command failed"
+    if len(output) > MAX_PS_OUTPUT:
+        return "process inventory exceeded bounded limit"
     for line in output.splitlines():
         parts = line.split(None, 3)
         if len(parts) != 4:

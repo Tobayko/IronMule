@@ -22,8 +22,8 @@ def _safe_runner(command):
     name = Path(command[0]).name
     if name == "pmset" and key[-2:] == ("-g", "batt"):
         return "Now drawing from 'AC Power'"
-    if name == "pmset" and key[-2:] == ("-g", "lowpowermode"):
-        return "lowpowermode 0"
+    if name == "osascript":
+        return "false\n"
     if name == "pmset" and key[-2:] == ("-g", "therm"):
         return "No thermal warning level has been recorded\nNo performance warning level has been recorded"
     if name == "sysctl" and key[-2:] == ("-n", "vm.swapusage"):
@@ -148,12 +148,62 @@ def test_preflight_requires_identity_environment_load_and_clean_git():
 def test_thermal_parser_is_strict_and_accepts_current_nominal_sentence():
     assert q3a._thermal_nominal("No thermal warning level has been recorded\nNo performance warning level has been recorded")
     assert q3a._thermal_nominal("No thermal warning level has been recorded\nNo performance warning level has been recorded\nNo CPU power status is available\nCPU_Speed_Limit = 0\npressure = 0")
+    assert q3a._thermal_nominal("Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nNo CPU power status has been recorded\nCPU_Speed_Limit = 0\nGPU_Speed_Limit = 0\nNumber of prochot entries = 0")
     assert not q3a._thermal_nominal("No thermal warning level has been recorded")
     assert not q3a._thermal_nominal("Thermal level = 0")
     assert not q3a._thermal_nominal("No thermal warning level has been recorded\nNo performance warning level has been recorded\nCPU_Speed_Limit = 100")
+    assert not q3a._thermal_nominal("Note: No thermal warning level has been recorded\nNote: No performance warning level has been recorded\nThrottle = 0")
     assert not q3a._thermal_nominal("No thermal warning level has been recorded\nNo performance warning level has been recorded\nThrottle = unknown")
     assert not q3a._thermal_nominal("not nominal")
     assert not q3a._thermal_nominal("thermal level = unknown")
+
+
+def test_low_power_uses_foundation_public_api_and_fails_closed_on_command_error():
+    calls = []
+
+    def runner(command):
+        calls.append(command)
+        if Path(command[0]).name == "pmset" and command[-2:] == ["-g", "batt"]:
+            return "Now drawing from 'AC Power'"
+        if Path(command[0]).name == "osascript":
+            return "false\n"
+        if Path(command[0]).name == "pmset" and command[-2:] == ["-g", "therm"]:
+            return "No thermal warning level has been recorded\nNo performance warning level has been recorded"
+        if Path(command[0]).name == "sysctl" and command[-2:] == ["-n", "vm.swapusage"]:
+            return "total = 4.00G used = 1553.81M free = 2.48G\n"
+        raise AssertionError(command)
+
+    environment = q3a.system_environment(runner)
+    assert environment["low_power_mode"] is False
+    assert environment["swap_used_bytes"] == int(1553.81 * 1024**2)
+    assert [Path(command[0]).name for command in calls] == ["pmset", "osascript", "pmset", "sysctl"]
+    osascript = calls[1]
+    assert osascript[:4] == [q3a.COMMANDS["osascript"], "-l", "JavaScript", "-e"]
+    assert osascript[4] == 'ObjC.import("Foundation"); JSON.stringify($.NSProcessInfo.processInfo.isLowPowerModeEnabled)'
+
+    def failed_runner(command):
+        if Path(command[0]).name == "osascript":
+            return q3a._CommandText("false\n", False)
+        return runner(command)
+
+    assert q3a.system_environment(failed_runner)["low_power_mode"] is None
+
+
+@pytest.mark.parametrize("value, expected", [("false\n", False), ("true\n", True), ("unexpected\n", None)])
+def test_low_power_foundation_stdout_is_exact(value, expected):
+    def runner(command):
+        name = Path(command[0]).name
+        if name == "pmset" and command[-2:] == ["-g", "batt"]:
+            return "Now drawing from 'AC Power'"
+        if name == "osascript":
+            return value
+        if name == "pmset" and command[-2:] == ["-g", "therm"]:
+            return "No thermal warning level has been recorded\nNo performance warning level has been recorded"
+        if name == "sysctl":
+            return "total = 4.00G used = 1.00M free = 3.00G"
+        raise AssertionError(command)
+
+    assert q3a.system_environment(runner)["low_power_mode"] is expected
 
 
 def test_load_and_process_gates_fail_closed():
@@ -169,6 +219,15 @@ def test_load_and_process_gates_fail_closed():
     assert q3a.competing_model_process(lambda _command: "123 100 2.0 claude worker\n") == "competing model activity detected"
     assert q3a.competing_model_process(lambda _command: "123 10 0.0 claude idle\n") is None
     assert q3a.competing_model_process(lambda _command: "123 100 nope claude worker\n") == "process inventory malformed"
+
+
+def test_ps_inventory_allows_ordinary_large_args_but_caps_at_512kib():
+    large = "123 10 0.0 idle " + ("x" * (65 * 1024)) + "\n"
+    assert q3a.competing_model_process(lambda _command: large) is None
+    medium = "123 10 0.0 idle " + ("x" * (500 * 1024)) + "\n"
+    assert q3a.competing_model_process(lambda _command: medium) is None
+    too_large = "123 10 0.0 idle " + ("x" * (q3a.MAX_PS_OUTPUT + 1)) + "\n"
+    assert q3a.competing_model_process(lambda _command: too_large) == "process inventory exceeded bounded limit"
 
 
 def _worker_result():
