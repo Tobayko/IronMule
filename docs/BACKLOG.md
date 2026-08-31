@@ -273,6 +273,50 @@ panel for coordinate/random/BO-surrogate replay, (2) independent grouped context
 with comparable panels for generalisation and contextual bandits, and (3) a measured
 sequential horizon before RL can become applicable.
 
+### `Q3a` — Path interaction: final Q2 incumbent versus `fused_argmax`
+
+**Mechanism.** Q2 evaluated `fused_argmax` early and then retained
+`compiled_fixed_cache=True`, `head_skip_prefill=True`, and `readback_every=2`.
+This six-process, balanced fresh-process A/B pilot asks the narrower path-dependence
+question: does enabling `fused_argmax=True` change the result only after the final
+incumbent has been assembled? Use only the locally cached
+`mlx-community/gemma-3-4b-it-4bit`, two warmups and seven measured repeats per arm.
+The dry-run is the default; execution is capped by the preregistered conservative
+`6 * 35 s + 60 s = 270 s` bound and must stop before start if the bound exceeds
+300 s. AC power, low-power off, nominal thermal state, no competing model process,
+swap and resource ceilings, three-sample load average (`max <= 4.0`, spread `<= 1.0`),
+strict process inventory, exact token/count/stop-reason/determinism, complete raw
+evidence, and runtime/model/environment identity are hard gates. The parent owns a
+monotone 300-second deadline; each child is capped at 35 seconds and the worker
+phase at 240 seconds. A passing result is information gain about path interaction
+only; there is no profile activation or promotion.
+
+**Kill.** Refuse before start on any unknown preflight state, missing local model,
+missing model revision/manifest, competing model process, or runtime bound above
+300 s. During execution, timeout, crash, swap/resource breach, malformed process
+inventory, load-gate breach, incomplete raw data, or any token/stop/count mismatch
+records `FAILED` with `BASE` fallback and stops the pilot. A clean run still cannot
+promote a profile; classify the paired total ratio before measurement as `GAIN` only
+when `ci_high < 0.995`, `LOSS` only when `ci_low > 1.005`,
+`PRACTICALLY_NEUTRAL` only for a complete CI inside `[0.995, 1.005]`, otherwise
+`INCONCLUSIVE`. Do not claim a direct statistical comparison with early Q2.
+
+**P2 safety debt (runtime lifecycle).** `ab.run` must retain partial child records
+and terminate the entire child process group on timeout; kill/cleanup failure is a
+hard `FAILED` result, never a short successful run. Kill when a timeout leaves an
+orphan process or the raw record cannot identify the completed children.
+
+**P2 safety debt (evaluator-owned identity).** The runtime must expose per-repeat
+physical/logical tokens, counts, stop reasons, capacities, RSS and resource gates
+without letting the optimizer infer missing values. Kill when a new execution path
+can pass validation with absent or self-asserted identity/resource evidence.
+
+**P2 safety debt (streaming worker output).** The current worker uses bounded
+`Popen` pipes and a 512 KiB cap, but `communicate()` still buffers the complete stream
+before the cap is checked. Replace this with a tempfile/selector-backed bounded reader
+that preserves progress markers and terminates the worker group on overflow. Kill when
+an overflow can block the producer, lose a completed-child marker, or leave an orphan.
+
 ### `R10` — An aborted run must not look like a finished one
 
 **Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports

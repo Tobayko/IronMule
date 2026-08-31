@@ -20,6 +20,9 @@ from ironmule.runtime import FixedKVCache  # noqa: E402
 CAPACITY = 256
 HEADS, DIM = 4, 8
 STEPS = 64
+# MLX may retain a small allocator header/cache bookkeeping delta. This fixed test-only
+# tolerance is in addition to exactly one keys+values cache copy, not a mechanism change.
+ALLOCATOR_METADATA_TOLERANCE_BYTES = 4096
 
 
 def _cache():
@@ -52,10 +55,12 @@ def test_fixed_cache_does_not_grow_while_decoding():
     after = mx.get_active_memory()
 
     grown = after - settled
-    budget = CAPACITY * HEADS * DIM * 2 * 2  # one extra copy of keys+values, fp16
+    budget = (CAPACITY * HEADS * DIM * 2 * 2
+              + ALLOCATOR_METADATA_TOLERANCE_BYTES)  # one copy + allocator metadata
     assert grown <= budget, (
         f"{STEPS - 8} decode steps grew active memory by {grown} B "
-        f"(more than one full cache copy, {budget} B) -- the fixed-shape cache is "
+        f"(more than one full cache copy plus {ALLOCATOR_METADATA_TOLERANCE_BYTES} B "
+        f"allocator metadata, threshold {budget} B) -- the fixed-shape cache is "
         f"being reallocated after all"
     )
 
@@ -90,7 +95,8 @@ def test_paired_ab_measures_peak_memory_per_arm(monkeypatch):
     class FakeEngine:
         def generate(self, ids, max_tokens, eos):
             return {"total_ns": 1, "prefill_ns": 1, "decode_ns": 1,
-                    "logical_tokens": [1, 2], "physical_tokens": [1, 2]}
+                    "logical_tokens": [1, 2], "physical_tokens": [1, 2],
+                    "capacity": 64}
 
     monkeypatch.setattr(tune_module, "load_engine", lambda *a, **k: (FakeEngine(), object()))
     monkeypatch.setattr(tune_module, "prompt_ids", lambda tok, prompt: [1, 2, 3])
@@ -107,3 +113,8 @@ def test_paired_ab_measures_peak_memory_per_arm(monkeypatch):
     assert out["arms"]["a"]["mlx_peak_bytes"] == 4_000_000_000
     assert out["arms"]["b"]["mlx_peak_bytes"] == 4_100_000_000
     assert out["mlx_peak_bytes"] == 4_100_000_000
+    assert out["arms"]["a"]["logical_tokens_per_repeat"] == [[1, 2]]
+    assert out["arms"]["a"]["physical_tokens_per_repeat"] == [[1, 2]]
+    assert out["arms"]["a"]["token_counts"] == [{"logical": 2, "physical": 2}]
+    assert out["arms"]["a"]["stop_reasons"] == ["length"]
+    assert out["arms"]["a"]["capacities"] == [64]

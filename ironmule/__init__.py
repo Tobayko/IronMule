@@ -32,7 +32,9 @@ from .plans import RUNTIME_VERSION, ExecutionPlan, ReusableSessionPlan, StrictOn
 from .runtime import BASELINE, Engine, Knobs, PrefixCache
 from .service import InteractiveMode, Request, Result, Runtime, ThroughputMode
 from .telemetry import RequestMetrics, Telemetry
-from .tune import DEFAULT_MODEL, knobs_for, load_profile, revalidate, stale, tune
+from .tune import (
+    DEFAULT_MODEL, _stored_confirmation_valid, knobs_for, load_profile, revalidate, stale, tune,
+)
 
 __version__ = RUNTIME_VERSION
 
@@ -58,6 +60,8 @@ def load(model_id: str = DEFAULT_MODEL, autotune: bool = True, force_retune: boo
     """Legacy entry point: an `Engine` wearing this machine's tuned knobs.
 
     Prefer `Runtime.load()`, which adds plans, modes, telemetry and the fallback.
+    Call ``close()`` on the returned engine (or use ``Runtime`` as a context
+    manager) before releasing a wired profile or loading another engine.
     """
     from .tune import load_engine
 
@@ -78,13 +82,46 @@ def status(model_id: str = DEFAULT_MODEL) -> str:
     where = f"{facts['chip']}, {facts['memory_bytes'] // 1024**3} GB, {facts['gpu_cores']} GPU cores"
     if profile is None:
         return f"{where}: not tuned yet"
-    line = (f"{where}: {profile['gain']*100:.2f}% faster than untuned "
-            f"({profile['baseline_ns']/1e6:.1f} -> {profile['tuned_ns']/1e6:.1f} ms), "
-            f"tokens identical")
-    # A point estimate on its own reads as more certain than it is, and the interval
-    # is already in the profile.
-    ratio = ((profile.get("confirmation") or {}).get("ratio") or {}).get("total_ns")
-    if ratio and "ci_low" in ratio and "ci_high" in ratio:
-        line += (f"; paired 95% CI "
-                 f"[{(1 - ratio['ci_high'])*100:.2f}%; {(1 - ratio['ci_low'])*100:.2f}%]")
-    return line
+    raw_confirmation = profile.get("confirmation")
+    if raw_confirmation is None:
+        confirmation = None
+    elif not isinstance(raw_confirmation, dict):
+        return f"{where}: BASELINE retained; confirmation invalid"
+    else:
+        confirmation = raw_confirmation
+    if isinstance(confirmation, dict) and confirmation.get("accepted") is False:
+        reason = confirmation.get("rejection_reason")
+        if reason not in {
+            "token_identity", "token_count_identity", "stop_reason_identity",
+            "determinism", "ci_not_below_one", "invalid_confirmation",
+        }:
+            reason = "invalid_confirmation"
+        return f"{where}: BASELINE retained; confirmation rejected ({reason})"
+    if isinstance(confirmation, dict) and confirmation.get("accepted") is True:
+        candidate_mapping = profile.get("confirmation_candidate_knobs")
+        try:
+            candidate_knobs = Knobs(**candidate_mapping)
+        except (TypeError, ValueError):
+            candidate_knobs = None
+        if (candidate_knobs is None
+                or candidate_knobs.as_dict() != candidate_mapping
+                or not _stored_confirmation_valid(
+                    confirmation, profile.get("confirmation_evidence"),
+                    expected_candidate=candidate_knobs
+                )):
+            return f"{where}: BASELINE retained; confirmation invalid"
+        ratio = confirmation.get("ratio")
+        total = ratio.get("total_ns") if isinstance(ratio, dict) else None
+        if not isinstance(total, dict):
+            return f"{where}: BASELINE retained; confirmation invalid"
+        try:
+            paired_gain = (1.0 - float(total["median_ratio"])) * 100
+            ci_low = (1.0 - float(total["ci_high"])) * 100
+            ci_high = (1.0 - float(total["ci_low"])) * 100
+        except (KeyError, TypeError, ValueError, OverflowError):
+            return f"{where}: BASELINE retained; confirmation invalid"
+        return (f"{where}: {paired_gain:.2f}% faster in paired confirmation, "
+                f"tokens identical; paired 95% CI [{ci_low:.2f}%; {ci_high:.2f}%]")
+    if confirmation is None:
+        return f"{where}: screening-only; no confirmed speedup"
+    return f"{where}: legacy/unconfirmed profile; no confirmed speedup"
