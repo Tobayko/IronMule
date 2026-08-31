@@ -235,6 +235,44 @@ own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.9
 would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
 of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
+### `Q3` — Adaptive optimizer method selection and replay
+
+**Mechanism.** Reuse `tune.Knobs`/`SEARCH` and the evidence-bound execution
+surfaces from B27 to make optimizer-method choice itself evidence-bound. Start
+offline with no runtime import: define a durable state/action/outcome/failure/
+uncertainty schema and an information-gain signal, then replay recorded studies
+before allowing any method to influence tuning. Treat reinforcement learning as a
+hypothesis, not an assumption; it is justified only if the data show a sequential
+benefit that simpler search methods cannot provide.
+
+**Test.** At equal evaluation budgets, compare the current coordinate descent and
+`BASE` against seeded Random, a Bayesian/surrogate method, and a contextual bandit.
+Use disjoint `TRAIN`/`VALIDATION`/sealed `HOLDOUT` group splits by study, model,
+hardware and time, and report best-known outcome, regret, uncertainty calibration,
+failure recovery and replay determinism. Keep all safety gates external to the
+optimizer: exact output/token/stop/count identity, resource and leak checks,
+fingerprint/domain validity, timeouts and rollback must pass before a candidate is
+considered. No runtime import, routing, persistence or activation is part of this
+experiment.
+
+**Kill.** Insufficient real coverage or sealed-holdout evidence means data
+collection only. If a simple method is equal or better at the same budget, do not
+introduce RL. Any output divergence, correctness failure, resource leak, unsafe
+failure handling or non-reproducible replay stops the experiment and leaves the
+current deterministic coordinate descent unchanged.
+
+**Current result (2026-08-31).** The real-data replay is `DATA_INSUFFICIENT` for
+adaptive method comparison and `NOT_APPLICABLE` for offline RL. The frozen dataset
+has SHA-256 `f67d975788763e4238019a3be7afa5394efbe2f2faea3a96a927e7cf522f2e33`,
+dataset ID `d4ae0c148e826de85c7aa5338f892b5571481a105f558d463e9d041f63dc82b7`,
+14 observations, 12 actions and 160 B36 raw timing samples. Q2 contributes a
+validation trajectory, B36 a sealed holdout, and there are no training rows; the
+counts are inventory facts, not statistical qualification. Q3 remains open. The
+next missing evidence is separated into (1) a complete raw counterfactual action
+panel for coordinate/random/BO-surrogate replay, (2) independent grouped contexts
+with comparable panels for generalisation and contextual bandits, and (3) a measured
+sequential horizon before RL can become applicable.
+
 ### `R10` — An aborted run must not look like a finished one
 
 **Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports

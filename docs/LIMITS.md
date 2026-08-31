@@ -42,6 +42,15 @@ identity/correctness/resources. D2b's frozen result is `NO_REGRESSION_OBSERVED` 
 its 5% engineering gates, not a speed, quality, qualification or activation claim.
 See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
 
+**Q3 is currently an offline contract/replay track only.** `ironmule.adaptive` and
+the replay builder define and validate state/action/outcome/failure/uncertainty
+records without importing the runtime or MLX. They do not select methods, persist
+profiles, route requests or activate an optimizer; `BASE` and runtime coordinate
+descent remain unchanged. The current replay is data-insufficient for BO, surrogate,
+coordinate-descent or contextual-bandit comparison and has no sequential horizon,
+so offline RL is not applicable. No BO/RL, performance, hardware or generalisation
+claim follows from the replay inventory.
+
 ## Apple-Silicon inference claims
 
 Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and

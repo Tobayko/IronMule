@@ -2434,3 +2434,18 @@ The first presentation regression run failed one stale assertion because it stil
 expected the earlier D1 suite label (`146 passed`) after D2b correctly became the
 newest verification source (`178 passed`). Updating that expectation fixed the test;
 no rendered metric, raw record or comparison logic changed.
+
+## Q3 — Offline adaptive replay data gate (2026-08-31)
+
+The Q3 replay builder remains an offline, no-runtime-import contract. Its frozen
+dataset is SHA-256 `f67d975788763e4238019a3be7afa5394efbe2f2faea3a96a927e7cf522f2e33`
+with dataset ID `d4ae0c148e826de85c7aa5338f892b5571481a105f558d463e9d041f63dc82b7`:
+14 observations, 12 actions and 160 B36 raw timing samples. Q2 is a validation
+trajectory and B36 is a sealed holdout; no training rows exist. The structural gate
+is `DATA_INSUFFICIENT` for current coordinate descent, seeded random, BO, surrogate
+and contextual bandit; offline RL is `NOT_APPLICABLE` because Q3 has no measured
+sequential horizon. This is an eligibility/data-quality result only: no timing,
+hardware, performance, generalisation, BO or RL claim, and no runtime selection,
+persistence or activation follows. Missing evidence remains separated into a
+complete counterfactual action panel, independent grouped contexts, and a measured
+sequential horizon.
