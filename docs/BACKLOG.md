@@ -317,6 +317,55 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
+### `Q3b` — Residual-swap safety canary with isolated 4B stages
+
+**Mechanism.** A known residual swap level may be safe for one local Gemma 4B
+model load even when a zero-swap gate is unavailable, but a paired process can
+hide allocator and swap accumulation. Run the exact pinned 4B revision with the
+Q2 incumbent first and the same arm plus `fused_argmax` second, in two separate
+fresh single-arm stage workers. Each stage uses one warmup and three measured
+repeats, while a bounded 0.25-second sampler records the maximum swap observed
+throughout the stage. The worker records synchronous start and final samples,
+monotonic timestamps and worker-start offsets, and fails closed on any sampler
+command/read/parse/thread error; successful evidence has at least two samples,
+equal-length arrays, an empty `sampler_errors`, and a maximum timestamp gap of
+1.75 s (0.25 s interval + 1 s command timeout + 0.5 s scheduling margin).
+Claude is not a blanket blocker: only the exact verified `argv[0]` token
+`/Applications/Claude.app/Contents/MacOS/Claude` is ignored; ClaudeX, generic
+Claude CLI/server/backend paths, and unknown Claude paths remain hard blockers.
+
+**Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
+execution. Require AC, low-power off, nominal thermal state, exact local model
+identity, clean Git binding, known installed memory, free memory `>=35%`, known
+initial swap `<=4 GiB`, and three load samples `max<=8`, `spread<=2`. After each
+stage require sampled swap increase from the initial reading `<=128 MiB`, a known
+fresh endpoint swap value, free memory `>=20%`, MLX peak and child RSS `<=60%` of installed memory, a complete
+fresh post-stage swap/pressure/RSS/load/process snapshot, reaped child, and
+logical plus per-repeat physical token/count/stop/determinism/capacity identity,
+including matching capacities, decode-step counts, and prompt-token counts
+across baseline and candidate.
+Use child timeout 35 s, worker cap 120 s, and total deadline 180 s with cleanup
+reserve. The synchronous worker-start sample must compare against the parent
+initial reading before any child starts; `before_child` must reject sampler
+errors and the current high-water delta. During a live child, any sampler
+read/parse/command failure or high-water delta above 128 MiB must atomically
+emit bounded, argv-free `@SAFETY` evidence and immediately `SIGTERM` the
+worker process group. The parent must preserve that marker even without a
+final `@@` result, reap the group on every nonzero/no-marker path, and retain
+partial evidence. The final synchronous sample is taken after child reap but
+still emits a terminal `@SAFETY` event for any read/sampler error or high-water
+delta violation, preventing a normal result. If TERM fails, immediately try
+KILL on the same group; only a double signal failure is a kill failure. Record
+raw partial evidence and stop before Stage 2 on any failure.
+
+**Kill.** Unknown or violated identity, process, load, power, thermal, memory,
+swap, timeout, cleanup, raw-completeness, or output-identity gate yields
+`FAILED` with `BASE` fallback and no next stage. A complete run may only be
+labelled `SAFETY_CANARY_PASS`; `performance_valid=false` and
+`promotion_allowed=false` always. No ratio, speed, RL, or promotion claim is
+valid. Kill-marker or group-cleanup failure is fail-loud. Q3a's
+preregistration, SHA, code path, and evidence remain unchanged.
+
 ### `R10` — An aborted run must not look like a finished one
 
 **Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports

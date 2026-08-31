@@ -69,3 +69,91 @@
 - **Gates:** Grün waren AC, Git-Bindung, installierter Speicher bekannt, Low-Power-off, exakte 4B-Identität, Preregistration, Zeitbudget und Thermal. Rot waren Swap `1774777794 B` (`1692.56 MiB`, Limit `256 MiB`), Loadavg max `6.1792` (Limit `4`) und das Prozess-Gate `no_competing_model_process=false`.
 - **Redigierte OS-Evidence:** Obwohl der Nutzer Claude als beendet meldete, fanden die Gates zwei echte `Claude`-Executables: PID `55295` mit CPU `4.1%` und RSS `292688 KiB` sowie PID `55345` mit CPU `2.8%` und RSS `395344 KiB`. Argumente wurden nicht gespeichert; kein Prozess wurde beendet. Selbst nach dem Stoppen von Claude würden Swap und Loadavg den Q3a-Start weiterhin blockieren.
 - **Messgrenze:** Analyse blieb `PATH_INTERACTION_ONLY`; es gibt keine Modellmessung, kein Ergebnisverhältnis und keine Performance-Evidence. Sicherste Fortsetzung ist nach gesicherter Nutzerarbeit und Neustart bzw. sauberem Zustand; kein automatischer Neustart. Das untracked SQuAD-File blieb unberührt.
+
+## 2026-08-31 — Q3b Residual-Swap-Safety-Canary preregistration and implementation
+
+- **Entscheidung:** Wegen des ausdrücklich gewünschten Verzichts auf einen Neustart
+  wurde ein separater Q3b-Safety-Canary eröffnet. Er nutzt ausschließlich die lokal
+  gepinnte Gemma-4B-Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, nie 27B,
+  und darf weder Promotion noch Performance-/RL-Aussagen erzeugen.
+- **Mechanismus:** Baseline und `fused_argmax`-Kandidat laufen in zwei separaten
+  frischen Single-Arm-Stage-Workern über den bestehenden `ironmule.ab.run`-Pfad;
+  der Worker lädt die unveränderten Q3a-Helfer erst nach der Capability-Prüfung.
+  Pro Stage werden Warmup 1, drei Roh-Repeats und `max_tokens=32` verwendet. Ein
+  begrenzter 0,25-s-Sampler hält die maximale Swap-Nutzung während der gesamten
+  Stage fest; eine vollständige Post-Stage-Snapshot-Gate entscheidet vor Stage 2.
+- **Sicherheitsgrenzen:** Start-Swap bekannt und `<=4 GiB`, Swap-Anstieg vom
+  Startmaximum `<=128 MiB`, freier Speicher `>=35%` am Start und `>=20%` je Stage,
+  MLX/RSS `<=60%` des installierten Speichers, Load `max<=8`/Spread `<=2`, AC,
+  Low-Power-off, Thermal nominal, Child 35 s, Worker 120 s, Gesamt 180 s mit
+  Cleanup-Reserve. Nur die exakt verifizierte Claude-Desktop-Executable wird
+  ignoriert; generisches/unklares Claude bleibt blockiert.
+- **Verifikation:** Keine Hardware-/MLX-Ausführung, kein Download und kein Commit
+  in diesem Arbeitsschritt. Preregistration und SHA wurden vor Tests angelegt und
+  nach der Review-Härtung aktualisiert. Q3a-Dateien und Q3a-SHA blieben unverändert.
+- **Offene Risiken:** Die reale Memory-Pressure-Ausgabe und Swap-Sampler-Granularität
+  bleiben plattformabhängige Beobachtungen; unbekannte Werte führen fail-closed zu
+  `FAILED`/`BASE`. Ein bestandener Canary ist ausschließlich `SAFETY_CANARY_PASS`
+  mit `performance_valid=false` und `promotion_allowed=false`.
+
+## 2026-08-31 — Q3b P1-Review-Korrekturen
+
+- **Änderung:** Die Claude-Desktop-Ausnahme prüft nun das sicher geparste, exakte
+  `argv[0]`-Token. Der kanonische Pfad ist erlaubt; `ClaudeX`, generische Claude-
+  CLI/Server-Pfade und fehlerhaftes Quoting bleiben harte Blocker.
+- **Änderung:** Der Stage-Worker nimmt synchron einen Start- und End-Swap-Sample
+  sowie periodische 0,25-s-Samples auf. Werte, monotone Zeitstempel und Worker-
+  Start-Offsets werden in gleich langen, auf 512 Einträge begrenzten Arrays
+  gespeichert. Jeder Command-/Read-/Parse-/Thread-/Zeitfehler wird in
+  `sampler_errors` festgehalten und beendet die Stage; erfolgreiche Resultate
+  verlangen `sampler_errors=[]`, mindestens zwei Samples und maximal 1,75 s
+  Zeitabstand.
+- **Änderung:** Das Stage-Gate verlangt zusätzlich den bekannten frischen Swap-
+  Endpunkt. Die Cross-Stage-Identity vergleicht neben Tokens, Counts und Stops
+  nun Kapazitäten, Decode-Schritte, Prompt-Tokens und Determinismus.
+- **Preregistration:** Q3b-Preregistration und SHA wurden vor jeder Hardware-
+  oder Modellmessung aktualisiert; SHA `35854a6c13dcbf93ab3ad19b2e4dd90620dd11583831e29a2c85c573b285a7c2`.
+- **Verifikation:** Q3b-Tests `20 passed`, `py_compile`, `git diff --check` und
+  Dry-Run-No-Write bestanden. Keine Hardware-/MLX-Ausführung, kein Download,
+  kein Modellstart und kein Commit.
+
+## 2026-08-31 — Q3b P1 Live-Swap-Abbruch behoben
+
+- **Befund:** Der periodische Q3b-Sampler setzte bei Swap-Fehlern oder einem
+  Überschreiten des 128-MiB-Highwaters bisher nur sein Stop-Event; eine aktive
+  `ironmule.ab`-Kindprozessgruppe konnte dadurch weiterlaufen. Der synchrone
+  Worker-Start und `before_child` prüften den Highwater ebenfalls nicht streng
+  gegen die Parent-Referenz.
+- **Änderung:** Der Worker vergleicht den synchronen Startwert vor jedem
+  IronMule-Import mit dem Parent-Initialwert. `before_child` lehnt Samplerfehler
+  und überschrittenes Highwater ab. Während eines aktiven Kindes wird Safety-
+  Evidence einmalig und begrenzt (`reason`, Samples, monotone Zeiten/Offsets,
+  Fehler, ohne argv) erfasst, als flushbarer `@SAFETY`-Marker ausgegeben und
+  unmittelbar mit `os.killpg(os.getpgrp(), SIGTERM)` beendet; Kill-/Markerfehler
+  bleiben fail-loud.
+- **Parent-/Cleanup-Fix:** `_start_stage` erkennt `@SAFETY` auch ohne finalen
+  `@@`-Marker, bewahrt Safety- und Partial-Evidence, bereinigt/reapt die
+  Workergruppe auf Safety-, Nonzero-, Malformed- und No-Marker-Pfaden und
+  kennzeichnet den Nachweis `group_gone`. Der finale synchrone Read nach einem
+  beendeten Kind löst keinen Live-Kill mehr aus.
+- **Verifikation:** Q3b-Suite `23 passed`; `py_compile`, `git diff --check`,
+  Preregistration-SHA und Dry-Run geprüft. Keine Hardware-/MLX-Ausführung,
+  kein Download, kein Modellstart und kein Commit. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b finaler P1-Swap-Read und TERM-Fallback
+
+- **Befund:** Der finale Swap-Read lief zwar nach dem Child-Reap, konnte aber
+  bei Read-/Samplerfehlern oder einem späten Highwater-Verstoß noch in einen
+  normalen Worker-Fehlerpfad ohne `@SAFETY` fallen. Außerdem behandelte der
+  Safety-Kill einen fehlgeschlagenen TERM nicht mit einer unmittelbaren
+  KILL-Eskalation.
+- **Änderung:** Der finale Sample wird jetzt strikt gegen Samplerfehler und
+  `max(samples) - initial_swap > 128 MiB` geprüft. Jeder Verstoß erzeugt ein
+  einmaliges begrenztes `@SAFETY`-Event und verhindert den Erfolgsmarker, auch
+  wenn ein injizierter Kill-Helfer zurückkehrt. `_capture_live_safety` versucht
+  bei TERM-Fehler unmittelbar SIGKILL auf derselben PGID; erst wenn beide
+  Signale scheitern, werden Kill-Fehler ausgegeben und der Pfad fail-loud
+  beendet.
+- **Verifikation:** Q3b-Suite `27 passed`; `py_compile`, `git diff --check`,
+  Preregistration-SHA und Dry-Run geprüft. Keine Hardware-/MLX-Ausführung,
+  kein Download, kein Modellstart und kein Commit. Q3a blieb unverändert.
