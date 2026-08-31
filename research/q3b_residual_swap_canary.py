@@ -33,6 +33,7 @@ from typing import Any, Callable, Mapping
 EXPERIMENT_ID = "Q3b-residual-swap-safety-canary"
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
 EXPECTED_REVISION = "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+EXPECTED_MODEL_MANIFEST_SHA256 = "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
 STAGES = ("baseline", "candidate")
 REPEATS = 3
 WARMUP = 1
@@ -75,11 +76,17 @@ COMMANDS = {
     "sysctl": "/usr/sbin/sysctl", "memory_pressure": "/usr/bin/memory_pressure",
     "ps": "/bin/ps", "git": "/usr/bin/git",
 }
-CLEANUP_PS_COMMAND = ["/bin/ps", "-Ao", "pid=,ppid=,pgid=,sid=,uid=,stat=,start=,args="]
+# macOS' /bin/ps does not expose the BSD ``sid`` keyword.  Keep this command
+# deliberately boring and portable; session identity is enriched below with
+# the public Python API after the bounded inventory has been parsed.
+CLEANUP_PS_COMMAND = ["/bin/ps", "-Ao", "pid=,ppid=,pgid=,uid=,stat=,start=,args="]
 CLEANUP_EVIDENCE_SCHEMA = "ironmule.cleanup.v2"
-CLEANUP_STAT_RE = re.compile(r"^[DRSITUWZNL](?:[s+<>-]*)$")
+# macOS emits ``N`` as the nice-priority modifier (for example ``SN`` or
+# ``SNs``); the other suffixes are the documented session/priority markers.
+CLEANUP_STAT_RE = re.compile(r"^[DRSITUWZNL](?:[s+<>-N]*)$")
 CLEANUP_START_RE = re.compile(r"^[^\s]+$")
 MAX_BASELINE_IDENTITIES = 4096
+MAX_PROCESS_ID = 2**31 - 1
 PREREGISTRATION = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.md"
 PREREGISTRATION_SHA = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.sha256"
 
@@ -200,7 +207,7 @@ def resolve_exact_local_identity(root: Path | None = None) -> dict[str, Any]:
     except (AttributeError, ImportError, OSError, ValueError, TypeError, KeyError) as exc:
         raise CanaryRefused(f"local model identity failed: {exc}") from exc
     if (binding["model_id"] != MODEL_ID or binding["model_revision"] != EXPECTED_REVISION
-            or not re.fullmatch(r"[0-9a-f]{64}", str(binding["model_manifest_sha256"]))):
+            or binding["model_manifest_sha256"] != EXPECTED_MODEL_MANIFEST_SHA256):
         raise CanaryRefused("local model identity does not match pinned 4B binding")
     return binding
 
@@ -569,7 +576,7 @@ def preflight(*, root: Path | None = None, run: Callable[[list[str]], str] = _ru
     load = loadavg_gate(load_sample, load_sleeper, deadline=deadline)
     git = _git_binding(root, bounded)
     checks = {
-        "model_identity_exact": isinstance(identity, dict) and identity.get("model_id") == MODEL_ID and identity.get("model_revision") == EXPECTED_REVISION and bool(re.fullmatch(r"[0-9a-f]{64}", str(identity.get("model_manifest_sha256", "")))),
+        "model_identity_exact": isinstance(identity, dict) and identity.get("model_id") == MODEL_ID and identity.get("model_revision") == EXPECTED_REVISION and identity.get("model_manifest_sha256") == EXPECTED_MODEL_MANIFEST_SHA256,
         "ac_power": env["power_source"] == "AC", "low_power_off": env["low_power_mode"] is False,
         "thermal_nominal": env["thermal_state"] == "nominal", "no_competing_model_process": competing_model_process(bounded) is None,
         "loadavg_gate": load["passed"], "start_swap_known": isinstance(env["swap_used_bytes"], int),
@@ -633,7 +640,11 @@ def _read_capability() -> dict[str, Any]:
             try: os.close(fd)
             except OSError: pass
     if (not isinstance(payload, dict) or not isinstance(expected, dict) or payload.get("nonce") != nonce
-            or payload.get("expected") != expected or set(expected) != {"identity", "runtime_code_sha256", "stage", "initial_swap", "installed_memory"}):
+            or payload.get("expected") != expected or set(expected) != {"identity", "runtime_code_sha256", "stage", "initial_swap", "installed_memory"}
+            or not isinstance(expected.get("identity"), dict)
+            or expected["identity"].get("model_id") != MODEL_ID
+            or expected["identity"].get("model_revision") != EXPECTED_REVISION
+            or expected["identity"].get("model_manifest_sha256") != EXPECTED_MODEL_MANIFEST_SHA256):
         raise CanaryRefused("worker capability or expected binding mismatch")
     return expected
 
@@ -888,7 +899,10 @@ def _stage_worker(*, kill_group: Callable[[int, int], None] | None = None,
             raise CanaryRefused(f"worker model resolution failed: {exc}") from exc
         actual = {"model_id": resolved.identity.model_id, "model_revision": resolved.identity.revision,
                   "model_manifest_sha256": resolved.identity.model_manifest_sha256}
-        if actual != expected["identity"]:
+        if (actual != expected["identity"]
+                or actual["model_id"] != MODEL_ID
+                or actual["model_revision"] != EXPECTED_REVISION
+                or actual["model_manifest_sha256"] != EXPECTED_MODEL_MANIFEST_SHA256):
             raise CanaryRefused("worker model identity differs from parent")
         def before_child(_index: int, _order: list[str]) -> None:
             with sample_lock:
@@ -964,7 +978,7 @@ def _stage_worker(*, kill_group: Callable[[int, int], None] | None = None,
 
 
 def _parse_cleanup_ps_snapshot(output: Any) -> dict[str, Any]:
-    """Parse the bounded PID/PPID/PGID/UID/status cleanup process view."""
+    """Parse the bounded canonical PID/PPID/PGID/UID/status process view."""
     if not isinstance(output, str) or not getattr(output, "ok", True):
         return {"valid": False, "records": [], "error": "ps snapshot unavailable"}
     if len(output) > MAX_PS_OUTPUT:
@@ -974,25 +988,26 @@ def _parse_cleanup_ps_snapshot(output: Any) -> dict[str, Any]:
     for line in output.splitlines():
         if not line.strip():
             return {"valid": False, "records": [], "error": "ps snapshot contains a blank row"}
-        parts = line.split(None, 7)
-        if len(parts) != 8 or "\x00" in parts[7] or not parts[7].strip():
+        parts = line.split(None, 6)
+        if len(parts) != 7 or "\x00" in parts[6] or not parts[6].strip():
             return {"valid": False, "records": [], "error": "ps snapshot row malformed"}
-        if any(re.fullmatch(r"[0-9]+", part) is None for part in parts[:5]):
+        if any(re.fullmatch(r"[0-9]+", part) is None for part in parts[:4]):
             return {"valid": False, "records": [], "error": "ps snapshot integer malformed"}
         try:
-            pid, ppid, pgid, sid, uid = (int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
+            pid, ppid, pgid, uid = (int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]))
         except (TypeError, ValueError, OverflowError):
             return {"valid": False, "records": [], "error": "ps snapshot integer malformed"}
-        stat, start = parts[5].strip(), parts[6].strip()
-        if (pid <= 0 or ppid < 0 or pgid < 0 or sid < 0 or uid < 0 or pid in seen
+        stat, start = parts[4].strip(), parts[5].strip()
+        if (pid <= 0 or pid > MAX_PROCESS_ID or ppid < 0 or ppid > MAX_PROCESS_ID
+                or pgid < 0 or pgid > MAX_PROCESS_ID or uid < 0 or uid > MAX_PROCESS_ID or pid in seen
                 or not stat or any(char.isspace() for char in stat)
                 or CLEANUP_STAT_RE.fullmatch(stat) is None
                 or CLEANUP_START_RE.fullmatch(start) is None
                 or any(ord(char) < 32 for char in start)):
             return {"valid": False, "records": [], "error": "ps snapshot identity malformed"}
         seen.add(pid)
-        records.append({"pid": pid, "ppid": ppid, "pgid": pgid, "sid": sid, "uid": uid,
-                        "stat": stat, "start": start, "args": parts[7].strip()})
+        records.append({"pid": pid, "ppid": ppid, "pgid": pgid, "uid": uid,
+                        "stat": stat, "start": start, "args": parts[6].strip()})
     # A complete snapshot must support ancestry reconstruction.  A missing
     # parent or a cycle is unknown process state, even if the target PGID is
     # absent; this is deliberately conservative for cleanup proof.
@@ -1011,6 +1026,75 @@ def _parse_cleanup_ps_snapshot(output: Any) -> dict[str, Any]:
     return {"valid": True, "records": records, "error": None}
 
 
+def _enrich_cleanup_records(parsed: Mapping[str, Any], *, get_sid: Callable[[int], int] | None = None,
+                            get_pgid: Callable[[int], int] | None = None) -> dict[str, Any]:
+    """Add session identity only to this user's rows, failing closed on ambiguity.
+
+    ``ps`` is a point-in-time inventory while ``getsid``/``getpgid`` are live
+    queries.  A process disappearing between the two is a bounded, typed race
+    and is omitted.  Every other API failure is unknown and invalidates the
+    snapshot.  Foreign/root rows retain the canonical fields; they are still
+    visible to group/UID checks but do not need a privileged session probe.
+    """
+    if not isinstance(parsed, Mapping) or parsed.get("valid") is not True:
+        return {"valid": False, "records": [], "gone_pids": [],
+                "enrichment": [], "error": parsed.get("error", "ps snapshot unavailable")
+                if isinstance(parsed, Mapping) else "ps snapshot unavailable"}
+    get_sid = os.getsid if get_sid is None else get_sid
+    get_pgid = os.getpgid if get_pgid is None else get_pgid
+    owner_uid = os.getuid()
+    if type(owner_uid) is not int or owner_uid <= 0:
+        return {"valid": False, "records": [], "gone_pids": [], "enrichment": [],
+                "error": "current UID is root or malformed"}
+    records: list[dict[str, Any]] = []
+    gone_pids: list[int] = []
+    enrichment: list[dict[str, Any]] = []
+    for original in parsed["records"]:
+        row = dict(original)
+        if row["uid"] != owner_uid:
+            records.append(row)
+            continue
+        try:
+            sid = get_sid(row["pid"])
+            actual_pgid = get_pgid(row["pid"])
+        except ProcessLookupError:
+            gone_pids.append(row["pid"])
+            enrichment.append({"pid": row["pid"], "status": "gone"})
+            continue
+        except PermissionError as exc:
+            return {"valid": False, "records": [], "gone_pids": gone_pids,
+                    "enrichment": enrichment, "error": f"process identity permission error: {type(exc).__name__}"}
+        except OSError as exc:
+            return {"valid": False, "records": [], "gone_pids": gone_pids,
+                    "enrichment": enrichment, "error": f"process identity error: {type(exc).__name__}"}
+        except (TypeError, ValueError) as exc:
+            return {"valid": False, "records": [], "gone_pids": gone_pids,
+                    "enrichment": enrichment, "error": f"process identity malformed: {type(exc).__name__}"}
+        if (type(sid) is not int or sid <= 0 or sid > MAX_PROCESS_ID
+                or type(actual_pgid) is not int or actual_pgid <= 0
+                or actual_pgid > MAX_PROCESS_ID or actual_pgid != row["pgid"]):
+            return {"valid": False, "records": [], "gone_pids": gone_pids,
+                    "enrichment": enrichment, "error": "process session or group identity mismatch"}
+        row["sid"] = sid
+        records.append(row)
+        enrichment.append({"pid": row["pid"], "status": "verified", "sid": sid,
+                           "pgid": actual_pgid})
+    # A live child whose parent was omitted by the race is not a trustworthy
+    # ancestry proof.  Re-run the strict same-snapshot tree check after
+    # enrichment so that this remains fail-closed.
+    by_pid = {row["pid"]: row for row in records}
+    for row in records:
+        cursor, chain = row["pid"], set()
+        while cursor:
+            if cursor in chain or cursor not in by_pid:
+                return {"valid": False, "records": [], "gone_pids": gone_pids,
+                        "enrichment": enrichment, "error": "process identity ancestry became incomplete"}
+            chain.add(cursor)
+            cursor = by_pid[cursor]["ppid"]
+    return {"valid": True, "records": records, "gone_pids": gone_pids,
+            "enrichment": enrichment, "error": None}
+
+
 def _cleanup_ps_snapshot(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
     """Take one bounded cleanup snapshot, preserving command failure state."""
     stamp = time.monotonic()
@@ -1018,10 +1102,14 @@ def _cleanup_ps_snapshot(run: Callable[[list[str]], str] = _run_text) -> dict[st
         output = run(CLEANUP_PS_COMMAND)
     except BaseException as exc:
         return {"monotonic": stamp, "command_ok": False, "parse_ok": False,
-                "records": [], "error": f"ps snapshot command: {type(exc).__name__}"}
+                "records": [], "gone_pids": [], "enrichment": [],
+                "error": f"ps snapshot command: {type(exc).__name__}"}
     parsed = _parse_cleanup_ps_snapshot(output)
+    enriched = _enrich_cleanup_records(parsed)
     return {"monotonic": stamp, "command_ok": bool(isinstance(output, str) and getattr(output, "ok", True)),
-            "parse_ok": parsed["valid"], "records": parsed["records"], "error": parsed["error"]}
+            "parse_ok": enriched["valid"], "records": enriched["records"],
+            "gone_pids": enriched["gone_pids"], "enrichment": enriched["enrichment"],
+            "error": enriched["error"]}
 
 
 def _capture_process_baseline(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
@@ -1029,9 +1117,10 @@ def _capture_process_baseline(run: Callable[[list[str]], str] = _run_text) -> di
     snapshot = _cleanup_ps_snapshot(run)
     if snapshot.get("command_ok") is not True or snapshot.get("parse_ok") is not True:
         return {"valid": False, "digest": None, "identities": [], "error": "baseline snapshot unknown"}
+    owner_uid = os.getuid()
     identities = [{"pid": row["pid"], "start": row["start"], "uid": row["uid"],
                    "sid": row["sid"], "pgid": row["pgid"]}
-                  for row in snapshot["records"]]
+                  for row in snapshot["records"] if row["uid"] == owner_uid and "sid" in row]
     if len(identities) > MAX_BASELINE_IDENTITIES:
         return {"valid": False, "digest": None, "identities": [], "error": "baseline exceeded bounded limit"}
     encoded = json.dumps(identities, sort_keys=True, separators=(",", ":")).encode()
@@ -1042,7 +1131,7 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
                              baseline: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Capture the worker PID/PGID/UID immediately after ``Popen``."""
     pid = getattr(process, "pid", None)
-    if type(pid) is not int or pid <= 0:
+    if type(pid) is not int or pid <= 0 or pid > MAX_PROCESS_ID:
         raise CanaryRefused("worker PID is malformed")
     owner_uid = os.getuid()
     if owner_uid <= 0:
@@ -1056,10 +1145,12 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
     if not snapshot["parse_ok"] or not snapshot["command_ok"]:
         raise CanaryRefused("worker identity snapshot is unavailable")
     rows = [row for row in snapshot["records"] if row["pid"] == pid]
-    if len(rows) != 1 or rows[0]["pgid"] != pid or rows[0]["sid"] != pid:
+    if len(rows) != 1:
         raise CanaryRefused("worker identity or process-group leader mismatch")
     if rows[0]["uid"] != owner_uid:
         raise CanaryRefused("worker UID differs from current non-root UID")
+    if rows[0]["pgid"] != pid or rows[0].get("sid") != pid:
+        raise CanaryRefused("worker identity or process-group leader mismatch")
     descendants = []
     by_pid = {row["pid"]: row for row in snapshot["records"]}
     for row in snapshot["records"]:
@@ -1074,12 +1165,19 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
                 break
             cursor = by_pid[cursor]["ppid"]
     known = sorted(set(descendants))
+    if any(row["pid"] in known and row["uid"] != owner_uid for row in snapshot["records"]):
+        raise CanaryRefused("worker descendant UID differs from current non-root UID")
+    known_rows = [row for row in snapshot["records"] if row["pid"] in known]
+    if any("sid" not in row for row in known_rows):
+        raise CanaryRefused("worker descendant session identity is unavailable")
     return {"worker_pid": pid, "parent_pid": rows[0]["ppid"], "pgid": rows[0]["pgid"],
             "sid": rows[0]["sid"], "uid": rows[0]["uid"], "known_descendant_pids": known,
-            "known_process_starts": {str(row["pid"]): row["start"] for row in snapshot["records"]
+            "known_process_starts": {str(row["pid"]): row["start"] for row in known_rows
                                      if row["pid"] in known},
-            "known_process_sids": {str(row["pid"]): row["sid"] for row in snapshot["records"]
+            "known_process_sids": {str(row["pid"]): row["sid"] for row in known_rows
                                    if row["pid"] in known},
+            "known_process_pgids": {str(row["pid"]): row["pgid"] for row in known_rows
+                                     if row["pid"] in known},
             "uid_invariant": {"owner_uid": owner_uid, "worker_uid": rows[0]["uid"],
                               "same_non_root": True},
             "spawn_baseline": {"valid": True, "digest": baseline["digest"],
@@ -1093,19 +1191,20 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     pid = getattr(process, "pid", None)
     known_descendants = identity.get("known_descendant_pids", []) if isinstance(identity, Mapping) else []
     known_starts = identity.get("known_process_starts", {}) if isinstance(identity, Mapping) else {}
+    known_pgids = identity.get("known_process_pgids", {}) if isinstance(identity, Mapping) else {}
     spawn_baseline = identity.get("spawn_baseline", {}) if isinstance(identity, Mapping) else {}
     baseline_identities = spawn_baseline.get("identities", []) if isinstance(spawn_baseline, Mapping) else []
     valid_identity = (
         isinstance(identity, Mapping)
-        and type(identity.get("worker_pid")) is int and identity["worker_pid"] > 0
-        and type(identity.get("parent_pid")) is int and identity["parent_pid"] >= 0
-        and type(identity.get("pgid")) is int and identity["pgid"] > 0
-        and type(identity.get("sid")) is int and identity["sid"] > 0
-        and type(identity.get("uid")) is int and identity["uid"] >= 0
+        and type(identity.get("worker_pid")) is int and 0 < identity["worker_pid"] <= MAX_PROCESS_ID
+        and type(identity.get("parent_pid")) is int and 0 <= identity["parent_pid"] <= MAX_PROCESS_ID
+        and type(identity.get("pgid")) is int and 0 < identity["pgid"] <= MAX_PROCESS_ID
+        and type(identity.get("sid")) is int and 0 < identity["sid"] <= MAX_PROCESS_ID
+        and type(identity.get("uid")) is int and 0 <= identity["uid"] <= MAX_PROCESS_ID
         and identity["worker_pid"] == pid and identity["pgid"] == identity["worker_pid"]
         and identity["sid"] == identity["worker_pid"]
         and isinstance(known_descendants, list)
-        and all(type(item) is int and item > 0 for item in known_descendants)
+        and all(type(item) is int and 0 < item <= MAX_PROCESS_ID for item in known_descendants)
         and isinstance(known_starts, dict)
         and set(known_starts) == {str(item) for item in known_descendants}
         and all(isinstance(item, str) and CLEANUP_START_RE.fullmatch(item) is not None
@@ -1113,24 +1212,27 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         and isinstance(identity.get("known_process_sids"), dict)
         and set(identity["known_process_sids"]) == {str(item) for item in known_descendants}
         and all(type(item) is int and item == identity["sid"] for item in identity["known_process_sids"].values())
+        and isinstance(known_pgids, dict)
+        and set(known_pgids) == {str(item) for item in known_descendants}
+        and all(type(item) is int and item == identity["pgid"] for item in known_pgids.values())
         and isinstance(identity.get("uid_invariant"), Mapping)
         and set(identity["uid_invariant"]) == {"owner_uid", "worker_uid", "same_non_root"}
         and type(identity["uid_invariant"]["owner_uid"]) is int and identity["uid_invariant"]["owner_uid"] > 0
         and identity["uid_invariant"]["owner_uid"] == os.getuid()
         and identity["uid_invariant"]["worker_uid"] == identity["uid"]
         and identity["uid_invariant"]["same_non_root"] is True
-        and hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == spawn_baseline["digest"]
         and isinstance(spawn_baseline, Mapping)
         and spawn_baseline.get("valid", True) is not False
         and isinstance(spawn_baseline.get("digest"), str)
         and re.fullmatch(r"[0-9a-f]{64}", spawn_baseline["digest"]) is not None
         and isinstance(baseline_identities, list) and len(baseline_identities) <= MAX_BASELINE_IDENTITIES
         and all(isinstance(item, Mapping) and set(item) == {"pid", "start", "uid", "sid", "pgid"}
-                and type(item["pid"]) is int and item["pid"] > 0
+                and type(item["pid"]) is int and 0 < item["pid"] <= MAX_PROCESS_ID
                 and isinstance(item["start"], str) and CLEANUP_START_RE.fullmatch(item["start"]) is not None
                 and type(item["uid"]) is int and item["uid"] >= 0
-                and type(item["sid"]) is int and item["sid"] >= 0
-                and type(item["pgid"]) is int and item["pgid"] >= 0 for item in baseline_identities)
+                and type(item["sid"]) is int and 0 <= item["sid"] <= MAX_PROCESS_ID
+                and type(item["pgid"]) is int and 0 <= item["pgid"] <= MAX_PROCESS_ID for item in baseline_identities)
+        and hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == spawn_baseline["digest"]
     )
     if valid_identity:
         exact_identity = {"worker_pid": identity["worker_pid"], "parent_pid": identity["parent_pid"],
@@ -1140,6 +1242,8 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
                                                    for pid in sorted(set(known_descendants))},
                           "known_process_sids": {str(pid): identity["known_process_sids"][str(pid)]
                                                  for pid in sorted(set(known_descendants))},
+                          "known_process_pgids": {str(pid): known_pgids[str(pid)]
+                                                  for pid in sorted(set(known_descendants))},
                           "uid_invariant": dict(identity["uid_invariant"]),
                           "spawn_baseline": {"valid": True, "digest": spawn_baseline["digest"], "identities": baseline_identities}}
     else:
@@ -1151,6 +1255,7 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
                           "known_descendant_pids": known_descendants if isinstance(known_descendants, list) else [],
                           "known_process_starts": known_starts if isinstance(known_starts, dict) else {},
                           "known_process_sids": identity.get("known_process_sids", {}) if isinstance(identity, Mapping) else {},
+                          "known_process_pgids": known_pgids if isinstance(known_pgids, dict) else {},
                           "uid_invariant": identity.get("uid_invariant", {}) if isinstance(identity, Mapping) else {},
                           "spawn_baseline": spawn_baseline if isinstance(spawn_baseline, Mapping) else {}}
     pgid = exact_identity["pgid"]
@@ -1170,6 +1275,8 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         members_now = [row for row in rows if row.get("pgid") == pgid]
         if any(row.get("uid") != exact_identity["uid"] for row in members_now):
             return False
+        if any(row.get("sid") != exact_identity["sid"] for row in members_now):
+            return False
         if reference_starts is not None:
             if any(row.get("pid") not in reference_starts for row in members_now):
                 return False
@@ -1179,7 +1286,8 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
             row_pid = row.get("pid")
             if row_pid in known_descendants:
                 if (row.get("start") != known_starts.get(str(row_pid))
-                        or row.get("sid") != exact_identity["sid"]):
+                        or row.get("sid") != exact_identity["sid"]
+                        or row.get("pgid") != known_pgids.get(str(row_pid))):
                     return False
         return True
 
@@ -1203,9 +1311,14 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         signal_attempts.append(record)
 
     pre_signal_snapshot = _cleanup_ps_snapshot(run)
-    pre_signal_rows = pre_signal_snapshot.get("records", []) if pre_signal_snapshot.get("parse_ok") is True else []
-    pre_signal_starts = {row["pid"]: row["start"] for row in pre_signal_rows if row.get("pgid") == pgid}
-    if group_safe(pre_signal_snapshot):
+    # Only the worker and descendants captured at spawn are attributable to
+    # this session.  A same-UID process that joined the group later must make
+    # the group-wide signal unsafe too; it is never enough to check UID alone.
+    pre_signal_starts = {pid: known_starts[str(pid)] for pid in known_descendants
+                         if str(pid) in known_starts}
+    pre_signal_known = pre_signal_snapshot.get("command_ok") is True and pre_signal_snapshot.get("parse_ok") is True
+    pre_signal_safe = valid_identity and pre_signal_known and group_safe(pre_signal_snapshot)
+    if pre_signal_safe:
         attempt("SIGTERM", signal.SIGTERM)
     elif (valid_identity and pre_signal_snapshot.get("command_ok") is True
           and pre_signal_snapshot.get("parse_ok") is True
@@ -1223,15 +1336,6 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         wait_errors.append("wait:TimeoutExpired")
     except (OSError, ValueError) as exc:
         wait_errors.append(f"wait:{type(exc).__name__}")
-    if not worker_reaped:
-        attempt("SIGKILL", signal.SIGKILL)
-        try:
-            process.wait(timeout=2)
-            worker_reaped = process.poll() is not None
-        except subprocess.TimeoutExpired:
-            wait_errors.append("reap:TimeoutExpired")
-        except (OSError, ValueError) as exc:
-            wait_errors.append(f"reap:{type(exc).__name__}")
     try:
         process.communicate(timeout=2)
     except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
@@ -1251,11 +1355,13 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     if valid_identity and snapshots[0].get("command_ok") is True and snapshots[0].get("parse_ok") is True \
             and (first_members or first_descendants) and not start_mismatch:
         descendant_kill_attempts: list[dict[str, Any]] = []
-        if group_safe(snapshots[0], require_leader=False, reference_starts=pre_signal_starts):
+        if pre_signal_safe and group_safe(snapshots[0], require_leader=False, reference_starts=pre_signal_starts):
             attempt("SIGKILL", signal.SIGKILL)
         for row in first_descendants:
-            if row.get("pid") == pid or row.get("start") != known_starts.get(str(row.get("pid"))) \
-                    or row.get("sid") != exact_identity["sid"]:
+            if (row.get("uid") != exact_identity["uid"]
+                    or row.get("start") != known_starts.get(str(row.get("pid"))) \
+                    or row.get("sid") != exact_identity["sid"] \
+                    or row.get("pgid") != known_pgids.get(str(row.get("pid")))):
                 continue
             attempt_record: dict[str, Any] = {"pid": row["pid"], "signal": "SIGKILL", "status": "sent"}
             try:
@@ -1287,14 +1393,15 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         # a captured PID/start identity before a direct PID kill.  The first
         # unknown snapshot remains in the final evidence, so the gate can never
         # become a false PASS.
-        if (valid_identity and worker_reaped
-                and snapshots[0].get("parse_ok") is not True
+        if (valid_identity and snapshots[0].get("parse_ok") is not True
                 and second_snapshot.get("parse_ok") is True):
             second_rows = second_snapshot.get("records", [])
             for row in second_rows:
                 row_pid = row.get("pid")
-                if (row_pid == pid or row_pid not in known_descendants
-                        or row.get("start") != known_starts.get(str(row_pid))):
+                if (row_pid not in known_descendants or row.get("uid") != exact_identity["uid"]
+                        or row.get("start") != known_starts.get(str(row_pid))
+                        or row.get("sid") != exact_identity["sid"]
+                        or row.get("pgid") != known_pgids.get(str(row_pid))):
                     continue
                 attempt_record = {"pid": row_pid, "signal": "SIGKILL", "status": "sent"}
                 try:
@@ -1307,6 +1414,11 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
                     attempt_record["status"] = "os_error"; attempt_record["error"] = f"{type(exc).__name__}: {exc}"[:256]
                 descendant_kill_attempts.append(attempt_record)
             if descendant_kill_attempts:
+                try:
+                    process.wait(timeout=2)
+                    worker_reaped = worker_reaped or process.poll() is not None
+                except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+                    wait_errors.append(f"reap-after-orphan-kill:{type(exc).__name__}")
                 try:
                     process.communicate(timeout=2)
                 except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
@@ -1332,7 +1444,8 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
                              and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs
                              and not (row.get("pid") in known_descendants
                                       and row.get("start") == known_starts.get(str(row.get("pid")))
-                                      and row.get("sid") == exact_identity["sid"])])
+                                      and row.get("sid") == exact_identity["sid"]
+                                      and row.get("pgid") == known_pgids.get(str(row.get("pid"))))])
     snapshots_valid = (len(snapshots) == 2
                        and all(snapshot.get("command_ok") is True and snapshot.get("parse_ok") is True
                                and isinstance(snapshot.get("monotonic"), (int, float))
@@ -1344,7 +1457,6 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     new_processes_empty = snapshots_valid and all(not group for group in new_processes)
     leaders_absent = snapshots_valid and all(not leader for leader in leaders)
     non_zombie = snapshots_valid and all(not row.get("stat", "").startswith("Z") for row in sum(members + descendants + leaders, []))
-    pre_signal_known = pre_signal_snapshot.get("command_ok") is True and pre_signal_snapshot.get("parse_ok") is True
     global_inventory_evidence = {"enabled": global_inventory, "known": True, "competing": None}
     if global_inventory:
         try:
@@ -1391,7 +1503,9 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     for snapshot in snapshots:
         rows = snapshot.get("records", []) if snapshot.get("parse_ok") is True else []
         if any(valid_identity and row.get("pid") in known_descendants
-               and row.get("start") != known_starts.get(str(row.get("pid"))) for row in rows):
+               and (row.get("start") != known_starts.get(str(row.get("pid")))
+                    or row.get("sid") != exact_identity["sid"]
+                    or row.get("pgid") != known_pgids.get(str(row.get("pid")))) for row in rows):
             unresolved.append("known PID start identity changed or was reused")
     if wait_errors:
         unresolved.extend(wait_errors)
@@ -1616,7 +1730,8 @@ def validate_stage_result(result: Any, stage: str) -> tuple[bool, str]:
     binding = result["binding"]
     if (not isinstance(binding, dict) or set(binding) != {"model_id", "model_revision", "model_manifest_sha256", "runtime_code_sha256"}
             or binding["model_id"] != MODEL_ID or binding["model_revision"] != EXPECTED_REVISION
-            or not re.fullmatch(r"[0-9a-f]{64}", str(binding["model_manifest_sha256"])) or not re.fullmatch(r"[0-9a-f]{64}", str(binding["runtime_code_sha256"]))):
+            or binding["model_manifest_sha256"] != EXPECTED_MODEL_MANIFEST_SHA256
+            or not re.fullmatch(r"[0-9a-f]{64}", str(binding["runtime_code_sha256"]))):
         return False, "stage model or runtime binding is invalid"
     return True, "ok"
 

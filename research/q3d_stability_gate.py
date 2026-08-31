@@ -27,6 +27,7 @@ EXPERIMENT_ID = "Q3d-model-free-stability-gate"
 SCHEMA = "ironmule.q3d_stability_gate.v1"
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
 EXPECTED_REVISION = "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+EXPECTED_MODEL_MANIFEST_SHA256 = "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
 SCHEDULED_SAMPLES = 60
 SAMPLE_COUNT = SCHEDULED_SAMPLES + 1
 SAMPLE_INTERVAL_SECONDS = 1.0
@@ -180,7 +181,7 @@ def preflight(*, root: Path | None = None, deadline: float | None = None,
         "model_cache_identity_exact": isinstance(identity, Mapping)
             and identity.get("model_id") == MODEL_ID
             and identity.get("model_revision") == EXPECTED_REVISION
-            and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("model_manifest_sha256", ""))) is not None,
+            and identity.get("model_manifest_sha256") == EXPECTED_MODEL_MANIFEST_SHA256,
         "git_commit_known": isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) is not None,
         "git_clean_and_bound": isinstance(git, Mapping) and git.get("clean") is True
             and isinstance(commit, str) and bool(commit),
@@ -221,7 +222,7 @@ def _preflight_is_complete(value: Any) -> bool:
         and isinstance(identity, Mapping)
         and identity.get("model_id") == MODEL_ID
         and identity.get("model_revision") == EXPECTED_REVISION
-        and re.fullmatch(r"[0-9a-f]{64}", str(identity.get("model_manifest_sha256", ""))) is not None
+        and identity.get("model_manifest_sha256") == EXPECTED_MODEL_MANIFEST_SHA256
         and isinstance(commit, str) and re.fullmatch(r"[0-9a-f]{40}", commit) is not None
         and isinstance(git, Mapping) and git.get("clean") is True and git.get("commit") == commit
         and _valid_load(value.get("loadavg"))
@@ -553,6 +554,11 @@ def _strict_q3c_result(raw: Any, *, root: Path, expected_commit: str,
     if not isinstance(git, Mapping) or git.get("commit") != expected_commit or git.get("clean") is not True:
         return False, "q3c commit binding mismatch", None
     identity = pre.get("identity")
+    if (not isinstance(expected_identity, Mapping)
+            or expected_identity.get("model_id") != MODEL_ID
+            or expected_identity.get("model_revision") != EXPECTED_REVISION
+            or expected_identity.get("model_manifest_sha256") != EXPECTED_MODEL_MANIFEST_SHA256):
+        return False, "expected model identity is not the pinned Gemma snapshot", None
     if not isinstance(identity, Mapping) or dict(identity) != dict(expected_identity):
         return False, "q3c model identity mismatch", None
     runtime_hash = q3c.runtime_code_sha256(root)
@@ -601,8 +607,11 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
     first = q3b._cleanup_ps_snapshot(run)
     if first.get("command_ok") is not True or first.get("parse_ok") is not True:
         return {"known": False, "groups": [], "errors": ["nested worker inventory unknown"]}
-    expected_fields = {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"}
-    if any(not isinstance(row, Mapping) or set(row) != expected_fields for row in first.get("records", [])):
+    required_fields = {"pid", "ppid", "pgid", "uid", "stat", "start", "args"}
+    allowed_fields = (required_fields, required_fields | {"sid"})
+    if any(not isinstance(row, Mapping) or set(row) not in allowed_fields
+           or (row.get("uid") == uid and ("sid" not in row or type(row.get("sid")) is not int))
+           for row in first.get("records", [])):
         return {"known": False, "groups": [], "errors": ["nested worker inventory schema unknown"]}
     if (not isinstance(baseline, Mapping) or baseline.get("valid") is not True
             or not isinstance(baseline.get("identities"), list)
@@ -641,7 +650,9 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
             errors.append(f"nested group signal failed: {row['pid']}")
         groups.append(attempt)
     second = q3b._cleanup_ps_snapshot(run)
-    if any(not isinstance(row, Mapping) or set(row) != expected_fields for row in second.get("records", [])):
+    if any(not isinstance(row, Mapping) or set(row) not in allowed_fields
+           or (row.get("uid") == uid and ("sid" not in row or type(row.get("sid")) is not int))
+           for row in second.get("records", [])):
         return {"known": False, "groups": groups, "remaining": [], "errors": errors + ["nested worker inventory schema unknown"]}
     remaining = [row for row in second.get("records", [])
                  if row.get("uid") == uid and "q3c_performance_replication.py" in row.get("args", "")
@@ -652,6 +663,7 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
             current = [item for item in second["records"] if item.get("pgid") == row.get("pgid")]
             if (row.get("start") != original_starts.get(row.get("pid"))
                     or row.get("start") != next((item.get("start") for item in current if item.get("pid") == row.get("pid")), None)
+                    or row.get("sid") != row.get("pgid")
                     or any(item.get("uid") != uid for item in current)):
                 errors.append(f"nested group start identity changed: {row.get('pid')}")
                 continue

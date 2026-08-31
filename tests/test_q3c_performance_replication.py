@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import importlib.util
 import json
 import statistics
@@ -56,17 +57,20 @@ q3c._q3b_runtime = lambda: type("Q3b", (), {"ab": _FakeAB()})()
 
 
 def _cleanup_evidence(pid):
+    baseline_identities = [{"pid": pid, "start": "00:00:01", "uid": 501, "sid": pid, "pgid": pid}]
+    baseline_digest = hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     snapshots = [
-        {"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "error": None},
-        {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "error": None},
+        {"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
+        {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
     ]
     return {"schema": "ironmule.cleanup.v2",
             "identity": {"worker_pid": pid, "parent_pid": 1, "pgid": pid, "sid": pid, "uid": 501,
                          "known_descendant_pids": [pid], "known_process_starts": {str(pid): "00:00:01"},
                          "known_process_sids": {str(pid): pid},
+                         "known_process_pgids": {str(pid): pid},
                          "uid_invariant": {"owner_uid": 501, "worker_uid": 501, "same_non_root": True},
-                         "spawn_baseline": {"valid": True, "digest": "4855d332ae3eecf6fc9c8d1b9c671b3bce5dfc5410a07ad2d4b25302a291e1b1",
-                                            "identities": [{"pid": 1, "start": "00:00:00", "uid": 0, "sid": 1, "pgid": 1}]}},
+                         "spawn_baseline": {"valid": True, "digest": baseline_digest,
+                                            "identities": baseline_identities}},
             "worker_reaped": True,
             "signal_attempts": [{"signal": "SIGTERM", "status": "not_found"}],
             "descendant_kill_attempts": [],
@@ -122,7 +126,7 @@ def _result(phase="R", incumbent_time=0.8568e9, candidate_time=0.8569e9):
               "token_count_identity": True, "stop_reason_identity": True, "deterministic": True,
               "reference_tokens": [4, 5], "ratios": ratios,
               "binding": {"model_id": q3c.MODEL_ID, "model_revision": q3c.EXPECTED_REVISION,
-                          "model_manifest_sha256": "a" * 64, "runtime_code_sha256": q3c.runtime_code_sha256()},
+                          "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256, "runtime_code_sha256": q3c.runtime_code_sha256()},
               "child_rss_peak_bytes": 100, "swap_samples": [100, 100],
               "swap_sample_times": [1.0, 1.25], "swap_sample_offsets": [0.0, 0.25],
               "sampler_errors": [], "max_swap_used_bytes": 100, "phase_initial_swap_bytes": 100,
@@ -168,6 +172,57 @@ def test_phase_plan_is_exact():
     assert q3c.phase_plan("N")["arms"]["candidate"] == q3c.CANDIDATE
     with pytest.raises(ValueError):
         q3c.phase_plan("X")
+
+
+def test_cleanup_validator_accepts_valid_session_different_from_process_group():
+    identity = {"uid": 501, "known_descendant_pids": [42],
+                "known_process_starts": {"42": "00:00:02"},
+                "known_process_sids": {"42": 42},
+                "known_process_pgids": {"42": 42}}
+    records = [{"pid": 1, "ppid": 0, "pgid": 1, "uid": 0, "stat": "S",
+                "start": "7:00AM", "args": "/sbin/launchd"},
+               {"pid": 42, "ppid": 1, "pgid": 42, "uid": 501, "sid": 42,
+                "stat": "S", "start": "00:00:02", "args": "/worker"},
+               {"pid": 43, "ppid": 1, "pgid": 43, "uid": 501, "sid": 1,
+                "stat": "S", "start": "00:00:03", "args": "/other"}]
+    assert q3c._cleanup_snapshot_records_valid(records, identity)
+
+
+def test_phase_validator_rejects_formally_valid_but_wrong_model_manifest():
+    result = _result("R")
+    result["binding"]["model_manifest_sha256"] = "f" * 64
+    valid, reason = q3c.validate_phase_result(result, "R")
+    assert valid is False
+    assert reason == "model/runtime binding mismatch"
+
+
+def test_q3c_preflight_requires_pinned_model_manifest(monkeypatch):
+    class Runtime:
+        COMMANDS = {"git": "/usr/bin/git"}
+        _run_text = staticmethod(lambda _command: "")
+        _deadline_runner = staticmethod(lambda _deadline, run: run)
+        system_environment = staticmethod(lambda _run: {
+            "power_source": "AC", "low_power_mode": False,
+            "thermal_state": "nominal", "swap_used_bytes": 1000,
+            "memory_free_percent": 50})
+        installed_memory_bytes = staticmethod(lambda _run: 1000)
+        loadavg_gate = staticmethod(lambda **_kwargs: {"passed": True})
+        _git_binding = staticmethod(lambda *_args: {"clean": True, "commit": "b" * 40})
+        competing_model_process = staticmethod(lambda _run: None)
+
+    monkeypatch.setattr(q3c, "_q3b_runtime", lambda: Runtime)
+    monkeypatch.setattr(q3c, "_untracked_runtime_inventory", lambda *_args: {"passed": True})
+    wrong = {"model_id": q3c.MODEL_ID, "model_revision": q3c.EXPECTED_REVISION,
+             "model_manifest_sha256": "f" * 64}
+    monkeypatch.setattr(Runtime, "resolve_exact_local_identity", staticmethod(lambda _root: wrong), raising=False)
+    rejected = q3c.preflight(root=ROOT)
+    assert rejected["checks"]["model_identity_exact"] is False
+    assert rejected["passed"] is False
+    correct = {**wrong, "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}
+    monkeypatch.setattr(Runtime, "resolve_exact_local_identity", staticmethod(lambda _root: correct), raising=False)
+    accepted = q3c.preflight(root=ROOT)
+    assert accepted["checks"]["model_identity_exact"] is True
+    assert accepted["passed"] is True
 
 
 def test_strict_phase_validation_rejects_forged_order_and_missing_evidence():
@@ -280,22 +335,25 @@ def test_worker_markers_reject_non_finite_constants_and_cleanup(monkeypatch):
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase worker result JSON malformed"
     assert cleaned == [4324]
 
 
 def _v2_cleanup(pid):
-    snapshots = [{"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "error": None},
-                 {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "error": None}]
+    baseline_identities = [{"pid": pid, "start": "00:00:01", "uid": 501, "sid": pid, "pgid": pid}]
+    baseline_digest = hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    snapshots = [{"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
+                 {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None}]
     return {"schema": "ironmule.cleanup.v2",
             "identity": {"worker_pid": pid, "parent_pid": 1, "pgid": pid, "sid": pid, "uid": 501,
                          "known_descendant_pids": [pid], "known_process_starts": {str(pid): "00:00:01"},
                          "known_process_sids": {str(pid): pid},
+                         "known_process_pgids": {str(pid): pid},
                          "uid_invariant": {"owner_uid": 501, "worker_uid": 501, "same_non_root": True},
-                         "spawn_baseline": {"valid": True, "digest": "4855d332ae3eecf6fc9c8d1b9c671b3bce5dfc5410a07ad2d4b25302a291e1b1",
-                                            "identities": [{"pid": 1, "start": "00:00:00", "uid": 0, "sid": 1, "pgid": 1}]}},
+                         "spawn_baseline": {"valid": True, "digest": baseline_digest,
+                                            "identities": baseline_identities}},
             "worker_reaped": True, "signal_attempts": [{"signal": "SIGTERM", "status": "not_found"}],
             "descendant_kill_attempts": [],
             "verification": {"method": "two_independent_ps_snapshots", "pre_signal_snapshot": snapshots[0], "pre_escalation_snapshot": snapshots[0], "snapshots": snapshots,
@@ -330,7 +388,8 @@ def test_start_phase_wires_v2_cleanup_for_every_worker_outcome(monkeypatch, stre
             events.append("capture")
             return {"worker_pid": process.pid, "parent_pid": 1, "pgid": process.pid, "sid": process.pid, "uid": 501,
                     "known_descendant_pids": [process.pid], "known_process_starts": {str(process.pid): "00:00:01"},
-                    "known_process_sids": {str(process.pid): process.pid}}
+                    "known_process_sids": {str(process.pid): process.pid},
+                    "known_process_pgids": {str(process.pid): process.pid}}
 
         @staticmethod
         def _cleanup_worker_evidence(process, identity):
@@ -342,7 +401,7 @@ def test_start_phase_wires_v2_cleanup_for_every_worker_outcome(monkeypatch, stre
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["cleanup"]["schema"] == "ironmule.cleanup.v2"
     assert outcome["cleanup"]["unresolved_errors"] == []
@@ -366,7 +425,7 @@ def test_success_group_alive_uses_structured_cleanup_error(monkeypatch):
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["cleanup"]["worker_group_gone"] is False
     assert outcome["cleanup"]["cleanup_errors"][0].startswith("cleanup:KeyboardInterrupt")
@@ -435,7 +494,7 @@ def test_nonzero_worker_marker_is_failure_and_cleanup_is_proven(monkeypatch):
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"].startswith("phase worker exited")
     assert outcome["cleanup"]["worker_group_gone"] is True
@@ -457,7 +516,7 @@ def test_phase_communication_base_exception_is_cleaned_and_reaped(monkeypatch):
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase communication failed"
     assert outcome["cleanup"]["worker_group_gone"] is True
@@ -479,7 +538,7 @@ def test_phase_communication_requires_text_streams_and_cleans_up(monkeypatch):
     monkeypatch.setattr(q3c, "runtime_code_sha256", lambda: "b" * 64)
     outcome = q3c._start_phase("R", {"model_id": q3c.MODEL_ID,
                                     "model_revision": q3c.EXPECTED_REVISION,
-                                    "model_manifest_sha256": "a" * 64}, 100, 1000,
+                                    "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase worker communication returned non-text output"
     assert outcome["cleanup"]["worker_group_gone"] is True
@@ -499,7 +558,7 @@ def test_failed_final_resource_gate_cannot_be_overwritten_by_recovery(monkeypatc
     monkeypatch.setattr(q3c, "_q3b_runtime", lambda: policy)
     monkeypatch.setattr(q3c, "preflight", lambda **_kwargs: {"passed": True, "identity": {
         "model_id": q3c.MODEL_ID, "model_revision": q3c.EXPECTED_REVISION,
-        "model_manifest_sha256": "a" * 64}, "runtime_code_sha256": q3c.runtime_code_sha256(),
+        "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, "runtime_code_sha256": q3c.runtime_code_sha256(),
         "environment": {"swap_used_bytes": 1000}, "installed_memory_bytes": 1000})
     monkeypatch.setattr(q3c, "_start_phase", lambda phase, *_args: r_result if phase == "R" else n_result)
     monkeypatch.setattr(q3c, "validate_phase_result", lambda *_args: (True, "ok"))
@@ -539,7 +598,7 @@ def test_phase_r_criteria_miss_is_recorded_but_does_not_skip_phase_n(monkeypatch
     monkeypatch.setattr(q3c, "_q3b_runtime", lambda: q3b)
     monkeypatch.setattr(q3c, "preflight", lambda **_kwargs: {"passed": True, "identity": {
         "model_id": q3c.MODEL_ID, "model_revision": q3c.EXPECTED_REVISION,
-        "model_manifest_sha256": "a" * 64}, "runtime_code_sha256": q3c.runtime_code_sha256(),
+        "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, "runtime_code_sha256": q3c.runtime_code_sha256(),
         "environment": {"swap_used_bytes": 1000}, "installed_memory_bytes": 1000})
     monkeypatch.setattr(q3c, "_start_phase", lambda phase, *_args: started.append(phase) or (r_result if phase == "R" else n_result))
     monkeypatch.setattr(q3c, "validate_phase_result", lambda *_args: (True, "ok"))
@@ -561,7 +620,7 @@ def test_phase_n_time_boundary_is_explicit_failure_evidence(monkeypatch, tmp_pat
     monkeypatch.setattr(q3c, "_q3b_runtime", lambda: policy)
     monkeypatch.setattr(q3c, "preflight", lambda **_kwargs: {"passed": True, "identity": {
         "model_id": q3c.MODEL_ID, "model_revision": q3c.EXPECTED_REVISION,
-        "model_manifest_sha256": "a" * 64}, "runtime_code_sha256": q3c.runtime_code_sha256(),
+        "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, "runtime_code_sha256": q3c.runtime_code_sha256(),
         "environment": {"swap_used_bytes": 1000}, "installed_memory_bytes": 1000})
     monkeypatch.setattr(q3c, "_start_phase", lambda phase, *_args: r_result)
     monkeypatch.setattr(q3c, "validate_phase_result", lambda *_args: (True, "ok"))
