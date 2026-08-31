@@ -278,3 +278,31 @@
   `start_new_session`. Ein strikter Regressionstest bindet die tatsächlich
   verwendeten Keywords gegen die Runtime-Signatur von `Popen` und weist
   unbekannte Keywords zurück. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 6: transienter Prozess-Gate-Fehlalarm
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary6_20260831.json` (SHA-256
+  `983370bdf70a0891cffdda5b8f4009251cddf24194435042bf39fe3340553904`) und
+  endete mit `FAILED`, `BASE`, ohne Modellmetriken.
+- **Gates/Messgrenze:** Alle Ressourcen-Gates waren grün. Das Prozess-Gate
+  blockierte transient durch einen Orchestrator-/Launcher-Vorfahren, dessen
+  `args` Modell-Tokens enthielten. Es wurde kein Modellkind und keine Stage
+  gestartet; es gibt keine Hardware- oder Performanceaussage. Eine spätere
+  direkte Ausführung der exakten Gate-Funktion auf dem aktuellen Snapshot war
+  grün und meldete keinen Blocker.
+- **Ursache/Lösung:** Die `args`-Inventur speicherte bislang kein `ppid` und
+  konnte dadurch einen nachweisbaren Vorfahren nicht vom übrigen Prozessraum
+  unterscheiden. Das Inventar verwendet nun strikt
+  `pid=,ppid=,rss=,%cpu=,args=`. Die aktuelle PID-Kette wird im selben Snapshot
+  bis `ppid=0` rekonstruiert; nur Selbstprozess und nachgewiesene Vorfahren
+  werden vor Token-Prüfungen ignoriert. Nachfahren, Geschwister und andere
+  Agenten bleiben Blocker. Fehlende Selbst-/Elternlinks, Zyklen und negative
+  `ppid`-Werte fail-closed. Claude-Signatur- und PID-Race-Verhalten bleibt
+  unverändert; Q3a blieb unverändert.
+- **Preregistration/Verifikation:** Der Text und SHA wurden vor der nächsten
+  Messung aktualisiert. `py_compile` und direkte Ancestry-/Malformed-Checks
+  waren erfolgreich; ein `pytest`-Lauf war nicht möglich, da in der vorhandenen
+  Umgebung kein pytest installiert ist und keine Installation freigegeben war.
+- **Messgrenze:** Kein Download, keine Modellinstallation, kein Hardware-/MLX-
+  Test und kein Commit.

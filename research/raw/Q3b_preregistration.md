@@ -41,13 +41,19 @@ runtime-code hash binding parent and worker. The initial memory-pressure free
 percentage must be at least 35%. Initial swap is recorded and must be known and
 at most 4 GiB. Three load samples must be known, have max at most 8.0 and spread
 at most 2.0. The process gate takes two bounded inventories,
-`pid=,rss=,%cpu=,args=` and `pid=,comm=`. The args snapshot is authoritative
-for relevance: every Claude-related or known inference/model record must have
-an exact same-PID `comm` record. Extra `comm` records are ignored, and an
-irrelevant args record may lack a `comm` row. If a relevant Claude args record
-is missing from `comm`, a read-only `kill(pid, 0)` probe may classify it as
-already gone; alive, permission-denied, and unknown probe results fail closed.
-Known inference/model tokens block directly even before comm matching.
+`pid=,ppid=,rss=,%cpu=,args=` and `pid=,comm=`. The args snapshot is
+authoritative for relevance and must contain the current process and its exact
+`ppid` chain through a root with `ppid=0`; cycles, missing links, malformed
+records, and an absent current process fail closed. Only the current process
+and proven ancestors in that same snapshot are ignored before relevance checks.
+Descendants, siblings, and other agents remain subject to the model-token and
+Claude checks. Every Claude-related or known inference/model record outside
+that ancestry must have an exact same-PID `comm` record. Extra `comm` records
+are ignored, and an irrelevant args record may lack a `comm` row. If a relevant
+Claude args record is missing from `comm`, a read-only `kill(pid, 0)` probe may
+classify it as already gone; alive, permission-denied, and unknown probe
+results fail closed. Known inference/model tokens block directly even before
+comm matching.
 The only Claude exception is a process whose `comm` path is lexically inside
 the exact `/Applications/Claude.app/Contents/` boundary, after the complete
 bundle has passed absolute `/usr/bin/codesign --verify --deep --strict` and
