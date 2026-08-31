@@ -2538,3 +2538,45 @@ No child completed, and there are no timings, exact identity, performance,
 promotion or activation results. The Q3c decision is `FAILED` with
 `BASE/current incumbent` fallback. The Q3c backlog entry is closed in Tier 0;
 Q3d is a separate, single-path recovery preregistration.
+
+## Q3d — Stability gate passed; Q3c blocked by macOS process-probe portability (2026-08-31)
+
+The model-free Q3d gate completed its frozen protocol and passed all of its
+gates. The retained raw record is
+`research/raw/Q3d_stability_20260831.json`, SHA-256
+`4699a49b174db31580a9701ef2075f8b1964d309b0f857dd7779fb230cfccb83`, size
+`34,144` bytes. Its companion summary is
+`research/raw/Q3d_summary_20260831.json`, SHA-256
+`3b43e267000ba15b9d9079d9f118e59c1cd51dbcdfecc067c20995b01a0a1c3e`, size
+`970` bytes.
+
+**Gate evidence.** The gate recorded exactly `61` swap samples: one
+synchronous `t0` sample plus 60 scheduled samples. First-to-last elapsed time
+was `60.020192667 s`, the maximum adjacent gap was `1.013944625 s`, and every
+sample reported the same swap value `2,651,722,874 B`; the measured high-water
+delta was exactly `0 B`. AC power, low-power-off, nominal thermal state, known
+32-GiB memory, free memory `62%`, load maximum `3.92578125`/spread `0`, clean
+Git and the exact local Gemma identity all passed. The gate was model-free: no
+MLX import, model load, inference child or timing arm ran.
+
+**Terminal Q3d result.** The one permitted unchanged Q3c invocation was not
+started (`invoked=false`) because its pre-spawn process baseline was
+unavailable. The underlying macOS command was
+`/bin/ps -Ao pid=,ppid=,pgid=,sid=,uid=,stat=,start=,args=`; on this host
+(macOS `26.6.2-arm64`) it returned `rc=1` with
+`ps: sid: keyword not found`. This is a portability defect in the OS probe,
+not evidence that the model or hardware was unsafe. No Q3c raw output exists,
+and there are no timing, exact-identity, performance or promotion values.
+
+The Q3d summary status is `Q3C_FAILED`, with `promotion_allowed=false` and
+fallback `BASE/current incumbent`. Q3d is closed: its gate PASS is retained as
+safety context only, is not pooled with Q3c and is not a current-model or
+performance guarantee. The next and only permitted path is the separately
+frozen Q3e portability repair, whose preregistration
+`research/raw/Q3e_preregistration.md` has SHA-256
+`71901b0d2220d7e9559bad536afaf15d04fac5ea1714f7ceade5bc37811dfd47`, recorded
+in `research/raw/Q3e_preregistration.sha256`. Q3e may remove only the unsupported
+`sid` field, use typed public `os.getsid(pid)` enrichment with fail-closed
+unknown/error handling, prove it with model-free tests, and then invoke the
+unchanged Q3c harness exactly once. No retry, download, installation, restart,
+27B run, UI or automatic activation follows from Q3d.

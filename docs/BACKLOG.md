@@ -317,57 +317,38 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `Q3d` — Recover Q3c safety evidence without a retry loop — preregister first
+### `Q3e` — Repair the macOS process probe, then permit one unchanged Q3c run
 
-**Mechanism.** Q3c produced no performance evidence: one run was rejected by the
-load gate and the next was stopped by the live swap high-water gate. The second
-record also could not prove worker-group cleanup. Q3d isolates one cleanup-proof
-repair and one model-free stability observation before permitting one unchanged
-Q3c harness run.
+**Mechanism.** Q3d's model-free stability gate passed, but its one permitted
+Q3c invocation was correctly stopped before `Popen`: macOS 26.6.2 does not
+support the requested `ps` field `sid` (`rc=1`, `ps: sid: keyword not found`).
+The portability defect prevents a valid process-group baseline even though it
+does not show unsafe hardware or model behavior. Q3d is closed; Q3e is a new,
+single-path repair and verification entry.
 
-**Test.** Before any hardware/model execution, repair only the cleanup proof and
-add regression tests for normal exit, safety abort, timeout, TERM→KILL fallback,
-reap and orphan detection. Also implement and test the minimal model-free gate
-harness: its parent is stdlib-only and imports no MLX/model. Then run exactly
-one `60 s` model-free stability gate with AC power, low-power off, nominal
-thermal state, start free memory `>=35%`, start swap `<=4 GiB`, load
-`max<=8`/`spread<=2` and no competing model process. It takes a synchronous
-`t0` swap sample plus exactly `60` scheduled samples at `t0+1..t0+60 s`
-(`61` total), first-to-last elapsed `>=60.0 s` and `<=62.5 s`, adjacent gaps
-`<=2.5 s`, command timeout `1.0 s`, gate wall deadline `90 s`, strict JSON,
-exclusive output and `512 KiB` output cap. The exact commit/prereg/runtime/
-model-cache identity and all command/timestamp/gap facts must be bound;
-`max(samples)-start` must equal exactly `0 B`; no performance is measured. Only
-complete PASS permits exactly one unchanged full Q3c harness run, bound to its
-exact post-repair commit, model snapshot, arms, protocol and criteria.
+**Test.** Freeze `research/raw/Q3e_preregistration.md` and its SHA before
+implementation. Repair only the process probe: remove `sid` from the canonical
+`ps` command, retain strict `pid`, `ppid`, `pgid`, `uid`, `stat`, `start` and
+`args`, and enrich relevant same-UID rows with public `os.getsid(pid)`. A
+typed `ProcessLookupError` is a known snapshot race and omits that row; every
+other error or unknown/malformed value fails closed. Add deterministic parser,
+race/error, UID, ancestry, cleanup and reuse tests plus a real model-free macOS
+`start_new_session=True` test proving `os.getsid(pid)==pid`, baseline capture
+and cleanup/reap. Run the Q3c/Q3d tests and full non-integration suite before
+any model work. If and only if all tests pass, invoke the unchanged Q3c
+protocol exactly once offline against the exact local Gemma 4B revision and
+manifest, with its existing preflight, 128-MiB live swap, identity, cleanup,
+statistics, Phase-R/Phase-N behavior and 600-second bound. Do not repeat the
+Q3d stability gate.
 
-The gate and full run reuse the exact process inventory: only the fully
-verified signed Claude Desktop bundle may be excepted when its path is inside
-`/Applications/Claude.app/Contents/`, identifier is
-`com.anthropic.claudefordesktop`, team is `Q6L2SF6YDW`, and first authority is
-`Developer ID Application: Anthropic PBC (Q6L2SF6YDW)`. Claude
-CLI/server/backend and model-token processes block. PID/PPID ancestry and
-snapshot-race handling are inherited; missing links, cycles, invalid or
-malformed PID/PPID/process records, unknown state, or untrusted/outside-bundle
-paths fail closed.
-
-The full run keeps Q3c's exact local Gemma 4B, two independent six-process
-phases, AB/BA order, identity rules, `128 MiB` live-run swap limit, and `600 s`
-study bound. Phase N still runs when Phase R has passed safety, identity, raw-
-completeness and cleanup gates but misses only its performance criterion; a
-performance miss is not a reason to skip N. Any safety, identity, raw,
-cleanup, unknown-state or criteria failure ends Q3d permanently. No attempt is
-repeated or pooled with Q3c run 1, run 2, or another Q3d run.
-
-**Kill.** A failed or incomplete cleanup proof, any failed test, any unknown
-stability fact, any non-zero swap increase, any competing model, any resource or
-cleanup failure, any Q3c safety/identity/raw failure, or any missed final
-criterion closes Q3d. Retain `BASE` and the current Q2 incumbent; never promote,
-route or activate a candidate. The complete raw evidence and all failed paths
-remain retained. The outer Q3d wall bound is at most `720 s` (`90 s` gate
-deadline + `600 s` Q3c run + `30 s` reserve), below the user's 12-minute
-ceiling.
-No UI or presentation layer is part of this entry.
+**Kill.** Any code scope expansion, failed/unknown test, unsupported or
+ambiguous process identity, failed preflight, timeout, safety/resource/cleanup
+failure, incomplete raw record, identity mismatch or missed Q3c criterion ends
+Q3e permanently. Retain `BASE` and the current Q2 incumbent; never promote,
+route or activate a candidate. Do not retry or pool Q3d/Q3c records, download
+or install software, run 27B, restart the machine or add UI. The full frozen
+details, including the exact model, hashes, 600-second protocol and Phase-N
+rule, live in `research/raw/Q3e_preregistration.md`.
 
 ### `R10` — An aborted run must not look like a finished one
 
@@ -480,6 +461,20 @@ Listed so the next person does not spend a week rediscovering them.
   exists. Raw run 2 SHA-256 is
   `d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`; retain
   both records and do not rerun Q3c.
+
+- **`Q3d` model-free recovery gate (2026-08-31).** The gate itself passed:
+  `61` samples over `60.020192667 s`, maximum adjacent gap
+  `1.013944625 s`, swap `2,651,722,874 B` throughout and delta `0 B`.
+  Raw SHA-256 is
+  `4699a49b174db31580a9701ef2075f8b1964d309b0f857dd7779fb230cfccb83`
+  (`34,144` bytes); the summary SHA-256 is
+  `3b43e267000ba15b9d9079d9f118e59c1cd51dbcdfecc067c20995b01a0a1c3e`
+  (`970` bytes). The one permitted Q3c invocation was then refused before
+  `Popen` because macOS `/bin/ps` rejected `sid` (`rc=1`, `ps: sid: keyword not
+  found`). No model, inference process, timing, identity or performance data
+  exists. Final state is `Q3C_FAILED` with `BASE/current incumbent` fallback;
+  do not repeat Q3d or pool its gate with Q3c. Q3e is the separately frozen
+  portability-repair path.
 
 - **`R11/R12/E15` fork-per-block memory-integrity path (b700377).** Closed by the
   complete four-block E15 after-file (SHA-256

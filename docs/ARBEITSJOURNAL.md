@@ -416,3 +416,34 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
   Metriken mit 95-%-CI, historische Q2-Zielwerte, Fallback BASE/Incumbent,
   keine Auto-Promotion und UI-Historie. Keine Q3c-Implementierung wurde
   vorgenommen.
+
+## 2026-08-31 — Q3d-Gate bestanden, Q3c vor dem Modellstart wegen macOS-Portabilität beendet
+
+- **Gate-Ergebnis:** `research/raw/Q3d_stability_20260831.json` (SHA-256
+  `4699a49b174db31580a9701ef2075f8b1964d309b0f857dd7779fb230cfccb83`,
+  `34.144` Bytes) meldet `PASS`. Der modellfreie Lauf enthielt genau `61`
+  Swap-Samples, dauerte `60.020192667 s`, hatte maximal `1.013944625 s`
+  Abstand und blieb bei `2.651.722.874 B` Swap; der Highwater-Anstieg war
+  exakt `0 B`. AC, Low-Power-off, nominale Thermik, `62%` freier Speicher,
+  Load-Maximum `3.92578125`/Spread `0`, Git-Bindung und exakte lokale
+  Gemma-Identität waren grün.
+- **Q3c-Einladung:** Der einzige erlaubte Q3c-Aufruf wurde nicht gestartet
+  (`invoked=false`). Die Vorab-Prozessaufnahme scheiterte auf macOS
+  `26.6.2-arm64` an `/bin/ps -Ao pid=,ppid=,pgid=,sid=,uid=,stat=,start=,args=`
+  mit `rc=1` und `ps: sid: keyword not found`. Es gab deshalb keinen
+  `Popen`, keinen MLX-/Modellimport, keinen Inferenzprozess, keine Timings,
+  keine Identitäts- oder Performancewerte und keinen Q3c-Raw-Datensatz.
+- **Abschluss:** `research/raw/Q3d_summary_20260831.json` (SHA-256
+  `3b43e267000ba15b9d9079d9f118e59c1cd51dbcdfecc067c20995b01a0a1c3e`,
+  `970` Bytes) meldet `Q3C_FAILED`, `promotion_allowed=false` und den
+  Fallback `BASE/current incumbent`. Das Gate-PASS ist nur Safety-Kontext;
+  er ist kein Performance- oder aktueller Modellnachweis. Q3d wird nicht
+  wiederholt oder mit Q3c gepoolt.
+- **Ursache und nächster Pfad:** Der Befund ist ein enger Portabilitätsfehler
+  im OS-Probe, kein Nachweis unsicherer Hardware oder eines Modellfehlers.
+  Vor jeder weiteren Modellmessung wird Q3e separat eingefroren: nur das
+  unsupported `sid` entfernen, öffentliche `os.getsid(pid)`-Werte mit
+  typed Race-/Error-Fail-Closed-Verhalten ergänzen, model-freie Tests samt
+  macOS-`start_new_session`-Reap-Beweis ausführen und danach höchstens einen
+  unveränderten Q3c-Aufruf erlauben. Kein Download, keine Installation, kein
+  Neustart, kein 27B-Modell, keine UI und keine Aktivierung.

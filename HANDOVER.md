@@ -8,9 +8,9 @@
 - **Replay und Fortsetzung:** Offline-Replay ist nur für `BASE` freigegeben. Die Datenbasis reicht nicht für eine adaptive/RL-Aussage; RL ist nicht anwendbar. Q3a wurde wegen der Gates nicht ausgeführt. Fortsetzung ist nur bei AC, Low-Power-off, nominalem Thermal, Load `<=4` und Spread `<=1`, Swap `<=256 MiB`, ohne Modellprozess oder aktive Claude-Aktivität und mit eindeutigem neuen Outputpfad zulässig.
 - **Verifikation:** Targeted `127`, breit `336 passed, 1 skipped`, separate Integration `12`, modellfreie Q3a-Suite `26`; `ab`-/`tune`-Selfchecks erfolgreich. Der gepufferte Worker-Output-Cap bleibt der bekannte P2-Backlogpunkt. SQuAD bleibt untracked/lokal, die Lizenzfrage offen, und PR #2 ist owner-only.
 
-## Current 2026-08-31 — Q3c failure and Q3d recovery (start here)
+## Current 2026-08-31 — Q3d terminal result; Q3e is the only next path
 
-Q3c is closed as a safety-only failure; it produced no valid performance
+Q3c remains closed as a safety-only failure; it produced no valid performance
 result. Run 1, `research/raw/Q3c_run1_20260831.json` (SHA-256
 `5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`), was
 refused before a phase because load `8.294921875 > 8`. Run 2,
@@ -19,26 +19,36 @@ refused before a phase because load `8.294921875 > 8`. Run 2,
 preflight but aborted after `105` samples / `27.394551749996026 s`: swap
 `2,353,654,661 B` → `2,625,172,930 B`, delta `271,518,269 B`
 (`258.94 MiB > 128 MiB`). Cleanup was unverified because TERM and KILL both
-returned `PermissionError` and the worker group remained alive. There are no
-timings, identity, performance or promotion values. Keep both raw files; they
-are ignored local evidence and must not be deleted or pooled.
+returned `PermissionError` and the worker group remained alive. Keep both raw
+files; they are ignored local evidence and must not be deleted or pooled.
+
+Q3d's model-free gate then passed, but its one permitted Q3c invocation was
+correctly refused before `Popen`. Raw
+`research/raw/Q3d_stability_20260831.json` has SHA-256
+`4699a49b174db31580a9701ef2075f8b1964d309b0f857dd7779fb230cfccb83` and size
+`34,144` bytes; summary
+`research/raw/Q3d_summary_20260831.json` has SHA-256
+`3b43e267000ba15b9d9079d9f118e59c1cd51dbcdfecc067c20995b01a0a1c3e` and size
+`970` bytes. The gate recorded exactly `61` samples, elapsed
+`60.020192667 s`, maximum gap `1.013944625 s`, and swap delta exactly `0 B`.
+The Q3c pre-spawn baseline failed on macOS `26.6.2-arm64` because
+`/bin/ps` rejected `sid` (`rc=1`, `ps: sid: keyword not found`). No model,
+MLX import, inference child, timing, identity or performance data exists.
+The terminal summary is `Q3C_FAILED`, `promotion_allowed=false`, fallback
+`BASE/current incumbent`; the gate PASS is safety context only.
 
 The next and only permitted path is frozen in
-`research/raw/Q3d_preregistration.md`, SHA-256
-`68bdb3149f08e3d529733219cdb238b7c9e97d8e5ebddc1a3c59bfcff4aca377`, with
-companion `research/raw/Q3d_preregistration.sha256`: first a cleanup-proof fix,
-minimal stdlib-only model-free gate harness and tests, then exactly one 60-second
-stability gate with one synchronous `t0` sample plus exactly 60 scheduled
-samples (`61` total), `0 B` high-water growth, a `90 s` wall deadline, `1.0 s`
-command timeouts, `2.5 s` maximum gaps, strict JSON and exclusive output. Only
-gate PASS permits exactly one Q3c harness invocation; a preflight refusal
-consumes that invocation and no second invocation is allowed. Any safety, cleanup,
-unknown-state, identity/raw or criteria failure ends Q3d permanently and
-retains `BASE`/current Q2 incumbent. If Phase R passes safety, identity, raw
-completeness and cleanup but misses only its performance criterion, Phase N
-still runs; that miss does not skip N. The complete bound is `720 s` (`90 s`
-gate deadline + `600 s` Q3c run + `30 s` reserve). No UI, 27B model, download,
-installation, restart or automatic promotion is allowed.
+`research/raw/Q3e_preregistration.md` (SHA-256
+`71901b0d2220d7e9559bad536afaf15d04fac5ea1714f7ceade5bc37811dfd47`) with its
+companion SHA file. Q3e may
+repair only this portability boundary: remove unsupported `sid`, enrich the
+canonical process rows with public `os.getsid(pid)`, treat typed
+`ProcessLookupError` as a snapshot race, and fail closed for every other
+unknown/error state. Model-free parser/cleanup tests and a real macOS
+`start_new_session=True`/`os.getsid(pid)==pid` test must pass before exactly
+one unchanged offline Q3c invocation. Q3d is not repeated, no retry or pooling
+is allowed, and no download, installation, restart, 27B model, UI or automatic
+promotion is allowed.
 
 Der historische Satz unten, dass „only the PR remains open“, beschreibt den älteren E15/PR-Stand und ist durch diese aktuelle Q3/Q3a-Sektion superseded.
 
