@@ -10,6 +10,7 @@ add the two this fork introduces: projection fusion and a right-sized cache.
 from __future__ import annotations
 
 import time
+import threading
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
@@ -39,6 +40,14 @@ class Knobs:
 
 
 BASELINE = Knobs()
+_NO_WIRED_LIMIT = object()
+_WIRED_LIMIT_LOCK = threading.RLock()
+_WIRED_LIMIT_OWNERS: list[tuple[object, int, int]] = []
+
+
+def _register_wired_owner(token: object, applied: int, previous: int) -> None:
+    """Record a successfully applied process-global Wired-limit mutation."""
+    _WIRED_LIMIT_OWNERS.append((token, applied, previous))
 
 
 class FixedKVCache:
@@ -300,11 +309,79 @@ class Engine:
         self._compiled = None
         self._compiled_capacity = None
         self.prefix_cache: PrefixCache | None = None
+        self._previous_wired_limit: Any = _NO_WIRED_LIMIT
+        self._wired_token: object | None = None
+        self._closed = False
         if knobs.fuse_projections:
             fast.fuse_projections(model)
         if knobs.wired_fraction > 0:
             from .hw import static_facts
-            mx.set_wired_limit(int(static_facts()["memory_bytes"] * knobs.wired_fraction))
+            applied = int(static_facts()["memory_bytes"] * knobs.wired_fraction)
+            with _WIRED_LIMIT_LOCK:
+                previous = mx.set_wired_limit(applied)
+                token = object()
+                try:
+                    _register_wired_owner(token, applied, previous)
+                except BaseException as exc:
+                    # A failed registration must not leave the process-global limit
+                    # changed or a partially appended owner on the stack.
+                    _WIRED_LIMIT_OWNERS[:] = [
+                        owner for owner in _WIRED_LIMIT_OWNERS if owner[0] is not token
+                    ]
+                    try:
+                        mx.set_wired_limit(previous)
+                    except BaseException as restore_error:
+                        exc.add_note(
+                            "wired-limit rollback failed: "
+                            f"{type(restore_error).__name__}: {restore_error}"
+                        )
+                    raise
+                self._previous_wired_limit = previous
+                self._wired_token = token
+
+    def close(self) -> None:
+        """Restore process-global state changed by this engine, at most once.
+
+        Wired-limit owners must close in reverse acquisition order.  This prevents an
+        older engine from restoring a limit that a newer live engine still owns.
+        """
+        with _WIRED_LIMIT_LOCK:
+            if self._closed:
+                return
+            token = self._wired_token
+            if token is None:
+                self._closed = True
+                return
+            if not _WIRED_LIMIT_OWNERS or _WIRED_LIMIT_OWNERS[-1][0] is not token:
+                raise RuntimeError("wired-limit engines must close in LIFO order")
+            _, applied, previous = _WIRED_LIMIT_OWNERS[-1]
+            current = mx.set_wired_limit(previous)
+            _WIRED_LIMIT_OWNERS.pop()
+            self._wired_token = None
+            self._previous_wired_limit = _NO_WIRED_LIMIT
+            self._closed = True
+            if current != applied:
+                restore_error = None
+                try:
+                    mx.set_wired_limit(current)
+                except BaseException as exc:
+                    restore_error = exc
+                error = RuntimeError(
+                    "wired limit changed externally while this engine was live"
+                )
+                if restore_error is not None:
+                    error.add_note(
+                        "foreign wired-limit restore failed: "
+                        f"{type(restore_error).__name__}: {restore_error}"
+                    )
+                raise error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.close()
+        return False
 
     @staticmethod
     def needs_reload(old: Knobs, new: Knobs) -> bool:
@@ -508,6 +585,8 @@ class Engine:
 
     def generate(self, prompt_ids: list[int], max_tokens: int, eos_ids: tuple[int, ...]) -> dict[str, Any]:
         """Greedy decode. Returns tokens plus a timing breakdown."""
+        if self._closed:
+            raise RuntimeError("engine is closed")
         capacity = self._capacity(len(prompt_ids), max_tokens)
 
         started = time.perf_counter_ns()

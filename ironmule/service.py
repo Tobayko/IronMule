@@ -180,31 +180,54 @@ class Runtime:
 
     def __init__(self, engine, tokenizer, mode=None, model_id: str = "",
                  quantisation: Any = None, model_identity: ModelIdentity | None = None):
-        from .tune import _eos_ids
-        engine_identity = getattr(engine, "model_identity", None)
-        if (model_identity is not None and engine_identity is not None
-                and model_identity != engine_identity):
-            raise ModelIdentityError(
-                "explicit Runtime identity conflicts with loaded Engine identity"
-            )
-        identity = model_identity or engine_identity
-        if identity is not None and not isinstance(identity, ModelIdentity):
-            raise ModelIdentityError("Runtime model identity has the wrong type")
-        if identity is not None and model_id and model_id != identity.model_id:
-            local = Path(model_id).expanduser()
-            local_id = f"local:{local.resolve().name}" if local.is_dir() else None
-            if local_id != identity.model_id:
-                raise ModelIdentityError("Runtime model_id conflicts with exact model identity")
-        if identity is not None and quantisation is not None and quantisation != identity.quantisation:
-            raise ModelIdentityError("Runtime quantisation conflicts with exact model identity")
-        self.engine = engine
-        self.tokenizer = tokenizer
-        self.mode = mode or InteractiveMode()
-        self.model_identity = identity
-        self.model_id = identity.model_id if identity is not None else model_id
-        self.quantisation = identity.quantisation if identity is not None else quantisation
-        self.backend = MLXBackend(engine, _eos_ids(tokenizer))
-        self.telemetry = Telemetry(mode=self.mode.name)
+        try:
+            from .tune import _eos_ids
+            engine_identity = getattr(engine, "model_identity", None)
+            if (model_identity is not None and engine_identity is not None
+                    and model_identity != engine_identity):
+                raise ModelIdentityError(
+                    "explicit Runtime identity conflicts with loaded Engine identity"
+                )
+            identity = model_identity or engine_identity
+            if identity is not None and not isinstance(identity, ModelIdentity):
+                raise ModelIdentityError("Runtime model identity has the wrong type")
+            if identity is not None and model_id and model_id != identity.model_id:
+                local = Path(model_id).expanduser()
+                local_id = f"local:{local.resolve().name}" if local.is_dir() else None
+                if local_id != identity.model_id:
+                    raise ModelIdentityError("Runtime model_id conflicts with exact model identity")
+            if identity is not None and quantisation is not None and quantisation != identity.quantisation:
+                raise ModelIdentityError("Runtime quantisation conflicts with exact model identity")
+            self.engine = engine
+            self.tokenizer = tokenizer
+            self.mode = mode or InteractiveMode()
+            self.model_identity = identity
+            self.model_id = identity.model_id if identity is not None else model_id
+            self.quantisation = identity.quantisation if identity is not None else quantisation
+            self.backend = MLXBackend(engine, _eos_ids(tokenizer))
+            self.telemetry = Telemetry(mode=self.mode.name)
+        except BaseException as exc:
+            close = getattr(engine, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except BaseException as cleanup_error:
+                    exc.add_note(
+                        "Runtime engine cleanup failed: "
+                        f"{type(cleanup_error).__name__}: {cleanup_error}"
+                    )
+            raise
+
+    def close(self) -> None:
+        """Release the loaded engine and any process-global state it owns."""
+        self.engine.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, _exc_type, _exc_value, _traceback):
+        self.close()
+        return False
 
     # -- construction ---------------------------------------------------------
     @classmethod

@@ -10,7 +10,9 @@ start reuses the result.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import math
 import os
 import statistics
 import subprocess
@@ -82,6 +84,99 @@ CONFIRM_PROCESSES = 6         # the screening search is cheap and single process
 CONFIRM_REPEATS = 7           # the winner still has to survive a paired A/B
 REVALIDATE_PROCESSES = 3      # canaries are cheaper than a full confirmation
 HYSTERESIS = 0.02             # a stored winner is only dropped when it clearly lost
+CONFIRMATION_REJECTION_REASONS = frozenset({
+    "token_identity", "token_count_identity", "stop_reason_identity",
+    "determinism", "ci_not_below_one", "invalid_confirmation",
+})
+CONFIRMATION_FIELDS = frozenset({
+    "arms", "processes", "repeats", "warmup", "raw", "per_arm",
+    "token_identity", "token_count_identity", "stop_reason_identity",
+    "deterministic", "reference_tokens", "ratios",
+})
+CONFIRMATION_METRICS = ("total_ns", "prefill_ns", "decode_ns")
+CONFIRMATION_RATIO_FIELDS = frozenset({
+    "median_ratio", "ci_low", "ci_high", "pairs",
+})
+
+
+def _finite_number(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(float(value))
+    except (OverflowError, ValueError):
+        return False
+
+
+def _exact_knobs(value: Any) -> Knobs | None:
+    """Decode a complete, canonical ten-field knob mapping."""
+    if not isinstance(value, Mapping):
+        return None
+    raw = dict(value)
+    if set(raw) != set(BASELINE.as_dict()):
+        return None
+    for name in (
+        "fuse_projections", "compiled_fixed_cache", "fused_argmax",
+        "head_skip_prefill", "prefill_into_fixed",
+    ):
+        if type(raw[name]) is not bool:
+            return None
+    for name, minimum in (
+        ("readback_every", 1), ("speculate_k", 0),
+        ("speculate_ngram", 1), ("capacity_slack", 0),
+    ):
+        if (type(raw[name]) is not int or raw[name] < minimum):
+            return None
+    wired_fraction = raw["wired_fraction"]
+    if isinstance(wired_fraction, bool) or not isinstance(wired_fraction, (int, float)):
+        return None
+    try:
+        wired_fraction = float(wired_fraction)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    if not math.isfinite(wired_fraction) or not 0.0 <= wired_fraction <= 1.0:
+        return None
+    raw["wired_fraction"] = wired_fraction
+    try:
+        knobs = Knobs(**raw)
+    except (TypeError, ValueError):
+        return None
+    return knobs if knobs.as_dict() == raw else None
+
+
+def _profile_numeric_metrics_valid(profile: Mapping[str, Any]) -> bool:
+    """Reject non-finite or impossible persisted timing metadata."""
+    def finite(value: Any) -> bool:
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False
+        try:
+            return math.isfinite(float(value))
+        except (OverflowError, TypeError, ValueError):
+            return False
+
+    for name in ("baseline_ns", "tuned_ns"):
+        if name in profile and (not finite(profile[name]) or float(profile[name]) <= 0):
+            return False
+    for name in (
+        "baseline_decode_ns", "tuned_decode_ns",
+        "baseline_prefill_ns", "tuned_prefill_ns",
+    ):
+        if name in profile and (not finite(profile[name]) or float(profile[name]) < 0):
+            return False
+    for name in ("gain", "tuned_at"):
+        if name in profile and not finite(profile[name]):
+            return False
+    return True
+
+
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"non-finite JSON constant is not allowed: {value}")
+
+
+def _confirmation_evidence_sha256(value: Any) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False, allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def resolve_local_model(model_id: str, revision: str | None = None) -> ResolvedModelSource:
@@ -240,6 +335,14 @@ def _eos_ids(tokenizer) -> tuple[int, ...]:
     return tuple(sorted(ids)) or (1, 106)
 
 
+def _close_engine(engine: Any | None) -> None:
+    """Close an engine when it owns process-global execution state."""
+    if engine is not None:
+        close = getattr(engine, "close", None)
+        if close is not None:
+            close()
+
+
 def prompt_ids(tokenizer, prompt: str) -> list[int]:
     rendered = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
@@ -277,6 +380,225 @@ def confirm(model_id: str, baseline: Knobs, candidate: Knobs, prompt: str,
     return ab.run({"baseline": baseline, "candidate": candidate},
                   processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
                   max_tokens=max_tokens, model=model_id, prompt=prompt)
+
+
+def _confirmation_decision(value: Any, *, expected_baseline: Knobs,
+                           expected_candidate: Knobs) -> tuple[bool, str | None]:
+    """Validate a paired confirmation before it can influence a stored profile."""
+    from . import ab
+
+    valid, _reason = ab.validate_result(
+        value, processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
+        expected_arms={"baseline": expected_baseline, "candidate": expected_candidate},
+    )
+    if not valid:
+        return False, "invalid_confirmation"
+
+    def finite_number(item: Any) -> bool:
+        if isinstance(item, bool) or not isinstance(item, (int, float)):
+            return False
+        try:
+            return math.isfinite(float(item))
+        except (OverflowError, ValueError):
+            return False
+
+    if not isinstance(value, Mapping):
+        return False, "invalid_confirmation"
+    if set(value) != CONFIRMATION_FIELDS:
+        return False, "invalid_confirmation"
+    token_identity = value.get("token_identity")
+    deterministic = value.get("deterministic")
+    processes = value.get("processes")
+    repeats = value.get("repeats")
+    warmup = value.get("warmup")
+    if (isinstance(processes, bool) or not isinstance(processes, int)
+            or processes != CONFIRM_PROCESSES
+            or isinstance(repeats, bool) or not isinstance(repeats, int)
+            or repeats != CONFIRM_REPEATS
+            or isinstance(warmup, bool) or not isinstance(warmup, int)
+            or warmup != 2
+            or not isinstance(value.get("raw"), list)
+            or len(value["raw"]) != processes
+            or not isinstance(value.get("arms"), Mapping)
+            or not isinstance(value.get("per_arm"), Mapping)
+            or not isinstance(value.get("reference_tokens"), list)):
+        return False, "invalid_confirmation"
+    ratios = value.get("ratios")
+    if not isinstance(ratios, Mapping):
+        return False, "invalid_confirmation"
+    if set(ratios) != {"candidate/baseline"}:
+        return False, "invalid_confirmation"
+    candidate = ratios.get("candidate/baseline")
+    if not isinstance(candidate, Mapping):
+        return False, "invalid_confirmation"
+    if set(candidate) != set(CONFIRMATION_METRICS):
+        return False, "invalid_confirmation"
+    total = candidate["total_ns"]
+    if not _ratio_metrics_valid(candidate, processes, finite_number):
+        return False, "invalid_confirmation"
+    token_count_identity = value.get("token_count_identity")
+    stop_reason_identity = value.get("stop_reason_identity")
+    if (not isinstance(token_identity, bool)
+            or not isinstance(token_count_identity, bool)
+            or not isinstance(stop_reason_identity, bool)
+            or not isinstance(deterministic, bool)):
+        return False, "invalid_confirmation"
+    if not token_identity:
+        return False, "token_identity"
+    if not token_count_identity:
+        return False, "token_count_identity"
+    if not stop_reason_identity:
+        return False, "stop_reason_identity"
+    if not deterministic:
+        return False, "determinism"
+    if float(total["ci_high"]) >= 1.0:
+        return False, "ci_not_below_one"
+    return True, None
+
+
+def _ratio_metrics_valid(candidate: Mapping[str, Any], processes: int,
+                         finite_number) -> bool:
+    if set(candidate) != set(CONFIRMATION_METRICS):
+        return False
+    for metric in CONFIRMATION_METRICS:
+        ratio = candidate[metric]
+        if not isinstance(ratio, Mapping) or set(ratio) != CONFIRMATION_RATIO_FIELDS:
+            return False
+        numbers = [ratio[name] for name in ("median_ratio", "ci_low", "ci_high")]
+        pairs = ratio["pairs"]
+        if (not isinstance(pairs, list) or len(pairs) != processes
+                or any(not finite_number(item) or float(item) <= 0 for item in numbers)
+                or any(not finite_number(item) or float(item) <= 0 for item in pairs)):
+            return False
+        try:
+            ordered = (
+                float(ratio["ci_low"]) <= float(ratio["median_ratio"])
+                <= float(ratio["ci_high"])
+            )
+            centered = float(ratio["median_ratio"]) == statistics.median(pairs)
+        except (TypeError, ValueError, OverflowError):
+            return False
+        if not centered or not ordered:
+            return False
+    return True
+
+
+def _stored_confirmation_valid(value: Any, evidence: Any = None, *,
+                               expected_candidate: Knobs) -> bool:
+    """Validate the compact confirmation record serialized in a profile."""
+    if not isinstance(value, Mapping) or not isinstance(expected_candidate, Knobs):
+        return False
+    expected = {
+        "ratio", "token_identity", "token_count_identity", "stop_reason_identity",
+        "deterministic", "accepted", "rejection_reason", "evidence_sha256",
+    }
+    if set(value) != expected or not isinstance(value["accepted"], bool):
+        return False
+    accepted = value["accepted"]
+    reason = value["rejection_reason"]
+    if reason is not None and reason not in CONFIRMATION_REJECTION_REASONS:
+        return False
+    ratio = value["ratio"]
+    if not isinstance(evidence, Mapping) or not isinstance(value["evidence_sha256"], str):
+        return False
+    try:
+        evidence_hash = _confirmation_evidence_sha256(evidence)
+    except (TypeError, ValueError, OverflowError):
+        return False
+    if value["evidence_sha256"] != evidence_hash:
+        return False
+    from . import ab
+    evidence_valid, _ = ab.validate_result(
+        evidence, processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
+        expected_arms={"baseline": BASELINE, "candidate": expected_candidate},
+    )
+    evidence_decision, evidence_reason = _confirmation_decision(
+        evidence, expected_baseline=BASELINE, expected_candidate=expected_candidate
+    ) if evidence_valid else (False, "invalid_confirmation")
+    if evidence_decision != accepted or evidence_reason != reason:
+        return False
+    if evidence_valid:
+        expected_ratio = evidence["ratios"]["candidate/baseline"]
+        if (ratio != expected_ratio
+                or value["token_identity"] != evidence["token_identity"]
+                or value["token_count_identity"] != evidence["token_count_identity"]
+                or value["stop_reason_identity"] != evidence["stop_reason_identity"]
+                or value["deterministic"] != evidence["deterministic"]):
+            return False
+    if accepted:
+        total = ratio.get("total_ns") if isinstance(ratio, Mapping) else None
+        return (reason is None and value["token_identity"] is True
+                and value["token_count_identity"] is True
+                and value["stop_reason_identity"] is True
+                and value["deterministic"] is True
+                and isinstance(ratio, Mapping)
+                and _ratio_metrics_valid(ratio, CONFIRM_PROCESSES, _finite_number)
+                and isinstance(total, Mapping)
+                and total["ci_high"] < 1.0
+                and total["median_ratio"] < 1.0)
+    if reason == "invalid_confirmation":
+        return (isinstance(ratio, Mapping)
+                and (value["token_identity"] is None
+                     or isinstance(value["token_identity"], bool))
+                and (value["token_count_identity"] is None
+                     or isinstance(value["token_count_identity"], bool))
+                and (value["stop_reason_identity"] is None
+                     or isinstance(value["stop_reason_identity"], bool))
+                and (value["deterministic"] is None
+                     or isinstance(value["deterministic"], bool)))
+    if not isinstance(ratio, Mapping):
+        return False
+    if not isinstance(value["token_identity"], bool) or not isinstance(value["deterministic"], bool):
+        return False
+    if not isinstance(value["token_count_identity"], bool) or not isinstance(value["stop_reason_identity"], bool):
+        return False
+    if not _ratio_metrics_valid(ratio, CONFIRM_PROCESSES,
+                                _finite_number):
+        return False
+    total = ratio["total_ns"]
+    if reason == "token_identity":
+        return (value["token_identity"] is False
+                and value["token_count_identity"] is True
+                and value["stop_reason_identity"] is True
+                and value["deterministic"] is True)
+    if reason == "token_count_identity":
+        return (value["token_identity"] is True
+                and value["token_count_identity"] is False
+                and value["stop_reason_identity"] is True
+                and value["deterministic"] is True)
+    if reason == "stop_reason_identity":
+        return (value["token_identity"] is True
+                and value["token_count_identity"] is True
+                and value["stop_reason_identity"] is False
+                and value["deterministic"] is True)
+    if reason == "determinism":
+        return (value["token_identity"] is True
+                and value["token_count_identity"] is True
+                and value["stop_reason_identity"] is True
+                and value["deterministic"] is False)
+    return (reason == "ci_not_below_one" and value["token_identity"] is True
+            and value["deterministic"] is True and total["ci_high"] >= 1.0)
+
+
+def _legacy_confirmation_valid(value: Mapping[str, Any]) -> bool:
+    """Accept the pre-acceptance confirmation shape without widening it."""
+    if set(value) != {"ratio", "token_identity"} or value["token_identity"] is not True:
+        return False
+    ratio = value["ratio"]
+    if not isinstance(ratio, Mapping):
+        return False
+    if set(ratio) == set(CONFIRMATION_METRICS):
+        return _ratio_metrics_valid(ratio, CONFIRM_PROCESSES, _finite_number)
+    if set(ratio) != {"total_ns"}:
+        return False
+    total = ratio["total_ns"]
+    if not isinstance(total, Mapping) or set(total) != {"median_ratio", "ci_low", "ci_high"}:
+        return False
+    try:
+        values = [float(total[name]) for name in ("median_ratio", "ci_low", "ci_high")]
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return all(math.isfinite(item) and item > 0 for item in values) and values[1] <= values[0] <= values[2]
 
 
 def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
@@ -317,13 +639,14 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
         try:
             prompt_tokens = len(prompt_ids(tokenizer, prompt))
         finally:
-            del engine
+            _close_engine(engine)
+            engine = None
     drifted = stale(
         profile, model_id, prompt_tokens, max_tokens,
         model_identity=resolved.identity,
     )
     ratio = result["ratios"]["stored/baseline"]["total_ns"]
-    if not result["token_identity"]:
+    if not result["token_identity"] or not result["deterministic"]:
         verdict = "retune_required"
     elif ratio["median_ratio"] > 1.0 - HYSTERESIS:
         verdict = "retune_required"
@@ -342,134 +665,173 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
 
     hardware = probe()
     resolved = resolve_local_model(model_id)
-    engine, tokenizer = load_engine(model_id, BASELINE, resolved_source=resolved)
-    ids = prompt_ids(tokenizer, prompt)
-    eos = _eos_ids(tokenizer)
+    engine = None
+    try:
+        engine, tokenizer = load_engine(model_id, BASELINE, resolved_source=resolved)
+        ids = prompt_ids(tokenizer, prompt)
+        eos = _eos_ids(tokenizer)
 
-    base = measure(engine, ids, max_tokens, eos, repeats=repeats)
-    if not base["deterministic"]:
-        raise RuntimeError("baseline is not deterministic, cannot gate on token identity")
-    reference = base["logical_tokens"]
-    print(f"baseline {base['total_ns']/1e6:.2f} ms  "
-          f"(prefill {base['prefill_ns']/1e6:.2f}, decode {base['decode_ns']/1e6:.2f}) "
-          f"{len(reference)} tokens, capacity {base['capacity']}")
+        base = measure(engine, ids, max_tokens, eos, repeats=repeats)
+        if not base["deterministic"]:
+            raise RuntimeError("baseline is not deterministic, cannot gate on token identity")
+        reference = base["logical_tokens"]
+        print(f"baseline {base['total_ns']/1e6:.2f} ms  "
+              f"(prefill {base['prefill_ns']/1e6:.2f}, decode {base['decode_ns']/1e6:.2f}) "
+              f"{len(reference)} tokens, capacity {base['capacity']}")
 
-    best, best_result, trials = BASELINE, base, []
-    for name, values in SEARCH:
-        for value in values:
-            candidate = replace(best, **{name: value})
-            if candidate == best:
-                continue
-            reload_needed = Engine.needs_reload(best, candidate)
-            try:
-                if reload_needed:
-                    del engine
-                    engine, tokenizer = load_engine(
-                        model_id, candidate, resolved_source=resolved
-                    )
-                else:
-                    engine.knobs = candidate
-                    engine._compiled = None
-                result = measure(engine, ids, max_tokens, eos, repeats=repeats)
-            except (ValueError, RuntimeError, TypeError) as exc:
-                # FusionUnsupported is typed; cache-specific ValueError and
-                # TypeError paths must explicitly say unsupported.  Generic
-                # runtime/type/value errors remain loud so programming bugs
-                # cannot be misreported as tuning results.
-                if not _is_unsupported_candidate(exc):
-                    raise
-                trials.append({"knob": name, "value": value,
-                               "disposition": "unsupported",
-                               "verdict": "unsupported",
-                               "reason": f"{type(exc).__name__}: {exc}"})
-                print(f"  {name}={value!r:>6}  unsupported ({exc})")
-                if reload_needed:
+        best, best_result, trials = BASELINE, base, []
+        for name, values in SEARCH:
+            for value in values:
+                candidate = replace(best, **{name: value})
+                if candidate == best:
+                    continue
+                reload_needed = Engine.needs_reload(best, candidate)
+                try:
+                    if reload_needed:
+                        _close_engine(engine)
+                        engine = None
+                        engine, tokenizer = load_engine(
+                            model_id, candidate, resolved_source=resolved
+                        )
+                    else:
+                        engine.knobs = candidate
+                        engine._compiled = None
+                    result = measure(engine, ids, max_tokens, eos, repeats=repeats)
+                except (ValueError, RuntimeError, TypeError) as exc:
+                    # FusionUnsupported is typed; cache-specific ValueError and
+                    # TypeError paths must explicitly say unsupported.  Generic
+                    # runtime/type/value errors remain loud so programming bugs
+                    # cannot be misreported as tuning results.
+                    if not _is_unsupported_candidate(exc):
+                        raise
+                    trials.append({"knob": name, "value": value,
+                                   "disposition": "unsupported",
+                                   "verdict": "unsupported",
+                                   "reason": f"{type(exc).__name__}: {exc}"})
+                    print(f"  {name}={value!r:>6}  unsupported ({exc})")
+                    if reload_needed:
+                        _close_engine(engine)
+                        engine = None
+                        engine, tokenizer = load_engine(
+                            model_id, best, resolved_source=resolved
+                        )
+                    else:
+                        engine.knobs = best
+                        engine._compiled = None
+                    continue
+                ratio = result["total_ns"] / base["total_ns"]
+                identical = result["logical_tokens"] == reference
+                verdict = ("rejected: tokens differ" if not identical
+                           else "rejected: not deterministic" if not result["deterministic"]
+                           else "kept" if ratio < best_result["total_ns"] / base["total_ns"] * KEEP_IF_RATIO_BELOW
+                           else "rejected: no gain")
+                trials.append({"knob": name, "value": value, "ratio": ratio,
+                               "disposition": "accepted" if verdict == "kept" else "rejected",
+                               "verdict": verdict,
+                               "total_ns": result["total_ns"], "decode_ns": result["decode_ns"],
+                               "prefill_ns": result["prefill_ns"]})
+                print(f"  {name}={value!r:>6}  ratio {ratio:.4f}  {verdict}")
+                if verdict == "kept":
+                    best, best_result = candidate, result
+                elif Engine.needs_reload(candidate, best):
+                    _close_engine(engine)
+                    engine = None
                     engine, tokenizer = load_engine(
                         model_id, best, resolved_source=resolved
                     )
                 else:
                     engine.knobs = best
                     engine._compiled = None
-                continue
-            ratio = result["total_ns"] / base["total_ns"]
-            identical = result["logical_tokens"] == reference
-            verdict = ("rejected: tokens differ" if not identical
-                       else "rejected: not deterministic" if not result["deterministic"]
-                       else "kept" if ratio < best_result["total_ns"] / base["total_ns"] * KEEP_IF_RATIO_BELOW
-                       else "rejected: no gain")
-            trials.append({"knob": name, "value": value, "ratio": ratio,
-                           "disposition": "accepted" if verdict == "kept" else "rejected",
-                           "verdict": verdict,
-                           "total_ns": result["total_ns"], "decode_ns": result["decode_ns"],
-                           "prefill_ns": result["prefill_ns"]})
-            print(f"  {name}={value!r:>6}  ratio {ratio:.4f}  {verdict}")
-            if verdict == "kept":
-                best, best_result = candidate, result
-            elif Engine.needs_reload(candidate, best):
-                del engine
-                engine, tokenizer = load_engine(
-                    model_id, best, resolved_source=resolved
-                )
+
+        _close_engine(engine)
+        engine = None
+        confirmation = None
+        confirmation_record = None
+        confirmation_candidate_knobs = None
+        if confirm_winner and best != BASELINE:
+            print("confirming the screening winner with a paired A/B ...")
+            # Keep the screening winner bound to the evidence before a rejected
+            # confirmation resets the profile to BASELINE.
+            confirmation_candidate_knobs = best.as_dict()
+            raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens)
+            accepted, rejection_reason = _confirmation_decision(
+                raw_confirmation, expected_baseline=BASELINE, expected_candidate=best
+            )
+            confirmation = (dict(raw_confirmation)
+                            if isinstance(raw_confirmation, Mapping) else {})
+            confirmation_evidence = (dict(raw_confirmation)
+                                     if isinstance(raw_confirmation, Mapping) else {})
+            evidence_sha256 = _confirmation_evidence_sha256(confirmation_evidence)
+            confirmation["accepted"] = accepted
+            confirmation["rejection_reason"] = rejection_reason
+            ratio = (confirmation.get("ratios", {}).get("candidate/baseline", {})
+                     .get("total_ns", {}))
+            confirmation_record = {
+                "ratio": confirmation.get("ratios", {}).get("candidate/baseline", {}),
+                "token_identity": confirmation.get("token_identity"),
+                "token_count_identity": confirmation.get("token_count_identity"),
+                "stop_reason_identity": confirmation.get("stop_reason_identity"),
+                "deterministic": confirmation.get("deterministic"),
+                "accepted": accepted,
+                "rejection_reason": rejection_reason,
+                "evidence_sha256": evidence_sha256,
+            }
+            if rejection_reason == "invalid_confirmation":
+                print("  confirmation invalid -> rejected")
             else:
-                engine.knobs = best
-                engine._compiled = None
+                print(f"  confirmed ratio {ratio['median_ratio']:.4f} "
+                      f"CI [{ratio['ci_low']:.4f}; {ratio['ci_high']:.4f}] "
+                      f"tokens identical {confirmation['token_identity']} -> {'accepted' if accepted else 'rejected'}")
+            if not accepted:
+                best, best_result = BASELINE, base
 
-    del engine
-    confirmation = None
-    if confirm_winner and best != BASELINE:
-        print("confirming the screening winner with a paired A/B ...")
-        confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens)
-        ratio = confirmation["ratios"]["candidate/baseline"]["total_ns"]
-        ok = confirmation["token_identity"] and ratio["ci_high"] < 1.0
-        print(f"  confirmed ratio {ratio['median_ratio']:.4f} "
-              f"CI [{ratio['ci_low']:.4f}; {ratio['ci_high']:.4f}] "
-              f"tokens identical {confirmation['token_identity']} -> {'accepted' if ok else 'rejected'}")
-        if not ok:
-            best, best_result = BASELINE, base
-
-    # The screening found the candidate from one process per arm; the confirmation
-    # measured it across six paired processes. Report what was measured, not what was
-    # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
-    if confirmation is not None:
-        gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]
-    else:
-        gain = 1.0 - best_result["total_ns"] / base["total_ns"]
-    profile = {
-        "conditions": conditions(
-            model_id, len(ids), max_tokens, model_identity=resolved.identity
-        ),
-        "confirmation": ({"ratio": confirmation["ratios"]["candidate/baseline"],
-                          "token_identity": confirmation["token_identity"]}
-                         if confirmation else None),
-        "fingerprint": hardware["fingerprint"],
-        "model_id": resolved.identity.model_id,
-        "model_identity": resolved.identity.to_dict(),
-        "knobs": best.as_dict(),
-        "baseline_ns": base["total_ns"],
-        "tuned_ns": best_result["total_ns"],
-        "baseline_decode_ns": base["decode_ns"],
-        "tuned_decode_ns": best_result["decode_ns"],
-        "baseline_prefill_ns": base["prefill_ns"],
-        "tuned_prefill_ns": best_result["prefill_ns"],
-        "gain": gain,
-        "token_count": len(reference),
-        "tokens": reference,
-        "trials": trials,
-        "hardware": hardware,
-        "tuned_at": time.time(),
-    }
-    save_profile(profile)
-    print(f"tuned: {gain*100:.2f}% faster end to end, tokens identical, stored in {PROFILES}")
-    return profile
+        # The screening found the candidate from one process per arm; the confirmation
+        # measured it across six paired processes. Report what was measured, not what was
+        # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
+        if confirmation is not None and confirmation["accepted"]:
+            gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]
+        elif confirmation is not None:
+            gain = 0.0
+        else:
+            gain = 1.0 - best_result["total_ns"] / base["total_ns"]
+        profile = {
+            "conditions": conditions(
+                model_id, len(ids), max_tokens, model_identity=resolved.identity
+            ),
+            "confirmation": confirmation_record,
+            "confirmation_evidence": confirmation_evidence if confirmation is not None else None,
+            "confirmation_candidate_knobs": confirmation_candidate_knobs,
+            "fingerprint": hardware["fingerprint"],
+            "model_id": resolved.identity.model_id,
+            "model_identity": resolved.identity.to_dict(),
+            "knobs": best.as_dict(),
+            "baseline_ns": base["total_ns"],
+            "tuned_ns": best_result["total_ns"],
+            "baseline_decode_ns": base["decode_ns"],
+            "tuned_decode_ns": best_result["decode_ns"],
+            "baseline_prefill_ns": base["prefill_ns"],
+            "tuned_prefill_ns": best_result["prefill_ns"],
+            "gain": gain,
+            "token_count": len(reference),
+            "tokens": reference,
+            "trials": trials,
+            "hardware": hardware,
+            "tuned_at": time.time(),
+        }
+        save_profile(profile)
+        print(f"tuned: {gain*100:.2f}% faster end to end, tokens identical, stored in {PROFILES}")
+        return profile
+    finally:
+        _close_engine(engine)
 
 
 def _all_profiles() -> dict[str, Any]:
     if not PROFILES.is_file():
         return {}
     try:
-        loaded = json.loads(PROFILES.read_text())
+        loaded = json.loads(PROFILES.read_text(), parse_constant=_reject_json_constant)
         return loaded if isinstance(loaded, dict) else {}
-    except (OSError, json.JSONDecodeError):
+    except (OSError, ValueError, json.JSONDecodeError):
         return {}
 
 
@@ -490,7 +852,8 @@ def save_profile(profile: dict[str, Any]) -> None:
 
 def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = True,
                  revision: str | None = None,
-                 model_identity: ModelIdentity | None = None) -> dict[str, Any] | None:
+                 model_identity: ModelIdentity | None = None,
+                 expected_candidate: Knobs | None = None) -> dict[str, Any] | None:
     """Return a valid profile, rejecting current identity drift by default.
 
     ``require_compatible=False`` is reserved for ``revalidate()``, which needs
@@ -503,6 +866,8 @@ def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = Tr
     profile = _all_profiles().get(f"{fingerprint()}/{identity.identity_sha256}")
     if not isinstance(profile, dict) or profile.get("model_id") != identity.model_id:
         return None
+    if not _profile_numeric_metrics_valid(profile):
+        return None
     conditions_record = profile.get("conditions")
     required = PROFILE_CONDITION_FIELDS
     if (not isinstance(conditions_record, dict)
@@ -514,15 +879,36 @@ def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = Tr
             or not isinstance(profile.get("model_identity"), dict)
             or not isinstance(profile.get("knobs"), dict)):
         return None
+    stored_knobs = _exact_knobs(profile.get("knobs"))
+    if stored_knobs is None:
+        return None
+    confirmation = profile.get("confirmation")
+    if confirmation is not None:
+        if not isinstance(confirmation, dict):
+            return None
+        if "accepted" in confirmation:
+            candidate_knobs = _exact_knobs(profile.get("confirmation_candidate_knobs"))
+            if (candidate_knobs is None
+                    or (expected_candidate is not None and candidate_knobs != expected_candidate)
+                    or not _stored_confirmation_valid(
+                        confirmation, profile.get("confirmation_evidence"),
+                        expected_candidate=candidate_knobs
+                    )):
+                return None
+            if confirmation["accepted"]:
+                if stored_knobs != candidate_knobs:
+                    return None
+            elif stored_knobs != BASELINE:
+                return None
+        elif not _legacy_confirmation_valid(confirmation):
+            return None
+    elif profile.get("confirmation_candidate_knobs") is not None:
+        return None
     try:
         stored_identity = ModelIdentity.from_dict(profile["model_identity"])
     except (ModelIdentityError, TypeError, ValueError):
         return None
     if stored_identity != identity:
-        return None
-    try:
-        Knobs(**profile["knobs"])
-    except (TypeError, ValueError):
         return None
     try:
         prompt_tokens = int(conditions_record["prompt_tokens"])

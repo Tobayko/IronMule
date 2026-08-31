@@ -201,6 +201,7 @@ def test_engine_generate_stops_on_prefill_eos(speculate_k):
             return 99
 
     engine = Engine.__new__(Engine)
+    engine._closed = False
     engine.knobs = SimpleNamespace(speculate_k=speculate_k, as_dict=lambda: {})
     engine.prefix_cache = None
     engine._capacity = lambda prompt_len, max_tokens: 64

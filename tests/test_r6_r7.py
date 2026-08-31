@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import importlib
 import os
+import statistics
 import subprocess
 import sys
 import types
@@ -181,11 +182,37 @@ def test_revalidate_uses_tokenized_prompt_length_from_canary(monkeypatch):
         "raw": [{"arms": {"baseline": {"prompt_tokens": 247}}}],
         "ratios": {"stored/baseline": {"total_ns": {"median_ratio": 0.5}}},
         "token_identity": True,
+        "deterministic": True,
     })
 
     result = tune.revalidate(prompt="a materially different prompt", max_tokens=17)
     assert observed == {"prompt_tokens": 247, "max_tokens": 17}
     assert result["verdict"] == "still_valid"
+
+
+def test_revalidate_requires_token_identity_and_determinism(monkeypatch):
+    from ironmule import ab
+
+    identity = _identity()
+    profile = {"conditions": {"prompt_tokens": 2, "max_tokens": 17},
+               "knobs": BASELINE.as_dict(), "gain": 0.0}
+    monkeypatch.setattr(
+        tune, "resolve_local_model",
+        lambda _model, _revision=None: types.SimpleNamespace(
+            path=Path("/cached/model"), identity=identity
+        ),
+    )
+    monkeypatch.setattr(tune, "load_profile", lambda _model, **_kwargs: profile)
+    monkeypatch.setattr(ab, "run", lambda *_args, **_kwargs: {
+        "raw": [{"arms": {"baseline": {"prompt_tokens": 2}}}],
+        "ratios": {"stored/baseline": {"total_ns": {"median_ratio": 0.5}}},
+        "token_identity": True,
+        "deterministic": False,
+    })
+    monkeypatch.setattr(tune, "stale", lambda *_args, **_kwargs: [])
+
+    result = tune.revalidate(max_tokens=17)
+    assert result["verdict"] == "retune_required"
 
 
 def test_corrupt_or_incomplete_profile_is_not_reused(monkeypatch):
@@ -201,6 +228,12 @@ def test_corrupt_or_incomplete_profile_is_not_reused(monkeypatch):
     assert tune.load_profile(
         "model", require_compatible=False, model_identity=identity
     ) is None
+
+
+def test_all_profiles_rejects_nonfinite_json_constants(monkeypatch, tmp_path):
+    monkeypatch.setattr(tune, "PROFILES", tmp_path / "profiles.json")
+    tune.PROFILES.write_text('{"value": NaN, "other": Infinity}')
+    assert tune._all_profiles() == {}
 
 
 def test_complete_freshly_shaped_profile_is_reusable(monkeypatch):
@@ -229,9 +262,82 @@ def test_complete_freshly_shaped_profile_is_reusable(monkeypatch):
         tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": profile}
     )
     assert tune.load_profile("model", model_identity=identity) == profile
+
+    invalid_knobs = [
+        ("fuse_projections", 1), ("readback_every", 0),
+        ("speculate_k", -1), ("speculate_ngram", 0),
+        ("capacity_slack", -1), ("wired_fraction", float("nan")),
+        ("wired_fraction", 1.1),
+    ]
+    for name, value in invalid_knobs:
+        malformed = dict(profile, knobs=dict(profile["knobs"], **{name: value}))
+        monkeypatch.setattr(
+            tune, "_all_profiles", lambda malformed=malformed: {
+                f"fp/{identity.identity_sha256}": malformed
+            }
+        )
+        assert tune.load_profile("model", model_identity=identity) is None
+    nonfinite_metric = dict(profile, baseline_ns=1e999)
+    monkeypatch.setattr(
+        tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": nonfinite_metric}
+    )
+    assert tune.load_profile("model", model_identity=identity) is None
+
+    candidate = Knobs(readback_every=2)
+    evidence = _confirmation()
+    ratio = evidence["ratios"]["candidate/baseline"]
+    compact = {
+        "ratio": ratio, "token_identity": True, "token_count_identity": True,
+        "stop_reason_identity": True, "deterministic": True,
+        "accepted": True, "rejection_reason": None,
+        "evidence_sha256": tune._confirmation_evidence_sha256(evidence),
+    }
+    accepted = dict(profile, knobs=candidate.as_dict(), confirmation=compact,
+                    confirmation_candidate_knobs=candidate.as_dict(),
+                    confirmation_evidence=evidence)
+    monkeypatch.setattr(
+        tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": accepted}
+    )
+    assert tune.load_profile("model", model_identity=identity) == accepted
+    missing_binding = dict(accepted)
+    missing_binding.pop("confirmation_candidate_knobs")
+    monkeypatch.setattr(
+        tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": missing_binding}
+    )
+    assert tune.load_profile("model", model_identity=identity) is None
+    mismatched_binding = dict(accepted, confirmation_candidate_knobs=BASELINE.as_dict())
+    monkeypatch.setattr(
+        tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": mismatched_binding}
+    )
+    assert tune.load_profile("model", model_identity=identity) is None
+
+    rejected_evidence = _confirmation(token_identity=False)
+    rejected = dict(
+        accepted,
+        knobs=BASELINE.as_dict(),
+        confirmation={
+            "ratio": rejected_evidence["ratios"]["candidate/baseline"],
+            "token_identity": False, "token_count_identity": True,
+            "stop_reason_identity": True, "deterministic": True,
+            "accepted": False, "rejection_reason": "token_identity",
+            "evidence_sha256": tune._confirmation_evidence_sha256(rejected_evidence),
+        },
+        confirmation_evidence=rejected_evidence,
+    )
+    monkeypatch.setattr(
+        tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": rejected}
+    )
+    assert tune.load_profile("model", model_identity=identity) == rejected
+
     unknown = dict(profile, conditions=dict(conditions, future_field=True))
     monkeypatch.setattr(
         tune, "_all_profiles", lambda: {f"fp/{identity.identity_sha256}": unknown}
+    )
+    assert tune.load_profile("model", model_identity=identity) is None
+    malformed_confirmation = dict(profile, confirmation={"accepted": True, "ratio": {}})
+    monkeypatch.setattr(
+        tune, "_all_profiles",
+        lambda: {f"fp/{identity.identity_sha256}": malformed_confirmation},
     )
     assert tune.load_profile("model", model_identity=identity) is None
     mismatched = dict(profile, conditions=dict(conditions, model_revision="tampered"))
@@ -455,6 +561,724 @@ def test_stored_gain_comes_from_the_confirmation_not_the_screening():
     finally:
         monkey.undo()
 
-    assert "14.32% faster" in line
-    # The interval must travel with the point estimate; its lower bound is ~6%.
-    assert "5.98%" in line and "14.51%" in line
+    assert "legacy/unconfirmed profile" in line
+    assert "14.32% faster" not in line
+    assert "CI" not in line
+
+
+def test_engine_close_restores_wired_limit_once(monkeypatch):
+    from ironmule import hw, runtime
+
+    current = 123
+    calls = []
+
+    def set_limit(value):
+        nonlocal current
+        previous, current = current, value
+        calls.append((previous, value))
+        return previous
+
+    monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+
+    engine = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
+    assert calls == [(123, 500)]
+
+    engine.close()
+    assert calls == [(123, 500), (500, 123)]
+    engine.close()
+    assert calls == [(123, 500), (500, 123)], "close must be idempotent"
+
+
+def test_nested_wired_engines_require_lifo_close(monkeypatch):
+    from ironmule import hw, runtime
+
+    current = 100
+    calls = []
+
+    def set_limit(value):
+        nonlocal current
+        previous, current = current, value
+        calls.append((previous, value))
+        return previous
+
+    monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    outer = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
+    inner = runtime.Engine(object(), object(), Knobs(wired_fraction=0.8))
+    assert current == 800
+
+    with pytest.raises(RuntimeError, match="LIFO"):
+        outer.close()
+    assert current == 800 and calls == [(100, 500), (500, 800)]
+
+    inner.close()
+    outer.close()
+    assert current == 100
+    assert calls[-2:] == [(800, 500), (500, 100)]
+
+
+def test_wired_close_detects_external_mutation_after_restore(monkeypatch):
+    from ironmule import hw, runtime
+
+    current = 100
+
+    def set_limit(value):
+        nonlocal current
+        previous, current = current, value
+        return previous
+
+    monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    engine = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
+    runtime.mx.set_wired_limit(900)
+
+    with pytest.raises(RuntimeError, match="changed externally"):
+        engine.close()
+    assert current == 900, "foreign external limit must be restored"
+    engine.close()
+
+
+def test_engine_context_and_closed_generate_guard():
+    from ironmule import runtime
+
+    engine = runtime.Engine(object(), object(), BASELINE)
+    with engine as entered:
+        assert entered is engine
+    with pytest.raises(RuntimeError, match="engine is closed"):
+        engine.generate([], 1, (1,))
+
+
+def test_wired_registration_failure_restores_limit_without_owner_leak(monkeypatch):
+    from ironmule import hw, runtime
+
+    current = 100
+    calls = []
+
+    def set_limit(value):
+        nonlocal current
+        previous, current = current, value
+        calls.append((previous, value))
+        return previous
+
+    monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    before = list(runtime._WIRED_LIMIT_OWNERS)
+    monkeypatch.setattr(runtime, "_register_wired_owner",
+                        lambda *_args: (_ for _ in ()).throw(RuntimeError("register failed")))
+
+    with pytest.raises(RuntimeError, match="register failed"):
+        runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
+
+    assert current == 100
+    assert calls == [(100, 500), (500, 100)]
+    assert runtime._WIRED_LIMIT_OWNERS == before
+
+
+def test_tune_closes_each_reloaded_engine_and_on_final_exit(monkeypatch):
+    events = []
+    identity = _identity(tune.DEFAULT_MODEL)
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+            self.closed = False
+
+        @staticmethod
+        def needs_reload(old, new):
+            return (old.fuse_projections != new.fuse_projections
+                    or old.wired_fraction != new.wired_fraction)
+
+        def close(self):
+            assert not self.closed
+            self.closed = True
+            events.append("close")
+
+    def fake_load(_model, knobs, **_kwargs):
+        events.append(("load", knobs.key()))
+        return FakeEngine(knobs), object()
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    monkeypatch.setattr(tune, "resolve_local_model",
+                        lambda *_args, **_kwargs: types.SimpleNamespace(
+                            path=Path("/cached/model"), identity=identity))
+    monkeypatch.setattr(tune, "load_engine", fake_load)
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(tune, "conditions", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(tune, "save_profile", lambda _profile: None)
+    monkeypatch.setattr(tune, "SEARCH", [
+        ("wired_fraction", [0.6]), ("fuse_projections", [True]),
+    ])
+
+    def fake_measure(engine, _ids, _max_tokens, _eos, **_kwargs):
+        total = 80 if engine.knobs.fuse_projections else 90 if engine.knobs.wired_fraction else 100
+        return {"total_ns": total, "prefill_ns": total // 2, "decode_ns": total // 2,
+                "logical_tokens": [7], "deterministic": True, "capacity": 2}
+
+    monkeypatch.setattr(tune, "measure", fake_measure)
+    profile = tune.tune(repeats=1, confirm_winner=False)
+
+    assert events[0][0] == "load"
+    assert events.count("close") == 3
+    assert all(events[index] == "close" for index in (1, 3, 5))
+    assert profile["knobs"]["fuse_projections"] is True
+
+
+def test_tune_closes_engine_when_measurement_raises(monkeypatch):
+    closed = []
+    identity = _identity(tune.DEFAULT_MODEL)
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+
+        @staticmethod
+        def needs_reload(_old, _new):
+            return False
+
+        def close(self):
+            closed.append(True)
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    monkeypatch.setattr(tune, "resolve_local_model",
+                        lambda *_args, **_kwargs: types.SimpleNamespace(
+                            path=Path("/cached/model"), identity=identity))
+    monkeypatch.setattr(tune, "load_engine",
+                        lambda _model, knobs, **_kwargs: (FakeEngine(knobs), object()))
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(tune, "SEARCH", [("readback_every", [2])])
+
+    calls = 0
+
+    def failing_measure(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise RuntimeError("measurement failed")
+        return {"total_ns": 100, "prefill_ns": 50, "decode_ns": 50,
+                "logical_tokens": [7], "deterministic": True, "capacity": 2}
+
+    monkeypatch.setattr(tune, "measure", failing_measure)
+    with pytest.raises(RuntimeError, match="measurement failed"):
+        tune.tune(repeats=1, confirm_winner=False)
+    assert closed == [True]
+
+
+def test_rejected_confirmation_stores_baseline_without_gain(monkeypatch):
+    identity = _identity(tune.DEFAULT_MODEL)
+    captured = {}
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+
+        @staticmethod
+        def needs_reload(_old, _new):
+            return False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    monkeypatch.setattr(tune, "resolve_local_model",
+                        lambda *_args, **_kwargs: types.SimpleNamespace(
+                            path=Path("/cached/model"), identity=identity))
+    monkeypatch.setattr(tune, "load_engine",
+                        lambda _model, knobs, **_kwargs: (FakeEngine(knobs), object()))
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(tune, "conditions", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(tune, "save_profile", lambda profile: captured.update(profile))
+    monkeypatch.setattr(tune, "SEARCH", [("readback_every", [2])])
+    measurements = iter((100, 80))
+
+    def measure_screening(*_args, **_kwargs):
+        total = next(measurements)
+        return {"total_ns": total, "prefill_ns": total // 2, "decode_ns": total // 2,
+                "logical_tokens": [7], "deterministic": True, "capacity": 2}
+
+    monkeypatch.setattr(tune, "measure", measure_screening)
+    monkeypatch.setattr(tune, "confirm",
+                        lambda *_args, **_kwargs: _confirmation(token_identity=False))
+
+    result = tune.tune(repeats=1, confirm_winner=True)
+
+    assert result["knobs"] == BASELINE.as_dict()
+    assert result["tuned_ns"] == result["baseline_ns"]
+    assert result["gain"] == 0.0
+    assert result["confirmation"]["accepted"] is False
+    assert result["confirmation"]["rejection_reason"] == "token_identity"
+    assert result["confirmation_evidence"]
+    assert result["confirmation"]["evidence_sha256"] == tune._confirmation_evidence_sha256(
+        result["confirmation_evidence"]
+    )
+    assert result["confirmation_candidate_knobs"] == Knobs(readback_every=2).as_dict()
+    assert captured["confirmation_candidate_knobs"] == Knobs(readback_every=2).as_dict()
+    assert captured["confirmation"]["accepted"] is False
+
+
+def test_accepted_confirmation_stores_candidate_gain(monkeypatch):
+    identity = _identity(tune.DEFAULT_MODEL)
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+
+        @staticmethod
+        def needs_reload(_old, _new):
+            return False
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    monkeypatch.setattr(tune, "resolve_local_model",
+                        lambda *_args, **_kwargs: types.SimpleNamespace(
+                            path=Path("/cached/model"), identity=identity))
+    monkeypatch.setattr(tune, "load_engine",
+                        lambda _model, knobs, **_kwargs: (FakeEngine(knobs), object()))
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(tune, "conditions", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(tune, "save_profile", lambda _profile: None)
+    monkeypatch.setattr(tune, "SEARCH", [("readback_every", [2])])
+    measurements = iter((100, 80))
+
+    def measure_screening(*_args, **_kwargs):
+        total = next(measurements)
+        return {"total_ns": total, "prefill_ns": total // 2, "decode_ns": total // 2,
+                "logical_tokens": [7], "deterministic": True, "capacity": 2}
+
+    monkeypatch.setattr(tune, "measure", measure_screening)
+    monkeypatch.setattr(tune, "confirm",
+                        lambda *_args, **_kwargs: _confirmation())
+
+    result = tune.tune(repeats=1, confirm_winner=True)
+
+    assert result["knobs"]["readback_every"] == 2
+    assert result["tuned_ns"] == 80
+    assert result["gain"] == pytest.approx(0.2)
+    assert result["confirmation"]["accepted"] is True
+    assert result["confirmation_evidence"]
+    assert result["confirmation"]["evidence_sha256"] == tune._confirmation_evidence_sha256(
+        result["confirmation_evidence"]
+    )
+    assert result["confirmation_candidate_knobs"] == result["knobs"]
+
+
+def test_confirmation_decision_binds_both_full_arm_knob_mappings():
+    evidence = _confirmation()
+    candidate = Knobs(readback_every=2)
+    assert tune._confirmation_decision(
+        evidence, expected_baseline=BASELINE, expected_candidate=candidate
+    ) == (True, None)
+
+    empty = dict(evidence, arms={})
+    assert tune._confirmation_decision(
+        empty, expected_baseline=BASELINE, expected_candidate=candidate
+    ) == (False, "invalid_confirmation")
+
+    swapped = dict(evidence, arms={
+        "baseline": candidate.as_dict(), "candidate": BASELINE.as_dict(),
+    })
+    assert tune._confirmation_decision(
+        swapped, expected_baseline=BASELINE, expected_candidate=candidate
+    ) == (False, "invalid_confirmation")
+
+    assert tune._confirmation_decision(
+        evidence, expected_baseline=BASELINE,
+        expected_candidate=Knobs(fused_argmax=True),
+    ) == (False, "invalid_confirmation")
+
+
+def _confirmation(*, token_identity=True, token_count_identity=True,
+                  stop_reason_identity=True, deterministic=True, median=0.8,
+                  ci_low=0.7, ci_high=0.9, pairs=None, extra=False):
+    import importlib
+
+    ab = importlib.import_module("ironmule.ab")
+
+    def arm(name):
+        logical = [[7] for _ in range(7)]
+        physical = [[7] for _ in range(7)]
+        counts = [{"logical": 1, "physical": 1} for _ in range(7)]
+        stops = ["length" for _ in range(7)]
+        if name == "candidate" and not token_identity:
+            logical = [[8] for _ in range(7)]
+        if name == "candidate" and not token_count_identity:
+            physical = [[7, 8] for _ in range(7)]
+            counts = [{"logical": 1, "physical": 2} for _ in range(7)]
+        if name == "candidate" and not stop_reason_identity:
+            stops = ["eos" for _ in range(7)]
+        if name == "candidate" and not deterministic:
+            logical[-1] = [8]
+        total = [1.0 for _ in range(7)]
+        if name == "candidate":
+            total = [0.8 for _ in range(7)]
+        return {
+            "total_ns": total, "prefill_ns": [1.0 for _ in range(7)],
+            "decode_ns": [1.0 for _ in range(7)],
+            "logical_tokens": logical[0],
+            "logical_tokens_per_repeat": logical,
+            "physical_tokens_per_repeat": physical,
+            "token_counts": counts, "stop_reasons": stops,
+            "capacities": [64 for _ in range(7)],
+            "deterministic": deterministic if name == "candidate" else True,
+            "decode_steps": len(physical[0]) - 1,
+            "prompt_tokens": 1, "mlx_peak_bytes": 10,
+        }
+
+    raw = []
+    for index in range(6):
+        raw.append({
+            "pid": index + 1,
+            "arms": {"baseline": arm("baseline"), "candidate": arm("candidate")},
+            "order": ["baseline", "candidate"] if index % 2 == 0 else ["candidate", "baseline"],
+            "mlx_peak_bytes": 10,
+        })
+    per_arm = {
+        name: {
+            metric: ab.summarise([
+                statistics.median(child["arms"][name][metric]) for child in raw
+            ])
+            for metric in ("total_ns", "prefill_ns", "decode_ns")
+        }
+        for name in ("baseline", "candidate")
+    }
+    ratios = {
+        metric: ab.paired_ratio(
+            [statistics.median(child["arms"]["candidate"][metric]) for child in raw],
+            [statistics.median(child["arms"]["baseline"][metric]) for child in raw],
+        )
+        for metric in ("total_ns", "prefill_ns", "decode_ns")
+    }
+    if any(value != default for value, default in ((median, 0.8), (ci_low, 0.7), (ci_high, 0.9))) or pairs is not None:
+        total = ratios["total_ns"]
+        total["median_ratio"] = median
+        total["ci_low"] = ci_low
+        total["ci_high"] = ci_high
+        if pairs is not None:
+            total["pairs"] = pairs
+    if extra:
+        ratios["total_ns"]["unexpected"] = 1
+    return {
+        "token_identity": token_identity,
+        "token_count_identity": token_count_identity,
+        "stop_reason_identity": stop_reason_identity,
+        "deterministic": deterministic,
+        "processes": 6, "repeats": 7, "warmup": 2,
+        "raw": raw, "arms": {
+            "baseline": BASELINE.as_dict(),
+            "candidate": Knobs(readback_every=2).as_dict(),
+        }, "per_arm": per_arm,
+        "reference_tokens": [7], "ratios": {"candidate/baseline": ratios},
+    }
+
+
+def test_archived_q2_confirmation_full_ratio_shape_remains_legacy_valid():
+    stored = {
+        "ratio": _confirmation()["ratios"]["candidate/baseline"],
+        "token_identity": True,
+    }
+    assert tune._legacy_confirmation_valid(stored)
+
+
+def test_stored_accepted_confirmation_requires_ci_below_one_and_median_below_one():
+    import copy
+
+    evidence = _confirmation()
+    ratio = evidence["ratios"]["candidate/baseline"]
+    stored = {
+        "ratio": ratio, "token_identity": True,
+        "token_count_identity": True, "stop_reason_identity": True,
+        "deterministic": True,
+        "accepted": True, "rejection_reason": None,
+        "evidence_sha256": tune._confirmation_evidence_sha256(evidence),
+    }
+    expected_candidate = Knobs(readback_every=2)
+    assert tune._stored_confirmation_valid(
+        stored, evidence, expected_candidate=expected_candidate
+    )
+    assert not tune._stored_confirmation_valid(
+        stored, {"value": float("inf")}, expected_candidate=expected_candidate
+    )
+
+    boundary = copy.deepcopy(stored)
+    boundary["ratio"]["total_ns"]["ci_high"] = 1.0
+    assert not tune._stored_confirmation_valid(
+        boundary, evidence, expected_candidate=expected_candidate
+    )
+
+    median = copy.deepcopy(stored)
+    median["ratio"]["total_ns"]["median_ratio"] = 1.0
+    median["ratio"]["total_ns"]["ci_high"] = 1.1
+    assert not tune._stored_confirmation_valid(
+        median, evidence, expected_candidate=expected_candidate
+    )
+
+
+@pytest.mark.parametrize(
+    "confirmation,reason",
+    [
+        ({}, "invalid_confirmation"),
+        (_confirmation(token_identity=False), "token_identity"),
+        (_confirmation(ci_high=1.0), "invalid_confirmation"),
+        (_confirmation(median=float("nan")), "invalid_confirmation"),
+        (_confirmation(median=0.0), "invalid_confirmation"),
+        (_confirmation(pairs=[]), "invalid_confirmation"),
+        (_confirmation(pairs=[0.8, 0.0]), "invalid_confirmation"),
+        (_confirmation(median=0.6, ci_low=0.7), "invalid_confirmation"),
+        (_confirmation(extra=True), "invalid_confirmation"),
+        (_confirmation(token_count_identity=False), "token_count_identity"),
+        (_confirmation(stop_reason_identity=False), "stop_reason_identity"),
+        (_confirmation(deterministic=False), "determinism"),
+    ],
+)
+def test_confirmation_decision_rejects_invalid_or_boundary_evidence(confirmation, reason):
+    assert tune._confirmation_decision(
+        confirmation, expected_baseline=BASELINE,
+        expected_candidate=Knobs(readback_every=2),
+    ) == (False, reason)
+
+
+def test_status_suppresses_rejected_confirmation_gain(monkeypatch):
+    import ironmule
+    from ironmule import hw
+
+    monkeypatch.setattr(hw, "static_facts", lambda: {
+        "chip": "Apple M1 Max", "memory_bytes": 32 * 1024**3, "gpu_cores": 32,
+    })
+    monkeypatch.setattr(ironmule, "load_profile", lambda *_args, **_kwargs: {
+        "gain": 0.4, "baseline_ns": 100, "tuned_ns": 60,
+        "confirmation": {
+            "accepted": False, "rejection_reason": "token_identity",
+            "ratio": {"total_ns": {"median_ratio": 0.6, "ci_low": 0.5, "ci_high": 0.7}},
+        },
+    })
+
+    line = ironmule.status()
+    assert "BASELINE retained" in line
+    assert "confirmation rejected (token_identity)" in line
+    assert "40.00% faster" not in line
+    assert "CI" not in line
+
+
+def test_status_does_not_claim_gain_for_screening_only_profile(monkeypatch):
+    import ironmule
+    from ironmule import hw
+
+    monkeypatch.setattr(hw, "static_facts", lambda: {
+        "chip": "Apple M1 Max", "memory_bytes": 32 * 1024**3, "gpu_cores": 32,
+    })
+    monkeypatch.setattr(ironmule, "load_profile", lambda *_args, **_kwargs: {
+        "gain": 0.4, "baseline_ns": 100, "tuned_ns": 60, "confirmation": None,
+    })
+
+    line = ironmule.status()
+    assert "screening-only" in line
+    assert "no confirmed speedup" in line
+    assert "40.00% faster" not in line
+
+
+def test_status_accepted_confirmation_uses_paired_gain_only(monkeypatch):
+    import ironmule
+    from ironmule import hw
+
+    monkeypatch.setattr(hw, "static_facts", lambda: {
+        "chip": "Apple M1 Max", "memory_bytes": 32 * 1024**3, "gpu_cores": 32,
+    })
+    evidence = _confirmation()
+    ratio = evidence["ratios"]["candidate/baseline"]
+    monkeypatch.setattr(ironmule, "load_profile", lambda *_args, **_kwargs: {
+        "gain": 0.4, "baseline_ns": 100, "tuned_ns": 60,
+        "confirmation": {
+            "accepted": True, "rejection_reason": None,
+            "token_identity": True, "token_count_identity": True,
+            "stop_reason_identity": True, "deterministic": True, "ratio": ratio,
+            "evidence_sha256": tune._confirmation_evidence_sha256(evidence),
+        },
+        "confirmation_candidate_knobs": Knobs(readback_every=2).as_dict(),
+        "confirmation_evidence": evidence,
+    })
+
+    line = ironmule.status()
+    assert "20.00% faster in paired confirmation" in line
+    assert "100.0 -> 60.0 ms" not in line
+    assert "CI" in line
+
+
+def test_status_rejects_malformed_accepted_confirmation(monkeypatch):
+    import ironmule
+    from ironmule import hw
+
+    monkeypatch.setattr(hw, "static_facts", lambda: {
+        "chip": "Apple M1 Max", "memory_bytes": 32 * 1024**3, "gpu_cores": 32,
+    })
+    monkeypatch.setattr(ironmule, "load_profile", lambda *_args, **_kwargs: {
+        "gain": 0.4, "baseline_ns": 100, "tuned_ns": 60,
+        "confirmation": {"accepted": True, "ratio": {}},
+    })
+
+    line = ironmule.status()
+    assert "BASELINE retained; confirmation invalid" in line
+    assert "40.00% faster" not in line
+
+
+def test_runtime_close_and_context_forward_to_engine(monkeypatch):
+    from ironmule.service import Runtime
+
+    class FakeEngine:
+        def __init__(self):
+            self.closes = 0
+
+        def close(self):
+            self.closes += 1
+
+    engine = FakeEngine()
+    runtime = Runtime.__new__(Runtime)
+    runtime.engine = engine
+    assert runtime.__enter__() is runtime
+    runtime.close()
+    assert engine.closes == 1
+    assert runtime.__exit__(None, None, None) is False
+    assert engine.closes == 2
+
+
+def test_runtime_init_closes_engine_on_identity_and_backend_failures(monkeypatch):
+    from ironmule import service
+    from ironmule.model_identity import ModelIdentityError
+
+    class FakeEngine:
+        def __init__(self, loaded_identity):
+            self.model_identity = loaded_identity
+            self.closes = 0
+
+        def close(self):
+            self.closes += 1
+
+    tokenizer = types.SimpleNamespace(eos_token_ids=(1,), eos_token_id=None)
+    loaded = _identity("org/model", "loaded")
+    conflict = FakeEngine(loaded)
+    with pytest.raises(ModelIdentityError, match="Engine identity"):
+        service.Runtime(conflict, tokenizer, model_identity=_identity("org/model", "other"))
+    assert conflict.closes == 1
+
+    backend_failure = FakeEngine(loaded)
+    monkeypatch.setattr(service, "MLXBackend",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("backend failed")))
+    with pytest.raises(RuntimeError, match="backend failed"):
+        service.Runtime(backend_failure, tokenizer)
+    assert backend_failure.closes == 1
+
+
+def test_runtime_init_preserves_cleanup_failure_as_exception_note(monkeypatch):
+    from ironmule import service
+
+    class BadEngine:
+        model_identity = None
+
+        def close(self):
+            raise RuntimeError("close failed")
+
+    monkeypatch.setattr(service, "MLXBackend",
+                        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("backend failed")))
+    tokenizer = types.SimpleNamespace(eos_token_ids=(1,), eos_token_id=None)
+    with pytest.raises(ValueError, match="backend failed") as error:
+        service.Runtime(BadEngine(), tokenizer)
+    assert any("cleanup failed" in note for note in error.value.__notes__)
+
+
+def test_ab_child_closes_each_arm_in_order_and_on_exception(monkeypatch):
+    import ironmule.ab as ab
+    import mlx.core as mx
+
+    events = []
+    monkeypatch.setattr(mx, "reset_peak_memory", lambda: events.append("reset"))
+    monkeypatch.setattr(mx, "get_peak_memory", lambda: 10)
+
+    class FakeEngine:
+        def __init__(self, name):
+            self.name = name
+
+        def generate(self, _ids, _max_tokens, _eos):
+            events.append(("generate", self.name))
+            if self.name == "bad":
+                raise RuntimeError("generation failed")
+            return {
+                "total_ns": 1, "prefill_ns": 1, "decode_ns": 0,
+                "logical_tokens": [7], "physical_tokens": [7], "capacity": 64,
+            }
+
+        def close(self):
+            events.append(("close", self.name))
+
+    tune_module = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(
+        tune_module, "load_engine",
+        lambda _model, knobs, **_kwargs: (
+            FakeEngine("bad" if knobs.readback_every == 2 else "good"), object()
+        ),
+    )
+    monkeypatch.setattr(tune_module, "prompt_ids", lambda _tok, _prompt: [1])
+    monkeypatch.setattr(tune_module, "_eos_ids", lambda _tok: (99,))
+
+    spec = {
+        "order": ["good", "bad"],
+        "arms": {
+            "good": BASELINE.as_dict(),
+            "bad": Knobs(readback_every=2).as_dict(),
+        },
+        "warmup": 1,
+        "repeats": 1,
+        "max_tokens": 2,
+    }
+    with pytest.raises(RuntimeError, match="generation failed"):
+        ab._child(spec)
+
+    assert events[:5] == [
+        "reset", ("generate", "good"), ("generate", "good"),
+        ("close", "good"), "reset",
+    ]
+    assert events[-1] == ("close", "bad")
+
+
+def test_ab_child_preserves_generation_error_when_close_also_fails(monkeypatch):
+    import ironmule.ab as ab
+    import mlx.core as mx
+
+    monkeypatch.setattr(mx, "reset_peak_memory", lambda: None)
+    monkeypatch.setattr(mx, "get_peak_memory", lambda: 10)
+
+    class BadEngine:
+        def generate(self, _ids, _max_tokens, _eos):
+            raise ValueError("generation failed")
+
+        def close(self):
+            raise RuntimeError("close failed")
+
+    tune_module = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(tune_module, "load_engine", lambda *_args, **_kwargs: (BadEngine(), object()))
+    monkeypatch.setattr(tune_module, "prompt_ids", lambda _tok, _prompt: [1])
+    monkeypatch.setattr(tune_module, "_eos_ids", lambda _tok: (99,))
+
+    spec = {
+        "order": ["bad"], "arms": {"bad": BASELINE.as_dict()},
+        "warmup": 1, "repeats": 1, "max_tokens": 2,
+    }
+    with pytest.raises(ValueError, match="generation failed") as error:
+        ab._child(spec)
+    assert any("cleanup failed" in note for note in error.value.__notes__)

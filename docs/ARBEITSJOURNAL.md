@@ -1,0 +1,42 @@
+# Arbeitsjournal
+
+## 2026-08-31 — Q3a vorregistrierter Pfadinteraktions-Pilot
+
+- **Entscheidung:** Q3a vergleicht den finalen Q2-Incumbent (`compiled_fixed_cache=True`, `head_skip_prefill=True`, `readback_every=2`) mit demselben Arm plus `fused_argmax=True`; es gibt keine Promotion oder Aktivierung.
+- **Umsetzung:** `docs/BACKLOG.md`, `research/raw/Q3a_preregistration.md`, der SHA-256-Begleiter, der stdlib-only Dry-Run-/Worker-Harness und die Unit-Tests wurden ergänzt. Der Worker verlangt nun eine einmalige Parent-Pipe/Nonce-Capability und die exakt gepinnte lokale 4B-Identity, bevor IronMule/MLX importiert werden.
+- **Messung:** Keine Hardware-/MLX-Ausführung. Der Dry-Run bindet 6 Kinder, 7 Wiederholungen, 2 Warmups, 35-Sekunden-Kindtimeouts, 240-Sekunden-Workerbudget und 300-Sekunden-Gesamtdeadline. Loadavg-, Prozess-, AC-, Thermal-, Swap- und Git-Gates sind vorab und vor jedem Kind vorgesehen.
+- **Verifikation:** Q3a-Unit-Tests, Python-Kompilierung, Dry-Run-No-Write, Hash- und `git diff --check` werden nach der Review-Härtung erneut ausgeführt.
+- **Offene Risiken:** RSS bleibt eine konservative Child-High-Water-Mark statt einer per Arm gemessenen Größe; GPU-Auslastung wird nicht behauptet, Prozessinventar und Loadavg sind nur ein Proxy. Die 35-Sekunden-Kindgrenze ist ein Pilotlimit, kein Performanceversprechen.
+
+## 2026-08-31 — Q3a-Safety-Nachhärtung im uncommitteten Worktree
+
+- **Änderung:** Der Q3a-Worker startet die einzige neue Prozessgruppe; `ab.run`-Kinder erben sie. Direkte Child-Timeouts werden bereinigt, und bereits abgeschlossene Child-Records werden über `ABRunError` zurückgegeben. Ausgabe und JSON-Konstanten sind begrenzt/strict.
+- **Änderung:** Q3a bindet vor dem Worker-Import das vollständige Python-Ausführungssurface (`ironmule/*.py` plus Q3a) und den exakt gepinnten 4B-Manifest-Hash; Prozess-, Thermal-, Load-, Swap-, AC- und Git-Kommandos bleiben absolute, fail-closed Gates.
+- **Änderung:** Resultatschema validiert exakte Arme, Referenz-Tokens, deterministische Per-Repeat-Felder und eindeutige Progress-Marker; unerwartete Ausführungsfehler werden als `FAILED` mit `BASE`-Fallback persistiert.
+- **Verifikation:** `py_compile`, Q3a-Dry-Run/No-Write, Preregistration-SHA, `git diff --check` und injizierte Preflight-/Schema-/Marker-Checks bestanden. `pytest` war in den vorhandenen Python-3.12/3.14-Umgebungen nicht installiert; keine Installation und keine Hardware-/MLX-Ausführung vorgenommen.
+- **Nachprüfung:** Bei Timeout wird auch nach beendetem Gruppenführer nochmals `SIGKILL` an die Prozessgruppe versucht, damit Nachkommen nicht still weiterlaufen; Git-Statuszeilen und fehlende System-/Identity-Evidence verweigern jetzt strikt.
+
+## 2026-08-31 — Q3a-P1/P2-Abschlusskorrektur
+
+- **Änderung:** Die Worker-Prozessgruppe bleibt die einzige Gruppe; `ab.run`-Kinder erhalten keine eigene Session und werden direkt mit `terminate → wait → kill → wait` bereinigt. Der äußere Q3a-Timeout beendet die Worker-Gruppe nur bis zum erfolgreichen `wait`.
+- **Änderung:** Befehle verwenden höchstens 1 s, der gemeinsame monotone Pilot reserviert 10 s für Postflight, und Postflight prüft erneut Loadavg sowie Prozessinventar. `ps` validiert PID/RSS/%CPU strikt und blockiert aktive native Ollama/llama.cpp/Claude- sowie weitere bekannte Modellaktivität.
+- **Änderung:** Thermal ist nur mit beiden separaten nominalen `pmset`-Zeilen gültig; Resultate benötigen sechs exakt an Raw gebundene Progress-Marker, exakte Preflight-Identity und erlauben negative Swap-Änderungen innerhalb des Delta-Limits. Fehler-Resultate bewahren begrenzte Partial-Children plus Marker.
+- **Verifikation:** Preregistration wurde inhaltlich aktualisiert und SHA neu berechnet; Hardware-/MLX-Ausführung bleibt ausgeschlossen.
+
+## 2026-08-31 — Q3a Safety Review: Prozess-/Deadline-/Gate-Fixes
+
+- **Entscheidung:** Der Worker ist die einzige neue Prozessgruppe; direkte A/B-Kinder erben die Worker-PGID. Direkte Timeout-Bereinigung eskaliert nur bei Bedarf (`terminate → wait → kill → wait`), der äußere Worker-Kill beendet nach erfolgreichem Wait sofort.
+- **Änderung:** OS-Kommandos sind auf 1 s begrenzt und deadline-gebunden; 10 s bleiben für Postflight reserviert. Drei Loadavg-Samples liegen 1 s auseinander (Sleeper injizierbar), und Postflight wiederholt Load-/Prozess-Gates.
+- **Änderung:** `ps` prüft strikt PID/RSS/%CPU und blockiert aktive native Ollama/llama.cpp/Claude-Prozesse unabhängig von Python; Thermal akzeptiert nur beide separaten nominalen Warnzeilen. Erfolg verlangt sechs 1:1 an Raw gebundene Marker und vollständige Preflight-Identity. Swap-Deltas dürfen negativ sein, solange sie unter 256 MiB bleiben.
+- **Änderung:** Unvollständiges Child-JSON wird vor Aggregation als indexierter `ABRunError` abgelehnt. Normale Worker-Fehler bewahren begrenzte Partial-Children und Marker; der noch gepufferte Streaming-Cap ist als P2-Backlog dokumentiert.
+- **Verifikation:** `py_compile`, Dry-Run, Gate-/Parser-/Deadline-/Dirty-Gate-Smokes, Prereg-SHA und `git diff --check` bestanden. `pytest`/`uv run --offline pytest` waren nicht ausführbar (`pytest` fehlt; uv-Cache nicht zugreifbar); keine Installation, kein MLX und keine Hardware-Ausführung.
+- **Letzte P1-Korrektur:** Outer-Timeout prüft die gesamte PGID per `killpg(pgid, 0)` und erzwingt SIGKILL nur bei verbliebener Gruppe; Thermal akzeptiert nur die beiden exakten No-Warning-Zeilen plus sichere CPU-/Nullwerte; native `llama-server`/`llama-cli`/`mlx_lm`/ähnliche Prozesse blockieren unabhängig von CPU/RSS, während inaktives Claude dem Load-Gate überlassen bleibt.
+- **Robustness/Data-Consistency:** `_finite` und Schema-Validation lehnen riesige JSON-Integer ohne Overflow ab. `per_arm`-Summaries, Child-Medians, Paare, Median-Verhältnis und deterministische Bootstrap-CIs werden vollständig aus Raw-Daten rekonstruiert; gefälschte Timing-/Ratio-/Summary-Werte failen geschlossen. Worker-`communicate()`-Timeout und -OSError nutzen denselben bounded Gruppen-Cleanup mit Reap.
+- **Flag-Consistency:** `token_identity`, `token_count_identity`, `stop_reason_identity` und `deterministic` werden aus sämtlichen Raw-Armen und Per-Repeat-Feldern rekonstruiert und exakt gegen die gemeldeten Top-Level-Flags geprüft; forged candidate token/count/stop/physical data failen vor Interpretation.
+
+## 2026-08-31 — Q3a-Abschluss-Reconciliation und Readiness
+
+- **Verifikation:** Targeted Suite `127 passed`; breite Suite `336 passed, 1 skipped`; separate MLX-Testmodell-Integration `12 passed`; Gesamtstand `348 passed, 1 skipped`. `ab`-Self-Check und `tune`-Self-Check beendeten sich mit Exit 0; der vorhandene `runpy`-Warnhinweis beim Tune-Self-Check bleibt rein diagnostisch. `py_compile`, `git diff --check`, Dry-Run und Preregistration-SHA `eb9cefd97d37af938689e0bcca66d8418628ed76097157da28f940e2a5ecf2ec` bestanden.
+- **Abgrenzung:** Es wurde kein Gemma-/Real-Performance-Benchmark ausgeführt und kein 27B-Modell verwendet. Die MLX-Integrationseinheitstests liefen separat und sind nicht als Performance-Evidence zu interpretieren.
+- **Readiness:** AC und Thermal waren nominal; der freie Systemspeicher lag bei 50 %. Der Swap-Stand betrug 1101.62 MiB und überschritt damit das 256-MiB-Gate; auch der Load war während der Beobachtung nicht sauber. Der Q3a-Modelstart bleibt daher korrekt blockiert und wurde nicht ausgeführt.
+- **Reviewstatus:** Die finalen Reviews zeigen keine offenen P0/P1-Findings. Das bekannte P2-Risiko des gepufferten Worker-Output-Caps bleibt als Backlog-Eintrag offen. Vorherige append-only Einträge sowie Preregistration und SHA wurden nicht verändert.
