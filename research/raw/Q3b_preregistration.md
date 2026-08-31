@@ -57,6 +57,11 @@ bounded `/usr/bin/codesign -dv --verbose=4` metadata checks for identifier
 CLI/server/backend processes, outside-bundle paths, untrusted bundles, and
 malformed inventories are hard blockers. The allowed desktop process still
 contributes to loadavg; its CPU value is not discarded from the load gate.
+The two codesign calls use a dedicated 5.0-second timeout because the observed
+deep verification took 1.487 s and metadata inspection 0.030 s on this host;
+all other OS commands retain the 1.0-second bound. This timeout exception is
+limited to the two codesign calls and does not relax any trust, output-size, or
+nonzero/exception fail-closed check.
 The two snapshots are not atomic: a process created after the args snapshot
 may appear only in `comm` and is ignored there, while repeated pre-child and
 post-stage gates are the detection boundary for later relevant processes. This

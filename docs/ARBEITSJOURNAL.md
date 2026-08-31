@@ -213,3 +213,26 @@
 - **Messgrenze:** Kein Modell wurde gestartet, keine Hardware-/MLX-Leistung
   gemessen und keine Performance-, Optimierungs- oder RL-Aussage abgeleitet.
   Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 3: Trust-Gate durch Codesign-Timeout verweigert
+
+- **Ergebnis:** `research/raw/Q3b_canary3_20260831.json` (Output-SHA-256
+  `eb4e87a5fd0fe1eba76fc23d123e7252e54219a0d46eacf5a96437f2a1f5e448`)
+  endete mit `FAILED`, `BASE`, `promotion_allowed=false`; kein Modellkind und
+  keine Stage wurden gestartet.
+- **Gates/Messgrenze:** Alle übrigen Preflight-Gates waren grün (AC,
+  Low-Power-off, Thermal nominal, exakte lokale 4B-Identity, Git-Bindung,
+  Preregistration, installierter Speicher, Startspeicher, Swap und Load). Rot
+  war ausschließlich `no_competing_model_process`: die signierte Claude-
+  Desktop-Ausnahme blieb wegen des 1,0-s-Standardtimeouts im Codesign-
+  Vertrauenshelfer falsch-negativ. Diagnostisch dauerte `codesign --verify
+  --deep --strict` 1,487 s, `codesign -dv --verbose=4` 0,030 s.
+- **Korrektur/Preregistration:** Der Vertrauenshelfer verwendet nun nur für die
+  beiden Codesign-Aufrufe `CLAUDE_CODESIGN_TIMEOUT_SECONDS=5.0`; alle anderen
+  OS-Kommandos behalten 1,0 s. Timeout, Exception, Nonzero-Exit, malformed oder
+  übergroße Ausgabe bleiben fail-closed. Die Q3b-Preregistration wurde vor der
+  nächsten Messung ergänzt und neu gehasht.
+- **Verifikation:** Q3b-Tests, `py_compile`, `git diff --check` und Dry-Run-
+  No-Write sind nach der Änderung erneut auszuführen. Keine Hardware-/MLX-
+  Ausführung, kein Download, kein Modellstart und kein Commit; Q3a blieb
+  unverändert.

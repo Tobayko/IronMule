@@ -339,7 +339,18 @@ passes absolute `/usr/bin/codesign --verify --deep --strict` plus bounded
 team `Q6L2SF6YDW`, and first authority `Developer ID Application: Anthropic PBC
 (Q6L2SF6YDW)`. ClaudeX, generic CLI/server/backend paths, outside-bundle paths,
 untrusted bundles, and malformed inventories remain hard blockers; the allowed
-desktop process still contributes to loadavg.
+desktop process still contributes to loadavg. The two codesign calls have a
+dedicated 5.0 s timeout (diagnostic observations: 1.487 s for deep verify and
+0.030 s for metadata); every other OS command remains bounded at 1.0 s.
+
+**Observed canary 3 (2026-08-31).** The real run is retained as
+`research/raw/Q3b_canary3_20260831.json` (SHA-256
+`eb4e87a5fd0fe1eba76fc23d123e7252e54219a0d46eacf5a96437f2a1f5e448`) and
+returned `FAILED` with `BASE`; all preflight gates were green except
+`no_competing_model_process`, which was a false negative from the 1.0 s
+codesign timeout. No model child or stage started. The 5.0 s dedicated bound
+is preregistered before the next measurement; timeout, exception, nonzero,
+malformed, and oversized trust-helper results remain hard failures.
 
 The args snapshot is authoritative for relevance. A relevant Claude args row
 must have the same PID in `comm`; a missing row is tolerated only when a

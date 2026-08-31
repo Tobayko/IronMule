@@ -63,12 +63,15 @@ def test_claude_bundle_trust_fails_closed_on_verify_or_metadata_failure(monkeypa
         "Authority=Developer ID Certification Authority",
     ])
     calls = []
-    def runner(command, **_kwargs):
+    kwargs_by_call = []
+    def runner(command, **kwargs):
         calls.append(command)
+        kwargs_by_call.append(kwargs)
         return Completed(stderr="ok" if "--verify" in command else metadata)
     assert q3b._trusted_claude_bundle(runner=runner)
     assert calls[0] == [q3b.CLAUDE_CODESIGN, "--verify", "--deep", "--strict", q3b.CLAUDE_DESKTOP_BUNDLE]
     assert calls[1] == [q3b.CLAUDE_CODESIGN, "-dv", "--verbose=4", q3b.CLAUDE_DESKTOP_BUNDLE]
+    assert [call["timeout"] for call in kwargs_by_call] == [q3b.CLAUDE_CODESIGN_TIMEOUT_SECONDS] * 2
 
     monkeypatch.setattr(q3b.subprocess, "run", lambda *_args, **_kwargs: Completed(returncode=1))
     assert not q3b._trusted_claude_bundle()
@@ -78,6 +81,18 @@ def test_claude_bundle_trust_fails_closed_on_verify_or_metadata_failure(monkeypa
         calls.append(command)
         return Completed(stderr="ok" if "--verify" in command else bad_metadata)
     assert not q3b._trusted_claude_bundle(runner=bad_runner)
+
+    class TimeoutRunner:
+        def __call__(self, *_args, **_kwargs):
+            raise q3b.subprocess.TimeoutExpired(cmd=q3b.CLAUDE_CODESIGN, timeout=5.0)
+
+    assert not q3b._trusted_claude_bundle(runner=TimeoutRunner())
+
+    class ErrorRunner:
+        def __call__(self, *_args, **_kwargs):
+            raise OSError("codesign unavailable")
+
+    assert not q3b._trusted_claude_bundle(runner=ErrorRunner())
 
 
 def test_untrusted_and_generic_claude_processes_are_blocked(monkeypatch):
