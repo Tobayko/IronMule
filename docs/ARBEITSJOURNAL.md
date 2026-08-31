@@ -257,3 +257,24 @@
   neuer SHA-256 `3563d3f9d47748a89ba9a91bc99e217d7da719918e51a68bbda54a9bddc6e615`.
 - **Messgrenze:** Kein Modellstart, kein Hardware-/MLX-Test, kein Download und
   kein Commit; Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 5: echter `Popen`-Kompatibilitätsfehler
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary5_20260831.json` (SHA-256
+  `10b1f30034856972d351ee959115c624ac9a5e6ceb4f6a5ce154b51ac7dd88fd`) und
+  endete mit `FAILED`, `BASE`, ohne Modellmetriken.
+- **Gates/Messgrenze:** Alle Preflight-Gates waren grün. Der Startspeicher lag
+  bei `62%`, der Loadavg-Maximalwert bei `1.87890625` (`1.8789`), und der
+  Swap-Sampler maß über 27 Samples eine Delta von `0 B`. Der Baseline-Worker
+  scheiterte vor dem ersten Modellkind mit
+  `TypeError: Popen.__init__() got an unexpected keyword argument
+  'capture_output'`; der Gruppen-Cleanup war erfolgreich (`group_gone=true`).
+  Es wurden keine Modellmetriken und keine Hardware-/Performanceaussage
+  erzeugt.
+- **Ursache/Lösung:** `subprocess.Popen` akzeptiert kein `capture_output`; der
+  A/B-Launcher verwendet nun explizit `stdout=subprocess.PIPE` und
+  `stderr=subprocess.PIPE`, bei unverändertem `text`, `cwd`, `env` und ohne
+  `start_new_session`. Ein strikter Regressionstest bindet die tatsächlich
+  verwendeten Keywords gegen die Runtime-Signatur von `Popen` und weist
+  unbekannte Keywords zurück. Q3a blieb unverändert.
