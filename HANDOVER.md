@@ -8,6 +8,38 @@
 - **Replay und Fortsetzung:** Offline-Replay ist nur für `BASE` freigegeben. Die Datenbasis reicht nicht für eine adaptive/RL-Aussage; RL ist nicht anwendbar. Q3a wurde wegen der Gates nicht ausgeführt. Fortsetzung ist nur bei AC, Low-Power-off, nominalem Thermal, Load `<=4` und Spread `<=1`, Swap `<=256 MiB`, ohne Modellprozess oder aktive Claude-Aktivität und mit eindeutigem neuen Outputpfad zulässig.
 - **Verifikation:** Targeted `127`, breit `336 passed, 1 skipped`, separate Integration `12`, modellfreie Q3a-Suite `26`; `ab`-/`tune`-Selfchecks erfolgreich. Der gepufferte Worker-Output-Cap bleibt der bekannte P2-Backlogpunkt. SQuAD bleibt untracked/lokal, die Lizenzfrage offen, und PR #2 ist owner-only.
 
+## Current 2026-08-31 — Q3c failure and Q3d recovery (start here)
+
+Q3c is closed as a safety-only failure; it produced no valid performance
+result. Run 1, `research/raw/Q3c_run1_20260831.json` (SHA-256
+`5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`), was
+refused before a phase because load `8.294921875 > 8`. Run 2,
+`research/raw/Q3c_run2_20260831.json` (SHA-256
+`d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`), passed
+preflight but aborted after `105` samples / `27.394551749996026 s`: swap
+`2,353,654,661 B` → `2,625,172,930 B`, delta `271,518,269 B`
+(`258.94 MiB > 128 MiB`). Cleanup was unverified because TERM and KILL both
+returned `PermissionError` and the worker group remained alive. There are no
+timings, identity, performance or promotion values. Keep both raw files; they
+are ignored local evidence and must not be deleted or pooled.
+
+The next and only permitted path is frozen in
+`research/raw/Q3d_preregistration.md`, SHA-256
+`68bdb3149f08e3d529733219cdb238b7c9e97d8e5ebddc1a3c59bfcff4aca377`, with
+companion `research/raw/Q3d_preregistration.sha256`: first a cleanup-proof fix,
+minimal stdlib-only model-free gate harness and tests, then exactly one 60-second
+stability gate with one synchronous `t0` sample plus exactly 60 scheduled
+samples (`61` total), `0 B` high-water growth, a `90 s` wall deadline, `1.0 s`
+command timeouts, `2.5 s` maximum gaps, strict JSON and exclusive output. Only
+gate PASS permits exactly one Q3c harness invocation; a preflight refusal
+consumes that invocation and no second invocation is allowed. Any safety, cleanup,
+unknown-state, identity/raw or criteria failure ends Q3d permanently and
+retains `BASE`/current Q2 incumbent. If Phase R passes safety, identity, raw
+completeness and cleanup but misses only its performance criterion, Phase N
+still runs; that miss does not skip N. The complete bound is `720 s` (`90 s`
+gate deadline + `600 s` Q3c run + `30 s` reserve). No UI, 27B model, download,
+installation, restart or automatic promotion is allowed.
+
 Der historische Satz unten, dass „only the PR remains open“, beschreibt den älteren E15/PR-Stand und ist durch diese aktuelle Q3/Q3a-Sektion superseded.
 
 Verification completed on 2026-08-30. Everything below is state, not advice:
@@ -300,7 +332,7 @@ licence violation, not a convenience. Fetch it with the command in
 was **absent from this machine entirely**, so E14–E16 could not run until it was fetched.
 `research/data/README.md` documents the command; the SHA-256 matched.
 
-## Current handover — Q3b audit and Q3c preregistration (2026-08-31)
+## Historical handover — Q3b audit and initial Q3c preregistration (2026-08-31)
 
 Q3b Canary 7 is audited and complete as safety evidence. The retained raw file
 `research/raw/Q3b_canary7_20260831.json` has SHA-256
@@ -313,7 +345,7 @@ determinism values are recorded in `research/LEDGER.md`; the same section
 records Total/Prefill/Decode medians and output/decode-step rates. Those Q3b
 timings are descriptive only and must not be multiplied with Q2.
 
-Q3c is preregistered before implementation or hardware execution:
+At this historical point Q3c was preregistered before implementation or hardware execution:
 `research/raw/Q3c_preregistration.md`, SHA-256
 `411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`, with the
 companion `research/raw/Q3c_preregistration.sha256`. It specifies exact local
@@ -324,5 +356,6 @@ Q3b safety policy, `600 s` study / `270 s` phase / `240 s` worker /
 `35 s` child bounds, exact identity rule, Total/Prefill/Decode and token-rate
 metrics with 95% CIs, Q2 target `0.8568` / `[0.8549; 0.9402]`, reproduction
 and preservation bars, BASE/current-incumbent fallback, no auto-promotion,
-and timestamped local UI history. No Q3c implementation or measurement has
-started.
+and timestamped local UI history. The initial snapshot used the then-current
+pre-UI hash; the final frozen Q3c preregistration and subsequent safety failures
+are documented in the current handover section above.
