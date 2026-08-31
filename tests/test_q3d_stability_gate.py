@@ -24,9 +24,9 @@ q3b = _load("test_q3d_q3b", "research/q3b_residual_swap_canary.py")
 q3d = _load("test_q3d_gate", "research/q3d_stability_gate.py")
 
 
-ROOT_ROW = "1 0 1 1 0 S 00:00:01 /sbin/launchd\n"
-WORKER_ROW = "42 1 42 42 501 S 00:00:02 /usr/bin/python worker\n"
-CHILD_ROW = "43 42 42 42 501 S 00:00:03 /usr/bin/python child\n"
+ROOT_ROW = "1 0 1 0 S 00:00:01 /sbin/launchd\n"
+WORKER_ROW = "42 1 42 501 S 00:00:02 /usr/bin/python worker\n"
+CHILD_ROW = "43 42 42 501 S 00:00:03 /usr/bin/python child\n"
 
 
 class _Process:
@@ -58,8 +58,11 @@ def _sequence(*outputs):
     return run
 
 
-def _capture_identity(monkeypatch, post_outputs, *, reaped=True, kill=None):
+def _capture_identity(monkeypatch, post_outputs, *, reaped=True, kill=None, pre_signal=None):
     process = _Process(reaped=reaped)
+    monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
+    monkeypatch.setattr(q3b.os, "getsid", lambda pid: 42 if pid in (42, 43) else (_ for _ in ()).throw(ProcessLookupError(pid)))
+    monkeypatch.setattr(q3b.os, "getpgid", lambda pid: 42 if pid in (42, 43) else (_ for _ in ()).throw(ProcessLookupError(pid)))
     monkeypatch.setattr(q3b.os, "killpg", kill or (lambda *_args: None))
     baseline_runner = _sequence(ROOT_ROW + WORKER_ROW + CHILD_ROW, ROOT_ROW + WORKER_ROW + CHILD_ROW)
     baseline = q3b._capture_process_baseline(baseline_runner)
@@ -67,7 +70,8 @@ def _capture_identity(monkeypatch, post_outputs, *, reaped=True, kill=None):
                                              run=_sequence(ROOT_ROW + WORKER_ROW + CHILD_ROW),
                                              baseline=baseline)
     evidence = q3b._cleanup_worker_evidence(
-        process, identity, run=_sequence(ROOT_ROW + WORKER_ROW + CHILD_ROW, *post_outputs))
+        process, identity, run=_sequence(pre_signal or (ROOT_ROW + WORKER_ROW + CHILD_ROW),
+                                          *post_outputs))
     return identity, evidence
 
 
@@ -78,6 +82,7 @@ def test_cleanup_identity_captures_parent_and_descendant_pids(monkeypatch):
     assert identity["known_descendant_pids"] == [42, 43]
     assert identity["known_process_starts"] == {"42": "00:00:02", "43": "00:00:03"}
     assert identity["known_process_sids"] == {"42": 42, "43": 42}
+    assert identity["known_process_pgids"] == {"42": 42, "43": 42}
     assert identity["spawn_baseline"]["valid"] is True
     assert evidence["worker_reaped"] is True
     assert evidence["verification"]["group_gone"] is True
@@ -98,15 +103,27 @@ def test_cleanup_permission_error_is_retained_but_resolved_when_group_empty(monk
 
 
 def test_cleanup_rejects_escaped_descendant_and_foreign_uid_member(monkeypatch):
-    escaped = "1 0 1 1 0 S 00:00:01 /sbin/launchd\n43 1 42 42 999 S 00:00:03 /usr/bin/child\n"
-    _, evidence = _capture_identity(monkeypatch, [escaped, escaped, escaped])
+    escaped = "1 0 1 0 S 00:00:01 /sbin/launchd\n43 1 42 999 S 00:00:03 /usr/bin/child\n"
+    group_signals = []
+    _, evidence = _capture_identity(monkeypatch, [escaped, escaped, escaped], pre_signal=escaped,
+                                    kill=lambda *args: group_signals.append(args))
     assert evidence["verification"]["group_gone"] is False
     assert any("descendant" in item or "group" in item for item in evidence["unresolved_errors"])
     assert evidence["verification"]["members"][0][0]["uid"] == 999
+    assert group_signals == []
+
+
+def test_cleanup_timeout_with_unsafe_foreign_group_never_sends_group_kill(monkeypatch):
+    escaped = "1 0 1 0 S 00:00:01 /sbin/launchd\n43 1 42 999 S 00:00:03 /usr/bin/child\n"
+    group_signals = []
+    _, evidence = _capture_identity(monkeypatch, [escaped, escaped, escaped], reaped=False, pre_signal=escaped,
+                                    kill=lambda *args: group_signals.append(args))
+    assert group_signals == []
+    assert evidence["verification"]["group_gone"] is False
 
 
 def test_cleanup_rejects_zombie_and_unreaped_leader(monkeypatch):
-    zombie = "1 0 1 1 0 S 00:00:01 /sbin/launchd\n42 1 42 42 501 Z 00:00:02 /usr/bin/worker\n"
+    zombie = "1 0 1 0 S 00:00:01 /sbin/launchd\n42 1 42 501 Z 00:00:02 /usr/bin/worker\n"
     _, evidence = _capture_identity(monkeypatch, [zombie, zombie, zombie], reaped=True)
     assert evidence["verification"]["group_gone"] is False
     assert "zombie worker or descendant remains" in evidence["unresolved_errors"]
@@ -117,8 +134,10 @@ def test_cleanup_rejects_zombie_and_unreaped_leader(monkeypatch):
 
 @pytest.mark.parametrize("output, needle", [
     ("1 0 1 1 0 S", "row malformed"),
-    ("1 0 1 1 0 S 00:00:01 /sbin/launchd\n42 77 42 42 501 S 00:00:02 /worker\n", "parent link missing"),
-    ("1 2 1 1 0 S 00:00:01 /one\n2 1 1 1 0 S 00:00:02 /two\n", "ancestry cycle"),
+    (f"{q3b.MAX_PROCESS_ID + 1} 0 1 0 S 00:00:01 /one\n", "identity malformed"),
+    (f"1 0 {q3b.MAX_PROCESS_ID + 1} 0 S 00:00:01 /one\n", "identity malformed"),
+    ("1 0 1 0 S 00:00:01 /sbin/launchd\n42 77 42 501 S 00:00:02 /worker\n", "parent link missing"),
+    ("1 2 1 0 S 00:00:01 /one\n2 1 1 0 S 00:00:02 /two\n", "ancestry cycle"),
 ])
 def test_cleanup_ps_parser_fails_closed_for_unknown_tree(output, needle):
     parsed = q3b._parse_cleanup_ps_snapshot(output)
@@ -127,13 +146,13 @@ def test_cleanup_ps_parser_fails_closed_for_unknown_tree(output, needle):
 
 
 def test_cleanup_race_with_first_snapshot_member_is_not_called_gone(monkeypatch):
-    escaped = "1 0 1 1 0 S 00:00:01 /sbin/launchd\n43 42 42 42 501 S 00:00:03 /usr/bin/child\n"
+    escaped = "1 0 1 0 S 00:00:01 /sbin/launchd\n43 42 42 501 S 00:00:03 /usr/bin/child\n"
     _, evidence = _capture_identity(monkeypatch, [escaped, ROOT_ROW])
     assert evidence["verification"]["group_gone"] is False
 
 
 def test_cleanup_escalates_term_to_kill_when_reaped_leader_has_member(monkeypatch):
-    member = ROOT_ROW + "43 1 42 42 501 S 00:00:03 /usr/bin/child\n"
+    member = ROOT_ROW + "43 1 42 501 S 00:00:03 /usr/bin/child\n"
     signals = []
     def killpg(pid, sig):
         signals.append((pid, sig))
@@ -144,28 +163,30 @@ def test_cleanup_escalates_term_to_kill_when_reaped_leader_has_member(monkeypatc
 
 
 def test_cleanup_kills_known_reparented_descendant_and_rejects_start_reuse(monkeypatch):
-    escaped = ROOT_ROW + "43 1 999 42 501 S 00:00:03 /usr/bin/child\n"
+    escaped = ROOT_ROW + "43 1 999 501 S 00:00:03 /usr/bin/child\n"
     killed = []
     monkeypatch.setattr(q3b.os, "kill", lambda pid, sig: killed.append((pid, sig)))
     _, evidence = _capture_identity(monkeypatch, [escaped, ROOT_ROW, ROOT_ROW])
-    assert killed == [(43, signal.SIGKILL)]
-    assert evidence["verification"]["group_gone"] is True
-    reused = ROOT_ROW + "43 1 999 42 501 S 99:99:99 /usr/bin/child\n"
+    # A reparented PID whose process-group identity changed cannot be proven
+    # to be the original child; fail closed instead of killing it.
+    assert killed == []
+    assert evidence["verification"]["group_gone"] is False
+    reused = ROOT_ROW + "43 1 999 501 S 99:99:99 /usr/bin/child\n"
     killed.clear()
     _, evidence = _capture_identity(monkeypatch, [reused, ROOT_ROW])
     assert killed == []
     assert evidence["verification"]["group_gone"] is False
-    assert "known PID start identity changed or was reused" in evidence["unresolved_errors"]
+    assert "cleanup verification snapshot unknown or malformed" in evidence["unresolved_errors"]
 
 
 def test_cleanup_rejects_reused_pid_with_changed_sid_or_group(monkeypatch):
-    reused = ROOT_ROW + "43 1 999 999 501 S 00:00:03 /usr/bin/child\n"
+    reused = ROOT_ROW + "43 1 999 501 S 00:00:03 /usr/bin/child\n"
     killed = []
     monkeypatch.setattr(q3b.os, "kill", lambda pid, sig: killed.append((pid, sig)))
     _, evidence = _capture_identity(monkeypatch, [reused, reused, reused])
     assert killed == []
     assert evidence["verification"]["group_gone"] is False
-    assert "new same-UID process appeared after worker spawn baseline" in evidence["unresolved_errors"]
+    assert "cleanup verification snapshot unknown or malformed" in evidence["unresolved_errors"]
 
 
 def test_cleanup_stat_unknown_fails_closed():
@@ -173,15 +194,67 @@ def test_cleanup_stat_unknown_fails_closed():
     assert parsed["valid"] is False
 
 
+def test_cleanup_probe_uses_portable_canonical_ps_and_enriches_same_uid(monkeypatch):
+    assert "sid=" not in ",".join(q3b.CLEANUP_PS_COMMAND)
+    full = ROOT_ROW + WORKER_ROW + CHILD_ROW
+    monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
+    monkeypatch.setattr(q3b.os, "getsid", lambda pid: 42 if pid in (42, 43) else 1)
+    monkeypatch.setattr(q3b.os, "getpgid", lambda pid: 42 if pid in (42, 43) else 1)
+    snapshot = q3b._cleanup_ps_snapshot(_sequence(full))
+    assert snapshot["command_ok"] is True and snapshot["parse_ok"] is True
+    assert snapshot["gone_pids"] == []
+    assert snapshot["records"][0].keys() == {"pid", "ppid", "pgid", "uid", "stat", "start", "args"}
+    assert snapshot["records"][1]["sid"] == 42
+    assert snapshot["records"][2]["sid"] == 42
+    assert all(item["status"] == "verified" for item in snapshot["enrichment"] if item["pid"] in (42, 43))
+
+
+def test_cleanup_probe_records_typed_process_lookup_race(monkeypatch):
+    full = ROOT_ROW + WORKER_ROW + CHILD_ROW
+    monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
+    monkeypatch.setattr(q3b.os, "getsid", lambda pid: (_ for _ in ()).throw(ProcessLookupError(pid)) if pid == 43 else 42)
+    monkeypatch.setattr(q3b.os, "getpgid", lambda pid: 42)
+    snapshot = q3b._cleanup_ps_snapshot(_sequence(full))
+    assert snapshot["parse_ok"] is True
+    assert snapshot["gone_pids"] == [43]
+    assert [row["pid"] for row in snapshot["records"]] == [1, 42]
+    assert {item["pid"] for item in snapshot["enrichment"] if item["status"] == "gone"} == {43}
+
+
+@pytest.mark.parametrize("failure", [PermissionError("denied"), OSError("probe"), ValueError("bad")])
+def test_cleanup_probe_fails_closed_for_non_race_or_malformed_identity(monkeypatch, failure):
+    full = ROOT_ROW + WORKER_ROW
+    monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
+    def fail(_pid):
+        raise failure
+    monkeypatch.setattr(q3b.os, "getsid", fail)
+    monkeypatch.setattr(q3b.os, "getpgid", lambda _pid: 42)
+    snapshot = q3b._cleanup_ps_snapshot(_sequence(full))
+    assert snapshot["parse_ok"] is False
+    assert snapshot["error"]
+
+
+@pytest.mark.parametrize("sid,pgid", [(0, 42), (42, 43)])
+def test_cleanup_probe_rejects_nonpositive_or_mismatched_session_group(monkeypatch, sid, pgid):
+    monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
+    monkeypatch.setattr(q3b.os, "getsid", lambda _pid: sid)
+    monkeypatch.setattr(q3b.os, "getpgid", lambda _pid: pgid)
+    snapshot = q3b._cleanup_ps_snapshot(_sequence(ROOT_ROW + WORKER_ROW))
+    assert snapshot["parse_ok"] is False
+    assert "identity mismatch" in snapshot["error"]
+
+
 def test_worker_identity_rejects_root_and_foreign_uid(monkeypatch):
     process = _Process()
     full = ROOT_ROW + WORKER_ROW + CHILD_ROW
+    monkeypatch.setattr(q3b.os, "getsid", lambda pid: 42 if pid in (42, 43) else (_ for _ in ()).throw(ProcessLookupError(pid)))
+    monkeypatch.setattr(q3b.os, "getpgid", lambda pid: 42 if pid in (42, 43) else (_ for _ in ()).throw(ProcessLookupError(pid)))
     baseline = q3b._capture_process_baseline(_sequence(full))
     monkeypatch.setattr(q3b.os, "getuid", lambda: 0)
     with pytest.raises(q3b.CanaryRefused, match="root execution"):
         q3b._capture_worker_identity(process, run=_sequence(full), baseline=baseline)
     monkeypatch.setattr(q3b.os, "getuid", lambda: 501)
-    foreign = ROOT_ROW + "42 1 42 42 999 S 00:00:02 /usr/bin/python worker\n"
+    foreign = ROOT_ROW + "42 1 42 999 S 00:00:02 /usr/bin/python worker\n"
     foreign_baseline = q3b._capture_process_baseline(_sequence(foreign))
     with pytest.raises(q3b.CanaryRefused, match="UID"):
         q3b._capture_worker_identity(process, run=_sequence(foreign), baseline=foreign_baseline)
@@ -189,13 +262,38 @@ def test_worker_identity_rejects_root_and_foreign_uid(monkeypatch):
 
 def test_cleanup_unknown_first_snapshot_still_attempts_safe_known_orphan_kill(monkeypatch):
     malformed = "not-a-ps-row\n"
-    orphan = ROOT_ROW + "43 1 999 42 501 S 00:00:03 /usr/bin/child\n"
+    orphan = ROOT_ROW + "43 1 999 501 S 00:00:03 /usr/bin/child\n"
     killed = []
     monkeypatch.setattr(q3b.os, "kill", lambda pid, sig: killed.append((pid, sig)))
     _, evidence = _capture_identity(monkeypatch, [malformed, orphan, ROOT_ROW, ROOT_ROW])
-    assert killed == [(43, signal.SIGKILL)]
+    assert killed == []
     assert evidence["verification"]["group_gone"] is False
     assert evidence["unresolved_errors"]
+
+
+@pytest.mark.integration
+def test_real_macos_process_identity_and_cleanup_reap():
+    if os.name != "posix":
+        pytest.skip("start_new_session and getsid are POSIX-only")
+    baseline = q3b._capture_process_baseline()
+    assert baseline["valid"] is True
+    process = subprocess.Popen(["/bin/sleep", "30"], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, text=True, start_new_session=True)
+    identity = None
+    try:
+        identity = q3b._capture_worker_identity(process, baseline=baseline)
+        assert os.getsid(process.pid) == process.pid
+        assert os.getpgid(process.pid) == process.pid
+        assert identity["worker_pid"] == process.pid
+        assert identity["pgid"] == process.pid and identity["sid"] == process.pid
+    finally:
+        if identity is not None:
+            evidence = q3b._cleanup_worker_evidence(process, identity)
+            assert evidence["verification"]["group_gone"] is True, evidence
+            assert evidence["unresolved_errors"] == []
+        elif process.poll() is None:
+            process.kill()
+            process.wait(timeout=3)
 
 
 def _fake_gate(*, values=None, fail_at=None):
@@ -220,7 +318,7 @@ def _fake_gate(*, values=None, fail_at=None):
             "swap_used_bytes": 100, "memory_free_percent": 50}
     pre = {"passed": True, "checks": {key: True for key in q3d._preflight_check_names()}, "environment": post,
            "model_cache_identity": {"model_id": q3d.MODEL_ID, "model_revision": q3d.EXPECTED_REVISION,
-                                     "model_manifest_sha256": "a" * 64},
+                                     "model_manifest_sha256": q3d.EXPECTED_MODEL_MANIFEST_SHA256},
            "git": {"clean": True, "commit": "b" * 40}, "git_commit": "b" * 40,
            "untracked": {"passed": True}, "loadavg": {"samples": [1.0, 1.0, 1.0], "max": 1.0, "spread": 0.0, "passed": True},
            "runtime_code_sha256": "c" * 64, "preregistration_matches": True,
@@ -284,11 +382,47 @@ def _main_preflight():
         "power_source": "AC", "low_power_mode": False, "thermal_state": "nominal",
         "memory_free_percent": 50, "swap_used_bytes": 100},
         "model_cache_identity": {"model_id": q3d.MODEL_ID, "model_revision": q3d.EXPECTED_REVISION,
-                                  "model_manifest_sha256": "a" * 64},
+                                  "model_manifest_sha256": q3d.EXPECTED_MODEL_MANIFEST_SHA256},
         "git": {"clean": True, "commit": "b" * 40}, "git_commit": "b" * 40,
         "untracked": {"passed": True}, "loadavg": {"samples": [1.0, 1.0, 1.0],
         "max": 1.0, "spread": 0.0, "passed": True}, "runtime_code_sha256": "c" * 64,
         "preregistration_matches": True, "installed_memory_bytes": 1000}
+
+
+def test_q3d_preflight_rejects_formally_valid_but_wrong_model_manifest():
+    pre = _main_preflight()
+    assert q3d._preflight_is_complete(pre) is True
+    pre["model_cache_identity"]["model_manifest_sha256"] = "f" * 64
+    assert q3d._preflight_is_complete(pre) is False
+
+
+def test_q3d_strict_binding_rejects_formally_valid_but_wrong_manifest(monkeypatch):
+    class FakeQ3c:
+        EXPERIMENT_ID = "Q3c-performance-replication"
+        PHASES = ("R", "N")
+        _sha256 = staticmethod(lambda _path: "a" * 64)
+        PREREGISTRATION = Path("q3c-preregistration.md")
+        _preregistration_matches = staticmethod(lambda: True)
+        _strict_equal = staticmethod(lambda _actual, _expected: True)
+        runtime_code_sha256 = staticmethod(lambda _root: "b" * 64)
+
+    raw = {"schema": "ironmule.q3c_result.v1", "experiment": FakeQ3c.EXPERIMENT_ID,
+           "fallback": "BASE/current incumbent", "promotion_allowed": False,
+           "status": "COMPLETE_PASS", "preregistration_sha256": "a" * 64,
+           "plan": {"frozen": True},
+           "preflight": {"passed": True, "git": {"commit": "b" * 40, "clean": True},
+                         "identity": {"model_id": q3d.MODEL_ID,
+                                      "model_revision": q3d.EXPECTED_REVISION,
+                                      "model_manifest_sha256": "f" * 64},
+                         "runtime_code_sha256": "b" * 64}}
+    monkeypatch.setattr(q3d, "_expected_q3c_plan", lambda *_args: raw["plan"])
+    valid, reason, _ = q3d._strict_q3c_result(
+        raw, root=ROOT, expected_commit="b" * 40,
+        expected_identity={"model_id": q3d.MODEL_ID,
+                           "model_revision": q3d.EXPECTED_REVISION,
+                           "model_manifest_sha256": "f" * 64}, q3c=FakeQ3c)
+    assert valid is False
+    assert reason == "expected model identity is not the pinned Gemma snapshot"
 
 
 def test_main_never_invokes_q3c_after_preflight_or_gate_failure(monkeypatch, tmp_path):
@@ -328,7 +462,7 @@ def test_q3c_invocation_is_one_exact_bounded_subprocess_call(tmp_path, monkeypat
     result = q3d._invoke_q3c_once(ROOT, q3c_output, expected_commit="b" * 40,
                                   expected_identity={"model_id": q3d.MODEL_ID,
                                                      "model_revision": q3d.EXPECTED_REVISION,
-                                                     "model_manifest_sha256": "a" * 64}, runner=runner)
+                                                     "model_manifest_sha256": q3d.EXPECTED_MODEL_MANIFEST_SHA256}, runner=runner)
     assert result["status"] == "FAILED"
     assert "schema" in result["error"]
     assert len(calls) == 1
@@ -380,12 +514,13 @@ def test_q3c_communicate_exception_routes_through_cleanup_v2(monkeypatch, tmp_pa
                     "sid": process.pid, "known_descendant_pids": [process.pid],
                     "known_process_starts": {str(process.pid): "00:00:01"},
                     "known_process_sids": {str(process.pid): process.pid},
+                    "known_process_pgids": {str(process.pid): process.pid},
                     "spawn_baseline": baseline or {"valid": True, "digest": "d" * 64, "identities": []}}
 
         @staticmethod
         def _cleanup_ps_snapshot(_run):
             return {"monotonic": 1.0, "command_ok": True, "parse_ok": True,
-                    "records": [{"pid": 1, "ppid": 0, "pgid": 1, "sid": 1, "uid": 0,
+                    "records": [{"pid": 1, "ppid": 0, "pgid": 1, "uid": 0,
                                  "stat": "S", "start": "00:00:01", "args": "root"}], "error": None}
 
         @staticmethod
@@ -405,14 +540,15 @@ def test_q3c_communicate_exception_routes_through_cleanup_v2(monkeypatch, tmp_pa
 
 
 def test_nested_q3c_worker_inventory_is_terminated_by_verified_group(monkeypatch):
-    root_row = {"pid": 1, "ppid": 0, "pgid": 1, "sid": 1, "uid": 0, "stat": "S",
+    root_row = {"pid": 1, "ppid": 0, "pgid": 1, "uid": 0, "stat": "S",
                 "start": "00:00:01", "args": "/sbin/launchd"}
     nested_row = {"pid": 50, "ppid": 1, "pgid": 50, "sid": 50, "uid": 501, "stat": "S",
                   "start": "00:00:02", "args": "python q3c_performance_replication.py --phase-worker"}
     first = q3b._parse_cleanup_ps_snapshot(
-        "1 0 1 1 0 S 00:00:01 /sbin/launchd\n"
-        "50 1 50 50 501 S 00:00:02 python q3c_performance_replication.py --phase-worker\n")
+        "1 0 1 0 S 00:00:01 /sbin/launchd\n"
+        "50 1 50 501 S 00:00:02 python q3c_performance_replication.py --phase-worker\n")
     assert first["valid"] is True
+    first["records"][1]["sid"] = 50
     first_record = {"monotonic": 1.0, "command_ok": True, "parse_ok": True,
                     "records": first["records"], "error": None}
     second_record = {"monotonic": 2.0, "command_ok": True, "parse_ok": True,
@@ -448,7 +584,7 @@ def test_nested_q3c_worker_missing_sid_or_args_is_unknown():
 def test_nested_preexisting_q3c_lookalike_is_not_killed(monkeypatch):
     row = {"pid": 50, "ppid": 1, "pgid": 50, "sid": 50, "uid": 501, "stat": "S",
            "start": "00:00:02", "args": "python q3c_performance_replication.py --phase-worker"}
-    root = {"pid": 1, "ppid": 0, "pgid": 1, "sid": 1, "uid": 0, "stat": "S",
+    root = {"pid": 1, "ppid": 0, "pgid": 1, "uid": 0, "stat": "S",
             "start": "00:00:01", "args": "root"}
     values = iter([{"monotonic": 1.0, "command_ok": True, "parse_ok": True,
                     "records": [root, row], "error": None},

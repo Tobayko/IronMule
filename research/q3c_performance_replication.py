@@ -30,6 +30,7 @@ from typing import Any, Callable, Mapping
 EXPERIMENT_ID = "Q3c-performance-replication"
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
 EXPECTED_REVISION = "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+EXPECTED_MODEL_MANIFEST_SHA256 = "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
 PHASES = ("R", "N")
 PROCESSES = 6
 REPEATS = 7
@@ -285,7 +286,7 @@ def preflight(*, root: Path | None = None, deadline: float | None = None) -> dic
     git = q3b._git_binding(root, bounded)
     untracked = _untracked_runtime_inventory(root, bounded, q3b)
     checks = {
-        "model_identity_exact": isinstance(identity, dict) and identity.get("model_id") == MODEL_ID and identity.get("model_revision") == EXPECTED_REVISION and bool(re.fullmatch(r"[0-9a-f]{64}", str(identity.get("model_manifest_sha256", "")))),
+        "model_identity_exact": isinstance(identity, dict) and identity.get("model_id") == MODEL_ID and identity.get("model_revision") == EXPECTED_REVISION and identity.get("model_manifest_sha256") == EXPECTED_MODEL_MANIFEST_SHA256,
         "ac_power": env.get("power_source") == "AC", "low_power_off": env.get("low_power_mode") is False,
         "thermal_nominal": env.get("thermal_state") == "nominal",
         "no_competing_model_process": q3b.competing_model_process(bounded) is None,
@@ -535,7 +536,7 @@ def validate_phase_result(result: Any, phase: str, expected_binding: Mapping[str
     current_hash = runtime_code_sha256()
     if (not isinstance(binding, dict) or set(binding) != {"model_id", "model_revision", "model_manifest_sha256", "runtime_code_sha256"}
             or binding.get("model_id") != MODEL_ID or binding.get("model_revision") != EXPECTED_REVISION
-            or not re.fullmatch(r"[0-9a-f]{64}", str(binding.get("model_manifest_sha256")))
+            or binding.get("model_manifest_sha256") != EXPECTED_MODEL_MANIFEST_SHA256
             or binding.get("runtime_code_sha256") != current_hash
             or (expected_binding is not None and any(binding.get(key) != expected_binding.get(key)
                                                        for key in ("model_id", "model_revision", "model_manifest_sha256", "runtime_code_sha256")))):
@@ -676,22 +677,29 @@ def _cleanup_evidence(policy: Any, process: Any, identity: Mapping[str, Any] | N
 def _cleanup_snapshot_records_valid(records: Any, identity: Mapping[str, Any]) -> bool:
     if not isinstance(records, list):
         return False
+    required = {"pid", "ppid", "pgid", "uid", "stat", "start", "args"}
+    allowed = (required, required | {"sid"})
+    known_pgids = identity.get("known_process_pgids", {})
     by_pid: dict[int, Mapping[str, Any]] = {}
     for row in records:
-        if (not isinstance(row, dict) or set(row) != {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"}
+        if (not isinstance(row, dict) or set(row) not in allowed
                 or not _bounded_nonnegative_integer(row["pid"], upper=MAX_PID) or row["pid"] <= 0
                 or not _bounded_nonnegative_integer(row["ppid"], upper=MAX_PID)
                 or not _bounded_nonnegative_integer(row["pgid"], upper=MAX_PID)
-                or not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID)
                 or not _bounded_nonnegative_integer(row["uid"])
                 or not isinstance(row["stat"], str) or CLEANUP_STAT_RE.fullmatch(row["stat"]) is None
                 or not isinstance(row["start"], str) or CLEANUP_START_RE.fullmatch(row["start"]) is None
                 or not isinstance(row["args"], str) or not row["args"] or "\x00" in row["args"]
                 or row["pid"] in by_pid):
             return False
+        if "sid" in row and (not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID) or row["sid"] <= 0):
+            return False
+        if row["uid"] == identity["uid"] and "sid" not in row:
+            return False
         if (row["pid"] in identity["known_descendant_pids"]
                 and (row["start"] != identity["known_process_starts"].get(str(row["pid"]))
-                     or row["sid"] != identity["known_process_sids"].get(str(row["pid"])) )):
+                     or row.get("sid") != identity["known_process_sids"].get(str(row["pid"]))
+                     or row["pgid"] != known_pgids.get(str(row["pid"])) )):
             return False
         by_pid[row["pid"]] = row
     for row in records:
@@ -704,6 +712,36 @@ def _cleanup_snapshot_records_valid(records: Any, identity: Mapping[str, Any]) -
     return True
 
 
+def _cleanup_snapshot_metadata_valid(gone_pids: Any, enrichment: Any) -> bool:
+    """Validate the bounded evidence for ps/API races and enrichment."""
+    if (not isinstance(gone_pids, list) or len(gone_pids) > 4096
+            or any(type(pid) is not int or pid <= 0 or pid > MAX_PID for pid in gone_pids)
+            or gone_pids != sorted(set(gone_pids))
+            or not isinstance(enrichment, list) or len(enrichment) > 4096):
+        return False
+    seen: set[int] = set()
+    gone = set(gone_pids)
+    for item in enrichment:
+        if not isinstance(item, dict) or not isinstance(item.get("pid"), int) \
+                or item["pid"] <= 0 or item["pid"] > MAX_PID or item["pid"] in seen:
+            return False
+        seen.add(item["pid"])
+        status = item.get("status")
+        if status == "gone":
+            if set(item) != {"pid", "status"} or item["pid"] not in gone:
+                return False
+        elif status == "verified":
+            if (set(item) != {"pid", "status", "sid", "pgid"}
+                    or not _bounded_nonnegative_integer(item["sid"], upper=MAX_PID)
+                    or item["sid"] <= 0
+                    or not _bounded_nonnegative_integer(item["pgid"], upper=MAX_PID)
+                    or item["pgid"] <= 0):
+                return False
+        else:
+            return False
+    return gone.issubset(seen)
+
+
 def _valid_cleanup_evidence(value: Any) -> bool:
     """Validate the exact v2 proof required for a successful Q3c phase."""
     if not isinstance(value, dict) or set(value) != {
@@ -711,7 +749,7 @@ def _valid_cleanup_evidence(value: Any) -> bool:
             "resolved_errors", "unresolved_errors"}:
         return False
     identity = value["identity"]
-    if (not isinstance(identity, dict) or set(identity) != {"worker_pid", "parent_pid", "pgid", "sid", "uid", "known_descendant_pids", "known_process_starts", "known_process_sids", "uid_invariant", "spawn_baseline"}
+    if (not isinstance(identity, dict) or set(identity) != {"worker_pid", "parent_pid", "pgid", "sid", "uid", "known_descendant_pids", "known_process_starts", "known_process_sids", "known_process_pgids", "uid_invariant", "spawn_baseline"}
             or not _bounded_nonnegative_integer(identity["worker_pid"], upper=MAX_PID)
             or identity["worker_pid"] <= 0
             or not _bounded_nonnegative_integer(identity["parent_pid"], upper=MAX_PID)
@@ -733,6 +771,10 @@ def _valid_cleanup_evidence(value: Any) -> bool:
                 or set(identity["known_process_sids"]) != {str(pid) for pid in identity["known_descendant_pids"]}
                 or any(type(value) is not int or value != identity["sid"]
                        for value in identity["known_process_sids"].values())
+                or not isinstance(identity["known_process_pgids"], dict)
+                or set(identity["known_process_pgids"]) != {str(pid) for pid in identity["known_descendant_pids"]}
+                or any(type(value) is not int or value != identity["pgid"]
+                       for value in identity["known_process_pgids"].values())
                 or not isinstance(identity["uid_invariant"], dict)
                 or set(identity["uid_invariant"]) != {"owner_uid", "worker_uid", "same_non_root"}
                 or type(identity["uid_invariant"]["owner_uid"]) is not int
@@ -785,43 +827,56 @@ def _valid_cleanup_evidence(value: Any) -> bool:
             or not math.isfinite(float(verification["snapshot_gap_seconds"]))
             or verification["snapshot_gap_seconds"] < 0):
         return False
+    snapshot_fields = {"monotonic", "command_ok", "parse_ok", "records", "gone_pids", "enrichment", "error"}
     for pre_snapshot in (verification["pre_signal_snapshot"], verification["pre_escalation_snapshot"]):
         if (not isinstance(pre_snapshot, dict)
-            or set(pre_snapshot) != {"monotonic", "command_ok", "parse_ok", "records", "error"}
+            or set(pre_snapshot) != snapshot_fields
             or not isinstance(pre_snapshot["monotonic"], (int, float))
             or isinstance(pre_snapshot["monotonic"], bool)
             or not math.isfinite(float(pre_snapshot["monotonic"]))
             or pre_snapshot["monotonic"] < 0
             or pre_snapshot["command_ok"] is not True or pre_snapshot["parse_ok"] is not True
             or pre_snapshot["error"] is not None
+            or not isinstance(pre_snapshot["gone_pids"], list)
+            or any(type(pid) is not int or pid <= 0 for pid in pre_snapshot["gone_pids"])
+            or not isinstance(pre_snapshot["enrichment"], list)
+            or not _cleanup_snapshot_metadata_valid(pre_snapshot["gone_pids"], pre_snapshot["enrichment"])
             or not _cleanup_snapshot_records_valid(pre_snapshot["records"], identity)):
             return False
     for snapshot in verification["snapshots"]:
-        if (not isinstance(snapshot, dict) or set(snapshot) != {"monotonic", "command_ok", "parse_ok", "records", "error"}
+        if (not isinstance(snapshot, dict) or set(snapshot) != snapshot_fields
                 or not isinstance(snapshot["monotonic"], (int, float)) or isinstance(snapshot["monotonic"], bool)
                 or not math.isfinite(float(snapshot["monotonic"])) or snapshot["monotonic"] < 0
                 or snapshot["command_ok"] is not True or snapshot["parse_ok"] is not True
-                or snapshot["error"] is not None or not isinstance(snapshot["records"], list)):
+                or snapshot["error"] is not None or not isinstance(snapshot["records"], list)
+                or not isinstance(snapshot["gone_pids"], list)
+                or any(type(pid) is not int or pid <= 0 for pid in snapshot["gone_pids"])
+                or not isinstance(snapshot["enrichment"], list)
+                or not _cleanup_snapshot_metadata_valid(snapshot["gone_pids"], snapshot["enrichment"])):
             return False
         seen: set[int] = set()
         by_pid: dict[int, Mapping[str, Any]] = {}
         for row in snapshot["records"]:
-            if (not isinstance(row, dict) or set(row) != {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"}
+            if (not isinstance(row, dict) or set(row) not in ({"pid", "ppid", "pgid", "uid", "stat", "start", "args"}, {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"})
                     or not _bounded_nonnegative_integer(row["pid"], upper=MAX_PID) or row["pid"] <= 0
                     or not _bounded_nonnegative_integer(row["ppid"], upper=MAX_PID)
                     or not _bounded_nonnegative_integer(row["pgid"], upper=MAX_PID)
-                    or not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID)
                     or not _bounded_nonnegative_integer(row["uid"])
                     or not isinstance(row["stat"], str) or not row["stat"]
                     or CLEANUP_STAT_RE.fullmatch(row["stat"]) is None
                     or not isinstance(row["start"], str) or CLEANUP_START_RE.fullmatch(row["start"]) is None
                     or not isinstance(row["args"], str) or not row["args"] or "\x00" in row["args"] or row["pid"] in seen):
                 return False
+            if "sid" in row and (not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID) or row["sid"] <= 0):
+                return False
+            if row["uid"] == identity["uid"] and "sid" not in row:
+                return False
             seen.add(row["pid"])
             by_pid[row["pid"]] = row
             if (row["pid"] in identity["known_descendant_pids"]
                     and (row["start"] != identity["known_process_starts"].get(str(row["pid"]))
-                         or row["sid"] != identity["known_process_sids"].get(str(row["pid"])) )):
+                         or row.get("sid") != identity["known_process_sids"].get(str(row["pid"]))
+                         or row["pgid"] != identity["known_process_pgids"].get(str(row["pid"])) )):
                 return False
         for row in snapshot["records"]:
             cursor = row["pid"]
@@ -979,6 +1034,7 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
             bound_identity["known_descendant_pids"] = sorted(pid for pid in known if pid > 0)
             starts = dict(bound_identity.get("known_process_starts", {}))
             sids = dict(bound_identity.get("known_process_sids", {}))
+            pgids = dict(bound_identity.get("known_process_pgids", {}))
             if isinstance(payload, Mapping):
                 for item in payloads:
                     if isinstance(item.get("started_child_starts"), Mapping):
@@ -989,6 +1045,14 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
                                      if type(key) in {str, int} and type(value) is int})
             bound_identity["known_process_starts"] = starts
             bound_identity["known_process_sids"] = sids
+            # ab.run children are spawned in the phase worker's verified
+            # process group.  Preserve that captured group identity for
+            # children learned from bounded progress markers as well.
+            worker_pgid = bound_identity.get("pgid")
+            if type(worker_pgid) is int and worker_pgid > 0:
+                for key in set(starts) | set(sids):
+                    pgids.setdefault(str(key), worker_pgid)
+            bound_identity["known_process_pgids"] = pgids
         return _cleanup_evidence(policy, process, bound_identity)
 
     try:
@@ -1129,7 +1193,10 @@ def _phase_worker() -> int:
         from ironmule.tune import resolve_local_model
         resolved = resolve_local_model(MODEL_ID, revision=EXPECTED_REVISION)
         actual = {"model_id": resolved.identity.model_id, "model_revision": resolved.identity.revision, "model_manifest_sha256": resolved.identity.model_manifest_sha256}
-        if actual != expected["identity"]:
+        if (actual != expected["identity"]
+                or actual["model_id"] != MODEL_ID
+                or actual["model_revision"] != EXPECTED_REVISION
+                or actual["model_manifest_sha256"] != EXPECTED_MODEL_MANIFEST_SHA256):
             raise Q3cRefused("worker model identity differs from parent")
         def before_child(_index: int, _order: list[str]) -> None:
             if errors or "event" in safety:

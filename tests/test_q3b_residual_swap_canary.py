@@ -308,7 +308,7 @@ def _stage_result(stage, *, tokens=None):
         "token_identity": True, "token_count_identity": True, "stop_reason_identity": True,
         "deterministic": True, "reference_tokens": tokens, "ratios": {},
         "binding": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION,
-                     "model_manifest_sha256": "a" * 64, "runtime_code_sha256": "b" * 64},
+                     "model_manifest_sha256": q3b.EXPECTED_MODEL_MANIFEST_SHA256, "runtime_code_sha256": "b" * 64},
         "child_rss_peak_bytes": 100, "swap_samples": [1000, 1000],
         "swap_sample_times": [1.0, 1.25], "swap_sample_offsets": [0.0, 0.25],
         "sampler_errors": [], "max_swap_used_bytes": 1000,
@@ -317,9 +317,58 @@ def _stage_result(stage, *, tokens=None):
 
 def _preflight_for_test():
     return {
-        "passed": True, "identity": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION, "model_manifest_sha256": "a" * 64},
+        "passed": True, "identity": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION, "model_manifest_sha256": q3b.EXPECTED_MODEL_MANIFEST_SHA256},
         "installed_memory_bytes": 1000, "environment": {"swap_used_bytes": 1000},
     }
+
+
+def test_preflight_rejects_formally_valid_but_wrong_model_manifest(monkeypatch):
+    monkeypatch.setattr(q3b, "system_environment", lambda _run: {
+        "power_source": "AC", "low_power_mode": False, "thermal_state": "nominal",
+        "swap_used_bytes": 1000, "memory_free_percent": 50})
+    monkeypatch.setattr(q3b, "installed_memory_bytes", lambda _run: 1000)
+    monkeypatch.setattr(q3b, "loadavg_gate", lambda *_args, **_kwargs: {"passed": True})
+    monkeypatch.setattr(q3b, "competing_model_process", lambda _run: None)
+    monkeypatch.setattr(q3b, "_git_binding", lambda *_args: {"clean": True, "commit": "b" * 40})
+    monkeypatch.setattr(q3b, "_preregistration_matches", lambda: True)
+    monkeypatch.setattr(q3b, "runtime_code_sha256", lambda *_args: "c" * 64)
+    result = q3b.preflight(
+        identity_resolver=lambda _root: {"model_id": q3b.MODEL_ID,
+                                         "model_revision": q3b.EXPECTED_REVISION,
+                                         "model_manifest_sha256": "f" * 64})
+    assert result["checks"]["model_identity_exact"] is False
+    assert result["passed"] is False
+
+
+def test_worker_capability_rejects_formally_valid_but_wrong_model_manifest(monkeypatch):
+    nonce = "nonce"
+    expected = {"identity": {"model_id": q3b.MODEL_ID,
+                              "model_revision": q3b.EXPECTED_REVISION,
+                              "model_manifest_sha256": "f" * 64},
+                "runtime_code_sha256": "c" * 64, "stage": "baseline",
+                "initial_swap": 1000, "installed_memory": 1000}
+    read_fd, write_fd = os.pipe()
+    try:
+        os.write(write_fd, json.dumps({"nonce": nonce, "expected": expected}).encode())
+    finally:
+        os.close(write_fd)
+    monkeypatch.setenv("IRONMULE_Q3B_CAP_FD", str(read_fd))
+    monkeypatch.setenv("IRONMULE_Q3B_CAP_NONCE", nonce)
+    monkeypatch.setenv("IRONMULE_Q3B_EXPECTED", json.dumps(expected))
+    try:
+        with pytest.raises(q3b.CanaryRefused, match="capability"):
+            q3b._read_capability()
+    finally:
+        try:
+            os.close(read_fd)
+        except OSError:
+            pass
+
+
+def test_stage_validator_rejects_formally_valid_but_wrong_model_manifest():
+    result = _stage_result("baseline")
+    result["binding"]["model_manifest_sha256"] = "f" * 64
+    assert q3b.validate_stage_result(result, "baseline")[0] is False
 
 
 def test_two_stage_run_stops_before_candidate_after_baseline_gate_failure(monkeypatch, tmp_path):
@@ -477,7 +526,7 @@ def test_live_safety_capture_is_bounded_single_shot_and_injectable():
 def test_worker_start_highwater_refuses_before_model_child(monkeypatch, capsys):
     expected = {
         "identity": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION,
-                     "model_manifest_sha256": "a" * 64},
+                     "model_manifest_sha256": q3b.EXPECTED_MODEL_MANIFEST_SHA256},
         "runtime_code_sha256": "b" * 64, "stage": "baseline", "initial_swap": 1000,
         "installed_memory": 1000,
     }
@@ -517,7 +566,7 @@ def test_parent_safety_marker_preserves_evidence_and_reaps(monkeypatch):
     monkeypatch.setattr(q3b, "_cleanup_worker", lambda process: cleanup.append(process.pid) or [])
     result, _ = q3b._start_stage("baseline", {"model_id": q3b.MODEL_ID,
                                                 "model_revision": q3b.EXPECTED_REVISION,
-                                                "model_manifest_sha256": "a" * 64},
+                                                "model_manifest_sha256": q3b.EXPECTED_MODEL_MANIFEST_SHA256},
                                   0, 1000, q3b.time.monotonic() + 60)
     assert result["failure"] == "stage worker live safety abort: swap_sampler_error"
     assert result["safety_event"]["errors"] == ["periodic: RuntimeError"]
@@ -620,7 +669,7 @@ def test_direct_stage_worker_refuses_before_ironmule_import(monkeypatch):
 def test_valid_capability_activates_exact_root_after_worker_checks(monkeypatch):
     expected = {
         "identity": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION,
-                     "model_manifest_sha256": "a" * 64},
+                     "model_manifest_sha256": q3b.EXPECTED_MODEL_MANIFEST_SHA256},
         "runtime_code_sha256": "b" * 64, "stage": "baseline", "initial_swap": 1000,
         "installed_memory": 1000,
     }
