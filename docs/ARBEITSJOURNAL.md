@@ -447,3 +447,65 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
   macOS-`start_new_session`-Reap-Beweis ausführen und danach höchstens einen
   unveränderten Q3c-Aufruf erlauben. Kein Download, keine Installation, kein
   Neustart, kein 27B-Modell, keine UI und keine Aktivierung.
+
+## 2026-08-31 — Q3e terminal: Phase R wegen zu breiter Same-UID-Regel verworfen
+
+- **Raw-Befund:** `research/raw/Q3e_q3c_final_20260831.json` ist `2.205.857`
+  Bytes groß, SHA-256
+  `1df6c81dc824911016e687883c535f1ec314f3e03b51303b04c38ae71bb6f4ea`, Status
+  `FAILED`, Fallback `BASE/current incumbent`,
+  `promotion_allowed=false`. Die vollständige redigierte Ergebnisnotiz liegt
+  in `research/raw/Q3e_terminal_result_20260831.md`, SHA-256
+  `fd89e23945315597476854843df1140a5c3e35ebf1aaf9a737c80d5ebf4fdfaa`.
+- **Was bestanden hat:** Alle 14 Preflight-Prüfungen, exakte lokale Gemma-
+  Identität/Revision/Manifest, sechs frische Prozesse, AB/BA-Ordnung, zwei
+  Warmups, sieben Repeats, identische logische und physische Tokens, Counts,
+  Stops, Kapazität, Prompt-/Decode-Zählung und Determinismus. Swap blieb bei
+  `2.643.334.266 B`, Delta `0 B`; Ressourcen und Cleanup-Reap des Workers
+  selbst waren in beiden unabhängigen Snapshots nachvollziehbar.
+- **Deskriptive Messung:** Incumbent/BASE total `0.857466859207542`, 95-%-CI
+  `[0.8551668079699586, 0.8611021999710893]`, also `14.2533140792%` schneller.
+  Prefill `16.0213211%`, Decode `10.0321650%`, physische Output-Rate
+  `16.6225872%` und Decode-Schritt-Rate `11.1510142%` besser. Die Werte
+  erfüllen die eingefrorenen Phase-R-Zielwerte, sind wegen des Cleanup-Fehlers
+  aber kein gültiger Performance-Nachweis. Phase N startete nicht.
+- **Ursache:** Vier stabile neue Prozesse mit derselben UID erschienen nach
+  dem Worker-Baseline-Snapshot: PID `28095` extensionkitservice, `28209`
+  STARFACE HeadsetXPCService, `28636` mdworker_shared und `28964`
+  AXVisualSupportAgent. Sie lagen außerhalb von Worker-Gruppe/-Session und
+  -Ancestry und enthielten keine bekannten Inferenz-Tokens. Q3e wertete jedoch
+  jeden neuen Same-UID-Prozess pauschal als ungelöst; deshalb wurde die Phase
+  fail-closed verworfen. Keine dieser Prozesse wurde beendet.
+- **Entscheidung:** Q3e ist terminal, wird nicht wiederholt und nicht mit
+  früheren Q3c/Q3d/Q2-Werten gepoolt. Fallback bleibt BASE/aktueller Q2-
+  Incumbent. Keine Aktivierung oder Promotion.
+
+## 2026-08-31 — Q3f vorregistriert: letzte enge Attributionserweiterung
+
+- **Freeze:** `research/raw/Q3f_preregistration.md` wurde vor jeder
+  Implementation oder Hardwareausführung eingefroren; SHA-256
+  `345c63cba5f019ab0314761404f7de398ceee876ffcee82d80c3578f9db8e31b`, notiert
+  in `research/raw/Q3f_preregistration.sha256`.
+- **Scope:** Erlaubt ist ausschließlich die Attribution eines neuen Same-UID-
+  Prozesses als `unrelated_new_process`, wenn zwei gültige Snapshots stabile
+  PID/Start/UID, vollständige Ancestry, getrennte PGID/SID, keinen Modell- oder
+  Inferenzhinweis, bekannten Nicht-Zombie-Zustand, keine konkurrierenden
+  Modellprozesse und vollständige Kommando-/Enrichment-Evidence beweisen.
+  Unbekannte, missgebildete, racy oder mehrdeutige Evidence bleibt ein harter
+  Fehler; es gibt keine Pfad-Allowlist und keine Tötung solcher Prozesse.
+- **Zusätzlicher No-Detach-Beweis:** `ab._child` muss vor dem Modellimport den
+  bounded Python-Audit-Guard `ironmule.q3f_child_guard.v1` installieren. Er
+  blockiert und protokolliert `subprocess.Popen`, `os.system`, Fork-/Spawn-
+  sowie verfügbare `setsid`/`setpgid`-Ereignisse. Erfolgreiche Child-Raws
+  enthalten exakt die Guard-Version und null Ereignisse; der direkte
+  Child-Start-Callback ist das vollständige Child-Ledger. Fehlende,
+  überlaufende oder unbekannte Guard-/Ledger-Evidence fail-closed. Die
+  lexikalische Blocker-Menge ist exakt `KNOWN_INFERENCE_ACTIVITY` plus
+  `q3c`, `q3d`, `ironmule`, `mlx`, `gemma`, `huggingface` und wird per Static
+  Scan und adversarialen Spawn-/Detach-Tests auf Gleichheit geprüft.
+- **Ablauf:** Erst modellfreie adversariale Tests einschließlich realem
+  `start_new_session=True`-Worker und nach Baseline erzeugtem unabhängigen
+  Prozess, dann der serielle vollständige Non-Integration-Test. Nur wenn alles
+  grün ist, genau ein unveränderter Offline-Q3c-Aufruf. Kein Q3d-Gate, keine
+  Wiederholung, kein Pooling, kein Download, keine Installation, kein Neustart,
+  kein 27B-Modell, keine UI und keine automatische Promotion.

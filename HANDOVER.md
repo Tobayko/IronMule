@@ -1,5 +1,67 @@
 # Handover — branch `r11-swap-gate`
 
+## Current 2026-08-31 — Q3e terminal; Q3f is frozen as the only next path
+
+Q3e is terminally `FAILED`. Its retained raw result is
+`research/raw/Q3e_q3c_final_20260831.json`, SHA-256
+`1df6c81dc824911016e687883c535f1ec314f3e03b51303b04c38ae71bb6f4ea`, size
+`2,205,857` bytes. The redacted terminal note is
+`research/raw/Q3e_terminal_result_20260831.md`, SHA-256
+`fd89e23945315597476854843df1140a5c3e35ebf1aaf9a737c80d5ebf4fdfaa`.
+
+All 14 preflight checks passed. Phase R completed with exact token, physical
+token, count, stop, capacity, prompt, decode-step and determinism identity;
+swap stayed at `2,643,334,266 B` with zero delta. The descriptive incumbent /
+BASE ratio was `0.857466859207542` (95-%-CI
+`[0.8551668079699586, 0.8611021999710893]`, `14.2533140792%` faster total),
+but it is not an accepted performance result because cleanup conservatively
+rejected four stable unrelated same-UID processes: PID `28095`
+`extensionkitservice`, `28209` STARFACE `HeadsetXPCService`, `28636`
+`mdworker_shared` and `28964` `AXVisualSupportAgent`. They were outside the
+worker group/session and ancestry and were not killed. Phase N did not run;
+fallback remains `BASE/current incumbent`, with no promotion or activation.
+
+The final frozen next path is
+`research/raw/Q3f_preregistration.md`, SHA-256
+`345c63cba5f019ab0314761404f7de398ceee876ffcee82d80c3578f9db8e31b` (companion
+SHA file present). Q3f allows only strict `unrelated_new_process`
+attribution, a pre-model-load bounded Python child-creation/no-detach guard and
+complete direct child-start ledger, and two valid snapshots with stable identity,
+separation from worker/known/nested PIDs and PGID/SID, complete non-ancestry, no
+model or inference tokens, known non-zombie state, no competing model process
+and full bounded evidence. The guard must block/record process and session
+escape operations; successful child records contain its exact version and zero
+events. Any ambiguity, model-like process, guard event, ancestry/group/session
+relation, unknown/malformed/racy state or cleanup uncertainty remains a hard
+failure. Tests must include a real unrelated process created after baseline,
+prove it is not killed, and prove the worker group is fully reaped. Only after
+the serial model-free test suite passes may exactly one unchanged offline Q3c
+run occur. No Q3d gate, retry, pooling, download, installation, restart, 27B,
+UI or automatic promotion is allowed.
+
+The guard contract is `ironmule.q3f_child_guard.v1`: it is installed in
+`ab._child` before model loading, blocks/records process and session escape
+operations, and requires an exact zero-event ledger on successful children.
+The direct child-start callback remains the complete child ledger. The exact
+case-insensitive lexical blocker set is
+`dedupe(KNOWN_INFERENCE_ACTIVITY + ("q3c", "q3d", "ironmule", "mlx", "gemma", "huggingface"))`;
+static and adversarial tests must assert equality. A stable PPID-1 process is
+never accepted as unrelated without this guard/ledger proof plus both valid
+snapshots.
+
+The guard starts at the actual `ab._child` execution closure, follows only a
+reviewed callee/module allowlist, excludes the legitimate parent-side
+`ab.run` `Popen`, and fails on any unreviewable reachable Python path. It
+receives all Python-visible audit events and wraps available `os` process/
+session calls; arbitrary native C-level syscalls are not claimed observable
+and remain subject to the strict snapshot/group/session/ledger gates. The
+Python-inference predicate is executable/args indicating Python **and** at
+least one exact blocker token. Generic external Python is not automatically
+inference, but still must satisfy every structural unrelated-process gate.
+
+The older Q3e-next-path paragraph below is retained as history; it is
+superseded by this terminal Q3e result and the frozen Q3f path above.
+
 ## Current 2026-08-31 — Q3/Q3a
 
 - **Commits:** Der Q3a-Code stammt aus Commit `0ec9237` (`fix: read macOS 26 q3a gates`); Versuch 3 wurde auf Docs-`HEAD` `28b2ef4` ausgeführt. Spätere reine Doku-Commits ändern den geprüften Code nicht. Die unmittelbar relevanten Vorläufer sind `771d133` und `7a8896f`.
