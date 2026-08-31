@@ -102,6 +102,36 @@ def test_competing_inference_process_is_blocked_and_malformed_fails_closed():
     assert q3b.competing_model_process(_inventories(output, "123")) == "process inventory malformed"
 
 
+def test_process_inventory_allows_new_extra_comm_pid():
+    args = "123 10 0.0 /usr/bin/python worker.py\n"
+    comm = "123 python\n456 /usr/bin/new-process\n"
+    assert q3b.competing_model_process(_inventories(args, comm)) is None
+
+
+def test_process_inventory_allows_irrelevant_missing_comm_pid():
+    args = "123 10 0.0 /usr/bin/python worker.py\n"
+    comm = "456 /usr/bin/new-process\n"
+    assert q3b.competing_model_process(_inventories(args, comm)) is None
+
+
+def test_process_inventory_allows_relevant_missing_pid_proven_gone(monkeypatch):
+    monkeypatch.setattr(q3b, "_trusted_claude_bundle", lambda: True)
+    args = f"123 10 0.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE} --type=renderer\n"
+    comm = "456 /usr/bin/new-process\n"
+    assert q3b.competing_model_process(
+        _inventories(args, comm), pid_probe=lambda pid: "gone"
+    ) is None
+
+
+@pytest.mark.parametrize("status", ["alive", "unknown"])
+def test_process_inventory_rejects_relevant_missing_pid_unproven(status):
+    args = f"123 10 0.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE} --type=renderer\n"
+    comm = "456 /usr/bin/new-process\n"
+    assert q3b.competing_model_process(
+        _inventories(args, comm), pid_probe=lambda pid: status
+    ) == "process inventory pid map mismatch"
+
+
 def test_load_gate_uses_canary_thresholds():
     assert q3b.loadavg_gate(iter([7.9, 8.0, 7.0]).__next__, sleeper=lambda _seconds: None)["passed"]
     assert not q3b.loadavg_gate(iter([7.9, 8.1, 7.0]).__next__, sleeper=lambda _seconds: None)["passed"]
@@ -205,6 +235,58 @@ def test_cross_stage_token_identity_requires_logical_physical_counts_and_stops()
     assert baseline["reference_tokens"] != candidate["reference_tokens"]
     identities = q3b.cross_stage_identity(baseline, candidate)
     assert identities["logical_tokens"] is False
+
+
+def test_descriptive_timing_is_finite_labeled_and_non_gating():
+    baseline = _stage_result("baseline", tokens=[1])
+    candidate = _stage_result("candidate", tokens=[1])
+    candidate["raw"][0]["arms"]["candidate"]["total_ns"] = [1.0, 1.0, 1.0]
+    candidate["raw"][0]["arms"]["candidate"]["prefill_ns"] = [1.0, 1.0, 1.0]
+    candidate["raw"][0]["arms"]["candidate"]["decode_ns"] = [1.0, 1.0, 1.0]
+    candidate["per_arm"]["candidate"] = {
+        metric: {"n": 1, "median": 1.0, "min": 1.0, "max": 1.0, "p95": 1.0, "stdev": 0.0}
+        for metric in ("total_ns", "prefill_ns", "decode_ns")
+    }
+    descriptive = q3b.descriptive_timing(baseline, candidate)
+    assert descriptive["descriptive_only"] is True
+    assert descriptive["performance_valid"] is False
+    assert descriptive["order_confounded"] is True
+    assert descriptive["statistical_confidence"] == "none"
+    assert descriptive["stages"]["baseline"]["median_total_ms"] == 2e-6
+    assert descriptive["stages"]["baseline"]["median_prefill_ms"] == 2e-6
+    assert descriptive["stages"]["baseline"]["median_decode_ms"] == 2e-6
+    assert descriptive["stages"]["baseline"]["logical_output_tokens"] == 1
+    assert descriptive["stages"]["baseline"]["physical_output_tokens"] == 2
+    assert descriptive["stages"]["baseline"]["total_output_tokens_per_s"] == pytest.approx(5e8)
+    assert descriptive["stages"]["baseline"]["decode_steps_per_s"] == pytest.approx(5e8)
+    assert descriptive["stages"]["candidate"]["total_output_tokens_per_s"] == pytest.approx(1e9)
+    assert descriptive["stages"]["candidate"]["decode_steps_per_s"] == pytest.approx(1e9)
+    for metric in ("total_ms", "prefill_ms", "decode_ms",
+                   "total_output_tokens_per_s", "decode_steps_per_s"):
+        comparison = descriptive["comparison"]["candidate_over_baseline"][metric]
+        assert comparison["ratio"] == (0.5 if metric.endswith("_ms") else 2.0)
+        assert comparison["percent_faster"] == (50.0 if metric.endswith("_ms") else 100.0)
+        assert comparison["direction"] == ("lower_is_better" if metric.endswith("_ms") else "higher_is_better")
+    assert "confidence_interval" not in descriptive
+    assert "winner" not in descriptive
+    assert "promotion_allowed" not in descriptive
+
+
+def test_descriptive_timing_refuses_incomplete_stage():
+    with pytest.raises(ValueError, match="complete candidate"):
+        q3b.descriptive_timing(_stage_result("baseline"), {"stage": "candidate"})
+
+
+def test_descriptive_timing_does_not_change_pass_status(monkeypatch, tmp_path):
+    monkeypatch.setattr(q3b, "preflight", lambda **_kwargs: _preflight_for_test())
+    monkeypatch.setattr(q3b, "_start_stage", lambda stage, *_args: (_stage_result(stage), []))
+    monkeypatch.setattr(q3b, "_post_environment", lambda *_args: _environment())
+    output = tmp_path / "passed.json"
+    assert q3b.main(["--execute", "--output", str(output)]) == 0
+    result = json.loads(output.read_text())
+    assert result["status"] == "SAFETY_CANARY_PASS"
+    assert result["performance_valid"] is False
+    assert result["descriptive_timing"]["descriptive_only"] is True
 
 
 @pytest.mark.parametrize("field", ["capacities", "decode_steps", "prompt_tokens", "deterministic"])

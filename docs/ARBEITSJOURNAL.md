@@ -178,3 +178,38 @@
   Metadaten-/Verify-Fehler, PID-Mismatch und malformed `comm` ab. Es wurde kein
   Hardware-/MLX-Test, kein Modellstart, kein Download und kein Commit ausgeführt;
   Q3a-Code und Q3a-SHA blieben unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 2: Preflight verweigert den Modellstart
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary2_20260831.json` (ignorierte Raw-Evidence,
+  SHA-256 `90e040f090111bb990377b4e8bfecfd8ec5a3753288955353f97cffdac1d5a2c`)
+  und endete mit `FAILED`, `BASE`, `promotion_allowed=false`, ohne Modellkind
+  und ohne Stage-Start.
+- **Gates:** Alle übrigen Preflight-Gates waren grün: AC, Low-Power-off,
+  Thermal nominal, exakte lokale 4B-Identity, Git-Bindung, Preregistration,
+  installierter Speicher und Load. Der Startspeicher lag bei `66%`, Swap bei
+  `1707668930 B` und der Loadavg-Maximalwert bei `1.7099609375`. Rot blieb nur
+  `no_competing_model_process`, weil die zwei `ps`-Inventare wegen eines
+  zwischen den Snapshots verschwundenen/neu erschienenen PID-Eintrags nicht
+  als identische Gesamtmenge behandelt werden konnten.
+- **Korrektur:** Die Q3b-Preregistration wurde vor weiterer Messung um die
+  PID-Race-Regel ergänzt und neu gehasht. Das Gate wertet nun relevante
+  `args`-Records strikt aus: fehlendes `comm` ist nur bei per injizierbarem
+  `kill(pid, 0)`-Probe nachgewiesenem Prozessende tolerierbar; alive,
+  permission-denied und unknown failen geschlossen. Extra `comm`-Records sowie
+  irrelevante fehlende Records werden ignoriert; Modell-/Inference-Tokens
+  blockieren weiterhin direkt. Wiederholte Pre-Child-/Post-Stage-Gates bilden
+  die verbleibende nicht-atomare Snapshot-Grenze.
+- **Deskriptive Ausgabe:** Für einen vollständigen Safety-PASS ist zusätzlich
+  eine klar als `descriptive_only=true` markierte Timing-Zusammenfassung
+  vorregistriert: Mediane aus den exakten Raw-Repeats, Token-/Decode-Zähler,
+  endliche Durchsatzformeln und Kandidat/Baseline-Ratios mit
+  richtungsabhängiger Prozentformel (`100*(1-ratio)` für Zeiten,
+  `100*(ratio-1)` für Durchsatz). Sie trägt `performance_valid=false`,
+  `order_confounded=true`, `statistical_confidence=none`, enthält weder CI,
+  Winner noch Promotion und wird bei FAILED/unvollständigen Stages nicht
+  berechnet; sie ist kein Gate.
+- **Messgrenze:** Kein Modell wurde gestartet, keine Hardware-/MLX-Leistung
+  gemessen und keine Performance-, Optimierungs- oder RL-Aussage abgeleitet.
+  Q3a blieb unverändert.
