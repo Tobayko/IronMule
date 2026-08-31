@@ -370,7 +370,7 @@ def _parse_process_args_inventory(output: Any) -> dict[int, tuple[int, int, floa
                 or pid in records):
             return "process inventory malformed"
         try:
-            argv = shlex.split(parts[3], posix=True)
+            argv = shlex.split(parts[4], posix=True)
         except (TypeError, ValueError):
             return "process inventory malformed"
         if not argv:

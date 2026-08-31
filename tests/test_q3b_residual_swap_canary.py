@@ -224,6 +224,20 @@ def test_process_inventory_rejects_ancestry_cycle_and_invalid_ppid():
     ) == "process inventory malformed"
 
 
+def test_process_inventory_rejects_malformed_argv_quoting():
+    current = os.getpid()
+    args = f"{current} 0 10 0.0 'unterminated\n"
+    assert q3b._parse_process_args_inventory(args) == "process inventory malformed"
+
+
+def test_process_inventory_accepts_argv_with_spaces():
+    current = os.getpid()
+    args = f"{current} 0 10 0.0 '/usr/bin/model helper' --model local\n"
+    parsed = q3b._parse_process_args_inventory(args)
+    assert isinstance(parsed, dict)
+    assert parsed[current][3] == "'/usr/bin/model helper' --model local"
+
+
 def test_load_gate_uses_canary_thresholds():
     assert q3b.loadavg_gate(iter([7.9, 8.0, 7.0]).__next__, sleeper=lambda _seconds: None)["passed"]
     assert not q3b.loadavg_gate(iter([7.9, 8.1, 7.0]).__next__, sleeper=lambda _seconds: None)["passed"]
