@@ -2449,3 +2449,72 @@ hardware, performance, generalisation, BO or RL claim, and no runtime selection,
 persistence or activation follows. Missing evidence remains separated into a
 complete counterfactual action panel, independent grouped contexts, and a measured
 sequential horizon.
+
+## Q3b — Residual-swap safety canary (2026-08-31)
+
+**Raw and audit.** The retained raw record is
+`research/raw/Q3b_canary7_20260831.json`, SHA-256
+`77ebc1ed8af5c1d5b4b064ce95605d3440b6e2fccabcd088d58f0900cdd0eb76`. A
+read-only audit recomputed the complete two-stage shape, three measured repeats
+per stage, sample-array lengths and maximum adjacent sampler gaps, resource
+gates, raw identity flags and cross-stage identity. Both stages were complete
+and the result is `SAFETY_CANARY_PASS` / `SAFETY_ONLY`; the declared
+`performance_valid=false` and `promotion_allowed=false` remain binding.
+
+**Binding and safety.** The exact local model was
+`mlx-community/gemma-3-4b-it-4bit`, revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, manifest SHA
+`a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`, with
+runtime-code SHA
+`d4577826e46d356ecc43cbae0c94465018d202ad29593a96a5f2693d1f279e59`.
+Preflight passed on AC, low-power off, nominal thermal, clean/bound Git,
+known 32 GiB memory, start free memory `49%`, start swap `1,690,891,714 B`
+(within the `4 GiB` start cap), and loadavg max `2.7905`. Baseline and
+candidate stages passed the live residual-swap policy: free memory `44%` and
+`46%`, swap delta `0 B` for each, loadavg max `3.8555` and
+`4.2837`, child RSS peaks `3,075,457,024 B` and
+`3,767,861,248 B`, and MLX peak `3,125,869,452 B`. Sampler arrays were
+complete (`81` and `73` samples), had no errors, and all child groups were
+reaped. Maximum adjacent sampler gaps were `0.330351 s` and `0.272347 s`,
+below the `1.75 s` bound.
+
+**Exactness.** Prompt tokens were `322`; each stage produced exactly `23`
+logical and `23` physical output tokens, `22` decode steps, capacity `384`,
+`eos` stop reasons, matching per-repeat counts, and deterministic output.
+The baseline arm was the Q2 incumbent
+(`compiled_fixed_cache=True`, `head_skip_prefill=True`,
+`readback_every=2`); the candidate differed only by `fused_argmax=True`.
+
+**Descriptive timing only.** These are raw-repeat medians from the two
+ordered single-arm stages, with no CI and no performance validity:
+
+| Stage/arm | Total ms | Prefill ms | Decode ms | Physical output tok/s | Decode steps/s |
+| :-- | --: | --: | --: | --: | --: |
+| Baseline / Q2 incumbent | `859.413` | `583.330` | `276.083` | `26.7624` | `79.6862` |
+| Candidate / +`fused_argmax` | `849.714` | `574.051` | `275.663` | `27.0679` | `79.8076` |
+
+The candidate-over-baseline descriptive ratios are total `0.988715`
+(`+1.1285%` faster), prefill `0.984093` (`+1.5907%`), decode
+`0.998479` (`+0.1521%`), output rate `1.011414`
+(`+1.1414%`) and decode-step rate `1.001524`
+(`+0.1524%`). They are safety-canary context only: do not
+multiply them with Q2 or use them to qualify, promote, route, or activate a
+profile. The completed Q3b backlog entry is closed; the general P2 lifecycle,
+identity, and streaming-output debts remain above it in the backlog.
+
+## Q3c — Preregistration sealed before implementation (2026-08-31)
+
+`research/raw/Q3c_preregistration.md` is frozen before any Q3c implementation
+or execution. Its SHA-256 is
+`411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`, recorded
+in `research/raw/Q3c_preregistration.sha256`. It defines two independent
+six-fresh-process `ab.run` phases (2 warmups, 7 repeats, alternating AB/BA):
+Phase R reproduces the exact Q2 incumbent against untuned `BASE`, and Phase N
+tests that incumbent plus `fused_argmax` against the same `BASE`. The local
+Gemma 4B, prompt token count `322`, `max_tokens=32`, residual-swap/live
+safety policy, exact `600 s` study / `270 s` phase / `240 s` worker /
+`35 s` child bounds, identity rule, timing/rate/CI outputs, Q2 target
+`0.8568` with CI `[0.8549; 0.9402]`, `±0.03` reproduction bar, candidate
+`+0.005` preservation bar, fallback, no-promotion and UI-history requirements
+are all frozen there. No Q3c code or hardware measurement is included in this
+entry.

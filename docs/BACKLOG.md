@@ -317,130 +317,100 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `Q3b` — Residual-swap safety canary with isolated 4B stages
+### `Q3c` — Replicate the Q2 incumbent and test `fused_argmax` — preregister first
 
-**Mechanism.** A known residual swap level may be safe for one local Gemma 4B
-model load even when a zero-swap gate is unavailable, but a paired process can
-hide allocator and swap accumulation. Run the exact pinned 4B revision with the
-Q2 incumbent first and the same arm plus `fused_argmax` second, in two separate
-fresh single-arm stage workers. Each stage uses one warmup and three measured
-repeats, while a bounded 0.25-second sampler records the maximum swap observed
-throughout the stage. The worker records synchronous start and final samples,
-monotonic timestamps and worker-start offsets, and fails closed on any sampler
-command/read/parse/thread error; successful evidence has at least two samples,
-equal-length arrays, an empty `sampler_errors`, and a maximum timestamp gap of
-1.75 s (0.25 s interval + 1 s command timeout + 0.5 s scheduling margin).
-Claude is not a blanket blocker: the process gate joins bounded
-`pid=,ppid=,rss=,%cpu=,args=` and `pid=,comm=` inventories by an exact PID map.
-The args snapshot must contain the current process and its complete `ppid` chain
-to `ppid=0`; only that process and proven ancestors are ignored before model
-token checks. Descendants, siblings, and other agents remain blockers. A
-Claude-related process is ignored only when its `comm` path is lexically inside
-the exact `/Applications/Claude.app/Contents/` boundary and the whole bundle
-passes absolute `/usr/bin/codesign --verify --deep --strict` plus bounded
-`-dv --verbose=4` metadata checks for identifier `com.anthropic.claudefordesktop`,
-team `Q6L2SF6YDW`, and first authority `Developer ID Application: Anthropic PBC
-(Q6L2SF6YDW)`. ClaudeX, generic CLI/server/backend paths, outside-bundle paths,
-untrusted bundles, and malformed inventories remain hard blockers; the allowed
-desktop process still contributes to loadavg. The two codesign calls have a
-dedicated 5.0 s timeout (diagnostic observations: 1.487 s for deep verify and
-0.030 s for metadata); every other OS command remains bounded at 1.0 s.
+**Mechanism.** Q2's paired confirmation reported ratio `0.8568`, 95% CI
+`[0.8549; 0.9402]`, and a stored screening gain of `14.57%`. Q3b established
+that the exact local 4B path can pass residual-swap safety, but its ordered
+single-arm timing is not evidence of speed. Q3c therefore separates the
+replication of the final Q2 incumbent from the incremental `fused_argmax` test
+using two independent paired phases over fresh processes.
 
-**Observed canary 3 (2026-08-31).** The real run is retained as
-`research/raw/Q3b_canary3_20260831.json` (SHA-256
-`eb4e87a5fd0fe1eba76fc23d123e7252e54219a0d46eacf5a96437f2a1f5e448`) and
-returned `FAILED` with `BASE`; all preflight gates were green except
-`no_competing_model_process`, which was a false negative from the 1.0 s
-codesign timeout. No model child or stage started. The 5.0 s dedicated bound
-is preregistered before the next measurement; timeout, exception, nonzero,
-malformed, and oversized trust-helper results remain hard failures.
+**Preregistration gate.** Create and hash
+`research/raw/Q3c_preregistration.md` before any Q3c implementation or hardware
+execution; write `research/raw/Q3c_preregistration.sha256` and do not edit the
+preregistration after execution starts. No Q3c implementation is part of this
+entry yet.
 
-The args snapshot is authoritative for relevance. A relevant Claude args row
-must have the same PID in `comm`; a missing row is tolerated only when a
-read-only `kill(pid, 0)` probe proves the process exited between snapshots.
-Alive, permission-denied, and unknown probe results fail closed. Known model
-tokens block before comm matching, irrelevant missing rows and extra comm rows
-are ignored, and repeated pre-child/post-stage gates bound the non-atomic
-snapshot race. This is a safety limitation, not performance evidence.
+**Exact workload and arms.** Use only the exact local
+`mlx-community/gemma-3-4b-it-4bit` snapshot at revision
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, prompt token count `322`, greedy
+generation, and `max_tokens=32`. Use the existing `ironmule.ab.run` contract,
+exactly six fresh OS processes per phase, two warmups and seven measured
+repeats per arm, with process order alternating `AB`, `BA`, `AB`, `BA`,
+`AB`, `BA`.
 
-**Observed canary 4 (2026-08-31).** The real run is retained as
-`research/raw/Q3b_canary4_20260831.json` (SHA-256
-`52deb8a6b686ddb084eb3fcd526ef99b2274829e6fb277636bdf7dc1e2df04e0`) and
-returned `FAILED` with `BASE`. Every preflight gate was green. The baseline
-worker reached its import point but failed with `ModuleNotFoundError: No module
-named 'ironmule'` before any model child; cleanup completed with
-`group_gone=true`, and the candidate stage was not started. The next attempt
-must activate the exact repository root only after worker capability, runtime
-hash, stage, and deadline validation, then require an in-root `ironmule` spec;
-the parent dry-run and direct worker without capability remain import-free.
+* Phase R (replication): `untuned BASE` (`Knobs()` defaults) versus the exact
+  Q2 incumbent: `compiled_fixed_cache=True`, `head_skip_prefill=True`,
+  `readback_every=2`, with every other knob at its baseline value
+  (`fuse_projections=False`, `fused_argmax=False`, `prefill_into_fixed=False`,
+  `speculate_k=0`, `speculate_ngram=3`, `capacity_slack=0`,
+  `wired_fraction=0.0`).
+* Phase N (new candidate): the same untuned `BASE` versus the Q2 incumbent
+  plus exactly `fused_argmax=True`.
 
-**Observed canary 5 (2026-08-31).** The real run is retained as
-`research/raw/Q3b_canary5_20260831.json` (SHA-256
-`10b1f30034856972d351ee959115c624ac9a5e6ceb4f6a5ce154b51ac7dd88fd`) and
-returned `FAILED` with `BASE`. All preflight gates were green: free memory was
-`62%`, loadavg max was `1.87890625` (reported as `1.8789`), and the swap
-sampler observed zero delta across 27 samples. The baseline stage failed before
-the first model child with `TypeError: Popen.__init__() got an unexpected
-keyword argument 'capture_output'`; cleanup still proved `group_gone=true`.
-No model metrics were produced. The fix is to use explicit `stdout`/`stderr`
-`PIPE` kwargs, with a strict real-signature regression test; no hardware or
-model result can be inferred from this attempt.
+Each phase is an independent raw result with its own six PIDs, arm plans,
+identity binding, safety history, cleanup/reap status and complete child
+records. Do not pool or multiply Q3b's ordered ratios with either phase, and do
+not pool the two Q3c phases into one comparison.
 
-**Observed canary 6 (2026-08-31).** The real run is retained as
-`research/raw/Q3b_canary6_20260831.json` (SHA-256
-`983370bdf70a0891cffdda5b8f4009251cddf24194435042bf39fe3340553904`) and
-returned `FAILED` with `BASE`. All resource gates were green; the transient
-process gate reported competing model activity from a launcher/orchestrator
-ancestor whose `args` contained model tokens, so no model child or stage
-started and no model metrics were produced. A later direct invocation of the
-exact process-gate function on the current snapshot was green with no blocker.
-The fix is to retain `ppid` in the bounded args inventory and ignore only the
-current process plus its proven same-snapshot ancestors before model-token
-checks; cycles, missing self/parent links, and malformed records remain hard
-failures. This is a gate-reliability result, not hardware or performance
-evidence.
+**Safety and exactness gates.** Reuse Q3b's residual-swap/live policy exactly:
+start swap known and `<=4 GiB`; a periodic bounded sampler checks the complete
+live stage and an observed high-water increase `>128 MiB` immediately aborts
+the current process group; start free memory `>=35%`, post-phase free memory
+`>=20%`, and both MLX peak and child RSS `<=60%` of installed memory. AC power,
+low-power off, nominal thermal state, known load, exact local model/revision/
+manifest, clean Git binding and complete runtime identity are required. The
+bounded process inventory blocks all known model/inference processes; only the
+exact, code-signed Claude Desktop bundle under
+`/Applications/Claude.app/Contents/` with identifier
+`com.anthropic.claudefordesktop`, team `Q6L2SF6YDW`, and the expected Anthropic
+authority may be ignored. Claude CLI/server/backend, malformed or untrusted
+records, outside-bundle paths, and unknown states remain blockers. The ppid
+ancestry/PID-race, 1.0 s OS-command, 5.0 s codesign, bounded-output,
+SIGTERM→SIGKILL, reap, `@SAFETY`, partial-raw and no-orphan rules are inherited
+without weakening them.
 
-**Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
-execution. Require AC, low-power off, nominal thermal state, exact local model
-identity, clean Git binding, known installed memory, free memory `>=35%`, known
-initial swap `<=4 GiB`, and three load samples `max<=8`, `spread<=2`. After each
-stage require sampled swap increase from the initial reading `<=128 MiB`, a known
-fresh endpoint swap value, free memory `>=20%`, MLX peak and child RSS `<=60%` of installed memory, a complete
-fresh post-stage swap/pressure/RSS/load/process snapshot, reaped child, and
-logical plus per-repeat physical token/count/stop/determinism/capacity identity,
-including matching capacities, decode-step counts, and prompt-token counts
-across baseline and candidate.
-Use child timeout 35 s, worker cap 120 s, and total deadline 180 s with cleanup
-reserve. The synchronous worker-start sample must compare against the parent
-initial reading before any child starts; `before_child` must reject sampler
-errors and the current high-water delta. During a live child, any sampler
-read/parse/command failure or high-water delta above 128 MiB must atomically
-emit bounded, argv-free `@SAFETY` evidence and immediately `SIGTERM` the
-worker process group. The parent must preserve that marker even without a
-final `@@` result, reap the group on every nonzero/no-marker path, and retain
-partial evidence. The final synchronous sample is taken after child reap but
-still emits a terminal `@SAFETY` event for any read/sampler error or high-water
-delta violation, preventing a normal result. If TERM fails, immediately try
-KILL on the same group; only a double signal failure is a kill failure. Record
-raw partial evidence and stop before Stage 2 on any failure.
+**Bounds.** The parent owns one monotonic `600 s` maximum for the study (ten
+minutes, below the user's 30-minute ceiling). Each phase has a `270 s` maximum:
+one `ab.run` worker is capped at `240 s`, each child at `35 s`, and `30 s` is
+reserved for phase cleanup and post-snapshot. A final `60 s` study reserve is
+kept for inter-phase identity checks and terminal cleanup, so the two phase
+bounds plus reserve are exactly `600 s`. Phase N starts only after Phase R has
+passed its safety, identity and cleanup gates; a failed/unknown Phase R stops the
+study and retains `BASE`/current-incumbent fallback.
 
-If both stages complete and pass every safety/identity check, the final PASS may
-also carry `descriptive_timing`: exact raw-repeat medians in milliseconds,
-logical/physical output counts, total output tokens/s, decode steps/s, and
-candidate-over-baseline ratios with direction-labelled percent-faster values:
-`100*(1-ratio)` for lower-is-better total/prefill/decode time and
-`100*(ratio-1)` for higher-is-better throughput. It is explicitly
-`descriptive_only=true`, `performance_valid=false`, `order_confounded=true`,
-`statistical_confidence=none`; it has no CI, winner, or promotion field and
-cannot affect status. Failed/incomplete stages never receive it.
+**Predeclared identity rule (“same values”).** Across both phases, every arm and
+repeat must be exactly identical on logical token IDs, physical token IDs,
+logical/physical counts, stop reasons, capacities, deterministic flags, prompt
+token count and decode-step count. The phase result must retain the complete
+per-repeat arrays and independently reconstructed identity booleans. Any
+mismatch, missing field, fallback, timeout, crash, malformed raw record,
+resource violation or cleanup failure is `FAILED`/inconclusive; it cannot be
+accepted as a speed result.
 
-**Kill.** Unknown or violated identity, process, load, power, thermal, memory,
-swap, timeout, cleanup, raw-completeness, or output-identity gate yields
-`FAILED` with `BASE` fallback and no next stage. A complete run may only be
-labelled `SAFETY_CANARY_PASS`; `performance_valid=false` and
-`promotion_allowed=false` always. No ratio, speed, RL, or promotion claim is
-valid. Kill-marker or group-cleanup failure is fail-loud. Q3a's
-preregistration, SHA, code path, and evidence remain unchanged.
+**Performance reproduction and preservation gates.** For each phase, derive
+per-process medians from the seven raw repeats and paired 10,000-resample
+bootstrap 95% CIs using the existing deterministic `ab.run`/`paired_ratio`
+convention (seed `20260825`). Report total, prefill and decode median time in
+milliseconds, physical output tokens/s and decode steps/s, each with its
+candidate/base ratio and CI. Phase R reproduces the historical incumbent only
+if its new incumbent/base median ratio is within `±0.03` absolute of `0.8568`,
+its new 95% CI contains `0.8568`, and its CI high is `<1.0`. Phase N preserves
+the candidate only if its candidate/base CI high is `<1.0` and its median ratio
+is no more than `0.005` above the replicated Phase-R incumbent median. Report
+the candidate's gain as descriptive percentages with direction labels and its
+CI; do not convert the historical stored `14.57%` screening gain into a new
+paired estimate.
+
+**Decision/kill.** There is no automatic profile promotion, routing or
+activation. If either phase fails, is incomplete, fails the exact-value rule,
+misses its predeclared performance gate, or is inconclusive, retain untuned
+`BASE` and the current Q2 incumbent and report the reason. A passing Phase R
+only establishes local replication under this exact workload; a passing Phase N
+only preserves the candidate under the stated bound. The Q3c raw result remains
+the auditable record; no presentation layer is part of the execution or
+decision contract.
 
 ### `R10` — An aborted run must not look like a finished one
 
