@@ -364,13 +364,15 @@ def validate_result(result: Any, *, processes: int, repeats: int, warmup: int,
 def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: int = 2,
         max_tokens: int = 32, model: str | None = None, prompt: str | None = None,
         *, child_timeout_seconds: float | None = None,
-        before_child=None, on_child=None) -> dict[str, Any]:
+        before_child=None, on_child=None, on_child_start=None) -> dict[str, Any]:
     """Spawn children, collect raw samples, and expose bounded progress hooks.
 
     ``before_child(index, order)`` runs immediately before each child.  After a
     successful child, ``on_child(index, child_record)`` receives a defensive,
-    JSON-safe copy of that record.  Timeout errors identify only the child index
-    and arm order; command arguments are intentionally excluded.
+    JSON-safe copy of that record.  ``on_child_start(index, pid, order)`` runs
+    immediately after the child is spawned so a caller can retain lifecycle
+    evidence before any model work.  Timeout errors identify only the child
+    index and arm order; command arguments are intentionally excluded.
     """
     if child_timeout_seconds is not None:
         try:
@@ -416,6 +418,18 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 f"child {index} could not start", partial_children=children,
                 child_index=index,
             ) from exc
+        if on_child_start is not None:
+            try:
+                on_child_start(index, proc.pid, list(order))
+            except BaseException as exc:
+                try:
+                    _terminate_child(proc)
+                except BaseException as cleanup_exc:
+                    exc.add_note(f"child-start callback cleanup failed: {cleanup_exc}")
+                raise ABRunError(
+                    f"child {index} start callback failed", partial_children=children,
+                    child_index=index,
+                ) from exc
         try:
             stdout, stderr = proc.communicate(timeout=timeout)
         except subprocess.TimeoutExpired:

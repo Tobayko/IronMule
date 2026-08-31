@@ -28,7 +28,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 EXPERIMENT_ID = "Q3b-residual-swap-safety-canary"
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
@@ -75,6 +75,11 @@ COMMANDS = {
     "sysctl": "/usr/sbin/sysctl", "memory_pressure": "/usr/bin/memory_pressure",
     "ps": "/bin/ps", "git": "/usr/bin/git",
 }
+CLEANUP_PS_COMMAND = ["/bin/ps", "-Ao", "pid=,ppid=,pgid=,sid=,uid=,stat=,start=,args="]
+CLEANUP_EVIDENCE_SCHEMA = "ironmule.cleanup.v2"
+CLEANUP_STAT_RE = re.compile(r"^[DRSITUWZNL](?:[s+<>-]*)$")
+CLEANUP_START_RE = re.compile(r"^[^\s]+$")
+MAX_BASELINE_IDENTITIES = 4096
 PREREGISTRATION = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.md"
 PREREGISTRATION_SHA = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.sha256"
 
@@ -110,6 +115,7 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
     limit = MAX_PS_OUTPUT if command in (
         [COMMANDS["ps"], "-Ao", "pid=,ppid=,rss=,%cpu=,args="],
         [COMMANDS["ps"], "-Ao", "pid=,comm="],
+        CLEANUP_PS_COMMAND,
     ) else MAX_COMMAND_OUTPUT
     if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > limit:
         return _CommandText("", False)
@@ -955,6 +961,475 @@ def _stage_worker(*, kill_group: Callable[[int, int], None] | None = None,
                                   "sampler_errors": sampler_errors,
                                   "safety_event": safety_state.get("event")}, sort_keys=True), flush=True)
         return 2
+
+
+def _parse_cleanup_ps_snapshot(output: Any) -> dict[str, Any]:
+    """Parse the bounded PID/PPID/PGID/UID/status cleanup process view."""
+    if not isinstance(output, str) or not getattr(output, "ok", True):
+        return {"valid": False, "records": [], "error": "ps snapshot unavailable"}
+    if len(output) > MAX_PS_OUTPUT:
+        return {"valid": False, "records": [], "error": "ps snapshot exceeded bounded limit"}
+    records: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for line in output.splitlines():
+        if not line.strip():
+            return {"valid": False, "records": [], "error": "ps snapshot contains a blank row"}
+        parts = line.split(None, 7)
+        if len(parts) != 8 or "\x00" in parts[7] or not parts[7].strip():
+            return {"valid": False, "records": [], "error": "ps snapshot row malformed"}
+        if any(re.fullmatch(r"[0-9]+", part) is None for part in parts[:5]):
+            return {"valid": False, "records": [], "error": "ps snapshot integer malformed"}
+        try:
+            pid, ppid, pgid, sid, uid = (int(parts[0]), int(parts[1]), int(parts[2]), int(parts[3]), int(parts[4]))
+        except (TypeError, ValueError, OverflowError):
+            return {"valid": False, "records": [], "error": "ps snapshot integer malformed"}
+        stat, start = parts[5].strip(), parts[6].strip()
+        if (pid <= 0 or ppid < 0 or pgid < 0 or sid < 0 or uid < 0 or pid in seen
+                or not stat or any(char.isspace() for char in stat)
+                or CLEANUP_STAT_RE.fullmatch(stat) is None
+                or CLEANUP_START_RE.fullmatch(start) is None
+                or any(ord(char) < 32 for char in start)):
+            return {"valid": False, "records": [], "error": "ps snapshot identity malformed"}
+        seen.add(pid)
+        records.append({"pid": pid, "ppid": ppid, "pgid": pgid, "sid": sid, "uid": uid,
+                        "stat": stat, "start": start, "args": parts[7].strip()})
+    # A complete snapshot must support ancestry reconstruction.  A missing
+    # parent or a cycle is unknown process state, even if the target PGID is
+    # absent; this is deliberately conservative for cleanup proof.
+    by_pid = {row["pid"]: row for row in records}
+    for row in records:
+        seen_chain: set[int] = set()
+        pid = row["pid"]
+        while pid != 0:
+            if pid in seen_chain:
+                return {"valid": False, "records": [], "error": "ps snapshot ancestry cycle"}
+            seen_chain.add(pid)
+            parent = by_pid.get(pid)
+            if parent is None:
+                return {"valid": False, "records": [], "error": "ps snapshot parent link missing"}
+            pid = parent["ppid"]
+    return {"valid": True, "records": records, "error": None}
+
+
+def _cleanup_ps_snapshot(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
+    """Take one bounded cleanup snapshot, preserving command failure state."""
+    stamp = time.monotonic()
+    try:
+        output = run(CLEANUP_PS_COMMAND)
+    except BaseException as exc:
+        return {"monotonic": stamp, "command_ok": False, "parse_ok": False,
+                "records": [], "error": f"ps snapshot command: {type(exc).__name__}"}
+    parsed = _parse_cleanup_ps_snapshot(output)
+    return {"monotonic": stamp, "command_ok": bool(isinstance(output, str) and getattr(output, "ok", True)),
+            "parse_ok": parsed["valid"], "records": parsed["records"], "error": parsed["error"]}
+
+
+def _capture_process_baseline(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
+    """Capture bounded stable PID/start/UID identities before a worker spawn."""
+    snapshot = _cleanup_ps_snapshot(run)
+    if snapshot.get("command_ok") is not True or snapshot.get("parse_ok") is not True:
+        return {"valid": False, "digest": None, "identities": [], "error": "baseline snapshot unknown"}
+    identities = [{"pid": row["pid"], "start": row["start"], "uid": row["uid"],
+                   "sid": row["sid"], "pgid": row["pgid"]}
+                  for row in snapshot["records"]]
+    if len(identities) > MAX_BASELINE_IDENTITIES:
+        return {"valid": False, "digest": None, "identities": [], "error": "baseline exceeded bounded limit"}
+    encoded = json.dumps(identities, sort_keys=True, separators=(",", ":")).encode()
+    return {"valid": True, "digest": hashlib.sha256(encoded).hexdigest(), "identities": identities, "error": None}
+
+
+def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = _run_text,
+                             baseline: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Capture the worker PID/PGID/UID immediately after ``Popen``."""
+    pid = getattr(process, "pid", None)
+    if type(pid) is not int or pid <= 0:
+        raise CanaryRefused("worker PID is malformed")
+    owner_uid = os.getuid()
+    if owner_uid <= 0:
+        raise CanaryRefused("root execution is not permitted for worker cleanup")
+    if (not isinstance(baseline, Mapping) or baseline.get("valid") is not True
+            or not isinstance(baseline.get("identities"), list)
+            or not isinstance(baseline.get("digest"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", baseline["digest"])):
+        raise CanaryRefused("pre-spawn baseline is unavailable")
+    snapshot = _cleanup_ps_snapshot(run)
+    if not snapshot["parse_ok"] or not snapshot["command_ok"]:
+        raise CanaryRefused("worker identity snapshot is unavailable")
+    rows = [row for row in snapshot["records"] if row["pid"] == pid]
+    if len(rows) != 1 or rows[0]["pgid"] != pid or rows[0]["sid"] != pid:
+        raise CanaryRefused("worker identity or process-group leader mismatch")
+    if rows[0]["uid"] != owner_uid:
+        raise CanaryRefused("worker UID differs from current non-root UID")
+    descendants = []
+    by_pid = {row["pid"]: row for row in snapshot["records"]}
+    for row in snapshot["records"]:
+        cursor = row["pid"]
+        chain: set[int] = set()
+        while cursor:
+            if cursor in chain or cursor not in by_pid:
+                raise CanaryRefused("worker identity ancestry is malformed")
+            chain.add(cursor)
+            if cursor == pid:
+                descendants.append(row["pid"])
+                break
+            cursor = by_pid[cursor]["ppid"]
+    known = sorted(set(descendants))
+    return {"worker_pid": pid, "parent_pid": rows[0]["ppid"], "pgid": rows[0]["pgid"],
+            "sid": rows[0]["sid"], "uid": rows[0]["uid"], "known_descendant_pids": known,
+            "known_process_starts": {str(row["pid"]): row["start"] for row in snapshot["records"]
+                                     if row["pid"] in known},
+            "known_process_sids": {str(row["pid"]): row["sid"] for row in snapshot["records"]
+                                   if row["pid"] in known},
+            "uid_invariant": {"owner_uid": owner_uid, "worker_uid": rows[0]["uid"],
+                              "same_non_root": True},
+            "spawn_baseline": {"valid": True, "digest": baseline["digest"],
+                               "identities": baseline["identities"]}}
+
+
+def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = None,
+                             *, run: Callable[[list[str]], str] = _run_text,
+                             global_inventory: bool = False) -> dict[str, Any]:
+    """Terminate/reap a worker group and return fail-closed cleanup evidence v2."""
+    pid = getattr(process, "pid", None)
+    known_descendants = identity.get("known_descendant_pids", []) if isinstance(identity, Mapping) else []
+    known_starts = identity.get("known_process_starts", {}) if isinstance(identity, Mapping) else {}
+    spawn_baseline = identity.get("spawn_baseline", {}) if isinstance(identity, Mapping) else {}
+    baseline_identities = spawn_baseline.get("identities", []) if isinstance(spawn_baseline, Mapping) else []
+    valid_identity = (
+        isinstance(identity, Mapping)
+        and type(identity.get("worker_pid")) is int and identity["worker_pid"] > 0
+        and type(identity.get("parent_pid")) is int and identity["parent_pid"] >= 0
+        and type(identity.get("pgid")) is int and identity["pgid"] > 0
+        and type(identity.get("sid")) is int and identity["sid"] > 0
+        and type(identity.get("uid")) is int and identity["uid"] >= 0
+        and identity["worker_pid"] == pid and identity["pgid"] == identity["worker_pid"]
+        and identity["sid"] == identity["worker_pid"]
+        and isinstance(known_descendants, list)
+        and all(type(item) is int and item > 0 for item in known_descendants)
+        and isinstance(known_starts, dict)
+        and set(known_starts) == {str(item) for item in known_descendants}
+        and all(isinstance(item, str) and CLEANUP_START_RE.fullmatch(item) is not None
+                for item in known_starts.values())
+        and isinstance(identity.get("known_process_sids"), dict)
+        and set(identity["known_process_sids"]) == {str(item) for item in known_descendants}
+        and all(type(item) is int and item == identity["sid"] for item in identity["known_process_sids"].values())
+        and isinstance(identity.get("uid_invariant"), Mapping)
+        and set(identity["uid_invariant"]) == {"owner_uid", "worker_uid", "same_non_root"}
+        and type(identity["uid_invariant"]["owner_uid"]) is int and identity["uid_invariant"]["owner_uid"] > 0
+        and identity["uid_invariant"]["owner_uid"] == os.getuid()
+        and identity["uid_invariant"]["worker_uid"] == identity["uid"]
+        and identity["uid_invariant"]["same_non_root"] is True
+        and hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest() == spawn_baseline["digest"]
+        and isinstance(spawn_baseline, Mapping)
+        and spawn_baseline.get("valid", True) is not False
+        and isinstance(spawn_baseline.get("digest"), str)
+        and re.fullmatch(r"[0-9a-f]{64}", spawn_baseline["digest"]) is not None
+        and isinstance(baseline_identities, list) and len(baseline_identities) <= MAX_BASELINE_IDENTITIES
+        and all(isinstance(item, Mapping) and set(item) == {"pid", "start", "uid", "sid", "pgid"}
+                and type(item["pid"]) is int and item["pid"] > 0
+                and isinstance(item["start"], str) and CLEANUP_START_RE.fullmatch(item["start"]) is not None
+                and type(item["uid"]) is int and item["uid"] >= 0
+                and type(item["sid"]) is int and item["sid"] >= 0
+                and type(item["pgid"]) is int and item["pgid"] >= 0 for item in baseline_identities)
+    )
+    if valid_identity:
+        exact_identity = {"worker_pid": identity["worker_pid"], "parent_pid": identity["parent_pid"],
+                          "pgid": identity["pgid"], "sid": identity["sid"], "uid": identity["uid"],
+                          "known_descendant_pids": sorted(set(known_descendants)),
+                          "known_process_starts": {str(pid): known_starts[str(pid)]
+                                                   for pid in sorted(set(known_descendants))},
+                          "known_process_sids": {str(pid): identity["known_process_sids"][str(pid)]
+                                                 for pid in sorted(set(known_descendants))},
+                          "uid_invariant": dict(identity["uid_invariant"]),
+                          "spawn_baseline": {"valid": True, "digest": spawn_baseline["digest"], "identities": baseline_identities}}
+    else:
+        exact_identity = {"worker_pid": pid if type(pid) is int and pid > 0 else None,
+                          "parent_pid": identity.get("parent_pid") if isinstance(identity, Mapping) else None,
+                          "pgid": identity.get("pgid") if isinstance(identity, Mapping) else None,
+                          "sid": identity.get("sid") if isinstance(identity, Mapping) else None,
+                          "uid": identity.get("uid") if isinstance(identity, Mapping) else None,
+                          "known_descendant_pids": known_descendants if isinstance(known_descendants, list) else [],
+                          "known_process_starts": known_starts if isinstance(known_starts, dict) else {},
+                          "known_process_sids": identity.get("known_process_sids", {}) if isinstance(identity, Mapping) else {},
+                          "uid_invariant": identity.get("uid_invariant", {}) if isinstance(identity, Mapping) else {},
+                          "spawn_baseline": spawn_baseline if isinstance(spawn_baseline, Mapping) else {}}
+    pgid = exact_identity["pgid"]
+    signal_attempts: list[dict[str, Any]] = []
+
+    def group_safe(snapshot: Mapping[str, Any], *, require_leader: bool = True,
+                   reference_starts: Mapping[int, str] | None = None) -> bool:
+        if not (valid_identity and snapshot.get("command_ok") is True and snapshot.get("parse_ok") is True):
+            return False
+        rows = snapshot.get("records", [])
+        leader = [row for row in rows if row.get("pid") == pid]
+        if require_leader and (len(leader) != 1 or leader[0].get("pgid") != pgid
+                                or leader[0].get("sid") != exact_identity["sid"]
+                                or leader[0].get("uid") != exact_identity["uid"]
+                                or leader[0].get("start") != known_starts.get(str(pid))):
+            return False
+        members_now = [row for row in rows if row.get("pgid") == pgid]
+        if any(row.get("uid") != exact_identity["uid"] for row in members_now):
+            return False
+        if reference_starts is not None:
+            if any(row.get("pid") not in reference_starts for row in members_now):
+                return False
+            if any(row.get("start") != reference_starts.get(row.get("pid")) for row in members_now):
+                return False
+        for row in rows:
+            row_pid = row.get("pid")
+            if row_pid in known_descendants:
+                if (row.get("start") != known_starts.get(str(row_pid))
+                        or row.get("sid") != exact_identity["sid"]):
+                    return False
+        return True
+
+    def attempt(name: str, sig: int) -> None:
+        status = "sent"
+        error = None
+        if not valid_identity:
+            status, error = "not_attempted", "worker identity is invalid"
+        else:
+            try:
+                os.killpg(pgid, sig)
+            except ProcessLookupError:
+                status = "not_found"
+            except PermissionError as exc:
+                status, error = "permission_error", str(exc)[:256]
+            except OSError as exc:
+                status, error = "os_error", f"{type(exc).__name__}: {exc}"[:256]
+        record: dict[str, Any] = {"signal": name, "status": status}
+        if error is not None:
+            record["error"] = error
+        signal_attempts.append(record)
+
+    pre_signal_snapshot = _cleanup_ps_snapshot(run)
+    pre_signal_rows = pre_signal_snapshot.get("records", []) if pre_signal_snapshot.get("parse_ok") is True else []
+    pre_signal_starts = {row["pid"]: row["start"] for row in pre_signal_rows if row.get("pgid") == pgid}
+    if group_safe(pre_signal_snapshot):
+        attempt("SIGTERM", signal.SIGTERM)
+    elif (valid_identity and pre_signal_snapshot.get("command_ok") is True
+          and pre_signal_snapshot.get("parse_ok") is True
+          and not [row for row in pre_signal_snapshot.get("records", []) if row.get("pgid") == pgid]):
+        signal_attempts.append({"signal": "SIGTERM", "status": "not_needed_group_already_gone"})
+    else:
+        signal_attempts.append({"signal": "SIGTERM", "status": "not_attempted",
+                                "error": "fresh pre-signal group identity was not proven"})
+    worker_reaped = False
+    wait_errors: list[str] = []
+    try:
+        process.wait(timeout=2)
+        worker_reaped = process.poll() is not None
+    except subprocess.TimeoutExpired:
+        wait_errors.append("wait:TimeoutExpired")
+    except (OSError, ValueError) as exc:
+        wait_errors.append(f"wait:{type(exc).__name__}")
+    if not worker_reaped:
+        attempt("SIGKILL", signal.SIGKILL)
+        try:
+            process.wait(timeout=2)
+            worker_reaped = process.poll() is not None
+        except subprocess.TimeoutExpired:
+            wait_errors.append("reap:TimeoutExpired")
+        except (OSError, ValueError) as exc:
+            wait_errors.append(f"reap:{type(exc).__name__}")
+    try:
+        process.communicate(timeout=2)
+    except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+        wait_errors.append(f"communicate:{type(exc).__name__}")
+
+    # The first post-TERM snapshot decides whether escalation is needed.  A
+    # surviving member must be killed even when the group leader was already
+    # reaped; otherwise an escaped child could be left behind.
+    snapshots = [_cleanup_ps_snapshot(run)]
+    pre_escalation_snapshot = snapshots[0]
+    first_rows = snapshots[0].get("records", []) if snapshots[0].get("parse_ok") is True else []
+    first_members = [row for row in first_rows if valid_identity and row.get("pgid") == pgid]
+    first_descendants = [row for row in first_rows if valid_identity and row.get("pid") in known_descendants]
+    start_mismatch = any(valid_identity and row.get("pid") in known_descendants
+                         and row.get("start") != known_starts.get(str(row.get("pid")))
+                         for row in first_rows)
+    if valid_identity and snapshots[0].get("command_ok") is True and snapshots[0].get("parse_ok") is True \
+            and (first_members or first_descendants) and not start_mismatch:
+        descendant_kill_attempts: list[dict[str, Any]] = []
+        if group_safe(snapshots[0], require_leader=False, reference_starts=pre_signal_starts):
+            attempt("SIGKILL", signal.SIGKILL)
+        for row in first_descendants:
+            if row.get("pid") == pid or row.get("start") != known_starts.get(str(row.get("pid"))) \
+                    or row.get("sid") != exact_identity["sid"]:
+                continue
+            attempt_record: dict[str, Any] = {"pid": row["pid"], "signal": "SIGKILL", "status": "sent"}
+            try:
+                os.kill(row["pid"], signal.SIGKILL)
+            except ProcessLookupError:
+                attempt_record["status"] = "not_found"
+            except PermissionError as exc:
+                attempt_record["status"] = "permission_error"; attempt_record["error"] = str(exc)[:256]
+            except OSError as exc:
+                attempt_record["status"] = "os_error"; attempt_record["error"] = f"{type(exc).__name__}: {exc}"[:256]
+            descendant_kill_attempts.append(attempt_record)
+        try:
+            process.wait(timeout=2)
+            worker_reaped = worker_reaped or process.poll() is not None
+        except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+            wait_errors.append(f"reap-after-kill:{type(exc).__name__}")
+        try:
+            process.communicate(timeout=2)
+        except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+            wait_errors.append(f"communicate-after-kill:{type(exc).__name__}")
+        # The pre-escalation snapshot explains why KILL was needed; two fresh
+        # snapshots are required for the final proof.
+        snapshots = [_cleanup_ps_snapshot(run), _cleanup_ps_snapshot(run)]
+    else:
+        descendant_kill_attempts = []
+        second_snapshot = _cleanup_ps_snapshot(run)
+        # If the first post-TERM inventory is unknown, do not silently leave
+        # known descendants behind.  A second valid snapshot can still prove
+        # a captured PID/start identity before a direct PID kill.  The first
+        # unknown snapshot remains in the final evidence, so the gate can never
+        # become a false PASS.
+        if (valid_identity and worker_reaped
+                and snapshots[0].get("parse_ok") is not True
+                and second_snapshot.get("parse_ok") is True):
+            second_rows = second_snapshot.get("records", [])
+            for row in second_rows:
+                row_pid = row.get("pid")
+                if (row_pid == pid or row_pid not in known_descendants
+                        or row.get("start") != known_starts.get(str(row_pid))):
+                    continue
+                attempt_record = {"pid": row_pid, "signal": "SIGKILL", "status": "sent"}
+                try:
+                    os.kill(row_pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    attempt_record["status"] = "not_found"
+                except PermissionError as exc:
+                    attempt_record["status"] = "permission_error"; attempt_record["error"] = str(exc)[:256]
+                except OSError as exc:
+                    attempt_record["status"] = "os_error"; attempt_record["error"] = f"{type(exc).__name__}: {exc}"[:256]
+                descendant_kill_attempts.append(attempt_record)
+            if descendant_kill_attempts:
+                try:
+                    process.communicate(timeout=2)
+                except (subprocess.TimeoutExpired, OSError, ValueError) as exc:
+                    wait_errors.append(f"communicate-after-orphan-kill:{type(exc).__name__}")
+                snapshots = [_cleanup_ps_snapshot(run), _cleanup_ps_snapshot(run)]
+            else:
+                snapshots.extend([second_snapshot])
+        else:
+            snapshots.append(second_snapshot)
+    members: list[list[dict[str, Any]]] = []
+    leaders: list[list[dict[str, Any]]] = []
+    descendants: list[list[dict[str, Any]]] = []
+    new_processes: list[list[dict[str, Any]]] = []
+    baseline_pairs = {(item.get("pid"), item.get("start"), item.get("uid"), item.get("sid"), item.get("pgid")) for item in baseline_identities}
+    for snapshot in snapshots:
+        rows = snapshot.get("records", []) if snapshot.get("parse_ok") is True else []
+        members.append([row for row in rows if valid_identity and row.get("pgid") == pgid])
+        leaders.append([row for row in rows if valid_identity and row.get("pid") == pid])
+        descendants.append([row for row in rows if valid_identity and row.get("pid") in known_descendants])
+        new_processes.append([{"pid": row["pid"], "start": row["start"], "uid": row["uid"],
+                              "sid": row["sid"], "pgid": row["pgid"]}
+                             for row in rows if valid_identity and row.get("uid") == exact_identity["uid"]
+                             and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs
+                             and not (row.get("pid") in known_descendants
+                                      and row.get("start") == known_starts.get(str(row.get("pid")))
+                                      and row.get("sid") == exact_identity["sid"])])
+    snapshots_valid = (len(snapshots) == 2
+                       and all(snapshot.get("command_ok") is True and snapshot.get("parse_ok") is True
+                               and isinstance(snapshot.get("monotonic"), (int, float))
+                               and math.isfinite(float(snapshot["monotonic"])) for snapshot in snapshots)
+                       and snapshots[1]["monotonic"] >= snapshots[0]["monotonic"])
+    pre_escalation_known = pre_escalation_snapshot.get("command_ok") is True and pre_escalation_snapshot.get("parse_ok") is True
+    members_empty = snapshots_valid and all(not group for group in members)
+    descendants_empty = snapshots_valid and all(not group for group in descendants)
+    new_processes_empty = snapshots_valid and all(not group for group in new_processes)
+    leaders_absent = snapshots_valid and all(not leader for leader in leaders)
+    non_zombie = snapshots_valid and all(not row.get("stat", "").startswith("Z") for row in sum(members + descendants + leaders, []))
+    pre_signal_known = pre_signal_snapshot.get("command_ok") is True and pre_signal_snapshot.get("parse_ok") is True
+    global_inventory_evidence = {"enabled": global_inventory, "known": True, "competing": None}
+    if global_inventory:
+        try:
+            competing = competing_model_process(run)
+            global_inventory_evidence["competing"] = competing
+            if competing is not None:
+                global_inventory_evidence["known"] = True
+                unresolved_competing = f"global process inventory: {competing}"
+            else:
+                unresolved_competing = None
+        except BaseException as exc:
+            global_inventory_evidence = {"enabled": True, "known": False, "competing": None,
+                                         "error": f"{type(exc).__name__}"}
+            unresolved_competing = "global process inventory unknown"
+    else:
+        unresolved_competing = None
+    group_gone = bool(valid_identity and worker_reaped and pre_signal_known and pre_escalation_known and snapshots_valid
+                      and members_empty and descendants_empty and new_processes_empty and leaders_absent and non_zombie
+                      and global_inventory_evidence["known"] and global_inventory_evidence["competing"] is None)
+    unresolved: list[str] = []
+    resolved: list[str] = []
+    if not valid_identity:
+        unresolved.append("worker identity invalid")
+    if not worker_reaped:
+        unresolved.append("worker leader was not reaped")
+    if not snapshots_valid:
+        unresolved.append("cleanup verification snapshot unknown or malformed")
+    if pre_escalation_snapshot.get("parse_ok") is not True or pre_escalation_snapshot.get("command_ok") is not True:
+        unresolved.append("pre-cleanup verification snapshot unknown or malformed")
+    if not pre_signal_known:
+        unresolved.append("pre-signal group verification snapshot unknown or malformed")
+    if unresolved_competing is not None:
+        unresolved.append(unresolved_competing)
+    if snapshots_valid and not members_empty:
+        unresolved.append("worker process group still has members")
+    if snapshots_valid and not descendants_empty:
+        unresolved.append("worker descendant still appears after cleanup")
+    if snapshots_valid and not new_processes_empty:
+        unresolved.append("new same-UID process appeared after worker spawn baseline")
+    if snapshots_valid and not leaders_absent:
+        unresolved.append("worker leader still appears in cleanup snapshot")
+    if snapshots_valid and not non_zombie:
+        unresolved.append("zombie worker or descendant remains")
+    for snapshot in snapshots:
+        rows = snapshot.get("records", []) if snapshot.get("parse_ok") is True else []
+        if any(valid_identity and row.get("pid") in known_descendants
+               and row.get("start") != known_starts.get(str(row.get("pid"))) for row in rows):
+            unresolved.append("known PID start identity changed or was reused")
+    if wait_errors:
+        unresolved.extend(wait_errors)
+    for attempt_record in descendant_kill_attempts:
+        if attempt_record["status"] in {"permission_error", "os_error"}:
+            (resolved if group_gone else unresolved).append(
+                f"PID{attempt_record['pid']}:{attempt_record['status']}")
+    for attempt_record in signal_attempts:
+        if attempt_record["status"] in {"permission_error", "os_error"}:
+            message = f"{attempt_record['signal']}:{attempt_record['status']}"
+            (resolved if group_gone else unresolved).append(message)
+    if group_gone and not unresolved:
+        resolved.extend([f"{record['signal']}:{record['status']}" for record in signal_attempts if record["status"] in {"not_found", "not_attempted"}])
+    verification = {
+        "method": "two_independent_ps_snapshots",
+        "pre_signal_snapshot": pre_signal_snapshot,
+        "pre_escalation_snapshot": pre_escalation_snapshot,
+        "snapshots": snapshots,
+        "members": members,
+        "leader": leaders,
+        "descendants": descendants,
+        "new_processes": new_processes,
+        "snapshot_count": len(snapshots),
+        "snapshot_gap_seconds": snapshots[1]["monotonic"] - snapshots[0]["monotonic"] if snapshots_valid else None,
+        "independent": snapshots_valid and len(snapshots) == 2,
+        "group_gone": group_gone,
+        "global_process_inventory": global_inventory_evidence,
+    }
+    return {
+        "schema": CLEANUP_EVIDENCE_SCHEMA,
+        "identity": exact_identity,
+        "worker_reaped": worker_reaped,
+        "signal_attempts": signal_attempts,
+        "descendant_kill_attempts": descendant_kill_attempts,
+        "verification": verification,
+        "resolved_errors": resolved,
+        "unresolved_errors": unresolved,
+    }
 
 
 def _cleanup_worker(process: subprocess.Popen[str]) -> list[str]:

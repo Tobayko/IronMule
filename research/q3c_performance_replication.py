@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import copy
 import hashlib
+import inspect
 import importlib.util
 import json
 import math
@@ -58,6 +59,8 @@ BOOTSTRAP_SEED = 20260825
 MAX_PID = 2**31 - 1
 MAX_EVIDENCE_INTEGER = 2**63 - 1
 MAX_TIMING_NS = CHILD_TIMEOUT_SECONDS * 1_000_000_000
+CLEANUP_STAT_RE = re.compile(r"^[DRSITUWZNL](?:[s+<>-]*)$")
+CLEANUP_START_RE = re.compile(r"^[^\s]+$")
 HISTORICAL_RATIO = 0.8568
 HISTORICAL_CI = (0.8549, 0.9402)
 
@@ -551,9 +554,7 @@ def validate_phase_result(result: Any, phase: str, expected_binding: Mapping[str
             or result["max_swap_used_bytes"] - result["phase_initial_swap_bytes"] > SWAP_DELTA_LIMIT_BYTES):
         return False, "swap sampler evidence is invalid"
     if (not _bounded_nonnegative_integer(result["child_rss_peak_bytes"]) or result["child_rss_peak_bytes"] <= 0
-            or not isinstance(result["cleanup"], dict) or set(result["cleanup"]) != {"worker_group_gone", "cleanup_errors", "child_cleanup_errors"}
-            or result["cleanup"]["worker_group_gone"] is not True or result["cleanup"]["cleanup_errors"] != []
-            or result["cleanup"]["child_cleanup_errors"] != []):
+            or not _valid_cleanup_evidence(result["cleanup"])):
         return False, "cleanup evidence is invalid"
     try:
         derived = derive_rates(result, candidate)
@@ -630,6 +631,250 @@ def _group_gone(pid: int) -> bool:
     return False
 
 
+def _cleanup_evidence(policy: Any, process: Any, identity: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """Use Q3b cleanup-proof v2, with a narrow legacy test double fallback."""
+    helper = getattr(policy, "_cleanup_worker_evidence", None)
+    if callable(helper):
+        try:
+            try:
+                accepts_global = "global_inventory" in inspect.signature(helper).parameters
+            except (TypeError, ValueError):
+                accepts_global = False
+            if accepts_global:
+                evidence = helper(process, identity, global_inventory=True)
+            else:
+                evidence = helper(process, identity)
+        except BaseException as exc:
+            return {"schema": "ironmule.cleanup.v2", "identity": dict(identity or {}),
+                    "worker_reaped": False, "signal_attempts": [],
+                    "verification": {"method": "two_independent_ps_snapshots", "snapshots": [],
+                                      "members": [], "leader": [], "group_gone": False},
+                    "resolved_errors": [], "unresolved_errors": [f"cleanup:{type(exc).__name__}: {exc}"[:512]],
+                    "worker_group_gone": False, "cleanup_errors": [f"cleanup:{type(exc).__name__}: {exc}"[:512]],
+                    "child_cleanup_errors": []}
+        return evidence if isinstance(evidence, dict) else {
+            "schema": "ironmule.cleanup.v2", "identity": dict(identity or {}),
+            "worker_reaped": False, "signal_attempts": [],
+            "verification": {"method": "two_independent_ps_snapshots", "snapshots": [],
+                              "members": [], "leader": [], "group_gone": False},
+            "resolved_errors": [], "unresolved_errors": ["cleanup returned malformed evidence"],
+            "worker_group_gone": False, "cleanup_errors": ["cleanup returned malformed evidence"],
+            "child_cleanup_errors": []}
+    try:
+        errors = policy._cleanup_worker(process)
+        if not isinstance(errors, list):
+            errors = ["cleanup returned malformed evidence"]
+        # This projection is intentionally only for old deterministic test
+        # doubles.  The committed Q3b policy always supplies v2 above.
+        return {"worker_group_gone": not errors, "cleanup_errors": [str(error)[:512] for error in errors],
+                "child_cleanup_errors": []}
+    except BaseException as exc:
+        return {"worker_group_gone": False, "cleanup_errors": [f"cleanup:{type(exc).__name__}: {exc}"[:512]],
+                "child_cleanup_errors": []}
+
+
+def _cleanup_snapshot_records_valid(records: Any, identity: Mapping[str, Any]) -> bool:
+    if not isinstance(records, list):
+        return False
+    by_pid: dict[int, Mapping[str, Any]] = {}
+    for row in records:
+        if (not isinstance(row, dict) or set(row) != {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"}
+                or not _bounded_nonnegative_integer(row["pid"], upper=MAX_PID) or row["pid"] <= 0
+                or not _bounded_nonnegative_integer(row["ppid"], upper=MAX_PID)
+                or not _bounded_nonnegative_integer(row["pgid"], upper=MAX_PID)
+                or not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID)
+                or not _bounded_nonnegative_integer(row["uid"])
+                or not isinstance(row["stat"], str) or CLEANUP_STAT_RE.fullmatch(row["stat"]) is None
+                or not isinstance(row["start"], str) or CLEANUP_START_RE.fullmatch(row["start"]) is None
+                or not isinstance(row["args"], str) or not row["args"] or "\x00" in row["args"]
+                or row["pid"] in by_pid):
+            return False
+        if (row["pid"] in identity["known_descendant_pids"]
+                and (row["start"] != identity["known_process_starts"].get(str(row["pid"]))
+                     or row["sid"] != identity["known_process_sids"].get(str(row["pid"])) )):
+            return False
+        by_pid[row["pid"]] = row
+    for row in records:
+        cursor, chain = row["pid"], set()
+        while cursor:
+            if cursor in chain or cursor not in by_pid:
+                return False
+            chain.add(cursor)
+            cursor = by_pid[cursor]["ppid"]
+    return True
+
+
+def _valid_cleanup_evidence(value: Any) -> bool:
+    """Validate the exact v2 proof required for a successful Q3c phase."""
+    if not isinstance(value, dict) or set(value) != {
+            "schema", "identity", "worker_reaped", "signal_attempts", "descendant_kill_attempts", "verification",
+            "resolved_errors", "unresolved_errors"}:
+        return False
+    identity = value["identity"]
+    if (not isinstance(identity, dict) or set(identity) != {"worker_pid", "parent_pid", "pgid", "sid", "uid", "known_descendant_pids", "known_process_starts", "known_process_sids", "uid_invariant", "spawn_baseline"}
+            or not _bounded_nonnegative_integer(identity["worker_pid"], upper=MAX_PID)
+            or identity["worker_pid"] <= 0
+            or not _bounded_nonnegative_integer(identity["parent_pid"], upper=MAX_PID)
+            or not _bounded_nonnegative_integer(identity["pgid"], upper=MAX_PID)
+            or identity["pgid"] != identity["worker_pid"]
+            or not _bounded_nonnegative_integer(identity["sid"], upper=MAX_PID)
+            or identity["sid"] != identity["worker_pid"]
+            or not _bounded_nonnegative_integer(identity["uid"], upper=MAX_EVIDENCE_INTEGER)
+            or (not isinstance(identity["known_descendant_pids"], list)
+                or any(not _bounded_nonnegative_integer(pid, upper=MAX_PID) or pid <= 0
+                       for pid in identity["known_descendant_pids"])
+                or identity["known_descendant_pids"] != sorted(set(identity["known_descendant_pids"]))
+                or identity["worker_pid"] not in identity["known_descendant_pids"]
+                or not isinstance(identity["known_process_starts"], dict)
+                or set(identity["known_process_starts"]) != {str(pid) for pid in identity["known_descendant_pids"]}
+                or any(not isinstance(value, str) or CLEANUP_START_RE.fullmatch(value) is None
+                       for value in identity["known_process_starts"].values())
+                or not isinstance(identity["known_process_sids"], dict)
+                or set(identity["known_process_sids"]) != {str(pid) for pid in identity["known_descendant_pids"]}
+                or any(type(value) is not int or value != identity["sid"]
+                       for value in identity["known_process_sids"].values())
+                or not isinstance(identity["uid_invariant"], dict)
+                or set(identity["uid_invariant"]) != {"owner_uid", "worker_uid", "same_non_root"}
+                or type(identity["uid_invariant"]["owner_uid"]) is not int
+                or identity["uid_invariant"]["owner_uid"] <= 0
+                or identity["uid_invariant"]["owner_uid"] != identity["uid"]
+                or identity["uid_invariant"]["worker_uid"] != identity["uid"]
+                or identity["uid_invariant"]["same_non_root"] is not True
+                or not isinstance(identity["spawn_baseline"], dict)
+                or set(identity["spawn_baseline"]) != {"valid", "digest", "identities"}
+                or identity["spawn_baseline"]["valid"] is not True
+                or not isinstance(identity["spawn_baseline"]["digest"], str)
+                or not re.fullmatch(r"[0-9a-f]{64}", identity["spawn_baseline"]["digest"])
+                or not isinstance(identity["spawn_baseline"]["identities"], list)
+                or len(identity["spawn_baseline"]["identities"]) > 4096)):
+        return False
+    baseline_identities = identity["spawn_baseline"]["identities"]
+    if any(not isinstance(item, dict) or set(item) != {"pid", "start", "uid", "sid", "pgid"}
+           or not _bounded_nonnegative_integer(item["pid"], upper=MAX_PID) or item["pid"] <= 0
+           or not isinstance(item["start"], str) or CLEANUP_START_RE.fullmatch(item["start"]) is None
+           or not _bounded_nonnegative_integer(item["uid"], upper=MAX_EVIDENCE_INTEGER)
+           or not _bounded_nonnegative_integer(item["sid"], upper=MAX_PID)
+           or not _bounded_nonnegative_integer(item["pgid"], upper=MAX_PID)
+           for item in baseline_identities):
+        return False
+    baseline_bytes = json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()
+    if hashlib.sha256(baseline_bytes).hexdigest() != identity["spawn_baseline"]["digest"]:
+        return False
+    if value["schema"] != "ironmule.cleanup.v2" or value["worker_reaped"] is not True:
+        return False
+    verification = value["verification"]
+    if (not isinstance(verification, dict) or set(verification) != {"method", "pre_signal_snapshot", "pre_escalation_snapshot", "snapshots", "members", "leader", "descendants", "new_processes", "snapshot_count", "snapshot_gap_seconds", "independent", "global_process_inventory", "group_gone"}
+            or verification["method"] != "two_independent_ps_snapshots"
+            or verification["group_gone"] is not True
+            or not isinstance(verification["global_process_inventory"], dict)
+            or set(verification["global_process_inventory"]) != {"enabled", "known", "competing"}
+            or verification["global_process_inventory"] != {"enabled": True, "known": True, "competing": None}
+            or verification["independent"] is not True
+            or verification["snapshot_count"] != 2
+            or not isinstance(verification["snapshots"], list) or len(verification["snapshots"]) != 2
+            or not isinstance(verification["members"], list) or len(verification["members"]) != 2
+            or verification["members"] != [[], []]
+            or not isinstance(verification["leader"], list) or len(verification["leader"]) != 2
+            or verification["leader"] != [[], []]
+            or not isinstance(verification["descendants"], list) or len(verification["descendants"]) != 2
+            or verification["descendants"] != [[], []]
+            or not isinstance(verification["new_processes"], list) or len(verification["new_processes"]) != 2
+            or verification["new_processes"] != [[], []]
+            or not isinstance(verification["snapshot_gap_seconds"], (int, float))
+            or isinstance(verification["snapshot_gap_seconds"], bool)
+            or not math.isfinite(float(verification["snapshot_gap_seconds"]))
+            or verification["snapshot_gap_seconds"] < 0):
+        return False
+    for pre_snapshot in (verification["pre_signal_snapshot"], verification["pre_escalation_snapshot"]):
+        if (not isinstance(pre_snapshot, dict)
+            or set(pre_snapshot) != {"monotonic", "command_ok", "parse_ok", "records", "error"}
+            or not isinstance(pre_snapshot["monotonic"], (int, float))
+            or isinstance(pre_snapshot["monotonic"], bool)
+            or not math.isfinite(float(pre_snapshot["monotonic"]))
+            or pre_snapshot["monotonic"] < 0
+            or pre_snapshot["command_ok"] is not True or pre_snapshot["parse_ok"] is not True
+            or pre_snapshot["error"] is not None
+            or not _cleanup_snapshot_records_valid(pre_snapshot["records"], identity)):
+            return False
+    for snapshot in verification["snapshots"]:
+        if (not isinstance(snapshot, dict) or set(snapshot) != {"monotonic", "command_ok", "parse_ok", "records", "error"}
+                or not isinstance(snapshot["monotonic"], (int, float)) or isinstance(snapshot["monotonic"], bool)
+                or not math.isfinite(float(snapshot["monotonic"])) or snapshot["monotonic"] < 0
+                or snapshot["command_ok"] is not True or snapshot["parse_ok"] is not True
+                or snapshot["error"] is not None or not isinstance(snapshot["records"], list)):
+            return False
+        seen: set[int] = set()
+        by_pid: dict[int, Mapping[str, Any]] = {}
+        for row in snapshot["records"]:
+            if (not isinstance(row, dict) or set(row) != {"pid", "ppid", "pgid", "sid", "uid", "stat", "start", "args"}
+                    or not _bounded_nonnegative_integer(row["pid"], upper=MAX_PID) or row["pid"] <= 0
+                    or not _bounded_nonnegative_integer(row["ppid"], upper=MAX_PID)
+                    or not _bounded_nonnegative_integer(row["pgid"], upper=MAX_PID)
+                    or not _bounded_nonnegative_integer(row["sid"], upper=MAX_PID)
+                    or not _bounded_nonnegative_integer(row["uid"])
+                    or not isinstance(row["stat"], str) or not row["stat"]
+                    or CLEANUP_STAT_RE.fullmatch(row["stat"]) is None
+                    or not isinstance(row["start"], str) or CLEANUP_START_RE.fullmatch(row["start"]) is None
+                    or not isinstance(row["args"], str) or not row["args"] or "\x00" in row["args"] or row["pid"] in seen):
+                return False
+            seen.add(row["pid"])
+            by_pid[row["pid"]] = row
+            if (row["pid"] in identity["known_descendant_pids"]
+                    and (row["start"] != identity["known_process_starts"].get(str(row["pid"]))
+                         or row["sid"] != identity["known_process_sids"].get(str(row["pid"])) )):
+                return False
+        for row in snapshot["records"]:
+            cursor = row["pid"]
+            chain: set[int] = set()
+            while cursor:
+                if cursor in chain or cursor not in by_pid:
+                    return False
+                chain.add(cursor)
+                cursor = by_pid[cursor]["ppid"]
+    snapshot_times = [snapshot["monotonic"] for snapshot in verification["snapshots"]]
+    if (snapshot_times[1] < snapshot_times[0]
+            or verification["snapshot_gap_seconds"] != snapshot_times[1] - snapshot_times[0]):
+        return False
+    expected_members = []
+    expected_leaders = []
+    expected_descendants = []
+    tracked = set(identity["known_descendant_pids"])
+    for snapshot in verification["snapshots"]:
+        rows = snapshot["records"]
+        expected_members.append([row for row in rows if row["pgid"] == identity["pgid"]])
+        expected_leaders.append([row for row in rows if row["pid"] == identity["worker_pid"]])
+        expected_descendants.append([row for row in rows if row["pid"] in tracked])
+    if (verification["members"] != expected_members
+            or verification["leader"] != expected_leaders
+            or verification["descendants"] != expected_descendants):
+        return False
+    attempts = value["signal_attempts"]
+    if (not isinstance(attempts, list) or not attempts or len(attempts) > 2
+            or any(not isinstance(item, dict) or set(item) - {"signal", "status", "error"}
+                   or item.get("signal") not in {"SIGTERM", "SIGKILL"}
+                   or item.get("status") not in {"sent", "not_found", "permission_error", "os_error", "not_attempted", "not_needed_group_already_gone"}
+                   or ("error" in item and (not isinstance(item["error"], str) or not item["error"] or len(item["error"]) > 256))
+                   or (item.get("status") in {"permission_error", "os_error", "not_attempted"} and "error" not in item)
+                   for item in attempts)
+            or [item.get("signal") for item in attempts] != ["SIGTERM", "SIGKILL"][:len(attempts)]
+            or not isinstance(value["resolved_errors"], list)
+            or not isinstance(value["unresolved_errors"], list)
+            or any(not isinstance(item, str) or not item or len(item) > 512 for item in value["resolved_errors"] + value["unresolved_errors"])
+            or value["unresolved_errors"] != []):
+        return False
+    descendant_attempts = value["descendant_kill_attempts"]
+    if (not isinstance(descendant_attempts, list) or len(descendant_attempts) > MAX_EVIDENCE_INTEGER
+            or any(not isinstance(item, dict) or set(item) - {"pid", "signal", "status", "error"}
+                   or type(item.get("pid")) is not int or item["pid"] <= 0
+                   or item.get("signal") != "SIGKILL"
+                   or item.get("status") not in {"sent", "not_found", "permission_error", "os_error"}
+                   or ("error" in item and (not isinstance(item["error"], str) or not item["error"] or len(item["error"]) > 256))
+                   or (item.get("status") in {"permission_error", "os_error"} and "error" not in item)
+                   for item in descendant_attempts)):
+        return False
+    return True
+
+
 def _record_completed_child(records: list[dict[str, Any]], lock: threading.Lock,
                             record: Mapping[str, Any]) -> None:
     """Append a defensive completed-child snapshot under its own lock."""
@@ -644,7 +889,10 @@ def _record_completed_child(records: list[dict[str, Any]], lock: threading.Lock,
 
 def _write_bounded_safety_marker(event: Mapping[str, Any],
                                  records: list[dict[str, Any]], lock: threading.Lock,
-                                 emit: Callable[[dict[str, Any]], None]) -> None:
+                                 emit: Callable[[dict[str, Any]], None],
+                                 started_child_pids: list[int] | None = None,
+                                 started_child_starts: Mapping[str, str] | None = None,
+                                 started_child_sids: Mapping[str, int] | None = None) -> None:
     """Publish safety evidence with full completed children and no argv field."""
     with lock:
         completed = copy.deepcopy(records)
@@ -655,6 +903,9 @@ def _write_bounded_safety_marker(event: Mapping[str, Any],
         "offsets": list(event.get("offsets", []))[:MAX_SWAP_SAMPLES],
         "errors": [str(item)[:512] for item in list(event.get("errors", []))[:32]],
         "partial_children": completed,
+        "started_child_pids": list(started_child_pids or event.get("started_child_pids", []))[:PROCESSES],
+        "started_child_starts": dict(started_child_starts or event.get("started_child_starts", {})),
+        "started_child_sids": dict(started_child_sids or event.get("started_child_sids", {})),
     }
     encoded = json.dumps(bounded_event, sort_keys=True, allow_nan=False).encode()
     if len(encoded) > MAX_WORKER_OUTPUT or b"argv" in encoded:
@@ -671,6 +922,15 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
     if len(payload) >= CAPABILITY_MAX_BYTES:
         os.close(read_fd); os.close(write_fd); raise Q3cRefused("capability payload exceeds bound")
     os.set_inheritable(read_fd, True)
+    process: Any = None
+    policy = _q3b_runtime()
+    baseline_capture = getattr(policy, "_capture_process_baseline", None)
+    baseline = baseline_capture() if callable(baseline_capture) else None
+    if callable(baseline_capture) and (not isinstance(baseline, Mapping) or baseline.get("valid") is not True):
+        os.close(read_fd)
+        os.close(write_fd)
+        raise Q3cRefused("pre-spawn process baseline is unavailable")
+    worker_identity: dict[str, Any] | None = None
     try:
         os.write(write_fd, payload); os.close(write_fd); write_fd = -1
         timeout = min(float(WORKER_MAX_SECONDS), deadline - time.monotonic() - POST_PHASE_SECONDS)
@@ -685,26 +945,60 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
             os.close(write_fd)
         os.close(read_fd)
 
-    def cleanup_errors() -> list[str]:
+    capture_identity = getattr(policy, "_capture_worker_identity", None)
+    if callable(capture_identity):
         try:
-            errors = _q3b_runtime()._cleanup_worker(process)
-            if not isinstance(errors, list):
-                return ["cleanup returned malformed evidence"]
-            return [str(error)[:512] for error in errors]
+            # This is intentionally the first operation after Popen: before
+            # communicate(), output parsing, or any model result handling.
+            worker_identity = capture_identity(process, baseline=baseline) if baseline is not None else capture_identity(process)
         except BaseException as exc:
-            return [f"cleanup:{type(exc).__name__}: {exc}"[:512]]
+            cleanup = _cleanup_evidence(policy, process, worker_identity)
+            return {"failure": f"worker identity capture failed: {type(exc).__name__}", "cleanup": cleanup}
+
+    def cleanup_record(payload: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        bound_identity = copy.deepcopy(worker_identity) if worker_identity is not None else None
+        known: set[int] = set()
+        if isinstance(bound_identity, dict):
+            known.update(item for item in bound_identity.get("known_descendant_pids", []) if type(item) is int)
+        if isinstance(payload, Mapping):
+            payloads: list[Mapping[str, Any]] = [payload]
+            if isinstance(payload.get("partial_result"), Mapping):
+                payloads.append(payload["partial_result"])
+            for item in payloads:
+                if isinstance(item.get("partial_evidence"), Mapping):
+                    payloads.append(item["partial_evidence"])
+            for item in payloads:
+                for field in ("raw", "partial_children"):
+                    rows = item.get(field)
+                    if isinstance(rows, list):
+                        known.update(row.get("pid") for row in rows if isinstance(row, Mapping) and type(row.get("pid")) is int)
+                for pid in item.get("started_child_pids", []) if isinstance(item.get("started_child_pids"), list) else []:
+                    if type(pid) is int:
+                        known.add(pid)
+        if isinstance(bound_identity, dict):
+            bound_identity["known_descendant_pids"] = sorted(pid for pid in known if pid > 0)
+            starts = dict(bound_identity.get("known_process_starts", {}))
+            sids = dict(bound_identity.get("known_process_sids", {}))
+            if isinstance(payload, Mapping):
+                for item in payloads:
+                    if isinstance(item.get("started_child_starts"), Mapping):
+                        starts.update({str(key): value for key, value in item["started_child_starts"].items()
+                                       if type(key) in {str, int} and isinstance(value, str)})
+                    if isinstance(item.get("started_child_sids"), Mapping):
+                        sids.update({str(key): value for key, value in item["started_child_sids"].items()
+                                     if type(key) in {str, int} and type(value) is int})
+            bound_identity["known_process_starts"] = starts
+            bound_identity["known_process_sids"] = sids
+        return _cleanup_evidence(policy, process, bound_identity)
 
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except BaseException as exc:
-        errors = cleanup_errors()
-        return {"failure": "phase worker timeout" if isinstance(exc, subprocess.TimeoutExpired) else "phase communication failed", "partial_evidence": [], "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors, "child_cleanup_errors": []}}
+        return {"failure": "phase worker timeout" if isinstance(exc, subprocess.TimeoutExpired) else "phase communication failed", "partial_evidence": [], "cleanup": cleanup_record()}
     if not isinstance(stdout, str) or not isinstance(stderr, str):
-        errors = cleanup_errors()
-        return {"failure": "phase worker communication returned non-text output", "partial_evidence": [], "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors, "child_cleanup_errors": []}}
+        return {"failure": "phase worker communication returned non-text output", "partial_evidence": [], "cleanup": cleanup_record()}
     if len(stdout) > MAX_WORKER_OUTPUT or len(stderr) > MAX_WORKER_OUTPUT:
-        errors = cleanup_errors()
-        return {"failure": "phase worker output exceeded bounded limit", "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors, "child_cleanup_errors": []}}
+        return {"failure": "phase worker output exceeded bounded limit", "cleanup": cleanup_record()}
     marker = next((line[2:] for line in stdout.splitlines() if line.startswith("@@")), None)
     safety = None
     for line in stdout.splitlines():
@@ -715,11 +1009,9 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
                 safety = {"reason": "malformed_safety_marker"}
             break
     if safety is not None:
-        errors = cleanup_errors()
-        return {"failure": "live safety abort", "safety_event": safety, "partial_evidence": safety, "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors, "child_cleanup_errors": []}}
+        return {"failure": "live safety abort", "safety_event": safety, "partial_evidence": safety, "cleanup": cleanup_record(safety)}
     if marker is None:
-        errors = cleanup_errors()
-        return {"failure": "phase worker returned no result", "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors, "child_cleanup_errors": []}}
+        return {"failure": "phase worker returned no result", "cleanup": cleanup_record()}
     try:
         result = json.loads(marker, parse_constant=_reject_json_constant)
     except (TypeError, ValueError, json.JSONDecodeError):
@@ -728,23 +1020,17 @@ def _start_phase(phase: str, identity: dict[str, Any], initial_swap: int, instal
         result = {"failure": "phase worker result JSON malformed"}
     if process.returncode != 0:
         partial = dict(result)
-        errors = cleanup_errors()
         result = {"failure": f"phase worker exited with status {process.returncode}", "partial_result": partial,
-                  "cleanup": {"worker_group_gone": not errors, "cleanup_errors": errors,
-                               "child_cleanup_errors": partial.get("child_cleanup_errors", [])}}
+                  "cleanup": cleanup_record(partial)}
     elif "failure" in result:
-        errors = cleanup_errors()
-        result["cleanup"] = {"worker_group_gone": not errors, "cleanup_errors": errors,
-                              "child_cleanup_errors": result.get("child_cleanup_errors", [])}
+        result["cleanup"] = cleanup_record(result)
     else:
-        gone = _group_gone(process.pid)
-        cleanup_failure: list[str] = []
-        if not gone:
-            cleanup_failure = cleanup_errors()
-            gone = not cleanup_failure
-        result["cleanup"] = {"worker_group_gone": gone,
-                              "cleanup_errors": cleanup_failure if cleanup_failure else ([] if gone else ["worker process group still alive"]),
-                              "child_cleanup_errors": result.get("child_cleanup_errors", [])}
+        result["cleanup"] = cleanup_record(result)
+        # Child-start lifecycle fields are transport-only evidence used by the
+        # parent cleanup proof; they are not part of the frozen phase schema.
+        result.pop("started_child_pids", None)
+        result.pop("started_child_starts", None)
+        result.pop("started_child_sids", None)
     return result
 
 
@@ -756,6 +1042,9 @@ def _phase_worker() -> int:
     errors: list[str] = []
     safety: dict[str, Any] = {}
     partial_children: list[dict[str, Any]] = []
+    started_child_pids: list[int] = []
+    started_child_starts: dict[str, str] = {}
+    started_child_sids: dict[str, int] = {}
     partial_children_lock = threading.Lock()
 
     def partial_children_snapshot() -> list[dict[str, Any]]:
@@ -803,10 +1092,25 @@ def _phase_worker() -> int:
             """Retain completed child raw evidence independently of sampler state."""
             _record_completed_child(partial_children, partial_children_lock, record)
 
+        def on_child_start(_index: int, pid: int, _order: list[str]) -> None:
+            if type(pid) is not int or pid <= 0:
+                raise Q3cRefused("child-start PID is malformed")
+            with partial_children_lock:
+                if len(started_child_pids) >= PROCESSES or pid in started_child_pids:
+                    raise Q3cRefused("child-start PID evidence is malformed")
+                snapshot = q3b._cleanup_ps_snapshot()
+                rows = [row for row in snapshot.get("records", []) if row.get("pid") == pid] \
+                    if snapshot.get("parse_ok") is True else []
+                if len(rows) != 1 or not isinstance(rows[0].get("start"), str):
+                    raise Q3cRefused("child-start identity snapshot is unavailable")
+                started_child_pids.append(pid)
+                started_child_starts[str(pid)] = rows[0]["start"]
+                started_child_sids[str(pid)] = rows[0]["sid"]
+
         def marker_writer(event: Mapping[str, Any]) -> None:
             """Emit bounded safety evidence, including completed children but no argv."""
             _write_bounded_safety_marker(event, partial_children, partial_children_lock,
-                                         q3b._emit_safety_marker)
+                                         q3b._emit_safety_marker, started_child_pids, started_child_starts, started_child_sids)
 
         def monitor() -> None:
             while not stop.wait(SAMPLE_INTERVAL_SECONDS):
@@ -837,7 +1141,7 @@ def _phase_worker() -> int:
         # ``ab._child`` passes this value to ``load_engine``; using the resolved
         # snapshot path binds every fresh child to the already-verified revision
         # without a download or a second cache selection.
-        result = ab.run({name: Knobs(**knobs) for name, knobs in PHASE_ARMS[phase].items()}, processes=PROCESSES, repeats=REPEATS, warmup=WARMUP, max_tokens=MAX_TOKENS, model=str(resolved.path), child_timeout_seconds=CHILD_TIMEOUT_SECONDS, before_child=before_child, on_child=on_child)
+        result = ab.run({name: Knobs(**knobs) for name, knobs in PHASE_ARMS[phase].items()}, processes=PROCESSES, repeats=REPEATS, warmup=WARMUP, max_tokens=MAX_TOKENS, model=str(resolved.path), child_timeout_seconds=CHILD_TIMEOUT_SECONDS, before_child=before_child, on_child=on_child, on_child_start=on_child_start)
         stop.set(); thread.join(timeout=2)
         if thread.is_alive():
             with lock:
@@ -853,7 +1157,7 @@ def _phase_worker() -> int:
                                                    final_error=final_error, marker_writer=marker_writer)
         if final_error is not None or errors or final_event is not None or "event" in safety or len(samples) < 2:
             raise Q3cRefused("final sampler gate failed")
-        result.update({"phase": phase, "phase_plan": phase_plan(phase), "binding": {**actual, "runtime_code_sha256": expected["runtime_code_sha256"]}, "child_rss_peak_bytes": q3b._load_q3a_helpers()._max_rss_bytes(), "swap_samples": samples, "swap_sample_times": times, "swap_sample_offsets": offsets, "sampler_errors": [], "max_swap_used_bytes": max(samples), "phase_initial_swap_bytes": samples[0], "derived_rates": derive_rates(result, PHASE_CANDIDATE[phase]), "cleanup": {"worker_group_gone": True, "cleanup_errors": [], "child_cleanup_errors": []}})
+        result.update({"phase": phase, "phase_plan": phase_plan(phase), "binding": {**actual, "runtime_code_sha256": expected["runtime_code_sha256"]}, "child_rss_peak_bytes": q3b._load_q3a_helpers()._max_rss_bytes(), "swap_samples": samples, "swap_sample_times": times, "swap_sample_offsets": offsets, "sampler_errors": [], "max_swap_used_bytes": max(samples), "phase_initial_swap_bytes": samples[0], "derived_rates": derive_rates(result, PHASE_CANDIDATE[phase]), "cleanup": {"worker_group_gone": True, "cleanup_errors": [], "child_cleanup_errors": []}, "started_child_pids": started_child_pids[:PROCESSES], "started_child_starts": dict(started_child_starts), "started_child_sids": dict(started_child_sids)})
         print("@@" + json.dumps(result, sort_keys=True, allow_nan=False), flush=True)
         return 0
     except BaseException as exc:
@@ -861,7 +1165,7 @@ def _phase_worker() -> int:
         inherited = getattr(exc, "partial_children", [])
         if isinstance(inherited, list) and inherited:
             completed.extend(copy.deepcopy(inherited[len(completed):]))
-        print("@@" + json.dumps({"failure": f"{type(exc).__name__}: {exc}", "partial_children": completed[:PROCESSES], "child_cleanup_errors": [], "partial_evidence": {"swap_samples": samples, "swap_sample_times": times, "swap_sample_offsets": offsets, "sampler_errors": errors}, "safety_event": safety.get("event")}, sort_keys=True), flush=True)
+        print("@@" + json.dumps({"failure": f"{type(exc).__name__}: {exc}", "partial_children": completed[:PROCESSES], "started_child_pids": started_child_pids[:PROCESSES], "started_child_starts": started_child_starts, "started_child_sids": started_child_sids, "child_cleanup_errors": [], "partial_evidence": {"swap_samples": samples, "swap_sample_times": times, "swap_sample_offsets": offsets, "sampler_errors": errors, "started_child_pids": started_child_pids[:PROCESSES], "started_child_starts": started_child_starts, "started_child_sids": started_child_sids}, "safety_event": safety.get("event")}, sort_keys=True), flush=True)
         return 2
 
 
