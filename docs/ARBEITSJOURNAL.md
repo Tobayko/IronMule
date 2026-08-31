@@ -509,3 +509,29 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
   grün ist, genau ein unveränderter Offline-Q3c-Aufruf. Kein Q3d-Gate, keine
   Wiederholung, kein Pooling, kein Download, keine Installation, kein Neustart,
   kein 27B-Modell, keine UI und keine automatische Promotion.
+
+## 2026-09-01 — Q3f terminal fehlgeschlagen: kein Performance-Nachweis
+
+- **Rohdaten:** `research/raw/Q3f_q3c_final_20260901.json`, `2,487,533` Bytes,
+  SHA-256 `e82accdbd52857e6201fa2b34984765e61658ecfd3956d5c903a49c1e6de70a9`;
+  Terminalnotiz `research/raw/Q3f_terminal_result_20260901.md`.
+- **Voraussetzungen:** Alle 14 Preflight-Prüfungen waren grün. AC, Thermal
+  nominal und Low-Power-off waren erfüllt; freier Speicher `67%`; Swap
+  `2,609,643,520 B` über 25 Proben konstant, Delta `0`, ohne Samplerfehler.
+- **Fehler:** Der Phase-Worker beendete sich mit Status `2` und
+  `ABRunError: child 0 start callback failed`. Es gab keinen Child-Start-Marker,
+  kein Child-Ledger und keine Timing-, Token-, Phase-N- oder akzeptierte
+  Performance-Evidence. Die genaue unterliegende Ursache ist in der begrenzten
+  Evidence nicht erhalten; ein Sichtbarkeits-Race ist nur eine unbewiesene
+  Hypothese.
+- **Sicherheit:** `ironmule.cleanup.v2` reapte den Worker; zwei unabhängige
+  Snapshots waren gültig, Gruppe/Descendants waren verschwunden und es war kein
+  Kill nötig. Weil Guard-/Ledger-Evidence fehlte, wurde der Lauf dennoch
+  fail-closed abgelehnt. Spotify Helper PID `52017` war außerhalb der Worker-
+  Gruppe und wurde nicht beendet; ohne Guard-/Ledger-Beweis wurde er nicht als
+  unabhängig akzeptiert. Kein Q3f-Orphan blieb zurück.
+- **Entscheidung:** `FAILED`, `promotion_allowed=false`, Fallback
+  `BASE/current incumbent`. Q3f wird nicht wiederholt oder mit früheren Läufen
+  gepoolt; die historischen Q2-Geschwindigkeitswerte sind nicht reproduziert.
+  Eine mögliche Verbesserung der Child-Sichtbarkeit ist ein neues Vorhaben und
+  benötigt ausdrückliche Freigabe sowie eine neue Vorregistrierung.

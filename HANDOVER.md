@@ -1,5 +1,36 @@
 # Handover — branch `r11-swap-gate`
 
+## Current 2026-09-01 — Q3f terminal result
+
+Q3f consumed its single permitted path and is terminally `FAILED`. The retained
+raw result is `research/raw/Q3f_q3c_final_20260901.json`, SHA-256
+`e82accdbd52857e6201fa2b34984765e61658ecfd3956d5c903a49c1e6de70a9`, size
+`2,487,533` bytes. The redacted terminal note is
+`research/raw/Q3f_terminal_result_20260901.md`; its companion SHA-256 is
+`a766f768d045045fca4462c8dfb4c0a8f63e46cd1c8c528d628a3f4421aecf1b`.
+
+All 14 preflight checks passed: AC power, free memory `67%`, nominal thermal,
+Low-Power-off, exact local Gemma 4B identity and clean runtime binding. Swap
+was `2,609,643,520 B` and stayed constant across 25 samples (`delta=0`, no
+sampler errors). The phase worker exited with status `2` and
+`ABRunError: child 0 start callback failed`, before any child marker, ledger,
+timing, token, Phase-N or accepted performance evidence existed. The exact
+lower-level cause is not preserved; a process/command visibility race is only
+an unproven hypothesis.
+
+Cleanup v2 reaped the worker and found no remaining group member or descendant
+in two valid independent snapshots; no kill was needed. The result still failed
+closed because guard/ledger evidence was unavailable. Same-UID Spotify Helper
+PID `52017` was outside the worker group and was not killed, but could not be
+accepted as unrelated without that missing proof. No Q3f orphan remained.
+
+Final state: `FAILED`, `promotion_allowed=false`, fallback
+`BASE/current incumbent`. There is no speed claim, no proof that historical Q2
+values were reproduced, no retry and no pooling with Q3e/Q3d/Q3c. Do not run
+Q3f again. A child-visibility hardening would require new explicit
+authorization and a new preregistration. No 27B model, download, installation,
+restart, UI work or automatic activation occurred.
+
 ## Current 2026-08-31 — Q3e terminal; Q3f is frozen as the only next path
 
 Q3e is terminally `FAILED`. Its retained raw result is

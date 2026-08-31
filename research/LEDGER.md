@@ -2661,3 +2661,34 @@ preflight and live safety limits, six fresh processes per phase, exact identity,
 statistics, timing bounds and no-promotion fallback. Q3f has no Q3d gate, retry,
 pooling, download, installation, restart, 27B run or UI; any failure consumes
 the single path and ends the study.
+
+## Q3f — Terminal result (2026-09-01)
+
+The single frozen Q3f path was executed once against the exact local Gemma 4B
+revision and ended `FAILED`. Raw result:
+`research/raw/Q3f_q3c_final_20260901.json`, size `2,487,533` bytes, SHA-256
+`e82accdbd52857e6201fa2b34984765e61658ecfd3956d5c903a49c1e6de70a9`. The
+redacted terminal note is `research/raw/Q3f_terminal_result_20260901.md`.
+
+All 14 preflight checks passed: AC power, free memory `67%`, nominal thermal,
+low-power off, exact model identity and clean runtime binding. Swap was
+`2,609,643,520 B` and remained constant over 25 samples (`delta=0`, no sampler
+errors). The phase worker exited with status `2` and the bounded error
+`ABRunError: child 0 start callback failed`, before any child-start marker,
+child ledger, timing, token, Phase-N, phase-gate or resource result was
+available. No accepted performance result exists. The exact lower-level cause
+is not preserved; an immediate process/command visibility race is only an
+unproven future hypothesis.
+
+Cleanup used `ironmule.cleanup.v2`: the worker was reaped, two independent
+snapshots were valid, no worker-group member or descendant remained, and no
+kill was needed (`SIGTERM: not_needed_group_already_gone`). The evidence still
+failed closed because the guard and direct child-start ledger were unavailable.
+A stable same-UID Spotify Helper (`PID 52017`) was outside the worker group and
+was not killed, but could not be accepted as unrelated without the missing
+proof. There was no orphan left at recording time.
+
+Status is terminal `FAILED`, `promotion_allowed=false`, fallback
+`BASE/current incumbent`. Do not retry or pool Q3f with Q3e/Q3d/Q3c, and do not
+claim historical Q2 reproduction or a new speed gain. A future child-visibility
+hardening requires explicit authorization and a new preregistration.
