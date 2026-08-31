@@ -20,7 +20,8 @@ def _child_record(*, order=("baseline", "candidate"), pid=1):
         "prompt_tokens": 1, "mlx_peak_bytes": 10,
     }
     return {"pid": pid, "arms": {"baseline": dict(arm), "candidate": dict(arm)},
-            "order": list(order), "mlx_peak_bytes": 10}
+            "order": list(order), "mlx_peak_bytes": 10,
+            "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}}
 
 
 class _FakeProcess:
@@ -61,7 +62,7 @@ def _run_setup(monkeypatch, payload=None):
 
     def fake_popen(args, **kwargs):
         calls.append((args, kwargs))
-        spec = json.loads(args[-1])
+        spec = json.loads(args[3])
         child = payload or _child_record(order=spec["order"], pid=100 + len(calls))
         return _FakeProcess(stdout="@@" + json.dumps(child) + "\n")
 
@@ -114,7 +115,7 @@ def test_run_uses_only_real_popen_compatible_pipe_kwargs(monkeypatch):
                             cwd=cwd, env=env)
         observed.append({"stdout": stdout, "stderr": stderr, "text": text,
                          "cwd": cwd, "env": env})
-        spec = json.loads(args[-1])
+        spec = json.loads(args[3])
         child = _child_record(order=spec["order"], pid=100 + len(observed))
         return _FakeProcess(stdout="@@" + json.dumps(child) + "\n")
 
@@ -249,3 +250,15 @@ def test_run_rejects_incomplete_child_before_aggregation(monkeypatch):
         ab.run(_arms(), processes=1)
     assert error.value.child_index == 0
     assert error.value.partial_children == []
+
+
+def test_guard_failure_marker_is_retained_in_ab_run_error(monkeypatch):
+    import importlib
+    tune = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    failure = {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}
+    process = _FakeProcess(returncode=2, stdout="@GUARD_FAILURE" + json.dumps(failure) + "\n")
+    monkeypatch.setattr(ab.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    with pytest.raises(ab.ABRunError) as error:
+        ab.run(_arms(), processes=1)
+    assert error.value.partial_evidence == {"guard_failure": failure}

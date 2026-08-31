@@ -54,6 +54,32 @@ MAX_PS_OUTPUT = 512 * 1024
 MAX_WORKER_OUTPUT = 512 * 1024
 CAPABILITY_MAX_BYTES = 16 * 1024
 KNOWN_INFERENCE_ACTIVITY = ("mlx", "llama", "ollama", "vllm", "gemma", "qwen")
+
+
+def _dedupe_casefold(values: tuple[str, ...]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        if not isinstance(value, str):
+            raise TypeError("blocker token must be text")
+        token = value.casefold()
+        if token and token not in seen:
+            seen.add(token)
+            result.append(token)
+    return tuple(result)
+
+
+# Q3f's exact blocker set is shared by process inventory, attribution and the
+# child guard's static/runtime tests.  It is deliberately lexical and does
+# not contain the unsafe ``hf`` shorthand.
+Q3F_BLOCKER_TOKENS = _dedupe_casefold(
+    KNOWN_INFERENCE_ACTIVITY + ("q3c", "q3d", "ironmule", "mlx", "gemma", "huggingface")
+)
+Q3F_BLOCKER_SET = frozenset(Q3F_BLOCKER_TOKENS)
+Q3F_GUARD_OPERATIONS = frozenset({
+    "subprocess.Popen", "os.system", "os.fork", "os.forkpty",
+    "os.posix_spawn", "os.posix_spawnp", "os.setsid", "os.setpgid",
+})
 CLAUDE_DESKTOP_EXECUTABLE = "/Applications/Claude.app/Contents/MacOS/Claude"
 CLAUDE_DESKTOP_BUNDLE = "/Applications/Claude.app"
 CLAUDE_DESKTOP_CONTENTS = CLAUDE_DESKTOP_BUNDLE + "/Contents/"
@@ -80,6 +106,7 @@ COMMANDS = {
 # deliberately boring and portable; session identity is enriched below with
 # the public Python API after the bounded inventory has been parsed.
 CLEANUP_PS_COMMAND = ["/bin/ps", "-Ao", "pid=,ppid=,pgid=,uid=,stat=,start=,args="]
+CLEANUP_COMM_COMMAND = ["/bin/ps", "-Ao", "pid=,comm="]
 CLEANUP_EVIDENCE_SCHEMA = "ironmule.cleanup.v2"
 # macOS emits ``N`` as the nice-priority modifier (for example ``SN`` or
 # ``SNs``); the other suffixes are the documented session/priority markers.
@@ -87,6 +114,8 @@ CLEANUP_STAT_RE = re.compile(r"^[DRSITUWZNL](?:[s+<>-N]*)$")
 CLEANUP_START_RE = re.compile(r"^[^\s]+$")
 MAX_BASELINE_IDENTITIES = 4096
 MAX_PROCESS_ID = 2**31 - 1
+MAX_COMM_RECORDS = 4096
+MAX_COMM_LENGTH = 1024
 PREREGISTRATION = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.md"
 PREREGISTRATION_SHA = Path(__file__).resolve().parent / "raw" / "Q3b_preregistration.sha256"
 
@@ -123,7 +152,7 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
         [COMMANDS["ps"], "-Ao", "pid=,ppid=,rss=,%cpu=,args="],
         [COMMANDS["ps"], "-Ao", "pid=,comm="],
         CLEANUP_PS_COMMAND,
-    ) else MAX_COMMAND_OUTPUT
+    ) else MAX_PS_OUTPUT if command == CLEANUP_COMM_COMMAND else MAX_COMMAND_OUTPUT
     if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > limit:
         return _CommandText("", False)
     return _CommandText(completed.stdout, True)
@@ -486,13 +515,14 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text,
         if pid in ancestry:
             continue
         lowered_args = args_text.casefold()
+        comm_path = comm_records.get(pid)
         # Model/inference patterns are always blockers, including if a process
         # happens to use a path below the Claude bundle.  This check is before
         # comm lookup so a model process cannot disappear from the second
         # snapshot and become an allowed gap.
-        if any(token in lowered_args for token in KNOWN_INFERENCE_ACTIVITY):
+        lowered_comm = comm_path.casefold() if isinstance(comm_path, str) else ""
+        if any(token in lowered_args or token in lowered_comm for token in Q3F_BLOCKER_SET):
             return "competing model activity detected"
-        comm_path = comm_records.get(pid)
         if comm_path is None:
             # Only an args record that is itself Claude-related needs a
             # same-PID comm proof.  Irrelevant args records may legitimately
@@ -1026,6 +1056,44 @@ def _parse_cleanup_ps_snapshot(output: Any) -> dict[str, Any]:
     return {"valid": True, "records": records, "error": None}
 
 
+def _parse_cleanup_comm_inventory(output: Any) -> dict[str, Any]:
+    """Parse a separate, bounded same-PID ``comm`` inventory.
+
+    The canonical cleanup snapshot intentionally keeps ancestry and process
+    arguments in its own schema.  ``comm`` is collected independently so a
+    same-PID executable identity cannot be inferred from an incomplete or
+    shifted ``args`` row.
+    """
+    if not isinstance(output, str) or not getattr(output, "ok", True):
+        return {"valid": False, "records": [], "error": "comm inventory unavailable"}
+    if len(output) > MAX_PS_OUTPUT:
+        return {"valid": False, "records": [], "error": "comm inventory exceeded bounded limit"}
+    records: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for line in output.splitlines():
+        if not line.strip():
+            return {"valid": False, "records": [], "error": "comm inventory contains a blank row"}
+        parts = line.split(None, 1)
+        if len(parts) != 2 or re.fullmatch(r"[0-9]+", parts[0]) is None:
+            return {"valid": False, "records": [], "error": "comm inventory row malformed"}
+        try:
+            pid = int(parts[0])
+        except (TypeError, ValueError, OverflowError):
+            return {"valid": False, "records": [], "error": "comm inventory PID malformed"}
+        comm = parts[1].strip()
+        if (pid <= 0 or pid > MAX_PROCESS_ID or pid in seen or not comm
+                or len(comm) > MAX_COMM_LENGTH or "\x00" in comm
+                or any(ord(char) < 32 for char in comm)):
+            return {"valid": False, "records": [], "error": "comm inventory identity malformed"}
+        seen.add(pid)
+        records.append({"pid": pid, "comm": comm})
+        if len(records) > MAX_COMM_RECORDS:
+            return {"valid": False, "records": [], "error": "comm inventory record limit exceeded"}
+    if not records:
+        return {"valid": False, "records": [], "error": "comm inventory is empty"}
+    return {"valid": True, "records": records, "error": None}
+
+
 def _enrich_cleanup_records(parsed: Mapping[str, Any], *, get_sid: Callable[[int], int] | None = None,
                             get_pgid: Callable[[int], int] | None = None) -> dict[str, Any]:
     """Add session identity only to this user's rows, failing closed on ambiguity.
@@ -1100,16 +1168,27 @@ def _cleanup_ps_snapshot(run: Callable[[list[str]], str] = _run_text) -> dict[st
     stamp = time.monotonic()
     try:
         output = run(CLEANUP_PS_COMMAND)
+        comm_output = run(CLEANUP_COMM_COMMAND)
     except BaseException as exc:
         return {"monotonic": stamp, "command_ok": False, "parse_ok": False,
                 "records": [], "gone_pids": [], "enrichment": [],
+                "comm": {"monotonic": time.monotonic(), "command_ok": False,
+                         "parse_ok": False, "records": [],
+                         "error": f"comm inventory command: {type(exc).__name__}"},
                 "error": f"ps snapshot command: {type(exc).__name__}"}
     parsed = _parse_cleanup_ps_snapshot(output)
     enriched = _enrich_cleanup_records(parsed)
-    return {"monotonic": stamp, "command_ok": bool(isinstance(output, str) and getattr(output, "ok", True)),
+    comm_stamp = time.monotonic()
+    comm = _parse_cleanup_comm_inventory(comm_output)
+    command_ok = bool(isinstance(output, str) and getattr(output, "ok", True))
+    return {"monotonic": stamp, "command_ok": command_ok,
             "parse_ok": enriched["valid"], "records": enriched["records"],
             "gone_pids": enriched["gone_pids"], "enrichment": enriched["enrichment"],
-            "error": enriched["error"]}
+            "comm": {"monotonic": comm_stamp,
+                     "command_ok": bool(isinstance(comm_output, str) and getattr(comm_output, "ok", True)),
+                     "parse_ok": comm["valid"], "records": comm["records"],
+                     "error": comm["error"]},
+            "error": enriched["error"] if enriched["error"] is not None else comm["error"]}
 
 
 def _capture_process_baseline(run: Callable[[list[str]], str] = _run_text) -> dict[str, Any]:
@@ -1153,6 +1232,13 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
         raise CanaryRefused("worker identity or process-group leader mismatch")
     descendants = []
     by_pid = {row["pid"]: row for row in snapshot["records"]}
+    ancestors: list[int] = []
+    cursor = rows[0]["ppid"]
+    while cursor:
+        if cursor not in by_pid or cursor in ancestors:
+            raise CanaryRefused("worker identity ancestry is malformed")
+        ancestors.append(cursor)
+        cursor = by_pid[cursor]["ppid"]
     for row in snapshot["records"]:
         cursor = row["pid"]
         chain: set[int] = set()
@@ -1170,10 +1256,13 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
     known_rows = [row for row in snapshot["records"] if row["pid"] in known]
     if any("sid" not in row for row in known_rows):
         raise CanaryRefused("worker descendant session identity is unavailable")
-    return {"worker_pid": pid, "parent_pid": rows[0]["ppid"], "pgid": rows[0]["pgid"],
+    return {"worker_pid": pid, "parent_pid": rows[0]["ppid"], "worker_ancestor_pids": ancestors,
+            "pgid": rows[0]["pgid"],
             "sid": rows[0]["sid"], "uid": rows[0]["uid"], "known_descendant_pids": known,
             "known_process_starts": {str(row["pid"]): row["start"] for row in known_rows
                                      if row["pid"] in known},
+            "known_process_ppids": {str(row["pid"]): row["ppid"] for row in known_rows
+                                    if row["pid"] in known},
             "known_process_sids": {str(row["pid"]): row["sid"] for row in known_rows
                                    if row["pid"] in known},
             "known_process_pgids": {str(row["pid"]): row["pgid"] for row in known_rows
@@ -1184,13 +1273,230 @@ def _capture_worker_identity(process: Any, *, run: Callable[[list[str]], str] = 
                                "identities": baseline["identities"]}}
 
 
+def _cleanup_comm_map(snapshot: Mapping[str, Any]) -> dict[int, dict[str, Any]] | None:
+    """Return a strict same-PID comm map for one cleanup snapshot."""
+    inventory = snapshot.get("comm")
+    if (not isinstance(inventory, Mapping) or inventory.get("command_ok") is not True
+            or inventory.get("parse_ok") is not True or inventory.get("error") is not None
+            or not isinstance(inventory.get("records"), list)
+            or len(inventory["records"]) > MAX_COMM_RECORDS):
+        return None
+    result: dict[int, dict[str, Any]] = {}
+    for item in inventory["records"]:
+        if (not isinstance(item, Mapping) or set(item) != {"pid", "comm"}
+                or type(item.get("pid")) is not int or not 0 < item["pid"] <= MAX_PROCESS_ID
+                or not isinstance(item.get("comm"), str) or not item["comm"]
+                or len(item["comm"]) > MAX_COMM_LENGTH or "\x00" in item["comm"]
+                or item["pid"] in result):
+            return None
+        result[item["pid"]] = dict(item)
+    return result
+
+
+def _valid_q3f_guard_ledger(guard_proof: Any, child_ledger: Any,
+                            known_descendants: list[int]) -> bool:
+    """Validate exact zero-event guard proof and its direct-start ledger."""
+    if (not isinstance(guard_proof, list) or not guard_proof
+            or len(guard_proof) > 64 or not isinstance(child_ledger, list)
+            or len(child_ledger) != len(guard_proof) or len(child_ledger) > 64):
+        return False
+    guard_by_pid: dict[int, Mapping[str, Any]] = {}
+    for item in guard_proof:
+        if (not isinstance(item, Mapping) or set(item) != {"pid", "guard"}
+                or type(item.get("pid")) is not int or item["pid"] <= 0
+                or item["pid"] in guard_by_pid or not isinstance(item.get("guard"), Mapping)):
+            return False
+        guard = item["guard"]
+        if (set(guard) != {"version", "installed", "events"}
+                or guard.get("version") != "ironmule.q3f_child_guard.v1"
+                or guard.get("installed") is not True or guard.get("events") != []):
+            return False
+        guard_by_pid[item["pid"]] = guard
+    ledger_by_pid: dict[int, Mapping[str, Any]] = {}
+    required = {"pid", "ppid", "pgid", "sid", "uid", "start", "callback_monotonic", "guard_version", "guard_event_count"}
+    for item in child_ledger:
+        if (not isinstance(item, Mapping) or set(item) != required
+                or type(item.get("pid")) is not int or item["pid"] <= 0
+                or item["pid"] in ledger_by_pid or item["pid"] not in guard_by_pid
+                or type(item.get("ppid")) is not int or item["ppid"] < 0
+                or type(item.get("pgid")) is not int or item["pgid"] <= 0
+                or type(item.get("sid")) is not int or item["sid"] <= 0
+                or type(item.get("uid")) is not int or item["uid"] <= 0
+                or not isinstance(item.get("start"), str) or not CLEANUP_START_RE.fullmatch(item["start"])
+                or not isinstance(item.get("callback_monotonic"), (int, float))
+                or isinstance(item["callback_monotonic"], bool)
+                or not math.isfinite(float(item["callback_monotonic"]))
+                or item["callback_monotonic"] < 0
+                or item.get("guard_version") != "ironmule.q3f_child_guard.v1"
+                or type(item.get("guard_event_count")) is not int or item["guard_event_count"] != 0):
+            return False
+        ledger_by_pid[item["pid"]] = item
+    return (set(guard_by_pid) == set(ledger_by_pid)
+            and set(guard_by_pid).issubset(set(known_descendants)))
+
+
+def _process_has_q3f_blocker(row: Mapping[str, Any], comm: Mapping[str, Any]) -> bool:
+    text = f"{row.get('args', '')} {comm.get('comm', '')}".casefold()
+    return any(token in text for token in Q3F_BLOCKER_SET)
+
+
+def _python_process_with_blocker(row: Mapping[str, Any], comm: Mapping[str, Any]) -> bool:
+    text = f"{row.get('args', '')} {comm.get('comm', '')}".casefold()
+    executable_is_python = re.search(
+        r"(?:^|[\s/])python(?:[0-9]+(?:\.[0-9]+)*)(?:$|[\s/])|(?:^|[\s/])python(?:$|\s)",
+        text,
+    ) is not None
+    return executable_is_python and _process_has_q3f_blocker(row, comm)
+
+
+def _classify_unrelated_new_processes(
+    snapshots: list[Mapping[str, Any]],
+    identity: Mapping[str, Any],
+    baseline_identities: list[Mapping[str, Any]],
+    known_descendants: list[int],
+    *,
+    competing: str | None,
+    guard_proof: Any = None,
+    child_ledger: Any = None,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str]]:
+    """Strictly split stable unrelated rows from hard cleanup blockers.
+
+    A candidate is retained with both complete rows and both same-PID comm
+    records.  Anything that cannot be proven stable, structurally separate and
+    non-model-like remains a ``new_process`` blocker and is never signalled.
+    """
+    def snapshot_ready(snapshot: Mapping[str, Any]) -> bool:
+        if not isinstance(snapshot, Mapping):
+            return False
+        comm = snapshot.get("comm")
+        return (snapshot.get("command_ok") is True
+                and snapshot.get("parse_ok") is True and snapshot.get("error") is None
+                and _cleanup_comm_map(snapshot) is not None
+                and isinstance(snapshot.get("monotonic"), (int, float))
+                and isinstance(comm, Mapping)
+                and isinstance(comm.get("monotonic"), (int, float))
+                and comm["monotonic"] >= snapshot["monotonic"])
+    if len(snapshots) != 2 or any(not snapshot_ready(snapshot) for snapshot in snapshots):
+        return [], [], ["cleanup attribution snapshots or comm inventory unknown"]
+    guards_valid = _valid_q3f_guard_ledger(guard_proof, child_ledger, known_descendants)
+    if guards_valid:
+        for entry in child_ledger:
+            key = str(entry["pid"])
+            if (entry["start"] != identity.get("known_process_starts", {}).get(key)
+                    or entry["ppid"] != identity.get("known_process_ppids", {}).get(key)
+                    or entry["sid"] != identity.get("known_process_sids", {}).get(key)
+                    or entry["pgid"] != identity.get("known_process_pgids", {}).get(key)
+                    or entry["uid"] != identity.get("uid")):
+                guards_valid = False
+                break
+    baseline_by_pid = {item["pid"]: item for item in baseline_identities if isinstance(item, Mapping)}
+    known = set(known_descendants)
+    worker_pid = identity.get("worker_pid")
+    worker_pgid = identity.get("pgid")
+    worker_sid = identity.get("sid")
+    worker_ancestors = set(identity.get("worker_ancestor_pids", []))
+    candidates: list[dict[str, Any]] = []
+    unresolved: list[dict[str, Any]] = []
+    reasons: list[str] = []
+    per_snapshot: list[dict[int, tuple[dict[str, Any], dict[str, Any]]]] = []
+    for snapshot in snapshots:
+        by_pid = {int(row["pid"]): row for row in snapshot["records"]}
+        comm_map = _cleanup_comm_map(snapshot)
+        assert comm_map is not None  # checked above; keeps the type narrow
+        rows: dict[int, tuple[dict[str, Any], dict[str, Any]]] = {}
+        for pid, row in by_pid.items():
+            if row.get("uid") != identity.get("uid"):
+                continue
+            baseline = baseline_by_pid.get(pid)
+            current_identity = (row.get("pid"), row.get("start"), row.get("uid"),
+                                row.get("sid"), row.get("pgid"))
+            if baseline is not None:
+                expected_identity = (baseline.get("pid"), baseline.get("start"), baseline.get("uid"),
+                                     baseline.get("sid"), baseline.get("pgid"))
+                if current_identity != expected_identity:
+                    unresolved.append({"reason": "baseline PID identity changed or was reused", "row": dict(row)})
+                    reasons.append("baseline PID identity changed or was reused")
+                continue
+            if pid in known or pid == worker_pid or row.get("pgid") == worker_pgid or row.get("sid") == worker_sid:
+                unresolved.append({"reason": "new process overlaps worker identity", "row": dict(row)})
+                reasons.append("new process overlaps worker identity")
+                continue
+            comm = comm_map.get(pid)
+            if comm is None:
+                unresolved.append({"reason": "new process has no same-PID comm evidence", "row": dict(row)})
+                reasons.append("new process has no same-PID comm evidence")
+                continue
+            # Full same-snapshot ancestry must be available (already checked by
+            # the canonical parser).  Reject both directions explicitly.
+            cursor = pid
+            chain: set[int] = set()
+            related = False
+            while cursor:
+                if cursor in chain:
+                    related = True
+                    break
+                chain.add(cursor)
+                if cursor == worker_pid:
+                    related = True
+                    break
+                parent = by_pid.get(cursor)
+                if parent is None:
+                    related = True
+                    break
+                cursor = int(parent["ppid"])
+            if pid in worker_ancestors:
+                related = True
+            if related:
+                unresolved.append({"reason": "new process has worker ancestry relation", "row": dict(row), "comm": dict(comm)})
+                reasons.append("new process has worker ancestry relation")
+                continue
+            if _process_has_q3f_blocker(row, comm) or _python_process_with_blocker(row, comm):
+                unresolved.append({"reason": "new process has exact model/inference blocker", "row": dict(row), "comm": dict(comm)})
+                reasons.append("new process has exact model/inference blocker")
+                continue
+            if not isinstance(row.get("stat"), str) or not row["stat"] or row["stat"].startswith("Z"):
+                unresolved.append({"reason": "new process state is unknown or zombie", "row": dict(row), "comm": dict(comm)})
+                reasons.append("new process state is unknown or zombie")
+                continue
+            rows[pid] = (dict(row), dict(comm))
+        per_snapshot.append(rows)
+    first, second = per_snapshot
+    for pid in sorted(set(first) | set(second)):
+        left, right = first.get(pid), second.get(pid)
+        if left is None or right is None:
+            unresolved.append({"reason": "new process identity was not stable in both snapshots",
+                               "pid": pid, "rows": [left[0] if left else None, right[0] if right else None]})
+            reasons.append("new process identity was not stable in both snapshots")
+            continue
+        if left != right:
+            unresolved.append({"reason": "new process row or comm identity changed between snapshots",
+                               "pid": pid, "rows": [left[0], right[0]], "comm": [left[1], right[1]]})
+            reasons.append("new process row or comm identity changed between snapshots")
+            continue
+        if competing is not None:
+            unresolved.append({"reason": "global competing model process is present", "pid": pid,
+                               "rows": [left[0], right[0]], "comm": [left[1], right[1]]})
+            reasons.append("global competing model process is present")
+            continue
+        candidates.append({"reason": "stable same-UID process proven unrelated by Q3f guard and snapshots",
+                           "pid": pid, "identity": {key: left[0][key] for key in ("pid", "start", "uid", "pgid", "sid")},
+                           "rows": [left[0], right[0]], "comm": [left[1], right[1]]})
+    if candidates and not guards_valid:
+        return ([{"reason": "guard or direct child-start ledger is unavailable"}]
+                + unresolved, [], sorted(set(reasons + ["guard or direct child-start ledger is unavailable"])))
+    return unresolved, candidates, sorted(set(reasons))
+
+
 def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = None,
                              *, run: Callable[[list[str]], str] = _run_text,
-                             global_inventory: bool = False) -> dict[str, Any]:
+                             global_inventory: bool = False,
+                             guard_proof: Any = None,
+                             child_ledger: Any = None) -> dict[str, Any]:
     """Terminate/reap a worker group and return fail-closed cleanup evidence v2."""
     pid = getattr(process, "pid", None)
     known_descendants = identity.get("known_descendant_pids", []) if isinstance(identity, Mapping) else []
     known_starts = identity.get("known_process_starts", {}) if isinstance(identity, Mapping) else {}
+    known_ppids = identity.get("known_process_ppids", {}) if isinstance(identity, Mapping) else {}
     known_pgids = identity.get("known_process_pgids", {}) if isinstance(identity, Mapping) else {}
     spawn_baseline = identity.get("spawn_baseline", {}) if isinstance(identity, Mapping) else {}
     baseline_identities = spawn_baseline.get("identities", []) if isinstance(spawn_baseline, Mapping) else []
@@ -1198,6 +1504,10 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         isinstance(identity, Mapping)
         and type(identity.get("worker_pid")) is int and 0 < identity["worker_pid"] <= MAX_PROCESS_ID
         and type(identity.get("parent_pid")) is int and 0 <= identity["parent_pid"] <= MAX_PROCESS_ID
+        and isinstance(identity.get("worker_ancestor_pids"), list)
+        and identity["worker_ancestor_pids"] == list(dict.fromkeys(identity["worker_ancestor_pids"]))
+        and identity["worker_pid"] not in identity["worker_ancestor_pids"]
+        and all(type(item) is int and 0 <= item <= MAX_PROCESS_ID for item in identity["worker_ancestor_pids"])
         and type(identity.get("pgid")) is int and 0 < identity["pgid"] <= MAX_PROCESS_ID
         and type(identity.get("sid")) is int and 0 < identity["sid"] <= MAX_PROCESS_ID
         and type(identity.get("uid")) is int and 0 <= identity["uid"] <= MAX_PROCESS_ID
@@ -1209,6 +1519,9 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         and set(known_starts) == {str(item) for item in known_descendants}
         and all(isinstance(item, str) and CLEANUP_START_RE.fullmatch(item) is not None
                 for item in known_starts.values())
+        and isinstance(known_ppids, dict)
+        and set(known_ppids) == {str(item) for item in known_descendants}
+        and all(type(item) is int and 0 <= item <= MAX_PROCESS_ID for item in known_ppids.values())
         and isinstance(identity.get("known_process_sids"), dict)
         and set(identity["known_process_sids"]) == {str(item) for item in known_descendants}
         and all(type(item) is int and item == identity["sid"] for item in identity["known_process_sids"].values())
@@ -1236,10 +1549,13 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     )
     if valid_identity:
         exact_identity = {"worker_pid": identity["worker_pid"], "parent_pid": identity["parent_pid"],
+                          "worker_ancestor_pids": list(identity["worker_ancestor_pids"]),
                           "pgid": identity["pgid"], "sid": identity["sid"], "uid": identity["uid"],
                           "known_descendant_pids": sorted(set(known_descendants)),
                           "known_process_starts": {str(pid): known_starts[str(pid)]
                                                    for pid in sorted(set(known_descendants))},
+                          "known_process_ppids": {str(pid): known_ppids[str(pid)]
+                                                  for pid in sorted(set(known_descendants))},
                           "known_process_sids": {str(pid): identity["known_process_sids"][str(pid)]
                                                  for pid in sorted(set(known_descendants))},
                           "known_process_pgids": {str(pid): known_pgids[str(pid)]
@@ -1249,11 +1565,13 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     else:
         exact_identity = {"worker_pid": pid if type(pid) is int and pid > 0 else None,
                           "parent_pid": identity.get("parent_pid") if isinstance(identity, Mapping) else None,
+                          "worker_ancestor_pids": identity.get("worker_ancestor_pids", []) if isinstance(identity, Mapping) else [],
                           "pgid": identity.get("pgid") if isinstance(identity, Mapping) else None,
                           "sid": identity.get("sid") if isinstance(identity, Mapping) else None,
                           "uid": identity.get("uid") if isinstance(identity, Mapping) else None,
                           "known_descendant_pids": known_descendants if isinstance(known_descendants, list) else [],
                           "known_process_starts": known_starts if isinstance(known_starts, dict) else {},
+                          "known_process_ppids": known_ppids if isinstance(known_ppids, dict) else {},
                           "known_process_sids": identity.get("known_process_sids", {}) if isinstance(identity, Mapping) else {},
                           "known_process_pgids": known_pgids if isinstance(known_pgids, dict) else {},
                           "uid_invariant": identity.get("uid_invariant", {}) if isinstance(identity, Mapping) else {},
@@ -1273,10 +1591,14 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
                                 or leader[0].get("start") != known_starts.get(str(pid))):
             return False
         members_now = [row for row in rows if row.get("pgid") == pgid]
-        if any(row.get("uid") != exact_identity["uid"] for row in members_now):
-            return False
-        if any(row.get("sid") != exact_identity["sid"] for row in members_now):
-            return False
+        for row in members_now:
+            row_pid = row.get("pid")
+            if (row_pid not in known_descendants
+                    or row.get("uid") != exact_identity["uid"]
+                    or row.get("start") != known_starts.get(str(row_pid))
+                    or row.get("sid") != identity.get("known_process_sids", {}).get(str(row_pid))
+                    or row.get("pgid") != known_pgids.get(str(row_pid))):
+                return False
         if reference_starts is not None:
             if any(row.get("pid") not in reference_starts for row in members_now):
                 return False
@@ -1432,20 +1754,12 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     leaders: list[list[dict[str, Any]]] = []
     descendants: list[list[dict[str, Any]]] = []
     new_processes: list[list[dict[str, Any]]] = []
-    baseline_pairs = {(item.get("pid"), item.get("start"), item.get("uid"), item.get("sid"), item.get("pgid")) for item in baseline_identities}
     for snapshot in snapshots:
         rows = snapshot.get("records", []) if snapshot.get("parse_ok") is True else []
         members.append([row for row in rows if valid_identity and row.get("pgid") == pgid])
         leaders.append([row for row in rows if valid_identity and row.get("pid") == pid])
         descendants.append([row for row in rows if valid_identity and row.get("pid") in known_descendants])
-        new_processes.append([{"pid": row["pid"], "start": row["start"], "uid": row["uid"],
-                              "sid": row["sid"], "pgid": row["pgid"]}
-                             for row in rows if valid_identity and row.get("uid") == exact_identity["uid"]
-                             and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs
-                             and not (row.get("pid") in known_descendants
-                                      and row.get("start") == known_starts.get(str(row.get("pid")))
-                                      and row.get("sid") == exact_identity["sid"]
-                                      and row.get("pgid") == known_pgids.get(str(row.get("pid"))))])
+        new_processes.append([])
     snapshots_valid = (len(snapshots) == 2
                        and all(snapshot.get("command_ok") is True and snapshot.get("parse_ok") is True
                                and isinstance(snapshot.get("monotonic"), (int, float))
@@ -1454,7 +1768,7 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
     pre_escalation_known = pre_escalation_snapshot.get("command_ok") is True and pre_escalation_snapshot.get("parse_ok") is True
     members_empty = snapshots_valid and all(not group for group in members)
     descendants_empty = snapshots_valid and all(not group for group in descendants)
-    new_processes_empty = snapshots_valid and all(not group for group in new_processes)
+    new_processes_empty = False
     leaders_absent = snapshots_valid and all(not leader for leader in leaders)
     non_zombie = snapshots_valid and all(not row.get("stat", "").startswith("Z") for row in sum(members + descendants + leaders, []))
     global_inventory_evidence = {"enabled": global_inventory, "known": True, "competing": None}
@@ -1473,6 +1787,16 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
             unresolved_competing = "global process inventory unknown"
     else:
         unresolved_competing = None
+    attribution_unresolved, unrelated_new_processes, attribution_reasons = (
+        _classify_unrelated_new_processes(
+            snapshots, exact_identity, baseline_identities, known_descendants,
+            competing=global_inventory_evidence.get("competing")
+            if global_inventory_evidence.get("known") is True else "unknown",
+            guard_proof=guard_proof, child_ledger=child_ledger,
+        ) if valid_identity else ([], [], ["worker identity invalid"])
+    )
+    new_processes = [[entry for entry in attribution_unresolved] for _ in snapshots]
+    new_processes_empty = snapshots_valid and not attribution_unresolved and not attribution_reasons
     group_gone = bool(valid_identity and worker_reaped and pre_signal_known and pre_escalation_known and snapshots_valid
                       and members_empty and descendants_empty and new_processes_empty and leaders_absent and non_zombie
                       and global_inventory_evidence["known"] and global_inventory_evidence["competing"] is None)
@@ -1496,6 +1820,7 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         unresolved.append("worker descendant still appears after cleanup")
     if snapshots_valid and not new_processes_empty:
         unresolved.append("new same-UID process appeared after worker spawn baseline")
+        unresolved.extend(attribution_reasons)
     if snapshots_valid and not leaders_absent:
         unresolved.append("worker leader still appears in cleanup snapshot")
     if snapshots_valid and not non_zombie:
@@ -1528,6 +1853,10 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         "leader": leaders,
         "descendants": descendants,
         "new_processes": new_processes,
+        "unrelated_new_processes": unrelated_new_processes,
+        "attribution_reasons": attribution_reasons,
+        "guard_proof": guard_proof,
+        "child_ledger": child_ledger,
         "snapshot_count": len(snapshots),
         "snapshot_gap_seconds": snapshots[1]["monotonic"] - snapshots[0]["monotonic"] if snapshots_valid else None,
         "independent": snapshots_valid and len(snapshots) == 2,
@@ -1540,6 +1869,8 @@ def _cleanup_worker_evidence(process: Any, identity: Mapping[str, Any] | None = 
         "worker_reaped": worker_reaped,
         "signal_attempts": signal_attempts,
         "descendant_kill_attempts": descendant_kill_attempts,
+        "guard_proof": guard_proof,
+        "child_ledger": child_ledger,
         "verification": verification,
         "resolved_errors": resolved,
         "unresolved_errors": unresolved,
@@ -1659,6 +1990,35 @@ def _integer_list(value: Any) -> bool:
     return isinstance(value, list) and all(isinstance(item, int) and not isinstance(item, bool) and item >= 0 for item in value)
 
 
+def _valid_q3f_child_guard(value: Any) -> bool:
+    if (not isinstance(value, dict) or set(value) != {"version", "installed", "events"}
+            or value.get("version") != "ironmule.q3f_child_guard.v1"
+            or value.get("installed") is not True
+            or not isinstance(value.get("events"), list) or len(value["events"]) > 32
+            or value["events"] != []):
+        return False
+    for event in value["events"]:
+        if (not isinstance(event, dict) or set(event) != {"event", "operation", "monotonic", "blocked"}
+                or event.get("event") not in Q3F_GUARD_OPERATIONS
+                or event.get("operation") != event.get("event")
+                or not isinstance(event.get("monotonic"), (int, float))
+                or isinstance(event["monotonic"], bool)
+                or not math.isfinite(float(event["monotonic"]))
+                or event.get("blocked") is not True):
+            return False
+        try:
+            if len(json.dumps(event, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()) > 512:
+                return False
+        except (TypeError, ValueError, OverflowError):
+            return False
+    try:
+        if len(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()) > 512 * 33:
+            return False
+    except (TypeError, ValueError, OverflowError):
+        return False
+    return True
+
+
 def validate_stage_result(result: Any, stage: str) -> tuple[bool, str]:
     if not isinstance(result, dict) or set(result) != {"stage", "arms", "processes", "repeats", "warmup", "raw", "per_arm", "token_identity", "token_count_identity", "stop_reason_identity", "deterministic", "reference_tokens", "ratios", "binding", "child_rss_peak_bytes", "swap_samples", "swap_sample_times", "swap_sample_offsets", "sampler_errors", "max_swap_used_bytes"}:
         return False, "stage schema fields are not exact"
@@ -1667,8 +2027,10 @@ def validate_stage_result(result: Any, stage: str) -> tuple[bool, str]:
     if not isinstance(result["raw"], list) or len(result["raw"]) != 1:
         return False, "stage raw record is incomplete"
     child = result["raw"][0]
-    if not isinstance(child, dict) or set(child) != {"pid", "arms", "order", "mlx_peak_bytes"} or child["order"] != [stage] or set(child["arms"]) != {stage} or not isinstance(child["pid"], int) or child["pid"] <= 0:
+    if not isinstance(child, dict) or set(child) != {"pid", "arms", "order", "mlx_peak_bytes", "guard"} or child["order"] != [stage] or set(child["arms"]) != {stage} or not isinstance(child["pid"], int) or child["pid"] <= 0:
         return False, "stage child identity is malformed"
+    if not _valid_q3f_child_guard(child["guard"]):
+        return False, "stage child guard is malformed"
     arm = child["arms"][stage]
     expected = {"total_ns", "prefill_ns", "decode_ns", "logical_tokens", "logical_tokens_per_repeat", "physical_tokens_per_repeat", "token_counts", "stop_reasons", "capacities", "deterministic", "decode_steps", "prompt_tokens", "mlx_peak_bytes"}
     if not isinstance(arm, dict) or set(arm) != expected:

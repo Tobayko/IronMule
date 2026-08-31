@@ -22,6 +22,31 @@ from .runtime import Knobs
 
 CHILD_ENV = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "PYTHONNOUSERSITE": "1"}
 MAX_CHILD_OUTPUT = 512 * 1024
+CHILD_BOOTSTRAP = (
+    "import importlib.util,json,os,sys;"
+    "guard_path=os.path.realpath(sys.argv[2]);"
+    "ab_path=os.path.realpath(sys.argv[3]);"
+    "guard_spec=importlib.util.spec_from_file_location('ironmule.q3f_child_guard',guard_path);"
+    "assert guard_spec is not None and guard_spec.loader is not None;"
+    "guard=importlib.util.module_from_spec(guard_spec);"
+    "sys.modules['ironmule.q3f_child_guard']=guard;"
+    "guard_spec.loader.exec_module(guard);"
+    "guard.assert_source_surface(ab_path);"
+    "guard.install();"
+    "from ironmule.ab import _child\n"
+    "def _emit_guard_failure(exc):\n"
+    "    for note in getattr(exc,'__notes__',[]):\n"
+    "        if isinstance(note,str) and note.startswith('@GUARD_FAILURE'):\n"
+    "            print(note,flush=True); break\n"
+    "try:\n"
+    "    result=_child(json.loads(sys.argv[1]))\n"
+    "except BaseException as exc:\n"
+    "    _emit_guard_failure(exc); raise\n"
+    "else:\n"
+    "    print('@@'+json.dumps(result,sort_keys=True,allow_nan=False),flush=True)\n"
+    "finally:\n"
+    "    guard.uninstall()"
+)
 
 
 def _reject_json_constant(value: str) -> None:
@@ -31,10 +56,12 @@ def _reject_json_constant(value: str) -> None:
 class ABRunError(RuntimeError):
     """A bounded child failure carrying only already-completed raw records."""
 
-    def __init__(self, message: str, *, partial_children=None, child_index=None):
+    def __init__(self, message: str, *, partial_children=None, child_index=None,
+                 partial_evidence=None):
         super().__init__(message)
         self.partial_children = list(partial_children or [])
         self.child_index = child_index
+        self.partial_evidence = partial_evidence
 
 
 def _terminate_child(process: subprocess.Popen[str]) -> None:
@@ -82,7 +109,33 @@ def _terminate_child(process: subprocess.Popen[str]) -> None:
 
 
 def _child(spec: dict[str, Any]) -> dict[str, Any]:
-    """Runs inside the subprocess: one fresh model per arm, in the given order."""
+    """Run the model child behind Q3f's bounded no-detach guard."""
+    from . import q3f_child_guard
+
+    owns_guard = not q3f_child_guard.is_installed()
+    if owns_guard:
+        q3f_child_guard.install()
+    try:
+        q3f_child_guard.assert_child_surface(_child)
+        return _child_execution(spec)
+    except BaseException as exc:
+        try:
+            marker = q3f_child_guard.failure_marker()
+            if marker is not None:
+                exc.add_note("@GUARD_FAILURE" + json.dumps(marker, sort_keys=True, allow_nan=False))
+        except BaseException:
+            pass
+        raise
+    finally:
+        if owns_guard:
+            q3f_child_guard.uninstall()
+
+
+def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
+    """Guarded execution closure: one fresh model per arm, in the given order."""
+    # This must be the first child operation.  The guard is stdlib-only and is
+    # installed before importing the model/runtime surface, so a Python-level
+    # process/session escape cannot turn into an unattributed cleanup record.
     from .tune import DEFAULT_MODEL, DEFAULT_PROMPT, _eos_ids, load_engine, prompt_ids
 
     import mlx.core as mx
@@ -159,6 +212,10 @@ def _child(spec: dict[str, Any]) -> dict[str, Any]:
     # Kept for existing readers, and still what it always was: the high-water mark
     # across every arm this process ran, not any single arm's peak.
     out["mlx_peak_bytes"] = max(arm["mlx_peak_bytes"] for arm in out["arms"].values())
+    # Capture only after all work has completed.  Any guard event or malformed
+    # ledger raises and therefore cannot be reported as a successful child.
+    from . import q3f_child_guard
+    out["guard"] = q3f_child_guard.ledger()
     return out
 
 
@@ -173,6 +230,41 @@ _CHILD_FIELDS = frozenset({
     "stop_reasons", "capacities", "deterministic", "decode_steps",
     "prompt_tokens", "mlx_peak_bytes",
 })
+_GUARD_FIELDS = frozenset({"version", "installed", "events"})
+_GUARD_EVENT_FIELDS = frozenset({"event", "operation", "monotonic", "blocked"})
+_GUARD_OPERATIONS = frozenset({
+    "subprocess.Popen", "os.system", "os.fork", "os.forkpty",
+    "os.posix_spawn", "os.posix_spawnp", "os.setsid", "os.setpgid",
+})
+
+
+def _valid_child_guard(value: Any) -> bool:
+    if not isinstance(value, dict) or set(value) != _GUARD_FIELDS:
+        return False
+    events = value["events"]
+    if (value["version"] != "ironmule.q3f_child_guard.v1"
+            or value["installed"] is not True
+            or not isinstance(events, list) or len(events) > 32 or events != []):
+        return False
+    for event in events:
+        if (not isinstance(event, dict) or set(event) != _GUARD_EVENT_FIELDS
+                or event["event"] not in _GUARD_OPERATIONS
+                or event["operation"] not in _GUARD_OPERATIONS
+                or event["event"] != event["operation"]
+                or not isinstance(event["monotonic"], (int, float))
+                or isinstance(event["monotonic"], bool)
+                or not math.isfinite(float(event["monotonic"]))
+                or event["monotonic"] < 0 or event["blocked"] is not True):
+            return False
+        try:
+            if len(json.dumps(event, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()) > 512:
+                return False
+        except (TypeError, ValueError, OverflowError):
+            return False
+    try:
+        return len(json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()) <= 512 * 33
+    except (TypeError, ValueError, OverflowError):
+        return False
 _SUMMARY_FIELDS = frozenset({"n", "median", "min", "max", "p95", "stdev"})
 _RATIO_FIELDS = frozenset({"median_ratio", "ci_low", "ci_high", "pairs"})
 
@@ -197,7 +289,7 @@ def _validate_child_record(child: Any, names: list[str], order: list[str],
                            repeats: int | None) -> str | None:
     if not isinstance(child, dict):
         return "child_not_object"
-    if set(child) != {"pid", "arms", "order", "mlx_peak_bytes"}:
+    if set(child) != {"pid", "arms", "order", "mlx_peak_bytes", "guard"}:
         return "child_fields"
     if (not isinstance(child["pid"], int) or isinstance(child["pid"], bool)
             or child["pid"] <= 0 or child["order"] != order
@@ -205,7 +297,8 @@ def _validate_child_record(child: Any, names: list[str], order: list[str],
             or set(child["arms"]) != set(names)
             or not isinstance(child["mlx_peak_bytes"], int)
             or isinstance(child["mlx_peak_bytes"], bool)
-            or child["mlx_peak_bytes"] < 0):
+            or child["mlx_peak_bytes"] < 0
+            or not _valid_child_guard(child["guard"])):
         return "child_identity"
     for name in names:
         arm = child["arms"][name]
@@ -407,8 +500,9 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
         try:
             proc = subprocess.Popen(
                 [sys.executable, "-c",
-                 "import json,sys;from ironmule.ab import _child;"
-                 "print('@@'+json.dumps(_child(json.loads(sys.argv[1]))))", json.dumps(spec)],
+                 CHILD_BOOTSTRAP, json.dumps(spec),
+                 str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "q3f_child_guard.py")),
+                 os.path.abspath(__file__)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 env={**os.environ, **CHILD_ENV},
@@ -474,9 +568,20 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 partial_children=children, child_index=index,
             )
         if proc.returncode != 0:
+            guard_failure = next((line[len("@GUARD_FAILURE"):].strip()
+                                  for line in stdout.splitlines()
+                                  if line.startswith("@GUARD_FAILURE")), None)
+            evidence = None
+            if isinstance(guard_failure, str):
+                try:
+                    evidence = {"guard_failure": json.loads(
+                        guard_failure, parse_constant=_reject_json_constant)}
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    evidence = {"guard_failure": {"malformed": True}}
             raise ABRunError(
                 f"child {index} exited with status {proc.returncode}",
                 partial_children=children, child_index=index,
+                partial_evidence=evidence,
             )
         line = next((l for l in stdout.splitlines() if l.startswith("@@")), None)
         if line is None:

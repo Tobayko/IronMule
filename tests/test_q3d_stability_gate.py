@@ -51,9 +51,21 @@ class _Process:
 
 def _sequence(*outputs):
     values = iter(outputs)
+    last_output = [None]
 
-    def run(_command):
-        return next(values)
+    def run(command):
+        if command == q3b.CLEANUP_COMM_COMMAND:
+            source = last_output[0]
+            if not isinstance(source, str):
+                return ""
+            comm_lines = []
+            for line in source.splitlines():
+                parts = line.split(None, 6)
+                if len(parts) == 7:
+                    comm_lines.append(f"{parts[0]} {parts[6].split(None, 1)[0]}")
+            return "\n".join(comm_lines) + ("\n" if comm_lines else "")
+        last_output[0] = next(values)
+        return last_output[0]
 
     return run
 
@@ -524,7 +536,7 @@ def test_q3c_communicate_exception_routes_through_cleanup_v2(monkeypatch, tmp_pa
                                  "stat": "S", "start": "00:00:01", "args": "root"}], "error": None}
 
         @staticmethod
-        def _cleanup_worker_evidence(process, identity):
+        def _cleanup_worker_evidence(process, identity, *, guard_proof=None, child_ledger=None, global_inventory=False):
             calls.append(("outer", process.pid, identity))
             return {"schema": "ironmule.cleanup.v2", "verification": {"group_gone": True}}
 
@@ -550,9 +562,11 @@ def test_nested_q3c_worker_inventory_is_terminated_by_verified_group(monkeypatch
     assert first["valid"] is True
     first["records"][1]["sid"] = 50
     first_record = {"monotonic": 1.0, "command_ok": True, "parse_ok": True,
-                    "records": first["records"], "error": None}
+                    "records": first["records"], "comm": {"monotonic": 1.01, "command_ok": True, "parse_ok": True,
+                    "records": [{"pid": 1, "comm": "launchd"}, {"pid": 50, "comm": "python"}], "error": None}, "error": None}
     second_record = {"monotonic": 2.0, "command_ok": True, "parse_ok": True,
-                     "records": [root_row], "error": None}
+                     "records": [root_row], "comm": {"monotonic": 2.01, "command_ok": True, "parse_ok": True,
+                     "records": [{"pid": 1, "comm": "launchd"}], "error": None}, "error": None}
     snapshots = iter([
         first_record,
         second_record,
@@ -561,6 +575,7 @@ def test_nested_q3c_worker_inventory_is_terminated_by_verified_group(monkeypatch
         @staticmethod
         def _cleanup_ps_snapshot(_run):
             return next(snapshots)
+        _cleanup_comm_map = staticmethod(q3b._cleanup_comm_map)
     killed = []
     monkeypatch.setattr(q3d.os, "killpg", lambda pid, sig: killed.append((pid, sig)))
     result = q3d._cleanup_nested_q3c_workers(
