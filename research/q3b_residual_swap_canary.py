@@ -57,6 +57,9 @@ CLAUDE_DESKTOP_EXECUTABLE = "/Applications/Claude.app/Contents/MacOS/Claude"
 CLAUDE_DESKTOP_BUNDLE = "/Applications/Claude.app"
 CLAUDE_DESKTOP_CONTENTS = CLAUDE_DESKTOP_BUNDLE + "/Contents/"
 CLAUDE_CODESIGN = "/usr/bin/codesign"
+# The complete sealed-bundle verification is materially slower than the other
+# short OS probes on this host; keep its longer bound local to these two calls.
+CLAUDE_CODESIGN_TIMEOUT_SECONDS = 5.0
 CLAUDE_BUNDLE_IDENTIFIER = "com.anthropic.claudefordesktop"
 CLAUDE_BUNDLE_TEAM = "Q6L2SF6YDW"
 CLAUDE_BUNDLE_AUTHORITY = "Developer ID Application: Anthropic PBC (Q6L2SF6YDW)"
@@ -313,7 +316,7 @@ def _trusted_claude_bundle(bundle: str = CLAUDE_DESKTOP_BUNDLE,
     try:
         verified = execute(
             [CLAUDE_CODESIGN, "--verify", "--deep", "--strict", bundle],
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+            capture_output=True, text=True, timeout=CLAUDE_CODESIGN_TIMEOUT_SECONDS, check=False,
         )
         if getattr(verified, "returncode", None) != 0:
             return False
@@ -324,7 +327,7 @@ def _trusted_claude_bundle(bundle: str = CLAUDE_DESKTOP_BUNDLE,
             return False
         metadata = execute(
             [CLAUDE_CODESIGN, "-dv", "--verbose=4", bundle],
-            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+            capture_output=True, text=True, timeout=CLAUDE_CODESIGN_TIMEOUT_SECONDS, check=False,
         )
         if getattr(metadata, "returncode", None) != 0:
             return False
