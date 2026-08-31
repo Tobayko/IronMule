@@ -68,6 +68,15 @@ post-stage gates are the detection boundary for later relevant processes. This
 inventory limitation supports safety gating only and creates no performance
 claim.
 
+The stage worker remains stdlib-only until the capability payload, runtime-code
+hash, stage name, and finite worker deadline have all been validated. It then
+activates only `Path(__file__).resolve().parents[1]`, which must contain
+`ironmule/__init__.py`, at `sys.path[0]`. `importlib.util.find_spec("ironmule")`
+must resolve exactly to that package origin and search path before any IronMule
+import; a shadow path or a preloaded foreign `ironmule` module refuses the stage.
+The parent dry-run and a direct `--stage-worker` invocation without a valid
+capability must not activate this path or import IronMule/MLX.
+
 The parent owns a monotone 180-second deadline. Each model child has a
 35-second timeout and each fresh stage worker has a 120-second cap. A bounded
 0.25-second swap sampler runs for the whole stage and its maximum, not merely
