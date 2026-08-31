@@ -303,7 +303,8 @@ def _stage_result(stage, *, tokens=None):
     summary = {"n": 1, "median": 2.0, "min": 2.0, "max": 2.0, "p95": 2.0, "stdev": 0.0}
     return {
         "stage": stage, "arms": {stage: q3b.ARMS[stage]}, "processes": 1, "repeats": 3, "warmup": 1,
-        "raw": [{"pid": 10 if stage == "baseline" else 11, "arms": {stage: arm}, "order": [stage], "mlx_peak_bytes": 100}],
+        "raw": [{"pid": 10 if stage == "baseline" else 11, "arms": {stage: arm}, "order": [stage], "mlx_peak_bytes": 100,
+                 "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}}],
         "per_arm": {stage: {"total_ns": summary, "prefill_ns": summary, "decode_ns": summary}},
         "token_identity": True, "token_count_identity": True, "stop_reason_identity": True,
         "deterministic": True, "reference_tokens": tokens, "ratios": {},

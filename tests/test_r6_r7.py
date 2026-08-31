@@ -949,6 +949,7 @@ def _confirmation(*, token_identity=True, token_count_identity=True,
             "arms": {"baseline": arm("baseline"), "candidate": arm("candidate")},
             "order": ["baseline", "candidate"] if index % 2 == 0 else ["candidate", "baseline"],
             "mlx_peak_bytes": 10,
+            "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []},
         })
     per_arm = {
         name: {

@@ -602,10 +602,12 @@ def _strict_q3c_result(raw: Any, *, root: Path, expected_commit: str,
 
 
 def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], str],
-                                baseline: Mapping[str, Any] | None = None) -> dict[str, Any]:
+                                baseline: Mapping[str, Any] | None = None,
+                                wrapper_pid: int | None = None) -> dict[str, Any]:
     """Best-effort cleanup for Q3c phase-worker sessions after wrapper timeout."""
     first = q3b._cleanup_ps_snapshot(run)
-    if first.get("command_ok") is not True or first.get("parse_ok") is not True:
+    if (first.get("command_ok") is not True or first.get("parse_ok") is not True
+            or getattr(q3b, "_cleanup_comm_map", lambda _snapshot: None)(first) is None):
         return {"known": False, "groups": [], "errors": ["nested worker inventory unknown"]}
     required_fields = {"pid", "ppid", "pgid", "uid", "stat", "start", "args"}
     allowed_fields = (required_fields, required_fields | {"sid"})
@@ -628,7 +630,13 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
     rows = [row for row in first.get("records", [])
             if row.get("uid") == uid and "q3c_performance_replication.py" in row.get("args", "")
             and "--phase-worker" in row.get("args", "")
+            and (wrapper_pid is None or row.get("ppid") == wrapper_pid)
             and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs]
+    comm_map = q3b._cleanup_comm_map(first)
+    if comm_map is None or any("python" not in comm_map.get(row.get("pid"), {}).get("comm", "").casefold()
+                               for row in rows):
+        return {"known": False, "groups": [], "remaining": [], "errors": ["nested worker comm identity unknown"]}
+    candidate_keys = {(row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) for row in rows}
     groups: list[dict[str, Any]] = []
     errors: list[str] = []
     original_starts = {row.get("pid"): row.get("start") for row in rows}
@@ -650,14 +658,16 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
             errors.append(f"nested group signal failed: {row['pid']}")
         groups.append(attempt)
     second = q3b._cleanup_ps_snapshot(run)
-    if any(not isinstance(row, Mapping) or set(row) not in allowed_fields
+    if (second.get("command_ok") is not True or second.get("parse_ok") is not True
+            or getattr(q3b, "_cleanup_comm_map", lambda _snapshot: None)(second) is None
+            or any(not isinstance(row, Mapping) or set(row) not in allowed_fields
            or (row.get("uid") == uid and ("sid" not in row or type(row.get("sid")) is not int))
-           for row in second.get("records", [])):
+           for row in second.get("records", []))):
         return {"known": False, "groups": groups, "remaining": [], "errors": errors + ["nested worker inventory schema unknown"]}
     remaining = [row for row in second.get("records", [])
                  if row.get("uid") == uid and "q3c_performance_replication.py" in row.get("args", "")
                  and "--phase-worker" in row.get("args", "")
-                 and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs]
+                 and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) in candidate_keys]
     if remaining and second.get("command_ok") is True and second.get("parse_ok") is True:
         for row in remaining:
             current = [item for item in second["records"] if item.get("pgid") == row.get("pgid")]
@@ -675,11 +685,41 @@ def _cleanup_nested_q3c_workers(q3b: Any, uid: int, run: Callable[[list[str]], s
         remaining = [row for row in final.get("records", [])
                      if row.get("uid") == uid and "q3c_performance_replication.py" in row.get("args", "")
                      and "--phase-worker" in row.get("args", "")
-                     and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) not in baseline_pairs]
+                     and (row.get("pid"), row.get("start"), row.get("uid"), row.get("sid"), row.get("pgid")) in candidate_keys]
         if remaining:
             errors.append("nested worker remains after kill")
     return {"known": second.get("command_ok") is True and second.get("parse_ok") is True,
             "groups": groups, "remaining": remaining, "errors": errors}
+
+
+def _strict_q3c_cleanup(q3b: Any, process: Any, identity: Mapping[str, Any],
+                        *, guard_proof: Any = None, child_ledger: Any = None) -> dict[str, Any]:
+    """Call v2 cleanup only when its Q3f proof channel is available."""
+    helper = getattr(q3b, "_cleanup_worker_evidence", None)
+    if not callable(helper):
+        return {"schema": "ironmule.cleanup.v2", "worker_reaped": False,
+                "verification": {"group_gone": False},
+                "unresolved_errors": ["strict Q3f cleanup helper unavailable"]}
+    try:
+        parameters = inspect.signature(helper).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "guard_proof" not in parameters or "child_ledger" not in parameters:
+        return {"schema": "ironmule.cleanup.v2", "worker_reaped": False,
+                "verification": {"group_gone": False},
+                "unresolved_errors": ["strict Q3f cleanup proof channel unavailable"]}
+    try:
+        evidence = helper(process, identity, global_inventory=True,
+                          guard_proof=guard_proof, child_ledger=child_ledger)
+    except BaseException as exc:
+        return {"schema": "ironmule.cleanup.v2", "worker_reaped": False,
+                "verification": {"group_gone": False},
+                "unresolved_errors": [f"strict cleanup failed: {type(exc).__name__}"]}
+    if not isinstance(evidence, dict):
+        return {"schema": "ironmule.cleanup.v2", "worker_reaped": False,
+                "verification": {"group_gone": False},
+                "unresolved_errors": ["strict cleanup returned malformed evidence"]}
+    return evidence
 
 
 def _invoke_q3c_once(root: Path, output: Path, *, expected_commit: str | None = None,
@@ -742,18 +782,16 @@ def _invoke_q3c_once(root: Path, output: Path, *, expected_commit: str | None = 
                     stdout_value, stderr_value = process.communicate(timeout=Q3C_WRAPPER_TIMEOUT_SECONDS)
                 except subprocess.TimeoutExpired as exc:
                     if hasattr(q3b, "_cleanup_ps_snapshot"):
-                        nested_cleanup = _cleanup_nested_q3c_workers(q3b, worker_identity["uid"], q3b._run_text, baseline)
-                    cleanup_helper = q3b._cleanup_worker_evidence
-                    accepts_global = "global_inventory" in inspect.signature(cleanup_helper).parameters
-                    cleanup = cleanup_helper(process, worker_identity, global_inventory=True) if accepts_global else cleanup_helper(process, worker_identity)
+                        nested_cleanup = _cleanup_nested_q3c_workers(q3b, worker_identity["uid"], q3b._run_text, baseline, process.pid)
+                    cleanup = _strict_q3c_cleanup(q3b, process, worker_identity,
+                                                  guard_proof=[], child_ledger=[])
                     completed = type("Completed", (), {
                         "returncode": process.poll(), "stdout": getattr(exc, "output", "") or "",
                         "stderr": getattr(exc, "stderr", "") or "",
                     })()
                 else:
-                    cleanup_helper = q3b._cleanup_worker_evidence
-                    accepts_global = "global_inventory" in inspect.signature(cleanup_helper).parameters
-                    cleanup = cleanup_helper(process, worker_identity, global_inventory=True) if accepts_global else cleanup_helper(process, worker_identity)
+                    cleanup = _strict_q3c_cleanup(q3b, process, worker_identity,
+                                                  guard_proof=[], child_ledger=[])
                     completed = type("Completed", (), {"returncode": process.returncode,
                                                        "stdout": stdout_value, "stderr": stderr_value})()
     except BaseException as exc:
@@ -765,12 +803,11 @@ def _invoke_q3c_once(root: Path, output: Path, *, expected_commit: str | None = 
                 if hasattr(q3b, "_cleanup_ps_snapshot"):
                     try:
                         nested_cleanup = _cleanup_nested_q3c_workers(
-                            q3b, worker_identity["uid"], q3b._run_text, baseline)
+                            q3b, worker_identity["uid"], q3b._run_text, baseline, process.pid)
                     except BaseException as nested_exc:
                         nested_cleanup = {"known": False, "errors": [f"nested cleanup failed: {type(nested_exc).__name__}"]}
-                cleanup_helper = q3b._cleanup_worker_evidence
-                accepts_global = "global_inventory" in inspect.signature(cleanup_helper).parameters
-                cleanup = cleanup_helper(process, worker_identity, global_inventory=True) if accepts_global else cleanup_helper(process, worker_identity)
+                cleanup = _strict_q3c_cleanup(q3b, process, worker_identity,
+                                              guard_proof=[], child_ledger=[])
             except BaseException as cleanup_exc:
                 cleanup = {"schema": "ironmule.cleanup.v2",
                            "error": f"cleanup failed: {type(cleanup_exc).__name__}"}
@@ -820,6 +857,10 @@ def _invoke_q3c_once(root: Path, output: Path, *, expected_commit: str | None = 
             "status": "PASS" if bounded and raw_bounded and getattr(completed, "returncode", None) == 0
             and strict_ok and (execute is not None or isinstance(cleanup, dict)
                                and cleanup.get("verification", {}).get("group_gone") is True
+                               and isinstance(cleanup.get("guard_proof"), list)
+                               and bool(cleanup.get("guard_proof"))
+                               and isinstance(cleanup.get("child_ledger"), list)
+                               and bool(cleanup.get("child_ledger"))
                                and (nested_cleanup is None or nested_cleanup.get("known") is True
                                     and not nested_cleanup.get("errors"))) else "FAILED"}
 

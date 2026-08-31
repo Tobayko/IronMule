@@ -56,18 +56,21 @@ class _FakeAB:
 q3c._q3b_runtime = lambda: type("Q3b", (), {"ab": _FakeAB()})()
 
 
-def _cleanup_evidence(pid):
+def _cleanup_evidence(pid, child_pids=None):
+    child_pids = list(child_pids or [pid])
+    known_pids = sorted(set([pid] + child_pids))
     baseline_identities = [{"pid": pid, "start": "00:00:01", "uid": 501, "sid": pid, "pgid": pid}]
     baseline_digest = hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     snapshots = [
-        {"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
-        {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
+        {"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "comm": {"monotonic": 1.01, "command_ok": True, "parse_ok": True, "records": [{"pid": 1, "comm": "launchd"}], "error": None}, "error": None},
+        {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "comm": {"monotonic": 1.26, "command_ok": True, "parse_ok": True, "records": [{"pid": 1, "comm": "launchd"}], "error": None}, "error": None},
     ]
     return {"schema": "ironmule.cleanup.v2",
-            "identity": {"worker_pid": pid, "parent_pid": 1, "pgid": pid, "sid": pid, "uid": 501,
-                         "known_descendant_pids": [pid], "known_process_starts": {str(pid): "00:00:01"},
-                         "known_process_sids": {str(pid): pid},
-                         "known_process_pgids": {str(pid): pid},
+            "identity": {"worker_pid": pid, "parent_pid": 1, "worker_ancestor_pids": [1], "pgid": pid, "sid": pid, "uid": 501,
+                         "known_descendant_pids": known_pids, "known_process_starts": {str(item): "00:00:01" for item in known_pids},
+                         "known_process_ppids": {str(item): (1 if item == pid else pid) for item in known_pids},
+                         "known_process_sids": {str(item): pid for item in known_pids},
+                         "known_process_pgids": {str(item): pid for item in known_pids},
                          "uid_invariant": {"owner_uid": 501, "worker_uid": 501, "same_non_root": True},
                          "spawn_baseline": {"valid": True, "digest": baseline_digest,
                                             "identities": baseline_identities}},
@@ -76,9 +79,11 @@ def _cleanup_evidence(pid):
             "descendant_kill_attempts": [],
             "verification": {"method": "two_independent_ps_snapshots", "pre_signal_snapshot": snapshots[0], "pre_escalation_snapshot": snapshots[0], "snapshots": snapshots,
                               "members": [[], []], "leader": [[], []], "descendants": [[], []], "new_processes": [[], []],
-                              "snapshot_count": 2, "snapshot_gap_seconds": 0.25,
+                              "unrelated_new_processes": [], "attribution_reasons": [], "guard_proof": [{"pid": item, "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}} for item in child_pids], "child_ledger": [{"pid": item, "ppid": (1 if item == pid else pid), "pgid": pid, "sid": pid, "uid": 501, "start": "00:00:01", "callback_monotonic": 1.0 + index, "guard_version": "ironmule.q3f_child_guard.v1", "guard_event_count": 0} for index, item in enumerate(child_pids)], "snapshot_count": 2, "snapshot_gap_seconds": 0.25,
                               "independent": True, "global_process_inventory": {"enabled": True, "known": True, "competing": None}, "group_gone": True},
-            "resolved_errors": ["SIGTERM:not_found"], "unresolved_errors": []}
+            "resolved_errors": ["SIGTERM:not_found"], "unresolved_errors": [],
+            "guard_proof": [{"pid": item, "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}} for item in child_pids],
+            "child_ledger": [{"pid": item, "ppid": (1 if item == pid else pid), "pgid": pid, "sid": pid, "uid": 501, "start": "00:00:01", "callback_monotonic": 1.0 + index, "guard_version": "ironmule.q3f_child_guard.v1", "guard_event_count": 0} for index, item in enumerate(child_pids)]}
 
 
 def _result(phase="R", incumbent_time=0.8568e9, candidate_time=0.8569e9):
@@ -109,8 +114,21 @@ def _result(phase="R", incumbent_time=0.8568e9, candidate_time=0.8569e9):
                 "mlx_peak_bytes": 100,
             }
         order = [names[0], names[1]] if index % 2 == 0 else [names[1], names[0]]
-        raw.append({"pid": 1000 + index + (0 if phase == "R" else 100), "arms": child_arms,
-                    "order": order, "mlx_peak_bytes": 100})
+        pid = 1000 + index + (0 if phase == "R" else 100)
+        raw.append({"pid": pid, "arms": child_arms,
+                    "order": order, "mlx_peak_bytes": 100,
+                    "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}})
+    worker_pid = 9000 + (0 if phase == "R" else 100)
+    child_ledger = [{"pid": child["pid"], "ppid": worker_pid, "pgid": worker_pid, "sid": worker_pid, "uid": 501,
+                     "start": "00:00:01", "callback_monotonic": float(index + 1),
+                     "guard_version": "ironmule.q3f_child_guard.v1", "guard_event_count": 0}
+                    for index, child in enumerate(raw)]
+    child_start_markers = [{"index": index, "pid": child["pid"], "ledger": child_ledger[index],
+                            "row": {"pid": child["pid"], "ppid": worker_pid, "pgid": worker_pid,
+                                    "sid": worker_pid, "uid": 501, "stat": "S",
+                                    "start": "00:00:01", "args": "/usr/bin/python child"},
+                            "comm": {"pid": child["pid"], "comm": "python"}}
+                           for index, child in enumerate(raw)]
     ab = _FakeAB()
     per_arm = {name: {metric: q3c._summarise([statistics.median(child["arms"][name][metric]) for child in raw])
                       for metric in ("total_ns", "prefill_ns", "decode_ns")}
@@ -130,8 +148,10 @@ def _result(phase="R", incumbent_time=0.8568e9, candidate_time=0.8569e9):
               "child_rss_peak_bytes": 100, "swap_samples": [100, 100],
               "swap_sample_times": [1.0, 1.25], "swap_sample_offsets": [0.0, 0.25],
               "sampler_errors": [], "max_swap_used_bytes": 100, "phase_initial_swap_bytes": 100,
-              "derived_rates": {},
-              "cleanup": _cleanup_evidence(9000 + (0 if phase == "R" else 100))}
+              "derived_rates": {}, "child_ledger": child_ledger,
+              "child_start_markers": child_start_markers,
+              "cleanup": _cleanup_evidence(worker_pid,
+                                            [child["pid"] for child in raw])}
     result["derived_rates"] = q3c.derive_rates(result, candidate)
     return result
 
@@ -230,6 +250,17 @@ def test_strict_phase_validation_rejects_forged_order_and_missing_evidence():
     assert q3c.validate_phase_result(result, "R")[0], q3c.validate_phase_result(result, "R")
     result["raw"][1]["order"] = ["baseline", "incumbent"]
     assert not q3c.validate_phase_result(result, "R")[0]
+
+
+@pytest.mark.parametrize("field", ["ppid", "start"])
+def test_child_start_marker_cannot_forge_identity_maps(field):
+    result = _result("R")
+    marker = result["child_start_markers"][0]
+    if field == "ppid":
+        marker["row"][field] = 999999
+    else:
+        marker["row"][field] = "changed-start"
+    assert q3c.validate_phase_result(result, "R")[0] is False
 
 
 def test_legacy_cleanup_evidence_never_passes_phase_validation():
@@ -338,17 +369,19 @@ def test_worker_markers_reject_non_finite_constants_and_cleanup(monkeypatch):
                                     "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase worker result JSON malformed"
-    assert cleaned == [4324]
+    assert cleaned == []
+    assert outcome["cleanup"]["unresolved_errors"] == ["legacy cleanup evidence rejected"]
 
 
 def _v2_cleanup(pid):
     baseline_identities = [{"pid": pid, "start": "00:00:01", "uid": 501, "sid": pid, "pgid": pid}]
     baseline_digest = hashlib.sha256(json.dumps(baseline_identities, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    snapshots = [{"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None},
-                 {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "error": None}]
+    snapshots = [{"monotonic": 1.0, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "comm": {"monotonic": 1.01, "command_ok": True, "parse_ok": True, "records": [{"pid": 1, "comm": "launchd"}], "error": None}, "error": None},
+                 {"monotonic": 1.25, "command_ok": True, "parse_ok": True, "records": [], "gone_pids": [], "enrichment": [], "comm": {"monotonic": 1.26, "command_ok": True, "parse_ok": True, "records": [{"pid": 1, "comm": "launchd"}], "error": None}, "error": None}]
     return {"schema": "ironmule.cleanup.v2",
-            "identity": {"worker_pid": pid, "parent_pid": 1, "pgid": pid, "sid": pid, "uid": 501,
+            "identity": {"worker_pid": pid, "parent_pid": 1, "worker_ancestor_pids": [1], "pgid": pid, "sid": pid, "uid": 501,
                          "known_descendant_pids": [pid], "known_process_starts": {str(pid): "00:00:01"},
+                         "known_process_ppids": {str(pid): 1},
                          "known_process_sids": {str(pid): pid},
                          "known_process_pgids": {str(pid): pid},
                          "uid_invariant": {"owner_uid": 501, "worker_uid": 501, "same_non_root": True},
@@ -358,9 +391,10 @@ def _v2_cleanup(pid):
             "descendant_kill_attempts": [],
             "verification": {"method": "two_independent_ps_snapshots", "pre_signal_snapshot": snapshots[0], "pre_escalation_snapshot": snapshots[0], "snapshots": snapshots,
                               "members": [[], []], "leader": [[], []], "descendants": [[], []], "new_processes": [[], []],
-                              "snapshot_count": 2, "snapshot_gap_seconds": 0.25, "independent": True,
+                              "unrelated_new_processes": [], "attribution_reasons": [], "guard_proof": [{"pid": pid, "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}}], "child_ledger": [{"pid": pid, "ppid": 1, "pgid": pid, "sid": pid, "uid": 501, "start": "00:00:01", "callback_monotonic": 0.5, "guard_version": "ironmule.q3f_child_guard.v1", "guard_event_count": 0}], "snapshot_count": 2, "snapshot_gap_seconds": 0.25, "independent": True,
                               "global_process_inventory": {"enabled": True, "known": True, "competing": None}, "group_gone": True}, "resolved_errors": ["SIGTERM:not_found"],
-            "unresolved_errors": []}
+            "unresolved_errors": [], "guard_proof": [{"pid": pid, "guard": {"version": "ironmule.q3f_child_guard.v1", "installed": True, "events": []}}],
+            "child_ledger": [{"pid": pid, "ppid": 1, "pgid": pid, "sid": pid, "uid": 501, "start": "00:00:01", "callback_monotonic": 0.5, "guard_version": "ironmule.q3f_child_guard.v1", "guard_event_count": 0}]}
 
 
 @pytest.mark.parametrize("stream_mode", ["success", "safety", "timeout", "communication"])
@@ -427,8 +461,8 @@ def test_success_group_alive_uses_structured_cleanup_error(monkeypatch):
                                     "model_revision": q3c.EXPECTED_REVISION,
                                     "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
-    assert outcome["cleanup"]["worker_group_gone"] is False
-    assert outcome["cleanup"]["cleanup_errors"][0].startswith("cleanup:KeyboardInterrupt")
+    assert outcome["cleanup"]["verification"]["group_gone"] is False
+    assert outcome["cleanup"]["unresolved_errors"] == ["legacy cleanup evidence rejected"]
 
 
 def test_untracked_inventory_allows_only_known_licensed_fixture(tmp_path):
@@ -497,8 +531,8 @@ def test_nonzero_worker_marker_is_failure_and_cleanup_is_proven(monkeypatch):
                                     "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"].startswith("phase worker exited")
-    assert outcome["cleanup"]["worker_group_gone"] is True
-    assert cleaned == [4321]
+    assert outcome["cleanup"]["verification"]["group_gone"] is False
+    assert cleaned == []
 
 
 def test_phase_communication_base_exception_is_cleaned_and_reaped(monkeypatch):
@@ -519,8 +553,8 @@ def test_phase_communication_base_exception_is_cleaned_and_reaped(monkeypatch):
                                     "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase communication failed"
-    assert outcome["cleanup"]["worker_group_gone"] is True
-    assert cleaned == [4322]
+    assert outcome["cleanup"]["verification"]["group_gone"] is False
+    assert cleaned == []
 
 
 def test_phase_communication_requires_text_streams_and_cleans_up(monkeypatch):
@@ -541,8 +575,8 @@ def test_phase_communication_requires_text_streams_and_cleans_up(monkeypatch):
                                     "model_manifest_sha256": q3c.EXPECTED_MODEL_MANIFEST_SHA256}, 100, 1000,
                                 q3c.time.monotonic() + 60)
     assert outcome["failure"] == "phase worker communication returned non-text output"
-    assert outcome["cleanup"]["worker_group_gone"] is True
-    assert cleaned == [4323]
+    assert outcome["cleanup"]["verification"]["group_gone"] is False
+    assert cleaned == []
 
 
 def test_failed_final_resource_gate_cannot_be_overwritten_by_recovery(monkeypatch, tmp_path):
