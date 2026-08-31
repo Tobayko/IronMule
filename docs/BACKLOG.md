@@ -371,6 +371,18 @@ must activate the exact repository root only after worker capability, runtime
 hash, stage, and deadline validation, then require an in-root `ironmule` spec;
 the parent dry-run and direct worker without capability remain import-free.
 
+**Observed canary 5 (2026-08-31).** The real run is retained as
+`research/raw/Q3b_canary5_20260831.json` (SHA-256
+`10b1f30034856972d351ee959115c624ac9a5e6ceb4f6a5ce154b51ac7dd88fd`) and
+returned `FAILED` with `BASE`. All preflight gates were green: free memory was
+`62%`, loadavg max was `1.87890625` (reported as `1.8789`), and the swap
+sampler observed zero delta across 27 samples. The baseline stage failed before
+the first model child with `TypeError: Popen.__init__() got an unexpected
+keyword argument 'capture_output'`; cleanup still proved `group_gone=true`.
+No model metrics were produced. The fix is to use explicit `stdout`/`stderr`
+`PIPE` kwargs, with a strict real-signature regression test; no hardware or
+model result can be inferred from this attempt.
+
 **Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
 execution. Require AC, low-power off, nominal thermal state, exact local model
 identity, clean Git binding, known installed memory, free memory `>=35%`, known

@@ -407,7 +407,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 [sys.executable, "-c",
                  "import json,sys;from ironmule.ab import _child;"
                  "print('@@'+json.dumps(_child(json.loads(sys.argv[1]))))", json.dumps(spec)],
-                capture_output=True, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 env={**os.environ, **CHILD_ENV},
             )

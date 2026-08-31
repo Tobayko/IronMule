@@ -1,3 +1,4 @@
+import inspect
 import json
 import subprocess
 from types import SimpleNamespace
@@ -96,6 +97,36 @@ def test_run_callbacks_receive_each_index_and_defensive_json_copy(monkeypatch):
     assert "start_new_session" not in calls[0][1]
     assert result["token_count_identity"] is True
     assert result["stop_reason_identity"] is True
+
+
+def test_run_uses_only_real_popen_compatible_pipe_kwargs(monkeypatch):
+    """Keep the A/B launch contract valid for subprocess.Popen itself."""
+    import importlib
+
+    tune = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    real_signature = inspect.signature(subprocess.Popen)
+    observed = []
+
+    def strict_popen(args, *, stdout, stderr, text, cwd, env):
+        # bind() is the regression guard: an unsupported Popen kwarg raises here.
+        real_signature.bind(args, stdout=stdout, stderr=stderr, text=text,
+                            cwd=cwd, env=env)
+        observed.append({"stdout": stdout, "stderr": stderr, "text": text,
+                         "cwd": cwd, "env": env})
+        spec = json.loads(args[-1])
+        child = _child_record(order=spec["order"], pid=100 + len(observed))
+        return _FakeProcess(stdout="@@" + json.dumps(child) + "\n")
+
+    monkeypatch.setattr(ab.subprocess, "Popen", strict_popen)
+    result = ab.run(_arms(), processes=1, repeats=7, warmup=2)
+
+    assert len(observed) == 1
+    assert observed[0]["stdout"] is subprocess.PIPE
+    assert observed[0]["stderr"] is subprocess.PIPE
+    assert observed[0]["text"] is True
+    assert "start_new_session" not in observed[0]
+    assert result["token_identity"] is True
 
 
 def test_run_timeout_is_passed_to_subprocess_and_is_loud(monkeypatch):
