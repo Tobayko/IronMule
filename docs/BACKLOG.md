@@ -331,7 +331,10 @@ command/read/parse/thread error; successful evidence has at least two samples,
 equal-length arrays, an empty `sampler_errors`, and a maximum timestamp gap of
 1.75 s (0.25 s interval + 1 s command timeout + 0.5 s scheduling margin).
 Claude is not a blanket blocker: the process gate joins bounded
-`pid=,rss=,%cpu=,args=` and `pid=,comm=` inventories by an exact PID map. A
+`pid=,ppid=,rss=,%cpu=,args=` and `pid=,comm=` inventories by an exact PID map.
+The args snapshot must contain the current process and its complete `ppid` chain
+to `ppid=0`; only that process and proven ancestors are ignored before model
+token checks. Descendants, siblings, and other agents remain blockers. A
 Claude-related process is ignored only when its `comm` path is lexically inside
 the exact `/Applications/Claude.app/Contents/` boundary and the whole bundle
 passes absolute `/usr/bin/codesign --verify --deep --strict` plus bounded
@@ -382,6 +385,20 @@ keyword argument 'capture_output'`; cleanup still proved `group_gone=true`.
 No model metrics were produced. The fix is to use explicit `stdout`/`stderr`
 `PIPE` kwargs, with a strict real-signature regression test; no hardware or
 model result can be inferred from this attempt.
+
+**Observed canary 6 (2026-08-31).** The real run is retained as
+`research/raw/Q3b_canary6_20260831.json` (SHA-256
+`983370bdf70a0891cffdda5b8f4009251cddf24194435042bf39fe3340553904`) and
+returned `FAILED` with `BASE`. All resource gates were green; the transient
+process gate reported competing model activity from a launcher/orchestrator
+ancestor whose `args` contained model tokens, so no model child or stage
+started and no model metrics were produced. A later direct invocation of the
+exact process-gate function on the current snapshot was green with no blocker.
+The fix is to retain `ppid` in the bounded args inventory and ignore only the
+current process plus its proven same-snapshot ancestors before model-token
+checks; cycles, missing self/parent links, and malformed records remain hard
+failures. This is a gate-reliability result, not hardware or performance
+evidence.
 
 **Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
 execution. Require AC, low-power off, nominal thermal state, exact local model

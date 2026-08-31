@@ -108,7 +108,7 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
     except (OSError, subprocess.SubprocessError):
         return _CommandText("", False)
     limit = MAX_PS_OUTPUT if command in (
-        [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="],
+        [COMMANDS["ps"], "-Ao", "pid=,ppid=,rss=,%cpu=,args="],
         [COMMANDS["ps"], "-Ao", "pid=,comm="],
     ) else MAX_COMMAND_OUTPUT
     if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > limit:
@@ -351,21 +351,22 @@ def _trusted_claude_bundle(bundle: str = CLAUDE_DESKTOP_BUNDLE,
     )
 
 
-def _parse_process_args_inventory(output: Any) -> dict[int, tuple[int, float, str]] | str:
+def _parse_process_args_inventory(output: Any) -> dict[int, tuple[int, int, float, str]] | str:
     if not isinstance(output, str) or not output or not getattr(output, "ok", True):
         return "process inventory unavailable or command failed"
     if len(output) > MAX_PS_OUTPUT:
         return "process inventory exceeded bounded limit"
-    records: dict[int, tuple[int, float, str]] = {}
+    records: dict[int, tuple[int, int, float, str]] = {}
     for line in output.splitlines():
-        parts = line.split(None, 3)
-        if len(parts) != 4:
+        parts = line.split(None, 4)
+        if len(parts) != 5:
             return "process inventory malformed"
         try:
-            pid, rss, cpu = int(parts[0]), int(parts[1]), float(parts[2])
+            pid, ppid, rss, cpu = (int(parts[0]), int(parts[1]), int(parts[2]),
+                                   float(parts[3]))
         except (TypeError, ValueError, OverflowError):
             return "process inventory malformed"
-        if (pid <= 0 or rss < 0 or not math.isfinite(cpu) or cpu < 0
+        if (pid <= 0 or ppid < 0 or rss < 0 or not math.isfinite(cpu) or cpu < 0
                 or pid in records):
             return "process inventory malformed"
         try:
@@ -374,7 +375,7 @@ def _parse_process_args_inventory(output: Any) -> dict[int, tuple[int, float, st
             return "process inventory malformed"
         if not argv:
             return "process inventory malformed"
-        records[pid] = (rss, cpu, parts[3])
+        records[pid] = (ppid, rss, cpu, parts[4])
     return records
 
 
@@ -422,13 +423,17 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text,
                             pid_probe: Callable[[int], str] | None = None) -> str | None:
     """Block inference activity using two bounded, PID-aware inventories.
 
-    The args inventory is the relevance snapshot.  Its Claude/model records
-    must have a same-PID comm record.  A missing comm record is tolerated only
-    when an injected, read-only PID probe proves that the process exited
-    between snapshots; alive, permission, and unknown states fail closed.
-    Extra comm records are ignored because they may be newer processes.
+    The args inventory is the relevance snapshot and must contain the current
+    PID's complete same-snapshot ``ppid`` chain through a root (``ppid=0``).
+    Only that PID and proven ancestors are ignored before Claude/model checks;
+    descendants and siblings remain relevant.  Claude/model records outside
+    that ancestry must have a same-PID comm record.  A missing comm record is
+    tolerated only when an injected, read-only PID probe proves that the
+    process exited between snapshots; alive, permission, and unknown states
+    fail closed.  Extra comm records are ignored because they may be newer
+    processes.
     """
-    args_command = [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="]
+    args_command = [COMMANDS["ps"], "-Ao", "pid=,ppid=,rss=,%cpu=,args="]
     comm_command = [COMMANDS["ps"], "-Ao", "pid=,comm="]
     try:
         args_output = run(args_command)
@@ -442,11 +447,30 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text,
     if isinstance(comm_records, str):
         return comm_records
     probe = _pid_probe if pid_probe is None else pid_probe
+    current_pid = os.getpid()
+    if current_pid not in args_records:
+        return "process inventory ancestry malformed"
+    ancestry: set[int] = set()
+    pid = current_pid
+    while True:
+        if pid in ancestry:
+            return "process inventory ancestry malformed"
+        ancestry.add(pid)
+        record = args_records.get(pid)
+        if record is None:
+            return "process inventory ancestry malformed"
+        ppid = record[0]
+        if ppid == 0:
+            break
+        if ppid not in args_records:
+            return "process inventory ancestry malformed"
+        pid = ppid
+
     trusted_bundle: bool | None = None
-    for pid, (rss, cpu, args_text) in args_records.items():
+    for pid, (ppid, rss, cpu, args_text) in args_records.items():
         if pid in absent_pids:
             return "prior model child was not reaped"
-        if pid == os.getpid():
+        if pid in ancestry:
             continue
         lowered_args = args_text.casefold()
         # Model/inference patterns are always blockers, including if a process

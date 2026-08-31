@@ -32,6 +32,25 @@ def _environment(**overrides):
 
 
 def _inventories(args, comm):
+    # Keep the older focused fixtures concise while supplying the strict
+    # parent-aware ps schema required by the gate.  The test process is the
+    # synthetic root; fixture PIDs remain independent siblings.
+    normalized = []
+    for line in args.splitlines():
+        parts = line.split(None, 3)
+        if len(parts) == 4:
+            normalized.append(f"{parts[0]} 0 {parts[1]} {parts[2]} {parts[3]}")
+        else:
+            normalized.append(line)
+    self_pid = os.getpid()
+    if not any(line.split(None, 1)[0:1] == [str(self_pid)] for line in normalized):
+        normalized.insert(0, f"{self_pid} 0 0 0.0 /usr/bin/python test")
+    comm_lines = comm.splitlines()
+    if not any(line.split(None, 1)[0:1] == [str(self_pid)] for line in comm_lines):
+        comm_lines.insert(0, f"{self_pid} python")
+    args = "\n".join(normalized) + "\n"
+    comm = "\n".join(comm_lines) + "\n"
+
     def run(command):
         return comm if command[-1].endswith("comm=") else args
     return run
@@ -147,6 +166,62 @@ def test_process_inventory_rejects_relevant_missing_pid_unproven(status):
     assert q3b.competing_model_process(
         _inventories(args, comm), pid_probe=lambda pid: status
     ) == "process inventory pid map mismatch"
+
+
+def _exact_inventories(args, comm):
+    def run(command):
+        return comm if command[-1].endswith("comm=") else args
+    return run
+
+
+def test_process_inventory_uses_exact_ancestry_before_model_token_checks():
+    current = os.getpid()
+    parent, root, sibling = current + 1, current + 2, current + 3
+    args = "\n".join([
+        f"{current} {parent} 10 0.0 /usr/bin/python test",
+        f"{parent} {root} 10 0.0 /usr/bin/python ancestor --mlx --gemma",
+        f"{root} 0 10 0.0 /usr/bin/python root --qwen",
+        f"{sibling} {root} 10 0.0 /usr/bin/python sibling --gemma",
+    ]) + "\n"
+    comm = "\n".join([
+        f"{current} python",
+        f"{parent} python",
+        f"{root} python",
+        f"{sibling} python",
+    ]) + "\n"
+    assert q3b.competing_model_process(_exact_inventories(args, comm)) == \
+        "competing model activity detected"
+    sibling_args = "\n".join(
+        line for line in args.splitlines()
+        if f"{sibling} {root} 10 0.0 /usr/bin/python sibling --gemma" not in line
+    ) + "\n"
+    assert q3b.competing_model_process(_exact_inventories(sibling_args, comm)) is None
+
+
+def test_process_inventory_requires_current_pid_and_complete_parent_chain():
+    current = os.getpid()
+    missing_self = f"{current + 1} 0 10 0.0 python --gemma\n"
+    assert q3b.competing_model_process(
+        _exact_inventories(missing_self, f"{current + 1} python\n")
+    ) == "process inventory ancestry malformed"
+    missing_parent = f"{current} {current + 1} 10 0.0 python\n"
+    assert q3b.competing_model_process(
+        _exact_inventories(missing_parent, f"{current} python\n")
+    ) == "process inventory ancestry malformed"
+
+
+def test_process_inventory_rejects_ancestry_cycle_and_invalid_ppid():
+    current = os.getpid()
+    cycle = f"{current} {current + 1} 10 0.0 python\n{current + 1} {current} 10 0.0 python\n"
+    comm = f"{current} python\n{current + 1} python\n"
+    assert q3b.competing_model_process(_exact_inventories(cycle, comm)) == \
+        "process inventory ancestry malformed"
+    assert q3b._parse_process_args_inventory(
+        f"-1 0 10 0.0 python\n"
+    ) == "process inventory malformed"
+    assert q3b._parse_process_args_inventory(
+        f"{current} -1 10 0.0 python\n"
+    ) == "process inventory malformed"
 
 
 def test_load_gate_uses_canary_thresholds():
