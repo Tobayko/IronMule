@@ -2,7 +2,9 @@ import importlib.util
 import json
 import os
 import signal
+import sys
 import threading
+import types
 from pathlib import Path
 
 import pytest
@@ -510,6 +512,7 @@ def test_top_level_import_surface_has_no_model_imports():
 
 def test_direct_stage_worker_refuses_before_ironmule_import(monkeypatch):
     imported = []
+    activated = []
     original = __import__
 
     def guarded(name, *args, **kwargs):
@@ -519,5 +522,57 @@ def test_direct_stage_worker_refuses_before_ironmule_import(monkeypatch):
         return original(name, *args, **kwargs)
 
     monkeypatch.setattr("builtins.__import__", guarded)
+    monkeypatch.setattr(q3b, "_activate_exact_repo_root", lambda: activated.append(True))
     assert q3b._stage_worker() == 2
     assert imported == []
+    assert activated == []
+
+
+def test_valid_capability_activates_exact_root_after_worker_checks(monkeypatch):
+    expected = {
+        "identity": {"model_id": q3b.MODEL_ID, "model_revision": q3b.EXPECTED_REVISION,
+                     "model_manifest_sha256": "a" * 64},
+        "runtime_code_sha256": "b" * 64, "stage": "baseline", "initial_swap": 1000,
+        "installed_memory": 1000,
+    }
+    monkeypatch.setattr(q3b, "_read_capability", lambda: expected)
+    monkeypatch.setattr(q3b, "runtime_code_sha256", lambda *_args, **_kwargs: "b" * 64)
+    monkeypatch.setattr(q3b, "_read_swap_sample", lambda _run: 1000)
+    monkeypatch.setenv("IRONMULE_Q3B_WORKER_DEADLINE", "9999999999")
+    original_path = list(sys.path)
+    monkeypatch.setattr(sys, "path", original_path)
+    activated = []
+    original_activate = q3b._activate_exact_repo_root
+
+    def tracking_activate():
+        root = original_activate()
+        activated.append(root)
+        return root
+
+    monkeypatch.setattr(q3b, "_activate_exact_repo_root", tracking_activate)
+    monkeypatch.setattr(q3b, "_load_q3a_helpers",
+                        lambda: (_ for _ in ()).throw(q3b.CanaryRefused("test stop")))
+    assert q3b._stage_worker() == 2
+    assert activated == [ROOT]
+    assert sys.path[0] == str(ROOT)
+
+
+def test_exact_repo_root_rejects_shadow_spec(monkeypatch, tmp_path):
+    shadow_package = tmp_path / "ironmule"
+    shadow_package.mkdir()
+    shadow_init = shadow_package / "__init__.py"
+    shadow_init.write_text("# shadow\n")
+    shadow_spec = types.SimpleNamespace(
+        origin=str(shadow_init), submodule_search_locations=[str(shadow_package)]
+    )
+    monkeypatch.setattr(q3b.importlib.util, "find_spec", lambda _name: shadow_spec)
+    with pytest.raises(q3b.CanaryRefused, match="outside the exact repository root"):
+        q3b._activate_exact_repo_root()
+
+
+def test_exact_repo_root_rejects_preloaded_foreign_module(monkeypatch, tmp_path):
+    foreign = types.ModuleType("ironmule")
+    foreign.__file__ = str(tmp_path / "ironmule.py")
+    monkeypatch.setitem(sys.modules, "ironmule", foreign)
+    with pytest.raises(q3b.CanaryRefused, match="preloaded foreign"):
+        q3b._activate_exact_repo_root()

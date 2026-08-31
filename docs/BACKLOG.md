@@ -360,6 +360,17 @@ tokens block before comm matching, irrelevant missing rows and extra comm rows
 are ignored, and repeated pre-child/post-stage gates bound the non-atomic
 snapshot race. This is a safety limitation, not performance evidence.
 
+**Observed canary 4 (2026-08-31).** The real run is retained as
+`research/raw/Q3b_canary4_20260831.json` (SHA-256
+`52deb8a6b686ddb084eb3fcd526ef99b2274829e6fb277636bdf7dc1e2df04e0`) and
+returned `FAILED` with `BASE`. Every preflight gate was green. The baseline
+worker reached its import point but failed with `ModuleNotFoundError: No module
+named 'ironmule'` before any model child; cleanup completed with
+`group_gone=true`, and the candidate stage was not started. The next attempt
+must activate the exact repository root only after worker capability, runtime
+hash, stage, and deadline validation, then require an in-root `ironmule` spec;
+the parent dry-run and direct worker without capability remain import-free.
+
 **Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
 execution. Require AC, low-power off, nominal thermal state, exact local model
 identity, clean Git binding, known installed memory, free memory `>=35%`, known

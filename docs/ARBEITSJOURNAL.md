@@ -236,3 +236,24 @@
   No-Write sind nach der Änderung erneut auszuführen. Keine Hardware-/MLX-
   Ausführung, kein Download, kein Modellstart und kein Commit; Q3a blieb
   unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 4: Worker-Importpfad verweigert
+
+- **Ergebnis:** Der Lauf schrieb `research/raw/Q3b_canary4_20260831.json`
+  (Output-SHA-256 `52deb8a6b686ddb084eb3fcd526ef99b2274829e6fb277636bdf7dc1e2df04e0`)
+  und endete mit `FAILED`, `BASE`. Alle Preflight-Gates waren grün.
+- **Befund:** Der Baseline-Worker erreichte den IronMule-Import, scheiterte
+  jedoch mit `ModuleNotFoundError: No module named 'ironmule'`, bevor ein
+  Modellkind gestartet wurde. Der Worker-Gruppen-Cleanup war erfolgreich
+  (`group_gone=true`); die Candidate-Stage wurde nicht gestartet.
+- **Korrektur:** Nach validierter Capability, Runtime-Code-Hash, Stage und
+  Deadline aktiviert der Worker künftig ausschließlich den exakten Repo-Root
+  `Path(__file__).resolve().parents[1]` an `sys.path[0]`. Die vorhandene
+  `ironmule/__init__.py`, ein `find_spec`-Origin/Search-Pfad innerhalb dieses
+  Roots und der Ausschluss vorab geladener Fremdmodule sind fail-closed.
+  Parent-Dry-Run und direkter Worker ohne Capability bleiben ohne Root-
+  Aktivierung und ohne IronMule/MLX-Import.
+- **Preregistration:** Q3b-Preregistration vor der nächsten Messung ergänzt;
+  neuer SHA-256 `3563d3f9d47748a89ba9a91bc99e217d7da719918e51a68bbda54a9bddc6e615`.
+- **Messgrenze:** Kein Modellstart, kein Hardware-/MLX-Test, kein Download und
+  kein Commit; Q3a blieb unverändert.

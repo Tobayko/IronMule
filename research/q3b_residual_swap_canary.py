@@ -608,6 +608,66 @@ def _read_capability() -> dict[str, Any]:
     return expected
 
 
+def _path_is_within(path: Path, root: Path) -> bool:
+    try:
+        path.resolve().relative_to(root.resolve())
+    except (OSError, RuntimeError, TypeError, ValueError):
+        return False
+    return True
+
+
+def _activate_exact_repo_root() -> Path:
+    """Make the worker's repository root the only injected import location."""
+    root = Path(__file__).resolve().parents[1]
+    package_init = root / "ironmule" / "__init__.py"
+    if not package_init.is_file():
+        raise CanaryRefused("exact IronMule package root is unavailable")
+
+    for module_name, preloaded in tuple(sys.modules.items()):
+        if preloaded is None or not (
+                module_name == "ironmule" or module_name.startswith("ironmule.")):
+            continue
+        preloaded_file = getattr(preloaded, "__file__", None)
+        preloaded_spec = getattr(preloaded, "__spec__", None)
+        if not isinstance(preloaded_file, str):
+            preloaded_file = getattr(preloaded_spec, "origin", None)
+        preloaded_paths = getattr(preloaded, "__path__", ())
+        try:
+            preloaded_paths = tuple(preloaded_paths or ())
+            preloaded_has_foreign_path = any(
+                not _path_is_within(Path(item), root) for item in preloaded_paths
+            )
+        except (OSError, RuntimeError, TypeError, ValueError) as exc:
+            raise CanaryRefused("preloaded foreign IronMule module") from exc
+        if (not isinstance(preloaded_file, str)
+                or not _path_is_within(Path(preloaded_file), root)
+                or preloaded_has_foreign_path):
+            raise CanaryRefused("preloaded foreign IronMule module")
+
+    root_text = str(root)
+    sys.path[:] = [entry for entry in sys.path if entry != root_text]
+    sys.path.insert(0, root_text)
+    try:
+        spec = importlib.util.find_spec("ironmule")
+    except (ImportError, AttributeError, ValueError) as exc:
+        raise CanaryRefused("exact IronMule module spec is unavailable") from exc
+    origin = getattr(spec, "origin", None) if spec is not None else None
+    if (spec is None or not isinstance(origin, str)
+            or not _path_is_within(Path(origin), root)
+            or Path(origin).resolve() != package_init.resolve()):
+        raise CanaryRefused("IronMule module spec resolves outside the exact repository root")
+    locations = getattr(spec, "submodule_search_locations", None)
+    try:
+        has_exact_location = locations is not None and any(
+            Path(item).resolve() == (root / "ironmule").resolve() for item in locations
+        )
+    except (OSError, RuntimeError, TypeError, ValueError):
+        has_exact_location = False
+    if not has_exact_location:
+        raise CanaryRefused("IronMule package spec has an unexpected search path")
+    return root
+
+
 def _max_rss_bytes() -> int:
     value = int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
     return value if sys.platform == "darwin" else value * 1024
@@ -714,6 +774,7 @@ def _stage_worker(*, kill_group: Callable[[int, int], None] | None = None,
         worker_deadline = float(os.environ.get("IRONMULE_Q3B_WORKER_DEADLINE", "nan"))
         if stage not in STAGES or not math.isfinite(worker_deadline):
             raise CanaryRefused("worker stage or deadline is malformed")
+        _activate_exact_repo_root()
         worker_started = time.monotonic()
         sample_lock = threading.Lock()
 
