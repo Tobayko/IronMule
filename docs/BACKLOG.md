@@ -341,6 +341,14 @@ team `Q6L2SF6YDW`, and first authority `Developer ID Application: Anthropic PBC
 untrusted bundles, and malformed inventories remain hard blockers; the allowed
 desktop process still contributes to loadavg.
 
+The args snapshot is authoritative for relevance. A relevant Claude args row
+must have the same PID in `comm`; a missing row is tolerated only when a
+read-only `kill(pid, 0)` probe proves the process exited between snapshots.
+Alive, permission-denied, and unknown probe results fail closed. Known model
+tokens block before comm matching, irrelevant missing rows and extra comm rows
+are ignored, and repeated pre-child/post-stage gates bound the non-atomic
+snapshot race. This is a safety limitation, not performance evidence.
+
 **Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
 execution. Require AC, low-power off, nominal thermal state, exact local model
 identity, clean Git binding, known installed memory, free memory `>=35%`, known
@@ -364,6 +372,16 @@ still emits a terminal `@SAFETY` event for any read/sampler error or high-water
 delta violation, preventing a normal result. If TERM fails, immediately try
 KILL on the same group; only a double signal failure is a kill failure. Record
 raw partial evidence and stop before Stage 2 on any failure.
+
+If both stages complete and pass every safety/identity check, the final PASS may
+also carry `descriptive_timing`: exact raw-repeat medians in milliseconds,
+logical/physical output counts, total output tokens/s, decode steps/s, and
+candidate-over-baseline ratios with direction-labelled percent-faster values:
+`100*(1-ratio)` for lower-is-better total/prefill/decode time and
+`100*(ratio-1)` for higher-is-better throughput. It is explicitly
+`descriptive_only=true`, `performance_valid=false`, `order_confounded=true`,
+`statistical_confidence=none`; it has no CI, winner, or promotion field and
+cannot affect status. Failed/incomplete stages never receive it.
 
 **Kill.** Unknown or violated identity, process, load, power, thermal, memory,
 swap, timeout, cleanup, raw-completeness, or output-identity gate yields

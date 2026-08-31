@@ -397,9 +397,34 @@ def _parse_process_comm_inventory(output: Any) -> dict[int, str] | str:
     return records
 
 
+def _pid_probe(pid: int, killer: Callable[[int, int], None] | None = None) -> str:
+    """Classify a PID without sending a signal or changing process state.
+
+    ``kill(pid, 0)`` only probes existence/permission.  A missing process is
+    expected when the two ``ps`` snapshots straddle process exit; permission
+    and every other error remain unknown and therefore fail closed at the
+    caller.  ``killer`` is injectable for deterministic tests.
+    """
+    try:
+        (os.kill if killer is None else killer)(pid, 0)
+    except ProcessLookupError:
+        return "gone"
+    except BaseException:
+        return "unknown"
+    return "alive"
+
+
 def competing_model_process(run: Callable[[list[str]], str] = _run_text,
-                            *, absent_pids: tuple[int, ...] = ()) -> str | None:
-    """Block inference activity using two strict, PID-matched inventories."""
+                            *, absent_pids: tuple[int, ...] = (),
+                            pid_probe: Callable[[int], str] | None = None) -> str | None:
+    """Block inference activity using two bounded, PID-aware inventories.
+
+    The args inventory is the relevance snapshot.  Its Claude/model records
+    must have a same-PID comm record.  A missing comm record is tolerated only
+    when an injected, read-only PID probe proves that the process exited
+    between snapshots; alive, permission, and unknown states fail closed.
+    Extra comm records are ignored because they may be newer processes.
+    """
     args_command = [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="]
     comm_command = [COMMANDS["ps"], "-Ao", "pid=,comm="]
     try:
@@ -413,20 +438,34 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text,
         return args_records
     if isinstance(comm_records, str):
         return comm_records
-    if set(args_records) != set(comm_records):
-        return "process inventory pid map mismatch"
+    probe = _pid_probe if pid_probe is None else pid_probe
     trusted_bundle: bool | None = None
     for pid, (rss, cpu, args_text) in args_records.items():
         if pid in absent_pids:
             return "prior model child was not reaped"
         if pid == os.getpid():
             continue
-        comm_path = comm_records[pid]
         lowered_args = args_text.casefold()
         # Model/inference patterns are always blockers, including if a process
-        # happens to use a path below the Claude bundle.
+        # happens to use a path below the Claude bundle.  This check is before
+        # comm lookup so a model process cannot disappear from the second
+        # snapshot and become an allowed gap.
         if any(token in lowered_args for token in KNOWN_INFERENCE_ACTIVITY):
             return "competing model activity detected"
+        comm_path = comm_records.get(pid)
+        if comm_path is None:
+            # Only an args record that is itself Claude-related needs a
+            # same-PID comm proof.  Irrelevant args records may legitimately
+            # lack a comm row, and extra comm rows are intentionally ignored.
+            if "claude" not in lowered_args:
+                continue
+            try:
+                status = probe(pid)
+            except BaseException:
+                status = "unknown"
+            if status == "gone":
+                continue
+            return "process inventory pid map mismatch"
         claude_related = "claude" in comm_path.casefold() or "claude" in lowered_args
         if not claude_related:
             continue
@@ -1037,6 +1076,69 @@ def cross_stage_identity(baseline: dict[str, Any], candidate: dict[str, Any]) ->
     }
 
 
+def descriptive_timing(baseline: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+    """Build non-gating timing context from two complete, validated stages.
+
+    This deliberately has no confidence interval, winner, or promotion field.
+    It is descriptive only: the fixed baseline-first order is confounded, and
+    the values must never affect the safety status or ``performance_valid``.
+    """
+    for stage, value in (("baseline", baseline), ("candidate", candidate)):
+        valid, reason = validate_stage_result(value, stage)
+        if not valid:
+            raise ValueError(f"descriptive timing requires complete {stage}: {reason}")
+
+    def metrics(result: dict[str, Any], stage: str) -> dict[str, float | int]:
+        arm = result["raw"][0]["arms"][stage]
+        median_total_ns = float(statistics.median(arm["total_ns"]))
+        median_prefill_ns = float(statistics.median(arm["prefill_ns"]))
+        median_decode_ns = float(statistics.median(arm["decode_ns"]))
+        logical = len(arm["logical_tokens_per_repeat"][0])
+        physical = len(arm["physical_tokens_per_repeat"][0])
+        decode_steps = arm["decode_steps"]
+        total_output_tokens_per_s = logical / (median_total_ns / 1e9)
+        decode_steps_per_s = decode_steps / (median_decode_ns / 1e9)
+        values = (median_total_ns / 1e6, median_prefill_ns / 1e6,
+                  median_decode_ns / 1e6, total_output_tokens_per_s,
+                  decode_steps_per_s)
+        if any(not math.isfinite(value) for value in values):
+            raise ValueError("descriptive timing formula is not finite")
+        return {
+            "median_total_ms": values[0], "median_prefill_ms": values[1],
+            "median_decode_ms": values[2], "logical_output_tokens": logical,
+            "physical_output_tokens": physical,
+            "total_output_tokens_per_s": values[3], "decode_steps_per_s": values[4],
+        }
+
+    stage_metrics = {"baseline": metrics(baseline, "baseline"),
+                     "candidate": metrics(candidate, "candidate")}
+    base = stage_metrics["baseline"]
+    cand = stage_metrics["candidate"]
+    comparisons: dict[str, dict[str, float]] = {}
+    for key in ("total_ms", "prefill_ms", "decode_ms",
+                "total_output_tokens_per_s", "decode_steps_per_s"):
+        base_key = f"median_{key}" if key.endswith("_ms") else key
+        candidate_value = float(cand[base_key])
+        baseline_value = float(base[base_key])
+        ratio = candidate_value / baseline_value
+        higher_is_better = key in ("total_output_tokens_per_s", "decode_steps_per_s")
+        percent_faster = 100.0 * (ratio - 1.0) if higher_is_better else 100.0 * (1.0 - ratio)
+        if not math.isfinite(ratio) or not math.isfinite(percent_faster):
+            raise ValueError("descriptive timing comparison is not finite")
+        comparisons[key] = {
+            "ratio": ratio, "percent_faster": percent_faster,
+            "direction": "higher_is_better" if higher_is_better else "lower_is_better",
+        }
+    return {
+        "descriptive_only": True,
+        "performance_valid": False,
+        "order_confounded": True,
+        "statistical_confidence": "none",
+        "stages": stage_metrics,
+        "comparison": {"candidate_over_baseline": comparisons},
+    }
+
+
 def _failure(plan: dict[str, Any], preflight_result: dict[str, Any], reason: str, stages: list[Any], resources: list[Any]) -> dict[str, Any]:
     return {"schema": "ironmule.q3b_result.v1", "experiment": EXPERIMENT_ID, "status": "FAILED", "fallback": "BASE",
             "promotion_allowed": False, "performance_valid": False, "interpretation": "SAFETY_ONLY",
@@ -1143,6 +1245,7 @@ def main(argv: list[str] | None = None) -> int:
                 result = {"schema": "ironmule.q3b_result.v1", "experiment": EXPERIMENT_ID,
                           "status": "SAFETY_CANARY_PASS", "fallback": None, "promotion_allowed": False,
                           "performance_valid": False, "interpretation": "SAFETY_ONLY", "token_identity": identities,
+                          "descriptive_timing": descriptive_timing(baseline, candidate),
                           "plan": plan, "preflight": pre, "stages": stages, "resource_history": resources}
     _write_exclusive(args.output, (json.dumps(result, indent=2, sort_keys=True, allow_nan=False) + "\n").encode())
     print(json.dumps({"status": result["status"], "output": str(args.output), "promotion_allowed": False, "performance_valid": False}, sort_keys=True))

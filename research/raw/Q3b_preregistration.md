@@ -41,7 +41,13 @@ runtime-code hash binding parent and worker. The initial memory-pressure free
 percentage must be at least 35%. Initial swap is recorded and must be known and
 at most 4 GiB. Three load samples must be known, have max at most 8.0 and spread
 at most 2.0. The process gate takes two bounded inventories,
-`pid=,rss=,%cpu=,args=` and `pid=,comm=`, and requires an exact PID map match.
+`pid=,rss=,%cpu=,args=` and `pid=,comm=`. The args snapshot is authoritative
+for relevance: every Claude-related or known inference/model record must have
+an exact same-PID `comm` record. Extra `comm` records are ignored, and an
+irrelevant args record may lack a `comm` row. If a relevant Claude args record
+is missing from `comm`, a read-only `kill(pid, 0)` probe may classify it as
+already gone; alive, permission-denied, and unknown probe results fail closed.
+Known inference/model tokens block directly even before comm matching.
 The only Claude exception is a process whose `comm` path is lexically inside
 the exact `/Applications/Claude.app/Contents/` boundary, after the complete
 bundle has passed absolute `/usr/bin/codesign --verify --deep --strict` and
@@ -51,6 +57,11 @@ bounded `/usr/bin/codesign -dv --verbose=4` metadata checks for identifier
 CLI/server/backend processes, outside-bundle paths, untrusted bundles, and
 malformed inventories are hard blockers. The allowed desktop process still
 contributes to loadavg; its CPU value is not discarded from the load gate.
+The two snapshots are not atomic: a process created after the args snapshot
+may appear only in `comm` and is ignored there, while repeated pre-child and
+post-stage gates are the detection boundary for later relevant processes. This
+inventory limitation supports safety gating only and creates no performance
+claim.
 
 The parent owns a monotone 180-second deadline. Each model child has a
 35-second timeout and each fresh stage worker has a 120-second cap. A bounded
@@ -101,6 +112,23 @@ above 128 MiB is still terminal safety evidence: it emits the same bounded
 `@SAFETY` event and prevents a normal result marker. If the worker-group TERM
 fails, it immediately attempts KILL on the same process group; only failure of
 both signals is a kill failure.
+
+## Descriptive timing context on a complete PASS
+
+Only after both stages have independently passed validation and all cross-stage
+identity checks, a final `SAFETY_CANARY_PASS` may include a `descriptive_timing`
+object. It is prominently labelled `descriptive_only=true`,
+`performance_valid=false`, `order_confounded=true`, and
+`statistical_confidence=none`. For each stage it reports the exact-raw-repeat
+median total, prefill, and decode time in milliseconds, logical and physical
+output-token counts, total output tokens per second, and decode steps per
+second. It may report candidate-over-baseline ratios and direction-labelled
+percent-faster values: `100 * (1 - ratio)` for lower-is-better total, prefill,
+and decode time, and `100 * (ratio - 1)` for higher-is-better total-throughput
+and decode-steps-throughput. A negative value means slower in either direction.
+It contains
+no confidence intervals, winner, or promotion decision. This object is never a
+gate, never changes status, and is absent for failed or incomplete stages.
 
 ## Decision and kill criteria
 
