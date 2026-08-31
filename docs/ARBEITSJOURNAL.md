@@ -307,6 +307,74 @@
 - **Messgrenze:** Kein Download, keine Modellinstallation, kein Hardware-/MLX-
   Test und kein Commit.
 
+## 2026-08-31 — Q3c safety aborts; Q3d single recovery path preregistered
+
+- **Entscheidung:** Q3c liefert keinen Performancebefund und wird nicht
+  wiederholt. Der sichere Fallback bleibt `BASE` beziehungsweise der aktuelle
+  Q2-Incumbent. Kein Profil wird aktiviert, geroutet oder automatisch
+  übernommen; kein „heurica“ wird ausgegeben.
+- **Run 1:** `research/raw/Q3c_run1_20260831.json`, SHA-256
+  `5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`, endete
+  vor jeder Phase, weil der Load-Maximalwert `8.294921875` über dem Gate `8`
+  lag. Es existieren daher keine Modellzeiten, Identitätswerte oder
+  Performance-Daten.
+- **Run 2:** `research/raw/Q3c_run2_20260831.json`, SHA-256
+  `d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`,
+  passierte den Preflight, brach aber Phase R live ab: `105` Swap-Samples in
+  `27.394551749996026 s`, Start `2,353,654,661 B`, Maximum
+  `2,625,172,930 B`, Delta `271,518,269 B` (`258.94 MiB`) statt höchstens
+  `128 MiB`. Der Raw-Datensatz meldet
+  `SIGTERM:PermissionError`, `SIGKILL:PermissionError` und eine weiterlebende
+  Workergruppe; Cleanup/Reap ist damit nicht verifiziert. Es gab keine
+  abgeschlossenen Kinder und keine Timings, Token-/Identitäts-, Performance-
+  oder Promotionsaussage.
+- **Ursache und Schutz:** Der Abbruch ist ein gemessener Safety-Abbruch; die
+  Daten erlauben keine feinere Ursache als Swap-Highwater plus unbekanntes
+  Cleanup. Run 1 und Run 2 bleiben getrennt erhalten und werden nicht gepoolt.
+  Die Rohdateien werden nicht gelöscht.
+- **Q3d-Vorregistrierung:** Vor weiterer Implementation oder Hardwareausführung
+  wird genau ein Recovery-Pfad eingefroren: erst Cleanup-Proof-Fix mit Tests,
+  dann genau ein 60-Sekunden-Modell-freier Stabilitäts-Gate mit exakt null
+  Swap-Anstieg; nur bei vollständigem PASS genau ein unveränderter Q3c-Lauf.
+  Jeder Safety-, Cleanup-, Unknown- oder Kriterienfehler beendet Q3d dauerhaft.
+  Ein reiner Performance-Miss in Phase R überspringt Phase N nicht, sofern R
+  Safety, Identität, Raw-Vollständigkeit und Cleanup bestanden hat.
+- **Messgrenze:** Kein Download, keine Installation, kein 27B-Modell, kein
+  Hardware-/MLX-Test und kein UI-/Promotion-Schritt in dieser Dokumentations-
+  änderung.
+
+## 2026-08-31 — Q3d-Gate-Spezifikation präzisiert
+
+- **Korrektur:** Die Q3d-Vorregistrierung erlaubt ausdrücklich neben dem
+  Cleanup-Proof-Fix und dessen Tests auch einen minimalen Stabilitäts-Gate-
+  Harness samt Tests. Der Parent bleibt stdlib-only und darf weder MLX noch
+  ein Modell importieren oder einen Inferenzprozess starten. Beides muss vor
+  dem ersten Gate-Lauf implementiert und getestet sein.
+- **Exaktes Gate:** Ein synchroner Swap-Sample bei monotonic `t0` plus genau
+  60 geplante Samples bei `t0+1 ... t0+60 s` ergeben exakt 61 Samples. Das
+  erste-bis-letzte Intervall muss `>=60.0 s` und `<=62.5 s` sein; jedes
+  Nachbarintervall `<=2.5 s`, jeder OS-Befehl hat `1.0 s` Timeout. Gate-Wall-
+  Deadline ist `90 s`, Output maximal `512 KiB`, Ausgabe striktes JSON auf
+  exklusivem Pfad. Commit-, Prereg-, Runtime- und Model-Cache-Identität sowie
+  alle Kommandos, Zeitstempel und Abstände müssen bekannt sein; der Swap-
+  Highwater-Anstieg muss exakt `0 B` betragen. Das Gate misst keine
+  Performance.
+- **Zeitbindung:** Q3d bleibt auf maximal `720 s` begrenzt: `90 s` Gate-
+  Deadline + `600 s` unveränderter Q3c-Lauf + `30 s` Abschlussreserve. Der
+  reine Performance-Miss in Phase R lässt Phase N weiterhin laufen, wenn R
+  Safety, Identität, Raw-Vollständigkeit und Cleanup bestanden hat.
+
+## 2026-08-31 — Korrekturhinweis zum historischen Q3c-Preregistrierungsentwurf
+
+Der frühere Q3c-Journalabschnitt mit SHA-256
+`411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701` und
+Verweis auf UI-Historie bleibt als append-only Historie unverändert. Er war ein
+historischer, vor dem Freeze abgelöster Entwurf. Die finale eingefrorene Q3c-
+Präregistrierung ist `research/raw/Q3c_preregistration.md` mit SHA-256
+`3bf63ff0dcf442855b6d7b97278fb1d43583a9f18e3f5b6c3caa507582a9ffc5`; die
+finale Fassung enthält keine UI-Anforderung. Die danach dokumentierten Q3c-
+Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
+
 ## 2026-08-31 — Q3b Canary 7 audited and Q3c preregistered
 
 - **Q3b-Audit:** `research/raw/Q3b_canary7_20260831.json` wurde read-only

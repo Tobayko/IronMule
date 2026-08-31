@@ -317,100 +317,57 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `Q3c` — Replicate the Q2 incumbent and test `fused_argmax` — preregister first
+### `Q3d` — Recover Q3c safety evidence without a retry loop — preregister first
 
-**Mechanism.** Q2's paired confirmation reported ratio `0.8568`, 95% CI
-`[0.8549; 0.9402]`, and a stored screening gain of `14.57%`. Q3b established
-that the exact local 4B path can pass residual-swap safety, but its ordered
-single-arm timing is not evidence of speed. Q3c therefore separates the
-replication of the final Q2 incumbent from the incremental `fused_argmax` test
-using two independent paired phases over fresh processes.
+**Mechanism.** Q3c produced no performance evidence: one run was rejected by the
+load gate and the next was stopped by the live swap high-water gate. The second
+record also could not prove worker-group cleanup. Q3d isolates one cleanup-proof
+repair and one model-free stability observation before permitting one unchanged
+Q3c harness run.
 
-**Preregistration gate.** Create and hash
-`research/raw/Q3c_preregistration.md` before any Q3c implementation or hardware
-execution; write `research/raw/Q3c_preregistration.sha256` and do not edit the
-preregistration after execution starts. No Q3c implementation is part of this
-entry yet.
+**Test.** Before any hardware/model execution, repair only the cleanup proof and
+add regression tests for normal exit, safety abort, timeout, TERM→KILL fallback,
+reap and orphan detection. Also implement and test the minimal model-free gate
+harness: its parent is stdlib-only and imports no MLX/model. Then run exactly
+one `60 s` model-free stability gate with AC power, low-power off, nominal
+thermal state, start free memory `>=35%`, start swap `<=4 GiB`, load
+`max<=8`/`spread<=2` and no competing model process. It takes a synchronous
+`t0` swap sample plus exactly `60` scheduled samples at `t0+1..t0+60 s`
+(`61` total), first-to-last elapsed `>=60.0 s` and `<=62.5 s`, adjacent gaps
+`<=2.5 s`, command timeout `1.0 s`, gate wall deadline `90 s`, strict JSON,
+exclusive output and `512 KiB` output cap. The exact commit/prereg/runtime/
+model-cache identity and all command/timestamp/gap facts must be bound;
+`max(samples)-start` must equal exactly `0 B`; no performance is measured. Only
+complete PASS permits exactly one unchanged full Q3c harness run, bound to its
+exact post-repair commit, model snapshot, arms, protocol and criteria.
 
-**Exact workload and arms.** Use only the exact local
-`mlx-community/gemma-3-4b-it-4bit` snapshot at revision
-`93724907d4ed1745d2fe50baadf3b0b01a65abf2`, prompt token count `322`, greedy
-generation, and `max_tokens=32`. Use the existing `ironmule.ab.run` contract,
-exactly six fresh OS processes per phase, two warmups and seven measured
-repeats per arm, with process order alternating `AB`, `BA`, `AB`, `BA`,
-`AB`, `BA`.
+The gate and full run reuse the exact process inventory: only the fully
+verified signed Claude Desktop bundle may be excepted when its path is inside
+`/Applications/Claude.app/Contents/`, identifier is
+`com.anthropic.claudefordesktop`, team is `Q6L2SF6YDW`, and first authority is
+`Developer ID Application: Anthropic PBC (Q6L2SF6YDW)`. Claude
+CLI/server/backend and model-token processes block. PID/PPID ancestry and
+snapshot-race handling are inherited; missing links, cycles, invalid or
+malformed PID/PPID/process records, unknown state, or untrusted/outside-bundle
+paths fail closed.
 
-* Phase R (replication): `untuned BASE` (`Knobs()` defaults) versus the exact
-  Q2 incumbent: `compiled_fixed_cache=True`, `head_skip_prefill=True`,
-  `readback_every=2`, with every other knob at its baseline value
-  (`fuse_projections=False`, `fused_argmax=False`, `prefill_into_fixed=False`,
-  `speculate_k=0`, `speculate_ngram=3`, `capacity_slack=0`,
-  `wired_fraction=0.0`).
-* Phase N (new candidate): the same untuned `BASE` versus the Q2 incumbent
-  plus exactly `fused_argmax=True`.
+The full run keeps Q3c's exact local Gemma 4B, two independent six-process
+phases, AB/BA order, identity rules, `128 MiB` live-run swap limit, and `600 s`
+study bound. Phase N still runs when Phase R has passed safety, identity, raw-
+completeness and cleanup gates but misses only its performance criterion; a
+performance miss is not a reason to skip N. Any safety, identity, raw,
+cleanup, unknown-state or criteria failure ends Q3d permanently. No attempt is
+repeated or pooled with Q3c run 1, run 2, or another Q3d run.
 
-Each phase is an independent raw result with its own six PIDs, arm plans,
-identity binding, safety history, cleanup/reap status and complete child
-records. Do not pool or multiply Q3b's ordered ratios with either phase, and do
-not pool the two Q3c phases into one comparison.
-
-**Safety and exactness gates.** Reuse Q3b's residual-swap/live policy exactly:
-start swap known and `<=4 GiB`; a periodic bounded sampler checks the complete
-live stage and an observed high-water increase `>128 MiB` immediately aborts
-the current process group; start free memory `>=35%`, post-phase free memory
-`>=20%`, and both MLX peak and child RSS `<=60%` of installed memory. AC power,
-low-power off, nominal thermal state, known load, exact local model/revision/
-manifest, clean Git binding and complete runtime identity are required. The
-bounded process inventory blocks all known model/inference processes; only the
-exact, code-signed Claude Desktop bundle under
-`/Applications/Claude.app/Contents/` with identifier
-`com.anthropic.claudefordesktop`, team `Q6L2SF6YDW`, and the expected Anthropic
-authority may be ignored. Claude CLI/server/backend, malformed or untrusted
-records, outside-bundle paths, and unknown states remain blockers. The ppid
-ancestry/PID-race, 1.0 s OS-command, 5.0 s codesign, bounded-output,
-SIGTERM→SIGKILL, reap, `@SAFETY`, partial-raw and no-orphan rules are inherited
-without weakening them.
-
-**Bounds.** The parent owns one monotonic `600 s` maximum for the study (ten
-minutes, below the user's 30-minute ceiling). Each phase has a `270 s` maximum:
-one `ab.run` worker is capped at `240 s`, each child at `35 s`, and `30 s` is
-reserved for phase cleanup and post-snapshot. A final `60 s` study reserve is
-kept for inter-phase identity checks and terminal cleanup, so the two phase
-bounds plus reserve are exactly `600 s`. Phase N starts only after Phase R has
-passed its safety, identity and cleanup gates; a failed/unknown Phase R stops the
-study and retains `BASE`/current-incumbent fallback.
-
-**Predeclared identity rule (“same values”).** Across both phases, every arm and
-repeat must be exactly identical on logical token IDs, physical token IDs,
-logical/physical counts, stop reasons, capacities, deterministic flags, prompt
-token count and decode-step count. The phase result must retain the complete
-per-repeat arrays and independently reconstructed identity booleans. Any
-mismatch, missing field, fallback, timeout, crash, malformed raw record,
-resource violation or cleanup failure is `FAILED`/inconclusive; it cannot be
-accepted as a speed result.
-
-**Performance reproduction and preservation gates.** For each phase, derive
-per-process medians from the seven raw repeats and paired 10,000-resample
-bootstrap 95% CIs using the existing deterministic `ab.run`/`paired_ratio`
-convention (seed `20260825`). Report total, prefill and decode median time in
-milliseconds, physical output tokens/s and decode steps/s, each with its
-candidate/base ratio and CI. Phase R reproduces the historical incumbent only
-if its new incumbent/base median ratio is within `±0.03` absolute of `0.8568`,
-its new 95% CI contains `0.8568`, and its CI high is `<1.0`. Phase N preserves
-the candidate only if its candidate/base CI high is `<1.0` and its median ratio
-is no more than `0.005` above the replicated Phase-R incumbent median. Report
-the candidate's gain as descriptive percentages with direction labels and its
-CI; do not convert the historical stored `14.57%` screening gain into a new
-paired estimate.
-
-**Decision/kill.** There is no automatic profile promotion, routing or
-activation. If either phase fails, is incomplete, fails the exact-value rule,
-misses its predeclared performance gate, or is inconclusive, retain untuned
-`BASE` and the current Q2 incumbent and report the reason. A passing Phase R
-only establishes local replication under this exact workload; a passing Phase N
-only preserves the candidate under the stated bound. The Q3c raw result remains
-the auditable record; no presentation layer is part of the execution or
-decision contract.
+**Kill.** A failed or incomplete cleanup proof, any failed test, any unknown
+stability fact, any non-zero swap increase, any competing model, any resource or
+cleanup failure, any Q3c safety/identity/raw failure, or any missed final
+criterion closes Q3d. Retain `BASE` and the current Q2 incumbent; never promote,
+route or activate a candidate. The complete raw evidence and all failed paths
+remain retained. The outer Q3d wall bound is at most `720 s` (`90 s` gate
+deadline + `600 s` Q3c run + `30 s` reserve), below the user's 12-minute
+ceiling.
+No UI or presentation layer is part of this entry.
 
 ### `R10` — An aborted run must not look like a finished one
 
@@ -513,6 +470,16 @@ rerunning the same control.
 ## Tier 0 — already dead. Do not re-run these.
 
 Listed so the next person does not spend a week rediscovering them.
+
+- **`Q3c` direct replication attempts (2026-08-31).** Run 1 was refused before
+  a phase because load `8.294921875 > 8` (raw SHA-256
+  `5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`); run 2
+  aborted after `105` samples / `27.395 s`, swap `2,353,654,661 B` to
+  `2,625,172,930 B`, delta `271,518,269 B` (`258.94 MiB > 128 MiB`), with
+  cleanup unverified. No timings, identity, performance result or promotion
+  exists. Raw run 2 SHA-256 is
+  `d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`; retain
+  both records and do not rerun Q3c.
 
 - **`R11/R12/E15` fork-per-block memory-integrity path (b700377).** Closed by the
   complete four-block E15 after-file (SHA-256

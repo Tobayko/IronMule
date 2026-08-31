@@ -2504,9 +2504,9 @@ identity, and streaming-output debts remain above it in the backlog.
 
 ## Q3c — Preregistration sealed before implementation (2026-08-31)
 
-`research/raw/Q3c_preregistration.md` is frozen before any Q3c implementation
-or execution. Its SHA-256 is
-`411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`, recorded
+`research/raw/Q3c_preregistration.md` was frozen before Q3c implementation or
+execution. Its SHA-256 is
+`3bf63ff0dcf442855b6d7b97278fb1d43583a9f18e3f5b6c3caa507582a9ffc5`, recorded
 in `research/raw/Q3c_preregistration.sha256`. It defines two independent
 six-fresh-process `ab.run` phases (2 warmups, 7 repeats, alternating AB/BA):
 Phase R reproduces the exact Q2 incumbent against untuned `BASE`, and Phase N
@@ -2515,6 +2515,26 @@ Gemma 4B, prompt token count `322`, `max_tokens=32`, residual-swap/live
 safety policy, exact `600 s` study / `270 s` phase / `240 s` worker /
 `35 s` child bounds, identity rule, timing/rate/CI outputs, Q2 target
 `0.8568` with CI `[0.8549; 0.9402]`, `±0.03` reproduction bar, candidate
-`+0.005` preservation bar, fallback, no-promotion and UI-history requirements
-are all frozen there. No Q3c code or hardware measurement is included in this
-entry.
+`+0.005` preservation bar, fallback and no-promotion requirements were frozen
+there. No UI history is part of the execution contract.
+
+## Q3c — Safety aborts before any performance result (2026-08-31)
+
+Two Q3c records are retained locally and are not pooled. Run 1,
+`research/raw/Q3c_run1_20260831.json` (SHA-256
+`5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`), failed
+in preflight because load `8.294921875` exceeded the declared maximum `8`.
+It entered no phase and has no model timings or identity observations.
+
+Run 2, `research/raw/Q3c_run2_20260831.json` (SHA-256
+`d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`), passed
+preflight but stopped Phase R on the live safety gate after `105` swap samples
+over `27.394551749996026 s`. Swap rose from `2,353,654,661 B` to
+`2,625,172,930 B`: delta `271,518,269 B` (`258.94 MiB`), above the unchanged
+`128 MiB` limit. The raw record reports cleanup errors
+(`SIGTERM:PermissionError`, `SIGKILL:PermissionError`, worker process group
+still alive) and `worker_group_gone=false`; cleanup is therefore unverified.
+No child completed, and there are no timings, exact identity, performance,
+promotion or activation results. The Q3c decision is `FAILED` with
+`BASE/current incumbent` fallback. The Q3c backlog entry is closed in Tier 0;
+Q3d is a separate, single-path recovery preregistration.
