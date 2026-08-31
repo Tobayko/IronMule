@@ -2580,3 +2580,84 @@ in `research/raw/Q3e_preregistration.sha256`. Q3e may remove only the unsupporte
 unknown/error handling, prove it with model-free tests, and then invoke the
 unchanged Q3c harness exactly once. No retry, download, installation, restart,
 27B run, UI or automatic activation follows from Q3d.
+
+## Q3e — Portable probe repaired; Phase R rejected by same-UID attribution (2026-08-31)
+
+Q3e passed all 14 preflight checks and repaired the macOS `ps sid` portability
+boundary. Its single permitted Q3c invocation completed Phase R with six fresh
+processes, alternating order, two warmups and seven measured repeats per arm.
+The exact Gemma 4B revision, manifest, prompt count, token IDs, physical token
+IDs, counts, stop reasons, capacity, decode steps and determinism were equal in
+every measured repeat. Swap stayed at `2,643,334,266 B` with zero delta, and
+the resource ceilings passed.
+
+The authoritative raw result is
+`research/raw/Q3e_q3c_final_20260831.json`, SHA-256
+`1df6c81dc824911016e687883c535f1ec314f3e03b51303b04c38ae71bb6f4ea`, size
+`2,205,857` bytes. It is `FAILED`, with `BASE/current incumbent` fallback and
+`promotion_allowed=false`. The redacted terminal note is
+`research/raw/Q3e_terminal_result_20260831.md`, SHA-256
+`fd89e23945315597476854843df1140a5c3e35ebf1aaf9a737c80d5ebf4fdfaa`.
+
+The descriptive Phase-R incumbent/BASE total-time ratio was
+`0.857466859207542`, bootstrap 95% CI
+`[0.8551668079699586, 0.8611021999710893]`, or `14.2533140792%` faster total
+time. Prefill was `16.0213211%` faster, decode `10.0321650%` faster, physical
+output rate `16.6225872%` higher and decode-step rate `11.1510142%` higher.
+These values meet the frozen historical Phase-R checks but are descriptive
+only and are not an accepted performance result because cleanup failed.
+
+Both independent final cleanup snapshots showed the worker group, leader and
+known descendants gone, and the worker was reaped. Cleanup nevertheless found
+four stable new same-UID processes outside the worker group/session and outside
+the worker ancestry: PID `28095` (`extensionkitservice`), PID `28209`
+(`STARFACE HeadsetXPCService`), PID `28636` (`mdworker_shared`) and PID `28964`
+(`AXVisualSupportAgent`). The strict Q3e rule treated any new same-UID process
+as unresolved, so `group_gone=false` and the phase was rejected. The complete
+bounded records remain in the raw file; no process was killed by this rule.
+Phase N did not run. Q3e is terminal and is not retried or pooled with any
+earlier result.
+
+## Q3f — Final same-UID attribution path preregistered (2026-08-31)
+
+Q3f is frozen in `research/raw/Q3f_preregistration.md`, SHA-256
+`345c63cba5f019ab0314761404f7de398ceee876ffcee82d80c3578f9db8e31b`, recorded
+in its companion SHA file. It permits only a strict `unrelated_new_process`
+classification for a new same-UID process when two valid snapshots prove stable
+PID/start/UID, separation from worker/known/nested PIDs and PGID/SID, complete
+non-ancestry, no model/inference tokens, known non-zombie state, no competing
+model process and complete command/enrichment evidence. Any identity ambiguity,
+model-like process or an executable/args combination indicating Python and
+containing an exact blocker token, ancestry/group/session relation,
+unknown/malformed/racy evidence or other cleanup uncertainty remains a hard
+failure. The full bounded record is retained and no unrelated process may be
+killed.
+
+Q3f additionally requires `ab._child` to install the bounded Python audit guard
+`ironmule.q3f_child_guard.v1` before model load. It blocks and records
+`subprocess.Popen`, `os.system`, fork/spawn and available `setsid`/`setpgid`
+process/session escape attempts; a successful child records the exact guard
+version and zero events. The direct child-start callback is the complete child
+ledger. Missing, overflowing or otherwise unknown guard/ledger evidence fails
+closed. The exact case-insensitive blocker set is the existing
+`KNOWN_INFERENCE_ACTIVITY` constant plus `q3c`, `q3d`, `ironmule`, `mlx`,
+`gemma` and `huggingface`, with equality covered by static and adversarial
+tests.
+The guard starts at the actual `ab._child` execution closure, follows only a
+reviewed callee/module allowlist, excludes the legitimate parent-side
+`ab.run` `Popen`, and fails on an unreviewable reachable Python path. It
+receives all Python-visible audit events and wraps available `os` process/
+session calls; arbitrary native C-level syscalls are not claimed observable
+and remain subject to the strict snapshot/group/session/ledger gates. The
+Python-inference predicate is executable/args indicating Python **and** at
+least one exact blocker token; generic external Python is not automatically
+inference, but still faces every structural unrelated-process gate.
+
+Before one unchanged offline Q3c invocation, Q3f allows only model-free
+adversarial and real macOS `start_new_session=True` cleanup tests, run serially
+with the full non-integration suite. Q3c remains exactly bound to its frozen
+preregistration, local Gemma 4B revision/manifest, unchanged arms/order,
+preflight and live safety limits, six fresh processes per phase, exact identity,
+statistics, timing bounds and no-promotion fallback. Q3f has no Q3d gate, retry,
+pooling, download, installation, restart, 27B run or UI; any failure consumes
+the single path and ends the study.

@@ -317,38 +317,54 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `Q3e` — Repair the macOS process probe, then permit one unchanged Q3c run
+### `Q3f` — Attribute unrelated same-UID processes without weakening cleanup
 
-**Mechanism.** Q3d's model-free stability gate passed, but its one permitted
-Q3c invocation was correctly stopped before `Popen`: macOS 26.6.2 does not
-support the requested `ps` field `sid` (`rc=1`, `ps: sid: keyword not found`).
-The portability defect prevents a valid process-group baseline even though it
-does not show unsafe hardware or model behavior. Q3d is closed; Q3e is a new,
-single-path repair and verification entry.
+**Mechanism.** Q3e's portability repair worked and its Phase-R tokens and
+resources were exact, but cleanup rejected four stable processes unrelated to
+the worker merely because they shared the user's UID and appeared after the
+baseline. A strict two-snapshot rule plus a bounded pre-model-load Python
+child-creation/no-detach guard and complete direct child-start ledger can
+classify such a process as `unrelated_new_process` only when PID/start/UID
+stability, process-group and session separation, complete ancestry, no
+worker-created escape event, exact non-model arguments, known non-zombie state,
+valid command evidence and no competing model process are all proven.
 
-**Test.** Freeze `research/raw/Q3e_preregistration.md` and its SHA before
-implementation. Repair only the process probe: remove `sid` from the canonical
-`ps` command, retain strict `pid`, `ppid`, `pgid`, `uid`, `stat`, `start` and
-`args`, and enrich relevant same-UID rows with public `os.getsid(pid)`. A
-typed `ProcessLookupError` is a known snapshot race and omits that row; every
-other error or unknown/malformed value fails closed. Add deterministic parser,
-race/error, UID, ancestry, cleanup and reuse tests plus a real model-free macOS
-`start_new_session=True` test proving `os.getsid(pid)==pid`, baseline capture
-and cleanup/reap. Run the Q3c/Q3d tests and full non-integration suite before
-any model work. If and only if all tests pass, invoke the unchanged Q3c
-protocol exactly once offline against the exact local Gemma 4B revision and
-manifest, with its existing preflight, 128-MiB live swap, identity, cleanup,
-statistics, Phase-R/Phase-N behavior and 600-second bound. Do not repeat the
-Q3d stability gate.
+**Test.** Freeze `research/raw/Q3f_preregistration.md` and its SHA before
+implementation. Permit only this attribution refinement and deterministic
+tests. Include a real model-free macOS `start_new_session=True` worker plus a
+new unrelated process created after baseline; prove the unrelated process is
+not killed while the worker group is completely reaped. The guard must block
+and record simulated `Popen`/fork/spawn and `setsid`/`setpgid` detach attempts,
+while a successful child raw record contains its exact guard version and zero
+events. Static scan, direct child-start ledger, and adversarial model-like
+arguments, ancestry, matching group/session, changed identity, foreign UID,
+unknown or malformed/racy evidence and zombie state must fail closed. Run the
+full non-integration suite serially before exactly one unchanged offline Q3c
+run against the exact local Gemma 4B revision and manifest.
 
-**Kill.** Any code scope expansion, failed/unknown test, unsupported or
-ambiguous process identity, failed preflight, timeout, safety/resource/cleanup
-failure, incomplete raw record, identity mismatch or missed Q3c criterion ends
-Q3e permanently. Retain `BASE` and the current Q2 incumbent; never promote,
-route or activate a candidate. Do not retry or pool Q3d/Q3c records, download
-or install software, run 27B, restart the machine or add UI. The full frozen
-details, including the exact model, hashes, 600-second protocol and Phase-N
-rule, live in `research/raw/Q3e_preregistration.md`.
+The guard contract is `ironmule.q3f_child_guard.v1`: successful children must
+record that exact version and zero events. The case-insensitive lexical blocker
+set must be exactly `dedupe(KNOWN_INFERENCE_ACTIVITY + ("q3c", "q3d",
+"ironmule", "mlx", "gemma", "huggingface"))`; static and runtime tests
+must assert equality.
+The guard starts at the actual `ab._child` closure, follows a reviewed
+callee/module allowlist, excludes the legitimate parent-side `ab.run` `Popen`,
+and fails on an unreviewable reachable Python path. It receives all
+Python-visible audit events and wraps available `os` process/session calls;
+arbitrary native C-level syscalls are not claimed observable and remain subject
+to the snapshot/group/session/ledger gates. The Python-inference predicate is
+executable/args indicating Python **and** containing a blocker token; generic
+external Python is not automatically inference, but still faces every
+structural unrelated-process gate.
+
+**Kill.** Any code scope expansion, failed/unknown test, false attribution,
+unbounded evidence, preflight refusal, timeout, safety/resource/cleanup
+failure, incomplete raw record, identity mismatch or missed frozen Q3c
+criterion ends Q3f permanently. Retain `BASE` and the current Q2 incumbent;
+never promote, route or activate a candidate. Do not repeat Q3d/Q3e, pool
+their records, download or install software, run 27B, restart the machine or
+add UI. The complete frozen rule and unchanged Q3c contract live in
+`research/raw/Q3f_preregistration.md`.
 
 ### `R10` — An aborted run must not look like a finished one
 
@@ -475,6 +491,20 @@ Listed so the next person does not spend a week rediscovering them.
   exists. Final state is `Q3C_FAILED` with `BASE/current incumbent` fallback;
   do not repeat Q3d or pool its gate with Q3c. Q3e is the separately frozen
   portability-repair path.
+
+- **`Q3e` portable process probe and one Q3c invocation (2026-08-31).** The
+  repair removed unsupported macOS `ps sid` and the exact Phase-R run completed
+  with token/resource identity intact. Its descriptive incumbent/BASE total
+  ratio was `0.857466859207542`, CI
+  `[0.8551668079699586, 0.8611021999710893]` (`14.2533140792%` faster), but
+  cleanup conservatively rejected four stable unrelated same-UID launchd
+  services that appeared after the worker baseline. The raw result is
+  `research/raw/Q3e_q3c_final_20260831.json`, SHA-256
+  `1df6c81dc824911016e687883c535f1ec314f3e03b51303b04c38ae71bb6f4ea`, size
+  `2,205,857` bytes; the terminal note is
+  `research/raw/Q3e_terminal_result_20260831.md`. Status is `FAILED`, Phase N
+  did not run, and fallback remains `BASE/current incumbent`. Do not pool or
+  rerun Q3e; Q3f is the separately frozen attribution path.
 
 - **`R11/R12/E15` fork-per-block memory-integrity path (b700377).** Closed by the
   complete four-block E15 after-file (SHA-256
