@@ -317,55 +317,6 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `Q3f` — Attribute unrelated same-UID processes without weakening cleanup
-
-**Mechanism.** Q3e's portability repair worked and its Phase-R tokens and
-resources were exact, but cleanup rejected four stable processes unrelated to
-the worker merely because they shared the user's UID and appeared after the
-baseline. A strict two-snapshot rule plus a bounded pre-model-load Python
-child-creation/no-detach guard and complete direct child-start ledger can
-classify such a process as `unrelated_new_process` only when PID/start/UID
-stability, process-group and session separation, complete ancestry, no
-worker-created escape event, exact non-model arguments, known non-zombie state,
-valid command evidence and no competing model process are all proven.
-
-**Test.** Freeze `research/raw/Q3f_preregistration.md` and its SHA before
-implementation. Permit only this attribution refinement and deterministic
-tests. Include a real model-free macOS `start_new_session=True` worker plus a
-new unrelated process created after baseline; prove the unrelated process is
-not killed while the worker group is completely reaped. The guard must block
-and record simulated `Popen`/fork/spawn and `setsid`/`setpgid` detach attempts,
-while a successful child raw record contains its exact guard version and zero
-events. Static scan, direct child-start ledger, and adversarial model-like
-arguments, ancestry, matching group/session, changed identity, foreign UID,
-unknown or malformed/racy evidence and zombie state must fail closed. Run the
-full non-integration suite serially before exactly one unchanged offline Q3c
-run against the exact local Gemma 4B revision and manifest.
-
-The guard contract is `ironmule.q3f_child_guard.v1`: successful children must
-record that exact version and zero events. The case-insensitive lexical blocker
-set must be exactly `dedupe(KNOWN_INFERENCE_ACTIVITY + ("q3c", "q3d",
-"ironmule", "mlx", "gemma", "huggingface"))`; static and runtime tests
-must assert equality.
-The guard starts at the actual `ab._child` closure, follows a reviewed
-callee/module allowlist, excludes the legitimate parent-side `ab.run` `Popen`,
-and fails on an unreviewable reachable Python path. It receives all
-Python-visible audit events and wraps available `os` process/session calls;
-arbitrary native C-level syscalls are not claimed observable and remain subject
-to the snapshot/group/session/ledger gates. The Python-inference predicate is
-executable/args indicating Python **and** containing a blocker token; generic
-external Python is not automatically inference, but still faces every
-structural unrelated-process gate.
-
-**Kill.** Any code scope expansion, failed/unknown test, false attribution,
-unbounded evidence, preflight refusal, timeout, safety/resource/cleanup
-failure, incomplete raw record, identity mismatch or missed frozen Q3c
-criterion ends Q3f permanently. Retain `BASE` and the current Q2 incumbent;
-never promote, route or activate a candidate. Do not repeat Q3d/Q3e, pool
-their records, download or install software, run 27B, restart the machine or
-add UI. The complete frozen rule and unchanged Q3c contract live in
-`research/raw/Q3f_preregistration.md`.
-
 ### `R10` — An aborted run must not look like a finished one
 
 **Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
@@ -505,6 +456,22 @@ Listed so the next person does not spend a week rediscovering them.
   `research/raw/Q3e_terminal_result_20260831.md`. Status is `FAILED`, Phase N
   did not run, and fallback remains `BASE/current incumbent`. Do not pool or
   rerun Q3e; Q3f is the separately frozen attribution path.
+
+- **`Q3f` terminal attribution path (2026-09-01).** The single permitted Q3f
+  execution reached the exact local Gemma 4B worker only far enough to fail with
+  `ABRunError: child 0 start callback failed`; no child marker, ledger, timing,
+  token, Phase-N or accepted performance evidence exists. All 14 preflight
+  checks passed, AC/thermal/low-power gates were green, and swap stayed at
+  `2,609,643,520 B` across 25 samples with zero delta. Cleanup reaped the
+  worker and rejected the run closed because guard/ledger evidence was
+  unavailable and same-UID Spotify Helper PID `52017` could not be proven
+  unrelated. Raw SHA-256 is
+  `e82accdbd52857e6201fa2b34984765e61658ecfd3956d5c903a49c1e6de70a9`
+  (`2,487,533` bytes); terminal note is
+  `research/raw/Q3f_terminal_result_20260901.md`. Status is `FAILED`, with
+  `BASE/current incumbent` fallback. Do not retry Q3f, pool its record or say
+  that historical Q2 speed was reproduced; any child-visibility race fix needs
+  new authorization and preregistration.
 
 - **`R11/R12/E15` fork-per-block memory-integrity path (b700377).** Closed by the
   complete four-block E15 after-file (SHA-256
