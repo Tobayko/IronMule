@@ -157,3 +157,24 @@
 - **Verifikation:** Q3b-Suite `27 passed`; `py_compile`, `git diff --check`,
   Preregistration-SHA und Dry-Run geprüft. Keine Hardware-/MLX-Ausführung,
   kein Download, kein Modellstart und kein Commit. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Claude-Prozess-Gate auf Bundle-Vertrauen korrigiert
+
+- **Befund:** Die bisherige Ausnahme vertraute auf ein einzelnes `argv[0]`-Token
+  und konnte weder Helper-/Crashpad-Prozesse noch den vollständigen signierten
+  App-Bundle-Zustand belegen. Ein einzelnes `ps`-Inventar war zudem nicht gegen
+  die separate `comm`-Darstellung abgeglichen.
+- **Änderung:** Q3b fragt nun zwei begrenzte absolute `ps`-Inventare ab und
+  verlangt eine strikte PID-Karte. Claude wird nur ignoriert, wenn der
+  whitespace-erhaltende `comm`-Pfad lexikalisch innerhalb des exakten
+  `/Applications/Claude.app/Contents/`-Baums liegt und der komplette Bundle-
+  Vertrauenshelfer mit `/usr/bin/codesign --verify --deep --strict` sowie
+  `-dv --verbose=4` exakt Identifier `com.anthropic.claudefordesktop`, Team
+  `Q6L2SF6YDW` und die erste Authority `Developer ID Application: Anthropic PBC
+  (Q6L2SF6YDW)` bestätigt. Unbekannt, fehlerhaft, außerhalb oder untrusted
+  bleibt blockiert; Modellmuster werden vor der Claude-Ausnahme weiter blockiert.
+- **Verifikation:** Q3b-Tests decken Desktop-, Helper- und Crashpad-Pfade,
+  generische/außerhalb liegende Claude-Pfade, Boundary-Spoofing, Trust-
+  Metadaten-/Verify-Fehler, PID-Mismatch und malformed `comm` ab. Es wurde kein
+  Hardware-/MLX-Test, kein Modellstart, kein Download und kein Commit ausgeführt;
+  Q3a-Code und Q3a-SHA blieben unverändert.

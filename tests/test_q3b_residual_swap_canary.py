@@ -29,19 +29,77 @@ def _environment(**overrides):
     return value
 
 
-def test_claude_exception_is_exact_bundle_only():
-    desktop = f"123 100 8.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE} --type=renderer\n"
-    assert q3b.competing_model_process(lambda _command: desktop) is None
-    quoted = f'123 100 8.0 "{q3b.CLAUDE_DESKTOP_EXECUTABLE}" --type=renderer\n'
-    assert q3b.competing_model_process(lambda _command: quoted) is None
-    assert q3b.competing_model_process(lambda _command: "123 100 0.0 /usr/local/bin/claude --serve\n") == "unverified Claude process activity detected"
-    assert q3b.competing_model_process(lambda _command: "123 100 0.0 /Applications/Other.app/Claude\n") == "unverified Claude process activity detected"
-    assert q3b.competing_model_process(lambda _command: f"123 100 0.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE}X\n") == "unverified Claude process activity detected"
+def _inventories(args, comm):
+    def run(command):
+        return comm if command[-1].endswith("comm=") else args
+    return run
+
+
+def test_claude_exception_requires_verified_bundle_and_exact_contents_boundary(monkeypatch):
+    monkeypatch.setattr(q3b, "_trusted_claude_bundle", lambda: True)
+    args = f"123 100 8.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE} --type=renderer\n"
+    comm = f"123 {q3b.CLAUDE_DESKTOP_EXECUTABLE}\n"
+    assert q3b.competing_model_process(_inventories(args, comm)) is None
+    helper_comm = "123 /Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper\n"
+    helper_args = "123 100 8.0 '/Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/MacOS/Claude Helper' --type=renderer\n"
+    assert q3b.competing_model_process(_inventories(helper_args, helper_comm)) is None
+    crashpad_comm = "123 /Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/Resources/crashpad_handler\n"
+    crashpad_args = "123 100 8.0 /Applications/Claude.app/Contents/Frameworks/Claude Helper.app/Contents/Resources/crashpad_handler\n"
+    assert q3b.competing_model_process(_inventories(crashpad_args, crashpad_comm)) is None
+    outside = "123 100 0.0 /Applications/Claude.app.evil/Contents/MacOS/Claude\n"
+    outside_comm = "123 /Applications/Claude.app.evil/Contents/MacOS/Claude\n"
+    assert q3b.competing_model_process(_inventories(outside, outside_comm)) == "unverified Claude process activity detected"
+
+
+def test_claude_bundle_trust_fails_closed_on_verify_or_metadata_failure(monkeypatch):
+    class Completed:
+        def __init__(self, returncode=0, stdout="", stderr=""):
+            self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+    metadata = "\n".join([
+        "Identifier=com.anthropic.claudefordesktop",
+        "TeamIdentifier=Q6L2SF6YDW",
+        "Authority=Developer ID Application: Anthropic PBC (Q6L2SF6YDW)",
+        "Authority=Developer ID Certification Authority",
+    ])
+    calls = []
+    def runner(command, **_kwargs):
+        calls.append(command)
+        return Completed(stderr="ok" if "--verify" in command else metadata)
+    assert q3b._trusted_claude_bundle(runner=runner)
+    assert calls[0] == [q3b.CLAUDE_CODESIGN, "--verify", "--deep", "--strict", q3b.CLAUDE_DESKTOP_BUNDLE]
+    assert calls[1] == [q3b.CLAUDE_CODESIGN, "-dv", "--verbose=4", q3b.CLAUDE_DESKTOP_BUNDLE]
+
+    monkeypatch.setattr(q3b.subprocess, "run", lambda *_args, **_kwargs: Completed(returncode=1))
+    assert not q3b._trusted_claude_bundle()
+    bad_metadata = metadata.replace("Q6L2SF6YDW", "WRONGTEAM", 1)
+    calls.clear()
+    def bad_runner(command, **_kwargs):
+        calls.append(command)
+        return Completed(stderr="ok" if "--verify" in command else bad_metadata)
+    assert not q3b._trusted_claude_bundle(runner=bad_runner)
+
+
+def test_untrusted_and_generic_claude_processes_are_blocked(monkeypatch):
+    monkeypatch.setattr(q3b, "_trusted_claude_bundle", lambda: False)
+    args = f"123 100 0.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE} --type=renderer\n"
+    comm = f"123 {q3b.CLAUDE_DESKTOP_EXECUTABLE}\n"
+    assert q3b.competing_model_process(_inventories(args, comm)) == "unverified Claude process activity detected"
+    generic_args = "123 100 0.0 /usr/local/bin/claude --serve\n"
+    generic_comm = "123 /usr/local/bin/claude\n"
+    assert q3b.competing_model_process(_inventories(generic_args, generic_comm)) == "unverified Claude process activity detected"
+    other_args = "123 100 0.0 /Applications/Other.app/Claude\n"
+    other_comm = "123 /Applications/Other.app/Claude\n"
+    assert q3b.competing_model_process(_inventories(other_args, other_comm)) == "unverified Claude process activity detected"
+    prefix_args = f"123 100 0.0 {q3b.CLAUDE_DESKTOP_EXECUTABLE}X\n"
+    prefix_comm = f"123 {q3b.CLAUDE_DESKTOP_EXECUTABLE}X\n"
+    assert q3b.competing_model_process(_inventories(prefix_args, prefix_comm)) == "unverified Claude process activity detected"
 
 
 def test_competing_inference_process_is_blocked_and_malformed_fails_closed():
-    assert q3b.competing_model_process(lambda _command: "123 10 0.0 llama-server --model local\n") == "competing model activity detected"
-    assert q3b.competing_model_process(lambda _command: "broken") == "process inventory malformed"
+    output = "123 10 0.0 llama-server --model local\n"
+    assert q3b.competing_model_process(_inventories(output, "123 llama-server\n")) == "competing model activity detected"
+    assert q3b.competing_model_process(_inventories(output, "123")) == "process inventory malformed"
 
 
 def test_load_gate_uses_canary_thresholds():
@@ -65,7 +123,7 @@ def test_stage_gate_requires_known_pressure_swap_and_rss():
 
 
 def test_stage_gate_checks_prior_child_reap():
-    assert q3b.competing_model_process(lambda _command: "4321 10 0.0 python child\n", absent_pids=(4321,)) == "prior model child was not reaped"
+    assert q3b.competing_model_process(_inventories("4321 10 0.0 python child\n", "4321 python\n"), absent_pids=(4321,)) == "prior model child was not reaped"
 
 
 def test_preregistration_sha_matches_before_execution():

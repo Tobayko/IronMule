@@ -330,9 +330,16 @@ monotonic timestamps and worker-start offsets, and fails closed on any sampler
 command/read/parse/thread error; successful evidence has at least two samples,
 equal-length arrays, an empty `sampler_errors`, and a maximum timestamp gap of
 1.75 s (0.25 s interval + 1 s command timeout + 0.5 s scheduling margin).
-Claude is not a blanket blocker: only the exact verified `argv[0]` token
-`/Applications/Claude.app/Contents/MacOS/Claude` is ignored; ClaudeX, generic
-Claude CLI/server/backend paths, and unknown Claude paths remain hard blockers.
+Claude is not a blanket blocker: the process gate joins bounded
+`pid=,rss=,%cpu=,args=` and `pid=,comm=` inventories by an exact PID map. A
+Claude-related process is ignored only when its `comm` path is lexically inside
+the exact `/Applications/Claude.app/Contents/` boundary and the whole bundle
+passes absolute `/usr/bin/codesign --verify --deep --strict` plus bounded
+`-dv --verbose=4` metadata checks for identifier `com.anthropic.claudefordesktop`,
+team `Q6L2SF6YDW`, and first authority `Developer ID Application: Anthropic PBC
+(Q6L2SF6YDW)`. ClaudeX, generic CLI/server/backend paths, outside-bundle paths,
+untrusted bundles, and malformed inventories remain hard blockers; the allowed
+desktop process still contributes to loadavg.
 
 **Test.** Preregister `research/raw/Q3b_preregistration.md` and its SHA before
 execution. Require AC, low-power off, nominal thermal state, exact local model

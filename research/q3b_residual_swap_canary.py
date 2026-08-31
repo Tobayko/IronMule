@@ -54,6 +54,12 @@ MAX_WORKER_OUTPUT = 512 * 1024
 CAPABILITY_MAX_BYTES = 16 * 1024
 KNOWN_INFERENCE_ACTIVITY = ("mlx", "llama", "ollama", "vllm", "gemma", "qwen")
 CLAUDE_DESKTOP_EXECUTABLE = "/Applications/Claude.app/Contents/MacOS/Claude"
+CLAUDE_DESKTOP_BUNDLE = "/Applications/Claude.app"
+CLAUDE_DESKTOP_CONTENTS = CLAUDE_DESKTOP_BUNDLE + "/Contents/"
+CLAUDE_CODESIGN = "/usr/bin/codesign"
+CLAUDE_BUNDLE_IDENTIFIER = "com.anthropic.claudefordesktop"
+CLAUDE_BUNDLE_TEAM = "Q6L2SF6YDW"
+CLAUDE_BUNDLE_AUTHORITY = "Developer ID Application: Anthropic PBC (Q6L2SF6YDW)"
 STAGE_SAMPLE_INTERVAL_SECONDS = 0.25
 # A sampler command may occupy the full one-second command timeout.  The
 # interval plus that timeout and a 0.5 s scheduling margin bound gaps without
@@ -98,7 +104,10 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
                                    timeout=timeout, check=False)
     except (OSError, subprocess.SubprocessError):
         return _CommandText("", False)
-    limit = MAX_PS_OUTPUT if command == [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="] else MAX_COMMAND_OUTPUT
+    limit = MAX_PS_OUTPUT if command in (
+        [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="],
+        [COMMANDS["ps"], "-Ao", "pid=,comm="],
+    ) else MAX_COMMAND_OUTPUT
     if completed.returncode != 0 or not isinstance(completed.stdout, str) or len(completed.stdout) > limit:
         return _CommandText("", False)
     return _CommandText(completed.stdout, True)
@@ -289,17 +298,62 @@ def loadavg_gate(sample: Callable[[], float] = lambda: os.getloadavg()[0], sleep
             "passed": valid and max(samples) <= LOAD_MAX and spread <= LOAD_SPREAD_MAX}
 
 
-def competing_model_process(run: Callable[[list[str]], str] = _run_text,
-                            *, absent_pids: tuple[int, ...] = ()) -> str | None:
-    """Block inference activity; only the exact Claude Desktop executable is ignored."""
+def _trusted_claude_bundle(bundle: str = CLAUDE_DESKTOP_BUNDLE,
+                           runner: Callable[..., Any] | None = None) -> bool:
+    """Return true only for the exact, currently verified Claude app bundle.
+
+    ``codesign --verify`` proves the complete sealed bundle.  ``codesign -dv``
+    writes its metadata to stderr, so both the bounded command result and the
+    exact identity/authority fields are checked here.  Any timeout, malformed
+    output, non-zero status, or missing field is deliberately untrusted.
+    """
+    if bundle != CLAUDE_DESKTOP_BUNDLE or not Path(bundle).is_absolute():
+        return False
+    execute = subprocess.run if runner is None else runner
     try:
-        output = run([COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="])
-    except Exception:
-        return "process inventory unavailable or command failed"
+        verified = execute(
+            [CLAUDE_CODESIGN, "--verify", "--deep", "--strict", bundle],
+            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+        )
+        if getattr(verified, "returncode", None) != 0:
+            return False
+        verify_stdout = getattr(verified, "stdout", "")
+        verify_stderr = getattr(verified, "stderr", "")
+        if (not isinstance(verify_stdout, str) or not isinstance(verify_stderr, str)
+                or len(verify_stdout) + len(verify_stderr) > MAX_COMMAND_OUTPUT):
+            return False
+        metadata = execute(
+            [CLAUDE_CODESIGN, "-dv", "--verbose=4", bundle],
+            capture_output=True, text=True, timeout=COMMAND_TIMEOUT_SECONDS, check=False,
+        )
+        if getattr(metadata, "returncode", None) != 0:
+            return False
+        stdout = getattr(metadata, "stdout", "")
+        stderr = getattr(metadata, "stderr", "")
+        if not isinstance(stdout, str) or not isinstance(stderr, str):
+            return False
+        if len(stdout) + len(stderr) > MAX_COMMAND_OUTPUT:
+            return False
+    except BaseException:
+        return False
+
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    identifiers = [line.split("=", 1)[1] for line in lines if line.startswith("Identifier=") and "=" in line]
+    teams = [line.split("=", 1)[1] for line in lines if line.startswith("TeamIdentifier=") and "=" in line]
+    authorities = [line.split("=", 1)[1] for line in lines if line.startswith("Authority=") and "=" in line]
+    return (
+        len(identifiers) == 1 and identifiers[0] == CLAUDE_BUNDLE_IDENTIFIER
+        and len(teams) == 1 and teams[0] == CLAUDE_BUNDLE_TEAM
+        and bool(authorities) and authorities[0] == CLAUDE_BUNDLE_AUTHORITY
+    )
+
+
+def _parse_process_args_inventory(output: Any) -> dict[int, tuple[int, float, str]] | str:
     if not isinstance(output, str) or not output or not getattr(output, "ok", True):
         return "process inventory unavailable or command failed"
     if len(output) > MAX_PS_OUTPUT:
         return "process inventory exceeded bounded limit"
+    records: dict[int, tuple[int, float, str]] = {}
     for line in output.splitlines():
         parts = line.split(None, 3)
         if len(parts) != 4:
@@ -308,29 +362,83 @@ def competing_model_process(run: Callable[[list[str]], str] = _run_text,
             pid, rss, cpu = int(parts[0]), int(parts[1]), float(parts[2])
         except (TypeError, ValueError, OverflowError):
             return "process inventory malformed"
-        if pid <= 0 or rss < 0 or not math.isfinite(cpu) or cpu < 0:
+        if (pid <= 0 or rss < 0 or not math.isfinite(cpu) or cpu < 0
+                or pid in records):
             return "process inventory malformed"
+        try:
+            argv = shlex.split(parts[3], posix=True)
+        except (TypeError, ValueError):
+            return "process inventory malformed"
+        if not argv:
+            return "process inventory malformed"
+        records[pid] = (rss, cpu, parts[3])
+    return records
+
+
+def _parse_process_comm_inventory(output: Any) -> dict[int, str] | str:
+    if not isinstance(output, str) or not output or not getattr(output, "ok", True):
+        return "process inventory unavailable or command failed"
+    if len(output) > MAX_PS_OUTPUT:
+        return "process inventory exceeded bounded limit"
+    records: dict[int, str] = {}
+    for line in output.splitlines():
+        # Split only once: comm= is a path and may contain spaces.
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2:
+            return "process inventory malformed"
+        try:
+            pid = int(parts[0])
+        except (TypeError, ValueError, OverflowError):
+            return "process inventory malformed"
+        comm = parts[1].strip()
+        if pid <= 0 or pid in records or not comm:
+            return "process inventory malformed"
+        records[pid] = comm
+    return records
+
+
+def competing_model_process(run: Callable[[list[str]], str] = _run_text,
+                            *, absent_pids: tuple[int, ...] = ()) -> str | None:
+    """Block inference activity using two strict, PID-matched inventories."""
+    args_command = [COMMANDS["ps"], "-Ao", "pid=,rss=,%cpu=,args="]
+    comm_command = [COMMANDS["ps"], "-Ao", "pid=,comm="]
+    try:
+        args_output = run(args_command)
+        comm_output = run(comm_command)
+    except BaseException:
+        return "process inventory unavailable or command failed"
+    args_records = _parse_process_args_inventory(args_output)
+    comm_records = _parse_process_comm_inventory(comm_output)
+    if isinstance(args_records, str):
+        return args_records
+    if isinstance(comm_records, str):
+        return comm_records
+    if set(args_records) != set(comm_records):
+        return "process inventory pid map mismatch"
+    trusted_bundle: bool | None = None
+    for pid, (rss, cpu, args_text) in args_records.items():
         if pid in absent_pids:
             return "prior model child was not reaped"
         if pid == os.getpid():
             continue
-        try:
-            argv = shlex.split(parts[3], posix=True)
-        except ValueError:
-            return "process inventory malformed"
-        if not argv:
-            return "process inventory malformed"
-        lowered_argv = [token.casefold() for token in argv]
-        desktop = CLAUDE_DESKTOP_EXECUTABLE.casefold()
-        # The exception is an exact argv[0] token only.  Prefixes such as
-        # ClaudeX and every generic CLI/server path remain blockers.
-        if lowered_argv[0] == desktop:
-            continue
-        if any("claude" in token for token in lowered_argv):
-            return "unverified Claude process activity detected"
-        lowered = parts[3].lower()
-        if any(token in lowered for token in KNOWN_INFERENCE_ACTIVITY):
+        comm_path = comm_records[pid]
+        lowered_args = args_text.casefold()
+        # Model/inference patterns are always blockers, including if a process
+        # happens to use a path below the Claude bundle.
+        if any(token in lowered_args for token in KNOWN_INFERENCE_ACTIVITY):
             return "competing model activity detected"
+        claude_related = "claude" in comm_path.casefold() or "claude" in lowered_args
+        if not claude_related:
+            continue
+        # The bundle path is an exact macOS path boundary; do not case-fold it
+        # or permit a similarly named root to cross the boundary.
+        inside_bundle = comm_path.startswith(CLAUDE_DESKTOP_CONTENTS)
+        if inside_bundle:
+            if trusted_bundle is None:
+                trusted_bundle = _trusted_claude_bundle()
+            if trusted_bundle:
+                continue
+        return "unverified Claude process activity detected"
     return None
 
 
