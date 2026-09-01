@@ -1,5 +1,10 @@
 # Kandidatenliste
 
+Studienakte, kein Backlog: offene Arbeit steht ausschließlich in
+[`../BACKLOG.md`](../BACKLOG.md). Diese Tabelle dokumentiert Kandidaten mit
+ihren gemessenen bzw. terminalen Status (früher `EXPERIMENT_BACKLOG.md` im
+Root; verschoben am 2026-09-01, Backlog M1 Punkt 2).
+
 Stand: 25. August 2026, Zyklus 21 nach realer Runtime-Qualifikation, nach Zyklus 20.
 Priorität nach erwarteter Wirkung je Aufwand, unter Berücksichtigung dessen, was
 bereits gemessen ist.
