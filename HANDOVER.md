@@ -35,7 +35,7 @@ restart, UI work or automatic activation occurred.
 
 The final Q4 correction is the H17 protocol in
 [`research/raw/Q4_preregistration.md`](research/raw/Q4_preregistration.md), with its
-SHA-256 `4c818404a50ca5102f1be8d48399af42f494eb7afb4d23d27e2a59481f4d203c` recorded
+SHA-256 `975aa61a52498172a87f992e7847b999924693e6d1d0185f56627a58f63b1545` recorded
 in the companion file. A complete trajectory is exactly steps 0--16:
 11 `KNOB_DELTA` evaluations, 5 plan-matching `STRATEGY_SELECT` evaluations for the
 final knob, and terminal `REVALIDATE` at step 16. Partial aborts are terminal at the
@@ -64,6 +64,28 @@ current-action and scaled remaining budget, with no unlisted interactions. Valid
 uses seeded uniform safe without-replacement propensity `1/remaining`; holdout uses
 frozen lexicographic order with propensity 1 and direct scoring only. No implementation,
 hardware/model run, download or commit occurred.
+
+## Current 2026-09-01 — Q4 offline implementation verified
+
+The durable report is [`research/raw/Q4_implementation_report_20260901.md`](research/raw/Q4_implementation_report_20260901.md)
+with SHA-256 `553b83dd5be114a546bee6e24654246b265947b1ad461148459148625dd13f65` and
+its companion SHA. The offline path is implemented and verified by `55/55` tests.
+The stable post-amendment import saw `285` inputs, skipped `2` derived
+implementation-report files, retained `195` unique contents and `1` eligible
+historical artifact; it produced `0` Q4 transitions and `0` TRAIN rows. The final
+historical-import dataset ID is
+`42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b` with semantic
+payload SHA `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`.
+Temporary import file SHA is `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35`
+and is not repository raw evidence. The earlier `dfb48c…`/`85c90b…` identity is
+superseded pre-amendment verification only. Foreign evidence is `MISSING`.
+
+Q4 contracts, dynamic candidate/delta state, raw context-bound Outcomes, panel cells,
+RewardRecord derivation, strict stage-vector OPE, dataset gate, external-Ed25519
+shadow envelope and foreign replay registry are implemented. Q4 has produced no new
+speed gain. RL remains `DATA_INSUFFICIENT`/`NOT_APPLICABLE` until the new 24-context,
+72-H17-trajectory, 1224-transition and complete-panel minimum is measured. No
+hardware/model/27B run, download, installation, UI, activation or commit occurred.
 
 ## Current 2026-09-01 — Q4 RL-first contract frozen
 

@@ -989,3 +989,113 @@ implementation hash, seeds, method budgets, all missing/failed rows, direct vers
 derived metrics, and the exact reason for any non-eligibility. No UI is part of this
 contract; a future UI may display already-written local evidence only after a separate
 decision.
+
+## 16. Implemented executable contract amendment — 2026-09-01
+
+This section records the implementation that now exists in the offline Q4 boundary.
+It supersedes any earlier placeholder wording where a field or gate below is more
+specific. The implementation remains model/runtime-free, local and shadow-only; it
+does not change the collection authorization or any performance claim.
+
+### 16.1 Frozen action/state records
+
+`ironmule.q4_knob_candidate.v1` contains exactly 11 immutable `CandidateSpec` slots
+(`changed_field`, `target_value`, `candidate_id`). `ironmule.q4_knob_action.v1` is a
+complete legal `KnobAction`; the frozen interaction anchor tuple contains exactly 12
+absolute actions, including `Q2_CURRENT_ACTION`. The eleven candidate slots are not
+the accepted path: a trajectory maintains a dynamic complete knob state and chooses a
+legal one-field delta from that state.
+
+`ironmule.q4_knob_delta.v1` contains `stage=KNOB_DELTA`,
+`source_action_id`, `target_action_id`, `changed_field`, `target_value` and a
+canonical `action_id`. The source and target are complete states from the dynamically
+declared legal state space; exactly one knob field differs and the target value agrees
+with that field. `KNOB_DELTA` transitions also carry the matching `candidate_id` for
+the policy slot. The persisted state field `evaluated_candidate_ids` is unique and
+prevents repeating a candidate; rejected/failed deltas leave the current absolute
+state unchanged, while accepted deltas update it.
+
+`ironmule.q4_state.v1` persists the complete context, stage, step, all fixed feature
+categories, current `knob_action_id`, `strategy_candidate_index` and
+`evaluated_candidate_ids`. The exact vector is exported as
+`FEATURE_VECTOR_ORDER`: intercept; model-size one-hot; memory bucket one-hot;
+GPU-core bucket one-hot; prompt bucket one-hot; output bucket one-hot;
+concurrency bucket one-hot; objective one-hot; plan one-hot; workload-stratum
+one-hot; arrival-pattern one-hot; every declared legal current-action one-hot; and
+scaled remaining budget. Unknown categories are out of domain and masked. No
+unlisted interactions are admitted.
+
+### 16.2 H17 transitions, outcomes and panels
+
+`ironmule.q4_trajectory.v1` is H17. A complete trajectory has exactly 17 ordered
+transitions with steps 0--10 `KNOB_DELTA`, 11--15 `STRATEGY_SELECT`, and 16 terminal
+`REVALIDATE`. `ironmule.q4_transition.v1` additionally requires `candidate_id` and
+`reference_outcome_id` for deterministic joins. Its stage/action-space and
+`decision_budget_index` must match the step; ordinary terminal is only step 16 and a
+partial abort terminates at its current step.
+
+`ironmule.q4_outcome.v1` is evaluator-owned and context-bound. It retains raw
+artifact references and timing samples (`total_ns`, `prefill_ns`, `decode_ns`), raw
+request-level `full_response_ms_samples` and raw throughput samples, their counts and
+nearest-rank/median aggregates, plus `context_id`, `knob_action_id`, optional
+`strategy_action_id`, plan, uncertainty, exact token/stop/count/state/capacity
+identity, memory/RSS/swap, timeout/crash/fallback/reap/rollback gates and all
+provenance digests. A measured strategy outcome requires at least 20 request samples
+for p95; mismatched context, raw samples, identity or gates is incomplete/unsafe.
+
+`ironmule.q4_dataset.v1` persists `source_artifacts`, `action_pools`, `contexts`,
+`states`, `trajectories`, `transitions`, `outcomes`, `risk_observations`,
+`panel_cells`, `split_manifest`, `seed_manifest`, `no_invented_performance` and a
+canonical `dataset_id`. A `panel_cell` binds one context, one of the 12 knob anchors,
+one of the five plan-matching safe strategies, candidate and reference outcome IDs;
+the exact expected panel is 60 distinct cells per context. S11/S12 are represented
+only by `ironmule.q4_risk_observation.v1` (`state_digest`, risk action/probe ID,
+failure code, evaluator gates, evidence IDs and timestamp); they feed risk knowledge
+only and never reward, OPE, safe-panel completeness or policy action support.
+
+### 16.3 Reward derivation and strict OPE
+
+`ironmule.q4_reward.v1` is a `RewardRecord` joining transition ID, candidate outcome,
+reference outcome, objective, positive current/candidate costs and the canonical
+`log(reference_cost / candidate_cost)` reward. `ironmule.q4_reward_derivation.v1`
+records `DERIVED` or `INELIGIBLE` per transition with an explicit reason. Unsafe,
+censored, missing, summary-only, mismatched or candidate=reference joins never
+receive a reward and are not imputed.
+
+The implemented replay view keeps reward outside the evaluator transition until this
+explicit join. It returns strict stage vectors: knob and strategy estimates are never
+scalar-added. Knob FQI uses only steps 0--10; the strategy immediate ridge head uses
+only steps 11--15 and no Bellman/cross-unit backup. OPE accepts only complete
+H17 `Q4_TRAIN`/`Q4_VALIDATION` trajectories with valid propensities. WIS clips each
+per-decision ratio at 10. DR uses five folds assigned by complete context/group hash;
+all trajectories from one context co-fold and no transition-level split is allowed.
+Every OPE result is `OPE_UNSUPPORTED` on missing support, invalid propensity, empty
+fold, absent overlap or deterministic propensity-1 counterfactual behaviour.
+`Q4_SEALED_HOLDOUT` is direct-panel-only and is never read for OPE fitting or model
+selection.
+
+### 16.4 Dataset gate, shadow envelope and foreign replay
+
+The executable dataset gate requires the exact split counts 12/6/6, all three model
+sizes in every split, 24 contexts, 72 complete H17 trajectories and 1224 complete
+transitions, plus 60-cell context panels and complete safe outcomes. Historical Q3
+imports do not satisfy this gate. Until it passes, `OFFLINE_RL` remains
+`DATA_INSUFFICIENT`/`NOT_APPLICABLE` and the HybridOptimizer falls back to BASE.
+
+`ironmule.q4_hybrid_recommendation.v1` is always `SHADOW_RECOMMENDATION`; it carries
+both head scores/uncertainties and a vector stage order. Its optional
+`ironmule.q4_shadow_recommendation_envelope.v1` is signed only by an external
+Ed25519 provider with a key ID and verifier; the Q4 code contains no cryptographic
+implementation and no runtime activation path. A missing signer/verifier leaves the
+envelope unsigned and ineligible.
+
+Foreign replay is guarded by `ironmule.q4_foreign_bundle_envelope.v1`, an explicit
+user-approved Ed25519 trust store (public-key ID and fingerprint), raw artifact hash
+verification, evaluator attestation and an in-memory `ReplayRegistry` that rejects
+duplicate bundle/payload/nonce replays. Verified foreign evidence can create only a
+revalidation-required calibration prior; it cannot replace BASE, enter a Q4 split or
+be treated as local performance. Current foreign evidence remains `MISSING`.
+
+The implementation status and pre-amendment import audit are recorded in
+`research/raw/Q4_implementation_report_20260901.md` and its SHA companion. That report
+is durable verification evidence, not a Q4 transition dataset or speed result.

@@ -17,6 +17,24 @@ context, 72 trajectories and 1224 transitions. The resulting claim is a local-pi
 claim only. Foreign evidence is `MISSING` until an Ed25519 signature, public-key ID and
 fingerprint resolve through a local user-approved trust store.
 
+## Current status after implementation
+
+`DONE`: offline Q4 contracts, 11 candidate specs, dynamic knob-delta/no-repeat state,
+12 interaction anchors, context-bound Outcomes, panel/trajectory/risk records, reward
+derivation exclusions, strict stage-vector OPE, dataset gate, external-Ed25519 shadow
+envelope and foreign replay registry are implemented and covered by 55/55 tests.
+`VERIFIED_POST_AMENDMENT`: the stable historical import saw 285 inputs, skipped two
+derived implementation-report files, retained 195 unique contents and one eligible
+historical artifact. Its dataset ID is
+`42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b` with semantic
+payload SHA `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`;
+the temporary import file SHA is `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35`
+and is not repository evidence. `PENDING_USER_START`: all Q4 panel cells and trajectories
+are new and unmeasured; current counts are 0 Q4 transitions and 0 TRAIN rows.
+`OFFLINE_RL` therefore remains `DATA_INSUFFICIENT`/`NOT_APPLICABLE`; no Q4 speed
+improvement claim exists. The durable evidence is recorded in
+[`research/raw/Q4_implementation_report_20260901.md`](../research/raw/Q4_implementation_report_20260901.md).
+
 Each trajectory is split into three separately preregistered/user-started phases:
 11 knob children (`11×120s=1320s`), 5 strategy children (`5×120s=600s`) and 1
 revalidation child (`120s`), each under 1800 seconds. Context, trajectory, study and
@@ -24,12 +42,13 @@ predeclared batch-time digests remain stable across those phases.
 
 ## Work packages
 
-1. **Corpus migration.** Build a read-only importer that deduplicates by content hash,
+1. **[DONE — post-amendment verification] Corpus migration.** The read-only importer
+   deduplicates by content hash,
    preserves raw/summary/partial/exploratory/failure quality and status, records source
    preregistration/code/model/environment/workload identities, and emits a new Q4
    dataset ID. Keep Q3's `DATA_INSUFFICIENT`/`NOT_APPLICABLE` result unchanged.
 
-2. **Two closed action spaces.** Implement strict canonical records for the existing
+2. **[DONE] Two closed action spaces.** Strict canonical records exist for the existing
    ten-field knob action and the ten-entry safe execution/scheduling strategy catalogue.
    Keep S11/S12 as two separate risk probes outside policy completeness and budget.
    Validate legal combinations, width `1..4`, objective class, action-pool completeness
@@ -37,7 +56,7 @@ predeclared batch-time digests remain stable across those phases.
    existing `AsyncGroupedB1Executor` at width 1; True Batch is not an existing
    `ExecutionStrategy`. Do not include 27B in the required panel.
 
-3. **State/transition/evaluator layer.** Implement the Q4 context, state, trajectory,
+3. **[DONE] State/transition/evaluator layer.** Q4 context, state, trajectory,
    transition, outcome, partial-abort and signed-foreign-bundle schemas. Enforce the
    seven-part group key `study/model/manifest/workload/hardware/runtime/time`, with a
    predeclared batch `time_digest` and stable `study_digest`. Enforce new-only
@@ -51,7 +70,7 @@ predeclared batch-time digests remain stable across those phases.
    workload-stratum, arrival-pattern, current-action one-hot and scaled remaining
    budget; unknown categories are OOD and masked, with no unlisted interactions.
 
-4. **Deterministic replay baselines.** Implement equal-budget replay for BASELINE,
+4. **[DONE] Deterministic replay baselines.** Equal-budget replay exists for BASELINE,
    current coordinate, seeded random, deterministic BO, surrogate and contextual
    bandit. Fix seeds, fold order, action ordering and lexicographic tie-breaks. Record
    `0 < behaviour_propensity <= 1` and `behaviour_policy_digest` on every transition.
@@ -63,7 +82,7 @@ predeclared batch-time digests remain stable across those phases.
    regression rate, calibration, support, recovery and byte-identical replay reports.
    No runtime import.
 
-5. **EB-HCORL.** Implement two separate RL heads: knob FQI only on steps 0--10 and
+5. **[DONE — data-gated] EB-HCORL.** Two separate RL heads exist: knob FQI only on steps 0--10 and
    strategy contextual-immediate ridge only on steps 11--15; neither head receives
    Bellman/reward backup from the other unit. Knob FQI uses `gamma=0.9`, ridge
    `alpha=1`, 20 iterations, tolerance `1e-9`, BC penalty `lambda=0.1`, a five-member
@@ -82,7 +101,7 @@ predeclared batch-time digests remain stable across those phases.
    contexts and mask OOD/unsupported actions. `OPE_UNSUPPORTED` is a valid outcome;
    unsupported OPE must not be converted into a direct performance claim.
 
-6. **Shadow HybridOptimizer.** Run the knob stage first, pass only its canonical action
+6. **[DONE — shadow-only] Shadow HybridOptimizer.** The knob stage passes only its canonical action
    identity and evidence to the strategy stage, then emit a signed
    `SHADOW_RECOMMENDATION`. Stage 2 state must contain `knob_action_id`. Measure the
    full exact panel of all 12 knob actions × five plan-matching safe strategies (60
@@ -91,13 +110,13 @@ predeclared batch-time digests remain stable across those phases.
    that the hybrid cannot execute an action, import MLX/runtime, change a plan/mode,
    write a profile or activate a route.
 
-7. **Synthetic and historical verification.** Use synthetic fixtures only for schema,
+7. **[DONE — offline] Synthetic and historical verification.** Synthetic fixtures cover schema,
    leakage, malformed-input, determinism, action-mask, failure-recovery and metric
    tests. Replay historical Q2/B35/B36/B27/E14b/E16/X1 records with their original
    restrictions and names (`Q3_VALIDATION`, `Q3_SEALED_HOLDOUT`, `LEDGER_ONLY` for
    E11); do not upgrade prior-only, summary-only or Q3 rows to Q4 split labels.
 
-8. **Collection gates.** After code review, freeze/hash one separate preregistration
+8. **[PENDING USER START] Collection gates.** After code review, freeze/hash one separate preregistration
    for each collection phase: complete panels, independent contexts and sequential
    trajectories. Request explicit user start for each phase. Require AC, Low Power off,
    nominal thermal state, no Claude/Claude Code model or competing inference process,
@@ -107,7 +126,7 @@ predeclared batch-time digests remain stable across those phases.
    knob, 5 strategy and 1 revalidation child; the three trajectories per context are
    separately preregistered and there is no aggregate 30-minute claim.
 
-9. **Sealed decision.** Lock validation choices, import only frozen raw evidence, run
+9. **[BLOCKED BY DATA] Sealed decision.** Lock validation choices, import only frozen raw evidence, run
    the one-pass sealed comparison and append an immutable result. Only `RL_WINS` can
    open a later architecture decision; it cannot activate anything automatically.
 
