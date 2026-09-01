@@ -191,11 +191,30 @@ Random/Grid/BO unter identischem Budget auf vorregistriertem Holdout.
 (`friday_optimizer/campaign.py`, CLI `campaign`) versiegelt die Regel statt der
 Aktion und erzeugt so Überlappung. Aus versiegelter Budgetevidenz: die
 vorgeschriebene Pause übersteigt die Rechenzeit um Faktor `28`–`31`, also
-passen **`10` Messpunkte in einen 30-Minuten-Block**. Bei Epsilon `0,5` über
-fünf Kandidaten braucht `ESS ≥ 30` genau `50` Punkte, also **`5` freigegebene
-Blöcke** — sofern die Frage „schlägt die gehintete Aktion die Baseline?"
-lautet. Die Frage „ist eine selten gezogene Aktion gut?" kostet `30` Blöcke
-und ist mit diesem Budget nicht zu beantworten.
+passen **`10` Messpunkte in einen 30-Minuten-Block**.
+
+**Am 2026-09-02 end-to-end trockengelaufen** (`recover_ground_truth.py`): eine
+bekannte Wahrheit wird in einen echten Korpus eingepflanzt und von den echten
+Schätzern zurückgewonnen. Ergebnis, ehrlich nach Korpusgröße:
+
+| Punkte | Blöcke | belastbare Schätzungen | Rangfolge |
+| --- | --- | --- | --- |
+| `50` | `5` | `0/5` — nichts erreicht die Untergrenze | falsch |
+| `150` | `15` | `1/5` (nur die gehintete Aktion) | zufällig richtig |
+| `400` | `40` | `5/5`, Medianfehler `0,21` Punkte | richtig |
+
+**Die früher genannten `5` Blöcke beantworten genau eine Frage** — „schlägt
+die gehintete Aktion die Baseline?" — und auch das nur bei Epsilon `0,5`; bei
+Epsilon `0,6` reicht es nicht einmal dafür. Eine **vollständige Rangfolge über
+alle fünf Aktionen kostet rund `400` Punkte, also `40` Blöcke** und damit etwa
+zwanzig Stunden gegatete Messzeit. Diese Zahl ist die realistische
+Eintrittskarte für R2, nicht die `5`.
+
+Nebenbeobachtung aus demselben Lauf: bei `150` Punkten war die *Rangfolge*
+bereits korrekt, obwohl vier von fünf Schätzungen unter der Untergrenze lagen.
+Die Untergrenze ist für Ordnungsentscheidungen konservativer als für
+Größenaussagen. Das rechtfertigt **keine** Absenkung; es wäre allenfalls ein
+Grund, ein eigenes vorregistriertes Ordnungsgate zu entwerfen.
 
 **Nicht gangbar:** F1s Sessions als Korpus mitzunutzen. F1s Kandidat ist
 vorregistriert, jede Entscheidung hätte Propensity `1,0` und damit keine

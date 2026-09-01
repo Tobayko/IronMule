@@ -182,3 +182,35 @@ def test_default_reward_is_the_relative_gain_and_rejects_censored_input():
     assert default_reward(OutcomeEvent("d1", "observed", reward=0.846)) == pytest.approx(0.154)
     with pytest.raises(ReplayError):
         default_reward(OutcomeEvent("d1", "censored_error"))
+
+
+def test_target_hints_price_a_policy_that_would_have_hinted_differently():
+    steps = make_steps(200)
+    env = ReplayEnv(steps)
+    # Default: the target is scored under the logged hints, so it concentrates
+    # on the same action the logger favoured.
+    logged = ips(env, TARGET, resamples=200)
+    assert logged.status == "ok"
+    # Overridden: the same policy object now concentrates on another action,
+    # which the logger drew rarely, so overlap and effective size fall.
+    other = ips(env, TARGET, resamples=200, target_hints=("fixed_compiled_cache",))
+    assert other.effective_samples < logged.effective_samples
+    assert other.value is not None
+
+
+def test_target_hints_do_not_change_the_corpus():
+    steps = make_steps(60)
+    env = ReplayEnv(steps)
+    before = [(step.decision.chosen, step.decision.hints, step.decision.propensity) for step in env.steps]
+    ips(env, TARGET, resamples=100, target_hints=("persistent_process",))
+    after = [(step.decision.chosen, step.decision.hints, step.decision.propensity) for step in env.steps]
+    assert before == after
+
+
+def test_every_estimator_accepts_the_same_target_hints():
+    env = ReplayEnv(make_steps(120))
+    hints = ("persistent_process",)
+    results = evaluate(env, TARGET, min_samples=DEFAULT_MIN_SAMPLES, resamples=100, target_hints=hints)
+    direct = snips(env, TARGET, resamples=100, target_hints=hints)
+    assert results["snips"].value == pytest.approx(direct.value)
+    assert set(results) == {"ips", "snips", "replayer"}
