@@ -5,6 +5,91 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
+## F1 — Integrationsstudie: bestätigte Gewinne ernten (freigegeben, priorisiert)
+
+**Status:** Nutzerfreigabe am 2026-09-01 erteilt. Vorregistrierung,
+Analysebaustein und Projektion sind am 2026-09-01 fertig — Ergebnis im
+Arbeitsjournal unter „2026-09-01 — F1". Offen ist nur noch die Ausführung.
+Rahmen und Erfolgshebel: [`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
+
+**Vorhanden:** [`docs/F1_INTEGRATION_VORREGISTRIERUNG.md`](docs/F1_INTEGRATION_VORREGISTRIERUNG.md)
+(zwei Arme `cold`/`warm`, Schwellen `50 %`/`10 %`, MDE `5 %`, Tokenidentität
+terminal), `friday_optimizer/integration.py` (`request_seconds`,
+`evaluate_integration`) und `experiments/f1_integration/project_f1.py`.
+
+**Erwartung, korrigiert:** `13,68 %` im warmen Arm, `70,05 %` im kalten. Die
+frühere Lesart `21 %` unterstellte, dass Prefill- und Decodegewinn sich
+multiplizieren; sie wirken auf verschiedene Phasen derselben Anfrage.
+
+**Offen — in dieser Reihenfolge:**
+
+1. **Sauberer Commit.** `optimizer_identity()` liefert heute
+   `optimizer_checkout_dirty`; ohne sauberen Baum lässt sich keine Session
+   planen. Harte Vorbedingung.
+2. Fingerprint gegen den sauberen HEAD sammeln und die Vorregistrierung mit
+   Umgebungs-Hashes versiegeln.
+3. A/A-Sessions je Arm zur MDE-Bestimmung, dann A/B — gegatet, manuell,
+   AC-only, fremdlastfrei, maximal 30 Minuten je Lauf, einzeln bestätigt.
+
+**Kill/Pivot:** unter Schwelle oder Identitätsbruch gilt Baseline; terminaler
+Negativeintrag in die Studienakte, F1 wird hier gelöscht. Widerspricht die
+Messung der Projektion, gewinnt die Messung und die Projektion wird korrigiert.
+
+## P1 — Prefill-Hebelklasse, beziffert (neu 2026-09-01)
+
+**Status:** offen, direkt nach F1. Herleitung im Arbeitsjournal unter
+„2026-09-01 — F1", Nachtrag „Amdahl-Decken je Phase".
+
+**Mechanismus:** für die registrierte Workload (Prompt `897`, `32` generierte
+Token) ist Prefill `79,84 %` der Anfrage. Jeder Decode-Hebel konkurriert damit
+um höchstens `20,16 %` — die vier gemessenen lieferten end-to-end `−0,01 %`,
+`0,84 %`, `1,42 %` und `0,38 %`. Der eine gemessene Prefill-Hebel (Head-Skip,
+Kandidat 19) liefert `12,26 %`. Offen und in der richtigen Klasse ist
+**Kandidat 5, Prefill-Step-Size-Sweep** (`2048` gegen `512`); Kandidat 1
+(Präfix-/KV-Wiederverwendung) und Kandidat 2 (Blockgrößen-Policy) sind an der
+Tokenidentität gescheitert, nicht am Mechanismus. Die eigentliche Hürde dieser
+Klasse ist also das Identitätsgate, und genau dort lohnt der nächste Aufwand.
+
+**Gate:** wie üblich — vorregistrierte Schwelle über MDE, exakte
+Tokenidentität, gepaarte Sessions.
+
+**Kill/Pivot:** findet sich keine längenunabhängig identitätserhaltende
+Blockstruktur (das Ergebnis von Zyklus 2), bleibt die Klasse geschlossen und
+der Eintrag wird mit dieser Begründung gelöscht. Für Workloads ab etwa `128`
+generierten Token kippt die Rechnung zugunsten der Decode-Klasse; diese
+Priorisierung gilt ausdrücklich nur für die registrierte kurze Antwort.
+
+## R2 — Offline-RL auf dem geloggten Korpus
+
+**Status:** offen; blockiert durch Korpusgröße, nicht durch fehlenden Code. R0
+(Entscheidungslogging) und R1 (Replay-Environment plus Off-Policy-Evaluation)
+sind am 2026-09-01 implementiert und getestet — Ergebnis im Arbeitsjournal
+unter „2026-09-01 — R0 und R1". Gesamtplan R0–R4:
+[`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
+
+**Mechanismus:** konservative Offline-RL-Verfahren ohne Live-Exploration
+(CQL/IQL-Klasse) über `friday_optimizer.replay`; Policy-Klasse klein und
+erklärbar (linear oder Baum über den vorhandenen Kontextfeatures — tiefe Netze
+sind unter 10⁴ Samples nicht begründbar). Bewertung ausschließlich per
+Off-Policy-Evaluation gegen Random/Grid/BO unter identischem Budget auf
+vorregistriertem Holdout.
+
+**Voraussetzung, die heute fehlt:** ein Korpus mit Überlappung. Der geloggte
+Bestand ist `0` Entscheidungen; `friday_optimizer replay` meldet korrekt
+`no_labels`. Solange die effektive Stichprobe unter `DEFAULT_MIN_SAMPLES = 30`
+liegt, liefert jeder Schätzer `insufficient_data`. Der Weg dahin ist Hebel 4
+aus dem Erfolgspfad: gebatchte Freigaben, mehrere vorregistrierte Messpunkte je
+gegatetem 30-Minuten-Block. Eine rein deterministische Loggingpolicy erzeugt
+zudem keine Überlappung — für einen auswertbaren Korpus muss mindestens ein
+Teil der Entscheidungen mit `epsilon_greedy` und protokolliertem Seed fallen.
+
+**Gate:** OPE-Vorteil mit Konfidenzintervall und `conclusive=true`, keine
+schlechtere Invalid-Suggestion-Rate als die deterministische Suche.
+
+**Kill/Pivot:** bleibt der OPE-Vorteil über Seeds und Holdouts aus, bleibt es
+bei Optimization Memory plus deterministischer Suche plus BO; RL bleibt NO-GO
+und wird nicht als Abkürzung wiedereröffnet.
+
 ## L1 — Friday Learning Controller v0.1 im Shadow-Modus
 
 **Status:** Offline-Implementierung freigegeben am 2026-08-30 durch fortbestehenden Nutzerauftrag; Hardware- und Promotionspfad bleiben gate-basiert gesperrt
@@ -285,6 +370,40 @@ Reale Adapterausführung, Profilpromotion und Produktaktivierung bleiben blockie
 - Empfehlung, Unsicherheit, tatsächliche Baselineentscheidung und späteres
   Messergebnis werden gemeinsam historisiert.
 
+#### L1.3a — Gemma Multi-Modell-Portfolio (offline/read-only)
+
+**Status:** in Arbeit; keine Hardwarefreigabe.
+
+**Mechanismus:** Exakte, getrennte Identitätszellen für Gemma 1B, 4B, 12B und
+27B verbinden bereits vorhandene lokale Cache-Identitäten mit ausschließlich
+qualitätsklassifizierter Evidenz. Jede Zelle liefert genau einen Status:
+`ready_for_experiment`, `waiting_readiness`, `missing_local_model`,
+`insufficient_evidence` oder `unsupported`. Ein deterministischer
+`next_safe_measurement` darf nur den nächsten erlaubten Messpunkt benennen;
+er startet keinen Lauf und ersetzt weder Readiness noch Nutzerfreigabe.
+
+Der aktuelle reale Cache enthält Gemma 1B, 4B und 12B; Gemma 27B fehlt lokal.
+`legacy_summary`, Quarantäne, fehlende Identitätsfelder und Evidenz fremder
+Hardware/Workloads bleiben aus einer Empfehlung ausgeschlossen. CLI und lokale
+UI bleiben read-only; Modellload, Download, Aktivierung und Cross-Device- oder
+Cross-Model-Speedclaims sind ausgeschlossen.
+
+**Gate:** kanonischer, byteidentischer Portfolio-Snapshot; vollständige lokale
+Cache-/Manifest-/Tokenizerbindung; keine Mischung zwischen Modell-, Hardware-
+oder Workloadzellen; keine Pfad-/Prompt-/Rohlog-Leaks; echte Quellen vor
+synthetischen Fixtures; Statusmatrix, deterministischer nächster Messpunkt,
+CLI- und read-only-UI-Tests grün.
+
+**Kill/Pivot:** Ein fehlender oder mehrdeutiger Cache wird positiv bewertet;
+`legacy_summary` oder fremde Hardware wird als verwertbare Evidenz verwendet;
+ein Resolver lädt/importiert ein Modell oder greift auf das Netzwerk zu; ein
+Portfolio-Status startet automatisch einen Lauf; ein Snapshot ist nicht
+reproduzierbar; Pfade, Prompts oder Rohlogs werden ausgeliefert; die Candidate-
+Registry- oder Workloadbindung kann ohne Invalidierung geändert werden; oder
+`unsupported`/`missing_local_model` erhält einen ausführbaren Messvorschlag.
+Dann bleibt die betreffende Zelle bei Baseline und die Portfolio-Komponente
+wird entfernt oder auf eine rein statische Inventaranzeige zurückgeführt.
+
 **Gate:** keine Runtime-/Evidenzmutation, korrekter OOD-Fallback, reproduzierbarer
 Replay und vorregistrierte Mindestwerte für Kalibrierung, Regret und
 Invalid-Suggestion-Rate.
@@ -332,3 +451,25 @@ Budget nicht reproduzierbar schlägt.
 - Ergebnisse, Fehler und verworfene Wege aus dem Backlog in Status, Journal und
   Studienakte übertragen; danach L1 aus dieser Datei entfernen oder nur den
   terminalen Dead-End-Verweis behalten.
+
+## M1 — Repo-Hygiene (Review 2026-09-01, extern)
+
+Punkte 1–4 (Status-Kurzfassung, Backlog-Vereinheitlichung, gemeinsame
+Studien-Lib-Regel, Root-Aufräumung) sind am 2026-09-01 umgesetzt; Ergebnis im
+Arbeitsjournal unter „2026-09-01 — Repo-Hygiene M1". Offen bleibt:
+
+5. **`.friday-data` = 4 GB, davon 3,9 GB `models/`.** Mechanismus: prüfen, ob
+   `models/` ein Duplikat des HF-Caches ist; wenn ja, dokumentierter Verweis
+   statt Kopie. Kill: wenn Snapshots evidenzgebunden nur dort liegen, bleibt
+   alles unangetastet.
+
+6. **Stage-Executables dürfen keine Apple-signierten Systembinaries sein.**
+   `SubprocessStageRunner` führt eine Kopie der allowlisteten Binary aus; macOS
+   killt die Kopie einer signierten Systembinary mit SIGKILL (`rc=137`).
+   Mechanismus: prüfen, ob der Runner die Bedingung selbst durchsetzen soll
+   (Signaturprüfung vor dem Staging) statt sie nur zu dokumentieren. Kill: wenn
+   jede reale Session ohnehin nur den venv-Interpreter staged, bleibt es bei
+   dem Journalvermerk vom 2026-09-01 und dieser Eintrag entfällt.
+
+Kandidaten-Studienakte: [`docs/KANDIDATENLISTE.md`](docs/KANDIDATENLISTE.md)
+(ehemals `EXPERIMENT_BACKLOG.md`; kein zweites Backlog).
