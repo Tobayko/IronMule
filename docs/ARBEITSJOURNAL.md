@@ -9563,3 +9563,56 @@ nicht selbstverständlich und ist jetzt festgehalten.
 Ergebnis, `below_threshold` ohne es zum Fehler zu erklären, Duplikaterkennung
 über zwei Dateien, und Abweisung eines Ergebnisses ohne gepaarte Samples.
 Der Auswertepfad steht als Abschnitt 4c in F1s Vorregistrierung.
+
+## 2026-09-02 — Provenienz für P2 und W1, und eine Arbeit, die ich nicht gemacht habe
+
+Offline-Ergänzung. Kein Modellstart, kein Hardwarelauf.
+
+**Zuerst der Weg, den ich verworfen habe.** Die Beobachtung war: P2 und W1
+schreiben ihr Ergebnis in eine JSON-Datei, nicht in eine Hashkette und nicht
+in eine UI. `AGENTS.md` verlangt, dass jede Messung dokumentiert und in einer
+lokalen Historie sichtbar wird, und `friday_evidence` hat mit
+`run_persisted` genau dafür eine Mechanik. Der naheliegende Schritt wäre
+gewesen, beide Studien dort zu registrieren.
+
+Das wäre falsch gewesen. `REGISTERED_TOOLS` ist eine ausdrücklich geschlossene
+Registry der H1/H2-Matmul-Werkzeuge; ein Test in `tests/test_friday_cli.py`
+prüft die exakte Menge. `SOURCE_DIRS` der Provenienz deckt
+`friday_evidence`, `friday_h0`, `friday_h01` und `tools` ab, aber nicht
+`experiments/`. `experiments` dort aufzunehmen hätte den Provenienz-Hash
+**jedes unbeteiligten Werkzeugs** verändert. Und die eigentliche Prämisse
+stimmte nicht: jede eigenständige Studie dieses Repositories legt ihr Ergebnis
+als JSON unter `experiments/<studie>/` ab — `chunk_identity`, `ttft`,
+`persistent_process`, `matmul_compile_ab`. P2 und W1 folgen dieser Konvention
+bereits. Es gab keine Lücke, nur eine falsch gelesene Regel.
+
+**Was tatsächlich fehlte.** Die Konvention teilt sich: die ernsten Studien
+tragen einen `provenance`-Block, die explorativen Scans nicht.
+
+| Studie | Provenienz |
+| --- | --- |
+| `persistent_process` | `code_files`, `code_sha256`, `git_revision`, `environment`, `model`, … |
+| `matmul_compile_ab` | zusätzlich `git_dirty_state`, `prompt_sha256`, `model_snapshot`, … |
+| `chunk_identity` | keine |
+| `ttft/*` | keine |
+
+P2 und W1 sind entscheidungsrelevant — P2 entscheidet, ob eine ganze
+Hebelklasse wieder aufgeht, W1 richtet die Priorisierung aus. Sie gehören auf
+die erste Seite dieser Tabelle, standen aber auf der zweiten. Ohne
+Provenienzblock ist ein Ergebnis nicht an die Schwellen bindbar, die es
+erzeugt haben: eine spätere Änderung an `gap_analysis.py` ließe ein altes
+Ergebnis so aussehen, als hätte es die neuen Schwellen benutzt. Genau das
+verhindert dieses Projekt sonst überall.
+
+**Umsetzung.** `study_provenance()` in `tools/_bench.py` — dort, weil beide
+Worker `_bench` ohnehin importieren und `tools/` selbst schon
+provenienzgedeckt ist. Git-Aufruf und Dateihashing kommen aus
+`friday_evidence.provenance`; nichts davon ist nachgebaut. Der Block bindet
+Git-Revision, Dirty-Zustand, die Hashes von Worker, Analysemodul und
+Vorregistrierung, einen Gesamthash darüber, die Stromquelle und den
+Modellsnapshot.
+
+**Verifikation.** Vollsuite grün. Vier neue Tests: beide Worker binden ihr
+Ergebnis nachweislich an Code und Vorregistrierung, der Provenienzblock hasht
+jede benannte Datei, und eine fehlende Datei wird abgewiesen statt still
+übergangen.
