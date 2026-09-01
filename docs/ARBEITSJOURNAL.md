@@ -9482,3 +9482,52 @@ vorregistriertes Ordnungsgate zu entwerfen — nicht ungefragt.
 
 **Verifikation.** Vollsuite `1513 passed, 2630 subtests passed`; drei neue
 Tests für `target_hints`.
+
+## 2026-09-02 — F1 ist ausreichend bestimmt, aber nur solange das Rauschen klein bleibt
+
+Offline-Simulation gegen die echte Entscheidungsfunktion
+(`experiments/f1_integration/power_f1.py`, `400` Versuche je Zelle). Kein
+Modell, keine Hardware; die Stichproben sind synthetisch und begründen keine
+Performanceaussage. Geprüft wird, ob F1 überhaupt entdecken kann, was es zu
+entdecken behauptet.
+
+**Anlass.** Auf der Workload, die der gegatete Harness fährt, erwartet F1
+`11,93 %` gegen eine Schwelle von `10 %` — `1,93` Punkte Marge. Ob sechs Paare
+(`MIN_PAIRS`) dafür reichen, hatte niemand gerechnet.
+
+**Rauschen aus versiegelter Evidenz.** Head-Skip-Kalibrierung
+`session_ratio_sd = 0,004526` (`0,45 %`), sechs Prozesspaare relative Streuung
+`0,734 %`. Nebenbefund: dieselbe Kalibrierung rechnete ein `raw_mde` von
+`0,0074` aus, das vom vorregistrierten Boden auf `0,05` angehoben wurde — das
+Gate ist rund siebenmal konservativer als das Messrauschen verlangt.
+
+**Trefferquote bei wahrem Gewinn `11,93 %`:**
+
+| Paare | `0,5 %` | `1,0 %` | `2,0 %` | `3,0 %` | `5,0 %` |
+| --- | --- | --- | --- | --- | --- |
+| `6` | `100,0 %` | `99,2 %` | `65,2 %` | `39,2 %` | `22,2 %` |
+| `12` | `100,0 %` | `100,0 %` | `86,8 %` | `61,3 %` | `30,2 %` |
+| `20` | `100,0 %` | `100,0 %` | `97,5 %` | `76,2 %` | `36,2 %` |
+| `30` | `100,0 %` | `100,0 %` | `99,8 %` | `88,5 %` | `49,0 %` |
+
+**Falschqualifikation bei wahrem Gewinn `8 %`**, also unter der Schwelle:
+zwischen `0,0 %` und `0,8 %` in jeder Zelle. Die Regel irrt in die sichere
+Richtung — sie qualifiziert nicht, was nicht qualifiziert gehört.
+
+**Schluss.** Bei dem Rauschen, das dieses Projekt tatsächlich misst, ist F1
+mit sechs Paaren gut bestimmt. Das Risiko liegt nicht in der Paarzahl, sondern
+darin, dass die zusammengesetzte End-to-End-Messung verrauschter sein könnte
+als die Einzelphasenmessungen es waren. Genau das messen F1s A/A-Sessions
+ohnehin.
+
+**Konsequenz, vorregistriert.** Die Paarzahl je Arm folgt jetzt verbindlich
+aus dem in den A/A-Sessions gemessenen Rauschen: ≤ `1 %` → sechs Paare,
+≤ `2 %` → zwanzig, ≤ `3 %` → dreißig (grenzwertig, wird vermerkt), > `3 %` →
+die Studie ist auf dieser Schwelle unterbestimmt und bricht vor dem A/B
+terminal ab. Angepasst wird die Stichprobe, nicht das Kriterium; die `10 %`
+bleiben unberührt. Regel steht in F1s Vorregistrierung, Abschnitt 4b.
+
+**Verifikation.** Vollsuite `1516 passed, 2630 subtests passed`; drei neue
+Regressionstests halten die drei Kernaussagen fest — sechs Paare genügen bei
+`0,8 %`, sie genügen bei `3 %` nicht, und eine Wahrheit unter der Schwelle
+wird in keinem von vierzig Läufen qualifiziert.

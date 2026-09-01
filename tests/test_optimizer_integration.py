@@ -140,3 +140,59 @@ def test_evidence_hash_is_stable_and_binds_the_samples():
     second = evaluate_integration(baseline, candidate, arm="warm", min_gain=0.10, mde=0.05)
     changed = evaluate_integration(baseline, arm_samples(1.51, 76.0, arm="candidate"), arm="warm", min_gain=0.10, mde=0.05)
     assert first.evidence_hash == second.evidence_hash != changed.evidence_hash
+
+
+def noisy_pairs(true_gain, noise, pairs, seed):
+    """Paired samples whose request-time ratio is 1 - true_gain, plus noise."""
+
+    import random
+
+    rng = random.Random(seed)
+    ttft, tokens, tps = 1.7851, 32, 70.99
+    share = ttft / (ttft + tokens / tps)
+    baseline, candidate = [], []
+    for index in range(pairs):
+        order = "AB" if index % 2 == 0 else "BA"
+        base = (ttft + tokens / tps) * rng.gauss(1.0, noise)
+        cand = base * (1.0 - true_gain) * rng.gauss(1.0, noise)
+        for request, arm, sink in ((base, "baseline", baseline), (cand, "candidate", candidate)):
+            sink.append(MetricSample(
+                session_id=f"s{index}", pair_id=f"p{index}", arm=arm, order=order,
+                ttft_seconds=request * share, tokens=tokens,
+                decode_tps=tokens / (request * (1 - share)),
+            ))
+    return baseline, candidate
+
+
+def test_six_pairs_are_enough_at_the_noise_the_evidence_shows():
+    # Sealed evidence sits at 0.45 to 0.83 % per-pair relative noise, and the
+    # 322-token expectation is 11.93 % against a 10 % threshold.
+    qualified = 0
+    for trial in range(40):
+        baseline, candidate = noisy_pairs(0.1193, 0.008, 6, seed=500 + trial)
+        result = evaluate_integration(baseline, candidate, arm="warm", min_gain=0.10,
+                                      mde=0.05, min_pairs=6, seed=trial, resamples=200)
+        qualified += result.status == "qualified"
+    assert qualified >= 38, f"only {qualified}/40 qualified; F1 would be under-powered"
+
+
+def test_six_pairs_are_not_enough_once_the_noise_triples():
+    qualified = 0
+    for trial in range(40):
+        baseline, candidate = noisy_pairs(0.1193, 0.030, 6, seed=700 + trial)
+        result = evaluate_integration(baseline, candidate, arm="warm", min_gain=0.10,
+                                      mde=0.05, min_pairs=6, seed=trial, resamples=200)
+        qualified += result.status == "qualified"
+    assert qualified < 30, "at 3 % noise six pairs must not look reliable"
+
+
+def test_a_truth_below_the_threshold_is_not_qualified():
+    # The rule must fail in the safe direction: an 8 % gain never clears a
+    # 10 % threshold, whatever the sampling happens to do.
+    wrong = 0
+    for trial in range(40):
+        baseline, candidate = noisy_pairs(0.08, 0.010, 6, seed=900 + trial)
+        result = evaluate_integration(baseline, candidate, arm="warm", min_gain=0.10,
+                                      mde=0.05, min_pairs=6, seed=trial, resamples=200)
+        wrong += result.status == "qualified"
+    assert wrong == 0, f"{wrong}/40 false qualifications"
