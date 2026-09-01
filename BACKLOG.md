@@ -493,16 +493,12 @@ Budget nicht reproduzierbar schlägt.
 
 ## M1 — Repo-Hygiene (Review 2026-09-01, extern)
 
-Punkte 1–4 (Status-Kurzfassung, Backlog-Vereinheitlichung, gemeinsame
-Studien-Lib-Regel, Root-Aufräumung) sind am 2026-09-01 umgesetzt; Ergebnis im
-Arbeitsjournal unter „2026-09-01 — Repo-Hygiene M1". Offen bleibt:
+Punkte 1–4 sind am 2026-09-01 umgesetzt (Ergebnis im Arbeitsjournal unter
+„2026-09-01 — Repo-Hygiene M1"), Punkt 5 am 2026-09-02 beantwortet und
+abgeschlossen („2026-09-02 — M1 Punkt 5": das Duplikat bleibt, weil die
+Pfadisolation den Snapshot-Claim prüfbar macht). Offen bleibt:
 
-5. **`.friday-data` = 4 GB, davon 3,9 GB `models/`.** Mechanismus: prüfen, ob
-   `models/` ein Duplikat des HF-Caches ist; wenn ja, dokumentierter Verweis
-   statt Kopie. Kill: wenn Snapshots evidenzgebunden nur dort liegen, bleibt
-   alles unangetastet.
-
-6. **Stage-Executables dürfen keine Apple-signierten Systembinaries sein.**
+5. **Stage-Executables dürfen keine Apple-signierten Systembinaries sein.**
    `SubprocessStageRunner` führt eine Kopie der allowlisteten Binary aus; macOS
    killt die Kopie einer signierten Systembinary mit SIGKILL (`rc=137`).
    Mechanismus: prüfen, ob der Runner die Bedingung selbst durchsetzen soll
