@@ -36,6 +36,7 @@ from .dataset import DatasetBuilder, DatasetCard, DatasetSnapshot, LeakageReport
 from .decisions import CENSORING, DECISION_SCHEMA, OUTCOME_SCHEMA, REWARD_METRICS, SELECTION_RULES, STOCHASTIC_RULES, DecisionError, DecisionEvent, OutcomeEvent, SelectionPolicy, decide, decision_context
 from .replay import DEFAULT_MIN_SAMPLES, ESTIMATORS, REPLAY_SCHEMA, Observation, OffPolicyEstimate, ReplayEnv, ReplayError, ReplayStep, Transition, default_reward, doubly_robust, effective_sample_size, ips, load_steps, replayer, snips
 from .integration import ARMS as INTEGRATION_ARMS, CONFIRMED_RATIOS, INTEGRATION_SCHEMA, IntegrationError, IntegrationResult, evaluate_integration, paired_request_ratios, prefill_share, project_request_ratio, request_seconds
+from .campaign import BLOCK_SECONDS, CAMPAIGN_SCHEMA, MEASURED_POINT_SECONDS, CampaignError, CampaignPlan, expected_effective_samples, plan_for_target, points_for_effective_samples
 from .portfolio import EVIDENCE_SCHEMA as PORTFOLIO_EVIDENCE_SCHEMA, MANIFEST_SCHEMA as PORTFOLIO_MANIFEST_SCHEMA, MODEL_IDS as PORTFOLIO_MODEL_IDS, MODEL_SIZES as PORTFOLIO_MODEL_SIZES, QUALITY_CLASSES as PORTFOLIO_QUALITY_CLASSES, SNAPSHOT_SCHEMA as PORTFOLIO_SNAPSHOT_SCHEMA, PortfolioEntry, PortfolioError, PortfolioManifest, PortfolioModel, PortfolioSnapshot, build_portfolio
 from .evaluator import CalibrationReport, CorrectnessResult, EvaluationError, Evaluator, MetricSample, ResourceResult, ShadowDecision, evaluate_candidate
 from .fingerprint import EnvironmentFingerprint, ExactFingerprint, Fingerprint, ModelFingerprint, RuntimeFingerprint, WorkloadFingerprint
@@ -167,6 +168,14 @@ __all__ = [
     "prefill_share",
     "project_request_ratio",
     "request_seconds",
+    "BLOCK_SECONDS",
+    "CAMPAIGN_SCHEMA",
+    "MEASURED_POINT_SECONDS",
+    "CampaignError",
+    "CampaignPlan",
+    "expected_effective_samples",
+    "plan_for_target",
+    "points_for_effective_samples",
     "CandidateRegistry",
     "CandidateSpec",
     "CorpusAuditor",
