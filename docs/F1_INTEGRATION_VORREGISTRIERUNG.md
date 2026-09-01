@@ -175,6 +175,23 @@ verbindlich und ohne weitere Entscheidung:
 Die Schwelle von `10 %` wird dabei **nicht** angepasst. Angepasst wird die
 Stichprobe, nicht das Kriterium.
 
+## 4c. Vom Messergebnis zum Urteil
+
+Ergänzt am 2026-09-02. Der gegatete Sessionpfad gibt die gepaarten Messungen
+bereits in genau der `MetricSample`-Form aus (`baseline_samples` und
+`candidate_samples` im Stage-Payload). Das Urteil entsteht daraus mit
+
+```
+python -m friday_optimizer integrate --result <session-result.json> \
+    --arm warm --min-gain 0.10 --mde 0.05
+```
+
+Das Kommando ist read-only, liest mehrere Ergebnisdateien, benutzt denselben
+Sample-Leser wie `RealSession` und ruft `evaluate_integration`. Ohne diesen
+Schritt liegt nach einem Lauf zwar Evidenz vor, aber kein Urteil — die Lücke
+wurde am 2026-09-02 gefunden und geschlossen, bevor ein Messblock dafür
+verbraucht wurde.
+
 ## 5. Gates
 
 1. **Tokenidentität ist terminal.** Jede Anfrage vergleicht `token_sha256`
