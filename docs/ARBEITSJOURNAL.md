@@ -9057,3 +9057,41 @@ Gate rundet nicht zu seinen Gunsten.
 
 **Verifikation.** Vollsuite `1485 passed, 2630 subtests passed`. Neu:
 `tests/test_optimizer_campaign.py` (9) und vier CLI-Tests.
+
+## 2026-09-02 — P2 ist gebaut und wartet nur noch auf eine Freigabe
+
+Offline-Implementierung. Kein Modellstart, kein Hardwarelauf; der Worker
+verweigert ohne `--execute` den Start und wurde ausschließlich mit
+`--self-check` ausgeführt.
+
+Der Messlauf zur Tie-Hypothese liegt vollständig vor:
+
+- `experiments/identity_forensics/PREREGISTRATION.md` — Frage, Messung,
+  vorregistrierte Klassifikation, Konsequenzen je Ausgang.
+- `experiments/identity_forensics/gap_analysis.py` — die Entscheidungsregel,
+  festgelegt **vor** der Messung: `structural` bei Abweichung an Position `0`
+  oder `1`; `tie` nur bei Abstand ≤ `1e-2` **und** Median ≥ `20 ×` Abstand;
+  bei genau einer verfehlten Bedingung `inconclusive`. Zwei unabhängige
+  Formen, damit weder Skala noch Ausreißer allein entscheiden.
+- `experiments/identity_forensics/measure_logit_gap.py` — ein Prozess,
+  Referenzlauf plus die zwei Chunkings `128` und `512`, die bei `677` Token an
+  Position `10` abwichen. AC-Pflicht, `BudgetGuard`, Pausenlogik,
+  Offline-Snapshot, `release_gate`.
+
+Der Worker bricht ab, wenn der Prompt nicht exakt `677` Token ergibt: eine
+andere Promptfamilie hat eine andere sensible Position und würde eine Frage
+beantworten, die niemand gestellt hat.
+
+**Wiederholte Grenze.** Diese Arbeit fasst das Tokenidentitätsgate nicht an.
+Ein gekipptes `argmax` bleibt ein Identitätsbruch. Die Schwellen in
+`gap_analysis.py` klassifizieren eine Hypothese über eine Messung, nicht eine
+Modellausgabe. Bei bestätigter Hypothese lautet die Konsequenz, eine
+Promptfamilie ohne degenerierte Position zu registrieren.
+
+**Verifikation.** Vollsuite `1497 passed, 2630 subtests passed`. Neu:
+`tests/test_identity_forensics.py` mit 12 Tests nach der im Repository
+etablierten Bauart — kein MLX-Import, kein Modell, kein Gerät; die
+Entscheidungsregel direkt geprüft, der Worker per Quelltextinspektion auf
+AC-Gate, Budgetguard, Offline-Resolver und fehlende Netzwerkpfade, dazu die
+beiden Gate-Ausgänge (`--self-check` gibt `0`, fehlendes `--execute` gibt
+`78`).
