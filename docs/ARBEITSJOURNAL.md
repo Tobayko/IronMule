@@ -8996,3 +8996,64 @@ Position für Prompt `677`. Ist der Abstand an Position `10` an der
 Auflösungsgrenze, ist die Hypothese bestätigt und die Prefill-Klasse wieder
 offen. Ist er groß, ist die Hypothese tot und die Mechanismen sind
 tatsächlich defekt.
+
+## 2026-09-01 — R2-Korpus: was eine Freigabe wirklich hergibt
+
+Reine Offline-Planung (`friday_optimizer/campaign.py`,
+`experiments/r2_campaign/plan_r2_corpus.py`). Kein Modellstart, kein
+Hardwarelauf.
+
+**Verworfene Idee, zuerst.** Der Plan, F1s gegatete Sessions gleichzeitig als
+R2-Korpus zu nutzen, trägt nicht. F1s Kandidat ist vorregistriert; jede dort
+geloggte Entscheidung hätte Propensity `1,0` und damit keinerlei Überlappung.
+Ein Korpus ohne Überlappung ist für Off-Policy-Evaluation wertlos. Die Idee
+wird nicht weiterverfolgt.
+
+**Was stattdessen trägt.** Eine vorregistrierte Explorationskampagne
+versiegelt nicht die *Aktion*, sondern die *Regel*: Policy, Epsilon,
+Seed-Basis, Punktzahl und Budget stehen vor der ersten Messung fest. Die
+gezogene Folge ist aus dem Seal reproduzierbar und nachträglich nicht
+umsortierbar — sie bleibt also vorregistriert und erzeugt trotzdem
+Propensity-Überlappung. Umgesetzt als `CampaignPlan` mit deterministischer
+Seed-Ableitung je Punkt und CLI-Kommando `campaign`.
+
+**Budgetrealität aus versiegelter Evidenz.** Der Wall-Clock wird nicht von der
+Rechenzeit bestimmt, sondern von der vorgeschriebenen Pause:
+
+| Studie | Läufe | GPU-Arbeit | Pause | Wall | Wall je Punkt |
+| --- | --- | --- | --- | --- | --- |
+| matmul-compile-ab | `6` | `34,02 s` | `937,71 s` | `1000,41 s` | `166,7 s` |
+| batched-readback | `6` | `20,34 s` | `625,16 s` | `672,95 s` | `112,2 s` |
+
+Die Pause übersteigt die Rechenzeit um Faktor `28` bis `31`. Daraus folgt die
+Kapazität einer Freigabe: **`10` Messpunkte je 30-Minuten-Block**, nicht
+mehr. Hebel 4 aus dem Erfolgspfad („mehrere Messpunkte je Freigabe") ist damit
+beziffert — er ist real, aber durch die Abkühlung gedeckelt, nicht durch die
+Uhr.
+
+**Wie viele Blöcke bis R2 auswertbar ist.** Für eine deterministische
+Zielpolicy kollabieren die Gewichte auf eine Aktion, und die erwartete
+effektive Stichprobe ist `Punkte × p_logging(Zielaktion)`. Bei fünf zulässigen
+Kandidaten:
+
+| Epsilon | `p(Hint)` | Ziel = gehintete Aktion | Ziel = selten gezogene Aktion |
+| --- | --- | --- | --- |
+| `0,2` | `0,840` | `36` Punkte, `4` Blöcke | `750` Punkte, `75` Blöcke |
+| `0,3` | `0,760` | `40` Punkte, `4` Blöcke | `501` Punkte, `51` Blöcke |
+| `0,5` | `0,600` | `50` Punkte, `5` Blöcke | `300` Punkte, `30` Blöcke |
+| `0,8` | `0,360` | `84` Punkte, `9` Blöcke | `188` Punkte, `19` Blöcke |
+
+Das ist die zentrale Planungszahl des Eintrags: **R2 ist mit rund fünf
+freigegebenen Blöcken erreichbar**, solange die Frage lautet „schlägt die
+gehintete Aktion die Baseline?". Die Frage „ist eine selten gezogene Aktion
+gut?" kostet das Sechsfache und ist mit diesem Budget praktisch nicht zu
+beantworten. Höheres Epsilon verschiebt genau zwischen diesen beiden Fragen.
+
+**Querprüfung.** Die analytische Vorhersage wurde gegen die echten Schätzer
+geprüft: für `50` Punkte bei Epsilon `0,5` sagt die Formel `30,00` effektive
+Stichproben voraus, der gezogene Korpus liefert `29,00` — eine Ziehung
+Streuung. Der Status bleibt korrekt `insufficient_data`, weil `29 < 30`; das
+Gate rundet nicht zu seinen Gunsten.
+
+**Verifikation.** Vollsuite `1485 passed, 2630 subtests passed`. Neu:
+`tests/test_optimizer_campaign.py` (9) und vier CLI-Tests.

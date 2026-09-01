@@ -27,6 +27,8 @@ from .corpus import EVIDENCE_CONTRACTS, CorpusAuditor
 from .dashboard import DashboardError, serve
 from .dataset import DatasetBuilder
 from .evaluator import CorrectnessResult, MetricSample, ResourceResult
+from .campaign import CampaignError, CampaignPlan, plan_for_target
+from .candidates import CandidateRegistry
 from .decisions import CENSORING, REWARD_METRICS, SELECTION_RULES, DecisionError, SelectionPolicy
 from .fingerprint import ExactFingerprint
 from .memory import OptimizationMemoryV2, ReadOnlyMemoryView
@@ -950,6 +952,61 @@ def _replay(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     return payload, ExitCode.OK if payload["ok"] else ExitCode.UNAVAILABLE
 
 
+def _campaign(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    if args.points is None and args.required is None:
+        raise CLIError(ExitCode.USAGE, "points_or_required_required")
+    if args.points is not None and args.required is not None:
+        raise CLIError(ExitCode.USAGE, "points_and_required_conflict")
+    logging_policy = _policy(args)
+    fingerprint = _fingerprint_document(_safe_existing_file(args.fingerprint, "fingerprint"))
+    registry = CandidateRegistry()
+    hints = tuple(args.hint or ())
+    candidates = registry.ordered_ids(fingerprint, historical_hints=hints)
+    try:
+        if args.points is not None:
+            plan = CampaignPlan(campaign_id=args.campaign_id, policy=logging_policy,
+                                seed_base=args.seed_base, points=args.points, hints=hints)
+        else:
+            plan = plan_for_target(
+                campaign_id=args.campaign_id, logging_policy=logging_policy,
+                target_policy=SelectionPolicy(args.target_policy_id),
+                candidates=candidates, required=args.required, seed_base=args.seed_base, hints=hints,
+            )
+    except (CampaignError, DecisionError) as exc:
+        raise CLIError(ExitCode.DATA, "campaign_rejected") from exc
+    if plan is None:
+        return {"command": "campaign", "schema_version": 1, "ok": False, "written": False,
+                "reason": "no_overlap_possible", "authorized": False}, ExitCode.UNAVAILABLE
+    try:
+        events = plan.decisions(fingerprint, registry=registry)
+    except (CampaignError, DecisionError, ValueError, TypeError) as exc:
+        raise CLIError(ExitCode.DATA, "campaign_draw_rejected") from exc
+    drawn: dict[str, int] = {}
+    for event in events:
+        drawn[event.chosen] = drawn.get(event.chosen, 0) + 1
+    payload = plan.as_dict()
+    payload.update({
+        "command": "campaign", "schema_version": 1, "campaign_hash": plan.campaign_hash,
+        "candidate_set": list(candidates), "drawn": dict(sorted(drawn.items())),
+        "distinct_actions": len(drawn), "fingerprint_hash": fingerprint.fingerprint_hash,
+        "registry_hash": registry.registry_hash, "no_activation": True, "learning_claim": False,
+    })
+    if not args.execute:
+        payload.update({"ok": True, "authorized": False, "written": False, "reason": "planning_only"})
+        return payload, ExitCode.OK
+    memory = _write_memory_path(args)
+    binding = _memory_preflight(memory)
+    orchestrator = OptimizerOrchestrator(OptimizerConfig(Path.cwd(), memory_path=memory))
+    _assert_memory_binding(memory, binding)
+    try:
+        for event in events:
+            orchestrator._append(event.as_record())
+    except (ValueError, TypeError, OSError) as exc:
+        raise CLIError(ExitCode.DATA, "campaign_write_rejected") from exc
+    payload.update({"ok": True, "authorized": True, "written": True, "records": len(events)})
+    return payload, ExitCode.OK
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="python -m friday_optimizer", allow_abbrev=False, description="Closed offline Friday optimizer control plane")
     parser.add_argument("--json", action="store_true", help="emit canonical JSON (the default)")
@@ -1032,6 +1089,19 @@ def _build_parser() -> argparse.ArgumentParser:
     outcome_parser.add_argument("--execute", action="store_true")
     outcome_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
 
+    campaign_parser = sub.add_parser("campaign", allow_abbrev=False)
+    campaign_parser.add_argument("--memory", required=True)
+    campaign_parser.add_argument("--fingerprint", required=True)
+    campaign_parser.add_argument("--campaign-id", dest="campaign_id", required=True)
+    _policy_arguments(campaign_parser)
+    campaign_parser.add_argument("--hint", action="append", default=[])
+    campaign_parser.add_argument("--seed-base", dest="seed_base", type=int, default=0)
+    campaign_parser.add_argument("--points", type=int)
+    campaign_parser.add_argument("--required", type=int)
+    campaign_parser.add_argument("--target-policy-id", dest="target_policy_id", default="target-greedy-v1")
+    campaign_parser.add_argument("--execute", action="store_true")
+    campaign_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
     replay_parser = sub.add_parser("replay", allow_abbrev=False)
     replay_parser.add_argument("--memory", required=True)
     _policy_arguments(replay_parser)
@@ -1078,7 +1148,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = _build_parser().parse_args(list(argv) if argv is not None else None)
         if not 0 <= args.port <= 65535 if args.command == "dashboard" else False:
             raise CLIError(ExitCode.USAGE, "invalid_port")
-        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "portfolio": _portfolio, "session-plan": _session_plan, "session": _session, "decide": _decide, "outcome": _outcome, "replay": _replay}[args.command]
+        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "portfolio": _portfolio, "session-plan": _session_plan, "session": _session, "decide": _decide, "outcome": _outcome, "replay": _replay, "campaign": _campaign}[args.command]
         payload, code = handler(args)
         if args.command != "dashboard":
             _emit(payload)

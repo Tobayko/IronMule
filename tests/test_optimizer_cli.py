@@ -357,3 +357,50 @@ def test_outcome_rejects_a_reward_on_a_censored_run(tmp_path):
     )
     assert payload(result)["ok"] is False
     assert result.returncode == int(cli.ExitCode.DATA)
+
+
+def test_campaign_plans_without_writing_and_reports_its_overlap(tmp_path):
+    document = _fingerprint_document(tmp_path)
+    result = run_cli(
+        "campaign", "--memory", str(tmp_path / "memory.sqlite3"), "--fingerprint", str(document),
+        "--campaign-id", "r2-v1", "--rule", "epsilon_greedy", "--epsilon", "0.5",
+        "--policy-id", "log-v1", "--hint", "head_skip_prefill", "--seed-base", "42", "--required", "30",
+    )
+    body = payload(result)
+    assert body["ok"] is True and body["written"] is False and body["reason"] == "planning_only"
+    assert body["points"] == 50 and body["blocks"] == 5 and body["points_per_block"] == 10
+    assert body["distinct_actions"] > 1, "a campaign without overlap is worthless"
+    assert body["learning_claim"] is False
+    assert not (tmp_path / "memory.sqlite3").exists()
+
+
+def test_campaign_execute_writes_one_record_per_point(tmp_path):
+    memory = str(tmp_path / "memory.sqlite3")
+    document = _fingerprint_document(tmp_path)
+    body = payload(run_cli(
+        "campaign", "--memory", memory, "--fingerprint", str(document), "--campaign-id", "r2-v2",
+        "--rule", "epsilon_greedy", "--epsilon", "0.5", "--policy-id", "log-v1",
+        "--hint", "head_skip_prefill", "--seed-base", "7", "--points", "12", "--execute",
+    ))
+    assert body["written"] is True and body["records"] == 12
+    decisions = payload(run_cli("replay", "--memory", memory))
+    # Decisions are logged, outcomes are not: nothing is labelled yet.
+    assert decisions["labelled_steps"] == 0
+    assert all(item["status"] == "no_labels" for item in decisions["estimates"].values())
+
+
+def test_campaign_requires_exactly_one_sizing_argument(tmp_path):
+    document = _fingerprint_document(tmp_path)
+    base = ["campaign", "--memory", str(tmp_path / "m.sqlite3"), "--fingerprint", str(document),
+            "--campaign-id", "r2-v3", "--rule", "epsilon_greedy", "--epsilon", "0.5"]
+    assert run_cli(*base).returncode == int(cli.ExitCode.USAGE)
+    assert run_cli(*base, "--points", "10", "--required", "30").returncode == int(cli.ExitCode.USAGE)
+
+
+def test_campaign_refuses_a_deterministic_rule(tmp_path):
+    document = _fingerprint_document(tmp_path)
+    result = run_cli(
+        "campaign", "--memory", str(tmp_path / "m.sqlite3"), "--fingerprint", str(document),
+        "--campaign-id", "r2-v4", "--points", "10",
+    )
+    assert result.returncode == int(cli.ExitCode.DATA)

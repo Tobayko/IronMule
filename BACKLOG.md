@@ -92,27 +92,29 @@ Promptfamilie ohne degenerierte Position zu registrieren — nicht das Gate zu
 
 ## R2 — Offline-RL auf dem geloggten Korpus
 
-**Status:** offen; blockiert durch Korpusgröße, nicht durch fehlenden Code. R0
-(Entscheidungslogging) und R1 (Replay-Environment plus Off-Policy-Evaluation)
-sind am 2026-09-01 implementiert und getestet — Ergebnis im Arbeitsjournal
-unter „2026-09-01 — R0 und R1". Gesamtplan R0–R4:
-[`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
+**Status:** offen; Korpus fehlt, Code und Kampagnenplanung stehen. R0/R1 am
+2026-09-01 implementiert, Kampagnenplanung am selben Tag — Ergebnisse im
+Arbeitsjournal unter „2026-09-01 — R0 und R1" und „2026-09-01 — R2-Korpus".
+Gesamtplan R0–R4: [`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
 
 **Mechanismus:** konservative Offline-RL-Verfahren ohne Live-Exploration
 (CQL/IQL-Klasse) über `friday_optimizer.replay`; Policy-Klasse klein und
-erklärbar (linear oder Baum über den vorhandenen Kontextfeatures — tiefe Netze
-sind unter 10⁴ Samples nicht begründbar). Bewertung ausschließlich per
-Off-Policy-Evaluation gegen Random/Grid/BO unter identischem Budget auf
-vorregistriertem Holdout.
+erklärbar. Bewertung ausschließlich per Off-Policy-Evaluation gegen
+Random/Grid/BO unter identischem Budget auf vorregistriertem Holdout.
 
-**Voraussetzung, die heute fehlt:** ein Korpus mit Überlappung. Der geloggte
-Bestand ist `0` Entscheidungen; `friday_optimizer replay` meldet korrekt
-`no_labels`. Solange die effektive Stichprobe unter `DEFAULT_MIN_SAMPLES = 30`
-liegt, liefert jeder Schätzer `insufficient_data`. Der Weg dahin ist Hebel 4
-aus dem Erfolgspfad: gebatchte Freigaben, mehrere vorregistrierte Messpunkte je
-gegatetem 30-Minuten-Block. Eine rein deterministische Loggingpolicy erzeugt
-zudem keine Überlappung — für einen auswertbaren Korpus muss mindestens ein
-Teil der Entscheidungen mit `epsilon_greedy` und protokolliertem Seed fallen.
+**Korpusweg, beziffert.** Eine vorregistrierte Explorationskampagne
+(`friday_optimizer/campaign.py`, CLI `campaign`) versiegelt die Regel statt der
+Aktion und erzeugt so Überlappung. Aus versiegelter Budgetevidenz: die
+vorgeschriebene Pause übersteigt die Rechenzeit um Faktor `28`–`31`, also
+passen **`10` Messpunkte in einen 30-Minuten-Block**. Bei Epsilon `0,5` über
+fünf Kandidaten braucht `ESS ≥ 30` genau `50` Punkte, also **`5` freigegebene
+Blöcke** — sofern die Frage „schlägt die gehintete Aktion die Baseline?"
+lautet. Die Frage „ist eine selten gezogene Aktion gut?" kostet `30` Blöcke
+und ist mit diesem Budget nicht zu beantworten.
+
+**Nicht gangbar:** F1s Sessions als Korpus mitzunutzen. F1s Kandidat ist
+vorregistriert, jede Entscheidung hätte Propensity `1,0` und damit keine
+Überlappung. Geprüft und verworfen am 2026-09-01.
 
 **Gate:** OPE-Vorteil mit Konfidenzintervall und `conclusive=true`, keine
 schlechtere Invalid-Suggestion-Rate als die deterministische Suche.
