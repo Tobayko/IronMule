@@ -9301,3 +9301,56 @@ dass der Projektinterpreter weiterhin durchläuft.
 verändert `code_manifest_sha256`. Weil noch keine der offenen Studien (F1, P2,
 W1) versiegelt ist, ist genau jetzt der richtige Zeitpunkt für solche
 Änderungen; nach dem Versiegeln wäre jede eine Neuversiegelung.
+
+## 2026-09-02 — W1 gebaut, und ein Befund über F1s eigene Schwelle
+
+Offline-Implementierung. Kein Modellstart, kein Hardwarelauf; der Worker
+verweigert ohne `--execute` und wurde nur mit `--self-check` ausgeführt.
+
+**Warum W1 keine A/B-Studie braucht.** Die Regimefrage hängt nur an drei
+Größen — TTFT, Antwortlänge und Decode-Rate. Es genügt, die Baseline bei zwei
+Antwortlängen im selben Prozess zu vermessen; Kandidaten müssen dafür nicht
+geschaltet werden. Damit kostet W1 keinen ganzen Freigabeblock, sondern einen
+Bruchteil davon.
+
+**Was gemessen wird.** Ein Prozess, ein Prompt von rund `900` Token, nach
+einem Warmlauf `32` Token als Kontrolle und `256` Token. Aufgezeichnet werden
+TTFT, Decode-Dauer, Gesamtrate und die Rate im ersten und letzten Viertel der
+Schritte — der Verlauf, nicht nur der Mittelwert, weil der KV-Cache über die
+Antwort wächst.
+
+**Warum die Frage scharf ist.** Bei `256` Token liegen die beiden bestätigten
+Kandidaten rechnerisch `0,38` Prozentpunkte auseinander:
+
+| Ratenabfall | `head_skip` | `fixed_compiled` | führend |
+| --- | --- | --- | --- |
+| `0 %` (`70,99` tok/s) | `5,09 %` | `4,71 %` | `head_skip` |
+| `10 %` (`63,89` tok/s) | `4,73 %` | `4,87 %` | **`fixed_compiled`** |
+| `20 %` (`56,79` tok/s) | `4,36 %` | `5,04 %` | **`fixed_compiled`** |
+
+Die Kandidaten-Kreuzung liegt bei `276` Token, die Decken-Kreuzung bei `203`.
+Ein Ratenabfall von zehn Prozent verschiebt sie unter `256`. Genau deshalb
+wird gemessen statt angenommen; die Toleranz `±10 %` steht vor der Messung
+fest.
+
+**Befund über F1, aus derselben Rechnung.** F1s kombinierter warmer Arm ist
+längenabhängig:
+
+| generierte Token | kombinierter Gewinn |
+| --- | --- |
+| `32` (registriert) | `13,68 %` |
+| `128` | `11,18 %` |
+| `256` | `9,80 %` |
+| `512` | `8,69 %` |
+
+Bei `256` Token unterschreitet derselbe Kandidat F1s eigene vorregistrierte
+Schwelle von `10 %`; die Studie meldete dann korrekt `below_threshold`. F1
+bleibt richtig — es erntet bestätigte Gewinne in dem Regime, in dem sie
+bestätigt wurden — aber die Zahl `13,68 %` darf nicht als allgemeines Ergebnis
+gelesen werden. Der Geltungsbereich steht jetzt ausdrücklich in F1s
+Vorregistrierung, und F1 wird dafür nicht erweitert.
+
+**Verifikation.** Vollsuite `1510 passed, 2630 subtests passed`. Neu:
+`tests/test_w1_regime.py` mit 11 Tests derselben Bauart wie bei P2 — kein
+MLX-Import, kein Modell, Entscheidungsregel direkt geprüft, Worker per
+Quelltextinspektion, beide Gate-Ausgänge.

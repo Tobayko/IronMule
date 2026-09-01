@@ -93,10 +93,25 @@ arbeiteten längst darüber: `segmented_decode` `240`, `self_consistency`
 verschiedene Regime, und alle Prioritätsaussagen (P1, die Schließung der
 Decode-Klasse) hängen an dieser Wahl.
 
-**Vorschlag:** eine eigene vorregistrierte Studie mit identischem Aufbau, aber
-Antwortlänge `256` Token, gegen dieselbe Baseline. Kosten gerechnet mit der
-bestehenden Pausenlogik: `188 s` je Punkt statt `167 s`, also `9` statt `10`
-Punkte je 30-Minuten-Block. Ein zusätzlicher Block beantwortet die Frage.
+**Messung:** fertig gebaut und gegatet — `experiments/w1_regime/` mit
+Vorregistrierung, Worker `measure_long_answer.py` (verweigert ohne
+`--execute`, AC-Pflicht, `BudgetGuard`, Offline-Snapshot) und der vor der
+Messung festgelegten Klassifikation in `regime_analysis.py`. Ein Prozess,
+Warmlauf plus `32` Token Kontrolle plus `256` Token, mit Ratenverlauf über
+erstes und letztes Viertel. Deutlich unter einer 30-Minuten-Freigabe — kein
+ganzer Block nötig, weil keine A/B-Paarung gebraucht wird.
+
+**Wartet auf:** eine einzelne Nutzerfreigabe für diesen Lauf.
+
+**Warum es kippen kann.** Bei `256` Token liegen die beiden bestätigten
+Kandidaten nur `0,38` Prozentpunkte auseinander (`head_skip` `5,09 %`,
+`fixed_compiled` `4,71 %`); die Kandidaten-Kreuzung liegt bei `276` Token. Ein
+Ratenabfall von `10 %` genügt, um die Reihenfolge schon bei `256` zu drehen.
+
+**Nebenbefund für F1.** F1s kombinierter warmer Arm ist bei `32` Token
+`13,68 %` wert, bei `256` Token nur `9,80 %` — unter F1s eigener `10 %`-
+Schwelle. F1 bleibt gültig, ist aber eine Aussage über das kurze
+Antwortregime; der Hinweis steht in F1s Vorregistrierung.
 
 **Bewusst nicht getan:** F1 um einen langen Arm erweitern. F1 erntet
 bestätigte Gewinne in genau dem Regime, in dem sie bestätigt wurden; ein

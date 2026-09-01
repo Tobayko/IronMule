@@ -85,6 +85,22 @@ beanspruchen.
 Die registrierte Antwortlänge ist deshalb Teil des Vertrags: `32` Token, wie in
 der persistenten Prozessstudie.
 
+**Geltungsbereich der Zahl, ergänzt am 2026-09-02.** Der Gewinn des warmen
+Arms hängt an der registrierten Antwortlänge und fällt mit ihr:
+
+| generierte Token | kombinierter warmer Gewinn |
+| --- | --- |
+| `32` (registriert) | `13,68 %` |
+| `128` | `11,18 %` |
+| `256` | `9,80 %` — **unter der Schwelle dieser Studie** |
+| `512` | `8,69 %` |
+
+Bei `256` Token unterschritte derselbe Kandidat die eigene `10 %`-Schwelle und
+die Studie meldete korrekt `below_threshold`. F1 bleibt damit gültig, ist aber
+ausdrücklich eine Aussage über das kurze Antwortregime. Ob dieses Regime das
+richtige Ziel ist, klärt die getrennte Studie W1
+(`experiments/w1_regime/PREREGISTRATION.md`); F1 wird dafür nicht erweitert.
+
 ## 4. Vorregistrierte Schwellen
 
 | Arm | Mindestgewinn `min_gain` | Begründung |
