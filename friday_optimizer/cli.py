@@ -27,6 +27,7 @@ from .corpus import EVIDENCE_CONTRACTS, CorpusAuditor
 from .dashboard import DashboardError, serve
 from .dataset import DatasetBuilder
 from .evaluator import CorrectnessResult, MetricSample, ResourceResult
+from .decisions import CENSORING, REWARD_METRICS, SELECTION_RULES, DecisionError, SelectionPolicy
 from .fingerprint import ExactFingerprint
 from .memory import OptimizationMemoryV2, ReadOnlyMemoryView
 from .orchestrator import (
@@ -35,7 +36,9 @@ from .orchestrator import (
     ShadowRequest,
     _inventory_identity_hash,
 )
+from .portfolio import PortfolioError, build_portfolio
 from .readiness import MacSystemProbe
+from .replay import DEFAULT_MIN_SAMPLES, ReplayError
 from .collector import Collector
 from .real_session import (
     RealSessionError,
@@ -689,14 +692,17 @@ def _dashboard(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     memory = _bounded_path(args.memory, "memory")
     profiles = _bounded_path(args.profiles, "profiles") if args.profiles else None
     dataset = _bounded_path(args.dataset, "dataset") if args.dataset else None
+    portfolio = _bounded_path(args.portfolio, "portfolio") if args.portfolio else None
     if memory.exists() or memory.is_symlink():
         _safe_existing_file(str(memory), "memory", max_bytes=64 * 1024 * 1024)
     if profiles is not None and (profiles.exists() or profiles.is_symlink()):
         _safe_existing_file(str(profiles), "profiles", max_bytes=16 * 1024 * 1024)
     if dataset is not None and (dataset.exists() or dataset.is_symlink()):
         _safe_existing_file(str(dataset), "dataset", max_bytes=4 * 1024 * 1024)
+    if portfolio is not None and (portfolio.exists() or portfolio.is_symlink()):
+        _safe_existing_file(str(portfolio), "portfolio", max_bytes=4 * 1024 * 1024)
     try:
-        server = serve(memory, int(args.port), profile_path=profiles, dataset_path=dataset)
+        server = serve(memory, int(args.port), profile_path=profiles, dataset_path=dataset, portfolio_path=portfolio)
     except (DashboardError, OSError):
         raise CLIError(ExitCode.UNAVAILABLE, "dashboard_unavailable") from None
     stopped = False
@@ -838,6 +844,112 @@ def _emit(payload: Mapping[str, Any]) -> None:
         raise CLIError(ExitCode.INTERNAL, "output_unavailable")
 
 
+def _portfolio(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    try:
+        snapshot = build_portfolio(_safe_existing_file(args.manifest, "manifest"))
+    except PortfolioError as exc:
+        raise CLIError(ExitCode.DATA, str(exc)) from exc
+    payload = snapshot.as_dict()
+    payload.update({"command": "portfolio", "schema_version": 1, "ok": True})
+    return payload, ExitCode.OK
+
+
+def _policy(args: argparse.Namespace) -> SelectionPolicy:
+    try:
+        return SelectionPolicy(args.policy_id, rule=args.rule, epsilon=args.epsilon)
+    except DecisionError as exc:
+        raise CLIError(ExitCode.USAGE, "invalid_policy") from exc
+
+
+def _fingerprint_document(path: Path) -> ExactFingerprint:
+    """Accept a plain fingerprint document or a fingerprint report."""
+
+    raw = _json_file(path)
+    body = _object(raw, "fingerprint")
+    for key in ("report", "fingerprint"):
+        while isinstance(body, Mapping) and key in body and isinstance(body[key], Mapping):
+            body = body[key]
+    try:
+        return ExactFingerprint.from_mapping(body)
+    except Exception as exc:
+        raise CLIError(ExitCode.DATA, "fingerprint_invalid") from exc
+
+
+def _write_memory_path(args: argparse.Namespace) -> Path:
+    memory = _bounded_path(args.memory, "memory")
+    _safe_parent(memory)
+    return memory
+
+
+def _decide(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    if not args.execute:
+        return {"command": "decide", "schema_version": 1, "ok": False, "authorized": False,
+                "reason": "explicit_execute_required", "written": False}, ExitCode.NOT_AUTHORIZED
+    policy = _policy(args)
+    fingerprint = _fingerprint_document(_safe_existing_file(args.fingerprint, "fingerprint"))
+    memory = _write_memory_path(args)
+    binding = _memory_preflight(memory)
+    orchestrator = OptimizerOrchestrator(OptimizerConfig(Path.cwd(), memory_path=memory))
+    _assert_memory_binding(memory, binding)
+    try:
+        event = orchestrator.select(fingerprint, policy=policy, hints=tuple(args.hint or ()),
+                                    qualified=tuple(args.qualified or ()), seed=args.seed, write=True)
+    except (DecisionError, ValueError, TypeError) as exc:
+        raise CLIError(ExitCode.DATA, "decision_rejected") from exc
+    payload = event.payload()
+    payload.update({"command": "decide", "schema_version": 1, "ok": True, "authorized": True,
+                    "written": True, "no_activation": True})
+    return payload, ExitCode.OK
+
+
+def _outcome(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    if not args.execute:
+        return {"command": "outcome", "schema_version": 1, "ok": False, "authorized": False,
+                "reason": "explicit_execute_required", "written": False}, ExitCode.NOT_AUTHORIZED
+    memory = _write_memory_path(args)
+    binding = _memory_preflight(memory)
+    orchestrator = OptimizerOrchestrator(OptimizerConfig(Path.cwd(), memory_path=memory))
+    _assert_memory_binding(memory, binding)
+    try:
+        outcome = orchestrator.record_outcome(
+            args.decision, args.censoring, reward=args.reward, reward_metric=args.metric,
+            evidence_hash=args.evidence_hash, notes=args.notes or "", write=True,
+        )
+    except (DecisionError, ValueError, TypeError) as exc:
+        raise CLIError(ExitCode.DATA, "outcome_rejected") from exc
+    payload = outcome.payload()
+    payload.update({"command": "outcome", "schema_version": 1, "ok": True, "authorized": True,
+                    "written": True, "no_activation": True})
+    return payload, ExitCode.OK
+
+
+def _replay(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    policy = _policy(args)
+    memory = _safe_existing_file(args.memory, "memory", max_bytes=64 * 1024 * 1024)
+    before = _metadata_signature([memory])
+    orchestrator = OptimizerOrchestrator(OptimizerConfig(Path.cwd(), memory_path=memory))
+    try:
+        estimates = orchestrator.evaluate_policy(policy, min_samples=args.min_samples, seed=args.seed)
+        steps = len(orchestrator.replay())
+    except (ReplayError, DecisionError, ValueError, TypeError) as exc:
+        raise CLIError(ExitCode.DATA, "replay_unavailable") from exc
+    except OSError as exc:
+        raise CLIError(ExitCode.UNAVAILABLE, "memory_unreadable") from exc
+    unchanged = before == _metadata_signature([memory])
+    conclusive = all(estimate.conclusive for estimate in estimates.values()) and bool(estimates)
+    payload = {
+        "command": "replay", "schema_version": 1, "policy": policy.as_dict(),
+        "labelled_steps": steps, "min_samples": args.min_samples,
+        "estimates": {name: estimate.as_dict() for name, estimate in estimates.items()},
+        "conclusive": conclusive, "learning_claim": False, "no_activation": True,
+        "source_metadata_unchanged": unchanged,
+        "ok": unchanged and conclusive,
+    }
+    if not unchanged:
+        payload["reason"] = "source_metadata_changed"
+    return payload, ExitCode.OK if payload["ok"] else ExitCode.UNAVAILABLE
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="python -m friday_optimizer", allow_abbrev=False, description="Closed offline Friday optimizer control plane")
     parser.add_argument("--json", action="store_true", help="emit canonical JSON (the default)")
@@ -882,6 +994,7 @@ def _build_parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--memory", required=True)
     dashboard.add_argument("--profiles")
     dashboard.add_argument("--dataset")
+    dashboard.add_argument("--portfolio")
     dashboard.add_argument("--port", type=int, default=0)
     dashboard.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
 
@@ -892,6 +1005,43 @@ def _build_parser() -> argparse.ArgumentParser:
     fingerprint.add_argument("--out")
     fingerprint.add_argument("--execute", action="store_true")
     fingerprint.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    def _policy_arguments(target: argparse.ArgumentParser) -> None:
+        target.add_argument("--policy-id", default="deterministic_order_v1")
+        target.add_argument("--rule", default="deterministic_order", choices=list(SELECTION_RULES))
+        target.add_argument("--epsilon", type=float, default=0.0)
+
+    decide_parser = sub.add_parser("decide", allow_abbrev=False)
+    decide_parser.add_argument("--memory", required=True)
+    decide_parser.add_argument("--fingerprint", required=True)
+    _policy_arguments(decide_parser)
+    decide_parser.add_argument("--hint", action="append", default=[])
+    decide_parser.add_argument("--qualified", action="append", default=[])
+    decide_parser.add_argument("--seed", type=int)
+    decide_parser.add_argument("--execute", action="store_true")
+    decide_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    outcome_parser = sub.add_parser("outcome", allow_abbrev=False)
+    outcome_parser.add_argument("--memory", required=True)
+    outcome_parser.add_argument("--decision", required=True)
+    outcome_parser.add_argument("--censoring", required=True, choices=list(CENSORING))
+    outcome_parser.add_argument("--reward", type=float)
+    outcome_parser.add_argument("--metric", default="ratio_median", choices=list(REWARD_METRICS))
+    outcome_parser.add_argument("--evidence-hash", dest="evidence_hash")
+    outcome_parser.add_argument("--notes", default="")
+    outcome_parser.add_argument("--execute", action="store_true")
+    outcome_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    replay_parser = sub.add_parser("replay", allow_abbrev=False)
+    replay_parser.add_argument("--memory", required=True)
+    _policy_arguments(replay_parser)
+    replay_parser.add_argument("--min-samples", dest="min_samples", type=int, default=DEFAULT_MIN_SAMPLES)
+    replay_parser.add_argument("--seed", type=int, default=0)
+    replay_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
+    portfolio = sub.add_parser("portfolio", allow_abbrev=False)
+    portfolio.add_argument("--manifest", required=True)
+    portfolio.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
 
     plan = sub.add_parser("session-plan", allow_abbrev=False)
     plan.add_argument("--checkout", required=True)
@@ -928,7 +1078,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = _build_parser().parse_args(list(argv) if argv is not None else None)
         if not 0 <= args.port <= 65535 if args.command == "dashboard" else False:
             raise CLIError(ExitCode.USAGE, "invalid_port")
-        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "session-plan": _session_plan, "session": _session}[args.command]
+        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "portfolio": _portfolio, "session-plan": _session_plan, "session": _session, "decide": _decide, "outcome": _outcome, "replay": _replay}[args.command]
         payload, code = handler(args)
         if args.command != "dashboard":
             _emit(payload)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import sys
 import time
 import os
 from pathlib import Path
@@ -12,6 +13,11 @@ from friday_optimizer.session import (
     AdapterResult, InvalidTransition, PromotionAuthorization, SessionController,
     SessionError, SessionState, StageSpec, SubprocessStageRunner,
 )
+
+# The stage runner executes a *copy* of the allowlisted binary.  macOS kills
+# a copied Apple-signed system binary with SIGKILL, so the fixture must use the
+# real interpreter behind the venv symlink, which is what a session runs too.
+STAGE_EXECUTABLE = os.path.realpath(sys.executable)
 
 
 class Clock:
@@ -237,13 +243,13 @@ class SessionTests(unittest.TestCase):
         self.assertIn("rollback", controller._event_file.read_text().splitlines())
 
     def test_subprocess_stage_is_hard_deadline_bounded(self):
-        executable = "/usr/bin/python3"
+        executable = STAGE_EXECUTABLE
         runner = SubprocessStageRunner(allowlisted_executables={executable: SubprocessStageRunner._file_sha256(executable)})
         result = runner.run(StageSpec(executable, ("-c", "import time; time.sleep(2)"), env={}, execute_authorized=True, authorization_session_id="s", authorization_nonce="n", authorization_tag="tag"), deadline=time.monotonic() + .05)
         self.assertEqual(result.outcome, "timeout")
 
     def test_stage_without_explicit_execution_authorization_is_blocked(self):
-        executable = "/usr/bin/python3"
+        executable = STAGE_EXECUTABLE
         runner = SubprocessStageRunner(allowlisted_executables={executable: SubprocessStageRunner._file_sha256(executable)})
         with self.assertRaises(SessionError):
             runner.run(StageSpec(executable, ("-c", "print('must-not-run')"), env={}), deadline=time.monotonic() + 5)

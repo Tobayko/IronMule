@@ -27,6 +27,8 @@ from typing import Any, Mapping, Protocol, Sequence
 from urllib.parse import parse_qs, urlsplit
 
 from .canonical import canonical_bytes, loads_strict
+from .decisions import DECISION_SCHEMA, OUTCOME_SCHEMA, SelectionPolicy
+from .replay import DEFAULT_MIN_SAMPLES, ReplayEnv, ReplayError, evaluate as evaluate_offline, load_steps
 from .memory import (
     APPLICATION_ID,
     MAX_PAYLOAD_BYTES,
@@ -36,6 +38,7 @@ from .memory import (
     _safe_path,
 )
 from .profiles import AtomicProfileStore, ProfileError
+from .portfolio import MANIFEST_SCHEMA as PORTFOLIO_MANIFEST_SCHEMA, PortfolioError, SNAPSHOT_SCHEMA as PORTFOLIO_SNAPSHOT_SCHEMA, build_portfolio
 
 
 HOST = LOOPBACK_HOST = "127.0.0.1"
@@ -93,6 +96,12 @@ class DatasetProvider(Protocol):
 
 class ShadowProvider(Protocol):
     """Optional immutable shadow-decision provider."""
+
+    def as_dict(self) -> Mapping[str, Any]: ...
+
+
+class PortfolioProvider(Protocol):
+    """Optional immutable portfolio manifest/snapshot provider."""
 
     def as_dict(self) -> Mapping[str, Any]: ...
 
@@ -333,6 +342,89 @@ def _error_payload(reason: str = "unavailable") -> dict[str, Any]:
     }
 
 
+def _portfolio_payload(data_state: str, *, value: Mapping[str, Any] | None = None, reason: str = "unavailable") -> dict[str, Any]:
+    """Project only bounded portfolio status; never expose source paths."""
+    result: dict[str, Any] = {
+        "schema_version": 1,
+        "read_only": True,
+        "data_state": data_state,
+        "snapshot_hash": None,
+        "manifest_hash": None,
+        "models": [],
+        "model_count": 0,
+        "next_action": None,
+        "no_model_load": True,
+        "no_download": True,
+        "no_activation": True,
+    }
+    if data_state == "unavailable":
+        result.update({"error": "unavailable", "reason": reason if reason in _UNAVAILABLE_REASONS else "unavailable"})
+        return result
+    if not isinstance(value, Mapping):
+        return _portfolio_payload("unavailable", reason="invalid")
+    snapshot_hash = _safe_hash(value.get("snapshot_sha256"))
+    manifest_hash = _safe_hash(value.get("manifest_sha256"))
+    entries = value.get("models")
+    if snapshot_hash is None or manifest_hash is None or not isinstance(entries, (list, tuple)) or len(entries) != 4:
+        return _portfolio_payload("unavailable", reason="invalid")
+    body = {key: child for key, child in value.items() if key != "snapshot_sha256"}
+    try:
+        if _canonical_hash(body) != snapshot_hash:
+            return _portfolio_payload("unavailable", reason="integrity")
+    except DashboardUnavailable:
+        return _portfolio_payload("unavailable", reason="invalid")
+    models: list[dict[str, Any]] = []
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            return _portfolio_payload("unavailable", reason="invalid")
+        size = _safe_text(entry.get("size"), identifier=True)
+        model_id = _safe_text(entry.get("model_id"), identifier=True)
+        status = _safe_text(entry.get("status"), identifier=True)
+        identity_hash = _safe_hash(entry.get("identity_hash"))
+        if size is None or model_id is None or status is None:
+            return _portfolio_payload("unavailable", reason="invalid")
+        counts = entry.get("evidence_counts")
+        if not isinstance(counts, Mapping):
+            return _portfolio_payload("unavailable", reason="invalid")
+        safe_counts = {
+            str(name): count
+            for name, count in counts.items()
+            if isinstance(name, str) and type(count) is int and 0 <= count <= MAX_VERIFY_ROWS
+        }
+        if len(safe_counts) != len(counts):
+            return _portfolio_payload("unavailable", reason="invalid")
+        usable = entry.get("usable_records")
+        if type(usable) is not int or not 0 <= usable <= MAX_VERIFY_ROWS:
+            return _portfolio_payload("unavailable", reason="invalid")
+        row: dict[str, Any] = {
+            "size": size,
+            "model_id": model_id,
+            "status": status,
+            "identity_hash": None if identity_hash is None else identity_hash[:12],
+            "identity_hash_short": None if identity_hash is None else identity_hash[:12],
+            "evidence_counts": safe_counts,
+            "usable_records": usable,
+        }
+        next_point = entry.get("next_safe_measurement")
+        if isinstance(next_point, Mapping):
+            action = _safe_text(next_point.get("action"), identifier=True)
+            point_size = _safe_text(next_point.get("size"), identifier=True)
+            requires_start = next_point.get("requires_user_start")
+            if action is not None and point_size is not None and isinstance(requires_start, bool):
+                row["next_action"] = {"action": action, "size": point_size, "requires_user_start": requires_start}
+        models.append(row)
+    next_point = value.get("next_safe_measurement")
+    next_action = None
+    if isinstance(next_point, Mapping):
+        action = _safe_text(next_point.get("action"), identifier=True)
+        point_size = _safe_text(next_point.get("size"), identifier=True)
+        requires_start = next_point.get("requires_user_start")
+        if action is not None and point_size is not None and isinstance(requires_start, bool):
+            next_action = {"action": action, "size": point_size, "requires_user_start": requires_start}
+    result.update({"data_state": "available", "snapshot_hash": snapshot_hash, "manifest_hash": manifest_hash, "models": models, "model_count": len(models), "next_action": next_action})
+    return result
+
+
 def _dataset_payload(
     data_state: str,
     *,
@@ -411,6 +503,10 @@ class DashboardService:
         dataset: DatasetProvider | DatasetSnapshotLike | None = None,
         dataset_snapshot: DatasetProvider | DatasetSnapshotLike | None = None,
         shadow: ShadowProvider | ShadowDecisionLike | None = None,
+        portfolio_path: str | os.PathLike[str] | None = None,
+        portfolio_provider: PortfolioProvider | Any | None = None,
+        portfolio_snapshot: PortfolioProvider | Any | None = None,
+        portfolio: PortfolioProvider | Any | None = None,
         expected_dataset_hash: str | None = None,
         dataset_sha256: str | None = None,
     ) -> None:
@@ -422,6 +518,10 @@ class DashboardService:
             raise DashboardError("dataset providers conflict")
         if shadow_provider is not None and shadow is not None and shadow_provider is not shadow:
             raise DashboardError("shadow providers conflict")
+        if portfolio_provider is not None and portfolio_snapshot is not None and portfolio_provider is not portfolio_snapshot:
+            raise DashboardError("portfolio providers conflict")
+        if portfolio_snapshot is not None and portfolio is not None and portfolio_snapshot is not portfolio:
+            raise DashboardError("portfolio providers conflict")
         if expected_dataset_hash is not None and dataset_sha256 is not None and expected_dataset_hash != dataset_sha256:
             raise DashboardError("dataset hashes conflict")
         self.database_path = Path(database_path)
@@ -429,6 +529,8 @@ class DashboardService:
         self.dataset_path = Path(dataset_path) if dataset_path is not None else None
         self.dataset_provider = dataset_provider if dataset_provider is not None else dataset_snapshot if dataset_snapshot is not None else dataset
         self.shadow_provider = shadow_provider if shadow_provider is not None else shadow
+        self.portfolio_path = Path(portfolio_path) if portfolio_path is not None else None
+        self.portfolio_provider = portfolio_provider if portfolio_provider is not None else portfolio_snapshot if portfolio_snapshot is not None else portfolio
         configured_hash = expected_dataset_hash if expected_dataset_hash is not None else dataset_sha256
         if configured_hash is not None and not _safe_hash(configured_hash):
             raise DashboardError("dataset hash is invalid")
@@ -740,6 +842,116 @@ class DashboardService:
             value["decision"] = None
             return value
 
+    def portfolio(self) -> dict[str, Any]:
+        if self.portfolio_provider is None and self.portfolio_path is None:
+            return _portfolio_payload("not_configured")
+        try:
+            if self.portfolio_provider is not None:
+                value = dict(self._provider_value(self.portfolio_provider))
+                if value.get("schema") == PORTFOLIO_MANIFEST_SCHEMA:
+                    value = build_portfolio(value).as_dict()
+            else:
+                assert self.portfolio_path is not None
+                before = _path_signature(self.portfolio_path)
+                raw = self.portfolio_path.read_bytes()
+                if len(raw) > MAX_DATASET_BYTES:
+                    raise DashboardUnavailable("bounded")
+                if _path_signature(self.portfolio_path) != before:
+                    raise DashboardUnavailable("identity")
+                parsed = loads_strict(raw, max_bytes=MAX_DATASET_BYTES, max_depth=MAX_JSON_DEPTH, max_items=100_000)
+                if not isinstance(parsed, Mapping) or canonical_bytes(parsed, max_bytes=MAX_DATASET_BYTES, max_depth=MAX_JSON_DEPTH, max_items=100_000) != raw:
+                    raise DashboardUnavailable("invalid")
+                if parsed.get("schema") == PORTFOLIO_MANIFEST_SCHEMA:
+                    value = build_portfolio(raw).as_dict()
+                else:
+                    value = dict(parsed)
+                if _path_signature(self.portfolio_path) != before:
+                    raise DashboardUnavailable("identity")
+            if value.get("schema") != PORTFOLIO_SNAPSHOT_SCHEMA:
+                raise DashboardUnavailable("invalid")
+            return _portfolio_payload("available", value=value)
+        except DashboardUnavailable as exc:
+            return _portfolio_payload("unavailable", reason=exc.reason)
+        except (PortfolioError, OSError, TypeError, ValueError, UnicodeError, json.JSONDecodeError):
+            return _portfolio_payload("unavailable", reason="invalid")
+        except Exception:
+            return _portfolio_payload("unavailable", reason="unavailable")
+
+    def decisions(self, limit: int = DEFAULT_LIMIT) -> dict[str, Any]:
+        """Read-only view of the RL-ready decision log and its estimate.
+
+        The panel exists so a logged decision is visible the same day it is
+        made.  It reports estimates together with their status; an estimate
+        below the sample floor is shown as ``insufficient_data`` and is not a
+        result.
+        """
+
+        if type(limit) is not int or not 1 <= limit <= MAX_HISTORY_ROWS:
+            raise DashboardError("limit is outside the registered range")
+        empty = {"revision": None, "total": 0, "labelled": 0, "observed": 0, "censoring": {},
+                 "policies": {}, "actions": {}, "decisions": [], "estimates": {},
+                 "learning_claim": False, "no_activation": True}
+        try:
+            rows, revision = self._memory()
+        except DashboardUnavailable as exc:
+            value = _error_payload(exc.reason)
+            value.update(empty)
+            return value
+        logged: list[Mapping[str, Any]] = []
+        outcomes: dict[str, Mapping[str, Any]] = {}
+        for row in rows:
+            if str(row["kind"]) != "system":
+                continue
+            try:
+                payload = self._payload(row)
+            except DashboardUnavailable:
+                continue
+            schema = payload.get("schema")
+            if schema == DECISION_SCHEMA and isinstance(payload.get("decision_id"), str):
+                logged.append(payload)
+            elif schema == OUTCOME_SCHEMA and isinstance(payload.get("decision_id"), str):
+                outcomes[payload["decision_id"]] = payload
+        known = {payload["decision_id"] for payload in logged}
+        paired = {key: value for key, value in outcomes.items() if key in known}
+        table = []
+        for payload in reversed(logged[-limit:]):
+            outcome = paired.get(payload["decision_id"], {})
+            table.append({
+                "decision_id": _safe_text(payload.get("decision_id"), identifier=True),
+                "policy_id": _safe_text(payload.get("policy_id"), identifier=True),
+                "rule": _safe_text(payload.get("selection_rule"), identifier=True),
+                "chosen": _safe_text(payload.get("chosen"), identifier=True),
+                "propensity": _safe_number(payload.get("propensity")),
+                "actions": len(payload.get("candidate_set") or ()),
+                "censoring": _safe_text(outcome.get("censoring"), identifier=True),
+                "reward": _safe_number(outcome.get("reward")),
+            })
+        estimates: dict[str, Any] = {}
+        try:
+            steps = load_steps(list(logged) + list(paired.values()))
+            environment = ReplayEnv(steps)
+            estimates = {
+                name: estimate.as_dict()
+                for name, estimate in evaluate_offline(
+                    environment, SelectionPolicy("deterministic_order_v1"),
+                    min_samples=DEFAULT_MIN_SAMPLES,
+                ).items()
+            }
+        except (ReplayError, ValueError, TypeError):
+            estimates = {}
+        observed = sum(1 for value in paired.values() if value.get("censoring") == "observed")
+        return {
+            "schema_version": 1, "read_only": True,
+            "data_state": "available" if logged else "empty",
+            "revision": revision, "total": len(logged), "labelled": len(paired), "observed": observed,
+            "censoring": dict(sorted(Counter(str(value.get("censoring")) for value in paired.values()).items())),
+            "policies": dict(sorted(Counter(str(value.get("policy_id")) for value in logged).items())),
+            "actions": dict(sorted(Counter(str(value.get("chosen")) for value in logged).items())),
+            "decisions": table, "estimates": estimates,
+            "min_samples": DEFAULT_MIN_SAMPLES,
+            "learning_claim": False, "no_activation": True,
+        }
+
     def status(self) -> dict[str, Any]:
         status: dict[str, Any] = {"schema_version": 1, "read_only": True, "service": "friday_optimizer", "data_state": "available"}
         try:
@@ -767,7 +979,8 @@ class DashboardService:
             status["shadow"] = self.shadow()
         except DashboardUnavailable:
             status["shadow"] = _error_payload("unavailable")
-        required_components = ((self.profile_path is not None, status.get("profiles")), (self.dataset_path is not None, status.get("dataset")), (self.dataset_provider is not None, status.get("dataset")))
+        status["portfolio"] = self.portfolio()
+        required_components = ((self.profile_path is not None, status.get("profiles")), (self.dataset_path is not None, status.get("dataset")), (self.dataset_provider is not None, status.get("dataset")), (self.portfolio_path is not None or self.portfolio_provider is not None, status.get("portfolio")))
         if any(configured and isinstance(component, Mapping) and component.get("data_state") == "unavailable" for configured, component in required_components):
             status["data_state"] = "unavailable"
             status["error"] = "unavailable"
@@ -800,12 +1013,13 @@ HTML = """<!doctype html>
 <section class="grid"><article><h2>Runtime</h2><dl id="runtime"><div><dt>TTFT</dt><dd>—</dd></div><div><dt>Decode tokens/s</dt><dd>—</dd></div><div><dt>CI / MDE</dt><dd>—</dd></div><div><dt>Correctness</dt><dd>—</dd></div><div><dt>Peak / RSS</dt><dd>—</dd></div><div><dt>Swap before / after</dt><dd>—</dd></div><div><dt>Lease / PID / mode</dt><dd>—</dd></div></dl></article>
 <article><h2>Bindings</h2><dl id="bindings"><div><dt>Dataset</dt><dd>—</dd></div><div><dt>Candidate</dt><dd>—</dd></div><div><dt>Code</dt><dd>—</dd></div><div><dt>Profile</dt><dd>—</dd></div><div><dt>Rollback</dt><dd>—</dd></div></dl></article></section>
 <section class="panel"><div class="panel-head"><h2>Chronological history</h2><span id="count">—</span></div><div class="table-wrap"><table><thead><tr><th>Time</th><th>Kind</th><th>Status</th><th>TTFT</th><th>Decode/s</th><th>Correctness</th><th>Memory</th></tr></thead><tbody id="history"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></section>
+<section class="panel"><div class="panel-head"><h2>Decision log (RL-ready)</h2><span id="dcount">—</span></div><div class="table-wrap"><table><thead><tr><th>Policy</th><th>Rule</th><th>Action</th><th>Propensity</th><th>Actions</th><th>Censoring</th><th>Reward</th></tr></thead><tbody id="decisions"><tr><td colspan="7">Loading…</td></tr></tbody></table></div></section>
 <footer>friday@local · read-only · loopback-only · <span id="revision">revision pending</span></footer></main><script src="/assets/app.js" defer></script></body></html>"""
 
 CSS = r""":root{color-scheme:dark;--bg:#070b12;--panel:#0d1420;--line:#253247;--ink:#e7eef8;--muted:#8ea0b8;--accent:#67e8f9;--ok:#7cf29a;--warn:#f6cf70;--bad:#ff8095;font:15px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}*{box-sizing:border-box}html,body{margin:0;min-width:320px;background:var(--bg);color:var(--ink)}body{background:radial-gradient(circle at 90% 0,#112438 0,transparent 42rem),var(--bg)}main{width:min(1180px,calc(100% - 32px));margin:auto;padding:28px 0 54px}header{border-top:1px solid var(--accent);padding-top:14px}.eyebrow,small,dt,.panel-head span{color:var(--muted);font-size:.68rem;letter-spacing:.12em;text-transform:uppercase}.eyebrow{color:var(--accent)}h1{font-size:clamp(3.5rem,11vw,8.5rem);font-weight:500;line-height:.82;letter-spacing:-.09em;margin:50px 0 26px}h1 span{color:transparent;-webkit-text-stroke:1px var(--accent)}.lede{max-width:55ch;color:var(--muted);line-height:1.6}.state,.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);margin:24px 0}.state>div,.grid article{background:var(--panel);padding:16px}.state strong{display:block;margin-top:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--accent);font-weight:500}.grid{grid-template-columns:1fr 1fr;background:none;gap:16px}.grid article,.panel{border:1px solid var(--line);border-radius:6px}.grid h2,.panel h2{font-size:.9rem;font-weight:500;letter-spacing:.08em;text-transform:uppercase;margin:0 0 14px}.grid dl{display:grid;grid-template-columns:1fr 1fr;gap:1px;margin:0;background:var(--line)}dl div{padding:10px;background:var(--panel)}dt{font-size:.6rem}dd{margin:6px 0 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.panel{overflow:hidden;margin-top:16px;background:var(--panel)}.panel-head{display:flex;justify-content:space-between;gap:16px;padding:16px;border-bottom:1px solid var(--line)}.panel-head h2{margin:0}.table-wrap{overflow:auto;max-height:620px}table{width:100%;border-collapse:collapse;font-size:.78rem}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}th{position:sticky;top:0;background:var(--panel);color:var(--muted);font-size:.62rem;font-weight:400;text-transform:uppercase}footer{display:flex;justify-content:space-between;gap:16px;margin-top:18px;padding-top:12px;border-top:1px solid var(--line);color:var(--muted);font-size:.7rem}@media(max-width:760px){main{width:min(100% - 20px,1180px);padding-top:18px}.state{grid-template-columns:1fr 1fr}.grid{grid-template-columns:1fr}h1{margin-top:38px}.grid dl{grid-template-columns:1fr 1fr}footer{display:block}footer span{display:block;margin-top:6px}}@media(max-width:430px){.state{grid-template-columns:1fr}.grid dl{grid-template-columns:1fr}h1{font-size:3.35rem}}
 """
 
-JS = r"""(()=>{const esc=v=>String(v??"—").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const text=v=>v===null||v===undefined?'—':esc(v);const q=id=>document.getElementById(id);const put=(id,v)=>{const e=q(id);if(e)e.textContent=v??'—'};const run=async()=>{try{const s=await fetch('/api/status',{cache:'no-store'}).then(r=>r.json());put('state',s.state||'not recorded');put('wait',s.wait_reason||'—');put('data',s.data_state||'unavailable');put('fingerprint',(s.fingerprint||'—')+(s.ood===true?' · OOD':'')+(s.ood_reason?' · '+s.ood_reason:''));put('revision',s.memory_revision||'—');const latest=s.latest||{};const d=s.dataset||{};const p=s.profiles||{};const row=document.querySelectorAll('#runtime dd');[latest.ttft_ms===undefined?'—':latest.ttft_ms+' ms',latest.decode_tps===undefined?'—':latest.decode_tps,latest.ci?latest.ci.low+'…'+latest.ci.high+' / '+(latest.mde??'—'):(latest.mde??'—'),latest.correctness,((latest.peak_memory_mb??'—')+' / '+(latest.peak_rss_mb??'—')),((latest.swap_before_mb??'—')+' / '+(latest.swap_after_mb??'—')),((latest.lease??'—')+' / '+(latest.pid??'—')+' / '+(latest.fork??'—'))].forEach((v,i)=>{if(row[i])row[i].textContent=v??'—'}));const b=document.querySelectorAll('#bindings dd');[d.dataset_hash||'—',latest.candidate_hash||latest.candidate||'—',latest.code_hash||'—',p.active||p.mode||'—',p.rollback_latched?'latched':'—'].forEach((v,i)=>{if(b[i])b[i].textContent=v});const h=await fetch('/api/history?limit=100',{cache:'no-store'}).then(r=>r.json());put('count',(h.returned??0)+' / '+(h.total??0));const body=q('history');body.innerHTML='';(h.history||[]).forEach(x=>{const tr=document.createElement('tr');[x.created_at,x.kind,x.status,x.ttft_ms===undefined?'—':x.ttft_ms,x.decode_tps===undefined?'—':x.decode_tps,x.correctness,x.peak_memory_mb===undefined?'—':x.peak_memory_mb].forEach(v=>{const td=document.createElement('td');td.textContent=v??'—';tr.append(td)});body.append(tr)});if(!body.children.length)body.innerHTML='<tr><td colspan="7">Keine Messdaten verfügbar.</td></tr>'}catch(e){put('data','unavailable');put('state','waiting')}};run()})()"""
+JS = r"""(()=>{const esc=v=>String(v??"—").replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));const text=v=>v===null||v===undefined?'—':esc(v);const q=id=>document.getElementById(id);const put=(id,v)=>{const e=q(id);if(e)e.textContent=v??'—'};const run=async()=>{try{const s=await fetch('/api/status',{cache:'no-store'}).then(r=>r.json());put('state',s.state||'not recorded');put('wait',s.wait_reason||'—');put('data',s.data_state||'unavailable');put('fingerprint',(s.fingerprint||'—')+(s.ood===true?' · OOD':'')+(s.ood_reason?' · '+s.ood_reason:''));put('revision',s.memory_revision||'—');const latest=s.latest||{};const d=s.dataset||{};const p=s.profiles||{};const row=document.querySelectorAll('#runtime dd');[latest.ttft_ms===undefined?'—':latest.ttft_ms+' ms',latest.decode_tps===undefined?'—':latest.decode_tps,latest.ci?latest.ci.low+'…'+latest.ci.high+' / '+(latest.mde??'—'):(latest.mde??'—'),latest.correctness,((latest.peak_memory_mb??'—')+' / '+(latest.peak_rss_mb??'—')),((latest.swap_before_mb??'—')+' / '+(latest.swap_after_mb??'—')),((latest.lease??'—')+' / '+(latest.pid??'—')+' / '+(latest.fork??'—'))].forEach((v,i)=>{if(row[i])row[i].textContent=v??'—'}));const b=document.querySelectorAll('#bindings dd');[d.dataset_hash||'—',latest.candidate_hash||latest.candidate||'—',latest.code_hash||'—',p.active||p.mode||'—',p.rollback_latched?'latched':'—'].forEach((v,i)=>{if(b[i])b[i].textContent=v});const h=await fetch('/api/history?limit=100',{cache:'no-store'}).then(r=>r.json());put('count',(h.returned??0)+' / '+(h.total??0));const body=q('history');body.innerHTML='';(h.history||[]).forEach(x=>{const tr=document.createElement('tr');[x.created_at,x.kind,x.status,x.ttft_ms===undefined?'—':x.ttft_ms,x.decode_tps===undefined?'—':x.decode_tps,x.correctness,x.peak_memory_mb===undefined?'—':x.peak_memory_mb].forEach(v=>{const td=document.createElement('td');td.textContent=v??'—';tr.append(td)});body.append(tr)});if(!body.children.length)body.innerHTML='<tr><td colspan="7">Keine Messdaten verfügbar.</td></tr>';const dec=await fetch('/api/decisions?limit=100',{cache:'no-store'}).then(r=>r.json());const est=dec.estimates&&dec.estimates.snips;put('dcount',(dec.observed??0)+' beobachtet / '+(dec.total??0)+' · '+(est?est.status:'keine Schätzung'));const dbody=q('decisions');dbody.innerHTML='';(dec.decisions||[]).forEach(x=>{const tr=document.createElement('tr');[x.policy_id,x.rule,x.chosen,x.propensity,x.actions,x.censoring,x.reward].forEach(v=>{const td=document.createElement('td');td.textContent=v??'—';tr.append(td)});dbody.append(tr)});if(!dbody.children.length)dbody.innerHTML='<tr><td colspan="7">Noch keine Entscheidung protokolliert.</td></tr>'}catch(e){put('data','unavailable');put('state','waiting')}};run()})()"""
 
 
 def _target(value: str) -> tuple[str, dict[str, list[str]]]:
@@ -935,7 +1149,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 value = self.service.history(int(raw))
                 self._json(200, value, head=head)
                 return
-            endpoint = {"/api/dataset": self.service.dataset, "/api/profiles": self.service.profiles, "/api/shadow": self.service.shadow}.get(path)
+            if path == "/api/decisions":
+                if set(query) - {"limit"} or len(query.get("limit", [])) > 1:
+                    raise DashboardError("decisions query is invalid")
+                raw = query.get("limit", [str(DEFAULT_LIMIT)])[0]
+                if not raw.isdigit() or len(raw) > 4:
+                    raise DashboardError("decisions limit is invalid")
+                value = self.service.decisions(int(raw))
+                self._json(503 if value.get("data_state") == "unavailable" else 200, value, head=head)
+                return
+            endpoint = {"/api/dataset": self.service.dataset, "/api/profiles": self.service.profiles, "/api/shadow": self.service.shadow, "/api/portfolio": self.service.portfolio}.get(path)
             if endpoint is not None and not query:
                 value = endpoint()
                 self._json(503 if value.get("data_state") == "unavailable" else 200, value, head=head)
@@ -995,7 +1218,7 @@ def serve(database_path: str | os.PathLike[str], port: int = 0, **kwargs: Any) -
 
 __all__ = [
     "CSP", "CSS", "DashboardError", "DashboardHandler", "DashboardRequestHandler", "DashboardServer",
-    "DashboardService", "DatasetProvider", "HTML", "HOST", "JS",
+    "DashboardService", "DatasetProvider", "PortfolioProvider", "HTML", "HOST", "JS",
     "LOOPBACK_HOST", "MAX_ASSET_BYTES", "MAX_HISTORY_ROWS", "MAX_RESPONSE_BYTES",
     "MAX_TARGET_BYTES", "ShadowDecisionProvider", "ShadowProvider", "DatasetSnapshotProvider", "serve",
 ]

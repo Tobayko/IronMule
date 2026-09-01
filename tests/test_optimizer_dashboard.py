@@ -17,7 +17,35 @@ from friday_optimizer.canonical import canonical_bytes
 from friday_optimizer.corpus import NormalizedRecord
 from friday_optimizer.dataset import DatasetBuilder
 from friday_optimizer.dashboard import DashboardService, serve
+from friday_optimizer.candidates import CandidateRegistry
+from friday_optimizer.portfolio import MANIFEST_SCHEMA, MODEL_IDS, build_portfolio
 from friday_optimizer.profiles import AtomicProfileStore, OptimizerProfile
+
+
+def _portfolio_manifest() -> dict:
+    digest = lambda seed: hashlib.sha256(seed.encode()).hexdigest()
+    models = []
+    for size in ("1b", "4b", "12b"):
+        models.append({
+            "size": size,
+            "model_id": MODEL_IDS[size],
+            "cache_status": "verified",
+            "identity": {
+                "revision": "rev-" + size,
+                "manifest_sha256": digest("manifest-" + size),
+                "tokenizer_sha256": digest("tokenizer-" + size),
+                "architecture": "gemma3_text" if size == "1b" else "gemma3",
+                "quant_bits": 4,
+                "quant_group_size": 64,
+                "identity_sha256": digest("identity-" + size),
+                "identity_document_sha256": digest("identity-document-" + size),
+            },
+            "evidence": [],
+            "preregistration": None,
+            "readiness": "unknown",
+        })
+    models.append({"size": "27b", "model_id": MODEL_IDS["27b"], "cache_status": "missing", "identity": None, "evidence": [], "preregistration": None, "readiness": "unknown"})
+    return {"schema": MANIFEST_SCHEMA, "version": 1, "models": models, "candidate_id": "combined_core_profile", "registry_hash": CandidateRegistry().registry_hash, "cache_inventory_sha256": digest("cache"), "evidence_inventory_sha256": digest("evidence"), "readiness_evidence_sha256": digest("readiness")}
 
 
 class OptimizerDashboardTests(unittest.TestCase):
@@ -59,6 +87,58 @@ class OptimizerDashboardTests(unittest.TestCase):
         result = DashboardService(self.root / "missing.sqlite3").status()
         self.assertEqual(result["data_state"], "unavailable")
         self.assertNotIn("Traceback", json.dumps(result))
+
+    def test_portfolio_provider_is_path_free_and_read_only(self) -> None:
+        portfolio = build_portfolio(_portfolio_manifest())
+        before = self.database.read_bytes()
+        result = DashboardService(self.database, portfolio_provider=portfolio).portfolio()
+        after = self.database.read_bytes()
+        self.assertEqual(before, after)
+        self.assertEqual(result["data_state"], "available")
+        self.assertEqual(result["model_count"], 4)
+        self.assertEqual(result["models"][0]["identity_hash_short"], portfolio.entries[0].identity_hash[:12])
+        self.assertIn("evidence_counts", result["models"][0])
+        self.assertNotIn(str(self.root), json.dumps(result))
+        self.assertNotIn("readiness", json.dumps(result))
+
+    def test_portfolio_loopback_route_is_read_only_and_bounded(self) -> None:
+        manifest_path = self.root / "portfolio.json"
+        manifest_path.write_bytes(canonical_bytes(_portfolio_manifest()))
+        before = manifest_path.read_bytes()
+        server = serve(self.database, 0, portfolio_path=manifest_path)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            def request(method: str, path: str, headers: dict[str, str] | None = None) -> tuple[int, dict[str, str], bytes]:
+                connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=2)
+                connection.request(method, path, headers=headers or {})
+                response = connection.getresponse()
+                body = response.read()
+                values = {key.lower(): value for key, value in response.getheaders()}
+                connection.close()
+                return response.status, values, body
+
+            status, headers, body = request("GET", "/api/portfolio")
+            self.assertEqual(status, 200)
+            self.assertEqual(headers["cache-control"], "no-store")
+            self.assertEqual(headers["x-content-type-options"], "nosniff")
+            value = json.loads(body)
+            self.assertEqual(value["data_state"], "available")
+            self.assertEqual(value["model_count"], 4)
+            self.assertNotIn(str(self.root), body.decode())
+            status, headers, body = request("HEAD", "/api/portfolio")
+            self.assertEqual(status, 200)
+            self.assertEqual(body, b"")
+            for method in ("POST", "PUT", "PATCH", "DELETE", "OPTIONS"):
+                status, _, _ = request(method, "/api/portfolio")
+                self.assertEqual(status, 405)
+            status, _, _ = request("GET", "/api/portfolio", {"Host": "evil.example"})
+            self.assertEqual(status, 421)
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+        self.assertEqual(manifest_path.read_bytes(), before)
 
     def test_corrupt_database_direct_methods_return_bounded_unavailable(self) -> None:
         with sqlite3.connect(self.database) as connection:
@@ -243,3 +323,38 @@ class OptimizerDashboardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_decisions_panel_reports_the_log_and_refuses_a_thin_estimate(tmp_path):
+    from friday_optimizer.decisions import OutcomeEvent, SelectionPolicy, decide
+    from friday_optimizer.memory import OptimizationMemoryV2
+    from tests.test_optimizer_decisions import make_fingerprint
+
+    path = tmp_path / "memory.sqlite3"
+    with OptimizationMemoryV2(path) as memory:
+        event = decide(SelectionPolicy("det-v1"), make_fingerprint(), hints=("head_skip_prefill",))
+        memory.append(event.as_record())
+        memory.append(OutcomeEvent(event.decision_id, "observed", reward=0.846).as_record())
+
+    value = DashboardService(path).decisions()
+    assert value["data_state"] == "available"
+    assert value["total"] == 1 and value["observed"] == 1
+    assert value["actions"] == {"head_skip_prefill": 1}
+    assert value["learning_claim"] is False and value["no_activation"] is True
+    assert all(item["conclusive"] is False for item in value["estimates"].values())
+    assert value["decisions"][0]["propensity"] == 1.0
+
+
+def test_decisions_panel_stays_empty_on_a_memory_without_decisions(tmp_path):
+    from friday_optimizer.memory import OptimizationMemoryV2
+    from friday_optimizer.records import DataPhase, OptimizationRecord, QualityClass, RecordKind
+
+    path = tmp_path / "memory.sqlite3"
+    with OptimizationMemoryV2(path) as memory:
+        memory.append(OptimizationRecord(
+            record_id="system:unrelated", kind=RecordKind.SYSTEM, quality=QualityClass.ENGINEERING,
+            phase=DataPhase.FEATURE, payload={"schema": "friday.optimizer.something-else.v1"},
+        ))
+    value = DashboardService(path).decisions()
+    assert value["data_state"] == "empty" and value["decisions"] == []
+    assert all(item["status"] == "no_labels" for item in value["estimates"].values())
