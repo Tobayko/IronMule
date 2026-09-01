@@ -9712,3 +9712,44 @@ Bestehen ist. Aktuell `9 passed, 18 skipped` — die Skips sind exakt die neun
 skriptlosen Dashboards.
 
 **Verifikation.** Vollsuite grün.
+
+## 2026-09-02 — SQL geprüft: sauber, mit drei erklärten Ausnahmen
+
+Offline-Sweep, keine Datei verändert außer der neuen Testdatei. Fortsetzung
+der Frage, die den Dashboardfehler gefunden hat: welche Sprache liegt hier als
+String herum und wird erst geparst, wenn ein seltener Pfad sie ausführt?
+
+**Bestand.** `192` vollständige SQL-Statements als Literale in zwölf Paketen,
+herausgelöst per AST. Ausgeschlossen wurden `75` Fließtextstellen — der erste
+Filterversuch hielt Docstrings wie „Create a server; callers own its
+lifecycle" für SQL — und `8` Fragmente, die per f-string zu einem größeren
+Statement zusammengesetzt werden.
+
+**Ergebnis: `189` kompilieren gegen das Schema ihres eigenen Pakets.** Die
+drei offenen sind allesamt Absicht:
+
+| Stelle | liest | erklärt |
+| --- | --- | --- |
+| `friday_h01/import_h0.py:761` | `runs` | importiert die H0-Studiendatenbank |
+| `friday_h01/runner.py:117` | `runs` | derselbe Importer |
+| `friday_head_skip_runtime/policy.py:152` | `record_sha256` | liest die versiegelte Head-Skip-Studie, deren `records` diese Spalte sehr wohl hat |
+
+Damit sind `192/192` gültig. Kein Defekt gefunden — ein gültiges Ergebnis.
+
+**Drei eigene Irrwege, notiert, weil sie dieselbe Falle sind.** Erstens hielt
+der Filter Prosa für SQL. Zweitens wertete ich „Incorrect number of bindings
+supplied" als Syntaxfehler, obwohl diese Meldung beweist, dass SQLite das
+Statement bereits *geparst* hat. Drittens legte ich alle Schemata in **eine**
+Scratch-Datenbank und erhielt `28` Falschmeldungen, weil jedes Paket eigene
+`metadata`- und `records`-Spalten definiert (`study_id`, `runtime_id`,
+`router_id`) und nur das erste gewinnt. Erst die Prüfung je Paket gegen dessen
+eigene Migration ergab ein belastbares Bild.
+
+**Wächter.** `tests/test_shipped_sql.py` prüft jedes Paket gegen seine eigenen
+Migrationen. Anders als der JavaScript-Wächter überspringt dieser nie:
+`sqlite3` ist Standardbibliothek. Die drei Ausnahmen stehen als benannte
+Allowlist mit Begründung im Code, nicht als stille Unterdrückung. Ein
+zusätzlicher Test schlägt an, wenn der Extraktor abdriftet und plötzlich
+deutlich weniger Statements findet.
+
+**Verifikation.** Vollsuite grün.
