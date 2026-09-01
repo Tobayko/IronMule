@@ -14,8 +14,11 @@ from pathlib import Path
 import pytest
 
 import friday_optimizer.cli as cli
+from friday_optimizer.candidates import CandidateRegistry
 from friday_optimizer.collector import CollectorReport, CurrentSnapshot
 from friday_optimizer.fingerprint import EnvironmentFingerprint, ExactFingerprint, ModelFingerprint, WorkloadFingerprint
+from friday_optimizer.canonical import canonical_bytes
+from friday_optimizer.portfolio import MANIFEST_SCHEMA, MODEL_IDS
 from friday_optimizer.real_session import FingerprintReport
 
 
@@ -34,6 +37,32 @@ def run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
 
 def payload(result: subprocess.CompletedProcess[str]) -> dict:
     return json.loads(result.stdout)
+
+
+def _portfolio_manifest() -> dict:
+    digest = lambda seed: __import__("hashlib").sha256(seed.encode()).hexdigest()
+    models = []
+    for size in ("1b", "4b", "12b"):
+        models.append({
+            "size": size,
+            "model_id": MODEL_IDS[size],
+            "cache_status": "verified",
+            "identity": {
+                "revision": "rev-" + size,
+                "manifest_sha256": digest("manifest-" + size),
+                "tokenizer_sha256": digest("tokenizer-" + size),
+                "architecture": "gemma3_text" if size == "1b" else "gemma3",
+                "quant_bits": 4,
+                "quant_group_size": 64,
+                "identity_sha256": digest("identity-" + size),
+                "identity_document_sha256": digest("identity-document-" + size),
+            },
+            "evidence": [],
+            "preregistration": None,
+            "readiness": "unknown",
+        })
+    models.append({"size": "27b", "model_id": MODEL_IDS["27b"], "cache_status": "missing", "identity": None, "evidence": [], "preregistration": None, "readiness": "unknown"})
+    return {"schema": MANIFEST_SCHEMA, "version": 1, "models": models, "candidate_id": "combined_core_profile", "registry_hash": CandidateRegistry().registry_hash, "cache_inventory_sha256": digest("cache"), "evidence_inventory_sha256": digest("evidence"), "readiness_evidence_sha256": digest("readiness")}
 
 
 def _fake_fingerprint_report(model_id: str) -> FingerprintReport:
@@ -56,6 +85,39 @@ def test_help_and_unknown_flags_are_bounded() -> None:
     assert unknown.returncode == 64
     assert "Traceback" not in unknown.stderr
     assert payload(unknown)["ok"] is False
+
+
+def test_portfolio_cli_emits_canonical_path_free_snapshot(tmp_path: Path) -> None:
+    manifest = tmp_path / "portfolio.json"
+    manifest.write_bytes(canonical_bytes(_portfolio_manifest()))
+    before = manifest.read_bytes()
+    result = run_cli("portfolio", "--manifest", str(manifest))
+    assert result.returncode == 0
+    value = payload(result)
+    assert value["command"] == "portfolio"
+    assert value["ok"] is True
+    assert value["schema"] == "friday.optimizer.portfolio.v1"
+    assert "models" in value and len(value["models"]) == 4
+    assert str(manifest) not in result.stdout
+    assert result.stdout.encode().strip() == canonical_bytes(value)
+    assert manifest.read_bytes() == before
+
+
+def test_portfolio_cli_rejects_schema_and_execute_without_writing(tmp_path: Path) -> None:
+    manifest = tmp_path / "portfolio.json"
+    manifest.write_bytes(canonical_bytes(_portfolio_manifest()))
+    invalid = run_cli("portfolio", "--manifest", str(manifest), "--execute")
+    assert invalid.returncode == 64
+    assert payload(invalid)["ok"] is False
+    bad = tmp_path / "bad.json"
+    bad.write_text("{\"schema\":\"wrong\"}")
+    rejected = run_cli("portfolio", "--manifest", str(bad))
+    assert rejected.returncode == 65
+    assert "wrong" not in rejected.stdout
+    assert str(bad) not in rejected.stdout
+    missing = run_cli("portfolio", "--manifest", str(tmp_path / "missing.json"))
+    assert missing.returncode == 65
+    assert "missing.json" not in missing.stdout
 
 
 def test_fingerprint_cli_and_file_projection_redact_local_model_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -233,3 +295,65 @@ def test_shadow_rejects_unknown_request_fields_without_history(tmp_path: Path) -
     assert result.returncode == 65
     assert payload(result)["error"] in {"unknown_request_field", "invalid_shadow_request"}
     assert not list(tmp_path.glob("*.sqlite3"))
+
+
+def _fingerprint_document(tmp_path: Path) -> Path:
+    from tests.test_optimizer_decisions import make_fingerprint
+
+    target = tmp_path / "fingerprint.json"
+    target.write_bytes(canonical_bytes(make_fingerprint().as_dict()))
+    return target
+
+
+def test_decide_requires_explicit_execute(tmp_path):
+    document = _fingerprint_document(tmp_path)
+    result = run_cli("decide", "--memory", str(tmp_path / "memory.sqlite3"), "--fingerprint", str(document))
+    body = payload(result)
+    assert body["ok"] is False and body["reason"] == "explicit_execute_required"
+    assert body["written"] is False
+    assert not (tmp_path / "memory.sqlite3").exists()
+
+
+def test_decide_outcome_replay_round_trip(tmp_path):
+    memory = str(tmp_path / "memory.sqlite3")
+    document = _fingerprint_document(tmp_path)
+    decision = payload(run_cli(
+        "decide", "--memory", memory, "--fingerprint", str(document),
+        "--hint", "head_skip_prefill", "--execute",
+    ))
+    assert decision["ok"] is True and decision["chosen"] == "head_skip_prefill"
+    assert decision["propensity"] == 1.0 and decision["no_activation"] is True
+
+    outcome = payload(run_cli(
+        "outcome", "--memory", memory, "--decision", decision["decision_id"],
+        "--censoring", "observed", "--reward", "0.846", "--execute",
+    ))
+    assert outcome["ok"] is True and outcome["reward"] == pytest.approx(0.846)
+
+    replay = run_cli("replay", "--memory", memory)
+    body = payload(replay)
+    assert body["labelled_steps"] == 1
+    assert body["learning_claim"] is False and body["conclusive"] is False
+    # One measurement is never a result, whatever the estimate happens to be.
+    assert all(item["status"] == "insufficient_data" for item in body["estimates"].values())
+    assert replay.returncode == int(cli.ExitCode.UNAVAILABLE)
+
+
+def test_replay_rejects_an_unknown_selection_rule(tmp_path):
+    memory = str(tmp_path / "memory.sqlite3")
+    document = _fingerprint_document(tmp_path)
+    run_cli("decide", "--memory", memory, "--fingerprint", str(document), "--execute")
+    result = run_cli("replay", "--memory", memory, "--rule", "policy_gradient")
+    assert result.returncode == int(cli.ExitCode.USAGE)
+
+
+def test_outcome_rejects_a_reward_on_a_censored_run(tmp_path):
+    memory = str(tmp_path / "memory.sqlite3")
+    document = _fingerprint_document(tmp_path)
+    decision = payload(run_cli("decide", "--memory", memory, "--fingerprint", str(document), "--execute"))
+    result = run_cli(
+        "outcome", "--memory", memory, "--decision", decision["decision_id"],
+        "--censoring", "censored_timeout", "--reward", "0.5", "--execute",
+    )
+    assert payload(result)["ok"] is False
+    assert result.returncode == int(cli.ExitCode.DATA)

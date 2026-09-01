@@ -17,6 +17,8 @@ from types import MappingProxyType
 from typing import Any, Iterable, Mapping, Sequence
 
 from .candidates import CandidateRegistry
+from .decisions import DecisionEvent, OutcomeEvent, SelectionPolicy, decide
+from .replay import DEFAULT_MIN_SAMPLES, OffPolicyEstimate, ReplayEnv, evaluate as evaluate_offline, load_steps
 from .canonical import canonical_bytes, sha256_hex
 from .adapters import DEFAULT_DISCOVERY_ROOTS
 from .corpus import CorpusAuditor, CorpusInventory, NormalizedRecord
@@ -743,6 +745,69 @@ class OptimizerOrchestrator:
                 if owned is not None:
                     owned.close()
         return decision
+
+    def _append(self, record: Any) -> None:
+        memory, owned = self._open_memory()
+        try:
+            memory.append(record)
+        finally:
+            if owned:
+                memory.close()
+
+    def select(self, fingerprint: ExactFingerprint, *, policy: SelectionPolicy | None = None,
+               hints: Sequence[str] = (), qualified: Sequence[str] = (), seed: int | None = None,
+               decision_id: str | None = None, write: bool = False) -> DecisionEvent:
+        """Decide one action over the masked candidate set and optionally log it.
+
+        The call sits deliberately outside every measurement window: it runs
+        before a session starts and after it ends, so decision logging can
+        never move a measured timing.  The mask comes from the sealed
+        registry; a policy may reorder and sample, never widen.
+        """
+
+        used = policy if policy is not None else SelectionPolicy("deterministic_order_v1")
+        if not isinstance(used, SelectionPolicy):
+            raise TypeError("policy must be SelectionPolicy")
+        event = decide(used, fingerprint, registry=self.registry, qualified=tuple(qualified),
+                       hints=tuple(hints), seed=seed, decision_id=decision_id)
+        if write:
+            self._append(event.as_record())
+        return event
+
+    def record_outcome(self, decision_id: str, censoring: str, *, reward: float | None = None,
+                       reward_metric: str = "ratio_median", evidence_hash: str | None = None,
+                       notes: str = "", write: bool = True) -> OutcomeEvent:
+        """Persist the reward of one decision, censored runs included."""
+
+        outcome = OutcomeEvent(decision_id, censoring, reward=reward, reward_metric=reward_metric,
+                               evidence_hash=evidence_hash, notes=notes)
+        if write:
+            self._append(outcome.as_record())
+        return outcome
+
+    def replay(self, *, censored_reward: float = 0.0) -> ReplayEnv:
+        """Build the offline replay environment from logged decisions."""
+
+        if self.memory is not None:
+            return ReplayEnv(load_steps(self.memory), censored_reward=censored_reward)
+        view = OptimizationMemoryV2.open_read_only(self.config.memory_path)
+        try:
+            return ReplayEnv(load_steps(view), censored_reward=censored_reward)
+        finally:
+            view.close()
+
+    def evaluate_policy(self, policy: SelectionPolicy, *, reward_model: Any = None,
+                        min_samples: int = DEFAULT_MIN_SAMPLES, seed: int = 0,
+                        censored_reward: float = 0.0) -> Mapping[str, OffPolicyEstimate]:
+        """Off-policy evaluate *policy* against the logged corpus.
+
+        The result is an estimate, never a promotion: an estimate below the
+        preregistered sample floor reports ``insufficient_data`` and nothing
+        may be read from it.
+        """
+
+        env = self.replay(censored_reward=censored_reward)
+        return evaluate_offline(env, policy, reward_model=reward_model, min_samples=min_samples, seed=seed)
 
     def make_session(self, *, probe: Any = None, lease: HardwareLease | None = None, readiness: ReadinessGate | None = None, stage_runner: SubprocessStageRunner | None = None, profile_contract: Any = None, stage_specs: Mapping[str, StageSpec] | None = None, session_id: str = "session", adapter: Any = None, stage_authorization_gate: Any = None) -> SessionController:
         """Construct the one concrete, non-promoting session configuration."""
