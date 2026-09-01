@@ -9354,3 +9354,74 @@ Vorregistrierung, und F1 wird dafür nicht erweitert.
 `tests/test_w1_regime.py` mit 11 Tests derselben Bauart wie bei P2 — kein
 MLX-Import, kein Modell, Entscheidungsregel direkt geprüft, Worker per
 Quelltextinspektion, beide Gate-Ausgänge.
+
+## 2026-09-02 — F1s Ausführungspfad geprüft: er trägt, aber nicht für die registrierte Workload
+
+Offline-Prüfung, kein Lauf. `session-plan` wurde read-only gegen die
+versiegelten Q2-Artefakte ausgeführt.
+
+**Der Pfad funktioniert.** Der Planer läuft durch, erzeugt ein vollständiges
+Plandokument und schließt korrekt fail-closed mit benannten Gründen:
+
+```
+blocked_reasons: fingerprint_mismatch, optimizer_head_mismatch,
+                 optimizer_source_identity_mismatch,
+                 optimizer_code_manifest_mismatch
+```
+
+Alle vier sind Provenienzbindungen gegen die inzwischen veraltete
+Q2-Vorregistrierung (`code_manifest_sha256 e2579250…` gegen aktuell
+`fc9e46c6…`), kein struktureller Defekt. Zwei Bedienfallen fürs Protokoll: der
+Interpreterpfad muss aufgelöst übergeben werden, sonst `symlink_path_refused`,
+und das Feld `optimizer_head` im Plan ist der von der Vorregistrierung
+geforderte Wert, nicht der aktuelle — ich hatte es zuerst falsch gelesen.
+
+**Der eigentliche Befund: zwei Promptlängen.** Der gegatete IronMule-Pfad
+fährt `ironmule.tune.DEFAULT_PROMPT` mit **`322`** Prompt-Token
+(`context_bucket: prompt_tokens_322`, `max_tokens: 32`). F1s Evidenz stammt
+aber aus zwei Quellen mit unterschiedlicher Länge:
+
+| Gewinn | gemessen bei | Quelle |
+| --- | --- | --- |
+| persistenter Prozess `−65,30 %` | Prompt `897` | `experiments/persistent_process` |
+| Prefill-Head-Skip `−15,4 %` | Prompt `897` | formale Head-Skip-Studie |
+| `fixed_compiled` `−7,04 %` | Prompt `322` | `experiments/matmul_compile_ab` |
+
+Meine Projektion vom selben Tag hat durchgehend das `897`-Profil benutzt. Das
+ist für die Decode-Zahl vertretbar — eine Decode-Ratio hängt kaum an der
+Promptlänge —, aber es heißt: F1s Kopfzahl gilt für eine Workload, die der
+vorhandene gegatete Harness nicht fährt.
+
+**Wie stark es sich auswirkt:**
+
+| Prompt | Antwort | Prefill-Anteil | `head_skip` | `fixed_compiled` | kombiniert |
+| --- | --- | --- | --- | --- | --- |
+| `897` | `32` | `79,84 %` | `12,26 %` | `1,42 %` | `13,68 %` |
+| `322` | `32` | `58,70 %` | `9,02 %` | `2,91 %` | **`11,93 %`** |
+| `897` | `256` | `33,11 %` | `5,09 %` | `4,71 %` | `9,80 %` |
+| `322` | `256` | `15,09 %` | `2,32 %` | `5,98 %` | `8,30 %` |
+
+(TTFT bei `322` linear aus der gemessenen `897`-Zeit skaliert, weil Prefill
+compute-gebunden ist; das ist eine Schätzung, keine Messung.)
+
+Nur eine der vier Zellen hat komfortablen Abstand zu F1s vorregistrierter
+`10 %`-Schwelle. Auf der Workload, die der Harness tatsächlich fährt
+(`322`/`32`), bleiben `1,93` Prozentpunkte Abstand statt `3,68`.
+
+**Entscheidung, die beim Nutzer liegt.** Drei Wege:
+
+1. **F1 auf `322`/`32` registrieren** — die Workload, die der gegatete Harness
+   fährt. Nutzt die vorhandene, auditierte Infrastruktur; `fixed_compiled`s
+   Evidenz kommt ohnehin von dort. Erwartung sinkt auf `11,93 %`.
+2. **Eigenen F1-Worker bauen** wie bei P2 und W1, mit dem `897`-Prompt. Passt
+   zur Evidenz von Head-Skip und persistentem Prozess, dupliziert aber
+   Messinfrastruktur, die es schon gibt.
+3. Schwelle senken — **ausgeschlossen**. Eine Schwelle an das anzupassen, was
+   herauskommen soll, ist genau der Fehler, den die Vorregistrierung verhindert.
+
+Empfehlung: Weg 1. Eine Studie, die ihr Harness nicht fahren kann, ist keine
+Studie. Die Prefill-Ratio des Head-Skip ist ein Phasenverhältnis und sollte
+über die Promptlänge übertragen, ist aber nur bei `897` bestätigt — F1 misst
+den zusammengesetzten Pfad ohnehin direkt und muss das nicht annehmen.
+
+Kein Code geändert; die Entscheidung wird nicht stillschweigend getroffen.
