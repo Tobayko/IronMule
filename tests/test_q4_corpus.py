@@ -6,37 +6,36 @@ import importlib.util
 import json
 import os
 import stat
-import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
+
+from q4_offline_loader import load_offline_modules
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _offline_modules():
-    package = types.ModuleType("ironmule")
-    package.__path__ = [str(ROOT / "ironmule")]
-    package.__package__ = "ironmule"
-    sys.modules["ironmule"] = package
-    for name in ("evidence", "q4_contracts", "q4_corpus"):
-        full = f"ironmule.{name}"
-        spec = importlib.util.spec_from_file_location(full, ROOT / "ironmule" / f"{name}.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[full] = module
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-    return sys.modules["ironmule.q4_corpus"]
-
-
-c = _offline_modules()
+_OFFLINE = load_offline_modules(
+    "evidence", "q4_contracts", "q4_corpus", namespace="q4_corpus_test_modules"
+)
+c = _OFFLINE["q4_corpus"]
 
 _BUILD_SPEC = importlib.util.spec_from_file_location("research.q4_build_corpus", ROOT / "research" / "q4_build_corpus.py")
 assert _BUILD_SPEC.loader is not None
 build_module = importlib.util.module_from_spec(_BUILD_SPEC)
 _BUILD_SPEC.loader.exec_module(build_module)
+
+
+def _build_offline_modules():
+    """Keep the imported corpus builder on this test's coherent graph."""
+    return _OFFLINE["q4_contracts"], _OFFLINE["q4_corpus"]
+
+
+# The builder's production-only convenience loader historically installs a
+# fake ``ironmule`` package.  Patch that test seam so invoking it cannot poison
+# the process-wide public module namespace during the full pytest run.
+build_module._load_offline_modules = _build_offline_modules
 
 
 def _write(path: Path, payload: object) -> None:

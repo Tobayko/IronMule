@@ -2,21 +2,17 @@
 
 from __future__ import annotations
 
-import importlib
-import sys
-import types
 import unittest
-from pathlib import Path
+
+from q4_offline_loader import load_offline_modules
 
 
-ROOT = Path(__file__).parents[1]
-pkg = types.ModuleType("ironmule")
-pkg.__path__ = [str(ROOT / "ironmule")]
-sys.modules.setdefault("ironmule", pkg)
-
-contracts = importlib.import_module("ironmule.q4_contracts")
-methods = importlib.import_module("ironmule.q4_methods")
-optimizer = importlib.import_module("ironmule.q4_optimizer")
+_OFFLINE = load_offline_modules(
+    "evidence", "q4_contracts", "q4_methods", "q4_optimizer", namespace="q4_optimizer_test_modules"
+)
+contracts = _OFFLINE["q4_contracts"]
+methods = _OFFLINE["q4_methods"]
+optimizer = _OFFLINE["q4_optimizer"]
 
 
 class Q4OptimizerTests(unittest.TestCase):

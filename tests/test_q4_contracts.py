@@ -2,32 +2,14 @@
 
 from __future__ import annotations
 
-import importlib.util
-import sys
-import types
 import unittest
-from pathlib import Path
+
+from q4_offline_loader import load_offline_modules
 
 
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _offline_contracts():
-    package = types.ModuleType("ironmule")
-    package.__path__ = [str(ROOT / "ironmule")]
-    package.__package__ = "ironmule"
-    sys.modules["ironmule"] = package
-    for name in ("evidence", "q4_contracts"):
-        full = f"ironmule.{name}"
-        spec = importlib.util.spec_from_file_location(full, ROOT / "ironmule" / f"{name}.py")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[full] = module
-        assert spec.loader is not None
-        spec.loader.exec_module(module)
-    return sys.modules["ironmule.q4_contracts"], sys.modules["ironmule.evidence"]
-
-
-q, evidence = _offline_contracts()
+_OFFLINE = load_offline_modules("evidence", "q4_contracts", namespace="q4_contracts_test_modules")
+q = _OFFLINE["q4_contracts"]
+evidence = _OFFLINE["evidence"]
 
 
 class ContractTests(unittest.TestCase):
