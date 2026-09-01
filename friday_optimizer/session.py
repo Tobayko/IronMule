@@ -216,6 +216,12 @@ class VerifiedStageRunner:
     verified = True
 
 
+#: Copying an Apple-signed binary out of these prefixes and running the copy is
+#: killed by macOS code signing enforcement (verified: cp /usr/bin/python3 then
+#: running the copy gives rc=137). Staging one can therefore never succeed.
+SYSTEM_EXECUTABLE_PREFIXES = ("/usr/bin/", "/usr/sbin/", "/usr/libexec/", "/bin/", "/sbin/", "/System/")
+
+
 class SubprocessStageRunner(VerifiedStageRunner):
     """Run a bounded stage with hard process cleanup, never a shell."""
 
@@ -295,6 +301,13 @@ class SubprocessStageRunner(VerifiedStageRunner):
             raise SessionError("stage executable is not allowlisted")
         if not os.path.isfile(spec.executable) or os.path.islink(spec.executable) or not os.access(spec.executable, os.X_OK):
             raise SessionError("stage executable is not a stable executable")
+        # This runner executes a *copy* of the allowlisted binary, and macOS
+        # kills the copy of an Apple-signed system binary with SIGKILL. The
+        # failure only surfaces as exit:-9 after the process has started, so
+        # without this check a scarce approved measurement block is spent on a
+        # cryptic error. A real session always stages the project interpreter.
+        if os.path.realpath(spec.executable).startswith(SYSTEM_EXECUTABLE_PREFIXES):
+            raise SessionError("stage executable is a system binary and cannot be staged")
         if self._file_sha256(spec.executable) != expected:
             raise SessionError("stage executable identity changed")
         if spec.cwd is not None:

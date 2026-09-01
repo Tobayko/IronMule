@@ -542,20 +542,9 @@ Budget nicht reproduzierbar schlägt.
   Studienakte übertragen; danach L1 aus dieser Datei entfernen oder nur den
   terminalen Dead-End-Verweis behalten.
 
-## M1 — Repo-Hygiene (Review 2026-09-01, extern)
-
-Punkte 1–4 sind am 2026-09-01 umgesetzt (Ergebnis im Arbeitsjournal unter
-„2026-09-01 — Repo-Hygiene M1"), Punkt 5 am 2026-09-02 beantwortet und
-abgeschlossen („2026-09-02 — M1 Punkt 5": das Duplikat bleibt, weil die
-Pfadisolation den Snapshot-Claim prüfbar macht). Offen bleibt:
-
-5. **Stage-Executables dürfen keine Apple-signierten Systembinaries sein.**
-   `SubprocessStageRunner` führt eine Kopie der allowlisteten Binary aus; macOS
-   killt die Kopie einer signierten Systembinary mit SIGKILL (`rc=137`).
-   Mechanismus: prüfen, ob der Runner die Bedingung selbst durchsetzen soll
-   (Signaturprüfung vor dem Staging) statt sie nur zu dokumentieren. Kill: wenn
-   jede reale Session ohnehin nur den venv-Interpreter staged, bleibt es bei
-   dem Journalvermerk vom 2026-09-01 und dieser Eintrag entfällt.
+---
 
 Kandidaten-Studienakte: [`docs/KANDIDATENLISTE.md`](docs/KANDIDATENLISTE.md)
-(ehemals `EXPERIMENT_BACKLOG.md`; kein zweites Backlog).
+— kein zweites Backlog. Abgeschlossene Einträge stehen im
+[Arbeitsjournal](docs/ARBEITSJOURNAL.md); die Repo-Hygiene M1 ist am
+2026-09-02 vollständig erledigt worden.

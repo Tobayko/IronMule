@@ -10,8 +10,8 @@ from pathlib import Path
 from friday_optimizer.readiness import HardwareLease, ProbeSnapshot, ReadinessPolicy
 from friday_optimizer.profiles import AtomicProfileStore, OptimizerProfile
 from friday_optimizer.session import (
-    AdapterResult, InvalidTransition, PromotionAuthorization, SessionController,
-    SessionError, SessionState, StageSpec, SubprocessStageRunner,
+    SYSTEM_EXECUTABLE_PREFIXES, AdapterResult, InvalidTransition, PromotionAuthorization,
+    SessionController, SessionError, SessionState, StageSpec, SubprocessStageRunner,
 )
 
 # The stage runner executes a *copy* of the allowlisted binary.  macOS kills
@@ -247,6 +247,26 @@ class SessionTests(unittest.TestCase):
         runner = SubprocessStageRunner(allowlisted_executables={executable: SubprocessStageRunner._file_sha256(executable)})
         result = runner.run(StageSpec(executable, ("-c", "import time; time.sleep(2)"), env={}, execute_authorized=True, authorization_session_id="s", authorization_nonce="n", authorization_tag="tag"), deadline=time.monotonic() + .05)
         self.assertEqual(result.outcome, "timeout")
+
+    def test_a_system_binary_is_refused_before_it_is_ever_staged(self):
+        # The runner executes a copy, and macOS kills the copy of a signed
+        # system binary with SIGKILL. Catching it here costs nothing; catching
+        # it at exit:-9 costs a scarce approved measurement block.
+        executable = "/usr/bin/python3"
+        runner = SubprocessStageRunner(allowlisted_executables={executable: SubprocessStageRunner._file_sha256(executable)})
+        with self.assertRaises(SessionError) as caught:
+            runner.run(StageSpec(executable, ("-c", "print('must-not-run')"), env={}, execute_authorized=True,
+                                 authorization_session_id="s", authorization_nonce="n", authorization_tag="t"),
+                       deadline=time.monotonic() + 5)
+        self.assertIn("system binary", str(caught.exception))
+
+    def test_the_project_interpreter_is_not_caught_by_that_guard(self):
+        self.assertFalse(STAGE_EXECUTABLE.startswith(SYSTEM_EXECUTABLE_PREFIXES))
+        runner = SubprocessStageRunner(allowlisted_executables={STAGE_EXECUTABLE: SubprocessStageRunner._file_sha256(STAGE_EXECUTABLE)})
+        result = runner.run(StageSpec(STAGE_EXECUTABLE, ("-c", "print('staged')"), env={}, execute_authorized=True,
+                                      authorization_session_id="s", authorization_nonce="n", authorization_tag="t"),
+                            deadline=time.monotonic() + 30)
+        self.assertNotEqual(result.outcome, "error")
 
     def test_stage_without_explicit_execution_authorization_is_blocked(self):
         executable = STAGE_EXECUTABLE
