@@ -292,7 +292,7 @@ class OptimizerDashboardTests(unittest.TestCase):
                 connection.close()
                 return response.status, values, body
 
-            for path in ("/", "/assets/app.css", "/assets/app.js", "/api/status", "/api/history?limit=1", "/api/dataset", "/api/profiles", "/api/shadow"):
+            for path in ("/", "/assets/app.css", "/assets/app.js", "/api/status", "/api/history?limit=1", "/api/dataset", "/api/profiles", "/api/shadow", "/api/decisions", "/api/decisions?limit=5"):
                 status, headers, body = request("GET", path)
                 self.assertIn(status, (200, 503))
                 self.assertEqual(headers["cache-control"], "no-store")
@@ -358,3 +358,39 @@ def test_decisions_panel_stays_empty_on_a_memory_without_decisions(tmp_path):
     value = DashboardService(path).decisions()
     assert value["data_state"] == "empty" and value["decisions"] == []
     assert all(item["status"] == "no_labels" for item in value["estimates"].values())
+
+
+def test_shipped_javascript_parses():
+    """The whole page is one IIFE: a single syntax error kills every panel.
+
+    Between 2026-08-30 and 2026-09-02 the file carried one surplus closing
+    parenthesis, so the dashboard rendered its shell and never populated a
+    value. Nothing caught it, because every test stopped at the service layer.
+    Skipped where no JavaScript engine is available; a skip is not a pass.
+    """
+
+    import shutil
+    import subprocess
+    import tempfile
+
+    from friday_optimizer.dashboard import JS
+
+    engine = shutil.which("node")
+    if engine is None:
+        pytest.skip("no JavaScript engine available to parse the shipped asset")
+    with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as handle:
+        handle.write(JS)
+        path = handle.name
+    try:
+        completed = subprocess.run([engine, "--check", path], capture_output=True, text=True)
+    finally:
+        Path(path).unlink(missing_ok=True)
+    assert completed.returncode == 0, completed.stderr.strip()[-400:]
+
+
+def test_shipped_markup_mentions_every_panel_the_script_fills():
+    from friday_optimizer.dashboard import HTML, JS
+
+    for element in ("history", "decisions", "count", "dcount"):
+        assert f'id="{element}"' in HTML, element
+        assert f"'{element}'" in JS, element
