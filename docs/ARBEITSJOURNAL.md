@@ -9261,3 +9261,43 @@ das ist methodisch richtig, und ein zusätzlicher Arm bei `256` Token würde die
 Bindung an die versiegelte Evidenz lockern. Die Regimefrage steht deshalb als
 eigener Backlog-Eintrag W1 und ist eine Entscheidung des Nutzers, keine
 stillschweigende Ausweitung.
+
+## 2026-09-02 — M1 letzter Punkt: Systembinaries werden vor dem Staging abgewiesen
+
+Offline-Änderung an `friday_optimizer/session.py`. Kein Modellstart, kein
+Hardwarelauf.
+
+**Kill-Kriterium des Backlogeintrags geprüft — es greift nicht.** Der Eintrag
+durfte entfallen, „wenn jede reale Session ohnehin nur den venv-Interpreter
+staged". Das stimmt fast: `_purelib_binding` in `ironmule_adapter.py` verlangt,
+dass der gebundene Interpreter der laufende ist. Aber der erste Zweig lautet
+`if sys.prefix == sys.base_prefix: return None, None` — außerhalb eines venv
+wird ohne Fehler durchgelassen. Ein Lauf mit `/usr/bin/python3` als laufendem
+und gebundenem Interpreter ist damit erreichbar.
+
+**Warum das teuer ist.** Der Runner führt eine *Kopie* der allowlisteten Binary
+aus; macOS killt die Kopie einer Apple-signierten Systembinary mit SIGKILL.
+Der Fehler zeigt sich erst nach dem Prozessstart als `exit:-9` — also nachdem
+ein freigegebener Messblock angebrochen ist. Ein Block fasst nach der
+Budgetrechnung vom selben Tag genau `10` Messpunkte; ihn an einer
+undurchsichtigen `-9` zu verlieren, ist der teuerste denkbare Weg, diesen
+Fehler zu lernen.
+
+**Guard.** `SubprocessStageRunner._validate_spec` weist ein Executable
+zurück, dessen realer Pfad unter `/usr/bin/`, `/usr/sbin/`, `/usr/libexec/`,
+`/bin/`, `/sbin/` oder `/System/` liegt, mit der Meldung „stage executable is a
+system binary and cannot be staged". Kein Unterprozess, kein `codesign`-Aufruf,
+keine neue Abhängigkeit — nur ein Präfixvergleich, der genau die Fehlerklasse
+trifft. Ein legitimer Lauf staged immer den Projektinterpreter und wird davon
+nicht berührt; ein Test prüft genau das mit.
+
+Damit ist Backlog M1 vollständig abgeschlossen und aus der Datei entfernt.
+
+**Verifikation.** Vollsuite `1499 passed, 2630 subtests passed`. Zwei neue
+Tests: die Abweisung der Systembinary vor jedem Prozessstart und der Nachweis,
+dass der Projektinterpreter weiterhin durchläuft.
+
+**Nebenwirkung, bewusst jetzt.** Die Änderung an `friday_optimizer/session.py`
+verändert `code_manifest_sha256`. Weil noch keine der offenen Studien (F1, P2,
+W1) versiegelt ist, ist genau jetzt der richtige Zeitpunkt für solche
+Änderungen; nach dem Versiegeln wäre jede eine Neuversiegelung.
