@@ -404,3 +404,69 @@ def test_campaign_refuses_a_deterministic_rule(tmp_path):
         "--campaign-id", "r2-v4", "--points", "10",
     )
     assert result.returncode == int(cli.ExitCode.DATA)
+
+
+def _session_result(tmp_path: Path, *, pairs=6, gain=0.12, name="result.json") -> Path:
+    """A stage payload in exactly the shape the IronMule worker emits."""
+
+    ttft, tokens, tps = 1.7851, 32, 70.99
+    share = ttft / (ttft + tokens / tps)
+    baseline, candidate = [], []
+    for index in range(pairs):
+        order = "AB" if index % 2 == 0 else "BA"
+        base = ttft + tokens / tps
+        cand = base * (1.0 - gain)
+        for request, arm, sink in ((base, "baseline", baseline), (cand, "candidate", candidate)):
+            sink.append({
+                "session_id": f"s{index}", "pair_id": f"p{index}", "arm": arm, "order": order,
+                "fingerprint": "f" * 64, "workload": "w",
+                "ttft_seconds": request * share, "tokens": tokens,
+                "decode_tps": tokens / (request * (1 - share)), "status": "ok", "error": "",
+            })
+    target = tmp_path / name
+    target.write_bytes(canonical_bytes({
+        "payload": {"schema": "friday.ironmule.result.v1", "stage": "test",
+                    "baseline_samples": baseline, "candidate_samples": candidate,
+                    "pair_count": pairs, "token_identity": True},
+    }))
+    return target
+
+
+def test_integrate_turns_a_session_result_into_a_verdict(tmp_path):
+    result = run_cli(
+        "integrate", "--result", str(_session_result(tmp_path)), "--arm", "warm",
+        "--min-gain", "0.10", "--mde", "0.05",
+    )
+    body = payload(result)
+    assert body["status"] == "qualified" and body["ok"] is True
+    assert body["pairs"] == 6
+    assert body["gain_percent"] == pytest.approx(12.0, abs=0.5)
+    assert body["formal_claim"] is False and body["no_activation"] is True
+
+
+def test_integrate_reports_below_threshold_without_calling_it_a_failure(tmp_path):
+    path = _session_result(tmp_path, gain=0.06, name="weak.json")
+    result = run_cli("integrate", "--result", str(path), "--arm", "warm",
+                     "--min-gain", "0.10", "--mde", "0.05")
+    body = payload(result)
+    assert body["status"] == "below_threshold" and body["qualified"] is False
+    assert result.returncode == int(cli.ExitCode.UNAVAILABLE)
+
+
+def test_integrate_combines_several_sessions(tmp_path):
+    first = _session_result(tmp_path, pairs=3, name="a.json")
+    second = _session_result(tmp_path, pairs=3, name="b.json")
+    body = payload(run_cli("integrate", "--result", str(first), "--result", str(second),
+                           "--arm", "warm", "--min-gain", "0.10", "--mde", "0.05"))
+    # Both files use the same pair ids, so the evaluator's duplicate guard must
+    # catch it rather than silently double-count the same evidence.
+    assert body["status"] in ("rejected", "inconclusive")
+
+
+def test_integrate_rejects_a_result_without_paired_samples(tmp_path):
+    empty = tmp_path / "empty.json"
+    empty.write_bytes(canonical_bytes({"payload": {"schema": "friday.ironmule.result.v1"}}))
+    result = run_cli("integrate", "--result", str(empty), "--arm", "warm",
+                     "--min-gain", "0.10", "--mde", "0.05")
+    assert result.returncode == int(cli.ExitCode.DATA)
+    assert payload(result)["error"] == "result_carries_no_paired_samples"

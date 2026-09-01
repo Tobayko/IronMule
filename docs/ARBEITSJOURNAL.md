@@ -9531,3 +9531,35 @@ bleiben unberührt. Regel steht in F1s Vorregistrierung, Abschnitt 4b.
 Regressionstests halten die drei Kernaussagen fest — sechs Paare genügen bei
 `0,8 %`, sie genügen bei `3 %` nicht, und eine Wahrheit unter der Schwelle
 wird in keinem von vierzig Läufen qualifiziert.
+
+## 2026-09-02 — Die Lücke zwischen Messung und Urteil geschlossen
+
+Offline-Ergänzung. Kein Modellstart, kein Hardwarelauf.
+
+**Befund.** Der Planpfad war geprüft, die Analyse war geprüft — aber nicht die
+Verbindung dazwischen. Der gegatete Sessionpfad gibt die gepaarten Messungen
+bereits in genau der `MetricSample`-Drahtform aus (`_metric_dict` im
+Stage-Worker erzeugt sie, `baseline_samples`/`candidate_samples` tragen sie).
+F1s Entscheidungsfunktion `evaluate_integration` nimmt genau diese Objekte.
+Nur: **nichts verband beides.** Nach einem F1-Lauf hätte Evidenz vorgelegen
+und kein Urteil, und die Glue-Arbeit wäre unter Zeitdruck nach einem
+verbrauchten Messblock entstanden.
+
+**Geschlossen mit `integrate`.** Neues read-only CLI-Kommando; es liest eine
+oder mehrere Ergebnisdateien, benutzt denselben Sample-Leser, den
+`RealSession` ohnehin anwendet (`_unwrap_stage_payload` und `_metric_samples`),
+und ruft `evaluate_integration`. Nichts am Ergebnisformat wird neu
+interpretiert, und `integration.py` bleibt reine Analyse — der Leser sitzt im
+CLI, damit das Analysemodul nicht die schwere `real_session`-Kette importieren
+muss.
+
+**Nebenbefund aus den Tests.** Werden zwei Ergebnisdateien mit denselben
+Paar-IDs zusammengeführt, meldet die Auswertung `rejected` beziehungsweise
+`inconclusive` statt dieselbe Evidenz doppelt zu zählen. Der
+Duplikat-Guard des Evaluators greift also auch über Dateigrenzen — das war
+nicht selbstverständlich und ist jetzt festgehalten.
+
+**Verifikation.** Vollsuite grün; vier neue CLI-Tests: Urteil aus einem
+Ergebnis, `below_threshold` ohne es zum Fehler zu erklären, Duplikaterkennung
+über zwei Dateien, und Abweisung eines Ergebnisses ohne gepaarte Samples.
+Der Auswertepfad steht als Abschnitt 4c in F1s Vorregistrierung.

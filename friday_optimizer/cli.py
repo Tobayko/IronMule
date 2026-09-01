@@ -28,6 +28,7 @@ from .dashboard import DashboardError, serve
 from .dataset import DatasetBuilder
 from .evaluator import CorrectnessResult, MetricSample, ResourceResult
 from .campaign import CampaignError, CampaignPlan, plan_for_target
+from .integration import ARMS, IntegrationError, evaluate_integration
 from .candidates import CandidateRegistry
 from .decisions import CENSORING, REWARD_METRICS, SELECTION_RULES, DecisionError, SelectionPolicy
 from .fingerprint import ExactFingerprint
@@ -1007,6 +1008,41 @@ def _campaign(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     return payload, ExitCode.OK
 
 
+def _integrate(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
+    """Turn one measured session result into F1's end-to-end verdict.
+
+    The extraction reuses the reader that RealSession already applies to a
+    stage payload; nothing about the result format is reinterpreted here.
+    """
+
+    from .real_session import _metric_samples, _unwrap_stage_payload
+
+    baseline: list[Any] = []
+    candidate: list[Any] = []
+    sources = []
+    for entry in args.result:
+        path = _safe_existing_file(entry, "result")
+        sources.append(_metadata_signature([path]))
+        payload = _unwrap_stage_payload(_object(_json_file(path), "result"))
+        left = _metric_samples(payload.get("baseline_samples"))
+        right = _metric_samples(payload.get("candidate_samples"))
+        if not left or not right:
+            raise CLIError(ExitCode.DATA, "result_carries_no_paired_samples")
+        baseline.extend(left)
+        candidate.extend(right)
+    try:
+        result = evaluate_integration(
+            baseline, candidate, arm=args.arm, min_gain=args.min_gain, mde=args.mde,
+            min_pairs=args.min_pairs, seed=args.seed,
+        )
+    except IntegrationError as exc:
+        raise CLIError(ExitCode.DATA, "integration_rejected") from exc
+    payload = result.as_dict()
+    payload.update({"command": "integrate", "schema_version": 1, "results": len(args.result),
+                    "ok": result.qualified})
+    return payload, ExitCode.OK if result.qualified else ExitCode.UNAVAILABLE
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = _Parser(prog="python -m friday_optimizer", allow_abbrev=False, description="Closed offline Friday optimizer control plane")
     parser.add_argument("--json", action="store_true", help="emit canonical JSON (the default)")
@@ -1089,6 +1125,15 @@ def _build_parser() -> argparse.ArgumentParser:
     outcome_parser.add_argument("--execute", action="store_true")
     outcome_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
 
+    integrate_parser = sub.add_parser("integrate", allow_abbrev=False)
+    integrate_parser.add_argument("--result", action="append", required=True)
+    integrate_parser.add_argument("--arm", required=True, choices=list(ARMS))
+    integrate_parser.add_argument("--min-gain", dest="min_gain", type=float, required=True)
+    integrate_parser.add_argument("--mde", type=float, required=True)
+    integrate_parser.add_argument("--min-pairs", dest="min_pairs", type=int, default=6)
+    integrate_parser.add_argument("--seed", type=int, default=11)
+    integrate_parser.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
+
     campaign_parser = sub.add_parser("campaign", allow_abbrev=False)
     campaign_parser.add_argument("--memory", required=True)
     campaign_parser.add_argument("--fingerprint", required=True)
@@ -1148,7 +1193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args = _build_parser().parse_args(list(argv) if argv is not None else None)
         if not 0 <= args.port <= 65535 if args.command == "dashboard" else False:
             raise CLIError(ExitCode.USAGE, "invalid_port")
-        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "portfolio": _portfolio, "session-plan": _session_plan, "session": _session, "decide": _decide, "outcome": _outcome, "replay": _replay, "campaign": _campaign}[args.command]
+        handler = {"doctor": _doctor, "audit": _audit, "import": _import, "dataset": _dataset, "status": _status, "shadow": _shadow, "dashboard": _dashboard, "fingerprint": _fingerprint, "portfolio": _portfolio, "session-plan": _session_plan, "session": _session, "decide": _decide, "outcome": _outcome, "replay": _replay, "campaign": _campaign, "integrate": _integrate}[args.command]
         payload, code = handler(args)
         if args.command != "dashboard":
             _emit(payload)
