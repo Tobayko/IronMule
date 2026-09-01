@@ -35,29 +35,45 @@ multiplizieren; sie wirken auf verschiedene Phasen derselben Anfrage.
 Negativeintrag in die Studienakte, F1 wird hier gelöscht. Widerspricht die
 Messung der Projektion, gewinnt die Messung und die Projektion wird korrigiert.
 
-## P1 — Prefill-Hebelklasse, beziffert (neu 2026-09-01)
+## P1 — Prefill-Hebelklasse; die Decode-Klasse ist erschöpft
 
 **Status:** offen, direkt nach F1. Herleitung im Arbeitsjournal unter
-„2026-09-01 — F1", Nachtrag „Amdahl-Decken je Phase".
+„2026-09-01 — F1" (Amdahl) und „2026-09-02 — Roofline je Phase" (Physik);
+reproduzierbar mit `experiments/roofline/phase_roofline.py`.
 
-**Mechanismus:** für die registrierte Workload (Prompt `897`, `32` generierte
-Token) ist Prefill `79,84 %` der Anfrage. Jeder Decode-Hebel konkurriert damit
-um höchstens `20,16 %` — die vier gemessenen lieferten end-to-end `−0,01 %`,
-`0,84 %`, `1,42 %` und `0,38 %`. Der eine gemessene Prefill-Hebel (Head-Skip,
-Kandidat 19) liefert `12,26 %`. Offen und in der richtigen Klasse ist
-**Kandidat 5, Prefill-Step-Size-Sweep** (`2048` gegen `512`); Kandidat 1
-(Präfix-/KV-Wiederverwendung) und Kandidat 2 (Blockgrößen-Policy) sind an der
-Tokenidentität gescheitert, nicht am Mechanismus. Die eigentliche Hürde dieser
-Klasse ist also das Identitätsgate, und genau dort lohnt der nächste Aufwand.
+**Befundlage.** Für die registrierte Workload (Prompt `897`, `32` generierte
+Token) ist Prefill `79,84 %` der Anfrage. Die Roofline sagt dazu:
+
+| Phase | Auslastung | end-to-end realistisch verfügbar | bereits gehoben |
+| --- | --- | --- | --- |
+| Decode | `60,3 %` der Bandbreite | `5,85 %` | `1,42 %` (`fixed_compiled`) |
+| Prefill | `45,5 %` der Rechenspitze | `37,11 %` | `12,26 %` (Head-Skip) |
+
+**Konsequenz 1 — Decode ist zu.** Für alle künftigen Decode-Kandidaten
+zusammen bleiben rund `4,4` Prozentpunkte end-to-end. Ein Decode-Kandidat kann
+sein eigenes Decode-Gate noch bestehen, aber die End-to-End-Schwelle von F1
+(`10 %` warm) grundsätzlich nicht mehr erreichen. Neue Decode-Kandidaten
+werden nicht mehr vorregistriert, solange die Workload kurz bleibt.
+
+**Konsequenz 2 — Prefill hat zwei Mechaniken, nicht eine.**
+
+1. **Blockstruktur** — Kandidat 5 (Prefill-Step-Size-Sweep) ist offen;
+   Kandidat 1 und 2 sind an der Tokenidentität gescheitert, nicht am
+   Mechanismus. Ob das ein Messartefakt war, entscheidet P2.
+2. **Rechenauslastung** — `45,5 %` der Spitze ist für eine compute-gebundene
+   Phase niedrig. Verdächtig sind Dequantisierungsaufwand, fehlende Fusion und
+   Tiling. Neu aus der Roofline-Rechnung, noch ohne Profilerbeleg; ein
+   Profilerbeleg ist nach `AGENTS.md` Voraussetzung, bevor hier
+   Kernelarbeit überhaupt vorgeschlagen werden darf.
 
 **Gate:** wie üblich — vorregistrierte Schwelle über MDE, exakte
 Tokenidentität, gepaarte Sessions.
 
 **Kill/Pivot:** findet sich keine längenunabhängig identitätserhaltende
-Blockstruktur (das Ergebnis von Zyklus 2), bleibt die Klasse geschlossen und
-der Eintrag wird mit dieser Begründung gelöscht. Für Workloads ab etwa `128`
-generierten Token kippt die Rechnung zugunsten der Decode-Klasse; diese
-Priorisierung gilt ausdrücklich nur für die registrierte kurze Antwort.
+Blockstruktur und zeigt der Profiler keinen adressierbaren Prefill-Engpass,
+bleibt die Klasse geschlossen. Für Workloads ab etwa `128` generierten Token
+kippt die Rechnung zugunsten der Decode-Klasse; diese Priorisierung gilt
+ausdrücklich nur für die registrierte kurze Antwort.
 
 ## P2 — Sind die Identitäts-Fehlschläge ein argmax-Tie? (neu 2026-09-01)
 
