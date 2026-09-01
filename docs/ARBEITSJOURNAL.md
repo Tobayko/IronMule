@@ -8924,3 +8924,75 @@ Einschränkung, die mitgehört werden muss: das gilt für die registrierte
 Workload — Prompt `897` Token, `32` generierte Token. Ab etwa `128` generierten
 Token kippt das Verhältnis, und für lange Generierung sind Decode-Hebel die
 richtige Klasse. Die Aussage ist workloadbedingt, nicht allgemein.
+
+## 2026-09-01 — Identitäts-Forensik: alle Prefill-Fehlschläge zeigen auf dieselbe Position
+
+Reine Offline-Auswertung bereits versiegelter Dateien
+(`experiments/identity_forensics/divergence_positions.py`). Kein Modellstart,
+kein Hardwarelauf, keine Datei verändert.
+
+Anlass: die Amdahl-Rechnung desselben Tages zeigt, dass Prefill `79,84 %` der
+registrierten Anfrage ist und damit die einzige Hebelklasse mit echtem
+Spielraum. Genau diese Klasse ist im Projekt geschlossen — Kandidat 1
+(Präfix-/KV-Wiederverwendung) und Kandidat 2 (Blockgrößen-Policy) stehen auf
+`candidate_correctness_failed`. Die Frage war, woran genau sie gescheitert sind.
+
+**Befund.** Über vier Quelldateien, zwei unabhängige Mechanismen, vier
+Promptlängen und fünf Blockgrößen gibt es `49` Identitätsbeobachtungen: `38`
+identisch, `11` abweichend. Die Divergenzposition ist:
+
+| Position der ersten Abweichung | Fälle |
+| --- | --- |
+| `10` | `10` |
+| `20` | `1` |
+
+Alle elf Abweichungen im Detail:
+
+| Quelle | Konfiguration | erste Abweichung |
+| --- | --- | --- |
+| chunk_identity | Prompt `677`, Chunk `128`, 6 Blöcke | `10` |
+| chunk_identity | Prompt `677`, Chunk `512`, 2 Blöcke | `10` |
+| chunk_identity | Prompt `1997`, Chunk `64`, 32 Blöcke | `10` |
+| chunk_identity | Prompt `1997`, Chunk `512`, 4 Blöcke | `10` |
+| chunk_confirmation | Prompt `1513`, Chunk `256`, 6 Blöcke | `10` |
+| chunk_confirmation | Prompt `1513`, Chunk `256`, 6 Blöcke (Wiederholung) | `10` |
+| prefix_reuse | Präfix `666` von `677` | `10` |
+| prefix_reuse | Präfix `1326` von `1337` | `10` |
+| prefix_reuse | Präfix `4406` von `4417` | `20` |
+| prefill_chunking | `512+Rest`, 2 Blöcke | `10` |
+| prefill_chunking | `128er`, 6 Blöcke | `10` |
+
+**Warum das gegen einen strukturellen Fehler spricht.** Ein falscher
+KV-Cache, ein falsches Attention-Fenster oder eine falsch zusammengesetzte
+Blockstruktur macht sich am **ersten** generierten Token bemerkbar, weil der
+Zustand ab dann falsch ist, und die Position streut über Konfigurationen.
+Beobachtet wird das Gegenteil: dieselbe späte Position, über zwei Mechanismen,
+die nichts miteinander zu tun haben, und über Promptlängen von `677` bis
+`1997`. Der einzige Ausreißer `20` ist der längste und inhaltlich andere
+Prompt (`4417`) — also eine andere Promptfamilie mit einer anderen sensiblen
+Position.
+
+**Hypothese, ausdrücklich noch nicht belegt.** An genau dieser Position liegen
+die beiden besten Kandidatentoken so dicht beieinander, dass jede Änderung der
+Fließkomma-Akkumulationsreihenfolge das `argmax` kippt. Chunking und
+Präfixwiederverwendung ändern beide die Summationsreihenfolge im Prefill. Der
+Mechanismus wäre dann korrekt und die Workload degeneriert — nicht umgekehrt.
+
+**Was das nicht heißt.** Ein gekipptes `argmax` ist trotzdem ein Bruch der
+Tokenidentität, und das Gate hat richtig ausgelöst. Es wird hier **kein**
+Vorschlag gemacht, das Identitätsgate aufzuweichen, zu tolerieren oder
+schwellwertbasiert umzudeuten; Schwellwerte bleiben unantastbar. Die
+Konsequenz ist eine andere: bei bestätigter Hypothese ist die richtige Antwort,
+für eine Prefill-Studie eine Promptfamilie ohne degenerierte Position zu
+registrieren — nicht das Gate zu ändern.
+
+**Nebenbefund, der F1 entlastet.** Die für F1 registrierte Workload — Prompt
+`897`, Chunk `256`, vier Blöcke — steht in `chunk_confirmation` auf
+`identical=true`. F1 liegt also auf einem identitätssauberen Punkt.
+
+**Nächster Schritt und Kill-Kriterium** stehen als Backlog-Eintrag P2. Ein
+einziger gegateter Kurzlauf entscheidet: Top-2-Logit-Abstand je generierter
+Position für Prompt `677`. Ist der Abstand an Position `10` an der
+Auflösungsgrenze, ist die Hypothese bestätigt und die Prefill-Klasse wieder
+offen. Ist er groß, ist die Hypothese tot und die Mechanismen sind
+tatsächlich defekt.

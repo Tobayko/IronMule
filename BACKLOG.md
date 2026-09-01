@@ -59,6 +59,37 @@ der Eintrag wird mit dieser Begründung gelöscht. Für Workloads ab etwa `128`
 generierten Token kippt die Rechnung zugunsten der Decode-Klasse; diese
 Priorisierung gilt ausdrücklich nur für die registrierte kurze Antwort.
 
+## P2 — Sind die Identitäts-Fehlschläge ein argmax-Tie? (neu 2026-09-01)
+
+**Status:** offen, entscheidet über P1. Herleitung im Arbeitsjournal unter
+„2026-09-01 — Identitäts-Forensik"; reproduzierbar mit
+`experiments/identity_forensics/divergence_positions.py`.
+
+**Mechanismus:** von `11` aufgezeichneten Identitätsabweichungen liegen `10`
+an generierter Position `10`, eine bei `20` — über zwei unabhängige
+Mechanismen (Chunking, Präfixwiederverwendung), vier Promptlängen und fünf
+Blockgrößen. Ein struktureller KV-/Fenster-/Blockfehler bricht am ersten
+generierten Token und streut. Eine feste späte Position ist die Signatur
+eines `argmax`-Gleichstands, den eine geänderte Akkumulationsreihenfolge
+kippt.
+
+**Messung:** ein gegateter Kurzlauf, ein Prozess, Prompt `677`, `16` Token
+greedy; aufgezeichnet wird der Top-2-Logit-Abstand je generierter Position.
+Weit unter dem Budget einer 30-Minuten-Freigabe.
+
+**Gate:** ist der Abstand an Position `10` an der Auflösungsgrenze und an den
+übrigen Positionen deutlich größer, gilt die Hypothese als gestützt.
+
+**Kill:** ist der Abstand an Position `10` groß, ist die Hypothese tot, die
+Mechanismen sind tatsächlich defekt, P1 wird geschlossen und dieser Eintrag
+gelöscht.
+
+**Ausdrücklich kein Bestandteil dieses Eintrags:** eine Aufweichung,
+Tolerierung oder Umdeutung des Tokenidentitätsgates. Schwellwerte bleiben
+unantastbar. Bei bestätigter Hypothese lautet die Konsequenz, eine
+Promptfamilie ohne degenerierte Position zu registrieren — nicht das Gate zu
+ändern.
+
 ## R2 — Offline-RL auf dem geloggten Korpus
 
 **Status:** offen; blockiert durch Korpusgröße, nicht durch fehlenden Code. R0
