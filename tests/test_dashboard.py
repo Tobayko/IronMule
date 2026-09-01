@@ -74,9 +74,18 @@ class DashboardAuditTests(unittest.TestCase):
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertEqual(headers["X-Frame-Options"], "DENY")
         self.assertNotIn(b"http://", html); self.assertNotIn(b"https://", html)
+        self.assertIn(b'id="status-filter"', html)
+        self.assertIn(b'id="run-search"', html)
+        self.assertIn(b'id="detail"', html)
+        _, _, css = self.request("GET", "/assets/app.css")
+        self.assertIn(b"matrix-layer", css)
+        self.assertIn(b"prefers-reduced-motion", css)
         _, _, js = self.request("GET", "/assets/app.js")
         self.assertNotIn(b"innerHTML", js); self.assertNotIn(b"document.write", js); self.assertNotIn(b"eval(", js)
         self.assertNotIn(b"http://", js); self.assertNotIn(b"https://", js)
+        self.assertIn(b"window.setInterval", js)
+        self.assertIn(b"/api/run?id=", js)
+        self.assertIn(b"source_revision", js)
 
     def test_empty_source_has_no_mock_kpis(self):
         status, _, body = self.request("GET", "/api/snapshot")
