@@ -9129,3 +9129,68 @@ um eine Maßnahme zu rechtfertigen.
 
 M1 Punkt 5 ist damit beantwortet und aus dem Backlog entfernt; offen bleibt
 nur noch Punkt 6.
+
+## 2026-09-02 — Roofline je Phase: wie weit ist das Gerät wirklich ausgereizt?
+
+Reine Offline-Analyse (`experiments/roofline/phase_roofline.py`). Kein
+Modellstart, kein Hardwarelauf. Quellen: der safetensors-Header des
+gebundenen Snapshots, dessen `config.json` und die versiegelte
+persistente-Prozess-Evidenz.
+
+**Eingangsgrößen, exakt statt geschätzt.** Der Header nennt
+`3,400 GB` Gewichte (`2,276 GB` U32-gepackt plus `1,125 GB` BF16), also
+`4,55 G` quantisierte Parameter. Die `config.json` nennt `34` Layer und
+Hidden `2560`. Die warme Baseline stammt unverändert aus sechs Paaren:
+Prompt `897` Token, TTFT `1,7851 s`, `32` Token bei `70,99` Token/s.
+
+**Auslastung.**
+
+| Phase | gemessen | Gerätespitze | Auslastung | Luft |
+| --- | --- | --- | --- | --- |
+| Decode | `241,4 GB/s` | `400 GB/s` | `60,3 %` | `1,66×` |
+| Prefill | `4,73 TFLOP/s` | `10,4 TFLOP/s` | `45,5 %` | `2,20×` |
+
+Prefill-Arbeit ist `8,165 TFLOP` Matmul plus `0,280 TFLOP` Attention; die
+Attention macht `3,32 %` aus, ist also mitgezählt und ändert das Bild nicht.
+Sie wegzulassen hätte die Auslastung geschönt, nicht das Gerät.
+
+**Was jede Phase end-to-end überhaupt wert sein kann** (32 generierte Token):
+
+| Szenario | Ratio | Gewinn |
+| --- | --- | --- |
+| Decode auf Roofline (`100 %`) | `0,920052` | `7,99 %` |
+| Decode realistisch (`85 %`) | `0,941523` | `5,85 %` |
+| Prefill auf Roofline (`100 %`) | `0,564782` | `43,52 %` |
+| Prefill realistisch (`85 %`) | `0,628871` | `37,11 %` |
+| beide realistisch (`85 %`) | `0,570394` | `42,96 %` |
+
+**Der zentrale Schluss: die Decode-Klasse ist rechnerisch erschöpft.** Selbst
+bei perfekter Bandbreitenausnutzung ist die gesamte Decode-Klasse `7,99 %`
+end-to-end wert, realistisch `5,85 %`. Davon sind mit `fixed_compiled` bereits
+`1,42 %` gehoben. Es bleiben rund `4,4` Prozentpunkte **für alle künftigen
+Decode-Kandidaten zusammen**. Ein Decode-Kandidat kann sein eigenes
+Decode-Gate weiterhin bestehen — `fixed_compiled` tat das mit `7,04 %` auf der
+Decodemetrik — aber er kann die End-to-End-Schwelle der F1-Studie (`10 %` im
+warmen Arm) grundsätzlich nicht mehr erreichen.
+
+Das erklärt die Projektgeschichte rückwirkend. Fused Greedy (`−0,01 %`
+end-to-end), gebündelter Readback (`0,84 %`) und der Custom Metal Kernel
+(`0,38 %`) waren nicht schlecht ausgeführt; sie zielten auf eine Phase, in der
+kaum etwas zu holen war.
+
+**Prefill dagegen ist offen.** Realistisch sind `37,11 %` end-to-end
+verfügbar, gehoben sind mit Head-Skip `12,26 %`. Es liegen rund `25`
+Prozentpunkte auf dem Tisch. Und `45,5 %` Rechenauslastung im Prefill ist ein
+*niedriger* Wert für eine compute-gebundene Phase — das deutet auf echte
+Ineffizienz (Dequantisierungsaufwand, fehlende Fusion, Tiling), nicht auf eine
+physikalische Grenze. Das ist eine zweite Prefill-Mechanik neben der
+Blockstruktur aus Kandidat 5 und wandert als solche in Backlog P1.
+
+**Grenzen dieser Rechnung, ausdrücklich.** `400 GB/s` und `10,4 TFLOP/s` sind
+Datenblattwerte für den M1 Max mit 32-Kern-GPU, auf dieser Maschine nicht
+nachgemessen. Die Decode-Rechnung unterstellt, dass je Token alle Gewichte
+gelesen werden. Beide Annahmen sind grob, aber in dieselbe Richtung robust:
+die Kernaussage — Decode fast erschöpft, Prefill weit offen — hängt an einem
+Faktor `7,1×` zwischen den Phasen und an einem Prefill-Anteil von `79,84 %`,
+nicht an der zweiten Nachkommastelle. `formal_claim=false`; das ist eine
+Planungsrechnung, keine Messung.
