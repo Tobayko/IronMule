@@ -9095,3 +9095,37 @@ Entscheidungsregel direkt geprüft, der Worker per Quelltextinspektion auf
 AC-Gate, Budgetguard, Offline-Resolver und fehlende Netzwerkpfade, dazu die
 beiden Gate-Ausgänge (`--self-check` gibt `0`, fehlendes `--execute` gibt
 `78`).
+
+## 2026-09-02 — M1 Punkt 5: die 3,9 GB bleiben, mit Begründung
+
+Reine Dateisystemprüfung, nichts verändert, nichts gelöscht.
+
+**Befund.** `.friday-data/models/hub` enthält `gemma-3-1b-it-4bit` (`736 MB`)
+und `gemma-3-4b-it-4bit` (`3,2 GB`); der globale HF-Cache
+`~/.cache/huggingface/hub` (`26 GB`) enthält dieselben beiden plus `12b` und
+ein `27B`. Die Revisionen stimmen überein
+(`2d44e83dc9e80843d22fb941d3d699a0b1351aa6` und
+`93724907d4ed1745d2fe50baadf3b0b01a65abf2`). Die Blobs haben **getrennte
+Inodes** — es ist also echte doppelte Belegung, keine Hardlink-Illusion und
+kein `du`-Artefakt. Der größte Blob wurde zur Sicherheit beidseitig gehasht:
+`94d3d701367d78584a9334ca00672b1c86e4aefa6a94167556c0485381e74af3`,
+`3 400 569 562` Byte, identisch. Der Blobname *ist* der SHA-256, also gilt das
+für jeden LFS-Blob ohne weitere Prüfung.
+
+**Entscheid: unangetastet lassen.** `resolve_local_model_snapshot` bindet per
+Default genau `.friday-data/models/hub`; jede versiegelte Messung ist über
+diesen Pfad aufgelöst worden. Der globale Cache ist dagegen von jedem anderen
+Werkzeug auf der Maschine beschreibbar. Genau diese Isolation macht den
+Snapshot-Claim überhaupt prüfbar. Ein Verweis statt der Kopie würde
+Provenienz gegen `3,9 GB` Plattenplatz tauschen; Hardlinks würden die
+Isolation still wieder aufheben, weil beide Pfade dann dieselben Inodes
+teilten. Das im Backlog hinterlegte Kill-Kriterium („wenn Snapshots
+evidenzgebunden nur dort liegen, bleibt alles unangetastet") greift damit.
+`.friday-data` ist ohnehin gitignoriert, die Kopie belastet nur die Platte,
+nicht das Repository.
+
+`.friday-data/models/xet` sind `1,0 MB` HF-Xet-Logs und Staging — zu klein,
+um eine Maßnahme zu rechtfertigen.
+
+M1 Punkt 5 ist damit beantwortet und aus dem Backlog entfernt; offen bleibt
+nur noch Punkt 6.
