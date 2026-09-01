@@ -37,12 +37,22 @@ Herleitung im Arbeitsjournal unter „2026-09-02 — F1s Ausführungspfad geprü
 2. Eigenen F1-Worker mit `897`-Prompt bauen wie bei P2 und W1.
 3. Schwelle senken — ausgeschlossen.
 
+**Power geprüft (2026-09-02).** Die Entscheidungsfunktion wurde gegen eine
+bekannte Wahrheit simuliert. Bei dem Paar-Rauschen, das die versiegelte
+Evidenz zeigt (`0,45 %`–`0,73 %`), qualifiziert F1 mit sechs Paaren in
+`99,2 %`–`100 %` der Fälle; Falschqualifikation bei einer Wahrheit unterhalb
+der Schwelle liegt überall bei höchstens `0,8 %`. Ab `2 %` Rauschen bricht die
+Power ein (`65,2 %` bei sechs Paaren). Die Paarzahl ist deshalb jetzt an das
+in den A/A-Sessions gemessene Rauschen gekoppelt — Regel in F1s
+Vorregistrierung, Abschnitt 4b. Die Schwelle bleibt unverändert.
+
 **Danach:**
 
 1. Workload entscheiden, Fingerprint gegen den aktuellen HEAD sammeln, die
    Vorregistrierung mit Umgebungs-Hashes versiegeln.
-2. A/A-Sessions je Arm zur MDE-Bestimmung, dann A/B — gegatet, manuell,
-   AC-only, fremdlastfrei, maximal 30 Minuten je Lauf, einzeln bestätigt.
+2. A/A-Sessions je Arm zur MDE- **und Rauschbestimmung**, daraus die Paarzahl
+   nach der vorregistrierten Regel, dann A/B — gegatet, manuell, AC-only,
+   fremdlastfrei, maximal 30 Minuten je Lauf, einzeln bestätigt.
 
 **Kill/Pivot:** unter Schwelle oder Identitätsbruch gilt Baseline; terminaler
 Negativeintrag in die Studienakte, F1 wird hier gelöscht. Widerspricht die

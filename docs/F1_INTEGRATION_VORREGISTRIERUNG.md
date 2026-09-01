@@ -137,6 +137,44 @@ Entscheidungsregel, implementiert in
 
 Weniger als sechs gültige Paare je Arm → `inconclusive`, ohne Zahl.
 
+## 4b. Vorregistrierte Paarzahl, an das gemessene Rauschen gekoppelt
+
+Ergänzt am 2026-09-02 aus der Powerrechnung
+[`experiments/f1_integration/power_f1.py`](../experiments/f1_integration/power_f1.py).
+Simuliert wurde die echte Entscheidungsfunktion gegen eine bekannte Wahrheit,
+`400` Versuche je Zelle.
+
+**Trefferquote bei wahrem Gewinn `11,93 %` gegen die `10 %`-Schwelle:**
+
+| Paare | Rauschen `0,5 %` | `1,0 %` | `2,0 %` | `3,0 %` | `5,0 %` |
+| --- | --- | --- | --- | --- | --- |
+| `6` | `100,0 %` | `99,2 %` | `65,2 %` | `39,2 %` | `22,2 %` |
+| `12` | `100,0 %` | `100,0 %` | `86,8 %` | `61,3 %` | `30,2 %` |
+| `20` | `100,0 %` | `100,0 %` | `97,5 %` | `76,2 %` | `36,2 %` |
+| `30` | `100,0 %` | `100,0 %` | `99,8 %` | `88,5 %` | `49,0 %` |
+
+**Falschqualifikation bei wahrem Gewinn `8 %`** — also unterhalb der Schwelle —
+liegt in jeder Zelle bei `0,0 %` bis `0,8 %`. Die Regel irrt in die sichere
+Richtung.
+
+Das versiegelte Paar-Rauschen des Projekts liegt bei `0,45 %`
+(`session_ratio_sd` der Head-Skip-Kalibrierung) bis `0,73 %` (relative
+Streuung der sechs Prozesspaare). In diesem Bereich genügen sechs Paare.
+
+**Vorregistrierte Regel.** Die A/A-Sessions dieser Studie messen das
+tatsächliche Paar-Rauschen ohnehin. Aus ihm folgt die Paarzahl je Arm
+verbindlich und ohne weitere Entscheidung:
+
+| gemessenes A/A-Paar-Rauschen | Paare je Arm |
+| --- | --- |
+| ≤ `1,0 %` | `6` |
+| ≤ `2,0 %` | `20` |
+| ≤ `3,0 %` | `30` (grenzwertig, wird im Ergebnis vermerkt) |
+| > `3,0 %` | Studie ist auf dieser Schwelle unterbestimmt; kein A/B, terminaler Abbruch |
+
+Die Schwelle von `10 %` wird dabei **nicht** angepasst. Angepasst wird die
+Stichprobe, nicht das Kriterium.
+
 ## 5. Gates
 
 1. **Tokenidentität ist terminal.** Jede Anfrage vergleicht `token_sha256`
