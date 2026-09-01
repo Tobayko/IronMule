@@ -101,6 +101,21 @@ ausdrücklich eine Aussage über das kurze Antwortregime. Ob dieses Regime das
 richtige Ziel ist, klärt die getrennte Studie W1
 (`experiments/w1_regime/PREREGISTRATION.md`); F1 wird dafür nicht erweitert.
 
+**Offene Workload-Entscheidung, festgehalten am 2026-09-02.** Der gegatete
+IronMule-Pfad fährt `ironmule.tune.DEFAULT_PROMPT` mit `322` Prompt-Token.
+F1s Evidenz für persistenten Prozess und Head-Skip stammt von `897`, die für
+`fixed_compiled` von `322`. Die Erwartung hängt daran:
+
+| Prompt | Antwort | `head_skip` | `fixed_compiled` | kombiniert |
+| --- | --- | --- | --- | --- |
+| `897` | `32` | `12,26 %` | `1,42 %` | `13,68 %` |
+| `322` | `32` | `9,02 %` | `2,91 %` | `11,93 %` |
+
+Vor dem Versiegeln ist zu entscheiden, welche Workload F1 registriert. Die
+Schwelle wird dabei **nicht** angepasst; sie steht unabhängig vom erwarteten
+Ergebnis. Herleitung im Arbeitsjournal unter „2026-09-02 — F1s
+Ausführungspfad geprüft".
+
 ## 4. Vorregistrierte Schwellen
 
 | Arm | Mindestgewinn `min_gain` | Begründung |

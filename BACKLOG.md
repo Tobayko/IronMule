@@ -21,14 +21,27 @@ terminal), `friday_optimizer/integration.py` (`request_seconds`,
 frühere Lesart `21 %` unterstellte, dass Prefill- und Decodegewinn sich
 multiplizieren; sie wirken auf verschiedene Phasen derselben Anfrage.
 
-**Offen — in dieser Reihenfolge:**
+**Ausführungspfad geprüft (2026-09-02).** `session-plan` läuft read-only
+durch und schließt korrekt fail-closed; die Blocker sind ausschließlich
+Provenienzbindungen gegen veraltete Q2-Artefakte. Kein struktureller Defekt.
+Der saubere Commit vom 2026-09-01 hat `optimizer_checkout_dirty` beseitigt.
 
-1. **Sauberer Commit.** `optimizer_identity()` liefert heute
-   `optimizer_checkout_dirty`; ohne sauberen Baum lässt sich keine Session
-   planen. Harte Vorbedingung.
-2. Fingerprint gegen den sauberen HEAD sammeln und die Vorregistrierung mit
-   Umgebungs-Hashes versiegeln.
-3. A/A-Sessions je Arm zur MDE-Bestimmung, dann A/B — gegatet, manuell,
+**Offene Entscheidung — Workload.** Der gegatete IronMule-Pfad fährt `322`
+Prompt-Token; F1s Evidenz für persistenten Prozess und Head-Skip stammt von
+`897`. Die kombinierte Erwartung fällt damit von `13,68 %` auf `11,93 %`
+(Abstand zur `10 %`-Schwelle: `1,93` statt `3,68` Punkte). Drei Wege,
+Herleitung im Arbeitsjournal unter „2026-09-02 — F1s Ausführungspfad geprüft":
+
+1. F1 auf `322`/`32` registrieren — nutzt die vorhandene auditierte
+   Infrastruktur. **Empfohlen.**
+2. Eigenen F1-Worker mit `897`-Prompt bauen wie bei P2 und W1.
+3. Schwelle senken — ausgeschlossen.
+
+**Danach:**
+
+1. Workload entscheiden, Fingerprint gegen den aktuellen HEAD sammeln, die
+   Vorregistrierung mit Umgebungs-Hashes versiegeln.
+2. A/A-Sessions je Arm zur MDE-Bestimmung, dann A/B — gegatet, manuell,
    AC-only, fremdlastfrei, maximal 30 Minuten je Lauf, einzeln bestätigt.
 
 **Kill/Pivot:** unter Schwelle oder Identitätsbruch gilt Baseline; terminaler
