@@ -18,8 +18,8 @@ separat freigabepflichtig.
 ## Von uns für dieses Projekt erstellte Arbeitsanweisungen
 
 - [`../AGENTS.md`](../AGENTS.md) steuert Codex im Project-Friday-Root.
-- [`../CODEX_START.md`](../CODEX_START.md) ist ein konkretes Startbriefing.
-- [`../IMPLEMENTIERUNGSPLAN.md`](../IMPLEMENTIERUNGSPLAN.md) ist der priorisierte Forschungsfahrplan.
+- [`CODEX_START.md`](CODEX_START.md) ist ein konkretes Startbriefing.
+- [`IMPLEMENTIERUNGSPLAN.md`](IMPLEMENTIERUNGSPLAN.md) ist der priorisierte Forschungsfahrplan.
 
 Diese Dateien sind Projektvorbereitung, keine externen Vorgaben. Sie dürfen bei einer späteren
 ausdrücklichen Nutzerentscheidung angepasst werden.

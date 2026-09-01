@@ -57,11 +57,21 @@ Der eigentliche Proof of Concept entsteht außerhalb dieses verschachtelten Repo
 - Xcode/Metal ist die Apple-Referenz; keine eigene GPU-ISA, keinen Compiler und keine neue IR in
   Phase 1 entwickeln.
 
+## Gemeinsamer Code für neue Studien
+
+Neue Studienpakete kopieren keine Infrastruktur mehr. Statistik, Storage,
+Provenienz, Guard und read-only UI kommen aus `friday_evidence` (bei Bedarf dort
+erweitern). Hintergrund: vier divergierte `statistics.py`-Kopien in
+`friday_h0/h1/n10/n10_v2`. Bestehende versiegelte Pakete bleiben wegen
+Code-Hash-Bindung byteidentisch eingefroren und werden weder umbenannt noch
+dedupliziert (siehe „warum `avo` in Bezeichnern stehen bleibt" im
+Arbeitsjournal-Archiv).
+
 ## Erwartete Projektstruktur
 
 - `docs/TECHNISCHES_KONZEPT.md` — vollständiger Forschungs- und Realitätscheck.
-- `IMPLEMENTIERUNGSPLAN.md` — priorisierte Phasen und Abbruchkriterien.
-- `CODEX_START.md` — Startbriefing und erster Codex-Auftrag.
+- `docs/IMPLEMENTIERUNGSPLAN.md` — priorisierte Phasen und Abbruchkriterien.
+- `docs/CODEX_START.md` — Startbriefing und erster Codex-Auftrag.
 - `PROJECT_STATUS.md` — nachprüfbarer lokaler Setup- und Teststand.
 - `docs/PHASE1_MATMUL_SPEC.md` — vorregistrierte, speicher-/UI-neutrale Phase-1-Messspezifikation.
 - `docs/PHASE1A_ARCHITEKTURFREIGABE.md` — nicht freigegebener Architekturvorschlag für Speicher,
