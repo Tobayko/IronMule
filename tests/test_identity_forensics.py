@@ -142,3 +142,43 @@ def test_worker_self_check_runs_offline():
     assert report["state"] == "self_check"
     assert report["expected_prompt_tokens"] == 677
     assert report["formal_claim"] is False and report["gate_unchanged"] is True
+
+
+def test_worker_binds_its_result_to_the_code_that_produced_it():
+    source = WORKER.read_text()
+    # Without provenance a later edit to the thresholds would make an old
+    # result look as if it had used the new ones.
+    assert "study_provenance" in source
+    assert "gap_analysis.py" in source and "PREREGISTRATION.md" in source
+
+
+def test_study_provenance_hashes_every_named_file_and_the_tree():
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "tools"))
+    from _bench import study_provenance
+
+    block = study_provenance(
+        [FORENSICS / "gap_analysis.py"],
+        preregistration=FORENSICS / "PREREGISTRATION.md",
+        extra={"model_snapshot": "rev"},
+    )
+    assert len(block["git_revision"]) == 40
+    assert set(block["code_files_sha256"]) == {
+        "experiments/identity_forensics/gap_analysis.py",
+        "experiments/identity_forensics/PREREGISTRATION.md",
+    }
+    assert len(block["code_sha256"]) == 64
+    assert block["model_snapshot"] == "rev"
+    assert isinstance(block["git_dirty"], bool)
+
+
+def test_study_provenance_refuses_a_missing_file():
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "tools"))
+    from _bench import study_provenance
+    from friday_evidence.provenance import ProvenanceError
+
+    with pytest.raises(ProvenanceError):
+        study_provenance([FORENSICS / "does_not_exist.py"])

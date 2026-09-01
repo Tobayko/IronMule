@@ -7,6 +7,7 @@ follow the same rules.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -196,6 +197,48 @@ def require_ac_power() -> str:
     return source
 
 
+def study_provenance(
+    code_paths: "list[str | Path]",
+    *,
+    preregistration: "str | Path | None" = None,
+    extra: "dict | None" = None,
+) -> dict:
+    """Bind one standalone study result to the code and tree that produced it.
+
+    The serious studies in ``experiments/`` (persistent process, matmul A/B)
+    carry such a block; the exploratory scans do not.  A decision-grade result
+    needs one: without it a later edit to a threshold file would silently make
+    an old result look as if it had used the new threshold.
+
+    Git and hashing come from :mod:`friday_evidence.provenance`.  Its
+    ``collect_provenance`` is not reused because it is bound to the closed
+    H1/H2 tool registry and to a fixed ``SOURCE_DIRS`` set that does not cover
+    ``experiments/``; registering a study there would change the provenance
+    hash of every unrelated tool.
+    """
+
+    from friday_evidence.provenance import _file_hashes, _run_git
+
+    resolved = [Path(item).resolve() for item in code_paths]
+    if preregistration is not None:
+        resolved.append(Path(preregistration).resolve())
+    revision = _run_git("rev-parse", "HEAD").decode("ascii").strip()
+    status = _run_git("status", "--porcelain=v1", "--untracked-files=all").decode("utf-8").strip()
+    files = _file_hashes(resolved)
+    payload = {
+        "git_revision": revision,
+        "git_dirty": bool(status),
+        "code_files_sha256": files,
+        "code_sha256": hashlib.sha256(
+            json.dumps(files, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        ).hexdigest(),
+        "power_source": read_power_source(),
+    }
+    if extra:
+        payload.update(extra)
+    return payload
+
+
 def release_gate(args, self_check) -> int | None:
     """Return an exit code when the tool must not proceed, else None.
 
@@ -224,4 +267,5 @@ __all__ = [
     "resolve_local_model_snapshot",
     "require_ac_power",
     "run_persisted",
+    "study_provenance",
 ]

@@ -74,7 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-check", action="store_true", dest="self_check")
     args = parser.parse_args(argv)
 
-    from _bench import BudgetGuard, release_gate, require_ac_power, resolve_local_model_snapshot
+    from _bench import (BudgetGuard, release_gate, require_ac_power,
+                        resolve_local_model_snapshot, study_provenance)
 
     gate = release_gate(args, self_check)
     if gate is not None:
@@ -160,6 +161,11 @@ def main(argv: list[str] | None = None) -> int:
 
     result = {
         "study_id": STUDY_ID, "formal_claim": False, "gate_unchanged": True,
+        "provenance": study_provenance(
+            [Path(__file__), Path(__file__).with_name("gap_analysis.py")],
+            preregistration=Path(__file__).with_name("PREREGISTRATION.md"),
+            extra={"model_snapshot": snapshot.revision, "model_id": MODEL_ID},
+        ),
         "model_id": MODEL_ID, "snapshot_revision": snapshot.revision,
         "prompt_tokens": len(ids), "generate_tokens": GEN,
         "reference_tokens": reference_tokens, "reference_gaps": reference_gaps,

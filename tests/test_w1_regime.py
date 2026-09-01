@@ -114,3 +114,9 @@ def test_worker_self_check_runs_offline():
     report = json.loads(result.stdout)
     assert report["control_tokens"] == 32 and report["long_tokens"] == 256
     assert report["formal_claim"] is False
+
+
+def test_worker_binds_its_result_to_the_code_that_produced_it():
+    source = WORKER.read_text()
+    assert "study_provenance" in source
+    assert "regime_analysis.py" in source and "PREREGISTRATION.md" in source
