@@ -9616,3 +9616,57 @@ Modellsnapshot.
 Ergebnis nachweislich an Code und Vorregistrierung, der Provenienzblock hasht
 jede benannte Datei, und eine fehlende Datei wird abgewiesen statt still
 übergangen.
+
+## 2026-09-02 — Das Dashboard hat nie eine Zahl angezeigt
+
+Offline-Fund und Einzeichenkorrektur. Kein Modellstart, kein Hardwarelauf.
+
+**Anlass.** Ich hatte in `friday_optimizer/dashboard.py` das minifizierte
+JavaScript per Stringersetzung um ein Entscheidungspanel erweitert und nur die
+Service-Schicht getestet — genau die Art Eingriff, die still bricht. Also
+gegen einen JS-Parser gehalten.
+
+**Befund.** Das ausgelieferte Skript ist syntaktisch ungültig:
+
+```
+].forEach((v,i)=>{if(row[i])row[i].textContent=v??'—'}));
+                                                       ^ eine Klammer zu viel
+```
+
+**Der Fehler ist älter als jede meiner Änderungen.** Geprüft gegen
+`b608524` — den Stand vor der ersten Zeile dieser Sitzung — und gegen
+`8c54cf9`: beide `SYNTAX BROKEN`. Erst der aktuelle Stand nach der Korrektur
+ist `SYNTAX OK`.
+
+**Warum das schwer wiegt.** Die ganze Seite ist ein einziger IIFE. Ein
+Syntaxfehler an einer Stelle verhindert, dass *irgendetwas* davon ausgeführt
+wird. Das Dashboard lieferte also seine statische Hülle aus, und jeder Wert
+blieb auf „Loading…" beziehungsweise „—" stehen: Status, Historie,
+Bindungen, Dataset, Profile. Die in `AGENTS.md` verlangte lokale UI mit
+Historie hat nie eine Messung angezeigt.
+
+Gefunden hat es niemand, weil jeder Test an der Servicegrenze aufhörte. Die
+HTTP-Tests holten `/assets/app.js` ab und prüften Statuscode, Header und
+Größe — nie, ob der Inhalt ausführbar ist. Ein Asset, das als Text korrekt
+ausgeliefert wird und als Programm nicht läuft, sieht in solchen Tests
+einwandfrei aus.
+
+**Korrektur und Absicherung.**
+
+- Die überzählige Klammer entfernt; das Skript parst.
+- Neuer Test `test_shipped_javascript_parses` prüft das ausgelieferte Asset
+  mit einem JavaScript-Parser. Fehlt eine Engine, wird der Test übersprungen —
+  im Docstring ausdrücklich vermerkt, dass ein Skip kein Bestehen ist.
+- Neuer Test, dass jede vom Skript befüllte ID im Markup existiert und
+  umgekehrt.
+- `/api/decisions` in die bestehende HTTP-Pfadliste aufgenommen; es war der
+  einzige Endpunkt ohne Abdeckung.
+- Das zweite Skript im Repository, `friday_h0/dashboard_assets.py`
+  (`20 530` Byte), wurde mitgeprüft: syntaktisch in Ordnung.
+
+**Livekontrolle** gegen die echte Optimizer-Memory: `/`, `/assets/app.js`,
+`/api/status` und `/api/decisions?limit=5` antworten mit `200`; das
+Entscheidungspanel meldet korrekt `data_state=empty`, weil noch keine
+Entscheidung geloggt ist.
+
+**Verifikation.** Vollsuite `1526 passed, 2630 subtests passed`.
