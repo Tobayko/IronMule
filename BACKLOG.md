@@ -73,9 +73,15 @@ generierten Token und streut. Eine feste späte Position ist die Signatur
 eines `argmax`-Gleichstands, den eine geänderte Akkumulationsreihenfolge
 kippt.
 
-**Messung:** ein gegateter Kurzlauf, ein Prozess, Prompt `677`, `16` Token
-greedy; aufgezeichnet wird der Top-2-Logit-Abstand je generierter Position.
-Weit unter dem Budget einer 30-Minuten-Freigabe.
+**Messung:** fertig gebaut und gegatet — `experiments/identity_forensics/`
+mit Vorregistrierung, Worker `measure_logit_gap.py` (verweigert ohne
+`--execute`, AC-Pflicht, `BudgetGuard`, Offline-Snapshot) und der vor der
+Messung festgelegten Klassifikation in `gap_analysis.py`. Ein Prozess,
+Prompt `677`, `16` Token greedy, Referenz plus die zwei Chunkings `128`
+und `512`, die genau an Position `10` abwichen. Drei Prefills und `48`
+Decodeschritte — weit unter einer 30-Minuten-Freigabe.
+
+**Wartet auf:** eine einzelne Nutzerfreigabe für diesen Lauf.
 
 **Gate:** ist der Abstand an Position `10` an der Auflösungsgrenze und an den
 übrigen Positionen deutlich größer, gilt die Hypothese als gestützt.
