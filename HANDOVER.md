@@ -62,8 +62,9 @@ scalar-adds them. The exact state vector is intercept, model-size, memory, GPU-c
 prompt, output, concurrency, objective, plan, workload-stratum, arrival-pattern,
 current-action and scaled remaining budget, with no unlisted interactions. Validation
 uses seeded uniform safe without-replacement propensity `1/remaining`; holdout uses
-frozen lexicographic order with propensity 1 and direct scoring only. No implementation,
-hardware/model run, download or commit occurred.
+frozen lexicographic order with propensity 1 and direct scoring only. No Q4 benchmark,
+activation, download or commit occurred; the later cached Gemma 4B correctness
+integration is disclosed below and is not a performance result.
 
 ## Current 2026-09-01 — Q4 offline implementation verified
 
@@ -85,7 +86,29 @@ RewardRecord derivation, strict stage-vector OPE, dataset gate, external-Ed25519
 shadow envelope and foreign replay registry are implemented. Q4 has produced no new
 speed gain. RL remains `DATA_INSUFFICIENT`/`NOT_APPLICABLE` until the new 24-context,
 72-H17-trajectory, 1224-transition and complete-panel minimum is measured. No
-hardware/model/27B run, download, installation, UI, activation or commit occurred.
+Qwen/27B benchmark or performance run, download, installation, UI, activation or
+commit occurred; a cached Gemma 4B runtime correctness integration did run and passed.
+
+## Current 2026-09-01 — Q4 integration/release quality disclosure
+
+The initial full pytest collection failed only because Q4 tests polluted
+`sys.modules["ironmule"]`. The test-only private loader
+`tests/q4_offline_loader.py` now gives the offline modules isolated namespaces; the
+fix does not alter product code. Q4 pytest is `55/55` green, and both full collection
+and full non-integration verification are green.
+
+The integration run intentionally excluded Qwen and 27B from the cached Gemma 4B
+correctness scope. It was a hardware/model integration check, not a benchmark or
+performance measurement. In combined integration
+order, the existing macOS cleanup tests
+`tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
+and
+`tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`
+failed, although the exact pair passes together in one isolated invocation. This remains
+an open `R14` integration/release/collection-quality issue, not a merge blocker:
+process inventory, group-gone ordering, timing and cleanup evidence must be recorded,
+and it closes only after two consecutive combined passes or deterministic proof and a
+fix. Isolated passes do not close it; the user-authorized merge proceeds with R14 open.
 
 ## Current 2026-09-01 — Q4 RL-first contract frozen
 

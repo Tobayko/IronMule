@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-import importlib
-import sys
-import types
 import unittest
-from pathlib import Path
 from dataclasses import replace
 import hashlib
 
+from q4_offline_loader import load_offline_modules
 
-ROOT = Path(__file__).parents[1]
-pkg = types.ModuleType("ironmule")
-pkg.__path__ = [str(ROOT / "ironmule")]
-sys.modules.setdefault("ironmule", pkg)
-
-q4 = importlib.import_module("ironmule.q4_methods")
+_OFFLINE = load_offline_modules(
+    "evidence", "q4_contracts", "q4_methods", namespace="q4_methods_test_modules"
+)
+q4 = _OFFLINE["q4_methods"]
 
 
 def row(action: str, group: str, reward: float = 1.0, *, stage: str = "KNOB_DELTA", propensity: float = 0.5):
@@ -87,7 +82,7 @@ class Q4MethodsTests(unittest.TestCase):
         self.assertEqual(score.failure_ucb, q4.failure_ucb(1, 4))
 
     def test_full_q4_state_uses_sparse_ridge_path(self):
-        contracts = importlib.import_module("ironmule.q4_contracts")
+        contracts = _OFFLINE["q4_contracts"]
         context = contracts.Q4Context(
             study_digest="a" * 64, model_digest="b" * 64,
             model_manifest_digest="c" * 64, workload_digest="d" * 64,
@@ -179,7 +174,7 @@ class Q4MethodsTests(unittest.TestCase):
         self.assertFalse(throughput.valid_for({"transition_id": "a" * 64, "reference_outcome_id": "b" * 64, "outcome_id": "c" * 64, "stage": "STRATEGY_SELECT"}))
 
     def test_strict_transition_join_maps_dynamic_delta_to_candidate_slot(self):
-        contracts = importlib.import_module("ironmule.q4_contracts")
+        contracts = _OFFLINE["q4_contracts"]
         context = contracts.Q4Context(
             study_digest="1" * 64, model_digest="2" * 64,
             model_manifest_digest="3" * 64, workload_digest="4" * 64,

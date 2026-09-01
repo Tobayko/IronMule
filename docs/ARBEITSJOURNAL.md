@@ -673,3 +673,44 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
   72-H17-trajectory, 1224-transition and complete-panel gate is still open.
 - **Scope:** No hardware/model/27B run, download, installation, UI, activation or
   commit occurred; existing raw JSON and local SQuAD data remain untouched.
+
+## 2026-09-01 — Q4 test isolation and combined integration order
+
+- **Initial full-suite issue:** The first full pytest collection failed because the Q4
+  tests polluted `sys.modules["ironmule"]` while loading offline modules. The test-only
+  private loader `tests/q4_offline_loader.py` now assigns isolated namespaces; this
+  fixes collection without changing product/runtime code.
+- **Verification:** Q4 pytest is green at `55/55`; full collection and the full
+  non-integration suite are green. No Qwen or 27B integration was run.
+- **Remaining integration finding:** In the combined integration order, these two
+  existing macOS process-cleanup tests fail, while each passes when run alone:
+  `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
+  and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+  This is recorded as an order/timing integration-quality finding, not as a Q4 or product
+  performance result. Process inventory, group-gone ordering, timing and cleanup
+  evidence remain required.
+- **Decision:** The finding is tracked as `R14` in `docs/BACKLOG.md`; it closes only
+  after two consecutive combined integration passes or deterministic proof and a fix.
+  Isolated passes do not close the issue. Qwen/27B benchmark or performance runs,
+  download, installation, UI, activation or commit did not occur in this documentation
+  entry; the cached Gemma 4B correctness integration is disclosed in the correction
+  below.
+
+## 2026-09-01 — Correction: Gemma 4B integration disclosure and merge disposition
+
+- **Command/outcome:** `pytest tests/test_ironmule_runtime_integration.py -q` ran the
+  cached Gemma 4B runtime correctness tests and passed. This was a hardware/model
+  integration check of grouped-vs-sequential correctness, token/count/stop/state
+  identity and related runtime behavior; it was not a benchmark or performance run,
+  and yields no speed claim.
+- **Combined integration:** The full integration invocation, explicitly without Qwen
+  and 27B, still showed the two R14 macOS process-cleanup flakes in combined order:
+  `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
+  and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+  The exact pair passed together in one isolated invocation:
+  `pytest -q tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+- **Disposition:** R14 is an open integration/release/collection-quality issue, not a
+  merge blocker. The user explicitly directs merge to main with R14 open. Its process
+  inventory, group-gone ordering and timing interaction remain subject to the existing
+  two-consecutive-green or deterministic-proof-and-fix criterion. Qwen/27B were not
+  run, and no benchmark/performance result was produced.

@@ -4,38 +4,38 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import sys
 import tempfile
-import types
 import unittest
 from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
-# The repository's public package eagerly imports its MLX runtime.  Q4's
-# offline boundary must be testable on a machine without MLX, so load only the
-# package modules needed by this test.  This does not alter production code.
-_package = types.ModuleType("ironmule")
-_package.__path__ = [str(Path(__file__).resolve().parents[1] / "ironmule")]
-sys.modules.setdefault("ironmule", _package)
+from q4_offline_loader import load_offline_modules
 
-from ironmule.evidence import ArtifactRef, EvidenceQuality
-from ironmule.q4_contracts import ForeignBundleMetadata
-from ironmule.q4_foreign import (
-    ENVELOPE_SCHEMA,
-    ForeignBundleEnvelope,
-    ForeignBundleVerifier,
-    ForeignEvidenceStatus,
-    ForeignIdentity,
-    ForeignVerificationError,
-    VerifierUnavailable,
-    ReplayRegistry,
-    TrustedPublicKey,
-    UserApprovedTrustStore,
-    bundle_id_sha256,
-    canonical_bundle_payload,
-    verify_foreign_bundle,
+
+_OFFLINE = load_offline_modules(
+    "evidence", "q4_contracts", "q4_foreign", namespace="q4_foreign_test_modules"
 )
+_evidence = _OFFLINE["evidence"]
+_contracts = _OFFLINE["q4_contracts"]
+_foreign = _OFFLINE["q4_foreign"]
+
+ArtifactRef = _evidence.ArtifactRef
+EvidenceQuality = _evidence.EvidenceQuality
+ForeignBundleMetadata = _contracts.ForeignBundleMetadata
+ENVELOPE_SCHEMA = _foreign.ENVELOPE_SCHEMA
+ForeignBundleEnvelope = _foreign.ForeignBundleEnvelope
+ForeignBundleVerifier = _foreign.ForeignBundleVerifier
+ForeignEvidenceStatus = _foreign.ForeignEvidenceStatus
+ForeignIdentity = _foreign.ForeignIdentity
+ForeignVerificationError = _foreign.ForeignVerificationError
+VerifierUnavailable = _foreign.VerifierUnavailable
+ReplayRegistry = _foreign.ReplayRegistry
+TrustedPublicKey = _foreign.TrustedPublicKey
+UserApprovedTrustStore = _foreign.UserApprovedTrustStore
+bundle_id_sha256 = _foreign.bundle_id_sha256
+canonical_bundle_payload = _foreign.canonical_bundle_payload
+verify_foreign_bundle = _foreign.verify_foreign_bundle
 
 
 HEX = "a" * 64
