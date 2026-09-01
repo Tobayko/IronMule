@@ -31,6 +31,47 @@ Q3f again. A child-visibility hardening would require new explicit
 authorization and a new preregistration. No 27B model, download, installation,
 restart, UI work or automatic activation occurred.
 
+## Current 2026-09-01 — Q4 final H17 contract frozen
+
+The final Q4 correction is the H17 protocol in
+[`research/raw/Q4_preregistration.md`](research/raw/Q4_preregistration.md), with its
+SHA-256 `4c818404a50ca5102f1be8d48399af42f494eb7afb4d23d27e2a59481f4d203c` recorded
+in the companion file. A complete trajectory is exactly steps 0--16:
+11 `KNOB_DELTA` evaluations, 5 plan-matching `STRATEGY_SELECT` evaluations for the
+final knob, and terminal `REVALIDATE` at step 16. Partial aborts are terminal at the
+current step and never complete. Each context's method budget is exactly 16 candidates
+(11 + 5); shared BASE is external.
+
+Stage-2 completeness is the full exact cross-product of all 12 knob actions with the
+five plan-matching safe strategies (60 cells/context), collected as 12 separate
+knob-anchor phases, each with five fresh processes (one per strategy), two warmups and
+five repeats, and a 600-second phase bound. S11/S12 remain two separate risk probes
+outside reward/OPE/policy support. Each trajectory is split into separately
+preregistered/user-started knob (11 children, 1320 seconds), strategy (5 children, 600
+seconds) and revalidation (1 child, 120 seconds) subphases, each under 1800 seconds;
+trajectory/context/study/time digests remain stable across subphases.
+
+The Q4 minimum is 24 entirely new contexts, 72 H17 trajectories and 1224 transitions;
+historical Q2/B35/B36 remain Q3-namespaced and E11 remains `LEDGER_ONLY`. OPE and
+ensemble folds use complete context/group hashes with all trajectories of a context
+co-fold. WIS clip is 10; grouped five-fold DR is TRAIN/VALIDATION-only, while sealed
+holdout is direct-panel-only. The final result remains a local-pilot claim; foreign
+evidence is `MISSING` pending Ed25519 verification through a user-approved local trust
+store. Knob FQI and strategy immediate-ridge heads are separate; the hybrid never
+scalar-adds them. The exact state vector is intercept, model-size, memory, GPU-core,
+prompt, output, concurrency, objective, plan, workload-stratum, arrival-pattern,
+current-action and scaled remaining budget, with no unlisted interactions. Validation
+uses seeded uniform safe without-replacement propensity `1/remaining`; holdout uses
+frozen lexicographic order with propensity 1 and direct scoring only. No implementation,
+hardware/model run, download or commit occurred.
+
+## Current 2026-09-01 — Q4 RL-first contract frozen
+
+This initial H13 draft is superseded by the final H17 contract above and retained only
+as historical provenance. The current protocol is the H17 preregistration at
+`research/raw/Q4_preregistration.md` (SHA-256 in its companion file) and the plan at
+`docs/Q4_IMPLEMENTATION_PLAN.md`.
+
 ## Current 2026-08-31 — Q3e terminal; Q3f is frozen as the only next path
 
 Q3e is terminally `FAILED`. Its retained raw result is

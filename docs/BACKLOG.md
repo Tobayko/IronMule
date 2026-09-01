@@ -273,6 +273,82 @@ panel for coordinate/random/BO-surrogate replay, (2) independent grouped context
 with comparable panels for generalisation and contextual bandits, and (3) a measured
 sequential horizon before RL can become applicable.
 
+### `Q4` — Evidence-bound hierarchical RL and two-stage hybrid optimizer
+
+**Mechanism.** The Q3 contract has a durable offline state/action/outcome schema, but
+its ten-knob action space cannot express the execution/scheduling evidence that made
+E14b and E16 useful. Q4 joins the existing Q2, B35, B36, B27, E14b, E16 and X1
+knowledge through content-hash migration while keeping two closed spaces separate:
+`KnobAction` for the ten runtime knobs and `ExecutionStrategyAction` for plan, mode,
+grouping, synchronization, cache and workload policy. A hierarchical conservative
+offline-RL policy can then learn an H=17 sequential trajectory (`11 KNOB_DELTA`, five
+`STRATEGY_SELECT`, one `REVALIDATE`) before final revalidation, with evaluator-owned
+correctness/resource gates, separate knob/strategy value heads and failure-risk critic,
+behaviour prior, exact propensities, action masks and uncertainty/OPE checks. The
+`HybridOptimizer` is two-stage and shadow-only until a later architecture decision.
+
+**Test.** Freeze `research/raw/Q4_preregistration.md` and its SHA before Q4
+implementation or collection. First build a read-only corpus migration preserving
+all raw/summary/partial/exploratory/failure statuses. Historical names remain
+`Q3_VALIDATION`, `Q3_SEALED_HOLDOUT` and E11 `LEDGER_ONLY`; Q4 splits are new only.
+Then, at equal budgets, replay
+`BASELINE`, current coordinate, seeded random, deterministic BO, surrogate,
+contextual bandit and offline RL over disjoint `Q4_TRAIN`/`Q4_VALIDATION`/
+`Q4_SEALED_HOLDOUT` groups
+by study/model/manifest/workload/hardware/runtime/time. Require complete raw panels
+for the ten-knob and strategy spaces, 24 entirely new contexts spanning Gemma 1B/4B/
+12B (`no27`) (Q4_TRAIN 12, Q4_VALIDATION 6,
+Q4_SEALED_HOLDOUT 6), 72 complete H17 trajectories and 1224 transitions, exact
+token/stop/count/state identity, resource/rollback evidence, deterministic seeds,
+exact behaviour propensities, H17 stage and partial-abort terminal-state evidence,
+grouped bootstrap, best
+outcome/regret, time-to-best, experiments-to-best, regression rate, uncertainty
+calibration, failure recovery and byte-identical replay. Only then may RL be scored;
+the two-stage report must remain unable to import the runtime, select a path, write a
+profile or activate a strategy. The method budget is exactly 11 knob-delta + 5
+plan-matching strategy decisions = 16 per context; the shared BASE reference is
+external to that budget. Stage 2 requires all 12 knob actions × five matching strategies
+= 60 exact cells/context, split into 12 anchor×strategy phases. S11/S12 are separate
+risk probes. Each context×stage/anchor collection is separately preregistered,
+explicitly user-started and capped at 30 minutes; child ceilings are 12 knob-panel, 5
+plan-matching strategy, 2 risk-probe, and per-trajectory subphases of 11 knob + 5
+strategy + 1 revalidate child. Strategy p95 requires at least 20 request-level samples
+per action. Foreign Macs contribute only Ed25519-signed raw
+bundles trusted through an explicit local user-approved key store.
+
+For each context, Stage 2 uses only the five strategies matching its frozen plan:
+S01--S05 for StrictOneShotPlan or S06--S10 for ReusableSessionPlan; the opposite plan
+is not exact/safe. The Stage-2 interaction panel is the full 60-cell cross-product,
+collected in 12 separate knob-anchor phases; each phase uses five fresh processes, one
+per strategy under that knob anchor (five arm cells, two warmups and five measured
+repeats), and any missing pair forces BASE fallback. The shared BASE reference is
+external to the method budget. The H17
+trajectory has explicit `KNOB_DELTA`/`STRATEGY_SELECT`/`REVALIDATE` stages; every delta
+changes exactly one legal knob field, accepted targets update the current action and
+rejected/failed targets leave it unchanged. Partial aborts are terminal at the current
+step and complete only at step 16. Knob FQI and strategy-immediate value heads are
+separate; the hybrid never scalar-adds them.
+
+**Kill.** Keep the current deterministic coordinate path and mark Q4
+`DATA_INSUFFICIENT` if any split, full panel, independent context or measured H=17
+horizon is absent. Mark RL `NOT_APPLICABLE` until the sequential horizon exists. Reject RL
+permanently for this decision when the best simpler method is equal or better at the
+same budget, RL does not beat it on sealed-holdout reward and both time-to-best and
+experiments-to-best, regression is worse, or uncertainty/OPE support is uncalibrated.
+The direct grouped advantage must have a 95% lower bound `>+2pp`; the equivalence
+margin is `1pp`. A DR estimate with opposite sign or absolute disagreement `>2pp`
+invalidates `RL_WINS`. `time_to_best`/`experiments_to_best` use original cost
+`c <= 1.01*c_oracle`; unsafe/censored and safe `c > 1.02*c_BASE` rates use separate
+exact denominators.
+Any token/output/stop/state divergence, safety/resource/cleanup failure, split
+leakage, fabricated/imputed/summary-only label, nondeterministic replay, unauthorized
+runtime import, profile write, routing or activation is terminal; BASE/current
+coordinate remains unchanged. WIS uses ratio clip 10 and grouped five-fold DR by
+complete context/group hash (all trajectories in a context co-fold); any overlap/support
+failure yields `OPE_UNSUPPORTED`. Do not retry or pool Q3c/Q3d/Q3e/Q3f, promote X1/B35/
+B27 summaries or exploratory true batching, combine E14b's `+18.02%` and `+20.05%`,
+or invent foreign-Mac measurements.
+
 ### `Q3a` — Path interaction: final Q2 incumbent versus `fused_argmax`
 
 **Mechanism.** Q2 evaluated `fused_argmax` early and then retained

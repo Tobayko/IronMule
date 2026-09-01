@@ -535,3 +535,95 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
   gepoolt; die historischen Q2-Geschwindigkeitswerte sind nicht reproduziert.
   Eine mögliche Verbesserung der Child-Sichtbarkeit ist ein neues Vorhaben und
   benötigt ausdrückliche Freigabe sowie eine neue Vorregistrierung.
+
+## 2026-09-01 — Q4 RL-first architecture and preregistration frozen
+
+- **Contract:** `research/raw/Q4_preregistration.md` was created before any Q4
+  implementation or hardware collection. Its SHA-256 is
+  `1ef42943032f20e85d21d81d0252853d7775b0858a4cb60a1743767bf9e0cf31`, recorded in
+  `research/raw/Q4_preregistration.sha256`. The companion implementation order is
+  `docs/Q4_IMPLEMENTATION_PLAN.md`.
+- **Decision:** Q4 is RL-first but hierarchical and conservative: a ten-knob
+  `KnobAction` stage precedes a separate execution/scheduling `StrategyAction` stage.
+  The `HybridOptimizer` is shadow-only; it cannot import the runtime, execute a
+  candidate, select a caller-owned plan/mode, write a profile or activate routing.
+- **Data boundary:** Q2 remains validation-only, B36 remains sealed-holdout-only,
+  B35/E14b/E16/X1 remain prior/limited evidence, B27 summary/partial records remain
+  non-qualifying, and Q3 safety failures remain retained/censored and unpooled. No
+  historical result is relabelled as TRAIN. The Q4 minimum is 12 grouped contexts,
+  36 complete horizon-12 trajectories and complete raw panels for both action spaces,
+  spanning Gemma 1B/4B/12B with `no27`.
+- **Gates:** Every comparison uses equal budgets and fixed seeds, grouped
+  TRAIN/VALIDATION/SEALED_HOLDOUT splits by study/model/manifest/workload/hardware/
+  runtime/time, evaluator-owned exact correctness/resource/rollback evidence and
+  direct plus OPE/calibration diagnostics. RL is `NOT_APPLICABLE` until a measured
+  sequential horizon exists and is rejected if the simpler method is equal/better or
+  if sealed-holdout, time-to-best, experiments-to-best, regression or safety criteria
+  fail. Each future hardware phase requires explicit user start, AC power, Low Power
+  off, nominal thermal state, no Claude/competing model process and a 30-minute cap.
+- **Scope:** Documentation only in this entry: no model download/installation,
+  hardware/MLX run, runtime change, UI, promotion or commit. Existing local SQuAD
+  artifact remains untouched.
+
+## 2026-09-01 — Q4 contract correction: H13, new-only splits and OPE gates
+
+- **Correction:** The prior Q4 entry recorded the initial draft only. The superseding
+  preregistration is `research/raw/Q4_preregistration.md` with SHA-256
+  `83849b458b567ebd9384b76280c7d3ea7db2221a819d13feda68511c63d1bf28`. It fixes H13 as `11 KNOB_DELTA +
+  1 STRATEGY_SELECT + 1 REVALIDATE`, explicit partial-abort terminal state, and
+  completion only at step 12.
+- **Data:** Q4 now requires 24 entirely new contexts (Q4_TRAIN 12,
+  Q4_VALIDATION 6, Q4_SEALED_HOLDOUT 6), 72 complete trajectories and 936
+  transitions. Historical Q2/B35/B36 remain `Q3_VALIDATION`/`Q3_SEALED_HOLDOUT`,
+  E11 remains `LEDGER_ONLY`; none is a Q4 split row. Gemma 1B/4B/12B are the local
+  panel; 27B is excluded.
+- **RL contract:** Every transition records exact behaviour propensity and policy
+  digest. Q4 TRAIN uses seeded uniform safe exploration; deterministic coordinate
+  propensity is 1 only for its selected action, so counterfactual OPE is unsupported.
+  WIS ratio clip 10 and grouped five-fold DR by complete context/group hash (all
+  trajectories in a context co-fold) are mandatory, with overlap/support failure
+  producing `OPE_UNSUPPORTED`; Q4_SEALED_HOLDOUT is direct-panel-only. The safe method
+  budget is 11 knob-delta + 5 plan-matching strategy decisions = 16, with shared BASE
+  outside the budget; S11/S12 are separate risk probes. Future context×stage and each
+  of three separately preregistered context×trajectory phases are user-started and
+  capped at 30 minutes; no aggregate time claim is made. Foreign evidence is
+  Ed25519-only through an explicit user-approved local trust store and is currently
+  missing.
+- **Decision thresholds:** A local `RL_WINS` requires direct grouped 95-% CI lower
+  bound `>+2pp`, equivalence margin `1pp`, lower original-cost time-to-best and
+  experiments-to-best (`c <= 1.01*c_oracle`), separate unsafe/censored and safe
+  `c > 1.02*c_BASE` denominators, and no DR contradiction (opposite sign or absolute
+  gap `>2pp`). Otherwise RL is killed or remains ineligible.
+- **Scope:** This correction is documentation only: no code, download, installation,
+  hardware/MLX run, UI, promotion or commit; local SQuAD remains untouched.
+
+## 2026-09-01 — Q4 final H17 math and collection-bound correction
+
+- **Final protocol:** The superseding `research/raw/Q4_preregistration.md` freezes
+  SHA-256 `4c818404a50ca5102f1be8d48399af42f494eb7afb4d23d27e2a59481f4d203c`. Complete trajectories are
+  H17: steps 0--10 are 11 `KNOB_DELTA` evaluations, steps 11--15 are five
+  plan-matching `STRATEGY_SELECT` evaluations for the final knob, and step 16 is the
+  terminal `REVALIDATE`; partial aborts are terminal at their current step and only
+  step 16 is complete.
+- **Budget/panels:** Equal method budget is 16 candidates (11 knob + 5 strategy) with
+  shared BASE outside the budget. Stage 2 requires all 12 knob actions × five
+  plan-matching strategies (60 cells/context), collected as 12 separate knob-anchor
+  phases, each with five fresh strategy processes (one per strategy, two warmups and
+  five repeats). The shared BASE reference remains external. S11/S12 remain separate
+  risk probes.
+- **Collection:** Each trajectory is three separately preregistered/user-started
+  subphases: knob (11 children, 1320 seconds), strategy (5 children, 600 seconds),
+  revalidate (1 child, 120 seconds), each below its 1800-second cap. Context,
+  trajectory, study and predeclared batch-time digests remain stable; there is no
+  aggregate 30-minute claim.
+- **RL math:** Knob FQI alone uses incremental wall reward and
+  `y=r+0.9*(not_knob_terminal)*max_supported Q_prev`, ridge `alpha=1`, 20 iterations
+  and tolerance `1e-9`. Strategy uses a separate contextual immediate ridge head with
+  objective-specific reward and no Bellman/cross-unit backup. The hybrid reports both
+  heads/vector and never scalar-adds them. Selection is
+  `Q_LCB - 0.1*(-log(max(propensity,1e-6)))`; OPE uses WIS clip 10 and grouped
+  context/group-hash five-fold DR only on controlled TRAIN/VALIDATION. Sealed holdout
+  is direct-panel-only.
+- **Scope:** No code, model/download/install, hardware/MLX run, UI, promotion or commit
+  occurred; foreign evidence remains `MISSING` and the local SQuAD artifact is
+  untouched.
