@@ -130,6 +130,39 @@ def main() -> int:
         ratio = project_request_ratio(**shared, **kwargs)
         print(f"{label:38s} {ratio:9.6f} {100*(1-ratio):7.2f} %")
     print()
+    # Where does the leading lever change? Everything above depends on the
+    # registered answer length, which was chosen for measurement budget, not
+    # because it is what a request looks like.
+    decode_ratio = REALISTIC_UTILISATION / decode_utilisation
+    prefill_ratio = prefill_utilisation / REALISTIC_UTILISATION
+
+    def ceilings(count: int) -> tuple[float, float]:
+        base = {"ttft_seconds": profile["ttft_seconds"], "tokens": count,
+                "decode_tps": profile["decode_tps"]}
+        return (1 - project_request_ratio(**base, decode_tps_ratio=decode_ratio),
+                1 - project_request_ratio(**base, ttft_ratio=prefill_ratio))
+
+    low, high = 2, 8192
+    while high - low > 1:
+        middle = (low + high) // 2
+        decode_gain, prefill_gain = ceilings(middle)
+        if prefill_gain > decode_gain:
+            low = middle
+        else:
+            high = middle
+    crossover = low
+    decode_gain, prefill_gain = ceilings(crossover)
+    print(f"leading lever changes at {crossover} generated tokens"
+          f" (both worth {decode_gain*100:.2f} % there,"
+          f" prefill share {prefill_share(ttft_seconds=profile['ttft_seconds'], tokens=crossover, decode_tps=profile['decode_tps'])*100:.2f} %)")
+    print(f"the registered workload generates {profile['tokens']} tokens, well below it")
+    print()
+    print(f"{'tokens':>7} {'decode ceiling':>15} {'prefill ceiling':>16}  leads")
+    for count in (16, 32, 64, 128, 256, 512, 1024):
+        decode_gain, prefill_gain = ceilings(count)
+        print(f"{count:7d} {decode_gain*100:14.2f} % {prefill_gain*100:15.2f} %"
+              f"  {'prefill' if prefill_gain > decode_gain else 'decode'}")
+    print()
     print("measured to date, for comparison")
     for label, kwargs in (
         ("head_skip_prefill (candidate 19)", {"ttft_ratio": 0.846385}),
