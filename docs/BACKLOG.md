@@ -287,34 +287,23 @@ correctness/resource gates, separate knob/strategy value heads and failure-risk 
 behaviour prior, exact propensities, action masks and uncertainty/OPE checks. The
 `HybridOptimizer` is two-stage and shadow-only until a later architecture decision.
 
-**Test.** Freeze `research/raw/Q4_preregistration.md` and its SHA before Q4
-implementation or collection. First build a read-only corpus migration preserving
-all raw/summary/partial/exploratory/failure statuses. Historical names remain
-`Q3_VALIDATION`, `Q3_SEALED_HOLDOUT` and E11 `LEDGER_ONLY`; Q4 splits are new only.
-Then, at equal budgets, replay
-`BASELINE`, current coordinate, seeded random, deterministic BO, surrogate,
-contextual bandit and offline RL over disjoint `Q4_TRAIN`/`Q4_VALIDATION`/
-`Q4_SEALED_HOLDOUT` groups
-by study/model/manifest/workload/hardware/runtime/time. Require complete raw panels
-for the ten-knob and strategy spaces, 24 entirely new contexts spanning Gemma 1B/4B/
-12B (`no27`) (Q4_TRAIN 12, Q4_VALIDATION 6,
-Q4_SEALED_HOLDOUT 6), 72 complete H17 trajectories and 1224 transitions, exact
-token/stop/count/state identity, resource/rollback evidence, deterministic seeds,
-exact behaviour propensities, H17 stage and partial-abort terminal-state evidence,
-grouped bootstrap, best
-outcome/regret, time-to-best, experiments-to-best, regression rate, uncertainty
-calibration, failure recovery and byte-identical replay. Only then may RL be scored;
-the two-stage report must remain unable to import the runtime, select a path, write a
-profile or activate a strategy. The method budget is exactly 11 knob-delta + 5
-plan-matching strategy decisions = 16 per context; the shared BASE reference is
-external to that budget. Stage 2 requires all 12 knob actions × five matching strategies
-= 60 exact cells/context, split into 12 anchor×strategy phases. S11/S12 are separate
-risk probes. Each context×stage/anchor collection is separately preregistered,
-explicitly user-started and capped at 30 minutes; child ceilings are 12 knob-panel, 5
-plan-matching strategy, 2 risk-probe, and per-trajectory subphases of 11 knob + 5
-strategy + 1 revalidate child. Strategy p95 requires at least 20 request-level samples
-per action. Foreign Macs contribute only Ed25519-signed raw
-bundles trusted through an explicit local user-approved key store.
+**Test (remaining hardware/evaluation work).** The offline contracts, corpus importer,
+replay methods, strict OPE, dataset gate, shadow envelope and foreign replay boundary
+are complete; the durable implementation report is
+`research/raw/Q4_implementation_report_20260901.md`. Remaining work is explicitly
+named collection only: on the local M1 Max, collect 24 entirely new contexts spanning
+Gemma 1B/4B/12B (`no27`) in new `Q4_TRAIN`/`Q4_VALIDATION`/`Q4_SEALED_HOLDOUT`
+groups by study/model/manifest/workload/hardware/runtime/time; build 12-knob and
+plan-matching five-strategy panels; collect 72 complete H17 trajectories (1224
+transitions); then run the equal-budget BASELINE/current-coordinate/seeded-random/
+BO/surrogate/contextual-bandit/OFFLINE_RL evaluation once on the direct sealed panels.
+Historical `Q3_VALIDATION`/`Q3_SEALED_HOLDOUT` and E11 `LEDGER_ONLY` rows remain
+outside Q4. The Stage-2 panel is 12 knob actions × 5 matching strategies = 60 exact
+cells/context, in 12 anchor phases; S11/S12 are separate risk probes. Each collection
+phase is separately preregistered and explicitly user-started, with 16 candidate
+decisions per context (11 knob-delta + 5 strategy; BASE external), exact identities,
+propensities, p95/request gates, grouped metrics, recovery and replay checks. The
+runtime remains unable to import, select, write or activate from the shadow report.
 
 For each context, Stage 2 uses only the five strategies matching its frozen plan:
 S01--S05 for StrictOneShotPlan or S06--S10 for ReusableSessionPlan; the opposite plan

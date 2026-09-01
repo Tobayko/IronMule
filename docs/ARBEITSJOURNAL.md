@@ -627,3 +627,49 @@ Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
 - **Scope:** No code, model/download/install, hardware/MLX run, UI, promotion or commit
   occurred; foreign evidence remains `MISSING` and the local SQuAD artifact is
   untouched.
+
+## 2026-09-01 — Q4 offline implementation verified
+
+- **Implementation report:** `research/raw/Q4_implementation_report_20260901.md`
+  records the offline implementation result; its SHA-256 is
+  `553b83dd5be114a546bee6e24654246b265947b1ad461148459148625dd13f65` and the
+  companion SHA is recorded beside it. The amended Q4 preregistration SHA-256 is
+  `975aa61a52498172a87f992e7847b999924693e6d1d0185f56627a58f63b1545`. The verification
+  covered 55/55 tests, 285 imported inputs, skipped two derived implementation-report
+  files, retained 195 unique contents, one eligible historical artifact, zero Q4
+  transitions, zero TRAIN rows and foreign evidence `MISSING`.
+- **Evidence boundary:** The final historical-import dataset ID is
+  `42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b` with semantic
+  payload SHA `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`.
+  Temporary import file SHA is
+  `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35` and is not
+  repository raw evidence. Earlier `dfb48c…`/`85c90b…` values are superseded
+  pre-amendment verification only.
+- **Status:** Q4 contracts, corpus adapter, replay methods, strict stage-vector OPE,
+  dataset gate, shadow envelope and foreign replay registry are implemented. RL is
+  still `DATA_INSUFFICIENT`/`NOT_APPLICABLE` until 24 new contexts, 72 H17 trajectories,
+  1224 transitions and complete panels exist. No Q4 speed gain or speed claim exists;
+  historical Q2/E14b/X1/B36 values remain context only.
+- **Scope:** No hardware/model/27B run, download, installation, UI, activation or
+  commit occurred in this verification entry. Existing raw JSON and local SQuAD data
+  remain untouched.
+
+## 2026-09-01 — Q4 post-amendment import finalized
+
+- **Stable import:** The post-amendment verification was repeated byte-identically.
+  It records 285 inputs, 195 unique contents after skipping exactly two derived
+  implementation-report files, one eligible historical artifact, zero Q4 transitions,
+  zero TRAIN rows and foreign evidence `MISSING`.
+- **Identity:** Final historical-import dataset ID is
+  `42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b`; semantic
+  payload SHA-256 is
+  `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`. Temporary
+  import file SHA-256 is
+  `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35` and is not
+  repository raw evidence. The earlier `dfb48c…`/`85c90b…` identity remains
+  superseded pre-amendment verification only.
+- **Verification:** Offline implementation coverage is now `55/55` tests. Q4 remains
+  `DATA_INSUFFICIENT`/`NOT_APPLICABLE` with no new speed result; the 24-context,
+  72-H17-trajectory, 1224-transition and complete-panel gate is still open.
+- **Scope:** No hardware/model/27B run, download, installation, UI, activation or
+  commit occurred; existing raw JSON and local SQuAD data remain untouched.
