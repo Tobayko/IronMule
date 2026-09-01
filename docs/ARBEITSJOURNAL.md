@@ -9194,3 +9194,70 @@ die Kernaussage — Decode fast erschöpft, Prefill weit offen — hängt an ein
 Faktor `7,1×` zwischen den Phasen und an einem Prefill-Anteil von `79,84 %`,
 nicht an der zweiten Nachkommastelle. `formal_claim=false`; das ist eine
 Planungsrechnung, keine Messung.
+
+## 2026-09-02 — Der Kreuzungspunkt: das Projekt optimiert eine 32-Token-Antwort
+
+Fortsetzung der Roofline-Rechnung desselben Tages, gleiche Quellen, gleiche
+Grenzen. Offline, kein Lauf.
+
+**Frage an die eigene Schlussfolgerung.** Die Aussage „Decode ist erschöpft,
+Prefill ist offen" hing an einer Zahl, die ich nicht geprüft hatte: `32`
+generierte Token. Diese Länge stammt aus der persistenten Prozessstudie und
+war dort eine Budgetentscheidung, keine Aussage darüber, wie eine Anfrage
+aussieht.
+
+**Kreuzungspunkt.** Bei welcher Antwortlänge wechselt der führende Hebel? Mit
+den realistischen Decken (`85 %` Auslastung je Phase):
+
+| generierte Token | Decode-Decke | Prefill-Decke | führend |
+| --- | --- | --- | --- |
+| `16` | `3,25 %` | `41,27 %` | Prefill |
+| `32` | `5,85 %` | `37,11 %` | Prefill |
+| `64` | `9,73 %` | `30,89 %` | Prefill |
+| `128` | `14,58 %` | `23,13 %` | Prefill |
+| `256` | `19,40 %` | `15,39 %` | **Decode** |
+| `512` | `23,25 %` | `9,22 %` | **Decode** |
+| `1024` | `25,81 %` | `5,12 %` | **Decode** |
+
+Der Wechsel liegt bei **`203` generierten Token**; dort sind beide Klassen
+`17,86 %` wert, der Prefill-Anteil ist auf `38,43 %` gefallen.
+
+**Was das über das Projekt sagt.** Jede Optimierungsstudie dieses Projekts
+liegt unterhalb des Kreuzungspunkts: Head-Skip `32`, Chunk-Identity `16`,
+persistenter Prozess `32`, der versiegelte Optimizer-Workload-Vertrag
+(`optimizer_shadow_q2/WORKLOAD_CONTRACT.json`) `32`. Das Projekt hat also
+durchgehend in dem Bereich optimiert, in dem Prefill führt — und das ist auch
+der Bereich, in dem die gestrige Aussage „Decode ist zu" gilt.
+
+Gleichzeitig hat dasselbe Projekt in *anderen* Experimenten längst mit
+realistischeren Längen gearbeitet: `segmented_decode` mit `240` Token,
+`self_consistency` mit `224` bis `640`, `prompt_lookup` mit `96`,
+`divergence` mit `160`. Diese liegen überwiegend jenseits des
+Kreuzungspunkts. Die Optimierungsseite und die Verhaltensseite des Projekts
+messen also verschiedene Regime.
+
+**Korrektur meiner gestrigen Aussage.** „Die Decode-Klasse ist erschöpft" gilt
+**nur unterhalb von rund `200` generierten Token**. Für eine typische
+Chatantwort ist sie nicht erschöpft, sondern die führende Klasse. Die
+Priorisierung in Backlog P1 wird entsprechend eingegrenzt.
+
+**Kosten eines zweiten Arms**, gerechnet mit der Pausenlogik der bestehenden
+Worker (`(1−0,15)/0,15` Pause je Sekunde GPU-Arbeit) und dem gemessenen
+Punktpreis von `167 s`:
+
+| Antwortlänge | zusätzliche GPU-Zeit | Wall je Punkt | Punkte je Block |
+| --- | --- | --- | --- |
+| `32` | — | `167,0 s` | `10` |
+| `128` | `1,35 s` | `176,0 s` | `10` |
+| `256` | `3,16 s` | `188,0 s` | `9` |
+| `512` | `6,76 s` | `212,1 s` | `8` |
+
+Ein Arm bei `256` Token kostet also `9` statt `10` Punkte je Freigabe. Das ist
+billig für die Frage, ob das Projekt das richtige Regime optimiert.
+
+**Was ich nicht getan habe.** Ich habe F1 nicht stillschweigend erweitert. F1
+erntet bestätigte Gewinne in genau dem Regime, in dem sie bestätigt wurden —
+das ist methodisch richtig, und ein zusätzlicher Arm bei `256` Token würde die
+Bindung an die versiegelte Evidenz lockern. Die Regimefrage steht deshalb als
+eigener Backlog-Eintrag W1 und ist eine Entscheidung des Nutzers, keine
+stillschweigende Ausweitung.

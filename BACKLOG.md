@@ -49,11 +49,14 @@ Token) ist Prefill `79,84 %` der Anfrage. Die Roofline sagt dazu:
 | Decode | `60,3 %` der Bandbreite | `5,85 %` | `1,42 %` (`fixed_compiled`) |
 | Prefill | `45,5 %` der Rechenspitze | `37,11 %` | `12,26 %` (Head-Skip) |
 
-**Konsequenz 1 — Decode ist zu.** Für alle künftigen Decode-Kandidaten
-zusammen bleiben rund `4,4` Prozentpunkte end-to-end. Ein Decode-Kandidat kann
-sein eigenes Decode-Gate noch bestehen, aber die End-to-End-Schwelle von F1
-(`10 %` warm) grundsätzlich nicht mehr erreichen. Neue Decode-Kandidaten
-werden nicht mehr vorregistriert, solange die Workload kurz bleibt.
+**Konsequenz 1 — Decode ist zu, aber nur unterhalb von rund `200` Token.**
+Für die registrierte Workload bleiben allen künftigen Decode-Kandidaten
+zusammen rund `4,4` Prozentpunkte end-to-end. Ein Decode-Kandidat kann sein
+eigenes Decode-Gate noch bestehen, aber die End-to-End-Schwelle von F1
+(`10 %` warm) grundsätzlich nicht mehr erreichen. **Diese Aussage endet bei
+`203` generierten Token**: darüber führt die Decode-Klasse (siehe W1). Neue
+Decode-Kandidaten werden nicht vorregistriert, solange die Workload kurz
+bleibt — für eine lange Antwort gilt das Gegenteil.
 
 **Konsequenz 2 — Prefill hat zwei Mechaniken, nicht eine.**
 
@@ -71,9 +74,41 @@ Tokenidentität, gepaarte Sessions.
 
 **Kill/Pivot:** findet sich keine längenunabhängig identitätserhaltende
 Blockstruktur und zeigt der Profiler keinen adressierbaren Prefill-Engpass,
-bleibt die Klasse geschlossen. Für Workloads ab etwa `128` generierten Token
-kippt die Rechnung zugunsten der Decode-Klasse; diese Priorisierung gilt
-ausdrücklich nur für die registrierte kurze Antwort.
+bleibt die Klasse geschlossen. Ab `203` generierten Token kippt die Rechnung
+zugunsten der Decode-Klasse; diese Priorisierung gilt ausdrücklich nur für die
+registrierte kurze Antwort.
+
+## W1 — Optimiert das Projekt das richtige Regime? (neu 2026-09-02)
+
+**Status:** offen, Entscheidung des Nutzers. Herleitung im Arbeitsjournal
+unter „2026-09-02 — Der Kreuzungspunkt"; reproduzierbar mit
+`experiments/roofline/phase_roofline.py`.
+
+**Mechanismus:** der führende Hebel wechselt bei **`203` generierten Token**
+von Prefill zu Decode. Jede Optimierungsstudie dieses Projekts liegt darunter
+— Head-Skip `32`, Chunk-Identity `16`, persistenter Prozess `32`, der
+versiegelte Workload-Vertrag `32`. Andere Experimente desselben Projekts
+arbeiteten längst darüber: `segmented_decode` `240`, `self_consistency`
+`224`–`640`, `divergence` `160`. Optimierungs- und Verhaltensseite messen
+verschiedene Regime, und alle Prioritätsaussagen (P1, die Schließung der
+Decode-Klasse) hängen an dieser Wahl.
+
+**Vorschlag:** eine eigene vorregistrierte Studie mit identischem Aufbau, aber
+Antwortlänge `256` Token, gegen dieselbe Baseline. Kosten gerechnet mit der
+bestehenden Pausenlogik: `188 s` je Punkt statt `167 s`, also `9` statt `10`
+Punkte je 30-Minuten-Block. Ein zusätzlicher Block beantwortet die Frage.
+
+**Bewusst nicht getan:** F1 um einen langen Arm erweitern. F1 erntet
+bestätigte Gewinne in genau dem Regime, in dem sie bestätigt wurden; ein
+zweites Regime würde die Bindung an die versiegelte Evidenz lockern.
+
+**Gate:** die gemessene Rangfolge der Hebel bei `256` Token gegen die
+vorhergesagte. Stimmt sie, ist die Roofline-Rechnung als Planungsinstrument
+bestätigt und die Priorisierung wird längenabhängig geführt.
+
+**Kill:** zeigt die Messung bei `256` Token dieselbe Rangfolge wie bei `32`,
+ist das Modell falsch, die Roofline-Ableitungen werden aus P1 entfernt und
+dieser Eintrag gelöscht.
 
 ## P2 — Sind die Identitäts-Fehlschläge ein argmax-Tie? (neu 2026-09-01)
 
