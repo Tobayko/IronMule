@@ -9670,3 +9670,45 @@ Entscheidungspanel meldet korrekt `data_state=empty`, weil noch keine
 Entscheidung geloggt ist.
 
 **Verifikation.** Vollsuite `1526 passed, 2630 subtests passed`.
+
+## 2026-09-02 — Alle dreizehn Dashboards geprüft, Wächter eingezogen
+
+Offline-Sweep, keine versiegelte Datei verändert. Anschlussarbeit an den
+Klammerfund desselben Tages.
+
+**Frage.** Wenn ein Syntaxfehler eine UI monatelang stillgelegt hat, ohne dass
+ein Test anschlägt — welche der übrigen UIs dieses Repositories laufen
+überhaupt?
+
+**Bestand.** Dreizehn Dashboard-Quellen in zwölf Paketen. Vier liefern
+JavaScript aus, neun rendern serverseitig und tragen kein Skript:
+
+| Paket | Skript |
+| --- | --- |
+| `friday_h0/dashboard_assets.py` | `20 529` B |
+| `friday_optimizer/dashboard.py` | `2 776` B |
+| `friday_phase1b/dashboard.py` | `640` B |
+| `friday_avo_router/dashboard.py` | `617` B |
+
+**Ergebnis.** Alle vier parsen. `phase1b` und `avo_router` sind versiegelte
+Pakete und wurden ausschließlich gelesen; beide sind in Ordnung, es bestand
+kein Anlass, sie anzufassen. `h0` war immer in Ordnung. Der Optimizer war der
+einzige Defekt und ist repariert. Die neun skriptlosen Dashboards können diese
+Fehlerklasse gar nicht haben.
+
+**Ein Fehlalarm, der keiner war.** Ein Zwischenstand meldete, `friday_h0`
+fetche `/api/run` und `/api/snapshot` ohne passende Route. Falsch: die Routen
+stehen in `friday_h0/dashboard.py`, mein Skript hatte nur im Assets-Modul
+gesucht. Notiert, weil es dieselbe Falle ist wie der ursprüngliche Bug — an
+der falschen Schicht nachsehen und ein sauberes Ergebnis für ein
+vollständiges halten.
+
+**Wächter.** `tests/test_shipped_ui.py` prüft generisch über alle Pakete: jedes
+ausgelieferte Skript parst, und jede ID, die ein Skript zur Laufzeit auflöst,
+existiert im Markup. Die Erkennung läuft über `friday_*/dashboard*.py`, ein
+neues Dashboard ist also am Tag seiner Entstehung abgedeckt. Ohne
+JavaScript-Engine wird übersprungen; im Docstring steht, dass ein Skip kein
+Bestehen ist. Aktuell `9 passed, 18 skipped` — die Skips sind exakt die neun
+skriptlosen Dashboards.
+
+**Verifikation.** Vollsuite grün.
