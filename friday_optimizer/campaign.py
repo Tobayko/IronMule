@@ -161,10 +161,11 @@ def expected_effective_samples(
     expectation reduces to ``points * p_logging(target action)``: exploring a
     rarely logged action is exactly as expensive as its rarity.
 
-    ``target_hints`` defaults to ``hints``.  Replay always scores a target
-    under the hints that were logged, so a different value answers a planning
-    question — "what would it cost to evaluate a differently hinted policy?" —
-    and never reinterprets an existing corpus.
+    ``target_hints`` defaults to ``hints`` and mirrors the identically named
+    parameter in :mod:`friday_optimizer.replay`: the default reads hints as
+    context shared by every policy, a different value scores a policy that
+    would have been hinted differently.  Either way the corpus itself is never
+    rewritten; only the target being priced changes.
     """
 
     if isinstance(points, bool) or not isinstance(points, int) or points < 1:

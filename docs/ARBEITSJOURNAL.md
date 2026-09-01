@@ -9425,3 +9425,60 @@ Studie. Die Prefill-Ratio des Head-Skip ist ein Phasenverhältnis und sollte
 den zusammengesetzten Pfad ohnehin direkt und muss das nicht annehmen.
 
 Kein Code geändert; die Entscheidung wird nicht stillschweigend getroffen.
+
+## 2026-09-02 — R2-Pipeline trockengelaufen: sie funktioniert, kostet aber 40 Blöcke
+
+Offline-Systemtest der Kette R0 → Kampagne → R1, bevor sie die teuerste
+Ressource des Projekts verbraucht. Kein Modell, keine Hardware; die Belohnungen
+sind synthetisch und begründen keinerlei Performanceaussage. Geprüft wird die
+Maschinerie, nicht das Modell.
+
+**Aufbau.** In `experiments/r2_campaign/recover_ground_truth.py` wird eine
+bekannte Wahrheit eingepflanzt — je Aktion ein Verhältnis, Rauschen
+`sd=0,010`, `5 %` zensierte Läufe — eine Kampagne gezogen, alles in eine echte
+Optimization Memory geschrieben (Hashkette wird verifiziert) und anschließend
+mit den echten Schätzern zurückgewonnen.
+
+**Ergebnis bei `400` Punkten:** alle fünf Zielaktionen erreichen `ok`,
+Medianfehler `0,21` Prozentpunkte, schlechtester Fehler `0,52`, die Rangfolge
+wird exakt reproduziert. Die Kette trägt.
+
+**Ergebnis nach Korpusgröße — und die Korrektur meiner eigenen Planzahl:**
+
+| Punkte | Blöcke | belastbare Schätzungen | Rangfolge |
+| --- | --- | --- | --- |
+| `50` | `5` | `0/5`, ESS `4`–`26` | falsch |
+| `150` | `15` | `1/5` | zufällig richtig |
+| `400` | `40` | `5/5` | richtig |
+
+Die am 2026-09-02 genannten „rund fünf Blöcke" beantworten genau **eine**
+Frage: „schlägt die gehintete Aktion die Baseline?" — und auch das nur bei
+Epsilon `0,5`. Dieser Trockenlauf benutzte Epsilon `0,6`, dort erreicht selbst
+die gehintete Aktion bei `50` Punkten nur ESS `26` und bleibt unter der
+Untergrenze. Eine **vollständige Rangfolge über alle fünf Aktionen kostet rund
+`400` Punkte, also `40` Freigabeblöcke** — etwa zwanzig Stunden gegatete
+Messzeit. Das ist die realistische Eintrittskarte für R2. Die Zahl gehört
+korrigiert ins Backlog, damit niemand mit `5` plant.
+
+**Fund im Code, durch den Trockenlauf ausgelöst.** Beim Versuch, mehrere
+Zielaktionen zu bewerten, zeigte sich: `replay` bewertete jede Ziel-Policy
+unter den *Hints des Loggers*. Damit konzentrierte sich jede deterministische
+Ziel-Policy zwangsläufig auf dieselbe Aktion, und nur eine einzige Frage war
+überhaupt stellbar. Das ist keine Kleinigkeit — es hätte R2 auf eine
+Ein-Aktions-Auswertung verengt.
+
+Behoben durch `target_hints` in `ips`, `snips`, `doubly_robust`, `replayer`
+und `evaluate`. Der Default bleibt die Kontext-Lesart (geloggte Hints, gilt für
+jede Policy); ein expliziter Wert bewertet eine Policy, die anders gehintet
+hätte. Der Korpus wird dabei nie verändert, nur die bepreiste Policy — ein
+Test prüft genau das. Die Formulierung in `campaign.py`, Replay bewerte
+*immer* unter den geloggten Hints, war damit falsch und ist angeglichen.
+
+**Nebenbeobachtung.** Bei `150` Punkten war die Rangfolge bereits korrekt,
+obwohl vier von fünf Schätzungen unter der Untergrenze lagen. Die Untergrenze
+ist für Ordnungsentscheidungen konservativer als für Größenaussagen. Das
+rechtfertigt keine Absenkung; es wäre allenfalls ein Grund, ein eigenes
+vorregistriertes Ordnungsgate zu entwerfen — nicht ungefragt.
+
+**Verifikation.** Vollsuite `1513 passed, 2630 subtests passed`; drei neue
+Tests für `target_hints`.

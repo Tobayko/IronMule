@@ -299,18 +299,34 @@ class OffPolicyEstimate:
         }
 
 
-def _target_probability(policy: SelectionPolicy, step: ReplayStep) -> float:
-    distribution = policy.distribution(step.decision.candidate_set, step.decision.hints)
-    return float(distribution[step.decision.chosen])
+def _target_distribution(
+    policy: SelectionPolicy, step: ReplayStep, target_hints: Sequence[str] | None
+) -> Mapping[str, float]:
+    """Distribution the target policy would use at this logged decision.
+
+    ``hints`` are ambiguous by nature: read as context they belong to the
+    decision and are shared by every policy scored on it, read as preference
+    they belong to the policy. The default takes the context reading and uses
+    the logged hints, which is what an ordinary replay wants. Passing
+    ``target_hints`` takes the other reading and scores a policy that would
+    have been hinted differently — a different policy, evaluated honestly
+    against the same log.
+    """
+
+    hints = step.decision.hints if target_hints is None else tuple(target_hints)
+    return policy.distribution(step.decision.candidate_set, hints)
 
 
-def _weights(env: ReplayEnv, policy: SelectionPolicy) -> list[tuple[float, float, ReplayStep]]:
+def _weights(
+    env: ReplayEnv, policy: SelectionPolicy, target_hints: Sequence[str] | None = None
+) -> list[tuple[float, float, ReplayStep]]:
     rows: list[tuple[float, float, ReplayStep]] = []
     for step in env.steps:
         reward = env.reward_of(step)
         if reward is None:
             continue
-        weight = _target_probability(policy, step) / step.decision.propensity
+        distribution = _target_distribution(policy, step, target_hints)
+        weight = float(distribution[step.decision.chosen]) / step.decision.propensity
         rows.append((weight, reward, step))
     return rows
 
@@ -372,10 +388,11 @@ def ips(
     min_samples: int = DEFAULT_MIN_SAMPLES,
     seed: int = 0,
     resamples: int = 2_000,
+    target_hints: Sequence[str] | None = None,
 ) -> OffPolicyEstimate:
     """Inverse propensity scoring: unbiased, high variance, needs overlap."""
 
-    rows = _weights(env, policy)
+    rows = _weights(env, policy, target_hints)
     censored = sum(1 for _, _, step in rows if not step.observed)
     return _estimate(
         "ips",
@@ -395,10 +412,11 @@ def snips(
     min_samples: int = DEFAULT_MIN_SAMPLES,
     seed: int = 0,
     resamples: int = 2_000,
+    target_hints: Sequence[str] | None = None,
 ) -> OffPolicyEstimate:
     """Self-normalised IPS: slightly biased, far more stable at small n."""
 
-    rows = _weights(env, policy)
+    rows = _weights(env, policy, target_hints)
     censored = sum(1 for _, _, step in rows if not step.observed)
     weights = [weight for weight, _, _ in rows]
     return _estimate(
@@ -421,6 +439,7 @@ def doubly_robust(
     min_samples: int = DEFAULT_MIN_SAMPLES,
     seed: int = 0,
     resamples: int = 2_000,
+    target_hints: Sequence[str] | None = None,
 ) -> OffPolicyEstimate:
     """Doubly robust: consistent if either propensities or the model are right.
 
@@ -430,11 +449,11 @@ def doubly_robust(
 
     if not callable(reward_model):
         raise ReplayError("reward_model must be callable")
-    rows = _weights(env, policy)
+    rows = _weights(env, policy, target_hints)
     censored = sum(1 for _, _, step in rows if not step.observed)
     contributions: list[float] = []
     for weight, reward, step in rows:
-        distribution = policy.distribution(step.decision.candidate_set, step.decision.hints)
+        distribution = _target_distribution(policy, step, target_hints)
         baseline = 0.0
         for action, probability in distribution.items():
             if probability <= 0.0:
@@ -465,6 +484,7 @@ def replayer(
     min_samples: int = DEFAULT_MIN_SAMPLES,
     seed: int = 0,
     resamples: int = 2_000,
+    target_hints: Sequence[str] | None = None,
 ) -> OffPolicyEstimate:
     """Rejection-sampling replay: keep only steps where the actions agree.
 
@@ -478,7 +498,7 @@ def replayer(
         reward = env.reward_of(step)
         if reward is None:
             continue
-        distribution = policy.distribution(step.decision.candidate_set, step.decision.hints)
+        distribution = _target_distribution(policy, step, target_hints)
         best = max(distribution.items(), key=lambda item: (item[1], item[0]))[0]
         if best != step.decision.chosen:
             continue
@@ -504,18 +524,19 @@ def evaluate(
     min_samples: int = DEFAULT_MIN_SAMPLES,
     seed: int = 0,
     resamples: int = 2_000,
+    target_hints: Sequence[str] | None = None,
 ) -> Mapping[str, OffPolicyEstimate]:
     """Run every applicable estimator and return them by name."""
 
+    shared = {"min_samples": min_samples, "seed": seed, "resamples": resamples,
+              "target_hints": target_hints}
     results = {
-        "ips": ips(env, policy, min_samples=min_samples, seed=seed, resamples=resamples),
-        "snips": snips(env, policy, min_samples=min_samples, seed=seed, resamples=resamples),
-        "replayer": replayer(env, policy, min_samples=min_samples, seed=seed, resamples=resamples),
+        "ips": ips(env, policy, **shared),
+        "snips": snips(env, policy, **shared),
+        "replayer": replayer(env, policy, **shared),
     }
     if reward_model is not None:
-        results["doubly_robust"] = doubly_robust(
-            env, policy, reward_model, min_samples=min_samples, seed=seed, resamples=resamples
-        )
+        results["doubly_robust"] = doubly_robust(env, policy, reward_model, **shared)
     return MappingProxyType(results)
 
 
