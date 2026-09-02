@@ -36,6 +36,13 @@ REPLAY_SCHEMA = "friday.optimizer.replay.v1"
 
 #: Minimum effective sample size before an estimate may be read as a result.
 #: Below it every estimator reports ``insufficient_data`` and nothing else.
+#:
+#: This is a **chosen** floor, not a number derived from this project's data:
+#: thirty is the conventional rule-of-thumb minimum for an importance-weighted
+#: estimate. It is deliberately conservative, and the dry run of 2026-09-02
+#: showed why - at 150 logged points the ranking was already right while four
+#: of five estimates still sat below it. Lowering it is a preregistered
+#: decision, never a convenience.
 DEFAULT_MIN_SAMPLES = 30
 
 MAX_STEPS = 100_000

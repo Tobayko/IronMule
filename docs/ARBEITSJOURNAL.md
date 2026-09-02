@@ -9996,3 +9996,47 @@ drei berechtigt. Die Suite hat dieses Problem nicht — die schwache Stelle war
 die neueste.
 
 **Verifikation.** Vollsuite `1602 passed, 20 skipped`.
+
+## 2026-09-02 — Konstanten im Code an ihre Evidenz gebunden, gemessen von gewählt getrennt
+
+Offline-Ergänzung. Fortsetzung des Claim-Ledgers vom selben Tag: der band die
+**Dokumente** an die Evidenz. Eine Konstante im Quelltext ist dieselbe
+Behauptung an einer Stelle, die niemand Korrektur liest.
+
+**Vier Konstanten kodieren einen Messwert.** Alle vier stimmen:
+
+| Konstante | im Code | in der Evidenz |
+| --- | --- | --- |
+| `CONFIRMED_RATIOS["head_skip_prefill"]` | `0.846385` | `0.846385` (versiegelte Studie) |
+| `CONFIRMED_RATIOS["fixed_compiled_cache"]` | `0.9295921887` | wörtlich in `matmul_compile_ab` |
+| `CONFIRMED_RATIOS["persistent_process"]` | `0.346968` | `0.346968` |
+| `MEASURED_POINT_SECONDS` | `167.0` | `1000,41 s / 6 = 166,7 s` |
+
+Die Rundung von `166,7` auf `167,0` geht in die sichere Richtung: eine längere
+Punktdauer ergibt *weniger* Punkte je Freigabeblock, der Plan verspricht also
+zu wenig statt zu viel. Der Test hält genau das fest — nicht nur die Nähe zum
+Messwert, sondern die Richtung der Rundung.
+
+**Die eigentliche Frage war eine andere.** Ein Leser muss auf einen Blick
+unterscheiden können, welche Zahl gemessen und welche gewählt ist. Wer eine
+selbstgesetzte Schwelle für einen gemessenen Wert hält, verliert genau den
+Boden, auf dem dieses Projekt steht.
+
+Ein Test prüft das jetzt: die vier Urteilskonstanten müssen sich in ihrem
+Umfeld als Urteil zu erkennen geben. Er schlug sofort an —
+`DEFAULT_MIN_SAMPLES = 30` in `replay.py` stand als „Minimum effective sample
+size", ohne zu sagen, woher die Dreißig kommt. Sie kommt aus keiner Messung
+dieses Projekts, sondern ist die konventionelle Faustregel für eine
+importance-gewichtete Schätzung. Das steht jetzt dort, zusammen mit dem
+Grund, sie **nicht** zu senken: im Trockenlauf war bei `150` Punkten die
+Rangfolge schon richtig, während vier von fünf Schätzungen noch darunter
+lagen — die Untergrenze ist für Ordnungsentscheidungen konservativer als für
+Größenaussagen, und das ist kein Anlass, sie zu lockern.
+
+`TIE_ABSOLUTE`, `RATE_TOLERANCE` und `PROMPT_TOLERANCE` waren bereits als
+vorregistriert beziehungsweise als erklärtes Band gekennzeichnet.
+
+**Kontrollprobe.** `CONFIRMED_RATIOS["persistent_process"]` testweise auf
+`0.340000` geändert: der Wächter schlägt an. Zurückgesetzt.
+
+**Verifikation.** Vollsuite grün.
