@@ -9900,3 +9900,46 @@ Evidenzdatenbank auftaucht, die niemand in die Liste aufgenommen hat.
 Datei fehlt — im Docstring steht, dass ein Skip kein Bestehen ist.
 
 **Verifikation.** Vollsuite `1597 passed, 20 skipped`.
+
+## 2026-09-02 — Offline-Zwang für P2 und W1, und was schon getestet war
+
+Offline-Ergänzung. Kein Modellstart, kein Hardwarelauf.
+
+**Zuerst, was ich nicht anfassen musste.** Die Vermutung war, dass die
+Sicherheitsguards nur per Quelltext-Grep geprüft sind. Für `BudgetGuard`
+stimmt das nicht: `tests/test_evidence.py` prüft ihn gründlich behavioral —
+kumulatives Dauerlastlimit, Zurücksetzen nach echter Pause, Kandidaten-Cooldown,
+rollender Duty-Cycle, Wall-Limit, und besonders
+`test_break_fails_closed_if_sleep_does_not_really_elapse`: die Pause zählt nur,
+wenn die Zeit tatsächlich verstrichen ist. Auch der lokale Modellresolver ist
+gut abgedeckt (Pfad-Traversal, ungültige Revision, unvollständiger Snapshot,
+und dass jedes Modellwerkzeug nur den validierten lokalen Pfad lädt). Kein
+Handlungsbedarf.
+
+**Was tatsächlich fehlte.** Die etablierten Worker
+(`persistent_process`, `matmul_compile_ab`) setzen `HF_HUB_OFFLINE`,
+`TRANSFORMERS_OFFLINE` und `HF_DATASETS_OFFLINE` — aber für einen
+**Kindprozess**, den sie starten. Meine P2- und W1-Worker laufen in-process
+und hatten gar keine Offline-Umgebung. Sie treffen zwar kein Netz, weil
+`resolve_local_model_snapshot` einen Dateipfad liefert und `mlx_lm.load` bei
+einem Pfad nicht beim Hub nachfragt. Aber „trifft zufällig kein Netz" ist eine
+schwächere Zusage als „kann nicht", und Downloads sind in diesem Projekt eine
+absolute Grenze.
+
+**`enforce_offline()` in `tools/_bench.py`.** Setzt elf Variablen — die drei
+Offline-Schalter, Telemetrie aus, `NO_PROXY=*` und alle vier Proxy-Variablen
+in beiden Schreibweisen auf leer — und gibt genau das zurück, was es gesetzt
+hat, damit es in den Provenienzblock wandert. Ein Ergebnis hält damit fest,
+unter welchen Bedingungen es gemessen wurde.
+
+**Der Aufrufzeitpunkt ist die eigentliche Zusage.** Der Hugging-Face-Client
+liest diese Variablen **einmal beim Import**. Ein Aufruf danach ist ein
+beruhigendes No-op — genau die Sorte Guard, die in einem Quelltext-Grep
+vorhanden aussieht und zur Laufzeit nichts tut. Beide Worker rufen jetzt vor
+dem `import mlx.core` auf, und ein Test prüft die Reihenfolge im Quelltext,
+nicht nur die Anwesenheit.
+
+**Kontrollprobe.** `enforce_offline()` testweise hinter den mlx-Import
+verschoben: der Reihenfolgetest schlägt an. Danach zurückgesetzt.
+
+**Verifikation.** Vollsuite `1601 passed, 20 skipped`.

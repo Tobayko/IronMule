@@ -74,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-check", action="store_true", dest="self_check")
     args = parser.parse_args(argv)
 
-    from _bench import (BudgetGuard, release_gate, require_ac_power,
+    from _bench import (BudgetGuard, enforce_offline, release_gate, require_ac_power,
                         resolve_local_model_snapshot, study_provenance)
 
     gate = release_gate(args, self_check)
@@ -83,6 +83,9 @@ def main(argv: list[str] | None = None) -> int:
 
     require_ac_power()
     guard = BudgetGuard()
+    # Before the model library is imported: the Hugging Face client reads
+    # these once at import time, so setting them later changes nothing.
+    offline = enforce_offline()
 
     import mlx.core as mx
     from mlx_lm import load
@@ -164,7 +167,8 @@ def main(argv: list[str] | None = None) -> int:
         "provenance": study_provenance(
             [Path(__file__), Path(__file__).with_name("gap_analysis.py")],
             preregistration=Path(__file__).with_name("PREREGISTRATION.md"),
-            extra={"model_snapshot": snapshot.revision, "model_id": MODEL_ID},
+            extra={"model_snapshot": snapshot.revision, "model_id": MODEL_ID,
+                   "offline_environment": offline},
         ),
         "model_id": MODEL_ID, "snapshot_revision": snapshot.revision,
         "prompt_tokens": len(ids), "generate_tokens": GEN,
