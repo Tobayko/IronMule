@@ -357,3 +357,39 @@ def stat_mode(path: Path) -> int:
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_a_comma_decimal_machine_can_still_be_certified():
+    """macOS prints numbers in the user's locale; the gate must still read them.
+
+    On a German system `sysctl vm.swapusage` emits "used = 1675,38M" and
+    `ps -o %cpu` emits "0,5". The parser accepted a dot only, so swap and the
+    process tree came back unreadable and the gate could never certify the
+    machine - failing closed, but failing always, on every run this project
+    ever wanted to make.
+    """
+
+    from friday_optimizer.readiness import ReadinessError, _locale_decimal, _parse_swap_value
+
+    german = "total = 3072,00M  used = 1675,38M  free = 1396,62M  (encrypted)"
+    english = "total = 3072.00M  used = 1675.38M  free = 1396.62M  (encrypted)"
+    for text in (german, english):
+        assert _parse_swap_value(text, "used") == int(1675.38 * 1024 * 1024)
+        assert _parse_swap_value(text, "total") == int(3072.00 * 1024 * 1024)
+
+    assert _locale_decimal("0,5") == 0.5
+    assert _locale_decimal("10.6") == 10.6
+    assert _locale_decimal(" 361,1 ") == 361.1
+
+
+def test_an_ambiguous_number_is_refused_rather_than_guessed():
+    """A thousands separator must not be read as a decimal mark."""
+
+    from friday_optimizer.readiness import ReadinessError, _locale_decimal
+
+    for text in ("1.234,56", "1,234.56", "1,2,3", "1.2.3", "", "   ", "abc", "nan"):
+        try:
+            value = _locale_decimal(text)
+        except ReadinessError:
+            continue
+        raise AssertionError(f"{text!r} was accepted as {value}")
