@@ -10407,3 +10407,57 @@ warmen Arm.
 `formal_claim=false`. Beide Rohergebnisse liegen unter
 `experiments/w1_regime/replication/`, der fehlerhafte erste ausdrücklich mit
 im Dateinamen benannt.
+
+## 2026-09-02 — F1 kann auf dieser Maschine nicht starten: der Readiness-Gate ist unerreichbar
+
+Offline-Befund, ausgelöst durch einen Ausführungsauftrag für F1 aus einer
+anderen Sitzung. Kein Lauf gestartet.
+
+**Der F1-Pfad hängt an `ReadinessGate`, P2 und W1 taten das nicht.**
+`RealSessionController` baut in `real_session.py:1301` einen Gate mit der
+Standardpolitik und bricht bei `not readiness.ready` ab; `SessionController`
+scheitert entsprechend mit `readiness_failed`. P2 und W1 nutzen dagegen nur
+`require_ac_power()` und `BudgetGuard` — deshalb liefen beide heute
+erfolgreich.
+
+**Die Grenze.** `ReadinessPolicy.max_load_1m = 0.75`, verglichen wird die rohe
+Ein-Minuten-Last: `sample.load_1m > policy.max_load_1m`. Die Kernzahl kommt in
+`readiness.py` nirgends vor, es ist also kein vergessener Teiler, sondern ein
+absoluter Wert. Der Docstring sagt „Values are intentionally bounded" — die
+Strenge ist gewollt.
+
+**Sie wurde nie erreicht.** Der historische Q2-Versuch vom 2026-08-30
+protokollierte zwei Anläufe:
+
+| Versuch | `load_1m` | CPU-Samples | Ergebnis |
+| --- | --- | --- | --- |
+| 1 | `1,614` | `162,5` / `63,1` / `26,2` | blockiert |
+| 2 | `2,415` | `56,5` / `27,7` / `12,0` | blockiert |
+
+Die beste je aufgezeichnete Last ist `1,614`, also mehr als das Doppelte der
+Grenze. Bemerkenswert: in beiden Anläufen fiel die CPU-Last bis zur dritten
+Probe unter die `35 %`-Grenze (`26,2` bzw. `12,0`), die **Last** blieb aber
+hoch. Heute, mit geschlossenen Anwendungen und `17,7 GB` frei, liegt sie bei
+`4,40`.
+
+Ein macOS-Desktop mit angemeldetem Nutzer erreicht `0,75` praktisch nicht.
+
+**Was das für den Auftrag bedeutet.** Dessen Schritt 3 („A/A-Sessions zuerst")
+kann nicht ausgeführt werden. Der Blocker liegt weder bei der
+Workload-Entscheidung noch beim Versiegeln.
+
+**Meine Empfehlung kehrt sich um.** Bisher empfahl ich Weg 1 — F1 auf
+`322`/`32` über den auditierten IronMule-Pfad —, begründet mit der
+Wiederverwendung vorhandener Infrastruktur. Diese Wiederverwendung ist
+wertlos, wenn der Pfad nicht startet. **Weg 2 wird damit der ausführbare:**
+ein eigener F1-Worker auf dem Standalone-Pfad, wie P2 und W1, die heute beide
+gelaufen sind. Nebeneffekt: dessen Workload (`897` Prompt-Token) passt zur
+Evidenz von Head-Skip und persistentem Prozess, nur `fixed_compiled` stammt
+von `322`.
+
+**Was ich nicht tue.** `max_load_1m` anfassen. Eine Schwelle zu senken, damit
+eine Studie läuft, ist genau das Muster, das der Auftrag selbst für Weg 3
+ausschließt. Ob `0,75` für eine 10-Kern-Maschine die richtige Zahl ist, wäre
+eine eigene, begründete und vorregistrierte Entscheidung des Nutzers — und
+sie müsste auf ihren Sachgründen stehen, nicht darauf, dass sonst nichts
+läuft.

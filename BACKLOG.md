@@ -26,6 +26,19 @@ durch und schließt korrekt fail-closed; die Blocker sind ausschließlich
 Provenienzbindungen gegen veraltete Q2-Artefakte. Kein struktureller Defekt.
 Der saubere Commit vom 2026-09-01 hat `optimizer_checkout_dirty` beseitigt.
 
+**Blocker, gefunden am 2026-09-02: der F1-Pfad kann auf dieser Maschine nicht
+starten.** `RealSessionController` erzwingt `ReadinessGate` mit
+`max_load_1m = 0.75` gegen die rohe Ein-Minuten-Last. Historisch beste
+gemessene Last: `1,614` (Q2-Versuch vom 2026-08-30), heute `4,40` bei
+geschlossenen Anwendungen. P2 und W1 liefen, weil sie nur `require_ac_power()`
+und `BudgetGuard` nutzen. Herleitung im Arbeitsjournal unter „2026-09-02 — F1
+kann auf dieser Maschine nicht starten".
+
+**Empfehlung gekehrt:** Weg 2 (eigener F1-Worker auf dem Standalone-Pfad, wie
+P2/W1) ist der ausführbare; Weg 1 nutzt Infrastruktur, die nicht startet.
+`max_load_1m` wird nicht gesenkt — eine Schwelle an die Ausführbarkeit
+anzupassen ist Weg 3 unter anderem Namen.
+
 **Offene Entscheidung — Workload.** Der gegatete IronMule-Pfad fährt `322`
 Prompt-Token; F1s Evidenz für persistenten Prozess und Head-Skip stammt von
 `897`. Die kombinierte Erwartung fällt damit von `13,68 %` auf `11,93 %`
