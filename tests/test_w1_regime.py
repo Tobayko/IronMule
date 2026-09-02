@@ -203,3 +203,24 @@ def test_the_slope_is_labelled_as_a_prior_not_a_measurement():
     context = source[max(0, index - 600):index + 200]
     assert "prior, not a measurement" in context
     assert "82.44" in context and "70.99" in context, "the two points must be named"
+
+
+def test_the_step_clock_starts_before_the_forward_pass():
+    """Timing after the forward pass measures argmax, not a decode rate.
+
+    The first real run of this worker did exactly that: its quarter rates came
+    out above its own overall rate, which is impossible for a genuine split of
+    the same loop. The ordering is asserted here rather than the symptom.
+    """
+
+    source = WORKER.read_text()
+    loop = source[source.index("for index in range(count):"):source.index("mx.synchronize()", source.index("for index in range(count):"))]
+    assert loop.index("at = time.perf_counter()") < loop.index("logits = model("), loop[:200]
+    assert "steps_sum_seconds" in source, "the coverage check must be recorded"
+
+
+def test_the_verdict_is_given_the_context_it_needs():
+    source = WORKER.read_text()
+    assert "context_tokens=len(ids)" in source, (
+        "without it expected_change stays null and the comparison built for it never runs"
+    )

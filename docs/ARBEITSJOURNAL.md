@@ -10342,3 +10342,68 @@ GPU-Arbeit `5,42` gegen `5,16` s.
 
 Beide Rohergebnisse liegen unverändert unter
 `experiments/identity_forensics/replication/`.
+
+## 2026-09-02 — W1 gelaufen: mein Vorwissen ist widerlegt, und der Lauf fand zwei Fehler in meinem eigenen Worker
+
+Zwei gegatete Läufe, je rund `66 s` Wall — exakt die aus versiegelter Evidenz
+geschätzte Dauer. AC-Betrieb, Prompt `901` Token (im registrierten Band
+`897 ± 40`), `prefix_identical=true`, MLX-Peak `3,214 GB`.
+
+**Maschinenzustand.** Vor dem Lauf Last `5,64`, CPU `140,6 %`, frei
+`12,28 GB`; danach Last `4,24`. Die verbliebene Fremdlast war `CGPDFService`
+— CPU-gebunden, während der Decodelauf GPU-gebunden ist.
+
+### Der erste Lauf legte zwei Defekte offen
+
+Das Ergebnis war in sich widersprüchlich: die Gesamtrate lag **unter** beiden
+Vierteln (`65,26` gegen `62,64` und `78,52`). Das ist für eine echte
+Aufteilung derselben Schleife unmöglich.
+
+1. **Die Uhr startete nach dem Forward-Pass.** `at = time.perf_counter()` stand
+   hinter `model(...)`, also maßen die Viertelraten nur `argmax` und `eval` —
+   keine Decode-Rate. Die Gesamtrate über die ganze Schleife war korrekt, die
+   Kurve nicht. Genau die Kurve war der Kern der Messung.
+2. **`classify()` bekam kein `context_tokens`.** Die in Iteration 22 gebaute
+   Gegenüberstellung von gemessener und erwarteter Kontextabnahme lief nie;
+   `expected_change` blieb `null`.
+
+Behoben, mit zwei Tests: die Reihenfolge im Quelltext wird geprüft, nicht das
+Symptom, und die Ergebnisdatei trägt jetzt `steps_sum_seconds` als
+Abdeckungsprobe. Im korrigierten Lauf decken die Schrittzeiten `99,0 %` der
+Schleife ab (`3,4887` von `3,5240 s`); vor der Korrektur hätte diese eine Zahl
+den Fehler sofort gezeigt.
+
+### Das Ergebnis widerlegt mein Vorwissen
+
+| | Kontrolle `32` | Langlauf `256` |
+| --- | --- | --- |
+| Gesamtrate | `63,83` tok/s | `72,36` tok/s |
+| erstes Viertel | `57,02` | `68,34` |
+| letztes Viertel | `70,13` | `77,23` |
+
+Vorhergesagt war `−3,58 %`, gemessen sind **`+13,36 %`**. Verdikt
+`rate_improves`. Das Vorwissen aus Iteration 22 — die Rate falle mit dem
+Kontext um `0,01786` tok/s je Token — ist damit **widerlegt, und zwar in der
+Richtung**. Es stammte aus zwei Punkten zweier verschiedener Studien und war
+im Code ausdrücklich als „prior, not a measurement" gekennzeichnet; es hat
+sich als genau das erwiesen.
+
+Was tatsächlich dominiert, ist Aufwärmen. Der `32`-Token-Lauf besteht
+überwiegend aus Aufwärmkosten, der `256`-Token-Lauf verteilt sie. Innerhalb
+des langen Laufs steigt die Rate weiter (`68,34` auf `77,23`) — bei `256`
+Token ist der stationäre Zustand noch nicht erreicht.
+
+### Folgen für die Priorisierung
+
+Mit der gemessenen Rate `72,36` liegt der Kandidaten-Kreuzungspunkt bei
+**`271`** generierten Token statt der vorhergesagten `267`. Die Korrektur ist
+klein, weil beide Effekte klein sind gegenüber dem Prefill-Anteil.
+
+Bei `256` Token: `head_skip` `5,02 %`, `fixed_compiled` `4,74 %`,
+Prefill-Anteil `32,68 %`. **Head-Skip führt weiterhin.** Der kombinierte
+Gewinn liegt bei `9,76 %` — wie vorhergesagt unter F1s `10 %`-Schwelle im
+warmen Arm.
+
+`formal_claim=false`. Beide Rohergebnisse liegen unter
+`experiments/w1_regime/replication/`, der fehlerhafte erste ausdrücklich mit
+im Dateinamen benannt.
