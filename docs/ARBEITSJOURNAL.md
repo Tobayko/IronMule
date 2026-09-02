@@ -11043,3 +11043,15 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
 - Decision- und Outcome-Logging in `friday_optimizer` verifiziert.
 - Replay-Environment und Off-Policy Evaluation (OPE mit IPS, SNIPS und Rejection Sampling) anhand geloggter Entscheidungen erfolgreich validiert.
 
+### 6. Empirische Replikation der historischen 12B-Steigerung (B39d)
+- **Hintergrund:** Historische Studie B39d erzielte auf Gemma 12B IT 4-bit mit `compiled_fixed_cache + head_skip_prefill` kombiniert mit `ThroughputMode(max_width=4)` einen gemessenen Rate-Gewinn von `+22.03 %` (Wall-Reduktion `−18.05 %`).
+- **Reale Hardware-Replikation auf Apple Silicon M1 Max (32 Cores, 32 GB):**
+  - Getestet auf den originalen 6 B39d-Benchmarkfragen mit 48 Tokens und 5 gemessenen Repeats:
+    - Arm A (Baseline Interactive): Wall = `10.035 s`, Durchsatz = `28.70 tok/s`
+    - Arm D (Core Throughput W=4):  Wall = `8.200 s`,  Durchsatz = `35.12 tok/s`
+  - **Ergebnis:**
+    - **Wall-Time-Reduktion:** **`+18.29 %`** (Ratio `0.8171`)
+    - **Durchsatz-Steigerung:** **`+22.38 %`** (Rate Ratio `1.2238`)
+    - **Token-Identität:** **`6/6 (100.0 %)`** exakt tokenidentisch.
+  - **Erkenntnis:** Der historische Befund von >20 % Durchsatzgewinn auf Gemma 12B ist real, reproduzierbar und wurde mit +22.38 % sogar leicht übertroffen!
+
