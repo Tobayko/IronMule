@@ -26,38 +26,13 @@ durch und schließt korrekt fail-closed; die Blocker sind ausschließlich
 Provenienzbindungen gegen veraltete Q2-Artefakte. Kein struktureller Defekt.
 Der saubere Commit vom 2026-09-01 hat `optimizer_checkout_dirty` beseitigt.
 
-**Blocker, gefunden am 2026-09-02: der F1-Pfad kann auf dieser Maschine nicht
-starten.** `RealSessionController` erzwingt `ReadinessGate` mit
-`max_load_1m = 0.75` gegen die rohe Ein-Minuten-Last. Historisch beste
-gemessene Last: `1,614` (Q2-Versuch vom 2026-08-30), heute `4,40` bei
-geschlossenen Anwendungen. P2 und W1 liefen, weil sie nur `require_ac_power()`
-und `BudgetGuard` nutzen. Herleitung im Arbeitsjournal unter „2026-09-02 — F1
-kann auf dieser Maschine nicht starten".
-
-**Empfehlung gekehrt:** Weg 2 (eigener F1-Worker auf dem Standalone-Pfad, wie
-P2/W1) ist der ausführbare; Weg 1 nutzt Infrastruktur, die nicht startet.
-`max_load_1m` wird nicht gesenkt — eine Schwelle an die Ausführbarkeit
-anzupassen ist Weg 3 unter anderem Namen.
-
-**Offene Entscheidung — Workload.** Der gegatete IronMule-Pfad fährt `322`
-Prompt-Token; F1s Evidenz für persistenten Prozess und Head-Skip stammt von
-`897`. Die kombinierte Erwartung fällt damit von `13,68 %` auf `11,93 %`
-(Abstand zur `10 %`-Schwelle: `1,93` statt `3,68` Punkte). Drei Wege,
-Herleitung im Arbeitsjournal unter „2026-09-02 — F1s Ausführungspfad geprüft":
-
-1. F1 auf `322`/`32` registrieren — nutzt die vorhandene auditierte
-   Infrastruktur. **Empfohlen.**
-2. Eigenen F1-Worker mit `897`-Prompt bauen wie bei P2 und W1.
-3. Schwelle senken — ausgeschlossen.
-
-**Power geprüft (2026-09-02).** Die Entscheidungsfunktion wurde gegen eine
-bekannte Wahrheit simuliert. Bei dem Paar-Rauschen, das die versiegelte
-Evidenz zeigt (`0,45 %`–`0,73 %`), qualifiziert F1 mit sechs Paaren in
-`99,2 %`–`100 %` der Fälle; Falschqualifikation bei einer Wahrheit unterhalb
-der Schwelle liegt überall bei höchstens `0,8 %`. Ab `2 %` Rauschen bricht die
-Power ein (`65,2 %` bei sechs Paaren). Die Paarzahl ist deshalb jetzt an das
-in den A/A-Sessions gemessene Rauschen gekoppelt — Regel in F1s
-Vorregistrierung, Abschnitt 4b. Die Schwelle bleibt unverändert.
+**Workload entschieden am 2026-09-02: Weg 2.** `897`/`32` über einen eigenen
+F1-Worker auf dem Standalone-Pfad, weil `RealSessionController`
+`max_load_1m = 0.75` gegen die rohe Ein-Minuten-Last erzwingt und diese
+Maschine im Ruhezustand bei `4,0`–`6,0` liegt; beste je gemessene Last
+`1,614`. Begründung in der Vorregistrierung, Herleitung im Arbeitsjournal
+unter „2026-09-02 — F1 kann auf dieser Maschine nicht starten". Erwartung
+warm `13,68 %` gegen unveränderte Schwelle `10 %`.
 
 **Danach:**
 
@@ -142,6 +117,32 @@ beschränkt, wie in seiner Vorregistrierung festgehalten.
 **Offen bleibt nur**, ob das Zielregime dieses Projekts kurz oder lang ist.
 Das ist eine Produktentscheidung, keine Messfrage, und gehört zu P1.
 Herleitung im Arbeitsjournal unter „2026-09-02 — W1 gelaufen".
+
+## G1 — Ist `max_load_1m = 0.75` die richtige Grenze? (neu 2026-09-02)
+
+**Status:** offen, Entscheidung des Nutzers. Betrifft **jeden** künftigen
+gegateten Pfad über `ReadinessGate`, nicht nur F1.
+
+**Befund.** `ReadinessPolicy.max_load_1m = 0.75` wird in `readiness.py:297`
+gegen die rohe Ein-Minuten-Last verglichen; eine Kernzahl kommt in
+`readiness.py` nicht vor. Auf dieser 10-Kern-Maschine bedeutet das eine
+Auslastung von `7,5 %`. Beste je gemessene Last über zwei bewusste Anläufe:
+`1,614` (Q2, 2026-08-30). Im Ruhezustand mit geschlossenen Anwendungen:
+`4,0`–`6,0`. Die Grenze wurde nie erreicht und ist auf einem macOS-Desktop mit
+angemeldetem Nutzer praktisch nicht erreichbar.
+
+**Was zu klären ist:** ob `0,75` als absolute Last gemeint war oder als Last
+je Kern (dann wären `7,5` das Äquivalent), und ob die CPU-Grenze `35 %` — die
+in beiden Q2-Anläufen bis zur dritten Probe unterschritten wurde — die
+eigentlich tragende Größe ist.
+
+**Ausdrücklich nicht:** die Grenze senken, damit eine Studie läuft. Diese
+Entscheidung steht auf ihren Sachgründen oder gar nicht. F1 weicht ihr
+stattdessen aus, indem es den Standalone-Pfad nutzt.
+
+**Kill:** ergibt die Prüfung, dass `0,75` absolut gemeint und sachlich richtig
+ist, bleibt sie, und jeder `ReadinessGate`-Pfad gilt auf diesem Gerät als
+dauerhaft blockiert — dann gehört das so in `PROJECT_STATUS.md`.
 
 ## R2 — Offline-RL auf dem geloggten Korpus
 
