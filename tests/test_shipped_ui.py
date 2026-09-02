@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from html.parser import HTMLParser
 from pathlib import Path
 
 import pytest
@@ -91,3 +92,74 @@ def test_every_element_the_script_touches_exists_in_the_markup(source_path):
         if f'id="{name}"' not in source and f'id=\\"{name}\\"' not in source
     )
     assert not missing, f"{source_path.parent.name} script fills ids absent from its markup: {missing}"
+
+
+class _NestingChecker(HTMLParser):
+    """Minimal well-formedness check: every element closes, in order."""
+
+    VOID = frozenset({
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "source", "track", "wbr",
+    })
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, tuple[int, int]]] = []
+        self.errors: list[str] = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in self.VOID:
+            self.stack.append((tag, self.getpos()))
+
+    def handle_endtag(self, tag):
+        if tag in self.VOID:
+            return
+        if not self.stack:
+            self.errors.append(f"</{tag}> at {self.getpos()} closes nothing")
+            return
+        opened, position = self.stack.pop()
+        if opened != tag:
+            self.errors.append(f"</{tag}> closes <{opened}> opened at {position}")
+
+
+def markup_of(source: str) -> str:
+    """Every HTML document or fragment written as a literal in the module."""
+
+    parts = re.findall(r'"""(\s*<(?:!doctype|section|table|div|main)\b.*?)"""', source, re.S | re.I)
+    return "\n".join(parts)
+
+
+@pytest.mark.parametrize("source_path", dashboard_sources(), ids=lambda p: p.parent.name)
+def test_every_shipped_document_is_well_nested(source_path):
+    markup = markup_of(source_path.read_text())
+    if not markup.strip():
+        pytest.skip(f"{source_path.parent.name} ships no HTML literal")
+    checker = _NestingChecker()
+    checker.feed(markup)
+    checker.close()
+    unclosed = [f"<{tag}> opened at {position}" for tag, position in checker.stack]
+    assert not checker.errors and not unclosed, "; ".join(checker.errors + unclosed)
+
+
+@pytest.mark.parametrize("source_path", dashboard_sources(), ids=lambda p: p.parent.name)
+def test_empty_state_spans_exactly_the_header_columns(source_path):
+    """A column added to a header and forgotten in the empty row misaligns it.
+
+    Only the static relation is asserted. How many cells the script appends per
+    row is built three different ways across these packages - array forEach,
+    template literal, explicit append - and encoding all three here would buy a
+    flaky test rather than a guard.
+    """
+
+    markup = markup_of(source_path.read_text())
+    if not markup.strip():
+        pytest.skip(f"{source_path.parent.name} ships no HTML literal")
+    mismatches = []
+    for table in re.findall(r"<table.*?</table>", markup, re.S | re.I):
+        headers = len(re.findall(r"<th\b", table, re.I))
+        if not headers:
+            continue
+        for span in re.findall(r'colspan="(\d+)"', table):
+            if int(span) != headers:
+                mismatches.append(f"colspan={span} against {headers} headers")
+    assert not mismatches, f"{source_path.parent.name}: " + "; ".join(mismatches)
