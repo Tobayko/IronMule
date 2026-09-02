@@ -53,6 +53,31 @@ sind inhaltlich relevant:
 Die Zahlen aus `device_model` beruhen auf `2` Fitpunkten mit `15,5 %`
 schlechtestem Holdout-Fehler; sie sind eine Stützung, kein Beleg.
 
+
+## Nachtrag 2026-09-02 — P2 gemessen: Kandidat 1 und 2 sind nicht mechanisch defekt
+
+Realer, gegateter Lauf `identity-gap-20260902-01`, Ergebnis
+`experiments/identity_forensics/logit_gap.json`. Prompt `677` Token, `16`
+greedy Token, Referenz gegen Chunk `128` und `512`.
+
+Beide Chunkings kippen unabhängig an Position `10`. Dort liegt mit `0,500` der
+**kleinste** Top-2-Abstand der gesamten Sequenz (Median `4,0`, Maximum
+`31,25`), während die durch Chunking eingetragene Störung dort `2,25`
+beziehungsweise `2,50` beträgt. An Position `0` ist der Abstand `1,750` größer
+als die dortige Störung `1,1875` — deshalb kippt dort nichts, wie
+`divergence_source` bereits festhielt.
+
+Verdikt beider Varianten: `tie`. Gesamtantwort:
+`tie_hypothesis_supported`, `formal_claim=false`.
+
+**Folge für die Statusspalten.** Kandidat 1 und Kandidat 2 bleiben formal
+`candidate_correctness_failed` — die Tokenidentität war und ist gebrochen. Der
+Grund ist aber die Workload, nicht der Mechanismus. Eine neue Studie mit einer
+Promptfamilie ohne degenerierte Position ist zulässig; ob eine solche Familie
+existiert, ist vorab prüfbar, indem der Top-2-Abstandsverlauf gegen die
+erwartete Störung gehalten wird. Kandidat 5 (Prefill-Step-Size-Sweep) ist der
+offene Hebel in dieser Klasse.
+
 ## Begründung der Reihenfolge
 
 Kandidat 2 war Voraussetzung für 1, 5, 8 und 9. Zyklus 2 fand keine zuverlässig

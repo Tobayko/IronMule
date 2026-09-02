@@ -10245,3 +10245,67 @@ korrekt, dass die Maschine beschäftigt ist.
 
 **Verifikation.** Vollsuite `1614 passed, 20 skipped`; zwei neue Tests halten
 sowohl das Komma-Format als auch die Abweisung mehrdeutiger Zahlen fest.
+
+## 2026-09-02 — P2 gelaufen: die Tie-Hypothese ist bestätigt
+
+Erster realer Hardwarelauf dieser Sitzung, vom Nutzer freigegeben. Ein
+Prozess, `39,6 s` Wall, `5,42 s` GPU-Arbeit, Dauerlast-Maximum `1,37 s`,
+Pause `28,03 s`. AC-Betrieb, Offline erzwungen, Provenienz sauber
+(`c874ecb2…`, `git_dirty=false`), Snapshot `93724907…`.
+
+**Warum der Lauf trotz beschäftigter Maschine zulässig war.** Die Maschine
+trug `202 %` Fremdlast (WindowServer, `duetexpertd`, STARFACE, Arc, Teams).
+P2 misst aber **keine Zeiten**: Logit-Abstände, Störungsgröße und
+Tokenidentität sind deterministisch. Fremdlast macht den Lauf langsamer, nicht
+falsch. W1 dagegen misst die Decode-Rate und muss auf eine ruhige Maschine
+warten.
+
+Nebenkorrektur an meiner eigenen Argumentation: ich hatte zuvor
+`ReadinessGate` geprüft und daraus geschlossen, P2 könne nicht starten. Falsch
+— `ReadinessGate` gehört zur L1-Control-Plane (`real_session`, `session`,
+`orchestrator`), also zum F1-Pfad. P2 nutzt wie die alten Studien
+`require_ac_power()` und `BudgetGuard`.
+
+**Ergebnis: `tie_hypothesis_supported`**, beide Varianten `tie`.
+
+| Variante | Blöcke | erste Abweichung | Abstand dort | gemessene Störung | Verdikt |
+| --- | --- | --- | --- | --- | --- |
+| Chunk `128` | `6` | `10` | `0,500` | `2,25` | `tie` |
+| Chunk `512` | `2` | `10` | `0,500` | `2,50` | `tie` |
+
+**Der Top-2-Abstand über alle 16 Positionen:**
+
+```
+ 0: 1,750    4: 5,000    8: 31,250   12: 3,250
+ 1:22,750    5: 6,500    9:  1,500   13: 0,750
+ 2: 4,750    6: 3,000   10:  0,500 <-- 14:14,250
+ 3: 2,750    7: 6,750   11:  2,250   15:13,000
+```
+
+Position `10` hat den **kleinsten** Abstand der gesamten Sequenz; der Median
+liegt bei `4,0`, das Maximum bei `31,25`. Der Abstand dort ist achtmal kleiner
+als der Median und vier- bis fünfmal kleiner als die Störung.
+
+**Der Mechanismus ist damit geschlossen.** Die Störung durch Chunking wächst
+mit der Position: `1,1875` an Position `0` (aus `divergence_source`, gemessen
+am 24.08.) auf `2,25`–`2,50` bis Position `10`. An Position `0` ist der
+Abstand `1,750` größer als die dortige Störung `1,1875` — deshalb kippt dort
+nichts, was `divergence_source` mit `difference_can_flip_choice=false` genau
+so festhielt. An Position `10` ist der Abstand `0,500` kleiner als die
+Störung — deshalb kippt es dort. Beide Chunkings finden unabhängig dieselbe
+Position.
+
+**Was das freigibt und was nicht.** Die Prefill-Hebelklasse ist **nicht
+mechanisch defekt**. Kandidat 1 (Präfix-/KV-Wiederverwendung) und Kandidat 2
+(Blockgrößen-Policy) sind an einer Workload mit einer degenerierten Position
+gescheitert, nicht an ihrem Mechanismus. Backlog P1, Mechanik 1, ist damit
+wieder offen.
+
+Nicht freigegeben ist irgendetwas anderes: die Tokenidentität bleibt gebrochen,
+das Gate hat korrekt ausgelöst, und an keiner Schwelle wurde etwas geändert
+(`gate_unchanged=true` in jedem Record). Die Konsequenz ist, für eine
+Prefill-Studie eine Promptfamilie **ohne** degenerierte Position zu
+registrieren — messbar, indem man vorab den Top-2-Abstandsverlauf aufnimmt und
+gegen die zu erwartende Störung hält. `formal_claim=false`.
+
+**Backlog P2 ist beantwortet und wird entfernt.**
