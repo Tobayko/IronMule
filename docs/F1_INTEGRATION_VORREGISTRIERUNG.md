@@ -101,20 +101,28 @@ ausdrücklich eine Aussage über das kurze Antwortregime. Ob dieses Regime das
 richtige Ziel ist, klärt die getrennte Studie W1
 (`experiments/w1_regime/PREREGISTRATION.md`); F1 wird dafür nicht erweitert.
 
-**Offene Workload-Entscheidung, festgehalten am 2026-09-02.** Der gegatete
-IronMule-Pfad fährt `ironmule.tune.DEFAULT_PROMPT` mit `322` Prompt-Token.
-F1s Evidenz für persistenten Prozess und Head-Skip stammt von `897`, die für
-`fixed_compiled` von `322`. Die Erwartung hängt daran:
+**Workload-Entscheidung, getroffen am 2026-09-02: Weg 2.** F1 registriert
+`897` Prompt-Token und `32` generierte Token und läuft über einen eigenen
+F1-Worker auf dem Standalone-Pfad (`require_ac_power` plus `BudgetGuard`),
+gebaut nach dem Muster von P2 und W1. Weg 1 (`322`/`32` über den
+IronMule-Pfad) entfällt.
 
-| Prompt | Antwort | `head_skip` | `fixed_compiled` | kombiniert |
-| --- | --- | --- | --- | --- |
-| `897` | `32` | `12,26 %` | `1,42 %` | `13,68 %` |
-| `322` | `32` | `9,02 %` | `2,91 %` | `11,93 %` |
+Zwei Gründe:
 
-Vor dem Versiegeln ist zu entscheiden, welche Workload F1 registriert. Die
-Schwelle wird dabei **nicht** angepasst; sie steht unabhängig vom erwarteten
-Ergebnis. Herleitung im Arbeitsjournal unter „2026-09-02 — F1s
-Ausführungspfad geprüft".
+1. **Der `ReadinessGate`-Pfad ist auf diesem Gerät nicht erreichbar.**
+   `RealSessionController` erzwingt `max_load_1m = 0.75` gegen die rohe
+   Ein-Minuten-Last; die beste je gemessene Last ist `1,614`
+   (Q2-Versuch 2026-08-30), im Ruhezustand liegt sie bei `4,0` bis `6,0`.
+   Wiederverwendung auditierter Infrastruktur nützt nichts, wenn sie nicht
+   startet. P2 und W1 liefen über den Standalone-Pfad erfolgreich.
+2. **Die `897`er-Workload passt zur versiegelten Evidenz** von Head-Skip und
+   persistentem Prozess. Nur `fixed_compiled` stammt von `322` und bleibt
+   deshalb ohne Einzelnachweis im Kandidatenprofil, wie in Abschnitt 3 bereits
+   festgehalten.
+
+Erwartung im warmen Arm damit `13,68 %` gegen die Schwelle `10 %`, Abstand
+`3,68` statt `1,93` Punkte. **Die Schwelle wurde dabei nicht angepasst** — sie
+stand vor dieser Entscheidung fest und steht danach unverändert.
 
 ## 4. Vorregistrierte Schwellen
 
@@ -191,6 +199,37 @@ Sample-Leser wie `RealSession` und ruft `evaluate_integration`. Ohne diesen
 Schritt liegt nach einem Lauf zwar Evidenz vor, aber kein Urteil — die Lücke
 wurde am 2026-09-02 gefunden und geschlossen, bevor ein Messblock dafür
 verbraucht wurde.
+
+## 4d. Der Worker (ergänzt 2026-09-02)
+
+`experiments/f1_integration/measure_f1.py`, warmer Arm. Ein Prozess, ein
+geladenes Modell, zwei IronMule-Engines: die Baseline mit `BASELINE`-Knobs, der
+Kandidat zusätzlich mit `compiled_fixed_cache` und `head_skip_prefill`.
+
+- **Workload wörtlich übernommen** aus `experiments/persistent_process/worker.py`
+  — derselbe Fülltext mal `40`, dieselben vier Fragen `P`/`Q`/`R`/`S`, je `897`
+  Token, `32` generierte. Ein Test hält beide Dateien gegeneinander; weicht die
+  versiegelte ab, schlägt er an.
+- **`--mode aa`** legt die Baseline auf **beide** Arme: die Studie misst dann
+  ihr eigenes Rauschen, und jede dort gemessene Differenz ist Messung, nicht
+  Effekt. Daraus folgt die Paarzahl nach Abschnitt 4b.
+- **`--mode ab`** misst Baseline gegen Kandidat.
+- Paare wechseln `AB` und `BA`, damit kein Arm systematisch auf dem wärmeren
+  Cache läuft.
+- **Tokenidentität ist terminal**: `token_sha256` je Paar; bei Abweichung wird
+  das brechende Paar herausgeschrieben und der Lauf endet sofort.
+- Der IronMule-Checkout wird gegen `03e884cb…` geprüft — denselben Commit, den
+  der Suchvertrag des Stage-Workers nennt.
+- Ausgabe im Drahtformat `friday.ironmule.result.v1`, damit
+  `python -m friday_optimizer integrate` daraus das Urteil erzeugt.
+
+Der Worker erzeugt Evidenz, kein Urteil. Ohne den `integrate`-Schritt liegt
+nach einem Lauf Messung vor und keine Antwort.
+
+**Kalter Arm noch nicht gebaut.** Er braucht einen frischen Prozess je
+Baseline-Anfrage; die Mechanik dafür steht in
+`experiments/persistent_process/measure_persistent_process.py` und wird von
+dort übernommen, nicht neu geschrieben.
 
 ## 5. Gates
 
