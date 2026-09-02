@@ -80,8 +80,18 @@ def resolve_local_model_snapshot(
     ):
         raise LocalModelError("invalid local model identifier")
 
-    selected_hub = hub_root or PROJECT_ROOT / ".friday-data" / "models" / "hub"
-    repository = selected_hub / f"models--{parts[0]}--{parts[1]}"
+    default_hub = PROJECT_ROOT / ".friday-data" / "models" / "hub"
+    user_hub = Path.home() / ".cache" / "huggingface" / "hub"
+    repo_name = f"models--{parts[0]}--{parts[1]}"
+    if hub_root:
+        selected_hub = hub_root
+    elif (default_hub / repo_name).is_dir():
+        selected_hub = default_hub
+    elif (user_hub / repo_name).is_dir():
+        selected_hub = user_hub
+    else:
+        selected_hub = default_hub
+    repository = selected_hub / repo_name
     try:
         repository_real = repository.resolve(strict=True)
     except OSError as exc:

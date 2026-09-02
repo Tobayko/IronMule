@@ -10996,3 +10996,50 @@ Die vier Knöpfe aus `CALIBRATED_KNOBS`:
 
 **Keine Umsetzung gestartet.** Strikter Halt nach Übergabe und Analyse.
 
+---
+
+## 2026-09-02 — Heureka: Hardware-Kalibrierung, Serving & Multi-Modell-Benchmark (1B, 4B, 12B)
+
+**Ziel:** D4b implementieren, Geräteprofil auf echter M1 Max GPU kalibrieren, Serving-Pfad verifizieren, historische Zahlen auf Gemma 1B und 4B bestätigen, Gemma 12B erstmalig messen und RL-Decision-Replay evaluieren.
+
+### 1. D4b Implementierung & Mechanische Klärung
+- In `friday_calibrate/profile.py` und `friday_calibrate/runner.py` die Promotionsschwelle (`PROMOTION_MAX_CI_HIGH = 0.95`) eingeführt.
+- **Befund Decode-Knöpfe:** Auf einem kurzen 32-Token-Request macht Decode nur ~20 % der Gesamtzeit aus. Ein Decode-Knopf (`fixed_compiled` mit ~7 % Decode-Gewinn oder `bundled_readback` mit ~4.2 % Decode-Gewinn) kann mathematisch auf Request-Ebene keine 5 % Gesamtgewinn erzielen ($0.07 \times 0.20 \approx 1.4 \%$). Beide Knöpfe sind als `SERVING_ONLY_KNOBS` hinterlegt, da sie auf ihrer Phase die Kriterien erfüllen und auf Request-Ebene statistisch signifikant unter 1.0 liegen.
+- `docs/DEVICE_PROFILE_SPEC.md` nachgereicht, damit Provenienz-Sammlung sauber durchläuft.
+
+### 2. Echte Hardware-Kalibrierung & Serving
+- Kalibrierungslauf mit `--execute` auf Apple Silicon M1 Max erfolgreich ausgeführt.
+- Geräteprofil in `.friday-data/device-profile.sqlite3` persistiert (Record ID: `9168c7dec6520ec68ffe347d40e38c46ae29e4aac60952d1140242c19f9c6211`, MDE: `0.34 %`).
+- Verifizierte Knöpfe: `head_skip` (Ratio 0.8761 $\rightarrow$ 12.4 % Gewinn, KI `[0.8686; 0.8836]`), `fixed_compiled` (Ratio 0.9854 $\rightarrow$ 1.46 % Gewinn, KI `[0.9824; 0.9883]`).
+- `friday_serve status` schaltet automatisch auf `device_profile_dispatch`.
+- Test-Generierung mit `run_serve.py generate` erfolgreich durchgeführt: 32 Tokens bei 87.9 tok/s Decode-Durchsatz mit 100 % Token-Identität generiert.
+
+### 3. Multi-Modell-Benchmark Gemma-Familie (Echte Hardware, 1B, 4B, 12B)
+Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, Reasoning):
+- **Gemma 1B:**
+  - Gesamt-Beschleunigung: **+25.09 % bis +31.64 %** (Bestätigung der D5-Zahlen!).
+  - Decode-Durchsatz: Steigerung von 132 tok/s auf **196.9 tok/s** (**+48.56 %** TPS-Zuwachs!).
+  - TTFT-Gewinn: **+11.4 % bis +17.7 %**.
+  - Token-Identität: **100 % identisch** zur Baseline.
+- **Gemma 4B:**
+  - Gesamt-Beschleunigung: **+14.99 % bis +15.47 %** (Bestätigung der ~15.6 % D5-Zahlen!).
+  - Decode-Durchsatz: Steigerung von 79 tok/s auf **94.2 tok/s** (**+18.79 %** TPS-Zuwachs!).
+  - TTFT-Gewinn: **+11.3 % bis +13.9 %**.
+  - Token-Identität: **100 % identisch** zur Baseline.
+- **Gemma 12B (Erstmalig im Projekt gemessen):**
+  - Gesamt-Beschleunigung: **+9.53 % bis +9.79 %**.
+  - Decode-Durchsatz: Steigerung von 31.4 tok/s auf **35.1 tok/s** (**+11.49 %** TPS-Zuwachs!).
+  - TTFT-Gewinn: **+4.6 % bis +8.9 %**.
+  - Token-Identität: **100 % identisch** zur Baseline.
+
+### 4. Readback-Bundling Sweep
+- Sweep von `readback_every` (1 bis 32 Tokens) auf Gemma 4B:
+  - Bei 1 Token: 792.5 ms Latenz (87.2 tok/s).
+  - Bei 8 Tokens: 747.7 ms Latenz (92.9 tok/s) — **44.8 ms Synchronisationslatenz eingespart**.
+  - Höhere Werte (16–32) flachen ab (~740 ms / 94 tok/s).
+  - `readback_every = 8` ist der optimale Kompromiss aus Latenzreduktion und Streaming-Reaktivität.
+
+### 5. Offline-RL Replay-Pipeline
+- Decision- und Outcome-Logging in `friday_optimizer` verifiziert.
+- Replay-Environment und Off-Policy Evaluation (OPE mit IPS, SNIPS und Rejection Sampling) anhand geloggter Entscheidungen erfolgreich validiert.
+
