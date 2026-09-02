@@ -9753,3 +9753,44 @@ zusätzlicher Test schlägt an, wenn der Extraktor abdriftet und plötzlich
 deutlich weniger Statements findet.
 
 **Verifikation.** Vollsuite grün.
+
+## 2026-09-02 — HTML geprüft, und die Spaltenzahl meiner eigenen Tabelle
+
+Offline-Sweep, dritte Sprache im Dashboard-Trio nach JavaScript und SQL.
+Keine versiegelte Datei verändert.
+
+**Wohlgeformtheit.** Alle vier HTML-tragenden Dashboards sind sauber
+verschachtelt: kein nicht geschlossenes Element, kein falsch zugeordnetes
+schließendes Tag.
+
+**Tabellenform.** Interessanter als Syntax ist, ob die Kopfzeile zu dem passt,
+was das Skript hineinschreibt. Eine Spalte im Kopf ergänzt und im Skript
+vergessen ergibt eine still verschobene Tabelle — kein Fehler, nur falsche
+Zahlen unter falschen Überschriften.
+
+| Dashboard | `<th>` | Zellen je Zeile | `colspan` der Leerzeile |
+| --- | --- | --- | --- |
+| `optimizer` `#history` | `7` | `7` | `7` |
+| `optimizer` `#decisions` | `7` | `7` | `7` |
+| `h0` `#runs` | `7` | `7` | — |
+| `phase1b` `#rows` | `5` | `5` | — |
+| `avo_router` `#rows` | `4` | `4` | — |
+
+Alles stimmt, auch das Panel, das ich am selben Tag von Hand eingefügt habe.
+Die drei Dashboards bauen ihre Zeilen auf drei verschiedene Arten —
+Array-`forEach`, Template-Literal, explizites `append` — was für die
+Wächterfrage unten wichtig wird.
+
+**Wächter, bewusst beschnitten.** `tests/test_shipped_ui.py` prüft jetzt
+zusätzlich die Verschachtelung jedes ausgelieferten Dokuments und dass jedes
+`colspan` einer Leerzeile exakt der Spaltenzahl ihres Tabellenkopfs
+entspricht. Beides ist rein statisch und zuverlässig. Die Zellzahl je Zeile
+wird **nicht** geprüft: sie müsste drei verschiedene Baumuster kennen, und
+das ergäbe einen wackligen Test statt eines Wächters. Der Verzicht steht im
+Docstring, damit niemand die Lücke für Abdeckung hält.
+
+Beide neuen Prüfungen wurden gegen Kontrollfälle gehalten, die anschlagen
+müssen: eine Tabelle mit drei Kopfspalten und `colspan="2"` wird erkannt,
+ebenso ein `</div>`, das ein offenes `<p>` schließt.
+
+**Verifikation.** Vollsuite `1572 passed, 20 skipped`.
