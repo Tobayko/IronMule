@@ -85,9 +85,15 @@ bleibt — für eine lange Antwort gilt das Gegenteil.
 
 **Konsequenz 2 — Prefill hat zwei Mechaniken, nicht eine.**
 
-1. **Blockstruktur** — Kandidat 5 (Prefill-Step-Size-Sweep) ist offen;
-   Kandidat 1 und 2 sind an der Tokenidentität gescheitert, nicht am
-   Mechanismus. Ob das ein Messartefakt war, entscheidet P2.
+1. **Blockstruktur** — **am 2026-09-02 durch P2 wieder geöffnet.** Der Lauf
+   bestätigte `tie_hypothesis_supported`: Position `10` trägt mit `0,500` den
+   kleinsten Top-2-Abstand der Sequenz (Median `4,0`), die Störung durch
+   Chunking beträgt dort `2,25`–`2,50`. Kandidat 1 und 2 scheiterten an einer
+   Workload mit degenerierter Position, nicht an ihrem Mechanismus.
+   Voraussetzung für die nächste Studie: eine Promptfamilie **ohne**
+   degenerierte Position registrieren — vorab prüfbar, indem der
+   Top-2-Abstandsverlauf gegen die erwartete Störung gehalten wird. Kandidat 5
+   (Prefill-Step-Size-Sweep) ist der offene Hebel darin.
 2. **Rechenauslastung** — `45,5 %` der Spitze ist für eine compute-gebundene
    Phase niedrig. Verdächtig sind Dequantisierungsaufwand, fehlende Fusion und
    Tiling. Neu aus der Roofline-Rechnung, noch ohne Profilerbeleg; ein
@@ -149,43 +155,6 @@ bestätigt und die Priorisierung wird längenabhängig geführt.
 **Kill:** zeigt die Messung bei `256` Token dieselbe Rangfolge wie bei `32`,
 ist das Modell falsch, die Roofline-Ableitungen werden aus P1 entfernt und
 dieser Eintrag gelöscht.
-
-## P2 — Sind die Identitäts-Fehlschläge ein argmax-Tie? (neu 2026-09-01)
-
-**Status:** offen, entscheidet über P1. Herleitung im Arbeitsjournal unter
-„2026-09-01 — Identitäts-Forensik"; reproduzierbar mit
-`experiments/identity_forensics/divergence_positions.py`.
-
-**Mechanismus:** von `11` aufgezeichneten Identitätsabweichungen liegen `10`
-an generierter Position `10`, eine bei `20` — über zwei unabhängige
-Mechanismen (Chunking, Präfixwiederverwendung), vier Promptlängen und fünf
-Blockgrößen. Ein struktureller KV-/Fenster-/Blockfehler bricht am ersten
-generierten Token und streut. Eine feste späte Position ist die Signatur
-eines `argmax`-Gleichstands, den eine geänderte Akkumulationsreihenfolge
-kippt.
-
-**Messung:** fertig gebaut und gegatet — `experiments/identity_forensics/`
-mit Vorregistrierung, Worker `measure_logit_gap.py` (verweigert ohne
-`--execute`, AC-Pflicht, `BudgetGuard`, Offline-Snapshot) und der vor der
-Messung festgelegten Klassifikation in `gap_analysis.py`. Ein Prozess,
-Prompt `677`, `16` Token greedy, Referenz plus die zwei Chunkings `128`
-und `512`, die genau an Position `10` abwichen. Drei Prefills und `48`
-Decodeschritte — weit unter einer 30-Minuten-Freigabe.
-
-**Wartet auf:** eine einzelne Nutzerfreigabe für diesen Lauf.
-
-**Gate:** ist der Abstand an Position `10` an der Auflösungsgrenze und an den
-übrigen Positionen deutlich größer, gilt die Hypothese als gestützt.
-
-**Kill:** ist der Abstand an Position `10` groß, ist die Hypothese tot, die
-Mechanismen sind tatsächlich defekt, P1 wird geschlossen und dieser Eintrag
-gelöscht.
-
-**Ausdrücklich kein Bestandteil dieses Eintrags:** eine Aufweichung,
-Tolerierung oder Umdeutung des Tokenidentitätsgates. Schwellwerte bleiben
-unantastbar. Bei bestätigter Hypothese lautet die Konsequenz, eine
-Promptfamilie ohne degenerierte Position zu registrieren — nicht das Gate zu
-ändern.
 
 ## R2 — Offline-RL auf dem geloggten Korpus
 

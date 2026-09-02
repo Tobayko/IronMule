@@ -41,6 +41,7 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 | L1 Optimizer (2026-08-30) | `friday_optimizer/`-Control-Plane offline implementiert; Memory `401` Records, Dataset `392` Records | `smoke_only/no_learning_claim` (`train=2`, `val=0`, `holdout=0`); Hardware, Learned Ranking und Promotion bleiben gesperrt |
 | Q2 Readiness (2026-08-30) | erster Readiness-Versuch blockiert (`foreign_load`, Last, Speicher) | `model_started=false`, `session_consumed=false` |
 | R0/R1 RL-Vorstufen (2026-09-01) | Entscheidungslogging mit Propensity und Replay-/OPE-Environment offline implementiert; Vollsuite `1459 passed` | Korpus ist leer, jeder Schätzer meldet `insufficient_data`; **kein** Lernclaim, RL bleibt NO-GO bis R2 |
+| P2 Identitäts-Tie (2026-09-02) | realer gegateter Lauf: beide Chunkings kippen an Position `10`, dort kleinster Top-2-Abstand `0,500` bei Median `4,0`, Störung `2,25`–`2,50`; `tie_hypothesis_supported` | Prefill-Klasse ist **nicht mechanisch defekt**; Tokenidentität bleibt gebrochen und das Gate hat korrekt ausgelöst; `formal_claim=false` |
 
 ## Geltende Entscheide und Grenzen
 
