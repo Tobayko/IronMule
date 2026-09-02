@@ -1,0 +1,14 @@
+diff --git a/ironmule/runtime.py b/ironmule/runtime.py
+index f0c8685..c2aecf3 100644
+--- a/ironmule/runtime.py
++++ b/ironmule/runtime.py
+@@ -482,8 +482,7 @@ class Engine:
+             out = body(mx.array([[current] + padded]), state)
+             picks = self._picks(out)
+             state = out[1]
+-            mx.eval(picks, *_leaves(state))
+-            mx.synchronize()
++            mx.eval(picks)
+             chosen = picks.reshape((-1,)).tolist()
+ 
+             accepted = [chosen[0]]

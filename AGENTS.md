@@ -22,8 +22,8 @@ Der eigentliche Proof of Concept entsteht außerhalb dieses verschachtelten Repo
   Entscheidungen eingesetzt.
 - Alle Subagenten für Implementierung, Refactoring, Tests und operative Aufgaben müssen
   ausschließlich `gpt-5.6-luna` (Luna) sein.
-- Vor jedem Download oder jeder Installation lokaler KI, Modelle oder Software ist eine
-  ausdrückliche Freigabe des Nutzers einzuholen; ohne Bestätigung wird nichts installiert.
+- Downloads und Installationen sind seit dem Nutzerentscheid vom 2026-09-02 ohne Einzelrückfrage
+  zulässig; die frühere Bestätigungspflicht entfällt. Bedingungen im Abschnitt „Hardwarefreigabe".
 - Jede Änderung, Entscheidung, Messung und jedes Testergebnis ist automatisch zu dokumentieren;
   relevante Messwerte sind zusätzlich in einer kleinen lokalen UI mit Historie darzustellen.
 - Erkannte Fehler, ihre Ursachen und erfolgreiche Lösungen sind dauerhaft im Arbeitsjournal zu
@@ -33,6 +33,65 @@ Der eigentliche Proof of Concept entsteht außerhalb dieses verschachtelten Repo
   dokumentieren.
 - Bei Entscheidungen mit Auswirkungen auf Installation, Sicherheit oder Architektur ist vorab
   nachzufragen.
+
+## Hardwarefreigabe (Nutzerentscheid 2026-09-02, dauerhaft gültig)
+
+Diese Regel ersetzt die frühere Einzelfreigabe je Messlauf. Sie gilt bis der
+Nutzer sie ausdrücklich widerruft, auch in künftigen Sitzungen.
+
+- **Tests laufen auf echter Hardware. Simulationen, Mocks und Fakes sind für
+  Hardwarepfade unzulässig.** Ein Test, der GPU-, MLX- oder Modellverhalten
+  behauptet, muss es auf dem Zielgerät ausgeführt haben. Synthetische Daten
+  bleiben ausschließlich für Rand- und Fehlerfälle zulässig und begründen
+  weiterhin keine Performance-, Hardware- oder Modellaussage.
+- **GPU, CPU und die übrige verfügbare Hardware werden genutzt, nicht
+  umgangen.** Ein Pfad, der mangels Freigabe auf eine serielle oder
+  CPU-Ersatzvariante ausweicht, ist kein gültiges Messergebnis mehr, sondern
+  ein offener Punkt.
+- **Reale Messläufe brauchen keine Einzelbestätigung mehr.** Sie werden
+  gestartet, sobald sie fachlich an der Reihe sind. Die frühere Regel
+  „jeder Lauf einzeln freigegeben, maximal 30 Minuten, manuell gestartet"
+  entfällt als Freigabehürde.
+- **Downloads und Installationen sind freigegeben.** Pakete, Werkzeuge und
+  Modelle dürfen ohne Einzelrückfrage geladen und installiert werden, wenn sie
+  die Arbeit voranbringen.
+
+### Was bei einer Installation zwingend mitläuft
+
+Das ist keine Erlaubnisfrage, sondern eine Folge der Evidenzbindung: jede
+versiegelte Studie bindet ihre Umgebung über `environment_sha256`
+(`friday_head_skip_runtime/policy.py:255-269`). Eine Installation ändert diesen
+Hash und kann bestehende Bindungen ungültig machen — ein Runtime-Pfad, der
+gestern autorisiert war, fällt danach still in die Baseline.
+
+- Vor der Installation den aktuellen `environment_sha256` festhalten.
+- Nach der Installation prüfen, welche Pakete ihre Autorisierung verlieren, und
+  das Ergebnis im Arbeitsjournal vermerken.
+- Betroffene Pfade werden neu qualifiziert oder als offener Punkt geführt — sie
+  gelten nicht stillschweigend weiter.
+- Modelle bevorzugt weiter aus dem validierten projektlokalen Cache; ein neu
+  geladenes Modell ist ein neuer Snapshot und erbt keine Evidenz.
+
+### Was dadurch ausdrücklich **nicht** entfällt
+
+Die folgenden Grenzen sind **keine** Freigabehürden, sondern Bedingungen dafür,
+dass eine Zahl überhaupt etwas bedeutet. Der zentrale Befund des Projekts ist,
+dass der Störuntergrund die meisten realen Effekte übersteigt
+(`docs/ERGEBNISSE.md`: ungepaart `20,5 %` Variationskoeffizient gegen gepaart
+`1,32 %`). Wer sie fallen lässt, misst nicht schneller, sondern erzeugt
+schneller bedeutungslose Zahlen.
+
+- `BudgetGuard`-Pausen, Duty-Cycle und die Kontinuitätsgrenze bleiben aktiv.
+- Netzbetrieb, kein Low-Power, Fremdlastfreiheit und die Speicher-/Swap-Grenzen
+  bleiben Vorbedingung jeder Messung.
+- Gepaarte Messung, Warmup, Wiederholungen, Median und Streuung bleiben Pflicht;
+  kein Ergebnis aus einem Einzelmesswert.
+- Vorregistrierung, eingefrorene Schwelle und exakte Tokenidentität als
+  terminales Gate bleiben unverändert.
+- Generierter Metal-/Kernelcode läuft weiterhin nur im kontrollierten Worker
+  mit Timeout, Ressourcenlimit, Correctness-Test und Rollback.
+
+Kurz: **die Erlaubnisfrage ist beantwortet, die Messhygiene bleibt.**
 
 ## Verbindlicher Arbeitsablauf
 

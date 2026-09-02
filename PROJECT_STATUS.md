@@ -28,6 +28,60 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 | Zwei-Modell-Planner | prospektiver Zyklus 15 mit sechs balancierten Paaren und zwölf frischen, seriellen Prozessen; 1B und 4B jeweils deterministisch `6/6`, aber strict contract/parser/candidate `0/6` | **`no_planner_qualified`**; 1B: Markdown, falscher Schlüssel `persistent_service_id`, End-of-turn-Trailer; 4B: Markdown-Codeblock trotz richtiger ID; `formal_claim=false` |
 | N10-v1 / N10-v2 formal | V1 auf `c3e582c` vor Timing terminal; V2 auf `959df09` mit registrierter Fixture-Identität versiegelt und mit 6 A/A- plus 6 A/B-Sessions terminal abgeschlossen | `N=10`-Batch-Dispatch ist für genau ein Gerät, FP16-`2048²`, zehn Matmuls und den festen Plan jenseits 5 % bestätigt; nur ein begrenzter N10-Runtime-Prototyp ist freigegeben |
 
+## Spekulation im Auslieferungspfad — entschieden am 2026-09-02
+
+| Bereich | Ergebnis | Zulässige Aussage |
+| --- | --- | --- |
+| H1.0 Umschaltpunkt | 4B, `897`-Token-Prompt, Längen `32`–`128`, Breiten `1`–`3`, gepaart gegen den Auslieferungspfad: Verlust in **jeder** Zelle, monoton wachsend mit Breite und Länge (`−12,23 %` bis `−75,35 %`) | es gibt keinen Umschaltpunkt unterhalb von `128` generierten Token; **der `(K,N)`-Dispatcher wird nicht gebaut**, `speculate_k` bleibt im Auslieferungspfad `0` |
+| H1.0 Amendment | gepatchter Spekulationspfad ohne die redundante Barriere: `−26,16 %` gegen `−26,46 %` (Breite `1`), `−51,29 %` gegen `−51,69 %` (Breite `2`) | der Rückstand ist **kein Defekt** des Spekulationspfades: das Entfernen der Barriere bewegt `0,3`–`0,4` Punkte |
+| Ursache, gemessen (S3) | `Engine.generate()['acceptance']` auf der versiegelten Workload: **`0,0` bei `k = 1, 2, 3`**; Decode `2,398` / `3,273` / `4,054 s` gegen rund `1,9 s` der Baseline | die tragende Ursache ist **Zusatzarbeit ohne jeden Gegenwert**: der `3`-Gramm-Lookup findet in diesem Prompt nichts, jede Iteration rechnet `k+1` Positionen und liefert ein Token. Die Kosten wachsen **linear in `k`** (rund `0,8 s` je Entwurfsplatz), **nicht** proportional zur Breite — Breite `4` kostet das `2,13`-fache, nicht das Vierfache, weil Decode bandbreitengebunden ist. Der Hebel des Verfahrens ist damit intakt; die Workload liefert ihm nichts. Korroboration über zwei Wege: `2,398/1,9 = 1,262` gegen den gepaarten `ratio_median 1,2616` bei `96`/w1 (`1,9` gerundet). Die Readback-Asymmetrie ist der kleinere Rest |
+| D4 Serving-Latte | Nutzerentscheidung vom 2026-09-02, übermittelt über die Mentor-Session, wörtlich „bundled_readback bleibt drin, D4 so entscheiden" | entschieden ist **genau ein Knopf**: `bundled_readback` bleibt im Auslieferungspfad, unter der schwächeren Serving-Latte (Intervall vollständig unter `1,0` plus Tokenidentität) und ohne jede Studienpromotion zu ändern. Ob diese Latte **allgemein** für künftige Serving-Knöpfe gilt, ist damit **nicht** entschieden und bleibt offene Nutzerfrage |
+| H1.0 zweites Modell | `gemma-3-1b-it-4bit`, `897`-Token-Prompt, `32` Token, Breite `1`, `24` Paare gegen den Auslieferungspfad: `−15,59 %`, KI `[1,1381; 1,2353]`, A/A `11,77 %` | bestätigte Verschlechterung auch auf dem 1B, und zwar an der schärfsten Stelle (kürzeste Länge, schmalste Breite). Auflösungsziel `3 %` in diesem Regime **nicht** erreicht; die übrigen 1B-Zellen sind **nicht gemessen** |
+| Tokenidentität der Spekulation | `4B`/`128`/Breite `2`: Bruch reproduziert sofort in Paar `0`, erster divergierender Index `10`, ungegattertes Token (`j = 0`, Entwurf leer); Logits `75,0` gegen `74,5` = **exakt ein bf16-ULP** (Raster ablesbar in `experiments/identity_forensics/logit_gap.json`: alle Werte in `[32,64)` Vielfache von `0,25`, in `[64,128)` von `0,5`) | **Ursache gemessen** (`BACKLOG.md` S3): ein Forward der Breite `3` statt `1` kippt eine Ein-ULP-Entscheidung. Die Identitätsbehauptung „per Konstruktion" von `_decode_speculative` hält damit **nicht** — dauerhaft, nicht bis zur Klärung. Spekulation darf im Auslieferungspfad nie als tokenidentisch geführt werden; `friday_serve/speculation.py` verliert seine Begründung „braucht kein Promotionsgate, weil identisch per Konstruktion" |
+
+**Gemessene 4B-Tabelle**, versiegelter `897`-Token-Prompt, gepaart, `6` Paare je
+Zelle, Baselinearm = Auslieferungspfad:
+
+| Token | Breite `1` | Breite `2` | Breite `3` | A/A des Regimes |
+| --- | --- | --- | --- | --- |
+| `32` | `−12,23 %` | `−22,61 %` | `−32,00 %` | `1,13 %` |
+| `48` | `−15,98 %` | `−28,99 %` | `−43,58 %` | `1,04 %` |
+| `64` | `−19,46 %` | `−38,95 %` | `−58,01 %` | `2,22 %` |
+| `96` | `−26,46 %` | `−51,69 %` | `−75,35 %` | `0,52 %` |
+| `128` | `−29,88 %` | **`identity_break`** | nicht gemessen | `0,70 %` |
+
+Die `128`er Zeile ist zu lesen wie sie dasteht: Breite `1` ist mit `−29,88 %`
+gemessen, Breite `2` brach die Tokenidentität in Paar `0` und beendete die
+Studie nach Vorregistrierung, Breite `3` wurde deshalb **nicht** gemessen. Eine
+ungemessene Zelle kann keinen Umschaltpunkt vortäuschen, aber sie kann einen
+verdecken.
+
+**Der Satz, der daraus folgt, mit seiner Bedingung:** der Auslieferungspfad
+bündelt den Readback (D4, 2026-09-02); gegen **diesen** Pfad verliert
+Prompt-Lookup-Spekulation auf `gemma-3-4b-it-4bit` bei jeder gemessenen Länge
+und Breite, und auf `gemma-3-1b-it-4bit` an der schärfsten gemessenen Stelle
+(`32` Token, Breite `1`) ebenfalls, dort als statistisch bestätigte
+Verschlechterung. Der `(K,N)`-Dispatcher wird nicht gebaut, H1.1 und H1.2 des
+Masterplans entfallen. Wird D4 je revidiert, verliert der Baselinearm seinen
+strukturellen Vorteil und die Frage ist neu zu stellen.
+
+Was dabei **nicht** gemessen ist und auch nicht projiziert wird: die übrigen
+1B-Zellen (Längen `48`–`128`, Breiten `2` und `3`). Der Kill stützt sich auf die
+vollständige 4B-Reihe plus den schärfsten 1B-Punkt, nicht auf eine Fortschreibung.
+
+**Die Reichweite ist workloadbedingt, nicht modellbedingt.** S3 hat gemessen,
+dass die Annahmequote auf der versiegelten Workload `0,0` ist — der Lookup
+trifft dort nie. Der Kill gilt für **diese** Auslieferungsworkload, nicht für
+Prompt-Lookup-Spekulation an sich. Auf einer wiederholungsreichen Workload
+(`journal.txt`) misst S1 mit derselben Technik `3`–`6 %` Gewinn. Zwei Workloads,
+zwei Vorzeichen, eine Ursache: die Trefferquote des Lookups. Wird D4 je revidiert, verliert der
+Baselinearm seinen strukturellen Vorteil und die Frage ist neu zu stellen.
+
+Der gepatchte IronMule-Arbeitsbaum wurde nach Prüfung von `patch.diff` und
+`runtime_py_sha256` gegen die Dateien auf der Platte zurückgesetzt
+(`9d30965e…`, `git status` leer, HEAD `03e884cb`); diese
+Dokumentationsabschnitte entstanden **danach**.
+
 ## Stand nach Zyklus 17 bis 21 und Optimizer-Arbeiten (Kurzfassung)
 
 | Bereich | Ergebnis | Zulässige Aussage |
@@ -42,6 +96,10 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 | Q2 Readiness (2026-08-30) | erster Readiness-Versuch blockiert (`foreign_load`, Last, Speicher) | `model_started=false`, `session_consumed=false` |
 | R0/R1 RL-Vorstufen (2026-09-01) | Entscheidungslogging mit Propensity und Replay-/OPE-Environment offline implementiert; Vollsuite `1459 passed` | Korpus ist leer, jeder Schätzer meldet `insufficient_data`; **kein** Lernclaim, RL bleibt NO-GO bis R2 |
 | P2 Identitäts-Tie (2026-09-02) | realer gegateter Lauf: beide Chunkings kippen an Position `10`, dort kleinster Top-2-Abstand `0,500` bei Median `4,0`, Störung `2,25`–`2,50`; `tie_hypothesis_supported` | Prefill-Klasse ist **nicht mechanisch defekt**; Tokenidentität bleibt gebrochen und das Gate hat korrekt ausgelöst; `formal_claim=false` |
+| **D5 `friday_serve` mit Knöpfen (2026-09-02)** | erste Messung des Auslieferungspfads: 4B `897`/`32` Ratio `0,8439`, KI `[0,8417; 0,8566]`, A/A `3,69 %`; 4B `897`/`256` `0,8590`; 1B `897`/`32` `0,6960`, A/A `14,25 %`. Tokenidentität auf allen Armen gehalten | **`15,61 %`** end-to-end kurz, `14,10 %` bei `256` Token, `30,40 %` auf dem 1B. Spekulation verschlechtert ab Breite `2` auf beiden Modellen. Antwortlängen über rund `287` Token sind wegen `continuous_gpu_limit_s = 6,0` nicht messbar. `formal_claim=false`, keine Aktivierung |
+| D2 Serve-Äquivalenz (2026-09-02) | `friday_serve` gegen `mlx_lm.stream_generate`, drei Promptfamilien, alle Knöpfe aus | `equivalent`, Tokenfolgen identisch; Voraussetzung für D5 |
+| Phase 3 Bandit (2026-09-02) | Prämisse widerlegt: Spekulation verliert auf `journal`/`tests` nicht reproduzierbar; Breiten unterscheiden sich um `0,016` | **terminaler Negativbefund** — Thompson Sampling entfällt, feste Entwurfsbreite; damit ist auch R1bs Kill-Kriterium erfüllt und R2s Kampagne bleibt der einzige Korpusweg |
+| Kandidat 5 Prefill-Schrittweite (2026-09-02) | Offline-Vorfilter über die gesamte Gap-Evidenz meldet dreimal `degenerate`, acht von sechzehn Positionen | **terminaler Negativbefund** — die Blockstruktur-Klasse bleibt geschlossen, keine Hardwarezeit |
 | **F1 warmer Arm (2026-09-02)** | erste End-to-End-Messung: `6` Paare, Tokenidentität `6/6`, Ratio-Median `0,8600567`, KI `[0,853444; 0,873056]`, Rauschen aus A/A `0,612 %` | **`qualified`** gegen vorregistrierte Schwelle `10 %`; Gewinn `13,99 %` end-to-end für ein Gerät, den Snapshot `93724907…`, `897`-Token-Prompt und `32` generierte Token; Projektion `13,68 %` bestätigt; `formal_claim=false`, keine Aktivierung |
 
 ## Geltende Entscheide und Grenzen
@@ -49,8 +107,11 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 - **GO im exakten Scope:** begrenzter N8-Runtime-Prototyp, N10-Runtime-Prototyp,
   N8/N10-Shadow-Router (nur Shadow), Head-Skip-Runtime (Engineering-GO).
 - **Negativ/abgelehnt:** Phase 1B Residual+RMSNorm (`baseline_fallback`),
-  Gemma-Planer 1B/4B (`no_planner_qualified`), gebündelter Readback,
-  Fused-Greedy-Compile (inconclusive).
+  Gemma-Planer 1B/4B (`no_planner_qualified`), gebündelter Readback
+  (abgelehnt als **Studienpromotion**, Zyklus 17, `0,9581` gegen die
+  vorregistrierte `0,95`; im **Auslieferungspfad behalten** durch
+  Nutzerentscheidung D4 vom 2026-09-02 — der H1.0-Befund hängt daran, dass der
+  Auslieferungspfad bündelt), Fused-Greedy-Compile (inconclusive).
 - **NO-GO:** produktive Phase 1B, adaptive Kernelsuche, breiterer Live-Suchraum,
   weitere Modellrunden ohne neue Freigabe, automatische Produktaktivierung,
   Downloads und Installationen.
