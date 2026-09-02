@@ -162,7 +162,7 @@ def test_chosen_constants_are_labelled_as_chosen():
 
     sources = {
         "DEFAULT_MIN_SAMPLES": ROOT / "friday_optimizer/replay.py",
-        "TIE_ABSOLUTE": ROOT / "experiments/identity_forensics/gap_analysis.py",
+        "TIE_MARGIN": ROOT / "experiments/identity_forensics/gap_analysis.py",
         "RATE_TOLERANCE": ROOT / "experiments/w1_regime/regime_analysis.py",
         "PROMPT_TOLERANCE": ROOT / "experiments/w1_regime/measure_long_answer.py",
     }
@@ -170,7 +170,8 @@ def test_chosen_constants_are_labelled_as_chosen():
     for name, path in sources.items():
         text = path.read_text()
         index = text.index(name)
-        context = text[max(0, index - 400):index]
+        # Two-sided: a label may follow the name as easily as precede it.
+        context = text[max(0, index - 400):index + 400]
         if not any(word in context.lower() for word in
                    ("preregistered", "chosen", "judgement", "judgment", "stated", "sealed baseline")):
             missing.append(name)

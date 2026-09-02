@@ -107,8 +107,14 @@ def main(argv: list[str] | None = None) -> int:
     # Exact: a different prompt family has a different sensitive position.
     check_prompt_length(ids, EXPECTED_PROMPT_TOKENS)
 
-    def run(chunk: int | None) -> tuple[list[int], list[dict]]:
-        """Prefill in blocks of *chunk*, then GEN greedy tokens with gaps."""
+    def run(chunk: int | None, reference_rows: list | None = None) -> tuple[list[int], list[dict], list]:
+        """Prefill in blocks of *chunk*, then GEN greedy tokens with gaps.
+
+        When *reference_rows* is given, the largest absolute logit difference
+        against the reference is recorded per position. That perturbation is
+        the quantity the tie criterion compares against; without it a gap is
+        just a number with no scale to be small relative to.
+        """
 
         cache = make_prompt_cache(model)
         size = len(ids) if chunk is None else chunk
@@ -123,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
 
         tokens: list[int] = []
         gaps: list[dict] = []
+        rows: list = []
         at = time.perf_counter()
         for position in range(GEN):
             if position > 0:
@@ -135,29 +142,42 @@ def main(argv: list[str] | None = None) -> int:
             second = float(row[0, top2])
             mx.eval(row)
             tokens.append(top1)
-            gaps.append({
+            entry = {
                 "position": position, "top1_id": top1, "top2_id": top2,
                 "top1_logit": first, "top2_logit": second, "gap": first - second,
-            })
+            }
+            if reference_rows is not None and position < len(reference_rows):
+                difference = mx.max(mx.abs(row - reference_rows[position]))
+                mx.eval(difference)
+                entry["max_abs_logit_diff"] = float(difference)
+            else:
+                rows.append(row)
+            gaps.append(entry)
         mx.synchronize()
         charge(time.perf_counter() - at)
-        return tokens, gaps
+        return tokens, gaps, rows
 
-    reference_tokens, reference_gaps = run(None)
+    reference_tokens, reference_gaps, reference_rows = run(None)
     variants = []
     for chunk in VARIANT_CHUNKS:
-        tokens, _ = run(chunk)
+        tokens, variant_gaps, _ = run(chunk, reference_rows=reference_rows)
         first_diff = next(
             (index for index, (left, right) in enumerate(zip(reference_tokens, tokens)) if left != right),
             None,
         )
-        verdict = classify(reference_gaps, first_diff)
+        # The perturbation up to and including the divergence: what chunking
+        # actually changed before the choice flipped.
+        window = variant_gaps if first_diff is None else variant_gaps[: first_diff + 1]
+        differences = [row["max_abs_logit_diff"] for row in window if "max_abs_logit_diff" in row]
+        perturbation = max(differences) if differences else None
+        verdict = classify(reference_gaps, first_diff, perturbation=perturbation)
         variants.append({
             "chunk": chunk, "blocks": -(-len(ids) // chunk),
             "identical": tokens == reference_tokens, "first_diff": first_diff,
-            "tokens": tokens, **verdict.as_dict(),
+            "tokens": tokens, "gaps": variant_gaps, **verdict.as_dict(),
         })
-        print(json.dumps({k: v for k, v in variants[-1].items() if k != "tokens"}), flush=True)
+        print(json.dumps({k: v for k, v in variants[-1].items()
+                          if k not in ("tokens", "gaps")}), flush=True)
 
     result = {
         "study_id": STUDY_ID, "formal_claim": False, "gate_unchanged": True,

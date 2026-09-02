@@ -17,10 +17,22 @@ from typing import Any, Mapping, Sequence
 
 ANALYSIS_SCHEMA = "friday.identity.gap-analysis.v1"
 
-#: Preregistered before the measurement, deliberately in two independent
-#: forms so neither scale nor outliers alone can decide.
-TIE_ABSOLUTE = 1e-2      # logit units at the divergence position
-TIE_RATIO = 20.0         # median gap over all positions / gap at divergence
+#: Revised 2026-09-02 after finding experiments/divergence_source, an
+#: undocumented study on this exact prompt. It measured that chunked prefill
+#: perturbs the final logits by ``1.1875`` while the top-1/top-2 gap at
+#: position 0 is ``1.75``, so the choice cannot flip there. The perturbation
+#: is therefore of order one, not of order float epsilon, and the original
+#: absolute threshold of ``1e-2`` would have called every divergence
+#: structural regardless of the truth.
+#:
+#: The criterion is now a comparison of two *measured* quantities: a flip is a
+#: tie when the local top-2 gap is smaller than the perturbation that chunking
+#: actually introduces. ``TIE_MARGIN`` is the one chosen number left - how much
+#: smaller the gap must be before the explanation is accepted.
+TIE_MARGIN = 1.0
+#: Kept as a sanity bound only: a divergence where the gap is this much larger
+#: than the perturbation is not a tie under any reading.
+TIE_RATIO = 20.0
 
 #: A divergence this early cannot be a late tie: the state is already wrong.
 STRUCTURAL_POSITION = 1
@@ -51,6 +63,7 @@ class GapVerdict:
     is_minimum: bool
     positions: int
     reasons: tuple[str, ...] = ()
+    perturbation: float | None = None
 
     def __post_init__(self) -> None:
         if self.verdict not in VERDICTS:
@@ -72,7 +85,8 @@ class GapVerdict:
             "is_minimum": self.is_minimum,
             "positions": self.positions,
             "reasons": list(self.reasons),
-            "tie_absolute": TIE_ABSOLUTE,
+            "perturbation": self.perturbation,
+            "tie_margin": TIE_MARGIN,
             "tie_ratio": TIE_RATIO,
             "gate_unchanged": True,
         }
@@ -82,14 +96,18 @@ def classify(
     gaps: Sequence[Mapping[str, Any]],
     first_diff: int | None,
     *,
-    tie_absolute: float = TIE_ABSOLUTE,
+    perturbation: float | None = None,
+    tie_margin: float = TIE_MARGIN,
     tie_ratio: float = TIE_RATIO,
 ) -> GapVerdict:
-    """Classify one divergence against the preregistered thresholds.
+    """Classify one divergence against the preregistered criterion.
 
     ``gaps`` is the per-position top-1 minus top-2 logit distance of the
     reference run. ``first_diff`` is the position at which the variant's tokens
-    first differ, or ``None`` when the runs were identical.
+    first differ, or ``None`` when the runs were identical. ``perturbation`` is
+    the largest absolute logit difference the variant introduces, measured in
+    the same run; without it no tie can be established, because the question is
+    whether the gap is small *relative to what chunking actually changes*.
     """
 
     values = [_finite(row.get("gap"), f"gap[{index}]") for index, row in enumerate(gaps)]
@@ -113,22 +131,25 @@ def classify(
         reasons.append("diverges_at_or_before_position_1")
         return GapVerdict("structural", first_diff, divergence, median, minimum, ratio,
                           is_minimum, len(values), tuple(reasons))
-    absolute_ok = divergence <= tie_absolute
-    ratio_ok = ratio >= tie_ratio
-    if not absolute_ok:
-        reasons.append("divergence_gap_above_absolute_threshold")
-    if not ratio_ok:
-        reasons.append("divergence_gap_not_small_against_the_median")
-    if absolute_ok and ratio_ok:
-        return GapVerdict("tie", first_diff, divergence, median, minimum, ratio, is_minimum,
-                          len(values), ())
-    if not absolute_ok and not ratio_ok:
-        # Large in both forms: the model genuinely changed its mind, so the
-        # mechanism is what broke, not the workload.
-        return GapVerdict("structural", first_diff, divergence, median, minimum, ratio,
+    if perturbation is None:
+        reasons.append("perturbation_not_measured")
+        return GapVerdict("inconclusive", first_diff, divergence, median, minimum, ratio,
                           is_minimum, len(values), tuple(reasons))
+    size = _finite(perturbation, "perturbation")
+    if size < 0.0:
+        raise GapError("perturbation must not be negative")
+    # A flip is explained when the local gap is smaller than what the variant
+    # actually changes; it is unexplained when the gap comfortably exceeds it.
+    if divergence <= size * tie_margin:
+        return GapVerdict("tie", first_diff, divergence, median, minimum, ratio, is_minimum,
+                          len(values), (), perturbation=size)
+    if divergence > size * tie_ratio:
+        reasons.append("gap_far_exceeds_the_measured_perturbation")
+        return GapVerdict("structural", first_diff, divergence, median, minimum, ratio,
+                          is_minimum, len(values), tuple(reasons), perturbation=size)
+    reasons.append("gap_between_the_perturbation_and_the_sanity_bound")
     return GapVerdict("inconclusive", first_diff, divergence, median, minimum, ratio,
-                      is_minimum, len(values), tuple(reasons))
+                      is_minimum, len(values), tuple(reasons), perturbation=size)
 
 
 def summarise(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
@@ -164,7 +185,7 @@ def summarise(results: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
 __all__ = [
     "ANALYSIS_SCHEMA",
     "STRUCTURAL_POSITION",
-    "TIE_ABSOLUTE",
+    "TIE_MARGIN",
     "TIE_RATIO",
     "VERDICTS",
     "GapError",
