@@ -9794,3 +9794,51 @@ müssen: eine Tabelle mit drei Kopfspalten und `colspan="2"` wird erkannt,
 ebenso ein `</div>`, das ein offenes `<p>` schließt.
 
 **Verifikation.** Vollsuite `1572 passed, 20 skipped`.
+
+## 2026-09-02 — Die dokumentierten Zahlen gegen ihre Evidenz gehalten
+
+Offline-Audit. Kein Modellstart, kein Hardwarelauf, keine Evidenzdatei
+verändert.
+
+**Warum das die wichtigste Prüfung ist.** Der gesamte Wert dieses Projekts
+liegt darin, dass jede Behauptung auf eine versiegelte Messung zurückgeht.
+Dokumentationsdrift — eine Zahl nachträglich editiert, anders gerundet oder
+aus einem überholten Lauf übernommen — ist deshalb die schlimmste denkbare
+Fehlerklasse. Geprüft hat sie nie jemand.
+
+**Ergebnis: zehn von zehn Kopfzahlen stimmen.**
+
+| Behauptung | dokumentiert | in der Evidenz |
+| --- | --- | --- |
+| Head-Skip `R` | `0,846385` | `0.8463845562069244` |
+| Head-Skip KI unten | `0,843147` | `0.8431470041496976` |
+| Head-Skip KI oben | `0,851284` | `0.8512844842159696` |
+| Persistenter Prozess `R` | `0,346968` | `0.34696789209993684` |
+| Persistenter Prozess Effekt | `−65,3032 %` | `-65.30321079000632` |
+| Zyklus 16 Ratio | `0,9295921887` | `0.9295921887` |
+| Zyklus 17 Ratio | `0,9581074518` | `0.9581074518` |
+| Zyklus 21 Ratio | `1,000510010` | `1.000510009822041` |
+| Phase 1B Gain | `1,870 %` | im Statusdokument geführt |
+| Head-Skip Runtime | `−15,4164 %` | in der Kandidatenliste geführt |
+
+Auch die Entscheidungswörter stimmen mit den Studienausgaben überein:
+`engineering_gain_confirmed_exact_scope`, `runtime_compile_wins_exact_scope`,
+`no_clear_speedup_baseline_retained`, `fused_greedy_compile_inconclusive` —
+jeweils mit `formal_claim=false`.
+
+Die Rundung von Zyklus 21 ist korrekt: `1.000510009822041` wird auf neun
+Nachkommastellen zu `1,000510010`, nicht abgeschnitten zu `1,000510009`.
+
+**Wächter.** `tests/test_documented_claims.py` führt das als Ledger: je Eintrag
+die deutsch formatierte Zeichenkette, wie sie im Dokument steht, **und** der
+Rohwert, wie er in der Evidenz steht. Beide Formen sind ausgeschrieben; ein
+Test, der die Formatierung selbst berechnet, würde bestehen, während das
+Dokument etwas anderes behauptet. Die Head-Skip-Zahlen werden gegen die
+versiegelte SQLite gelesen und übersprungen, wenn sie in einem Checkout fehlt
+— sie ist gitignoriert.
+
+**Kontrollprobe.** `0,846385` in `PROJECT_STATUS.md` testweise auf `0,846999`
+geändert: der Wächter schlägt an. Danach zurückgesetzt. Ein Wächter, den
+niemand hat scheitern sehen, ist keiner.
+
+**Verifikation.** Vollsuite `1583 passed, 20 skipped`.
