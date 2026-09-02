@@ -5,46 +5,29 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
-## F1 — Integrationsstudie: bestätigte Gewinne ernten (freigegeben, priorisiert)
+## F1 — warmer Arm beantwortet, kalter Arm offen
 
-**Status:** Nutzerfreigabe am 2026-09-01 erteilt. Vorregistrierung,
-Analysebaustein und Projektion sind am 2026-09-01 fertig — Ergebnis im
-Arbeitsjournal unter „2026-09-01 — F1". Offen ist nur noch die Ausführung.
-Rahmen und Erfolgshebel: [`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
+**Warmer Arm am 2026-09-02 gemessen und bestanden.** `13,99 %` end-to-end,
+Ratio-Median `0,8600567`, KI `[0,853444; 0,873056]`, `6` Paare, Tokenidentität
+`6/6`, A/A-Rauschen `0,612 %`. Status `qualified` gegen die unveränderte
+Schwelle `10 %`. Die Projektion `13,68 %` liegt im Intervall und ist bestätigt.
+Ergebnis in `docs/ERGEBNISSE.md`, Herleitung im Arbeitsjournal unter
+„2026-09-02 — F1 warmer Arm gemessen".
 
-**Vorhanden:** [`docs/F1_INTEGRATION_VORREGISTRIERUNG.md`](docs/F1_INTEGRATION_VORREGISTRIERUNG.md)
-(zwei Arme `cold`/`warm`, Schwellen `50 %`/`10 %`, MDE `5 %`, Tokenidentität
-terminal), `friday_optimizer/integration.py` (`request_seconds`,
-`evaluate_integration`) und `experiments/f1_integration/project_f1.py`.
+**Offen: der kalte Arm.** Er misst den persistenten Modellprozess mit und
+erwartet rund `70 %` gegen die Schwelle `50 %`. Er braucht einen frischen
+Prozess je Baseline-Anfrage; die Mechanik dafür steht vollständig in
+`experiments/persistent_process/measure_persistent_process.py` und wird von
+dort übernommen, nicht neu geschrieben.
 
-**Erwartung, korrigiert:** `13,68 %` im warmen Arm, `70,05 %` im kalten. Die
-frühere Lesart `21 %` unterstellte, dass Prefill- und Decodegewinn sich
-multiplizieren; sie wirken auf verschiedene Phasen derselben Anfrage.
+**Unverändert:** Tokenidentität terminal, AC-only, fremdlastfrei, maximal
+30 Minuten je Lauf, jeder reale Lauf einzeln bestätigt, Downloads gesperrt,
+keine automatische Aktivierung. Ein bestandenes Gate erlaubt Integration,
+nicht Aktivierung.
 
-**Ausführungspfad geprüft (2026-09-02).** `session-plan` läuft read-only
-durch und schließt korrekt fail-closed; die Blocker sind ausschließlich
-Provenienzbindungen gegen veraltete Q2-Artefakte. Kein struktureller Defekt.
-Der saubere Commit vom 2026-09-01 hat `optimizer_checkout_dirty` beseitigt.
-
-**Workload entschieden am 2026-09-02: Weg 2.** `897`/`32` über einen eigenen
-F1-Worker auf dem Standalone-Pfad, weil `RealSessionController`
-`max_load_1m = 0.75` gegen die rohe Ein-Minuten-Last erzwingt und diese
-Maschine im Ruhezustand bei `4,0`–`6,0` liegt; beste je gemessene Last
-`1,614`. Begründung in der Vorregistrierung, Herleitung im Arbeitsjournal
-unter „2026-09-02 — F1 kann auf dieser Maschine nicht starten". Erwartung
-warm `13,68 %` gegen unveränderte Schwelle `10 %`.
-
-**Danach:**
-
-1. Workload entscheiden, Fingerprint gegen den aktuellen HEAD sammeln, die
-   Vorregistrierung mit Umgebungs-Hashes versiegeln.
-2. A/A-Sessions je Arm zur MDE- **und Rauschbestimmung**, daraus die Paarzahl
-   nach der vorregistrierten Regel, dann A/B — gegatet, manuell, AC-only,
-   fremdlastfrei, maximal 30 Minuten je Lauf, einzeln bestätigt.
-
-**Kill/Pivot:** unter Schwelle oder Identitätsbruch gilt Baseline; terminaler
-Negativeintrag in die Studienakte, F1 wird hier gelöscht. Widerspricht die
-Messung der Projektion, gewinnt die Messung und die Projektion wird korrigiert.
+**Kill/Pivot:** bleibt der kalte Arm unter `50 %`, gilt für ihn die Baseline
+und der Befund wandert als terminaler Negativeintrag in die Studienakte; der
+warme Arm bleibt davon unberührt.
 
 ## P1 — Prefill-Hebelklasse; die Decode-Klasse ist erschöpft
 

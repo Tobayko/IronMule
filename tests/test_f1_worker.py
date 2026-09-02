@@ -82,6 +82,11 @@ def test_it_reuses_the_sealed_workload_verbatim():
         assert fragment in worker, fragment
         assert fragment in sealed, f"{fragment} is no longer the sealed workload"
     assert ") * 40" in worker and ") * 40" in sealed
+    # The separator is worth its own assertion: leaving it out yields 895
+    # tokens instead of 897, which the first run of this worker did.
+    joiner = 'FILLER + "\\n\\n" + QUESTIONS[key]'
+    assert joiner in worker, "the sealed prompt joins filler and question with a blank line"
+    assert joiner in sealed
 
 
 def test_token_identity_is_terminal_not_a_warning():

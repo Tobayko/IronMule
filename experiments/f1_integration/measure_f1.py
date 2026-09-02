@@ -135,7 +135,9 @@ def main(argv: list[str] | None = None) -> int:
 
     def prompt_ids(key: str) -> list[int]:
         templated = tokenizer.apply_chat_template(
-            [{"role": "user", "content": FILLER + QUESTIONS[key]}],
+            # The separator is part of the sealed prompt: without it the count
+            # is 895, not 897, and it is a different workload.
+            [{"role": "user", "content": FILLER + "\n\n" + QUESTIONS[key]}],
             add_generation_prompt=True,
         )
         ids = list(templated if isinstance(templated, list) else tokenizer.encode(templated))
