@@ -176,3 +176,40 @@ def test_chosen_constants_are_labelled_as_chosen():
                    ("preregistered", "chosen", "judgement", "judgment", "stated", "sealed baseline")):
             missing.append(name)
     assert not missing, f"these constants read as measurements: {missing}"
+
+
+def test_the_readback_gain_belongs_to_a_stacked_arm_not_a_standalone_one():
+    """4.19 % was measured on top of fixed_compiled, not against baseline.
+
+    Both arms of the cycle-17 study carry fixed_compiled; they differ only in
+    readback_every. Reading the ratio as a standalone decode gain would count
+    the two knobs as alternatives when they are in fact stacked.
+    """
+
+    payload = json.loads((ROOT / "experiments/batched_readback_compile/results.json").read_text())
+    paired = payload["metrics"]["paired"]
+    assert paired["baseline_arm"] == "fixed_compiled_readback_1"
+    assert paired["candidate_arm"] == "fixed_compiled_readback_8"
+    assert paired["primary"]["median"] == pytest.approx(0.9581074518316217, abs=1e-12)
+    assert set(payload["metrics"]["arms"]) == {
+        "fixed_compiled_readback_1", "fixed_compiled_readback_8"
+    }
+
+
+def test_the_registry_readback_candidate_is_not_the_measured_one():
+    """readback_every_2 has no measurement; cycle 17 measured N = 8.
+
+    The candidate's name asserts a parameter that its own parameters mapping
+    does not carry and that no sealed study measured. Pinned here so the
+    4.19 % is never cited as evidence for N = 2.
+    """
+
+    from friday_optimizer.candidates import CandidateRegistry
+
+    specification = CandidateRegistry().get("readback_every_2")
+    assert dict(specification.parameters) == {}, "the name carries the only claim"
+    payload = json.loads((ROOT / "experiments/batched_readback_compile/results.json").read_text())
+    measured = set(payload["metrics"]["arms"])
+    assert not any("readback_2" in arm for arm in measured), (
+        "if N=2 is ever measured, this discrepancy is resolved and the test should say so"
+    )

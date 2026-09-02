@@ -10151,3 +10151,48 @@ mit Batch `2` und `32`, `self_consistency` mit anderen Sampling-Parametern.
 Beide liefern keinen Batch-1-Vergleichspunkt. W1 bleibt nötig.
 
 **Verifikation.** Vollsuite `1610 passed, 20 skipped`.
+
+## 2026-09-02 — Korrektur der Amdahl-Buchführung: die Decode-Knobs sind gestapelt
+
+Offline-Prüfung von F1s größter ungeprüfter Annahme — dass die bestätigten
+Gewinne sich zusammensetzen — anhand vorhandener Evidenz.
+
+**Fund.** Die Zyklus-17-Studie `batched_readback_compile` hat die Arme
+`fixed_compiled_readback_1` und `fixed_compiled_readback_8`. **Beide** tragen
+`fixed_compiled`; sie unterscheiden sich nur in `readback_every`. Die Ratio
+`0,9581074518` ist also ein Zuwachs **auf** `fixed_compiled`, nicht ein
+Vergleich gegen die nackte Baseline.
+
+**Was das an meiner Tabelle korrigiert.** Der Amdahl-Nachtrag vom selben Tag
+führte die beiden Decode-Kandidaten als Alternativen:
+
+| | dort | korrekt |
+| --- | --- | --- |
+| `fixed_compiled` | `1,42 %` end-to-end | `1,42 %` |
+| gebündelter Readback | `0,84 %` end-to-end | kein eigenständiger Wert |
+| beide zusammen | nicht ausgewiesen | Decode-Ratio `0,890649`, **`2,20 %`** end-to-end |
+
+Die Rechnung, was der Decode-Klasse bleibt, ändert sich damit: statt
+`5,85 − 1,42 = 4,43` Punkte sind es `5,85 − 2,20 = 3,65`. Die Klasse ist also
+**stärker** ausgeschöpft als ich schrieb, nicht schwächer. Die Schlussfolgerung
+selbst hält: auch gestapelt bleiben die Decode-Knobs mit `2,20 %` weit unter
+F1s `10 %`-Schwelle im warmen Arm.
+
+**Positiver Nebenbefund.** Der Messaufbau dieses Projekts *kann* gestapelte
+Knobs messen und tut es bereits — die Zyklus-17-Studie ist genau das. F1s
+Kernaufgabe, drei Gewinne gemeinsam zu messen, ist im vorhandenen Harness
+also nicht neu, sondern erprobt.
+
+**Zweiter Fund: der Registry-Kandidat passt nicht zur Evidenz.** Die
+versiegelte Kandidatenregistry führt `readback_every_2`. Sein Name behauptet
+`N = 2`; seine `parameters` sind leer, tragen die Zahl also nicht; und
+gemessen wurde in Zyklus 17 `N = 8` (Arme `readback_1` gegen `readback_8`).
+Der Suchvertrag des Stage-Workers kennt `2, 4, 8`. Für `N = 2` existiert damit
+**keine** Messung.
+
+Die Registry ist versiegelt und wird nicht angefasst. Festgehalten ist die
+Diskrepanz als Test, damit die `4,19 %` nie als Beleg für `N = 2` zitiert
+werden — der Test formuliert zugleich, woran man erkennt, dass sie aufgelöst
+ist: sobald ein Arm mit `readback_2` gemessen wurde.
+
+**Verifikation.** Vollsuite `1612 passed, 20 skipped`.
