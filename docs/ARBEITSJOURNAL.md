@@ -9842,3 +9842,61 @@ geändert: der Wächter schlägt an. Danach zurückgesetzt. Ein Wächter, den
 niemand hat scheitern sehen, ist keiner.
 
 **Verifikation.** Vollsuite `1583 passed, 20 skipped`.
+
+## 2026-09-02 — Alle zwölf versiegelten Datenbanken verifizieren; fünf Verteidigungslinien belegt
+
+Offline-Audit. Keine Evidenzdatei verändert; jeder Manipulationsversuch lief
+ausschließlich auf temporären Kopien.
+
+**Warum.** Die Hashketten sind der tiefste Integritätsmechanismus dieses
+Projekts, und niemand hat sie je als Menge laufen lassen. Eine Kette
+verifiziert nur, wenn jemand sie fragt.
+
+**Ergebnis: alles verifiziert.**
+
+| Datenbank | Records | Befund |
+| --- | --- | --- |
+| `head-skip-v1` | `16` | verifiziert |
+| `h1-v2` | `16` | verifiziert |
+| `n10-v2` | `16` | verifiziert |
+| `n10-v1` | `2` | verifiziert |
+| `phase1b-rmsnorm` | `2` | verifiziert |
+| `avo-router` | `2` | verifiziert |
+| `runtime` | `2` | verifiziert |
+| `runtime-n10` | `2` | verifiziert |
+| `head-skip-runtime` | `3` | verifiziert |
+| `optimizer-v2` | `404` | `chain_ok=true` |
+| `research` | `14` | Schema und Zeilen verifiziert |
+| `h0` | `28` Runs | Identität, Schema, `0` Manifest-Abweichungen |
+| `h01` | — | Schema verifiziert |
+
+Die drei „terminalen 16-Record-Historien", die `PROJECT_STATUS.md` für
+Head-Skip, H1-v2 und N10-v2 behauptet, sind exakt `16`. Bei Head-Skip stimmt
+auch die Zusammensetzung mit der Tabellenformulierung überein: eine
+Präregistrierung, sechs Kalibrierungssessions, eine Zusammenfassung, ein Seal,
+sechs Bestätigungssessions, eine Entscheidung.
+
+**Fünf Verteidigungslinien, einzeln belegt.** Ich habe auf einer Kopie
+schrittweise stärker manipuliert; jede Stufe wurde von einer *anderen* Schicht
+gefangen, bevor die nächste überhaupt gebraucht wurde:
+
+1. `UPDATE` auf `records` → `IntegrityError: Phase-1B history is append-only`
+   (Trigger `records_no_update`).
+2. Trigger entfernt, dann `UPDATE` → `Phase-1B database schema differs`; das
+   Fehlen des Triggers ist selbst ein erkannter Zustand.
+3. Trigger schemagetreu wiederhergestellt, Payload kaputt →
+   `Phase-1B record JSON is invalid`.
+4. Gültiges JSON mit einem zusätzlichen Schlüssel → `Phase-1B report keys differ`.
+5. Nur ein Zeichen eines vorhandenen Wertes geändert → `Phase-1B action differs`.
+
+Die Hashkette dahinter wurde nie erreicht. Das ist das Gegenstück zum
+Dashboardbefund desselben Tages: die Messseite dieses Projekts ist
+außerordentlich gut verteidigt — kaputt war die Darstellung.
+
+**Wächter.** `tests/test_sealed_evidence.py` verifiziert jede Kette, prüft die
+Record-Zahlen gegen die dokumentierten und schlägt an, wenn eine neue
+Evidenzdatenbank auftaucht, die niemand in die Liste aufgenommen hat.
+`.friday-data` ist gitignoriert, deshalb überspringt jede Prüfung, wenn ihre
+Datei fehlt — im Docstring steht, dass ein Skip kein Bestehen ist.
+
+**Verifikation.** Vollsuite `1597 passed, 20 skipped`.
