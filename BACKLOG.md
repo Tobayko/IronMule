@@ -109,52 +109,26 @@ bleibt die Klasse geschlossen. Ab `203` generierten Token kippt die Rechnung
 zugunsten der Decode-Klasse; diese Priorisierung gilt ausdrücklich nur für die
 registrierte kurze Antwort.
 
-## W1 — Optimiert das Projekt das richtige Regime? (neu 2026-09-02)
+## W1 — beantwortet am 2026-09-02, Rest steht in P1
 
-**Status:** offen, Entscheidung des Nutzers. Herleitung im Arbeitsjournal
-unter „2026-09-02 — Der Kreuzungspunkt"; reproduzierbar mit
-`experiments/roofline/phase_roofline.py`.
+**Gemessen.** Zwei gegatete Läufe, je `66 s`. Kontrolle `32` Token
+`63,83` tok/s, Langlauf `256` Token `72,36` tok/s. Verdikt `rate_improves`,
+gemessene Änderung `+13,36 %` gegen vorhergesagte `−3,58 %`.
 
-**Mechanismus:** der führende Hebel wechselt bei **`203` generierten Token**
-von Prefill zu Decode. Jede Optimierungsstudie dieses Projekts liegt darunter
-— Head-Skip `32`, Chunk-Identity `16`, persistenter Prozess `32`, der
-versiegelte Workload-Vertrag `32`. Andere Experimente desselben Projekts
-arbeiteten längst darüber: `segmented_decode` `240`, `self_consistency`
-`224`–`640`, `divergence` `160`. Optimierungs- und Verhaltensseite messen
-verschiedene Regime, und alle Prioritätsaussagen (P1, die Schließung der
-Decode-Klasse) hängen an dieser Wahl.
+**Das Vorwissen war falsch.** Die aus zwei Studienpunkten abgeleitete
+Kontextabnahme (`−0,01786` tok/s je Token) ist widerlegt; dominierend ist
+Aufwärmen, nicht Kontextwachstum. Innerhalb des langen Laufs steigt die Rate
+weiter (`68,34` auf `77,23`), der stationäre Zustand ist bei `256` Token noch
+nicht erreicht.
 
-**Messung:** fertig gebaut und gegatet — `experiments/w1_regime/` mit
-Vorregistrierung, Worker `measure_long_answer.py` (verweigert ohne
-`--execute`, AC-Pflicht, `BudgetGuard`, Offline-Snapshot) und der vor der
-Messung festgelegten Klassifikation in `regime_analysis.py`. Ein Prozess,
-Warmlauf plus `32` Token Kontrolle plus `256` Token, mit Ratenverlauf über
-erstes und letztes Viertel. Deutlich unter einer 30-Minuten-Freigabe — kein
-ganzer Block nötig, weil keine A/B-Paarung gebraucht wird.
+**Priorisierung bleibt.** Kreuzungspunkt `271` statt `267` Token; bei `256`
+führt `head_skip` mit `5,02 %` gegen `4,74 %`. Der kombinierte Gewinn `9,76 %`
+liegt unter F1s `10 %`-Schwelle — F1 bleibt damit auf das kurze Antwortregime
+beschränkt, wie in seiner Vorregistrierung festgehalten.
 
-**Wartet auf:** eine einzelne Nutzerfreigabe für diesen Lauf.
-
-**Warum es kippen kann.** Bei `256` Token liegen die beiden bestätigten
-Kandidaten nur `0,38` Prozentpunkte auseinander (`head_skip` `5,09 %`,
-`fixed_compiled` `4,71 %`); die Kandidaten-Kreuzung liegt bei `276` Token. Ein
-Ratenabfall von `10 %` genügt, um die Reihenfolge schon bei `256` zu drehen.
-
-**Nebenbefund für F1.** F1s kombinierter warmer Arm ist bei `32` Token
-`13,68 %` wert, bei `256` Token nur `9,80 %` — unter F1s eigener `10 %`-
-Schwelle. F1 bleibt gültig, ist aber eine Aussage über das kurze
-Antwortregime; der Hinweis steht in F1s Vorregistrierung.
-
-**Bewusst nicht getan:** F1 um einen langen Arm erweitern. F1 erntet
-bestätigte Gewinne in genau dem Regime, in dem sie bestätigt wurden; ein
-zweites Regime würde die Bindung an die versiegelte Evidenz lockern.
-
-**Gate:** die gemessene Rangfolge der Hebel bei `256` Token gegen die
-vorhergesagte. Stimmt sie, ist die Roofline-Rechnung als Planungsinstrument
-bestätigt und die Priorisierung wird längenabhängig geführt.
-
-**Kill:** zeigt die Messung bei `256` Token dieselbe Rangfolge wie bei `32`,
-ist das Modell falsch, die Roofline-Ableitungen werden aus P1 entfernt und
-dieser Eintrag gelöscht.
+**Offen bleibt nur**, ob das Zielregime dieses Projekts kurz oder lang ist.
+Das ist eine Produktentscheidung, keine Messfrage, und gehört zu P1.
+Herleitung im Arbeitsjournal unter „2026-09-02 — W1 gelaufen".
 
 ## R2 — Offline-RL auf dem geloggten Korpus
 

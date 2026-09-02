@@ -122,13 +122,19 @@ def main(argv: list[str] | None = None) -> int:
         tokens: list[int] = []
         decode_started = time.perf_counter()
         for index in range(count):
+            # The clock starts before the forward pass. Starting it after
+            # measures argmax and eval only, which is not a decode rate - the
+            # first run of this worker did exactly that and produced quarter
+            # rates above its own overall rate.
+            at = time.perf_counter()
             if index > 0:
                 logits = model(mx.array([[tokens[-1]]]), cache=cache)
-            at = time.perf_counter()
             token = int(mx.argmax(logits[:, -1, :], axis=-1)[0])
             mx.eval(logits)
             tokens.append(token)
-            steps.append(time.perf_counter() - at)
+            if index > 0:
+                # Position zero arrives with the prefill, not from a decode step.
+                steps.append(time.perf_counter() - at)
         mx.synchronize()
         decode_seconds = time.perf_counter() - decode_started
         charge(decode_seconds)
@@ -140,7 +146,11 @@ def main(argv: list[str] | None = None) -> int:
             "decode_seconds": decode_seconds, "decode_tps": rate,
             "first_quarter_tps": quarter / max(sum(steps[:quarter]), 1e-9),
             "last_quarter_tps": quarter / max(sum(steps[-quarter:]), 1e-9),
-            "step_median_ms": statistics.median(steps) * 1e3,
+            "step_median_ms": statistics.median(steps) * 1e3 if steps else None,
+            # Coverage check: the per-step times must account for the loop.
+            # A large shortfall means the clock is measuring the wrong span.
+            "steps_sum_seconds": sum(steps),
+            "steps_counted": len(steps),
             "token_ids": tokens,
         }
 
@@ -149,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     control = run(CONTROL_TOKENS)
     long_run = run(LONG_TOKENS)
     verdict = classify(ttft=long_run["ttft_seconds"], control_tps=control["decode_tps"],
-                       long_tps=long_run["decode_tps"], tokens=LONG_TOKENS)
+                       long_tps=long_run["decode_tps"], tokens=LONG_TOKENS,
+                       context_tokens=len(ids))
 
     result = {
         "study_id": STUDY_ID, "formal_claim": False, "model_id": MODEL_ID,
