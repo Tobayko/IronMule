@@ -325,14 +325,44 @@ _SWAP_UNITS = {
 }
 
 
+def _locale_decimal(text: str) -> float:
+    """Parse a number that macOS may print with a comma decimal mark.
+
+    ``sysctl vm.swapusage`` and ``ps -o %cpu`` follow the user's locale, so on
+    a German system they emit ``1675,38M`` and ``0,5``. The previous parser
+    accepted a dot only, so on such a machine the readiness gate could never
+    certify memory or the process tree and therefore never permitted a single
+    gated measurement - failing closed, but failing always.
+
+    Ambiguity is refused rather than guessed: a value carrying both separators,
+    or more than one of either, raises instead of being interpreted as a
+    thousands group.
+    """
+
+    candidate = text.strip()
+    if not candidate:
+        raise ReadinessError("number_unreadable")
+    dots, commas = candidate.count("."), candidate.count(",")
+    if (dots and commas) or dots > 1 or commas > 1:
+        raise ReadinessError("number_ambiguous")
+    normalised = candidate.replace(",", ".")
+    try:
+        value = float(normalised)
+    except ValueError as exc:
+        raise ReadinessError("number_unreadable") from exc
+    if not _finite(value):
+        raise ReadinessError("number_unreadable")
+    return value
+
+
 def _parse_swap_value(text: str, name: str) -> int:
-    match = re.search(r"\b" + re.escape(name) + r"\s*=\s*([0-9]+(?:\.[0-9]+)?)\s*([A-Za-z]+)", text, re.I)
+    match = re.search(r"\b" + re.escape(name) + r"\s*=\s*([0-9]+(?:[.,][0-9]+)?)\s*([A-Za-z]+)", text, re.I)
     if not match:
         raise ReadinessError("swap_value_unknown")
     unit = match.group(2).upper()
     if unit not in _SWAP_UNITS:
         raise ReadinessError("swap_unit_unknown")
-    number = float(match.group(1))
+    number = _locale_decimal(match.group(1))
     if not _finite(number):
         raise ReadinessError("swap_value_unknown")
     return int(number * _SWAP_UNITS[unit])
@@ -502,11 +532,11 @@ class MacSystemProbe:
                 state, cpu_text, command = fields[3], fields[4], fields[5]
                 parsed_cpu: float | None = None
                 try:
-                    parsed_cpu = float(cpu_text)
-                    if not _finite(parsed_cpu) or parsed_cpu < 0:
+                    parsed_cpu = _locale_decimal(cpu_text)
+                    if parsed_cpu < 0:
                         raise ValueError
                     cpu_values.append(parsed_cpu)
-                except (ValueError, TypeError):
+                except (ReadinessError, ValueError, TypeError):
                     malformed = True
                 records[pid] = (uid, ppid, state, parsed_cpu, command)
             try:

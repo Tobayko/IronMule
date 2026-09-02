@@ -10196,3 +10196,52 @@ werden — der Test formuliert zugleich, woran man erkennt, dass sie aufgelöst
 ist: sobald ein Arm mit `readback_2` gemessen wurde.
 
 **Verifikation.** Vollsuite `1612 passed, 20 skipped`.
+
+## 2026-09-02 — Der Readiness-Gate konnte auf dieser Maschine nie bestehen
+
+Beim Versuch, P2 tatsächlich zu starten, gefunden. Kein Modellstart erfolgt.
+
+**Befund.** `ReadinessGate` meldete `ready: False` mit sieben Gründen, darunter
+`process_tree_unreadable`, `cpu_unknown` und `memory_or_swap_unknown`. Die
+zugrunde liegenden Befehle liefen aber alle fehlerfrei — `pmset`, `vm_stat`,
+`sysctl`, `ps` lieferten jeweils gültige Ausgabe.
+
+Es scheiterte die **Auswertung**. macOS gibt Zahlen in der Locale des Nutzers
+aus. Auf diesem deutschen System liefert `sysctl vm.swapusage`
+`used = 1675,38M` und `ps -o %cpu` liefert `0,5` — mit **Komma**. Der Parser
+akzeptierte ausschließlich den Punkt:
+
+- `_parse_swap_value` verwendete `([0-9]+(?:\.[0-9]+)?)`; die Regex traf
+  nichts, der Swap galt als unlesbar.
+- `float(cpu_text)` warf `ValueError`; jede Prozesszeile galt als
+  fehlerhaft, also war der Prozessbaum unlesbar.
+
+**Tragweite.** Der Gate fällt damit fail-closed — aber er fällt **immer**. Auf
+einer deutschsprachigen Maschine konnte dieses Projekt **keinen einzigen**
+gegateten Hardwarelauf starten. Das erklärt den Journaleintrag vom
+2026-08-30: „Q2 Readiness — erster Readiness-Versuch blockiert (`foreign_load`,
+Last, Speicher), `model_started=false`". Dieselbe Gründemenge.
+
+**Korrektur.** Neuer Helfer `_locale_decimal` akzeptiert genau ein `.` **oder**
+genau ein `,` als Dezimalzeichen und **weist Mehrdeutigkeit ab** statt zu
+raten: `1.234,56`, `1,234.56`, `1,2,3` und leere Eingaben werfen. Die
+Swap-Regex akzeptiert nun `[.,]`. Keine Schwelle, keine Grenze und keine
+Gate-Logik wurden angefasst — ausschließlich das Einlesen von Zahlen.
+
+**Danach messbar geworden:** `process_tree_readable: True` statt `False`,
+`cpu_percent: 361,1` statt `None`, `swap_used_bytes: 1,73 GB` statt `None`.
+
+**Was ausdrücklich kein Fehler ist.** Die Speicherrechnung zählt bewusst nur
+`Pages free + Pages speculative` und lässt `inactive`/`purgeable` weg — im
+Code als konservative Untergrenze begründet, weil sich die Pools überlappen
+können. Das ist eine Entwurfsentscheidung, keine Panne, und bleibt
+unangetastet. Die Folge ist allerdings, dass der Gate rund `1,72 GB` echt
+freier Seiten verlangt, was auf einem benutzten Mac in der Regel erst nach
+dem Schließen von Anwendungen erreicht wird.
+
+**Verbleibende Blocker sind echt**, nicht Parsing: `foreign_workload_or_unknown`,
+`load_too_high`, `cpu_too_high`. Der Gate misst jetzt korrekt und sagt
+korrekt, dass die Maschine beschäftigt ist.
+
+**Verifikation.** Vollsuite `1614 passed, 20 skipped`; zwei neue Tests halten
+sowohl das Komma-Format als auch die Abweisung mehrdeutiger Zahlen fest.
