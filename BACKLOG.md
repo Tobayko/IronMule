@@ -74,7 +74,9 @@ Token) ist Prefill `79,84 %` der Anfrage. Die Roofline sagt dazu:
 
 **Konsequenz 1 — Decode ist zu, aber nur unterhalb von rund `200` Token.**
 Für die registrierte Workload bleiben allen künftigen Decode-Kandidaten
-zusammen rund `4,4` Prozentpunkte end-to-end. Ein Decode-Kandidat kann sein
+zusammen rund `3,65` Prozentpunkte end-to-end (korrigiert am 2026-09-02: die
+beiden gemessenen Decode-Knobs sind gestapelt, nicht alternativ — Ratio
+`0,9296 × 0,9581 = 0,8906`, also `2,20 %` end-to-end statt `1,42 %`). Ein Decode-Kandidat kann sein
 eigenes Decode-Gate noch bestehen, aber die End-to-End-Schwelle von F1
 (`10 %` warm) grundsätzlich nicht mehr erreichen. **Diese Aussage endet bei
 `203` generierten Token**: darüber führt die Decode-Klasse (siehe W1). Neue
