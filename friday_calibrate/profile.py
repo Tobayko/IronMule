@@ -53,21 +53,26 @@ class ProfileError(ValueError):
     """A device profile is malformed or claims something it did not measure."""
 
 
+#: General promotion bar: a knob must show at least 5 % statistically confirmed gain
+#: (interval wholly below 0.95) to qualify for general promotion.
+PROMOTION_MAX_CI_HIGH: float = 0.95
+
+#: Knobs authorized under the serving bar (interval wholly below 1.0 + exact token identity)
+#: rather than the 5 % end-to-end promotion threshold, because decode knobs on short prompts
+#: act only on the ~20 % decode share and cannot mathematically achieve 5 % end-to-end
+#: despite being verified in their own phase (Cycle 16 fixed_compiled: 7.04 % decode gain;
+#: Cycle 17 / D4 bundled_readback: 4.19 % decode gain, user decision D4 from 2026-09-02).
+SERVING_ONLY_KNOBS: frozenset[str] = frozenset({"bundled_readback", "fixed_compiled"})
+
+
 @dataclass(frozen=True)
 class KnobVerdict:
     """One knob, one verdict, and the evidence that produced it.
 
-    The bar for ``verified`` is deliberately **weaker** than a study promotion,
-    and the difference has to be stated rather than assumed. A promotion asserts
-    an effect *size* against a preregistered threshold; ``bundled_readback`` was
-    rejected in Zyklus 17 for missing `5 %` at a ratio of `0.9581`, even though
-    its bootstrap interval `[0.95347, 0.95989]` lies wholly below `1.0`.
-
-    A serving knob does not have to be big. It has to be real, and it has to
-    leave the tokens alone. So ``verified`` requires exactly that: an interval
-    wholly below `1.0` on this device, and token identity. A knob that clears
-    this bar but not a promotion bar is a legitimate serving knob and an
-    illegitimate claim — and this profile is the former, never the latter.
+    Under D4b, the bar for ``verified`` requires reaching the promotion threshold
+    (``ci_high < 0.95``), EXCEPT for named knobs in ``SERVING_ONLY_KNOBS``
+    (such as ``bundled_readback``, user decision D4 from 2026-09-02) which are
+    authorized under the serving bar (``ci_high < 1.0``).
     """
 
     knob: str
@@ -97,15 +102,14 @@ class KnobVerdict:
         if type(self.token_identical) is not bool:
             raise ProfileError("token_identical must be a bool")
         if self.verdict == "verified":
-            # A verified knob must carry the two things that make it verified:
-            # identical tokens, and a gain interval that does not touch 1.0.
             if not self.token_identical:
                 raise ProfileError(f"{self.knob}: verified requires token identity")
             if self.ratio is None or self.ci_high is None:
                 raise ProfileError(f"{self.knob}: verified requires a ratio and an interval")
-            if self.ci_high >= 1.0:
+            threshold = 1.0 if self.knob in SERVING_ONLY_KNOBS else PROMOTION_MAX_CI_HIGH
+            if self.ci_high >= threshold:
                 raise ProfileError(
-                    f"{self.knob}: verified requires an interval wholly below 1.0"
+                    f"{self.knob}: verified requires an interval wholly below {threshold}"
                 )
             if self.pairs < 1:
                 raise ProfileError(f"{self.knob}: verified requires at least one pair")
