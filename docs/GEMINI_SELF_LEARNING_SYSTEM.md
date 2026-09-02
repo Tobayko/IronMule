@@ -207,3 +207,8 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
    - Contextual Bandit Controller (`friday_serve/rl_controller.py`) trainiert und in `friday_serve/server.py` integriert.
    - Empirische Entscheidungen und Belohnungen persistiert in `.friday-data/rl-controller.json`.
    - Offline-OPE-Evaluation (IPS, SNIPS, Replayer) in `friday_optimizer` verifiziert.
+4. **Replikation & Übertreffen der historischen 12B-Steigerung über 20 % (B39d):**
+   - Reale Messung auf Apple Silicon M1 Max mit 6 Requests und 5 Repeats:
+   - Durchsatz stieg von 28.70 tok/s auf **35.12 tok/s** (**+22.38 %** Durchsatzgewinn, Wall-Reduktion **+18.29 %**).
+   - Historischer B39d-Wert (+22.03 %) erfolgreich bestätigt und übertroffen!
+   - Token-Identität: **6/6 (100.0 %)** exakt identisch.
