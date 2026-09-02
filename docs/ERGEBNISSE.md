@@ -456,3 +456,35 @@ wählt genau einen bekannten Plan und fällt sonst seriell zurück. Es gibt kein
 freie Suche, keine Codegenerierung, keine Modellaktion und kein Custom Metal.
 Die zwei Runtime-Messungen sind Engineering-Evidenz und erweitern den formalen
 N10-Claim nicht.
+
+## F1 — Integrationsstudie, warmer Arm (2026-09-02)
+
+**Erste End-to-End-Zahl des Projekts.** Persistenter Prozess vorausgesetzt
+(warmer Arm), gemessen wurden `head_skip_prefill` und `compiled_fixed_cache`
+gemeinsam gegen den unveränderten Pfad.
+
+| Größe | Wert |
+| --- | --- |
+| Anfrage-Ratio (Median) | `0,8600567` |
+| End-to-End-Gewinn | **`13,99 %`** |
+| Konfidenzintervall | `[0,853444 ; 0,873056]` |
+| vorregistrierte Schwelle | `10 %` (Ratio `0,90`) |
+| Paare | `6`, Tokenidentität `6/6` |
+| A/A-Rauschen | `0,612 %` |
+| Status | **`qualified`** |
+
+Phasenweise: TTFT-Ratio `0,849479` (einzeln bestätigt `0,846385`),
+Decode-Ratio `1,094084` (einzeln `1,075741`). Die Knobs stören sich nicht.
+
+Die vorab veröffentlichte Projektion `13,68 %` liegt im Konfidenzintervall und
+ist damit bestätigt. Die naive Produktrechnung hätte `21,32 %` versprochen —
+Prefill- und Decodegewinn setzen sich als zeitgewichtetes Mittel zusammen,
+nicht multiplikativ.
+
+**Geltungsbereich:** ein Gerät, Snapshot `93724907…`, IronMule `03e884cb…`,
+`897`-Token-Promptfamilie, `32` generierte Token, Batch `1`, greedy.
+`formal_claim=false`, keine Aktivierung, kein Cross-Device- oder
+Cross-Model-Claim. Bei `256` generierten Token fällt die Erwartung auf
+`9,80 %` und damit unter die Schwelle.
+
+**Offen:** der kalte Arm (mit persistentem Prozess, Erwartung rund `70 %`).

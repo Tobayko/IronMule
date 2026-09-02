@@ -10461,3 +10461,80 @@ ausschließt. Ob `0,75` für eine 10-Kern-Maschine die richtige Zahl ist, wäre
 eine eigene, begründete und vorregistrierte Entscheidung des Nutzers — und
 sie müsste auf ihren Sachgründen stehen, nicht darauf, dass sonst nichts
 läuft.
+
+## 2026-09-02 — F1 warmer Arm gemessen: `13,99 %`, qualifiziert
+
+Erste End-to-End-Zahl dieses Projekts. Drei gegatete Läufe, vom Nutzer
+freigegeben: ein abgebrochener Vorlauf, eine A/A- und eine A/B-Session.
+
+**Der Abbruch war ein Erfolg des Guards.** Der erste Startversuch endete mit
+`prompt is 895 tokens, registered as 897`. Ursache: die versiegelte
+Konstruktion verbindet Fülltext und Frage mit `"\n\n"`, ich hatte den
+Separator weggelassen. Zwei Token Unterschied, eine andere Workload — vor der
+Messung gefangen, nicht danach. Der Test, der Worker und versiegelte Datei
+gegeneinander hält, prüft jetzt zusätzlich den Separator, nicht nur die
+Textbausteine.
+
+**A/A, sechs Paare.** Median `1,001421`, relatives Rauschen **`0,612 %`**,
+Spanne `0,993018` bis `1,008732`. Tokenidentität hielt. Nach Abschnitt 4b
+folgt daraus verbindlich: **sechs Paare je Arm**. Das deckt sich mit der
+Powerrechnung vom selben Tag, die bei `0,5`–`1,0 %` Rauschen `99,2`–`100 %`
+Trefferquote ergab. Budget `26,17 s` GPU, `2:58` Wall.
+
+**A/B, sechs Paare.** Tokenidentität hielt auf allen sechs Paaren; das
+terminale Gate löste nicht aus. Budget `24,48 s` GPU, `2:45` Wall.
+
+| Paar | Key | TTFT Baseline | TTFT Kandidat | tps Baseline | tps Kandidat | Ratio |
+| --- | --- | --- | --- | --- | --- | --- |
+| `p0` | `P` | `1,7028` | `1,4788` | `67,74` | `71,89` | `0,884460` |
+| `p1` | `Q` | `1,7416` | `1,4462` | `68,21` | `72,83` | `0,852946` |
+| `p2` | `R` | `1,7357` | `1,4738` | `66,48` | `73,71` | `0,860571` |
+| `p3` | `S` | `1,7475` | `1,4993` | `65,46` | `74,83` | `0,861653` |
+| `p4` | `P` | `1,7118` | `1,4548` | `65,94` | `75,94` | `0,853943` |
+| `p5` | `Q` | `1,7217` | `1,4480` | `67,04` | `72,37` | `0,859542` |
+
+**Urteil.** `python -m friday_optimizer integrate --arm warm --min-gain 0.10
+--mde 0.05`:
+
+```
+status          qualified
+ratio_median    0,8600567
+gain_percent    13,994
+ci              [0,8534443 ; 0,8730562]
+pairs           6
+formal_claim    false
+no_activation   true
+evidence_hash   b3dd59d9a0c0195f…
+```
+
+Die Obergrenze `0,873056` liegt klar unter der Schwelle `0,90`. Das Gate ist
+bestanden, nicht gestreift.
+
+**Die Projektion ist bestätigt.** Vorhergesagt `0,863161` (`13,68 %`),
+gemessen `0,860057` (`13,99 %`). Der Projektionswert liegt innerhalb des
+Konfidenzintervalls, die vorregistrierte Kill-Bedingung greift also nicht.
+Damit ist das Kompositionsmodell belegt: Prefill- und Decodegewinn setzen sich
+als **zeitgewichtetes Mittel** zusammen. Die naive Produktrechnung hätte
+`21,32 %` versprochen — sie wäre um mehr als sieben Punkte danebengelegen.
+
+**Die Phasen reproduzieren ihre Einzelwerte:**
+
+| Phase | im Verbund | einzeln bestätigt | Abweichung |
+| --- | --- | --- | --- |
+| TTFT-Ratio | `0,849479` | `0,846385` (Head-Skip) | `+0,37 %` |
+| Decode-Ratio | `1,094084` | `1,075741` (`fixed_compiled`) | `+1,71 %` |
+
+Die beiden Knobs stören sich nicht; der Decodegewinn fällt im Verbund sogar
+leicht größer aus.
+
+**Geltungsbereich.** Ein Gerät, ein gebundener Gemma-4B-Snapshot
+(`93724907…`), IronMule `03e884cb…`, die versiegelte Promptfamilie mit `897`
+Token, `32` generierte Token, Batch `1`, greedy. `formal_claim=false`,
+`no_activation=true`. Kein Cross-Device-, Cross-Model- oder Qualitätsclaim.
+Bei längeren Antworten fällt der Wert: bei `256` Token liegt die Erwartung bei
+`9,80 %`, also unter der Schwelle — das steht so in Abschnitt 4b der
+Vorregistrierung und wurde durch W1 nicht widerlegt.
+
+**Offen bleibt der kalte Arm.** Er misst den persistenten Prozess mit und
+erwartet rund `70 %`; er braucht einen frischen Prozess je Baseline-Anfrage.
+F1 bleibt deshalb im Backlog, mit geschlossenem warmem Arm.

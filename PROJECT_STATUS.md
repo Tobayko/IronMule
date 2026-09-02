@@ -42,6 +42,7 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 | Q2 Readiness (2026-08-30) | erster Readiness-Versuch blockiert (`foreign_load`, Last, Speicher) | `model_started=false`, `session_consumed=false` |
 | R0/R1 RL-Vorstufen (2026-09-01) | Entscheidungslogging mit Propensity und Replay-/OPE-Environment offline implementiert; Vollsuite `1459 passed` | Korpus ist leer, jeder Schätzer meldet `insufficient_data`; **kein** Lernclaim, RL bleibt NO-GO bis R2 |
 | P2 Identitäts-Tie (2026-09-02) | realer gegateter Lauf: beide Chunkings kippen an Position `10`, dort kleinster Top-2-Abstand `0,500` bei Median `4,0`, Störung `2,25`–`2,50`; `tie_hypothesis_supported` | Prefill-Klasse ist **nicht mechanisch defekt**; Tokenidentität bleibt gebrochen und das Gate hat korrekt ausgelöst; `formal_claim=false` |
+| **F1 warmer Arm (2026-09-02)** | erste End-to-End-Messung: `6` Paare, Tokenidentität `6/6`, Ratio-Median `0,8600567`, KI `[0,853444; 0,873056]`, Rauschen aus A/A `0,612 %` | **`qualified`** gegen vorregistrierte Schwelle `10 %`; Gewinn `13,99 %` end-to-end für ein Gerät, den Snapshot `93724907…`, `897`-Token-Prompt und `32` generierte Token; Projektion `13,68 %` bestätigt; `formal_claim=false`, keine Aktivierung |
 
 ## Geltende Entscheide und Grenzen
 
