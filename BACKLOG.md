@@ -127,6 +127,59 @@ stattdessen aus, indem es den Standalone-Pfad nutzt.
 ist, bleibt sie, und jeder `ReadinessGate`-Pfad gilt auf diesem Gerät als
 dauerhaft blockiert — dann gehört das so in `PROJECT_STATUS.md`.
 
+## R1b — Entscheidungsstrom mit `epsilon_greedy`-Logging (neu 2026-09-02)
+
+**Status:** offen. Voraussetzung für R2; ohne diesen Eintrag ist die Kampagne
+der einzige Korpusweg. Betrifft nicht die Studien selbst, sondern den
+Regelbetrieb um sie herum.
+
+**Befund.** Der Code ist vollständig: `SelectionPolicy` in
+`friday_optimizer/decisions.py` kennt `epsilon_greedy`, erzwingt ein positives
+Epsilon für stochastische Regeln (`decisions.py:158`), berechnet die Propensity
+je Aktion (`decisions.py:194`) und protokolliert Regel, Epsilon und Seed mit
+jeder Entscheidung. `campaign.py` versiegelt darüber die Regel statt der
+Aktion.
+
+Was fehlt, ist der Entscheidungsstrom. `Orchestrator.select`
+(`orchestrator.py:757`) wird ausschließlich vom CLI-Kommando `decide`
+(`cli.py:898`) aufgerufen, und `--epsilon` steht auf `0.0` (`cli.py:1105`).
+Kein realer Messpfad erzeugt eine `DecisionEvent`: jede Studie registriert
+ihren Kandidaten vorab, also fällt jede Entscheidung mit Propensity `1,0`.
+`epsilon_greedy` ist damit implementiert, aber unbenutzt — nicht abgeschaltet,
+sondern ohne Anschlussstelle.
+
+**Mechanismus.** Einen Pfad benennen, der auf gegateter Hardware ohnehin läuft
+und dessen Kandidat *nicht* vorregistriert ist, und dort `select` /
+`record_outcome` mit `epsilon > 0` und protokolliertem Seed einhängen. Jeder
+gegatete Lauf, den das Projekt ohnehin macht, liefert dann einen
+überlappenden Korpuspunkt als Nebenprodukt, statt R2s `400` Punkte
+vollständig in einer eigenen Kampagne zu bezahlen.
+
+**Der Preis, ehrlich.** Exploration heißt, Messzeit auf einen Kandidaten zu
+verwenden, den die Suche für schlechter hält. Bei Epsilon `0,5` ist das die
+Hälfte der Punkte. Das ist kein Gratis-Nebenprodukt, sondern eine Umverteilung
+von Messbudget — vertretbar nur, weil derselbe Lauf sonst gar keinen
+Korpuswert hätte.
+
+**Ausdrücklich nicht:** vorregistrierte Studien stochastisch machen. F1 und
+seinesgleichen behalten Propensity `1,0`; das ist Absicht und am 2026-09-01
+bereits geprüft und verworfen (siehe R2, „Nicht gangbar"). Ebenso wenig wird
+ein Epsilon in einen Promotionsentscheid eingebaut — Promotion bleibt
+deterministisch per Vorregistrierung.
+
+**Gate:** ein realer gegateter Lauf erzeugt mindestens eine `DecisionEvent`
+mit `rule=epsilon_greedy`, Propensity `< 1,0`, protokolliertem Seed und einer
+zugehörigen `OutcomeEvent` samt Zensierungsstatus; `friday_optimizer replay`
+meldet für den entstehenden Korpus eine effektive Stichprobengröße `> 0`
+statt `insufficient_data`.
+
+**Kill/Pivot:** findet sich kein Pfad, dessen Kandidat sachlich offen ist —
+weil jede Messung dieses Projekts ihren Kandidaten konstruktionsbedingt
+vorregistriert —, dann erntet Epsilon-Logging im Regelbetrieb nichts. Der
+Eintrag entfällt, R2s Kampagne (`40` Blöcke, rund zwanzig Stunden gegatete
+Messzeit) bleibt der einzige Korpusweg, und das gehört so in
+`PROJECT_STATUS.md`.
+
 ## R2 — Offline-RL auf dem geloggten Korpus
 
 **Status:** offen; Korpus fehlt, Code und Kampagnenplanung stehen. R0/R1 am
@@ -167,6 +220,9 @@ bereits korrekt, obwohl vier von fünf Schätzungen unter der Untergrenze lagen.
 Die Untergrenze ist für Ordnungsentscheidungen konservativer als für
 Größenaussagen. Das rechtfertigt **keine** Absenkung; es wäre allenfalls ein
 Grund, ein eigenes vorregistriertes Ordnungsgate zu entwerfen.
+
+**Amortisierung statt Einmalzahlung:** R1b prüft, ob ein Teil dieser Punkte
+im Regelbetrieb anfallen kann statt vollständig in der Kampagne.
 
 **Nicht gangbar:** F1s Sessions als Korpus mitzunutzen. F1s Kandidat ist
 vorregistriert, jede Entscheidung hätte Propensity `1,0` und damit keine
