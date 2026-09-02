@@ -21,6 +21,14 @@ ANALYSIS_SCHEMA = "friday.regime.w1.v1"
 #: short-answer control counts as constant for the purposes of the model.
 RATE_TOLERANCE = 0.10
 
+#: Existing evidence says the rate is *not* constant: decode_width measured
+#: 82.44 tok/s at context 256 and persistent_process 70.99 at context 897,
+#: a decline of 0.01786 tok/s per context token. Two points from two studies
+#: with different definitions - a prior, not a measurement. It is recorded
+#: alongside the verdict so a decline that merely matches the expectation is
+#: not read as an anomaly, and an anomaly is not read as ordinary growth.
+CONTEXT_RATE_SLOPE = -0.01786
+
 VERDICTS = ("rate_stable", "rate_degrades", "rate_improves", "inconclusive")
 
 
@@ -57,6 +65,7 @@ class RegimeVerdict:
     relative_change: float
     predicted_long_tps: float
     tolerance: float
+    expected_change: float | None
     leader: str
     head_skip_gain: float
     fixed_compiled_gain: float
@@ -76,6 +85,7 @@ class RegimeVerdict:
             "schema": ANALYSIS_SCHEMA, "verdict": self.verdict,
             "control_tps": self.control_tps, "long_tps": self.long_tps,
             "relative_change": self.relative_change,
+            "expected_change": self.expected_change,
             "predicted_long_tps": self.predicted_long_tps,
             "tolerance": self.tolerance, "tokens": self.tokens,
             "leader": self.leader, "head_skip_gain": self.head_skip_gain,
@@ -91,6 +101,7 @@ def classify(
     control_tps: float,
     long_tps: float,
     tokens: int,
+    context_tokens: int | None = None,
     head_skip_ttft_ratio: float = 0.846385,
     fixed_compiled_decode_ratio: float = 0.9295921887,
     tolerance: float = RATE_TOLERANCE,
@@ -106,6 +117,11 @@ def classify(
         verdict = "rate_degrades"
     else:
         verdict = "rate_improves"
+    expected = None
+    if context_tokens is not None and context_tokens > 0:
+        # Half the generated tokens: the average context growth over the run.
+        growth = tokens / 2.0
+        expected = (CONTEXT_RATE_SLOPE * growth) / control
     shared = {"ttft": ttft, "tokens": tokens, "decode_tps": long}
     head_skip = 1.0 - request_ratio(**shared, ttft_ratio=head_skip_ttft_ratio)
     fixed = 1.0 - request_ratio(**shared, decode_tps_ratio=1.0 / fixed_compiled_decode_ratio)
@@ -113,7 +129,7 @@ def classify(
                                    decode_tps_ratio=1.0 / fixed_compiled_decode_ratio)
     return RegimeVerdict(
         verdict=verdict, control_tps=control, long_tps=long, relative_change=change,
-        predicted_long_tps=control, tolerance=tolerance,
+        predicted_long_tps=control, tolerance=tolerance, expected_change=expected,
         leader="head_skip_prefill" if head_skip > fixed else "fixed_compiled_cache",
         head_skip_gain=head_skip, fixed_compiled_gain=fixed, combined_gain=combined,
         tokens=tokens,
@@ -121,4 +137,4 @@ def classify(
 
 
 __all__ = ["ANALYSIS_SCHEMA", "RATE_TOLERANCE", "VERDICTS", "RegimeError",
-           "RegimeVerdict", "classify", "request_ratio"]
+           "CONTEXT_RATE_SLOPE", "RegimeVerdict", "classify", "request_ratio"]

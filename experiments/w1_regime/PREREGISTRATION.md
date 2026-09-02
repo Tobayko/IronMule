@@ -35,6 +35,37 @@ Die Kandidaten-Kreuzung liegt bei `276` Token. Ein Abfall der Decode-Rate um
 Die Vorhersage ist also empfindlich genau in dem Bereich, den niemand gemessen
 hat. Deshalb wird gemessen statt angenommen.
 
+## 2b. Vorwissen aus vorhandener Evidenz (ergänzt 2026-09-02)
+
+Bei der Suche nach undokumentierten Messungen fanden sich zwei Punkte, die
+W1s Grundannahme betreffen — und sie widerlegen sie teilweise:
+
+| Studie | Kontext | Batch-1-Rate |
+| --- | --- | --- |
+| `decode_width` | `256` | `82,44` tok/s |
+| `persistent_process` | `897` | `70,99` tok/s |
+
+Die Decode-Rate ist also **nicht konstant**, sondern fällt mit dem Kontext:
+`−0,01786` tok/s je Kontexttoken, `−13,9 %` über `641` Token. Zwei Punkte aus
+zwei Studien mit unterschiedlichen Definitionen und Prompts — ein Vorwissen,
+keine Messung.
+
+**Folge für die Rechnung.** Der Kreuzungspunkt der Kandidaten verschiebt sich
+von `276` auf `267` generierte Token; bei `256` Token schrumpft der Abstand
+zwischen `head_skip` (`4,97 %`) und `fixed_compiled` (`4,76 %`) von `0,38` auf
+`0,21` Prozentpunkte. Die Frage wird dadurch **schärfer**, nicht stumpfer.
+
+**Folge für das Verdikt.** Ein Rückgang, der lediglich der Kontexterwartung
+entspricht, ist keine Anomalie. Der Lauf hält deshalb neben der gemessenen
+Änderung auch die aus dem Vorwissen erwartete fest (`−3,22 %` bei `256`
+generierten Token). Die Schwellen bleiben unverändert; ergänzt wird nur die
+Vergleichsgröße, damit „stabil" nicht mit „kein Rückgang" verwechselt wird.
+
+Dass der Worker die Rate im ersten und letzten Viertel getrennt aufzeichnet,
+war ursprünglich Vorsicht. Es ist jetzt der Kern der Messung: die Rate fällt
+*während* der Generierung, und nur der Verlauf zeigt, ob sie so fällt wie
+erwartet.
+
 ## 3. Messung
 
 Ein Prozess, ein Modell (lokaler Snapshot, offline), ein Prompt von rund

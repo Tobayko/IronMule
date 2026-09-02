@@ -10106,3 +10106,48 @@ beidseitig gemacht und gegengeprüft: entfernt man die Kennzeichnung von
 `DEFAULT_MIN_SAMPLES`, schlägt er weiterhin an.
 
 **Verifikation.** Vollsuite `1607 passed, 20 skipped`.
+
+## 2026-09-02 — Vorhandene Evidenz korrigiert auch W1: die Decode-Rate ist nicht konstant
+
+Offline-Fortsetzung. Nach der Lehre des vorigen Eintrags — vor dem Versiegeln
+prüfen, ob jemand die Größe schon gemessen hat — dieselbe Frage für W1.
+
+**Gefunden.** `decode_width/report.json` misst Batch 1 bei Kontext `256`:
+`82,44` tok/s (`0,01213 s` je Schritt). W1s Baseline aus
+`persistent_process` liegt bei Kontext `897` und `70,99` tok/s.
+
+Daraus: **`−0,01786` tok/s je Kontexttoken**, also `−13,9 %` über `641`
+Token. Zwei Punkte aus zwei Studien mit verschiedenen Definitionen und
+Prompts — ein Vorwissen, keine Messung, und so gekennzeichnet.
+
+**Was das an meiner Rechnung korrigiert.** Die Kreuzungspunkt-Analyse vom
+selben Tag behandelte `decode_tps` als konstant, während der Kontext während
+der Generierung wächst. Mit fallender Rate:
+
+| generierte Token | Rate konstant | Rate fallend | `head_skip` | `fixed_compiled` |
+| --- | --- | --- | --- | --- |
+| `32` | `70,99` | `70,71` | `12,25 %` | `1,42 %` |
+| `256` | `70,99` | `68,69` | `4,97 %` | `4,76 %` |
+| `512` | `70,99` | `66,32` | `2,88 %` | `5,72 %` |
+
+Der Kandidaten-Kreuzungspunkt wandert von `276` auf `267` generierte Token.
+Der Fehler war also moderat — rund `3 %` —, aber der Abstand bei `256` Token
+schrumpft von `0,38` auf `0,21` Prozentpunkte. W1 wird dadurch **wichtiger**,
+nicht überflüssig.
+
+**Was das am Verdikt ändert.** Ein Rückgang, der genau der Kontexterwartung
+entspricht, ist keine Anomalie. `regime_analysis` hält jetzt neben der
+gemessenen Änderung die erwartete fest (`−3,22 %` bei `256` Token). Die
+Schwellen bleiben unangetastet; ergänzt wird nur die Vergleichsgröße, damit
+`rate_stable` nicht als „kein Rückgang" gelesen wird.
+
+Dass der Worker die Rate im ersten und letzten Viertel getrennt aufzeichnet,
+war ursprünglich Vorsicht ohne ausformulierten Grund. Der Grund ist jetzt
+benannt: die Rate fällt *während* der Generierung, und nur der Verlauf zeigt,
+ob sie so fällt wie erwartet.
+
+**Was nicht W1s Frage beantwortet.** `segmented_decode` (`240` Token) läuft
+mit Batch `2` und `32`, `self_consistency` mit anderen Sampling-Parametern.
+Beide liefern keinen Batch-1-Vergleichspunkt. W1 bleibt nötig.
+
+**Verifikation.** Vollsuite `1610 passed, 20 skipped`.
