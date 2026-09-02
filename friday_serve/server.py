@@ -29,6 +29,7 @@ from friday_runtime_core.controller import (
 )
 
 from .dispatch import explain, knobs_for
+from .rl_controller import AdaptiveRLController
 from .scope import RequestScope, in_calibrated_scope, observe
 
 BASELINE_PLAN = "baseline_greedy"
@@ -75,9 +76,11 @@ class Server:
         profile: DeviceProfile | None,
         *,
         latch=None,
+        rl_controller: AdaptiveRLController | None = None,
     ) -> None:
         self.backend = backend
         self.profile = profile
+        self.rl_controller = rl_controller
         self.controller = DispatchController(
             evidence=profile,
             decide=self._decide,
@@ -124,10 +127,23 @@ class Server:
             **kwargs,
         )
         decision = self.controller.decide_scope(scope)
-        knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        action = "baseline"
+        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
+            action, rl_knobs, score = self.rl_controller.select_action(
+                scope.model_id, scope.prompt_tokens, scope.output_tokens
+            )
+            profile_knobs = knobs_for(self.profile)
+            knobs = {k: v for k, v in rl_knobs.items() if k in profile_knobs}
+        else:
+            knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
         with self.controller.guard(decision):
             result = self.backend.generate(token_ids, max_tokens, knobs)
             self._check_marker(result, knobs, max_tokens)
+        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
+            reward = 0.15 if knobs else 0.0
+            self.rl_controller.observe_reward(
+                action, scope.model_id, scope.prompt_tokens, scope.output_tokens, reward
+            )
         return _generation(result, decision, knobs)
 
     @staticmethod

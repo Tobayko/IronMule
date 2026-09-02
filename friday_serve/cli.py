@@ -109,9 +109,13 @@ def main(argv: list[str] | None = None) -> int:
 
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
     from .ironmule_backend import IronMuleBackend
+    from .rl_controller import AdaptiveRLController
+
+    rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
+    rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
 
     backend = IronMuleBackend.load(args.model)
-    server = Server(backend, profile, latch=_latch(args.database))
+    server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
     result = server.generate(args.prompt, args.max_tokens)
     _print(
         {

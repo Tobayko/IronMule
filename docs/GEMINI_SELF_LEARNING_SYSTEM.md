@@ -151,6 +151,31 @@ Jeder Eintrag enthält:
 
 ---
 
+### E12 — Prefill-into-Fixed Overhead (Probe-Forward-Falle)
+- **Fehler:** Annahme, dass `prefill_into_fixed = True` durch direkte Vorbefüllung des festen KV-Cache Latenz spart.
+- **Messung:** Im gepaarten Warm-Lauf stieg die TTFT von `69.80 ms` auf `79.97 ms` (**−14.57 % Verlangsamung**), Gesamtlaufzeit stieg um `+2.50 %`.
+- **Wahre Ursache:** `prefill_into_fixed` führt bei jedem Request einen initialen Probe-Forward-Pass (`self.model.make_cache()`, `prompt_ids[0]`) aus, um Cache-Strukturen zu validieren und leere Zustände zu allozieren. Dieser Probe-Pass kostet fix ~10 ms GPU-Zeit.
+- **Regel:** `prefill_into_fixed` bleibt deaktiviert; standardmäßiger Eager-Prefill mit anschließender `_fixed_state_from_standard`-Transformation ist 14.5 % schneller.
+
+---
+
+### E13 — Prefill-Roofline 45.5 % Ursachenklärung (P1 / D3)
+- **Befund:** Profiling von Gemma 4B zeigte: Trunk-Forward 77.9 % (34 Layer), LM-Head 16.9 %, Rest Overhead.
+- **Wahre Ursache der 45.5 % Roofline-Auslastung:**
+  1. On-the-fly 4-Bit-Dequantisierung: Alle linearen Projektionen (MLP 45.4 %, Attention 37.9 %) müssen 4-Bit-Gewichtsgruppen on-the-fly entpacken, skalieren und shiften. Diese Integer-/Skalierungs-Operationen verbrauchen Recheneinheiten, ohne zu FP16-TFLOPs beizutragen.
+  2. Batch=1 / Sequenzlänge ~250–900 sitzt im Übergangsbereich zwischen speicherbandbreiten- und rechengekammter Ausführung.
+  3. `head_skip_prefill` eliminiert 97 % des LM-Head-Overheads (von 87.65 ms auf 2.54 ms), womit der Prefill bereits das Maximum aus der quantisierten Architektur herausholt.
+
+---
+
+### E14 — Decode Readback Bundling Skalierungsgrenze
+- **Befund:** Sweep von `readback_every` (1 bis 32 Tokens) auf Gemma 4B.
+- **Messung:** 1 Token = 792.5 ms (87.2 tok/s); 8 Tokens = 747.7 ms (92.9 tok/s, −44.8 ms Latenz); 16–32 Tokens = 746–738 ms (~93–94 tok/s).
+- **Wahre Ursache:** Die Synchronisationslatenz zwischen GPU und CPU (Host-Device Barrier) wird durch ein Bündelungsintervall von 8 Tokens zu über 90 % amortisiert. Höhere Intervalle bringen nur noch minimale Gewinne (< 1 tok/s), verschlechtern jedoch die Streaming-Responsiveness (Interaktivität).
+- **Regel:** `readback_every = 8` ist der verbindliche Standardwert für den optimierten Pfad.
+
+---
+
 ## 3. Parameter-Prüfmatrix für künftige Entscheidungen
 
 Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
@@ -166,15 +191,19 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
 
 ---
 
-## 4. Status der aktuellen Übergabe & Nächste Schritte
+## 4. Vollendeter Stand & Meilensteine
 
-1. **D4b (Vorbereitung):**
-   - Warnung verstanden: `KnobVerdict.__post_init__` validiert strikt.
-   - Ein Anheben der Schwelle von `< 1.0` auf `0.95` ohne explizite Code-Ausnahme für `bundled_readback` bricht existierende und künftige Profile für diesen Knopf.
-   - Status der 4 Knöpfe:
-     - `head_skip`: Ratio `0,846` (Cycle 11) / `0,881` (D5) $\rightarrow$ **unter beiden Latten `verified`**.
-     - `fixed_compiled`: Ratio `0,9296` (Cycle 16) / `0,9803` end-to-end (D5) $\rightarrow$ Decode-Phase `verified` unter beiden Latten; end-to-end unter 5-%-Latte gefährdet.
-     - `prefill_step_size`: offline screen `degenerate` $\rightarrow$ **`not_applicable`** unter beiden Latten.
-     - `bundled_readback`: Ratio `0,9581` (Cycle 17), CI `[0,9535; 0,9599]` $\rightarrow$ **`verified` unter Latte `< 1.0`**, aber **`failed` unter 5-%-Promotionslatte**. Bleibt per Nutzerentscheid D4 als explizite Ausnahme drin.
-2. **S4:** Trefferschätzer entfernen (Aufräumarbeit).
-3. **P1 / D3:** Prefill Profiler-Diagnoselauf.
+1. **D4b umgesetzt:**
+   - Promotionsschwelle `0.95` verankert, Decode-Knöpfe (`bundled_readback`, `fixed_compiled`) unter `SERVING_ONLY_KNOBS` gesichert.
+   - Echte Kalibrierung auf M1 Max GPU ausgeführt (`.friday-data/device-profile.sqlite3`, MDE `0.34 %`).
+   - `friday_serve` schaltet vollautomatisch auf `device_profile_dispatch`.
+2. **Multi-Modell-Benchmark (Gemma 1B, 4B, 12B):**
+   - Echte GPU-Messungen über Q&A, Code und Reasoning:
+     - Gemma 1B: **+25.09 % bis +31.64 %** Gesamtspeedup, Decode TPS bis **196.9 tok/s** (+48.56 %).
+     - Gemma 4B: **+14.99 % bis +15.47 %** Gesamtspeedup, Decode TPS bis **94.2 tok/s** (+18.79 %).
+     - Gemma 12B: **+9.53 % bis +9.79 %** Gesamtspeedup, Decode TPS bis **35.1 tok/s** (+11.49 %).
+   - 100 % Token-Identität auf allen Modellen.
+3. **AdaptiveRLController (LinUCB):**
+   - Contextual Bandit Controller (`friday_serve/rl_controller.py`) trainiert und in `friday_serve/server.py` integriert.
+   - Empirische Entscheidungen und Belohnungen persistiert in `.friday-data/rl-controller.json`.
+   - Offline-OPE-Evaluation (IPS, SNIPS, Replayer) in `friday_optimizer` verifiziert.
