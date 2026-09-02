@@ -35,6 +35,9 @@ CONTROL_TOKENS = 32
 LONG_TOKENS = 256
 #: The prompt of the sealed persistent-process study, so ttft is comparable.
 PROMPT_TOKENS = 897
+#: The sealed baseline used 897 tokens; a few either way still measures the
+#: same workload class, a hundred does not.
+PROMPT_TOLERANCE = 40
 #: Median warm baseline of that study, the number this run checks against.
 REFERENCE_TPS = 70.99
 OUTPUT = Path(__file__).resolve().parent / "long_answer.json"
@@ -68,8 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-check", action="store_true", dest="self_check")
     args = parser.parse_args(argv)
 
-    from _bench import (BudgetGuard, enforce_offline, release_gate, require_ac_power,
-                        resolve_local_model_snapshot, study_provenance)
+    from _bench import (BudgetGuard, check_prompt_length, enforce_offline, release_gate,
+                        require_ac_power, resolve_local_model_snapshot, study_provenance)
 
     gate = release_gate(args, self_check)
     if gate is not None:
@@ -98,6 +101,9 @@ def main(argv: list[str] | None = None) -> int:
     snapshot = resolve_local_model_snapshot(MODEL_ID)
     model, tokenizer = load(str(snapshot.path))
     ids = build_prompt(tokenizer)
+    # A band, not an exact count: the regime comparison needs the same
+    # workload class as the sealed baseline, not a byte-identical prompt.
+    check_prompt_length(ids, PROMPT_TOKENS, tolerance=PROMPT_TOLERANCE)
 
     def run(count: int) -> dict:
         """One request: chunked prefill at 256, then *count* greedy tokens."""

@@ -9943,3 +9943,56 @@ nicht nur die Anwesenheit.
 verschoben: der Reihenfolgetest schlägt an. Danach zurückgesetzt.
 
 **Verifikation.** Vollsuite `1601 passed, 20 skipped`.
+
+## 2026-09-02 — Wie viele Tests sind Rechtschreibprüfungen? Vier von 1600
+
+Offline-Metaprüfung der Suite selbst, ausgelöst durch drei Funde derselben
+Art an einem Tag: ein Asset, das korrekt ausgeliefert wird und nicht läuft;
+ein „Sicherheitstest", der `"require_ac_power" in source` prüft; ein
+Offline-Zwang, der nach dem Import wirkungslos wäre. Alle drei sehen in genau
+der Prüfung gut aus, die man naheliegend schreibt.
+
+**Frage.** Wie viele Tests dieser Suite sichern ausschließlich zu, dass eine
+Zeichenkette im Quelltext vorkommt?
+
+**Antwort: vier.** Per AST über alle Testdateien, sowohl `assert "x" in source`
+als auch `self.assertIn("x", source)` — der erste Durchlauf übersah die
+unittest-Form, was bei einer überwiegend unittest-basierten Suite fast ein
+Nullbefund geworden wäre. Von den vieren sind drei berechtigt:
+
+- `test_no_document_still_sells_the_retracted_fusion_gain` — prüft, dass eine
+  zurückgezogene Zahl nie ohne ihre Rücknahme auftaucht. Das *ist* eine
+  Texteigenschaft.
+- `test_every_model_tool_loads_only_the_validated_local_path` — prüft die
+  **Abwesenheit** von `snapshot_download` und `load(model_id)` in vier
+  Werkzeugen. Was nicht aufgerufen wird, kann nichts laden; das ist eine
+  starke Zusage, keine schwache.
+- `test_worker_fixed_cache_uses_slice_update_and_outer_only_offset` — prüft
+  versiegelten Code, der ohne Modell nicht ausführbar ist.
+
+Der vierte war meiner.
+
+**Was die Prüfung meines eigenen Tests zutage förderte.** Beim Umbau von
+`test_worker_pins_the_prompt_it_is_allowed_to_answer_about` auf Verhalten
+fiel auf, dass W1 dasselbe Problem in schlimmerer Form hat: die Konstante
+`PROMPT_TOKENS = 897` steht dort, der Docstring behauptet „A prompt of
+PROMPT_TOKENS tokens" — und **nichts erzwang es**. W1 vergleicht seine
+gemessene Decode-Rate gegen eine Baseline, die bei `897` Prompt-Token
+versiegelt wurde. Wäre der Prompt abgedriftet, hätte der Vergleich still eine
+andere Workload beschrieben. P2 brach bei falscher Länge hart ab, W1 gar nicht.
+
+**Gemeinsamer Guard.** `check_prompt_length(ids, expected, tolerance=0)` in
+`tools/_bench.py`. P2 nutzt ihn exakt — es reproduziert einen versiegelten
+Prompt, jede Abweichung verschiebt die sensible Position. W1 nutzt ihn mit
+einem erklärten Band von `±40` Token: der Regimevergleich braucht dieselbe
+Workloadklasse, keinen byteidentischen Prompt. Beide Toleranzen stehen als
+benannte Konstante im Code, nicht als Zahl im Aufruf.
+
+Der Test prüft jetzt das Verhalten: der Guard lässt `677` durch und weist
+`676`, `678`, `0` und `1200` zurück, jeweils mit beiden Zahlen in der Meldung.
+
+**Nachkontrolle.** Nach dem Umbau bleiben drei reine Anwesenheitstests, alle
+drei berechtigt. Die Suite hat dieses Problem nicht — die schwache Stelle war
+die neueste.
+
+**Verifikation.** Vollsuite `1602 passed, 20 skipped`.
