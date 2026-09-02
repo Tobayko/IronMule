@@ -31,7 +31,13 @@ from .plan import (
     PREFILL_STEP_SIZE_NOTE,
     PROMPT_TOKENS,
 )
-from .profile import CALIBRATED_KNOBS, DeviceProfile, KnobVerdict
+from .profile import (
+    CALIBRATED_KNOBS,
+    PROMOTION_MAX_CI_HIGH,
+    SERVING_ONLY_KNOBS,
+    DeviceProfile,
+    KnobVerdict,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
@@ -142,15 +148,15 @@ def verdict_for(
     baseline, candidate, breaks = paired_arms(run, engine_knobs, pairs=pairs)
     if breaks:
         return KnobVerdict(knob=knob, verdict="failed", pairs=len(baseline), reason=breaks[0])
+    min_gain = 0.0 if knob in SERVING_ONLY_KNOBS else (1.0 - PROMOTION_MAX_CI_HIGH)
     result = evaluate_integration(
-        baseline, candidate, arm="warm", min_gain=0.0, mde=mde, min_pairs=max(1, pairs // 2)
+        baseline, candidate, arm="warm", min_gain=min_gain, mde=mde, min_pairs=max(1, pairs // 2)
     )
     ratio = result.ratio_median
     low, high = (result.ci or (None, None))
     identical = True
-    # `qualified` means the interval clears the threshold; with min_gain 0.0 that
-    # is exactly "measurably faster than baseline, beyond this device's noise".
-    if result.qualified and ratio is not None and high is not None and high < 1.0:
+    threshold = 1.0 if knob in SERVING_ONLY_KNOBS else PROMOTION_MAX_CI_HIGH
+    if result.qualified and ratio is not None and high is not None and high < threshold:
         return KnobVerdict(
             knob=knob,
             verdict="verified",
