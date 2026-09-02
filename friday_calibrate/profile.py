@@ -1,0 +1,289 @@
+"""The device profile: what this machine verified, replacing what was frozen elsewhere.
+
+The sealed runtimes decide whether an optimised path may run by comparing the
+host against constants written on one machine at one moment
+(``friday_runtime_n10/policy.py:186-199``). That is not a weak check, it is the
+wrong check: it asks "are you Tobias' M1 Max as it was in August", and the
+answer went to ``False`` on that very machine when macOS updated.
+
+A device profile asks the question the evidence actually supports: *was this
+knob verified as token-identical on this device, against this model snapshot?*
+It is produced by a gated calibration run, stored in an append-only hash chain,
+and it is the only thing that authorises a knob at serving time.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Mapping, Sequence
+
+from friday_evidence.canonical import canonical_sha256
+from friday_runtime_core.history import HistorySpec
+
+SCHEMA_VERSION = 1
+RUNTIME_ID = "friday-device-profile-v1"
+PROFILE_KIND = "device_profile"
+FAILURE_KIND = "runtime_failure"
+
+HISTORY = HistorySpec(
+    runtime_id=RUNTIME_ID,
+    kinds=frozenset({PROFILE_KIND, FAILURE_KIND}),
+)
+
+#: The knobs a calibration run may verify. Closed on purpose: a knob that is not
+#: in this tuple cannot be turned on by a profile, whatever a profile claims.
+CALIBRATED_KNOBS = ("head_skip", "fixed_compiled", "prefill_step_size", "bundled_readback")
+
+#: A knob is either shown to preserve tokens on this device, shown not to, or
+#: was not applicable here. There is no fourth, softer verdict.
+VERDICTS = ("verified", "failed", "not_applicable")
+
+#: Which phase each knob acts on. Dispatch is per phase, not per process:
+#: prefill is compute-bound, decode is bandwidth-bound, and a knob that helps
+#: one says nothing about the other.
+KNOB_PHASE = {
+    "head_skip": "prefill",
+    "prefill_step_size": "prefill",
+    "fixed_compiled": "decode",
+    "bundled_readback": "decode",
+}
+
+
+class ProfileError(ValueError):
+    """A device profile is malformed or claims something it did not measure."""
+
+
+@dataclass(frozen=True)
+class KnobVerdict:
+    """One knob, one verdict, and the evidence that produced it.
+
+    The bar for ``verified`` is deliberately **weaker** than a study promotion,
+    and the difference has to be stated rather than assumed. A promotion asserts
+    an effect *size* against a preregistered threshold; ``bundled_readback`` was
+    rejected in Zyklus 17 for missing `5 %` at a ratio of `0.9581`, even though
+    its bootstrap interval `[0.95347, 0.95989]` lies wholly below `1.0`.
+
+    A serving knob does not have to be big. It has to be real, and it has to
+    leave the tokens alone. So ``verified`` requires exactly that: an interval
+    wholly below `1.0` on this device, and token identity. A knob that clears
+    this bar but not a promotion bar is a legitimate serving knob and an
+    illegitimate claim — and this profile is the former, never the latter.
+    """
+
+    knob: str
+    verdict: str
+    pairs: int = 0
+    ratio: float | None = None
+    ci_low: float | None = None
+    ci_high: float | None = None
+    token_identical: bool = False
+    reason: str = ""
+
+    def __post_init__(self) -> None:
+        if self.knob not in CALIBRATED_KNOBS:
+            raise ProfileError(f"unregistered knob: {self.knob}")
+        if self.verdict not in VERDICTS:
+            raise ProfileError(f"unregistered verdict: {self.verdict}")
+        if isinstance(self.pairs, bool) or not isinstance(self.pairs, int) or self.pairs < 0:
+            raise ProfileError("pairs must be a non-negative integer")
+        for name in ("ratio", "ci_low", "ci_high"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ProfileError(f"{name} must be a number or None")
+            if not 0.0 < float(value) < 10.0:
+                raise ProfileError(f"{name} is outside the plausible ratio range")
+        if type(self.token_identical) is not bool:
+            raise ProfileError("token_identical must be a bool")
+        if self.verdict == "verified":
+            # A verified knob must carry the two things that make it verified:
+            # identical tokens, and a gain interval that does not touch 1.0.
+            if not self.token_identical:
+                raise ProfileError(f"{self.knob}: verified requires token identity")
+            if self.ratio is None or self.ci_high is None:
+                raise ProfileError(f"{self.knob}: verified requires a ratio and an interval")
+            if self.ci_high >= 1.0:
+                raise ProfileError(
+                    f"{self.knob}: verified requires an interval wholly below 1.0"
+                )
+            if self.pairs < 1:
+                raise ProfileError(f"{self.knob}: verified requires at least one pair")
+
+    @property
+    def phase(self) -> str:
+        return KNOB_PHASE[self.knob]
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "knob": self.knob,
+            "phase": self.phase,
+            "verdict": self.verdict,
+            "pairs": self.pairs,
+            "ratio": self.ratio,
+            "ci_low": self.ci_low,
+            "ci_high": self.ci_high,
+            "token_identical": self.token_identical,
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_dict(cls, value: Mapping[str, Any]) -> "KnobVerdict":
+        if not isinstance(value, Mapping):
+            raise ProfileError("knob verdict must be an object")
+        return cls(
+            knob=value.get("knob", ""),
+            verdict=value.get("verdict", ""),
+            pairs=value.get("pairs", 0),
+            ratio=value.get("ratio"),
+            ci_low=value.get("ci_low"),
+            ci_high=value.get("ci_high"),
+            token_identical=bool(value.get("token_identical", False)),
+            reason=str(value.get("reason", "")),
+        )
+
+
+@dataclass(frozen=True)
+class DeviceProfile:
+    """One device, one model snapshot, one calibration run."""
+
+    profile_id: str
+    model_id: str
+    model_revision: str
+    hardware_sha256: str
+    environment_sha256: str
+    mde: float
+    knobs: tuple[KnobVerdict, ...]
+    width_curve: Mapping[int, float] = field(default_factory=dict)
+    roofline: Mapping[str, Any] = field(default_factory=dict)
+    aa_noise: float | None = None
+    schema_version: int = SCHEMA_VERSION
+
+    def __post_init__(self) -> None:
+        for name in ("profile_id", "model_id", "model_revision"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value:
+                raise ProfileError(f"{name} must be a non-empty string")
+        for name in ("hardware_sha256", "environment_sha256"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or len(value) != 64:
+                raise ProfileError(f"{name} must be a sha256 digest")
+        if isinstance(self.mde, bool) or not isinstance(self.mde, (int, float)):
+            raise ProfileError("mde must be a number")
+        if not 0.0 <= float(self.mde) < 1.0:
+            raise ProfileError("mde must be a fraction within [0, 1)")
+        seen = [verdict.knob for verdict in self.knobs]
+        if len(seen) != len(set(seen)):
+            raise ProfileError("a knob may carry at most one verdict")
+        if any(not isinstance(verdict, KnobVerdict) for verdict in self.knobs):
+            raise ProfileError("knobs must be KnobVerdict values")
+        for width, value in self.width_curve.items():
+            # Width 0 is the "speculation off" action and a real point on the
+            # curve — often the winning one, which is the whole reason the
+            # bandit exists.
+            if isinstance(width, bool) or not isinstance(width, int) or width < 0:
+                raise ProfileError("width curve keys must be non-negative integers")
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise ProfileError("width curve values must be positive numbers")
+
+    # -- queries --------------------------------------------------------------
+    def verdict_for(self, knob: str) -> KnobVerdict | None:
+        return next((item for item in self.knobs if item.knob == knob), None)
+
+    def is_verified(self, knob: str) -> bool:
+        """The single question serving asks. Anything but ``verified`` is off."""
+
+        verdict = self.verdict_for(knob)
+        return verdict is not None and verdict.verdict == "verified"
+
+    def verified_knobs(self, phase: str | None = None) -> tuple[str, ...]:
+        return tuple(
+            item.knob
+            for item in self.knobs
+            if item.verdict == "verified" and (phase is None or item.phase == phase)
+        )
+
+    def unverified(self) -> tuple[str, ...]:
+        return tuple(knob for knob in CALIBRATED_KNOBS if not self.is_verified(knob))
+
+    # -- serialisation --------------------------------------------------------
+    def as_report(self, run_id: str) -> dict[str, Any]:
+        body = {
+            "schema_version": self.schema_version,
+            "runtime_id": RUNTIME_ID,
+            "kind": PROFILE_KIND,
+            "run_id": run_id,
+            "status": "device_profile_recorded",
+            "profile_id": self.profile_id,
+            "model_id": self.model_id,
+            "model_revision": self.model_revision,
+            "hardware_sha256": self.hardware_sha256,
+            "environment_sha256": self.environment_sha256,
+            "mde": float(self.mde),
+            "aa_noise": None if self.aa_noise is None else float(self.aa_noise),
+            "knobs": [verdict.as_dict() for verdict in self.knobs],
+            "width_curve": {str(width): float(value) for width, value in self.width_curve.items()},
+            "roofline": dict(self.roofline),
+            "formal_claim": False,
+        }
+        body["profile_sha256"] = canonical_sha256(body)
+        return body
+
+    @classmethod
+    def from_report(cls, report: Mapping[str, Any]) -> "DeviceProfile":
+        if not isinstance(report, Mapping) or report.get("kind") != PROFILE_KIND:
+            raise ProfileError("report is not a device profile")
+        body = {key: value for key, value in report.items() if key != "profile_sha256"}
+        if report.get("profile_sha256") != canonical_sha256(body):
+            raise ProfileError("device profile digest does not replay")
+        knobs = report.get("knobs")
+        if not isinstance(knobs, Sequence) or isinstance(knobs, (str, bytes)):
+            raise ProfileError("device profile knobs must be a list")
+        curve = report.get("width_curve") or {}
+        if not isinstance(curve, Mapping):
+            raise ProfileError("width curve must be an object")
+        try:
+            width_curve = {int(width): float(value) for width, value in curve.items()}
+        except (TypeError, ValueError) as exc:
+            raise ProfileError("width curve is malformed") from exc
+        return cls(
+            profile_id=report.get("profile_id", ""),
+            model_id=report.get("model_id", ""),
+            model_revision=report.get("model_revision", ""),
+            hardware_sha256=report.get("hardware_sha256", ""),
+            environment_sha256=report.get("environment_sha256", ""),
+            mde=report.get("mde", 0.0),
+            knobs=tuple(KnobVerdict.from_dict(item) for item in knobs),
+            width_curve=width_curve,
+            roofline=report.get("roofline") or {},
+            aa_noise=report.get("aa_noise"),
+            schema_version=report.get("schema_version", SCHEMA_VERSION),
+        )
+
+
+def newest_profile(records: Iterable[Mapping[str, Any]]) -> DeviceProfile | None:
+    """The last recorded profile in a verified chain, or ``None``."""
+
+    latest = None
+    for row in records:
+        if row.get("record_kind") == PROFILE_KIND:
+            latest = row
+    if latest is None:
+        return None
+    return DeviceProfile.from_report(latest["report"])
+
+
+__all__ = [
+    "CALIBRATED_KNOBS",
+    "FAILURE_KIND",
+    "HISTORY",
+    "KNOB_PHASE",
+    "PROFILE_KIND",
+    "RUNTIME_ID",
+    "SCHEMA_VERSION",
+    "VERDICTS",
+    "DeviceProfile",
+    "KnobVerdict",
+    "ProfileError",
+    "newest_profile",
+]

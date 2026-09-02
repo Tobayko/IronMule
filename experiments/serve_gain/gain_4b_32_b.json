@@ -1,0 +1,82 @@
+{
+  "aa_spread": 0.03689500999053141,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 50.382539,
+    "max_continuous_gpu_seconds": 2.216741,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 284.473913,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 338.811987
+  },
+  "formal_claim": false,
+  "ironmule_head": "03e884cb28a05d090d20844460fc3afc8e738a91",
+  "mde": 0.03689500999053141,
+  "model": "4b",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "no_activation": true,
+  "output_tokens": 32,
+  "pairs": 6,
+  "prompt_tokens": 897,
+  "provenance": {
+    "code_files_sha256": {
+      "experiments/serve_gain/measure.py": "a0da8b751c7d472be4edc04d5d796eec56a936f12467cb92ee72c4d989f83703",
+      "friday_calibrate/runner.py": "d18829b9af4504e1077756bab4c77224ad7272e19e337b79a9289bd227d5e625",
+      "friday_serve/server.py": "0f04e01f529f130bf0bdc40986f218675974de8ee4c27ccf7343b964db13cbc8"
+    },
+    "code_sha256": "c08cd1519176d679fcc6100183e53a9a09dbb46cbafe9109d7d742fc7858f9ab",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "power_source": "ac_power"
+  },
+  "rows": [
+    {
+      "arm": "bundled_readback",
+      "ci": [
+        0.969161115849027,
+        0.9962197518103456
+      ],
+      "gain_percent": 1.1422647201489777,
+      "knobs": {
+        "readback_every": 8
+      },
+      "pairs": 6,
+      "ratio_median": 0.9885773527985102,
+      "real_gain": true,
+      "reasons": [],
+      "status": "qualified",
+      "token_identical": true
+    },
+    {
+      "arm": "combined",
+      "ci": [
+        0.8416599892529257,
+        0.8566279042294641
+      ],
+      "gain_percent": 15.614727290945861,
+      "knobs": {
+        "compiled_fixed_cache": true,
+        "head_skip_prefill": true,
+        "readback_every": 8
+      },
+      "pairs": 6,
+      "ratio_median": 0.8438527270905414,
+      "real_gain": true,
+      "reasons": [],
+      "status": "qualified",
+      "token_identical": true
+    }
+  ],
+  "state": "measured",
+  "study_id": "serve-gain-20260902-01",
+  "token_identity_held": true,
+  "verdict": "measured",
+  "wall_seconds": 334.9
+}

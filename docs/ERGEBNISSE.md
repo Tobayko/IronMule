@@ -488,3 +488,72 @@ Cross-Model-Claim. Bei `256` generierten Token fällt die Erwartung auf
 `9,80 %` und damit unter die Schwelle.
 
 **Offen:** der kalte Arm (mit persistentem Prozess, Erwartung rund `70 %`).
+
+## H1.0 — der Umschaltpunkt der Spekulation existiert nicht (2026-09-02)
+
+**Frage.** Ab welcher Antwortlänge gewinnt Prompt-Lookup-Spekulation gegen den
+Auslieferungspfad? Vorregistrierung
+[`H10_VORREGISTRIERUNG.md`](H10_VORREGISTRIERUNG.md), Rohdaten
+`experiments/switch_point/`.
+
+**Gemessen, 4B, versiegelter `897`-Token-Prompt, gepaart, `6` Paare je Zelle,
+Baselinearm = Auslieferungspfad (`head_skip` + `fixed_compiled` +
+`readback_every 8`):**
+
+| Token | Breite `1` | Breite `2` | Breite `3` | A/A des Regimes |
+| --- | --- | --- | --- | --- |
+| `32` | `−12,23 %` | `−22,61 %` | `−32,00 %` | `1,13 %` |
+| `48` | `−15,98 %` | `−28,99 %` | `−43,58 %` | `1,04 %` |
+| `64` | `−19,46 %` | `−38,95 %` | `−58,01 %` | `2,22 %` |
+| `96` | `−26,46 %` | `−51,69 %` | `−75,35 %` | `0,52 %` |
+| `128` | `−29,88 %` | **`identity_break`** | nicht gemessen | `0,70 %` |
+
+Kein Vorzeichenwechsel. Der Verlust wächst monoton mit Breite **und** Länge;
+alle Intervalle liegen weit außerhalb des jeweiligen A/A-Rauschens.
+
+**Die Ursache ist strukturell, nicht ein Defekt.** Der Verdacht, der
+Spekulationspfad von IronMule verliere durch eine überflüssige Barriere
+(`mx.eval(picks, *_leaves(state))` plus `mx.synchronize()` je Iteration), wurde
+gemessen und ist widerlegt: das Entfernen bewegt bei `96` Token `0,30` Punkte
+(Breite `1`) und `0,40` Punkte (Breite `2`) bei Intervallbreiten von `1,2` bis
+`2,9` Punkten. Amendment: [`H10_AMENDMENT_SPEKULATIONSPFAD.md`](H10_AMENDMENT_SPEKULATIONSPFAD.md),
+Rohdaten `experiments/spec_path/`.
+
+**Die tragende Ursache hat S3 gemessen, und sie ist eine andere, als hier
+zuerst stand.** `Engine.generate()['acceptance']` liefert auf dieser Workload
+`0,0` bei `k = 1, 2, 3` — der `3`-Gramm-Lookup findet für den generierten Text
+keine Fortsetzung im Prompt. Jede Iteration rechnet damit `k+1` Positionen und
+liefert genau **ein** Token; die Decode-Zeit steigt entsprechend von rund
+`1,9 s` (Baseline) auf `2,398` / `3,273` / `4,054 s`. Der Rückstand ist
+vervielfachte Rechenarbeit ohne Gegenwert. Die Asymmetrie des Rücklesens — der
+Baselinearm bündelt über acht Token, der Spekulationsarm kann es nicht — ist der
+kleinere Rest, nicht die Hauptursache.
+
+**Damit ist der Befund workloadbedingt.** Er gilt für die versiegelte
+Auslieferungsworkload, auf der der Lookup nie trifft, nicht für
+Prompt-Lookup-Spekulation an sich; auf `journal.txt` misst S1 mit derselben
+Technik `3`–`6 %` Gewinn.
+
+**Reichweite.** Der Auslieferungspfad bündelt den Readback, weil
+`bundled_readback` dort bleibt (Nutzerentscheidung D4 vom 2026-09-02). Wird D4
+revidiert, ist die Frage neu zu stellen.
+
+**Zweites Modell, `gemma-3-1b-it-4bit`, zwei Zellen.** A/A bei `32` Token
+`11,766 %` — die eingefrorene Paarzahlregel verlangt `92` Paare und deckelt auf
+`24`; das Auflösungsziel `3 %` ist in diesem Regime damit **nicht** erreicht, und
+das wird berichtet statt gelockert. Gemessen wurde die schärfste Stelle
+(`32` Token, Breite `1`, der Punkt mit der besten Chance auf eine
+Vorzeichenumkehr): Ratio-Median `1,1559`, `−15,59 %`, KI `[1,1381; 1,2353]`,
+`24` Paare, Tokenidentität gehalten. Das Intervall liegt vollständig über
+`1 + s = 1,1177`, also eine bestätigte Verschlechterung selbst bei diesem groben
+Band. Die übrigen 1B-Zellen sind **nicht gemessen** und werden nicht
+fortgeschrieben.
+
+**Nebenbefund, der über die Studie hinausgeht.** Das A/A-Rauschen hängt auch am
+gemessenen **Arm**: `1,13 %` auf dem combined-Arm gegen D5s `3,69 %` auf dem
+knobs-off-Arm, gleiches Modell, gleiche Länge, gleicher Tag.
+
+**Offen und unberührt:** der Identitätsbruch bei `4B`/`128`/Breite `2`
+(`BACKLOG.md` S3). Spekulation behauptet Tokenidentität per Konstruktion; dieser
+Bruch ist ein Korrektheitsbefund und verschwindet nicht dadurch, dass der
+Dispatcher nicht gebaut wird.

@@ -1,0 +1,35 @@
+{
+  "aa_pairs": 6,
+  "aa_spread": 0.010397850269688869,
+  "baseline_arm": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 8
+  },
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 26.833397,
+    "max_continuous_gpu_seconds": 2.266024,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 152.154457,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 183.842407
+  },
+  "derived_pairs": 6,
+  "formal_claim": false,
+  "ironmule_head": "03e884cb28a05d090d20844460fc3afc8e738a91",
+  "model": "4b",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "no_activation": true,
+  "output_tokens": 48,
+  "prompt_tokens": 897,
+  "resolution": 0.03,
+  "state": "aa_only",
+  "study_id": "switch-point-20260902-01",
+  "wall_seconds": 179.0
+}

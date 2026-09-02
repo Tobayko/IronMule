@@ -1,0 +1,86 @@
+{
+  "all_identical_to_greedy": true,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 82.809597,
+    "max_continuous_gpu_seconds": 2.826474,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 500.545002,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 587.054136
+  },
+  "formal_claim": false,
+  "generate_tokens": 96,
+  "order_sensitivity": {
+    "0": 0.0,
+    "1": -0.0102,
+    "2": -0.0159,
+    "3": 0.0008,
+    "4": -0.0042
+  },
+  "orders": {
+    "ascending": {
+      "best_draft_length": 3,
+      "median_seconds": {
+        "0": 2.7983,
+        "1": 2.6681,
+        "2": 2.6827,
+        "3": 2.6442,
+        "4": 2.7376
+      },
+      "speedup": {
+        "0": 1.0,
+        "1": 1.0488,
+        "2": 1.0431,
+        "3": 1.0583,
+        "4": 1.0222
+      }
+    },
+    "descending": {
+      "best_draft_length": 1,
+      "median_seconds": {
+        "0": 2.8259,
+        "1": 2.6685,
+        "2": 2.6685,
+        "3": 2.6724,
+        "4": 2.7532
+      },
+      "speedup": {
+        "0": 1.0,
+        "1": 1.059,
+        "2": 1.059,
+        "3": 1.0575,
+        "4": 1.0264
+      }
+    }
+  },
+  "power_source": "ac_power",
+  "prompt_file": "journal.txt",
+  "prompt_tokens": 749,
+  "provenance": {
+    "code_files_sha256": {
+      "experiments/lookup_order/measure.py": "62ce12059b0c2763a89de33a63e071a429a94b07bc39222da122b6299460a1b5",
+      "friday_hardware/speculate.py": "006702abd67a83128ac8ab7d3afc45d94c9167c6829cc6cb12ff9164baff026d"
+    },
+    "code_sha256": "e6b2949b053245a4833687e9bd206ddda9d98d67201355ee258359636db5d15e",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "power_source": "ac_power"
+  },
+  "repeats": 3,
+  "single_shot_ascending_as_the_tool_reports_it": {
+    "0": 1.0,
+    "1": 1.0483,
+    "2": 1.0587,
+    "3": 1.0584,
+    "4": 1.0137
+  },
+  "state": "measured",
+  "study_id": "lookup-order-20260902-01"
+}

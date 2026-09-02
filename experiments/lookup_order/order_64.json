@@ -1,0 +1,86 @@
+{
+  "all_identical_to_greedy": true,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 70.660199,
+    "max_continuous_gpu_seconds": 2.409038,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 492.610963,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 567.599761
+  },
+  "formal_claim": false,
+  "generate_tokens": 64,
+  "order_sensitivity": {
+    "0": 0.0,
+    "1": -0.0173,
+    "2": -0.0098,
+    "3": 0.0224,
+    "4": -0.0012
+  },
+  "orders": {
+    "ascending": {
+      "best_draft_length": 3,
+      "median_seconds": {
+        "0": 2.3507,
+        "1": 2.2711,
+        "2": 2.2798,
+        "3": 2.2615,
+        "4": 2.3436
+      },
+      "speedup": {
+        "0": 1.0,
+        "1": 1.035,
+        "2": 1.0311,
+        "3": 1.0394,
+        "4": 1.003
+      }
+    },
+    "descending": {
+      "best_draft_length": 1,
+      "median_seconds": {
+        "0": 2.3472,
+        "1": 2.2305,
+        "2": 2.255,
+        "3": 2.308,
+        "4": 2.3374
+      },
+      "speedup": {
+        "0": 1.0,
+        "1": 1.0523,
+        "2": 1.0409,
+        "3": 1.017,
+        "4": 1.0042
+      }
+    }
+  },
+  "power_source": "ac_power",
+  "prompt_file": "journal.txt",
+  "prompt_tokens": 749,
+  "provenance": {
+    "code_files_sha256": {
+      "experiments/lookup_order/measure.py": "70fb96b531edc49ae03c6985ecc6272614059c4171dce05085473b629517b22b",
+      "friday_hardware/speculate.py": "006702abd67a83128ac8ab7d3afc45d94c9167c6829cc6cb12ff9164baff026d"
+    },
+    "code_sha256": "6450c96285768d742a03dbcfdff4210e9e869160eafd2106fdd71735590c99ed",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "power_source": "ac_power"
+  },
+  "repeats": 3,
+  "single_shot_ascending_as_the_tool_reports_it": {
+    "0": 1.0,
+    "1": 1.0209,
+    "2": 1.017,
+    "3": 1.0252,
+    "4": 0.9893
+  },
+  "state": "measured",
+  "study_id": "lookup-order-20260902-01"
+}

@@ -1,0 +1,66 @@
+{
+  "all_identical": true,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 5.934659,
+    "max_continuous_gpu_seconds": 2.057533,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 32.038846,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 44.223222
+  },
+  "device_profile": null,
+  "formal_claim": false,
+  "max_tokens": 24,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "provenance": {
+    "code_files_sha256": {
+      "experiments/serve_equivalence/measure.py": "3c9737b6c429fda2d4e0dff910ce331aca0b14b7504129bf9ae2e8f0ed537a02",
+      "friday_serve/ironmule_backend.py": "94bbb27e59fd7b3f5a36b12c4c141e7457109199cdb6b84df9c2e844c6fed010",
+      "friday_serve/server.py": "0f04e01f529f130bf0bdc40986f218675974de8ee4c27ccf7343b964db13cbc8"
+    },
+    "code_sha256": "05531811ff0e6099d6ca7939d0aceb32836326de6536d8f0c2c3e9151fe32e05",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "power_source": "ac_power"
+  },
+  "rows": [
+    {
+      "baseline_identical": true,
+      "baseline_plan": "baseline_greedy",
+      "baseline_reason": "no_device_profile",
+      "prompt": "code",
+      "prompt_tokens": 54,
+      "reference_tokens": 24,
+      "served_tokens": 24
+    },
+    {
+      "baseline_identical": true,
+      "baseline_plan": "baseline_greedy",
+      "baseline_reason": "no_device_profile",
+      "prompt": "sealed",
+      "prompt_tokens": 897,
+      "reference_tokens": 24,
+      "served_tokens": 24
+    },
+    {
+      "baseline_identical": true,
+      "baseline_plan": "baseline_greedy",
+      "baseline_reason": "no_device_profile",
+      "prompt": "short",
+      "prompt_tokens": 16,
+      "reference_tokens": 24,
+      "served_tokens": 24
+    }
+  ],
+  "state": "measured",
+  "study_id": "serve-equivalence-20260902-01",
+  "verdict": "equivalent"
+}

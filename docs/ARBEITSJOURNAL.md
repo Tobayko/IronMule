@@ -10538,3 +10538,461 @@ Vorregistrierung und wurde durch W1 nicht widerlegt.
 **Offen bleibt der kalte Arm.** Er misst den persistenten Prozess mit und
 erwartet rund `70 %`; er braucht einen frischen Prozess je Baseline-Anfrage.
 F1 bleibt deshalb im Backlog, mit geschlossenem warmem Arm.
+
+---
+
+## 2026-09-02 — Ausbauplan umgesetzt: Kern, Kalibrierung, Serving, Bandit
+
+**Auftrag.** Den Ausbauplan „vom Messprojekt zum auslieferbaren Runtime"
+umsetzen (Plan unter `~/.claude/plans/ja-mach-den-plan-cozy-thompson.md`).
+Bindend: strikte Tokenidentität, keine KV-Quantisierung, kein Qualitätsgate;
+Kalibrierung einmalig je Gerät, danach Dispatch ohne Rückfrage. Keine reale
+Messung in dieser Sitzung.
+
+**Zuerst der Bestand, dann der Code.** Fünf Annahmen des Plans haben der
+Prüfung am Code nicht standgehalten. Sie sind vollständig in
+`docs/AUSBAUPLAN_UMSETZUNG_2026-09-02.md` hergeleitet; die drei folgenreichsten:
+
+**Erstens: die Hashbindung ist hier schon tot, nicht erst auf fremden Macs.**
+`friday_head_skip_runtime.load_policy()` meldet auf dieser Maschine
+`formal_code_mismatch`; `friday_runtime_n10` weicht in `code_sha256`,
+`spec_sha256` **und** `hardware_sha256` ab. Letzteres, weil `hardware_sha256`
+`platform.mac_ver()` enthält und die Maschine inzwischen auf macOS `26.6.2`
+läuft. Ein Betriebssystem-Update hat gereicht. Der Plan behandelt Phase 1 als
+Erweiterung für die Community; sie ist zuerst eine Reparatur hier.
+
+**Zweitens: Phase 0 in der Planfassung hätte genau das zerstört, was sie
+schützt.** `provenance.py` hasht in jedem Runtime-Paket **jede** eigene `*.py`
+in `code_sha256`. Code herauszuziehen ändert damit den Hash, gegen den Stufe A
+prüft — und `AGENTS.md` verbietet es ohnehin ausdrücklich. `friday_runtime_core`
+ist deshalb ein **neues** Paket; die drei versiegelten Pakete sind
+byteidentisch unverändert geblieben, `snapshot` je Paket ebenfalls. Der
+Circuit-Breaker-Defekt ist dort behoben, wo Dauerbetrieb stattfindet.
+
+**Drittens: die Zieltabelle rechnet zwei Faktoren doppelt oder gar nicht.**
+`fixed_compiled` ist F1s `compiled_fixed_cache` und damit bereits in
+`0,860057` enthalten; es ein zweites Mal aufzustapeln zählt es doppelt. Die
+Prefill-Schrittweite hat auf dem Auslieferungspfad keine Baseline mehr —
+`ironmule/runtime.py:_prefill` fährt den ganzen Prompt in einem Forward, und
+ihre Messung ist ohnehin `n=1` je Chunkgröße, aufsteigend, in einem Prozess.
+Dazu multiplizieren Phasenratios nicht; dieses Journal hat den Fehler am
+selben Tag schon einmal beziffert („die naive Produktrechnung hätte `21,32 %`
+versprochen").
+
+**Nachgerechnet** (`experiments/f1_projection/recompute.py`, verankert auf F1s
+gemessenen Phasenratios `TTFT 0,849479` / `tps 1,094084`; das Modell
+reproduziert F1s gemessene `0,860057` auf `0,0033` genau):
+
+| Regime | Plan | nachgerechnet |
+| --- | --- | --- |
+| kurz `897/32` | `18,7 %` | `13,99 %` gemessen, `14,5 %` bedingt |
+| lang günstig `897/512` | `19,2 %` | nicht projizierbar (`16,4`–`34,1 %`) |
+| lang ungünstig `897/512` | `13,0 %` | `12,9`–`13,0 %` |
+
+**Der dritte Faktor wurde ebenfalls abgelehnt, und das hatte ich zuerst
+übersehen.** `bundled_readback` scheiterte in Zyklus 17 an seiner eigenen
+vorregistrierten Schwelle: Ratio `0,9581074518` gegen `median_ratio_max = 0,95`,
+Verdikt `no_clear_speedup_baseline_retained`. Abgelehnt wurde er für eine
+verfehlte **Größe**, nicht für Wirkungslosigkeit — sein Bootstrap-Intervall
+`[0,95347; 0,95989]` liegt vollständig unter `1,0`. Ob der Auslieferungspfad ihn
+benutzen darf, ist damit eine Entscheidung über die Latte, keine Messung: eine
+Studienpromotion behauptet eine Effektgröße, ein Serving-Knopf muss nur real und
+tokenidentisch sein. Das Geräteprofil setzt bewusst die schwächere Latte und
+sagt das in `KnobVerdict` ausdrücklich. Ohne diese Entscheidung bleibt auf dem
+kurzen Workload **kein Hebel über F1 hinaus**.
+
+Das lange günstige Regime ist nicht projizierbar, weil zwei Eingaben fehlen:
+die Decoderate bei `512` Token und eine **Decode-only**-Ratio für Spekulation.
+`friday_hardware/speculate.py:182` startet den Timer vor dem Prefill-Forward,
+also sind die `1,162` ein Ganz-Anfrage-Speedup bei `859/64`. Eine eigene
+Zwischenzahl wäre genauso ungedeckt gewesen wie die des Plans; die Spanne steht
+deshalb so da, wie sie ist.
+
+**Gebaut.** `friday_runtime_core` (Provenienz, hashverkettete History,
+Dispatch-Controller, prozessüberdauernder Circuit Breaker, Paritätstest gegen
+die versiegelte Kopie), `friday_calibrate` (gegateter Lauf, `146 s` GPU
+geschätzt, hashverkettetes Geräteprofil), `friday_serve`
+(`generate(prompt, max_tokens)` auf der IronMule-Engine, Stufe B unangetastet,
+verallgemeinerte Markerprüfung), `friday_serve/speculation.py` (Thompson
+Sampling über `{0,1,2,3,4}`) und `experiments/prefill_step_size/screen.py`.
+Vollsuite `1627` → `1715 passed`, `20 skipped`; die versiegelten Pakete
+unverändert.
+
+**Das Phase-3-Gate ist auf dem vorhandenen Korpus nicht entscheidbar, und das
+ist selbst der Befund.** Die Evidenz zerfällt in zwei Hälften: die 14 Sweeps
+haben Kontrafaktuale, aber fast keine Verluste (`6` von `56` Armen unter `1,0`,
+konzentriert auf zwei Läufe, deren `ngram` die Ursache war, nicht der
+Workload); die Läufe mit echten Verlusten haben keinen Sweep. Ein Bandit, dessen
+Zweck das Abschalten ist, lässt sich auf einem Korpus ohne Verluste nicht
+prüfen. Steht als `S1` im Backlog, mit dem Sweep, der es entscheidet.
+
+**Nebenbefund zu Phase 4.** Der Vorfilter meldet auf P2s eigenem Prompt
+`degenerate` an **acht von sechzehn** Positionen. Der Plan spricht von einer
+einzelnen degenerierten Position; die Rohdaten sagen die Hälfte. Eine
+Promptfamilie ohne degenerierte Position zu finden ist damit deutlich
+unwahrscheinlicher als angenommen.
+
+**Offen und freigabepflichtig:** Kalibrierlauf (`D1`), Serve-Äquivalenz (`D2`),
+Prompt-Lookup-Sweep auf `journal`/`tests` (`S1`), Erweiterung von
+`CANDIDATE_IDS` um `speculate_draft_1..4` (`R1b`, Architekturänderung),
+Profilerlauf Prefill (`D3`).
+
+---
+
+## 2026-09-02 — D2 bestanden, und die Prämisse von Phase 3 hält nicht
+
+Erste reale Läufe unter der neuen Hardwarefreigabe (`AGENTS.md`, Abschnitt
+„Hardwarefreigabe"). Netzbetrieb, `BudgetGuard` aktiv, fremdlastfrei.
+
+**D2 — Baselineäquivalenz: bestanden.** `friday_serve` gegen
+`mlx_lm.stream_generate`, drei Promptfamilien (`897`, `54`, `16` Prompttoken),
+`24` Token je Lauf, alle Knöpfe aus. Verdikt `equivalent`, Tokenfolgen
+identisch auf allen drei. Budget `5,93 s` GPU, `44 s` Wall. Damit ist der neue
+Einstiegspunkt derselbe Decoder wie die Referenz, bevor irgendein Knopf
+dazukommt. Rohdaten `experiments/serve_equivalence/equivalence.json`.
+
+**S1 — der Sweep, der das Gate entscheiden sollte, entscheidet es anders als
+erwartet.** Gemessen auf `journal` und `tests` (4B, `ngram 3`, Breiten `0..4`):
+
+| Prompt | n=1 | n=2 | n=3 | n=4 |
+| --- | --- | --- | --- | --- |
+| journal | `0,9971` | `1,0587` | `1,0425` | `1,0357` |
+| tests | `1,0216` | `1,0234` | `1,0560` | `1,0208` |
+
+Beide sind Gewinne. `experiments/prompt_lookup/real/results.json` meldet für
+dieselben Prompts `journal 0,992`/`0,980` und `tests 0,974` — also Verluste.
+**Das sind genau die Zahlen, auf denen die Begründung des Banditen ruht.**
+
+**Also nachgemessen, ob die Messordnung die Ursache ist.** Verdacht:
+`tools/measure_prompt_lookup.py:196-201` misst jeden Arm genau einmal,
+aufsteigend, und nimmt den *ersten* Arm als Baseline — jeder spätere Arm läuft
+also wärmer als seine Referenz, und W1 hat gezeigt, dass Aufwärmen hier
+dominiert. `experiments/lookup_order/` fährt denselben Sweep mit `3`
+Wiederholungen je Arm in **beiden** Richtungen.
+
+**Der Verdacht war falsch, und das ist ein gültiges Ergebnis.** Der
+Ordnungseffekt beträgt `-0,0159` bis `+0,0008`; Aufwärmdrift erklärt die
+Sweepzahlen nicht. Was der Lauf stattdessen zeigt:
+
+| | n=0 | n=1 | n=2 | n=3 | n=4 |
+| --- | --- | --- | --- | --- | --- |
+| journal, 96 Token, aufsteigend | `1,0000` | `1,0488` | `1,0431` | `1,0583` | `1,0222` |
+| journal, 96 Token, absteigend | `1,0000` | `1,0590` | `1,0590` | `1,0575` | `1,0264` |
+| journal, 64 Token, aufsteigend | `1,0000` | `1,0350` | `1,0311` | `1,0394` | `1,0030` |
+| journal, 64 Token, absteigend | `1,0000` | `1,0523` | `1,0409` | `1,0170` | `1,0042` |
+
+Zwölf Messungen je Breite, Tokenidentität durchgehend. **Spekulation gewinnt auf
+`journal` bei jeder Breite, in beiden Richtungen, bei beiden Antwortlängen.** Die
+beste Breite wechselt dabei zwischen `1` und `3` bei einem Abstand von `0,016` —
+die Wahl *zwischen* den Breiten liegt im Rauschen, das *Ob* nicht.
+
+**Konsequenz für Phase 3.** Die Prämisse des Banditen war: „der Gewinn liegt im
+Abschalten". Sie stützt sich auf `journal 0,992` und `tests 0,974`. Diese
+Verluste reproduzieren unter besser gestützter Messung nicht — zwei Harnesse
+widersprechen sich auf byteidentischer Eingabe (`749` Prompttoken in beiden),
+und der mit mehr Wiederholungen sagt Gewinn. Damit hat der Bandit auf der
+vorhandenen Evidenz **keine Rechtfertigung**: es gibt nichts zuverlässig
+abzuschalten. Eine feste Entwurfsbreite im Bereich `1`–`3` ist das, was die
+Messungen tragen.
+
+Der Widerspruch zwischen den Harnessen ist **nicht** aufgeklärt. Geprüft und
+ausgeschlossen: unterschiedliche Prompts (beide `749` Token), Messordnung,
+Antwortlänge (`64` wie `96` gemessen), und der `adapt`-Pfad (der `fixed`-Arm in
+`measure_real_context.py` läuft mit `adapt=False`). Offen bleibt die
+Wiederholungszahl: dort `2`, hier `3` je Richtung. Das steht als eigener
+Backlog-Eintrag, weil eine unerklärte Abweichung zwischen zwei Messwerkzeugen
+jede spätere Zahl aus beiden betrifft.
+
+**Budget der Sitzung:** `5,93 s` (D2) + `2 × ~40 s` (S1-Sweeps) + `82,81 s`
+(96 Token) + `~55 s` (64 Token) GPU, jeder Lauf innerhalb von `BudgetGuard`.
+
+---
+
+## 2026-09-02 — D5: die erste Zahl aus `friday_serve` mit eingeschalteten Knöpfen
+
+D2 hatte die Äquivalenz mit Knöpfen **aus** bewiesen — die Voraussetzung, nicht
+das Ziel. D5 misst denselben Anfragepfad gegen sich selbst, gepaart, mit exakter
+Tokenidentität als terminalem Gate. Aufbau wie F1: alternierende AB/BA-Paare in
+einem Prozess, ein geladenes Modell, der versiegelte Prompt.
+
+**Kurzes Regime, 4B, `897`/`32`, `6` Paare, A/A-Rauschen `3,69 %`:**
+
+| Arm | Ratio | Gewinn | 95%-KI | Urteil |
+| --- | --- | --- | --- | --- |
+| `head_skip` | `0,8809` | `11,91 %` | `[0,8726; 0,8887]` | qualified |
+| `fixed_compiled` | `0,9803` | `1,97 %` | `[0,9623; 0,9918]` | qualified |
+| `bundled_readback` | `0,9886` | `1,14 %` | `[0,9692; 0,9962]` | qualified |
+| **`combined`** | **`0,8439`** | **`15,61 %`** | `[0,8417; 0,8566]` | **qualified** |
+| `combined+speculate_1` | `0,9614` | `3,86 %` | `[0,9508; 1,0150]` | below_threshold |
+| `combined+speculate_2` | `1,0625` | `-6,25 %` | `[1,0490; 1,0702]` | rejected |
+| `combined+speculate_3` | `1,1481` | `-14,81 %` | `[1,1301; 1,1640]` | rejected |
+
+Tokenidentität hielt auf allen Paaren aller Arme.
+
+**`15,61 %` ist die Zahl, für die das Projekt da war.** Gemessen, nicht
+gerechnet. Sie liegt über meiner eigenen korrigierten Projektion (`14,5 %`) und
+deutlich unter der des Ausbauplans (`18,7 %`). Die Einzelarme summieren sich auf
+`15,02 %`, kombiniert gemessen `15,61 %` — leicht überadditiv, dasselbe Bild wie
+bei F1.
+
+**Die Einzelwerte reproduzieren ihre Studien.** `head_skip` `11,91 %` gegen
+`12,26 %` im Backlog, `fixed_compiled` `1,97 %` gegen `1,42 %`.
+`bundled_readback` liefert `1,14 %` end-to-end bei einem Intervall vollständig
+unter `1,0` — real, klein, und genau der Fall, für den die schwächere
+Serving-Latte gedacht ist (Backlog `D4`).
+
+**Spekulation gehört nicht ins kurze Regime, und zwar deutlich.** Sie
+verschlechtert monoton mit der Entwurfsbreite: `n=1` bleibt mit
+`[0,9508; 1,0150]` innerhalb des Rauschens, `n=2` kostet `6,25 %`, `n=3` kostet
+`14,81 %` gegen die Baseline — obwohl `combined` allein `15,61 %` gewinnt. Bei
+`32` generierten Token gegen `897` Prompttoken ist der Decodeanteil rund ein
+Fünftel der Anfrage; die zusätzlichen Verifikationsforwards kosten mehr, als die
+seltenen Treffer einbringen.
+
+**Das widerspricht S1 nicht.** S1 maß `96` Token auf `journal` und fand Gewinne
+bei jeder Breite. Hier sind es `32` Token auf dem versiegelten Prompt. Beide
+Befunde zusammen sagen dasselbe: die Entwurfsbreite ist nicht der Parameter, auf
+den es ankommt — die **Antwortlänge** ist es. Ein Bandit über Breiten hätte
+diese Grenze nicht gefunden, weil sie nicht in seinem Aktionsraum liegt.
+
+**Der Budgetdeckel hat dabei gearbeitet.** Der erste Anlauf über alle sieben
+Arme brach mit `BudgetError: GPU work budget exceeded` bei `120 s` ab. Das Limit
+wurde **nicht** angehoben; die Studie läuft in Scheiben, jede innerhalb ihres
+eigenen Budgets, mit einer einmal gemessenen A/A-Streuung, die an die Folgeläufe
+weitergereicht wird.
+
+**Nebenbefund zum Rauschen.** Das A/A-Rauschen betrug hier `3,69 %` gegen F1s
+`0,612 %` am selben Tag. Sechs Paare tragen den Effekt von `15,61 %` bei diesem
+Rauschen bequem, aber die Streuung ist sechsmal so hoch wie bei F1 und das ist
+nicht erklärt. Für kleine Effekte wie `bundled_readback` (`1,14 %`) ist das
+relevant.
+
+### D5, Fortsetzung: Antwortlänge, zweites Modell, und eine Grenze der Messhygiene
+
+**Das lange Regime `512` Token ist unter der eigenen Messhygiene nicht
+messbar.** Der Lauf brach mit `BudgetError: continuous GPU work budget exceeded`
+ab. `BudgetPolicy.continuous_gpu_limit_s` steht auf `6,0` Sekunden pro
+ununterbrochenem GPU-Block; eine Antwort mit `512` Token braucht auf dem 4B rund
+acht. Aus `TTFT 1,73 s` und `67,4 tok/s` folgt die messbare Obergrenze:
+**rund `287` generierte Token**. Das Limit wurde nicht angehoben — es ist keine
+Freigabehürde, sondern eine Messbedingung. Gemessen wurde deshalb bei `256`.
+
+**Der Gewinn fällt mit der Antwortlänge, wie erwartet:**
+
+| Regime (4B) | A/A-Rauschen | `combined` | 95%-KI |
+| --- | --- | --- | --- |
+| `897`/`32` | `3,69 %` | **`15,61 %`** | `[0,8417; 0,8566]` |
+| `897`/`256` | `2,21 %` | **`14,10 %`** | `[0,8543; 0,8641]` |
+
+`head_skip` ist ein Prefill-Hebel; je länger die Antwort, desto kleiner der
+Prefill-Anteil, an dem er ansetzt. Das ist dieselbe Rechnung, die W1 für den
+Kreuzungspunkt bei `271` Token angestellt hat, jetzt end-to-end gemessen.
+
+**Zweites Modell, 1B, `897`/`32`, `6` Paare:**
+
+| Arm | Ratio | Gewinn | 95%-KI | Urteil |
+| --- | --- | --- | --- | --- |
+| `head_skip` | `0,8614` | `13,86 %` | `[0,7643; 0,9945]` | qualified, knapp |
+| `fixed_compiled` | `0,9350` | `6,50 %` | `[0,8513; 1,0369]` | below_threshold |
+| `bundled_readback` | `0,8880` | `11,20 %` | `[0,8267; 0,9347]` | qualified |
+| **`combined`** | **`0,6960`** | **`30,40 %`** | `[0,6726; 0,7659]` | **qualified** |
+| `combined+speculate_1` | `0,8838` | `11,62 %` | `[0,8169; 0,9898]` | qualified |
+| `combined+speculate_2` | `1,0371` | `-3,71 %` | `[0,9584; 1,0970]` | below_threshold |
+| `combined+speculate_3` | `1,1633` | `-16,33 %` | `[1,0531; 1,2127]` | inconclusive |
+
+**`30,40 %` auf dem 1B ist doppelt so viel wie auf dem 4B — und die Zahl ist
+mit Vorsicht zu lesen.** Das A/A-Rauschen betrug hier `14,25 %`, mehr als das
+Dreifache des 4B-Wertes. Das Intervall der Kombination liegt mit
+`[0,6726; 0,7659]` weit und vollständig unter `1,0`, der Gesamteffekt trägt also
+auch bei diesem Rauschen. **Die Zerlegung in Einzelknöpfe trägt nicht:**
+`fixed_compiled` schließt mit `[0,8513; 1,0369]` die `1,0` ein und ist damit auf
+dem 1B **nicht** belegt, und `head_skip` streift sie mit `0,9945`. Wer die
+Einzelwerte braucht, braucht mehr Paare.
+
+**Warum das 1B so viel lauter misst:** die Anfrage dauert dort einen Bruchteil
+der 4B-Anfrage, sodass jede Störung relativ stärker durchschlägt. Für ein
+Geräteprofil auf kleinen Modellen ist die Paarzahl aus dem A/A-Rauschen
+abzuleiten und nicht von der 4B-Messung zu übernehmen. Das ist eine Konsequenz
+für `friday_calibrate`, nicht nur eine Fußnote.
+
+**Spekulation verliert auf beiden Modellen mit wachsender Breite.** Auf dem 1B
+gewinnt `n=1` noch `11,62 %`, `n=2` verliert `3,71 %`, `n=3` verliert `16,33 %`.
+Dasselbe Muster wie auf dem 4B, nur verschoben. Zusammen mit S1 ergibt das:
+**nicht die Breite entscheidet, sondern das Verhältnis von Antwortlänge zu
+Prompt.** Ein Bandit über Breiten hätte diese Grenze nie gefunden — sie liegt
+nicht in seinem Aktionsraum. Phase 3 wäre also selbst dann die falsche
+Konstruktion gewesen, wenn der Korpus sie getragen hätte.
+
+## 2026-09-02 — H1.0: der Umschaltpunkt existiert nicht, und die Identität hält nicht
+
+**Frage.** Ab welcher Antwortlänge gewinnt Prompt-Lookup-Spekulation gegen den
+Auslieferungspfad? D5 maß bei `32` Token einen Verlust, S1 bei `96` Token einen
+Gewinn; dazwischen muss ein Vorzeichenwechsel liegen. Vorregistrierung
+`docs/H10_VORREGISTRIERUNG.md`, Code `experiments/switch_point/`.
+
+**Was anders gemessen wurde als in D5.** Baselinearm ist der Auslieferungspfad
+(`head_skip` + `fixed_compiled` + `readback_every 8`), nicht die nackte
+Baseline — der Dispatcher würde von dort umschalten. A/A je (Modell, Länge) neu
+gemessen statt übernommen, Paarzahl daraus nach eingefrorener Regel.
+
+**Ergebnis, 4B, versiegelter `897`-Token-Prompt, gepaart, `6` Paare je Zelle:**
+
+| Token | w1 | w2 | w3 | A/A |
+| --- | --- | --- | --- | --- |
+| `32` | `−12,23 %` | `−22,61 %` | `−32,00 %` | `1,13 %` |
+| `48` | `−15,98 %` | `−28,99 %` | `−43,58 %` | `1,04 %` |
+| `64` | `−19,46 %` | `−38,95 %` | `−58,01 %` | `2,22 %` |
+| `96` | `−26,46 %` | `−51,69 %` | `−75,35 %` | `0,52 %` |
+| `128` | `−29,88 %` | **`identity_break`** | nicht gemessen | `0,70 %` |
+
+**Es gibt keinen Umschaltpunkt.** Der Verlust wächst monoton mit der Breite und
+monoton mit der Länge. Alle Intervalle liegen weit außerhalb des jeweiligen
+A/A-Rauschens.
+
+**Konsistenzprüfung gegen D5.** Aus D5s Ratios ergibt sich für `32` Token
+implizit `1,1393` / `1,2591` / `1,3605` gegen combined; direkt gemessen wurden
+`1,1223` / `1,2261` / `1,3200`. Zwei Prozesse an verschiedenen Tagen, Abweichung
+`1,7`–`4,1` Punkte, gleiche Richtung und Größenordnung.
+
+**Zwei Nebenbefunde, beide relevant über diese Studie hinaus.**
+
+1. **Das A/A-Rauschen hängt auch am gemessenen Arm.** `1,13 %` auf dem
+   combined-Arm gegen D5s `3,69 %` auf dem knobs-off-Arm, gleiches Modell,
+   gleiche Länge, gleicher Tag. Der offene Punkt 3 aus D5 bekommt damit eine
+   dritte Zahl statt einer Erklärung.
+2. **Die Paarzahlregel hat nie mehr als ihre Untergrenze ausgegeben** — siehe
+   `BACKLOG.md` P3.
+
+**Der Identitätsbruch bei `128`/w2 ist der schwerere Befund.** Er steht als S3
+im Backlog, mit beiden offenen Zweigen. Die zuerst notierte Numerikhypothese ist
+durch die eigene Evidenz geschwächt: P2 misst als *kleinsten* Top-2-Abstand
+dieser Promptfamilie `0,500`, und ein Abstand von `0,5` kippt keinen `argmax`
+über Reduktionsunterschiede. Der Lauf hat den Bruch außerdem erkannt und die
+beiden Sequenzen mit dem Prozess weggeworfen — die Datei enthält die Meldung und
+keine Evidenz. Das ist die teuerste Zeile dieses Tages.
+
+**Amendment.** Der Widerspruch zu S1 wurde nicht als „andere Baseline"
+abgehakt — diese Erklärung war falsch, S1s Index `0` ist ein
+Nichtspekulationsarm derselben Implementierung. Gemessen wurde stattdessen der
+Verdacht, dass `ironmule/runtime.py:_decode_speculative` je Iteration den
+gesamten KV-Cache auswertet und synchronisiert, während
+`friday_hardware/speculate.py` nur die Logits auswertet:
+`docs/H10_AMENDMENT_SPEKULATIONSPFAD.md`.
+
+**Eine Regel, die aus der Arbeit selbst fiel:** `study_provenance` hasht die
+Codedateien beim **Schreiben** des Berichts, nicht beim Start. Eine Änderung an
+einer gehashten Datei während eines laufenden Laufs ist damit eine stille
+Falschangabe in der Studienakte — Code wie Vorregistrierung. Notiert in
+`docs/MASTERPLAN_RUNTIME_RL_EXO.md`; sachlich gehört sie in `AGENTS.md`, das ist
+eine Nutzerentscheidung.
+
+## 2026-09-02 — H1.0, zweites Modell und Amendment: der Kill ist gemessen
+
+**Amendment.** Der Verdacht, IronMules Spekulationspfad verliere durch eine
+überflüssige Barriere (`mx.eval(picks, *_leaves(state))` plus `mx.synchronize()`
+je Iteration), ist gemessen und **widerlegt**. 4B, `96` Token, gepatchter Pfad
+gegen ungepatchten: `−26,16 %` gegen `−26,46 %` (Breite `1`), `−51,29 %` gegen
+`−51,69 %` (Breite `2`). `0,30` und `0,40` Punkte bei Intervallbreiten von `1,2`
+bis `2,9` und einem A/A von `0,52 %` — kein Effekt.
+
+Der Patch lag als Arbeitsbaumänderung vor, der Kopf blieb `03e884cb`. Damit das
+keine stille Lücke wird, waren beide Dateihashes im Runner **gepinnt** und der
+Lauf brach ohne den Patch ab; real geprüft, nicht behauptet. Nach Prüfung von
+`patch.diff` und `runtime_py_sha256` gegen die Dateien auf der Platte wurde der
+Arbeitsbaum zurückgesetzt (`9d30965e…`, `git status` leer); erst danach entstanden
+die Dokumentationsabschnitte.
+
+**Zweites Modell.** Der 1B-Arm wurde verkleinert gemessen — zwei Zellen statt
+fünfzehn, Begründung vor dem Lauf im Nachtrag zur Vorregistrierung. A/A
+`11,766 %`; die Paarzahlregel rechnete `92` und gab ihren Deckel `24` aus, womit
+das Auflösungsziel `3 %` in diesem Regime nicht erreicht ist. Gemessen wurde die
+schärfste Stelle (`32` Token, Breite `1`): `−15,59 %`, KI `[1,1381; 1,2353]`,
+Tokenidentität gehalten. Das Intervall liegt vollständig über `1 + s`, also eine
+bestätigte Verschlechterung selbst bei diesem groben Band.
+
+**Ein Zwischenstand von mir war falsch und ist korrigiert.** Ich hatte den
+1B-Arm für gegenstandslos erklärt, weil die strukturelle Ursache dort
+„verschärft" gelte. Das war eine Projektion aus einem anderen Regime — genau
+das, was der Rahmen dieses Projekts verbietet und was ich bei S1 zu Recht
+abgelehnt hatte. Die Zeile ist gestrichen und durch die Messung ersetzt.
+
+**Fehler zweiter Art, ebenfalls protokolliert:** eine Ersetzung per Indexbereich
+in `BACKLOG.md` hat zweimal Nachbareinträge mitgelöscht (S3, dann P3). Beide
+beim Nachzählen der Überschriften gefunden und wiederhergestellt. Wer Abschnitte
+per Index ersetzt, löscht, was dazwischen liegt.
+
+**Die Paarzahlregel kennt nur ihre Ränder.** Sechs Regime, fünfmal die
+Untergrenze `6`, einmal der Deckel `24`, nie ein Zwischenwert (`BACKLOG.md` P3).
+
+**Was der Kill nicht berührt:** der Identitätsbruch bei `4B`/`128`/Breite `2`
+bleibt offen (`BACKLOG.md` S3).
+
+## 2026-09-02 — S3: der Identitätsbruch ist ein ULP, und er kippt H1.0s Ursache
+
+**Gemessen.** Die Zelle `4B`/`128`/Breite `2` bricht sofort wieder, Paar `0` von
+`10`. Erster divergierender Index `10`, Baseline-Token `44505`, Kandidat `3797`,
+`j = 0` in Iteration `9`, Entwurf leer — also das ungegatterte freie Token.
+
+**Die Ursache steht in einer Datei, die seit Wochen im Repository liegt.**
+`experiments/identity_forensics/logit_gap.json` trägt an Position `10`
+`top1_id = 44505` mit `75,0` und `top2_id = 3797` mit `74,5`. Exakt die beiden
+Token, exakt in dieser Rolle.
+
+**`0,500` ist kein Abstand, sondern die Auflösung.** Alle Logitwerte der Datei in
+`[32, 64)` sind Vielfache von `0,25`, alle in `[64, 128)` Vielfache von `0,5` —
+das bf16-Raster, aus den Zahlen ablesbar statt behauptet. Bei `75,0` gegen
+`74,5` sind die beiden Kandidaten benachbarte darstellbare Zahlen. Ein Forward
+der Breite `3` statt `1` kippt das ohne Anomalie.
+
+**Beide Sitzungen haben diese Zahl falsch gelesen**, in beide Richtungen: zuerst
+als Beleg für entartete Positionen, dann als Gegenbeleg („`0,5` ist kein knappes
+Rennen"). Beide Male wurde ein *Logit-Abstand* diskutiert, wo eine Aussage über
+das *Zahlenformat* nötig war.
+
+**Der Nebenbefund ist der eigentliche Befund.** Der Nachspieler zählte `127`
+Iterationen für `128` Token, also null Annahmen. Bestätigt vom Zähler der Engine
+selbst: `acceptance = 0,0` bei `k = 1, 2, 3`
+(`experiments/identity_break/acceptance.json`), Decode `2,398` / `3,273` /
+`4,054` Sekunden gegen rund `1,9` der Baseline.
+
+Damit war H1.0s Ursachensatz falsch. Nicht die Readback-Asymmetrie trägt den
+Verlust, sondern **vervielfachte Rechenarbeit ohne Gegenwert**: der
+`3`-Gramm-Lookup findet im versiegelten Prompt nichts, jede Iteration rechnet
+`k+1` Positionen für ein Token. Die Asymmetrie bleibt richtig, ist aber der
+kleinere Rest — das Amendment hatte sie mit `0,3`–`0,4` Punkten beziffert.
+
+**Und die Reichweite ist eine andere.** Der Kill gilt für diese
+Auslieferungsworkload, nicht für Prompt-Lookup an sich. S1 misst auf
+`journal.txt` `3`–`6 %` Gewinn mit derselben Technik. Zwei Workloads, zwei
+Vorzeichen, eine Ursache: die Trefferquote. Neuer Eintrag `BACKLOG.md` S4.
+
+**Methodisch mitgenommen:** der Nachspieler hat seine Prüfung gegen einen
+intakten Lauf nie bekommen — der Warmup war selbst schon gebrochen. Geschlossen
+wurde die Lücke nicht durch ihn, sondern durch den unabhängigen Zähler der
+Engine. Ein direkter `generate()`-Aufruf brauchte dafür kein `Sample` und keinen
+Eingriff in den eingefrorenen Messkern.
+
+---
+
+## 2026-09-02 — Übergabe an Gemini: Neuer Branch und Self-Learning System
+
+**Übergabe übernommen.** Branch `gemini/self-learning-runtime` von `Codex/Ai-HardwareMule`
+erstellt. Handoff-Dokumente (`docs/MASTERPLAN_RUNTIME_RL_EXO.md`, `PROJECT_STATUS.md`,
+`BACKLOG.md`, `docs/AUSBAUPLAN_UMSETZUNG_2026-09-02.md`) vollständig studiert.
+
+**Self-Learning System etabliert:** `docs/GEMINI_SELF_LEARNING_SYSTEM.md` angelegt.
+Elf methodische und inhaltliche Negativbefunde/Sackgassen dauerhaft katalogisiert
+(darunter Spekulation Acceptance 0,0, ULP-Bruch in bf16, Verbot naiver Phasenmultiplikation,
+A/A-Regimeabhängigkeit, Editierverbot bei aktiven Läufen, Unigramm-vs-Trigramm).
+Parameter-Prüfmatrix hinterlegt, um Wiederholungen bei identischen Parametern
+auszuschließen.
+
+**D4b Bestandsaufnahme (Vorbereitung ohne Implementierung):**
+Die vier Knöpfe aus `CALIBRATED_KNOBS`:
+1. `head_skip`: `verified` unter Latte `< 1.0` und Promotionslatte `0.95`.
+2. `fixed_compiled`: `verified` unter Decode-Latte; end-to-end unter 5-%-Promotionslatte gefährdet.
+3. `prefill_step_size`: `not_applicable` (Screening `degenerate`).
+4. `bundled_readback`: `0,9581` (KI `[0,9535; 0,9599]`) $\rightarrow$ `verified` unter schwächerer Latte, `failed` unter Promotionslatte. Gedeckt durch Nutzerentscheid D4 als explizite Ausnahme.
+
+**Keine Umsetzung gestartet.** Strikter Halt nach Übergabe und Analyse.
+

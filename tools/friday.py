@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Single entry point for every measurement tool in this project.
 
+    python tools/friday.py status               what this device does right now
     python tools/friday.py list                 what is available
     python tools/friday.py doctor               is this machine ready?
     python tools/friday.py <tool> [args...]     run one tool
@@ -162,6 +163,51 @@ def cmd_doctor() -> int:
     return 0
 
 
+def cmd_status(rest: list[str]) -> int:
+    """Everything relevant on one screen: device, knobs, runtime, runs, open work.
+
+    Replaces twelve loopback web dashboards. Line-oriented on purpose - a
+    full-screen TUI reads far worse to a screen reader than plain scrollback,
+    and it is the leaner build besides.
+    """
+
+    known = {"--json", "--plain", "--decisions", "--signals", "--all"}
+    unknown = [item for item in rest if item not in known]
+    if unknown:
+        print(json.dumps({"error": "unknown option", "given": unknown,
+                          "known": sorted(known)}))
+        return 64
+    sys.path.insert(0, str(PROJECT_ROOT))
+    import time
+
+    from friday_runtime_core import status as ui
+    from friday_runtime_core import status_sources as src
+    from friday_runtime_core.provenance import hardware_facts
+
+    profile = src.device_profile()
+    everything = "--all" in rest
+    sections = [
+        ui.device_section(hardware_facts(), profile),
+        ui.knob_section(profile, src.KNOWN_KNOBS),
+        ui.runtime_section(profile, src.circuit_reason()),
+        ui.runs_section(src.recent_runs()),
+    ]
+    # The two sections that carry what a web dashboard used to: shown on
+    # request, so the default page stays one screen.
+    if everything or "--signals" in rest:
+        sections.append(ui.signal_section(src.h0_board()))
+    if everything or "--decisions" in rest:
+        sections.append(ui.decisions_section(src.optimizer_decisions()))
+    sections.append(ui.open_section(src.open_backlog_entries()))
+    snapshot = ui.Status(generated_at=time.strftime("%Y-%m-%d %H:%M"), sections=tuple(sections))
+    if "--json" in rest:
+        print(json.dumps(snapshot.as_dict(), indent=2, sort_keys=True, ensure_ascii=False))
+        return 0
+    colour = ui.use_colour() and "--plain" not in rest
+    sys.stdout.write(ui.render(snapshot, colour=colour))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help", "help"}:
@@ -173,6 +219,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_list()
     if command == "doctor":
         return cmd_doctor()
+    if command == "status":
+        return cmd_status(rest)
     if command not in TOOLS:
         print(json.dumps({"error": "unknown tool", "tool": command, "known": sorted(TOOLS)}))
         return 64
