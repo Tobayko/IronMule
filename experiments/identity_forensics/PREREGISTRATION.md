@@ -38,21 +38,45 @@ Budget: drei Prefills von `677` Token plus `48` Decodeschritte, deutlich
 unter einer 30-Minuten-Freigabe. AC-Pflicht, `BudgetGuard`, Pausenlogik wie in
 allen bisherigen Läufen.
 
-## 4. Vorregistrierte Klassifikation
+## 4. Vorregistrierte Klassifikation (revidiert 2026-09-02)
 
-Implementiert in `gap_analysis.py`, festgelegt vor der Messung:
+**Die ursprüngliche Schwelle war falsch und ist zurückgezogen.** Registriert
+war „Abstand ≤ `1e-2`". Am 2026-09-02 fand sich
+`experiments/divergence_source/results.json` — eine undokumentierte Studie auf
+**genau diesem Prompt** (`677` Token, Splits `[677]` gegen `[512, 165]`). Sie
+misst:
+
+| Größe | Wert |
+| --- | --- |
+| erste Schicht mit Unterschied | `0` |
+| maximale Logit-Differenz durch Chunking | `1,1875` |
+| Top-1/Top-2-Abstand an Position `0` | `1,75` |
+| kann der Unterschied die Wahl kippen? | `false` |
+
+Die Störung ist also von der Größenordnung **eins**, nicht von der Größenordnung
+Fließkomma-Epsilon. Eine Schwelle bei `1e-2` hätte jede Abweichung als
+`structural` eingestuft, unabhängig von der Wahrheit. Sie wird ersatzlos
+gestrichen; `TIE_ABSOLUTE` existiert nicht mehr.
+
+Und sie erklärt zugleich, warum Position `0` nie kippt: dort ist der Abstand
+`1,75` größer als die Störung `1,1875`.
+
+**Neues Kriterium: zwei gemessene Größen vergleichen.** Der Lauf misst je
+Position zusätzlich die maximale absolute Logit-Differenz zwischen Referenz
+und Variante. Eine Abweichung gilt als Tie, wenn der lokale Top-2-Abstand
+**kleiner ist als die tatsächlich gemessene Störung** — nicht kleiner als eine
+gesetzte Zahl.
 
 | Bedingung | Verdikt |
 | --- | --- |
 | erste Abweichung an Position `0` oder `1` | `structural` |
-| Abstand ≤ `1e-2` **und** Median-Abstand ≥ `20 ×` Abstand an der Position | `tie` |
-| beide Bedingungen verfehlt | `structural` |
-| genau eine verfehlt | `inconclusive` |
-| keine Abweichung reproduziert | `no_divergence` |
+| Störung nicht gemessen | `inconclusive` |
+| Abstand ≤ Störung × `TIE_MARGIN` (`1,0`) | `tie` |
+| Abstand > Störung × `TIE_RATIO` (`20,0`) | `structural` |
+| dazwischen | `inconclusive` |
 
-Zwei unabhängige Formen (absolut und relativ), damit weder Skala noch
-Ausreißer allein entscheiden. Gesamtantwort nur `tie_hypothesis_supported`,
-wenn **jede** abweichende Variante `tie` ergibt.
+`TIE_MARGIN` ist die einzige verbliebene gewählte Zahl und als solche im Code
+gekennzeichnet. `TIE_RATIO` bleibt reine Plausibilitätsgrenze.
 
 ## 5. Konsequenzen
 

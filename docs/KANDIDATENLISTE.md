@@ -37,6 +37,22 @@ bereits gemessen ist.
 | 24 | Fixed-Cache/Compile-Decode-A/B | Laufzeitumgebung mit festem KV-Cache vergleichen | Tokenidentität, Cache- und Compile-Vertrag | **`runtime_compile_wins_exact_scope`** (Zyklus 16; 18 Arm-Ausführungen gemessen) |
 | 25 | Fused Greedy innerhalb der Compile-Umgebung | identisches greedy `argmax` innerhalb statt außerhalb des kompilierten Körpers | nur gepaarte Laufzeit entscheidet; Matmul bleibt aktiv | **`fused_greedy_compile_inconclusive`** (Zyklus 21; Baseline retained) |
 
+
+## Nachtrag 2026-09-02 — drei bisher undokumentierte Messungen
+
+Ein Abgleich aller Ergebnisdateien unter `experiments/` gegen die Dokumente
+fand drei Studien, deren Ergebnisse nirgends festgehalten waren. Alle drei
+sind inhaltlich relevant:
+
+| Studie | Kerngröße | Bedeutung |
+| --- | --- | --- |
+| `divergence_source` | Chunking stört die Endlogits um `1,1875`; Top-2-Abstand an Position `0` ist `1,75`; `difference_can_flip_choice=false`; erste abweichende Schicht `0` | beantwortet einen Teil von P2 vorab und hat dessen ursprüngliche Schwelle widerlegt |
+| `device_model` | effektive Bandbreite `358,4 GB/s` = `89,6 %` der Datenblattspitze; schlechtester Holdout-Fehler `15,5 %` bei nur `2` Fitpunkten | stützt die Annahme `85 %` „realistische Auslastung" der Roofline-Rechnung mit einer Messung statt einem Urteil |
+| `decode_width` | Snapshot-Gewicht `3 400 569 562` Byte; bei Kontext `256` ein ungenutzter Faktor `1,324` zwischen Forward-Pass-Decke und realisierter Generierungsschleife | bestätigt unabhängig die aus dem safetensors-Header abgeleiteten `3,400 GB` |
+
+Die Zahlen aus `device_model` beruhen auf `2` Fitpunkten mit `15,5 %`
+schlechtestem Holdout-Fehler; sie sind eine Stützung, kein Beleg.
+
 ## Begründung der Reihenfolge
 
 Kandidat 2 war Voraussetzung für 1, 5, 8 und 9. Zyklus 2 fand keine zuverlässig

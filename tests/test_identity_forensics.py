@@ -42,49 +42,70 @@ def gaps(values):
 NORMAL = [3.1, 2.8, 4.0, 1.9, 3.3, 2.2, 5.1, 3.0, 2.7, 3.4, 2.9, 3.1, 2.5, 3.8, 2.0, 3.6]
 
 
-def test_a_collapsed_gap_at_the_divergence_is_a_tie():
+#: Measured by experiments/divergence_source on this exact prompt: chunked
+#: prefill perturbs the final logits by this much.
+PERTURBATION = 1.1875
+
+
+def test_a_gap_below_the_measured_perturbation_is_a_tie():
     values = list(NORMAL)
-    values[10] = 4e-4
-    verdict = gap_analysis.classify(gaps(values), 10)
+    values[10] = 0.4
+    verdict = gap_analysis.classify(gaps(values), 10, perturbation=PERTURBATION)
     assert verdict.verdict == "tie" and verdict.supports_tie_hypothesis
-    assert verdict.is_minimum is True
-    assert verdict.ratio > gap_analysis.TIE_RATIO
+    assert verdict.perturbation == PERTURBATION
     assert verdict.as_dict()["gate_unchanged"] is True
 
 
-def test_a_wide_gap_at_the_divergence_is_structural():
-    verdict = gap_analysis.classify(gaps(NORMAL), 10)
+def test_a_gap_far_above_the_perturbation_is_structural():
+    verdict = gap_analysis.classify(gaps([40.0] * 16), 10, perturbation=PERTURBATION)
     assert verdict.verdict == "structural"
-    assert "divergence_gap_above_absolute_threshold" in verdict.reasons
+    assert "gap_far_exceeds_the_measured_perturbation" in verdict.reasons
+
+
+def test_without_a_measured_perturbation_nothing_may_be_concluded():
+    """The old criterion used an absolute 1e-2 and would have been wrong.
+
+    experiments/divergence_source measured the perturbation at 1.1875 logits,
+    two orders of magnitude above that threshold, so every divergence would
+    have been called structural regardless of the truth.
+    """
+
+    verdict = gap_analysis.classify(gaps(NORMAL), 10)
+    assert verdict.verdict == "inconclusive"
+    assert "perturbation_not_measured" in verdict.reasons
+    assert not hasattr(gap_analysis, "TIE_ABSOLUTE"), "the refuted threshold must be gone"
 
 
 def test_an_early_divergence_is_structural_whatever_the_gap():
     values = list(NORMAL)
     values[1] = 1e-9
-    assert gap_analysis.classify(gaps(values), 1).verdict == "structural"
-    assert gap_analysis.classify(gaps(values), 0).verdict == "structural"
+    for position in (0, 1):
+        verdict = gap_analysis.classify(gaps(values), position, perturbation=PERTURBATION)
+        assert verdict.verdict == "structural"
 
 
-def test_a_small_but_not_dominant_gap_stays_inconclusive():
-    # Absolute threshold met, ratio not: every position is tiny, so the
-    # divergence position is not special and nothing may be concluded.
-    values = [5e-3] * 16
-    verdict = gap_analysis.classify(gaps(values), 10)
+def test_a_gap_between_perturbation_and_sanity_bound_stays_inconclusive():
+    # Larger than the perturbation but not absurdly so: the flip is neither
+    # explained nor excluded, and the run says so.
+    values = [PERTURBATION * 4] * 16
+    verdict = gap_analysis.classify(gaps(values), 10, perturbation=PERTURBATION)
     assert verdict.verdict == "inconclusive"
-    assert "divergence_gap_not_small_against_the_median" in verdict.reasons
+    assert "gap_between_the_perturbation_and_the_sanity_bound" in verdict.reasons
 
 
 def test_identical_runs_report_no_divergence():
-    verdict = gap_analysis.classify(gaps(NORMAL), None)
+    verdict = gap_analysis.classify(gaps(NORMAL), None, perturbation=PERTURBATION)
     assert verdict.verdict == "no_divergence" and verdict.first_diff is None
 
 
 def test_malformed_evidence_is_rejected():
     for bad in ([], gaps([1.0, float("nan")]), [{"gap": -1.0}]):
         with pytest.raises(gap_analysis.GapError):
-            gap_analysis.classify(bad, 0 if bad else None)
+            gap_analysis.classify(bad, 0 if bad else None, perturbation=PERTURBATION)
     with pytest.raises(gap_analysis.GapError):
-        gap_analysis.classify(gaps(NORMAL), 99)
+        gap_analysis.classify(gaps(NORMAL), 99, perturbation=PERTURBATION)
+    with pytest.raises(gap_analysis.GapError):
+        gap_analysis.classify(gaps(NORMAL), 10, perturbation=-1.0)
 
 
 def test_summary_needs_every_variant_to_agree():
@@ -167,6 +188,12 @@ def test_worker_binds_its_result_to_the_code_that_produced_it():
     # result look as if it had used the new ones.
     assert "study_provenance" in source
     assert "gap_analysis.py" in source and "PREREGISTRATION.md" in source
+
+
+def test_the_worker_measures_the_perturbation_it_classifies_against():
+    source = WORKER.read_text()
+    assert "max_abs_logit_diff" in source
+    assert "perturbation=perturbation" in source
 
 
 def test_study_provenance_hashes_every_named_file_and_the_tree():

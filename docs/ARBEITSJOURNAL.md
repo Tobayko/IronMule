@@ -10040,3 +10040,69 @@ vorregistriert beziehungsweise als erklärtes Band gekennzeichnet.
 `0.340000` geändert: der Wächter schlägt an. Zurückgesetzt.
 
 **Verifikation.** Vollsuite grün.
+
+## 2026-09-02 — Drei undokumentierte Messungen gefunden; eine widerlegt P2s Schwelle
+
+Offline-Abgleich aller Ergebnisdateien unter `experiments/` gegen die
+Dokumente. Kein Modellstart, kein Hardwarelauf.
+
+**Frage.** Der Claim-Ledger band Dokumente an Evidenz. Die Gegenrichtung war
+offen: gibt es Messungen, die nirgends dokumentiert sind? In einem Projekt,
+das jede Messung dokumentieren muss, wäre das vergessene Arbeit oder ein
+verstecktes Negativergebnis.
+
+**Drei gefunden.** Der erste Durchlauf meldete zehn — die meisten davon
+Fehlalarm, weil die Dokumente Studien auf Deutsch nennen („gebündelter
+Readback" für `batched_readback_compile`, „Zyklus 21" für
+`fused_greedy_compile_v4`). Nach Abgleich über Entscheidungswörter und
+markante Zahlen bleiben drei ohne jede Spur in den Dokumenten.
+
+**`divergence_source` — der wichtigste Fund, und er widerlegt mich.**
+Dieselbe Studie, derselbe Prompt (`677` Token), dieselben Splits (`[677]`
+gegen `[512, 165]`), gemessen am 24.08.:
+
+| Größe | Wert |
+| --- | --- |
+| erste Schicht mit Unterschied | `0` |
+| maximale Logit-Differenz durch Chunking | `1,1875` |
+| Top-1/Top-2-Abstand an Position `0` | `1,75` |
+| kann der Unterschied die Wahl kippen? | `false` |
+
+Die Störung durch Chunking ist von der Größenordnung **eins**, nicht von der
+Größenordnung Fließkomma-Epsilon. Meine vorregistrierte Schwelle
+`TIE_ABSOLUTE = 1e-2` lag damit **zwei Größenordnungen** daneben; P2 hätte
+jede Abweichung als `structural` eingestuft, unabhängig von der Wahrheit — und
+das Ergebnis hätte überzeugend ausgesehen.
+
+Zugleich erklärt dieselbe Messung, warum Position `0` nie kippt: der Abstand
+`1,75` ist dort größer als die Störung `1,1875`. Die Tie-Hypothese ist im
+Kern richtig, nur war meine Skala falsch.
+
+**Kriterium ersetzt.** `TIE_ABSOLUTE` ist ersatzlos gestrichen. Der Lauf misst
+jetzt zusätzlich je Position die maximale absolute Logit-Differenz zwischen
+Referenz und Variante, und eine Abweichung gilt als Tie, wenn der lokale
+Top-2-Abstand **kleiner als diese gemessene Störung** ist. Damit vergleicht
+das Kriterium zwei gemessene Größen statt einer gemessenen gegen eine
+geratene. Ohne gemessene Störung lautet das Verdikt `inconclusive` — es gibt
+dann keine Skala, relativ zu der ein Abstand klein sein könnte.
+
+**`device_model`.** Effektive Bandbreite `358,4 GB/s`, also `89,6 %` der
+Datenblattspitze von `400 GB/s`. Meine Roofline-Rechnung nahm `85 %` als
+„realistische Auslastung" an — ein Urteil, das jetzt durch eine Messung
+gestützt ist und leicht konservativ war. Einschränkung: `2` Fitpunkte,
+`15,5 %` schlechtester Holdout-Fehler. Stützung, kein Beleg.
+
+**`decode_width`.** Snapshot-Gewicht `3 400 569 562` Byte — bestätigt
+unabhängig die `3,400 GB`, die ich aus dem safetensors-Header abgeleitet
+hatte. Außerdem bei Kontext `256` ein ungenutzter Faktor `1,324` zwischen
+Forward-Pass-Decke und realisierter Generierungsschleife.
+
+Alle drei stehen jetzt als Nachtrag in der Kandidatenliste.
+
+**Nebenbefund am eigenen Wächter.** Der Test „Urteilskonstanten müssen sich
+als Urteil zu erkennen geben" schlug bei `TIE_MARGIN` an, weil er nur die
+`400` Zeichen **vor** dem Namen las und das Label dahinter stand. Fenster
+beidseitig gemacht und gegengeprüft: entfernt man die Kennzeichnung von
+`DEFAULT_MIN_SAMPLES`, schlägt er weiterhin an.
+
+**Verifikation.** Vollsuite `1607 passed, 20 skipped`.
