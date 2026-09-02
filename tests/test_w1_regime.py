@@ -153,3 +153,25 @@ def test_enforce_offline_actually_sets_what_it_promises(monkeypatch):
     # A proxy already in the environment must be cleared, not preserved.
     assert os.environ["HTTPS_PROXY"] == ""
     assert enforce_offline() == applied, "must be idempotent"
+
+
+def test_the_declared_prompt_length_is_actually_enforced():
+    """PROMPT_TOKENS was a claim in a docstring and nothing checked it.
+
+    W1 compares its decode rate against a baseline sealed at 897 prompt
+    tokens. If the prompt drifted, the comparison would silently be about a
+    different workload.
+    """
+
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "tools"))
+    from _bench import check_prompt_length
+
+    assert check_prompt_length(range(897), 897, tolerance=40) == 897
+    assert check_prompt_length(range(930), 897, tolerance=40) == 930
+    for wrong in (850, 1100):
+        with pytest.raises(SystemExit):
+            check_prompt_length(range(wrong), 897, tolerance=40)
+    source = WORKER.read_text()
+    assert "check_prompt_length(ids, PROMPT_TOKENS, tolerance=PROMPT_TOLERANCE)" in source

@@ -121,11 +121,28 @@ def test_worker_carries_the_standard_run_guards():
 
 
 def test_worker_pins_the_prompt_it_is_allowed_to_answer_about():
+    """Behaviour, not spelling: the guard must actually refuse.
+
+    This test used to assert that two strings appear in the worker source,
+    which is a spelling check wearing a safety check's name. The condition it
+    guards - a drifted prompt has a different sensitive position - is worth
+    exercising.
+    """
+
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "tools"))
+    from _bench import check_prompt_length
+
+    assert check_prompt_length(range(677), 677) == 677
+    for wrong in (676, 678, 0, 1200):
+        with pytest.raises(SystemExit) as caught:
+            check_prompt_length(range(wrong), 677)
+        assert "677" in str(caught.value) and str(wrong) in str(caught.value)
+    # The worker must use it, and exactly, since it reproduces a sealed prompt.
     source = WORKER.read_text()
-    # A different prompt has a different sensitive position, so the run must
-    # abort rather than silently answer a question nobody asked.
+    assert "check_prompt_length(ids, EXPECTED_PROMPT_TOKENS)" in source
     assert "EXPECTED_PROMPT_TOKENS = 677" in source
-    assert "raise SystemExit(" in source
 
 
 def test_worker_refuses_to_run_without_explicit_release():

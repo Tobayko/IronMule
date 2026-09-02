@@ -74,8 +74,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-check", action="store_true", dest="self_check")
     args = parser.parse_args(argv)
 
-    from _bench import (BudgetGuard, enforce_offline, release_gate, require_ac_power,
-                        resolve_local_model_snapshot, study_provenance)
+    from _bench import (BudgetGuard, check_prompt_length, enforce_offline, release_gate,
+                        require_ac_power, resolve_local_model_snapshot, study_provenance)
 
     gate = release_gate(args, self_check)
     if gate is not None:
@@ -104,11 +104,8 @@ def main(argv: list[str] | None = None) -> int:
     snapshot = resolve_local_model_snapshot(MODEL_ID)
     model, tokenizer = load(str(snapshot.path))
     ids = build_prompt(tokenizer)
-    if len(ids) != EXPECTED_PROMPT_TOKENS:
-        raise SystemExit(
-            f"prompt is {len(ids)} tokens, expected {EXPECTED_PROMPT_TOKENS}; "
-            "the sensitive position would not be comparable"
-        )
+    # Exact: a different prompt family has a different sensitive position.
+    check_prompt_length(ids, EXPECTED_PROMPT_TOKENS)
 
     def run(chunk: int | None) -> tuple[list[int], list[dict]]:
         """Prefill in blocks of *chunk*, then GEN greedy tokens with gaps."""

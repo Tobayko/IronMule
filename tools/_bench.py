@@ -229,6 +229,25 @@ def enforce_offline() -> dict:
     return dict(OFFLINE_ENVIRONMENT)
 
 
+def check_prompt_length(ids, expected: int, *, tolerance: int = 0) -> int:
+    """Fail before measuring if the prompt is not the one that was registered.
+
+    A study whose prompt drifted answers a question nobody asked, and it does
+    so using a whole approved measurement block. ``tolerance`` is zero where a
+    prompt must reproduce a sealed one exactly, and a stated band where a
+    comparison only needs the same workload class.
+    """
+
+    count = len(ids)
+    if abs(count - expected) > tolerance:
+        allowed = f"{expected}" if tolerance == 0 else f"{expected} +/- {tolerance}"
+        raise SystemExit(
+            f"prompt is {count} tokens, registered as {allowed}; "
+            "the measurement would not be comparable"
+        )
+    return count
+
+
 def study_provenance(
     code_paths: "list[str | Path]",
     *,
@@ -299,6 +318,7 @@ __all__ = [
     "resolve_local_model_snapshot",
     "require_ac_power",
     "OFFLINE_ENVIRONMENT",
+    "check_prompt_length",
     "enforce_offline",
     "run_persisted",
     "study_provenance",
