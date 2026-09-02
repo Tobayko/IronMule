@@ -100,3 +100,78 @@ def test_the_ledger_would_notice_a_changed_number():
     body = (ROOT / "experiments/persistent_process/results.json").read_text()
     assert "0.34696789209993684" in body
     assert "0.34696789209993685" not in body
+
+
+# --- Constants in code that encode a measured value ---------------------------
+#
+# The ledger above binds the documents. A constant in code is the same claim in
+# a place nobody proofreads, so it gets the same treatment.
+
+
+def test_confirmed_ratios_match_the_studies_they_name():
+    from friday_optimizer.integration import CONFIRMED_RATIOS
+
+    persistent = json.loads((ROOT / "experiments/persistent_process/results.json").read_text())
+    assert CONFIRMED_RATIOS["persistent_process"] == pytest.approx(
+        persistent["metrics"]["all_pair_median_ratio"], abs=5e-7
+    )
+
+    matmul = (ROOT / "experiments/matmul_compile_ab/results.json").read_text()
+    assert str(CONFIRMED_RATIOS["fixed_compiled_cache"]) in matmul
+
+    if not HEAD_SKIP_DATABASE.is_file():
+        pytest.skip("sealed head-skip database is not present in this checkout")
+    connection = sqlite3.connect(f"file:{HEAD_SKIP_DATABASE}?mode=ro", uri=True)
+    try:
+        payload = connection.execute(
+            "SELECT payload_json FROM records WHERE kind='study_decision'"
+        ).fetchone()[0]
+    finally:
+        connection.close()
+    ratio = json.loads(payload)["intervals"]["all"]["ratio"]
+    assert CONFIRMED_RATIOS["head_skip_prefill"] == pytest.approx(ratio, abs=5e-7)
+
+
+def test_the_measured_point_cost_is_derived_and_rounded_the_safe_way():
+    """167 s per point comes from a sealed budget, not from a guess.
+
+    Rounding must go up: a longer estimate yields fewer points per approved
+    block, so the plan under-promises rather than over-promises.
+    """
+
+    from friday_optimizer.campaign import BLOCK_SECONDS, MEASURED_POINT_SECONDS
+
+    matmul = json.loads((ROOT / "experiments/matmul_compile_ab/results.json").read_text())
+    measured = matmul["budget"]["parent_wall_seconds"] / matmul["metrics"]["runs_completed"]
+    assert measured == pytest.approx(166.7, abs=0.5)
+    assert MEASURED_POINT_SECONDS >= measured, "rounding must not promise more points"
+    assert MEASURED_POINT_SECONDS - measured < 1.0, "the constant has drifted from its evidence"
+    # The standing rule is a 30-minute block; the plan may not quietly extend it.
+    assert BLOCK_SECONDS == 30 * 60
+
+
+def test_chosen_constants_are_labelled_as_chosen():
+    """A reader must be able to tell a measurement from a judgement.
+
+    These four are judgement calls. Their modules must say so, or a later
+    reader will treat a threshold somebody picked as a number somebody
+    measured - which is how a project like this loses its footing.
+    """
+
+    import sys as _sys
+
+    sources = {
+        "DEFAULT_MIN_SAMPLES": ROOT / "friday_optimizer/replay.py",
+        "TIE_ABSOLUTE": ROOT / "experiments/identity_forensics/gap_analysis.py",
+        "RATE_TOLERANCE": ROOT / "experiments/w1_regime/regime_analysis.py",
+        "PROMPT_TOLERANCE": ROOT / "experiments/w1_regime/measure_long_answer.py",
+    }
+    missing = []
+    for name, path in sources.items():
+        text = path.read_text()
+        index = text.index(name)
+        context = text[max(0, index - 400):index]
+        if not any(word in context.lower() for word in
+                   ("preregistered", "chosen", "judgement", "judgment", "stated", "sealed baseline")):
+            missing.append(name)
+    assert not missing, f"these constants read as measurements: {missing}"
