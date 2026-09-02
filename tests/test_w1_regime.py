@@ -175,3 +175,31 @@ def test_the_declared_prompt_length_is_actually_enforced():
             check_prompt_length(range(wrong), 897, tolerance=40)
     source = WORKER.read_text()
     assert "check_prompt_length(ids, PROMPT_TOKENS, tolerance=PROMPT_TOLERANCE)" in source
+
+
+def test_the_expected_context_decline_is_recorded_next_to_the_measurement():
+    """A decline that merely matches expectation is not an anomaly.
+
+    Existing evidence (decode_width at context 256, persistent_process at 897)
+    says the decode rate falls with context. Reporting only "stable" would
+    conflate "no anomaly" with "the expected decline happened".
+    """
+
+    verdict = regime.classify(**BASE, long_tps=70.99, context_tokens=897)
+    assert verdict.expected_change is not None
+    assert verdict.expected_change < 0, "the prior says the rate falls, not rises"
+    assert verdict.expected_change == pytest.approx(-0.032, abs=0.005)
+    assert verdict.as_dict()["expected_change"] == verdict.expected_change
+
+
+def test_without_a_context_the_expectation_is_absent_rather_than_invented():
+    verdict = regime.classify(**BASE, long_tps=70.99)
+    assert verdict.expected_change is None
+
+
+def test_the_slope_is_labelled_as_a_prior_not_a_measurement():
+    source = (W1 / "regime_analysis.py").read_text()
+    index = source.index("CONTEXT_RATE_SLOPE")
+    context = source[max(0, index - 600):index + 200]
+    assert "prior, not a measurement" in context
+    assert "82.44" in context and "70.99" in context, "the two points must be named"
