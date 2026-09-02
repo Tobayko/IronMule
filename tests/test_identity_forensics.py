@@ -182,3 +182,36 @@ def test_study_provenance_refuses_a_missing_file():
 
     with pytest.raises(ProvenanceError):
         study_provenance([FORENSICS / "does_not_exist.py"])
+
+
+def test_offline_is_enforced_before_the_model_library_is_imported():
+    """Order matters: the Hugging Face client reads these once, at import.
+
+    Setting them afterwards is a comforting no-op, which is exactly the kind
+    of guard that looks present in a source grep and does nothing at runtime.
+    """
+
+    source = WORKER.read_text()
+    assert "enforce_offline()" in source
+    assert source.index("enforce_offline()") < source.index("import mlx.core")
+    assert "offline_environment" in source, "the applied environment belongs in provenance"
+
+
+def test_enforce_offline_actually_sets_what_it_promises(monkeypatch):
+    import sys as _sys
+
+    _sys.path.insert(0, str(ROOT / "tools"))
+    from _bench import OFFLINE_ENVIRONMENT, enforce_offline
+
+    import os
+
+    for name in OFFLINE_ENVIRONMENT:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("HTTPS_PROXY", "http://example.invalid:3128")
+    applied = enforce_offline()
+    assert applied == OFFLINE_ENVIRONMENT
+    assert os.environ["HF_HUB_OFFLINE"] == "1"
+    assert os.environ["NO_PROXY"] == "*"
+    # A proxy already in the environment must be cleared, not preserved.
+    assert os.environ["HTTPS_PROXY"] == ""
+    assert enforce_offline() == applied, "must be idempotent"

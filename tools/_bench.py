@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -197,6 +198,37 @@ def require_ac_power() -> str:
     return source
 
 
+#: What an offline measurement must never be able to reach. The established
+#: workers set these on a child process they spawn; an in-process worker has
+#: to set them on itself, before the model library is imported.
+OFFLINE_ENVIRONMENT = {
+    "HF_HUB_OFFLINE": "1",
+    "HF_DATASETS_OFFLINE": "1",
+    "TRANSFORMERS_OFFLINE": "1",
+    "HF_HUB_DISABLE_TELEMETRY": "1",
+    "NO_PROXY": "*",
+    "HTTP_PROXY": "",
+    "HTTPS_PROXY": "",
+    "ALL_PROXY": "",
+    "http_proxy": "",
+    "https_proxy": "",
+    "all_proxy": "",
+}
+
+
+def enforce_offline() -> dict:
+    """Pin this process offline and return exactly what was applied.
+
+    Call before importing the model library: the Hugging Face client reads
+    these once at import time, so setting them afterwards changes nothing.
+    Idempotent, and the returned mapping belongs in the provenance block so a
+    result records the conditions it was measured under.
+    """
+
+    os.environ.update(OFFLINE_ENVIRONMENT)
+    return dict(OFFLINE_ENVIRONMENT)
+
+
 def study_provenance(
     code_paths: "list[str | Path]",
     *,
@@ -266,6 +298,8 @@ __all__ = [
     "release_gate",
     "resolve_local_model_snapshot",
     "require_ac_power",
+    "OFFLINE_ENVIRONMENT",
+    "enforce_offline",
     "run_persisted",
     "study_provenance",
 ]
