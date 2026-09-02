@@ -3,7 +3,7 @@
   "formal_claim": false,
   "gate_unchanged": true,
   "provenance": {
-    "git_revision": "c2df27cd05dd37907b08bf673f5d04622752828f",
+    "git_revision": "c874ecb2375356312cf92e719ce6c5b91c250267",
     "git_dirty": false,
     "code_files_sha256": {
       "experiments/identity_forensics/PREREGISTRATION.md": "8586be071ac49f2347a8ec95de659834fe3fbb0892a60ba912909e1385dfb82b",
@@ -561,11 +561,11 @@
   },
   "peak_gb": 3.781,
   "budget": {
-    "gpu_work_seconds": 5.162525,
-    "max_continuous_gpu_seconds": 1.394072,
+    "gpu_work_seconds": 5.419362,
+    "max_continuous_gpu_seconds": 1.374934,
     "cooldown_seconds": 0.0,
-    "required_break_seconds": 28.030343,
-    "wall_seconds": 37.769962,
+    "required_break_seconds": 28.027264,
+    "wall_seconds": 38.934443,
     "candidate_cooldown_seconds": 60.0
   }
 }

@@ -10309,3 +10309,36 @@ registrieren — messbar, indem man vorab den Top-2-Abstandsverlauf aufnimmt und
 gegen die zu erwartende Störung hält. `formal_claim=false`.
 
 **Backlog P2 ist beantwortet und wird entfernt.**
+
+## 2026-09-02 — P2 repliziert: identisch bis auf Zeit und Commit
+
+Zweiter gegateter Lauf auf Nutzeranweisung, `37,8 s` Wall, `5,16 s`
+GPU-Arbeit, AC-Betrieb.
+
+**Warum ein zweiter Lauf trotz vorliegendem Ergebnis.** Greedy Dekodierung ist
+deterministisch; die Abstände und die Störung **müssen** exakt gleich
+herauskommen. Weichen sie ab, wäre der Befund schwächer als er aussieht. Der
+Lauf prüft also nicht das Ergebnis, sondern seine Wiederholbarkeit.
+
+**Ergebnis: identisch.** Ein vollständiger Feldvergleich beider
+Ergebnisdateien findet außerhalb des Budgetblocks genau **einen**
+Unterschied:
+
+```
+provenance.git_revision: c874ecb2… -> c2df27cd…
+```
+
+Das ist korrekt und erwünscht: zwischen den Läufen wurde das erste Ergebnis
+committet, und die Provenienz hält fest, gegen welchen Stand jeweils gemessen
+wurde.
+
+Gleich geblieben sind: alle `16` Referenztoken, alle `16` Top-2-Abstände, für
+beide Varianten `first_diff = 10`, `divergence_gap = 0,500`, `perturbation`
+`2,25` beziehungsweise `2,50`, beide Verdikte `tie`, Gesamtantwort
+`tie_hypothesis_supported`.
+
+Nur die Zeiten unterscheiden sich, wie erwartet: Wall `38,93` gegen `37,77` s,
+GPU-Arbeit `5,42` gegen `5,16` s.
+
+Beide Rohergebnisse liegen unverändert unter
+`experiments/identity_forensics/replication/`.
