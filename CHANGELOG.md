@@ -6,6 +6,16 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **New: an OpenAI-compatible HTTP endpoint (`ironmule serve`, `ironmule.http`).**
+  Standard library only, no new dependency. `POST /v1/chat/completions` (streaming
+  and non-streaming), `GET /v1/models`, `GET /health`. It serves one loaded model
+  one request at a time on the interactive path and answers `HTTP 429` while busy;
+  it adds no sampling and no batching, and token output is identical to
+  `Runtime.generate`. `Runtime.stream` was added to yield decoded deltas token by
+  token (sequential path, same tokens as `generate` under `InteractiveMode`).
+  See [`docs/HTTP.md`](docs/HTTP.md). `README.md` no longer says IronMule provides
+  no streaming — it now provides a local one.
+
 - **MLX peak memory is now measured per arm, not per process.** `mx.get_peak_memory()`
   is a process-wide high-water mark and `mx.reset_peak_memory()` was called nowhere in
   the repository. `ironmule/ab.py` loads a fresh model for every arm inside one child

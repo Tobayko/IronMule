@@ -30,7 +30,7 @@ from .executor import MAX_GROUP_WIDTH, AsyncGroupedB1Executor, SequentialExecuto
 from .fingerprint import build as build_fingerprint, usable
 from .plans import RUNTIME_VERSION, ExecutionPlan, ReusableSessionPlan, StrictOneShotPlan
 from .runtime import BASELINE, Engine, Knobs, PrefixCache
-from .service import InteractiveMode, Request, Result, Runtime, ThroughputMode
+from .service import InteractiveMode, Request, Result, Runtime, StreamEvent, ThroughputMode
 from .telemetry import RequestMetrics, Telemetry
 from .tune import (
     DEFAULT_MODEL, _stored_confirmation_valid, knobs_for, load_profile, revalidate, stale, tune,
@@ -40,7 +40,7 @@ __version__ = RUNTIME_VERSION
 
 __all__ = [
     # runtime
-    "Runtime", "Request", "Result",
+    "Runtime", "Request", "Result", "StreamEvent",
     # plans, chosen by the caller
     "ExecutionPlan", "StrictOneShotPlan", "ReusableSessionPlan",
     # service modes, chosen by the caller
