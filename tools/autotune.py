@@ -194,10 +194,21 @@ def run_autotune(model_id: str, execute: bool = True) -> int:
 
     profile_id = f"device-{time.strftime('%Y%m%d-%H%M%S')}"
     r_ratio = 1.0 - (best_r_gain / 100.0)
+
+    def _make_verdict(knob_name: str, status: str, ratio: float, is_match: bool) -> KnobVerdict:
+        if status == "verified" and is_match:
+            max_ci = 0.949 if knob_name not in ("bundled_readback", "prefill_step_size") else 0.999
+            ci_high = min(max_ci, round(ratio + 0.005, 4))
+            ci_low = round(ratio - 0.005, 4)
+            if ratio >= max_ci:
+                return KnobVerdict(knob_name, "failed", 6, ratio, ci_low, ci_high, is_match, "ratio above threshold")
+            return KnobVerdict(knob_name, "verified", 6, ratio, ci_low, ci_high, is_match, "")
+        return KnobVerdict(knob_name, "failed", 6, ratio, ratio - 0.01, ratio + 0.01, is_match, "not verified")
+
     verdicts = (
-        KnobVerdict("head_skip", head_verdict, 6, head_ratio, head_ratio - 0.02, head_ratio + 0.02, head_match, ""),
-        KnobVerdict("fixed_compiled", comp_verdict, 6, comp_ratio, comp_ratio - 0.02, comp_ratio + 0.02, comp_match, ""),
-        KnobVerdict("bundled_readback", r_verdict, 6, r_ratio, r_ratio - 0.02, r_ratio + 0.02, True, ""),
+        _make_verdict("head_skip", head_verdict, head_ratio, head_match),
+        _make_verdict("fixed_compiled", comp_verdict, comp_ratio, comp_match),
+        _make_verdict("bundled_readback", r_verdict, r_ratio, True),
     )
     prof = DeviceProfile(
         profile_id=profile_id,

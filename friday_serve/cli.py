@@ -88,6 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     http_cmd.add_argument("--host", default="127.0.0.1")
     http_cmd.add_argument("--port", type=int, default=8080)
     http_cmd.add_argument("--dashboard", action="store_true", default=True)
+    http_cmd.add_argument("--model", default=None, help="Model ID or local path")
 
     args = parser.parse_args(argv)
     profile = load_profile(args.database)
@@ -112,7 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
         rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
 
-        backend = IronMuleBackend.load(args.model)
+        target_model = args.model or DEFAULT_MODEL
+        backend = IronMuleBackend.load(target_model)
         server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
         tracker = get_global_tracker()
         httpd = create_server(
