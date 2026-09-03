@@ -165,8 +165,9 @@ def benchmark_model_long_tasks(model_id: str, tag: str, guard) -> dict:
 
         results_by_length[f"{max_tokens}_tokens"] = length_results
 
-    del model, tokenizer
-    mx.eval()
+    del model, tokenizer, engines
+    gc.collect()
+    mx.clear_cache()
     mx.synchronize()
 
     return {
@@ -178,18 +179,29 @@ def benchmark_model_long_tasks(model_id: str, tag: str, guard) -> dict:
     }
 
 
+MODELS = {
+    "Gemma_4B": ("mlx-community/gemma-3-4b-it-4bit", "Gemma 4B"),
+    "Gemma_12B": ("mlx-community/gemma-3-12b-it-4bit", "Gemma 12B"),
+}
+
+
 def main():
     # continuous_gpu_limit lifted for this study by user decision 2026-09-03
     # (12B/256-token runs exceed 6 s); duty cycle and wall limit stay.
+    #
+    # One model per invocation: `benchmark_long_tasks.py Gemma_12B`. The process
+    # exits between models so only one LLM is ever resident in unified memory.
     guard = harness_preconditions(allow_long_gpu=True)
-    all_results = {}
-
-    all_results["Gemma_4B"] = benchmark_model_long_tasks("mlx-community/gemma-3-4b-it-4bit", "Gemma 4B", guard)
-    all_results["Gemma_12B"] = benchmark_model_long_tasks("mlx-community/gemma-3-12b-it-4bit", "Gemma 12B", guard)
+    wanted = [a for a in sys.argv[1:] if a in MODELS] or list(MODELS)
 
     out_path = PROJECT_ROOT / "experiments" / "model_benchmark" / "long_tasks_benchmark_results.json"
-    out_path.write_text(json.dumps(all_results, indent=2))
-    print(f"\n[OK] All Long Task benchmark results written to: {out_path}")
+    all_results = json.loads(out_path.read_text()) if out_path.exists() else {}
+
+    for key in wanted:
+        model_id, tag = MODELS[key]
+        all_results[key] = benchmark_model_long_tasks(model_id, tag, guard)
+        out_path.write_text(json.dumps(all_results, indent=2))
+        print(f"\n[saved] {tag} -> {out_path}")
 
 
 if __name__ == "__main__":

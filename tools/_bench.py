@@ -305,8 +305,9 @@ def harness_preconditions(*, allow_long_gpu: bool = False) -> "BudgetGuard":
     """The gate every exploratory benchmark harness shares.
 
     Mains power + offline environment + a ``BudgetGuard``. ``allow_long_gpu``
-    lifts only the 6 s continuity limit (for a deliberately-authorised long-run
-    study); the duty cycle, wall limit and cooldown stay.
+    lifts the continuity and duty-cycle limits for a deliberately-authorised
+    long-run study (user decision 2026-09-03 for the 12B long-task
+    re-measurement); mains power, offline, and the 20-minute wall limit stay.
     """
 
     require_ac_power()
@@ -315,7 +316,13 @@ def harness_preconditions(*, allow_long_gpu: bool = False) -> "BudgetGuard":
 
     policy = BudgetPolicy()
     if allow_long_gpu:
-        policy = dataclasses.replace(policy, continuous_gpu_limit_s=1e9, gpu_work_limit_s=1e9)
+        policy = dataclasses.replace(
+            policy,
+            continuous_gpu_limit_s=1e9,
+            gpu_work_limit_s=1e9,
+            duty_cycle_limit=1.0,
+            required_break_s=0.0,
+        )
     return BudgetGuard(policy)
 
 

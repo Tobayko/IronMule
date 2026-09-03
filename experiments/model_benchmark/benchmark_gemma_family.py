@@ -42,7 +42,7 @@ PROMPTS = {
 
 OUTPUT_TOKENS = 48
 WARMUP_RUNS = 1
-REPS = 6
+REPS = 4
 
 
 def benchmark_model(model_tag: str, model_id: str, guard) -> dict:
@@ -68,10 +68,13 @@ def benchmark_model(model_tag: str, model_id: str, guard) -> dict:
             mx.synchronize()
 
         # Interleaved measurement: every rep runs all configs, order rotated so
-        # warm-up drift cannot systematically favour one config.
+        # warm-up drift cannot systematically favour one config. A mandated break
+        # follows every generation so the 25% duty cycle holds (calibrator pattern).
         for rep in range(REPS):
             order = cfg_names if rep % 2 == 0 else list(reversed(cfg_names))
             for cfg_name in order:
+                guard.required_break()
+                guard.required_break()
                 mx.synchronize()
                 out = backend.generate(token_ids, max_tokens=OUTPUT_TOKENS, knobs=CONFIGS[cfg_name])
                 guard.record_gpu((out["prefill_ns"] + out["decode_ns"]) / 1e9)
@@ -81,7 +84,6 @@ def benchmark_model(model_tag: str, model_id: str, guard) -> dict:
                 samples[cfg_name]["tps"].append((n - 1) / decode_s if decode_s > 0 and n > 1 else 0.0)
                 samples[cfg_name]["total"].append((out["prefill_ns"] + out["decode_ns"]) / 1e9)
                 tokens_seen[cfg_name].append(list(out["logical_tokens"]))
-            guard.required_break()
 
         for cfg_name in CONFIGS:
             prompt_results[cfg_name] = {
@@ -130,20 +132,25 @@ def benchmark_model(model_tag: str, model_id: str, guard) -> dict:
 
     del backend
     gc.collect()
-    mx.metal.clear_cache()
+    mx.clear_cache()
     return results
 
 
 def main():
+    # optional model filter: `benchmark_gemma_family.py 4B 12B` runs a subset,
+    # each invocation gets its own fresh wall budget.
+    wanted = [a for a in sys.argv[1:] if a in MODELS] or list(MODELS)
     guard = harness_preconditions()
-    all_results = {}
-    for tag, model_id in MODELS.items():
-        all_results[tag] = benchmark_model(tag, model_id, guard)
 
     out_file = PROJECT_ROOT / "experiments" / "model_benchmark" / "gemma_family_benchmark.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    out_file.write_text(json.dumps(all_results, indent=2))
-    print(f"\nSaved complete benchmark results to: {out_file}")
+    all_results = json.loads(out_file.read_text()) if out_file.exists() else {}
+
+    for tag in wanted:
+        guard.required_break()
+        all_results[tag] = benchmark_model(tag, MODELS[tag], guard)
+        out_file.write_text(json.dumps(all_results, indent=2))
+        print(f"\n[saved] {tag} -> {out_file}")
 
 
 if __name__ == "__main__":

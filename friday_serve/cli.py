@@ -132,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     http_cmd.add_argument("--no-interactive", action="store_false", dest="interactive", help="Disable live terminal cockpit")
     http_cmd.add_argument("--concurrency", type=int, default=None, help="Maximum concurrent requests (default: auto-adaptive, 8 for 1B, 4 for 4B, 2 for 12B)")
     http_cmd.add_argument("--model", default=None, help="Model ID or local path")
+    http_cmd.add_argument("--dual-model", action="store_true", help="Also load the 1B model co-resident (a second LLM in unified memory); off by default")
 
     args = parser.parse_args(argv)
     profile = load_profile(args.database)
@@ -170,7 +171,7 @@ def main(argv: list[str] | None = None) -> int:
         _prewarm_hardware(backend, profile)
 
         alternate_backends = {}
-        if "1b" not in target_model.lower():
+        if getattr(args, "dual_model", False) and "1b" not in target_model.lower():
             try:
                 model_1b_id = "mlx-community/gemma-3-1b-it-4bit"
                 print(f"Pre-warming secondary model ({model_1b_id}) for Dual-Model Co-Residency...")

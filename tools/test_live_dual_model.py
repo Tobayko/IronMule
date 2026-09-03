@@ -39,6 +39,7 @@ def main():
         "--port",
         str(PORT),
         "--no-interactive",
+        "--dual-model",  # this test is explicitly about co-residency
     ]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env)
 

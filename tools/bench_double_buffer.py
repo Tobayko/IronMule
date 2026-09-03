@@ -106,18 +106,21 @@ def main():
     bench_sync(engine, tokenizer, p_ids, 8)
     bench_pipelined(engine, tokenizer, p_ids, 8)
 
+    def _run(fn, acc):
+        guard.required_break()
+        guard.required_break()
+        ms = fn(engine, tokenizer, p_ids, max_toks)
+        guard.record_gpu(ms / 1e3)
+        acc.append(ms)
+
     sync_ms, pipe_ms = [], []
     for i in range(8):
         if i % 2 == 0:
-            sync_ms.append(bench_sync(engine, tokenizer, p_ids, max_toks))
-            guard.record_gpu(sync_ms[-1] / 1e3)
-            pipe_ms.append(bench_pipelined(engine, tokenizer, p_ids, max_toks))
-            guard.record_gpu(pipe_ms[-1] / 1e3)
+            _run(bench_sync, sync_ms)
+            _run(bench_pipelined, pipe_ms)
         else:
-            pipe_ms.append(bench_pipelined(engine, tokenizer, p_ids, max_toks))
-            guard.record_gpu(pipe_ms[-1] / 1e3)
-            sync_ms.append(bench_sync(engine, tokenizer, p_ids, max_toks))
-            guard.record_gpu(sync_ms[-1] / 1e3)
+            _run(bench_pipelined, pipe_ms)
+            _run(bench_sync, sync_ms)
 
     s, p = statistics.median(sync_ms), statistics.median(pipe_ms)
     ratio = p / s
