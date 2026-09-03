@@ -31,6 +31,18 @@ Offen bleiben vier eng umrissene Punkte:
    Batcher-Admission komplett wie `Server.generate` läuft (post-hoc
    Marker-Verifikation je Session, `guard`-Kontext). *Gate:* der Batcher-Pfad
    nutzt dieselbe `guard`/`_check_marker`-Kette wie der Single-Flight-Pfad.
+5. **D4 ist nicht im Code verdrahtet.** `knobs_for()` emittiert nur `verified`-Knöpfe.
+   `bundled_readback` (`readback_every=8`) ist auf beiden echten Kalibrierungen
+   `failed` (Ratio rund `0,996`, KI-Oberkante über `1,0`). D4 vom 2026-09-02 hat
+   entschieden, den Knopf **trotzdem** im Auslieferungspfad zu behalten — der Code
+   wendet ihn derzeit nicht an. Entweder `knopfs_for` mit einer D4-Ausnahme für
+   `bundled_readback` ausstatten oder D4 revidieren. Betrifft auch die F1-Baseline
+   (sie hatte `readback_every=8`).
+6. **D4b — schwächere Serving-Latte über `bundled_readback` hinaus?**
+   `SERVING_ONLY_KNOBS` deckt jetzt `bundled_readback` (D4) plus `fixed_compiled`
+   (Zyklus-16-Evidenz). `fuse_projections` ist am 2026-09-03 raus (korrektheits-
+   gesperrt). Ob die `< 1,0`-Latte allgemein für künftige Serving-Knöpfe gilt,
+   bleibt offene Nutzerentscheidung.
 
 ## F1 — abgeschlossen am 2026-09-02
 
