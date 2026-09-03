@@ -70,6 +70,14 @@ TOOLS = {
         "evidence.py",
         "Verify or display the append-only H1/H2 evidence history (no GPU)",
     ),
+    "autotune": (
+        "autotune.py",
+        "Universal Hardware Auto-Tuner: safely calibrates and certifies hardware knobs in <45s",
+    ),
+    "serve": (
+        "run_serve.py",
+        "OpenAI-compatible HTTP/SSE server with Terminal Live-Cockpit for LLM inference",
+    ),
 }
 
 
@@ -221,6 +229,10 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_doctor()
     if command == "status":
         return cmd_status(rest)
+    if command == "serve" and (not rest or rest[0] not in {"status", "generate", "serve"}):
+        rest = ["serve"] + rest
+    if command == "autotune" and "--execute" not in rest and "-h" not in rest and "--help" not in rest:
+        rest = ["--execute"] + rest
     if command not in TOOLS:
         print(json.dumps({"error": "unknown tool", "tool": command, "known": sorted(TOOLS)}))
         return 64

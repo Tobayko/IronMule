@@ -13,8 +13,11 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
+
+import mlx.core as mx
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
@@ -44,11 +47,15 @@ class IronMuleBackend:
     def __init__(self, model, tokenizer, *, model_id: str, model_revision: str) -> None:
         sys.path.insert(0, str(IRONMULE))
         from ironmule import BASELINE, Engine, Knobs, PrefixCache
+        from ironmule.runtime import _leaves, _lookup_draft, _state_is_hybrid
 
         self._Engine = Engine
         self._Knobs = Knobs
         self._PrefixCache = PrefixCache
         self._baseline = BASELINE
+        self._leaves = _leaves
+        self._lookup_draft = _lookup_draft
+        self._state_is_hybrid = _state_is_hybrid
         self.model = model
         self.tokenizer = tokenizer
         self.model_id = model_id
@@ -136,6 +143,183 @@ class IronMuleBackend:
         except Exception:
             result["text"] = None
         return result
+
+    def _decode_text(self, tokens: Sequence[int]) -> str:
+        visible = [value for value in tokens if value not in self.eos_ids]
+        if not visible:
+            return ""
+        try:
+            rendered = self.tokenizer.decode(visible)
+            return rendered if isinstance(rendered, str) else ""
+        except Exception:
+            return ""
+
+    def stream_generate(
+        self, token_ids: Sequence[int], max_tokens: int, knobs: Mapping[str, Any]
+    ) -> Iterator[dict[str, Any]]:
+        engine = self._engine(knobs)
+        prompt_ids = [int(t) for t in token_ids]
+        capacity = engine._capacity(len(prompt_ids), max_tokens)
+
+        # 1. Prefill
+        started = time.perf_counter_ns()
+        state, token = engine._prefill(prompt_ids, capacity)
+        prefill_ns = time.perf_counter_ns() - started
+
+        first = int(token.reshape((-1,)).item())
+        hits = (
+            getattr(engine.prefix_cache, "hits", 0)
+            if getattr(engine, "prefix_cache", None) is not None
+            else 0
+        )
+        first_text = self._decode_text([first])
+
+        yield {
+            "type": "token",
+            "token": first,
+            "tokens": [first],
+            "text": first_text,
+            "is_first": True,
+            "prefill_ns": prefill_ns,
+            "prefix_cache_hits": hits,
+        }
+
+        if first in self.eos_ids:
+            yield {
+                "type": "done",
+                "total_tokens": 1,
+                "decode_ns": 0,
+                "total_ns": prefill_ns,
+                "knobs": engine.knobs.as_dict(),
+                "prefix_cache_hits": hits,
+                "logical_tokens": [first],
+            }
+            return
+
+        if max_tokens <= 1:
+            yield {
+                "type": "done",
+                "total_tokens": 1,
+                "decode_ns": 0,
+                "total_ns": prefill_ns,
+                "knobs": engine.knobs.as_dict(),
+                "prefix_cache_hits": hits,
+                "logical_tokens": [first],
+            }
+            return
+
+        # 2. Decode loop
+        logical_tokens = [first]
+        decode_started = time.perf_counter_ns()
+
+        if engine.knobs.speculate_k > 0:
+            if self._state_is_hybrid(state):
+                raise ValueError("speculative decoding is unsupported for hybrid cache state")
+            width = engine.knobs.speculate_k + 1
+            body = engine._body(capacity, width)
+            sequence = list(prompt_ids) + [first]
+            offset = len(prompt_ids) + 1
+            current = first
+
+            while len(logical_tokens) < max_tokens:
+                draft = self._lookup_draft(
+                    sequence, engine.knobs.speculate_ngram, engine.knobs.speculate_k
+                )
+                padded = (draft + [current] * engine.knobs.speculate_k)[: engine.knobs.speculate_k]
+                out = body(mx.array([[current] + padded]), state)
+                picks = engine._picks(out)
+                state = out[1]
+                mx.eval(picks, *self._leaves(state))
+                mx.synchronize()
+                chosen = picks.reshape((-1,)).tolist()
+
+                accepted = [chosen[0]]
+                for i in range(1, width):
+                    if i - 1 < len(draft) and draft[i - 1] == chosen[i - 1]:
+                        accepted.append(chosen[i])
+                    else:
+                        break
+
+                accepted = accepted[: max_tokens - len(logical_tokens)]
+
+                chunk_tokens = []
+                hit_eos = False
+                for tok in accepted:
+                    chunk_tokens.append(tok)
+                    if tok in self.eos_ids:
+                        hit_eos = True
+                        break
+
+                logical_tokens.extend(chunk_tokens)
+                sequence.extend(accepted)
+                offset += len(accepted)
+                current = accepted[-1]
+                state["position"]["offset"] = mx.array(offset - 1, dtype=mx.int32)
+
+                chunk_text = self._decode_text(chunk_tokens)
+                yield {
+                    "type": "token",
+                    "token": chunk_tokens[-1],
+                    "tokens": chunk_tokens,
+                    "text": chunk_text,
+                    "is_first": False,
+                }
+
+                if hit_eos:
+                    break
+        else:
+            body = engine._body(capacity, 1)
+            every = max(1, engine.knobs.readback_every)
+            pending: list[Any] = []
+            curr_token = token
+            steps_remaining = max_tokens - 1
+
+            for step in range(steps_remaining):
+                out = body(curr_token, state)
+                picks = engine._picks(out)
+                curr_token, state = picks[:, -1:], out[1]
+                pending.append(curr_token)
+
+                if len(pending) == every or step == steps_remaining - 1:
+                    mx.eval(*pending, *self._leaves(state))
+                    mx.synchronize()
+                    raw_chunk = [int(item.reshape((-1,)).item()) for item in pending]
+                    pending = []
+
+                    chunk_tokens = []
+                    hit_eos = False
+                    for tok in raw_chunk:
+                        chunk_tokens.append(tok)
+                        if tok in self.eos_ids:
+                            hit_eos = True
+                            break
+
+                    logical_tokens.extend(chunk_tokens)
+                    chunk_text = self._decode_text(chunk_tokens)
+
+                    yield {
+                        "type": "token",
+                        "token": chunk_tokens[-1],
+                        "tokens": chunk_tokens,
+                        "text": chunk_text,
+                        "is_first": False,
+                    }
+
+                    if hit_eos:
+                        break
+
+        decode_ns = time.perf_counter_ns() - decode_started
+        total_ns = prefill_ns + decode_ns
+
+        yield {
+            "type": "done",
+            "total_tokens": len(logical_tokens),
+            "decode_ns": decode_ns,
+            "total_ns": total_ns,
+            "knobs": engine.knobs.as_dict(),
+            "prefix_cache_hits": hits,
+            "logical_tokens": logical_tokens,
+        }
 
 
 __all__ = ["BackendError", "EXPECTED_IRONMULE_HEAD", "IronMuleBackend", "ironmule_head"]
