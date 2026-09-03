@@ -163,15 +163,15 @@ def run_monitor(host: str = "127.0.0.1", port: int = 8080, refresh_hz: float = 1
     return 0
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="IronMule Live Terminal Monitor")
     parser.add_argument("--host", default="127.0.0.1", help="Friday server host")
     parser.add_argument("--port", type=int, default=8080, help="Friday server port")
     parser.add_argument("--hz", type=float, default=10.0, help="Screen refresh frequency in Hz (default: 10)")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    sys.exit(run_monitor(host=args.host, port=args.port, refresh_hz=args.hz))
+    return run_monitor(host=args.host, port=args.port, refresh_hz=args.hz)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

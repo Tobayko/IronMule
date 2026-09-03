@@ -11145,4 +11145,43 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   - End-to-End Live-Test mit echtem Streaming-Curl verifiziert.
   - **140/140 Unittests laufen zu 100 % grün.**
 
+### 11. Fehlerbehebung: .zshrc Startup-Fehler & friday.py monitor/autotune CLI Dispatch (2026-09-03)
+- **Problem 1 (.zshrc:source:7: no such file or directory: /Users/tobiasburandt/.local/bin/env):**
+  - **Ursache:** In `~/.zshrc` wurde `source $HOME/.local/bin/env` unkonditioniert aufgerufen, obwohl keine Datei `env` im Verzeichnis `$HOME/.local/bin/` existiert.
+  - **Lösung:** In `~/.zshrc` Zeile 7 durch `[ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"` abgesichert.
+  - **Verifikation:** Interaktiver Shell-Start (`zsh -i -c "exit"`) liefert Exit Code 0 ohne Fehlerausgabe.
+- **Problem 2 (friday.py: error: unrecognized arguments: monitor):**
+  - **Ursache:** `tools/monitor.py` definierte `def main():` ohne Parameter und rief `parser.parse_args()` ohne Argumentliste auf. Bei Aufruf über `tools/friday.py monitor` evaluierte `inspect.signature(module.main).parameters` auf leer. `argparse` griff defaultmäßig auf `sys.argv[1:]` zu, welches das Top-Level-Kommando `"monitor"` enthielt, das vom Sub-Parser nicht erkannt wurde. Dasselbe Problem bestand bei `tools/autotune.py`.
+  - **Lösung:** `main(argv: list[str] | None = None) -> int` und `args = parser.parse_args(argv)` in `tools/monitor.py` und `tools/autotune.py` implementiert.
+  - **Verifikation:**
+    - `.venv/bin/python tools/friday.py monitor -h` -> Exit Code 0.
+    - `.venv/bin/python tools/friday.py autotune -h` -> Exit Code 0.
+    - Live-Start von `tools/friday.py monitor` bindet sich erfolgreich an den laufenden Server auf Port 8080 und rendert das Cockpit im TTY.
+- **Erläuterung Terminal UI ("Model läuft, aber ich sehe im Terminal UI nichts"):**
+  - `tools/friday.py serve` ist der Serverprozess, der beim Start den initialen Status (STANDBY) ausgibt und dann im HTTP-Event-Loop auf Requests lauscht.
+  - Das dynamische Live-Terminal-Cockpit (10-20 FPS) wird separat über `.venv/bin/python tools/friday.py monitor` ausgeführt.
 
+### 12. Single-Window Unified Live-Cockpit in friday.py serve (2026-09-03)
+- **Benutzeranforderung:**
+  - Der OpenAI-kompatible Server und das Live-Terminal-Cockpit sollen in einem einzigen Fenster laufen und flüssig in Echtzeit aktualisiert werden, ohne dass ein separates Monitor-Terminal geöffnet werden muss.
+- **Implementierung:**
+  - `friday_serve/cli.py`:
+    - Flags `--interactive` und `--no-interactive` ergänzt (Standard: `True` in TTY).
+    - Erkennt interaktive Terminals (`is_interactive = args.dashboard and args.interactive and sys.stdout.isatty()`).
+    - Übergibt `interactive_dashboard=is_interactive` an `create_server()`.
+    - Bei `Ctrl+C` wird der Monitor-Thread sauber gestoppt und der Terminal-Cursor (`\033[?25h\033[0m`) wiederhergestellt.
+  - `friday_serve/http_server.py`:
+    - Bindet `telemetry_tracker.set_server_info(host, port)` an den Server-Socket.
+    - Startet den Hintergrund-Thread `IronMuleLiveCockpit` automatisch, wenn `interactive_dashboard=True`.
+    - Unterdrückt doppelte statische Dashboard-Ausgaben bei Non-Stream- und Stream-Requests, wenn der interaktive Monitor läuft.
+  - `friday_serve/terminal_dashboard.py`:
+    - `run_interactive_monitor` prüft `sys.stdout.isatty()` (kein Flooding in Headless-/Pipe-Umgebungen).
+    - Zeigt unter dem Cockpit-Kasten eine dezente Steuerungs- und Endpunktzeile (`[Ctrl+C] Stop Server │ API: http://... │ Dashboard: /dashboard`).
+    - Dynamische Port-Anzeige im Standby-Status.
+  - `friday_serve/telemetry.py`:
+    - `host` und `port` im `TelemetryTracker` hinterlegt.
+- **Verifikation:**
+  - Echter Hardware-Inferenzlauf mit `curl -s -N http://127.0.0.1:8997/v1/chat/completions`:
+    - Modell `gemma-3-4b-it-4bit` streamt 16 Tokens bei 77.41 tok/s, 198.17 GB/s UMA-Bandbreite, TTFT 127.8 ms.
+    - `/dashboard` und `/telemetry` spiegeln die Messwerte sofort im Cockpit wider.
+    - 31/31 Unittests in `tests/test_terminal_dashboard.py`, `tests/test_http_server.py`, `tests/test_stream_backend.py` laufen zu 100 % grün.

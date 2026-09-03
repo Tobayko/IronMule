@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Friday — Self-Optimizing Apple Silicon AI Runtime
+# Direct executable launcher for GitHub users
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Prefer project-local virtual environment
+if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
+    PYTHON_BIN="$SCRIPT_DIR/.venv/bin/python"
+elif command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+else
+    echo "❌ Error: Python 3 not found. Please run ./scripts/bootstrap_apple.sh first." >&2
+    exit 1
+fi
+
+export PYTHONPATH="$SCRIPT_DIR:${PYTHONPATH:-}"
+exec "$PYTHON_BIN" "$SCRIPT_DIR/tools/friday.py" "$@"

@@ -88,6 +88,9 @@ def main(argv: list[str] | None = None) -> int:
     http_cmd.add_argument("--host", default="127.0.0.1")
     http_cmd.add_argument("--port", type=int, default=8080)
     http_cmd.add_argument("--dashboard", action="store_true", default=True)
+    http_cmd.add_argument("--no-dashboard", action="store_false", dest="dashboard")
+    http_cmd.add_argument("--interactive", action="store_true", default=True, help="Live interactive terminal cockpit (default: True in TTY)")
+    http_cmd.add_argument("--no-interactive", action="store_false", dest="interactive", help="Disable live terminal cockpit")
     http_cmd.add_argument("--model", default=None, help="Model ID or local path")
 
     args = parser.parse_args(argv)
@@ -114,26 +117,36 @@ def main(argv: list[str] | None = None) -> int:
         rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
 
         target_model = args.model or DEFAULT_MODEL
+        print(f"Loading {target_model} into Apple Silicon Unified Memory...")
         backend = IronMuleBackend.load(target_model)
         server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
         tracker = get_global_tracker()
+        tracker.set_server_info(args.host, args.port)
+
+        is_interactive = bool(args.dashboard and getattr(args, "interactive", True) and sys.stdout.isatty())
         httpd = create_server(
             server,
             host=args.host,
             port=args.port,
             telemetry_tracker=tracker,
             enable_dashboard=args.dashboard,
+            interactive_dashboard=is_interactive,
         )
-        print(f"⚡ Friday Server running on http://{args.host}:{args.port}")
-        print(f"   OpenAI API: http://{args.host}:{args.port}/v1/chat/completions")
-        print(f"   Terminal Dashboard: http://{args.host}:{args.port}/dashboard")
-        print(render_cockpit(tracker, colored=True))
+        if not is_interactive:
+            print(f"⚡ Friday Server running on http://{args.host}:{args.port}")
+            print(f"   OpenAI API: http://{args.host}:{args.port}/v1/chat/completions")
+            print(f"   Terminal Dashboard: http://{args.host}:{args.port}/dashboard")
+            print(render_cockpit(tracker, colored=True))
+
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:
-            print("\nShutting down Friday server...")
-            httpd.shutdown()
+            pass
+        finally:
             httpd.server_close()
+            if is_interactive:
+                sys.stdout.write("\n⚡ Friday server shut down cleanly.\n")
+                sys.stdout.flush()
         return 0
 
     if not args.execute:
