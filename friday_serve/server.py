@@ -30,7 +30,7 @@ from friday_runtime_core.controller import (
 )
 
 from .dispatch import explain, knobs_for
-from .rl_controller import AdaptiveRLController
+from .rl_controller import AdaptiveRLController, detect_ngram_overlap
 from .scope import RequestScope, in_calibrated_scope, observe
 
 BASELINE_PLAN = "baseline_greedy"
@@ -83,16 +83,27 @@ class Server:
         *,
         latch=None,
         rl_controller: AdaptiveRLController | None = None,
+        alternate_backends: dict[str, GenerationBackend] | None = None,
     ) -> None:
         self.backend = backend
         self.profile = profile
         self.rl_controller = rl_controller
+        self.alternate_backends = alternate_backends or {}
         self.controller = DispatchController(
             evidence=profile,
             decide=self._decide,
             fallback=BASELINE_DECISION,
             latch=latch,
         )
+
+    def get_backend(self, model_hint: str | None = None) -> GenerationBackend:
+        if not model_hint or model_hint == "auto":
+            return self.backend
+        m = model_hint.lower()
+        for k, b in self.alternate_backends.items():
+            if k.lower() in m or m in k.lower():
+                return b
+        return self.backend
 
     # -- decision -------------------------------------------------------------
     def _decide(self, profile: DeviceProfile | None, scope: RequestScope | None):
@@ -135,44 +146,58 @@ class Server:
             )
 
     # -- serving --------------------------------------------------------------
-    def generate(self, prompt: str, max_tokens: int = 32, **kwargs) -> Generation:
+    def generate(self, prompt: str, max_tokens: int = 32, *, model: str | None = None, **kwargs) -> Generation:
+        backend = self.get_backend(model or kwargs.get("model_id"))
         try:
-            token_ids = tuple(self.backend.encode(prompt))
+            token_ids = tuple(backend.encode(prompt))
         except Exception as exc:
             raise RuntimeExecutionError("prompt encoding failed") from exc
         scope = observe(
-            model_id=getattr(self.backend, "model_id", None),
-            model_revision=getattr(self.backend, "model_revision", None),
+            model_id=getattr(backend, "model_id", None),
+            model_revision=getattr(backend, "model_revision", None),
             token_ids=token_ids,
             output_tokens=max_tokens,
             **kwargs,
         )
         decision = self.controller.decide_scope(scope)
         action = "baseline"
+        has_overlap = detect_ngram_overlap(token_ids)
         if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
             action, rl_knobs, score = self.rl_controller.select_action(
-                scope.model_id, scope.prompt_tokens, scope.output_tokens
+                scope.model_id,
+                scope.prompt_tokens,
+                scope.output_tokens,
+                has_ngram_overlap=has_overlap,
             )
             profile_knobs = knobs_for(self.profile)
-            knobs = {k: v for k, v in rl_knobs.items() if k in profile_knobs}
+            knobs = {
+                k: v for k, v in rl_knobs.items()
+                if k in profile_knobs or k in ("speculate_k", "speculate_ngram")
+            }
         else:
             knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
         with self.controller.guard(decision):
-            result = self.backend.generate(token_ids, max_tokens, knobs)
+            result = backend.generate(token_ids, max_tokens, knobs)
             self._check_marker(result, knobs, max_tokens)
         if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
             reward = 0.15 if knobs else 0.0
             self.rl_controller.observe_reward(
-                action, scope.model_id, scope.prompt_tokens, scope.output_tokens, reward
+                action,
+                scope.model_id,
+                scope.prompt_tokens,
+                scope.output_tokens,
+                reward,
+                has_ngram_overlap=has_overlap,
             )
         return _generation(result, decision, knobs)
 
     def stream_generate(
-        self, prompt: str | Sequence[int], max_tokens: int = 128, **kwargs
+        self, prompt: str | Sequence[int], max_tokens: int = 128, *, model: str | None = None, **kwargs
     ) -> Iterator[dict[str, Any]]:
+        backend = self.get_backend(model or kwargs.get("model_id"))
         if isinstance(prompt, str):
             try:
-                token_ids = tuple(self.backend.encode(prompt))
+                token_ids = tuple(backend.encode(prompt))
             except Exception as exc:
                 raise RuntimeExecutionError("prompt encoding failed") from exc
         else:
@@ -182,20 +207,27 @@ class Server:
                 raise RuntimeExecutionError("invalid token sequence") from exc
 
         scope = observe(
-            model_id=getattr(self.backend, "model_id", None),
-            model_revision=getattr(self.backend, "model_revision", None),
+            model_id=getattr(backend, "model_id", None),
+            model_revision=getattr(backend, "model_revision", None),
             token_ids=token_ids,
             output_tokens=max_tokens,
             **kwargs,
         )
         decision = self.controller.decide_scope(scope)
         action = "baseline"
+        has_overlap = detect_ngram_overlap(token_ids)
         if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
             action, rl_knobs, score = self.rl_controller.select_action(
-                scope.model_id, scope.prompt_tokens, scope.output_tokens
+                scope.model_id,
+                scope.prompt_tokens,
+                scope.output_tokens,
+                has_ngram_overlap=has_overlap,
             )
             profile_knobs = knobs_for(self.profile)
-            knobs = {k: v for k, v in rl_knobs.items() if k in profile_knobs}
+            knobs = {
+                k: v for k, v in rl_knobs.items()
+                if k in profile_knobs or k in ("speculate_k", "speculate_ngram")
+            }
         else:
             knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
 
@@ -204,7 +236,7 @@ class Server:
         start_ns = time.perf_counter_ns()
 
         with self.controller.guard(decision):
-            for event in self.backend.stream_generate(token_ids, max_tokens, knobs):
+            for event in backend.stream_generate(token_ids, max_tokens, knobs):
                 event_type = event.get("type")
                 if event_type == "token":
                     if event.get("is_first"):
@@ -240,7 +272,12 @@ class Server:
         if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
             reward = 0.15 if knobs else 0.0
             self.rl_controller.observe_reward(
-                action, scope.model_id, scope.prompt_tokens, scope.output_tokens, reward
+                action,
+                scope.model_id,
+                scope.prompt_tokens,
+                scope.output_tokens,
+                reward,
+                has_ngram_overlap=has_overlap,
             )
 
     @staticmethod

@@ -157,6 +157,22 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
+        if path == "/v1/models":
+            main_id = getattr(self.server.server_instance.backend, "model_id", "friday-model")
+            models = [
+                {"id": main_id, "object": "model", "owned_by": "project-friday"},
+                {"id": "gemma-4b", "object": "model", "owned_by": "project-friday"},
+            ]
+            alt = getattr(self.server.server_instance, "alternate_backends", {})
+            for k, b in alt.items():
+                m_id = getattr(b, "model_id", k)
+                if not any(m["id"] == m_id for m in models):
+                    models.append({"id": m_id, "object": "model", "owned_by": "project-friday"})
+                if not any(m["id"] == k for m in models):
+                    models.append({"id": k, "object": "model", "owned_by": "project-friday"})
+            self._send_json(200, {"object": "list", "data": models})
+            return
+
         self._send_json(404, {"error": {"message": f"Not found: {self.path}", "code": 404}})
 
     def do_POST(self) -> None:
@@ -183,14 +199,55 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         max_tokens = int(body.get("max_tokens") or body.get("max_completion_tokens") or 128)
         stream = bool(body.get("stream", False))
 
-        # Concurrency Gate: non-blocking acquire
+        target_model = body.get("model")
+        is_alternate_model = bool(
+            target_model
+            and target_model != getattr(self.server.server_instance.backend, "model_id", "")
+            and any(k in target_model.lower() for k in ("1b", "alternate"))
+        )
+        # Dynamic Batcher Path if enabled
+        if self.server.batcher is not None and not is_alternate_model:
+            try:
+                if isinstance(prompt, str):
+                    token_ids = self.server.server_instance.backend.encode(prompt)
+                else:
+                    token_ids = prompt
+
+                from .dispatch import knobs_for
+                knobs = knobs_for(self.server.server_instance.profile)
+
+                session = self.server.batcher.submit(token_ids, max_tokens, knobs)
+            except RuntimeError:
+                self._send_json(
+                    429,
+                    {
+                        "error": {
+                            "message": f"Too Many Requests: Single-model GPU inference concurrency limit reached ({self.server.max_concurrency}).",
+                            "type": "concurrency_limit_error",
+                            "code": 429,
+                        }
+                    },
+                    headers={"Retry-After": "1"},
+                )
+                return
+
+            try:
+                if stream:
+                    self._handle_batcher_stream(session, body)
+                else:
+                    self._handle_batcher_non_stream(session, body)
+            except (BrokenPipeError, ConnectionResetError):
+                session.cancel()
+            return
+
+        # Fallback / Single-flight Concurrency Gate: non-blocking acquire
         acquired = self.server.concurrency_semaphore.acquire(blocking=False)
         if not acquired:
             self._send_json(
                 429,
                 {
                     "error": {
-                        "message": "Too Many Requests: Single-model GPU inference concurrency limit reached.",
+                        "message": f"Too Many Requests: Single-model GPU inference concurrency limit reached ({self.server.max_concurrency}).",
                         "type": "concurrency_limit_error",
                         "code": 429,
                     }
@@ -207,22 +264,110 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         finally:
             self.server.concurrency_semaphore.release()
 
+    def _handle_batcher_stream(self, session: Any, body: dict[str, Any]) -> None:
+        completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        model = getattr(self.server.server_instance.backend, "model_id", "friday-model")
+        created = int(time.time())
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        init_chunk = {
+            "id": completion_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}, "finish_reason": None}],
+        }
+        self.wfile.write(f"data: {json.dumps(init_chunk)}\n\n".encode("utf-8"))
+        self.wfile.flush()
+
+        chunk_prefix = f'data: {{"id":"{completion_id}","object":"chat.completion.chunk","created":{created},"model":"{model}","choices":[{{"index":0,"delta":{{"content":'.encode("utf-8")
+        chunk_suffix = b'},"finish_reason":null}]}\n\n'
+
+        for event in session.stream():
+            etype = event.get("type")
+            if etype == "token":
+                text = event.get("text", "")
+                if text:
+                    self.wfile.write(chunk_prefix + json.dumps(text).encode("utf-8") + chunk_suffix)
+                    self.wfile.flush()
+            elif etype == "done":
+                finish_chunk = {
+                    "id": completion_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                }
+                self.wfile.write(f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8"))
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                break
+
+    def _handle_batcher_non_stream(self, session: Any, body: dict[str, Any]) -> None:
+        completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+        model = getattr(self.server.server_instance.backend, "model_id", "friday-model")
+        created = int(time.time())
+
+        collected_text = []
+        logical_tokens = []
+        prompt_len = len(session.prompt_ids)
+
+        for event in session.stream():
+            etype = event.get("type")
+            if etype == "token":
+                text = event.get("text", "")
+                if text:
+                    collected_text.append(text)
+            elif etype == "done":
+                logical_tokens = event.get("logical_tokens", [])
+                break
+
+        full_content = "".join(collected_text)
+        completion_len = len(logical_tokens)
+
+        response = {
+            "id": completion_id,
+            "object": "chat.completion",
+            "created": created,
+            "model": model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": full_content},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": prompt_len,
+                "completion_tokens": completion_len,
+                "total_tokens": prompt_len + completion_len,
+            },
+        }
+        self._send_json(200, response)
+
     def _handle_non_stream(
         self, prompt: str | Sequence[int], max_tokens: int, body: dict[str, Any]
     ) -> None:
         server_instance = self.server.server_instance
-        model = getattr(server_instance.backend, "model_id", "friday-model")
+        model = body.get("model") or getattr(server_instance.backend, "model_id", "friday-model")
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
 
         try:
+            backend = server_instance.get_backend(model)
             if isinstance(prompt, str):
-                gen = server_instance.generate(prompt, max_tokens=max_tokens)
+                gen = server_instance.generate(prompt, max_tokens=max_tokens, model=model)
                 full_text = gen.text or ""
                 num_tokens = len(gen.tokens)
-                prompt_tokens = len(server_instance.backend.encode(prompt))
+                prompt_tokens = len(backend.encode(prompt))
             else:
-                events = list(server_instance.stream_generate(prompt, max_tokens=max_tokens))
+                events = list(server_instance.stream_generate(prompt, max_tokens=max_tokens, model=model))
                 text_parts = [e.get("text", "") for e in events if e.get("type") == "token"]
                 full_text = "".join(text_parts)
                 done_ev = events[-1] if events and events[-1].get("type") == "done" else {}
@@ -298,7 +443,8 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         first_hits = 0
         token_count = 0
 
-        prompt_len = len(prompt) if isinstance(prompt, (list, tuple)) else len(server_instance.backend.encode(prompt))
+        backend = server_instance.get_backend(model)
+        prompt_len = len(prompt) if isinstance(prompt, (list, tuple)) else len(backend.encode(prompt))
         if self.server.telemetry_tracker is not None:
             self.server.telemetry_tracker.start_request(
                 model_id=model,
@@ -308,7 +454,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             )
 
         try:
-            for event in server_instance.stream_generate(prompt, max_tokens=max_tokens):
+            for event in server_instance.stream_generate(prompt, max_tokens=max_tokens, model=model):
                 event_type = event.get("type")
                 if event_type == "token":
                     token_count += 1
@@ -324,20 +470,9 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                             self.server.telemetry_tracker.update_tokens(token_count)
                     content = event.get("text", "")
                     if content:
-                        chunk = {
-                            "id": completion_id,
-                            "object": "chat.completion.chunk",
-                            "created": created,
-                            "model": model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": content},
-                                    "finish_reason": None,
-                                }
-                            ],
-                        }
-                        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode("utf-8"))
+                        chunk_prefix = f'data: {{"id":"{completion_id}","object":"chat.completion.chunk","created":{created},"model":"{model}","choices":[{{"index":0,"delta":{{"content":'.encode("utf-8")
+                        chunk_suffix = b'},"finish_reason":null}]}\n\n'
+                        self.wfile.write(chunk_prefix + json.dumps(content).encode("utf-8") + chunk_suffix)
                         self.wfile.flush()
                 elif event_type == "done":
                     finish_chunk = {
@@ -399,12 +534,19 @@ class FridayHTTPServer(ThreadingHTTPServer):
         telemetry_tracker: TelemetryTracker | None = None,
         enable_dashboard: bool = False,
         interactive_dashboard: bool = False,
+        max_concurrency: int = 1,
     ) -> None:
         self.server_instance = server_instance
         self.telemetry_tracker = telemetry_tracker if telemetry_tracker is not None else get_global_tracker()
         self.enable_dashboard = enable_dashboard
         self.interactive_dashboard = interactive_dashboard
-        self.concurrency_semaphore = threading.Semaphore(1)
+        self.max_concurrency = max(1, int(max_concurrency))
+        self.concurrency_semaphore = threading.Semaphore(self.max_concurrency)
+        self.batcher = None
+        if self.max_concurrency > 1 and hasattr(server_instance.backend, "_engine"):
+            from .batcher import ContinuousBatcher
+            self.batcher = ContinuousBatcher(server_instance.backend, max_concurrency=self.max_concurrency)
+
         self.allow_reuse_address = True
         self.daemon_threads = True
         self.stop_event = threading.Event()
@@ -438,6 +580,8 @@ class FridayHTTPServer(ThreadingHTTPServer):
             self.monitor_thread.join(timeout=1.0)
 
     def server_close(self) -> None:
+        if self.batcher is not None:
+            self.batcher.stop()
         self.stop_interactive_monitor()
         super().server_close()
 
@@ -449,6 +593,7 @@ def create_server(
     telemetry_tracker: TelemetryTracker | None = None,
     enable_dashboard: bool = False,
     interactive_dashboard: bool = False,
+    max_concurrency: int = 1,
 ) -> FridayHTTPServer:
     """Create and return a configured FridayHTTPServer."""
     return FridayHTTPServer(
@@ -458,6 +603,7 @@ def create_server(
         telemetry_tracker=telemetry_tracker,
         enable_dashboard=enable_dashboard,
         interactive_dashboard=interactive_dashboard,
+        max_concurrency=max_concurrency,
     )
 
 

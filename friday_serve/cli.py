@@ -68,7 +68,35 @@ def _latch(database: str | Path):
                 collect_provenance(spec, require_clean=False),
             )
 
-    return PersistentLatch(load=load, append=append)
+def _prewarm_hardware(backend: Any, profile: Any) -> None:
+    """Pre-warm Metal GPU shader compilation and pin memory to eliminate cold first-request latency."""
+    import time
+    import mlx.core as mx
+    from .dispatch import knobs_for
+
+    from .environment_tuning import tune_runtime_environment
+    env_info = tune_runtime_environment(uma_gb=34.0)
+    qos_str = "P-Core QoS Active" if env_info.get("qos_interactive") else "Standard QoS"
+    print(f"✓ Environment Tuned: {qos_str} | Metal Cache: {env_info.get('metal_cache_limit_gb', 17):.0f} GB | Wired: {env_info.get('metal_wired_limit_gb', 24):.0f} GB")
+
+    try:
+        t0 = time.perf_counter()
+        knobs = knobs_for(profile)
+        dummy_ids = backend.encode("Friday Apple Silicon Pre-Warmup")
+        engine = backend._engine(knobs)
+        capacity = 128
+        state, token = engine._prefill(dummy_ids, capacity)
+        body = engine._body(capacity, 1)
+        for _ in range(4):
+            out = body(token, state)
+            token, state = engine._picks(out)[:, -1:], out[1]
+        leaves = backend._leaves(state) if hasattr(backend, "_leaves") else []
+        mx.eval(token, *leaves)
+        mx.synchronize()
+        warm_ms = (time.perf_counter() - t0) * 1000
+        print(f"✓ Hardware Pre-Warmup complete in {warm_ms:.1f} ms. Metal JIT shaders primed.")
+    except Exception as exc:
+        print(f"⚠️ Pre-warmup warning (ignored): {exc}")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -91,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
     http_cmd.add_argument("--no-dashboard", action="store_false", dest="dashboard")
     http_cmd.add_argument("--interactive", action="store_true", default=True, help="Live interactive terminal cockpit (default: True in TTY)")
     http_cmd.add_argument("--no-interactive", action="store_false", dest="interactive", help="Disable live terminal cockpit")
+    http_cmd.add_argument("--concurrency", type=int, default=None, help="Maximum concurrent requests (default: auto-adaptive, 8 for 1B, 4 for 4B, 2 for 12B)")
     http_cmd.add_argument("--model", default=None, help="Model ID or local path")
 
     args = parser.parse_args(argv)
@@ -114,12 +143,39 @@ def main(argv: list[str] | None = None) -> int:
         from .terminal_dashboard import render_cockpit
 
         rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
-        rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
+        rl_ctrl = AdaptiveRLController.load(rl_path)
 
         target_model = args.model or DEFAULT_MODEL
-        print(f"Loading {target_model} into Apple Silicon Unified Memory...")
+        def _adaptive_concurrency(m_id: str) -> int:
+            m = m_id.lower()
+            return 8 if "1b" in m else (2 if "12b" in m else 4)
+
+        concurrency = args.concurrency if args.concurrency is not None else _adaptive_concurrency(target_model)
+        print(f"Loading {target_model} into Apple Silicon Unified Memory (Adaptive Concurrency: {concurrency})...")
         backend = IronMuleBackend.load(target_model)
-        server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
+        _prewarm_hardware(backend, profile)
+
+        alternate_backends = {}
+        if "1b" not in target_model.lower():
+            try:
+                model_1b_id = "mlx-community/gemma-3-1b-it-4bit"
+                print(f"Pre-warming secondary model ({model_1b_id}) for Dual-Model Co-Residency...")
+                backend_1b = IronMuleBackend.load(model_1b_id)
+                _prewarm_hardware(backend_1b, None)
+                alternate_backends[model_1b_id] = backend_1b
+                alternate_backends["gemma-1b"] = backend_1b
+                alternate_backends["1b"] = backend_1b
+                print("✓ Dual-Model Co-Residency Active: 1B + 4B pinned simultaneously in Unified Memory.")
+            except Exception as exc:
+                print(f"⚠️ Secondary model load skipped: {exc}")
+
+        server = Server(
+            backend,
+            profile,
+            latch=_latch(args.database),
+            rl_controller=rl_ctrl,
+            alternate_backends=alternate_backends,
+        )
         tracker = get_global_tracker()
         tracker.set_server_info(args.host, args.port)
 
@@ -131,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
             telemetry_tracker=tracker,
             enable_dashboard=args.dashboard,
             interactive_dashboard=is_interactive,
+            max_concurrency=concurrency,
         )
         if not is_interactive:
             print(f"⚡ Friday Server running on http://{args.host}:{args.port}")

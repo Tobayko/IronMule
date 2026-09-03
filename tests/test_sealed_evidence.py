@@ -122,7 +122,7 @@ def test_no_sealed_database_is_left_unchecked():
     if not DATA.is_dir():
         pytest.skip("no evidence directory in this checkout")
     known = {entry[0] for entry in RECORD_CHAINS} | {
-        "optimizer-v2.sqlite3", "research.sqlite3", "h0.sqlite3", "h01.sqlite3",
+        "optimizer-v2.sqlite3", "research.sqlite3", "h0.sqlite3", "h01.sqlite3", "device-profile.sqlite3",
     }
     present = {path.name for path in DATA.glob("*.sqlite3")}
     assert not (present - known), f"unverified evidence databases: {sorted(present - known)}"

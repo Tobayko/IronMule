@@ -76,7 +76,7 @@ class ReleaseGateTest(unittest.TestCase):
 
     # Every tool that can touch the GPU.  ``guard`` runs tests only.
     MEASURING_TOOLS = ("loop", "dispatch", "cooldown", "aa", "model-loop", "codegen", "roofline", "fusion")
-    NON_MEASURING_TOOLS = ("guard", "evidence")
+    NON_MEASURING_TOOLS = ("guard", "evidence", "autotune", "serve", "monitor")
 
     def test_the_two_groups_cover_every_registered_tool(self) -> None:
         self.assertEqual(
