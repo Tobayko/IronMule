@@ -213,3 +213,11 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
    - **Gemma 4B:** Durchsatz von 72.42 auf **97.49 tok/s** gesteigert (**+34.62 % Durchsatzgewinn**, Laufzeit um **25.71 % reduziert**).
    - **Gemma 12B:** Durchsatz von 28.70 auf **35.12 tok/s** gesteigert (**+22.38 % Durchsatzgewinn**, Laufzeit um **18.29 % reduziert**).
    - **Token-Identität:** **100.0 %** über alle drei Modelle und alle Anfragen hinweg verifiziert.
+5. **Stateful Prefix-Caching Durchbruch (TTFT-Reduktion um ~90 %):**
+   - Gemma 4B: TTFT sinkt von `697.07 ms` auf **`78.57 ms`** (**−88.73 %**, 8.87x Speedup).
+   - Gemma 12B: TTFT sinkt von `2096.76 ms` auf **`210.04 ms`** (**−89.98 %**, 9.98x Speedup).
+   - 100 % Token-Identität.
+6. **Prompt-Lookup Speculative Decoding (Bis zu +41 % Decode TPS):**
+   - Gemma 4B Doc-Extraction: Decode TPS steigt von 86.06 auf **121.16 tok/s** (**+40.79 %**) bei 96.67 % Annahme.
+   - Gemma 12B Doc-Extraction: Decode TPS steigt von 33.58 auf **41.85 tok/s** (**+24.63 %**) bei 95.65 % Annahme.
+   - RL-Controller auf 9D-Features und 6 Strategien erweitert und trainiert (OPE Value: 0.4954).

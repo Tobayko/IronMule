@@ -43,16 +43,18 @@ class IronMuleBackend:
 
     def __init__(self, model, tokenizer, *, model_id: str, model_revision: str) -> None:
         sys.path.insert(0, str(IRONMULE))
-        from ironmule import BASELINE, Engine, Knobs
+        from ironmule import BASELINE, Engine, Knobs, PrefixCache
 
         self._Engine = Engine
         self._Knobs = Knobs
+        self._PrefixCache = PrefixCache
         self._baseline = BASELINE
         self.model = model
         self.tokenizer = tokenizer
         self.model_id = model_id
         self.model_revision = model_revision
         self._engines: dict[str, Any] = {}
+        self.prefix_cache: Any | None = None
         self.eos_ids = tuple(
             sorted(
                 {
@@ -97,18 +99,37 @@ class IronMuleBackend:
             raise BackendError("tokenizer returned invalid prompt IDs")
         return ids
 
+    def set_prefix_cache(self, prefix_ids: Sequence[int] | None) -> None:
+        """Configure stateful prefix caching across all engines."""
+        if prefix_ids is None:
+            self.prefix_cache = None
+        elif isinstance(prefix_ids, self._PrefixCache):
+            self.prefix_cache = prefix_ids
+        else:
+            self.prefix_cache = self._PrefixCache(list(prefix_ids))
+        for engine in self._engines.values():
+            engine.prefix_cache = self.prefix_cache
+
     def _engine(self, knobs: Mapping[str, Any]):
         settings = self._baseline if not knobs else self._Knobs(**dict(knobs))
         key = settings.key()
         engine = self._engines.get(key)
         if engine is None:
             engine = self._engines[key] = self._Engine(self.model, self.tokenizer, settings)
+            engine.prefix_cache = self.prefix_cache
         return engine
 
     def generate(
         self, token_ids: Sequence[int], max_tokens: int, knobs: Mapping[str, Any]
     ) -> dict[str, Any]:
-        result = dict(self._engine(knobs).generate(list(token_ids), max_tokens, self.eos_ids))
+        engine = self._engine(knobs)
+        result = dict(engine.generate(list(token_ids), max_tokens, self.eos_ids))
+        if "prefix_cache_hits" not in result:
+            result["prefix_cache_hits"] = (
+                getattr(engine.prefix_cache, "hits", 0)
+                if getattr(engine, "prefix_cache", None) is not None
+                else 0
+            )
         visible = [value for value in result["logical_tokens"] if value not in self.eos_ids]
         try:
             result["text"] = self.tokenizer.decode(visible)

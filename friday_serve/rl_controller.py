@@ -18,25 +18,47 @@ import numpy as np
 
 ACTIONS: tuple[str, ...] = (
     "baseline",
-    "head_skip",
-    "fixed_compiled",
-    "readback_bundled",
     "full_optimized",
+    "deep_bundled_long",
+    "speculative_draft",
+    "prefix_cached",
+    "throughput_grouped",
 )
 
 ACTION_TO_KNOBS: Mapping[str, Mapping[str, Any]] = {
     "baseline": {},
-    "head_skip": {"head_skip_prefill": True},
-    "fixed_compiled": {"compiled_fixed_cache": True},
-    "readback_bundled": {"readback_every": 8},
     "full_optimized": {
         "head_skip_prefill": True,
         "compiled_fixed_cache": True,
         "readback_every": 8,
     },
+    "deep_bundled_long": {
+        "head_skip_prefill": True,
+        "compiled_fixed_cache": True,
+        "readback_every": 16,
+        "wired_fraction": 0.6,
+    },
+    "speculative_draft": {
+        "head_skip_prefill": True,
+        "compiled_fixed_cache": True,
+        "speculate_k": 2,
+        "speculate_ngram": 3,
+    },
+    "prefix_cached": {
+        "head_skip_prefill": True,
+        "compiled_fixed_cache": True,
+        "readback_every": 8,
+        "prefix_cached": True,
+    },
+    "throughput_grouped": {
+        "head_skip_prefill": True,
+        "compiled_fixed_cache": True,
+        "mode": "throughput",
+        "max_width": 4,
+    },
 }
 
-FEATURE_DIM = 6
+FEATURE_DIM = 9
 
 
 @dataclass
@@ -89,10 +111,15 @@ class AdaptiveRLController:
         model_id: str,
         prompt_tokens: int,
         output_tokens: int,
+        *,
+        has_prefix_cache: bool = False,
+        is_concurrent: bool = False,
+        has_ngram_overlap: bool = False,
     ) -> np.ndarray:
-        """Extract a normalized 6-dimensional feature vector:
+        """Extract a normalized 9-dimensional feature vector:
 
-        [is_1b, is_4b, is_12b, norm_prompt_len, norm_output_len, prompt_to_output_ratio]
+        [is_1b, is_4b, is_12b, norm_prompt_len, norm_output_len, prompt_to_output_ratio,
+         has_prefix_cache, is_concurrent, has_ngram_overlap]
         """
         is_1b = 1.0 if "1b" in model_id.lower() else 0.0
         is_4b = 1.0 if "4b" in model_id.lower() else 0.0
@@ -100,8 +127,14 @@ class AdaptiveRLController:
         norm_p = min(prompt_tokens / 1024.0, 2.0)
         norm_o = min(output_tokens / 256.0, 2.0)
         ratio = min(prompt_tokens / max(1, output_tokens), 10.0) / 10.0
+        f_prefix = 1.0 if has_prefix_cache else 0.0
+        f_concurrent = 1.0 if is_concurrent else 0.0
+        f_ngram = 1.0 if has_ngram_overlap else 0.0
 
-        vec = np.array([is_1b, is_4b, is_12b, norm_p, norm_o, ratio], dtype=np.float64)
+        vec = np.array(
+            [is_1b, is_4b, is_12b, norm_p, norm_o, ratio, f_prefix, f_concurrent, f_ngram],
+            dtype=np.float64,
+        )
         return vec.reshape((FEATURE_DIM, 1))
 
     def select_action(
@@ -110,13 +143,23 @@ class AdaptiveRLController:
         prompt_tokens: int,
         output_tokens: int,
         *,
+        has_prefix_cache: bool = False,
+        is_concurrent: bool = False,
+        has_ngram_overlap: bool = False,
         allowed_actions: Sequence[str] = ACTIONS,
     ) -> tuple[str, Mapping[str, Any], float]:
         """Select best action using LinUCB exploration/exploitation.
 
         Returns (action_name, knob_dict, ucb_score).
         """
-        x = self.extract_features(model_id, prompt_tokens, output_tokens)
+        x = self.extract_features(
+            model_id,
+            prompt_tokens,
+            output_tokens,
+            has_prefix_cache=has_prefix_cache,
+            is_concurrent=is_concurrent,
+            has_ngram_overlap=has_ngram_overlap,
+        )
         best_action = "baseline"
         best_score = -float("inf")
 
@@ -138,11 +181,22 @@ class AdaptiveRLController:
         prompt_tokens: int,
         output_tokens: int,
         reward: float,
+        *,
+        has_prefix_cache: bool = False,
+        is_concurrent: bool = False,
+        has_ngram_overlap: bool = False,
     ) -> None:
         """Update the RL model with the observed empirical reward (gain = 1 - ratio)."""
         if action not in self.models:
             return
-        x = self.extract_features(model_id, prompt_tokens, output_tokens)
+        x = self.extract_features(
+            model_id,
+            prompt_tokens,
+            output_tokens,
+            has_prefix_cache=has_prefix_cache,
+            is_concurrent=is_concurrent,
+            has_ngram_overlap=has_ngram_overlap,
+        )
         self.models[action].update(x, reward)
         self.history.append({
             "action": action,
@@ -150,6 +204,9 @@ class AdaptiveRLController:
             "prompt_tokens": prompt_tokens,
             "output_tokens": output_tokens,
             "reward": reward,
+            "has_prefix_cache": has_prefix_cache,
+            "is_concurrent": is_concurrent,
+            "has_ngram_overlap": has_ngram_overlap,
         })
         if self.save_path:
             self.save()
@@ -179,8 +236,11 @@ class AdaptiveRLController:
         controller = cls(alpha=data.get("alpha", 0.5), save_path=path)
         for action, params in data.get("actions", {}).items():
             if action in controller.models:
-                controller.models[action].A = np.array(params["A"], dtype=np.float64)
-                controller.models[action].b = np.array(params["b"], dtype=np.float64)
+                arr_a = np.array(params["A"], dtype=np.float64)
+                arr_b = np.array(params["b"], dtype=np.float64)
+                if arr_a.shape == (FEATURE_DIM, FEATURE_DIM) and arr_b.shape == (FEATURE_DIM, 1):
+                    controller.models[action].A = arr_a
+                    controller.models[action].b = arr_b
         return controller
 
 
