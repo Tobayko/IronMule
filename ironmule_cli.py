@@ -330,6 +330,38 @@ def _run_models(argv: list[str]) -> int:
     return 0
 
 
+def _run_serve(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="ironmule serve",
+        description="Serve a local model over an OpenAI-compatible HTTP endpoint "
+                    "(POST /v1/chat/completions, GET /v1/models). One request at a time.",
+    )
+    parser.add_argument("--model", default=None, help="model repo id (default: the tuned default)")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--no-tuned-profile", action="store_true",
+                        help="ignore this machine's tuned profile and run the baseline knobs")
+    args = parser.parse_args(argv)
+    try:
+        from ironmule import Runtime
+        from ironmule.http import serve
+        from ironmule.tune import DEFAULT_MODEL
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("serve", exc)
+    try:
+        runtime = Runtime.load(args.model or DEFAULT_MODEL,
+                               use_tuned_profile=not args.no_tuned_profile)
+    except ImportError as exc:
+        if not _is_runtime_dependency_error(exc):
+            raise
+        return _dependency_error("serve", exc)
+    with runtime:
+        serve(runtime, host=args.host, port=args.port)
+    return 0
+
+
 def _run_benchmark(argv: list[str]) -> int:
     try:
         benchmark_main = _load_benchmark()
@@ -365,10 +397,11 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {doctor|benchmark|models|tune|revalidate|status|info} [options]")
+        print("usage: ironmule {doctor|benchmark|serve|models|tune|revalidate|status|info} [options]")
         print("\ncommands:")
         print("  doctor       Check Apple Silicon and MLX prerequisites")
         print("  benchmark   Run the existing reproducible local benchmark")
+        print("  serve        Serve a model over an OpenAI-compatible HTTP endpoint")
         print("  models      List locally cached Hugging Face model snapshots")
         print("  tune        Tune or inspect the existing local profile (--show)")
         print("  revalidate  Canary-check the stored profile")
@@ -380,6 +413,8 @@ def _dispatch(argv: list[str] | None) -> int:
         return doctor(rest)
     if command == "benchmark":
         return _run_benchmark(rest)
+    if command == "serve":
+        return _run_serve(rest)
     if command == "tune":
         return _run_tune(rest)
     if command == "models":

@@ -106,6 +106,27 @@ cached commit is recommended; without it, exactly one cached revision must exist
 loading fails closed. See the [runtime guide](docs/RUNTIME.md) for concurrent
 requests, throughput mode, reusable sessions, and exact model identity.
 
+### Serve it over an OpenAI-compatible endpoint
+
+```bash
+ironmule serve --model mlx-community/gemma-3-4b-it-4bit --port 8000
+```
+
+This exposes the loaded runtime at `http://127.0.0.1:8000/v1` so an OpenAI client,
+Cursor, or Open WebUI can use the local model:
+
+```bash
+curl -N http://127.0.0.1:8000/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "gemma", "stream": true,
+       "messages": [{"role": "user", "content": "Explain unified memory in one sentence."}]}'
+```
+
+Standard library only — no web framework is added. The endpoint answers one request
+at a time on the interactive path and returns HTTP 429 while it is busy; token
+output is identical to `Runtime.generate` / `Runtime.stream`. It adds no sampling,
+no batching, and no cloud call. See [`docs/HTTP.md`](docs/HTTP.md).
+
 ## What IronMule includes
 
 - **Two service modes:** choose low single-request latency or higher aggregate
@@ -180,6 +201,7 @@ and [E12](research/LEDGER.md#e12--falsification-test-at-the-sliding-window-bound
 | :-- | :-- |
 | `ironmule doctor` | Check Apple Silicon, Python, MLX, and Metal prerequisites |
 | `ironmule models` | List cached Hugging Face model snapshots without downloading |
+| `ironmule serve` | Serve a model over an OpenAI-compatible HTTP endpoint |
 | `ironmule benchmark` | Compare interactive and throughput modes locally |
 | `ironmule tune` | Measure candidates and write or inspect a local profile |
 | `ironmule revalidate` | Canary-check the stored profile against the current setup |
@@ -191,7 +213,9 @@ Run `ironmule --help` or `ironmule <command> --help` for options.
 ## What it deliberately does not do
 
 - It does not download or redistribute model weights.
-- It does not provide a hosted API server, streaming, or sampling mode.
+- It does not host anything: `ironmule serve` binds a local OpenAI-compatible
+  endpoint on your machine, one request at a time, with no cloud call.
+- It does not add a sampling mode: decoding stays greedy, `temperature = 0`.
 - It does not automatically select a plan that can change model output.
 - It does not use true tensor batching or claim that every model becomes faster.
 - It does not treat a single benchmark run as proof.
@@ -226,12 +250,13 @@ The [limits](docs/LIMITS.md), [runtime guide](docs/RUNTIME.md), and
 
 | Path | What is there |
 | :-- | :-- |
-| `ironmule/` | Runtime, execution plans, service modes, telemetry, and tuning |
+| `ironmule/` | Runtime, execution plans, service modes, telemetry, tuning, HTTP endpoint |
 | `examples/` | Small interactive, throughput, and reusable-session examples |
 | `tests/` | Fast tests plus real-model integration tests |
 | `research/LEDGER.md` | Positive and negative experiments with methods and results |
 | `research/raw/` | Preregistrations and public result summaries |
 | `docs/RUNTIME.md` | API and runtime details |
+| `docs/HTTP.md` | OpenAI-compatible endpoint: routes, streaming, limits |
 | `docs/LIMITS.md` | Measured validity domain and known gaps |
 | `docs/BACKLOG.md` | Open ideas and routes already ruled out |
 

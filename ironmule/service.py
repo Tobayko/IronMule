@@ -55,6 +55,17 @@ class Result:
     metrics: dict
 
 
+@dataclass
+class StreamEvent:
+    """One step of :meth:`Runtime.stream`. ``done`` is true on the final event."""
+
+    text: str
+    token: int
+    index: int
+    done: bool
+    stop_reason: str
+
+
 class InteractiveMode:
     name = "interactive"
 
@@ -258,6 +269,12 @@ class Runtime:
             [{"role": "user", "content": text}], tokenize=False, add_generation_prompt=True)
         return list(self.tokenizer.encode(rendered, add_special_tokens=False))
 
+    def encode_chat(self, messages: Sequence[dict]) -> list[int]:
+        """Encode a full OpenAI-style message list through the model's chat template."""
+        rendered = self.tokenizer.apply_chat_template(
+            list(messages), tokenize=False, add_generation_prompt=True)
+        return list(self.tokenizer.encode(rendered, add_special_tokens=False))
+
     def session_plan(self, shared_prefix: str, name: str = "session") -> ReusableSessionPlan:
         """Build a reusable-session plan from the shared part of a prompt."""
         rendered = self.tokenizer.apply_chat_template(
@@ -311,6 +328,53 @@ class Runtime:
         request = Request(prompt_ids=ids, max_tokens=max_tokens,
                           plan=plan or StrictOneShotPlan())
         return self.serve([request])[0]
+
+    def stream(self, prompt: str | None = None, *, prompt_ids: Sequence[int] | None = None,
+               plan: ExecutionPlan | None = None, max_tokens: int = 64):
+        """Yield ``StreamEvent`` objects token by token for a single request.
+
+        This is the sequential (interactive) path only: one request, synchronised
+        every step, decoded incrementally. Throughput mode groups several requests
+        and waits once, which does not map onto a token stream to one client, so
+        it is not offered here. The token sequence is identical to
+        :meth:`generate` with :class:`InteractiveMode`.
+        """
+        from .executor import _accept_token, build_sessions, now
+
+        ids = list(prompt_ids) if prompt_ids is not None else self.encode(prompt or "")
+        request = Request(prompt_ids=ids, max_tokens=max_tokens,
+                          plan=plan or StrictOneShotPlan())
+        if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session"):
+            raise ValueError(f"unknown execution plan: {request.plan!r}")
+
+        self.telemetry = Telemetry(mode="interactive")
+        capacity = self.backend.capacity_for([len(ids)], max_tokens)
+        session = build_sessions([request], self.backend, self.telemetry, capacity)[0]
+
+        emitted = ""
+        while True:
+            visible = [t for t in session.tokens if t not in self.backend.eos_ids]
+            full = self.tokenizer.decode(visible) if visible else ""
+            delta = full[len(emitted):] if full.startswith(emitted) else full
+            emitted = full
+            yield StreamEvent(
+                text=delta,
+                token=session.tokens[-1],
+                index=len(session.tokens) - 1,
+                done=session.done,
+                stop_reason=session.stop_reason,
+            )
+            if session.done:
+                break
+            handle = self.backend.step(session.state, session.tokens[-1], capacity)
+            self.backend.complete([handle])
+            token, state = self.backend.read(handle)
+            session.state = state
+            _accept_token(session, token, now(), self.backend.eos_ids)
+
+        import mlx.core as mx
+        self.telemetry.wall_ns = now() - self.telemetry.requests[0].arrival_ns
+        self.telemetry.peak_memory_bytes = mx.get_peak_memory()
 
     # -- validity -------------------------------------------------------------
     def fingerprint(self, plan: ExecutionPlan | None = None,
