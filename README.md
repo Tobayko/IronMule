@@ -69,19 +69,49 @@ Nachweis. `codegen` erprobt separat eine stark eingeschränkte modellgeschrieben
 Plansprache.
 
 
-## Schnellstart
+## Schnellstart (OpenAI Server mit Live-Terminal-Cockpit)
+
+Auf jedem Apple Silicon Mac in unter einer Minute startklar:
 
 ```bash
-./scripts/bootstrap_apple.sh          # Python 3.12 + uv, legt .venv an
-.venv/bin/python tools/friday.py doctor
+# 1. Umgebung vorbereiten (Python 3.12 + uv)
+./scripts/bootstrap_apple.sh
+
+# 2. Hardware-Preflight prüfen
+./friday doctor
+
+# 3. Friday mit Live-Terminal-Cockpit starten
+./friday serve
 ```
 
-`doctor` prüft Python, MLX samt Metal-Zugriff, NumPy, Netzbetrieb und Plattenplatz
-und sagt, was fehlt.
+Das Modell wird in das Unified Memory geladen und das **interaktive Live-Cockpit** (10-FPS-Tacho für UMA-Bandbreite, TTFT, Tokens/s und VRAM) startet direkt im selben Terminalfenster.
+
+### Anfragen senden (OpenAI-kompatibel)
+
+Jeder OpenAI-kompatible Client (Cursor, OpenWebUI, Python `openai`, curl) kann sich direkt an Port 8080 verbinden:
 
 ```bash
-.venv/bin/python tools/friday.py list             # verfügbare Werkzeuge
-.venv/bin/python tools/friday.py evidence snapshot # lokale Evidenzhistorie, read-only
+curl -N http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Hallo Friday!"}],
+    "stream": true
+  }'
+```
+
+Im selben Terminalfenster visualisiert das Cockpit in Echtzeit Speicherbandbreite (GB/s gegen 400 GB/s Bus), TTFT (mit Prefix-Cache-Trefferanzeige), Generierungsrate und Zero-Swap.
+
+### Hardware Auto-Tuner (<15 Sekunden)
+
+Kalibriert und zertifiziert automatisch die optimalen Hardware-Knöpfe für diesen spezifischen Mac auf realer Hardware:
+
+```bash
+./friday autotune
+```
+
+Status und Knöpfe jederzeit einsehen:
+```bash
+./friday status
 ```
 
 **Netzbetrieb ist Pflicht, nicht Komfort:** Auf Akku begrenzt macOS das
@@ -92,16 +122,16 @@ verweigern den Start auf Batterie.
 
 | Kommando | Zweck |
 | --- | --- |
-| `loop` | Exploriert Ausführungspläne, verfeinert und misst den Sieger erneut |
-| `dispatch` | Misst einen Plan gegen eine Baseline, gepaart, gegen feste Schwelle |
-| `cooldown` | Charakterisiert, wie eine Leerlaufpause die nächste Operation verlangsamt |
-| `aa` | Vorregistrierte A/A-Nullkontrolle (Kalibrierung, keine Optimierung) |
-| `model-loop` | **H2-explorativ:** ein lokales Modell schlägt Parameter vor, der Harness bewertet sie (benötigt `mlx-lm`) |
-| `codegen` | **H2-explorativ:** ein Modell schreibt einen begrenzten Dispatch-Plan; kein formaler H2-Nachweis (benötigt `mlx-lm`) |
-| `roofline` | Misst, ob Inferenz speicher- oder rechenbegrenzt ist — entscheidet, welche Optimierung überhaupt helfen kann |
-| `fusion` | Misst `mx.compile` über den cache-freien Forward-Pass — **kein** Generierungsgewinn, siehe ERGEBNISSE |
-| `guard` | Belegt, dass der H0.1-Analysekern stdlib-only bleibt |
-| `evidence` | Verifiziert/liest die append-only H1/H2-Historie ohne GPU (`tools/evidence.py`) |
+| `./friday serve` | Startet OpenAI-kompatiblen Server mit interaktivem Terminal-Live-Cockpit |
+| `./friday autotune` | Universeller Hardware-Auto-Tuner: kalibriert und zertifiziert Hardware-Knöpfe in <15s |
+| `./friday status` | Hardware-Fakten, zertifizierte Knöpfe, Latenz und Runtime-Zustand auf einen Blick |
+| `./friday doctor` | Preflight-Check: prüft Metal-GPU, Python, Netzbetrieb und Speicher |
+| `./friday monitor` | Remote-Cockpit-Monitor für separate Terminals oder Remote-Hosts |
+| `./friday loop` | Exploriert Ausführungspläne, verfeinert und misst den Sieger erneut (benötigt `--execute`) |
+| `./friday dispatch` | Misst einen Plan gegen eine Baseline, gepaart, gegen feste Schwelle (benötigt `--execute`) |
+| `./friday aa` | Vorregistrierte A/A-Nullkontrolle (Kalibrierung, keine Optimierung) |
+| `./friday roofline` | Misst, ob Inferenz speicher- oder rechenbegrenzt ist |
+| `./friday evidence` | Verifiziert/liest die append-only H1/H2-Historie ohne GPU |
 
 Jedes messende Werkzeug hat zwei Sicherungen:
 

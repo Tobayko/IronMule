@@ -113,13 +113,22 @@ class TelemetryTracker:
         self,
         max_history: int = 50,
         peak_bandwidth_gbs: float = 400.0,
+        host: str = "127.0.0.1",
+        port: int = 8080,
     ) -> None:
         self.max_history = max_history
         self.peak_bandwidth_gbs = peak_bandwidth_gbs
+        self.host = host
+        self.port = port
         self._lock = threading.Lock()
         self.current: RequestMetrics | None = None
         self.live: LiveState = LiveState()
         self.history: collections.deque[RequestMetrics] = collections.deque(maxlen=max_history)
+
+    def set_server_info(self, host: str, port: int) -> None:
+        with self._lock:
+            self.host = host
+            self.port = port
 
     @staticmethod
     def model_size_gb(model_id: str) -> float:

@@ -234,14 +234,14 @@ def run_autotune(model_id: str, execute: bool = True) -> int:
     return 0
 
 
-def main():
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Friday Universal Hardware Auto-Tuner")
     parser.add_argument("--model-id", default="mlx-community/gemma-3-4b-it-4bit", help="Target model ID")
     parser.add_argument("--execute", action="store_true", help="Execute real hardware benchmarking")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    sys.exit(run_autotune(args.model_id, execute=args.execute))
+    return run_autotune(args.model_id, execute=args.execute)
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

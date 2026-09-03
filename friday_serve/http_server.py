@@ -250,7 +250,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                 action=action,
                 breaker_status=breaker,
             )
-            if self.server.enable_dashboard:
+            if self.server.enable_dashboard and not getattr(self.server, "interactive_dashboard", False):
                 print_live_cockpit(self.server.telemetry_tracker)
 
         self._send_json(
@@ -410,6 +410,9 @@ class FridayHTTPServer(ThreadingHTTPServer):
         self.stop_event = threading.Event()
         self.monitor_thread: threading.Thread | None = None
         super().__init__(server_address, RequestHandlerClass)
+
+        if self.telemetry_tracker is not None:
+            self.telemetry_tracker.set_server_info(server_address[0], server_address[1])
 
         if interactive_dashboard:
             self.start_interactive_monitor()

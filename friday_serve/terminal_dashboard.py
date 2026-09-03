@@ -138,7 +138,8 @@ def render_cockpit(
         status_tag = f"{c_emerald_b}✓ COMPLETED STREAM #{len(history):03d} ({m.tokens_generated} tokens in {m.wall_s:.2f}s){c_reset}"
         lines.append(f"{c_border}║{c_reset} STATUS: {status_tag:<{width + (len(c_emerald_b) + len(c_reset)) - 13}} {c_border}║{c_reset}")
     else:
-        status_tag = f"{pulse_color}●{c_reset} {c_dim}STATUS: STANDBY — READY FOR INFERENCE ON PORT 8080{c_reset}"
+        port_val = getattr(tracker, "port", 8080)
+        status_tag = f"{pulse_color}●{c_reset} {c_dim}STATUS: STANDBY — READY FOR INFERENCE ON PORT {port_val}{c_reset}"
         lines.append(f"{c_border}║{c_reset} {status_tag:<{width + (len(pulse_color) + len(c_reset) + len(c_dim) + len(c_reset)) - 4}} {c_border}║{c_reset}")
 
     lines.append(f"{c_border}╠{thin_sep}╣{c_reset}")
@@ -261,28 +262,35 @@ def run_interactive_monitor(
     Uses cursor repositioning (\033[H) for 100% flicker-free in-place updating.
     Never scrolls, never opens a new window, restores cursor cleanly on exit.
     """
-    if sys.stdout.isatty():
-        # Hide cursor and clear screen once
-        sys.stdout.write("\033[?25l\033[2J\033[H")
-        sys.stdout.flush()
+    if not sys.stdout.isatty():
+        return
+
+    # Hide cursor and clear screen once
+    sys.stdout.write("\033[?25l\033[2J\033[H")
+    sys.stdout.flush()
 
     interval = 1.0 / max(1.0, refresh_hz)
     tick = 0
     try:
         while not stop_event.is_set():
-            if sys.stdout.isatty():
-                sys.stdout.write("\033[H")
+            sys.stdout.write("\033[H")
             rendered = render_cockpit(tracker, colored=colored, live_tick=tick)
+            host = getattr(tracker, "host", "127.0.0.1")
+            port = getattr(tracker, "port", 8080)
+            footer = (
+                f"  {Theme.MUTED}[Ctrl+C] Stop Server │ API: http://{host}:{port}/v1/chat/completions │ Dashboard: /dashboard{Theme.RESET}"
+                if colored
+                else f"  [Ctrl+C] Stop Server │ API: http://{host}:{port}/v1/chat/completions │ Dashboard: /dashboard"
+            )
             # Append clear to end of screen for complete clean wipe
-            sys.stdout.write(rendered + "\033[J\n")
+            sys.stdout.write(rendered + "\n" + footer + "\033[J\n")
             sys.stdout.flush()
             tick += 1
             time.sleep(interval)
     finally:
-        if sys.stdout.isatty():
-            # Restore cursor and color
-            sys.stdout.write("\033[?25h\033[0m\n")
-            sys.stdout.flush()
+        # Restore cursor and color
+        sys.stdout.write("\033[?25h\033[0m\n")
+        sys.stdout.flush()
 
 
 __all__ = [

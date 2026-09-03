@@ -1,21 +1,13 @@
 #!/usr/bin/env python3
-"""Single entry point for every measurement tool in this project.
+"""Single entry point for the Friday Hardware-Aware AI Runtime on Apple Silicon.
 
-    python tools/friday.py status               what this device does right now
-    python tools/friday.py list                 what is available
-    python tools/friday.py doctor               is this machine ready?
-    python tools/friday.py <tool> [args...]     run one tool
-
-Every measuring tool sits behind an explicit ``--execute`` flag.  Without it the
-tool prints ``not_released`` and exits 78 before importing MLX or touching the
-GPU, so an accidental invocation cannot start a measurement.
-
-Why this project measures the way it does, in one paragraph: on this class of
-hardware an *unpaired* comparison of two execution plans is close to worthless.
-Between-run spread was measured at ~20%, which swamps most real effects, and a
-27% "win" for ``mx.compile`` evaporated to 0.2% once measured paired.  Every tool
-here therefore compares both arms inside the same block, where they meet the same
-disturbance, and requires an effect to clear a threshold fixed before the run.
+Quickstart:
+    ./friday serve                              Start OpenAI-compatible server with Live-Cockpit
+    ./friday autotune                           Auto-tune hardware knobs on real Apple Silicon (<15s)
+    ./friday status                             Inspect device profile, knobs, and runtime health
+    ./friday doctor                             Verify Apple Silicon Metal GPU & environment readiness
+    ./friday monitor [--port 8080]              Remote live terminal telemetry monitor
+    ./friday <tool> --execute                   Run a paired hardware measurement tool
 """
 
 from __future__ import annotations
@@ -28,6 +20,14 @@ from pathlib import Path
 
 TOOLS_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = TOOLS_DIR.parent
+
+PRIMARY_COMMANDS = {
+    "serve": "Start OpenAI-compatible HTTP/SSE server with Terminal Live-Cockpit",
+    "autotune": "Universal Hardware Auto-Tuner: safely calibrates hardware knobs in <15s",
+    "status": "Everything on one screen: hardware facts, verified knobs, runtime state",
+    "doctor": "Preflight check: verifies Apple Silicon Metal GPU, Python, and memory",
+    "monitor": "Remote Interactive Terminal Cockpit: in-place telemetry at 10-20 FPS",
+}
 
 TOOLS = {
     "loop": (
@@ -99,13 +99,21 @@ def _load(module_path: Path):
 
 
 def cmd_list() -> int:
-    print("Available tools:\n")
-    width = max(len(name) for name in TOOLS)
-    for name, (script, description) in TOOLS.items():
-        print(f"  {name:<{width}}  {description}")
-    print(f"\nRun a measurement with:  python tools/friday.py <tool> --execute")
-    print("Read history with:       python tools/friday.py evidence snapshot")
-    print("Add --self-check to any measuring tool to verify its statistics offline.")
+    print("🐎 Friday — Hardware-Aware Self-Optimizing AI Runtime on Apple Silicon\n")
+    print("Core Commands:")
+    pwidth = max(len(name) for name in PRIMARY_COMMANDS)
+    for name, desc in PRIMARY_COMMANDS.items():
+        print(f"  ./friday {name:<{pwidth}}  {desc}")
+
+    print("\nExploratory Measurement Tools (require --execute):")
+    m_tools = {k: v for k, v in TOOLS.items() if k not in PRIMARY_COMMANDS}
+    mwidth = max(len(name) for name in m_tools)
+    for name, (script, description) in m_tools.items():
+        print(f"  ./friday {name:<{mwidth}}  {description}")
+
+    print("\nQuickstart:  ./friday serve")
+    print("Auto-tune:   ./friday autotune")
+    print("Status:      ./friday status")
     return 0
 
 
