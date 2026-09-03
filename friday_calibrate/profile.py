@@ -61,9 +61,14 @@ PROMOTION_MAX_CI_HIGH: float = 0.95
 #: Knobs authorized under the serving bar (interval wholly below 1.0 + exact token identity)
 #: rather than the 5 % end-to-end promotion threshold, because decode knobs on short prompts
 #: act only on the ~20 % decode share and cannot mathematically achieve 5 % end-to-end
-#: despite being verified in their own phase (Cycle 16 fixed_compiled: 7.04 % decode gain;
-#: Cycle 17 / D4 bundled_readback: 4.19 % decode gain, user decision D4 from 2026-09-02).
-SERVING_ONLY_KNOBS: frozenset[str] = frozenset({"bundled_readback", "fixed_compiled", "fuse_projections"})
+#: despite being verified in their own phase.
+#:
+#: ``fuse_projections`` was removed 2026-09-03: it breaks token identity on bf16/4-bit
+#: (candidate_correctness_failed) so it can never be ``verified`` under any bar, and no
+#: user decision ever authorised it. ``fixed_compiled`` stays for now (Cycle 16 measured
+#: a 7 % decode gain under this bar) but whether the weaker bar generalises past
+#: ``bundled_readback`` (user decision D4, 2026-09-02) is open — see BACKLOG D4b.
+SERVING_ONLY_KNOBS: frozenset[str] = frozenset({"bundled_readback", "fixed_compiled"})
 
 
 @dataclass(frozen=True)
