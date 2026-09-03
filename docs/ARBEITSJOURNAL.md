@@ -11101,3 +11101,21 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   6. **Korrektheits-Gate:**
      - **100.0 % mathematische Token-Identität** über alle Long-Task-Runs hinweg.
 
+### 9. Stateful Prefix-Caching, Prompt-Lookup Speculation & RL Multi-Strategy Dispatch (2026-09-03)
+- **Stateful Prefix-Caching (`PrefixCache` in `friday_serve`):**
+  - Getestet auf M1 Max mit 342-Token Shared System Prefix über 4 verschiedene Queries:
+  - Gemma 4B: TTFT sinkt von `697.07 ms` auf **`78.57 ms`** (**`−88.73 %`**, **8.87x Speedup**).
+  - Gemma 12B: TTFT sinkt von `2096.76 ms` auf **`210.04 ms`** (**`−89.98 %`**, **9.98x Speedup**).
+  - 100 % mathematische Token-Identität verifiziert.
+- **Prompt-Lookup Speculative Decoding (`speculate_k = 2..3`):**
+  - Getestet auf Document Extraction (90 Tokens) und Python Code Refactoring (80 Tokens):
+  - Gemma 4B Doc-Extraction: Decode TPS steigt von `86.06 tok/s` auf **`121.16 tok/s`** (**`+40.79 %`** Gain, 1.41x) bei **96.67 %** Annahmerate!
+  - Gemma 12B Doc-Extraction: Decode TPS steigt von `33.58 tok/s` auf **`41.85 tok/s`** (**`+24.63 %`** Gain, 1.25x) bei **95.65 %** Annahmerate!
+  - Gemma 12B Code-Refactoring: Decode TPS steigt von `32.88 tok/s` auf **`34.14 tok/s`** (**`+3.83 %`**) bei **72.00 %** Annahmerate.
+  - 100 % mathematische Token-Identität zu Greedy Baseline ($k=0$) verifiziert.
+- **Adaptive RL Controller Multi-Strategy Expansion:**
+  - Feature-Dimension auf `9D` erweitert: Modell (1B/4B/12B), Längen (Prompt/Target/Ratio), Flags (Prefix-Cache, Concurrent Batch, N-Gram Overlap).
+  - Aktionsraum auf 6 kanonische Inferenzstrategien erweitert: `baseline`, `full_optimized`, `deep_bundled_long`, `speculative_draft`, `prefix_cached`, `throughput_grouped`.
+  - Trainiert auf allen realen Hardware-Daten; Modell versiegelt in `.friday-data/rl-controller.json`.
+  - OPE Policy Mean Reward: **0.4954 vs. 0.0000 Baseline**.
+

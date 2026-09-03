@@ -61,6 +61,7 @@ class Generation:
     plan: str
     reason: str
     knobs: Mapping[str, Any]
+    prefix_cache_hits: int = 0
 
     @property
     def total_ns(self) -> int:
@@ -112,6 +113,21 @@ class Server:
         described = explain(self.profile)
         described["circuit_reason"] = self.controller.circuit_reason
         return described
+
+    def set_prefix_cache(self, prompt: str | Sequence[int] | None) -> None:
+        """Encode prefix prompt (if string) and configure prefix cache on backend."""
+        if prompt is None:
+            prefix_ids = None
+        elif isinstance(prompt, str):
+            prefix_ids = list(self.backend.encode(prompt))
+        else:
+            prefix_ids = [int(token) for token in prompt]
+        if hasattr(self.backend, "set_prefix_cache"):
+            self.backend.set_prefix_cache(prefix_ids)
+        else:
+            raise AttributeError(
+                f"{type(self.backend).__name__} does not implement set_prefix_cache"
+            )
 
     # -- serving --------------------------------------------------------------
     def generate(self, prompt: str, max_tokens: int = 32, **kwargs) -> Generation:
@@ -189,6 +205,7 @@ def _generation(
         plan=decision.plan,
         reason=decision.reason,
         knobs=dict(knobs),
+        prefix_cache_hits=int(result.get("prefix_cache_hits", 0)),
     )
 
 
