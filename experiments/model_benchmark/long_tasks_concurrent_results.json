@@ -1,0 +1,44 @@
+{
+  "Gemma_4B": {
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "measurements": {
+      "Arm A (Baseline Interactive)": {
+        "wall_s": 7.782551959011471,
+        "rate_tok_s": 65.78818910513687,
+        "peak_mb": 2900.0035610198975
+      },
+      "Arm C (Core Interactive)": {
+        "wall_s": 7.1375899169943295,
+        "rate_tok_s": 71.73289667159884,
+        "peak_mb": 2842.8436603546143
+      },
+      "Arm D (Core Throughput W=4)": {
+        "wall_s": 5.924156459019287,
+        "rate_tok_s": 86.42580653326617,
+        "peak_mb": 2960.1911754608154
+      }
+    },
+    "identity_matches": 4
+  },
+  "Gemma_12B": {
+    "model_id": "mlx-community/gemma-3-12b-it-4bit",
+    "measurements": {
+      "Arm A (Baseline Interactive)": {
+        "wall_s": 20.361195708013838,
+        "rate_tok_s": 25.145870966629186,
+        "peak_mb": 7819.308935165405
+      },
+      "Arm C (Core Interactive)": {
+        "wall_s": 19.645668915996794,
+        "rate_tok_s": 26.061723944817984,
+        "peak_mb": 7938.863206863403
+      },
+      "Arm D (Core Throughput W=4)": {
+        "wall_s": 17.757491917000152,
+        "rate_tok_s": 28.83290063670739,
+        "peak_mb": 8303.684900283813
+      }
+    },
+    "identity_matches": 4
+  }
+}

@@ -11079,3 +11079,25 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   - **12B:** Durchsatz um **+22.38 %** gesteigert, Laufzeit um **−18.29 %** reduziert.
   - Alle Modelle wahren **100.0 % mathematische Token-Identität**.
 
+### 8. Long-Task, Memory-Bandwidth & Hardware-Tuning Benchmark (Apple Silicon M1 Max)
+- **Workload:** Lange Prompt-Kontexte (379 Tokens) und lange Generierungssequenzen (128 und 256 Tokens) auf Gemma 4B (2.56 GB) und Gemma 12B (7.19 GB).
+- **Gemessene Metriken & Ergebnisse:**
+  1. **TTFT (Time To First Token):**
+     - Gemma 4B: Sinkt von `700.8 ms` auf `586.7 ms` (**`−114.1 ms`**, **`+16.28 %`** schnellerer Start).
+     - Gemma 12B: Sinkt von `2121.7 ms` auf `1937.4 ms` (**`−184.3 ms`**, **`+8.69 %`** schnellerer Start).
+     - Ursache: `head_skip_prefill` eliminiert 378 von 379 LM-Head-Projektionen ($378 \times 256.000$ Matrix-Multiplikationen entfallen!).
+  2. **Decode Throughput & Speicherbandbreite (Single-Sequence):**
+     - Gemma 4B (128 Tokens): Steigt von 74.43 tok/s (190.6 GB/s, 47.6 % der M1 Max Bandbreite) auf **87.20 tok/s** (**223.3 GB/s**, 55.8 % der Bandbreite) mit `readback_every=16` (**+17.17 %** Decode TPS).
+     - Gemma 12B (128 Tokens): Steigt von 29.78 tok/s (214.0 GB/s) auf **33.13 tok/s** (**238.1 GB/s**, 59.5 % der Bandbreite) (**+11.28 %** Decode TPS).
+     - Gemma 12B (256 Tokens): Wall-Time sinkt von 10.580 s auf **9.718 s** (**862 ms** reine Lebenszeit pro Request gespart).
+  3. **Wired Memory Tuning (`wired_fraction = 0.6`):**
+     - Lockt die physischen Seiten in den DRAM, verhindert macOS Kernel Paging / VM-Compressor-Aktivität.
+     - Bringt bei Gemma 12B weitere **112 ms** Latenzgewinn ohne Token-Abweichung.
+  4. **Concurrent Long Tasks (`ThroughputMode W=4`, 4 x 128 = 512 generierte Tokens):**
+     - Gemma 4B: Wall sinkt von 7.783 s auf **5.924 s** (**−23.88 %**), Durchsatz steigt von 65.8 auf **86.4 tok/s** (**+31.37 %**).
+     - Gemma 12B: Wall sinkt von 20.361 s auf **17.757 s** (**−12.79 %**, **2.604 s gespart!**), Durchsatz steigt von 25.15 auf **28.83 tok/s** (**+14.66 %**).
+  5. **Speicher-Footprint:**
+     - `FixedKVCache` senkt den Peak-RAM-Bedarf um **149 MB** (Gemma 4B) bzw. **130 MB** (Gemma 12B) durch Wegfall dynamischer Puffer-Reallokationen.
+  6. **Korrektheits-Gate:**
+     - **100.0 % mathematische Token-Identität** über alle Long-Task-Runs hinweg.
+
