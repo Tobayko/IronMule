@@ -1,18 +1,14 @@
-"""Unit and concurrency tests for Continuous Dynamic Batching in Friday HTTP Server.
+"""Concurrency gate + batcher safety.
 
-Verifies:
-1. When max_concurrency == 1: Critic Gate 1 enforces single-flight and rejects 2nd request with HTTP 429.
-2. When max_concurrency == 4:
-   - Admits up to 4 concurrent requests without 429.
-   - Rejects 5th concurrent request with HTTP 429 (Critic Gate 1 still guards memory budget).
-   - Generates and streams tokens concurrently to all 4 connections.
-   - Verifies 100% token accuracy and clean completion.
+The HTTP layer enforces a concurrency ceiling (HTTP 429). The continuous batcher,
+when enabled, must (a) apply only the device-profile knob set the request's scope
+allows, and (b) fail loud — error every session and stand down to the
+single-flight path — rather than die silently on a decode exception.
 """
 
 from __future__ import annotations
 
 import json
-import queue
 import threading
 import time
 import unittest
@@ -21,7 +17,9 @@ import urllib.request
 from typing import Any, Iterator, Mapping, Sequence
 
 from friday_calibrate.profile import DeviceProfile, KnobVerdict
+from friday_serve.batcher import BatchSession, ContinuousBatcher
 from friday_serve.http_server import create_server
+from friday_serve.scope import observe
 from friday_serve.server import Server
 
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
@@ -118,7 +116,7 @@ class SimulatedBatchBackend:
                 self.active_count -= 1
 
 
-class DynamicBatchingServerTest(unittest.TestCase):
+class ConcurrencyGateTest(unittest.TestCase):
     def setUp(self) -> None:
         self.profile = make_test_profile("head_skip", "fixed_compiled", "bundled_readback")
 
@@ -221,6 +219,78 @@ class DynamicBatchingServerTest(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+class _TrivialBackend:
+    model_id = MODEL_ID
+    model_revision = REVISION
+    eos_ids = (1,)
+
+    def encode(self, prompt: str) -> list[int]:
+        return [7] * max(1, len(prompt))
+
+
+class _Breaker:
+    def __init__(self) -> None:
+        self.tripped: Exception | None = None
+        self.reason: str | None = None
+
+    def trip(self, exc: Exception) -> None:
+        self.tripped = exc
+
+
+class _Controller:
+    def __init__(self) -> None:
+        self.breaker = _Breaker()
+
+
+class BatcherGatingTest(unittest.TestCase):
+    def test_plan_request_drops_knobs_outside_the_calibrated_scope(self) -> None:
+        profile = make_test_profile("head_skip", "fixed_compiled")
+        server = Server(_TrivialBackend(), profile)
+        ids = [7] * 40
+
+        _d, greedy = server.plan_request(ids, 32, temperature=0.0)
+        self.assertEqual(greedy, {"head_skip_prefill": True, "compiled_fixed_cache": True})
+
+        _d, sampled = server.plan_request(ids, 32, temperature=0.9)
+        self.assertEqual(sampled, {})
+
+        # a latched breaker forces the baseline too
+        server.controller.breaker.trip(RuntimeError("boom"))
+        _d, latched = server.plan_request(ids, 32, temperature=0.0)
+        self.assertEqual(latched, {})
+
+
+class BatcherFailureTest(unittest.TestCase):
+    def _batcher(self) -> ContinuousBatcher:
+        b = ContinuousBatcher(_TrivialBackend(), max_concurrency=4, controller=_Controller())
+        b.stop_event.set()  # freeze the idle worker; we drive _fail_all directly
+        b.worker_thread.join(timeout=1.0)
+        return b
+
+    def test_fail_all_errors_every_session_and_stands_down(self) -> None:
+        b = self._batcher()
+        live = BatchSession("s1", [7] * 40, 32, {"head_skip_prefill": True})
+        queued = BatchSession("s2", [7] * 40, 32, {})
+        b.active_sessions = [live]
+        b.incoming_queue.put(queued)
+
+        b._fail_all(RuntimeError("decode exploded"))
+
+        self.assertEqual(live.event_queue.get_nowait()["type"], "error")
+        self.assertEqual(queued.event_queue.get_nowait()["type"], "error")
+        self.assertEqual(b.active_count, 0)
+        self.assertTrue(b._dead)
+        # an optimised session was running -> the breaker latches
+        self.assertIsInstance(b.controller.breaker.tripped, RuntimeError)
+
+    def test_submit_raises_once_the_worker_is_dead(self) -> None:
+        b = self._batcher()
+        b._dead = True
+        with self.assertRaises(RuntimeError) as caught:
+            b.submit([7] * 40, 32, {})
+        self.assertIn("batcher worker is dead", str(caught.exception))
 
 
 if __name__ == "__main__":

@@ -113,6 +113,20 @@ def hardware_facts() -> dict[str, Any]:
     }
 
 
+def machine_sha256() -> str:
+    """A digest over the *stable* host identity: CPU, model, memory, arch.
+
+    Deliberately excludes ``macos`` — a routine OS update changed a frozen
+    hardware hash on the origin machine itself once, and the device profile
+    exists precisely so that does not invalidate a calibration. This is enough
+    to catch a ``.friday-data`` copied to a different Mac.
+    """
+
+    facts = hardware_facts()
+    stable = {key: value for key, value in facts.items() if key != "macos"}
+    return canonical_sha256(stable)
+
+
 def collect_provenance(spec: ProvenanceSpec, *, require_clean: bool = True) -> dict[str, Any]:
     """Collect the full identity of one runtime: repository, code, spec, host."""
 

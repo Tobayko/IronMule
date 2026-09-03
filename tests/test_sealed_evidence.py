@@ -116,6 +116,20 @@ def test_every_h0_run_still_hashes_to_its_recorded_manifest():
     assert not mismatches, f"manifest hash drifted for: {mismatches}"
 
 
+def test_the_device_profile_chain_still_verifies():
+    path = DATA / "device-profile.sqlite3"
+    if not path.is_file():
+        pytest.skip("device-profile.sqlite3 is not present in this checkout")
+    from friday_calibrate.profile import HISTORY
+    from friday_runtime_core.history import RuntimeHistory
+
+    with RuntimeHistory.open(HISTORY, path, read_only=True) as history:
+        with history.read_transaction():
+            records = list(history.verified_records())
+    # append-only; every run_calibration.py run adds a row, so assert a floor
+    assert records, "the device-profile chain is empty"
+
+
 def test_no_sealed_database_is_left_unchecked():
     """A new sealed database must be added here, not quietly ignored."""
 

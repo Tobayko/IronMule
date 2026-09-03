@@ -11364,11 +11364,80 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   - TTFT stabilisiert sich bei **`105.8 ms`**.
   - Vollsuite: **98 Tests & 116 Subtests zu 100 % bestanden**.
 
+## 2026-09-03 — Codex-Review: gefälschte Evidenz und ungegatete Automatik behoben
 
+Ein externer Review (Codex) hat den Branch `gemini/runtime-rl` geprüft und
+**NO-GO für Merge, Serving und Performanceclaims** vergeben. Die Befunde und die
+Behebung:
 
+### Kritische Defekte
 
+- **`tools/autotune.py` schrieb erfundene Statistik in die versiegelte DB.** Je Knopf
+  genau eine Messung; `_make_verdict()` setzte `pairs=6` und ein künstliches
+  Intervall `ratio ± 0.005` fest; kein A/A-Lauf, kein AC-/BudgetGuard-Check.
+  Geschrieben wurde `verdict="verified"` in dieselbe `.friday-data/device-profile.sqlite3`
+  wie beim echten Kalibrator, und `tools/friday.py` hängte automatisch `--execute`
+  an. **DB-Prüfung:** die vier neuesten Profil-Zeilen (`…095118`, `…102744`,
+  `…111457`, `…111759`, alle `aa_noise=null`) sind Autotuner-Fälschungen; die
+  einzige echte Zeile ist `…20260902-203442` (`pairs=2`, echte Bootstrap-KIs,
+  `aa_noise=0.00343`, `bundled_readback` = failed). Serving dispatchte auf einer
+  Fälschung.
+  **Behoben:** `tools/autotune.py` gelöscht; `newest_profile()` überspringt jetzt
+  Zeilen mit `verified`-Knopf ohne `aa_noise` und fällt auf die letzte ehrliche
+  Zeile zurück. Einziger Kalibrator ist `python tools/run_calibration.py run --execute`.
+- **RL/Bandit lief live im Serving-Pfad.** `server.py` liess `speculate_k` das
+  Geräteprofil-Gate umgehen und vergab pro Request `reward = 0.15`, trainierte den
+  LinUCB-Bandit synchron und schrieb `rl-controller.json` pro Request. Verstoss gegen
+  `GEMINI_SELF_LEARNING_SYSTEM.md` E01–E03 und BACKLOG L1.
+  **Behoben:** RL läuft nur noch im **Shadow-Modus** — `log_decision()` protokolliert
+  die Aktion, die der Bandit wählen würde, nach `.friday-data/rl-shadow-decisions.jsonl`;
+  angewendet werden ausschliesslich geräteprofil-verifizierte Knöpfe, `speculate_k`
+  bleibt `0`, keine Gewichts-Updates aus einem Serving-Request.
+- **Circuit Breaker tot.** `friday_serve/cli.py:_latch()` hatte kein `return` → immer
+  `MemoryLatch`. **Behoben:** gibt jetzt `PersistentLatch(load, append)` zurück.
+- **Dynamic Batcher umging alle Gates und starb still.** Der Default-Pfad rief
+  `knobs_for(profile)` direkt und der Decode-Loop hatte kein `try/except` — ein
+  Engine-Fehler killte den Worker, der Client hing 30 s, danach Dauer-429.
+  **Behoben:** `Server.plan_request()` führt Batcher-Admission durch `observe()` +
+  `decide_scope()` + Scope-Ablehnung; `_admit_session` prüft die angewendeten Knöpfe
+  gegen die autorisierten; `_run_loop` fängt Decode-Fehler, erroret alle Sessions,
+  latcht den Breaker bei Optimierungspfad-Fehler und markiert den Worker tot →
+  `submit()` fällt auf den Single-Flight-Pfad zurück.
+- **Multi-Modell griff nicht.** `/v1/models` doppelt definiert (Multi-Modell-Zweig
+  unerreichbar); `_handle_stream` ignorierte `body["model"]` fest → `stream:true` an
+  das 1B-Modell lief über das 4B-Backend. **Behoben:** tote Route entfernt, echte
+  Backend-IDs aufgelistet, `_handle_stream`/`_handle_non_stream` reichen `model` +
+  `temperature` durch.
+- **Testisolation zerstört.** `test_prefix_cache_integration.py` und
+  `test_stream_backend.py` schoben eine Fremdrepo-Worktree an `sys.path[0]` →
+  `pytest --collect-only` brach die ganze Suite ab. **Behoben:** einmalige
+  `tests/conftest.py`, die die Worktree nur anhängt.
 
+### Messharnesse repariert (nicht gelöscht — Nutzerentscheid)
 
+- `tools/bench_sub4bit_quant.py`: `mx.eval` je Iteration statt einmal nach 100 lazy
+  Graphen (Latenz war ~100× zu niedrig).
+- `tools/bench_double_buffer.py`: `time.sleep(0.5 ms)` durch echte SSE-Serialisierung
+  (`tokenizer.decode` + `json.dumps` + Buffer-Write) ersetzt; gepaart AB/BA; delivery
+  config `readback_every=8`.
+- `tools/bench_prompt_lookup.py`: Kandidat behält `readback_every=8` (kein
+  Doppel-Knopf); Identitätscheck über volle Sequenzen gleicher Länge; 6er-Paare AB/BA.
+- `experiments/model_benchmark/benchmark_gemma_family.py` + `benchmark_long_tasks.py`:
+  verschränkte AB/BA-Messung statt blockweise; Tokenidentität je Iteration; das
+  zirkuläre `effective_bw_gbs = model_gb × tps` entfernt.
+- `experiments/model_benchmark/benchmark_end_to_end_synthesis.py`: rechnet jetzt aus
+  den geladenen Ergebnisdateien statt ein hartkodiertes Literal zu schreiben; fehlende
+  Quelle → `"not measured"`.
+- Alle verbleibenden Harnesse rufen `harness_preconditions()` (`require_ac_power` +
+  `enforce_offline` + `BudgetGuard`) und `guard.record_gpu()` um den Messbereich.
+- **Nutzerentscheid 2026-09-03:** für die 12B-Langlauf-Nachmessung ist die
+  `continuous_gpu_limit_s = 6,0`-Grenze einmalig angehoben (`allow_long_gpu=True`);
+  Duty-Cycle, Wall-Limit und Cooldown bleiben.
 
+### Zurückgezogene Zahlen
 
-
+Die fabrizierten Ergebnisdateien `gemma_family_benchmark.json`,
+`long_tasks_benchmark_results.json` und `end_to_end_synthesis_results.json` sind
+gelöscht; die Abschnitte 17–21 oben und die entsprechenden `PROJECT_STATUS.md`- und
+`README.md`-Zahlen gelten als **explorativ, nicht vorregistriert, `formal_claim=false`**
+bis zur gepaarten Hardware-Nachmessung mit den reparierten Harnessen.

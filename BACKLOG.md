@@ -5,6 +5,33 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
+## C1 — Reste aus dem Codex-Review vom 2026-09-03
+
+Die kritischen Defekte sind behoben (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03).
+Offen bleiben vier eng umrissene Punkte:
+
+1. **`friday_serve/speculation.py` entfernen (S4).** Nur noch von
+   `experiments/speculation_bandit/replay.py` und `tests/test_speculation.py`
+   referenziert, im Serving-Pfad tot (`knobs_for()` kann `speculate_k` nicht
+   emittieren). Kill-Kriterium S4 verlangt Entfernung statt Kalibrierung.
+   *Gate:* Suite grün nach Löschung von `speculation.py`, `model_speculation.py`,
+   `tools/bench_draft_speculation.py` und den zugehörigen Tests/Experimenten.
+2. **`h01.sqlite3` ohne Kettentest.** Steht in der `known`-Allowlist von
+   `tests/test_sealed_evidence.py`, hat aber keinen `RECORD_CHAINS`-Eintrag und
+   keinen dedizierten `verified_records()`-Test — vorbestehend, nicht vom
+   Gemini-Branch. *Gate:* eigener Test analog `test_the_device_profile_chain_still_verifies`.
+3. **Radix-Cache-Speicherbudget zählt Trie-Tokens, nicht KV-Bytes.**
+   `RadixCache._check_eviction` hat einen `ponytail:`-Kommentar mit dem Ceiling.
+   *Kill:* nur angehen, wenn Eviction unter realem Speicherdruck nachweislich
+   falsch liegt (`tensor.nbytes`-Buchhaltung).
+4. **Batcher-Admission ohne `_check_marker`/`guard` nach dem Lauf.**
+   `Server.plan_request` gatet die Knopfauswahl vor der Session; der Batcher prüft
+   die angewendeten Knöpfe bei `_admit_session` und latcht den Breaker bei einem
+   Optimierungspfad-Fehler. Was fehlt: eine `Server`-Methode, durch die die
+   Batcher-Admission komplett wie `Server.generate` läuft (post-hoc
+   Marker-Verifikation je Session, `guard`-Kontext). *Gate:* der Batcher-Pfad
+   nutzt dieselbe `guard`/`_check_marker`-Kette wie der Single-Flight-Pfad.
+
 ## F1 — abgeschlossen am 2026-09-02
 
 **Warmer Arm gemessen und bestanden:** `13,99 %` end-to-end, Ratio-Median

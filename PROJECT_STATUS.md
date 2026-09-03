@@ -84,6 +84,18 @@ Dokumentationsabschnitte entstanden **danach**.
 
 ## Stand nach Zyklus 17 bis 21 und Optimizer-Arbeiten (Kurzfassung)
 
+> **Korrektur 2026-09-03 (Codex-Review).** Die mit `†` markierten Zeilen (Gemma
+> Multi-Modell-Benchmark, Combinatorial Sweep, sowie Teile von D5) stammen aus
+> Messharnessen mit methodischen Fehlern (blockweise statt gepaart, lazy-MLX-Graphen
+> einmal evaluiert, Baseline auf Kandidatenlänge gekürzt) oder aus dem gelöschten
+> `tools/autotune.py`, der erfundene `pairs=6`-Statistik in die versiegelte DB schrieb.
+> Diese Zahlen sind **zurückgezogen**: `formal_claim=false`, keine Aktivierung,
+> Wiederholungsmessung mit den reparierten Harnessen ausstehend
+> (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03). Der RL-Controller läuft nur noch
+> im Shadow-Modus. Unberührt bleibt die echte D4b-Kalibrierung
+> (`…20260902-203442`: `head_skip` + `fixed_compiled` verified) und die
+> vorregistrierten Studien F1, D2, P2.
+
 | Bereich | Ergebnis | Zulässige Aussage |
 | --- | --- | --- |
 | Zyklus 16 Matmul-Umgebungs-A/B | `fixed_compiled` gegen `standard_eager` Ratio `0,9295921887`, 18/18 tokenidentisch | rechnerisch rund 7 % schnellere Decode-Phase, nur Laufzeitumgebung; `formal_claim=false`, keine Aktivierung |
@@ -102,8 +114,8 @@ Dokumentationsabschnitte entstanden **danach**.
 | Kandidat 5 Prefill-Schrittweite (2026-09-02) | Offline-Vorfilter über die gesamte Gap-Evidenz meldet dreimal `degenerate`, acht von sechzehn Positionen | **terminaler Negativbefund** — die Blockstruktur-Klasse bleibt geschlossen, keine Hardwarezeit |
 | **F1 warmer Arm (2026-09-02)** | erste End-to-End-Messung: `6` Paare, Tokenidentität `6/6`, Ratio-Median `0,8600567`, KI `[0,853444; 0,873056]`, Rauschen aus A/A `0,612 %` | **`qualified`** gegen vorregistrierte Schwelle `10 %`; Gewinn `13,99 %` end-to-end für ein Gerät, den Snapshot `93724907…`, `897`-Token-Prompt und `32` generierte Token; Projektion `13,68 %` bestätigt; `formal_claim=false`, keine Aktivierung |
 | **D4b Kalibrierung & Profil (2026-09-02)** | Echte GPU-Kalibrierung auf M1 Max (`tools/run_calibration.py run --pairs 2 --execute`), MDE `0,34 %`. Knöpfe: `head_skip` (Ratio `0,8761`, KI `[0,8686; 0,8836]`, `verified`), `fixed_compiled` (Ratio `0,9854`, KI `[0,9824; 0,9883]`, `verified`), `prefill_step_size` (`not_applicable`). Persistiert in `.friday-data/device-profile.sqlite3`. | **`device_profile_dispatch`** aktiv im Serving-Pfad (`friday_serve status`). Reale Generierung mit verifizierten Knöpfen tokenidentisch bei `87,9 tok/s` Decode. |
-| **Gemma Multi-Modell-Benchmark (2026-09-02)** | Gepaarter Benchmark auf echter M1 Max GPU über 3 Aufgaben (QA, Code, Reasoning) für **1B, 4B und 12B**: 1B Speedup **`+25,09 %` bis `+31,64 %`** (Decode TPS: `132` $\rightarrow$ **`196,9 tok/s`**, `+48,56 %`); 4B Speedup **`+14,99 %` bis `+15,47 %`** (Decode TPS: `79` $\rightarrow$ **`94,2 tok/s`**, `+18,79 %`); 12B Speedup **`+9,53 %` bis `+9,79 %`** (Decode TPS: `31,4` $\rightarrow$ **`35,1 tok/s`**, `+11,49 %`). | **Alle D5-Zahlen auf echter Hardware bestätigt**; 12B-Baseline erstmalig etabliert. Tokenidentität: **`100 % identisch`** auf allen Läufen. Readback-Bundling bei `8` Tokens als Sweet Spot verifiziert (`−44,8 ms` Synchronisationsoverhead). |
-| **Systematischer Combinatorial Sweep & Startup-Ablation (2026-09-03)** | Umfassender Sweep aller Knobs, Kombinationen und Startreihenfolgen auf echter GPU: Core Triad (`head_skip` + `fixed_compiled` + `readback_8`) gewinnt eindeutig mit **`+13,76 %` Latenzreduktion / `+16,47 %` TPS (4B)** und **`+7,51 %` / `+8,58 %` TPS (12B)** bei **`100 %` Token-Identität**. Startup-Ablation belegt **`34,3 %`** Kaltstart-Latenz-Reduktion durch Hardware-First Pre-Warmup. `fuse_projections` bricht Token-Identität auf bf16/4-bit (`candidate_correctness_failed`) und bleibt gesperrt. | **Optimaler Serving-Stack bestätigt:** `Core Triad` ($R=8$) als globale Bestkonfiguration versiegelt. |
+| `†` Gemma Multi-Modell-Benchmark (2026-09-02) | ~~Gepaarter Benchmark 1B/4B/12B~~ — Harness maß blockweise statt gepaart und prüfte nur die letzte Tokenfolge; das „Bandbreite"-Feld war `model_gb × tps`, keine unabhängige Messung | **zurückgezogen**; Nachmessung mit `benchmark_gemma_family.py` (repariert) ausstehend |
+| `†` Systematischer Combinatorial Sweep & Startup-Ablation (2026-09-03) | ~~Core Triad gewinnt +13,76 %/+16,47 %~~ — dieselben Harness-Fehler; `fuse_projections`-Sperre wegen `candidate_correctness_failed` bleibt korrekt | **zurückgezogen**; Nachmessung ausstehend. `fuse_projections` bleibt gesperrt (Korrektheit, nicht Lattenhöhe) |
 
 ## Geltende Entscheide und Grenzen
 

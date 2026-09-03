@@ -25,10 +25,15 @@ class RadixNode:
         tokens: tuple[int, ...],
         parent: RadixNode | None = None,
         cache_state: Any | None = None,
+        tag: Any | None = None,
     ) -> None:
         self.tokens = tokens
         self.parent = parent
         self.cache_state = cache_state
+        # The KV state depends on model revision + the knobs active at prefill
+        # (head_skip changes the computation). A state may only be fed back into
+        # a request whose tag matches, or it is a silent correctness break.
+        self.tag = tag
         self.children: dict[int, RadixNode] = {}  # Keyed by the first token of the child branch
         self.last_accessed: float = time.time()
         self.total_tokens: int = (parent.total_tokens + len(tokens)) if parent else len(tokens)
@@ -50,9 +55,13 @@ class RadixCache:
         self.tokens_saved = 0
 
     def match_prefix(
-        self, token_ids: Sequence[int]
+        self, token_ids: Sequence[int], *, tag: Any | None = None
     ) -> tuple[int, Any | None, list[RadixNode]]:
         """Find the longest matching prefix for the given token sequence.
+
+        Only a cached state whose ``tag`` equals the request's ``tag`` (model
+        revision + knob signature) is returned; a state built under different
+        knobs is treated as a miss.
 
         Returns:
             (matched_token_count, deepest_cache_state, path_nodes)
@@ -88,7 +97,7 @@ class RadixCache:
                     curr = child
                     curr.last_accessed = time.time()
                     matched_nodes.append(curr)
-                    if curr.cache_state is not None:
+                    if curr.cache_state is not None and curr.tag == tag:
                         last_valid_state = curr.cache_state
                         last_valid_len = curr.total_tokens
                 else:
@@ -104,9 +113,14 @@ class RadixCache:
             return last_valid_len, last_valid_state, matched_nodes
 
     def insert(
-        self, token_ids: Sequence[int], cache_state: Any
+        self, token_ids: Sequence[int], cache_state: Any, *, tag: Any | None = None
     ) -> None:
-        """Insert a token sequence and its terminal KV cache state into the Radix Tree."""
+        """Insert a token sequence and its terminal KV cache state into the Radix Tree.
+
+        ``tag`` records the model revision + knob signature the state was built
+        under; ``match_prefix`` will only hand it back to a request with the same
+        tag.
+        """
         if not token_ids or cache_state is None:
             return
 
@@ -125,6 +139,7 @@ class RadixCache:
                         tokens=tokens_tuple[idx:],
                         parent=curr,
                         cache_state=cache_state,
+                        tag=tag,
                     )
                     curr.children[first_tok] = new_node
                     self.total_cached_tokens += len(new_node.tokens)
@@ -148,6 +163,7 @@ class RadixCache:
                     if idx == len(tokens_tuple):
                         # Exact match on existing node, update state
                         curr.cache_state = cache_state
+                        curr.tag = tag
                         return
                 else:
                     # Split child node at match_len
@@ -175,17 +191,24 @@ class RadixCache:
                             tokens=remaining_tokens,
                             parent=intermediate,
                             cache_state=cache_state,
+                            tag=tag,
                         )
                         intermediate.children[remaining_tokens[0]] = new_branch
                         self.total_cached_tokens += len(remaining_tokens)
                     else:
                         intermediate.cache_state = cache_state
+                        intermediate.tag = tag
 
                     self._check_eviction()
                     return
 
     def _check_eviction(self) -> None:
-        """Evict oldest leaf nodes if cached token limit is exceeded."""
+        """Evict oldest leaf nodes if cached token limit is exceeded.
+
+        ponytail: the budget counts trie tokens, not real KV tensor bytes —
+        a coarse ceiling. Upgrade to ``tensor.nbytes`` accounting if eviction
+        proves wrong under memory pressure.
+        """
         if self.total_cached_tokens <= self.max_tokens:
             return
 

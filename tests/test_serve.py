@@ -138,6 +138,23 @@ class ScopeTest(unittest.TestCase):
             self.assertFalse(allowed)
             self.assertEqual(reason, expected)
 
+    def test_a_profile_from_another_machine_is_out_of_scope(self) -> None:
+        import dataclasses
+
+        current = dataclasses.replace(profile("head_skip"), machine_sha256="c" * 64)
+        scope = observe(
+            model_id=MODEL, model_revision=REVISION, token_ids=[1, 2, 3], output_tokens=32
+        )
+        allowed, reason = in_calibrated_scope(scope, current)
+        self.assertFalse(allowed)
+        self.assertEqual(reason, "machine_mismatch")
+
+        # a profile with the live machine hash still serves
+        from friday_runtime_core.provenance import machine_sha256
+
+        here = dataclasses.replace(profile("head_skip"), machine_sha256=machine_sha256())
+        self.assertTrue(in_calibrated_scope(scope, here)[0])
+
     def test_prompt_content_does_not_narrow_the_scope(self) -> None:
         """Token identity is a property of the computation, not of one prompt."""
 
@@ -229,6 +246,20 @@ class ServeTest(unittest.TestCase):
         with self.assertRaises(RuntimeExecutionError):
             server.generate("hello", 4)
         self.assertEqual(server.explain()["circuit_reason"], "ValueError")
+
+
+class LatchWiringTest(unittest.TestCase):
+    def test_cli_latch_returns_a_persistent_latch(self) -> None:
+        # _latch had no return statement, so serve got a MemoryLatch and the
+        # breaker never survived a restart.
+        import tempfile
+        from pathlib import Path
+
+        from friday_serve import cli
+
+        with tempfile.TemporaryDirectory() as d:
+            latch = cli._latch(Path(d) / "device-profile.sqlite3")
+        self.assertIsInstance(latch, PersistentLatch)
 
 
 if __name__ == "__main__":

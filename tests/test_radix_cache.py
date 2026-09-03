@@ -19,6 +19,22 @@ class TestRadixCache(unittest.TestCase):
         self.assertEqual(state, dummy_state)
         self.assertEqual(cache.hits, 1)
 
+    def test_tag_mismatch_is_a_miss(self):
+        # A KV state built under one knob signature must not be served to a
+        # request with a different one.
+        cache = RadixCache(max_tokens=1000)
+        head_skip = ("rev1", (("head_skip_prefill", True),))
+        baseline = ("rev1", ())
+        cache.insert((10, 20, 30, 40), {"kv": "head_skip"}, tag=head_skip)
+
+        miss_len, miss_state, _ = cache.match_prefix((10, 20, 30, 40, 50), tag=baseline)
+        self.assertEqual(miss_len, 0)
+        self.assertIsNone(miss_state)
+
+        hit_len, hit_state, _ = cache.match_prefix((10, 20, 30, 40, 50), tag=head_skip)
+        self.assertEqual(hit_len, 4)
+        self.assertEqual(hit_state, {"kv": "head_skip"})
+
     def test_partial_prefix_match(self):
         cache = RadixCache(max_tokens=1000)
         system_prompt = (1, 2, 3, 4, 5)

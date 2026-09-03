@@ -3,11 +3,14 @@
 
 Quickstart:
     ./friday serve                              Start OpenAI-compatible server with Live-Cockpit
-    ./friday autotune                           Auto-tune hardware knobs on real Apple Silicon (<15s)
     ./friday status                             Inspect device profile, knobs, and runtime health
     ./friday doctor                             Verify Apple Silicon Metal GPU & environment readiness
     ./friday monitor [--port 8080]              Remote live terminal telemetry monitor
     ./friday <tool> --execute                   Run a paired hardware measurement tool
+
+Device-profile calibration is `python tools/run_calibration.py run --execute`
+(paired AB/BA, bootstrap CI, A/A noise gate) -- the only writer of the sealed
+device profile.
 """
 
 from __future__ import annotations
@@ -23,7 +26,6 @@ PROJECT_ROOT = TOOLS_DIR.parent
 
 PRIMARY_COMMANDS = {
     "serve": "Start OpenAI-compatible HTTP/SSE server with Terminal Live-Cockpit",
-    "autotune": "Universal Hardware Auto-Tuner: safely calibrates hardware knobs in <15s",
     "status": "Everything on one screen: hardware facts, verified knobs, runtime state",
     "doctor": "Preflight check: verifies Apple Silicon Metal GPU, Python, and memory",
     "monitor": "Remote Interactive Terminal Cockpit: in-place telemetry at 10-20 FPS",
@@ -70,10 +72,6 @@ TOOLS = {
         "evidence.py",
         "Verify or display the append-only H1/H2 evidence history (no GPU)",
     ),
-    "autotune": (
-        "autotune.py",
-        "Universal Hardware Auto-Tuner: safely calibrates and certifies hardware knobs in <45s",
-    ),
     "serve": (
         "run_serve.py",
         "OpenAI-compatible HTTP/SSE server with Terminal Live-Cockpit for LLM inference",
@@ -112,8 +110,8 @@ def cmd_list() -> int:
         print(f"  ./friday {name:<{mwidth}}  {description}")
 
     print("\nQuickstart:  ./friday serve")
-    print("Auto-tune:   ./friday autotune")
     print("Status:      ./friday status")
+    print("Calibrate:   python tools/run_calibration.py run --execute")
     return 0
 
 
@@ -243,8 +241,6 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_status(rest)
     if command == "serve" and (not rest or rest[0] not in {"status", "generate", "serve"}):
         rest = ["serve"] + rest
-    if command == "autotune" and "--execute" not in rest and "-h" not in rest and "--help" not in rest:
-        rest = ["--execute"] + rest
     if command not in TOOLS:
         print(json.dumps({"error": "unknown tool", "tool": command, "known": sorted(TOOLS)}))
         return 64

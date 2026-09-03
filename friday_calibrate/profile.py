@@ -162,6 +162,10 @@ class DeviceProfile:
     width_curve: Mapping[int, float] = field(default_factory=dict)
     roofline: Mapping[str, Any] = field(default_factory=dict)
     aa_noise: float | None = None
+    #: Digest over the stable host identity (CPU/model/memory/arch, not macOS).
+    #: ``None`` on profiles recorded before this field existed; serving skips the
+    #: host check for those.
+    machine_sha256: str | None = None
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -173,6 +177,10 @@ class DeviceProfile:
             value = getattr(self, name)
             if not isinstance(value, str) or len(value) != 64:
                 raise ProfileError(f"{name} must be a sha256 digest")
+        if self.machine_sha256 is not None and (
+            not isinstance(self.machine_sha256, str) or len(self.machine_sha256) != 64
+        ):
+            raise ProfileError("machine_sha256 must be a sha256 digest or None")
         if isinstance(self.mde, bool) or not isinstance(self.mde, (int, float)):
             raise ProfileError("mde must be a number")
         if not 0.0 <= float(self.mde) < 1.0:
@@ -231,6 +239,8 @@ class DeviceProfile:
             "roofline": dict(self.roofline),
             "formal_claim": False,
         }
+        if self.machine_sha256 is not None:
+            body["machine_sha256"] = self.machine_sha256
         body["profile_sha256"] = canonical_sha256(body)
         return body
 
@@ -262,20 +272,34 @@ class DeviceProfile:
             width_curve=width_curve,
             roofline=report.get("roofline") or {},
             aa_noise=report.get("aa_noise"),
+            machine_sha256=report.get("machine_sha256"),
             schema_version=report.get("schema_version", SCHEMA_VERSION),
         )
 
 
 def newest_profile(records: Iterable[Mapping[str, Any]]) -> DeviceProfile | None:
-    """The last recorded profile in a verified chain, or ``None``."""
+    """The newest *serviceable* profile in a verified chain, or ``None``.
 
-    latest = None
-    for row in records:
-        if row.get("record_kind") == PROFILE_KIND:
-            latest = row
-    if latest is None:
-        return None
-    return DeviceProfile.from_report(latest["report"])
+    A row is skipped, not raised on, when it fails to replay
+    (:class:`ProfileError`) or when it claims a verified knob without an A/A
+    noise measurement. The real calibrator (``friday_calibrate.runner``) always
+    records ``aa_noise`` because ``noise_mde`` runs first and raises rather than
+    returning ``None``; a verified knob with ``aa_noise`` absent is the mark of
+    a single-shot fabrication, and serving must fall back past it to the last
+    row that was actually measured the way ``DEVICE_PROFILE_SPEC`` requires.
+    """
+
+    for row in reversed(list(records)):
+        if row.get("record_kind") != PROFILE_KIND:
+            continue
+        try:
+            profile = DeviceProfile.from_report(row["report"])
+        except ProfileError:
+            continue
+        if profile.aa_noise is None and profile.verified_knobs():
+            continue
+        return profile
+    return None
 
 
 __all__ = [

@@ -69,6 +69,8 @@ def main():
             data = json.loads(resp.read().decode("utf-8"))
             model_ids = [m["id"] for m in data.get("data", [])]
             print(f"   ✓ Available Co-Resident Models in RAM: {model_ids}")
+        assert any("1b" in m.lower() for m in model_ids), f"1B not in catalog: {model_ids}"
+        assert any("4b" in m.lower() for m in model_ids), f"4B not in catalog: {model_ids}"
 
         # 2. Query Gemma 1B (Ultra-fast low-latency tier)
         print("\n3. [CHECK 2] Streaming from Gemma 1B (model='gemma-1b')...")
@@ -105,8 +107,9 @@ def main():
         print("\"\n")
         ttft_1b = (first_t - t0) * 1000.0 if first_t else 0.0
         dur_1b = (time.perf_counter() - first_t) if first_t else 0.0
-        tps_1b = 32.0 / dur_1b if dur_1b > 0 else 0.0
-        print(f"   ✓ 1B TTFT: {ttft_1b:.1f} ms | Decode TPS: {tps_1b:.1f} tok/s | Tokens: 32")
+        tps_1b = total_tokens_1b / dur_1b if dur_1b > 0 else 0.0
+        print(f"   ✓ 1B TTFT: {ttft_1b:.1f} ms | Decode TPS: {tps_1b:.1f} tok/s | Tokens: {total_tokens_1b}")
+        assert total_tokens_1b > 0, "1B produced no tokens"
 
         # 3. Query Gemma 4B (High-quality reasoning tier)
         print("\n4. [CHECK 3] Streaming from Gemma 4B (model='gemma-4b')...")
@@ -141,8 +144,9 @@ def main():
         print("\"\n")
         ttft_4b = (first_t - t0) * 1000.0 if first_t else 0.0
         dur_4b = (time.perf_counter() - first_t) if first_t else 0.0
-        tps_4b = 32.0 / dur_4b if dur_4b > 0 else 0.0
-        print(f"   ✓ 4B TTFT: {ttft_4b:.1f} ms | Decode TPS: {tps_4b:.1f} tok/s | Tokens: 32")
+        tps_4b = len(toks_4b) / dur_4b if dur_4b > 0 else 0.0
+        print(f"   ✓ 4B TTFT: {ttft_4b:.1f} ms | Decode TPS: {tps_4b:.1f} tok/s | Tokens: {len(toks_4b)}")
+        assert len(toks_4b) > 0, "4B produced no tokens"
 
         # 4. Simultaneous Concurrent Multi-Model Execution
         print("\n5. [CHECK 4] Concurrent Multi-Model Query: Client 1 -> 1B, Client 2 -> 4B simultaneously...")
@@ -188,6 +192,8 @@ def main():
         print(f"   ✓ Both models responded concurrently in {total_multi_ms:.1f} ms total:")
         for m_name, (lat, txt) in results.items():
             print(f"     Model '{m_name}': {lat:6.1f} ms -> \"{txt}\"")
+        assert set(results) == {"gemma-1b", "gemma-4b"}, f"missing a model response: {results}"
+        assert all(txt for _, txt in results.values()), f"a model returned empty text: {results}"
 
     finally:
         print("\n6. Shutting down server...")
@@ -196,7 +202,7 @@ def main():
         print("✓ Server cleanly shut down.")
 
     print("\n" + "=" * 80)
-    print("✅ DUAL-MODEL CO-RESIDENCY TEST SUCCESSFUL: 1B + 4B Live on M1 Max!")
+    print("✅ DUAL-MODEL CO-RESIDENCY TEST PASSED: catalog + both models streamed live.")
     print("================================================================================")
 
 

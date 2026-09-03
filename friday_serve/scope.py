@@ -11,6 +11,7 @@ means baseline.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from dataclasses import dataclass
 from typing import Any, Sequence
@@ -19,6 +20,15 @@ from typing import Any, Sequence
 #: that shape was never verified for token identity, so it does not get a knob.
 CALIBRATED_TEMPERATURE = 0.0
 CALIBRATED_BATCH = 1
+
+
+@functools.lru_cache(maxsize=1)
+def _live_machine_sha256() -> str:
+    """This host's stable identity digest. Constant for the process; the
+    ``sysctl`` calls behind it must not run on every request."""
+    from friday_runtime_core.provenance import machine_sha256
+
+    return machine_sha256()
 
 
 @dataclass(frozen=True)
@@ -98,6 +108,13 @@ def in_calibrated_scope(scope: RequestScope | None, profile) -> tuple[bool, str]
         return False, "batch_out_of_scope"
     if scope.temperature != CALIBRATED_TEMPERATURE:
         return False, "sampling_out_of_scope"
+    # A profile carries the stable host identity it was measured on. If it was
+    # copied from another Mac, its knobs were never verified here.
+    # ponytail: only the stable subset (CPU/model/memory/arch, not the macOS
+    # version) is compared, so a routine OS update does not invalidate it.
+    expected = getattr(profile, "machine_sha256", None)
+    if expected is not None and _live_machine_sha256() != expected:
+        return False, "machine_mismatch"
     return True, "device_profile_verified"
 
 

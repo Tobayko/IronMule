@@ -9,8 +9,7 @@ Tests whether N-gram matching directly from the input prompt (without a secondar
 
 from __future__ import annotations
 
-import gc
-import json
+import statistics
 import sys
 import time
 from pathlib import Path
@@ -23,8 +22,8 @@ sys.path.insert(0, str(IRONMULE))
 
 import mlx.core as mx
 from mlx_lm import load
-from _bench import enforce_offline, resolve_local_model_snapshot
-from ironmule.runtime import Engine, Knobs, BASELINE
+from _bench import harness_preconditions, resolve_local_model_snapshot
+from ironmule.runtime import Engine, Knobs
 
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
 
@@ -71,8 +70,18 @@ TEST_CASES = [
 ]
 
 
+def _wall_ms(engine, p_ids, max_tokens, eos_ids, guard):
+    t0 = time.perf_counter_ns()
+    res = engine.generate(p_ids, max_tokens, eos_ids)
+    mx.eval()
+    mx.synchronize()
+    ns = time.perf_counter_ns() - t0
+    guard.record_gpu(ns / 1e9)
+    return ns / 1e6, res
+
+
 def main():
-    enforce_offline()
+    guard = harness_preconditions()
     print("================================================================================")
     print(f"🚀 PROMPT-LOOKUP SELF-SPECULATION BENCHMARK: {MODEL_ID}")
     print("================================================================================")
@@ -81,41 +90,17 @@ def main():
     model, tokenizer = load(str(snapshot.path))
     eos_ids = tuple(sorted({int(getattr(tokenizer, "eos_token_id", 1))}))
 
-    # 1. Baseline Run (Core Triad without Speculation)
-    print("\n--- [PHASE 1] Measuring Core Triad Baseline (No Speculation) ---")
+    # Delivery-path knob set. The speculative arm differs by speculate_k ONLY —
+    # readback_every stays 8 so any delta is attributable to speculation.
     base_knobs = Knobs(head_skip_prefill=True, compiled_fixed_cache=True, readback_every=8)
     base_engine = Engine(model, tokenizer, base_knobs)
 
-    baseline_data = {}
-    for tc in TEST_CASES:
-        p_ids = tokenizer.encode(tc["prompt"])
-        # Warmup
-        _ = base_engine.generate(p_ids, 8, eos_ids)
-        mx.eval()
-        mx.synchronize()
-
-        t0 = time.perf_counter_ns()
-        res = base_engine.generate(p_ids, tc["max_tokens"], eos_ids)
-        mx.eval()
-        mx.synchronize()
-        wall_ms = (time.perf_counter_ns() - t0) / 1e6
-        dec_ms = res["decode_ns"] / 1e6
-        tps = len(res["physical_tokens"]) / (dec_ms / 1000.0) if dec_ms > 0 else 0.0
-
-        baseline_data[tc["name"]] = {
-            "tokens": res["physical_tokens"],
-            "wall_ms": wall_ms,
-            "dec_ms": dec_ms,
-            "tps": tps,
-        }
-        print(f"  ✓ {tc['name']:<16}: Wall={wall_ms:6.1f} ms | Decode={tps:5.1f} tok/s | Tokens: {len(res['physical_tokens'])}")
-
-    # 2. Speculative Run with Prompt-Lookup (K in {2, 3, 4})
     for k_val in (2, 3, 4):
-        print(f"\n--- [PHASE 2] Evaluating Prompt-Lookup Speculation (Lookahead K={k_val}, N-gram=3) ---")
+        print(f"\n--- Prompt-Lookup Speculation K={k_val}, N-gram=3 (paired vs baseline) ---")
         spec_knobs = Knobs(
             head_skip_prefill=True,
             compiled_fixed_cache=True,
+            readback_every=8,
             speculate_k=k_val,
             speculate_ngram=3,
         )
@@ -124,37 +109,35 @@ def main():
         all_match = True
         for tc in TEST_CASES:
             p_ids = tokenizer.encode(tc["prompt"])
-            # Warmup
-            _ = spec_engine.generate(p_ids, 8, eos_ids)
-            mx.eval()
-            mx.synchronize()
+            base_engine.generate(p_ids, 8, eos_ids); mx.synchronize()
+            spec_engine.generate(p_ids, 8, eos_ids); mx.synchronize()
 
-            t0 = time.perf_counter_ns()
-            res = spec_engine.generate(p_ids, tc["max_tokens"], eos_ids)
-            mx.eval()
-            mx.synchronize()
-            wall_ms = (time.perf_counter_ns() - t0) / 1e6
-            dec_ms = res["decode_ns"] / 1e6
-            cnt = len(res["physical_tokens"])
-            tps = cnt / (dec_ms / 1000.0) if dec_ms > 0 else 0.0
+            ratios, acc = [], 0.0
+            base_tokens = spec_tokens = None
+            for rep in range(6):
+                if rep % 2 == 0:
+                    b_ms, b_res = _wall_ms(base_engine, p_ids, tc["max_tokens"], eos_ids, guard)
+                    s_ms, s_res = _wall_ms(spec_engine, p_ids, tc["max_tokens"], eos_ids, guard)
+                else:
+                    s_ms, s_res = _wall_ms(spec_engine, p_ids, tc["max_tokens"], eos_ids, guard)
+                    b_ms, b_res = _wall_ms(base_engine, p_ids, tc["max_tokens"], eos_ids, guard)
+                ratios.append(s_ms / b_ms)
+                acc = s_res.get("acceptance", 0.0)
+                base_tokens, spec_tokens = b_res["physical_tokens"], s_res["physical_tokens"]
 
-            base = baseline_data[tc["name"]]
-            base_toks = base["tokens"][:cnt]
-            is_match = (res["physical_tokens"] == base_toks)
-            if not is_match:
-                all_match = False
-
-            tps_gain = ((tps / max(0.1, base["tps"])) - 1.0) * 100.0
-            wall_ratio = wall_ms / max(1.0, base["wall_ms"])
-            m_str = "MATCH ✅" if is_match else "DIFF ❌"
-
+            # full-sequence identity, equal length required
+            is_match = base_tokens == spec_tokens
+            all_match &= is_match
+            r = statistics.median(ratios)
             print(
-                f"  --> {tc['name']:<14}: Wall Ratio={wall_ratio:.4f} | "
-                f"TPS={tps:5.1f} tok/s ({tps_gain:+5.1f}%) | "
-                f"Acc={res['acceptance']*100:4.1f}% | Tokens: {m_str}"
+                f"  --> {tc['name']:<14}: wall ratio (median of 6) {r:.4f} "
+                f"({(1 - r) * 100:+.1f}%) | acc {acc * 100:4.1f}% | "
+                f"identity {'MATCH' if is_match else 'DIFF'} "
+                f"(base {len(base_tokens)} tok, spec {len(spec_tokens)} tok)"
             )
+            guard.required_break()
 
-        print(f"  ==> Lookahead K={k_val} Overall Token Identity: {'100% BIT-EXACT ✅' if all_match else 'FAILED ❌'}")
+        print(f"  ==> K={k_val} token identity: {'exact on every case' if all_match else 'BROKEN'}")
 
 
 if __name__ == "__main__":

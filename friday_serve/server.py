@@ -18,7 +18,6 @@ they are what makes serving without a human in the loop defensible:
 
 from __future__ import annotations
 
-import time
 from dataclasses import dataclass
 from typing import Any, Iterator, Mapping, Protocol, Sequence
 
@@ -125,6 +124,35 @@ class Server:
             **kwargs,
         )
 
+    def plan_request(
+        self,
+        token_ids: Sequence[int],
+        max_tokens: int,
+        *,
+        backend: GenerationBackend | None = None,
+        **kwargs,
+    ) -> tuple[DispatchDecision, dict[str, Any]]:
+        """The one gate every serving path shares: scope -> decision -> knobs.
+
+        Returns the dispatch decision and the engine knob overrides this request
+        is authorised to use (empty when the request is out of the calibrated
+        scope, the breaker is latched, or no knob was verified). The batcher and
+        the single-flight path both go through here so neither can apply a knob
+        the profile did not earn.
+        """
+
+        backend = backend or self.backend
+        scope = observe(
+            model_id=getattr(backend, "model_id", None),
+            model_revision=getattr(backend, "model_revision", None),
+            token_ids=token_ids,
+            output_tokens=max_tokens,
+            **kwargs,
+        )
+        decision = self.controller.decide_scope(scope)
+        knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        return decision, knobs
+
     def explain(self) -> dict[str, Any]:
         described = explain(self.profile)
         described["circuit_reason"] = self.controller.circuit_reason
@@ -160,35 +188,11 @@ class Server:
             **kwargs,
         )
         decision = self.controller.decide_scope(scope)
-        action = "baseline"
-        has_overlap = detect_ngram_overlap(token_ids)
-        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
-            action, rl_knobs, score = self.rl_controller.select_action(
-                scope.model_id,
-                scope.prompt_tokens,
-                scope.output_tokens,
-                has_ngram_overlap=has_overlap,
-            )
-            profile_knobs = knobs_for(self.profile)
-            knobs = {
-                k: v for k, v in rl_knobs.items()
-                if k in profile_knobs or k in ("speculate_k", "speculate_ngram")
-            }
-        else:
-            knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        self._shadow_log(scope, decision, knobs, token_ids)
         with self.controller.guard(decision):
             result = backend.generate(token_ids, max_tokens, knobs)
             self._check_marker(result, knobs, max_tokens)
-        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
-            reward = 0.15 if knobs else 0.0
-            self.rl_controller.observe_reward(
-                action,
-                scope.model_id,
-                scope.prompt_tokens,
-                scope.output_tokens,
-                reward,
-                has_ngram_overlap=has_overlap,
-            )
         return _generation(result, decision, knobs)
 
     def stream_generate(
@@ -214,26 +218,11 @@ class Server:
             **kwargs,
         )
         decision = self.controller.decide_scope(scope)
-        action = "baseline"
-        has_overlap = detect_ngram_overlap(token_ids)
-        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
-            action, rl_knobs, score = self.rl_controller.select_action(
-                scope.model_id,
-                scope.prompt_tokens,
-                scope.output_tokens,
-                has_ngram_overlap=has_overlap,
-            )
-            profile_knobs = knobs_for(self.profile)
-            knobs = {
-                k: v for k, v in rl_knobs.items()
-                if k in profile_knobs or k in ("speculate_k", "speculate_ngram")
-            }
-        else:
-            knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+        self._shadow_log(scope, decision, knobs, token_ids)
 
         total_tokens_seen = 0
         has_done = False
-        start_ns = time.perf_counter_ns()
 
         with self.controller.guard(decision):
             for event in backend.stream_generate(token_ids, max_tokens, knobs):
@@ -268,17 +257,43 @@ class Server:
             if not has_done and total_tokens_seen == 0:
                 raise RuntimeExecutionError("engine returned no tokens")
 
-        elapsed_ns = time.perf_counter_ns() - start_ns
-        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
-            reward = 0.15 if knobs else 0.0
-            self.rl_controller.observe_reward(
-                action,
-                scope.model_id,
-                scope.prompt_tokens,
-                scope.output_tokens,
-                reward,
-                has_ngram_overlap=has_overlap,
-            )
+    def _shadow_log(
+        self,
+        scope: RequestScope | None,
+        decision: DispatchDecision,
+        applied_knobs: Mapping[str, Any],
+        token_ids: Sequence[int],
+    ) -> None:
+        """RL shadow: record the action the bandit *would* pick. Never applies it.
+
+        No reward is observed and no weight is updated from a serving request —
+        there is no measured reward here, and RL stays NO-GO until R2.
+        """
+
+        if (
+            self.rl_controller is None
+            or scope is None
+            or self.controller.is_fallback(decision)
+        ):
+            return
+        has_overlap = detect_ngram_overlap(token_ids)
+        action, shadow_knobs, score = self.rl_controller.select_action(
+            scope.model_id,
+            scope.prompt_tokens,
+            scope.output_tokens,
+            has_ngram_overlap=has_overlap,
+        )
+        self.rl_controller.log_decision(
+            model_id=scope.model_id,
+            prompt_tokens=scope.prompt_tokens,
+            output_tokens=scope.output_tokens,
+            shadow_action=action,
+            shadow_knobs=shadow_knobs,
+            shadow_score=score,
+            applied_knobs=applied_knobs,
+            applied_plan=decision.plan,
+            has_ngram_overlap=has_overlap,
+        )
 
     @staticmethod
     def _check_marker(

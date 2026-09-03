@@ -68,16 +68,27 @@ def _latch(database: str | Path):
                 collect_provenance(spec, require_clean=False),
             )
 
+    return PersistentLatch(load, append)
+
+
 def _prewarm_hardware(backend: Any, profile: Any) -> None:
     """Pre-warm Metal GPU shader compilation and pin memory to eliminate cold first-request latency."""
     import time
     import mlx.core as mx
     from .dispatch import knobs_for
 
-    from .environment_tuning import tune_runtime_environment
-    env_info = tune_runtime_environment(uma_gb=34.0)
-    qos_str = "P-Core QoS Active" if env_info.get("qos_interactive") else "Standard QoS"
-    print(f"✓ Environment Tuned: {qos_str} | Metal Cache: {env_info.get('metal_cache_limit_gb', 17):.0f} GB | Wired: {env_info.get('metal_wired_limit_gb', 24):.0f} GB")
+    try:
+        from .environment_tuning import tune_runtime_environment
+
+        env_info = tune_runtime_environment()
+        qos_str = "P-Core QoS Active" if env_info.get("qos_interactive") else "Standard QoS"
+        print(
+            f"✓ Environment Tuned: {qos_str} | UMA: {env_info.get('uma_gb', 0):.0f} GB | "
+            f"Metal Cache: {env_info.get('metal_cache_limit_gb', 0):.0f} GB | "
+            f"Wired: {env_info.get('metal_wired_limit_gb', 0):.0f} GB"
+        )
+    except Exception as exc:
+        print(f"⚠️ Environment tuning skipped: {exc}")
 
     try:
         t0 = time.perf_counter()
@@ -143,7 +154,10 @@ def main(argv: list[str] | None = None) -> int:
         from .terminal_dashboard import render_cockpit
 
         rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
-        rl_ctrl = AdaptiveRLController.load(rl_path)
+        rl_shadow_path = PROJECT_ROOT / ".friday-data" / "rl-shadow-decisions.jsonl"
+        # Shadow only: the controller logs the action it would pick; serving
+        # applies device-profile knobs and never updates the weights here.
+        rl_ctrl = AdaptiveRLController.load(rl_path, shadow_log_path=rl_shadow_path)
 
         target_model = args.model or DEFAULT_MODEL
         def _adaptive_concurrency(m_id: str) -> int:
@@ -219,13 +233,9 @@ def main(argv: list[str] | None = None) -> int:
 
     sys.path.insert(0, str(PROJECT_ROOT / "tools"))
     from .ironmule_backend import IronMuleBackend
-    from .rl_controller import AdaptiveRLController
-
-    rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
-    rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
 
     backend = IronMuleBackend.load(args.model)
-    server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
+    server = Server(backend, profile, latch=_latch(args.database))
     result = server.generate(args.prompt, args.max_tokens)
     _print(
         {

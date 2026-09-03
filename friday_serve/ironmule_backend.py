@@ -124,6 +124,10 @@ class IronMuleBackend:
         for engine in self._engines.values():
             engine.prefix_cache = self.prefix_cache
 
+    def _radix_tag(self, knobs: Mapping[str, Any]) -> tuple:
+        """A KV state is only reusable within the same model revision and knob set."""
+        return (self.model_revision, tuple(sorted((str(k), v) for k, v in dict(knobs).items())))
+
     def _engine(self, knobs: Mapping[str, Any]):
         settings = self._baseline if not knobs else self._Knobs(**dict(knobs))
         key = settings.key()
@@ -168,9 +172,10 @@ class IronMuleBackend:
         prompt_ids = [int(t) for t in token_ids]
         capacity = engine._capacity(len(prompt_ids), max_tokens)
 
-        # 1. Prefill with Radix-Tree Lookup
+        # 1. Prefill with Radix-Tree Lookup (keyed by model revision + knob signature)
         started = time.perf_counter_ns()
-        match_len, cached_state, _ = self.radix_cache.match_prefix(prompt_ids)
+        radix_tag = self._radix_tag(knobs)
+        match_len, cached_state, _ = self.radix_cache.match_prefix(prompt_ids, tag=radix_tag)
         if match_len > 0 and cached_state is not None and match_len < len(prompt_ids):
             suffix = prompt_ids[match_len:]
             warm_state = {"position": {"offset": mx.array(match_len, dtype=mx.int32)}, "layers": cached_state}
@@ -189,7 +194,7 @@ class IronMuleBackend:
                 else 0
             )
             if len(prompt_ids) >= 32 and hasattr(state, "__getitem__") and "layers" in state:
-                self.radix_cache.insert(prompt_ids, state["layers"])
+                self.radix_cache.insert(prompt_ids, state["layers"], tag=radix_tag)
         prefill_ns = time.perf_counter_ns() - started
         first = int(token.reshape((-1,)).item())
         first_text = self._decode_text([first])
