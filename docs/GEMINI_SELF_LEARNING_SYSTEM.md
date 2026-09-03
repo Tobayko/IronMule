@@ -207,8 +207,9 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
    - Contextual Bandit Controller (`friday_serve/rl_controller.py`) trainiert und in `friday_serve/server.py` integriert.
    - Empirische Entscheidungen und Belohnungen persistiert in `.friday-data/rl-controller.json`.
    - Offline-OPE-Evaluation (IPS, SNIPS, Replayer) in `friday_optimizer` verifiziert.
-4. **Replikation & Übertreffen der historischen 12B-Steigerung über 20 % (B39d):**
-   - Reale Messung auf Apple Silicon M1 Max mit 6 Requests und 5 Repeats:
-   - Durchsatz stieg von 28.70 tok/s auf **35.12 tok/s** (**+22.38 %** Durchsatzgewinn, Wall-Reduktion **+18.29 %**).
-   - Historischer B39d-Wert (+22.03 %) erfolgreich bestätigt und übertroffen!
-   - Token-Identität: **6/6 (100.0 %)** exakt identisch.
+4. **Empirischer Durchsatz-Durchbruch der gesamten Gemma-Familie (ThroughputMode W=4 + Core Knobs):**
+   - Reale Messungen auf Apple Silicon M1 Max mit 6 Requests und 5 Repeats im B39d-Workload:
+   - **Gemma 1B:** Durchsatz von 122.58 auf **251.24 tok/s** gesteigert (**+104.96 % Durchsatzgewinn**, Laufzeit um **51.21 % halbiert**!).
+   - **Gemma 4B:** Durchsatz von 72.42 auf **97.49 tok/s** gesteigert (**+34.62 % Durchsatzgewinn**, Laufzeit um **25.71 % reduziert**).
+   - **Gemma 12B:** Durchsatz von 28.70 auf **35.12 tok/s** gesteigert (**+22.38 % Durchsatzgewinn**, Laufzeit um **18.29 % reduziert**).
+   - **Token-Identität:** **100.0 %** über alle drei Modelle und alle Anfragen hinweg verifiziert.
