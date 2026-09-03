@@ -18,8 +18,9 @@ they are what makes serving without a human in the loop defensible:
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
-from typing import Any, Mapping, Protocol, Sequence
+from typing import Any, Iterator, Mapping, Protocol, Sequence
 
 from friday_calibrate.profile import DeviceProfile
 from friday_runtime_core.controller import (
@@ -47,6 +48,10 @@ class GenerationBackend(Protocol):
     def generate(
         self, token_ids: Sequence[int], max_tokens: int, knobs: Mapping[str, Any]
     ) -> Mapping[str, Any]: ...
+
+    def stream_generate(
+        self, token_ids: Sequence[int], max_tokens: int, knobs: Mapping[str, Any]
+    ) -> Iterator[dict[str, Any]]: ...
 
 
 @dataclass(frozen=True)
@@ -161,6 +166,82 @@ class Server:
                 action, scope.model_id, scope.prompt_tokens, scope.output_tokens, reward
             )
         return _generation(result, decision, knobs)
+
+    def stream_generate(
+        self, prompt: str | Sequence[int], max_tokens: int = 128, **kwargs
+    ) -> Iterator[dict[str, Any]]:
+        if isinstance(prompt, str):
+            try:
+                token_ids = tuple(self.backend.encode(prompt))
+            except Exception as exc:
+                raise RuntimeExecutionError("prompt encoding failed") from exc
+        else:
+            try:
+                token_ids = tuple(int(x) for x in prompt)
+            except Exception as exc:
+                raise RuntimeExecutionError("invalid token sequence") from exc
+
+        scope = observe(
+            model_id=getattr(self.backend, "model_id", None),
+            model_revision=getattr(self.backend, "model_revision", None),
+            token_ids=token_ids,
+            output_tokens=max_tokens,
+            **kwargs,
+        )
+        decision = self.controller.decide_scope(scope)
+        action = "baseline"
+        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
+            action, rl_knobs, score = self.rl_controller.select_action(
+                scope.model_id, scope.prompt_tokens, scope.output_tokens
+            )
+            profile_knobs = knobs_for(self.profile)
+            knobs = {k: v for k, v in rl_knobs.items() if k in profile_knobs}
+        else:
+            knobs = {} if self.controller.is_fallback(decision) else knobs_for(self.profile)
+
+        total_tokens_seen = 0
+        has_done = False
+        start_ns = time.perf_counter_ns()
+
+        with self.controller.guard(decision):
+            for event in self.backend.stream_generate(token_ids, max_tokens, knobs):
+                event_type = event.get("type")
+                if event_type == "token":
+                    if event.get("is_first"):
+                        total_tokens_seen += 1
+                    else:
+                        chunk = event.get("tokens")
+                        if chunk:
+                            total_tokens_seen += len(chunk)
+                        else:
+                            total_tokens_seen += 1
+                    if total_tokens_seen > max_tokens:
+                        raise RuntimeExecutionError("engine returned more tokens than requested")
+                elif event_type == "done":
+                    has_done = True
+                    used = event.get("knobs")
+                    if not isinstance(used, Mapping):
+                        raise RuntimeExecutionError("engine did not report the knobs it used")
+                    for name, value in knobs.items():
+                        if used.get(name) != value:
+                            raise RuntimeExecutionError(
+                                f"authorised knob was not applied: {name}={value!r} vs {used.get(name)!r}"
+                            )
+                    if "plan" not in event:
+                        event["plan"] = decision.plan
+                    if "reason" not in event:
+                        event["reason"] = decision.reason
+                yield event
+
+            if not has_done and total_tokens_seen == 0:
+                raise RuntimeExecutionError("engine returned no tokens")
+
+        elapsed_ns = time.perf_counter_ns() - start_ns
+        if self.rl_controller is not None and not self.controller.is_fallback(decision) and scope is not None:
+            reward = 0.15 if knobs else 0.0
+            self.rl_controller.observe_reward(
+                action, scope.model_id, scope.prompt_tokens, scope.output_tokens, reward
+            )
 
     @staticmethod
     def _check_marker(

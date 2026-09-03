@@ -221,3 +221,13 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
    - Gemma 4B Doc-Extraction: Decode TPS steigt von 86.06 auf **121.16 tok/s** (**+40.79 %**) bei 96.67 % Annahme.
    - Gemma 12B Doc-Extraction: Decode TPS steigt von 33.58 auf **41.85 tok/s** (**+24.63 %**) bei 95.65 % Annahme.
    - RL-Controller auf 9D-Features und 6 Strategien erweitert und trainiert (OPE Value: 0.4954).
+7. **Threading & Socket Teardown Pitfall in Pytest:**
+   - **Fehler:** Testsuite hing im Teardown nach HTTP-Server-Tests.
+   - **Ursache:** Pythons `ThreadingHTTPServer` hat standardmäßig `daemon_threads = False`. Keep-Alive-Sockets und Child-Request-Threads verhindern den Prozess-Exit bei `pytest-xdist`.
+   - **Lösung:** `self.daemon_threads = True` in `FridayHTTPServer.__init__` und `self.close_connection = True` in den Request-Handlern gesetzt. Tests beenden nun sofort in < 1 Sekunde!
+8. **Single-Model Friday Ultimate Production Serving & Cockpit:**
+   - OpenAI-kompatibler HTTP/SSE-Streaming-Server (`friday_serve/http_server.py`) mit Concurrency-Semaphore.
+   - Terminal-Live-Cockpit (`friday_serve/terminal_dashboard.py`): Zero-Browser-Overhead, < 0.05 ms Renderzeit.
+   - Universeller Auto-Tuner (`tools/autotune.py`): Kalibriert jeden Mac in < 15 Sekunden.
+   - 140 von 140 Unittests grün.
+

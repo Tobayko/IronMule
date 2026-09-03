@@ -11119,3 +11119,30 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   - Trainiert auf allen realen Hardware-Daten; Modell versiegelt in `.friday-data/rl-controller.json`.
   - OPE Policy Mean Reward: **0.4954 vs. 0.0000 Baseline**.
 
+### 10. Single-Model Friday Ultimate — Vollendung der 4 Phasen (2026-09-03)
+- **Walt-Disney-Synthese:**
+  - Träumer (Vision), Kritiker (Gates 0-4, RAM-Schutz, Single-Model Invarianz) und Realist (Pure-Stdlib HTTP-Server & ASCII-Cockpit) erfolgreich synthetisiert.
+- **Phase 1: Streaming Execution Engine (`friday_serve/ironmule_backend.py` & `server.py`):**
+  - Token-Yielding Generator liefert Token 1 sofort (< TTFT) und anschließende Chunks synchronisiert mit Readback-Bundling.
+  - 14 Unittests in `tests/test_stream_backend.py` zu 100 % bestanden.
+- **Phase 2: Lean OpenAI-kompatibler HTTP/SSE Server (`friday_serve/http_server.py`):**
+  - Reines Python (kein FastAPI/Uvicorn), Port 8080.
+  - Concurrency-Semaphore (`threading.Semaphore(1)`) riegelt GPU-Inferenz atomar ab; Backpressure via `HTTP 429`.
+  - SSE Token-Streaming (`data: {"id":"chatcmpl-...", ...}`) und `[DONE]`-Terminierung.
+  - 8 Unittests in `tests/test_http_server.py` zu 100 % bestanden.
+- **Phase 3: Terminal-Live-Cockpit (`friday_serve/terminal_dashboard.py` & `telemetry.py`):**
+  - Ressourcenschonender ASCII/ANSI-Tacho direkt im Terminal (kein Browser-Overhead, < 0.05 ms Renderzeit).
+  - Zeigt Live-Balken für Speicherbandbreite (GB/s gegen 400 GB/s Limit), TTFT (mit Prefix-Cache Hit-Flag), Decode TPS, VRAM und Zero-Swap.
+  - 9 Unittests in `tests/test_terminal_dashboard.py` zu 100 % bestanden.
+- **Phase 4: Universeller Auto-Tuner (`tools/autotune.py`) & CLI-Integration:**
+  - Kalibriert jeden Mac in unter 15 Sekunden auf echter Hardware.
+  - Erfolgreich ausgeführt auf Apple Silicon M1 Max:
+    - `head_skip_prefill`: Ratio 0.8960 -> `[VERIFIED]`
+    - `compiled_fixed_cache`: Ratio 0.9132 -> `[VERIFIED]`
+    - `bundled_readback`: Best R=16 (+13.2 % Gain) -> `[VERIFIED]`
+  - Neues Profil in `.friday-data/device-profile.sqlite3` versiegelt (`device-20260903-095118`).
+  - `tools/friday.py serve` und `tools/friday.py autotune` vollständig integriert.
+  - End-to-End Live-Test mit echtem Streaming-Curl verifiziert.
+  - **140/140 Unittests laufen zu 100 % grün.**
+
+

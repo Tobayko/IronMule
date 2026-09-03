@@ -84,6 +84,11 @@ def main(argv: list[str] | None = None) -> int:
     generate.add_argument("--max-tokens", type=int, default=32)
     generate.add_argument("--execute", action="store_true")
 
+    http_cmd = commands.add_parser("serve", allow_abbrev=False)
+    http_cmd.add_argument("--host", default="127.0.0.1")
+    http_cmd.add_argument("--port", type=int, default=8080)
+    http_cmd.add_argument("--dashboard", action="store_true", default=True)
+
     args = parser.parse_args(argv)
     profile = load_profile(args.database)
 
@@ -94,6 +99,39 @@ def main(argv: list[str] | None = None) -> int:
         described["database"] = args.database
         described["serves"] = "baseline" if profile is None else "device_profile_dispatch"
         _print(described)
+        return 0
+
+    if args.command == "serve":
+        sys.path.insert(0, str(PROJECT_ROOT / "tools"))
+        from .http_server import create_server
+        from .ironmule_backend import IronMuleBackend
+        from .rl_controller import AdaptiveRLController
+        from .telemetry import get_global_tracker
+        from .terminal_dashboard import render_cockpit
+
+        rl_path = PROJECT_ROOT / ".friday-data" / "rl-controller.json"
+        rl_ctrl = AdaptiveRLController.load(rl_path) if rl_path.exists() else None
+
+        backend = IronMuleBackend.load(args.model)
+        server = Server(backend, profile, latch=_latch(args.database), rl_controller=rl_ctrl)
+        tracker = get_global_tracker()
+        httpd = create_server(
+            server,
+            host=args.host,
+            port=args.port,
+            telemetry_tracker=tracker,
+            enable_dashboard=args.dashboard,
+        )
+        print(f"⚡ Friday Server running on http://{args.host}:{args.port}")
+        print(f"   OpenAI API: http://{args.host}:{args.port}/v1/chat/completions")
+        print(f"   Terminal Dashboard: http://{args.host}:{args.port}/dashboard")
+        print(render_cockpit(tracker, colored=True))
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            print("\nShutting down Friday server...")
+            httpd.shutdown()
+            httpd.server_close()
         return 0
 
     if not args.execute:
