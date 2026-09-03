@@ -84,6 +84,28 @@ class RequestMetrics:
         return asdict(self)
 
 
+@dataclass
+class LiveState:
+    """Dynamic real-time inference state for live dashboard animation."""
+
+    status: str = "STANDBY"  # "STANDBY", "PREFILLING", "DECODING", "COMPLETED"
+    model_id: str = "mlx-community/gemma-3-4b-it-4bit"
+    tokens_generated: int = 0
+    max_tokens: int = 0
+    prompt_tokens: int = 0
+    ttft_ms: float = 0.0
+    is_prefix_hit: bool = False
+    current_tps: float = 0.0
+    current_bw_gbs: float = 0.0
+    action: str = "device_profile_dispatch"
+    vram_mb: float = 0.0
+    swap_mb: float = 0.0
+    decode_start_ns: int = 0
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 class TelemetryTracker:
     """Thread-safe telemetry aggregator and rolling history tracker."""
 
@@ -96,6 +118,7 @@ class TelemetryTracker:
         self.peak_bandwidth_gbs = peak_bandwidth_gbs
         self._lock = threading.Lock()
         self.current: RequestMetrics | None = None
+        self.live: LiveState = LiveState()
         self.history: collections.deque[RequestMetrics] = collections.deque(maxlen=max_history)
 
     @staticmethod
@@ -111,6 +134,43 @@ class TelemetryTracker:
             return 7.19
         # Default for 4B and common IT/chat weights
         return 2.56
+
+    def start_request(self, model_id: str, prompt_tokens: int, max_tokens: int = 128, action: str = "device_profile_dispatch") -> None:
+        """Called when prefill begins."""
+        with self._lock:
+            self.live.status = "PREFILLING"
+            self.live.model_id = model_id
+            self.live.prompt_tokens = prompt_tokens
+            self.live.max_tokens = max_tokens
+            self.live.tokens_generated = 0
+            self.live.action = action
+            self.live.vram_mb = _read_vram_mb()
+            self.live.swap_mb = _read_swap_mb()
+
+    def update_first_token(self, ttft_ns: int, is_prefix_hit: bool) -> None:
+        """Called immediately after first token is yielded."""
+        with self._lock:
+            self.live.status = "DECODING"
+            self.live.tokens_generated = 1
+            self.live.ttft_ms = round(max(0, ttft_ns) / 1_000_000.0, 2)
+            self.live.is_prefix_hit = is_prefix_hit
+            self.live.decode_start_ns = time.perf_counter_ns()
+
+    def update_tokens(self, tokens_generated: int) -> None:
+        """Called on every yielded decode chunk."""
+        with self._lock:
+            self.live.status = "DECODING"
+            self.live.tokens_generated = tokens_generated
+            if self.live.decode_start_ns > 0 and tokens_generated > 1:
+                elapsed_s = (time.perf_counter_ns() - self.live.decode_start_ns) / 1e9
+                if elapsed_s > 0:
+                    self.live.current_tps = round((tokens_generated - 1) / elapsed_s, 1)
+                    model_gb = self.model_size_gb(self.live.model_id)
+                    self.live.current_bw_gbs = round(model_gb * self.live.current_tps, 1)
+
+    def get_live(self) -> LiveState:
+        with self._lock:
+            return LiveState(**self.live.as_dict())
 
     def record_request(
         self,
@@ -170,6 +230,8 @@ class TelemetryTracker:
         with self._lock:
             self.current = metrics
             self.history.append(metrics)
+            self.live.status = "COMPLETED"
+            self.live.tokens_generated = tokens_generated
 
         return metrics
 
@@ -184,6 +246,7 @@ class TelemetryTracker:
     def clear(self) -> None:
         with self._lock:
             self.current = None
+            self.live = LiveState()
             self.history.clear()
 
 
@@ -196,6 +259,7 @@ def get_global_tracker() -> TelemetryTracker:
 
 __all__ = [
     "GLOBAL_TRACKER",
+    "LiveState",
     "RequestMetrics",
     "TelemetryTracker",
     "get_global_tracker",

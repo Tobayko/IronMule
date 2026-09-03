@@ -78,6 +78,10 @@ TOOLS = {
         "run_serve.py",
         "OpenAI-compatible HTTP/SSE server with Terminal Live-Cockpit for LLM inference",
     ),
+    "monitor": (
+        "monitor.py",
+        "Interactive IronMule Live Terminal Monitor: in-place, flicker-free telemetry cockpit at 10-20 FPS",
+    ),
 }
 
 

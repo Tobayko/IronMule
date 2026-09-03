@@ -145,11 +145,14 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             tracker = self.server.telemetry_tracker
             current = tracker.get_current()
             history = [m.as_dict() for m in tracker.get_history()]
+            live = tracker.get_live().as_dict()
             self._send_json(
                 200,
                 {
                     "current": current.as_dict() if current else None,
+                    "live": live,
                     "history": history,
+                    "peak_bandwidth_gbs": tracker.peak_bandwidth_gbs,
                 },
             )
             return
@@ -293,14 +296,32 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
 
         first_prefill_ns = 0
         first_hits = 0
+        token_count = 0
+
+        prompt_len = len(prompt) if isinstance(prompt, (list, tuple)) else len(server_instance.backend.encode(prompt))
+        if self.server.telemetry_tracker is not None:
+            self.server.telemetry_tracker.start_request(
+                model_id=model,
+                prompt_tokens=prompt_len,
+                max_tokens=max_tokens,
+                action=getattr(server_instance.controller, "plan", "device_profile_dispatch"),
+            )
 
         try:
             for event in server_instance.stream_generate(prompt, max_tokens=max_tokens):
                 event_type = event.get("type")
                 if event_type == "token":
+                    token_count += 1
                     if event.get("is_first"):
                         first_prefill_ns = event.get("prefill_ns", 0)
                         first_hits = event.get("prefix_cache_hits", 0)
+                        if self.server.telemetry_tracker is not None:
+                            self.server.telemetry_tracker.update_first_token(
+                                first_prefill_ns, first_hits > 0
+                            )
+                    else:
+                        if self.server.telemetry_tracker is not None:
+                            self.server.telemetry_tracker.update_tokens(token_count)
                     content = event.get("text", "")
                     if content:
                         chunk = {
@@ -342,12 +363,12 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                             model_id=model,
                             prefill_ns=first_prefill_ns,
                             decode_ns=event.get("decode_ns", 0),
-                            tokens_generated=event.get("total_tokens", 1),
+                            tokens_generated=event.get("total_tokens", token_count),
                             prefix_cache_hits=event.get("prefix_cache_hits", first_hits),
-                            action=event.get("plan", "baseline"),
+                            action=event.get("plan", "device_profile_dispatch"),
                             breaker_status=breaker,
                         )
-                        if self.server.enable_dashboard:
+                        if self.server.enable_dashboard and not getattr(self.server, "interactive_dashboard", False):
                             print_live_cockpit(self.server.telemetry_tracker)
         except (BrokenPipeError, ConnectionResetError):
             pass
@@ -377,14 +398,45 @@ class FridayHTTPServer(ThreadingHTTPServer):
         server_instance: Server,
         telemetry_tracker: TelemetryTracker | None = None,
         enable_dashboard: bool = False,
+        interactive_dashboard: bool = False,
     ) -> None:
         self.server_instance = server_instance
         self.telemetry_tracker = telemetry_tracker if telemetry_tracker is not None else get_global_tracker()
         self.enable_dashboard = enable_dashboard
+        self.interactive_dashboard = interactive_dashboard
         self.concurrency_semaphore = threading.Semaphore(1)
         self.allow_reuse_address = True
         self.daemon_threads = True
+        self.stop_event = threading.Event()
+        self.monitor_thread: threading.Thread | None = None
         super().__init__(server_address, RequestHandlerClass)
+
+        if interactive_dashboard:
+            self.start_interactive_monitor()
+
+    def start_interactive_monitor(self, refresh_hz: float = 10.0) -> None:
+        """Launch background interactive terminal monitor loop."""
+        from .terminal_dashboard import run_interactive_monitor
+
+        self.interactive_dashboard = True
+        self.stop_event.clear()
+        self.monitor_thread = threading.Thread(
+            target=run_interactive_monitor,
+            args=(self.telemetry_tracker, self.stop_event, refresh_hz, True),
+            daemon=True,
+            name="IronMuleLiveCockpit",
+        )
+        self.monitor_thread.start()
+
+    def stop_interactive_monitor(self) -> None:
+        """Signal interactive monitor thread to stop cleanly and restore terminal."""
+        self.stop_event.set()
+        if self.monitor_thread and self.monitor_thread.is_alive():
+            self.monitor_thread.join(timeout=1.0)
+
+    def server_close(self) -> None:
+        self.stop_interactive_monitor()
+        super().server_close()
 
 
 def create_server(
@@ -393,6 +445,7 @@ def create_server(
     port: int = 8080,
     telemetry_tracker: TelemetryTracker | None = None,
     enable_dashboard: bool = False,
+    interactive_dashboard: bool = False,
 ) -> FridayHTTPServer:
     """Create and return a configured FridayHTTPServer."""
     return FridayHTTPServer(
@@ -401,6 +454,7 @@ def create_server(
         server_instance,
         telemetry_tracker=telemetry_tracker,
         enable_dashboard=enable_dashboard,
+        interactive_dashboard=interactive_dashboard,
     )
 
 
