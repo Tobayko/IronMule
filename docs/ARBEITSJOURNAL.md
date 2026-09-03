@@ -11055,3 +11055,27 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
     - **Token-Identität:** **`6/6 (100.0 %)`** exakt tokenidentisch.
   - **Erkenntnis:** Der historische Befund von >20 % Durchsatzgewinn auf Gemma 12B ist real, reproduzierbar und wurde mit +22.38 % sogar leicht übertroffen!
 
+### 7. Multi-Modell Durchsatz-Benchmark (Gemma 1B & 4B unter ThroughputMode W=4)
+- **Hintergrund:** Nach der Verifikation von Gemma 12B (+22.38 %) wurde derselbe Aufbau (B39d-Workload: 6 Fragen, max_tokens=48, 2 Warmups, 5 Repeats, Arm A vs. Arm C vs. Arm D) auf Gemma 1B und 4B auf der Apple Silicon M1 Max GPU ausgeführt.
+- **Messwerte Gemma 1B IT 4-bit:**
+  - Arm A (Baseline Interactive): Wall = `2.3494 s`, Durchsatz = `122.58 tok/s`
+  - Arm C (Core Interactive):     Wall = `1.6516 s`, Durchsatz = `174.38 tok/s` (+42.25 % Durchsatz)
+  - Arm D (Core Throughput W=4):  Wall = `1.1463 s`, Durchsatz = `251.24 tok/s`
+  - **Effekt auf 1B:**
+    - **Wall-Time-Reduktion:** **`+51.21 %`** (Laufzeit mehr als halbiert! Ratio `0.4879`)
+    - **Durchsatz-Steigerung:** **`+104.96 %`** (Rate mehr als verdoppelt! 2.05x! Ratio `2.0496`)
+    - **Token-Identität:** **`6/6 (100.0 %)`** exakt identisch!
+- **Messwerte Gemma 4B IT 4-bit:**
+  - Arm A (Baseline Interactive): Wall = `3.9769 s`, Durchsatz = `72.42 tok/s`
+  - Arm C (Core Interactive):     Wall = `3.6093 s`, Durchsatz = `79.79 tok/s` (+10.18 % Durchsatz)
+  - Arm D (Core Throughput W=4):  Wall = `2.9543 s`, Durchsatz = `97.49 tok/s`
+  - **Effekt auf 4B:**
+    - **Wall-Time-Reduktion:** **`+25.71 %`** (Ratio `0.7429`)
+    - **Durchsatz-Steigerung:** **`+34.62 %`** (Ratio `1.3462`)
+    - **Token-Identität:** **`6/6 (100.0 %)`** exakt identisch!
+- **Gesamterkenntnis Gemma-Familie (ThroughputMode + Core Knobs):**
+  - **1B:** Durchsatz verdoppelt (**+104.96 %**), Laufzeit halbiert (**−51.21 %**).
+  - **4B:** Durchsatz um über ein Drittel gesteigert (**+34.62 %**), Laufzeit um ein Viertel reduziert (**−25.71 %**).
+  - **12B:** Durchsatz um **+22.38 %** gesteigert, Laufzeit um **−18.29 %** reduziert.
+  - Alle Modelle wahren **100.0 % mathematische Token-Identität**.
+
