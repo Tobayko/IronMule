@@ -95,6 +95,17 @@ class ReadinessTests(unittest.TestCase):
         self.assertIn("foreign_workload_or_unknown", result.reasons)
         self.assertIn("load_too_high", result.reasons)
 
+    def test_normalize_load_by_cpus_allows_multicore_desktop_workload(self):
+        clock = FakeClock()
+        # On a 10-core machine, load_1m=2.0 is 0.20 load per core (below max_load_1m=0.75)
+        policy = ReadinessPolicy(sample_interval_seconds=1, normalize_load_by_cpus=True, max_load_1m=0.75)
+        result = check_readiness(
+            FakeProbe([snapshot(load_1m=2.0, cpu_percent=10.0)] * 3),
+            policy, sleeper=clock.sleep, clock=clock,
+        )
+        self.assertTrue(result.ready)
+        self.assertNotIn("load_too_high", result.reasons)
+
     def test_snapshot_rejects_nan_inf_and_bad_ranges(self):
         for changes in (
             {"load_1m": float("nan")},

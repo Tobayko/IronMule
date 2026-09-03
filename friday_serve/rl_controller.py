@@ -41,7 +41,7 @@ ACTION_TO_KNOBS: Mapping[str, Mapping[str, Any]] = {
     "speculative_draft": {
         "head_skip_prefill": True,
         "compiled_fixed_cache": True,
-        "speculate_k": 2,
+        "speculate_k": 3,
         "speculate_ngram": 3,
     },
     "prefix_cached": {
@@ -59,6 +59,19 @@ ACTION_TO_KNOBS: Mapping[str, Mapping[str, Any]] = {
 }
 
 FEATURE_DIM = 9
+
+
+def detect_ngram_overlap(tokens: Sequence[int], ngram: int = 3) -> bool:
+    """Detect if token sequence contains repeated n-grams indicating context reuse."""
+    if len(tokens) < 32:
+        return False
+    seen = set()
+    for i in range(len(tokens) - ngram + 1):
+        g = tuple(tokens[i : i + ngram])
+        if g in seen:
+            return True
+        seen.add(g)
+    return False
 
 
 @dataclass

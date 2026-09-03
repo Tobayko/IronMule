@@ -1,0 +1,363 @@
+{
+  "model_id": "mlx-community/gemma-3-12b-it-4bit",
+  "results": [
+    {
+      "name": "00_baseline",
+      "description": "Baseline (All Knobs Off)",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1186.7902505,
+          "wall_ratio": 1.001,
+          "ttft_ms": 214.0822915,
+          "ttft_gain_pct": -0.75,
+          "decode_tps": 32.90416223247365,
+          "tps_gain_pct": 0.04,
+          "bandwidth_gb_s": 220.6,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1869.036604,
+          "wall_ratio": 1.0064,
+          "ttft_ms": 387.5298955,
+          "ttft_gain_pct": -1.38,
+          "decode_tps": 32.40331019518449,
+          "tps_gain_pct": -0.45,
+          "bandwidth_gb_s": 217.3,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2199.471479,
+          "wall_ratio": 1.0038,
+          "ttft_ms": 220.0510205,
+          "ttft_gain_pct": -1.48,
+          "decode_tps": 32.336329839387616,
+          "tps_gain_pct": -0.25,
+          "bandwidth_gb_s": 216.8,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 1.0037,
+      "mean_ttft_gain_pct": -1.21,
+      "mean_tps_gain_pct": -0.22
+    },
+    {
+      "name": "01_head_skip_only",
+      "description": "Head Skip Prefill only",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1172.335187,
+          "wall_ratio": 0.9888,
+          "ttft_ms": 202.6630005,
+          "ttft_gain_pct": 4.62,
+          "decode_tps": 33.00658387161138,
+          "tps_gain_pct": 0.36,
+          "bandwidth_gb_s": 221.3,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1840.1369585,
+          "wall_ratio": 0.9909,
+          "ttft_ms": 360.46441649999997,
+          "ttft_gain_pct": 5.7,
+          "decode_tps": 32.44384929111821,
+          "tps_gain_pct": -0.33,
+          "bandwidth_gb_s": 217.6,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2193.162229,
+          "wall_ratio": 1.0009,
+          "ttft_ms": 206.330604,
+          "ttft_gain_pct": 4.84,
+          "decode_tps": 32.21522813512186,
+          "tps_gain_pct": -0.63,
+          "bandwidth_gb_s": 216.0,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9935,
+      "mean_ttft_gain_pct": 5.05,
+      "mean_tps_gain_pct": -0.2
+    },
+    {
+      "name": "02_fixed_compiled_only",
+      "description": "Fixed Compiled KV-Cache only",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1117.8690625,
+          "wall_ratio": 0.9429,
+          "ttft_ms": 210.90941650000002,
+          "ttft_gain_pct": 0.74,
+          "decode_tps": 35.289412383852735,
+          "tps_gain_pct": 7.3,
+          "bandwidth_gb_s": 236.6,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1774.8822289999998,
+          "wall_ratio": 0.9557,
+          "ttft_ms": 387.778375,
+          "ttft_gain_pct": -1.45,
+          "decode_tps": 34.610556947548424,
+          "tps_gain_pct": 6.33,
+          "bandwidth_gb_s": 232.1,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2074.952479,
+          "wall_ratio": 0.9469,
+          "ttft_ms": 219.8302915,
+          "ttft_gain_pct": -1.38,
+          "decode_tps": 34.50255324176082,
+          "tps_gain_pct": 6.43,
+          "bandwidth_gb_s": 231.4,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9485,
+      "mean_ttft_gain_pct": -0.7,
+      "mean_tps_gain_pct": 6.69
+    },
+    {
+      "name": "03_readback_8_only",
+      "description": "Bundled Readback (R=8) only",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1155.3716875,
+          "wall_ratio": 0.9745,
+          "ttft_ms": 211.16008349999998,
+          "ttft_gain_pct": 0.62,
+          "decode_tps": 33.89771675720919,
+          "tps_gain_pct": 3.07,
+          "bandwidth_gb_s": 227.3,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1816.145229,
+          "wall_ratio": 0.978,
+          "ttft_ms": 382.493375,
+          "ttft_gain_pct": -0.06,
+          "decode_tps": 33.485619329092366,
+          "tps_gain_pct": 2.87,
+          "bandwidth_gb_s": 224.5,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2149.8643335,
+          "wall_ratio": 0.9811,
+          "ttft_ms": 218.8412705,
+          "ttft_gain_pct": -0.93,
+          "decode_tps": 33.147445774162804,
+          "tps_gain_pct": 2.25,
+          "bandwidth_gb_s": 222.3,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9779,
+      "mean_ttft_gain_pct": -0.12,
+      "mean_tps_gain_pct": 2.73
+    },
+    {
+      "name": "04_readback_16_only",
+      "description": "Bundled Readback (R=16) only",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1166.717667,
+          "wall_ratio": 0.9841,
+          "ttft_ms": 213.670583,
+          "ttft_gain_pct": -0.56,
+          "decode_tps": 33.58504920767484,
+          "tps_gain_pct": 2.11,
+          "bandwidth_gb_s": 225.2,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1837.5207500000001,
+          "wall_ratio": 0.9895,
+          "ttft_ms": 390.164771,
+          "ttft_gain_pct": -2.07,
+          "decode_tps": 33.170272512294055,
+          "tps_gain_pct": 1.91,
+          "bandwidth_gb_s": 222.4,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2143.613688,
+          "wall_ratio": 0.9783,
+          "ttft_ms": 220.68629149999998,
+          "ttft_gain_pct": -1.78,
+          "decode_tps": 33.28604195830624,
+          "tps_gain_pct": 2.68,
+          "bandwidth_gb_s": 223.2,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9839,
+      "mean_ttft_gain_pct": -1.47,
+      "mean_tps_gain_pct": 2.23
+    },
+    {
+      "name": "05_head_skip_plus_compiled",
+      "description": "Head Skip + Fixed Compiled",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1113.8398125,
+          "wall_ratio": 0.9395,
+          "ttft_ms": 205.835667,
+          "ttft_gain_pct": 3.13,
+          "decode_tps": 35.24969333214882,
+          "tps_gain_pct": 7.18,
+          "bandwidth_gb_s": 236.4,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1749.7560835,
+          "wall_ratio": 0.9422,
+          "ttft_ms": 360.396479,
+          "ttft_gain_pct": 5.72,
+          "decode_tps": 34.55274645805788,
+          "tps_gain_pct": 6.15,
+          "bandwidth_gb_s": 231.7,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2056.5728335000003,
+          "wall_ratio": 0.9386,
+          "ttft_ms": 201.59108400000002,
+          "ttft_gain_pct": 7.03,
+          "decode_tps": 34.50632569252575,
+          "tps_gain_pct": 6.44,
+          "bandwidth_gb_s": 231.4,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9401,
+      "mean_ttft_gain_pct": 5.29,
+      "mean_tps_gain_pct": 6.59
+    },
+    {
+      "name": "06_core_triad_r8",
+      "description": "Core Triad (HeadSkip + Compiled + Readback 8)",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1083.632875,
+          "wall_ratio": 0.914,
+          "ttft_ms": 201.07068750000002,
+          "ttft_gain_pct": 5.37,
+          "decode_tps": 36.26630016654438,
+          "tps_gain_pct": 10.27,
+          "bandwidth_gb_s": 243.2,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1703.149375,
+          "wall_ratio": 0.9171,
+          "ttft_ms": 354.826875,
+          "ttft_gain_pct": 7.17,
+          "decode_tps": 35.605281022666354,
+          "tps_gain_pct": 9.39,
+          "bandwidth_gb_s": 238.8,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2067.7803955,
+          "wall_ratio": 0.9437,
+          "ttft_ms": 206.3357915,
+          "ttft_gain_pct": 4.84,
+          "decode_tps": 34.39029054906553,
+          "tps_gain_pct": 6.08,
+          "bandwidth_gb_s": 230.6,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9249,
+      "mean_ttft_gain_pct": 5.8,
+      "mean_tps_gain_pct": 8.58
+    },
+    {
+      "name": "07_core_triad_r16",
+      "description": "Core Triad High-Cadence (HeadSkip + Compiled + Readback 16)",
+      "mode": "single",
+      "all_tokens_identical": true,
+      "tasks": {
+        "qa_short": {
+          "wall_ms": 1115.341,
+          "wall_ratio": 0.9407,
+          "ttft_ms": 213.0848755,
+          "ttft_gain_pct": -0.28,
+          "decode_tps": 35.49619645616852,
+          "tps_gain_pct": 7.93,
+          "bandwidth_gb_s": 238.0,
+          "tokens_identical": true
+        },
+        "math_reasoning": {
+          "wall_ms": 1729.2487919999999,
+          "wall_ratio": 0.9312,
+          "ttft_ms": 363.321875,
+          "ttft_gain_pct": 4.95,
+          "decode_tps": 35.148149004642406,
+          "tps_gain_pct": 7.98,
+          "bandwidth_gb_s": 235.7,
+          "tokens_identical": true
+        },
+        "coding_task": {
+          "wall_ms": 2146.1846459999997,
+          "wall_ratio": 0.9795,
+          "ttft_ms": 218.9573545,
+          "ttft_gain_pct": -0.98,
+          "decode_tps": 33.212999218782656,
+          "tps_gain_pct": 2.45,
+          "bandwidth_gb_s": 222.7,
+          "tokens_identical": true
+        }
+      },
+      "mean_wall_ratio": 0.9504,
+      "mean_ttft_gain_pct": 1.23,
+      "mean_tps_gain_pct": 6.12
+    },
+    {
+      "name": "08_throughput_baseline",
+      "description": "ThroughputMode W=4 (Baseline Knobs)",
+      "mode": "throughput_w4",
+      "all_tokens_identical": true,
+      "tasks": {
+        "concurrent": {
+          "wall_ms": 5044.545395499999,
+          "wall_ratio": 1.0429,
+          "tps": 28.54570730857808,
+          "tps_gain_pct": -4.11,
+          "tokens_identical": true
+        }
+      }
+    },
+    {
+      "name": "09_throughput_core_triad",
+      "description": "ThroughputMode W=4 (Core Triad Knobs)",
+      "mode": "throughput_w4",
+      "all_tokens_identical": true,
+      "tasks": {
+        "concurrent": {
+          "wall_ms": 5036.0015415,
+          "wall_ratio": 1.0411,
+          "tps": 28.594656102132845,
+          "tps_gain_pct": -3.95,
+          "tokens_identical": true
+        }
+      }
+    }
+  ]
+}

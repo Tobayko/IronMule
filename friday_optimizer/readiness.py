@@ -129,8 +129,11 @@ class ReadinessPolicy:
     deadline_seconds: float = 30.0
     min_memory_available_bytes: int = 1
     min_memory_available_fraction: float = 0.05
+    normalize_load_by_cpus: bool = False
 
     def __post_init__(self) -> None:
+        if not isinstance(self.normalize_load_by_cpus, bool):
+            raise TypeError("normalize_load_by_cpus must be a bool")
         if isinstance(self.min_samples, bool) or not isinstance(self.min_samples, int) or self.min_samples < 2 or self.min_samples > 100:
             raise ValueError("min_samples must be at least two")
         numbers = (self.sample_interval_seconds, self.max_load_1m, self.max_cpu_percent, self.memory_stability_fraction, self.load_stability_delta, self.deadline_seconds, self.min_memory_available_fraction)
@@ -294,8 +297,10 @@ def check_readiness(
             reasons.append("foreign_workload_or_unknown")
         if sample.load_1m is None:
             reasons.append("load_unknown")
-        elif sample.load_1m > policy.max_load_1m:
-            reasons.append("load_too_high")
+        else:
+            effective_load = (sample.load_1m / max(1, os.cpu_count() or 1)) if getattr(policy, "normalize_load_by_cpus", False) else sample.load_1m
+            if effective_load > policy.max_load_1m:
+                reasons.append("load_too_high")
         if sample.cpu_percent is None:
             reasons.append("cpu_unknown")
         elif sample.cpu_percent > policy.max_cpu_percent:
@@ -781,8 +786,37 @@ class HardwareLease:
         self.release()
 
 
+def probe_thermal_status() -> dict[str, Any]:
+    """Probe macOS thermal pressure and CPU/GPU throttling level via pmset."""
+    try:
+        completed = subprocess.run(
+            ["/usr/bin/pmset", "-g", "therm"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=5,
+        )
+        out = completed.stdout
+        is_throttled = bool("warning" in out.lower() and "no " not in out.lower())
+        speed_limit = 100
+        for line in out.splitlines():
+            if "CPU_Speed_Limit" in line:
+                try:
+                    speed_limit = int(line.split("=")[-1].strip())
+                except ValueError:
+                    pass
+        return {
+            "throttled": is_throttled,
+            "cpu_speed_limit": speed_limit,
+            "raw": out.strip(),
+        }
+    except Exception as exc:
+        return {"throttled": False, "cpu_speed_limit": 100, "error": str(exc)}
+
+
 __all__ = [
     "HardwareLease", "LeaseBusy", "LeaseError", "MacProbe", "MacSystemProbe", "ProbeSnapshot",
     "ReadinessGate",
     "ReadinessDecision", "ReadinessError", "ReadinessPolicy", "check_readiness",
+    "probe_thermal_status",
 ]

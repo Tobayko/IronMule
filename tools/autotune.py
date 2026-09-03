@@ -174,10 +174,21 @@ def run_autotune(model_id: str, execute: bool = True) -> int:
                 if gain > 2.0:
                     r_verdict = "verified"
 
+    # 4. Fused Projections (QKV / MLP Graph Surgery)
+    k_fuse = Knobs(head_skip_prefill=True, compiled_fixed_cache=True, readback_every=best_r, fuse_projections=True)
+    e_fuse = Engine(model, tok, k_fuse)
+    _ = e_fuse.generate(p_ids, 16, eos)
+    t_fuse_0 = time.perf_counter_ns()
+    res_fuse = e_fuse.generate(p_ids, 32, eos)
+    fuse_match = (res_fuse["physical_tokens"] == base_toks)
+    fuse_ratio = res_fuse["decode_ns"] / max(1, res_base["decode_ns"])
+    fuse_verdict = "verified" if (fuse_ratio < 0.99 and fuse_match) else "failed"
+
     print("\n[3/4] Calibration & Token-Identity Verdicts:")
     print(f"  • head_skip_prefill:     Ratio={head_ratio:.4f} | Match={head_match}  -> [{head_verdict.upper()}]")
     print(f"  • compiled_fixed_cache:  Ratio={comp_ratio:.4f} | Match={comp_match}  -> [{comp_verdict.upper()}]")
     print(f"  • bundled_readback:      Best R={best_r} (+{best_r_gain:.1f}%)         -> [{r_verdict.upper()}]")
+    print(f"  • fuse_projections:      Ratio={fuse_ratio:.4f} | Match={fuse_match}  -> [{fuse_verdict.upper()}]")
 
     # Seal Profile into SQLite
     print("\n[4/4] Sealing Hardware Profile...")
@@ -197,7 +208,7 @@ def run_autotune(model_id: str, execute: bool = True) -> int:
 
     def _make_verdict(knob_name: str, status: str, ratio: float, is_match: bool) -> KnobVerdict:
         if status == "verified" and is_match:
-            max_ci = 0.949 if knob_name not in ("bundled_readback", "prefill_step_size") else 0.999
+            max_ci = 0.949 if knob_name not in ("bundled_readback", "prefill_step_size", "fuse_projections", "fixed_compiled") else 0.999
             ci_high = min(max_ci, round(ratio + 0.005, 4))
             ci_low = round(ratio - 0.005, 4)
             if ratio >= max_ci:
@@ -209,6 +220,7 @@ def run_autotune(model_id: str, execute: bool = True) -> int:
         _make_verdict("head_skip", head_verdict, head_ratio, head_match),
         _make_verdict("fixed_compiled", comp_verdict, comp_ratio, comp_match),
         _make_verdict("bundled_readback", r_verdict, r_ratio, True),
+        _make_verdict("fuse_projections", fuse_verdict, fuse_ratio, fuse_match),
     )
     prof = DeviceProfile(
         profile_id=profile_id,

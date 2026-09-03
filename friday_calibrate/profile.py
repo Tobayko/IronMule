@@ -32,7 +32,7 @@ HISTORY = HistorySpec(
 
 #: The knobs a calibration run may verify. Closed on purpose: a knob that is not
 #: in this tuple cannot be turned on by a profile, whatever a profile claims.
-CALIBRATED_KNOBS = ("head_skip", "fixed_compiled", "prefill_step_size", "bundled_readback")
+CALIBRATED_KNOBS = ("head_skip", "fixed_compiled", "prefill_step_size", "bundled_readback", "fuse_projections")
 
 #: A knob is either shown to preserve tokens on this device, shown not to, or
 #: was not applicable here. There is no fourth, softer verdict.
@@ -46,6 +46,7 @@ KNOB_PHASE = {
     "prefill_step_size": "prefill",
     "fixed_compiled": "decode",
     "bundled_readback": "decode",
+    "fuse_projections": "decode",
 }
 
 
@@ -62,7 +63,7 @@ PROMOTION_MAX_CI_HIGH: float = 0.95
 #: act only on the ~20 % decode share and cannot mathematically achieve 5 % end-to-end
 #: despite being verified in their own phase (Cycle 16 fixed_compiled: 7.04 % decode gain;
 #: Cycle 17 / D4 bundled_readback: 4.19 % decode gain, user decision D4 from 2026-09-02).
-SERVING_ONLY_KNOBS: frozenset[str] = frozenset({"bundled_readback", "fixed_compiled"})
+SERVING_ONLY_KNOBS: frozenset[str] = frozenset({"bundled_readback", "fixed_compiled", "fuse_projections"})
 
 
 @dataclass(frozen=True)

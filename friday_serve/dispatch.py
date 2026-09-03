@@ -22,6 +22,7 @@ KNOB_TO_ENGINE: Mapping[str, Mapping[str, Any]] = {
     "head_skip": {"head_skip_prefill": True},
     "fixed_compiled": {"compiled_fixed_cache": True},
     "bundled_readback": {"readback_every": 8},
+    "fuse_projections": {"fuse_projections": True},
 }
 
 PHASES = ("prefill", "decode")

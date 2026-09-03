@@ -11,6 +11,7 @@ says nothing about it.
 
 from __future__ import annotations
 
+import functools
 import subprocess
 import sys
 import time
@@ -76,6 +77,8 @@ class IronMuleBackend:
         )
         if not self.eos_ids:
             raise BackendError("tokenizer exposes no end-of-sequence id")
+        from .radix_cache import RadixCache
+        self.radix_cache = RadixCache(max_tokens=16384)
 
     @classmethod
     def load(cls, model_id: str) -> "IronMuleBackend":
@@ -96,15 +99,19 @@ class IronMuleBackend:
             model, tokenizer, model_id=model_id, model_revision=snapshot.revision
         )
 
-    def encode(self, prompt: str) -> list[int]:
+    @functools.lru_cache(maxsize=512)
+    def _encode_cached(self, prompt: str) -> tuple[int, ...]:
         rendered = self.tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}], add_generation_prompt=True
         )
         values = rendered if isinstance(rendered, list) else self.tokenizer.encode(rendered)
-        ids = [int(value) for value in values]
+        ids = tuple(int(value) for value in values)
         if not ids or any(value < 0 for value in ids):
             raise BackendError("tokenizer returned invalid prompt IDs")
         return ids
+
+    def encode(self, prompt: str) -> list[int]:
+        return list(self._encode_cached(prompt))
 
     def set_prefix_cache(self, prefix_ids: Sequence[int] | None) -> None:
         """Configure stateful prefix caching across all engines."""
@@ -161,17 +168,30 @@ class IronMuleBackend:
         prompt_ids = [int(t) for t in token_ids]
         capacity = engine._capacity(len(prompt_ids), max_tokens)
 
-        # 1. Prefill
+        # 1. Prefill with Radix-Tree Lookup
         started = time.perf_counter_ns()
-        state, token = engine._prefill(prompt_ids, capacity)
+        match_len, cached_state, _ = self.radix_cache.match_prefix(prompt_ids)
+        if match_len > 0 and cached_state is not None and match_len < len(prompt_ids):
+            suffix = prompt_ids[match_len:]
+            warm_state = {"position": {"offset": mx.array(match_len, dtype=mx.int32)}, "layers": cached_state}
+            state, hidden = engine._feed(warm_state, suffix, capacity)
+            from ironmule.runtime import _project
+            logits = _project(engine.model, hidden[:, -1:, :] if engine.knobs.head_skip_prefill else hidden)
+            token = mx.argmax(logits[:, -1, :], axis=-1).reshape((1, 1))
+            mx.eval(token, *self._leaves(state))
+            mx.synchronize()
+            hits = self.radix_cache.hits
+        else:
+            state, token = engine._prefill(prompt_ids, capacity)
+            hits = (
+                getattr(engine.prefix_cache, "hits", 0)
+                if getattr(engine, "prefix_cache", None) is not None
+                else 0
+            )
+            if len(prompt_ids) >= 32 and hasattr(state, "__getitem__") and "layers" in state:
+                self.radix_cache.insert(prompt_ids, state["layers"])
         prefill_ns = time.perf_counter_ns() - started
-
         first = int(token.reshape((-1,)).item())
-        hits = (
-            getattr(engine.prefix_cache, "hits", 0)
-            if getattr(engine, "prefix_cache", None) is not None
-            else 0
-        )
         first_text = self._decode_text([first])
 
         yield {
