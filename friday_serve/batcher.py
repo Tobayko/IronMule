@@ -72,8 +72,11 @@ class ContinuousBatcher:
         backend: Any,
         max_concurrency: int = 4,
         max_width: int = 4,
+        *,
+        controller: Any = None,
     ) -> None:
         self.backend = backend
+        self.controller = controller
         self.max_concurrency = max_concurrency
         self.max_width = min(max_width, max_concurrency)
         self.incoming_queue: queue.Queue[BatchSession] = queue.Queue()
@@ -81,6 +84,7 @@ class ContinuousBatcher:
         self.stop_event = threading.Event()
         self.lock = threading.Lock()
         self.active_count = 0
+        self._dead = False
 
         self.worker_thread = threading.Thread(
             target=self._run_loop, daemon=True, name="FridayContinuousBatcher"
@@ -90,8 +94,16 @@ class ContinuousBatcher:
     def submit(
         self, prompt_ids: Sequence[int], max_tokens: int, knobs: Mapping[str, Any]
     ) -> BatchSession:
-        """Submit a request to the batcher. Raises RuntimeError if concurrency limit reached."""
+        """Submit a request to the batcher.
+
+        Raises ``RuntimeError`` if the concurrency limit is reached, or if the
+        worker thread has died (message contains ``"batcher worker is dead"``,
+        which the HTTP layer treats as a signal to fall back to the single-flight
+        path rather than a 429).
+        """
         with self.lock:
+            if self._dead:
+                raise RuntimeError("batcher worker is dead")
             # Critic Gate 1: Check total admitted + pending requests
             total_in_flight = self.active_count + self.incoming_queue.qsize()
             if total_in_flight >= self.max_concurrency:
@@ -144,16 +156,28 @@ class ContinuousBatcher:
             return False
 
         engine = self.backend._engine(session.knobs)
+        # Marker check: the engine must actually carry the authorised knobs, the
+        # same guarantee Server._check_marker enforces on the single-flight path.
+        applied = getattr(engine, "knobs", None)
+        if applied is not None and hasattr(applied, "as_dict"):
+            used = applied.as_dict()
+            for name, value in session.knobs.items():
+                if used.get(name) != value:
+                    session.event_queue.put(
+                        {"type": "error", "error": f"authorised knob not applied: {name}={value!r}"}
+                    )
+                    return False
         prompt_ids = session.prompt_ids
         capacity = engine._capacity(len(prompt_ids), session.max_tokens)
         session.capacity = capacity
 
         t0 = time.perf_counter_ns()
         radix = getattr(self.backend, "radix_cache", None)
+        radix_tag = self.backend._radix_tag(session.knobs) if hasattr(self.backend, "_radix_tag") else None
         match_len = 0
         cached_state = None
         if radix is not None:
-            match_len, cached_state, _ = radix.match_prefix(prompt_ids)
+            match_len, cached_state, _ = radix.match_prefix(prompt_ids, tag=radix_tag)
 
         if match_len > 0 and cached_state is not None and match_len < len(prompt_ids):
             suffix = prompt_ids[match_len:]
@@ -171,7 +195,7 @@ class ContinuousBatcher:
             mx.synchronize()
             hits = getattr(getattr(engine, "prefix_cache", None), "hits", 0)
             if radix is not None and len(prompt_ids) >= 32 and hasattr(state, "__getitem__") and "layers" in state:
-                radix.insert(prompt_ids, state["layers"])
+                radix.insert(prompt_ids, state["layers"], tag=radix_tag)
         session.prefill_ns = time.perf_counter_ns() - t0
 
         first_tok = int(token.reshape((-1,)).item())
@@ -252,65 +276,94 @@ class ContinuousBatcher:
             session_generated: dict[int, list[Any]] = {id(s): [] for s in group}
             flat_eval = []
 
-            for _ in range(cadence):
+            try:
+                for _ in range(cadence):
+                    for s in group:
+                        engine = self.backend._engine(s.knobs)
+                        body = engine._body(s.capacity, 1)
+                        out = body(s.curr_token, s.state)
+                        picks = engine._picks(out)
+                        next_tok, next_state = picks[:, -1:], out[1]
+                        s.curr_token = next_tok
+                        s.state = next_state
+                        session_generated[id(s)].append(next_tok)
+                        flat_eval.append(next_tok)
+                        flat_eval.extend(self._leaves(next_state))
+
+                # 3. Unified Metal Evaluation: Submit all grouped steps together
+                mx.async_eval(*flat_eval)
+                mx.eval(*flat_eval)
+                mx.synchronize()
+
+                # 4. Process Tokens & Dispatch to individual SSE queues
                 for s in group:
                     engine = self.backend._engine(s.knobs)
-                    body = engine._body(s.capacity, 1)
-                    out = body(s.curr_token, s.state)
-                    picks = engine._picks(out)
-                    next_tok, next_state = picks[:, -1:], out[1]
-                    s.curr_token = next_tok
-                    s.state = next_state
-                    session_generated[id(s)].append(next_tok)
-                    flat_eval.append(next_tok)
-                    flat_eval.extend(self._leaves(next_state))
+                    tokens_for_s = session_generated[id(s)]
+                    hit_eos = False
 
-            # 3. Unified Metal Evaluation: Submit all grouped steps together
-            mx.async_eval(*flat_eval)
-            mx.eval(*flat_eval)
-            mx.synchronize()
+                    for next_tok in tokens_for_s:
+                        tok_val = int(next_tok.reshape((-1,)).item())
+                        s.logical_tokens.append(tok_val)
+                        hit_eos = tok_val in eos_ids
+                        at_limit = len(s.logical_tokens) >= s.max_tokens
 
-            # 4. Process Tokens & Dispatch to individual SSE queues
-            for s in group:
-                engine = self.backend._engine(s.knobs)
-                tokens_for_s = session_generated[id(s)]
-                hit_eos = False
-
-                for next_tok in tokens_for_s:
-                    tok_val = int(next_tok.reshape((-1,)).item())
-                    s.logical_tokens.append(tok_val)
-                    hit_eos = tok_val in eos_ids
-                    at_limit = len(s.logical_tokens) >= s.max_tokens
-
-                    tok_text = self._decode_text([tok_val])
-                    s.event_queue.put(
-                        {
-                            "type": "token",
-                            "token": tok_val,
-                            "tokens": [tok_val],
-                            "text": tok_text,
-                            "is_first": False,
-                        }
-                    )
-
-                    if hit_eos or at_limit:
-                        s.done = True
-                        decode_ns = time.perf_counter_ns() - s.start_decode_ns
-                        hits = getattr(getattr(engine, "prefix_cache", None), "hits", 0)
+                        tok_text = self._decode_text([tok_val])
                         s.event_queue.put(
                             {
-                                "type": "done",
-                                "total_tokens": len(s.logical_tokens),
-                                "decode_ns": decode_ns,
-                                "total_ns": s.prefill_ns + decode_ns,
-                                "knobs": dict(s.knobs),
-                                "prefix_cache_hits": hits,
-                                "logical_tokens": list(s.logical_tokens),
+                                "type": "token",
+                                "token": tok_val,
+                                "tokens": [tok_val],
+                                "text": tok_text,
+                                "is_first": False,
                             }
                         )
-                        break
+
+                        if hit_eos or at_limit:
+                            s.done = True
+                            decode_ns = time.perf_counter_ns() - s.start_decode_ns
+                            hits = getattr(getattr(engine, "prefix_cache", None), "hits", 0)
+                            s.event_queue.put(
+                                {
+                                    "type": "done",
+                                    "total_tokens": len(s.logical_tokens),
+                                    "decode_ns": decode_ns,
+                                    "total_ns": s.prefill_ns + decode_ns,
+                                    "knobs": dict(s.knobs),
+                                    "prefix_cache_hits": hits,
+                                    "logical_tokens": list(s.logical_tokens),
+                                }
+                            )
+                            break
+            except Exception as exc:  # noqa: BLE001 - one bad decode must not brick the worker silently
+                self._fail_all(exc)
+                return
 
             # Keep only active, non-done sessions
             self.active_sessions = [s for s in self.active_sessions if not s.done]
             with self.lock:
                 self.active_count = len(self.active_sessions)
+
+    def _fail_all(self, exc: Exception) -> None:
+        """A decode step raised. Error every in-flight and queued session, latch
+        the breaker if an optimised session was running, and mark the worker dead
+        so ``submit`` sends later requests to the single-flight path."""
+
+        optimised = any(s.knobs for s in self.active_sessions)
+        for s in list(self.active_sessions):
+            s.done = True
+            s.event_queue.put({"type": "error", "error": f"batcher decode failed: {exc}"})
+        self.active_sessions.clear()
+        while True:
+            try:
+                waiting = self.incoming_queue.get_nowait()
+            except queue.Empty:
+                break
+            waiting.event_queue.put({"type": "error", "error": "batcher unavailable"})
+        with self.lock:
+            self.active_count = 0
+            self._dead = True
+        if optimised and self.controller is not None:
+            try:
+                self.controller.breaker.trip(exc)
+            except Exception:
+                pass

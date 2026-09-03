@@ -12,11 +12,32 @@ Optimizes the operating system execution environment without altering model weig
 from __future__ import annotations
 
 import ctypes
-import os
+import subprocess
 import sys
 from typing import Any
 
 import mlx.core as mx
+
+
+def detect_uma_gb() -> float:
+    """Real unified memory in GiB, or a conservative fallback off Darwin."""
+    if sys.platform == "darwin":
+        try:
+            out = subprocess.run(
+                ["/usr/sbin/sysctl", "-n", "hw.memsize"],
+                capture_output=True, text=True, timeout=3, check=False,
+            )
+            total = int(out.stdout.strip())
+            if total > 0:
+                return total / (1024**3)
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            pass
+    try:
+        import psutil
+
+        return psutil.virtual_memory().total / (1024**3)
+    except Exception:
+        return 16.0
 
 
 def set_performance_qos() -> bool:
@@ -32,29 +53,34 @@ def set_performance_qos() -> bool:
         return False
 
 
-def tune_runtime_environment(uma_gb: float = 34.0) -> dict[str, Any]:
-    """Apply all hardware, OS, and Metal environment tunings."""
+def tune_runtime_environment(uma_gb: float | None = None) -> dict[str, Any]:
+    """Apply hardware, OS, and Metal environment tunings. Never raises."""
     qos_ok = set_performance_qos()
+    if uma_gb is None:
+        uma_gb = detect_uma_gb()
 
     # Metal allocation cache: 50% of UMA to avoid buffer reallocation syscalls
     cache_bytes = int(0.5 * uma_gb * (1024**3))
     # Wired memory limit: 70% of UMA to prevent swapping
     wired_bytes = int(0.7 * uma_gb * (1024**3))
 
-    try:
-        set_c = getattr(mx, "set_cache_limit", None) or getattr(getattr(mx, "metal", None), "set_cache_limit", None)
-        if set_c:
-            set_c(cache_bytes)
-        set_w = getattr(mx, "set_wired_limit", None) or getattr(getattr(mx, "metal", None), "set_wired_limit", None)
-        if set_w:
-            set_w(wired_bytes)
-        dev_fn = getattr(mx, "device_info", None) or getattr(getattr(mx, "metal", None), "device_info", None)
-        if dev_fn:
-            metal_info = dev_fn()
-    except Exception as exc:
-        metal_info = {"error": str(exc)}
+    metal_info: dict[str, Any] = {}
+    if sys.platform == "darwin":
+        try:
+            set_c = getattr(mx, "set_cache_limit", None) or getattr(getattr(mx, "metal", None), "set_cache_limit", None)
+            if set_c:
+                set_c(cache_bytes)
+            set_w = getattr(mx, "set_wired_limit", None) or getattr(getattr(mx, "metal", None), "set_wired_limit", None)
+            if set_w:
+                set_w(wired_bytes)
+            dev_fn = getattr(mx, "device_info", None) or getattr(getattr(mx, "metal", None), "device_info", None)
+            if dev_fn:
+                metal_info = dict(dev_fn())
+        except Exception as exc:
+            metal_info = {"error": str(exc)}
 
     return {
+        "uma_gb": uma_gb,
         "qos_interactive": qos_ok,
         "metal_cache_limit_gb": cache_bytes / (1024**3),
         "metal_wired_limit_gb": wired_bytes / (1024**3),

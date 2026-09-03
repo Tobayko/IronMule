@@ -35,14 +35,12 @@ sys.path.insert(0, str(PROJECT_ROOT / "tools"))
 sys.path.insert(0, str(IRONMULE))
 
 import mlx.core as mx
-from tools._bench import enforce_offline, resolve_local_model_snapshot
+from tools._bench import harness_preconditions, resolve_local_model_snapshot
 from mlx_lm import load
 from mlx.utils import tree_flatten
 
-from ironmule.runtime import Knobs, Engine, BASELINE
+from ironmule.runtime import Knobs, Engine
 from ironmule.tune import _eos_ids
-
-M1_MAX_PEAK_BANDWIDTH_GBS = 400.0  # 512-bit LPDDR5-6400 on M1 Max
 
 # Long document prompt (~380 tokens)
 LONG_PROMPT_DOC = (
@@ -75,7 +73,7 @@ def get_model_size_gb(model) -> float:
     return tot_bytes / 1e9
 
 
-def benchmark_model_long_tasks(model_id: str, tag: str) -> dict:
+def benchmark_model_long_tasks(model_id: str, tag: str, guard) -> dict:
     print(f"\n=======================================================")
     print(f"=== LONG TASK BENCHMARK: {tag} ({model_id}) ===")
     print(f"=======================================================")
@@ -103,76 +101,50 @@ def benchmark_model_long_tasks(model_id: str, tag: str) -> dict:
         print(f"\n--- Testing Long Output: {max_tokens} tokens (Prompt: {prompt_len}) ---")
         length_results = {}
 
+        engines = {name: Engine(model, tokenizer, knobs) for name, knobs in configs}
+        names = [name for name, _ in configs]
+        base_name = names[0]
+
         # Warmup all engines
-        for _, knobs in configs:
-            eng = Engine(model, tokenizer, knobs)
-            _ = eng.generate(prompt_ids[:16], 8, eos_ids)
+        for eng in engines.values():
+            eng.generate(prompt_ids[:16], 8, eos_ids)
+        mx.synchronize()
 
-        base_tokens = None
+        samples = {name: {"ttft": [], "tps": [], "wall": [], "peak": []} for name in names}
+        tokens_seen = {name: [] for name in names}
 
-        for cfg_name, knobs in configs:
-            eng = Engine(model, tokenizer, knobs)
-
-            ttfts = []
-            decode_tpss = []
-            walls = []
-            peaks = []
-            tokens_sample = None
-
-            for rep in range(3):
+        for rep in range(3):
+            order = names if rep % 2 == 0 else list(reversed(names))
+            for cfg_name in order:
                 mx.reset_peak_memory()
-                mx.eval()
                 mx.synchronize()
-
-                res = eng.generate(prompt_ids, max_tokens, eos_ids)
-
-                ttft_ms = res["prefill_ns"] / 1e6
-                decode_s = res["decode_ns"] / 1e9
-                total_s = res["total_ns"] / 1e9
+                res = engines[cfg_name].generate(prompt_ids, max_tokens, eos_ids)
+                guard.record_gpu(res["total_ns"] / 1e9)
                 tok_count = len(res["physical_tokens"])
+                decode_s = res["decode_ns"] / 1e9
+                samples[cfg_name]["ttft"].append(res["prefill_ns"] / 1e6)
+                samples[cfg_name]["tps"].append((tok_count - 1) / max(decode_s, 1e-6))
+                samples[cfg_name]["wall"].append(res["total_ns"] / 1e9)
+                samples[cfg_name]["peak"].append(mx.get_peak_memory() / (1024 * 1024))
+                tokens_seen[cfg_name].append(res["physical_tokens"])
+            guard.required_break()
 
-                # Decode TPS = (total_tokens - 1) / decode_seconds
-                decode_tps = (tok_count - 1) / max(decode_s, 1e-6)
-                peak_mb = mx.get_peak_memory() / (1024 * 1024)
-
-                ttfts.append(ttft_ms)
-                decode_tpss.append(decode_tps)
-                walls.append(total_s)
-                peaks.append(peak_mb)
-
-                if rep == 0:
-                    tokens_sample = res["physical_tokens"]
-
-            med_ttft = st.median(ttfts)
-            med_tps = st.median(decode_tpss)
-            med_wall = st.median(walls)
-            med_peak = st.median(peaks)
-
-            # Bandwidth: model_bytes streamed per generated decode token
-            effective_bw_gbs = model_gb * med_tps
-            bw_util_pct = (effective_bw_gbs / M1_MAX_PEAK_BANDWIDTH_GBS) * 100.0
-
-            if base_tokens is None:
-                base_tokens = tokens_sample
-                match = True
-            else:
-                match = (tokens_sample == base_tokens)
-
+        for cfg_name in names:
+            match = all(
+                cand == base
+                for cand, base in zip(tokens_seen[cfg_name], tokens_seen[base_name])
+            )
             length_results[cfg_name] = {
-                "ttft_ms": med_ttft,
-                "decode_tps": med_tps,
-                "wall_s": med_wall,
-                "effective_bw_gbs": effective_bw_gbs,
-                "bw_util_pct": bw_util_pct,
-                "peak_mem_mb": med_peak,
+                "ttft_ms": st.median(samples[cfg_name]["ttft"]),
+                "decode_tps": st.median(samples[cfg_name]["tps"]),
+                "wall_s": st.median(samples[cfg_name]["wall"]),
+                "peak_mem_mb": st.median(samples[cfg_name]["peak"]),
                 "tokens_identical": match,
             }
-
+            r = length_results[cfg_name]
             print(
-                f"[{cfg_name}]:\n"
-                f"   TTFT: {med_ttft:.2f} ms | Decode TPS: {med_tps:.2f} tok/s | Wall: {med_wall:.3f} s\n"
-                f"   Effective Bandwidth: {effective_bw_gbs:.1f} GB/s ({bw_util_pct:.1f}% of 400 GB/s) | "
-                f"Peak RAM: {med_peak:.0f} MB | Identical: {match}"
+                f"[{cfg_name}]: TTFT {r['ttft_ms']:.2f} ms | Decode {r['decode_tps']:.2f} tok/s | "
+                f"Wall {r['wall_s']:.3f} s | Peak RAM {r['peak_mem_mb']:.0f} MB | Identical: {match}"
             )
 
         # Print Gains against baseline
@@ -207,11 +179,13 @@ def benchmark_model_long_tasks(model_id: str, tag: str) -> dict:
 
 
 def main():
-    enforce_offline()
+    # continuous_gpu_limit lifted for this study by user decision 2026-09-03
+    # (12B/256-token runs exceed 6 s); duty cycle and wall limit stay.
+    guard = harness_preconditions(allow_long_gpu=True)
     all_results = {}
 
-    all_results["Gemma_4B"] = benchmark_model_long_tasks("mlx-community/gemma-3-4b-it-4bit", "Gemma 4B")
-    all_results["Gemma_12B"] = benchmark_model_long_tasks("mlx-community/gemma-3-12b-it-4bit", "Gemma 12B")
+    all_results["Gemma_4B"] = benchmark_model_long_tasks("mlx-community/gemma-3-4b-it-4bit", "Gemma 4B", guard)
+    all_results["Gemma_12B"] = benchmark_model_long_tasks("mlx-community/gemma-3-12b-it-4bit", "Gemma 12B", guard)
 
     out_path = PROJECT_ROOT / "experiments" / "model_benchmark" / "long_tasks_benchmark_results.json"
     out_path.write_text(json.dumps(all_results, indent=2))

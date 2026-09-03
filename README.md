@@ -1,313 +1,123 @@
-# IronMule: Hardware-Aware AI Runtime for Apple Silicon
+# IronMule — Hardware-Aware AI Runtime for Apple Silicon
 
-```text
- ██╗██████╗  ██████╗ ███╗   ██╗███╗   ███╗██╗   ██╗██╗     ███████╗
- ██║██╔══██╗██╔═══██╗████╗  ██║████╗ ████║██║   ██║██║     ██╔════╝
- ██║██████╔╝██║   ██║██╔██╗ ██║██╔████╔██║██║   ██║██║     █████╗  
- ██║██╔══██╗██║   ██║██║╚██╗██║██║╚██╔╝██║██║   ██║██║     ██╔══╝  
- ██║██║  ██║╚██████╔╝██║ ╚████║██║ ╚═╝ ██║╚██████╔╝███████╗███████╗
- ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝     ╚═╝ ╚═════╝ ╚══════╝╚══════╝
-   ⚡ HARDWARE-AWARE SELF-OPTIMIZING AI RUNTIME FOR APPLE SILICON ⚡
-```
+**IronMule** (Project Friday) is a tightly measured local LLM inference runtime for
+Apple Silicon, built on MLX around Gemma 3 (4-bit). It is a research vehicle, not a
+product: every performance claim is bound to a preregistration, a sealed code hash,
+paired AB/BA sampling, an A/A noise gate, and exact token identity. A number that has
+not passed that pipeline is labelled *exploratory*, not shipped.
 
-```text
-╭────────────────────────────────────────────────────────────────────────────────────────╮
-│  HARDWARE: Apple Silicon M1 Max (34 GB UMA, 32-Core GPU, 400 GB/s Bus)                 │
-│  VERIFICATION: 98/98 Tests Passed (100% Bit-Exact Identity, Zero Simulation/Mocks)     │
-│  BENCHMARK: 117.2 tok/s Decode (RAG) │ TTFT: 72.6 ms │ Tokenizer: 0.21 µs (26,513x)   │
-╰────────────────────────────────────────────────────────────────────────────────────────╯
-```
-
-<p align="center">
-  <img src="docs/assets/architecture.jpg" alt="Figure 1: IronMule System Architecture & Pipeline" width="100%">
-  <em>Figure 1: Clean, zero-copy inference pipeline on Apple Silicon Unified Memory Architecture (UMA).</em>
-</p>
-
-<p align="center">
-  <a href="#benchmarks"><img src="https://img.shields.io/badge/Apple_Silicon-M1_Max_34GB-black?style=for-the-badge&logo=apple" alt="Apple Silicon"></a>
-  <a href="#architecture"><img src="https://img.shields.io/badge/Architecture-Unified_Memory-00E5FF?style=for-the-badge" alt="Unified Memory"></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/Tests-98%20Passed%20(100%25)-00E676?style=for-the-badge" alt="Tests"></a>
-  <a href="#api"><img src="https://img.shields.io/badge/OpenAI_API-v1_Compatible-blueviolet?style=for-the-badge" alt="OpenAI API"></a>
-  <a href="docs/ARBEITSJOURNAL.md"><img src="https://img.shields.io/badge/Evidence-Zero_Mocks-FF9100?style=for-the-badge" alt="Evidence"></a>
-</p>
+> **Status 2026-09-03.** A review (Codex) found that several benchmark harnesses added
+> during the 2026-09-02/03 "serving" work measured incorrectly (single-shot instead of
+> paired, lazy MLX graphs evaluated once, baseline truncated to candidate length) and
+> that a former auto-tuner wrote fabricated statistics into the sealed device profile.
+> Those harnesses have been repaired and the affected numbers are being re-measured on
+> real hardware; until each re-run lands, the figures below are marked *exploratory —
+> re-measurement pending*. See `docs/ARBEITSJOURNAL.md` (entry 2026-09-03) and
+> `docs/GEMINI_SELF_LEARNING_SYSTEM.md`.
 
 ---
 
-## ⚡ What is IronMule?
+## What it does
 
-**IronMule** (Project Friday) is an autonomous, hardware-aware, self-optimizing LLM runtime engineered specifically for **Apple Silicon Unified Memory Architectures (UMA)** and **Metal GPU compute**.
-
-Instead of treating Apple Silicon as generic UNIX or a CUDA clone, IronMule exploits the unified physical address space, on-chip threadgroup caches, Mach kernel scheduler, and streaming memory bus to deliver the fastest local inference on macOS with **100% bit-exact mathematical token identity**.
-
----
-
-## 🌟 Key Features & Breakthroughs
-
-### 1. Dual-Model Zero-Cold-Start Co-Residency
-- Holds **Gemma 1B (0.8 GB)** and **Gemma 4B (2.5 GB)** resident in 34 GB Unified Memory simultaneously (total footprint < 3.3 GB).
-- Both models are pre-warmed on server startup (priming Metal JIT shaders in < 200 ms).
-- Dynamic model routing: sub-30ms switching between ultra-fast low-latency tier (`gemma-1b` at >160 tok/s) and high-reasoning tier (`gemma-4b` at ~80–117 tok/s) via OpenAI-compatible `/v1/models` catalog.
-
-### 2. Workload-Adaptive Prompt-Lookup Self-Speculation
-- Zero-memory-overhead speculative decoding without requiring a secondary draft model.
-- Automatically detects document/schema n-gram recurrence (`detect_ngram_overlap`) in incoming requests.
-- **M1 Max Hardware Benchmark:** Reaches **93.3% acceptance rate** on RAG, summarization, and document Q&A, boosting decode throughput from 90.9 to **`117.2 tok/s` (+29.0% TPS)** with **100% bit-exact token identity**.
-
-### 3. Radix-Tree Global Prefix Caching (vLLM / SGLang Architecture)
-- Hierarchical KV-Trie (`friday_serve/radix_cache.py`) with zero-copy node slicing and LRU eviction.
-- Caches common system instructions, API schemas, and few-shot examples across independent client sessions.
-- **M1 Max Hardware Benchmark:** Slashes Time-To-First-Token (TTFT) from 189.6 ms to **`72.6 ms` (2.6x speedup)**.
-
-### 4. macOS Mach Kernel QoS & Metal Allocation Clamping
-- Pinned to Apple **Firestorm Performance Cores (P-Cores)** via `pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0)`.
-- Eliminates CPU scheduling throttles to Efficiency Cores (E-Cores).
-- Pre-allocates a **17 GB Metal allocation cache** (50% UMA) and sets a **24 GB Wired Memory Limit** (70% UMA), stopping Mach VM allocation syscalls and preventing macOS `dynamic_pager` memory compression.
-
-### 5. Double-Buffered Asynchronous Token Generation Pipeline
-- Overlaps Metal GPU execution for step $t+1$ (`mx.async_eval`) with Python host socket streaming and SSE serialization for step $t$.
-- Eliminates host bubbles, yielding a **+2.9% throughput increase** (21.3 ms saved per 64 tokens).
-
-### 6. Continuous Dynamic Micro-Batching
-- Coordinates up to $W=8$ concurrent inference requests within a single unified Metal command buffer evaluation.
-- Saturates the 32 GPU cores to achieve **83.5 tok/s aggregate throughput** (+42% gain vs single stream) with zero cross-request attention bleeding.
-
-### 7. Ultra-Fast Server Fastpath
-- LRU prompt tokenization cache: cuts prompt encoding latency from 5,514.7 µs to **`0.21 µs` (26,513x speedup)**.
-- Pre-formatted SSE byte buffers: cuts per-token serialization from 2.06 µs to **`0.28 µs` (7.5x speedup)**.
+- Loads one Gemma 3 model into Apple Silicon Unified Memory and serves it behind an
+  OpenAI-compatible HTTP/SSE endpoint (`/v1/chat/completions`, `/v1/models`).
+- Applies an engine knob only if *this device's* calibration profile verified it as
+  token-identical (`head_skip_prefill`, `compiled_fixed_cache`, `readback_every = 8`).
+  An unverified knob is off; a profile that verified nothing serves the baseline.
+- Derives request scope from the actual tokens and the loaded model, never from a
+  caller's label; a request outside the calibrated scope (non-greedy, batched, wrong
+  model revision) runs the baseline.
+- Latches a persistent circuit breaker on any failure of an optimised path, so a knob
+  that failed once stays off across restarts.
+- Runs the LinUCB `AdaptiveRLController` in **shadow mode only**: it logs the knob set
+  it *would* pick (`.friday-data/rl-shadow-decisions.jsonl`) but never applies it and
+  never learns from a serving request. RL stays NO-GO until R2.
 
 ---
 
-## 📊 Empirical Hardware Roofline Benchmarks
+## Measurement tools (`python tools/friday.py <tool>`)
 
-<p align="center">
-  <img src="docs/assets/benchmark_comparison.jpg" alt="Figure 2: Empirical Hardware Comparison on Apple Silicon M1 Max" width="100%">
-  <em>Figure 2: Empirical comparison on Apple Silicon M1 Max: (A) Time-To-First-Token (TTFT) reduction via Radix-Tree Prefix Cache, (B) Generation speedup via Workload-Adaptive Prompt-Lookup.</em>
-</p>
+Every measuring tool refuses to run without an explicit `--execute` and enforces the
+shared gate: AC power, `BudgetGuard` duty cycle, offline environment, paired sampling.
 
-All metrics measured on an **Apple M1 Max (34 GB Unified Memory, 32-Core GPU, macOS 15+)**:
+| Command | Script | What it measures |
+| --- | --- | --- |
+| `loop` | `optimization_loop.py` | Self-optimisation loop over execution plans, confirms its own winner |
+| `dispatch` | `measure_dispatch_plan.py` | One execution plan vs. baseline, paired, frozen threshold |
+| `cooldown` | `measure_cooldown_effect.py` | How an idle pause slows the next operation |
+| `aa` | `run_h0_aa.py` | The preregistered H0 A/A null control (calibration, no optimisation) |
+| `model-loop` | `model_loop.py` | H2: a local model proposes execution plans, the harness judges them |
+| `codegen` | `codegen_loop.py` | H2 full: a local model writes execution plans, sandboxed and judged |
+| `roofline` | `measure_roofline.py` | Whether inference is memory- or compute-bound per phase |
+| `fusion` | `measure_fusion_layer.py` | Fuse a model's forward pass, measure the gain |
+| `guard` | `run_h01_guard.py` | Verify the H0.1 analysis core stays stdlib-only (no GPU) |
+| `evidence` | `evidence.py` | Verify or display the append-only H1/H2 evidence history (no GPU) |
+| `serve` | `run_serve.py` | Start the OpenAI-compatible HTTP/SSE server + terminal cockpit |
+| `monitor` | `monitor.py` | Remote in-place terminal telemetry cockpit |
 
-| Dimension | Baseline (Standard) | IronMule Optimized | Gain / Acceleration | Verification |
-| :--- | :---: | :---: | :---: | :--- |
-| **Prompt Tokenization** | 5,514.7 µs | **0.21 µs** | **26,513x Faster** | `tools/bench_server_fastpath.py` |
-| **SSE Chunk Formatting** | 2.06 µs / tok | **0.28 µs / tok** | **7.5x Faster** | `tools/bench_server_fastpath.py` |
-| **K-V Prefix Cache Hit (TTFT)** | 189.6 ms | **72.6 ms** | **2.6x Faster TTFT** | `tools/bench_radix_cache.py` |
-| **Decode Throughput (RAG)** | 90.9 tok/s | **117.2 tok/s** | **+29.0% TPS** | `tools/bench_prompt_lookup.py` |
-| **Decode Step RMSNorm Fusion** | 653.3 µs | **290.6 µs** | **+55.5% Speedup** | `tools/bench_fused_rmsnorm.py` |
-| **Dual-Model Concurrent Query** | Single-model only | **Both models in 270 ms** | **Zero Cold Start** | `tools/test_live_dual_model.py` |
-| **Multi-Stream GPU Saturation** | 58.3 tok/s (1 Client) | **83.5 tok/s (4–8 Clients)** | **+42% Throughput** | `tools/bench_hardware_environment.py` |
-| **Server Cold-Start Delay** | ~400 ms Hitch | **105.8 ms from Request #1** | **Primed Metal JIT** | `tools/test_live_server_e2e.py` |
-
----
-
-## 🖥️ Live Terminal Cockpit Dashboard
-
-IronMule includes a high-density, flicker-free ANSI/Unicode terminal dashboard running at 10 FPS directly in your terminal or over HTTP (`/dashboard`):
-
-```text
-╔══════════════════════════════════════════════════════════════════════════╗
-║              🐎 IRONMULE ⚡ FRIDAY ULTIMATE INFERENCE COCKPIT              ║
-╠══════════════════════════════════════════════════════════════════════════╣
-║ Model: mlx-community/gemma-3-4b-it-4bit (2.56 GB) │ Breaker: NOMINAL     ║
-╠──────────────────────────────────────────────────────────────────────────╣
-║ STATUS: ✓ COMPLETED STREAM #001 (28 tokens in 0.40s)                    ║
-╠──────────────────────────────────────────────────────────────────────────╣
-║ MEMORY BANDWIDTH UTILIZATION:                                            ║
-║   [████████████░░░░░░░░░░] 226.8 GB/s / 400.0 GB/s (56.7 %)              ║
-║                                                                          ║
-║ TIME TO FIRST TOKEN (TTFT):                                              ║
-║   [████████░░░░░░░░░░░░░░] 72.6 ms  [RADIX-TREE CACHE HIT]               ║
-║                                                                          ║
-║ DECODE RATE (TPS):                                                       ║
-║   [████████████████░░░░░░] 117.2 tok/s (RAG Speculation Active)          ║
-╠──────────────────────────────────────────────────────────────────────────╣
-║ HARDWARE & MEMORY SAFETY:                                                ║
-║   VRAM Peak: 3203 MB | SWAP: 0.0 MB [WIRED SAFE] | Concurrency: 4/4      ║
-║                                                                          ║
-║ DISPATCH & CONTROLLER:                                                   ║
-║   RL Strategy: device_profile_dispatch | Speculation Acceptance: 93.3 %  ║
-╠──────────────────────────────────────────────────────────────────────────╣
-║ RECENT INFERENCE STREAMS:                                                ║
-║   #1   32 tok │ TTFT:  72.6 ms │ 117.2 tok/s │ 226.8 GB/s │ [RADIX]      ║
-╚══════════════════════════════════════════════════════════════════════════╝
-```
+Device-profile calibration is separate: `python tools/run_calibration.py run --execute`
+(paired AB/BA, bootstrap CI, A/A noise gate) is the **only** writer of the sealed
+`.friday-data/device-profile.sqlite3`.
 
 ---
 
-## 🚀 Quickstart
+## Quickstart
 
-### Prerequisites
-- Apple Silicon Mac (M1, M2, M3, M4 — Max/Ultra recommended for peak UMA bandwidth)
-- macOS 14.0+ (Sonoma, Sequoia)
-- Python 3.12+
-
-### 1. Installation
 ```bash
-# Clone the repository
-git clone https://github.com/Tobayko/IronMule.git
-cd IronMule
+# Apple Silicon Mac, macOS 14+, Python 3.12+
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-apple-silicon.txt
 
-# Install dependencies into virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+python tools/friday.py doctor          # verify Metal GPU, Python, AC power
+python tools/friday.py status          # device profile, verified knobs, runtime state
+python tools/run_calibration.py run --execute --pairs 6   # calibrate this machine
+python tools/friday.py serve --port 8080
 ```
 
-### 2. Verify Hardware & System Health
-```bash
-python tools/friday.py status
-```
-
-### 3. Launch IronMule Serving Engine
-```bash
-# Start server with Live Terminal Dashboard on port 8080
-python tools/friday.py serve --port 8080 --dashboard
-```
-
----
-
-## 🔌 OpenAI-Compatible API Usage
-
-IronMule exposes a standard OpenAI v1 endpoint (`/v1/chat/completions` and `/v1/models`). It drops seamlessly into **Cursor**, **OpenWebUI**, **Continue.dev**, or standard SDKs:
-
-### Python Example
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://127.0.0.1:8080/v1", api_key="not-needed")
-
-# 1. High-speed reasoning stream (Gemma 4B)
-stream = client.chat.completions.create(
-    model="gemma-4b",
-    messages=[{"role": "user", "content": "Explain Unified Memory in one sentence."}],
-    stream=True,
-)
-
-for chunk in stream:
-    content = chunk.choices[0].delta.content or ""
-    print(content, end="", flush=True)
-print()
-
-# 2. Ultra-fast low-latency stream (Gemma 1B)
-response = client.chat.completions.create(
-    model="gemma-1b",
-    messages=[{"role": "user", "content": "Hello!"}],
-    max_tokens=16,
-)
-print(response.choices[0].message.content)
-```
-
-### cURL Example
 ```bash
 curl -N http://127.0.0.1:8080/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma-4b",
-    "messages": [{"role": "user", "content": "Why is Apple Silicon fast?"}],
-    "stream": true
-  }'
+  -d '{"model": "gemma-4b", "stream": true,
+       "messages": [{"role": "user", "content": "Why is Apple Silicon fast?"}]}'
 ```
 
 ---
 
-## 🧪 Testing & Verification
+## Testing
 
-IronMule enforces strict scientific rigor: zero mocks, zero simulations on hardware execution paths, and terminal pre-registered gates.
-
-Run the complete test suite:
 ```bash
-pytest tests/
-```
-Output:
-```text
-============================== 98 passed in 5.45s ==============================
+pytest tests/          # -n auto is set in pytest.ini
 ```
 
-Run live benchmarks directly on your GPU:
-```bash
-# Live E2E Server Demonstration (Single stream + 4 concurrent clients)
-python tools/test_live_server_e2e.py
-
-# Dual-Model Zero-Cold-Start Serving Demonstration
-python tools/test_live_dual_model.py
-
-# Radix-Tree Prefix Cache Benchmark
-python tools/bench_radix_cache.py
-
-# Sub-4-Bit Quantization Roofline Study
-python tools/bench_sub4bit_quant.py
-
-# Multi-Stream Hardware Environment Saturation
-python tools/bench_hardware_environment.py
-```
+Hardware execution paths use no mocks or simulations; a test that claims GPU, MLX or
+model behaviour must have run it on the target device. Synthetic data is allowed only
+for edge and error cases and grounds no performance claim.
 
 ---
 
-## 🔬 Architecture Overview
+## Empirical findings (bound to evidence)
 
-```text
-┌─────────────────┐       ┌────────────────────────┐       ┌─────────────────────────────┐       ┌──────────────────────┐
-│   User Prompt   │──────>│   Radix-Tree Trie      │──────>│   Unified Memory (UMA)      │──────>│   32-Core Metal GPU  │
-│  (Client / API) │       │   Prefix Cache Hit     │       │   Gemma 1B (0.8G) + 4B (2.5G)   │       │   Pipelined Decode   │
-└─────────────────┘       │   TTFT: 72.6 ms        │       │   Zero-Copy 400 GB/s Bus        │       │   117.2 tok/s        │
-                          └────────────────────────┘       └─────────────────────────────┘       └──────────────────────┘
-```
+The load-bearing results and their retractions live in
+[`docs/ERGEBNISSE.md`](docs/ERGEBNISSE.md); the full history is in the append-only
+[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
 
-```mermaid
-flowchart TD
-    subgraph Client ["Client Layer"]
-        C1["OpenAI Client / Cursor"]
-        C2["WebUI / Browser"]
-    end
-
-    subgraph Server ["IronMule Serving Layer"]
-        HTTP["HTTP / SSE Server (Port 8080)"]
-        FAST["Fastpath: 0.2µs Tokenizer + SSE Buffer"]
-        ROUTER["Adaptive RL Router"]
-    end
-
-    subgraph Cache ["Cache & Memory Subsystem"]
-        RADIX["Radix-Tree Global Prefix Cache (TTFT < 75ms)"]
-        UMA["Unified Memory Architecture (400 GB/s)"]
-        WIRED["24 GB Wired Memory + 17 GB Metal Cache"]
-    end
-
-    subgraph Compute ["Metal GPU Compute Layer (M1 Max)"]
-        BATCH["Continuous Dynamic Batcher (W=4/8)"]
-        PIPE["Double-Buffered Pipelined Dispatch"]
-        SPEC["Workload-Adaptive Prompt Lookup (K=3)"]
-        M1B["Resident Gemma 1B (0.8 GB)"]
-        M4B["Resident Gemma 4B (2.5 GB)"]
-    end
-
-    C1 --> HTTP
-    C2 --> HTTP
-    HTTP --> FAST
-    FAST --> ROUTER
-    ROUTER --> RADIX
-    RADIX --> BATCH
-    BATCH --> PIPE
-    PIPE --> SPEC
-    SPEC --> M1B
-    SPEC --> M4B
-    M1B -.-> UMA
-    M4B -.-> UMA
-    UMA -.-> WIRED
-```
+1. **Unpaired variance dwarfs the effects.** Run-to-run variance on the M1 Max is far
+   larger than any optimisation gain measured; every calibration therefore uses paired
+   block sampling with a bounded confidence interval. This is the project's central
+   result — an unpaired number here is meaningless.
+2. **Prefill dominates the short-answer regime.** For the sealed 897-token / 32-token
+   workload prefill is ~80 % of the request; a decode-only knob cannot reach the F1
+   end-to-end threshold in that regime.
+3. **Prompt-lookup speculation loses on the delivery workload.** Acceptance is 0.0 on
+   the sealed prompt; `speculate_k` stays 0 in the delivery path and speculation is
+   never treated as token-identical (bf16 1-ULP breaks). See
+   `docs/GEMINI_SELF_LEARNING_SYSTEM.md` E01–E03.
+4. **The device profile replaces frozen host constants.** A macOS update once broke a
+   sealed hardware hash on the origin machine itself; a profile asks instead whether a
+   knob was verified token-identical on *this* device against *this* model snapshot.
 
 ---
 
-## 📜 Empirical Journal & Evidence
-
-Every architectural decision, hardware benchmark, failed experiment, and empirical roofline is documented in the immutable append-only [Arbeitsjournal](docs/ARBEITSJOURNAL.md) and [Walkthrough](file:///Users/tobiasburandt/.gemini/antigravity/brain/1d7b942e-f6f1-47f8-b96d-0ba5fea2a65b/walkthrough.md).
-
-Key empirical findings:
-1. **Unpaired vs. Paired Variance:** Unpaired run-to-run variance on M1 Max exceeds 20.5%, dwarfing true optimization effects. All IronMule calibrations require paired block sampling with bounded confidence intervals.
-2. **Draft Speculation Limits on UMA:** Running an external 1B draft model alongside a 12B model degrades performance (-16% to -38%) because both models compete for the 400 GB/s DRAM bus.
-3. **Prompt-Lookup Superiority:** In contrast, Prompt-Lookup requires **0 MB extra DRAM transfers**, delivering a net +29% speedup on context-heavy tasks.
-4. **QuantGEMM vs. FP16 Compute Ceiling:** FP16 reaches 7.71 TFLOPS (74.2% of peak) via matrix engines, while 4-bit QuantGEMM plateaus at 4.47 TFLOPS due to SIMD shader unpacking overhead.
-
----
-
-## 📄 License
+## License
 
 MIT License. Developed as part of Project Friday research.

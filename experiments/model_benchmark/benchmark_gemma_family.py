@@ -19,6 +19,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "tools"))
 
 from friday_serve.ironmule_backend import IronMuleBackend
+from _bench import harness_preconditions
 import mlx.core as mx
 
 MODELS = {
@@ -41,10 +42,10 @@ PROMPTS = {
 
 OUTPUT_TOKENS = 48
 WARMUP_RUNS = 1
-PAIRS = 3
+REPS = 6
 
 
-def benchmark_model(model_tag: str, model_id: str) -> dict:
+def benchmark_model(model_tag: str, model_id: str, guard) -> dict:
     print(f"\n=======================================================")
     print(f"LOADING MODEL {model_tag}: {model_id}")
     print(f"=======================================================")
@@ -57,48 +58,45 @@ def benchmark_model(model_tag: str, model_id: str) -> dict:
         print(f"Prompt length: {len(token_ids)} tokens, target output: {OUTPUT_TOKENS} tokens")
 
         prompt_results = {}
-        tokens_by_config = {}
+        samples = {cfg: {"ttft": [], "tps": [], "total": []} for cfg in CONFIGS}
+        tokens_seen = {cfg: [] for cfg in CONFIGS}
+        cfg_names = list(CONFIGS)
 
         # Warmup all engines
-        for cfg_name, knobs in CONFIGS.items():
-            _ = backend.generate(token_ids, max_tokens=OUTPUT_TOKENS, knobs=knobs)
-            mx.eval()
+        for knobs in CONFIGS.values():
+            backend.generate(token_ids, max_tokens=OUTPUT_TOKENS, knobs=knobs)
             mx.synchronize()
 
-        # Measurement iterations
-        for cfg_name, knobs in CONFIGS.items():
-            ttft_list = []
-            decode_tps_list = []
-            total_time_list = []
-            last_tokens = None
-
-            for i in range(PAIRS):
-                mx.eval()
+        # Interleaved measurement: every rep runs all configs, order rotated so
+        # warm-up drift cannot systematically favour one config.
+        for rep in range(REPS):
+            order = cfg_names if rep % 2 == 0 else list(reversed(cfg_names))
+            for cfg_name in order:
                 mx.synchronize()
-                out = backend.generate(token_ids, max_tokens=OUTPUT_TOKENS, knobs=knobs)
-                ttft_ms = out["prefill_ns"] / 1e6
+                out = backend.generate(token_ids, max_tokens=OUTPUT_TOKENS, knobs=CONFIGS[cfg_name])
+                guard.record_gpu((out["prefill_ns"] + out["decode_ns"]) / 1e9)
+                n = len(out["logical_tokens"])
                 decode_s = out["decode_ns"] / 1e9
-                n_tokens = len(out["logical_tokens"])
-                tps = (n_tokens - 1) / decode_s if decode_s > 0 and n_tokens > 1 else 0.0
-                total_s = (out["prefill_ns"] + out["decode_ns"]) / 1e9
+                samples[cfg_name]["ttft"].append(out["prefill_ns"] / 1e6)
+                samples[cfg_name]["tps"].append((n - 1) / decode_s if decode_s > 0 and n > 1 else 0.0)
+                samples[cfg_name]["total"].append((out["prefill_ns"] + out["decode_ns"]) / 1e9)
+                tokens_seen[cfg_name].append(list(out["logical_tokens"]))
+            guard.required_break()
 
-                ttft_list.append(ttft_ms)
-                decode_tps_list.append(tps)
-                total_time_list.append(total_s)
-                last_tokens = list(out["logical_tokens"])
-
-            tokens_by_config[cfg_name] = last_tokens
+        for cfg_name in CONFIGS:
             prompt_results[cfg_name] = {
-                "ttft_ms_median": statistics.median(ttft_list),
-                "decode_tps_median": statistics.median(decode_tps_list),
-                "total_time_s_median": statistics.median(total_time_list),
-                "tokens_generated": len(last_tokens),
+                "ttft_ms_median": statistics.median(samples[cfg_name]["ttft"]),
+                "decode_tps_median": statistics.median(samples[cfg_name]["tps"]),
+                "total_time_s_median": statistics.median(samples[cfg_name]["total"]),
+                "tokens_generated": len(tokens_seen[cfg_name][0]),
             }
 
-        # Check Token Identity against baseline
-        base_tokens = tokens_by_config["baseline"]
+        # Token identity: every rep of a candidate must match that rep's baseline.
         for cfg_name in ("dispatched", "combined_r8"):
-            is_identical = tokens_by_config[cfg_name] == base_tokens
+            is_identical = all(
+                cand == base
+                for cand, base in zip(tokens_seen[cfg_name], tokens_seen["baseline"])
+            )
             prompt_results[cfg_name]["token_identical_to_baseline"] = is_identical
             if not is_identical:
                 print(f"WARNING: Token mismatch in {cfg_name} for {prompt_name}!")
@@ -137,9 +135,10 @@ def benchmark_model(model_tag: str, model_id: str) -> dict:
 
 
 def main():
+    guard = harness_preconditions()
     all_results = {}
     for tag, model_id in MODELS.items():
-        all_results[tag] = benchmark_model(tag, model_id)
+        all_results[tag] = benchmark_model(tag, model_id, guard)
 
     out_file = PROJECT_ROOT / "experiments" / "model_benchmark" / "gemma_family_benchmark.json"
     out_file.parent.mkdir(parents=True, exist_ok=True)

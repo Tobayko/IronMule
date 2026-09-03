@@ -153,7 +153,7 @@ class TestAdaptiveRLController(unittest.TestCase):
             "mlx-community/gemma-3-4b-it-4bit", 200, 80, has_ngram_overlap=True
         )
         self.assertEqual(chosen, "speculative_draft")
-        self.assertEqual(knobs.get("speculate_k"), 2)
+        self.assertEqual(knobs.get("speculate_k"), ACTION_TO_KNOBS["speculative_draft"]["speculate_k"])
 
     def test_save_and_load(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".json") as tmp:
@@ -178,16 +178,28 @@ class TestAdaptiveRLController(unittest.TestCase):
             )
             self.assertEqual(loaded.models["deep_bundled_long"].A.shape, (9, 9))
 
-    def test_train_rl_controller_seals_model(self) -> None:
-        import tools.train_rl_controller as trainer
-        trainer.main()
-        sealed_path = Path(__file__).resolve().parents[1] / ".friday-data" / "rl-controller.json"
-        self.assertTrue(sealed_path.exists())
-        loaded = AdaptiveRLController.load(sealed_path)
-        self.assertEqual(len(loaded.models), 6)
-        for model in loaded.models.values():
-            self.assertEqual(model.A.shape, (9, 9))
-            self.assertEqual(model.b.shape, (9, 1))
+    def test_shadow_log_records_without_touching_weights(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            shadow = Path(d) / "shadow.jsonl"
+            ctrl = AdaptiveRLController(shadow_log_path=shadow)
+            a_before = ctrl.models["full_optimized"].A.copy()
+            ctrl.log_decision(
+                model_id="mlx-community/gemma-3-4b-it-4bit",
+                prompt_tokens=200,
+                output_tokens=32,
+                shadow_action="full_optimized",
+                shadow_knobs=ACTION_TO_KNOBS["full_optimized"],
+                shadow_score=1.2,
+                applied_knobs={"head_skip_prefill": True},
+                applied_plan="device_profile_dispatch",
+            )
+            import json as _json
+
+            record = _json.loads(shadow.read_text().splitlines()[0])
+            self.assertEqual(record["shadow_action"], "full_optimized")
+            self.assertEqual(record["applied_knobs"], {"head_skip_prefill": True})
+            self.assertEqual(ctrl.history, [])
+            np.testing.assert_array_equal(ctrl.models["full_optimized"].A, a_before)
 
 
 if __name__ == "__main__":

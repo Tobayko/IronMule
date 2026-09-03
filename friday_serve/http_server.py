@@ -93,21 +93,18 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             return
 
         if path == "/v1/models":
-            model_id = getattr(self.server.server_instance.backend, "model_id", "friday-model")
-            self._send_json(
-                200,
-                {
-                    "object": "list",
-                    "data": [
-                        {
-                            "id": model_id,
-                            "object": "model",
-                            "created": int(time.time()),
-                            "owned_by": "friday",
-                        }
-                    ],
-                },
-            )
+            si = self.server.server_instance
+            main_id = getattr(si.backend, "model_id", "friday-model")
+            seen = {main_id}
+            data = [{"id": main_id, "object": "model", "created": int(time.time()), "owned_by": "friday"}]
+            for backend in getattr(si, "alternate_backends", {}).values():
+                alt_id = getattr(backend, "model_id", None)
+                if alt_id and alt_id not in seen:
+                    seen.add(alt_id)
+                    data.append(
+                        {"id": alt_id, "object": "model", "created": int(time.time()), "owned_by": "friday"}
+                    )
+            self._send_json(200, {"object": "list", "data": data})
             return
 
         if path == "/status":
@@ -157,22 +154,6 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        if path == "/v1/models":
-            main_id = getattr(self.server.server_instance.backend, "model_id", "friday-model")
-            models = [
-                {"id": main_id, "object": "model", "owned_by": "project-friday"},
-                {"id": "gemma-4b", "object": "model", "owned_by": "project-friday"},
-            ]
-            alt = getattr(self.server.server_instance, "alternate_backends", {})
-            for k, b in alt.items():
-                m_id = getattr(b, "model_id", k)
-                if not any(m["id"] == m_id for m in models):
-                    models.append({"id": m_id, "object": "model", "owned_by": "project-friday"})
-                if not any(m["id"] == k for m in models):
-                    models.append({"id": k, "object": "model", "owned_by": "project-friday"})
-            self._send_json(200, {"object": "list", "data": models})
-            return
-
         self._send_json(404, {"error": {"message": f"Not found: {self.path}", "code": 404}})
 
     def do_POST(self) -> None:
@@ -205,32 +186,37 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             and target_model != getattr(self.server.server_instance.backend, "model_id", "")
             and any(k in target_model.lower() for k in ("1b", "alternate"))
         )
-        # Dynamic Batcher Path if enabled
+        # Dynamic Batcher Path if enabled. The knob set is decided the same way
+        # Server.generate decides it: scope -> dispatch decision -> profile knobs
+        # (empty when out of the calibrated scope or the breaker is latched), so
+        # the batcher can never apply a knob the profile did not earn.
+        session = None
         if self.server.batcher is not None and not is_alternate_model:
+            si = self.server.server_instance
             try:
-                if isinstance(prompt, str):
-                    token_ids = self.server.server_instance.backend.encode(prompt)
-                else:
-                    token_ids = prompt
-
-                from .dispatch import knobs_for
-                knobs = knobs_for(self.server.server_instance.profile)
-
-                session = self.server.batcher.submit(token_ids, max_tokens, knobs)
-            except RuntimeError:
-                self._send_json(
-                    429,
-                    {
-                        "error": {
-                            "message": f"Too Many Requests: Single-model GPU inference concurrency limit reached ({self.server.max_concurrency}).",
-                            "type": "concurrency_limit_error",
-                            "code": 429,
-                        }
-                    },
-                    headers={"Retry-After": "1"},
+                token_ids = si.backend.encode(prompt) if isinstance(prompt, str) else prompt
+                _decision, knobs = si.plan_request(
+                    token_ids, max_tokens, temperature=float(body.get("temperature") or 0.0)
                 )
-                return
+                session = self.server.batcher.submit(token_ids, max_tokens, knobs)
+            except RuntimeError as exc:
+                if "batcher worker is dead" in str(exc):
+                    session = None  # fall through to the single-flight Server path
+                else:
+                    self._send_json(
+                        429,
+                        {
+                            "error": {
+                                "message": f"Too Many Requests: GPU inference concurrency limit reached ({self.server.max_concurrency}).",
+                                "type": "concurrency_limit_error",
+                                "code": 429,
+                            }
+                        },
+                        headers={"Retry-After": "1"},
+                    )
+                    return
 
+        if session is not None:
             try:
                 if stream:
                     self._handle_batcher_stream(session, body)
@@ -266,7 +252,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_batcher_stream(self, session: Any, body: dict[str, Any]) -> None:
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-        model = getattr(self.server.server_instance.backend, "model_id", "friday-model")
+        model = body.get("model") or getattr(self.server.server_instance.backend, "model_id", "friday-model")
         created = int(time.time())
 
         self.send_response(200)
@@ -296,6 +282,12 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                 if text:
                     self.wfile.write(chunk_prefix + json.dumps(text).encode("utf-8") + chunk_suffix)
                     self.wfile.flush()
+            elif etype == "error":
+                err_chunk = {"error": {"message": event.get("error", "batcher error"), "code": 500}}
+                self.wfile.write(f"data: {json.dumps(err_chunk)}\n\n".encode("utf-8"))
+                self.wfile.write(b"data: [DONE]\n\n")
+                self.wfile.flush()
+                break
             elif etype == "done":
                 finish_chunk = {
                     "id": completion_id,
@@ -311,7 +303,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
 
     def _handle_batcher_non_stream(self, session: Any, body: dict[str, Any]) -> None:
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
-        model = getattr(self.server.server_instance.backend, "model_id", "friday-model")
+        model = body.get("model") or getattr(self.server.server_instance.backend, "model_id", "friday-model")
         created = int(time.time())
 
         collected_text = []
@@ -324,6 +316,9 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                 text = event.get("text", "")
                 if text:
                     collected_text.append(text)
+            elif etype == "error":
+                self._send_json(500, {"error": {"message": event.get("error", "batcher error"), "code": 500}})
+                return
             elif etype == "done":
                 logical_tokens = event.get("logical_tokens", [])
                 break
@@ -356,18 +351,25 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
     ) -> None:
         server_instance = self.server.server_instance
         model = body.get("model") or getattr(server_instance.backend, "model_id", "friday-model")
+        temperature = float(body.get("temperature") or 0.0)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
 
         try:
             backend = server_instance.get_backend(model)
             if isinstance(prompt, str):
-                gen = server_instance.generate(prompt, max_tokens=max_tokens, model=model)
+                gen = server_instance.generate(
+                    prompt, max_tokens=max_tokens, model=model, temperature=temperature
+                )
                 full_text = gen.text or ""
                 num_tokens = len(gen.tokens)
                 prompt_tokens = len(backend.encode(prompt))
             else:
-                events = list(server_instance.stream_generate(prompt, max_tokens=max_tokens, model=model))
+                events = list(
+                    server_instance.stream_generate(
+                        prompt, max_tokens=max_tokens, model=model, temperature=temperature
+                    )
+                )
                 text_parts = [e.get("text", "") for e in events if e.get("type") == "token"]
                 full_text = "".join(text_parts)
                 done_ev = events[-1] if events and events[-1].get("type") == "done" else {}
@@ -428,7 +430,8 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         self, prompt: str | Sequence[int], max_tokens: int, body: dict[str, Any]
     ) -> None:
         server_instance = self.server.server_instance
-        model = getattr(server_instance.backend, "model_id", "friday-model")
+        model = body.get("model") or getattr(server_instance.backend, "model_id", "friday-model")
+        temperature = float(body.get("temperature") or 0.0)
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         created = int(time.time())
 
@@ -454,7 +457,9 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
             )
 
         try:
-            for event in server_instance.stream_generate(prompt, max_tokens=max_tokens, model=model):
+            for event in server_instance.stream_generate(
+                prompt, max_tokens=max_tokens, model=model, temperature=temperature
+            ):
                 event_type = event.get("type")
                 if event_type == "token":
                     token_count += 1
@@ -545,7 +550,11 @@ class FridayHTTPServer(ThreadingHTTPServer):
         self.batcher = None
         if self.max_concurrency > 1 and hasattr(server_instance.backend, "_engine"):
             from .batcher import ContinuousBatcher
-            self.batcher = ContinuousBatcher(server_instance.backend, max_concurrency=self.max_concurrency)
+            self.batcher = ContinuousBatcher(
+                server_instance.backend,
+                max_concurrency=self.max_concurrency,
+                controller=getattr(server_instance, "controller", None),
+            )
 
         self.allow_reuse_address = True
         self.daemon_threads = True

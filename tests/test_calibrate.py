@@ -151,6 +151,7 @@ class ProfileTest(unittest.TestCase):
             hardware_sha256="a" * 64,
             environment_sha256="b" * 64,
             mde=0.006,
+            aa_noise=0.003,
             knobs=(
                 KnobVerdict("head_skip", "verified", 6, 0.877, 0.86, 0.89, True),
                 KnobVerdict("fixed_compiled", "failed", 6, 1.01, 0.99, 1.03, True, "no gain"),
@@ -210,6 +211,33 @@ class ProfileTest(unittest.TestCase):
                     rows = history.verified_records()
             self.assertEqual(newest_profile(rows).verified_knobs(), ("head_skip",))
             self.assertIsNone(newest_profile([]))
+
+    def test_a_fabricated_profile_without_aa_noise_is_skipped_for_serving(self) -> None:
+        # tools/autotune.py wrote verified verdicts with no A/A noise run into
+        # the sealed chain; newest_profile must fall back past them.
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "profile.sqlite3"
+            provenance = collect_provenance(
+                ProvenanceSpec(
+                    runtime_id=HISTORY.runtime_id,
+                    code_directories=("friday_calibrate",),
+                    spec_files=("AGENTS.md",),
+                ),
+                require_clean=False,
+            )
+            good = self._profile().as_report("cal-real")
+            fabricated = self._profile(
+                profile_id="device-fake", aa_noise=None
+            ).as_report("cal-fake")
+            with RuntimeHistory.open(HISTORY, path, initialize=True) as history:
+                history.persist(good, provenance)
+                history.persist(fabricated, provenance)
+            with RuntimeHistory.open(HISTORY, path, read_only=True) as history:
+                with history.read_transaction():
+                    rows = history.verified_records()
+            chosen = newest_profile(rows)
+            self.assertEqual(chosen.profile_id, "device-test")
+            self.assertEqual(chosen.verified_knobs(), ("head_skip",))
 
 
 class CalibrateTest(unittest.TestCase):

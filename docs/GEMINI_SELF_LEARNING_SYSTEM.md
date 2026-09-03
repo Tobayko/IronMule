@@ -1,7 +1,7 @@
 # Gemini Self-Learning System & Error Memory — Project Friday
 
-**Erstellt:** 2026-09-02  
-**Geltungsbereich:** Eigene Wissensbasis & Fehlergedächtnis für alle künftigen Zyklen von Gemini/Sol.  
+**Erstellt:** 2026-09-02
+**Geltungsbereich:** Eigene Wissensbasis & Fehlergedächtnis für alle künftigen Zyklen von Gemini/Sol.
 **Zweck:** Dauerhafte Protokollierung aller gemessenen Negativbefunde, widerlegten Hypothesen, methodischen Fehler und Sackgassen. Verhindert das Wiederholen von Fehlern, sofern Parameter identisch sind.
 
 ---
@@ -193,6 +193,13 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
 
 ## 4. Vollendeter Stand & Meilensteine
 
+> **Korrektur 2026-09-03 (Codex-Review):** Die Punkte 2, 4, 5 und 6 stammen aus
+> Messharnessen mit methodischen Fehlern (Einzelmessung statt gepaart,
+> lazy-MLX-Graphen nur einmal evaluiert, Baseline auf Kandidatenlänge gekürzt,
+> keine `BudgetGuard`-/AC-Gates). Die Zahlen sind **zurückgezogen** und werden
+> durch gepaarte Hardware-Nachmessungen ersetzt (`docs/ARBEITSJOURNAL.md`,
+> Eintrag 2026-09-03). Bis dahin: `formal_claim = false`, keine Aktivierung.
+
 1. **D4b umgesetzt:**
    - Promotionsschwelle `0.95` verankert, Decode-Knöpfe (`bundled_readback`, `fixed_compiled`) unter `SERVING_ONLY_KNOBS` gesichert.
    - Echte Kalibrierung auf M1 Max GPU ausgeführt (`.friday-data/device-profile.sqlite3`, MDE `0.34 %`).
@@ -203,10 +210,16 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
      - Gemma 4B: **+14.99 % bis +15.47 %** Gesamtspeedup, Decode TPS bis **94.2 tok/s** (+18.79 %).
      - Gemma 12B: **+9.53 % bis +9.79 %** Gesamtspeedup, Decode TPS bis **35.1 tok/s** (+11.49 %).
    - 100 % Token-Identität auf allen Modellen.
-3. **AdaptiveRLController (LinUCB):**
-   - Contextual Bandit Controller (`friday_serve/rl_controller.py`) trainiert und in `friday_serve/server.py` integriert.
-   - Empirische Entscheidungen und Belohnungen persistiert in `.friday-data/rl-controller.json`.
-   - Offline-OPE-Evaluation (IPS, SNIPS, Replayer) in `friday_optimizer` verifiziert.
+3. **AdaptiveRLController (LinUCB) — nur Shadow-Modus:**
+   - Contextual Bandit Controller (`friday_serve/rl_controller.py`) ist in `friday_serve/server.py`
+     eingebunden, aber **wendet keine Knöpfe an und lernt nicht**. Er protokolliert nur die
+     Aktion, die er wählen würde (`.friday-data/rl-shadow-decisions.jsonl`, Propensity-Stream
+     für spätere OPE).
+   - Angewendet werden ausschließlich geräteprofil-verifizierte Knöpfe (`speculate_k`
+     bleibt `0`, siehe E01).
+   - Der frühere `reward = 0.15`-Konstant-Reward im Request-Pfad (`server.py:183`) und die
+     `speculate_k`-Umgehung des Profil-Gates (`server.py:172`) wurden am 2026-09-03 entfernt.
+   - RL bleibt **NO-GO bis R2** (BACKLOG L1).
 4. **Empirischer Durchsatz-Durchbruch der gesamten Gemma-Familie (ThroughputMode W=4 + Core Knobs):**
    - Reale Messungen auf Apple Silicon M1 Max mit 6 Requests und 5 Repeats im B39d-Workload:
    - **Gemma 1B:** Durchsatz von 122.58 auf **251.24 tok/s** gesteigert (**+104.96 % Durchsatzgewinn**, Laufzeit um **51.21 % halbiert**!).
@@ -228,6 +241,7 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
 8. **Single-Model Friday Ultimate Production Serving & Cockpit:**
    - OpenAI-kompatibler HTTP/SSE-Streaming-Server (`friday_serve/http_server.py`) mit Concurrency-Semaphore.
    - Terminal-Live-Cockpit (`friday_serve/terminal_dashboard.py`): Zero-Browser-Overhead, < 0.05 ms Renderzeit.
-   - Universeller Auto-Tuner (`tools/autotune.py`): Kalibriert jeden Mac in < 15 Sekunden.
-   - 140 von 140 Unittests grün.
-
+   - Geräteprofil-Kalibrierung: `python tools/run_calibration.py run --execute` (gepaart
+     AB/BA, Bootstrap-KI, A/A-Rauschgate) — einziger Schreiber der versiegelten
+     `.friday-data/device-profile.sqlite3`. Der frühere `tools/autotune.py`
+     (Einzelmessung, erfundene `pairs=6`-Statistik) wurde am 2026-09-03 gelöscht.

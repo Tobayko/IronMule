@@ -101,11 +101,11 @@ def main():
 
         suffix = prompt_ids[match_len:]
         cap_warm = engine._capacity(len(prompt_ids), 16)
-        
+
         # Build state from cached layers at offset match_len
         warm_state = {"position": {"offset": mx.array(match_len, dtype=mx.int32)}, "layers": cached_state}
         state_warm, hidden = engine._feed(warm_state, suffix, cap_warm)
-        
+
         from ironmule.runtime import _project, _leaves
         logits = _project(engine.model, hidden[:, -1:, :] if engine.knobs.head_skip_prefill else hidden)
         token_warm = mx.argmax(logits[:, -1, :], axis=-1).reshape((1, 1))

@@ -21,7 +21,7 @@ import mlx.core as mx
 import mlx.nn as nn
 
 
-def bench_quant_level(bits: int, group_size: int = 64, M: int = 1, K: int = 2560, N: int = 10240):
+def bench_quant_level(bits: int, group_size: int = 64, M: int = 1, K: int = 2560, N: int = 10240, guard=None):
     # Simulated MLP layer weight (K x N)
     w_fp16 = mx.random.normal(shape=(N, K), dtype=mx.float16) * 0.02
     x = mx.random.normal(shape=(M, K), dtype=mx.float16)
@@ -49,10 +49,11 @@ def bench_quant_level(bits: int, group_size: int = 64, M: int = 1, K: int = 2560
     mse = float(mx.mean(diff ** 2).item())
     cos_sim = float((mx.sum(ref_out * q_out) / (mx.linalg.norm(ref_out) * mx.linalg.norm(q_out))).item())
 
-    # Warmup
+    # Warmup — evaluate each iteration or MLX keeps the graph lazy and only the
+    # last array is ever realised.
     for _ in range(10):
         out = quant_forward()
-    mx.eval(out)
+        mx.eval(out)
     mx.synchronize()
 
     # Benchmark iterations
@@ -60,10 +61,12 @@ def bench_quant_level(bits: int, group_size: int = 64, M: int = 1, K: int = 2560
     t0 = time.perf_counter_ns()
     for _ in range(iters):
         out = quant_forward()
-    mx.eval(out)
+        mx.eval(out)
     mx.synchronize()
     total_ns = time.perf_counter_ns() - t0
     lat_us = (total_ns / iters) / 1e3
+    if guard is not None:
+        guard.record_gpu(total_ns / 1e9)
 
     # Bandwidth in GB/s: (weight_bytes + input_bytes + output_bytes) / lat_sec
     data_bytes = weight_bytes + x.nbytes + out.nbytes
@@ -86,6 +89,9 @@ def bench_quant_level(bits: int, group_size: int = 64, M: int = 1, K: int = 2560
 
 
 def main():
+    from _bench import harness_preconditions
+
+    guard = harness_preconditions()
     print("================================================================================")
     print("🔬 SUB-4-BIT QUANTIZATION & MEMORY ROOFLINE (M1 Max)")
     print("================================================================================")
@@ -99,7 +105,7 @@ def main():
 
     decode_results = []
     for b in [8, 4, 3, 2]:
-        res = bench_quant_level(bits=b, M=1)
+        res = bench_quant_level(bits=b, M=1, guard=guard)
         decode_results.append(res)
         print(
             f"{b:<6} | "
@@ -117,7 +123,7 @@ def main():
 
     prefill_results = []
     for b in [8, 4, 3, 2]:
-        res = bench_quant_level(bits=b, M=128)
+        res = bench_quant_level(bits=b, M=128, guard=guard)
         prefill_results.append(res)
         print(
             f"{b:<6} | "

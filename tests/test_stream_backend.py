@@ -21,9 +21,7 @@ Validates:
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 from typing import Any, Iterator, Mapping, Sequence
 
 import mlx.core as mx
@@ -36,13 +34,8 @@ from friday_serve.ironmule_backend import IronMuleBackend
 from friday_serve.rl_controller import AdaptiveRLController
 from friday_serve.server import BASELINE_PLAN, DEVICE_PROFILE_PLAN, Server
 
-# Ensure ironmule worktree is in path for tests
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
-if str(IRONMULE) not in sys.path:
-    sys.path.insert(0, str(IRONMULE))
-
-from ironmule.runtime import BASELINE, Knobs, PrefixCache  # noqa: E402
+# ironmule worktree is placed on sys.path by tests/conftest.py
+from ironmule.runtime import BASELINE, Knobs, PrefixCache
 
 MODEL = "mlx-community/gemma-3-4b-it-4bit"
 REVISION = "rev1"
@@ -504,29 +497,35 @@ class TestServerStreamGenerate(unittest.TestCase):
         self.assertIn("circuit breaker latched", str(caught.exception))
         self.assertIn("authorised knob was not applied", str(caught.exception.__cause__))
 
-    def test_rl_controller_updates_reward_after_stream(self) -> None:
-        """AdaptiveRLController receives reward observation after complete stream."""
+    def test_rl_controller_logs_decision_in_shadow_mode(self) -> None:
+        """Shadow mode: the controller logs the action it would pick, applies none of it,
+        and never updates its weights from a serving request."""
+        import json
+        import tempfile
+        from pathlib import Path
+
         backend = FakeServerBackend()
         profile = make_profile("head_skip")
-        rl = AdaptiveRLController()
+        with tempfile.TemporaryDirectory() as d:
+            shadow_path = Path(d) / "rl-shadow-decisions.jsonl"
+            rl = AdaptiveRLController(shadow_log_path=shadow_path)
+            before = {a: m.A.copy() for a, m in rl.models.items()}
 
-        server = Server(backend, profile, rl_controller=rl)
-        self.assertEqual(rl.history, [])
+            server = Server(backend, profile, rl_controller=rl)
+            list(server.stream_generate("hello", max_tokens=4))
 
-        # Initially, baseline action is chosen (reward 0.0)
-        list(server.stream_generate("hello", max_tokens=4))
-        self.assertEqual(len(rl.history), 1)
-        self.assertEqual(rl.history[0]["action"], "baseline")
-        self.assertEqual(rl.history[0]["reward"], 0.0)
+            # weights untouched, no reward observed
+            self.assertEqual(rl.history, [])
+            for action, matrix in before.items():
+                self.assertTrue((rl.models[action].A == matrix).all())
 
-        # Train full_optimized action to have high reward
-        rl.observe_reward("full_optimized", MODEL, 5, 4, 1.0)
-
-        # Now full_optimized is selected, producing reward 0.15 for verified knobs
-        list(server.stream_generate("hello", max_tokens=4))
-        self.assertEqual(len(rl.history), 3)
-        self.assertEqual(rl.history[-1]["action"], "full_optimized")
-        self.assertEqual(rl.history[-1]["reward"], 0.15)
+            lines = shadow_path.read_text().splitlines()
+            self.assertEqual(len(lines), 1)
+            record = json.loads(lines[0])
+            self.assertIn(record["shadow_action"], rl.models)
+            # applied knobs are the device-profile set, not the RL knobs
+            self.assertEqual(set(record["applied_knobs"]), {"head_skip_prefill"})
+            self.assertNotIn("speculate_k", record["applied_knobs"])
 
 
 if __name__ == "__main__":

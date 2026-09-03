@@ -340,5 +340,65 @@ class TestHTTPServer(unittest.TestCase):
         self.assertEqual(caught.exception.code, 404)
 
 
+class _TaggedBackend:
+    """A fake backend that stamps its own model id into every chunk of text."""
+
+    def __init__(self, model_id: str) -> None:
+        self.model_id = model_id
+        self.model_revision = REVISION
+
+    def encode(self, prompt: str) -> list[int]:
+        return [ord(c) for c in prompt]
+
+    def stream_generate(self, token_ids, max_tokens, knobs):
+        yield {"type": "token", "token": 1, "tokens": [1], "text": f"[{self.model_id}]",
+               "is_first": True, "prefill_ns": 1, "prefix_cache_hits": 0}
+        yield {"type": "done", "total_tokens": 1, "decode_ns": 1, "total_ns": 2,
+               "knobs": dict(knobs), "prefix_cache_hits": 0, "logical_tokens": [1]}
+
+    def generate(self, token_ids, max_tokens, knobs):
+        return {"logical_tokens": [1], "text": f"[{self.model_id}]",
+                "prefill_ns": 1, "decode_ns": 1, "knobs": dict(knobs)}
+
+
+class DualModelRoutingTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.alt_id = "mlx-community/gemma-3-1b-it-4bit"
+        main = _TaggedBackend(MODEL_ID)
+        alt = _TaggedBackend(self.alt_id)
+        server = Server(main, make_profile("head_skip"),
+                        alternate_backends={self.alt_id: alt, "gemma-1b": alt})
+        self.httpd = create_server(server, host="127.0.0.1", port=0)
+        self.port = self.httpd.server_address[1]
+        self.base_url = f"http://127.0.0.1:{self.port}"
+        self.t = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.t.start()
+
+    def tearDown(self) -> None:
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.t.join(timeout=2.0)
+
+    def test_models_lists_both_and_no_bogus_entry(self) -> None:
+        with urllib.request.urlopen(f"{self.base_url}/v1/models") as resp:
+            ids = {m["id"] for m in json.loads(resp.read())["data"]}
+        self.assertEqual(ids, {MODEL_ID, self.alt_id})
+        self.assertNotIn("gemma-4b", ids)
+
+    def test_streaming_request_for_the_alt_model_is_served_by_the_alt_backend(self) -> None:
+        payload = {"model": "gemma-1b", "stream": True,
+                   "messages": [{"role": "user", "content": "hi"}], "max_tokens": 4}
+        req = urllib.request.Request(
+            f"{self.base_url}/v1/chat/completions",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req) as resp:
+            body = resp.read().decode("utf-8")
+        self.assertIn(f"[{self.alt_id}]", body)
+        self.assertNotIn(f"[{MODEL_ID}]", body)
+        self.assertIn('"model":"gemma-1b"', body.replace(" ", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

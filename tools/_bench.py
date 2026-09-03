@@ -7,6 +7,7 @@ follow the same rules.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import os
@@ -300,6 +301,24 @@ def study_provenance(
     return payload
 
 
+def harness_preconditions(*, allow_long_gpu: bool = False) -> "BudgetGuard":
+    """The gate every exploratory benchmark harness shares.
+
+    Mains power + offline environment + a ``BudgetGuard``. ``allow_long_gpu``
+    lifts only the 6 s continuity limit (for a deliberately-authorised long-run
+    study); the duty cycle, wall limit and cooldown stay.
+    """
+
+    require_ac_power()
+    enforce_offline()
+    from friday_evidence.budget import BudgetPolicy
+
+    policy = BudgetPolicy()
+    if allow_long_gpu:
+        policy = dataclasses.replace(policy, continuous_gpu_limit_s=1e9, gpu_work_limit_s=1e9)
+    return BudgetGuard(policy)
+
+
 def release_gate(args, self_check) -> int | None:
     """Return an exit code when the tool must not proceed, else None.
 
@@ -330,6 +349,7 @@ __all__ = [
     "OFFLINE_ENVIRONMENT",
     "check_prompt_length",
     "enforce_offline",
+    "harness_preconditions",
     "run_persisted",
     "study_provenance",
 ]

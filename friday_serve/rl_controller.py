@@ -1,14 +1,22 @@
-"""Reinforcement Learning Contextual Bandit Controller for Friday LLM Runtime.
+"""LinUCB contextual bandit for Friday — shadow only.
 
-Selects the optimal hardware optimization knobs dynamically based on request features
-(model size, prompt length, output length, phase balance) using LinUCB (Upper Confidence Bound).
-Logs all decisions and rewards for offline replay evaluation (OPE).
+Given a request's features (model size, prompt/output length, phase balance,
+n-gram overlap) the controller *would* pick a knob configuration. In the serving
+path it never does: :meth:`log_decision` records the choice it would have made
+next to the knobs the device profile actually authorised, and nothing else. No
+weights are updated from a serving request (there is no measured reward there),
+and ``speculate_k`` is never applied — RL stays NO-GO until R2 (BACKLOG L1),
+speculation stays out of the delivery path (GEMINI_SELF_LEARNING_SYSTEM E01).
+
+``select_action`` / ``observe_reward`` remain for the offline replay/OPE
+harnesses in ``friday_optimizer``; only ``log_decision`` runs live.
 """
 
 from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -111,13 +119,53 @@ class AdaptiveRLController:
         *,
         alpha: float = 0.5,
         save_path: Path | None = None,
+        shadow_log_path: Path | None = None,
     ) -> None:
         self.alpha = alpha
         self.save_path = save_path
+        self.shadow_log_path = shadow_log_path
         self.models: dict[str, LinUCBModel] = {
             action: LinUCBModel.create(FEATURE_DIM) for action in ACTIONS
         }
         self.history: list[dict[str, Any]] = []
+
+    def log_decision(
+        self,
+        *,
+        model_id: str,
+        prompt_tokens: int,
+        output_tokens: int,
+        shadow_action: str,
+        shadow_knobs: Mapping[str, Any],
+        shadow_score: float,
+        applied_knobs: Mapping[str, Any],
+        applied_plan: str,
+        has_ngram_overlap: bool = False,
+    ) -> None:
+        """Append one shadow decision. Never touches the model weights.
+
+        This is the propensity stream the offline replay harness needs; the
+        serving path applies ``applied_knobs`` (the device-profile set), not
+        ``shadow_knobs``.
+        """
+
+        if self.shadow_log_path is None:
+            return
+        record = {
+            "ts": time.time(),
+            "model_id": model_id,
+            "prompt_tokens": int(prompt_tokens),
+            "output_tokens": int(output_tokens),
+            "shadow_action": shadow_action,
+            "shadow_knobs": dict(shadow_knobs),
+            "shadow_score": float(shadow_score),
+            "applied_knobs": dict(applied_knobs),
+            "applied_plan": applied_plan,
+            "has_ngram_overlap": bool(has_ngram_overlap),
+        }
+        self.shadow_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self.shadow_log_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record) + "\n")
 
     @staticmethod
     def extract_features(
@@ -242,11 +290,13 @@ class AdaptiveRLController:
         self.save_path.write_text(json.dumps(data, indent=2))
 
     @classmethod
-    def load(cls, path: Path) -> "AdaptiveRLController":
+    def load(cls, path: Path, *, shadow_log_path: Path | None = None) -> "AdaptiveRLController":
         if not path.exists():
-            return cls(save_path=path)
+            return cls(save_path=path, shadow_log_path=shadow_log_path)
         data = json.loads(path.read_text())
-        controller = cls(alpha=data.get("alpha", 0.5), save_path=path)
+        controller = cls(
+            alpha=data.get("alpha", 0.5), save_path=path, shadow_log_path=shadow_log_path
+        )
         for action, params in data.get("actions", {}).items():
             if action in controller.models:
                 arr_a = np.array(params["A"], dtype=np.float64)

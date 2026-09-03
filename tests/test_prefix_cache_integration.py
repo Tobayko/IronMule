@@ -16,9 +16,7 @@ Tests:
 
 from __future__ import annotations
 
-import sys
 import unittest
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from friday_calibrate.profile import DeviceProfile, KnobVerdict
@@ -26,13 +24,8 @@ from friday_evidence.canonical import canonical_sha256
 from friday_serve.ironmule_backend import IronMuleBackend
 from friday_serve.server import BASELINE_PLAN, DEVICE_PROFILE_PLAN, Server
 
-# Ensure ironmule worktree is in path for tests
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
-if str(IRONMULE) not in sys.path:
-    sys.path.insert(0, str(IRONMULE))
-
-from ironmule.runtime import BASELINE, Knobs, PrefixCache  # noqa: E402
+# ironmule worktree is placed on sys.path by tests/conftest.py
+from ironmule.runtime import BASELINE, Knobs, PrefixCache
 
 
 def make_profile(*verified: str, model_id: str = "test-model", revision: str = "rev1") -> DeviceProfile:

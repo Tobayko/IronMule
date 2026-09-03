@@ -381,6 +381,8 @@ def calibrate(
         verdict_for(knob, run, pairs=pairs, mde=mde) for knob in CALIBRATED_KNOBS
     )
     curve = draft_width_curve(run)
+    from friday_runtime_core.provenance import machine_sha256
+
     return DeviceProfile(
         profile_id=profile_id or f"device-{time.strftime('%Y%m%d-%H%M%S')}",
         model_id=str(identity.get("model_id", MODEL_ID)),
@@ -392,6 +394,7 @@ def calibrate(
         width_curve=curve,
         roofline=dict(roofline or {}),
         aa_noise=spread,
+        machine_sha256=machine_sha256(),
     )
 
 
