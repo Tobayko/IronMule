@@ -193,12 +193,15 @@ Bevor eine frühere Sackgasse verworfen wird, ist gegen diese Matrix zu prüfen:
 
 ## 4. Vollendeter Stand & Meilensteine
 
-> **Korrektur 2026-09-03 (Codex-Review):** Die Punkte 2, 4, 5 und 6 stammen aus
-> Messharnessen mit methodischen Fehlern (Einzelmessung statt gepaart,
+> **Korrektur 2026-09-03 (Codex-Review + Nachmessung):** Die Punkte 2, 4, 5 und 6
+> stammen aus Messharnessen mit methodischen Fehlern (Einzelmessung statt gepaart,
 > lazy-MLX-Graphen nur einmal evaluiert, Baseline auf Kandidatenlänge gekürzt,
-> keine `BudgetGuard`-/AC-Gates). Die Zahlen sind **zurückgezogen** und werden
-> durch gepaarte Hardware-Nachmessungen ersetzt (`docs/ARBEITSJOURNAL.md`,
-> Eintrag 2026-09-03). Bis dahin: `formal_claim = false`, keine Aktivierung.
+> keine `BudgetGuard`-/AC-Gates). Die Zahlen sind **zurückgezogen**. Die gepaarte
+> Hardware-Nachmessung mit den reparierten Harnessen lief am selben Tag
+> (`docs/ARBEITSJOURNAL.md`, „Nachmessung 2026-09-03"): `head_skip` + `readback_8`
+> geben end-to-end rund `+9…+25 %` (tokenidentisch), Punkt 6 (Sub-4-Bit `1,24x`)
+> und der Double-Buffer-Gewinn sind **widerlegt**, Spekulation (Punkt 3-nah)
+> bricht die Tokenidentität. `formal_claim = false`, keine Aktivierung.
 
 1. **D4b umgesetzt:**
    - Promotionsschwelle `0.95` verankert, Decode-Knöpfe (`bundled_readback`, `fixed_compiled`) unter `SERVING_ONLY_KNOBS` gesichert.

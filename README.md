@@ -10,10 +10,14 @@ not passed that pipeline is labelled *exploratory*, not shipped.
 > during the 2026-09-02/03 "serving" work measured incorrectly (single-shot instead of
 > paired, lazy MLX graphs evaluated once, baseline truncated to candidate length) and
 > that a former auto-tuner wrote fabricated statistics into the sealed device profile.
-> Those harnesses have been repaired and the affected numbers are being re-measured on
-> real hardware; until each re-run lands, the figures below are marked *exploratory —
-> re-measurement pending*. See `docs/ARBEITSJOURNAL.md` (entry 2026-09-03) and
-> `docs/GEMINI_SELF_LEARNING_SYSTEM.md`.
+> The harnesses are repaired and the affected numbers were re-measured the same day on
+> real hardware (serial, one model in memory at a time). Result: `head_skip` +
+> `readback_every=8` give a token-identical **~+9…+25% end-to-end** depending on model
+> and answer length; the three headline "breakthroughs" of the Gemini phase —
+> sub-4-bit `1.24x`, double-buffering `+2.9%`, prompt-lookup `+29%` bit-exact — were
+> all measurement artifacts and are **refuted**. Numbers below are exploratory
+> (session noise floor MDE 2.86%). See `docs/ARBEITSJOURNAL.md` (entry
+> "Nachmessung 2026-09-03") and `docs/GEMINI_SELF_LEARNING_SYSTEM.md`.
 
 ---
 

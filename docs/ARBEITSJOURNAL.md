@@ -11439,5 +11439,81 @@ Behebung:
 Die fabrizierten Ergebnisdateien `gemma_family_benchmark.json`,
 `long_tasks_benchmark_results.json` und `end_to_end_synthesis_results.json` sind
 gelöscht; die Abschnitte 17–21 oben und die entsprechenden `PROJECT_STATUS.md`- und
-`README.md`-Zahlen gelten als **explorativ, nicht vorregistriert, `formal_claim=false`**
-bis zur gepaarten Hardware-Nachmessung mit den reparierten Harnessen.
+`README.md`-Zahlen gelten als **explorativ, nicht vorregistriert, `formal_claim=false`**.
+Die Nachmessung mit den reparierten Harnessen ist am selben Tag gelaufen (unten).
+
+### Nachmessung 2026-09-03 auf echter M1 Max (seriell, ein Modell je im Speicher)
+
+Rahmen: AC-Strom, offline, `harness_preconditions()` (`require_ac_power` +
+`enforce_offline` + `BudgetGuard`, 25 % Duty-Cycle). Für den 12B-Langlauf ist die
+Kontinuitäts- und Duty-Cycle-Grenze per Nutzerentscheid vom 2026-09-03 einmalig
+angehoben (`allow_long_gpu=True`); Wall-Limit und AC-Strom bleiben. Der
+Maschinenzustand war diese Session lauter als am 2026-09-02 (Kalibrier-MDE
+`2,86 %` gegen `0,34 %`), daher explorativ.
+
+**Kalibrierung — Profil `device-20260903-150754` (6 Paare):**
+`head_skip` **`verified`**, Ratio `0,8778`, KI `[0,8668; 0,8888]`, tokenidentisch.
+`fixed_compiled` **`failed`** (Ratio `0,9911`, KI `[0,9819; 1,0022]` — Oberkante
+über `1,0` bei diesem Rauschen), `bundled_readback` **`failed`** (KI
+`[0,9894; 1,0016]`). `prefill_step_size`, `fuse_projections`: `not_applicable`.
+Neues Feld `machine_sha256` (stabile Host-Identität, ohne macOS-Version) gefüllt.
+Serving dispatcht seither **nur `head_skip`**. Der `fixed_compiled`-Verdikt vom
+2026-09-02 (`device-20260902-203442`, MDE `0,34 %`) war korrekt; die Differenz
+ist der Rauschuntergrund, kein Regress — auf einer ruhigen Maschine erneut messen.
+
+**`benchmark_gemma_family.py`** (repariert: AB/BA verschränkt, Tokenidentität je
+Iteration, ein Modell pro Prozess). Tokenidentität `100 %` auf **jeder** Iteration,
+jedem Modell, jeder Config:
+
+| Modell | `DISPATCHED` (`head_skip` + `fixed_compiled`) Total | `COMBINED_R8` (+ `readback_every=8`) Total | `COMBINED_R8` Decode-TPS |
+| --- | --- | --- | --- |
+| 1B | `+14 %`…`+17 %` | `+20 %`…`+25 %` | `+32 %`…`+34 %` |
+| 4B | `+7 %`…`+20 %` (ein Rausch-Ausreißer `−17 %` bei `code_task`) | `+14 %`…`+21 %` | `+8 %`…`+16 %` |
+| 12B | `+4 %`…`+9 %` | `+9 %`…`+12 %` | `+8 %`…`+15 %` |
+
+**`benchmark_long_tasks.py`** (`379`-Token-Prompt, `128`/`256` Ausgabe, `n=3`
+verschränkt, ein Modell pro Prozess). Tokenidentität `100 %` überall:
+
+| Zelle | `Core+R8` Wall gespart | Decode-TPS | TTFT-Reduktion |
+| --- | --- | --- | --- |
+| 4B / 128 | `+14,2 %` | `+15,0 %` | `+16,4 %` |
+| 4B / 256 | `+12,6 %` | `+13,7 %` | `+15,7 %` |
+| 12B / 128 | `+8,9 %` | `+10,4 %` | `+8,0 %` |
+| 12B / 256 | `+10,4 %` | `+12,3 %` | `+7,7 %` |
+
+12B/256 Baseline-Wall `10,9 s` — über der `6 s`-Grenze, gedeckt durch den
+Nutzerentscheid.
+
+**`bench_prompt_lookup.py`** (repariert: Kandidat behält `readback_every=8`, kein
+Doppel-Knopf; Identitätscheck über **volle** Sequenzen gleicher Länge). K=3, 4B:
+
+| Task | Wall-Ratio (Median, `n=4`) | Annahmequote | Tokenidentität |
+| --- | --- | --- | --- |
+| Code Refactor | `1,75` (`−75 %`) | `39 %` | `MATCH` (48/48) |
+| Document Q&A | `0,91` (`+9 %`) | `93 %` | **`DIFF`** (Baseline `41`, Spekulation `40`) |
+| JSON Extraction | `1,29` (`−29 %`) | `49 %` | `MATCH` (48/48) |
+
+**Bestätigt E02/S3.** Der alte Harness meldete `+29 % TPS, 100 % bit-exact` —
+das war ein Artefakt der Baseline-Kürzung auf die (kürzere) Spekulationsausgabe.
+Real bricht die Tokenidentität, und auf 2 von 3 Tasks ist Spekulation langsamer.
+`speculate_k` bleibt im Auslieferungspfad `0`.
+
+**`bench_sub4bit_quant.py`** (repariert: `mx.eval` je Iteration). Decode-Latenz
+(M=1, K=2560→N=10240): 8-Bit `303 µs`, 4-Bit `272 µs`, 3-Bit `273 µs`, 2-Bit
+`261 µs`. **4-Bit→3-Bit-Decode-Speedup: `0,99x`** (keiner). 4-Bit→2-Bit `1,04x`,
+aber Cos-Ähnlichkeit `0,927` (2-Bit unbrauchbar). **Widerlegt Abschnitt 20
+(„3-Bit ist das physikalische Optimum, `1,24x`")** — die alte Zahl war das
+`÷100`-Artefakt der lazy MLX-Graphen (echte Latenz rund `75x` der gemeldeten
+„`3,9 µs`").
+
+**`bench_double_buffer.py`** (repariert: echte SSE-Serialisierung statt
+`time.sleep(0.5 ms)`). 4B, `64` Token, `readback_every=8`, gepaart AB/BA `n=8`:
+sync `740,9 ms`, pipelined `737,9 ms`, Ratio `0,9958` (**`+0,42 %` Wall —
+Rauschen**). **Widerlegt Abschnitt 19/20 („`+2,9 %`")** — dort wurde das Verstecken
+einer festen `time.sleep`-Zeit gemessen.
+
+**Fazit.** Der belegbare Serving-Gewinn ist `head_skip` (`+12 %` Prefill,
+tokenidentisch) plus `readback_every=8` bündeln; end-to-end je nach Modell und
+Antwortlänge rund `+9 %`…`+25 %` Wall, immer tokenidentisch. Kein
+Sub-4-Bit-Gewinn, kein Double-Buffer-Gewinn, kein Spekulationsgewinn ohne
+Identitätsbruch — alle drei „Durchbrüche" der Gemini-Phase waren Messfehler.

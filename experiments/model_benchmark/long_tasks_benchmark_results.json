@@ -1,0 +1,138 @@
+{
+  "Gemma_4B": {
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "tag": "Gemma 4B",
+    "model_gb": 2.560756736,
+    "prompt_tokens": 379,
+    "lengths": {
+      "128_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "ttft_ms": 698.89975,
+          "decode_tps": 74.99064277683264,
+          "wall_s": 2.394738875,
+          "peak_mem_mb": 3191.099016189575,
+          "tokens_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "ttft_ms": 584.727792,
+          "decode_tps": 80.94254728267663,
+          "wall_s": 2.153741917,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "ttft_ms": 584.55325,
+          "decode_tps": 86.27208468056988,
+          "wall_s": 2.055170042,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "ttft_ms": 582.832417,
+          "decode_tps": 86.26629779578116,
+          "wall_s": 2.055018001,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        }
+      },
+      "256_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "ttft_ms": 694.43975,
+          "decode_tps": 74.92007240217036,
+          "wall_s": 4.097655833,
+          "peak_mem_mb": 3191.099016189575,
+          "tokens_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "ttft_ms": 583.878,
+          "decode_tps": 81.22968253316627,
+          "wall_s": 3.723334667,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "ttft_ms": 585.68175,
+          "decode_tps": 85.15294058522828,
+          "wall_s": 3.580293542,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "ttft_ms": 582.468166,
+          "decode_tps": 85.52982995553891,
+          "wall_s": 3.5645355,
+          "peak_mem_mb": 3042.499439239502,
+          "tokens_identical": true
+        }
+      }
+    }
+  },
+  "Gemma_12B": {
+    "model_id": "mlx-community/gemma-3-12b-it-4bit",
+    "tag": "Gemma 12B",
+    "model_gb": 7.185864192,
+    "prompt_tokens": 379,
+    "lengths": {
+      "128_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "ttft_ms": 2078.967,
+          "decode_tps": 30.06644952154408,
+          "wall_s": 6.302944291,
+          "peak_mem_mb": 7679.834726333618,
+          "tokens_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "ttft_ms": 1911.736583,
+          "decode_tps": 32.397685076116524,
+          "wall_s": 5.831769749,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "ttft_ms": 1913.075417,
+          "decode_tps": 33.197714648098,
+          "wall_s": 5.744359666,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "ttft_ms": 1904.48725,
+          "decode_tps": 33.63418642565588,
+          "wall_s": 5.677121167,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        }
+      },
+      "256_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "ttft_ms": 2076.42075,
+          "decode_tps": 28.909907304775402,
+          "wall_s": 10.907322334,
+          "peak_mem_mb": 7679.834726333618,
+          "tokens_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "ttft_ms": 1912.673583,
+          "decode_tps": 30.942657282424,
+          "wall_s": 10.153724042,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "ttft_ms": 1916.428,
+          "decode_tps": 32.46173745222406,
+          "wall_s": 9.771848542,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "ttft_ms": 1915.31925,
+          "decode_tps": 33.003858830588506,
+          "wall_s": 9.66886075,
+          "peak_mem_mb": 7549.876214981079,
+          "tokens_identical": true
+        }
+      }
+    }
+  }
+}

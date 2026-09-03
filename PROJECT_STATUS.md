@@ -84,17 +84,17 @@ Dokumentationsabschnitte entstanden **danach**.
 
 ## Stand nach Zyklus 17 bis 21 und Optimizer-Arbeiten (Kurzfassung)
 
-> **Korrektur 2026-09-03 (Codex-Review).** Die mit `†` markierten Zeilen (Gemma
-> Multi-Modell-Benchmark, Combinatorial Sweep, sowie Teile von D5) stammen aus
-> Messharnessen mit methodischen Fehlern (blockweise statt gepaart, lazy-MLX-Graphen
-> einmal evaluiert, Baseline auf Kandidatenlänge gekürzt) oder aus dem gelöschten
-> `tools/autotune.py`, der erfundene `pairs=6`-Statistik in die versiegelte DB schrieb.
-> Diese Zahlen sind **zurückgezogen**: `formal_claim=false`, keine Aktivierung,
-> Wiederholungsmessung mit den reparierten Harnessen ausstehend
-> (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03). Der RL-Controller läuft nur noch
-> im Shadow-Modus. Unberührt bleibt die echte D4b-Kalibrierung
-> (`…20260902-203442`: `head_skip` + `fixed_compiled` verified) und die
-> vorregistrierten Studien F1, D2, P2.
+> **Korrektur 2026-09-03 (Codex-Review + Nachmessung).** Die mit `†` markierten
+> Zeilen (Gemma Multi-Modell-Benchmark, Combinatorial Sweep) stammen aus
+> Messharnessen mit methodischen Fehlern oder aus dem gelöschten `tools/autotune.py`
+> (erfundene `pairs=6`-Statistik in der versiegelten DB). Sie sind **zurückgezogen**
+> und am selben Tag mit den reparierten Harnessen seriell nachgemessen worden
+> (`docs/ARBEITSJOURNAL.md`, Eintrag „Nachmessung 2026-09-03"). Der RL-Controller
+> läuft nur noch im Shadow-Modus; `bundled_readback`/`fixed_compiled` sind bei
+> diesem lauteren Maschinenzustand (MDE `2,86 %`) durchgefallen, `head_skip` bleibt
+> verifiziert. Die drei „Durchbrüche" der Gemini-Phase (Sub-4-Bit `1,24x`,
+> Double-Buffer `+2,9 %`, Spekulation `+29 %` bit-exact) waren alle Messfehler und
+> sind widerlegt. Unberührt: die vorregistrierten Studien F1, D2, P2.
 
 | Bereich | Ergebnis | Zulässige Aussage |
 | --- | --- | --- |
@@ -114,8 +114,9 @@ Dokumentationsabschnitte entstanden **danach**.
 | Kandidat 5 Prefill-Schrittweite (2026-09-02) | Offline-Vorfilter über die gesamte Gap-Evidenz meldet dreimal `degenerate`, acht von sechzehn Positionen | **terminaler Negativbefund** — die Blockstruktur-Klasse bleibt geschlossen, keine Hardwarezeit |
 | **F1 warmer Arm (2026-09-02)** | erste End-to-End-Messung: `6` Paare, Tokenidentität `6/6`, Ratio-Median `0,8600567`, KI `[0,853444; 0,873056]`, Rauschen aus A/A `0,612 %` | **`qualified`** gegen vorregistrierte Schwelle `10 %`; Gewinn `13,99 %` end-to-end für ein Gerät, den Snapshot `93724907…`, `897`-Token-Prompt und `32` generierte Token; Projektion `13,68 %` bestätigt; `formal_claim=false`, keine Aktivierung |
 | **D4b Kalibrierung & Profil (2026-09-02)** | Echte GPU-Kalibrierung auf M1 Max (`tools/run_calibration.py run --pairs 2 --execute`), MDE `0,34 %`. Knöpfe: `head_skip` (Ratio `0,8761`, KI `[0,8686; 0,8836]`, `verified`), `fixed_compiled` (Ratio `0,9854`, KI `[0,9824; 0,9883]`, `verified`), `prefill_step_size` (`not_applicable`). Persistiert in `.friday-data/device-profile.sqlite3`. | **`device_profile_dispatch`** aktiv im Serving-Pfad (`friday_serve status`). Reale Generierung mit verifizierten Knöpfen tokenidentisch bei `87,9 tok/s` Decode. |
-| `†` Gemma Multi-Modell-Benchmark (2026-09-02) | ~~Gepaarter Benchmark 1B/4B/12B~~ — Harness maß blockweise statt gepaart und prüfte nur die letzte Tokenfolge; das „Bandbreite"-Feld war `model_gb × tps`, keine unabhängige Messung | **zurückgezogen**; Nachmessung mit `benchmark_gemma_family.py` (repariert) ausstehend |
-| `†` Systematischer Combinatorial Sweep & Startup-Ablation (2026-09-03) | ~~Core Triad gewinnt +13,76 %/+16,47 %~~ — dieselben Harness-Fehler; `fuse_projections`-Sperre wegen `candidate_correctness_failed` bleibt korrekt | **zurückgezogen**; Nachmessung ausstehend. `fuse_projections` bleibt gesperrt (Korrektheit, nicht Lattenhöhe) |
+| Gemma-Familie nachgemessen (2026-09-03, repariert) | AB/BA verschränkt, Tokenidentität je Iteration, ein Modell pro Prozess. `head_skip`+`fixed_compiled`+`readback_8` gegen Baseline, `100 %` tokenidentisch: 1B `+20…25 %` Wall (`+32…34 %` TPS), 4B `+14…21 %`, 12B `+9…12 %` (`+8…15 %` TPS) | **explorativ** (Session-MDE `2,86 %`, `n=4`); `formal_claim=false`, keine Aktivierung. Ersetzt die zurückgezogenen `†`-Zahlen |
+| Langlauf nachgemessen (2026-09-03, repariert) | `379`-Prompt, `128`/`256` Ausgabe, `Core+R8`, `100 %` tokenidentisch: 4B `+13…14 %` Wall, 12B `+9…10 %` Wall. 12B/256 Baseline `10,9 s` > `6 s` — Nutzerentscheid-Ausnahme | **explorativ**; Kontinuitätsgrenze für diese Messung freigegeben (Journal) |
+| Sub-4-Bit / Double-Buffer / Prompt-Lookup (2026-09-03, repariert) | Sub-4-Bit-Decode `0,99x` (kein Gewinn); Double-Buffer `+0,42 %` Wall (Rauschen); Prompt-Lookup bricht Tokenidentität (Doc Q&A `41` gegen `40` Token) und ist auf 2/3 Tasks langsamer | **alle drei Gemini-„Durchbrüche" widerlegt**; `speculate_k` bleibt `0` |
 
 ## Geltende Entscheide und Grenzen
 

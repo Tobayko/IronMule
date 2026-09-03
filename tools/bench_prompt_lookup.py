@@ -9,6 +9,7 @@ Tests whether N-gram matching directly from the input prompt (without a secondar
 
 from __future__ import annotations
 
+import json
 import statistics
 import sys
 import time
@@ -71,6 +72,8 @@ TEST_CASES = [
 
 
 def _wall_ms(engine, p_ids, max_tokens, eos_ids, guard):
+    guard.required_break()
+    guard.required_break()
     t0 = time.perf_counter_ns()
     res = engine.generate(p_ids, max_tokens, eos_ids)
     mx.eval()
@@ -95,7 +98,8 @@ def main():
     base_knobs = Knobs(head_skip_prefill=True, compiled_fixed_cache=True, readback_every=8)
     base_engine = Engine(model, tokenizer, base_knobs)
 
-    for k_val in (2, 3, 4):
+    out = {"model": MODEL_ID, "runs": []}
+    for k_val in (3,):
         print(f"\n--- Prompt-Lookup Speculation K={k_val}, N-gram=3 (paired vs baseline) ---")
         spec_knobs = Knobs(
             head_skip_prefill=True,
@@ -114,7 +118,7 @@ def main():
 
             ratios, acc = [], 0.0
             base_tokens = spec_tokens = None
-            for rep in range(6):
+            for rep in range(4):
                 if rep % 2 == 0:
                     b_ms, b_res = _wall_ms(base_engine, p_ids, tc["max_tokens"], eos_ids, guard)
                     s_ms, s_res = _wall_ms(spec_engine, p_ids, tc["max_tokens"], eos_ids, guard)
@@ -129,8 +133,13 @@ def main():
             is_match = base_tokens == spec_tokens
             all_match &= is_match
             r = statistics.median(ratios)
+            out["runs"].append({
+                "k": k_val, "task": tc["name"], "wall_ratio_median": r,
+                "acceptance": acc, "token_identical": is_match,
+                "base_tokens": len(base_tokens), "spec_tokens": len(spec_tokens),
+            })
             print(
-                f"  --> {tc['name']:<14}: wall ratio (median of 6) {r:.4f} "
+                f"  --> {tc['name']:<14}: wall ratio (median of {len(ratios)}) {r:.4f} "
                 f"({(1 - r) * 100:+.1f}%) | acc {acc * 100:4.1f}% | "
                 f"identity {'MATCH' if is_match else 'DIFF'} "
                 f"(base {len(base_tokens)} tok, spec {len(spec_tokens)} tok)"
@@ -138,6 +147,11 @@ def main():
             guard.required_break()
 
         print(f"  ==> K={k_val} token identity: {'exact on every case' if all_match else 'BROKEN'}")
+
+    out_path = PROJECT_ROOT / "experiments" / "model_benchmark" / "prompt_lookup_results.json"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(out, indent=2))
+    print(f"\n[saved] -> {out_path}")
 
 
 if __name__ == "__main__":
