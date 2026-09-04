@@ -67,6 +67,12 @@ _REQUIRES_ENGINE = not (IRONMULE / "ironmule" / "runtime.py").is_file()
 # says 3.12, so this records the floor rather than inventing one -- the engine
 # package keeps its own >=3.10 claim and its tests keep running on 3.11.
 _REQUIRES_PY312 = sys.version_info < (3, 12)
+# Several research tests spawn the project's own interpreter as a subprocess to
+# exercise a measurement script end to end. That interpreter is `<repo>/.venv`,
+# which exists on the target device and nowhere else -- a runner builds its own
+# environment under a different name. Without it those tests fail on
+# FileNotFoundError rather than on anything they meant to check.
+_REQUIRES_PROJECT_VENV = not (ROOT / ".venv" / "bin" / "python").is_file()
 
 
 def _needs(path: Path, tokens: tuple[str, ...]) -> bool:
@@ -85,6 +91,8 @@ def collect_ignore_glob_hook(path: Path) -> bool:
     if _REQUIRES_ENGINE and _needs(path, ("friday-optimizer-ironmule", "from ironmule", "import ironmule")):
         return True
     if _REQUIRES_PY312 and _needs(path, ("friday_optimizer",)):
+        return True
+    if _REQUIRES_PROJECT_VENV and _needs(path, (".venv",)):
         return True
     return False
 
