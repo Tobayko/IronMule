@@ -332,6 +332,23 @@ schlechtere Invalid-Suggestion-Rate als die deterministische Suche.
 bei Optimization Memory plus deterministischer Suche plus BO; RL bleibt NO-GO
 und wird nicht als Abkürzung wiedereröffnet.
 
+**Stand 2026-09-04 — die Kampagne läuft.** Vorregistrierung samt Amendment A
+liegt in [`docs/R2_VORREGISTRIERUNG.md`](docs/R2_VORREGISTRIERUNG.md), beide vor
+dem ersten gezählten Punkt geschrieben. Erstes Fenster: **`68` Punkte, `0`
+Fehlschläge, `0` Tokenidentitätsbrüche**; Korpus von `2` auf `71` Labels.
+Werkzeuge: `tools/run_r2_point.py` (ein Punkt) und `tools/run_r2_campaign.py`
+(Fenster, fortsetzbar, Cursor über vorhandene Outcome-Records).
+
+Drei Annahmen des Backlog-Eintrags sind dabei gefallen und stehen korrigiert im
+Amendment: der Session-Runner kann keinen Kampagnenpunkt fahren
+(`ALLOWED_CANDIDATE` ist auf einen Kandidaten festgenagelt), `doubly_robust` ist
+über die CLI nicht erreichbar (es braucht ein Kostenmodell, das `replay` nie
+übergibt), und `persistent_process` ist kein Engine-Knopf und wird deshalb
+gezogen, aber nicht gemessen.
+
+Rest: `283` messbare Punkte, rund `14` Stunden. Das Kill-Kriterium unten bleibt
+unverändert und wird erst in Phase 3 geprüft.
+
 ## D1 — Die Hashbindung ist auf dem Versiegelungsgerät selbst gerissen (neu 2026-09-02)
 
 **Status:** offen, Code liegt. Der Kalibrierlauf braucht eine Freigabe.
