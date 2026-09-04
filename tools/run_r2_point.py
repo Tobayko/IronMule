@@ -217,9 +217,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.write:
         from friday_optimizer.memory import OptimizationMemoryV2
 
+        # Both records or neither. Two separate appends can be interrupted
+        # between them, which leaves the decision written and its label missing;
+        # the campaign cursor keys on the outcome, so the point would be retried
+        # and the retry would then fail on the decision's UNIQUE record_id.
         with OptimizationMemoryV2(args.memory) as memory:
-            memory.append(decision.as_record())
-            memory.append(outcome.as_record())
+            memory.append_many([decision.as_record(), outcome.as_record()])
         written = True
 
     print(
