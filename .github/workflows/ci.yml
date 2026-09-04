@@ -35,12 +35,13 @@ jobs:
         run: |
           .ci-venv/bin/python -m ironmule_cli --help
           .ci-venv/bin/python -m ironmule_cli info
-      - name: Report what this environment can collect
-        run: .ci-venv/bin/python -m pytest -n 0 -m "not integration" --collect-only -q | tail -5
-      # A runner is not the target device. Modules that assert MLX, Metal or
-      # model behaviour need MLX and the pinned engine worktree, and neither
-      # exists here; tests/conftest.py drops exactly those from collection, so
-      # what runs below is the offline logic -- statistics, records, hash
-      # chains, decisions, replay -- which is what CI can honestly check.
-      - name: Unit tests (no real-model integration)
-        run: .ci-venv/bin/python -m pytest -n 0 -m "not integration"
+      # A runner is not the target device. The research tree under tests/ binds
+      # to this project's own machine by design -- gitignored evidence databases
+      # under .friday-data/, a validated local model cache, a pinned engine
+      # worktree, and its own .venv interpreter -- and AGENTS.md is explicit that
+      # a test asserting MLX, Metal or model behaviour must have run on the
+      # target device. So CI runs the engine package's own suite, which depends
+      # on nothing outside the repository. The research suite runs on the target
+      # device, which is the only place it can say anything true.
+      - name: Engine test suite (no real-model integration)
+        run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"

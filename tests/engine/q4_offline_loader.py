@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def load_offline_modules(*names: str, namespace: str) -> dict[str, Any]:

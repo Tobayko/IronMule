@@ -40,7 +40,7 @@ def _identity(model_id="model", revision="revision"):
 
 def test_import_does_not_mutate_huggingface_offline_environment():
     """A library import must preserve values chosen by the embedding process."""
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     code = "import os; before=(os.environ.get('HF_HUB_OFFLINE'), os.environ.get('TRANSFORMERS_OFFLINE')); import ironmule; after=(os.environ.get('HF_HUB_OFFLINE'), os.environ.get('TRANSFORMERS_OFFLINE')); print(before == after)"
     env = {**os.environ, "HF_HUB_OFFLINE": "caller-value", "TRANSFORMERS_OFFLINE": "caller-value-2"}
     result = subprocess.run([sys.executable, "-c", code], cwd=root, env=env,
@@ -503,7 +503,7 @@ def test_only_typed_or_explicitly_unsupported_candidate_errors_are_skippable():
 def test_metadata_has_qualified_dependency_intervals_and_dynamic_version():
     import tomllib
 
-    metadata = tomllib.loads((Path(__file__).resolve().parents[1] / "pyproject.toml").read_text())
+    metadata = tomllib.loads((Path(__file__).resolve().parents[2] / "pyproject.toml").read_text())
     project = metadata["project"]
     assert project["dynamic"] == ["version"]
     assert "mlx>=0.32,<0.33" in project["dependencies"]

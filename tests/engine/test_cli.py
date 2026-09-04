@@ -160,7 +160,7 @@ def test_models_on_a_machine_without_any_cache(tmp_path):
     }
     done = subprocess.run(
         [sys.executable, "-m", "ironmule_cli", "models"],
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=Path(__file__).resolve().parents[2],
         env=env, capture_output=True, text=True,
     )
     assert done.returncode == 0, done.stderr
@@ -294,7 +294,7 @@ def test_help_and_doctor_survive_a_broken_mlx_install(tmp_path):
     )
     done = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=Path(__file__).resolve().parents[2],
         capture_output=True, text=True,
     )
     assert done.returncode == 0, done.stderr
@@ -310,7 +310,7 @@ def test_benchmark_reports_an_uncached_model_without_a_traceback(tmp_path):
     done = subprocess.run(
         [sys.executable, "-m", "ironmule_cli", "benchmark",
          "--model", "mlx-community/gemma-3-4b-it-4bit"],
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=Path(__file__).resolve().parents[2],
         env=env, capture_output=True, text=True,
     )
     assert done.returncode == 1
@@ -329,7 +329,7 @@ def test_models_reports_a_broken_runtime_install_without_a_traceback(tmp_path):
     )
     done = subprocess.run(
         [sys.executable, "-c", script],
-        cwd=Path(__file__).resolve().parent.parent,
+        cwd=Path(__file__).resolve().parents[2],
         capture_output=True, text=True,
     )
     assert done.returncode == 1

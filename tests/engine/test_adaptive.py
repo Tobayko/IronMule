@@ -9,7 +9,7 @@ import pytest
 # Import the two stdlib-only modules without executing ironmule/__init__.py,
 # whose legacy public surface imports the MLX runtime.  Q3 itself must not do so.
 _package = types.ModuleType("ironmule")
-_package.__path__ = [str(Path(__file__).parents[1].joinpath("ironmule"))]
+_package.__path__ = [str(Path(__file__).parents[2].joinpath("ironmule"))]
 sys.modules.setdefault("ironmule", _package)
 
 from ironmule.adaptive import (
@@ -86,7 +86,7 @@ def observation(**updates):
 
 
 def test_adaptive_module_has_only_stdlib_and_evidence_imports():
-    tree = ast.parse(Path(__file__).parents[1].joinpath("ironmule/adaptive.py").read_text())
+    tree = ast.parse(Path(__file__).parents[2].joinpath("ironmule/adaptive.py").read_text())
     imports = [node for node in ast.walk(tree) if isinstance(node, (ast.Import, ast.ImportFrom))]
     names = {
         (node.module.split(".")[0] if isinstance(node, ast.ImportFrom) and node.module else alias.name.split(".")[0])
@@ -204,7 +204,7 @@ def test_action_panel_is_explicit_and_incomplete_panel_stays_insufficient():
 
 
 def test_runtime_knob_schema_and_search_values_remain_the_source_of_truth():
-    root = Path(__file__).parents[1]
+    root = Path(__file__).parents[2]
     runtime = ast.parse(root.joinpath("ironmule/runtime.py").read_text())
     tune = ast.parse(root.joinpath("ironmule/tune.py").read_text())
     knob = next(node for node in runtime.body if isinstance(node, ast.ClassDef) and node.name == "Knobs")

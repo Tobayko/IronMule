@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("q3_build_replay", ROOT / "research/q3_build_replay.py")
 q3 = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
