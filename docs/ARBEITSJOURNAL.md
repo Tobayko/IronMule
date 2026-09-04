@@ -6244,9 +6244,9 @@ Dokumentation wurde ProjectAtlas `0.4.5-rc1` mit fokussiertem Session-Brief für
 den Worktree `.worktrees/ironmule-qwen-hybrid-cache` verwendet; der Index war
 verfügbar. Es gab keine Downloads oder Installationen. Die Arbeitsliste und
 Präregistrierungen waren vor dem ersten Modelllauf per `apply_patch` angelegt:
-[`B35_preregistration.md`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_preregistration.md)
+`B35_preregistration.md` (im gitignorierten Worktree, nicht im Repository)
 und die spätere reine Kontaminationskorrektur
-[`B35a_preregistration.md`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35a_preregistration.md).
+`B35a_preregistration.md` (im gitignorierten Worktree, nicht im Repository).
 
 **Sicherheits- und Laufregel.** Die Modellläufe wurden ausschließlich außerhalb
 der Sandbox mit `require_escalated` auf dem vorhandenen Projektinterpreter
@@ -6297,7 +6297,7 @@ Modell-/Pythonprozesse und es gab keinen neuen Python-Crashreport.
 
 **Approach D / Kontaminationskorrektur.** Der erste 1B-AB-Versuch lief zeitweise
   parallel zu breiten `find`-Suchen. Seine Rohdatei
-  [`B35_gemma1b_AB_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma1b_AB_20260828.json)
+  `B35_gemma1b_AB_20260828.json` (im gitignorierten Worktree, nicht im Repository)
   ist mit `valid_for_metrics: false` markiert und liefert keinen Performancewert.
   B35a fror als einzige Korrektur eine such-, CPU- und I/O-freie Umgebung vor und
   während jedes Laufes ein; Arme, Prompt, Schwellen und Wiederholungen blieben
@@ -6327,12 +6327,12 @@ Modell-/Pythonprozesse und es gab keinen neuen Python-Crashreport.
   auf Apple M1 Max, 32 GB Unified Memory, Darwin/AC-Power; die lokalen
   Snapshot- und Konfigurationsdigests stehen in den sechs Rohdateien.
 
-  Rohreferenzen: [`B35_gemma1b_AB_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma1b_AB_clean_20260828.json),
-  [`B35_gemma1b_BA_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma1b_BA_clean_20260828.json),
-  [`B35_gemma4b_AB_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma4b_AB_clean_20260828.json),
-  [`B35_gemma4b_BA_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma4b_BA_clean_20260828.json),
-  [`B35_gemma12b_AB_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma12b_AB_clean_20260828.json),
-  [`B35_gemma12b_BA_clean_20260828.json`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_gemma12b_BA_clean_20260828.json).
+  Rohreferenzen: `B35_gemma1b_AB_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository),
+  `B35_gemma1b_BA_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository),
+  `B35_gemma4b_AB_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository),
+  `B35_gemma4b_BA_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository),
+  `B35_gemma12b_AB_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository),
+  `B35_gemma12b_BA_clean_20260828.json` (im gitignorierten Worktree, nicht im Repository).
 
 **Entscheidung.** Wortlaut des Ledger-Entscheids: „exploratory candidate
 qualifies under gate; 12B result order-sensitive/inconclusive for robust
@@ -6364,7 +6364,7 @@ Die zulässige Aussage bleibt daher explorativ: 1B/4B qualifizieren den
 Kandidaten unter dem aufgezeichneten Screen, 12B ist wegen des starken
 Order-Effekts für robuste Performance inkonklusiv. Keine Aktivierung oder
 allgemeine Performanceaussage. Der Review liegt in
-[`B35_review.md`](../.worktrees/ironmule-qwen-hybrid-cache/research/raw/B35_review.md);
+`B35_review.md` (im gitignorierten Worktree, nicht im Repository);
 B36 verlangt getrennte frische Prozesse pro Arm, Swap ab Prozessstart vor Load,
 externe Crashreport-Snapshots und vollständige Repeat-Token-/Stop-Aufzeichnung.
 
