@@ -10,10 +10,16 @@ to contain prompts, model output, or process logs.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
+
+#: An immutable empty mapping, shared. Spelled as a factory because a
+#: dataclass default must be hashable on Python 3.11 and ``mappingproxy``
+#: is not; 3.12 relaxed that check to list/dict/set only (gh-96151), which
+#: is why the bare default worked here and nowhere else.
+_EMPTY_MAPPING: Mapping[str, Any] = MappingProxyType({})
 
 from .canonical import CanonicalJSONError, canonical_bytes, loads_strict, sha256_hex
 from .memory import OptimizationMemoryV2, ReadOnlyMemoryView
@@ -159,7 +165,7 @@ class SessionEvent:
     ood: bool = False
     profile_hash: str = ""
     rollback: bool = False
-    payload: Mapping[str, Any] = MappingProxyType({})
+    payload: Mapping[str, Any] = field(default_factory=lambda: _EMPTY_MAPPING)
     created_at: str = ""
 
     def __post_init__(self) -> None:
