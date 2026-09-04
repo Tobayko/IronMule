@@ -37,9 +37,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "tools"))
 
 POINT_RUNNER = PROJECT_ROOT / "tools" / "run_r2_point.py"
-#: Measured on this machine, two pilot points: 179.3 s and 178.5 s. Used only to
-#: decide whether the next point still fits in the window, never as evidence.
-POINT_SECONDS = 185.0
+#: Measured on this machine: 179 s for the two pilot points, a 188 s median over
+#: the 68 points of the first window. Used only to decide whether the next point
+#: still fits in the window, never as evidence. Deliberately above the median so
+#: the last point of a window finishes inside it.
+POINT_SECONDS = 200.0
 
 
 def _deadline(until: str | None, minutes: float | None) -> float:
@@ -175,6 +177,11 @@ def main(argv: list[str] | None = None) -> int:
             capture_output=True,
             text=True,
             cwd=str(PROJECT_ROOT),
+            # Its own session, so a Ctrl-C aimed at this supervisor does not
+            # reach the point in flight. Without this the child dies with the
+            # group and the claim below -- that an interrupt finishes the point
+            # rather than abandoning it half written -- would not be true.
+            start_new_session=True,
         )
         line = (completed.stdout or "").strip().splitlines()
         summary = {}
