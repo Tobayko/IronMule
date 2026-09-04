@@ -11636,3 +11636,55 @@ hat hier funktioniert wie vorgesehen.
   und nennt den Befehl; erst `--calibrate-if-unknown` startet die
   Viertelstunde selbst.
 - Suite: `1848 passed, 20 skipped, 2633 subtests passed`.
+
+---
+
+## 2026-09-04 — R2-Kampagne, erstes Fenster: 68 Punkte
+
+**Fenster.** 14:23 bis 18:00, 214,5 Minuten, unbeaufsichtigt, fortsetzbar.
+**Ergebnis: 68 gemessene Punkte, 0 Fehlschläge, 0 Tokenidentitätsbrüche.**
+Korpus von `402/2` (feature/label) auf `471/71`. Hash-Kette verifiziert.
+
+Vorregistrierung: `docs/R2_VORREGISTRIERUNG.md` samt Amendment A, beide vor dem
+ersten gezählten Punkt geschrieben.
+
+### Was gemessen wurde
+
+| Aktion | n | Median-Ratio | Gewinn | Streuung |
+| --- | ---: | ---: | ---: | --- |
+| `head_skip_prefill` | `43` | `0,8754` | **`+12,46 %`** | `[0,8670; 0,8823]` |
+| `fixed_compiled_cache` | `8` | `0,9861` | `+1,39 %` | `[0,9802; 0,9933]` |
+| `readback_every_2` | `12` | `1,0012` | `−0,12 %` | `[0,9923; 1,0082]` |
+| `baseline` | `5` | `1,0016` | `−0,16 %` | `[0,9929; 1,0040]` |
+
+Je Punkt sechs Paare, alternierend AB/BA, Tokenidentität je Paar geprüft.
+
+**Zwei Kontrollen halten.** `baseline` gegen sich selbst liegt bei `1,0016` — ein
+A/A muss nahe `1` landen und tut es. Und `head_skip_prefill` reproduziert über
+`43` unabhängige Punkte das Geräteprofil (`0,8778`, KI `[0,8668; 0,8888]`,
+gemessen am 2026-09-03 über einen anderen Aufrufweg).
+
+**`readback_every_2` liefert keinen Gewinn** (`−0,12 %`, Streuung schließt `1,0`
+ein). Das deckt sich mit der Nachmessung vom 2026-09-03, die `bundled_readback`
+im Geräteprofil durchfallen ließ. Zwei unabhängige Wege, dasselbe Nein.
+
+### Punktkosten
+
+Median `188 s` je Punkt gegen die Konstante `167,0 s` in `campaign.py` und gegen
+`179 s` in den beiden Pilotpunkten. Der Aufschlag ist erklärbar: während des
+Fensters liefen CI-Reparaturen auf derselben Maschine. Die Paarung fängt das ab —
+beide Arme eines Paares laufen unter denselben Bedingungen —, aber die
+Wandzeitschätzung für die Restkampagne steigt entsprechend.
+
+Rest: `283` messbare Punkte, rund `14` Stunden, gut zwei Nachtfenster.
+
+### Was der Lauf über die Werkzeuge sagte
+
+Der Supervisor lief 214 Minuten ohne Eingriff. Der Cursor über vorhandene
+Outcome-Records hat gehalten: der Lauf begann bei `already_done 1` und übersprang
+den Pilotpunkt korrekt. Das Fenster schloss `56 s` vor Ablauf, weil kein weiterer
+Punkt mehr hineinpasste — die beabsichtigte Kante.
+
+`48` der `400` gezogenen Punkte sind `persistent_process` und wurden ohne
+Outcome-Record übersprungen (Amendment A2). Kein GPU-Aufwand, und die Schritte
+bleiben unlabelled, was `_weights` korrekt überspringt.
