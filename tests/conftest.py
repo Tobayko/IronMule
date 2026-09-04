@@ -14,11 +14,11 @@ IronMule worktree is only *appended*, so ``from ironmule.runtime import ...``
 resolves while the worktree's stray ``tests/`` sorts last in ``__path__`` and
 never wins.
 
-Since the two trees were merged there is a *third* ``test_benchmark.py``: the
-engine package's own, which legitimately owns ``tests/test_benchmark.py``. The
-research tree's copy was renamed to ``tests/test_friday_benchmark.py`` (likewise
-``test_friday_cli.py`` and ``test_friday_evidence.py``), so a shared-helper
-import has to name that file, not the engine's.
+Since the two trees were merged there is a *third* ``test_benchmark.py``. The
+engine package's own now lives in ``tests/engine/`` together with the rest of its
+suite; the research tree's copy was renamed to ``tests/test_friday_benchmark.py``
+(likewise ``test_friday_cli.py`` and ``test_friday_evidence.py``), so a
+shared-helper import has to name that file rather than the engine's.
 """
 
 from __future__ import annotations

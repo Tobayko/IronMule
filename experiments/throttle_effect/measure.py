@@ -6,16 +6,21 @@ effects. So the claim is tested the way every other claim here is: paired,
 alternating AB/BA, median over repeats, with the spread reported next to it.
 
 Design. A fixed, bandwidth-heavy foreign job runs while the model decodes
-continuously. Only the *foreign* job's wall time is measured. Two arms:
+continuously. Only the *foreign* job's wall time is measured. Two arms per run:
 
-* ``full``    -- the pause is zero, today's behaviour.
-* ``minimal`` -- the pause the step-back mode applies when the Mac is busy.
+* ``full``     -- the pause is zero, today's behaviour.
+* ``--level``  -- ``gentle`` or ``minimal``, the step-back the mode applies when
+  the Mac is busy. Each level is a separate run and writes its own report.
 
 The detection logic is not under test here (that is offline in
 ``tests/test_throttle.py``); the level is forced, so this measures exactly one
-thing: what the pause is worth to whoever else is using the machine.
+thing: what standing aside is worth to whoever else is using the machine.
 
-Run: ``python experiments/throttle_effect/measure.py --execute``
+Measured 2026-09-04, six pairs per level, median with spread:
+``gentle`` buys the foreign job ``4.0 %`` while the model keeps ``80.7 %`` of its
+tokens; ``minimal`` buys ``7.4 %`` and keeps ``39.1 %``.
+
+Run: ``python experiments/throttle_effect/measure.py --execute --level gentle``
 """
 
 from __future__ import annotations

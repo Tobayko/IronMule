@@ -330,8 +330,19 @@ Maschine, sechs Paare, 4B: **`179,3 s`** und **`178,5 s`**. Davon sind rund
 `26,5 s` GPU-Arbeit und `148,3 s` vorgeschriebene Pause — die Kapazität hängt an
 der Abkühlung, nicht am Takt.
 
-Nach A2 werden `352` der `400` Punkte gemessen, das kostet rund **`17,5`
-Stunden**. Die Blockzahl `40` bleibt die Obergrenze.
+**Nachtrag nach dem ersten Fenster (68 Punkte):** gemessener Median **`188 s`**.
+Der Aufschlag gegenüber den Piloten ist erklärbar — während des Fensters liefen
+CI-Reparaturen auf derselben Maschine. Die Paarung fängt das ab (beide Arme eines
+Paares laufen unter denselben Bedingungen); für die Wandzeitplanung gilt der
+höhere Wert.
+
+Nach A2 werden `352` der `400` Punkte gemessen. Bei `188 s` sind das rund
+**`18,4` Stunden**. Die Blockzahl `40` bleibt die Obergrenze.
+
+`MEASURED_POINT_SECONDS` selbst bleibt **unverändert**: die Konstante geht über
+`CampaignPlan.as_dict` in den `campaign_hash` ein, und ein geänderter Wert wäre
+ein anderes Siegel — die bereits gemessenen Punkte gehörten dann zu keiner
+Kampagne mehr. Die gemessene Zahl steht hier, nicht im Code.
 
 ## A6 — Die Pilotpunkte bleiben Kampagnenpunkte
 
