@@ -7,11 +7,17 @@ can say that a candidate is executable for a fingerprint.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import json
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
+
+#: An immutable empty mapping, shared. Spelled as a factory because a
+#: dataclass default must be hashable on Python 3.11 and ``mappingproxy``
+#: is not; 3.12 relaxed that check to list/dict/set only (gh-96151), which
+#: is why the bare default worked here and nowhere else.
+_EMPTY_MAPPING: Mapping[str, Any] = MappingProxyType({})
 
 from .fingerprint import ExactFingerprint
 
@@ -69,7 +75,7 @@ class CandidateSpec:
     allowed_chip_families: tuple[str, ...] = ()
     allowed_mlx_versions: tuple[str, ...] = ()
     allowed_workload_modes: tuple[str, ...] = ()
-    parameters: Mapping[str, Any] = MappingProxyType({})
+    parameters: Mapping[str, Any] = field(default_factory=lambda: _EMPTY_MAPPING)
     prerequisites: tuple[str, ...] = ()
     requires_exact_fingerprint: bool = True
     requires_greedy: bool | None = None

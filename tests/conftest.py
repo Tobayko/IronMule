@@ -81,12 +81,6 @@ ENGINE_TESTS = Path(__file__).resolve().parent / "engine"
 
 _REQUIRES_MLX = _missing("mlx")
 _REQUIRES_ENGINE = not (IRONMULE / "ironmule" / "runtime.py").is_file()
-# friday_optimizer uses MappingProxyType as a dataclass default
-# (candidates.py:72, history.py:162). Python 3.12 relaxed the mutable-default
-# check; 3.11 rejects it at import time. requirements-apple-silicon.txt already
-# says 3.12, so this records the floor rather than inventing one -- the engine
-# package keeps its own >=3.10 claim and its tests keep running on 3.11.
-_REQUIRES_PY312 = sys.version_info < (3, 12)
 
 
 def _needs(path: Path, tokens: tuple[str, ...]) -> bool:
@@ -108,8 +102,6 @@ def collect_ignore_glob_hook(path: Path) -> bool:
     if _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx")):
         return True
     if _REQUIRES_ENGINE and _needs(path, ("friday-optimizer-ironmule",)):
-        return True
-    if _REQUIRES_PY312 and _needs(path, ("friday_optimizer",)):
         return True
     return False
 
