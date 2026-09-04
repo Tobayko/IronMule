@@ -98,6 +98,51 @@ def censoring_for(reason: str) -> str:
     return "censored_error"
 
 
+def outcome_from_ratios(
+    ratios: Sequence[float],
+    *,
+    decision_id: str,
+    evidence_hash: str | None = None,
+    notes: str = "",
+    created_at: str = "",
+) -> OutcomeEvent:
+    """The label for a point measured through the calibration harness.
+
+    ``friday_calibrate.runner.paired_arms`` returns the two arms as
+    ``MetricSample``s rather than a session result file, and
+    ``integration.paired_request_ratios`` turns those into one request-time ratio
+    per pair under the evaluator's own pairing rules. This takes it from there,
+    so both measurement paths produce the same kind of label.
+
+    An empty sequence means the pairing rejected every pair -- a defect in the
+    run, not an observation about the action, so it is censored rather than
+    scored.
+    """
+
+    usable = [
+        float(value)
+        for value in ratios
+        if not isinstance(value, bool) and isinstance(value, (int, float)) and value > 0
+    ]
+    if not usable or len(usable) != len(ratios):
+        return OutcomeEvent(
+            decision_id=decision_id,
+            censoring="censored_error",
+            evidence_hash=evidence_hash,
+            notes=notes[:120] or "paired_ratios_unusable",
+            created_at=created_at,
+        )
+    return OutcomeEvent(
+        decision_id=decision_id,
+        censoring="observed",
+        reward=statistics.median(usable),
+        reward_metric=REWARD_METRIC,
+        evidence_hash=evidence_hash,
+        notes=notes[:120],
+        created_at=created_at,
+    )
+
+
 def outcome_for(result: Mapping[str, Any], *, decision_id: str, created_at: str = "") -> OutcomeEvent:
     """The single label for one session result. Never raises on a failed run."""
 
@@ -155,5 +200,6 @@ __all__ = [
     "RewardError",
     "censoring_for",
     "outcome_for",
+    "outcome_from_ratios",
     "ratio_median",
 ]
