@@ -220,3 +220,131 @@ Blöcke sie vervielfachen.
 - **Kein CQL/IQL.** Im Repository existieren `ips`, `snips`, `doubly_robust` und
   `replayer` — sonst nichts. Die Policy-Klasse bleibt klein und erklärbar;
   tiefe Netze sind unter `10⁴` Samples nicht begründbar.
+
+---
+
+# Amendment A — 2026-09-04, nach dem Pilotpunkt, vor der Kampagne
+
+Zwei Pilotpunkte auf echter Hardware haben drei Annahmen der obigen Fassung
+widerlegt. Es ist **nichts von der Kampagne gemessen**; die Änderungen sind
+folgenlos und stehen hier, bevor der erste gezählte Punkt läuft.
+
+## A1 — Messpfad: Kalibrier-Harness statt Session-Runner
+
+Die obige Fassung ging von `friday_optimizer session` aus. Der Pfad kann keinen
+Kampagnenpunkt fahren:
+
+- `real_session.py:46` — `ALLOWED_CANDIDATE = "combined_core_profile"`,
+  hartkodiert an drei Stellen (`:688`, `:870`, `:1212`). Er misst **einen**
+  Kandidaten, und zwar den, den dieser Aktionsraum ausschließt.
+- `--prereg` verlangt ein maschinenlesbares Artefakt mit sechzehn Hash-Feldern,
+  nicht dieses Dokument.
+- Der Pfad ist nie gelaufen; sein Readiness-Tor hat nie bestanden.
+
+**Stattdessen:** `friday_calibrate.runner.build_runner` und `paired_arms` — der
+Code, der das einzige echte Geräteprofil dieser Maschine erzeugt hat. Gepaart
+AB/BA, Tokenidentität je Paar, Budget-Guard und Netzteil-Tor eingeschlossen.
+
+Damit entfällt die Readiness-Policy aus dem Abschnitt „Readiness" für den
+Messpfad: `paired_arms` durchläuft `ReadinessGate` nicht. Die dort hergeleiteten
+Grenzen und die Stellschraube `require_idle_workload` bleiben gültig und
+dokumentiert, werden von dieser Kampagne aber **nicht benutzt**. Was stattdessen
+gilt: `require_ac_power()` und `BudgetGuard`, wie bei jeder Messung dieses
+Projekts.
+
+## A2 — `persistent_process` wird gezogen, aber nicht gemessen
+
+`persistent_process` ist **kein Engine-Knopf** — `ironmule.runtime.Knobs` führt
+es nicht. Und das Kalibrier-Harness hält den Prozess ohnehin über alle Paare
+offen. Gegen `baseline` gemessen verglichen es zwei identische Konfigurationen
+und lieferte per Konstruktion eine Ratio nahe `1,0`: ein **fabriziertes**
+Null-Ergebnis, keine Messung.
+
+Der Aktionsraum bleibt trotzdem unverändert, und das Siegel damit auch. Die
+Ziehung kommt aus der versiegelten Registry und bildet die ehrliche
+Zulässigkeit ab; sie zu beschneiden hieße, den Fingerprint zu verbiegen.
+
+**Stattdessen:** ein gezogener `persistent_process`-Punkt wird **nicht gemessen
+und bekommt keinen Outcome-Record.** Kein `not_run`, kein `censored_*` — gar
+keinen.
+
+Der Unterschied ist nicht kosmetisch. `ReplayEnv.reward_of` liefert `None` nur
+dann, wenn ein Schritt überhaupt keinen Outcome hat, und `_weights` überspringt
+genau solche Schritte (`replay.py:333`). Ein zensierter Record dagegen zählt als
+Reward `0,0`, geht in `samples` ein und verwässert damit jede IPS-Schätzung um
+den Anteil dieser Punkte — bei `≈48` von `400` also um rund `12 %`. Ein Record zu
+schreiben hieße zu behaupten, es sei nichts beobachtet worden; kein Record zu
+schreiben sagt korrekt, dass es keine Beobachtung gibt.
+
+**Ergänzend eingefroren:** über `persistent_process` wird **keine Zielpolicy
+ausgewertet.** Die vorregistrierten Ziele sind deterministische Punktmassen je
+messbarer Aktion; für sie ist `distribution["persistent_process"] = 0`, ein
+gezogener Punkt trüge also ohnehin das Gewicht null.
+
+| Aktion | Knöpfe | gemessen |
+| --- | --- | :---: |
+| `baseline` | `{}` | ja |
+| `head_skip_prefill` | `{head_skip_prefill: True}` | ja |
+| `fixed_compiled_cache` | `{compiled_fixed_cache: True}` | ja |
+| `readback_every_2` | `{readback_every: 2}` | ja |
+| `persistent_process` | — | **nein** |
+
+Gezogene Verteilung über die `400` versiegelten Punkte, nachgerechnet:
+`head_skip_prefill 214`, `readback_every_2 49`, `persistent_process 48`,
+`fixed_compiled_cache 46`, `baseline 43`. Gemessen werden also **`352` Punkte**,
+und jede messbare Aktion bleibt deutlich über der ESS-Untergrenze `30`.
+
+## A3 — Reward: die Paarung des Integrationspfads
+
+Die Erstfassung nannte `median(candidate.total_ns) / median(baseline.total_ns)`
+aus der Ergebnisdatei des Session-Runners. Ohne diesen Pfad gibt es die Serie
+nicht. Stattdessen `integration.paired_request_ratios`: je Probe
+`request_seconds = ttft + tokens / decode_tps`, je Paar das Verhältnis, darüber
+der Median. Das sind die Paarungsregeln des Evaluators, dieselben, die F1 benutzt
+hat.
+
+Unverändert: **`ratio_median` bleibt die einzige Metrik**, kleiner als `1` heißt
+schneller, `decode_ratio` bleibt gesperrt, und Phasenverhältnisse werden nicht
+zusammengesetzt (E04).
+
+## A4 — Gate-Schätzer: `doubly_robust` braucht ein Kostenmodell
+
+`replay.evaluate` führt `doubly_robust` nur aus, wenn ein `reward_model`
+übergeben wird, und `friday_optimizer replay` übergibt keines. Über die CLI ist
+der Schätzer also nicht erreichbar.
+
+**Präzisiert:** das Tor trägt **`ips`** — der einzige über die CLI erreichbare
+Schätzer mit Bootstrap-Intervall. `doubly_robust` tritt hinzu, sobald die
+Auswertung in Phase 3 ein Kostenmodell stellt; kann sie das nicht, ruht das Tor
+auf `ips` allein, und das wird berichtet. `snips` bleibt Stabilitätsvergleich
+ohne Stimmrecht.
+
+Nachgeprüft: `_interval` liefert `(None, None)` erst unterhalb von **zwei**
+Proben. Bei `400` Punkten hat `ips` sein Intervall; im Pilotlauf mit einer Probe
+erwartungsgemäß nicht.
+
+## A5 — Gemessene Punktkosten
+
+`campaign.MEASURED_POINT_SECONDS` nimmt `167,0 s` an. Zwei Pilotpunkte auf dieser
+Maschine, sechs Paare, 4B: **`179,3 s`** und **`178,5 s`**. Davon sind rund
+`26,5 s` GPU-Arbeit und `148,3 s` vorgeschriebene Pause — die Kapazität hängt an
+der Abkühlung, nicht am Takt.
+
+Nach A2 werden `352` der `400` Punkte gemessen, das kostet rund **`17,5`
+Stunden**. Die Blockzahl `40` bleibt die Obergrenze.
+
+## A6 — Die Pilotpunkte bleiben Kampagnenpunkte
+
+Weil A2 das Siegel nicht ändert, sind beide Pilotpunkte gültige Punkte dieser
+Kampagne.
+
+- Punkt `0` (`readback_every_2`, `ratio_median 0,9842`) wurde gemessen und
+  **nicht** geschrieben. Er wird im regulären Lauf an seinem Index neu gezogen —
+  derselbe Seed, dieselbe Aktion — und dann geschrieben.
+- Punkt `1` (`r2-corpus-20260904-01.0001`, `head_skip_prefill`,
+  `ratio_median 0,8760`) ist geschrieben und zählt.
+
+Punkt `1` ist zugleich eine unabhängige Gegenprobe: das Geräteprofil führt
+`head_skip` mit Ratio `0,8778`, KI `[0,8668; 0,8888]`, gemessen am 2026-09-03
+durch das Kalibrier-CLI. Der hier über den Kampagnenpfad gemessene Wert `0,8760`
+liegt in diesem Intervall. Zwei getrennte Aufrufwege, dasselbe Ergebnis.
