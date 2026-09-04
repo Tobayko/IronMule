@@ -1,0 +1,19 @@
+Here is a Python function:
+
+def compute_statistics(measurements, threshold):
+    total = 0
+    count = 0
+    outliers = []
+    for value in measurements:
+        if value > threshold:
+            outliers.append(value)
+            continue
+        total = total + value
+        count = count + 1
+    if count == 0:
+        return None
+    average = total / count
+    return {"average": average, "count": count, "outliers": outliers}
+
+Rewrite this function so the parameter `threshold` is named `limit` instead.
+Return the complete function and change nothing else.

@@ -1,0 +1,65 @@
+Here is a file from the project:
+
+
+
+@dataclass(frozen=True)
+class HardwareProfile:
+    """Measurements for one (device, model, quantisation), and nothing beyond it."""
+
+    device: str
+    model_id: str
+    bits: int
+    group_size: int
+    layers: int
+    weight_gb: float
+    # Two-term single-token model: layers * per_layer_ms + weight_gb * ms_per_gigabyte
+    per_layer_ms: float
+    ms_per_gigabyte: float
+    # Measured forward-pass cost per width. Keys are the widths actually measured.
+    width_ms: Mapping[int, float]
+    # Widths where going wider made cost per position worse than a narrower width
+    # already achieved. Never schedule onto one of these.
+    regression_widths: tuple[int, ...] = ()
+    prefill_ms_per_position: float | None = None
+    # Context-lookup speculation, measured per model. Both matter and neither
+    # transfers: an eight-token window took the 4B from 1.215x to 1.274x on the same
+    # task where it took the 1B from 1.695x down to 1.538x, because depth is cheap on
+    # the 1B's flatter curve and hit rate pays there more than hit quality does.
+    lookup_ngram: int = 3
+    lookup_draft: int = 2
+    measured_at: str = ""
+    notes: str = ""
+    # Safety headroom when sizing a segment against a continuous-load limit. Step
+    # cost drifts with temperature and cache length; a segment sized to exactly fill
+    # the limit fails on the first slower run, and a failed run is not a slow run.
+    segment_safety: float = 0.75
+
+    def __post_init__(self) -> None:
+        if self.layers < 1 or self.weight_gb <= 0:
+            raise ProfileError("a profile needs a positive depth and weight")
+        if self.per_layer_ms <= 0 or self.ms_per_gigabyte <= 0:
+            raise ProfileError("both cost terms must be positive")
+        if not self.width_ms:
+            raise ProfileError("a profile without measured widths cannot schedule")
+        if any(w < 1 or ms <= 0 for w, ms in self.width_ms.items()):
+            raise ProfileError("measured widths and times must be positive")
+        if not 0.0 < self.segment_safety <= 1.0:
+            raise ProfileError("segment safety must lie in (0, 1]")
+        if self.lookup_ngram < 2:
+            raise ProfileError(
+                "a one-token lookup window measured slower than not drafting at all"
+            )
+        if self.lookup_draft < 0:
+            raise ProfileError("draft length must be non-negative")
+        unknown = set(self.regression_widths) - set(self.width_ms)
+        if unknown:
+            raise ProfileError(f"regression widths were never measured: {sorted(unknown)}")
+
+    # -- identity -----------------------------------------------------------
+
+    def applies_to(self, model_id: str, bits: int, group_size: int) -> bool:
+        return (self.model_id, self.bits, self.group_size) == (model_id, bits, group_size)
+
+    def require(self, model_id: str, bits: int, group_size: int) -> None:
+
+Add a field `created_by: str = ""` to the Plan dataclass and include it in as_dict(). Show the complete updated dataclass.
