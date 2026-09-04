@@ -790,6 +790,40 @@ def _session_plan(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     return payload, ExitCode.OK if plan.ready else ExitCode.UNAVAILABLE
 
 
+def _readiness_policy(args: argparse.Namespace):
+    """A campaign-specific readiness policy, or ``None`` for the default.
+
+    The defaults compare the raw one-minute load against `0.75` and a
+    core-summed `cpu_percent` against `35.0`. Both are unreachable on a desktop
+    with a logged-in user (`BACKLOG.md` G1), so a long campaign has to state its
+    own limits -- derived and written down, never quietly lowered. Passing
+    neither flag leaves `ReadinessPolicy` exactly as it is today.
+    """
+
+    load = getattr(args, "max_load_per_cpu", None)
+    cpu = getattr(args, "max_cpu_percent", None)
+    allow_foreign = bool(getattr(args, "allow_foreign_workload", False))
+    no_reserve = bool(getattr(args, "no_memory_reserve", False))
+    if load is None and cpu is None and not allow_foreign and not no_reserve:
+        return None
+    from .readiness import ReadinessPolicy
+
+    default = ReadinessPolicy()
+    return ReadinessPolicy(
+        max_load_1m=default.max_load_1m if load is None else float(load),
+        # A per-core limit is only meaningful with the divisor switched on.
+        normalize_load_by_cpus=load is not None,
+        max_cpu_percent=default.max_cpu_percent if cpu is None else float(cpu),
+        require_idle_workload=not allow_foreign,
+        # Swap growth is checked separately and is the signal that actually
+        # means "this machine is out of memory" on macOS; the free-page fraction
+        # is not, because the OS spends free pages on cache by design.
+        min_memory_available_fraction=0.0
+        if no_reserve
+        else default.min_memory_available_fraction,
+    )
+
+
 def _session(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
     if not args.execute:
         return {"command": "session", "schema_version": 1, "ok": False, "authorized": False, "reason": "explicit_execute_required", "no_activation": True}, ExitCode.NOT_AUTHORIZED
@@ -818,6 +852,7 @@ def _session(args: argparse.Namespace) -> tuple[dict[str, Any], ExitCode]:
             memory=_safe_existing_file(args.memory, "memory", max_bytes=64 * 1024 * 1024),
             result_out=args.result_out,
             execute=True,
+            **({} if (policy := _readiness_policy(args)) is None else {"readiness_policy": policy}),
         )
     except RealSessionError as exc:
         raise _real_error(exc) from exc
@@ -1183,6 +1218,28 @@ def _build_parser() -> argparse.ArgumentParser:
     session.add_argument("--memory", required=True)
     session.add_argument("--result-out", required=True)
     session.add_argument("--session-id", required=True)
+    session.add_argument(
+        "--max-load-per-cpu",
+        type=float,
+        default=None,
+        help="Readiness limit on the 1-minute load PER CORE (switches on the divisor). Omit to keep the default policy.",
+    )
+    session.add_argument(
+        "--max-cpu-percent",
+        type=float,
+        default=None,
+        help="Readiness limit on summed process CPU (100 == one core). Omit to keep the default policy.",
+    )
+    session.add_argument(
+        "--allow-foreign-workload",
+        action="store_true",
+        help="Do not block on any active user process; rely on the numeric limits instead. Requires a preregistration that says so.",
+    )
+    session.add_argument(
+        "--no-memory-reserve",
+        action="store_true",
+        help="Drop the free-page reserve check; swap growth remains the memory gate.",
+    )
     session.add_argument("--execute", action="store_true")
     session.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
     return parser

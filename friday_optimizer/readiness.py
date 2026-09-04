@@ -130,10 +130,23 @@ class ReadinessPolicy:
     min_memory_available_bytes: int = 1
     min_memory_available_fraction: float = 0.05
     normalize_load_by_cpus: bool = False
+    #: Whether *any* active process of this user blocks the run.
+    #:
+    #: The default is the original behaviour and stays that way. It is the right
+    #: answer for a short, hand-started study on a quiet machine, and the wrong
+    #: one for a long unattended campaign: on a desktop with a logged-in user the
+    #: detector fires on macOS's own services and the browser
+    #: (`modelmanagerd`, `SystemUIServer`, `BTLEServerAgent`, a renderer helper),
+    #: so it is true essentially always and gates nothing it was meant to gate.
+    #: A caller that turns it off must rely on the numeric limits instead --
+    #: load, CPU and swap growth -- and say so in its preregistration.
+    require_idle_workload: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.normalize_load_by_cpus, bool):
             raise TypeError("normalize_load_by_cpus must be a bool")
+        if not isinstance(self.require_idle_workload, bool):
+            raise TypeError("require_idle_workload must be a bool")
         if isinstance(self.min_samples, bool) or not isinstance(self.min_samples, int) or self.min_samples < 2 or self.min_samples > 100:
             raise ValueError("min_samples must be at least two")
         numbers = (self.sample_interval_seconds, self.max_load_1m, self.max_cpu_percent, self.memory_stability_fraction, self.load_stability_delta, self.deadline_seconds, self.min_memory_available_fraction)
@@ -293,7 +306,7 @@ def check_readiness(
             reasons.append("ac_not_confirmed")
         if sample.low_power is not False:
             reasons.append("low_power_not_confirmed_off")
-        if sample.workload_active is not False:
+        if getattr(policy, "require_idle_workload", True) and sample.workload_active is not False:
             reasons.append("foreign_workload_or_unknown")
         if sample.load_1m is None:
             reasons.append("load_unknown")
