@@ -93,13 +93,27 @@ def steps(pairs: int = DEFAULT_PAIRS) -> tuple[Step, ...]:
     )
 
 
-def as_dict(pairs: int = DEFAULT_PAIRS) -> dict[str, Any]:
+def as_dict(
+    pairs: int = DEFAULT_PAIRS,
+    *,
+    model_id: str = MODEL_ID,
+    prompt_tokens: int = PROMPT_TOKENS,
+    output_tokens: int = OUTPUT_TOKENS,
+) -> dict[str, Any]:
+    """The run, written down. Defaults are the sealed 4B workload, unchanged.
+
+    Another model is calibrated the same way against its own tokenisation of the
+    same prompt: ``prompt_tokens`` is the exact count only for the sealed
+    workload, and ``0`` elsewhere, where the observed count is recorded instead
+    of asserted (``runner.build_runner``).
+    """
+
     ordered = steps(pairs)
     return {
-        "model_id": MODEL_ID,
+        "model_id": model_id,
         "expected_ironmule_head": EXPECTED_IRONMULE_HEAD,
-        "prompt_tokens": PROMPT_TOKENS,
-        "output_tokens": OUTPUT_TOKENS,
+        "prompt_tokens": prompt_tokens,
+        "output_tokens": output_tokens,
         "pairs": pairs,
         "steps": [
             {

@@ -7,9 +7,10 @@ import json
 import sys
 from pathlib import Path
 
-from friday_calibrate.profile import HISTORY, newest_profile
+from friday_calibrate.profile import HISTORY, profile_for
 from friday_runtime_core.history import HistoryError, RuntimeHistory
 
+from .scope import live_machine_sha256
 from .server import Server
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -21,8 +22,12 @@ def _print(value) -> None:
     print(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False))
 
 
-def load_profile(database: str | Path):
-    """The newest profile in a verified chain, or ``None`` — never a guess."""
+def load_profile(database: str | Path, *, model_id: str | None = None):
+    """This machine's profile for *this* model, or ``None`` — never a guess.
+
+    ``None`` means the pair (machine, model) was never calibrated here, and
+    serving says so instead of running on a profile measured for something else.
+    """
 
     try:
         with RuntimeHistory.open(HISTORY, database, read_only=True) as history:
@@ -30,7 +35,35 @@ def load_profile(database: str | Path):
                 rows = history.verified_records()
     except (HistoryError, OSError):
         return None
-    return newest_profile(rows)
+    return profile_for(rows, machine_sha256=live_machine_sha256(), model_id=model_id)
+
+
+def _offer_calibration(database: str | Path, model_id: str, *, run_it: bool):
+    """No profile for this machine and model. Say so; measure only if asked.
+
+    A calibration run holds the GPU for roughly a quarter of an hour, so it is
+    not something to start behind someone's back on the first launch. Without
+    the flag this prints the one command that fixes it and serves the baseline,
+    which is the honest state: nothing here was verified on this machine yet.
+    """
+
+    print(f"This machine has no calibration profile for {model_id}.")
+    if not run_it:
+        print("  Serving the safe baseline -- no knob was verified here.")
+        print(f"  To measure it (~15 min on AC power, GPU held):")
+        print(f"    python tools/run_calibration.py run --execute --pairs 6 --model {model_id}")
+        return None
+
+    print("  Measuring this machine now (~15 min). Ctrl-C aborts; nothing is written.")
+    from friday_calibrate.cli import main as calibrate_main
+
+    code = calibrate_main(
+        ["run", "--execute", "--pairs", "6", "--model", model_id, "--database", str(database)]
+    )
+    if code != 0:
+        print("  Calibration did not complete; serving the baseline.")
+        return None
+    return load_profile(database, model_id=model_id)
 
 
 def _latch(database: str | Path):
@@ -132,21 +165,44 @@ def main(argv: list[str] | None = None) -> int:
     http_cmd.add_argument("--no-interactive", action="store_false", dest="interactive", help="Disable live terminal cockpit")
     http_cmd.add_argument("--concurrency", type=int, default=None, help="Maximum concurrent requests (default: auto-adaptive, 8 for 1B, 4 for 4B, 2 for 12B)")
     http_cmd.add_argument("--model", default=None, help="Model ID or local path")
+    http_cmd.add_argument(
+        "--calibrate-if-unknown",
+        action="store_true",
+        help="Measure this machine and model first when no profile exists yet (~15 min GPU)",
+    )
+    http_cmd.add_argument(
+        "--throttle",
+        choices=("auto", "off"),
+        default="auto",
+        help="Step back while the Mac is busy, on battery or thermally limited (default: auto)",
+    )
     http_cmd.add_argument("--dual-model", action="store_true", help="Also load the 1B model co-resident (a second LLM in unified memory); off by default")
 
     args = parser.parse_args(argv)
-    profile = load_profile(args.database)
+    # The profile is bound to one machine and one model, so the model has to be
+    # known before it is looked up -- ``serve`` overrides it on the subparser.
+    target_model = args.model or DEFAULT_MODEL
+    profile = load_profile(args.database, model_id=target_model)
 
     if args.command == "status":
         from .dispatch import explain
 
         described = explain(profile)
         described["database"] = args.database
+        described["model_id"] = target_model
+        described["machine_sha256"] = live_machine_sha256()
         described["serves"] = "baseline" if profile is None else "device_profile_dispatch"
+        if profile is None:
+            described["reason"] = "no_profile_for_this_machine_and_model"
         _print(described)
         return 0
 
     if args.command == "serve":
+        if profile is None:
+            profile = _offer_calibration(
+                args.database, target_model, run_it=args.calibrate_if_unknown
+            )
+
         sys.path.insert(0, str(PROJECT_ROOT / "tools"))
         from .http_server import create_server
         from .ironmule_backend import IronMuleBackend
@@ -160,12 +216,20 @@ def main(argv: list[str] | None = None) -> int:
         # applies device-profile knobs and never updates the weights here.
         rl_ctrl = AdaptiveRLController.load(rl_path, shadow_log_path=rl_shadow_path)
 
-        target_model = args.model or DEFAULT_MODEL
         def _adaptive_concurrency(m_id: str) -> int:
             m = m_id.lower()
             return 8 if "1b" in m else (2 if "12b" in m else 4)
 
         concurrency = args.concurrency if args.concurrency is not None else _adaptive_concurrency(target_model)
+
+        from .throttle import Throttle, set_global_throttle
+
+        throttle = set_global_throttle(
+            Throttle(enabled=args.throttle == "auto", max_width=concurrency)
+        ).start()
+        if throttle.enabled:
+            print("✓ Considerate mode on: pace and batch width follow this Mac's idle load.")
+
         print(f"Loading {target_model} into Apple Silicon Unified Memory (Adaptive Concurrency: {concurrency})...")
         backend = IronMuleBackend.load(target_model)
         _prewarm_hardware(backend, profile)

@@ -1,0 +1,44 @@
+{
+  "all_identical": true,
+  "formal_claim": false,
+  "generated_at": "2026-09-04T08:13:25",
+  "max_tokens": 48,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "repeats": 3,
+  "results": [
+    {
+      "first_divergence_index": null,
+      "identical": true,
+      "order": [
+        1,
+        4
+      ],
+      "repeat": 0,
+      "tokens_width_1": 48,
+      "tokens_width_4": 48
+    },
+    {
+      "first_divergence_index": null,
+      "identical": true,
+      "order": [
+        4,
+        1
+      ],
+      "repeat": 1,
+      "tokens_width_1": 48,
+      "tokens_width_4": 48
+    },
+    {
+      "first_divergence_index": null,
+      "identical": true,
+      "order": [
+        1,
+        4
+      ],
+      "repeat": 2,
+      "tokens_width_1": 48,
+      "tokens_width_4": 48
+    }
+  ],
+  "study_id": "batch-width-identity-20260904-01"
+}

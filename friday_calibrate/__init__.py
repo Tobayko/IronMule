@@ -8,6 +8,7 @@ from .profile import (
     KnobVerdict,
     ProfileError,
     newest_profile,
+    profile_for,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "KnobVerdict",
     "ProfileError",
     "newest_profile",
+    "profile_for",
 ]

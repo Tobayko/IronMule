@@ -1,0 +1,155 @@
+{
+  "array_mb": 256,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 32.36304,
+    "max_continuous_gpu_seconds": 2.810545,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 132.149552,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 170.60452
+  },
+  "detail": [
+    {
+      "full": {
+        "foreign_seconds": 2.2463846660102718,
+        "gpu_seconds": 2.7619325420237146,
+        "level": "full",
+        "model_tokens": 195
+      },
+      "minimal": {
+        "foreign_seconds": 2.1300030830316246,
+        "gpu_seconds": 2.6548201669938862,
+        "level": "minimal",
+        "model_tokens": 77
+      },
+      "order": [
+        "full",
+        "minimal"
+      ],
+      "pair": 0,
+      "ratio": 0.9481916054985593,
+      "token_ratio": 0.39487179487179486
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.246807333023753,
+        "gpu_seconds": 2.767229708028026,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "minimal": {
+        "foreign_seconds": 2.0792512919870205,
+        "gpu_seconds": 2.6123125410522334,
+        "level": "minimal",
+        "model_tokens": 76
+      },
+      "order": [
+        "minimal",
+        "full"
+      ],
+      "pair": 1,
+      "ratio": 0.9254248290122697,
+      "token_ratio": 0.3958333333333333
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.2510727089829743,
+        "gpu_seconds": 2.771861207962502,
+        "level": "full",
+        "model_tokens": 194
+      },
+      "minimal": {
+        "foreign_seconds": 2.0870482090394944,
+        "gpu_seconds": 2.5993656659848057,
+        "level": "minimal",
+        "model_tokens": 75
+      },
+      "order": [
+        "full",
+        "minimal"
+      ],
+      "pair": 2,
+      "ratio": 0.9271349613502331,
+      "token_ratio": 0.3865979381443299
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.249876542016864,
+        "gpu_seconds": 2.771635624987539,
+        "level": "full",
+        "model_tokens": 193
+      },
+      "minimal": {
+        "foreign_seconds": 2.088909749989398,
+        "gpu_seconds": 2.6196393750142306,
+        "level": "minimal",
+        "model_tokens": 77
+      },
+      "order": [
+        "minimal",
+        "full"
+      ],
+      "pair": 3,
+      "ratio": 0.9284552778690826,
+      "token_ratio": 0.39896373056994816
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.268680332985241,
+        "gpu_seconds": 2.810545334010385,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "minimal": {
+        "foreign_seconds": 2.068636624957435,
+        "gpu_seconds": 2.5878810840076767,
+        "level": "minimal",
+        "model_tokens": 63
+      },
+      "order": [
+        "full",
+        "minimal"
+      ],
+      "pair": 4,
+      "ratio": 0.9118237571334791,
+      "token_ratio": 0.328125
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.261790500022471,
+        "gpu_seconds": 2.78611866699066,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "minimal": {
+        "foreign_seconds": 2.081604207982309,
+        "gpu_seconds": 2.61969758302439,
+        "level": "minimal",
+        "model_tokens": 62
+      },
+      "order": [
+        "minimal",
+        "full"
+      ],
+      "pair": 5,
+      "ratio": 0.9203346675837697,
+      "token_ratio": 0.3229166666666667
+    }
+  ],
+  "foreign_time_ratio_max": 0.9481916054985593,
+  "foreign_time_ratio_median": 0.9262798951812514,
+  "foreign_time_ratio_min": 0.9118237571334791,
+  "foreign_time_ratio_stdev": 0.012069624483981939,
+  "formal_claim": false,
+  "generated_at": "2026-09-04T08:26:22",
+  "level": "minimal",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_token_ratio_median": 0.3907348665080624,
+  "pairs": 6,
+  "study_id": "throttle-effect-20260904-01"
+}

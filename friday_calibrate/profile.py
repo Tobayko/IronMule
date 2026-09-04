@@ -171,6 +171,11 @@ class DeviceProfile:
     #: ``None`` on profiles recorded before this field existed; serving skips the
     #: host check for those.
     machine_sha256: str | None = None
+    #: The IronMule commit the knobs were measured against. Serving compared
+    #: nothing before this existed, so a profile stayed authoritative across an
+    #: engine change that could invalidate every verdict in it. ``None`` on
+    #: profiles recorded before the field; those keep the old, weaker guarantee.
+    ironmule_head: str | None = None
     schema_version: int = SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -186,6 +191,10 @@ class DeviceProfile:
             not isinstance(self.machine_sha256, str) or len(self.machine_sha256) != 64
         ):
             raise ProfileError("machine_sha256 must be a sha256 digest or None")
+        if self.ironmule_head is not None and (
+            not isinstance(self.ironmule_head, str) or len(self.ironmule_head) != 40
+        ):
+            raise ProfileError("ironmule_head must be a git object name or None")
         if isinstance(self.mde, bool) or not isinstance(self.mde, (int, float)):
             raise ProfileError("mde must be a number")
         if not 0.0 <= float(self.mde) < 1.0:
@@ -246,6 +255,8 @@ class DeviceProfile:
         }
         if self.machine_sha256 is not None:
             body["machine_sha256"] = self.machine_sha256
+        if self.ironmule_head is not None:
+            body["ironmule_head"] = self.ironmule_head
         body["profile_sha256"] = canonical_sha256(body)
         return body
 
@@ -278,12 +289,13 @@ class DeviceProfile:
             roofline=report.get("roofline") or {},
             aa_noise=report.get("aa_noise"),
             machine_sha256=report.get("machine_sha256"),
+            ironmule_head=report.get("ironmule_head"),
             schema_version=report.get("schema_version", SCHEMA_VERSION),
         )
 
 
-def newest_profile(records: Iterable[Mapping[str, Any]]) -> DeviceProfile | None:
-    """The newest *serviceable* profile in a verified chain, or ``None``.
+def _serviceable(records: Iterable[Mapping[str, Any]]):
+    """Newest first, the profiles in a verified chain that may be served.
 
     A row is skipped, not raised on, when it fails to replay
     (:class:`ProfileError`) or when it claims a verified knob without an A/A
@@ -303,6 +315,55 @@ def newest_profile(records: Iterable[Mapping[str, Any]]) -> DeviceProfile | None
             continue
         if profile.aa_noise is None and profile.verified_knobs():
             continue
+        yield profile
+
+
+def newest_profile(records: Iterable[Mapping[str, Any]]) -> DeviceProfile | None:
+    """The newest serviceable profile in a verified chain, or ``None``.
+
+    Answers "what was recorded last" — which is the wrong question as soon as
+    the chain holds rows for more than one machine or model. Prefer
+    :func:`profile_for` wherever the caller knows which of the two it wants.
+    """
+
+    return next(_serviceable(records), None)
+
+
+def profile_for(
+    records: Iterable[Mapping[str, Any]],
+    *,
+    machine_sha256: str | None = None,
+    model_id: str | None = None,
+) -> DeviceProfile | None:
+    """The newest serviceable profile measured *here*, for *this* model.
+
+    One append-only chain holds every calibration a host ever ran, and a run is
+    bound to one machine and one model. Picking the chronologically last row
+    therefore hands back whichever model was calibrated most recently, on
+    whichever machine wrote the row. Serving then rejected that profile one
+    request at a time as ``model_mismatch`` or ``machine_mismatch`` — reasons
+    that name the symptom and hide the cause, and that read as "your knobs are
+    off" rather than "this pair was never calibrated here".
+
+    Filtering at the lookup makes the miss explicit: ``None`` means *this*
+    machine never calibrated *this* model, which is the question a caller can
+    act on by running a calibration.
+
+    A row without ``machine_sha256`` predates the field and is accepted, exactly
+    as ``friday_serve.scope.in_calibrated_scope`` accepts it: the chain is local
+    to one host, and a stricter rule here would retire every profile recorded
+    before the field existed.
+    """
+
+    for profile in _serviceable(records):
+        if model_id is not None and profile.model_id != model_id:
+            continue
+        if (
+            machine_sha256 is not None
+            and profile.machine_sha256 is not None
+            and profile.machine_sha256 != machine_sha256
+        ):
+            continue
         return profile
     return None
 
@@ -320,4 +381,5 @@ __all__ = [
     "KnobVerdict",
     "ProfileError",
     "newest_profile",
+    "profile_for",
 ]

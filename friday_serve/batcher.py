@@ -74,9 +74,13 @@ class ContinuousBatcher:
         max_width: int = 4,
         *,
         controller: Any = None,
+        throttle: Any = None,
     ) -> None:
+        from .throttle import get_global_throttle
+
         self.backend = backend
         self.controller = controller
+        self.throttle = throttle if throttle is not None else get_global_throttle()
         self.max_concurrency = max_concurrency
         self.max_width = min(max_width, max_concurrency)
         self.incoming_queue: queue.Queue[BatchSession] = queue.Queue()
@@ -225,6 +229,7 @@ class ContinuousBatcher:
                 {
                     "type": "done",
                     "total_tokens": 1,
+                    "prefill_ns": session.prefill_ns,
                     "decode_ns": 0,
                     "total_ns": session.prefill_ns,
                     "knobs": dict(session.knobs),
@@ -240,8 +245,13 @@ class ContinuousBatcher:
         eos_ids = getattr(self.backend, "eos_ids", (1,))
 
         while not self.stop_event.is_set():
-            # 1. Admit new sessions up to max_width
-            while len(self.active_sessions) < self.max_width:
+            # Read the step-back level once per pass so admission and the decode
+            # group agree. It narrows how many sessions share one Metal eval; it
+            # never rejects, so a busy Mac makes requests wait rather than fail.
+            width = self.throttle.width_cap(self.max_width)
+
+            # 1. Admit new sessions up to the current width
+            while len(self.active_sessions) < width:
                 try:
                     timeout = 0.005 if self.active_sessions else 0.05
                     new_session = self.incoming_queue.get(timeout=timeout)
@@ -268,13 +278,14 @@ class ContinuousBatcher:
                 continue
 
             # 2. Grouped Decode Step with Cadence Bundling across all active sessions
-            group = self.active_sessions[: self.max_width]
+            group = self.active_sessions[:width]
             cadence = min(4, min(s.max_tokens - len(s.logical_tokens) for s in group))
             if cadence < 1:
                 cadence = 1
 
             session_generated: dict[int, list[Any]] = {id(s): [] for s in group}
             flat_eval = []
+            bundle_started = time.perf_counter()
 
             try:
                 for _ in range(cadence):
@@ -294,6 +305,14 @@ class ContinuousBatcher:
                 mx.async_eval(*flat_eval)
                 mx.eval(*flat_eval)
                 mx.synchronize()
+
+                # The one pacing seam: the CPU has just finished waiting on
+                # Metal, so a pause here hands GPU time back instead of stalling
+                # graph construction. Timing only -- the tokens above are already
+                # decided, so the output cannot change. The pause is measured
+                # against this bundle's own duration, so it scales with cadence,
+                # model size and machine speed instead of assuming them.
+                self.throttle.pause(time.perf_counter() - bundle_started)
 
                 # 4. Process Tokens & Dispatch to individual SSE queues
                 for s in group:
@@ -326,6 +345,7 @@ class ContinuousBatcher:
                                 {
                                     "type": "done",
                                     "total_tokens": len(s.logical_tokens),
+                                    "prefill_ns": s.prefill_ns,
                                     "decode_ns": decode_ns,
                                     "total_ns": s.prefill_ns + decode_ns,
                                     "knobs": dict(s.knobs),

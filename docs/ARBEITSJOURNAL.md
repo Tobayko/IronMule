@@ -11517,3 +11517,122 @@ tokenidentisch) plus `readback_every=8` bündeln; end-to-end je nach Modell und
 Antwortlänge rund `+9 %`…`+25 %` Wall, immer tokenidentisch. Kein
 Sub-4-Bit-Gewinn, kein Double-Buffer-Gewinn, kein Spekulationsgewinn ohne
 Identitätsbruch — alle drei „Durchbrüche" der Gemini-Phase waren Messfehler.
+
+---
+
+## 2026-09-04 — Geräteprofil je Maschine × Modell, und ein Rücksichtsmodus
+
+**Auftrag.** IronMule soll jeden Mac, auf dem es läuft, selbst kennenlernen, und
+im Betrieb zurücktreten, wenn der Nutzer die Maschine für etwas anderes braucht.
+Planung nach der Walt-Disney-Methode in
+`~/.claude/plans/ich-m-chte-das-ironmule-floating-owl.md`.
+
+### Befund 1 — die Profilsuche stellte die falsche Frage
+
+`newest_profile()` gab die chronologisch letzte Zeile der Kette zurück, ohne
+Maschine oder Modell zu prüfen. Auf einem zweiten Mac oder mit einem zweiten
+Modell wurde damit ein fremdes Profil geladen und anschließend **pro Anfrage**
+in `in_calibrated_scope()` als `model_mismatch` beziehungsweise
+`machine_mismatch` verworfen — eine Begründung, die das Symptom nennt und die
+Ursache versteckt.
+
+Neu: `friday_calibrate.profile.profile_for(records, machine_sha256=…,
+model_id=…)`. `None` heißt jetzt nachprüfbar „diese Maschine hat dieses Modell
+nie kalibriert", und `friday_serve serve` bietet daraufhin den Messlauf an.
+Alle drei Leser (`friday_serve.cli.load_profile`,
+`friday_runtime_core.status_sources.device_profile`, `run_calibration.py show`)
+gehen darüber.
+
+**Korrektur einer eigenen Fehlaussage im selben Lauf.** Beim Sichten der Kette
+hielt ich Zeile 3 (`gemma-3-12b-it-4bit`) zunächst für ein echtes, bisher
+unerreichbares 12B-Profil. Falsch: die Zeilen 2–5 sind die am 2026-09-03 vom
+Codex-Review gefundenen Fabrikationen (verifizierte Knöpfe ohne `aa_noise`), die
+der bestehende Filter in `newest_profile` zu Recht überspringt. Serviert werden
+weiterhin nur die Zeilen 1 und 6, beide 4B. Der Nutzen von `profile_for` liegt
+also nicht darin, ein vorhandenes 12B-Profil freizuschalten, sondern darin, den
+Fehlschlag auf fremder Hardware ehrlich zu benennen.
+
+### Befund 2 — der Batcher meldete keine Telemetrie
+
+`_handle_batcher_stream`/`_handle_batcher_non_stream` haben den
+`TelemetryTracker` nie angefasst. Da der Batcher ab Nebenläufigkeit `> 1` der
+Standardpfad ist, stand das Cockpit im Normalbetrieb dauerhaft auf `STANDBY` und
+jede Live-Zahl stammte ausschließlich vom Fallback-Pfad. Verdrahtet; die
+`done`-Ereignisse des Batchers führen dafür jetzt zusätzlich `prefill_ns`.
+
+### Befund 3 — Tokenidentität über die Batch-Breite, gemessen
+
+`experiments/batch_width_identity/` — 4B, greedy, `48` Token, Breite `1` gegen
+`4` (drei Begleitsitzungen im selben `mx.eval`), 3 Wiederholungen mit
+alternierender Reihenfolge: **identisch in allen drei Paaren**, kein
+divergierender Index. Damit ist der Breiten-Hebel des Rücksichtsmodus zulässig.
+
+*Geltungsbereich:* dieses Gerät, dieser Engine-Commit, 4B, greedy, Breiten `1`
+und `4`, `48` Token. Kein allgemeiner Beweis — E02 bleibt für die
+*Sequenz*-Dimension (Entwurfsbreite) unberührt gültig.
+
+### Befund 4 — feste Pause war der falsche Regler
+
+Erster Entwurf: feste Pause von `60 ms` je Readback-Bündel für die Stufe
+`minimal`. Gemessen (`experiments/throttle_effect/`, gepaart AB/BA, 6 Paare):
+Fremdjob **`9,2 %` schneller** (Median `0,9077`, Streuung `[0,9041; 0,9117]`),
+aber das Modell lieferte nur noch **`15,5 %`** seiner Token.
+
+**Ursache:** die Pause feuert je Bündel, und die Bündelgröße hängt an
+`readback_every`. Dieselbe Zahl bedeutet bei `readback_every=1` eine achtfach
+stärkere Bremse als bei `8` — und auf einer schnelleren Maschine wieder eine
+andere. Ein fester Wert kann das nicht treffen.
+
+**Korrektur:** die Pause wird als **Anteil der gerade geleisteten Arbeit**
+angegeben (`Level.pause_for(work_seconds)`), gemessen an der Dauer des Bündels,
+das eben fertig wurde. Damit skaliert sie von selbst mit Kadenz, Modellgröße und
+Maschine. Gedeckelt bei `250 ms`, damit ein pathologisches Bündel kein sichtbarer
+Hänger wird.
+
+**Nachmessung, 6 Paare je Stufe, alternierend, Median mit Streuung:**
+
+| Stufe | Abgabe | Fremdjob schneller | Modell behält |
+| --- | ---: | ---: | ---: |
+| `gentle` | `15 %` | **`4,0 %`** (`0,9605`, `[0,9511; 0,9673]`) | `80,7 %` |
+| `minimal` | `100 %` | **`7,4 %`** (`0,9263`, `[0,9118; 0,9482]`) | `39,1 %` |
+
+Beide Streuungen sind eng und liegen in beiden Reihenfolgen gleich — der Effekt
+ist kein Rauschen. Das Kill-Kriterium des Plans ist damit erfüllt: der
+Rücksichtsmodus gibt messbar etwas zurück. Der relative Regler kaufte gegenüber
+dem festen mehr als das Doppelte an Modelldurchsatz (`15,5 %` → `39,1 %`) für
+`1,8` Prozentpunkte weniger Fremdgewinn.
+
+*Geltungsbereich:* 4B, Baseline-Knöpfe (`readback_every=1`), ein
+bandbreitengebundener Fremdjob (`256 MB`, `180` Durchläufe), diese Maschine am
+Netz. Nicht übertragbar auf CPU-gebundene Fremdlast oder auf ein Profil mit
+gebündeltem Readback — dort ist die Bündeldauer eine andere, und genau deshalb
+ist der Regler relativ.
+
+### Befund 5 — zwei eigene Messfehler im Harness, beide vom Guard gefangen
+
+`BudgetGuard` brach den ersten und zweiten Lauf mit
+`rolling GPU duty-cycle budget exceeded` ab. Ursache in **meinem** Harness, nicht
+im Guard: ich habe die volle Armdauer (inklusive Aufwärmen und Auslaufen) als
+GPU-Zeit verbucht und die Pause exakt am `25 %`-Limit zurückgezahlt. Die
+Unterdeckung summiert sich und kippt die Rolling-Window-Prüfung ein paar Paare
+später. Behoben durch Rückzahlung gegen `20 %` und Aufrunden der Pause. Der Guard
+hat hier funktioniert wie vorgesehen.
+
+### Weiteres
+
+- **Engine-Bindung im Profil.** `ironmule_head` wurde in `build_runner` erhoben,
+  aber nie ins Profil kopiert; `friday_serve` verglich sie nie. Feld ergänzt,
+  neuer Scope-Grund `engine_mismatch`. **Abweichung vom Plan:** kein
+  Schema-Bump auf `2` — `RuntimeHistory` prüft `schema_version` gegen die
+  `HistorySpec` und die SQL-`CHECK` pinnt sie auf `1`
+  (`friday_runtime_core/history.py:345,368`, `migrations/0001_runtime.sql:8`).
+  Ein Bump hätte jedes neue Profil unspeicherbar gemacht. Das Feld ist rein
+  additiv; alte Profile lesen sich unverändert.
+- **Kalibrierung je Modell.** `run_calibration.py run --model {1b,4b,<id>}`. Die
+  `897`-Token-Prüfung gilt weiter exakt für das versiegelte 4B-Modell; für jedes
+  andere Modell wird die beobachtete Länge protokolliert statt behauptet — sie
+  ist eine Eigenschaft der Tokenisierung, nicht des Prompts.
+- **Kein automatischer Messlauf beim Start.** `serve` meldet das fehlende Profil
+  und nennt den Befehl; erst `--calibrate-if-unknown` startet die
+  Viertelstunde selbst.
+- Suite: `1848 passed, 20 skipped, 2633 subtests passed`.

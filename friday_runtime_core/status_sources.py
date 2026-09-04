@@ -90,12 +90,18 @@ def recent_runs(limit: int = 6) -> list[dict[str, Any]]:
     return collected[:limit]
 
 
-def device_profile(database: str | Path | None = None):
-    """The newest verified device profile, or ``None``. Never a guess."""
+def device_profile(database: str | Path | None = None, *, model_id: str | None = None):
+    """The newest verified device profile *for this machine*, or ``None``.
+
+    Never a guess, and never another machine's row: the chain is append-only and
+    can hold profiles copied in from elsewhere. ``model_id`` narrows it further
+    when the caller knows which model it is about to serve.
+    """
 
     try:
-        from friday_calibrate.profile import HISTORY, newest_profile
+        from friday_calibrate.profile import HISTORY, profile_for
         from friday_runtime_core.history import RuntimeHistory
+        from friday_runtime_core.provenance import machine_sha256
     except Exception:
         return None
     path = database or (PROJECT_ROOT / ".friday-data" / "device-profile.sqlite3")
@@ -106,7 +112,7 @@ def device_profile(database: str | Path | None = None):
     except Exception:
         return None
     try:
-        return newest_profile(rows)
+        return profile_for(rows, machine_sha256=machine_sha256(), model_id=model_id)
     except Exception:
         return None
 

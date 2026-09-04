@@ -395,6 +395,7 @@ def calibrate(
         roofline=dict(roofline or {}),
         aa_noise=spread,
         machine_sha256=machine_sha256(),
+        ironmule_head=identity.get("ironmule_head"),
     )
 
 

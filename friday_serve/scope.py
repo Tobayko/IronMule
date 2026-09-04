@@ -23,12 +23,29 @@ CALIBRATED_BATCH = 1
 
 
 @functools.lru_cache(maxsize=1)
-def _live_machine_sha256() -> str:
+def live_machine_sha256() -> str:
     """This host's stable identity digest. Constant for the process; the
     ``sysctl`` calls behind it must not run on every request."""
     from friday_runtime_core.provenance import machine_sha256
 
     return machine_sha256()
+
+
+@functools.lru_cache(maxsize=1)
+def live_ironmule_head() -> str | None:
+    """The bound engine checkout's commit, or ``None`` when unreadable.
+
+    Unreadable means the profile's engine binding cannot be checked, which is
+    the state every profile was in before the field existed; it is not treated
+    as a mismatch.
+    """
+
+    try:
+        from .ironmule_backend import ironmule_head
+
+        return ironmule_head()
+    except Exception:
+        return None
 
 
 @dataclass(frozen=True)
@@ -113,8 +130,13 @@ def in_calibrated_scope(scope: RequestScope | None, profile) -> tuple[bool, str]
     # ponytail: only the stable subset (CPU/model/memory/arch, not the macOS
     # version) is compared, so a routine OS update does not invalidate it.
     expected = getattr(profile, "machine_sha256", None)
-    if expected is not None and _live_machine_sha256() != expected:
+    if expected is not None and live_machine_sha256() != expected:
         return False, "machine_mismatch"
+    # A knob was verified against one engine. A different IronMule commit is a
+    # different computation, so the verdicts do not carry over to it.
+    engine = getattr(profile, "ironmule_head", None)
+    if engine is not None and live_ironmule_head() != engine:
+        return False, "engine_mismatch"
     return True, "device_profile_verified"
 
 
@@ -123,5 +145,6 @@ __all__ = [
     "CALIBRATED_TEMPERATURE",
     "RequestScope",
     "in_calibrated_scope",
+    "live_machine_sha256",
     "observe",
 ]
