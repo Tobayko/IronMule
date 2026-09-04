@@ -8,11 +8,19 @@ jobs:
   macos:
     runs-on: macos-14
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # The engine package claims >= 3.10 and keeps being tested on 3.11.
+        # The research tree needs 3.12 (requirements-apple-silicon.txt) and
+        # removes itself from collection below that -- see tests/conftest.py.
+        python-version: ["3.11", "3.12"]
+    name: macos / py${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
       - name: Build wheel
         run: |
           python -m pip install --upgrade build
@@ -22,10 +30,17 @@ jobs:
           python -m venv .ci-venv
           .ci-venv/bin/python -m pip install --upgrade pip
           .ci-venv/bin/python -m pip install dist/*.whl
-          .ci-venv/bin/python -m pip install "pytest>=8" "pytest-xdist>=3"
+          .ci-venv/bin/python -m pip install "pytest>=8" "pytest-xdist>=3" "numpy>=2"
       - name: CLI smoke (no model)
         run: |
           .ci-venv/bin/python -m ironmule_cli --help
           .ci-venv/bin/python -m ironmule_cli info
+      - name: Report what this environment can collect
+        run: .ci-venv/bin/python -m pytest -n 0 -m "not integration" --collect-only -q | tail -5
+      # A runner is not the target device. Modules that assert MLX, Metal or
+      # model behaviour need MLX and the pinned engine worktree, and neither
+      # exists here; tests/conftest.py drops exactly those from collection, so
+      # what runs below is the offline logic -- statistics, records, hash
+      # chains, decisions, replay -- which is what CI can honestly check.
       - name: Unit tests (no real-model integration)
         run: .ci-venv/bin/python -m pytest -n 0 -m "not integration"
