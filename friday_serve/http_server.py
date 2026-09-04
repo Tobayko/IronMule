@@ -28,6 +28,7 @@ from friday_runtime_core.controller import RuntimeExecutionError
 from friday_serve.server import Server
 from friday_serve.telemetry import TelemetryTracker, get_global_tracker
 from friday_serve.terminal_dashboard import print_live_cockpit, render_cockpit
+from friday_serve.throttle import get_global_throttle
 
 
 def _extract_prompt_and_tokens(server_instance: Server, body: dict[str, Any]) -> str | list[int]:
@@ -123,6 +124,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                     "model_id": model_id,
                     "model_revision": revision,
                     "explanation": explained,
+                    "throttle": get_global_throttle().as_dict(),
                 },
             )
             return
@@ -191,13 +193,15 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         # (empty when out of the calibrated scope or the breaker is latched), so
         # the batcher can never apply a knob the profile did not earn.
         session = None
+        action = "baseline"
         if self.server.batcher is not None and not is_alternate_model:
             si = self.server.server_instance
             try:
                 token_ids = si.backend.encode(prompt) if isinstance(prompt, str) else prompt
-                _decision, knobs = si.plan_request(
+                decision, knobs = si.plan_request(
                     token_ids, max_tokens, temperature=float(body.get("temperature") or 0.0)
                 )
+                action = decision.plan
                 session = self.server.batcher.submit(token_ids, max_tokens, knobs)
             except RuntimeError as exc:
                 if "batcher worker is dead" in str(exc):
@@ -219,9 +223,9 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         if session is not None:
             try:
                 if stream:
-                    self._handle_batcher_stream(session, body)
+                    self._handle_batcher_stream(session, body, action)
                 else:
-                    self._handle_batcher_non_stream(session, body)
+                    self._handle_batcher_non_stream(session, body, action)
             except (BrokenPipeError, ConnectionResetError):
                 session.cancel()
             return
@@ -250,10 +254,43 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         finally:
             self.server.concurrency_semaphore.release()
 
-    def _handle_batcher_stream(self, session: Any, body: dict[str, Any]) -> None:
+    def _record_done(self, model: str, action: str, event: dict[str, Any], token_count: int) -> None:
+        """Close one request in the telemetry tracker.
+
+        The batcher is the default path whenever concurrency is above 1, so
+        without this the cockpit stays at STANDBY in normal operation and every
+        live reading is taken from the fallback path only.
+        """
+
+        tracker = self.server.telemetry_tracker
+        if tracker is None:
+            return
+        breaker = getattr(self.server.server_instance.controller, "circuit_reason", None) or "nominal"
+        tracker.record_request(
+            model_id=model,
+            prefill_ns=event.get("prefill_ns", 0),
+            decode_ns=event.get("decode_ns", 0),
+            tokens_generated=event.get("total_tokens", token_count),
+            prefix_cache_hits=event.get("prefix_cache_hits", 0),
+            action=action,
+            breaker_status=breaker,
+        )
+        if self.server.enable_dashboard and not getattr(self.server, "interactive_dashboard", False):
+            print_live_cockpit(tracker)
+
+    def _handle_batcher_stream(self, session: Any, body: dict[str, Any], action: str = "baseline") -> None:
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         model = body.get("model") or getattr(self.server.server_instance.backend, "model_id", "friday-model")
         created = int(time.time())
+
+        tracker = self.server.telemetry_tracker
+        if tracker is not None:
+            tracker.start_request(
+                model_id=model,
+                prompt_tokens=len(session.prompt_ids),
+                max_tokens=session.max_tokens,
+                action=action,
+            )
 
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -275,9 +312,17 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
         chunk_prefix = f'data: {{"id":"{completion_id}","object":"chat.completion.chunk","created":{created},"model":"{model}","choices":[{{"index":0,"delta":{{"content":'.encode("utf-8")
         chunk_suffix = b'},"finish_reason":null}]}\n\n'
 
+        token_count = 0
         for event in session.stream():
             etype = event.get("type")
             if etype == "token":
+                token_count += 1
+                if tracker is not None:
+                    if event.get("is_first"):
+                        hits = event.get("prefix_cache_hits", 0)
+                        tracker.update_first_token(event.get("prefill_ns", 0), hits > 0)
+                    else:
+                        tracker.update_tokens(token_count)
                 text = event.get("text", "")
                 if text:
                     self.wfile.write(chunk_prefix + json.dumps(text).encode("utf-8") + chunk_suffix)
@@ -299,9 +344,10 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                 self.wfile.write(f"data: {json.dumps(finish_chunk)}\n\n".encode("utf-8"))
                 self.wfile.write(b"data: [DONE]\n\n")
                 self.wfile.flush()
+                self._record_done(model, action, event, token_count)
                 break
 
-    def _handle_batcher_non_stream(self, session: Any, body: dict[str, Any]) -> None:
+    def _handle_batcher_non_stream(self, session: Any, body: dict[str, Any], action: str = "baseline") -> None:
         completion_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
         model = body.get("model") or getattr(self.server.server_instance.backend, "model_id", "friday-model")
         created = int(time.time())
@@ -321,6 +367,7 @@ class FridayRequestHandler(BaseHTTPRequestHandler):
                 return
             elif etype == "done":
                 logical_tokens = event.get("logical_tokens", [])
+                self._record_done(model, action, event, len(logical_tokens))
                 break
 
         full_content = "".join(collected_text)

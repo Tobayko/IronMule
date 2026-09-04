@@ -21,6 +21,7 @@ import time
 from typing import Any
 
 from .telemetry import LiveState, RequestMetrics, TelemetryTracker
+from .throttle import get_global_throttle
 
 
 def make_bar(value: float, max_value: float, width: int = 22) -> str:
@@ -125,6 +126,20 @@ def render_cockpit(
     lines.append(
         f"{c_border}║{c_reset} {model_line:<{width + (len(c_white) + len(c_reset) + len(breaker_color) + len(c_reset)) - 4}} {c_border}║{c_reset}"
     )
+
+    # Why the answer is slow right now, in one row. Omitted entirely when the
+    # considerate mode is off, so the cockpit is unchanged for anyone not using it.
+    throttle_state = get_global_throttle().as_dict()
+    if throttle_state["enabled"]:
+        level_color = c_emerald_b if throttle_state["level"] == "full" else c_amber
+        mac_line = (
+            f"Mac: {level_color}{throttle_state['level'].upper()}{c_reset} "
+            f"({throttle_state['reason']}) │ batch ≤ {throttle_state['width_cap']} │ "
+            f"yielding {throttle_state['give_back_pct']:.0f}%"
+        )
+        lines.append(
+            f"{c_border}║{c_reset} {mac_line:<{width + (len(level_color) + len(c_reset)) - 4}} {c_border}║{c_reset}"
+        )
 
     # Dynamic Live Status Bar
     lines.append(f"{c_border}╠{thin_sep}╣{c_reset}")

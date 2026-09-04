@@ -42,6 +42,14 @@ def ironmule_head() -> str:
     return completed.stdout.strip()
 
 
+def _throttle():
+    """The process-wide step-back level. Off unless ``serve`` switched it on."""
+
+    from .throttle import get_global_throttle
+
+    return get_global_throttle()
+
+
 class IronMuleBackend:
     """One loaded model; one engine per distinct knob setting, built on demand."""
 
@@ -299,6 +307,7 @@ class IronMuleBackend:
             curr_token = token
             steps_remaining = max_tokens - 1
 
+            bundle_started = time.perf_counter()
             for step in range(steps_remaining):
                 out = body(curr_token, state)
                 picks = engine._picks(out)
@@ -308,6 +317,12 @@ class IronMuleBackend:
                 if len(pending) == every or step == steps_remaining - 1:
                     mx.eval(*pending, *self._leaves(state))
                     mx.synchronize()
+                    # Same seam as the batcher: the CPU has just waited on Metal,
+                    # so the pause hands GPU time back, measured against how long
+                    # this bundle took. Timing only -- the tokens in `pending`
+                    # are already decided.
+                    _throttle().pause(time.perf_counter() - bundle_started)
+                    bundle_started = time.perf_counter()
                     raw_chunk = [int(item.reshape((-1,)).item()) for item in pending]
                     pending = []
 

@@ -171,6 +171,45 @@ stattdessen aus, indem es den Standalone-Pfad nutzt.
 ist, bleibt sie, und jeder `ReadinessGate`-Pfad gilt auf diesem Gerät als
 dauerhaft blockiert — dann gehört das so in `PROJECT_STATUS.md`.
 
+**Teilantwort vom 2026-09-04.** Für den **Serving**-Rücksichtsmodus ist die Frage
+umgangen statt beantwortet: `friday_serve/throttle.py` vergleicht nicht gegen eine
+feste Zahl, sondern gegen die **gelernte Ruhelast dieser Maschine** (laufendes
+Minimum der Ein-Minuten-Last über ein 10-Minuten-Fenster) und wertet nur den
+Überschuss in ganzen belegten Kernen. `ReadinessPolicy` ist **unverändert** — die
+Frage bleibt offen für den Messpfad, wo fail-closed die richtige Antwort ist.
+
+## T1 — Der Rücksichtsmodus, offene Ränder (neu 2026-09-04)
+
+**Status:** offen. Kern gemessen und verdrahtet; drei Ränder ungeprüft.
+
+**Was belegt ist** (`experiments/throttle_effect/`, gepaart AB/BA, 6 Paare je
+Stufe, Median mit Streuung, `docs/ARBEITSJOURNAL.md` 2026-09-04): bei
+bandbreitengebundener Fremdlast wird der Fremdjob **`4,0 %`** schneller
+(`gentle`, Modell behält `80,7 %`) beziehungsweise **`7,4 %`** (`minimal`, Modell
+behält `39,1 %`). Tokenidentität über die Batch-Breite `1` gegen `4` ist gemessen
+identisch (`experiments/batch_width_identity/`).
+
+**Offen, mit Mechanismus:**
+
+1. **CPU-gebundene Fremdlast.** Gemessen wurde nur ein bandbreitengebundener Job,
+   weil der um denselben Unified-Memory-Bus konkurriert wie die GPU. Ein reiner
+   Rechenkern konkurriert kaum — der Gewinn könnte dort nahe null liegen.
+   *Kill:* zeigt eine CPU-gebundene Fremdlast keinen Gewinn, ist der
+   Rücksichtsmodus als **bandbreitenbezogen** zu dokumentieren und nicht als
+   allgemeine Entlastung zu bewerben.
+2. **Profil mit gebündeltem Readback.** Gemessen wurde gegen Baseline-Knöpfe
+   (`readback_every=1`). Bei `readback_every=8` ist ein Bündel rund achtmal so
+   lang; die Abgabe ist relativ und sollte deshalb tragen, ist es aber nicht.
+   *Kill:* weicht der Modelldurchsatz je Stufe um mehr als `10` Prozentpunkte von
+   der `readback_every=1`-Messung ab, ist die Abgabe je Kadenz zu staffeln.
+3. **`15 %` und `100 %` sind gewählt, nicht optimiert.** Es gibt keine
+   vorregistrierte Zielgröße für den Wechselkurs „Fremdgewinn gegen
+   Modelldurchsatz". *Kill:* ohne eine solche Zielgröße bleiben die zwei Werte
+   ausdrücklich Voreinstellungen und werden nicht als optimal geführt.
+
+**Nicht gangbar:** den Effekt aus den Zahlen anderer Fremdlasten hochrechnen —
+dieselbe Fehlerklasse wie E04 (Phasenratios multiplizieren).
+
 ## R1b — geschlossen am 2026-09-02: Kill-Kriterium erfüllt
 
 **Die Frage war,** ob ein realer Messpfad existiert, dessen Kandidat sachlich
@@ -620,6 +659,13 @@ die GPU fährt" — nicht „drosselt die Maschine unter Volllast".
 **Kill:** bleibt die Entscheidung aus, bleibt die Vollastfrage unbeantwortet und
 der Serving-Pfad bekommt keinen Schutz. Das ist ein zulässiger Endzustand und
 gehört dann so in `PROJECT_STATUS.md`.
+
+**Stand 2026-09-04.** `probe_thermal_status()` hat seit heute einen Aufrufer:
+`friday_serve/throttle.py` liest `CPU_Speed_Limit` und schaltet bei `< 100` auf
+die Stufe `minimal`. Das ist ein **Signal, kein Beleg** — es beantwortet die
+Vollastfrage nicht und behauptet nicht, Drosselung zu verhindern. Auf dieser
+Maschine meldet `pmset -g therm` im Ruhezustand gar keine `CPU_Speed_Limit`-Zeile,
+der Zweig ist hier also bislang unbeobachtet.
 
 ## L1 — Friday Learning Controller v0.1 im Shadow-Modus
 
