@@ -1,0 +1,79 @@
+{
+  "study_id": "w1-regime-20260902-01",
+  "formal_claim": false,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "provenance": {
+    "git_revision": "1a5b525466537af15b3717a570d8f900e65d11e9",
+    "git_dirty": false,
+    "code_files_sha256": {
+      "experiments/w1_regime/PREREGISTRATION.md": "f2ff29dfceb0c11f71524eed5a6a29e2fc14195ae139498ec7a2063e76662b2a",
+      "experiments/w1_regime/measure_long_answer.py": "912fe453d70fe53fbcceb1f4e7f833b91f7ba12f0157640fe1abc8dc7de121ef",
+      "experiments/w1_regime/regime_analysis.py": "a396757294da8ad31f8446d93ed1ff48fd1aa678a7e12a00e4636ee2f40ac993"
+    },
+    "code_sha256": "ba6703abbbcd2e19ff7bb3112c8995102ebef7782ede3b57365ab092d495ebbc",
+    "power_source": "ac_power",
+    "model_snapshot": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "offline_environment": {
+      "HF_HUB_OFFLINE": "1",
+      "HF_DATASETS_OFFLINE": "1",
+      "TRANSFORMERS_OFFLINE": "1",
+      "HF_HUB_DISABLE_TELEMETRY": "1",
+      "NO_PROXY": "*",
+      "HTTP_PROXY": "",
+      "HTTPS_PROXY": "",
+      "ALL_PROXY": "",
+      "http_proxy": "",
+      "https_proxy": "",
+      "all_proxy": ""
+    }
+  },
+  "snapshot_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "prompt_tokens": 901,
+  "reference_tps": 70.99,
+  "control": {
+    "tokens_generated": 32,
+    "ttft_seconds": 1.719417832995532,
+    "decode_seconds": 0.4749911659746431,
+    "decode_tps": 65.26437167813539,
+    "first_quarter_tps": 62.64253578720651,
+    "last_quarter_tps": 78.51585409650723,
+    "step_median_ms": 12.741124999593012
+  },
+  "long": {
+    "tokens_generated": 256,
+    "ttft_seconds": 1.7192542910051998,
+    "decode_seconds": 3.556823999999324,
+    "decode_tps": 71.69317346038164,
+    "first_quarter_tps": 76.60482283955695,
+    "last_quarter_tps": 84.89028165689342,
+    "step_median_ms": 12.090958000044338
+  },
+  "prefix_identical": true,
+  "verdict": {
+    "schema": "friday.regime.w1.v1",
+    "verdict": "rate_stable",
+    "control_tps": 65.26437167813539,
+    "long_tps": 71.69317346038164,
+    "relative_change": 0.09850400175383907,
+    "expected_change": null,
+    "predicted_long_tps": 65.26437167813539,
+    "tolerance": 0.1,
+    "tokens": 256,
+    "leader": "head_skip_prefill",
+    "head_skip_gain": 0.04992474837337979,
+    "fixed_compiled_gain": 0.04752533066547271,
+    "combined_gain": 0.0974500790388525,
+    "model_holds": true,
+    "formal_claim": false
+  },
+  "peak_gb": 3.214,
+  "budget": {
+    "gpu_work_seconds": 9.306303,
+    "max_continuous_gpu_seconds": 3.556824,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 52.046108,
+    "wall_seconds": 65.913232,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

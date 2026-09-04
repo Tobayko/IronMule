@@ -1,0 +1,63 @@
+{
+  "candidate_id": "batched-readback-20260824-01",
+  "formal_claim": false,
+  "steps": 128,
+  "reps": 2,
+  "ms_per_token": {
+    "1": 14.3132,
+    "2": 13.3041,
+    "4": 12.6777,
+    "8": 12.4554,
+    "16": 12.2222,
+    "32": 12.1334
+  },
+  "ratio_vs_interval_1": {
+    "1": 1.0,
+    "2": 0.9295,
+    "4": 0.8857,
+    "8": 0.8702,
+    "16": 0.8539,
+    "32": 0.8477
+  },
+  "saving_pct": {
+    "1": 0.0,
+    "2": 7.05,
+    "4": 11.43,
+    "8": 12.98,
+    "16": 14.61,
+    "32": 15.23
+  },
+  "identical_to_interval_1": {
+    "1": true,
+    "2": true,
+    "4": true,
+    "8": true,
+    "16": true,
+    "32": true
+  },
+  "tokens_produced": {
+    "1": 129,
+    "2": 129,
+    "4": 129,
+    "8": 129,
+    "16": 129,
+    "32": 129
+  },
+  "derived_breakeven_length": {
+    "1": null,
+    "2": 6.5,
+    "4": 13.0,
+    "8": 26.0,
+    "16": 52.1,
+    "32": 104.2
+  },
+  "derivation_note": "Break-even ist BERECHNET, nicht gemessen: erwarteter Ueberlauf (N-1)/2 Token zur vollen Schrittzeit gegen gesparte Readbacks (Zyklus 6: 2,199 ms je Schritt)",
+  "budget": {
+    "gpu_work_seconds": 45.717511,
+    "max_continuous_gpu_seconds": 2.212571,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 256.546505,
+    "wall_seconds": 304.369086,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

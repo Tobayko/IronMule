@@ -1,0 +1,212 @@
+{
+  "schema_version": 1,
+  "source_document": "docs/ARBEITSJOURNAL.md (sections dated 2026-08-21; cross-checked with docs/ERGEBNISSE.md)",
+  "records": [
+    {
+      "source_key": "legacy-2026-08-21-dispatch-n8",
+      "tool": "dispatch",
+      "result_status": "exploratory_effect_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "protocol_note": "The documented formal A/A gate was incomplete and MDE was not frozen before this A/B run.",
+        "verdict": "effect_confirmed_under_exploratory_5_percent_threshold",
+        "n_matmuls": 8,
+        "replicates": 5,
+        "blocks_per_replicate": 30,
+        "aggregate": {"ratio": 0.8531, "ci_low": 0.8263, "ci_high": 0.8777},
+        "effect_percent": -14.7,
+        "serial_ms_per_op": 2.572,
+        "batched_ms_per_op": 2.212,
+        "gpu_work_seconds": 5.8,
+        "mde": 0.05,
+        "correctness": "byte_identical",
+        "source_section": "H1 — erste bestätigte Optimierung: Dispatch-Plan"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-cooldown-dose-response",
+      "tool": "cooldown",
+      "result_status": "exploratory_characterization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "verdict": "monotone_cooldown_effect_observed",
+        "repetitions_per_pause": 10,
+        "gpu_work_seconds": 3.2,
+        "selected_points": [
+          {"pause_seconds": 0.0, "first_sample_ratio": 0.94, "excess_sample_equivalents": 0.0},
+          {"pause_seconds": 0.25, "first_sample_ratio": 1.89, "excess_sample_equivalents": 2.42},
+          {"pause_seconds": 2.0, "first_sample_ratio": 3.67, "excess_sample_equivalents": 4.09},
+          {"pause_seconds": 20.0, "first_sample_ratio": 4.12, "excess_sample_equivalents": 5.12}
+        ],
+        "source_section": "Cooldown-Effekt isoliert und charakterisiert"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-loop-confirmation-1",
+      "tool": "loop",
+      "result_status": "exploratory_optimization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "protocol_note": "Exploratory threshold; no complete preregistered H1 gate.",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "selected_batch_size": 8,
+        "effect_percent": -13.6,
+        "confirmation": {"ci_low": 0.8429, "ci_high": 0.8918, "replicate_ratios": [0.864, 0.86, 0.879]},
+        "mde": 0.05,
+        "source_section": "Self-Optimization-Loop gebaut und bestätigt"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-loop-confirmation-2",
+      "tool": "loop",
+      "result_status": "exploratory_optimization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "protocol_note": "Exploratory threshold; no complete preregistered H1 gate.",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "selected_batch_size": 6,
+        "effect_percent": -11.13,
+        "confirmation": {"ci_low": 0.8454, "ci_high": 0.9052, "replicate_ratios": [0.889, 0.892, 0.858]},
+        "mde": 0.05,
+        "source_section": "Self-Optimization-Loop gebaut und bestätigt"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-loop-confirmation-3",
+      "tool": "loop",
+      "result_status": "exploratory_optimization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "protocol_note": "Exploratory threshold; no complete preregistered H1 gate.",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "selected_batch_size": 6,
+        "effect_percent": -14.11,
+        "confirmation": {"ci_low": 0.8473, "ci_high": 0.9059, "replicate_ratios": [0.858, 0.891, 0.859]},
+        "mde": 0.05,
+        "source_section": "Self-Optimization-Loop gebaut und bestätigt"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-loop-confirmation-4",
+      "tool": "loop",
+      "result_status": "exploratory_optimization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "protocol_note": "Exploratory threshold; no complete preregistered H1 gate.",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "selected_batch_size": 16,
+        "effect_percent": -11.08,
+        "mde": 0.05,
+        "source_section": "Projekt für Dritte nutzbar gemacht"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-model-loop",
+      "tool": "model-loop",
+      "result_status": "exploratory_h2_optimization_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "formal_h2_claim": false,
+        "protocol_note": "Uses the exploratory H1 threshold and lacks a sealed H2 comparison against classical search at equal budget.",
+        "model": "mlx-community/gemma-3-4b-it-4bit",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "proposed_by_model": [3, 5, 7, 10, 12, 13, 14, 15, 16],
+        "selected_batch_size": 13,
+        "confirmation": {"ci_low": 0.8552, "ci_high": 0.8957, "replicate_ratios": [0.8847, 0.8847, 0.8617]},
+        "effect_percent": -11.53,
+        "gpu_work_seconds": 12.85,
+        "wall_seconds": 21.5,
+        "mde": 0.05,
+        "source_section": "H2 erreicht — ein lokales Modell schlägt Ausführungspläne vor"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-codegen-loop",
+      "tool": "codegen",
+      "result_status": "exploratory_h2_codegen_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h1_claim": false,
+        "formal_h2_claim": false,
+        "protocol_note": "Historical summary predates fail-closed verification of worker resource-limit setup and shared duty/cooldown accounting.",
+        "model": "mlx-community/gemma-3-4b-it-4bit",
+        "verdict": "optimization_confirmed_under_exploratory_5_percent_threshold",
+        "written": 5,
+        "measured": 5,
+        "beat_threshold": 3,
+        "confirmation": {"ratio": 0.8838, "ci_low": 0.8676, "ci_high": 0.8975, "replicate_ratios": [0.8742, 0.897, 0.8838]},
+        "effect_percent": -11.62,
+        "wall_seconds": 20.8,
+        "mde": 0.05,
+        "source_section": "H2 vollständig — das Modell schreibt den Ausführungsplan selbst"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-roofline",
+      "tool": "roofline",
+      "result_status": "exploratory_memory_bound_observed",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h2_claim": false,
+        "verdict": "memory_bound_on_observed_device",
+        "peak_source": "published vendor figures, not measured here",
+        "models": [
+          {"model": "gemma-3-1b", "weight_gb": 0.73, "generation_ms_per_token": 5.75, "bandwidth_share": 0.319, "compute_share": 0.024, "verdict": "memory_bound"},
+          {"model": "gemma-3-4b", "weight_gb": 2.56, "generation_ms_per_token": 12.51, "bandwidth_share": 0.512, "compute_share": 0.039, "verdict": "memory_bound"}
+        ],
+        "source_section": "Roofline-Messung — die Inferenz ist speicherbegrenzt, nicht rechenbegrenzt"
+      }
+    },
+    {
+      "source_key": "legacy-2026-08-21-fusion-cache-free-and-e2e",
+      "tool": "fusion",
+      "result_status": "negative_practical_result",
+      "observed_at_unix_ns": null,
+      "report": {
+        "evidence_grade": "legacy_summary",
+        "formal_claim": false,
+        "raw_measurements_available": false,
+        "formal_h2_claim": false,
+        "verdict": "not_confirmed_for_real_generation",
+        "cache_free_forward_effect_percent": {"gemma-3-1b": -12.4, "gemma-3-4b": -15.0},
+        "end_to_end_effect_percent": {"gemma-3-1b": -0.5, "gemma-3-4b": -0.1},
+        "reason": "Real generation always uses a mutable KV cache; mlx-lm already compiles cache-free fusible regions.",
+        "source_section": "Korrektur: die Fusions-Layer bringt in echter Nutzung nichts"
+      }
+    }
+  ]
+}

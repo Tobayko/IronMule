@@ -1,0 +1,155 @@
+{
+  "array_mb": 256,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 32.944857,
+    "max_continuous_gpu_seconds": 2.827238,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 132.151475,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 171.227692
+  },
+  "detail": [
+    {
+      "full": {
+        "foreign_seconds": 2.2465791249996983,
+        "gpu_seconds": 2.7645452080178075,
+        "level": "full",
+        "model_tokens": 195
+      },
+      "order": [
+        "full",
+        "gentle"
+      ],
+      "pair": 0,
+      "ratio": 0.9641871616571629,
+      "stepped_back": {
+        "foreign_seconds": 2.1661227499716915,
+        "gpu_seconds": 2.681165125046391,
+        "level": "gentle",
+        "model_tokens": 156
+      },
+      "token_ratio": 0.8
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.2428797080065124,
+        "gpu_seconds": 2.797553541022353,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "order": [
+        "gentle",
+        "full"
+      ],
+      "pair": 1,
+      "ratio": 0.965692412855877,
+      "stepped_back": {
+        "foreign_seconds": 2.165931916970294,
+        "gpu_seconds": 2.683829292014707,
+        "level": "gentle",
+        "model_tokens": 155
+      },
+      "token_ratio": 0.8072916666666666
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.2691766250063665,
+        "gpu_seconds": 2.8010064580012113,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "order": [
+        "full",
+        "gentle"
+      ],
+      "pair": 2,
+      "ratio": 0.9511421716774724,
+      "stepped_back": {
+        "foreign_seconds": 2.1583095830283128,
+        "gpu_seconds": 2.676756959001068,
+        "level": "gentle",
+        "model_tokens": 155
+      },
+      "token_ratio": 0.8072916666666666
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.2944830000051297,
+        "gpu_seconds": 2.810206125024706,
+        "level": "full",
+        "model_tokens": 193
+      },
+      "order": [
+        "gentle",
+        "full"
+      ],
+      "pair": 3,
+      "ratio": 0.967267317737196,
+      "stepped_back": {
+        "foreign_seconds": 2.2193784170085564,
+        "gpu_seconds": 2.736125416995492,
+        "level": "gentle",
+        "model_tokens": 156
+      },
+      "token_ratio": 0.8082901554404145
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.282485125004314,
+        "gpu_seconds": 2.827237833989784,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "order": [
+        "full",
+        "gentle"
+      ],
+      "pair": 4,
+      "ratio": 0.9518123181614007,
+      "stepped_back": {
+        "foreign_seconds": 2.1724974579992704,
+        "gpu_seconds": 2.6957244590157643,
+        "level": "gentle",
+        "model_tokens": 157
+      },
+      "token_ratio": 0.8177083333333334
+    },
+    {
+      "full": {
+        "foreign_seconds": 2.2604185420204885,
+        "gpu_seconds": 2.7887220829725266,
+        "level": "full",
+        "model_tokens": 192
+      },
+      "order": [
+        "gentle",
+        "full"
+      ],
+      "pair": 5,
+      "ratio": 0.9567383211574518,
+      "stepped_back": {
+        "foreign_seconds": 2.1626290410058573,
+        "gpu_seconds": 2.681984332972206,
+        "level": "gentle",
+        "model_tokens": 154
+      },
+      "token_ratio": 0.8020833333333334
+    }
+  ],
+  "foreign_time_ratio_max": 0.967267317737196,
+  "foreign_time_ratio_median": 0.9604627414073074,
+  "foreign_time_ratio_min": 0.9511421716774724,
+  "foreign_time_ratio_stdev": 0.00717248938723687,
+  "formal_claim": false,
+  "generated_at": "2026-09-04T08:29:36",
+  "level": "gentle",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_token_ratio_median": 0.8072916666666666,
+  "pairs": 6,
+  "study_id": "throttle-effect-20260904-01"
+}

@@ -1,0 +1,22 @@
+{
+  "candidate_id": "logsumexp-skip-20260824-01",
+  "formal_claim": false,
+  "steps": 128,
+  "reps": 3,
+  "ms_per_token": {
+    "normalised": 14.3003,
+    "raw": 14.5226
+  },
+  "saving_pct": -1.555,
+  "identical": true,
+  "isolated_logsumexp_ms": 0.4086,
+  "isolated_share_of_step_pct": 2.857,
+  "budget": {
+    "gpu_work_seconds": 25.966831,
+    "max_continuous_gpu_seconds": 2.19846,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 144.329755,
+    "wall_seconds": 171.943505,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

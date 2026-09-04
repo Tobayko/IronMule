@@ -1,0 +1,9 @@
+{
+  "model": "mlx-community/gemma-3-4b-it-4bit",
+  "note": "repaired harness: candidate keeps readback_every=8 (no knob confound), identity checked over full equal-length sequences",
+  "runs": [
+    {"k": 3, "task": "Code Refactor", "wall_ratio_median": 1.7544, "acceptance": 0.394, "token_identical": true, "base_tokens": 48, "spec_tokens": 48},
+    {"k": 3, "task": "Document Q&A", "wall_ratio_median": 0.9090, "acceptance": 0.933, "token_identical": false, "base_tokens": 41, "spec_tokens": 40},
+    {"k": 3, "task": "JSON Extraction", "wall_ratio_median": 1.2941, "acceptance": 0.490, "token_identical": true, "base_tokens": 48, "spec_tokens": 48}
+  ]
+}

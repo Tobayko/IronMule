@@ -1,0 +1,115 @@
+{
+  "aa_spread": 0.03689500999053141,
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 80.751476,
+    "max_continuous_gpu_seconds": 2.540562,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 456.592374,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 541.099888
+  },
+  "formal_claim": false,
+  "ironmule_head": "03e884cb28a05d090d20844460fc3afc8e738a91",
+  "mde": 0.03689500999053141,
+  "model": "4b",
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "no_activation": true,
+  "output_tokens": 32,
+  "pairs": 6,
+  "prompt_tokens": 897,
+  "provenance": {
+    "code_files_sha256": {
+      "experiments/serve_gain/measure.py": "a0da8b751c7d472be4edc04d5d796eec56a936f12467cb92ee72c4d989f83703",
+      "friday_calibrate/runner.py": "d18829b9af4504e1077756bab4c77224ad7272e19e337b79a9289bd227d5e625",
+      "friday_serve/server.py": "0f04e01f529f130bf0bdc40986f218675974de8ee4c27ccf7343b964db13cbc8"
+    },
+    "code_sha256": "c08cd1519176d679fcc6100183e53a9a09dbb46cbafe9109d7d742fc7858f9ab",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "power_source": "ac_power"
+  },
+  "rows": [
+    {
+      "arm": "combined+speculate_1",
+      "ci": [
+        0.9507655837098639,
+        1.0150119830910378
+      ],
+      "gain_percent": 3.8564812495946565,
+      "knobs": {
+        "compiled_fixed_cache": true,
+        "head_skip_prefill": true,
+        "readback_every": 8,
+        "speculate_k": 1,
+        "speculate_ngram": 3
+      },
+      "pairs": 6,
+      "ratio_median": 0.9614351875040534,
+      "real_gain": false,
+      "reasons": [
+        "request_gain_below_preregistered_threshold"
+      ],
+      "status": "below_threshold",
+      "token_identical": true
+    },
+    {
+      "arm": "combined+speculate_2",
+      "ci": [
+        1.049027024901017,
+        1.0702212203407433
+      ],
+      "gain_percent": -6.250846605616034,
+      "knobs": {
+        "compiled_fixed_cache": true,
+        "head_skip_prefill": true,
+        "readback_every": 8,
+        "speculate_k": 2,
+        "speculate_ngram": 3
+      },
+      "pairs": 6,
+      "ratio_median": 1.0625084660561603,
+      "real_gain": false,
+      "reasons": [
+        "statistically_confirmed_request_regression"
+      ],
+      "status": "rejected",
+      "token_identical": true
+    },
+    {
+      "arm": "combined+speculate_3",
+      "ci": [
+        1.130085221372677,
+        1.1639835714424647
+      ],
+      "gain_percent": -14.807065923332875,
+      "knobs": {
+        "compiled_fixed_cache": true,
+        "head_skip_prefill": true,
+        "readback_every": 8,
+        "speculate_k": 3,
+        "speculate_ngram": 3
+      },
+      "pairs": 6,
+      "ratio_median": 1.1480706592333287,
+      "real_gain": false,
+      "reasons": [
+        "statistically_confirmed_request_regression"
+      ],
+      "status": "rejected",
+      "token_identical": true
+    }
+  ],
+  "state": "measured",
+  "study_id": "serve-gain-20260902-01",
+  "token_identity_held": true,
+  "verdict": "measured",
+  "wall_seconds": 537.4
+}

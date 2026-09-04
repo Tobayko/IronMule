@@ -246,3 +246,16 @@ available, but it is not OSI open source. Personal, learning, academic, and some
 organisation uses are free under the exact licence terms. Larger production use,
 hosted services, resale, and paid product embedding may require a commercial licence.
 Read [LICENSE.md](LICENSE.md) and [COMMERCIAL.md](COMMERCIAL.md) before adopting it.
+
+---
+
+## Project Friday — the research tree
+
+Alongside the engine package this repository carries **Project Friday**, the
+measurement and self-calibration research the engine's numbers come from:
+device profiles measured per machine, a serving path that only enables a knob
+this device verified as token-identical, and the experiment record behind it.
+
+See **[README_PROJECT_FRIDAY.md](README_PROJECT_FRIDAY.md)**, the open work list
+in [`BACKLOG.md`](BACKLOG.md) and the append-only
+[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).

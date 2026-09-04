@@ -1,0 +1,917 @@
+{
+  "version": 1,
+  "date": "2026-08-24",
+  "formal_claim": true,
+  "formal_claims": [
+    {
+      "candidate_id": "prefill-head-skip-20260824-02",
+      "study_id": "head-skip-prefill-v1-20260824",
+      "status": "head_skip_gain_confirmed",
+      "scope": "one-device-one-model-one-prompt-one-prefill-plan"
+    }
+  ],
+  "device": {
+    "model": "Apple M1 Max",
+    "unified_memory_gb": 32,
+    "peak_bandwidth_gb_s": 400,
+    "measured_effective_gb_s": 358.4
+  },
+  "backend": {
+    "mlx": "0.32.0",
+    "mlx_lm": "0.31.3",
+    "python": "3.12.13",
+    "macos": "26.5.2",
+    "available": [
+      "mlx"
+    ],
+    "absent": [
+      "vllm",
+      "llama.cpp"
+    ]
+  },
+  "models": {
+    "gemma-3-4b-it-4bit": {
+      "layers": 34,
+      "weight_gb": 2.183177,
+      "sliding_window": 1024,
+      "rotating_layers": 29,
+      "profile": "profiles/m1max_gemma-3-4b-4bit-g64.json"
+    },
+    "gemma-3-1b-it-4bit": {
+      "layers": 26,
+      "weight_gb": 0.562629,
+      "sliding_window": 512,
+      "rotating_layers": 22,
+      "profile": "profiles/m1max_gemma-3-1b-4bit-g64.json"
+    }
+  },
+  "workloads": [
+    {
+      "id": "short",
+      "prompt_tokens": 17,
+      "output_tokens": 96,
+      "shared_prefix": 0
+    },
+    {
+      "id": "medium",
+      "prompt_tokens": 169,
+      "output_tokens": 96,
+      "shared_prefix": 0
+    },
+    {
+      "id": "long",
+      "prompt_tokens": 898,
+      "output_tokens": 96,
+      "shared_prefix": 886
+    },
+    {
+      "id": "repeated_prefix",
+      "prompt_tokens": 898,
+      "output_tokens": 96,
+      "shared_prefix": 886,
+      "note": "Gemma 3 hat keine eigene System-Rolle; das Praefix ist das gemeinsame Token-Praefix der gerenderten Prompts"
+    },
+    {
+      "id": "code_rewrite",
+      "prompt_tokens": 859,
+      "output_tokens": 64,
+      "overlap": "hoch"
+    },
+    {
+      "id": "json_struct",
+      "prompt_tokens": 159,
+      "output_tokens": 64,
+      "overlap": "mittel"
+    },
+    {
+      "id": "concurrent_32",
+      "requests": 32,
+      "prompt_tokens": 64,
+      "output_tokens": 64
+    },
+    {
+      "id": "cold_start_probe",
+      "prompt_tokens": 897,
+      "output_tokens": 1,
+      "note": "drei frische Prozesse, Kaltstart zerlegt"
+    },
+    {
+      "id": "kv_realloc_probe",
+      "prompt_tokens": 765,
+      "output_tokens": 48,
+      "repetitions": 8,
+      "prefill_chunk": 256,
+      "note": "Inter-Token-Latenz und Cacheformen je Decodeschritt; Aufwaermlauf verworfen"
+    },
+    {
+      "id": "head_skip_formal",
+      "prompt_tokens": 897,
+      "prefill_chunk": 256,
+      "batch": 1,
+      "correctness_tokens": 32,
+      "calibration_sessions": 6,
+      "confirmation_sessions": 6,
+      "measurement_pairs_per_session": 4,
+      "note": "versiegelte A/A- plus A/B-Studie; greedy ohne Prompt-Logprobs"
+    },
+    {
+      "id": "head_skip_runtime_qualification",
+      "prompt_tokens": 897,
+      "prefill_chunk": 256,
+      "batch": 1,
+      "output_tokens": 32,
+      "measurement_pairs": 4,
+      "formal_claim": false,
+      "note": "begrenzter Runtime-Einbau; CPU-Gate plus genau ein GPU-Prozess"
+    },
+    {
+      "id": "persistent_process_validation",
+      "prompt_tokens": 897,
+      "prefill_chunk": 256,
+      "batch": 1,
+      "output_tokens": 32,
+      "calibration_pairs": 2,
+      "characterization_pairs": 3,
+      "validation_pairs": 3,
+      "formal_claim": false,
+      "note": "prospektiver Vergleich: neuer Modellprozess je Anfrage gegen einmal geladenen Modellprozess"
+    },
+    {
+      "id": "planner_4b_closed_case",
+      "prompt_tokens": 322,
+      "max_output_tokens": 32,
+      "observed_output_tokens": 23,
+      "fresh_processes": 3,
+      "fixed_candidate_ids": 4,
+      "formal_claim": false,
+      "note": "geschlossener Planungsfall; Gemma 4B darf nur eine feste Kandidaten-ID als striktes JSON vorschlagen"
+    },
+    {
+      "id": "dual_model_evidence_planner",
+      "prompt_tokens": 322,
+      "max_output_tokens": 32,
+      "expected_response": "{\"candidate_id\":\"persistent_service_qualification\"}",
+      "balanced_pairs": 6,
+      "fresh_processes": 12,
+      "model_runs": {
+        "1b": 6,
+        "4b": 6
+      },
+      "formal_claim": false,
+      "study_id": "dual-model-evidence-planner-20260824-01",
+      "note": "sechs Paare, 1b→4b in Paaren 1–3 und 4b→1b in Paaren 4–6; Modelle strikt seriell"
+    },
+    {
+      "id": "matmul_compile_ab_fixed_cache_decode",
+      "prompt_tokens": 322,
+      "output_tokens": 32,
+      "decode_forwards": 31,
+      "arms": [
+        "standard_eager",
+        "fixed_eager",
+        "fixed_compiled"
+      ],
+      "fixed_cache_capacity": 512,
+      "model": "mlx-community/gemma-3-4b-it-4bit",
+      "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+      "study_id": "matmul-compile-ab-20260824-01",
+      "candidate_id": "fixed_cache_compiled_decode_v1",
+      "formal_claim": false,
+      "status": "completed",
+      "decision": "runtime_compile_wins_exact_scope",
+      "hardware_measured": true,
+      "evidence_commit": "cc6d2ea012a0cd6a858acc9a66d4754e95c421b7",
+      "preregistration_sha256": "dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf",
+      "result_sha256": "fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57",
+      "verification_sha256": "09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038",
+      "marker_sha256": "8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f",
+      "measured": {
+        "runs": 6,
+        "arm_executions": 18,
+        "exact_token_identity": true,
+        "exact_text_identity": true,
+        "decode_median_seconds": {
+          "standard_eager": 0.399939187,
+          "fixed_eager": 0.3999597295,
+          "fixed_compiled": 0.371848789
+        },
+        "token_rate_median": {
+          "standard_eager": 77.5131895,
+          "fixed_eager": 77.5078153,
+          "fixed_compiled": 83.367224
+        },
+        "ttft_median_seconds": {
+          "standard_eager": 0.638376521,
+          "fixed_eager": 0.638425813,
+          "fixed_compiled": 0.6385446665
+        },
+        "decode_ratios": {
+          "fixed_compiled_div_standard_eager": {
+            "median": 0.9295921887,
+            "bootstrap_95_ci": {
+              "lower": 0.9128789083,
+              "upper": 0.9348209684
+            }
+          },
+          "fixed_compiled_div_fixed_eager": {
+            "median": 0.9296309524,
+            "bootstrap_95_ci": {
+              "lower": 0.9256302629,
+              "upper": 0.9327708433
+            }
+          }
+        },
+        "peak_rss_bytes": 3771564032,
+        "peak_mlx_bytes": 3476049782,
+        "swap_delta_bytes": 0
+      },
+      "calculated": {
+        "warmed_ratio": 0.9829777045,
+        "cold_ratio": 1.0154895491,
+        "break_even_decode_steps_median": 36.47,
+        "measured_decode_steps": 31
+      },
+      "matmul_operation": "active_in_all_arms",
+      "note": "runtime-only Cache/Compile-A/B; keine Gewichts-, Modell- oder Quantisierungsänderung; greedy Token- und Textidentität Pflicht; alte Device-Model-Compile-Messungen wegen falscher Token ab Position 2 ungültig"
+    },
+    {
+      "id": "multi_turn_continuation",
+      "status": "not_measured",
+      "formal_claim": false,
+      "note": "verlangter fehlender Baseline-Workload; nächste neue Einzelstudie erforderlich"
+    },
+    {
+      "id": "parallel_requests",
+      "status": "not_measured",
+      "formal_claim": false,
+      "note": "verlangter fehlender Baseline-Workload; concurrent_32 bleibt nur Definition"
+    }
+  ],
+  "candidates": [
+    {
+      "id": "prefix_reuse",
+      "priority": 4,
+      "state": "candidate_correctness_failed",
+      "measured": {
+        "ttft_uncached_ms": 1702.86,
+        "ttft_prefix_hit_ms": 131.02,
+        "ratio": 13.0
+      },
+      "gate_failed": "token_identity",
+      "cause": "prefill chunk width changes numerics"
+    },
+    {
+      "id": "chunk_identity_policy",
+      "priority": 1,
+      "state": "candidate_correctness_failed",
+      "blocks": [
+        "prefix_reuse",
+        "prefill_step_sweep",
+        "microbatch",
+        "continuous_batch"
+      ],
+      "measured": {
+        "cells": 23,
+        "failures": 6,
+        "failure_rate": 0.26,
+        "chunk_256": "7/8, faellt bei 1513 Token",
+        "chunk_1024": "4/4, nur 4 Laengen"
+      },
+      "gate_failed": "token_identity",
+      "note": "kein Blockgroesse haelt zuverlaessig; vier Kandidaten bleiben blockiert"
+    },
+    {
+      "id": "shape_buckets",
+      "priority": 10,
+      "state": "candidate_characterized",
+      "measured": {
+        "best_batch_4b": 64,
+        "ratio_4b": 5.98,
+        "best_batch_1b": 256,
+        "ratio_1b": 13.74,
+        "regressions_4b": [
+          6,
+          7,
+          8,
+          9,
+          48
+        ],
+        "regressions_1b": [
+          48
+        ]
+      }
+    },
+    {
+      "id": "ngram_speculative",
+      "priority": 13,
+      "state": "candidate_characterized",
+      "measured": {
+        "code_rewrite": 1.097,
+        "journal": 1.029,
+        "test_output": 0.994
+      }
+    },
+    {
+      "id": "draft_speculative",
+      "priority": 14,
+      "state": "candidate_rejected",
+      "measured": {
+        "ratio": 0.56
+      }
+    },
+    {
+      "id": "compiled_single",
+      "priority": 9,
+      "state": "candidate_correctness_failed",
+      "measured": {
+        "dispatch_reduction": 0.238
+      },
+      "gate_failed": "token_identity"
+    },
+    {
+      "id": "vllm_metal",
+      "priority": 15,
+      "state": "permission_required"
+    },
+    {
+      "id": "llama_cpp",
+      "priority": 16,
+      "state": "permission_required"
+    },
+    {
+      "id": "persistent_process",
+      "priority": 3,
+      "state": "engineering_gain_confirmed_exact_scope",
+      "note": "import mlx_lm kostet mehr als das Modellladen; USE_TORCH=0 half nicht",
+      "measured": {
+        "cold_process_ttft_s": 5.053,
+        "warm_ttft_s": 1.747,
+        "removed_share": 0.654,
+        "threshold": 0.5,
+        "token_identity": "3/3, auch nach zwischengeschobenen Anfragen",
+        "rss_stable_gb": 3.77
+      },
+      "preregistered_gate": "load+warmup >= 30% of cold TTFT",
+      "gate_result": "28.7 %, knapp verfehlt; Schwelle war zu eng gefasst",
+      "cycle": 5,
+      "confirmation_cycle": 13,
+      "caveat": "Importzeit aus Zyklus 3 uebernommen; Gegencheck 0,8 % Abweichung",
+      "prospective_validation": {
+        "candidate_id": "persistent-process-20260824-03",
+        "study_id": "persistent-process-20260824-03",
+        "decision": "engineering_gain_confirmed_exact_scope",
+        "formal_claim": false,
+        "all_pair_median_ratio": 0.34696789209993684,
+        "effect_percent": -65.30321079000632,
+        "cold_ttft_median_ms": 5148.7740625,
+        "warm_ttft_median_ms": 1785.1103125,
+        "pair_ratio_min": 0.3431151327460551,
+        "pair_ratio_max": 0.3496472967134737,
+        "token_identity": "6/6 exact greedy pairs",
+        "warm_peak_rss_bytes": 3763077120,
+        "warm_rss_growth_bytes": 0,
+        "swap_delta_bytes": 0,
+        "result_sha256": "3925d83139cb6278c2b0aa103716e36a33f550f852bd30758976090fa0f7024"
+      }
+    },
+    {
+      "id": "divergence_impact",
+      "priority": 0,
+      "state": "candidate_characterized",
+      "measured": {
+        "token_divergence_rate": 0.7,
+        "answer_same_among_diverged": 0.286,
+        "max_differing_tokens": 153,
+        "generate_tokens": 160,
+        "problems": 10
+      },
+      "note": "Zerteilungs-Divergenz aendert die Antwort, nicht nur die Formulierung"
+    },
+    {
+      "id": "host_sync_readback",
+      "priority": 7,
+      "cycle": 6,
+      "state": "candidate_recommended_for_preregistration",
+      "measured": {
+        "readback_ms_per_token": 14.3671,
+        "deferred_ms_per_token": 12.1683,
+        "eos_check_ms_per_token": 14.4429,
+        "saving_pct": 15.3,
+        "token_identity": "alle drei Arme identisch"
+      },
+      "caveat": "deferred kann nicht anhalten; 15,3 % sind die Obergrenze fuer gebuendeltes Lesen"
+    },
+    {
+      "id": "batched_readback",
+      "priority": 7,
+      "state": "no_clear_speedup_baseline_retained",
+      "note": "Stop-Pruefung alle N Schritte statt jeden; abrufbare Variante von host_sync_readback",
+      "cycle": 7,
+      "confirmation_cycle": 17,
+      "decision": "no_clear_speedup_baseline_retained",
+      "measured": {
+        "ms_per_token": {
+          "1": 14.3132,
+          "2": 13.3041,
+          "4": 12.6777,
+          "8": 12.4554,
+          "16": 12.2222,
+          "32": 12.1334
+        },
+        "saving_pct": {
+          "4": 11.43,
+          "8": 12.98,
+          "16": 14.61,
+          "32": 15.23
+        },
+        "token_identity": "alle sechs Intervalle identisch"
+      },
+      "derived": {
+        "breakeven_tokens": {
+          "4": 13.0,
+          "8": 26.0,
+          "16": 52.1,
+          "32": 104.2
+        }
+      },
+      "implemented": "HardwareProfile.readback_interval()"
+    },
+    {
+      "id": "prefill_head_skip",
+      "priority": 6,
+      "cycle": 8,
+      "confirmation_cycle": 12,
+      "state": "formal_gain_confirmed",
+      "formal_claim": true,
+      "measured": {
+        "head_share_of_prefill": {
+          "128": 0.1479,
+          "256": 0.1605,
+          "512": 0.1525
+        },
+        "prefill_full_s": 1.7614,
+        "prefill_lean_s": 1.4788,
+        "token_identity": "identisch bei allen drei Blockgroessen"
+      },
+      "confirmed": {
+        "study_id": "head-skip-prefill-v1-20260824",
+        "mde": 0.05,
+        "ratio": 0.8463845562069244,
+        "effect_percent": -15.361544379307556,
+        "ci95_characterization": [
+          0.840544153967485,
+          0.848452007351796
+        ],
+        "ci95_validation": [
+          0.8426833774588842,
+          0.85494065830565
+        ],
+        "ci95_all": [
+          0.8431470041496976,
+          0.8512844842159696
+        ],
+        "token_identity": "12/12 session gates",
+        "decision_sha256": "99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a"
+      },
+      "runtime_qualification": {
+        "qualification_id": "head-skip-runtime-qualification-20260824-01",
+        "decision": "engineering_go_exact_scope",
+        "formal_claim": false,
+        "ratio": 0.8458362744682114,
+        "effect_percent": -15.416372553178858,
+        "baseline_median_ms": 1806.4618545,
+        "candidate_median_ms": 1528.206979,
+        "token_identity": true,
+        "peak_memory_delta_bytes": -97855968,
+        "swap_delta_bytes": 0,
+        "runtime_database_sha256": "6dcf6e4cb942b842dca6e9b0b071df8e7c6cb81ba28fdc5e0fdb05c414d20567",
+        "runtime_chain_head": "db4c98e892136930cc515be94417a294c960cfaa9a790a6ea05629d0b796b8f3"
+      },
+      "limit": "nur bei greedy ohne Logprob-Ausgabe je Prompt-Token anwendbar",
+      "note": "mlx_lm wendet lm_head auf alle Prefill-Positionen an; gelesen wird eine"
+    },
+    {
+      "id": "divergence_source",
+      "priority": 0,
+      "cycle": 9,
+      "state": "candidate_characterized",
+      "measured": {
+        "first_differing_layer": 0,
+        "kv_dtype": "bfloat16",
+        "relative_diff_layer0": 0.00488,
+        "relative_diff_layer17": 0.198,
+        "bfloat16_ulp": 0.00391,
+        "final_logit_diff": 1.1875,
+        "top1_top2_gap": 1.75,
+        "flipped_here": false
+      },
+      "conclusion": "Divergenz ist ein bfloat16-ULP bei Schicht 0, ueber 34 Schichten rund 40-fach verstaerkt; kein Kernel-Hotspot"
+    },
+    {
+      "id": "custom_metal_kernel",
+      "priority": 15,
+      "state": "candidate_rejected",
+      "reason": "Zyklus 9: kein Kernelengpass nachweisbar; Ursache ist Praezision ueber alle Schichten"
+    },
+    {
+      "id": "logsumexp_skip",
+      "priority": 6,
+      "cycle": 10,
+      "state": "candidate_characterized",
+      "measured": {
+        "normalised_ms_per_token": 14.3003,
+        "raw_ms_per_token": 14.5226,
+        "saving_pct": -1.555,
+        "isolated_logsumexp_ms": 0.4086,
+        "isolated_share_of_step_pct": 2.857,
+        "token_identity": true
+      },
+      "conclusion": "isoliert 0,41 ms, im Loop wirkungslos -- MLX ueberlappt sie mit dem GPU-gebundenen Forward; isolierte Kosten sind nicht Grenzkosten"
+    },
+    {
+      "id": "kv_cache_realloc",
+      "priority": 6,
+      "cycle": 11,
+      "state": "candidate_recommended_for_preregistration",
+      "measured": {
+        "prompt_tokens": 765,
+        "decode_steps": 48,
+        "repetitions": 8,
+        "realloc_steps": [
+          1,
+          4
+        ],
+        "events_consistent_across_repetitions": true,
+        "rotating_realloc_excess_ms": 31.5853,
+        "global_realloc_excess_ms": 0.2968,
+        "mean_realloc_step_excess_ms": 15.9411,
+        "excess_share_of_decode_pct": 4.4263,
+        "baseline_ms_per_step": 14.2671,
+        "itl_p50_ms": 14.267,
+        "itl_p95_ms": 15.1385,
+        "itl_p99_ms": 46.7879,
+        "token_identity": true
+      },
+      "calculated_before_measurement": {
+        "rotating_expected_ms": 0.7616,
+        "global_expected_ms": 0.1317,
+        "decode_share_pct": 0.13
+      },
+      "caveat": "Schritt 1 ist zugleich der erste Decodeschritt; die 4,4263 % lokalisieren korrelierte Grenzkosten, isolieren aber noch keinen kausalen A/B-Gewinn"
+    },
+    {
+      "id": "gemma_4b_evidence_planner",
+      "priority": 0,
+      "cycle": 14,
+      "state": "planner_contract_failed",
+      "formal_claim": false,
+      "study_id": "gemma-4b-evidence-planner-20260824-01",
+      "measured": {
+        "fresh_processes": 3,
+        "prompt_tokens": 322,
+        "output_tokens_each": 23,
+        "finish_reason_stop": "3/3",
+        "greedy_token_identity": "3/3 exact",
+        "strict_json_contract": "0/3",
+        "raw_text_selected_expected_id": "3/3",
+        "compute_seconds": [
+          1.050531834,
+          1.0410025,
+          1.04766975
+        ],
+        "process_wall_seconds": [
+          4.9131725,
+          4.856396167,
+          4.858676292
+        ],
+        "max_rss_bytes": 3764961280,
+        "max_mlx_peak_bytes": 3021085374,
+        "swap_delta_bytes": 0
+      },
+      "decision": "planner_contract_failed",
+      "gate_failed": "strict_json_without_markdown",
+      "result_sha256": "64a72331d1a415ae1dac191fecdf9c69cd43f5c11566c2df5ec091cf50a60975",
+      "conclusion": "Die inhaltlich erwartete ID stand in allen drei Antworten, aber jeweils in einem Markdown-Codeblock; keine automatische Auswahl oder Aktivierung"
+    },
+    {
+      "id": "dual_model_evidence_planner",
+      "priority": 0,
+      "cycle": 15,
+      "state": "no_planner_qualified",
+      "formal_claim": false,
+      "study_id": "dual-model-evidence-planner-20260824-01",
+      "models": {
+        "1b": {
+          "id": "mlx-community/gemma-3-1b-it-4bit",
+          "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6"
+        },
+        "4b": {
+          "id": "mlx-community/gemma-3-4b-it-4bit",
+          "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+        }
+      },
+      "measured": {
+        "balanced_pairs": 6,
+        "fresh_serial_processes": 12,
+        "contract_1b": "0/6",
+        "contract_4b": "0/6",
+        "output_tokens_1b": 32,
+        "finish_reason_1b": "length",
+        "output_tokens_4b": 23,
+        "finish_reason_4b": "stop",
+        "parser_1b": "0/6",
+        "parser_4b": "0/6",
+        "candidate_id_1b": "0/6",
+        "candidate_id_4b": "0/6",
+        "determinism_1b": "6/6",
+        "determinism_4b": "6/6",
+        "cross_model_decoded_text_equality": "0/6",
+        "ttft_median_mad_s": {
+          "1b": [0.295451312, 0.0005528535],
+          "4b": [0.796846125, 0.0088023125]
+        },
+        "model_work_median_mad_s": {
+          "1b": [0.4608839165, 0.000574333],
+          "4b": [1.0487644165, 0.0092854165]
+        },
+        "process_wall_median_mad_s": {
+          "1b": [4.2468557705, 0.0059329165],
+          "4b": [4.883630417, 0.0182606455]
+        },
+        "peak_rss_bytes": {
+          "1b": 1937965056,
+          "4b": 3765420032
+        },
+        "peak_mlx_bytes": {
+          "1b": 1012548526,
+          "4b": 3021085374
+        },
+        "swap_delta_bytes": 0,
+        "guard_model_work_s": 9.205052,
+        "guard_max_continuous_s": 1.151402,
+        "guard_wall_s": 178.475444,
+        "duty_factor": 0.15,
+        "resource_or_budget_aborts": 0
+      },
+      "calculated": {
+        "pairwise_ratio_1b_over_4b": {
+          "ttft_median": 0.373014193,
+          "ttft_bootstrap95": [0.365603946, 0.377539933],
+          "model_work_median": 0.439069434,
+          "model_work_bootstrap95": [0.434598134, 0.444460794],
+          "process_wall_median": 0.872042394,
+          "process_wall_bootstrap95": [0.864987297, 0.939562889],
+          "token_rate_median": 3.168801108,
+          "token_rate_bootstrap95": [3.130352029, 3.201472197]
+        },
+        "walltime_reduction_percent": 12.8,
+        "peak_rss_reduction_percent": 48.5,
+        "bootstrap_resamples": 10000,
+        "note": "Verhältnisse, Konfidenzintervalle und Prozentwerte sind aus den Rohdaten berechnet; keine zusätzlichen Messungen"
+      },
+      "gate_status": {
+        "resource": "passed",
+        "budget": "passed",
+        "snapshot": "passed",
+        "pairing": "passed",
+        "fresh_process": "passed",
+        "functional": "failed_for_both_models"
+      },
+      "failure_causes": {
+        "1b": "Markdown, falscher Schlüssel persistent_service_id statt candidate_id, end_of_turn-Trailer",
+        "4b": "Markdown-Codeblock trotz inhaltlich richtiger candidate_id"
+      },
+      "decision": "no_planner_qualified",
+      "preregistration_sha256": "246357735be8adaf2c275c36eb0d5bcd6fadef8dc267c3a5c612cbae15422cfe",
+      "result_sha256": "7c87c8cfd884b302641d77f2edb186e402d20a2a2f9a108c896ba88062d8523d",
+      "marker_sha256": "ed4e97d61d0fa43ee31dc551c3de7c74d65001080d4f7bb55dca7da3d0774327",
+      "conclusion": "Beide Modelle verfehlten den festen Vertragsfall; keine automatische Präferenz, Kandidatenausführung oder Aktivierung"
+    },
+    {
+      "id": "fixed_cache_compiled_decode_v1",
+      "priority": 0,
+      "cycle": 16,
+      "state": "runtime_compile_wins_exact_scope",
+      "formal_claim": false,
+      "study_id": "matmul-compile-ab-20260824-01",
+      "scope": "runtime_only",
+      "arms": [
+        "standard_eager",
+        "fixed_eager",
+        "fixed_compiled"
+      ],
+      "mathematical_matmul": "active_in_all_arms",
+      "measured": {
+        "runs": 6,
+        "arm_executions": 18,
+        "exact_token_identity": true,
+        "exact_text_identity": true,
+        "decode_median_seconds": {
+          "standard_eager": 0.399939187,
+          "fixed_eager": 0.3999597295,
+          "fixed_compiled": 0.371848789
+        },
+        "token_rate_median": {
+          "standard_eager": 77.5131895,
+          "fixed_eager": 77.5078153,
+          "fixed_compiled": 83.367224
+        },
+        "ttft_median_seconds": {
+          "standard_eager": 0.638376521,
+          "fixed_eager": 0.638425813,
+          "fixed_compiled": 0.6385446665
+        },
+        "decode_ratios": {
+          "fixed_compiled_div_standard_eager": {
+            "median": 0.9295921887,
+            "bootstrap_95_ci": {
+              "lower": 0.9128789083,
+              "upper": 0.9348209684
+            }
+          },
+          "fixed_compiled_div_fixed_eager": {
+            "median": 0.9296309524,
+            "bootstrap_95_ci": {
+              "lower": 0.9256302629,
+              "upper": 0.9327708433
+            }
+          }
+        },
+        "peak_rss_bytes": 3771564032,
+        "peak_mlx_bytes": 3476049782,
+        "swap_delta_bytes": 0
+      },
+      "result": "runtime_compile_wins_exact_scope",
+      "preregistration_sha256": "dc84020e9bdf07043c5395d3d21d7941f466eae1007ab15cd031f78479696fcf",
+      "minimum_required_break_blocks": 13,
+      "required_break_seconds": 4.0,
+      "result_sha256": "fbcc2fc65ac5d255ed11039a74c34e9a02d942cec17b25a6ed863058e0073b57",
+      "verification_sha256": "09b1b53841a59bad3c4b1b9a0ef62fb659668b472358c10fa9188cad158f0038",
+      "marker_sha256": "8adf6f9c2453524bd1e05f4973ee85f84a323e9461a3f9b996ec2d0f7fed3c2f",
+      "decision": "runtime_compile_wins_exact_scope",
+      "hardware_measured": true,
+      "evidence_commit": "cc6d2ea012a0cd6a858acc9a66d4754e95c421b7",
+      "calculated": {
+        "warmed_ratio": 0.9829777045,
+        "cold_ratio": 1.0154895491,
+        "break_even_decode_steps_median": 36.47,
+        "measured_decode_steps": 31
+      },
+      "note": "Seal-Commit 83ee3ea03f9fb303b8226ab8ad3189f07daec727; sechs frische Prozesse, 18 Arm-Ausführungen (3 × 6), exakt gleiche Token/Text. Matmul aktiv in allen Armen; nur feste Cacheform und MLX-Compile-Laufzeitorganisation. Berechnete warme/kalte Projektionen sind kein zusätzlicher Messwert; Lifecycle-Selfcheck-Befund nach der Messung getrennt behoben. Keine Auto-Aktivierung; Freigabe genau einmal verbraucht"
+    },
+    {
+      "id": "fixed_compiled_batched_readback_n8_v1",
+      "study_id": "fixed-compiled-batched-readback-20260824-01",
+      "candidate_id": "fixed_compiled_batched_readback_n8_v1",
+      "status": "no_clear_speedup_baseline_retained",
+      "formal_claim": false,
+      "measured": true,
+      "result": "experiments/batched_readback_compile/results.json",
+      "arms": ["fixed_compiled_readback_1", "fixed_compiled_readback_8"],
+      "paired_fresh_processes": 6,
+      "planned_arm_executions": 12,
+      "variable": "readback_interval_only",
+      "fixed_invariants": ["model", "weights", "quantization", "mathematical_matmul", "fixed_compiled_runtime"],
+      "eos_tail": "fully_timed_and_trimmed",
+      "correctness_gate": "exact_logical_tokens_and_visible_text_terminal",
+      "hardware_measured": true,
+      "authorization": "consumed_exactly_once",
+      "cycle_7_reference": "exploratory_12.98_percent_only",
+      "decision": "no_clear_speedup_baseline_retained",
+      "evidence_valid": true,
+      "result_sha256": "d2eb29fe31dcf47fe294d2b0bec2d724fe6cc6e6f6d88d2035783613338fbddd",
+      "verification_sha256": "be91320e44507573601b81b90016ff0b9c8bee9458465cebff5ae438e6bf9214",
+      "marker_sha256": "18801fdfca677eb1b0d6a82ac95954990ac05476876447ca1170a42e754710dc",
+      "note": "6 pairs/12 arms; exact logical/visible output identity; readback8 faster in every pair but median ratio 0.9581074518 misses fixed <=0.95 gate. Baseline retained; no activation, quality or self-learning claim."
+    }
+  ],
+  "candidate_attempts": {
+    "18": {
+      "study_id": "fused-greedy-compile-20260825-01",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "parent_worker_environment_hash_mismatch",
+      "evidence_commit": "dc2cdced58b629e6a39cb8ed870d847d8ee16c13",
+      "result_sha256": "ea644a912c9bb20a9fc992d7e24bfecfbb70285f2788ee83a15aeb4937503035",
+      "marker_sha256": "000bf298a3e03d51a84abe8087edfb51b173202451dbfed01bcac11607d3a6fd",
+      "formal_claim": false
+    },
+    "19": {
+      "study_id": "fused-greedy-compile-20260825-02",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "worker_rejected_own_result_as_git_dirty",
+      "evidence_commit": "59bbe9d698d978dcbd621fe89fb17bf98b286b8a",
+      "result_sha256": "4e02221975f6f1710e96dc70f69b4df6f48a1d93df859c6274ed83460dee0320",
+      "marker_sha256": "59525fe94e2705f56191f6ae6b9f0eb2f53ca36fa17442cd20fad70514df03e1",
+      "formal_claim": false
+    },
+    "20": {
+      "study_id": "fused-greedy-compile-20260825-03",
+      "status": "resource_or_budget_failed",
+      "load_count": 0,
+      "cause": "worker_snapshot_manifest_omitted_dev",
+      "evidence_commit": "78f983c71636637b7995eb90500fe689cbe53fee",
+      "result_sha256": "72e7e0692136766bcd5cea4147f3c106ad64de8ddadba855767d8908ae53200d",
+      "marker_sha256": "e2bbff9fad7aa6e3a8e1e16cb2d9ec884c05a1b8bc5a2fabc1225f06d5a0b9da",
+      "formal_claim": false
+    },
+    "21": {
+      "study_id": "fused-greedy-compile-20260825-04",
+      "candidate_id": "fixed_compiled_fused_greedy",
+      "status": "fused_greedy_compile_inconclusive",
+      "decision": "fused_greedy_compile_inconclusive",
+      "baseline_retained": true,
+      "hardware_measured": true,
+      "runs": 6,
+      "arm_executions": 12,
+      "exact_token_identity": true,
+      "exact_text_identity": true,
+      "decode_median_seconds": {
+        "fixed_compiled_external_greedy": 0.266399792,
+        "fixed_compiled_fused_greedy": 0.2660886875
+      },
+      "ttft_median_seconds": {
+        "fixed_compiled_external_greedy": 0.641516396,
+        "fixed_compiled_fused_greedy": 0.641348646
+      },
+      "model_time_median_seconds": {
+        "fixed_compiled_external_greedy": 0.2659206645,
+        "fixed_compiled_fused_greedy": 0.265599773
+      },
+      "token_rate_median": {
+        "fixed_compiled_external_greedy": 86.33650705949903,
+        "fixed_compiled_fused_greedy": 86.4373498460686
+      },
+      "paired_decode_ratio": 1.000510009822041,
+      "paired_bootstrap_95_ci": [0.9811781821677017, 1.0047006793221342],
+      "bootstrap_seed": 20260825,
+      "bootstrap_resamples": 10000,
+      "peak_rss_bytes": 3769974784,
+      "peak_mlx_bytes": 3524169562,
+      "swap_delta_bytes": 0,
+      "mathematical_matmul": "active_in_all_arms",
+      "evidence_commit": "4f89e51c3933aa9c9d42563393589da3c2e4a875",
+      "seal_commit": "ad4c92f32e608a8a0870b37e23a4dba0da1f666c",
+      "preregistration_sha256": "a734975191de7c77a4966c42c0225d8bdbe89d215e24ff63600affef0599dadf",
+      "result_sha256": "55bad770baad66cbebb804288845e9cf2785c0969c77355731ab8a23b3a43a2e",
+      "marker_sha256": "1c1dc10670c153c4c7430f3320671c08a3d56114e0fc5ee6af988c750ceb14e4",
+      "formal_claim": false
+    }
+  },
+  "endpoints": {
+    "primary": [
+      "ttft_ms",
+      "tpot_ms",
+      "aggregate_output_tokens_per_second"
+    ],
+    "secondary": [
+      "prefill_tokens_per_second",
+      "peak_unified_memory_gb",
+      "process_rss_bytes",
+      "swap_delta",
+      "itl_p50",
+      "itl_p95",
+      "itl_p99"
+    ],
+    "ttft_classes": [
+      "cold_process",
+      "warm_uncached",
+      "warm_prefix_hit",
+      "warm_full_cache_hit"
+    ]
+  },
+  "gates": {
+    "correctness": {
+      "sampling": "greedy",
+      "temperature": 0.0,
+      "requires": [
+        "identical_token_ids",
+        "identical_finish_reason",
+        "no_truncation",
+        "no_silent_fallback"
+      ],
+      "on_failure": "correctness_failed_terminal",
+      "known_limit": "Prefill-Zerteilung veraendert erzeugte Token in rund 26 % der geprueften Konfigurationen; keine Blockgroesse haelt zuverlaessig (Zyklus 2)",
+      "decision": "Vertrag haelt. Zyklus 4: unter abweichenden Faellen stimmten nur 28,6 % der Antworten ueberein; die Abweichungen sind inhaltlich, nicht kosmetisch."
+    },
+    "budget": {
+      "gpu_seconds_per_process": 120,
+      "continuous_gpu_seconds": 6,
+      "duty_cycle": 0.15,
+      "duty_window_seconds": 60,
+      "wall_seconds": 1200,
+      "candidate_cooldown_seconds": 60,
+      "ac_power_required": true,
+      "swap_growth_allowed": false
+    },
+    "limits": {
+      "max_cycles": 21,
+      "cycles_completed": 21,
+      "cycle21_authorization": "consumed_exactly_once",
+      "candidate_attempts": [18, 19, 20, 21],
+      "max_failed_attempts_per_candidate": 1,
+      "max_hardware_runs_per_candidate": 6
+    }
+  }
+}

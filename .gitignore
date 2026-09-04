@@ -23,3 +23,18 @@ research/raw/.*.partial
 
 # Local working files, never published
 .local/
+
+# --- Project Friday research tree ---
+.projectatlas/
+.venv/
+.friday-data/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+experiments/*.jsonl
+experiments/*.sqlite*
+experiments/raw/
+.DS_Store
+.idea/
+.vscode/
+.worktrees/

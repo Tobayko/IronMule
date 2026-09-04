@@ -1,0 +1,43 @@
+{
+  "prompt_tokens": 677,
+  "rows": [
+    {
+      "zerteilung": "ein Block",
+      "bloecke": 1,
+      "identisch_zu_ein_block": true,
+      "erste_abweichung": null
+    },
+    {
+      "zerteilung": "512+Rest",
+      "bloecke": 2,
+      "identisch_zu_ein_block": false,
+      "erste_abweichung": 10
+    },
+    {
+      "zerteilung": "Praefix+11",
+      "bloecke": 2,
+      "identisch_zu_ein_block": true,
+      "erste_abweichung": null
+    },
+    {
+      "zerteilung": "256er",
+      "bloecke": 3,
+      "identisch_zu_ein_block": true,
+      "erste_abweichung": null
+    },
+    {
+      "zerteilung": "128er",
+      "bloecke": 6,
+      "identisch_zu_ein_block": false,
+      "erste_abweichung": 10
+    }
+  ],
+  "budget": {
+    "gpu_work_seconds": 9.043269,
+    "max_continuous_gpu_seconds": 1.281837,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 88.188103,
+    "wall_seconds": 98.929973,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

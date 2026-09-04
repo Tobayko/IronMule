@@ -1,0 +1,41 @@
+{
+  "bits": 4,
+  "device": "arm64 / Darwin 25.5.0",
+  "group_size": 64,
+  "layers": 26,
+  "long_match_acceptance": 0.897,
+  "long_match_tokens": 9,
+  "lookup_draft": 4,
+  "lookup_ngram": 3,
+  "measured_at": "2d44e83dc9e8",
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "ms_per_gigabyte": 2.79005,
+  "notes": "Assembled from measurement reports; see docs/DECODE_WIDTH_BEFUND and docs/GERAETEMODELL. Applies to this device, model and quantisation only.",
+  "per_layer_ms": 0.16669,
+  "prefill_ms_per_position": 1.8378,
+  "regression_widths": [
+    48
+  ],
+  "segment_safety": 0.75,
+  "short_match_acceptance": 0.472,
+  "weight_gb": 0.562629,
+  "width_ms": {
+    "1": 6.477,
+    "10": 17.422,
+    "12": 17.973,
+    "14": 17.775,
+    "16": 17.73,
+    "2": 8.015,
+    "24": 18.044,
+    "3": 9.576,
+    "32": 17.34,
+    "4": 11.684,
+    "48": 28.47,
+    "5": 13.452,
+    "6": 15.266,
+    "64": 27.582,
+    "7": 15.707,
+    "8": 16.166,
+    "9": 16.966
+  }
+}

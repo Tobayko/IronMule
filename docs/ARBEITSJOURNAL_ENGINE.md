@@ -1,0 +1,716 @@
+# Arbeitsjournal
+
+## 2026-08-31 — Q3a vorregistrierter Pfadinteraktions-Pilot
+
+- **Entscheidung:** Q3a vergleicht den finalen Q2-Incumbent (`compiled_fixed_cache=True`, `head_skip_prefill=True`, `readback_every=2`) mit demselben Arm plus `fused_argmax=True`; es gibt keine Promotion oder Aktivierung.
+- **Umsetzung:** `docs/BACKLOG.md`, `research/raw/Q3a_preregistration.md`, der SHA-256-Begleiter, der stdlib-only Dry-Run-/Worker-Harness und die Unit-Tests wurden ergänzt. Der Worker verlangt nun eine einmalige Parent-Pipe/Nonce-Capability und die exakt gepinnte lokale 4B-Identity, bevor IronMule/MLX importiert werden.
+- **Messung:** Keine Hardware-/MLX-Ausführung. Der Dry-Run bindet 6 Kinder, 7 Wiederholungen, 2 Warmups, 35-Sekunden-Kindtimeouts, 240-Sekunden-Workerbudget und 300-Sekunden-Gesamtdeadline. Loadavg-, Prozess-, AC-, Thermal-, Swap- und Git-Gates sind vorab und vor jedem Kind vorgesehen.
+- **Verifikation:** Q3a-Unit-Tests, Python-Kompilierung, Dry-Run-No-Write, Hash- und `git diff --check` werden nach der Review-Härtung erneut ausgeführt.
+- **Offene Risiken:** RSS bleibt eine konservative Child-High-Water-Mark statt einer per Arm gemessenen Größe; GPU-Auslastung wird nicht behauptet, Prozessinventar und Loadavg sind nur ein Proxy. Die 35-Sekunden-Kindgrenze ist ein Pilotlimit, kein Performanceversprechen.
+
+## 2026-08-31 — Q3a-Safety-Nachhärtung im uncommitteten Worktree
+
+- **Änderung:** Der Q3a-Worker startet die einzige neue Prozessgruppe; `ab.run`-Kinder erben sie. Direkte Child-Timeouts werden bereinigt, und bereits abgeschlossene Child-Records werden über `ABRunError` zurückgegeben. Ausgabe und JSON-Konstanten sind begrenzt/strict.
+- **Änderung:** Q3a bindet vor dem Worker-Import das vollständige Python-Ausführungssurface (`ironmule/*.py` plus Q3a) und den exakt gepinnten 4B-Manifest-Hash; Prozess-, Thermal-, Load-, Swap-, AC- und Git-Kommandos bleiben absolute, fail-closed Gates.
+- **Änderung:** Resultatschema validiert exakte Arme, Referenz-Tokens, deterministische Per-Repeat-Felder und eindeutige Progress-Marker; unerwartete Ausführungsfehler werden als `FAILED` mit `BASE`-Fallback persistiert.
+- **Verifikation:** `py_compile`, Q3a-Dry-Run/No-Write, Preregistration-SHA, `git diff --check` und injizierte Preflight-/Schema-/Marker-Checks bestanden. `pytest` war in den vorhandenen Python-3.12/3.14-Umgebungen nicht installiert; keine Installation und keine Hardware-/MLX-Ausführung vorgenommen.
+- **Nachprüfung:** Bei Timeout wird auch nach beendetem Gruppenführer nochmals `SIGKILL` an die Prozessgruppe versucht, damit Nachkommen nicht still weiterlaufen; Git-Statuszeilen und fehlende System-/Identity-Evidence verweigern jetzt strikt.
+
+## 2026-08-31 — Q3a-P1/P2-Abschlusskorrektur
+
+- **Änderung:** Die Worker-Prozessgruppe bleibt die einzige Gruppe; `ab.run`-Kinder erhalten keine eigene Session und werden direkt mit `terminate → wait → kill → wait` bereinigt. Der äußere Q3a-Timeout beendet die Worker-Gruppe nur bis zum erfolgreichen `wait`.
+- **Änderung:** Befehle verwenden höchstens 1 s, der gemeinsame monotone Pilot reserviert 10 s für Postflight, und Postflight prüft erneut Loadavg sowie Prozessinventar. `ps` validiert PID/RSS/%CPU strikt und blockiert aktive native Ollama/llama.cpp/Claude- sowie weitere bekannte Modellaktivität.
+- **Änderung:** Thermal ist nur mit beiden separaten nominalen `pmset`-Zeilen gültig; Resultate benötigen sechs exakt an Raw gebundene Progress-Marker, exakte Preflight-Identity und erlauben negative Swap-Änderungen innerhalb des Delta-Limits. Fehler-Resultate bewahren begrenzte Partial-Children plus Marker.
+- **Verifikation:** Preregistration wurde inhaltlich aktualisiert und SHA neu berechnet; Hardware-/MLX-Ausführung bleibt ausgeschlossen.
+
+## 2026-08-31 — Q3a Safety Review: Prozess-/Deadline-/Gate-Fixes
+
+- **Entscheidung:** Der Worker ist die einzige neue Prozessgruppe; direkte A/B-Kinder erben die Worker-PGID. Direkte Timeout-Bereinigung eskaliert nur bei Bedarf (`terminate → wait → kill → wait`), der äußere Worker-Kill beendet nach erfolgreichem Wait sofort.
+- **Änderung:** OS-Kommandos sind auf 1 s begrenzt und deadline-gebunden; 10 s bleiben für Postflight reserviert. Drei Loadavg-Samples liegen 1 s auseinander (Sleeper injizierbar), und Postflight wiederholt Load-/Prozess-Gates.
+- **Änderung:** `ps` prüft strikt PID/RSS/%CPU und blockiert aktive native Ollama/llama.cpp/Claude-Prozesse unabhängig von Python; Thermal akzeptiert nur beide separaten nominalen Warnzeilen. Erfolg verlangt sechs 1:1 an Raw gebundene Marker und vollständige Preflight-Identity. Swap-Deltas dürfen negativ sein, solange sie unter 256 MiB bleiben.
+- **Änderung:** Unvollständiges Child-JSON wird vor Aggregation als indexierter `ABRunError` abgelehnt. Normale Worker-Fehler bewahren begrenzte Partial-Children und Marker; der noch gepufferte Streaming-Cap ist als P2-Backlog dokumentiert.
+- **Verifikation:** `py_compile`, Dry-Run, Gate-/Parser-/Deadline-/Dirty-Gate-Smokes, Prereg-SHA und `git diff --check` bestanden. `pytest`/`uv run --offline pytest` waren nicht ausführbar (`pytest` fehlt; uv-Cache nicht zugreifbar); keine Installation, kein MLX und keine Hardware-Ausführung.
+- **Letzte P1-Korrektur:** Outer-Timeout prüft die gesamte PGID per `killpg(pgid, 0)` und erzwingt SIGKILL nur bei verbliebener Gruppe; Thermal akzeptiert nur die beiden exakten No-Warning-Zeilen plus sichere CPU-/Nullwerte; native `llama-server`/`llama-cli`/`mlx_lm`/ähnliche Prozesse blockieren unabhängig von CPU/RSS, während inaktives Claude dem Load-Gate überlassen bleibt.
+- **Robustness/Data-Consistency:** `_finite` und Schema-Validation lehnen riesige JSON-Integer ohne Overflow ab. `per_arm`-Summaries, Child-Medians, Paare, Median-Verhältnis und deterministische Bootstrap-CIs werden vollständig aus Raw-Daten rekonstruiert; gefälschte Timing-/Ratio-/Summary-Werte failen geschlossen. Worker-`communicate()`-Timeout und -OSError nutzen denselben bounded Gruppen-Cleanup mit Reap.
+- **Flag-Consistency:** `token_identity`, `token_count_identity`, `stop_reason_identity` und `deterministic` werden aus sämtlichen Raw-Armen und Per-Repeat-Feldern rekonstruiert und exakt gegen die gemeldeten Top-Level-Flags geprüft; forged candidate token/count/stop/physical data failen vor Interpretation.
+
+## 2026-08-31 — Q3a-Abschluss-Reconciliation und Readiness
+
+- **Verifikation:** Targeted Suite `127 passed`; breite Suite `336 passed, 1 skipped`; separate MLX-Testmodell-Integration `12 passed`; Gesamtstand `348 passed, 1 skipped`. `ab`-Self-Check und `tune`-Self-Check beendeten sich mit Exit 0; der vorhandene `runpy`-Warnhinweis beim Tune-Self-Check bleibt rein diagnostisch. `py_compile`, `git diff --check`, Dry-Run und Preregistration-SHA `eb9cefd97d37af938689e0bcca66d8418628ed76097157da28f940e2a5ecf2ec` bestanden.
+- **Abgrenzung:** Es wurde kein Gemma-/Real-Performance-Benchmark ausgeführt und kein 27B-Modell verwendet. Die MLX-Integrationseinheitstests liefen separat und sind nicht als Performance-Evidence zu interpretieren.
+- **Readiness:** AC und Thermal waren nominal; der freie Systemspeicher lag bei 50 %. Der Swap-Stand betrug 1101.62 MiB und überschritt damit das 256-MiB-Gate; auch der Load war während der Beobachtung nicht sauber. Der Q3a-Modelstart bleibt daher korrekt blockiert und wurde nicht ausgeführt.
+- **Reviewstatus:** Die finalen Reviews zeigen keine offenen P0/P1-Findings. Das bekannte P2-Risiko des gepufferten Worker-Output-Caps bleibt als Backlog-Eintrag offen. Vorherige append-only Einträge sowie Preregistration und SHA wurden nicht verändert.
+
+## 2026-08-31 — Q3a-Abschluss-Reconciliation und Readiness (final)
+
+- **Verifikation:** Targeted Suite `127 passed`; breite Suite `336 passed, 1 skipped`; separate MLX-Testmodell-Integration `12 passed`; Gesamtstand `348 passed, 1 skipped`. `ab`-Self-Check und `tune`-Self-Check beendeten sich mit Exit 0; der vorhandene `runpy`-Warnhinweis beim Tune-Self-Check bleibt rein diagnostisch. `py_compile`, `git diff --check`, Dry-Run und Preregistration-SHA `eb9cefd97d37af938689e0bcca66d8418628ed76097157da28f940e2a5ecf2ec` bestanden.
+- **Abgrenzung:** Kein Gemma-/Real-Performance-Benchmark und kein 27B-Modell; die separaten MLX-Integrationseinheitstests liefen, sind aber keine Performance-Evidence.
+- **Readiness:** AC und Thermal waren nominal, freier Systemspeicher 50 %. Der Swap-Stand lag bei 1101.62 MiB und damit über dem 256-MiB-Gate; auch der Load war während der Beobachtung nicht sauber. Der Q3a-Modelstart bleibt korrekt blockiert und wurde nicht ausgeführt.
+- **Reviewstatus:** Keine offenen P0/P1-Findings. Das bekannte P2-Risiko des gepufferten Worker-Output-Caps bleibt im Backlog. Vorherige append-only Einträge sowie Preregistration und SHA wurden nicht verändert; Raw-Evidence ist unter `research/raw/Q3a_preflight_refusal_20260831.json` erhalten.
+
+## 2026-08-31 — Q3a-Preflight-Portability-Fix
+
+- **Ausgangslage:** Der Stand von Commit `771d133` blieb korrekt `FAILED` mit `BASE`-Fallback, ohne Modellstart und mit `partial_children=0`. Die ursprüngliche Gate-Lesung war bei Thermal/Situation teilweise `unknown`; der beobachtete Load-Maximalwert lag bei `8.696`. Die vorhandene Raw-Evidence unter `research/raw/Q3a_preflight_refusal_20260831.json` und der ignorierte Datenpfad wurden unverändert erhalten.
+- **Änderung:** Low-Power wird nun ausschließlich über die absolute öffentliche Foundation-Abfrage `/usr/bin/osascript -l JavaScript -e 'ObjC.import("Foundation"); JSON.stringify($.NSProcessInfo.processInfo.isLowPowerModeEnabled)'` mit exakt `true`/`false`-Auswertung gelesen; der ungültige `pmset -g lowpowermode`-Pfad ist entfernt. Thermal normalisiert optional exakt das reale `Note: `-Präfix, verlangt weiterhin beide No-Warning-Zeilen und erlaubt nur bekannte CPU/GPU-Null-/No-status-Zeilen. Swap entfernt abschließende Newlines und parst reale Werte wie `used = 1553.81M`; das manuelle Ist-Ergebnis betrug `1553.81 MiB`.
+- **Sicherheitsgrenzen:** Nur die absolute `ps`-Inventarabfrage darf bis 512 KiB lesen; alle anderen Kommandos bleiben bei 64 KiB. Größere Inventare failen geschlossen, und argv wird nie persistiert. Sicherheits-Schwellen, Preregistration und Preregistration-SHA sowie die 4B-/No-27B-Bindung blieben unverändert.
+- **Verifikation:** Die modellfreie Q3a-Suite bestand mit `26 passed`; `py_compile` und `git diff --check` bestanden. Ein direkter stdlib-`system_environment()`-Diagnoselauf startete kein Modell und importierte kein MLX; auf der isolierten Umgebung ergab er `AC`, Low-Power `false`, Thermal/Swap wegen OS-Berechtigungsfehlern `unknown`/`None`. Kein 27B-Modell und kein Hardware-/MLX-Performance-Test wurden ausgeführt.
+
+## 2026-08-31 — Q3a korrigierter zweiter Preflight
+
+- **Ergebnis:** Der korrigierte Lauf auf Commit `0ec9237` blieb korrekt `FAILED` mit `BASE`-Fallback, `promotion_allowed=false`, ohne Modellstart und mit `partial_children=0`. Das Raw-Ergebnis `research/raw/Q3a_preflight_refusal2_20260831.json` blieb als ignorierte Evidence erhalten; die beiden ignorierten Q3a-Refusal-Raw-Dateien sind unverändert vorhanden.
+- **Gates:** Grün waren AC, Git-Bindung, installierter Speicher, Low-Power-off, exakte lokale 4B-Identity (Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, Manifest `a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`), Preregistration-SHA, Zeitbudget und Thermal. Rot waren Loadavg mit `max=21.723` und `spread=0.699`, Swap mit `1641021440` Bytes (über dem 256-MiB-Limit) sowie aktive Claude-Prozessaktivität. Ein 27B-Modell wurde nicht verwendet.
+- **Replay-/Resume-Grenze:** Offline-Replay ist derzeit nur für `BASE` zulässig; die Datenbasis ist für eine belastbare adaptive/RL-Aussage unzureichend, daher ist RL nicht anwendbar. Ein späterer Q3a-Start ist ausschließlich bei AC, Low-Power-off, nominalem Thermal, Load `<=4` und Spread `<=1`, Swap `<=256 MiB`, ohne Modell- oder aktive-Claude-Prozesse sowie mit eindeutigem neuem Outputpfad zulässig.
+- **Verifikation:** Targeted `127` Tests, breite Suite `336 passed, 1 skipped`, separate Integration `12 passed`, modellfreie Q3a-Suite `26 passed`; `ab`-/`tune`-Selfchecks waren erfolgreich. Der bekannte gepufferte Worker-Output-Cap bleibt ein P2-Backlogpunkt. SQuAD-Daten bleiben untracked/lokal und die Lizenzfrage offen; PR #2 bleibt owner-only.
+
+## 2026-08-31 — Q3a-Versuch 3: Preflight verweigert den Modellstart
+
+- **Ausgangslage und Scope:** Der ausdrücklich autorisierte Lauf wurde im Worktree auf HEAD `28b2ef4` ausgeführt; der geprüfte Q3a-Code stammt aus `0ec9237`. Verwendet wurde ausschließlich der exakt vorregistrierte lokale `mlx-community/gemma-3-4b-it-4bit`-Arm, Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, Manifest-SHA `a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`. Kein Download, kein 27B-Modell und keine Codeänderung.
+- **Ergebnis:** Der Harness schrieb `research/raw/Q3a_attempt3_20260831.json` (ignoriert, SHA-256 `019b1aafbc7342a782476d62e2921e8141b185c50490df4b72d5c0f0fbb9e8a2`) und endete vor jedem Modellstart mit `FAILED`, `BASE`, `promotion_allowed=false` und `partial_children=0`. Es wurden keine Modellkinder gestartet und keine Prozesse beendet.
+- **Gates:** Grün waren AC, Git-Bindung, installierter Speicher bekannt, Low-Power-off, exakte 4B-Identität, Preregistration, Zeitbudget und Thermal. Rot waren Swap `1774777794 B` (`1692.56 MiB`, Limit `256 MiB`), Loadavg max `6.1792` (Limit `4`) und das Prozess-Gate `no_competing_model_process=false`.
+- **Redigierte OS-Evidence:** Obwohl der Nutzer Claude als beendet meldete, fanden die Gates zwei echte `Claude`-Executables: PID `55295` mit CPU `4.1%` und RSS `292688 KiB` sowie PID `55345` mit CPU `2.8%` und RSS `395344 KiB`. Argumente wurden nicht gespeichert; kein Prozess wurde beendet. Selbst nach dem Stoppen von Claude würden Swap und Loadavg den Q3a-Start weiterhin blockieren.
+- **Messgrenze:** Analyse blieb `PATH_INTERACTION_ONLY`; es gibt keine Modellmessung, kein Ergebnisverhältnis und keine Performance-Evidence. Sicherste Fortsetzung ist nach gesicherter Nutzerarbeit und Neustart bzw. sauberem Zustand; kein automatischer Neustart. Das untracked SQuAD-File blieb unberührt.
+
+## 2026-08-31 — Q3b Residual-Swap-Safety-Canary preregistration and implementation
+
+- **Entscheidung:** Wegen des ausdrücklich gewünschten Verzichts auf einen Neustart
+  wurde ein separater Q3b-Safety-Canary eröffnet. Er nutzt ausschließlich die lokal
+  gepinnte Gemma-4B-Revision `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, nie 27B,
+  und darf weder Promotion noch Performance-/RL-Aussagen erzeugen.
+- **Mechanismus:** Baseline und `fused_argmax`-Kandidat laufen in zwei separaten
+  frischen Single-Arm-Stage-Workern über den bestehenden `ironmule.ab.run`-Pfad;
+  der Worker lädt die unveränderten Q3a-Helfer erst nach der Capability-Prüfung.
+  Pro Stage werden Warmup 1, drei Roh-Repeats und `max_tokens=32` verwendet. Ein
+  begrenzter 0,25-s-Sampler hält die maximale Swap-Nutzung während der gesamten
+  Stage fest; eine vollständige Post-Stage-Snapshot-Gate entscheidet vor Stage 2.
+- **Sicherheitsgrenzen:** Start-Swap bekannt und `<=4 GiB`, Swap-Anstieg vom
+  Startmaximum `<=128 MiB`, freier Speicher `>=35%` am Start und `>=20%` je Stage,
+  MLX/RSS `<=60%` des installierten Speichers, Load `max<=8`/Spread `<=2`, AC,
+  Low-Power-off, Thermal nominal, Child 35 s, Worker 120 s, Gesamt 180 s mit
+  Cleanup-Reserve. Nur die exakt verifizierte Claude-Desktop-Executable wird
+  ignoriert; generisches/unklares Claude bleibt blockiert.
+- **Verifikation:** Keine Hardware-/MLX-Ausführung, kein Download und kein Commit
+  in diesem Arbeitsschritt. Preregistration und SHA wurden vor Tests angelegt und
+  nach der Review-Härtung aktualisiert. Q3a-Dateien und Q3a-SHA blieben unverändert.
+- **Offene Risiken:** Die reale Memory-Pressure-Ausgabe und Swap-Sampler-Granularität
+  bleiben plattformabhängige Beobachtungen; unbekannte Werte führen fail-closed zu
+  `FAILED`/`BASE`. Ein bestandener Canary ist ausschließlich `SAFETY_CANARY_PASS`
+  mit `performance_valid=false` und `promotion_allowed=false`.
+
+## 2026-08-31 — Q3b P1-Review-Korrekturen
+
+- **Änderung:** Die Claude-Desktop-Ausnahme prüft nun das sicher geparste, exakte
+  `argv[0]`-Token. Der kanonische Pfad ist erlaubt; `ClaudeX`, generische Claude-
+  CLI/Server-Pfade und fehlerhaftes Quoting bleiben harte Blocker.
+- **Änderung:** Der Stage-Worker nimmt synchron einen Start- und End-Swap-Sample
+  sowie periodische 0,25-s-Samples auf. Werte, monotone Zeitstempel und Worker-
+  Start-Offsets werden in gleich langen, auf 512 Einträge begrenzten Arrays
+  gespeichert. Jeder Command-/Read-/Parse-/Thread-/Zeitfehler wird in
+  `sampler_errors` festgehalten und beendet die Stage; erfolgreiche Resultate
+  verlangen `sampler_errors=[]`, mindestens zwei Samples und maximal 1,75 s
+  Zeitabstand.
+- **Änderung:** Das Stage-Gate verlangt zusätzlich den bekannten frischen Swap-
+  Endpunkt. Die Cross-Stage-Identity vergleicht neben Tokens, Counts und Stops
+  nun Kapazitäten, Decode-Schritte, Prompt-Tokens und Determinismus.
+- **Preregistration:** Q3b-Preregistration und SHA wurden vor jeder Hardware-
+  oder Modellmessung aktualisiert; SHA `35854a6c13dcbf93ab3ad19b2e4dd90620dd11583831e29a2c85c573b285a7c2`.
+- **Verifikation:** Q3b-Tests `20 passed`, `py_compile`, `git diff --check` und
+  Dry-Run-No-Write bestanden. Keine Hardware-/MLX-Ausführung, kein Download,
+  kein Modellstart und kein Commit.
+
+## 2026-08-31 — Q3b P1 Live-Swap-Abbruch behoben
+
+- **Befund:** Der periodische Q3b-Sampler setzte bei Swap-Fehlern oder einem
+  Überschreiten des 128-MiB-Highwaters bisher nur sein Stop-Event; eine aktive
+  `ironmule.ab`-Kindprozessgruppe konnte dadurch weiterlaufen. Der synchrone
+  Worker-Start und `before_child` prüften den Highwater ebenfalls nicht streng
+  gegen die Parent-Referenz.
+- **Änderung:** Der Worker vergleicht den synchronen Startwert vor jedem
+  IronMule-Import mit dem Parent-Initialwert. `before_child` lehnt Samplerfehler
+  und überschrittenes Highwater ab. Während eines aktiven Kindes wird Safety-
+  Evidence einmalig und begrenzt (`reason`, Samples, monotone Zeiten/Offsets,
+  Fehler, ohne argv) erfasst, als flushbarer `@SAFETY`-Marker ausgegeben und
+  unmittelbar mit `os.killpg(os.getpgrp(), SIGTERM)` beendet; Kill-/Markerfehler
+  bleiben fail-loud.
+- **Parent-/Cleanup-Fix:** `_start_stage` erkennt `@SAFETY` auch ohne finalen
+  `@@`-Marker, bewahrt Safety- und Partial-Evidence, bereinigt/reapt die
+  Workergruppe auf Safety-, Nonzero-, Malformed- und No-Marker-Pfaden und
+  kennzeichnet den Nachweis `group_gone`. Der finale synchrone Read nach einem
+  beendeten Kind löst keinen Live-Kill mehr aus.
+- **Verifikation:** Q3b-Suite `23 passed`; `py_compile`, `git diff --check`,
+  Preregistration-SHA und Dry-Run geprüft. Keine Hardware-/MLX-Ausführung,
+  kein Download, kein Modellstart und kein Commit. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b finaler P1-Swap-Read und TERM-Fallback
+
+- **Befund:** Der finale Swap-Read lief zwar nach dem Child-Reap, konnte aber
+  bei Read-/Samplerfehlern oder einem späten Highwater-Verstoß noch in einen
+  normalen Worker-Fehlerpfad ohne `@SAFETY` fallen. Außerdem behandelte der
+  Safety-Kill einen fehlgeschlagenen TERM nicht mit einer unmittelbaren
+  KILL-Eskalation.
+- **Änderung:** Der finale Sample wird jetzt strikt gegen Samplerfehler und
+  `max(samples) - initial_swap > 128 MiB` geprüft. Jeder Verstoß erzeugt ein
+  einmaliges begrenztes `@SAFETY`-Event und verhindert den Erfolgsmarker, auch
+  wenn ein injizierter Kill-Helfer zurückkehrt. `_capture_live_safety` versucht
+  bei TERM-Fehler unmittelbar SIGKILL auf derselben PGID; erst wenn beide
+  Signale scheitern, werden Kill-Fehler ausgegeben und der Pfad fail-loud
+  beendet.
+- **Verifikation:** Q3b-Suite `27 passed`; `py_compile`, `git diff --check`,
+  Preregistration-SHA und Dry-Run geprüft. Keine Hardware-/MLX-Ausführung,
+  kein Download, kein Modellstart und kein Commit. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Claude-Prozess-Gate auf Bundle-Vertrauen korrigiert
+
+- **Befund:** Die bisherige Ausnahme vertraute auf ein einzelnes `argv[0]`-Token
+  und konnte weder Helper-/Crashpad-Prozesse noch den vollständigen signierten
+  App-Bundle-Zustand belegen. Ein einzelnes `ps`-Inventar war zudem nicht gegen
+  die separate `comm`-Darstellung abgeglichen.
+- **Änderung:** Q3b fragt nun zwei begrenzte absolute `ps`-Inventare ab und
+  verlangt eine strikte PID-Karte. Claude wird nur ignoriert, wenn der
+  whitespace-erhaltende `comm`-Pfad lexikalisch innerhalb des exakten
+  `/Applications/Claude.app/Contents/`-Baums liegt und der komplette Bundle-
+  Vertrauenshelfer mit `/usr/bin/codesign --verify --deep --strict` sowie
+  `-dv --verbose=4` exakt Identifier `com.anthropic.claudefordesktop`, Team
+  `Q6L2SF6YDW` und die erste Authority `Developer ID Application: Anthropic PBC
+  (Q6L2SF6YDW)` bestätigt. Unbekannt, fehlerhaft, außerhalb oder untrusted
+  bleibt blockiert; Modellmuster werden vor der Claude-Ausnahme weiter blockiert.
+- **Verifikation:** Q3b-Tests decken Desktop-, Helper- und Crashpad-Pfade,
+  generische/außerhalb liegende Claude-Pfade, Boundary-Spoofing, Trust-
+  Metadaten-/Verify-Fehler, PID-Mismatch und malformed `comm` ab. Es wurde kein
+  Hardware-/MLX-Test, kein Modellstart, kein Download und kein Commit ausgeführt;
+  Q3a-Code und Q3a-SHA blieben unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 2: Preflight verweigert den Modellstart
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary2_20260831.json` (ignorierte Raw-Evidence,
+  SHA-256 `90e040f090111bb990377b4e8bfecfd8ec5a3753288955353f97cffdac1d5a2c`)
+  und endete mit `FAILED`, `BASE`, `promotion_allowed=false`, ohne Modellkind
+  und ohne Stage-Start.
+- **Gates:** Alle übrigen Preflight-Gates waren grün: AC, Low-Power-off,
+  Thermal nominal, exakte lokale 4B-Identity, Git-Bindung, Preregistration,
+  installierter Speicher und Load. Der Startspeicher lag bei `66%`, Swap bei
+  `1707668930 B` und der Loadavg-Maximalwert bei `1.7099609375`. Rot blieb nur
+  `no_competing_model_process`, weil die zwei `ps`-Inventare wegen eines
+  zwischen den Snapshots verschwundenen/neu erschienenen PID-Eintrags nicht
+  als identische Gesamtmenge behandelt werden konnten.
+- **Korrektur:** Die Q3b-Preregistration wurde vor weiterer Messung um die
+  PID-Race-Regel ergänzt und neu gehasht. Das Gate wertet nun relevante
+  `args`-Records strikt aus: fehlendes `comm` ist nur bei per injizierbarem
+  `kill(pid, 0)`-Probe nachgewiesenem Prozessende tolerierbar; alive,
+  permission-denied und unknown failen geschlossen. Extra `comm`-Records sowie
+  irrelevante fehlende Records werden ignoriert; Modell-/Inference-Tokens
+  blockieren weiterhin direkt. Wiederholte Pre-Child-/Post-Stage-Gates bilden
+  die verbleibende nicht-atomare Snapshot-Grenze.
+- **Deskriptive Ausgabe:** Für einen vollständigen Safety-PASS ist zusätzlich
+  eine klar als `descriptive_only=true` markierte Timing-Zusammenfassung
+  vorregistriert: Mediane aus den exakten Raw-Repeats, Token-/Decode-Zähler,
+  endliche Durchsatzformeln und Kandidat/Baseline-Ratios mit
+  richtungsabhängiger Prozentformel (`100*(1-ratio)` für Zeiten,
+  `100*(ratio-1)` für Durchsatz). Sie trägt `performance_valid=false`,
+  `order_confounded=true`, `statistical_confidence=none`, enthält weder CI,
+  Winner noch Promotion und wird bei FAILED/unvollständigen Stages nicht
+  berechnet; sie ist kein Gate.
+- **Messgrenze:** Kein Modell wurde gestartet, keine Hardware-/MLX-Leistung
+  gemessen und keine Performance-, Optimierungs- oder RL-Aussage abgeleitet.
+  Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 3: Trust-Gate durch Codesign-Timeout verweigert
+
+- **Ergebnis:** `research/raw/Q3b_canary3_20260831.json` (Output-SHA-256
+  `eb4e87a5fd0fe1eba76fc23d123e7252e54219a0d46eacf5a96437f2a1f5e448`)
+  endete mit `FAILED`, `BASE`, `promotion_allowed=false`; kein Modellkind und
+  keine Stage wurden gestartet.
+- **Gates/Messgrenze:** Alle übrigen Preflight-Gates waren grün (AC,
+  Low-Power-off, Thermal nominal, exakte lokale 4B-Identity, Git-Bindung,
+  Preregistration, installierter Speicher, Startspeicher, Swap und Load). Rot
+  war ausschließlich `no_competing_model_process`: die signierte Claude-
+  Desktop-Ausnahme blieb wegen des 1,0-s-Standardtimeouts im Codesign-
+  Vertrauenshelfer falsch-negativ. Diagnostisch dauerte `codesign --verify
+  --deep --strict` 1,487 s, `codesign -dv --verbose=4` 0,030 s.
+- **Korrektur/Preregistration:** Der Vertrauenshelfer verwendet nun nur für die
+  beiden Codesign-Aufrufe `CLAUDE_CODESIGN_TIMEOUT_SECONDS=5.0`; alle anderen
+  OS-Kommandos behalten 1,0 s. Timeout, Exception, Nonzero-Exit, malformed oder
+  übergroße Ausgabe bleiben fail-closed. Die Q3b-Preregistration wurde vor der
+  nächsten Messung ergänzt und neu gehasht.
+- **Verifikation:** Q3b-Tests, `py_compile`, `git diff --check` und Dry-Run-
+  No-Write sind nach der Änderung erneut auszuführen. Keine Hardware-/MLX-
+  Ausführung, kein Download, kein Modellstart und kein Commit; Q3a blieb
+  unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 4: Worker-Importpfad verweigert
+
+- **Ergebnis:** Der Lauf schrieb `research/raw/Q3b_canary4_20260831.json`
+  (Output-SHA-256 `52deb8a6b686ddb084eb3fcd526ef99b2274829e6fb277636bdf7dc1e2df04e0`)
+  und endete mit `FAILED`, `BASE`. Alle Preflight-Gates waren grün.
+- **Befund:** Der Baseline-Worker erreichte den IronMule-Import, scheiterte
+  jedoch mit `ModuleNotFoundError: No module named 'ironmule'`, bevor ein
+  Modellkind gestartet wurde. Der Worker-Gruppen-Cleanup war erfolgreich
+  (`group_gone=true`); die Candidate-Stage wurde nicht gestartet.
+- **Korrektur:** Nach validierter Capability, Runtime-Code-Hash, Stage und
+  Deadline aktiviert der Worker künftig ausschließlich den exakten Repo-Root
+  `Path(__file__).resolve().parents[1]` an `sys.path[0]`. Die vorhandene
+  `ironmule/__init__.py`, ein `find_spec`-Origin/Search-Pfad innerhalb dieses
+  Roots und der Ausschluss vorab geladener Fremdmodule sind fail-closed.
+  Parent-Dry-Run und direkter Worker ohne Capability bleiben ohne Root-
+  Aktivierung und ohne IronMule/MLX-Import.
+- **Preregistration:** Q3b-Preregistration vor der nächsten Messung ergänzt;
+  neuer SHA-256 `3563d3f9d47748a89ba9a91bc99e217d7da719918e51a68bbda54a9bddc6e615`.
+- **Messgrenze:** Kein Modellstart, kein Hardware-/MLX-Test, kein Download und
+  kein Commit; Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 5: echter `Popen`-Kompatibilitätsfehler
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary5_20260831.json` (SHA-256
+  `10b1f30034856972d351ee959115c624ac9a5e6ceb4f6a5ce154b51ac7dd88fd`) und
+  endete mit `FAILED`, `BASE`, ohne Modellmetriken.
+- **Gates/Messgrenze:** Alle Preflight-Gates waren grün. Der Startspeicher lag
+  bei `62%`, der Loadavg-Maximalwert bei `1.87890625` (`1.8789`), und der
+  Swap-Sampler maß über 27 Samples eine Delta von `0 B`. Der Baseline-Worker
+  scheiterte vor dem ersten Modellkind mit
+  `TypeError: Popen.__init__() got an unexpected keyword argument
+  'capture_output'`; der Gruppen-Cleanup war erfolgreich (`group_gone=true`).
+  Es wurden keine Modellmetriken und keine Hardware-/Performanceaussage
+  erzeugt.
+- **Ursache/Lösung:** `subprocess.Popen` akzeptiert kein `capture_output`; der
+  A/B-Launcher verwendet nun explizit `stdout=subprocess.PIPE` und
+  `stderr=subprocess.PIPE`, bei unverändertem `text`, `cwd`, `env` und ohne
+  `start_new_session`. Ein strikter Regressionstest bindet die tatsächlich
+  verwendeten Keywords gegen die Runtime-Signatur von `Popen` und weist
+  unbekannte Keywords zurück. Q3a blieb unverändert.
+
+## 2026-08-31 — Q3b Canary-Versuch 6: transienter Prozess-Gate-Fehlalarm
+
+- **Ergebnis:** Der ausdrücklich gestartete Q3b-Lauf schrieb
+  `research/raw/Q3b_canary6_20260831.json` (SHA-256
+  `983370bdf70a0891cffdda5b8f4009251cddf24194435042bf39fe3340553904`) und
+  endete mit `FAILED`, `BASE`, ohne Modellmetriken.
+- **Gates/Messgrenze:** Alle Ressourcen-Gates waren grün. Das Prozess-Gate
+  blockierte transient durch einen Orchestrator-/Launcher-Vorfahren, dessen
+  `args` Modell-Tokens enthielten. Es wurde kein Modellkind und keine Stage
+  gestartet; es gibt keine Hardware- oder Performanceaussage. Eine spätere
+  direkte Ausführung der exakten Gate-Funktion auf dem aktuellen Snapshot war
+  grün und meldete keinen Blocker.
+- **Ursache/Lösung:** Die `args`-Inventur speicherte bislang kein `ppid` und
+  konnte dadurch einen nachweisbaren Vorfahren nicht vom übrigen Prozessraum
+  unterscheiden. Das Inventar verwendet nun strikt
+  `pid=,ppid=,rss=,%cpu=,args=`. Die aktuelle PID-Kette wird im selben Snapshot
+  bis `ppid=0` rekonstruiert; nur Selbstprozess und nachgewiesene Vorfahren
+  werden vor Token-Prüfungen ignoriert. Nachfahren, Geschwister und andere
+  Agenten bleiben Blocker. Fehlende Selbst-/Elternlinks, Zyklen und negative
+  `ppid`-Werte fail-closed. Claude-Signatur- und PID-Race-Verhalten bleibt
+  unverändert; Q3a blieb unverändert.
+- **Preregistration/Verifikation:** Der Text und SHA wurden vor der nächsten
+  Messung aktualisiert. `py_compile` und direkte Ancestry-/Malformed-Checks
+  waren erfolgreich; ein `pytest`-Lauf war nicht möglich, da in der vorhandenen
+  Umgebung kein pytest installiert ist und keine Installation freigegeben war.
+- **Messgrenze:** Kein Download, keine Modellinstallation, kein Hardware-/MLX-
+  Test und kein Commit.
+
+## 2026-08-31 — Q3c safety aborts; Q3d single recovery path preregistered
+
+- **Entscheidung:** Q3c liefert keinen Performancebefund und wird nicht
+  wiederholt. Der sichere Fallback bleibt `BASE` beziehungsweise der aktuelle
+  Q2-Incumbent. Kein Profil wird aktiviert, geroutet oder automatisch
+  übernommen; kein „heurica“ wird ausgegeben.
+- **Run 1:** `research/raw/Q3c_run1_20260831.json`, SHA-256
+  `5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`, endete
+  vor jeder Phase, weil der Load-Maximalwert `8.294921875` über dem Gate `8`
+  lag. Es existieren daher keine Modellzeiten, Identitätswerte oder
+  Performance-Daten.
+- **Run 2:** `research/raw/Q3c_run2_20260831.json`, SHA-256
+  `d94db80402254c87c0e4a0128cf802e1eaa59d42c4459c2f208077f48c38b8df`,
+  passierte den Preflight, brach aber Phase R live ab: `105` Swap-Samples in
+  `27.394551749996026 s`, Start `2,353,654,661 B`, Maximum
+  `2,625,172,930 B`, Delta `271,518,269 B` (`258.94 MiB`) statt höchstens
+  `128 MiB`. Der Raw-Datensatz meldet
+  `SIGTERM:PermissionError`, `SIGKILL:PermissionError` und eine weiterlebende
+  Workergruppe; Cleanup/Reap ist damit nicht verifiziert. Es gab keine
+  abgeschlossenen Kinder und keine Timings, Token-/Identitäts-, Performance-
+  oder Promotionsaussage.
+- **Ursache und Schutz:** Der Abbruch ist ein gemessener Safety-Abbruch; die
+  Daten erlauben keine feinere Ursache als Swap-Highwater plus unbekanntes
+  Cleanup. Run 1 und Run 2 bleiben getrennt erhalten und werden nicht gepoolt.
+  Die Rohdateien werden nicht gelöscht.
+- **Q3d-Vorregistrierung:** Vor weiterer Implementation oder Hardwareausführung
+  wird genau ein Recovery-Pfad eingefroren: erst Cleanup-Proof-Fix mit Tests,
+  dann genau ein 60-Sekunden-Modell-freier Stabilitäts-Gate mit exakt null
+  Swap-Anstieg; nur bei vollständigem PASS genau ein unveränderter Q3c-Lauf.
+  Jeder Safety-, Cleanup-, Unknown- oder Kriterienfehler beendet Q3d dauerhaft.
+  Ein reiner Performance-Miss in Phase R überspringt Phase N nicht, sofern R
+  Safety, Identität, Raw-Vollständigkeit und Cleanup bestanden hat.
+- **Messgrenze:** Kein Download, keine Installation, kein 27B-Modell, kein
+  Hardware-/MLX-Test und kein UI-/Promotion-Schritt in dieser Dokumentations-
+  änderung.
+
+## 2026-08-31 — Q3d-Gate-Spezifikation präzisiert
+
+- **Korrektur:** Die Q3d-Vorregistrierung erlaubt ausdrücklich neben dem
+  Cleanup-Proof-Fix und dessen Tests auch einen minimalen Stabilitäts-Gate-
+  Harness samt Tests. Der Parent bleibt stdlib-only und darf weder MLX noch
+  ein Modell importieren oder einen Inferenzprozess starten. Beides muss vor
+  dem ersten Gate-Lauf implementiert und getestet sein.
+- **Exaktes Gate:** Ein synchroner Swap-Sample bei monotonic `t0` plus genau
+  60 geplante Samples bei `t0+1 ... t0+60 s` ergeben exakt 61 Samples. Das
+  erste-bis-letzte Intervall muss `>=60.0 s` und `<=62.5 s` sein; jedes
+  Nachbarintervall `<=2.5 s`, jeder OS-Befehl hat `1.0 s` Timeout. Gate-Wall-
+  Deadline ist `90 s`, Output maximal `512 KiB`, Ausgabe striktes JSON auf
+  exklusivem Pfad. Commit-, Prereg-, Runtime- und Model-Cache-Identität sowie
+  alle Kommandos, Zeitstempel und Abstände müssen bekannt sein; der Swap-
+  Highwater-Anstieg muss exakt `0 B` betragen. Das Gate misst keine
+  Performance.
+- **Zeitbindung:** Q3d bleibt auf maximal `720 s` begrenzt: `90 s` Gate-
+  Deadline + `600 s` unveränderter Q3c-Lauf + `30 s` Abschlussreserve. Der
+  reine Performance-Miss in Phase R lässt Phase N weiterhin laufen, wenn R
+  Safety, Identität, Raw-Vollständigkeit und Cleanup bestanden hat.
+
+## 2026-08-31 — Korrekturhinweis zum historischen Q3c-Preregistrierungsentwurf
+
+Der frühere Q3c-Journalabschnitt mit SHA-256
+`411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701` und
+Verweis auf UI-Historie bleibt als append-only Historie unverändert. Er war ein
+historischer, vor dem Freeze abgelöster Entwurf. Die finale eingefrorene Q3c-
+Präregistrierung ist `research/raw/Q3c_preregistration.md` mit SHA-256
+`3bf63ff0dcf442855b6d7b97278fb1d43583a9f18e3f5b6c3caa507582a9ffc5`; die
+finale Fassung enthält keine UI-Anforderung. Die danach dokumentierten Q3c-
+Safety-Abbrüche und die Q3d-Korrekturen beziehen sich auf diese finale Fassung.
+
+## 2026-08-31 — Q3b Canary 7 audited and Q3c preregistered
+
+- **Q3b-Audit:** `research/raw/Q3b_canary7_20260831.json` wurde read-only
+  auditiert; SHA-256 ist
+  `77ebc1ed8af5c1d5b4b064ce95605d3440b6e2fccabcd088d58f0900cdd0eb76`.
+  Das Raw-Schema ist vollständig, beide unabhängigen Stages haben je einen
+  Warmup und drei Mess-Repeats, vollständige Sampler-Arrays ohne Fehler,
+  erfolgreiche Cleanup-/Reap-Nachweise und `SAFETY_CANARY_PASS` /
+  `SAFETY_ONLY`. `performance_valid=false` und
+  `promotion_allowed=false` bleiben unverändert.
+- **Safety/Identity:** Exakte lokale Gemma-3-4B-Revision
+  `93724907d4ed1745d2fe50baadf3b0b01a65abf2`, Manifest-SHA
+  `a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae`,
+  Runtime-Code-SHA
+  `d4577826e46d356ecc43cbae0c94465018d202ad29593a96a5f2693d1f279e59`.
+  Start: AC, Low-Power aus, Thermal nominal, freier Speicher 49 %, Swap
+  `1,690,891,714 B`, Loadavg max 2.7905. Stage-Gates: freier Speicher
+  44 %/46 %, Swap-Delta `0 B`/`0 B`, Loadavg max 3.8555/4.2837, Child-RSS
+  `3,075,457,024 B`/`3,767,861,248 B`, MLX-Peak `3,125,869,452 B`.
+- **Exakte Werte und Geschwindigkeitskontext:** Beide Stages hatten Prompt
+  322, logisch/physisch 23 Ausgabetokens, 22 Decode-Schritte, Kapazität 384,
+  `eos`, gleiche Counts und Determinismus. Die Raw-Mediane (Total/Prefill/
+  Decode) betrugen Baseline `859.413/583.330/276.083 ms` und Kandidat
+  `849.714/574.051/275.663 ms`; Output-Rate `26.7624` vs. `27.0679` tok/s,
+  Decode-Rate `79.6862` vs. `79.8076` Schritte/s. Deskriptive Kandidaten-
+  Geschwindigkeitswerte sind Total +1.1285 %, Prefill +1.5907 %, Decode
+  +0.1521 %, Output-Rate +1.1414 % und Decode-Rate +0.1524 %. Keine CI,
+  keine Performance-Aussage und keine Multiplikation mit Q2.
+- **Q3c-Präregistrierung:** Vor jeder Implementierung und Hardware-Messung
+  wurden `research/raw/Q3c_preregistration.md` sowie der SHA-Begleiter
+  angelegt. SHA-256:
+  `411b3f930fa41128a75fff9bd56bd1fbd04dad56b639e64f94c21bc1f42ad701`.
+  Festgeschrieben sind zwei unabhängige `ab.run`-Phasen mit je sechs frischen
+  Prozessen, AB/BA-Alternierung, zwei Warmups und sieben Repeats:
+  Phase R BASE gegen den exakten Q2-Incumbent, Phase N BASE gegen Incumbent
+  plus `fused_argmax`. Enthalten sind die Q3b-Safety-Gates, 600 s Gesamt-,
+  270 s Phase-, 240 s Worker- und 35 s Child-Bounds, exakte Token-/Physical-
+  /Count-/Stop-/Capacity-/Determinismus-Regel, Total/Prefill/Decode-/Rate-
+  Metriken mit 95-%-CI, historische Q2-Zielwerte, Fallback BASE/Incumbent,
+  keine Auto-Promotion und UI-Historie. Keine Q3c-Implementierung wurde
+  vorgenommen.
+
+## 2026-08-31 — Q3d-Gate bestanden, Q3c vor dem Modellstart wegen macOS-Portabilität beendet
+
+- **Gate-Ergebnis:** `research/raw/Q3d_stability_20260831.json` (SHA-256
+  `4699a49b174db31580a9701ef2075f8b1964d309b0f857dd7779fb230cfccb83`,
+  `34.144` Bytes) meldet `PASS`. Der modellfreie Lauf enthielt genau `61`
+  Swap-Samples, dauerte `60.020192667 s`, hatte maximal `1.013944625 s`
+  Abstand und blieb bei `2.651.722.874 B` Swap; der Highwater-Anstieg war
+  exakt `0 B`. AC, Low-Power-off, nominale Thermik, `62%` freier Speicher,
+  Load-Maximum `3.92578125`/Spread `0`, Git-Bindung und exakte lokale
+  Gemma-Identität waren grün.
+- **Q3c-Einladung:** Der einzige erlaubte Q3c-Aufruf wurde nicht gestartet
+  (`invoked=false`). Die Vorab-Prozessaufnahme scheiterte auf macOS
+  `26.6.2-arm64` an `/bin/ps -Ao pid=,ppid=,pgid=,sid=,uid=,stat=,start=,args=`
+  mit `rc=1` und `ps: sid: keyword not found`. Es gab deshalb keinen
+  `Popen`, keinen MLX-/Modellimport, keinen Inferenzprozess, keine Timings,
+  keine Identitäts- oder Performancewerte und keinen Q3c-Raw-Datensatz.
+- **Abschluss:** `research/raw/Q3d_summary_20260831.json` (SHA-256
+  `3b43e267000ba15b9d9079d9f118e59c1cd51dbcdfecc067c20995b01a0a1c3e`,
+  `970` Bytes) meldet `Q3C_FAILED`, `promotion_allowed=false` und den
+  Fallback `BASE/current incumbent`. Das Gate-PASS ist nur Safety-Kontext;
+  er ist kein Performance- oder aktueller Modellnachweis. Q3d wird nicht
+  wiederholt oder mit Q3c gepoolt.
+- **Ursache und nächster Pfad:** Der Befund ist ein enger Portabilitätsfehler
+  im OS-Probe, kein Nachweis unsicherer Hardware oder eines Modellfehlers.
+  Vor jeder weiteren Modellmessung wird Q3e separat eingefroren: nur das
+  unsupported `sid` entfernen, öffentliche `os.getsid(pid)`-Werte mit
+  typed Race-/Error-Fail-Closed-Verhalten ergänzen, model-freie Tests samt
+  macOS-`start_new_session`-Reap-Beweis ausführen und danach höchstens einen
+  unveränderten Q3c-Aufruf erlauben. Kein Download, keine Installation, kein
+  Neustart, kein 27B-Modell, keine UI und keine Aktivierung.
+
+## 2026-08-31 — Q3e terminal: Phase R wegen zu breiter Same-UID-Regel verworfen
+
+- **Raw-Befund:** `research/raw/Q3e_q3c_final_20260831.json` ist `2.205.857`
+  Bytes groß, SHA-256
+  `1df6c81dc824911016e687883c535f1ec314f3e03b51303b04c38ae71bb6f4ea`, Status
+  `FAILED`, Fallback `BASE/current incumbent`,
+  `promotion_allowed=false`. Die vollständige redigierte Ergebnisnotiz liegt
+  in `research/raw/Q3e_terminal_result_20260831.md`, SHA-256
+  `fd89e23945315597476854843df1140a5c3e35ebf1aaf9a737c80d5ebf4fdfaa`.
+- **Was bestanden hat:** Alle 14 Preflight-Prüfungen, exakte lokale Gemma-
+  Identität/Revision/Manifest, sechs frische Prozesse, AB/BA-Ordnung, zwei
+  Warmups, sieben Repeats, identische logische und physische Tokens, Counts,
+  Stops, Kapazität, Prompt-/Decode-Zählung und Determinismus. Swap blieb bei
+  `2.643.334.266 B`, Delta `0 B`; Ressourcen und Cleanup-Reap des Workers
+  selbst waren in beiden unabhängigen Snapshots nachvollziehbar.
+- **Deskriptive Messung:** Incumbent/BASE total `0.857466859207542`, 95-%-CI
+  `[0.8551668079699586, 0.8611021999710893]`, also `14.2533140792%` schneller.
+  Prefill `16.0213211%`, Decode `10.0321650%`, physische Output-Rate
+  `16.6225872%` und Decode-Schritt-Rate `11.1510142%` besser. Die Werte
+  erfüllen die eingefrorenen Phase-R-Zielwerte, sind wegen des Cleanup-Fehlers
+  aber kein gültiger Performance-Nachweis. Phase N startete nicht.
+- **Ursache:** Vier stabile neue Prozesse mit derselben UID erschienen nach
+  dem Worker-Baseline-Snapshot: PID `28095` extensionkitservice, `28209`
+  STARFACE HeadsetXPCService, `28636` mdworker_shared und `28964`
+  AXVisualSupportAgent. Sie lagen außerhalb von Worker-Gruppe/-Session und
+  -Ancestry und enthielten keine bekannten Inferenz-Tokens. Q3e wertete jedoch
+  jeden neuen Same-UID-Prozess pauschal als ungelöst; deshalb wurde die Phase
+  fail-closed verworfen. Keine dieser Prozesse wurde beendet.
+- **Entscheidung:** Q3e ist terminal, wird nicht wiederholt und nicht mit
+  früheren Q3c/Q3d/Q2-Werten gepoolt. Fallback bleibt BASE/aktueller Q2-
+  Incumbent. Keine Aktivierung oder Promotion.
+
+## 2026-08-31 — Q3f vorregistriert: letzte enge Attributionserweiterung
+
+- **Freeze:** `research/raw/Q3f_preregistration.md` wurde vor jeder
+  Implementation oder Hardwareausführung eingefroren; SHA-256
+  `345c63cba5f019ab0314761404f7de398ceee876ffcee82d80c3578f9db8e31b`, notiert
+  in `research/raw/Q3f_preregistration.sha256`.
+- **Scope:** Erlaubt ist ausschließlich die Attribution eines neuen Same-UID-
+  Prozesses als `unrelated_new_process`, wenn zwei gültige Snapshots stabile
+  PID/Start/UID, vollständige Ancestry, getrennte PGID/SID, keinen Modell- oder
+  Inferenzhinweis, bekannten Nicht-Zombie-Zustand, keine konkurrierenden
+  Modellprozesse und vollständige Kommando-/Enrichment-Evidence beweisen.
+  Unbekannte, missgebildete, racy oder mehrdeutige Evidence bleibt ein harter
+  Fehler; es gibt keine Pfad-Allowlist und keine Tötung solcher Prozesse.
+- **Zusätzlicher No-Detach-Beweis:** `ab._child` muss vor dem Modellimport den
+  bounded Python-Audit-Guard `ironmule.q3f_child_guard.v1` installieren. Er
+  blockiert und protokolliert `subprocess.Popen`, `os.system`, Fork-/Spawn-
+  sowie verfügbare `setsid`/`setpgid`-Ereignisse. Erfolgreiche Child-Raws
+  enthalten exakt die Guard-Version und null Ereignisse; der direkte
+  Child-Start-Callback ist das vollständige Child-Ledger. Fehlende,
+  überlaufende oder unbekannte Guard-/Ledger-Evidence fail-closed. Die
+  lexikalische Blocker-Menge ist exakt `KNOWN_INFERENCE_ACTIVITY` plus
+  `q3c`, `q3d`, `ironmule`, `mlx`, `gemma`, `huggingface` und wird per Static
+  Scan und adversarialen Spawn-/Detach-Tests auf Gleichheit geprüft.
+- **Ablauf:** Erst modellfreie adversariale Tests einschließlich realem
+  `start_new_session=True`-Worker und nach Baseline erzeugtem unabhängigen
+  Prozess, dann der serielle vollständige Non-Integration-Test. Nur wenn alles
+  grün ist, genau ein unveränderter Offline-Q3c-Aufruf. Kein Q3d-Gate, keine
+  Wiederholung, kein Pooling, kein Download, keine Installation, kein Neustart,
+  kein 27B-Modell, keine UI und keine automatische Promotion.
+
+## 2026-09-01 — Q3f terminal fehlgeschlagen: kein Performance-Nachweis
+
+- **Rohdaten:** `research/raw/Q3f_q3c_final_20260901.json`, `2,487,533` Bytes,
+  SHA-256 `e82accdbd52857e6201fa2b34984765e61658ecfd3956d5c903a49c1e6de70a9`;
+  Terminalnotiz `research/raw/Q3f_terminal_result_20260901.md`.
+- **Voraussetzungen:** Alle 14 Preflight-Prüfungen waren grün. AC, Thermal
+  nominal und Low-Power-off waren erfüllt; freier Speicher `67%`; Swap
+  `2,609,643,520 B` über 25 Proben konstant, Delta `0`, ohne Samplerfehler.
+- **Fehler:** Der Phase-Worker beendete sich mit Status `2` und
+  `ABRunError: child 0 start callback failed`. Es gab keinen Child-Start-Marker,
+  kein Child-Ledger und keine Timing-, Token-, Phase-N- oder akzeptierte
+  Performance-Evidence. Die genaue unterliegende Ursache ist in der begrenzten
+  Evidence nicht erhalten; ein Sichtbarkeits-Race ist nur eine unbewiesene
+  Hypothese.
+- **Sicherheit:** `ironmule.cleanup.v2` reapte den Worker; zwei unabhängige
+  Snapshots waren gültig, Gruppe/Descendants waren verschwunden und es war kein
+  Kill nötig. Weil Guard-/Ledger-Evidence fehlte, wurde der Lauf dennoch
+  fail-closed abgelehnt. Spotify Helper PID `52017` war außerhalb der Worker-
+  Gruppe und wurde nicht beendet; ohne Guard-/Ledger-Beweis wurde er nicht als
+  unabhängig akzeptiert. Kein Q3f-Orphan blieb zurück.
+- **Entscheidung:** `FAILED`, `promotion_allowed=false`, Fallback
+  `BASE/current incumbent`. Q3f wird nicht wiederholt oder mit früheren Läufen
+  gepoolt; die historischen Q2-Geschwindigkeitswerte sind nicht reproduziert.
+  Eine mögliche Verbesserung der Child-Sichtbarkeit ist ein neues Vorhaben und
+  benötigt ausdrückliche Freigabe sowie eine neue Vorregistrierung.
+
+## 2026-09-01 — Q4 RL-first architecture and preregistration frozen
+
+- **Contract:** `research/raw/Q4_preregistration.md` was created before any Q4
+  implementation or hardware collection. Its SHA-256 is
+  `1ef42943032f20e85d21d81d0252853d7775b0858a4cb60a1743767bf9e0cf31`, recorded in
+  `research/raw/Q4_preregistration.sha256`. The companion implementation order is
+  `docs/Q4_IMPLEMENTATION_PLAN.md`.
+- **Decision:** Q4 is RL-first but hierarchical and conservative: a ten-knob
+  `KnobAction` stage precedes a separate execution/scheduling `StrategyAction` stage.
+  The `HybridOptimizer` is shadow-only; it cannot import the runtime, execute a
+  candidate, select a caller-owned plan/mode, write a profile or activate routing.
+- **Data boundary:** Q2 remains validation-only, B36 remains sealed-holdout-only,
+  B35/E14b/E16/X1 remain prior/limited evidence, B27 summary/partial records remain
+  non-qualifying, and Q3 safety failures remain retained/censored and unpooled. No
+  historical result is relabelled as TRAIN. The Q4 minimum is 12 grouped contexts,
+  36 complete horizon-12 trajectories and complete raw panels for both action spaces,
+  spanning Gemma 1B/4B/12B with `no27`.
+- **Gates:** Every comparison uses equal budgets and fixed seeds, grouped
+  TRAIN/VALIDATION/SEALED_HOLDOUT splits by study/model/manifest/workload/hardware/
+  runtime/time, evaluator-owned exact correctness/resource/rollback evidence and
+  direct plus OPE/calibration diagnostics. RL is `NOT_APPLICABLE` until a measured
+  sequential horizon exists and is rejected if the simpler method is equal/better or
+  if sealed-holdout, time-to-best, experiments-to-best, regression or safety criteria
+  fail. Each future hardware phase requires explicit user start, AC power, Low Power
+  off, nominal thermal state, no Claude/competing model process and a 30-minute cap.
+- **Scope:** Documentation only in this entry: no model download/installation,
+  hardware/MLX run, runtime change, UI, promotion or commit. Existing local SQuAD
+  artifact remains untouched.
+
+## 2026-09-01 — Q4 contract correction: H13, new-only splits and OPE gates
+
+- **Correction:** The prior Q4 entry recorded the initial draft only. The superseding
+  preregistration is `research/raw/Q4_preregistration.md` with SHA-256
+  `83849b458b567ebd9384b76280c7d3ea7db2221a819d13feda68511c63d1bf28`. It fixes H13 as `11 KNOB_DELTA +
+  1 STRATEGY_SELECT + 1 REVALIDATE`, explicit partial-abort terminal state, and
+  completion only at step 12.
+- **Data:** Q4 now requires 24 entirely new contexts (Q4_TRAIN 12,
+  Q4_VALIDATION 6, Q4_SEALED_HOLDOUT 6), 72 complete trajectories and 936
+  transitions. Historical Q2/B35/B36 remain `Q3_VALIDATION`/`Q3_SEALED_HOLDOUT`,
+  E11 remains `LEDGER_ONLY`; none is a Q4 split row. Gemma 1B/4B/12B are the local
+  panel; 27B is excluded.
+- **RL contract:** Every transition records exact behaviour propensity and policy
+  digest. Q4 TRAIN uses seeded uniform safe exploration; deterministic coordinate
+  propensity is 1 only for its selected action, so counterfactual OPE is unsupported.
+  WIS ratio clip 10 and grouped five-fold DR by complete context/group hash (all
+  trajectories in a context co-fold) are mandatory, with overlap/support failure
+  producing `OPE_UNSUPPORTED`; Q4_SEALED_HOLDOUT is direct-panel-only. The safe method
+  budget is 11 knob-delta + 5 plan-matching strategy decisions = 16, with shared BASE
+  outside the budget; S11/S12 are separate risk probes. Future context×stage and each
+  of three separately preregistered context×trajectory phases are user-started and
+  capped at 30 minutes; no aggregate time claim is made. Foreign evidence is
+  Ed25519-only through an explicit user-approved local trust store and is currently
+  missing.
+- **Decision thresholds:** A local `RL_WINS` requires direct grouped 95-% CI lower
+  bound `>+2pp`, equivalence margin `1pp`, lower original-cost time-to-best and
+  experiments-to-best (`c <= 1.01*c_oracle`), separate unsafe/censored and safe
+  `c > 1.02*c_BASE` denominators, and no DR contradiction (opposite sign or absolute
+  gap `>2pp`). Otherwise RL is killed or remains ineligible.
+- **Scope:** This correction is documentation only: no code, download, installation,
+  hardware/MLX run, UI, promotion or commit; local SQuAD remains untouched.
+
+## 2026-09-01 — Q4 final H17 math and collection-bound correction
+
+- **Final protocol:** The superseding `research/raw/Q4_preregistration.md` freezes
+  SHA-256 `4c818404a50ca5102f1be8d48399af42f494eb7afb4d23d27e2a59481f4d203c`. Complete trajectories are
+  H17: steps 0--10 are 11 `KNOB_DELTA` evaluations, steps 11--15 are five
+  plan-matching `STRATEGY_SELECT` evaluations for the final knob, and step 16 is the
+  terminal `REVALIDATE`; partial aborts are terminal at their current step and only
+  step 16 is complete.
+- **Budget/panels:** Equal method budget is 16 candidates (11 knob + 5 strategy) with
+  shared BASE outside the budget. Stage 2 requires all 12 knob actions × five
+  plan-matching strategies (60 cells/context), collected as 12 separate knob-anchor
+  phases, each with five fresh strategy processes (one per strategy, two warmups and
+  five repeats). The shared BASE reference remains external. S11/S12 remain separate
+  risk probes.
+- **Collection:** Each trajectory is three separately preregistered/user-started
+  subphases: knob (11 children, 1320 seconds), strategy (5 children, 600 seconds),
+  revalidate (1 child, 120 seconds), each below its 1800-second cap. Context,
+  trajectory, study and predeclared batch-time digests remain stable; there is no
+  aggregate 30-minute claim.
+- **RL math:** Knob FQI alone uses incremental wall reward and
+  `y=r+0.9*(not_knob_terminal)*max_supported Q_prev`, ridge `alpha=1`, 20 iterations
+  and tolerance `1e-9`. Strategy uses a separate contextual immediate ridge head with
+  objective-specific reward and no Bellman/cross-unit backup. The hybrid reports both
+  heads/vector and never scalar-adds them. Selection is
+  `Q_LCB - 0.1*(-log(max(propensity,1e-6)))`; OPE uses WIS clip 10 and grouped
+  context/group-hash five-fold DR only on controlled TRAIN/VALIDATION. Sealed holdout
+  is direct-panel-only.
+- **Scope:** No code, model/download/install, hardware/MLX run, UI, promotion or commit
+  occurred; foreign evidence remains `MISSING` and the local SQuAD artifact is
+  untouched.
+
+## 2026-09-01 — Q4 offline implementation verified
+
+- **Implementation report:** `research/raw/Q4_implementation_report_20260901.md`
+  records the offline implementation result; its SHA-256 is
+  `553b83dd5be114a546bee6e24654246b265947b1ad461148459148625dd13f65` and the
+  companion SHA is recorded beside it. The amended Q4 preregistration SHA-256 is
+  `975aa61a52498172a87f992e7847b999924693e6d1d0185f56627a58f63b1545`. The verification
+  covered 55/55 tests, 285 imported inputs, skipped two derived implementation-report
+  files, retained 195 unique contents, one eligible historical artifact, zero Q4
+  transitions, zero TRAIN rows and foreign evidence `MISSING`.
+- **Evidence boundary:** The final historical-import dataset ID is
+  `42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b` with semantic
+  payload SHA `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`.
+  Temporary import file SHA is
+  `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35` and is not
+  repository raw evidence. Earlier `dfb48c…`/`85c90b…` values are superseded
+  pre-amendment verification only.
+- **Status:** Q4 contracts, corpus adapter, replay methods, strict stage-vector OPE,
+  dataset gate, shadow envelope and foreign replay registry are implemented. RL is
+  still `DATA_INSUFFICIENT`/`NOT_APPLICABLE` until 24 new contexts, 72 H17 trajectories,
+  1224 transitions and complete panels exist. No Q4 speed gain or speed claim exists;
+  historical Q2/E14b/X1/B36 values remain context only.
+- **Scope:** No hardware/model/27B run, download, installation, UI, activation or
+  commit occurred in this verification entry. Existing raw JSON and local SQuAD data
+  remain untouched.
+
+## 2026-09-01 — Q4 post-amendment import finalized
+
+- **Stable import:** The post-amendment verification was repeated byte-identically.
+  It records 285 inputs, 195 unique contents after skipping exactly two derived
+  implementation-report files, one eligible historical artifact, zero Q4 transitions,
+  zero TRAIN rows and foreign evidence `MISSING`.
+- **Identity:** Final historical-import dataset ID is
+  `42de861095f7050a7c572ee2ab97ed253e649e790c115d65b2cc1e4e2f6c766b`; semantic
+  payload SHA-256 is
+  `05a592140db776c48423a3caec8d646e28216c232a0c3d60483af1d3901b35ed`. Temporary
+  import file SHA-256 is
+  `a188d4e2fd299ea615706e2ed0292bdf78dfaa1def388f0e869b82cc38558f35` and is not
+  repository raw evidence. The earlier `dfb48c…`/`85c90b…` identity remains
+  superseded pre-amendment verification only.
+- **Verification:** Offline implementation coverage is now `55/55` tests. Q4 remains
+  `DATA_INSUFFICIENT`/`NOT_APPLICABLE` with no new speed result; the 24-context,
+  72-H17-trajectory, 1224-transition and complete-panel gate is still open.
+- **Scope:** No hardware/model/27B run, download, installation, UI, activation or
+  commit occurred; existing raw JSON and local SQuAD data remain untouched.
+
+## 2026-09-01 — Q4 test isolation and combined integration order
+
+- **Initial full-suite issue:** The first full pytest collection failed because the Q4
+  tests polluted `sys.modules["ironmule"]` while loading offline modules. The test-only
+  private loader `tests/q4_offline_loader.py` now assigns isolated namespaces; this
+  fixes collection without changing product/runtime code.
+- **Verification:** Q4 pytest is green at `55/55`; full collection and the full
+  non-integration suite are green. No Qwen or 27B integration was run.
+- **Remaining integration finding:** In the combined integration order, these two
+  existing macOS process-cleanup tests fail, while each passes when run alone:
+  `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
+  and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+  This is recorded as an order/timing integration-quality finding, not as a Q4 or product
+  performance result. Process inventory, group-gone ordering, timing and cleanup
+  evidence remain required.
+- **Decision:** The finding is tracked as `R14` in `docs/BACKLOG.md`; it closes only
+  after two consecutive combined integration passes or deterministic proof and a fix.
+  Isolated passes do not close the issue. Qwen/27B benchmark or performance runs,
+  download, installation, UI, activation or commit did not occur in this documentation
+  entry; the cached Gemma 4B correctness integration is disclosed in the correction
+  below.
+
+## 2026-09-01 — Correction: Gemma 4B integration disclosure and merge disposition
+
+- **Command/outcome:** `pytest tests/test_ironmule_runtime_integration.py -q` ran the
+  cached Gemma 4B runtime correctness tests and passed. This was a hardware/model
+  integration check of grouped-vs-sequential correctness, token/count/stop/state
+  identity and related runtime behavior; it was not a benchmark or performance run,
+  and yields no speed claim.
+- **Combined integration:** The full integration invocation, explicitly without Qwen
+  and 27B, still showed the two R14 macOS process-cleanup flakes in combined order:
+  `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
+  and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+  The exact pair passed together in one isolated invocation:
+  `pytest -q tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
+- **Disposition:** R14 is an open integration/release/collection-quality issue, not a
+  merge blocker. The user explicitly directs merge to main with R14 open. Its process
+  inventory, group-gone ordering and timing interaction remain subject to the existing
+  two-consecutive-green or deterministic-proof-and-fix criterion. Qwen/27B were not
+  run, and no benchmark/performance result was produced.

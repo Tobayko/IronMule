@@ -1,0 +1,121 @@
+{
+  "study_id": "head-skip-prefill-v1-20260824",
+  "candidate_id": "prefill-head-skip-20260824-02",
+  "status": "head_skip_gain_confirmed",
+  "formal_claim": true,
+  "claim_scope": "one-device-one-model-one-prompt-one-prefill-plan",
+  "action": "permit_bounded_architecture_review",
+  "sealed_identity": {
+    "git_revision": "9466bb9f9f01813bcbd86b6d16837e90ad2523da",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "preregistration_document_sha256": "8f7a9a854639824d337aa9ff3ef97ae2255c804291577c5021af2e93abbbeec6",
+    "study_script_sha256": "b39bd6be0768173d293647d45cc7f0d3b1c469fd234375c8f0d46ce3c227dc14",
+    "preregistration_sha256": "175a7238520d2a01a5c1c24898ff34773eb1b7a1cbbd6324b988d11fe8bc9cc6",
+    "provenance_sha256": "66a62e506c16294ab0034efed17b51b37f602eaedaf8ddde8f6b7b473f2a2453",
+    "confirmation_seal_sha256": "2571670a87fc5bd536d4ccee40d4c889afa30c37e65110e18f70607fd6caf11e",
+    "decision_sha256": "99820747b874dfdfa72a2d65abbb1d9644a20cca3bd816d9058f4374aeb7428a"
+  },
+  "workload": {
+    "prompt_tokens": 897,
+    "prefill_chunk": 256,
+    "batch": 1,
+    "sampling": "greedy",
+    "correctness_tokens": 32,
+    "prompt_logprobs": false,
+    "calibration_sessions": 6,
+    "confirmation_sessions": 6,
+    "measurement_pairs_per_session": 4
+  },
+  "calibration_from_measured_blocks": {
+    "session_ratios": [
+      0.9984979527138921,
+      1.0046921560751745,
+      0.9940065585864084,
+      1.0057693879511374,
+      1.004462628760744,
+      1.0011982143002525
+    ],
+    "aggregate_ratio": 1.0028290932390196,
+    "ci95": [
+      0.9949313642401706,
+      1.005963691687921
+    ],
+    "session_ratio_sd": 0.004526069575093009,
+    "raw_mde": 0.007391040666208896,
+    "sealed_mde": 0.05,
+    "all_gates_passed": true
+  },
+  "confirmation_from_measured_blocks": {
+    "session_ratios": {
+      "C0": 0.8452568535344324,
+      "V0": 0.8461734544802355,
+      "C1": 0.8434013089547433,
+      "V1": 0.8476534505382339,
+      "C2": 0.8465957105988664,
+      "V2": 0.852478428622713
+    },
+    "median_prefill_a_ms_across_sessions": 1995.444239,
+    "median_prefill_b_ms_across_sessions": 1688.116333,
+    "token_identity": "12/12 session gates",
+    "token_sha256": "666dcfb103d263a12b29ed9a1c1ec496c6922f96c3a6e7cec083eab47fb5127c",
+    "mlx_peak_memory_bytes": 3213903666,
+    "rss_peak_bytes_range": [
+      3768795136,
+      3769696256
+    ]
+  },
+  "calculated_decision": {
+    "mde": 0.05,
+    "ratio": 0.8463845562069244,
+    "effect_percent": -15.361544379307556,
+    "intervals": {
+      "characterization": {
+        "ratio": 0.8452568535344324,
+        "ci95": [
+          0.840544153967485,
+          0.848452007351796
+        ]
+      },
+      "validation": {
+        "ratio": 0.8476534505382339,
+        "ci95": [
+          0.8426833774588842,
+          0.85494065830565
+        ]
+      },
+      "all": {
+        "ratio": 0.8463845562069244,
+        "ci95": [
+          0.8431470041496976,
+          0.8512844842159696
+        ]
+      }
+    },
+    "gain_gate": "all three upper bounds < 0.95",
+    "gain_gate_passed": true
+  },
+  "calculated_resource_totals": {
+    "gpu_work_seconds": 332.27794,
+    "required_break_seconds": 3077.978881,
+    "session_wall_seconds": 3430.234516
+  },
+  "evidence": {
+    "database": ".friday-data/head-skip-v1.sqlite3",
+    "database_mode": "0600",
+    "database_bytes": 77824,
+    "database_sha256": "15ee462bbad5a8f757373f093fdf2ccfb8bdd0048c03447c1cb635acd38ec8d9",
+    "records": 16,
+    "formal_claim_records": 1,
+    "chain_head": "8a568e61f0e087794b1997f273e580c72e7f5abaa1eb8bad7954b303dd38a2d4",
+    "raw_measurements": "append-only session records 2-7 and 10-15",
+    "read_only_replay": "passed"
+  },
+  "limitations": [
+    "single_device",
+    "single_model_snapshot",
+    "single_prompt_length",
+    "greedy_without_prompt_logprobs_only",
+    "no_automatic_product_activation"
+  ]
+}

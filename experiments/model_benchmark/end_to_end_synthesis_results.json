@@ -1,0 +1,269 @@
+{
+  "note": "derived from the result files listed under 'sources'; no GPU work here",
+  "sources": {
+    "family_benchmark": "gemma_family_benchmark.json",
+    "long_tasks": "long_tasks_benchmark_results.json",
+    "prompt_lookup": "prompt_lookup_results.json"
+  },
+  "family_benchmark": {
+    "1B": [
+      {
+        "prompt": "short_q",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 14.187687192170017,
+        "tps_gain_pct": 19.142975959812937,
+        "token_identical": true
+      },
+      {
+        "prompt": "short_q",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 20.172565056448388,
+        "tps_gain_pct": 32.581230782205935,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 17.07235185500584,
+        "tps_gain_pct": 21.83623093452407,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 20.471326046557525,
+        "tps_gain_pct": 31.841812539811954,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 16.12865085624945,
+        "tps_gain_pct": 21.17442347903491,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 24.856641099317546,
+        "tps_gain_pct": 34.18041871237445,
+        "token_identical": true
+      }
+    ],
+    "4B": [
+      {
+        "prompt": "short_q",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 6.886666784727902,
+        "tps_gain_pct": 7.898801861006688,
+        "token_identical": true
+      },
+      {
+        "prompt": "short_q",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 13.745958345415833,
+        "tps_gain_pct": 16.47788680821085,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": -17.537646963255682,
+        "tps_gain_pct": 13.833174326711095,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 40.38399309842333,
+        "tps_gain_pct": 15.655880799680077,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 20.401685828186768,
+        "tps_gain_pct": 9.407154801007177,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 21.385399556976026,
+        "tps_gain_pct": 16.105214836706907,
+        "token_identical": true
+      }
+    ],
+    "12B": [
+      {
+        "prompt": "short_q",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 4.481473780716394,
+        "tps_gain_pct": 5.380204434026403,
+        "token_identical": true
+      },
+      {
+        "prompt": "short_q",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 12.068219029354509,
+        "tps_gain_pct": 15.384119391693552,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 9.237974742241073,
+        "tps_gain_pct": 9.264221783952076,
+        "token_identical": true
+      },
+      {
+        "prompt": "code_task",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 8.77134969726,
+        "tps_gain_pct": 8.034019160702389,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "dispatched",
+        "end_to_end_speedup_pct": 7.087346090473579,
+        "tps_gain_pct": 7.6360927606377915,
+        "token_identical": true
+      },
+      {
+        "prompt": "reasoning",
+        "config": "combined_r8",
+        "end_to_end_speedup_pct": 11.890947041852051,
+        "tps_gain_pct": 15.13456320282045,
+        "token_identical": true
+      }
+    ]
+  },
+  "long_tasks": {
+    "Gemma_4B": {
+      "128_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "wall_s": 2.394738875,
+          "decode_tps": 74.99064277683264,
+          "token_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "wall_s": 2.153741917,
+          "decode_tps": 80.94254728267663,
+          "token_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "wall_s": 2.055170042,
+          "decode_tps": 86.27208468056988,
+          "token_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "wall_s": 2.055018001,
+          "decode_tps": 86.26629779578116,
+          "token_identical": true
+        }
+      },
+      "256_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "wall_s": 4.097655833,
+          "decode_tps": 74.92007240217036,
+          "token_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "wall_s": 3.723334667,
+          "decode_tps": 81.22968253316627,
+          "token_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "wall_s": 3.580293542,
+          "decode_tps": 85.15294058522828,
+          "token_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "wall_s": 3.5645355,
+          "decode_tps": 85.52982995553891,
+          "token_identical": true
+        }
+      }
+    },
+    "Gemma_12B": {
+      "128_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "wall_s": 6.302944291,
+          "decode_tps": 30.06644952154408,
+          "token_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "wall_s": 5.831769749,
+          "decode_tps": 32.397685076116524,
+          "token_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "wall_s": 5.744359666,
+          "decode_tps": 33.197714648098,
+          "token_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "wall_s": 5.677121167,
+          "decode_tps": 33.63418642565588,
+          "token_identical": true
+        }
+      },
+      "256_tokens": {
+        "Baseline (Unoptimized, r=1)": {
+          "wall_s": 10.907322334,
+          "decode_tps": 28.909907304775402,
+          "token_identical": true
+        },
+        "Core (Compiled + HeadSkip, r=1)": {
+          "wall_s": 10.153724042,
+          "decode_tps": 30.942657282424,
+          "token_identical": true
+        },
+        "Core + Readback Bundled (r=8)": {
+          "wall_s": 9.771848542,
+          "decode_tps": 32.46173745222406,
+          "token_identical": true
+        },
+        "Core + Deep Bundling (r=16)": {
+          "wall_s": 9.66886075,
+          "decode_tps": 33.003858830588506,
+          "token_identical": true
+        }
+      }
+    }
+  },
+  "prompt_lookup": {
+    "model": "mlx-community/gemma-3-4b-it-4bit",
+    "note": "repaired harness: candidate keeps readback_every=8 (no knob confound), identity checked over full equal-length sequences",
+    "runs": [
+      {
+        "k": 3,
+        "task": "Code Refactor",
+        "wall_ratio_median": 1.7544,
+        "acceptance": 0.394,
+        "token_identical": true,
+        "base_tokens": 48,
+        "spec_tokens": 48
+      },
+      {
+        "k": 3,
+        "task": "Document Q&A",
+        "wall_ratio_median": 0.909,
+        "acceptance": 0.933,
+        "token_identical": false,
+        "base_tokens": 41,
+        "spec_tokens": 40
+      },
+      {
+        "k": 3,
+        "task": "JSON Extraction",
+        "wall_ratio_median": 1.2941,
+        "acceptance": 0.49,
+        "token_identical": true,
+        "base_tokens": 48,
+        "spec_tokens": 48
+      }
+    ]
+  }
+}

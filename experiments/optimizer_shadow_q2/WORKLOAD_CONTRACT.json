@@ -1,0 +1,15 @@
+{
+  "schema": "friday.workload_contract.v1",
+  "schema_version": 1,
+  "prompt_family": "ironmule.tune.DEFAULT_PROMPT",
+  "tokenizer": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129",
+  "generator": "ironmule.runtime.Engine.generate",
+  "context_bucket": "prompt_tokens_322",
+  "batch": 1,
+  "concurrency": 1,
+  "max_tokens": 32,
+  "greedy": true,
+  "prompt_logprobs": false,
+  "power_mode": "ac",
+  "mode": "interactive"
+}

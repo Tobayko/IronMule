@@ -1,0 +1,37 @@
+{
+  "rows": [
+    {
+      "prefix_tokens": 666,
+      "prompt_tokens": 677,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prefix_tokens": 1326,
+      "prompt_tokens": 1337,
+      "identical": false,
+      "first_diff": 10
+    },
+    {
+      "prefix_tokens": 2646,
+      "prompt_tokens": 2657,
+      "identical": true,
+      "first_diff": null
+    },
+    {
+      "prefix_tokens": 4406,
+      "prompt_tokens": 4417,
+      "identical": false,
+      "first_diff": 20
+    }
+  ],
+  "window_note": "Gemma 3 4B: 29/34 Layer rotierend, Fenster 1024",
+  "budget": {
+    "gpu_work_seconds": 38.883041,
+    "max_continuous_gpu_seconds": 1.000361,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 340.746854,
+    "wall_seconds": 381.142316,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

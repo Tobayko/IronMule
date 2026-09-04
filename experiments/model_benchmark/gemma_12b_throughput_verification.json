@@ -1,0 +1,19 @@
+{
+  "model_id": "mlx-community/gemma-3-12b-it-4bit",
+  "base_wall_s": 6.918939707975369,
+  "base_rate_tok_s": 27.749916620704784,
+  "results": {
+    "Arm A (Baseline Interactive)": {
+      "wall_s": 6.918939707975369,
+      "rate_tok_s": 27.749916620704784
+    },
+    "Arm C (Optimized Interactive)": {
+      "wall_s": 6.572989082982531,
+      "rate_tok_s": 29.210454722507908
+    },
+    "Arm D (Optimized Throughput W=4)": {
+      "wall_s": 5.791619208990596,
+      "rate_tok_s": 33.15135078320577
+    }
+  }
+}

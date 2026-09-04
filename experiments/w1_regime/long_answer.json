@@ -1,0 +1,83 @@
+{
+  "study_id": "w1-regime-20260902-01",
+  "formal_claim": false,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "provenance": {
+    "git_revision": "1a5b525466537af15b3717a570d8f900e65d11e9",
+    "git_dirty": true,
+    "code_files_sha256": {
+      "experiments/w1_regime/PREREGISTRATION.md": "f2ff29dfceb0c11f71524eed5a6a29e2fc14195ae139498ec7a2063e76662b2a",
+      "experiments/w1_regime/measure_long_answer.py": "9cf1a283277416adcfdb3b59acdd3326739746bf2a227f8e33c4da5ef03fba56",
+      "experiments/w1_regime/regime_analysis.py": "a396757294da8ad31f8446d93ed1ff48fd1aa678a7e12a00e4636ee2f40ac993"
+    },
+    "code_sha256": "d34d1674333f2a9fd67fca260336ef846b3b317a3462be2a202aeb29865ae27f",
+    "power_source": "ac_power",
+    "model_snapshot": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "offline_environment": {
+      "HF_HUB_OFFLINE": "1",
+      "HF_DATASETS_OFFLINE": "1",
+      "TRANSFORMERS_OFFLINE": "1",
+      "HF_HUB_DISABLE_TELEMETRY": "1",
+      "NO_PROXY": "*",
+      "HTTP_PROXY": "",
+      "HTTPS_PROXY": "",
+      "ALL_PROXY": "",
+      "http_proxy": "",
+      "https_proxy": "",
+      "all_proxy": ""
+    }
+  },
+  "snapshot_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "prompt_tokens": 901,
+  "reference_tps": 70.99,
+  "control": {
+    "tokens_generated": 32,
+    "ttft_seconds": 1.7194466670043766,
+    "decode_seconds": 0.4856511660036631,
+    "decode_tps": 63.83182450707053,
+    "first_quarter_tps": 57.01722561012318,
+    "last_quarter_tps": 70.13102928983683,
+    "step_median_ms": 14.228415995603427,
+    "steps_sum_seconds": 0.46638845501001924,
+    "steps_counted": 31
+  },
+  "long": {
+    "tokens_generated": 256,
+    "ttft_seconds": 1.7171749590197578,
+    "decode_seconds": 3.5239822500152513,
+    "decode_tps": 72.36131793765317,
+    "first_quarter_tps": 68.33521476807901,
+    "last_quarter_tps": 77.22725555862309,
+    "step_median_ms": 13.384334015427157,
+    "steps_sum_seconds": 3.488731704070233,
+    "steps_counted": 255
+  },
+  "prefix_identical": true,
+  "verdict": {
+    "schema": "friday.regime.w1.v1",
+    "verdict": "rate_improves",
+    "control_tps": 63.83182450707053,
+    "long_tps": 72.36131793765317,
+    "relative_change": 0.133624465483324,
+    "expected_change": -0.03581411024444046,
+    "predicted_long_tps": 63.83182450707053,
+    "tolerance": 0.1,
+    "tokens": 256,
+    "leader": "head_skip_prefill",
+    "head_skip_gain": 0.05019695500400445,
+    "fixed_compiled_gain": 0.04740056763397427,
+    "combined_gain": 0.09759752263797872,
+    "model_holds": true,
+    "formal_claim": false
+  },
+  "peak_gb": 3.214,
+  "budget": {
+    "gpu_work_seconds": 9.300672,
+    "max_continuous_gpu_seconds": 3.523982,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 52.065532,
+    "wall_seconds": 64.779525,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

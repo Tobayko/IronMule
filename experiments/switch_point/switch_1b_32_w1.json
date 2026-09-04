@@ -1,0 +1,69 @@
+{
+  "aa_spread": 0.11766,
+  "baseline_arm": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 8
+  },
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 21.154073,
+    "max_continuous_gpu_seconds": 0.921425,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 116.127884,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 140.531705
+  },
+  "formal_claim": false,
+  "ironmule_head": "03e884cb28a05d090d20844460fc3afc8e738a91",
+  "mde": 0.11766,
+  "model": "1b",
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "model_revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+  "no_activation": true,
+  "output_tokens": 32,
+  "pairs": 24,
+  "prompt_tokens": 897,
+  "provenance": {
+    "code_files_sha256": {
+      "docs/H10_VORREGISTRIERUNG.md": "8658ecf3c2621c2c84be00eb7c347622d1b494057c98fc43dae7c0a23683d64c",
+      "experiments/switch_point/measure.py": "f183cc29efa50bfa25c67cf06832de7cb94c2556a6293707bde0b8c3566d3e6e",
+      "friday_calibrate/runner.py": "de2eb778c4a353867bbee087efa628a05938d510a860bb35b5e10b1f3f259b7f"
+    },
+    "code_sha256": "0fd9af5ccbb3342824dc824eb5e09de5d6170117e8ea323adf741080cebe8d72",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-1b-it-4bit",
+    "model_revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "power_source": "ac_power"
+  },
+  "rows": [
+    {
+      "ci": [
+        1.138077496232503,
+        1.235255542153071
+      ],
+      "gain_percent": -15.587124555042386,
+      "pairs": 24,
+      "ratio_median": 1.1558712455504239,
+      "reasons": [
+        "statistically_confirmed_request_regression"
+      ],
+      "status": "rejected",
+      "token_identical": true,
+      "verdict": "loses",
+      "width": 1
+    }
+  ],
+  "state": "measured",
+  "study_id": "switch-point-20260902-01",
+  "token_identity_held": true,
+  "verdict": "measured",
+  "wall_seconds": 137.3,
+  "winning_widths": [],
+  "workload": "sealed-897-32"
+}

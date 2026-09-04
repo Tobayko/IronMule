@@ -1,0 +1,45 @@
+Excerpt from the project journal:
+
+Launcher `tools/run_runtime_prototype.py` auf, dessen Wiederholung bestand.
+
+**Vorregistrierung.** Der neue Vertrag
+[`AVO_SHADOW_ROUTER_SPEC.md`](AVO_SHADOW_ROUTER_SPEC.md) friert vor jedem neuen
+Router-Code und Timingwert die reine Shadow-Semantik, beide exakten
+Evidenzbindungen, CPU-Gates, echte Tensor-Negativfälle, eigene private
+Hashketten-DB und read-only UI ein. Weder N8 noch N10 noch ProjectAtlas werden
+für den Router verändert.
+
+**Implementierung und frühe Fehlerclosure.** Der neue Namespace
+`friday_avo_router/` komponiert die unveränderten N8-/N10-Controller, besitzt
+absichtlich keine `execute`-Methode, erzwingt immer `serial_shadow_only` und
+speichert ausschließlich die drei vorregistrierten Record-Arten. Der erste
+Compile-Lauf fand ein nicht-ASCII-Mittelpunktzeichen in einem Python-Bytestring;
+es wurde durch die semantisch identische HTML-Entity `&middot;` ersetzt. Der erste
+History-Testlauf übergab `strict_json_loads` irrtümlich `str` statt `bytes` und
+erzeugte zwei Fehler. ProjectAtlas verlangte wegen der neuen Dateien einen
+Refresh; danach bestätigte ein exakter Slice den Bytes-Vertrag und die
+Korrektur verwendet nun UTF-8-Bytes plus feste Größenobergrenze. Die fokussierte
+Suite bestand anschließend zunächst `11/11`, nach CLI- und Härtungstests
+`16/16` Tests. `ruff` ist in der bestehenden Umgebung nicht vorhanden; da
+Compile- und Tests keine Installation erfordern, wurde nichts installiert.
+
+**Vor-Commit-Ausführungssperren.** Beide Messkommandos endeten ohne `--execute`
+mit Exit `78` und legten keine DB an. Mit `--execute` sperrte der schmutzige
+Worktree die Policy-Messung bereits an der Provenienz; die Shadow-Validierung
+ohne vorherigen Policy-Record sperrte ebenfalls vor einer DB-Anlage. Der
+read-only Policy-Status meldete erwartungsgemäß für beide Policies
+`worktree_dirty`, der Router war nicht bereit. `git diff --check` bestand und
+`.friday-data/avo-router.sqlite3` blieb abwesend.
+
+**Hochsicherheits-Diff-Review.** Wegen der Nutzeranforderung „unter hoher
+Sicherheit“ wurde zusätzlich der lokale `codex-security:security-diff-scan`
+verwendet. Sein Capability-Preflight war bereit; fehlende delegierte Worker
+sind aufgrund der bindenden Einzelagentenregel erwartet. Der advisory
+Trusted-Access-Status war `not_granted` und blockiert die lokale Analyse nicht.
+Eine zunächst angenommene globale Referenzposition für
+`threat-model-guidance.md` sowie später für `final-report.md` war falsch und
+endete jeweils read-only mit `No such file`; `rg --files` löste die
+versionierten skill-lokalen beziehungsweise Plugin-Root-Pfade auf, die danach
+vollständig gelesen wurden. ProjectAtlas meldete während dieser Analyse eine
+
+List every file path and every identifier mentioned above, one per line.

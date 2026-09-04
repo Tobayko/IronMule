@@ -1,0 +1,84 @@
+{
+  "rows": [
+    {
+      "model": "4B",
+      "prompt": "code",
+      "prompt_tokens": 859,
+      "greedy_ms": 2970.2,
+      "fast_ms": 2557.0,
+      "speedup": 1.162,
+      "acceptance": 1.0,
+      "tokens_per_step": 2.286,
+      "identical": true,
+      "unrewindable_steps": 0
+    },
+    {
+      "model": "4B",
+      "prompt": "journal",
+      "prompt_tokens": 749,
+      "greedy_ms": 2730.6,
+      "fast_ms": 2787.3,
+      "speedup": 0.98,
+      "acceptance": 0.444,
+      "tokens_per_step": 1.103,
+      "identical": true,
+      "unrewindable_steps": 0
+    },
+    {
+      "model": "4B",
+      "prompt": "tests",
+      "prompt_tokens": 159,
+      "greedy_ms": 1559.2,
+      "fast_ms": 1589.4,
+      "speedup": 0.981,
+      "acceptance": 0.333,
+      "tokens_per_step": 1.032,
+      "identical": true,
+      "unrewindable_steps": 0
+    },
+    {
+      "model": "1B",
+      "prompt": "code",
+      "prompt_tokens": 859,
+      "greedy_ms": 928.5,
+      "fast_ms": 951.9,
+      "speedup": 0.975,
+      "acceptance": null,
+      "tokens_per_step": 1.011,
+      "identical": true,
+      "unrewindable_steps": 95
+    },
+    {
+      "model": "1B",
+      "prompt": "journal",
+      "prompt_tokens": 749,
+      "greedy_ms": 882.8,
+      "fast_ms": 913.2,
+      "speedup": 0.967,
+      "acceptance": null,
+      "tokens_per_step": 1.011,
+      "identical": true,
+      "unrewindable_steps": 95
+    },
+    {
+      "model": "1B",
+      "prompt": "tests",
+      "prompt_tokens": 159,
+      "greedy_ms": 752.4,
+      "fast_ms": 597.4,
+      "speedup": 1.26,
+      "acceptance": 0.893,
+      "tokens_per_step": 1.371,
+      "identical": true,
+      "unrewindable_steps": 0
+    }
+  ],
+  "budget": {
+    "gpu_work_seconds": 19.219924,
+    "max_continuous_gpu_seconds": 2.970243,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 136.275745,
+    "wall_seconds": 158.508199,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

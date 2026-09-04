@@ -1,0 +1,34 @@
+{
+  "cpu_count": 10,
+  "cpu_percent_of_machine": {
+    "max": 96.35,
+    "mean": 23.169,
+    "median": 17.88,
+    "min": 10.59,
+    "n": 141,
+    "p05": 12.75
+  },
+  "cpu_percent_summed": {
+    "max": 963.5,
+    "mean": 231.6901,
+    "median": 178.8,
+    "min": 105.9,
+    "n": 141,
+    "p05": 127.5
+  },
+  "formal_claim": false,
+  "generated_at": "2026-09-04T12:45:14",
+  "interval_seconds": 5.0,
+  "load_1m": {
+    "max": 36.5205,
+    "mean": 9.3752,
+    "median": 6.9131,
+    "min": 4.6021,
+    "n": 141,
+    "p05": 4.856
+  },
+  "minutes": 12.0,
+  "note": "The window was not guaranteed quiet; read min/p05 as the idle estimate and median/mean as how busy this particular window was.",
+  "probe_errors": [],
+  "study_id": "r2-readiness-idle-20260904-01"
+}

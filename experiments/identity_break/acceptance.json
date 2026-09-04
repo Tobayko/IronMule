@@ -1,0 +1,60 @@
+{
+  "all_zero_acceptance": true,
+  "arm": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 8
+  },
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 14.03278,
+    "max_continuous_gpu_seconds": 5.492308,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 76.089142,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 93.532434
+  },
+  "formal_claim": false,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "no_activation": true,
+  "prompt_tokens": 897,
+  "provenance": {
+    "code_files_sha256": {
+      ".worktrees/friday-optimizer-ironmule/ironmule/runtime.py": "9d30965eb7073771f2620fae7cb0cd42d799ca047bb59e4661f82d71b98a9f3b",
+      "experiments/identity_break/acceptance.py": "74b1b50b42ca8009f76c0b7db3e7985ae98827cc97bdd358e9af9278de65e182"
+    },
+    "code_sha256": "b996376749c535105f438e813f4e855904a0d468641c30af0ed5814a0dca6322",
+    "git_dirty": true,
+    "git_revision": "ea3aed338747e7ffb577ddbcfcaf4c5604262b0a",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "power_source": "ac_power"
+  },
+  "rows": [
+    {
+      "acceptance": 0.0,
+      "decode_seconds": 2.398119542,
+      "speculate_k": 1,
+      "tokens": 128
+    },
+    {
+      "acceptance": 0.0,
+      "decode_seconds": 3.273098666,
+      "speculate_k": 2,
+      "tokens": 128
+    },
+    {
+      "acceptance": 0.0,
+      "decode_seconds": 4.05425525,
+      "speculate_k": 3,
+      "tokens": 128
+    }
+  ],
+  "state": "measured",
+  "study_id": "identity-break-acceptance-20260902-01",
+  "wall_seconds": 90.1
+}

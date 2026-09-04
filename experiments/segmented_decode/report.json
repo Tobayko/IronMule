@@ -1,0 +1,56 @@
+{
+  "budget": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 0.0,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 31.315027,
+    "max_continuous_gpu_seconds": 5.21476,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 156.309528,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 192.497758
+  },
+  "continuous_limit_seconds": 6.0,
+  "correctness": {
+    "segment_size": 16,
+    "segmented_matches_unsegmented": true,
+    "segments_used": 3,
+    "tokens_compared": 48
+  },
+  "generate_tokens": 240,
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "model_snapshot_weight_bytes": 3400569562,
+  "model_snapshot_weight_files": [
+    "model.safetensors"
+  ],
+  "model_source": "validated_project_local_snapshot",
+  "narrow": {
+    "batch": 2,
+    "generated": 240,
+    "generation_seconds": 5.215,
+    "sample_tokens_per_second": 92.05,
+    "seconds_per_sample_token": 0.010864,
+    "segments": 1,
+    "stopped_early": true
+  },
+  "peak_memory_gb": 4.2181,
+  "power_source": "ac_power",
+  "steps_per_segment": 50,
+  "stop_tokens": [
+    1,
+    106
+  ],
+  "wide": {
+    "batch": 32,
+    "generated": 151,
+    "generation_seconds": 12.819,
+    "sample_tokens_per_second": 376.94,
+    "seconds_per_sample_token": 0.002653,
+    "segments": 3,
+    "stopped_early": true
+  },
+  "wide_advantage": 4.095
+}

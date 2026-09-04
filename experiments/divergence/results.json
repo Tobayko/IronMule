@@ -1,0 +1,142 @@
+{
+  "candidate_id": "divergence-impact-20260824-01",
+  "formal_claim": false,
+  "chunk": 512,
+  "generate_tokens": 160,
+  "problems": 10,
+  "rows": [
+    {
+      "prompt_tokens": 1219,
+      "truth": 57,
+      "tokens_identical": false,
+      "first_diff": 5,
+      "differing_tokens": 44,
+      "answer_reference": 25,
+      "answer_chunked": 25,
+      "answer_same": true,
+      "reference_correct": false,
+      "chunked_correct": false
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 64,
+      "tokens_identical": false,
+      "first_diff": 2,
+      "differing_tokens": 153,
+      "answer_reference": 48,
+      "answer_chunked": 64,
+      "answer_same": false,
+      "reference_correct": false,
+      "chunked_correct": true
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 49,
+      "tokens_identical": false,
+      "first_diff": 2,
+      "differing_tokens": 147,
+      "answer_reference": null,
+      "answer_chunked": 49,
+      "answer_same": false,
+      "reference_correct": false,
+      "chunked_correct": true
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 54,
+      "tokens_identical": false,
+      "first_diff": 6,
+      "differing_tokens": 151,
+      "answer_reference": 54,
+      "answer_chunked": 32,
+      "answer_same": false,
+      "reference_correct": true,
+      "chunked_correct": false
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 54,
+      "tokens_identical": false,
+      "first_diff": 5,
+      "differing_tokens": 51,
+      "answer_reference": null,
+      "answer_chunked": null,
+      "answer_same": true,
+      "reference_correct": false,
+      "chunked_correct": false
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 66,
+      "tokens_identical": true,
+      "first_diff": null,
+      "differing_tokens": 0,
+      "answer_reference": null,
+      "answer_chunked": null,
+      "answer_same": true,
+      "reference_correct": false,
+      "chunked_correct": false
+    },
+    {
+      "prompt_tokens": 1202,
+      "truth": 412,
+      "tokens_identical": true,
+      "first_diff": null,
+      "differing_tokens": 0,
+      "answer_reference": 412,
+      "answer_chunked": 412,
+      "answer_same": true,
+      "reference_correct": true,
+      "chunked_correct": true
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 66,
+      "tokens_identical": false,
+      "first_diff": 6,
+      "differing_tokens": 109,
+      "answer_reference": 55,
+      "answer_chunked": 66,
+      "answer_same": false,
+      "reference_correct": false,
+      "chunked_correct": true
+    },
+    {
+      "prompt_tokens": 1219,
+      "truth": 72,
+      "tokens_identical": false,
+      "first_diff": 5,
+      "differing_tokens": 133,
+      "answer_reference": null,
+      "answer_chunked": 7,
+      "answer_same": false,
+      "reference_correct": false,
+      "chunked_correct": false
+    },
+    {
+      "prompt_tokens": 1202,
+      "truth": 356,
+      "tokens_identical": true,
+      "first_diff": null,
+      "differing_tokens": 0,
+      "answer_reference": 356,
+      "answer_chunked": 356,
+      "answer_same": true,
+      "reference_correct": true,
+      "chunked_correct": true
+    }
+  ],
+  "token_divergence_rate": 0.7,
+  "answer_same_among_diverged": 0.286,
+  "answer_extractable_both": 6,
+  "accuracy_reference": 0.3,
+  "accuracy_chunked": 0.5,
+  "budget": {
+    "gpu_work_seconds": 89.251212,
+    "max_continuous_gpu_seconds": 2.557479,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 505.059777,
+    "wall_seconds": 595.86988,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

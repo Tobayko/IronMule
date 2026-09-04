@@ -1,0 +1,4 @@
+[submodule "ProjectAtlas"]
+	path = ProjectAtlas
+	url = https://github.com/styler-ai/ProjectAtlas.git
+	ignore = untracked

@@ -1,0 +1,31 @@
+{
+  "256": {
+    "seconds": 4.052,
+    "positions_per_second": 505.4,
+    "ms_per_position": 1.9787
+  },
+  "512": {
+    "seconds": 3.859,
+    "positions_per_second": 530.7,
+    "ms_per_position": 1.8841
+  },
+  "1024": {
+    "seconds": 3.768,
+    "positions_per_second": 543.5,
+    "ms_per_position": 1.8399
+  },
+  "2048": {
+    "seconds": 3.764,
+    "positions_per_second": 544.1,
+    "ms_per_position": 1.8378
+  },
+  "_peak_gb": 4.48,
+  "_budget": {
+    "gpu_work_seconds": 15.443122,
+    "max_continuous_gpu_seconds": 3.763852,
+    "cooldown_seconds": 0.0,
+    "required_break_seconds": 112.209286,
+    "wall_seconds": 129.325752,
+    "candidate_cooldown_seconds": 60.0
+  }
+}

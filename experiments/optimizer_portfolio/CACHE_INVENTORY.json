@@ -1,0 +1,71 @@
+{
+  "schema": "friday.optimizer.gemma-cache-inventory.v1",
+  "generated_at_utc": "2026-08-30T07:41:11Z",
+  "policy": {
+    "no_download": true,
+    "no_install": true,
+    "no_model_load": true,
+    "identity_source": "stdlib_only_model_identity.py"
+  },
+  "models": [
+    {
+      "model_id": "mlx-community/gemma-3-1b-it-4bit",
+      "size_class": "1B",
+      "status": "verified",
+      "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+      "identity_sha256": "5282a537a53c01c823ff7522a79ee0578b681d20e0298254d4648c2e393dee05",
+      "manifest_sha256": "b50c4acc474736709088f7e99e94e82fcc5b05f3448bdbae97cfc04fd6b2a38a",
+      "tokenizer_sha256": "7442b43f188d2d4ce88a4193d15e970bd6ec378acca9f9d1f501b1464edfdcf3",
+      "architecture": "gemma3_text",
+      "quantisation": {"bits": 4, "group_size": 64},
+      "manifest_file_count": 9,
+      "manifest_bytes": 771860852,
+      "tokenizer_file_count": 5
+    },
+    {
+      "model_id": "mlx-community/gemma-3-4b-it-4bit",
+      "size_class": "4B",
+      "status": "verified",
+      "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+      "identity_sha256": "2730e8b13b892b576452493dfb1983c0948c175d02c50099475385f8bac97bd2",
+      "manifest_sha256": "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
+      "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129",
+      "architecture": "gemma3",
+      "quantisation": {"bits": 4, "group_size": 64},
+      "manifest_file_count": 12,
+      "manifest_bytes": 3439894985,
+      "tokenizer_file_count": 6,
+      "q2_identity_match": true
+    },
+    {
+      "model_id": "mlx-community/gemma-3-12b-it-4bit",
+      "size_class": "12B",
+      "status": "verified",
+      "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+      "identity_sha256": "2b5b13a3c53a96299b33d0385b13a4b54973b810540cf7a99d4aa3966ebf1474",
+      "manifest_sha256": "aef12412aba9e6351a457381fb723672d253f8473b837757beff716d3c8e2b31",
+      "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129",
+      "architecture": "gemma3",
+      "quantisation": {"bits": 4, "group_size": 64},
+      "manifest_file_count": 15,
+      "manifest_bytes": 8068021302,
+      "tokenizer_file_count": 6
+    },
+    {
+      "model_id": "mlx-community/gemma-3-27b-it-4bit",
+      "size_class": "27B",
+      "status": "missing",
+      "reason": "no_local_cache_repository_or_snapshot",
+      "revision": null,
+      "identity_sha256": null,
+      "manifest_sha256": null,
+      "tokenizer_sha256": null,
+      "architecture": null,
+      "quantisation": null,
+      "manifest_file_count": null,
+      "manifest_bytes": null,
+      "tokenizer_file_count": null
+    }
+  ],
+  "content_sha256": "577a844928f9065f963eedbb742df67fc9b25ec6d6cae0f7738da310ae7b5df9"
+}
