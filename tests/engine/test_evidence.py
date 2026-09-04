@@ -461,7 +461,7 @@ def test_b27_public_adapter_is_explicitly_summary_only_and_cannot_create_profile
 
 
 def test_module_and_runtime_import_boundaries_remain_one_way():
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[2]
     evidence_path = root / "ironmule" / "evidence.py"
     tree = ast.parse(evidence_path.read_text())
     allowed = {

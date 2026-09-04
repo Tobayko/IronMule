@@ -38,17 +38,27 @@ if IRONMULE.is_dir() and str(IRONMULE) not in sys.path:
     sys.path.append(str(IRONMULE))
 
 
-# -- collection on a machine that is not the target device --------------------
+# -- collection away from the target device -----------------------------------
 #
-# The research suite asserts MLX, Metal and model behaviour, and AGENTS.md is
-# explicit that such a test must have run on the target device -- a CI runner is
-# not one. Those modules therefore need MLX present and the pinned IronMule
-# worktree checked out (the worktree is gitignored, so a fresh clone never has
-# it). Rather than maintaining a list of paths in the workflow file, a module
-# whose precondition is missing removes itself from collection here, which keeps
-# working when files are added or renamed.
+# The research suite is bound to *this* machine by design, not by accident. Its
+# evidence lives in gitignored SQLite databases under `.friday-data/`, its models
+# in a validated local cache, its engine in a pinned worktree under
+# `.worktrees/`, and several of its tests spawn `<repo>/.venv/bin/python` to
+# drive a measurement script end to end. AGENTS.md is explicit that a test
+# asserting MLX, Metal or model behaviour must have run on the target device --
+# so a CI runner is not a place where that suite can say anything true.
 #
-# On this Mac both preconditions hold and nothing is skipped.
+# The first attempt enumerated what was missing, one precondition at a time, and
+# each fix uncovered the next dependency: MLX, then the worktree, then `.venv`,
+# then the evidence databases, then the model cache. The list was the wrong
+# shape. One question replaces it: **is this the target device?** If it is not,
+# the research tree is not collected at all, and CI checks the engine package --
+# which is exactly what it can check honestly.
+#
+# The split is clean rather than approximate: 105 test modules import a
+# `friday_*` package and none of them is one of the engine's 34.
+#
+# On this Mac every precondition holds and nothing is dropped.
 
 def _missing(name: str) -> bool:
     from importlib.util import find_spec
@@ -59,6 +69,16 @@ def _missing(name: str) -> bool:
         return True
 
 
+#: The target device is the machine that carries the project's own environment
+#: and its measured evidence. Both are gitignored, so no clone is one by default.
+IS_TARGET_DEVICE = (ROOT / ".venv" / "bin" / "python").is_file() and (
+    ROOT / ".friday-data"
+).is_dir()
+
+#: The engine package's own suite. It depends on nothing outside the repository,
+#: so it runs anywhere -- that is what CI checks.
+ENGINE_TESTS = Path(__file__).resolve().parent / "engine"
+
 _REQUIRES_MLX = _missing("mlx")
 _REQUIRES_ENGINE = not (IRONMULE / "ironmule" / "runtime.py").is_file()
 # friday_optimizer uses MappingProxyType as a dataclass default
@@ -67,12 +87,6 @@ _REQUIRES_ENGINE = not (IRONMULE / "ironmule" / "runtime.py").is_file()
 # says 3.12, so this records the floor rather than inventing one -- the engine
 # package keeps its own >=3.10 claim and its tests keep running on 3.11.
 _REQUIRES_PY312 = sys.version_info < (3, 12)
-# Several research tests spawn the project's own interpreter as a subprocess to
-# exercise a measurement script end to end. That interpreter is `<repo>/.venv`,
-# which exists on the target device and nowhere else -- a runner builds its own
-# environment under a different name. Without it those tests fail on
-# FileNotFoundError rather than on anything they meant to check.
-_REQUIRES_PROJECT_VENV = not (ROOT / ".venv" / "bin" / "python").is_file()
 
 
 def _needs(path: Path, tokens: tuple[str, ...]) -> bool:
@@ -86,19 +100,24 @@ def _needs(path: Path, tokens: tuple[str, ...]) -> bool:
 def collect_ignore_glob_hook(path: Path) -> bool:
     """True when *path* cannot be collected in this environment."""
 
+    if ENGINE_TESTS == path or ENGINE_TESTS in path.parents:
+        return False  # the engine's suite is self-contained; it runs anywhere
+    if not IS_TARGET_DEVICE:
+        return True  # everything else is the research tree
+    # On a target device the research tree can still be missing a piece.
     if _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx")):
         return True
-    if _REQUIRES_ENGINE and _needs(path, ("friday-optimizer-ironmule", "from ironmule", "import ironmule")):
+    if _REQUIRES_ENGINE and _needs(path, ("friday-optimizer-ironmule",)):
         return True
     if _REQUIRES_PY312 and _needs(path, ("friday_optimizer",)):
-        return True
-    if _REQUIRES_PROJECT_VENV and _needs(path, (".venv",)):
         return True
     return False
 
 
 def pytest_ignore_collect(collection_path, config):  # noqa: ARG001 - pytest hook
     path = Path(str(collection_path))
+    if path.is_dir():
+        return None
     if path.suffix != ".py" or not path.name.startswith("test_"):
         return None
-    return True if collect_ignore_glob_hook(path) else None
+    return True if collect_ignore_glob_hook(path.resolve()) else None

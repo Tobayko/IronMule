@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 
 
 def _load(name: str, path: str):

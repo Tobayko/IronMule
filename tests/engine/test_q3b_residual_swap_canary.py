@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("q3b_residual_swap_canary", ROOT / "research/q3b_residual_swap_canary.py")
 assert SPEC.loader is not None
 q3b = importlib.util.module_from_spec(SPEC)

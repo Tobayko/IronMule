@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("q3a_path_interaction", ROOT / "research/q3a_path_interaction.py")
 assert SPEC.loader is not None
 q3a = importlib.util.module_from_spec(SPEC)

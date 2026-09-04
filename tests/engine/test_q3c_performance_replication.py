@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 
-ROOT = Path(__file__).parents[1]
+ROOT = Path(__file__).parents[2]
 SPEC = importlib.util.spec_from_file_location("q3c_performance_replication", ROOT / "research/q3c_performance_replication.py")
 assert SPEC.loader is not None
 q3c = importlib.util.module_from_spec(SPEC)

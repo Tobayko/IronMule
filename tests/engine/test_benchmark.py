@@ -11,7 +11,7 @@ from types import SimpleNamespace
 
 import pytest
 
-_BENCHMARK_PATH = Path(__file__).parents[1] / "ironmule" / "benchmark.py"
+_BENCHMARK_PATH = Path(__file__).parents[2] / "ironmule" / "benchmark.py"
 _SPEC = importlib.util.spec_from_file_location("ironmule_benchmark_test_target", _BENCHMARK_PATH)
 benchmark = importlib.util.module_from_spec(_SPEC)
 assert _SPEC.loader is not None

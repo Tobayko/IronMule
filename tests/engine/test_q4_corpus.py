@@ -13,7 +13,7 @@ from pathlib import Path
 from q4_offline_loader import load_offline_modules
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 _OFFLINE = load_offline_modules(
