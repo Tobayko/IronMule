@@ -346,8 +346,32 @@ Amendment: der Session-Runner kann keinen Kampagnenpunkt fahren
 übergibt), und `persistent_process` ist kein Engine-Knopf und wird deshalb
 gezogen, aber nicht gemessen.
 
-Rest: `283` messbare Punkte, rund `14` Stunden. Das Kill-Kriterium unten bleibt
-unverändert und wird erst in Phase 3 geprüft.
+**Stand 2026-09-05 — Korpus vollständig, Tor nicht stellbar.** `352` von `352`
+messbaren Punkten, `0` zensiert, `0` Tokenidentitätsbrüche, Kette verifiziert.
+Auswertung: `experiments/r2_campaign/evaluate_corpus.py`.
+
+Auf dem **vollen** Korpus sind alle vier Zielpolicies `conclusive`:
+`head_skip_prefill 0,1450 [0,1326; 0,1567]`, `fixed_compiled_cache 0,0172
+[0,0127; 0,0221]`, `baseline −0,0001 [−0,0009; 0,0007]`, `readback_every_2
+−0,0018 [−0,0029; −0,0007]`.
+
+Auf dem **vorregistrierten Holdout** erreichen drei von vier die ESS-Untergrenze
+`30` nicht (`7`, `7`, `5`). Ursache ist ein Größenfehler in der Vorregistrierung,
+nicht die Messung: die `400`-Punkte-Tabelle gilt für den ganzen Korpus, ein
+`20 %`-Holdout behält `70` Punkte, und darin zieht eine nicht gehintete Aktion
+rund achtmal. Ein tragfähiger Holdout bräuchte etwa `1250` gemessene Punkte,
+also weitere rund `41` Stunden.
+
+**Damit bleibt RL NO-GO — aber als *nicht prüfbar*, nicht als *nicht bestanden*.**
+Die Unterscheidung ist die eigentliche Antwort dieses Eintrags. Holdout und
+ESS-Untergrenze werden nicht nachträglich angepasst.
+
+**Offen, als Entscheidung:** entweder den Korpus auf ~`1250` Punkte ausbauen und
+das Tor wie eingefroren stellen, oder R2 mit diesem Befund schließen und den
+Korpus dem Kostenmodell plus BO zuführen, den `docs/FABLE_ERFOLGSPFAD.md` als den
+tragfähigen Weg bezeichnet. Die beschreibenden Zahlen oben stehen in jedem Fall.
+
+Das Kill-Kriterium unten bleibt unverändert.
 
 ## D1 — Die Hashbindung ist auf dem Versiegelungsgerät selbst gerissen (neu 2026-09-02)
 

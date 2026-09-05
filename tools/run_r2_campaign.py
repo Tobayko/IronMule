@@ -200,7 +200,12 @@ def main(argv: list[str] | None = None) -> int:
                         "index": index,
                         "action": drawn[index],
                         "returncode": completed.returncode,
-                        "detail": (summary or {"stderr": (completed.stderr or "")[-400:]}),
+                        # Always carry stderr, not only when stdout parsed to
+                        # nothing: the point runner prints its decision before it
+                        # measures, so a failure after that leaves a parseable
+                        # line and the actual cause was being thrown away.
+                        "detail": summary,
+                        "stderr": (completed.stderr or "").strip()[-600:],
                     }
                 ),
                 flush=True,
