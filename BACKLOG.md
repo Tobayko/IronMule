@@ -366,10 +366,12 @@ also weitere rund `41` Stunden.
 Die Unterscheidung ist die eigentliche Antwort dieses Eintrags. Holdout und
 ESS-Untergrenze werden nicht nachträglich angepasst.
 
-**Offen, als Entscheidung:** entweder den Korpus auf ~`1250` Punkte ausbauen und
-das Tor wie eingefroren stellen, oder R2 mit diesem Befund schließen und den
-Korpus dem Kostenmodell plus BO zuführen, den `docs/FABLE_ERFOLGSPFAD.md` als den
-tragfähigen Weg bezeichnet. Die beschreibenden Zahlen oben stehen in jedem Fall.
+**Offen, als Entscheidung:** Optionen, Kosten und meine Empfehlung stehen in
+[`docs/FORSCHUNGSENTSCHEID_2026-09-05.md`](docs/FORSCHUNGSENTSCHEID_2026-09-05.md).
+Kurz: entweder den Korpus auf ~`1250` Punkte ausbauen (~`41` h) und das Tor wie
+eingefroren stellen, oder R2 mit diesem Befund schließen und den Korpus dem
+Kostenmodell plus BO zuführen. Empfohlen wird das Schließen. Die beschreibenden
+Zahlen oben stehen in jedem Fall.
 
 Das Kill-Kriterium unten bleibt unverändert.
 
