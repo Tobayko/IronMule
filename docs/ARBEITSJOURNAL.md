@@ -11688,3 +11688,87 @@ Punkt mehr hineinpasste — die beabsichtigte Kante.
 `48` der `400` gezogenen Punkte sind `persistent_process` und wurden ohne
 Outcome-Record übersprungen (Amendment A2). Kein GPU-Aufwand, und die Schritte
 bleiben unlabelled, was `_weights` korrekt überspringt.
+
+---
+
+## 2026-09-05 — R2-Korpus vollständig, und das Tor lässt sich nicht stellen
+
+**Der Korpus steht.** `352` von `352` messbaren Punkten, `0` zensiert, `0`
+Tokenidentitätsbrüche, Hash-Kette verifiziert. Zwei Fenster plus ein
+nachgeholter Punkt; `803` Minuten Messzeit.
+
+Ziehung gegen Vorhersage: `head_skip_prefill 214`, `readback_every_2 49`,
+`fixed_compiled_cache 46`, `baseline 43`. Die Vorregistrierung sagte `208` und
+je `≈48`.
+
+### Was der Korpus stützt
+
+Gemessene Verhältnisse, gepaart, Median über die Punkte je Aktion:
+
+| Aktion | n | Median-Ratio | Gewinn | Streuung |
+| --- | ---: | ---: | ---: | --- |
+| `head_skip_prefill` | `214` | `0,8760` | `+12,40 %` | `[0,8670; 0,8870]` |
+| `fixed_compiled_cache` | `46` | `0,9845` | `+1,55 %` | `[0,9756; 0,9933]` |
+| `baseline` | `43` | `1,0002` | `−0,02 %` | `[0,9929; 1,0045]` |
+| `readback_every_2` | `49` | `1,0014` | `−0,14 %` | `[0,9923; 1,0082]` |
+
+Off-Policy-Evaluation auf dem vollen Korpus, `ips` mit Bootstrap-Intervall, alle
+vier `conclusive`: `head_skip_prefill 0,1450 [0,1326; 0,1567]`,
+`fixed_compiled_cache 0,0172 [0,0127; 0,0221]`, `baseline −0,0001
+[−0,0009; 0,0007]`, `readback_every_2 −0,0018 [−0,0029; −0,0007]`.
+
+Drei unabhängige Bestätigungen: `head_skip` reproduziert über `214` Punkte das
+Geräteprofil (`0,8778`, KI `[0,8668; 0,8888]`), gemessen über einen anderen
+Aufrufweg. `baseline` gegen sich selbst schließt die Null ein — die Kontrolle
+hält. Und `readback_every_2` zeigt keinen Gewinn, was die Nachmessung vom
+2026-09-03 unabhängig bestätigt, die `bundled_readback` im Profil durchfallen
+ließ.
+
+### Der Befund, der zählt: mein Holdout war zu klein für mein Tor
+
+Das Tor verlangt `conclusive=true` auf dem vorregistrierten Holdout — den letzten
+`20 %` der versiegelten Reihenfolge. Dort erreichen **drei von vier**
+Zielpolicies die ESS-Untergrenze `30` nicht: `7`, `7` und `5`.
+
+Der Rechenfehler ist meiner. Die Größentabelle des Trockenlaufs (`400` Punkte
+ergeben `5/5`) gilt für den **gesamten** Korpus. Wer `20 %` abschneidet, behält
+`70` Punkte, und bei `p(andere) = 0,12` zieht eine nicht gehintete Aktion darin
+rund **acht** Mal. Der Holdout wurde für ein Tor eingefroren, das er nie tragen
+konnte. Er bräuchte rund `250` Punkte, also einen Korpus von etwa `1250` — gegen
+`352` weitere `41` Stunden.
+
+**Konsequenz, sauber getrennt:** die Zahlen oben sind beschreibend und stehen.
+Ein bestandenes Tor sind sie nicht. **RL bleibt NO-GO — nicht weil der
+OPE-Vorteil ausblieb, sondern weil der vorregistrierte Test in dieser Größe nicht
+durchführbar ist.** „Nicht bestanden" und „nicht prüfbar" sind nicht dasselbe,
+und die Unterscheidung gehört in den Bericht, nicht in eine Fußnote. Der Holdout
+wird nicht verschoben und die Untergrenze nicht gesenkt; genau dafür stand beides
+vorher fest.
+
+### Zwei Aufzeichnungsbefunde
+
+**Fingerprint-Drift über acht Werte.** `runtime_commit` steckt im
+`EnvironmentFingerprint`; jeder Commit während der Kampagne erzeugte einen neuen
+`fingerprint_hash` (`266` Punkte auf `15d8f618`, der Rest auf sieben ältere
+verteilt). Geprüft statt angenommen: gezogene Aktion, Propensity und
+Kandidatenmenge sind über alle `400` Punkte identisch — der Zug hängt an
+`seed_for(index)` und der Kandidatenmenge, und die hängt an Modell, Workload,
+Chip und MLX, nicht am Commit. `friday_calibrate/` wurde während der Läufe nie
+committet. Aufzeichnungsartefakt, kein Messartefakt;
+`environment.runtime_commit` gehört in Phase 3 aus dem Merkmalssatz.
+
+**Zwei eigene Werkzeugdefekte, vor dem Nachtlauf gefunden.** Entscheid und Label
+wurden als zwei Appends geschrieben — eine Unterbrechung dazwischen hätte den
+Punkt unwiederholbar gemacht, weil der Cursor am Label hängt und der zweite
+Versuch an der `UNIQUE`-Beschränkung des Entscheids scheitert. Und die Zusage,
+`SIGINT` bringe den laufenden Punkt zu Ende, war falsch: das Kind lief in
+derselben Prozessgruppe. Beides behoben; der Stopp um 23:45 hat den Fix dann live
+bestätigt und einen Punkt gerettet, der sonst verloren gewesen wäre.
+
+### Ein Fehlschlag
+
+Index `378` brach in der Nacht mit Rückgabecode `1` ab, `154` Punkte desselben
+Fensters liefen. Die Ursache ging verloren, weil meine Fehlerausgabe stderr nur
+aufnahm, wenn stdout unparsbar war — der Läufer druckt seinen Entscheid aber vor
+der Messung. Behoben. Der Punkt wurde am 2026-09-05 nachgeholt und lief durch
+(`0,8794`, `+12,06 %`); der Abbruch war transient.

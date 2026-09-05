@@ -359,3 +359,80 @@ Punkt `1` ist zugleich eine unabhängige Gegenprobe: das Geräteprofil führt
 `head_skip` mit Ratio `0,8778`, KI `[0,8668; 0,8888]`, gemessen am 2026-09-03
 durch das Kalibrier-CLI. Der hier über den Kampagnenpfad gemessene Wert `0,8760`
 liegt in diesem Intervall. Zwei getrennte Aufrufwege, dasselbe Ergebnis.
+
+---
+
+# Amendment B — 2026-09-05, nach der Kampagne, vor jeder Aussage
+
+Der Korpus ist vollständig: **`352` von `352` messbaren Punkten, `0` zensiert,
+`0` Tokenidentitätsbrüche**, Hash-Kette verifiziert. Die Auswertung liegt in
+`experiments/r2_campaign/evaluate_corpus.py` und ist reproduzierbar.
+
+Und sie zeigt: **das in dieser Vorregistrierung eingefrorene Tor lässt sich am
+eingefrorenen Holdout nicht prüfen.** Das ist ein Fehler in der Erstfassung, kein
+Ergebnis der Messung.
+
+## B1 — Was der Korpus stützt
+
+Off-Policy-Evaluation je Aktion, deterministische Zielpolicy als Punktmasse,
+`ips` mit Bootstrap-Intervall (Amendment A4):
+
+| Zielpolicy | voller Korpus (`352`) | ESS | Holdout (`70`) | ESS |
+| --- | --- | ---: | --- | ---: |
+| `head_skip_prefill` | `0,1450` `[0,1326; 0,1567]` | `214` | `0,1737` `[0,1465; 0,1974]` | `51` |
+| `fixed_compiled_cache` | `0,0172` `[0,0127; 0,0221]` | `46` | *unzureichend* | `7` |
+| `baseline` | `−0,0001` `[−0,0009; 0,0007]` | `43` | *unzureichend* | `7` |
+| `readback_every_2` | `−0,0018` `[−0,0029; −0,0007]` | `49` | *unzureichend* | `5` |
+
+Auf dem vollen Korpus sind alle vier Schätzungen `conclusive`, die Rangfolge ist
+eindeutig, und die Intervalle der beiden oberen überlappen mit nichts.
+`baseline` gegen sich selbst liegt bei `−0,0001` und schließt die Null ein — die
+Kontrolle, die halten muss, hält.
+
+## B2 — Warum das Tor trotzdem nicht gestellt werden kann
+
+Das Tor verlangt `conclusive=true` **auf dem vorregistrierten Holdout**. Dort
+erreichen drei von vier Zielpolicies die ESS-Untergrenze `30` nicht: `7`, `7`
+und `5`.
+
+**Der Rechenfehler ist meiner.** Die Größentabelle des Trockenlaufs — `400`
+Punkte ergeben `5/5` belastbare Schätzungen — gilt für den **gesamten** Korpus.
+Wer davon `20 %` als Holdout abschneidet, behält `70` Punkte; bei
+`p(andere) = 0,12` zieht eine nicht gehintete Aktion darin rund **acht** Mal. Der
+Holdout wurde für ein Tor eingefroren, das er nie tragen konnte.
+
+Was er bräuchte: `30 / 0,12 ≈ 250` Holdout-Punkte, also rund **`1250` gemessene
+Punkte** insgesamt — gegenüber `352` weitere **`41` Stunden** Messzeit.
+
+## B3 — Was daraus folgt, und was ausdrücklich nicht
+
+- Die Zahlen in B1 sind **beschreibend**. Sie sind belastbar gemessen, gepaart,
+  tokenidentisch, und sie stehen. Sie sind **kein bestandenes Tor**.
+- **RL bleibt NO-GO.** Nicht, weil der OPE-Vorteil ausblieb, sondern weil der
+  vorregistrierte Test in dieser Größe nicht durchführbar ist. Der Unterschied
+  gehört benannt: „nicht bestanden" und „nicht prüfbar" sind nicht dasselbe.
+- Der Holdout wird **nicht** nachträglich verschoben, nicht geschrumpft und die
+  ESS-Untergrenze wird nicht gesenkt. Genau dafür steht er vorher fest.
+- Der Korpus ist für den anderen Zweck vollständig brauchbar: `352` gelabelte
+  Punkte mit `27` Kontextfeldern tragen das Kostenmodell und die Bayesian
+  Optimization, die `docs/FABLE_ERFOLGSPFAD.md` als den tragfähigen Weg
+  bezeichnet, und die dort ab `50`–`100` sauberen Punkten Nutzen liefern.
+
+## B4 — Zwei Aufzeichnungsbefunde
+
+**Der Fingerprint driftete über acht Werte.** `runtime_commit` ist Teil des
+`EnvironmentFingerprint`, und während der Kampagne wurde committet — jeder Commit
+erzeugte einen neuen `fingerprint_hash` (`266` Punkte auf `15d8f618`, der Rest
+verteilt auf sieben ältere). Geprüft statt angenommen: **gezogene Aktion,
+Propensity und Kandidatenmenge sind über alle `400` Punkte identisch**, weil der
+Zug an `seed_for(index)` und der Kandidatenmenge hängt, und die hängt an
+Modell/Workload/Chip/MLX, nicht am Commit. `friday_calibrate/` wurde während der
+Läufe nie committet. Es ist ein Aufzeichnungs-, kein Messartefakt.
+`environment.runtime_commit` gehört in Phase 3 aus dem Merkmalssatz genommen.
+
+**Übersprungene Punkte tragen gar keinen Record.** A2 sagte „keinen
+Outcome-Record"; tatsächlich schreibt der Läufer für eine nicht messbare Aktion
+weder Entscheid noch Label. Der Korpus hat deshalb `352` Schritte statt `400` mit
+`48` unlabelled. Für die Schätzer gleichwertig — sie überspringen unlabelled
+Schritte —, und konservativer. Hier korrigiert, damit die Vorregistrierung
+beschreibt, was der Code tut.

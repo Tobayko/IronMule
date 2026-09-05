@@ -1,0 +1,165 @@
+{
+  "chain_verified": true,
+  "formal_claim": false,
+  "gate_assessable": false,
+  "generated_at": "2026-09-05T07:53:43",
+  "holdout_from_index": 320,
+  "holdout_inconclusive": [
+    "baseline",
+    "fixed_compiled_cache",
+    "readback_every_2"
+  ],
+  "learning_claim": false,
+  "min_samples": 30,
+  "splits": {
+    "full": {
+      "estimates": [
+        {
+          "action": "baseline",
+          "ci_high": 0.0007193631811777859,
+          "ci_low": -0.0009328314877415176,
+          "conclusive": true,
+          "effective_samples": 43.0,
+          "ips": -0.00011722820820940987,
+          "samples": 352,
+          "snips": -0.00011515626778524356,
+          "status": "ok"
+        },
+        {
+          "action": "head_skip_prefill",
+          "ci_high": 0.1567327586324185,
+          "ci_low": 0.13258195671410808,
+          "conclusive": true,
+          "effective_samples": 214.0,
+          "ips": 0.1449757995790135,
+          "samples": 352,
+          "snips": 0.12400173063057306,
+          "status": "ok"
+        },
+        {
+          "action": "fixed_compiled_cache",
+          "ci_high": 0.02211606081431243,
+          "ci_low": 0.012661040000780327,
+          "conclusive": true,
+          "effective_samples": 45.99999999999999,
+          "ips": 0.01715630108500083,
+          "samples": 352,
+          "snips": 0.015753959952835545,
+          "status": "ok"
+        },
+        {
+          "action": "readback_every_2",
+          "ci_high": -0.0007229645945345572,
+          "ci_low": -0.0028561521066047314,
+          "conclusive": true,
+          "effective_samples": 49.00000000000001,
+          "ips": -0.0017654021415785572,
+          "samples": 352,
+          "snips": -0.0015218487032709845,
+          "status": "ok"
+        }
+      ],
+      "n": 352
+    },
+    "holdout": {
+      "estimates": [
+        {
+          "action": "baseline",
+          "ci_high": 0.002516317658184254,
+          "ci_low": -0.0003609812069168578,
+          "conclusive": false,
+          "effective_samples": 6.999999999999999,
+          "ips": 0.0009760295213040185,
+          "samples": 70,
+          "snips": 0.0011712354255648222,
+          "status": "insufficient_data"
+        },
+        {
+          "action": "head_skip_prefill",
+          "ci_high": 0.19739477179048828,
+          "ci_low": 0.1465068225003333,
+          "conclusive": true,
+          "effective_samples": 51.0,
+          "ips": 0.17371453096004594,
+          "samples": 70,
+          "snips": 0.12398448876364065,
+          "status": "ok"
+        },
+        {
+          "action": "fixed_compiled_cache",
+          "ci_high": 0.02190697773901934,
+          "ci_low": 0.003752545130606979,
+          "conclusive": false,
+          "effective_samples": 6.999999999999999,
+          "ips": 0.012477305536050677,
+          "samples": 70,
+          "snips": 0.014972766643260813,
+          "status": "insufficient_data"
+        },
+        {
+          "action": "readback_every_2",
+          "ci_high": 0.00014085694553496388,
+          "ci_low": -0.0034785168654178065,
+          "conclusive": false,
+          "effective_samples": 5.0,
+          "ips": -0.0013442185155998754,
+          "samples": 70,
+          "snips": -0.0022582871062077903,
+          "status": "insufficient_data"
+        }
+      ],
+      "n": 70
+    },
+    "train": {
+      "estimates": [
+        {
+          "action": "baseline",
+          "ci_high": 0.000586891428079681,
+          "ci_low": -0.0013899643362930245,
+          "conclusive": true,
+          "effective_samples": 35.99999999999999,
+          "ips": -0.00038860424035813327,
+          "samples": 282,
+          "snips": -0.00036528798593664526,
+          "status": "ok"
+        },
+        {
+          "action": "head_skip_prefill",
+          "ci_high": 0.15152511943712813,
+          "ci_low": 0.12377712382359285,
+          "conclusive": true,
+          "effective_samples": 163.00000000000003,
+          "ips": 0.13784207193123948,
+          "samples": 282,
+          "snips": 0.12400712532513472,
+          "status": "ok"
+        },
+        {
+          "action": "fixed_compiled_cache",
+          "ci_high": 0.02423302098653911,
+          "ci_low": 0.012951913586700411,
+          "conclusive": true,
+          "effective_samples": 38.99999999999999,
+          "ips": 0.018317753880839522,
+          "samples": 282,
+          "snips": 0.01589417413660537,
+          "status": "ok"
+        },
+        {
+          "action": "readback_every_2",
+          "ci_high": -0.000678140577490494,
+          "ci_low": -0.003185916073330753,
+          "conclusive": true,
+          "effective_samples": 44.0,
+          "ips": -0.0018699512685945423,
+          "samples": 282,
+          "snips": -0.0014381625211190752,
+          "status": "ok"
+        }
+      ],
+      "n": 282
+    }
+  },
+  "steps": 352,
+  "study_id": "r2-corpus-eval-20260905-01"
+}
