@@ -11988,3 +11988,20 @@ einschließlich sauberem Wheelbau/Installation und vollständiger Engine-Suite.
 Der aktuelle kleine Provenienzfix `ef71e9f` bezeichnet auch den Benutzer-Cache
 korrekt als lokalen statt ausschließlich projektlokalen Snapshot. Experimentelle
 Kandidaten bleiben inaktiv; die Produktreferenz ist weiter maßgeblich.
+
+### PROD2 — voller Pilot wegen Readiness verworfen; CI terminal grün
+
+Der korrigierte volle 1B-Pilot Versuch 2 erreicht acht tatsächliche Anfragen im
+ersten Limitblock. Danach verweigert die unveränderte CPU-Grenze den Lauf:
+`load_ratio=0.805517578125 > 0.8`, AC, Low Power aus, Thermal-State 0, Quellmanifest
+vor/nach identisch. Status `failed`, keine angenommene Effektgröße, keine
+Aktivierung, kein Pooling mit anderen Versuchen. Alle eigenen Worker beendet.
+Weitere Hardwareversuche werden nicht blind an denselben Busy-Zustand gehängt;
+PROD3 hält kontrollierte Readiness-Deferral als offenen Produktmechanismus fest.
+
+CI `34097092847` für `5fe3817` ist terminal grün: auf Python 3.11 und 3.12 jeweils
+`764 passed, 16 deselected`, zusätzlich statische Prüfung bestanden und sauberes
+Wheel gebaut/installiert. Die 16 expliziten Modell-Integrationen auf dem fremden
+CI-Runner sind keine lokale Gemma-Evidenz. `docs/PRODUCT_CHECKPOINT_2026-09-07.md`
+trennt umgesetzten Produktkern, bewiesenen Forward-Mechanismus, verworfene
+Leistungsmessung und verbleibende Arbeit. Hardwarefreigabe bleibt dauerhaft gültig.
