@@ -10,6 +10,25 @@ the complete `ironmule/*.py` import surface, not just its statistics helper.
 Request wall time is a conservative accounting bound for inference work;
 model-load wall time is reported separately and is not labelled GPU time.
 
+## Amendment before 1B audit attempt 2
+
+Attempt 1 is retained as failed. The worker loaded, but the first cell's
+readiness checkpoint raised `NameError` because `os.cpu_count()` lacked its
+module import. No generation call or forward-count result was obtained. Add
+the missing import and exercise the real checkpoint before restarting with a
+new report. No threshold, schedule, budget or interpretation rule changes.
+
+## Amendment before 1B audit attempt 3
+
+Attempt 2 is retained as a readiness failure, with no generation calls: the
+observed one-minute CPU load rose above the unchanged 0.8-per-logical-core gate.
+Readiness is now also checked before loading a worker, and every accepted or
+rejected numeric checkpoint is persisted before its gate is applied. Do not
+lower the threshold or terminate unrelated user/system jobs to obtain a run.
+The separate CI-discovered worker-start repair adds Python isolated mode to
+prevent the package's `types.py` from shadowing the standard library; the
+generation algorithm remains unchanged. All attempted runs stay separate.
+
 ## Scope and exact baseline
 
 The candidate is derived from the installed `mlx-lm==0.31.3` greedy

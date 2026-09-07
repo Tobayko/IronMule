@@ -221,7 +221,7 @@ class MLXWorkerClient:
             })
             try:
                 self._process = subprocess.Popen(
-                    [sys.executable, "-u", str(worker), "--spec", json.dumps(self.spec.as_dict(), separators=(",", ":"))],
+                    [sys.executable, "-I", "-u", str(worker), "--spec", json.dumps(self.spec.as_dict(), separators=(",", ":"))],
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,

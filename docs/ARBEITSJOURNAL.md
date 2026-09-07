@@ -11933,3 +11933,34 @@ meldet `isLowPowerModeEnabled=false`; die neuen macOS-pmset-Ausgaben haben hier
 stattdessen `powermode=2`, weshalb eine fehlende `lowpowermode`-Zeile ausdrücklich
 nicht als fehlgeschlagene Hardwarefreigabe oder als boolesche Messung gilt.
 Kein Benchmark aus dieser winzigen Probe abgeleitet.
+
+### Veröffentlichung und CI-Startfehler
+
+Produkt-Meilenstein `2f6f74f` ist auf `Codex/ironmule-product` veröffentlicht.
+Die automatische Prüfung lehnte den Push zunächst wegen unklarer Zuordnung
+von Ziel/Hardwareprotokollen ab. Zusätzliche read-only-Nachweise: angemeldetes
+Konto `Tobayko`, gleichnamiger Eigentümer des bereits konfigurierten öffentlichen
+`Tobayko/IronMule`, bestätigte Admin-/Push-Berechtigung. Die vollständige
+String-Inventur der drei zu publizierenden Protokolle enthielt ausschließlich
+feste Apfel-Testausgaben, öffentliche Modell-/Framework-/Chipdaten, Hashes und
+zufällige Anfrage-IDs, keine Nutzerpfade, Geheimnisse oder privaten Prompts.
+Auf dieser Grundlage wurde derselbe Push freigegeben; keine Umgehung, kein
+anderes Ziel, kein Force-Push.
+
+CI `34095831873`: Wheelbau, saubere Installation und CLI-Smoke auf Python 3.11
+und 3.12 bestanden. In beiden vollständigen Testsuiten scheiterte genau der
+direkte Worker-Start für eine ungültige Spezifikation (3.12: 763 passed, 1 failed).
+Ursache reproduziert: bei absolutem Scriptstart kann `ironmule_product/types.py`
+vor dem Bootstrap Pythons Standardmodul `types` überschatten. `python -S` zeigt
+den Circular-Import; `python -I -S` liefert die erwartete begrenzte JSON-Antwort.
+Der Parent startet den Worker jetzt mit `-I -u`; eine echte Child-Regression
+prüft genau diese Argumente. Die neue CI-Verifikation wird separat verfolgt.
+
+PROD2-1B-Audit Versuch 1 scheiterte vor der ersten Generierung am fehlenden
+`os`-Import im Readiness-Checkpoint. Versuch 2 wurde wegen zu hoher echter
+CPU-Last verworfen, ebenfalls ohne Generierung. Beide lokalen Artefakte bleiben
+erhalten. Der fehlende Import ist repariert; die öffentliche Energie-/Thermal-
+Probe ist real vorab ausgeführt. Readiness wird jetzt auch vor Modellladung
+geprüft; abgewiesene numerische Beobachtungen werden vor dem Gate persistiert.
+CPU-, Speicher-, Duty- und Korrektheitsgrenzen wurden nicht gelockert und keine
+fremden Nutzer-/Systemprozesse beendet.
