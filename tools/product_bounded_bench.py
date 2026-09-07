@@ -317,7 +317,7 @@ def _run_worker(
     checkpoint: Any = None,
 ) -> dict[str, Any]:
     from ironmule_product.backend import MLXWorkerClient
-    from ironmule.bench import paired_ratio, swap_used_bytes
+    from ironmule.bench import paired_ratio, summarise, swap_used_bytes
 
     if worker_result is None:
         worker_result = {"worker_index": worker_index, "limit_order": list(order), "status": "started", "limits": {}}
@@ -481,7 +481,7 @@ def run(model_id: str, output: Path, *, audit_only: bool) -> int:
         report["model"]["model_source"] = "validated_local_snapshot"
         persist()
         guard = harness_preconditions()
-        from ironmule.bench import MemoryGate, environment as bench_environment, paired_ratio, summarise
+        from ironmule.bench import MemoryGate, environment as bench_environment, paired_ratio
 
         environment = bench_environment
         import mlx.core as mx

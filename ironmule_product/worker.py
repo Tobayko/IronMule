@@ -6,7 +6,6 @@ import argparse
 from contextlib import redirect_stdout
 import json
 import math
-import os
 from pathlib import Path
 import queue
 import sys
