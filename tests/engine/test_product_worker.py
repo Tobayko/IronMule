@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -37,7 +38,6 @@ def test_unavailable_device_or_missing_snapshot_is_clean_backend_error(tmp_path:
     # An empty snapshot is rejected before any device operation. This checks
     # the real worker's metadata failure, not GPU availability.
     client = MLXWorkerClient(_spec(tmp_path), startup_timeout=2)
-    request = GenerationRequest("local/test", (("user", "hello"),))
     launched: list[list[str]] = []
     real_popen = backend_module.subprocess.Popen
 
@@ -95,6 +95,21 @@ def _attached_transport(tmp_path: Path, body: str) -> MLXWorkerClient:
 
 def _request(request_id: str = "request-1", *, max_tokens: int = 2) -> GenerationRequest:
     return GenerationRequest("local/test", (("user", "hello"),), max_tokens=max_tokens, request_id=request_id)
+
+
+def _cleanup_process(process: subprocess.Popen) -> None:
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+    finally:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
 
 
 def test_transport_preserves_fragmented_and_batched_frames(tmp_path: Path) -> None:
@@ -245,3 +260,161 @@ def test_protocol_size_rejection_keeps_worker_unstarted(tmp_path):
         client.stream(request)
     assert client._process is None
     assert client._usable is True
+
+
+def test_receiver_shutdown_returns_without_daemon_finalization_abort(tmp_path: Path) -> None:
+    code = (
+        "import queue, threading; from ironmule_product.worker import _receiver; "
+        "q=queue.Queue(maxsize=8); c={}; p=set(); lock=threading.Lock(); "
+        "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+        "assert q.get()['type']=='shutdown'"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", code], cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        assert process.stdin is not None and process.stderr is not None
+        process.stdin.write(b'{"type":"shutdown"}\n')
+        process.stdin.flush()
+        assert process.wait(timeout=3) == 0
+        assert process.stderr.read() == b""
+    finally:
+        _cleanup_process(process)
+
+
+def test_receiver_full_queue_shutdown_is_bounded(tmp_path: Path) -> None:
+    code = (
+        "import queue, threading; from ironmule_product.worker import _receiver; "
+        "q=queue.Queue(maxsize=1); q.put({'type':'work'}); c={}; p=set(); lock=threading.Lock(); "
+        "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+        "t.join(timeout=2); assert not t.is_alive(); assert q.get_nowait()['type']=='shutdown'"
+    )
+    process = subprocess.Popen(
+        [sys.executable, "-u", "-c", code], cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+    )
+    try:
+        assert process.stdin is not None and process.stderr is not None
+        process.stdin.write(b'{"type":"shutdown"}\n')
+        process.stdin.flush()
+        assert process.wait(timeout=3) == 0
+        assert process.stderr.read() == b""
+    finally:
+        _cleanup_process(process)
+
+
+def test_startup_guard_exception_is_preserved_and_child_is_reaped(tmp_path, monkeypatch):
+    processes = []
+    real_popen = backend_module.subprocess.Popen
+
+    def fake_popen(*args, **kwargs):
+        process = real_popen(
+            [sys.executable, "-u", "-c", "import time; time.sleep(5)"],
+            stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
+            env=kwargs.get("env"),
+        )
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    client = MLXWorkerClient(_spec(tmp_path), startup_timeout=1)
+
+    class GuardFailure(KeyboardInterrupt):
+        pass
+
+    with pytest.raises(GuardFailure):
+        client.start(startup_guard=lambda _pid: (_ for _ in ()).throw(GuardFailure()))
+    assert processes and processes[0].poll() is not None
+    assert not client.ready
+
+
+def test_startup_guard_is_polled_until_timeout_and_child_is_reaped(tmp_path, monkeypatch):
+    processes = []
+    calls = []
+    real_popen = backend_module.subprocess.Popen
+
+    def fake_popen(*args, **kwargs):
+        process = real_popen(
+            [sys.executable, "-u", "-c", "import time; time.sleep(5)"],
+            stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
+            env=kwargs.get("env"),
+        )
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    client = MLXWorkerClient(_spec(tmp_path), startup_timeout=.12)
+    with pytest.raises(BackendUnavailable):
+        client.start(startup_guard=lambda pid: calls.append(pid))
+    assert processes and processes[0].poll() is not None
+    assert len(calls) >= 2 and all(pid == processes[0].pid for pid in calls)
+
+
+def test_slow_startup_guard_cannot_bypass_absolute_deadline(tmp_path, monkeypatch):
+    processes = []
+    real_popen = backend_module.subprocess.Popen
+    spec = _spec(tmp_path)
+
+    def fake_popen(*args, **kwargs):
+        body = ("import json, sys, time; print(json.dumps({'type':'ready','protocol_version':1,"
+                f"'model_id':{spec.model_id!r},'revision':{spec.revision!r},"
+                "'device':'gpu','stop_handling':'parent'}), flush=True); time.sleep(5)")
+        process = real_popen(
+            [sys.executable, "-u", "-c", body],
+            stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
+            env=kwargs.get("env"),
+        )
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    client = MLXWorkerClient(spec, startup_timeout=.05)
+
+    calls = []
+
+    def slow_guard(_pid):
+        calls.append(True)
+        if len(calls) == 2:
+            time.sleep(.1)
+
+    with pytest.raises(BackendUnavailable):
+        client.start(startup_guard=slow_guard)
+    assert processes and processes[0].poll() is not None
+    assert len(calls) == 2
+    assert not client.ready
+
+
+@pytest.mark.parametrize("event", [
+    {"type": "ready", "startup_wall_seconds": float("nan")},
+    {"type": "ready", "startup_wall_seconds": 1},
+    {"type": "ready", "startup_wall_seconds": -1, "process_peak_rss_bytes": 1,
+     "mlx_active_bytes": 1, "mlx_peak_bytes": 1, "mlx_cache_bytes": 1,
+     "recommended_working_set_bytes": 1},
+    {"type": "ready", "startup_wall_seconds": 1, "process_peak_rss_bytes": 1.0,
+     "mlx_active_bytes": 1, "mlx_peak_bytes": 1, "mlx_cache_bytes": 1,
+     "recommended_working_set_bytes": 1},
+    {"type": "ready", "startup_wall_seconds": 1, "process_peak_rss_bytes": 1,
+     "mlx_active_bytes": 2, "mlx_peak_bytes": 1, "mlx_cache_bytes": 1,
+     "recommended_working_set_bytes": 1},
+    {"type": "ready", "startup_wall_seconds": 10**1000, "process_peak_rss_bytes": 1,
+     "mlx_active_bytes": 1, "mlx_peak_bytes": 1, "mlx_cache_bytes": 1,
+     "recommended_working_set_bytes": 1},
+])
+def test_startup_telemetry_contract_rejects_invalid_payloads(event):
+    with pytest.raises(BackendUnavailable):
+        MLXWorkerClient._validate_startup_telemetry(event)
+
+
+def test_ready_start_with_guard_is_explicitly_rejected(tmp_path):
+    client = _attached_transport(tmp_path, "import time; time.sleep(1)")
+    observed = []
+    try:
+        with pytest.raises(ValueError, match="already-ready"):
+            client.start(startup_guard=lambda pid: observed.append(pid))
+        assert observed == []
+        assert client.ready
+    finally:
+        client.close()

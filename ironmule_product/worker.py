@@ -8,8 +8,10 @@ import json
 import math
 from pathlib import Path
 import queue
+import resource
 import sys
 import threading
+import time
 from typing import Any
 
 
@@ -35,11 +37,56 @@ def _emit(value: dict[str, Any]) -> None:
     _PROTOCOL_OUT.flush()
 
 
+def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "startup_wall_seconds": time.monotonic() - startup_started,
+        # Darwin reports ru_maxrss in bytes (unlike Linux's KiB convention).
+        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        "mlx_active_bytes": mx.get_active_memory(),
+        "mlx_peak_bytes": mx.get_peak_memory(),
+        "mlx_cache_bytes": mx.get_cache_memory(),
+        "recommended_working_set_bytes": mx.device_info().get("max_recommended_working_set_size"),
+    }
+    startup = values["startup_wall_seconds"]
+    try:
+        startup_float = float(startup)
+    except (OverflowError, TypeError, ValueError):
+        startup_float = math.inf
+    if (isinstance(startup, bool) or not isinstance(startup, (int, float))
+            or not math.isfinite(startup_float) or startup <= 0 or startup > 86400):
+        raise RuntimeError("invalid startup telemetry: startup_wall_seconds")
+    byte_values = {key: value for key, value in values.items() if key != "startup_wall_seconds"}
+    if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in byte_values.values()):
+        raise RuntimeError("invalid startup telemetry byte field")
+    if byte_values["process_peak_rss_bytes"] <= 0 or byte_values["recommended_working_set_bytes"] <= 0:
+        raise RuntimeError("invalid startup telemetry byte field")
+    if values["mlx_peak_bytes"] < values["mlx_active_bytes"]:
+        raise RuntimeError("invalid startup telemetry memory ordering")
+    return values
+
+
 def _safe_error(code: str, request_id: str | None = None) -> None:
     event: dict[str, Any] = {"type": "error", "code": code, "message": "stock MLX backend unavailable"}
     if request_id is not None:
         event["request_id"] = request_id
     _emit(event)
+
+
+def _enqueue_terminal(commands: queue.Queue[dict[str, Any] | None], value: dict[str, Any] | None) -> None:
+    """Deliver EOF/shutdown without blocking on a full bounded queue."""
+    try:
+        commands.put_nowait(value)
+    except queue.Full:
+        # Shutdown/EOF supersedes queued work. Drop one bounded command so the
+        # main loop can always observe the terminal marker and exit cleanly.
+        try:
+            commands.get_nowait()
+        except queue.Empty:
+            pass
+        try:
+            commands.put_nowait(value)
+        except queue.Full:
+            pass
 
 
 def _load(spec: dict[str, Any]):
@@ -93,13 +140,11 @@ def _receiver(
             # EOF must eventually reach the main loop even when command
             # admission is momentarily full; this is a bounded wait on the
             # queue, not an unbounded command backlog.
-            commands.put(None)
+            _enqueue_terminal(commands, None)
             return
         if len(line) > MAX_LINE:
-            try:
-                commands.put_nowait({"type": "invalid"})
-            except queue.Full:
-                _safe_error("overloaded")
+            _enqueue_terminal(commands, {"type": "invalid"})
+            _enqueue_terminal(commands, None)
             return
         try:
             command = json.loads(line.decode("utf-8"))
@@ -115,6 +160,9 @@ def _receiver(
             except queue.Full:
                 _safe_error("overloaded")
             continue
+        if command.get("type") == "shutdown":
+            _enqueue_terminal(commands, command)
+            return
         if command.get("type") == "cancel":
             request_id = command.get("request_id")
             if isinstance(request_id, str) and request_id and len(request_id) <= 256:
@@ -324,6 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
     args = parser.parse_args(argv)
+    startup_started = time.monotonic()
     try:
         spec = json.loads(args.spec)
         if not isinstance(spec, dict):
@@ -332,10 +381,17 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         _safe_error("backend_unavailable")
         return 1
+    import mlx.core as mx
+    try:
+        telemetry = _startup_telemetry(mx, startup_started)
+    except Exception:
+        _safe_error("backend_unavailable")
+        return 1
     _emit({
         "type": "ready", "protocol_version": PROTOCOL_VERSION,
         "model_id": spec.get("model_id"), "revision": spec.get("revision"),
         "device": "gpu", "stop_handling": "parent", "context_limit": CONTEXT_LIMIT,
+        **telemetry,
     })
     commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=8)
     cancellations: dict[str, threading.Event] = {}
@@ -350,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
     while True:
         command = commands.get()
         if command is None or command.get("type") == "shutdown":
+            reader.join(timeout=1.0)
             return 0
         if command.get("type") != "generate":
             _safe_error("protocol_error")

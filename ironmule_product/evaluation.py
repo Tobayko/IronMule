@@ -11,6 +11,7 @@ from typing import Any
 from friday_evidence.statistics import paired_ratio
 
 from .calibration_plan import POLICY, plan_id, schedule
+from .memory import POLL_INTERVAL_SECONDS, RSS_LIMIT_FRACTION, SWAP_DELTA_LIMIT_BYTES
 from friday_evidence.registry import DEFAULT_BUDGET_POLICY
 
 
@@ -328,6 +329,37 @@ def evaluate_report(report: dict) -> dict[str, Any]:
                     workers[index] = worker
             if len({worker.get("pid") for worker in workers.values()}) != 3:
                 reasons.append("worker pids are not distinct")
+        load_monitor = report.get("load_monitor")
+        if load_monitor is not None:
+            expected_load_monitor = {
+                "schema": "ironmule.load_monitor.v1",
+                "poll_interval_seconds": POLL_INTERVAL_SECONDS,
+                "swap_delta_limit_bytes": SWAP_DELTA_LIMIT_BYTES,
+                "rss_limit_fraction": RSS_LIMIT_FRACTION,
+                "mlx_peak_limit_fraction": POLICY.peak_memory_fraction,
+                "clean_shutdown_required": True,
+            }
+            if not isinstance(load_monitor, Mapping) or dict(load_monitor) != expected_load_monitor:
+                reasons.append("load monitor metadata is invalid")
+            else:
+                exits = report.get("worker_exit_codes")
+                if not isinstance(exits, list) or len(exits) != 3:
+                    reasons.append("clean shutdown proof must contain exactly three exit rows")
+                else:
+                    exit_indexes: set[int] = set()
+                    for row in exits:
+                        if not isinstance(row, Mapping) or set(row) != {"worker_index", "returncode", "normal_shutdown"}:
+                            reasons.append("worker exit proof shape is invalid")
+                            continue
+                        index, code = row.get("worker_index"), row.get("returncode")
+                        if type(index) is not int or index in exit_indexes or index not in workers:
+                            reasons.append("worker exit indexes do not map to worker proof")
+                        else:
+                            exit_indexes.add(index)
+                        if type(code) is not int or code != 0 or row.get("normal_shutdown") is not True:
+                            reasons.append("worker did not prove clean zero exit")
+                    if exit_indexes != set(workers):
+                        reasons.append("worker exit indexes are incomplete")
         expected = schedule()
         samples = report.get("samples")
         if not isinstance(samples, list) or len(samples) != len(expected):

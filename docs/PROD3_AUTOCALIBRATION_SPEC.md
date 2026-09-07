@@ -103,3 +103,22 @@ passing control-plane tests or by an incomplete calibration attempt.
 - Source, model and environment files stay frozen during each installed run.
   Package/contract corrections produce a new attempt, never altered historical
   evidence or relaxed thresholds.
+
+## Final implementation amendment — load monitor provenance
+
+Calibration run metadata now records the immutable load-monitor contract without
+changing the measurement schedule or evaluator policy:
+
+```json
+{
+  "schema": "ironmule.load_monitor.v1",
+  "poll_interval_seconds": 0.25,
+  "swap_delta_limit_bytes": 268435456,
+  "rss_limit_fraction": 0.60,
+  "mlx_peak_limit_fraction": 0.60
+}
+```
+
+The contract is emitted in `run_started`; load samples and validated worker-ready
+metrics are persisted as validation states. Legacy event journals without this
+amendment remain exportable without gaining new report fields.

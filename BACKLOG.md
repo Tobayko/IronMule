@@ -88,15 +88,23 @@ Kill: Änderungen an Energieeinstellungen, Beenden fremder Prozesse, verdeckte
 Retries, Busy-Loop oder Aufweichen einer eingefrorenen Messschwelle. Wenn keine
 gültige Phase entsteht, bleibt die Produktreferenz aktiv und Optimierung offen.
 
-## PROD4 — Modelllade-Spitze vorab begrenzen (2026-09-07)
+## PROD4 — vorausschauende Speicheradmission (Rest, 2026-09-07)
 
-Mechanismus: tatsächliche Lade-RSS-/MLX-Spitzen und Steady-State-Bedarf getrennt
-erfassen; Admission berücksichtigt den verfügbaren Speicher und temporäre
-Ladepuffer statt nur Gewichtsdateigröße und generischen Free-Prozentwert. Der
-installierte 12B-Lauf erzeugte nach Ladung 2.457.463.685 B zusätzlichen Swap, noch
-vor einer Generierung. Gate: real gemessene Lade-/Inferenzphasen mit unveränderter
-Tokenidentität, Byte-/Swapgrenzen und kontrolliertem Worker. Kill: nur verschobene
-Allocation, neue Kontext-/Qualitätsverluste oder Anheben der Grenze zum Bestehen.
+Startup-Polling, echte Lade-Telemetrie und der Shutdown-Fix sind umgesetzt und
+beantwortet (`docs/PROD4_RESULTS_2026-09-07.md`); sie sind keine Vorabreserve.
+12B scheitert weiterhin vor `ready`: das systemweite Swapdelta springt in rund
+288 ms von +51.579.454 auf +468.587.643 B, während Prozess-RSS nur 792.756.224 B
+meldet. Die Wache beendet den eigenen Worker; MLX-Ladepeaks sind noch unbekannt.
+
+Mechanismus: die tatsächlichen Allokationen in den Ladephasen mit öffentlichen
+MLX-Metriken untersuchen, anschließend Lade- und Inferenz-/KV-Bedarf getrennt
+profilieren und nur daraus modell-/umgebungsspezifische Admission ableiten.
+Prozess-RSS, Gewichtsdateigröße und generische Free-Prozente sind kein Headroom-
+Beweis; keine überlappenden VM-Zähler zu angeblich freiem RAM aufsummieren.
+Gate: tatsächliche vollständige Phasenmessung plus gültige 12B-Generierung,
+unveränderte Tokenidentität und feste Speicher-/Swapgrenzen.
+Kill: lediglich verschobene Allocation, unzuordenbare Fremdlast, Kontext-/
+Qualitätsverluste oder Anheben einer Grenze, damit das Modell durchpasst.
 
 ## PROD5 — Versionsprüfung an den geladenen Worker binden (2026-09-07)
 
@@ -107,6 +115,31 @@ invalidieren. Noch kein gemessener Effekt. Gate: unabhängige API-Paare und
 Kompatibilitäts-/Änderungstests. Kill: stale Bindungen, umgangene Versionsprüfung
 oder kein Nettovorteil über Rauschen. Nicht als isoliert erfolgreicher Knopf mit
 anderen Kandidaten kombinieren, ohne die gesamte Konfiguration zu prüfen.
+
+## PROD6 — Modellkonfiguration darf keine Python-Erweiterung nachladen (2026-09-07)
+
+Mechanismus: der installierte MLX-LM-0.31.3-Loader hat neben den eingebauten
+Modellklassen einen `config.model_file`-Pfad mit `exec_module`. Die bestehende
+Tokenizer-Option `trust_remote_code=False` sperrt diesen anderen Pfad nicht.
+Vor der breiten Modellaufnahme muss der Produktworker diesen Konfigurationspfad
+explizit ausschließen und Code-/Metadatenbindung weiterhin prüfen.
+Gate: Konfiguration mit ausführbarer Modelldatei wird vor deren Ausführung
+abgewiesen; die vorhandenen unveränderten Gemma-Snapshots bleiben lauffähig.
+Kill: stillschweigende Ausführung von Snapshot-Python, nicht erfasste alternative
+Loaderpfade oder Abschalten der Identitäts-/Kompatibilitätsprüfung.
+
+## PROD7 — geprüfte lokale UI für Lade-/Kalibrierungsverlauf (2026-09-07)
+
+Mechanismus: die verifizierten Load-screen- und Kalibrierungsereignisse in einer
+read-only lokalen Verlaufansicht zusammenführen, mit eindeutig getrennten
+Load-only-/Inferenzzahlen, Originalfehlern und späteren Korrekturen. Der bestehende
+portable Dashboard-Reader scheitert am horizontalen Overflow; der akzeptierte
+kanonische PROD3-Snapshot ersetzt keinen geprüften PROD4-UI-Nachweis.
+Gate: tatsächliche visuelle Prüfung, lückenlose Fehler-/Versuchshistorie,
+1B-Versuch 1 trotz altem `passed` sichtbar fehlerhaft, 12B nicht als Generierung
+gezählt, keine Nutzerprompts oder privaten Pfade.
+Kill: umgangener UI-Verifier, versteckte Fehlversuche, falsche Modelltest-Zähler
+oder Telemetrie-/Modellarbeit allein durch Öffnen der Ansicht.
 
 ## C1 — Reste aus dem Codex-Review vom 2026-09-03
 
