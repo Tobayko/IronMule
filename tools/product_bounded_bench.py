@@ -476,6 +476,9 @@ def run(model_id: str, output: Path, *, audit_only: bool) -> int:
 
         spec = ModelSpec(model_id, snapshot.revision, str(snapshot.path), snapshot.weight_bytes)
         report["model"] = snapshot.report_identity()
+        # The shared resolver also supports the user's ordinary HF cache.
+        # Its historical label must not imply that every snapshot is project-local.
+        report["model"]["model_source"] = "validated_local_snapshot"
         persist()
         guard = harness_preconditions()
         from ironmule.bench import MemoryGate, environment as bench_environment, paired_ratio, summarise
