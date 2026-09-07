@@ -59,10 +59,15 @@ Der eigentliche Proof of Concept entsteht außerhalb dieses verschachtelten Repo
 
 ## Bindende Nutzerregeln für Orchestrierung
 
-- `Sol` wird ausschließlich als Orchestrator für Planung, Koordination, Reviews und
-  Entscheidungen eingesetzt.
-- Alle Subagenten für Implementierung, Refactoring, Tests und operative Aufgaben müssen
-  ausschließlich `gpt-5.6-luna` (Luna) sein.
+- Subagenten werden seit dem Nutzerentscheid vom 2026-09-07 aufgabenbezogen und
+  kostenbewusst ausgewählt; die frühere ausschließliche Luna-Bindung ist aufgehoben.
+  `gpt-5.6-luna` ist die erste Wahl für klar begrenzte Routineaufgaben und Tests,
+  `gpt-5.6-terra` für anspruchsvollere Implementierung/Integration, `gpt-5.6-sol`
+  für komplexe Planung, Koordination und Reviews. `gpt-6-astra` wird gezielt für
+  besonders schwierige Architektur-/Reviewfragen eingesetzt, nicht pauschal.
+- Maßgeblich ist der Aufwand bis zum geprüften Ergebnis, nicht nur der nominelle
+  Modellpreis. Bei wiederholtem Scheitern wird die eng begrenzte Problemstelle
+  einem passenderen Modell übergeben, statt denselben Fehlversuch zu wiederholen.
 - Downloads und Installationen sind seit dem Nutzerentscheid vom 2026-09-02 ohne Einzelrückfrage
   zulässig; die frühere Bestätigungspflicht entfällt. Bedingungen im Abschnitt „Hardwarefreigabe".
 - Jede Änderung, Entscheidung, Messung und jedes Testergebnis ist automatisch zu dokumentieren;
@@ -133,6 +138,21 @@ schneller bedeutungslose Zahlen.
   mit Timeout, Ressourcenlimit, Correctness-Test und Rollback.
 
 Kurz: **die Erlaubnisfrage ist beantwortet, die Messhygiene bleibt.**
+
+## Kaggle-Freigabe (Nutzerentscheid 2026-09-07)
+
+- Kaggle MCP darf ergänzend für Tests in anderen Umgebungen genutzt werden,
+  sobald die Verbindung tatsächlich verfügbar ist. Es ist nur ein Free-Account:
+  vor jedem Lauf aktuelle Restquote prüfen, klein anfangen, Laufzeit/Accelerator-
+  Budget begrenzen und keine kostenpflichtigen Ressourcen aktivieren.
+- Nur gezielte Tests starten; keine unbeaufsichtigten Dauersessions. Eigene
+  Sessions/Jobs nach Abschluss, Fehler oder Nichtnutzung stoppen und den
+  beendeten Zustand tatsächlich nachprüfen. Bei nicht bestätigtem Stop melden.
+- Günstige Subagenten für klar abgegrenzte Kaggle-Orchestrierung bevorzugen.
+  Keine privaten Nutzerprompts, Zugangsdaten oder unnötigen Daten hochladen;
+  Notebooks/Artefakte nicht ohne Auftrag öffentlich machen.
+- Kaggle-Ergebnisse mit ihrer echten Hardware-/Softwareidentität getrennt
+  dokumentieren. Sie ersetzen keine Apple-Silicon-/Metal-Qualifikation auf dem Mac.
 
 ## Verbindlicher Arbeitsablauf
 

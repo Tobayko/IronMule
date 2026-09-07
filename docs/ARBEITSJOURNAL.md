@@ -12281,3 +12281,132 @@ stimmt mit der generierten Konfiguration für denselben Root/DB-/Config-Pfad
 Navigationsindex mit einem begrenzten Vollscan erneuert. Kein ProjectAtlas-
 Quellcode und keine Modelle wurden dabei verändert.
 Der Vollscan `index-1` ist ohne Fehler abgeschlossen.
+
+### PROD6/PROD7 — Modellcode-Grenze und verifizierte Historienprojektion
+
+PROD6 ergänzt einen vor-MLX-Konfigurationscheck sowie den ausdrücklich erzwungenen
+öffentlichen `model_config={"model_file": None}`-Override. Ein früher Dateicheck
+allein hätte die erneute Konfigurationslesung im Loader nicht sicher abgedeckt.
+Der erste Entwurf las nach einer Hashprüfung nochmals unbegrenzt; das Review
+ersetzte ihn durch einen begrenzten FD-Read mit Regularitäts-/Identitätsprüfung.
+`1e999` wird ebenso wie Infinity/NaN verworfen. Ein valider tief verschachtelter
+JSON-Test deckte eine Abhängigkeit vom veränderten Python-Rekursionslimit auf;
+eine explizite iterative Tiefengrenze 64 beseitigt sie. Ein echter Kindprozess
+ohne Site-Packages weist `custom.py` vor MLX ab und erzeugt keinen Ausführungsmarker.
+Alle vorhandenen 1B-/4B-/12B-Konfigurationen bestehen den reinen Metadatencheck.
+Die native Fortsetzung ist in `docs/PROD6_MODEL_POLICY_SPEC.md` vorregistriert.
+
+PROD7 liest beide tatsächlichen Primärjournale, gleicht terminale Anfragezähler
+mit den letzten Sample-Validierungen ab, erhält Rohstatus/Exitwerte und korrigiert
+die Darstellung des alten `passed`/-6-Ladeversuchs. 730 Ereignisse ergeben acht
+Versuche, 140 abgeschlossene Modellanfragen und fünf fehlgeschlagene/abgebrochene
+Versuche; Load-only zählt nicht als Generierung. Der erste Dashboard-Entwurf
+verwendete ungültige Renderer-Versionen/Metric-Blöcke. Nach Schema- und
+Reconciliation-Korrekturen akzeptiert der Artefaktvalidator das Datenmodell.
+
+Der portable HTML-Builder scheitert weiterhin am Desktop-Overflow. Das gelieferte
+Fehlerbild zeigt die korrekten Inhalte; die Reader-Quelle setzt die Topbar auf
+`width: 100vw` mit viewportbasierten Randwerten. Das ist ein konkreter Verdacht
+für Überlauf bei sichtbarer vertikaler Scrollbar, keine bereits verifizierte
+Rendererreparatur. Weder Framework-/Verifier-Code noch Browser-/OS-Einstellungen
+wurden manipuliert, und keine ungeprüfte HTML-Datei wird als fertig ausgeliefert.
+
+Die Datenqualitäts- und Notebook-Skills werden für eine ausführbare, metadata-only
+Prüfspur genutzt. Dafür wurden nbformat/nbclient/ipykernel ausschließlich in eine
+neue temporäre QA-Umgebung installiert; die LLM-Projektumgebung bleibt vorher/
+nachher auf `e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Ein temporäres Subagenten-Nutzungslimit beendete einen UI-Arbeitsschritt; danach
+bestätigte der Account-Status freie Kapazität und derselbe Luna-Agent setzte
+seinen gespeicherten Stand erfolgreich fort. Kein Reset-Credit wurde eingelöst.
+Die aktuelle Gesamtsuite besteht mit 927 Tests, 16 deselected (51,13 s).
+
+Nutzerentscheid: Subagenten dürfen jetzt aufgabenbezogen Luna, Terra, Sol oder
+Astra nutzen. Die alleinige Luna-Pflicht in AGENTS.md ist ersetzt; Routine bleibt
+bei Luna, größere Integration wird Terra zugeordnet, stärkere Modelle werden
+gezielt für schwierige Fragen statt pauschal verwendet. Die geöffneten
+[offiziellen Hinweise zur Modellwahl](https://developers.openai.com/tracks/building-agents#how-to-choose)
+stützen die Unterscheidung nach Aufgabenkomplexität; daraus werden keine konkreten
+Codex-Abonnementkosten oder garantierten Ersparnisse abgeleitet.
+
+Die direkte lokale, schreibgeschützte IronMule-Weboberfläche wurde ausdrücklich
+freigegeben. Damit wird die bisherige Abhängigkeit von einem externen Dashboard-
+Renderer für das Produkt aufgehoben; dessen fehlerhafter HTML-Export wird nicht
+als Lösung ausgegeben. Der eigentliche Produktcode bleibt während des laufenden
+installierten 1B-Durchgangs eingefroren. Planung/Quellenprüfung und Metadaten-QA
+ändern diesen Messstand nicht.
+
+Neue Priorisierung durch den Nutzer: die Oberfläche ist nachrangig; echte
+Modelltests haben Vorrang. Weitere UI-Implementierung ist deshalb zurückgestellt.
+Die bereits erstellte Datenprojektion und das erfolgreich ausgeführte QA-Notebook
+bleiben als Zwischenstände erhalten, nicht als fertig geprüfte Produktoberfläche.
+
+Der installierte 1B-Durchgang `2c8875cb181943fda977362b8d71acaf` ist vollständig:
+90/90 Anfragen bestanden, drei frische Worker mit Exitcode 0, identische Modell-/
+Code-/Environment-/Hardwarebindung vorher/nachher. Die unabhängige Auswertung
+aus dem Journalexport reproduziert `inconclusive` ohne Aktivierung. Beobachtete
+Ratio-Mediane für Caps 1/8/32: 0,990136 / 0,974446 / 0,991229; die festen
+Rauschschwellen 0,266272 / 0,233275 / 0,148454 werden nicht übersprungen.
+35,351157 s konservativ erfasste Arbeit, Maximum 0,595315 s am Stück,
+372,444143 s Pflichtpausen, 119,92215 s Cooldown, 690,216597 s Laufzeit.
+Rohdatei: `research/raw/PROD6_1B_installed_20260907_attempt1.json`.
+Der Kandidat ist für diesen vollständigen 1B-Plan beantwortet, nicht qualifiziert.
+
+Der nächste 4B-Lauf ist vor Ausführung als echte Ausgabe-Regressionsprüfung
+präzisiert (ein Warmup + drei Referenzanfragen), nicht als Wiederholung des
+geschlossenen Performanceprotokolls. Ein erster Harness-Entwurf hätte SQLite
+aus einem fremden Monitor-Thread geschrieben; das Review verlangt Prüfung im
+besitzenden Thread, vollständige Fehlerbuchhaltung und erneute Readiness nach
+dem Hashing. Kein Hardwarelauf dieses Entwurfs wurde gestartet.
+
+### Fortsetzung 12B — zusätzliche Prozessmessung vorregistriert
+
+Die 4B-Referenzprüfung ist inzwischen tatsächlich bestanden: Lauf
+`8ab88f2b59f7489a8b17525014b68332`, ein Warmup und drei Generierungen, alle vier
+vollständigen Ausgaben identisch zur gemessenen Stock-Referenz; PID 22856 beendet
+sich mit Exitcode 0. Rohdatei `research/raw/PROD6_4B_reference_20260907_attempt1.json`.
+Die User-Priorität bleibt Modellprüfung, nicht Oberfläche.
+
+Für 12B ergänzt `PROD4_PROCESS_MEMORY_SPEC.md` den vorhandenen kontrollierten
+Load-only-Pfad um `proc_pid_rusage` V4 und fünf Sekunden Kontrolle ohne Modell.
+Der SDK-Abgleich liefert 296 Bytes sowie Offsets 64/72/240/280 für resident,
+footprint und beide Peak-Felder. Diese Zusatzmessung ist kein neuer Kernel und
+verändert keine Speichergrenze. Ein physischer Footprint wird nicht mit RSS
+addiert; fehlende Zusatztelemetrie kann keinen erfolgreichen Diagnoselauf ergeben.
+
+Die Kaggle-Freigabe ist dauerhaft mit Free-Account-/Budget-/Stop-Regeln in
+AGENTS.md festgehalten. Hier wird keine Kaggle-Session gestartet: der aktuelle
+12B-Befund betrifft Apple Metal auf dem lokalen M1 Max und ist dort zu prüfen.
+
+### 12B lokal tatsächlich bestanden — Ladung und Generierung
+
+Ladediagnose `ffab58946c0a47fd9db22524bb9ff263`: 18 echte Kontroll- und 67
+Worker-Beobachtungen, jeweils maximal 0 B Swapdelta, Prozess-Footprint-Peak
+8.133.171.488 B, MLX-Ladepeak 7.188.274.696 B, normaler Exitcode 0.
+Anschließend nach mehr als 60 s Abstand Generierungsregression
+`c633cec2b3e84410b10adb3050f5451b`: ein Warmup plus drei tatsächliche 12B-
+Generierungen, alle vier vollständigen Ausgabehashes exakt gleich der realen
+Stock-Referenz. MLX-Peak maximal 7.327.146.968 B, Swapdelta 0 B, Exitcode 0.
+Vorher-/Nachher-Identitäten und Quellmanifeste stimmen in beiden Läufen überein.
+Details/Grenzen/Rohdateien stehen in `docs/PROD4P_12B_RESULTS_2026-09-07.md`.
+
+Der Installations-Codehash änderte sich durch das Diagnosehilfsmodul von
+`bdbd6c18c58c05c9a47f0e487ef37dcb189f1ead1ae8b03c591e49f9b1df1d76` auf
+`e4a9002a0f18f6a8a5d6d8c524b8766624ae9325f58defd5d84c6e8bfca8689e`.
+MLX/MLX-LM/NumPy/Transformers blieben unverändert; kein alter Lauf autorisiert
+diesen neuen Code automatisch. Die Projektumgebung wurde nicht angefasst.
+PROD1-B und der Modellcode-Schutz PROD6 sind beantwortet und aus dem Backlog
+entfernt. Prognostische Admission, Langkontext/Dauerlast und vollständige
+12B-Performancequalifikation bleiben offen. Die frühere Swapverletzung ist
+kein gelöschter Fehler und kein Beleg für einen heute erzielten Speedup.
+
+Abschließende Gesamtsuite: 940 bestanden, 16 deselected (49,62 s), Ruff-F und
+Xcode-First-Launch ebenfalls bestanden. Separates Read-only-Review gleicht beide
+12B-Rohberichte mit den kettenverifizierten Journalen ab: 18 Idle-/67 Lade-
+Beobachtungen im Diagnoseversuch, 129 Kontrollbeobachtungen und vier Ausgaben
+im Referenzversuch, jeweils Null-Swapdelta und bestätigte Exitcodes 0. Keine
+privaten Pfade, Nutzertexte oder Zugangsdaten in den geprüften Rohdaten.
+Die lokale Projektumgebung bleibt auf
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Build-Zwischenstände sind im eigenen temporären Prüfbereich wiederherstellbar
+abgelegt. Die zurückgestellten UI-Zwischenstände werden nicht als fertige
+Produktoberfläche mit diesem Modelltest-Meilenstein vermischt.

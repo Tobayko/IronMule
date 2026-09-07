@@ -39,7 +39,7 @@ class LoadScreenFailure(RuntimeError):
         super().__init__(detail or code)
 
 
-_EXPECTED_ABORT_CODES = frozenset(("cancelled", "paused", "job_deadline", "readiness_timeout"))
+_EXPECTED_ABORT_CODES = frozenset(("cancelled", "paused", "job_deadline", "readiness_timeout", "process_memory_probe_failed"))
 
 
 def _memory_guard_code(exc: BaseException) -> str | None:
@@ -69,7 +69,7 @@ def classify_worker_exit(
     return "crashed"
 
 
-def _source_manifest() -> dict[str, str]:
+def _source_manifest(*, process_memory: bool = False) -> dict[str, str]:
     root = Path(__file__).resolve().parents[1]
     paths = [
         Path(__file__).resolve(),
@@ -82,6 +82,9 @@ def _source_manifest() -> dict[str, str]:
         root / "friday_evidence" / "events.py",
         root / "friday_evidence" / "budget.py",
     ]
+    if process_memory:
+        paths.extend((root / "friday_evidence" / "process_memory.py",
+                      root / "docs" / "PROD4_PROCESS_MEMORY_SPEC.md"))
     result = {}
     for path in paths:
         if not path.is_file() or path.is_symlink() or path.stat().st_size > MAX_SOURCE_FILE_BYTES:
@@ -166,11 +169,11 @@ def _versions() -> dict[str, str | None]:
     return result
 
 
-def _installed_package_proof() -> dict[str, Any]:
+def _installed_package_proof(extra_modules: tuple[str, ...] = ()) -> dict[str, Any]:
     import importlib
 
     project_root = Path(__file__).resolve().parents[1]
-    names = ("ironmule_product.backend", "ironmule_product.memory", "friday_evidence.events", "friday_evidence.identity")
+    names = ("ironmule_product.backend", "ironmule_product.memory", "friday_evidence.events", "friday_evidence.identity", *extra_modules)
     module_hashes: dict[str, str] = {}
     outside = True
     for name in names:
@@ -198,7 +201,9 @@ def _installed_package_proof() -> dict[str, Any]:
     }
 
 
-def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict:
+def run(state_dir: Path, model_id: str, output: Path, wait_ready: float, *, process_memory: bool = False) -> dict:
+    if type(process_memory) is not bool:
+        raise LoadScreenFailure("invalid_process_memory_option")
     if not isinstance(model_id, str) or not model_id or len(model_id) > 4096:
         raise LoadScreenFailure("invalid_model_id")
     if isinstance(wait_ready, bool) or not isinstance(wait_ready, (int, float)) or not math.isfinite(wait_ready) or not 0 <= wait_ready <= 900:
@@ -218,8 +223,10 @@ def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict
         "model_id": spec.model_id, "revision": spec.revision,
         "performance_claim": False, "activation_allowed": False,
         "samples": [], "readiness_samples": [], "load_memory_samples": [],
-        "worker": None, "source_manifest_before": _source_manifest(),
+        "worker": None, "source_manifest_before": _source_manifest(process_memory=process_memory),
         "platform": platform.platform(), "package_import": None,
+        "process_memory_probe": "darwin_rusage_v4" if process_memory else None,
+        "idle_memory_samples": [],
     }
     cancel = threading.Event()
     guard: BudgetGuard | None = None
@@ -258,10 +265,37 @@ def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict
                     "policy": asdict(READINESS_POLICY), "wait_ready": float(wait_ready),
                     "swap_delta_limit_bytes": SWAP_DELTA_LIMIT_BYTES,
                     "rss_limit_fraction": 0.60,
+                    "process_memory_probe": report["process_memory_probe"],
+                    "idle_control_seconds": 5.0 if process_memory else 0.0,
                 }),
+                "process_memory_probe": report["process_memory_probe"],
             })
-            report["package_import"] = _installed_package_proof()
+            report["package_import"] = _installed_package_proof(
+                ("friday_evidence.process_memory",) if process_memory else (),
+            )
             report["versions"] = report["package_import"]["versions"]
+            if process_memory:
+                from friday_evidence.process_memory import ProcessMemoryError, sample_process_memory
+
+            def record_memory(sample: dict[str, Any], *, idle: bool = False) -> None:
+                saved = dict(sample)
+                diagnostic_error = None
+                if process_memory:
+                    try:
+                        saved["process_memory"] = sample_process_memory(sample["pid"])
+                    except ProcessMemoryError as exc:
+                        diagnostic_error = exc.code
+                        saved["process_memory_error"] = diagnostic_error
+                report["idle_memory_samples" if idle else "load_memory_samples"].append(saved)
+                journal.append(run_id, "validation", {
+                    "state": "idle_memory_sample" if idle else "load_memory_sample",
+                    "observation": saved,
+                })
+                # Keep an already-observed swap/RSS failure as the primary
+                # error; absence of required diagnostic data otherwise stops.
+                if diagnostic_error and not sample.get("errors"):
+                    raise LoadScreenFailure("process_memory_probe_failed")
+
             with model_lease(store):
                 initial_deadline = min(job_deadline, time.monotonic() + float(wait_ready))
                 initial, _ = _wait_ready(
@@ -296,11 +330,21 @@ def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict
                     raise LoadScreenFailure("swap_growth")
                 guard = BudgetGuard(sleeper=sleep)
 
+                if process_memory:
+                    idle_guard = LoadMemoryGuard(
+                        swap_baseline_bytes=report["swap_baseline_bytes"],
+                        memory_total_bytes=report["memory_total_bytes"],
+                        on_sample=lambda sample: record_memory(sample, idle=True),
+                    )
+                    idle_end = time.monotonic() + 5.0
+                    while time.monotonic() < idle_end:
+                        check()
+                        idle_guard(os.getpid())
+                        sleep(min(0.25, max(0.0, idle_end - time.monotonic())))
+                    idle_guard(os.getpid(), force=True)
+
                 def on_load_memory_sample(sample: dict[str, Any]) -> None:
-                    report["load_memory_samples"].append(dict(sample))
-                    journal.append(run_id, "validation", {
-                        "state": "load_memory_sample", "observation": dict(sample),
-                    })
+                    record_memory(sample)
 
                 load_guard = LoadMemoryGuard(
                     swap_baseline_bytes=report["swap_baseline_bytes"],
@@ -395,7 +439,7 @@ def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict
                 check()
                 report["status"] = "passed"
                 report["budget"] = guard.summary()
-            report["source_manifest_after"] = _source_manifest()
+            report["source_manifest_after"] = _source_manifest(process_memory=process_memory)
             if report["source_manifest_after"] != report["source_manifest_before"]:
                 raise LoadScreenFailure("source_changed")
             journal.append(run_id, "run_finished", {
@@ -410,7 +454,7 @@ def run(state_dir: Path, model_id: str, output: Path, wait_ready: float) -> dict
         report["samples"] = report["readiness_samples"] + report["load_memory_samples"]
         if guard is not None:
             report["budget"] = guard.summary()
-        report.setdefault("source_manifest_after", _source_manifest())
+        report.setdefault("source_manifest_after", _source_manifest(process_memory=process_memory))
         try:
             with EventJournal(state_dir / JOURNAL_NAME) as failed_journal:
                 failed_journal.append(run_id, "run_finished", {
@@ -429,12 +473,15 @@ def main() -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--execute", action="store_true")
     parser.add_argument("--wait-ready", type=float, default=DEFAULT_WAIT_READY)
+    parser.add_argument("--process-memory", action="store_true",
+                        help="Record Darwin physical footprint and a five-second no-worker control")
     args = parser.parse_args()
     if not args.execute:
         print(json.dumps({"state": "not_released", "hint": "pass --execute"}))
         return 78
     try:
-        report = run(args.state_dir, args.model, args.output, args.wait_ready)
+        report = run(args.state_dir, args.model, args.output, args.wait_ready,
+                     process_memory=args.process_memory)
         _exclusive_write(args.output, report)
         print(json.dumps({"status": report["status"], "run_id": report["run_id"], "output": str(args.output)}))
         return 0 if report["status"] == "passed" else 1
