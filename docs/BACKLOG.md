@@ -8,6 +8,17 @@ This file exists because the alternative is holding twenty half-ideas in one hea
 re-deriving them badly six weeks later. An idea written down with its kill criterion
 costs nothing to keep and can be refuted by anyone.
 
+## PROD1 — Approved product implementation (2026-09-05)
+
+The user approved the product-wrapper plan, real-hardware validation of every
+locally available Gemma model, and publishing completed work to GitHub. The
+cross-tree work list is `BACKLOG.md` PROD1. Mechanism: portable model/backend
+contracts, corrected population-aware evaluation, measured configuration
+interactions, and conservative RL outside the token path. Gate: installed-product
+correctness plus paired end-to-end validation against the unchanged product and
+stock mlx_lm references. Kill: missing evidence, resource/quality failures or no
+net gain leaves the reference active. Historical sealed artifacts stay unchanged.
+
 ## Read this before optimising anything
 
 **Making the runtime faster usually makes the headline number smaller.** The shipped

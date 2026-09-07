@@ -12,8 +12,8 @@ low-latency and high-throughput execution, reuse shared prompt prefixes, measure
 to first token (TTFT), and keep a record of which MLX optimisations are both faster
 and correct on your machine.
 
-IronMule runs locally. It does not upload prompts, download models, or hide a cloud
-service behind the API.
+IronMule runs locally. It does not upload prompts, silently download models, or hide
+a cloud service behind the API. Model downloads require an explicit command.
 
 <p align="center">
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/license-fair--code-111111?style=for-the-badge" alt="License: fair-code"></a>
@@ -48,6 +48,25 @@ tensor batches, and the public benchmark fails when the two modes change the out
 
 ## Quick start
 
+### Local HTTP service preview
+
+This development branch adds a persistent, isolated model service:
+
+```bash
+ironmule setup --mode desktop
+ironmule models list --family gemma --json
+ironmule models add mlx-community/gemma-3-1b-it-4bit
+ironmule serve --model mlx-community/gemma-3-1b-it-4bit
+```
+
+After installing the checkout below, follow the
+[product quick start](docs/PRODUCT_QUICKSTART.md) for JSON/SSE requests,
+model registration, server mode and TLS. This preview serves the stock MLX-LM
+reference: **autonomous optimization and RL are not yet enabled**. Existing
+Python runtime optimizations described below are a separate execution path.
+
+### Install the checkout
+
 You need Python 3.10+, an Apple Silicon Mac, MLX, and a compatible model already in
 your local Hugging Face cache. The package is not currently published on PyPI, so
 install it from a checkout:
@@ -67,8 +86,9 @@ ironmule doctor
 ironmule models
 ```
 
-`ironmule models` prints an empty list on a fresh machine. IronMule never downloads
-weights, so fetch one model yourself first — about 3.4 GB for the 4B used below:
+`ironmule models` prints an empty list on a fresh machine. Fetch one model first
+— about 3.4 GB for the 4B used below — or use the preview's explicit
+`models add MODEL --download` command after setup:
 
 ```bash
 hf download mlx-community/gemma-3-4b-it-4bit

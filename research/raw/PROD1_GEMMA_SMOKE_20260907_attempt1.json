@@ -1,0 +1,204 @@
+{
+  "activation_allowed": false,
+  "error": "continuous GPU work budget exceeded",
+  "error_type": "BudgetError",
+  "git_dirty": true,
+  "git_head": "c260c8ca179b408c6ef6d12261324351600b77a9",
+  "models": [
+    {
+      "error": "continuous GPU work budget exceeded",
+      "error_type": "BudgetError",
+      "model_id": "mlx-community/gemma-3-1b-it-4bit",
+      "product": [
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.36715691699646413,
+          "warmup": true
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.2985438330215402,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.32853733299998567,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.3028748339856975,
+          "warmup": false
+        }
+      ],
+      "product_load_wall_seconds": 4.290812625025865,
+      "reference": {
+        "guard": {
+          "candidate_cooldown_seconds": 60.0,
+          "continuous_gpu_limit_seconds": 6.0,
+          "cooldown_seconds": 0.0,
+          "duty_cycle_limit": 0.25,
+          "gpu_work_limit_seconds": 120.0,
+          "gpu_work_seconds": 1.374249,
+          "max_continuous_gpu_seconds": 0.436675,
+          "required_break_limit_seconds": 4.0,
+          "required_break_seconds": 20.025201,
+          "wall_limit_seconds": 1200.0,
+          "wall_seconds": 26.662683
+        },
+        "hardware": {
+          "architecture": "applegpu_g13s",
+          "device_name": "Apple M1 Max",
+          "max_buffer_length": 20100448256,
+          "max_recommended_working_set_size": 26800603136,
+          "memory_size": 34359738368,
+          "resource_limit": 499000
+        },
+        "load_wall_seconds": 5.263052999973297,
+        "samples": [
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.4366749589680694,
+            "warmup": true
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.30440745799569413,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.31294391700066626,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.3202229999587871,
+            "warmup": false
+          }
+        ]
+      },
+      "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+      "sse": {
+        "done_markers": 1,
+        "text": "Here\u2019s a short sentence about apples"
+      },
+      "status": "failed"
+    }
+  ],
+  "os": "macOS-26.6.2-arm64-arm-64bit",
+  "performance_claim": false,
+  "python": "3.12.13",
+  "schema": "ironmule.product_gemma_smoke.v1",
+  "source_sha256_before": "ab3f8aa3a576a8c3099788bf612804b735b9d621cc0ed581dd60317a5c83862d",
+  "status": "failed",
+  "versions": {
+    "mlx": "0.32.0",
+    "mlx-lm": "0.31.3",
+    "numpy": "2.5.2"
+  }
+}

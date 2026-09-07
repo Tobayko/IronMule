@@ -11772,3 +11772,164 @@ Fensters liefen. Die Ursache ging verloren, weil meine Fehlerausgabe stderr nur
 aufnahm, wenn stdout unparsbar war — der Läufer druckt seinen Entscheid aber vor
 der Messung. Behoben. Der Punkt wurde am 2026-09-05 nachgeholt und lief durch
 (`0,8794`, `+12,06 %`); der Abbruch war transient.
+
+## 2026-09-05 — PROD1: Produktumsetzung freigegeben, Zugriffsgrenzen diagnostiziert
+
+Der Nutzer hat den kritisch revidierten Wrapper-/Produktplan zur Umsetzung
+freigegeben: CLI/API, autonome Optimierung und RL, Desktop-/Serverprofil,
+Exact als Standard, Efficiency mit 0,5-Prozentpunkte-Nichtunterlegenheitsgrenze,
+lokale Metadaten ohne persistierte Nutzerprompts. Live-Hardwaretests aller
+lokalen Gemma-Modelle und Veröffentlichung fertiger Arbeit auf GitHub sind
+freigegeben. Der frühere Gesprächswunsch ohne Benchmarks ist damit ersetzt.
+
+Ausgangsstand `dc6d32c`, sauberer Arbeitsbaum. ProjectAtlas-MCP scheitert an
+der Sitzungs-Approval-Policy; versionierter CLI-Fallback 0.4.5-rc1 genutzt und
+nach `dependency_closure_limit` vollständig aufgefrischt. ProjectAtlas-Quellcode
+blieb unverändert. Xcode-First-Launch-Prüfung erfolgreich; AC-Strom vorhanden.
+Python/MLX/mlx-lm: `3.12.13/0.32.0/0.31.3`. Keine Installation durchgeführt.
+
+**Echter Vorabfehler:** `mx.metal.is_available()` ist `True`, aber bereits
+`mx.device_info()` scheitert mit `No Metal device available`. Die vorhandene
+CLI meldete davor `(True, 'Metal available')`. `_probe_metal` prüft jetzt im
+isolierten Kind Gerätezugriff und eine winzige explizite GPU-Addition. In dieser
+Sitzung meldet sie korrekt `False`; `doctor --json` liefert `ready=false` und
+Exitcode 1. Das ist ein verifizierter Diagnosefix, kein GPU-Erfolg.
+
+GitHub ist per Git nicht erreichbar (`Could not resolve host: github.com`),
+`.git` ist per Sitzungsrechten schreibgeschützt. Die Nutzerfreigabe ist vorhanden;
+Metal-Validierung und Commit/Push benötigen tatsächlichen Zugriff und werden
+nicht als erledigt gemeldet. Keine CPU-Ersatzmessung.
+
+Die Umsetzung wird in `docs/PRODUCT_IMPLEMENTATION_2026-09-05.md` geführt.
+Luna-Subagenten bearbeiteten getrennt R2-Nennerkorrektur, lokale Modellinventur
+und Primärquellenrecherche; der Hauptagent prüft die Ergebnisse unabhängig.
+Die Recherche samt Mechanismen und Kill-Kriterien steht in
+`docs/PRODUCT_RESEARCH_2026-09-05.md`; keine externe Leistungszahl wird auf diesen
+Mac übertragen.
+
+### PROD1 — abgeschlossene erste Teilschritte
+
+PROD1-A ist beantwortet und aus der offenen Liste entfernt. Der separate
+Evaluator `experiments/r2_campaign/corrected_evaluation.py` prüft den
+400er-Zugplan gegen die 352 tatsächlichen Records und ergänzt ausschließlich
+mathematische Nullbeiträge der 48 ausgelassenen `persistent_process`-Züge.
+Die Originaldateien bleiben unverändert; der historische Holdout bleibt
+unentschieden. Individuell resampelte Bootstrap-Bereiche sind ausdrücklich nur
+IID-Diagnostik mit ungeprüfter Zeitabhängigkeit. Der fehlgeschlagene Versuch378
+und ungeprüfte Äquivalenz der Messabhängigkeiten über Commits bleiben sichtbar.
+
+Unabhängiger Review korrigierte eine erste Testfixture, die unzulässig fehlende
+zielgestützte Aktionen als Null wertete, sowie veränderbare historische
+Schwellen und eine falsche Independence-Metadatenbezeichnung. Neue Regressionen
+weisen diese Fälle zurück. Die publizierbare Ableitung enthält keinen absoluten
+lokalen Datenbankpfad.
+
+`ironmule models list --family gemma --json` funktioniert ohne Runtime-Import.
+Die tatsächlichen MLX-Gewichtsdateien ergeben 1B: 732577304 B, 4B: 3400569562 B,
+12B: 8028675248 B. Das sind Metadaten, keine Inferenz-/Speichermessung. Der
+erste Inventurentwurf hielt die veralteten HF-Shard-Indizes fälschlich für
+verbindlich. Behoben durch ausdrücklich getrennte HF- und MLX-LM-Auswahl;
+Indexabweichungen werden weiter angezeigt. Fehlende echte Tokenizerartefakte,
+Verzeichnis-Symlink-Ausbrüche, zyklische Links und übergroße JSON-Metadaten sind
+abgesichert.
+
+Verifikation: 19 fokussierte Datei-/CLI-/Rechentests bestanden; Wheel gebaut
+und CLI/Inventur per Python `-S` direkt aus dem Wheel außerhalb des Checkouts
+erfolgreich aufgerufen. Keine vollständige Installation oder GPU-Suite behauptet.
+Ein erster Wheel-Smoke nutzte versehentlich einen relativen Interpreterpfad aus
+`/private/tmp`; Exit127, anschließend mit dem absoluten Projektinterpreter
+korrigiert und bestanden. Build-Artefakte werden im temporären Build-Verzeichnis
+aufbewahrt. Produkt-Serving, RL-Aktivierung, Gemma-Live-Tests und GitHub-Push
+bleiben offen wegen des fehlenden Zugriffs und sind nicht als fertig markiert.
+
+## 2026-09-07 — PROD1: Hardwarezugriff wieder möglich, R2 publiziert, Streamingfehler gefunden
+
+Die Sitzungsrechte erlauben jetzt geprüfte Eskalationen. Eine winzige reale
+Metal-Addition ist außerhalb der Sandbox bestanden; auch GitHub-DNS funktioniert.
+Die dauerhafte Hardwarefreigabe des Nutzers bleibt ausdrücklich gültig.
+
+R2-Korrektur als `c260c8c` auf `Codex/ironmule-product` gepusht. Ein erster Push
+scheiterte, weil das case-insensitive Dateisystem den Ref unter `Codex` anlegte,
+HEAD aber `codex` enthielt. Die automatische Prüfung lehnte die Angleichung
+zunächst wegen vermuteter fremder Historie ab. Read-only-Vergleich bewies, dass
+beide Refs und HEAD dieselbe vollständige Commit-ID tragen und seit main nur
+die vier R2-Dateien geändert sind. Danach wurde die Angleichung freigegeben und
+der Push ausgeführt. Keine andere Branchhistorie wurde verändert.
+
+Produktkern/CLI: portable Settings/Modellregistrierung, isolierter Referenzworker,
+JSONL-Protokoll mit echten Deadlines sowie HTTP/SSE werden verbunden. Review
+behob unter anderem gepufferte Pipe-Reads, doppelte Stop-Verarbeitung,
+GPU-Enum-Vergleich, fälschlich abgelehnte Streaming-/Seed-Felder und unerwünschtes
+chmod bestehender Zustandsverzeichnisse. Keine Optimierungsfreigabe folgt daraus.
+
+Der registrierte reale Gemma-Screen Versuch 1 endet `failed` und bleibt unter
+`research/raw/PROD1_GEMMA_SMOKE_20260907_attempt1.json` erhalten. Gemma 1B lieferte
+bei Warmup und drei Wiederholungen exakt dieselben Tokens/Text/Stops wie das
+getrennte direkte mlx_lm-Referenzprogramm. JSON und SSE lieferten passenden Text.
+Der SSE-Body endete jedoch erst mit dem 15-s-HTTP-Leerlauf-Timeout, da er
+keep-alive ohne Längen-/Chunk-Framing verwendete. BudgetGuard verwarf korrekt
+die als konservative obere Grenze gebuchte Clientdauer. Behoben durch expliziten
+Verbindungsabschluss nach `[DONE]`; Amendment und neue Versuchdatei vorgesehen.
+Der Lauf qualifiziert keinen Performancegewinn und noch keine Modellmatrix.
+
+### PROD1 — vollständige kurze Modellmatrix und Servergrenzen
+
+Versuch 2 (`research/raw/PROD1_GEMMA_SMOKE_20260907_attempt2.json`) ist terminal
+`passed`: alle drei vollständigen lokalen Gemma-Snapshots 1B/4B/12B, getrennte
+Stock-/Produktprozesse, jeweils Warmup plus drei Wiederholungen mit vollständiger
+Token-/Text-/Stop-/Count-Identität sowie reale JSON-/SSE-/Stop-Anfragen. Der
+Quellhash vor/nach ist identisch. Das ist ein kurzer Korrektheitsnachweis, kein
+Performance- oder Dauerlastnachweis. Versuch 1 bleibt sichtbar fehlgeschlagen.
+
+Nachfolgender unabhängiger Review/Regressionen: Deadline und Cancellation greifen
+auch bei bereits gepufferten IPC-Frames; NaN/Inf-Timeouts und übergroße encodierte
+Anfragen werden vor Workerstart abgewiesen. Der Modellprozess wird für einen
+reinen Anfragefehler nicht als kaputt markiert. Das Kontextlimit beträgt explizit
+8192 inklusive Prompt und reservierter Ausgabe. Versuche jenseits dieses Limits
+werden nach tatsächlicher Tokenisierung vor dem Model-Forward verworfen.
+
+Reale IPv4/IPv6-, Auth-, Origin-, Framing- und TLS-Tests sowie Belegung aller 64
+Handlerplätze sind ausgeführt. Eine unvollständige TLS-Verbindung konnte den
+Accept-Loop blockieren: Handshake wanderte in den bereits zugelassenen Handler
+mit 15-s-Timeout. TLS-Sättigung schließt unverhandelte Sockets statt Klartext zu
+senden. 117 fokussierte Produkt-/IPC-/Datei-/HTTP-/Rechentests bestanden vor der
+zusätzlichen Auth-Alias-Regression. Keine Inferenz wurde dafür vorgetäuscht.
+
+Ein zweiter Review bestätigte Wheel-Bau und extrahierte `python -S`-Smokes für
+Setup, Registry, Status, Inventur und Hilfe außerhalb des Checkouts; Build-Reste
+liegen im eigenen temporären Verzeichnis. Kein Paket wurde installiert und kein
+Environment-Hash durch ein Dependency-Update geändert. Die Readme verweist jetzt
+auf `docs/PRODUCT_QUICKSTART.md` und trennt die neue Referenz-API ausdrücklich von
+den älteren Python-Runtime-Optimierungen. `configuration_only` bleibt wahr.
+
+PROD2 ist als eigener Mechanismus vorregistriert: ungenutzter letzter Forward bei
+endlichem greedy-Ausgabelimit. Der erste Harness-Review fand eine echte
+Auswertungsgefahr: AB/BA wurden noch positionsabhängig statt nach Armnamen
+zugeordnet. Das würde den BA-Quotienten invertieren. Vor jeder Ausführung muss
+die Zuordnung repariert, Rohdaten vor Gate-Fehlern gesichert und A/A-Rauschen je
+Längenklasse statt über verschieden lange Anfragen zusammen ausgewertet werden.
+Noch keine Performancezahl oder automatische Aktivierung aus diesem Kandidaten.
+
+### PROD1 — erweiterter nativer Screen bestanden; abschließender Auth-Fix
+
+Versuch 3 ist terminal `passed`, Quellhash vor/nach identisch. Gemma 1B/4B/12B
+bestehen getrennte Stock-Referenzvergleiche, HTTP/SSE/Stop, tatsächliche
+Mid-Generation-Cancellation nach dem ersten Token (in allen drei Fällen endet
+der Worker bei Completion-Count 2), Kontext-Overflow-Abweisung und exakt passende
+anschließende Wiederverwendung desselben geladenen Workers. Kein eigener
+`ironmule_product/worker.py`-Prozess bleibt nach dem Test übrig.
+
+Nach Ende dieses Quellen-Freeze wurde ausschließlich die HTTP-Authentifizierung
+nachgeschärft: ASCII-Ersetzung ließ einen Nicht-ASCII-Bearer (`abcé`) auf einen
+konfigurierten ASCII-Schlüssel (`abc?`) abbilden. Eine echte Loopback-Regression
+zeigte zunächst HTTP 200 statt 401. Strikte ASCII-Gültigkeit zusätzlich zum
+weiterhin ausgeführten konstantzeitigen Vergleich verhindert diese Aliasbildung.
+Der Modell-/Generatorcode des Screens blieb dabei unverändert. Der abschließende
+fokussierte Testlauf ist `118 passed`, die bestehende CLI-Suite `28 passed`.
+
+Zusätzlicher echter MPS-Smoke: PyTorch 2.13.0, Tensoraddition auf `mps:0`,
+Synchronisation und Ergebnisprüfung bestanden. Die öffentliche Foundation-API
+meldet `isLowPowerModeEnabled=false`; die neuen macOS-pmset-Ausgaben haben hier
+stattdessen `powermode=2`, weshalb eine fehlende `lowpowermode`-Zeile ausdrücklich
+nicht als fehlgeschlagene Hardwarefreigabe oder als boolesche Messung gilt.
+Kein Benchmark aus dieser winzigen Probe abgeleitet.

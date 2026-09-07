@@ -1,0 +1,713 @@
+{
+  "activation_allowed": false,
+  "git_dirty": true,
+  "git_head": "c260c8ca179b408c6ef6d12261324351600b77a9",
+  "guard": {
+    "candidate_cooldown_seconds": 60.0,
+    "continuous_gpu_limit_seconds": 6.0,
+    "cooldown_seconds": 120.008536,
+    "duty_cycle_limit": 0.25,
+    "gpu_work_limit_seconds": 120.0,
+    "gpu_work_seconds": 11.351297,
+    "max_continuous_gpu_seconds": 1.500804,
+    "required_break_limit_seconds": 4.0,
+    "required_break_seconds": 96.10046,
+    "wall_limit_seconds": 1200.0,
+    "wall_seconds": 330.459796
+  },
+  "models": [
+    {
+      "http": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "message": {
+              "content": "Here\u2019s a short sentence about apples",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1788760837,
+        "id": "chatcmpl-43de7cf702ce41cbbfb683868ee2298c",
+        "model": "mlx-community/gemma-3-1b-it-4bit",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 16,
+          "total_tokens": 24
+        }
+      },
+      "model_id": "mlx-community/gemma-3-1b-it-4bit",
+      "product": [
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.3267771669779904,
+          "warmup": true
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.29709670797456056,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.2987918750150129,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Here\u2019s a short sentence about apples",
+          "tokens": [
+            8291,
+            236858,
+            236751,
+            496,
+            2822,
+            13315,
+            1003,
+            36157
+          ],
+          "wall_seconds": 0.27825762500287965,
+          "warmup": false
+        }
+      ],
+      "product_load_wall_seconds": 4.079589125001803,
+      "reference": {
+        "guard": {
+          "candidate_cooldown_seconds": 60.0,
+          "continuous_gpu_limit_seconds": 6.0,
+          "cooldown_seconds": 0.0,
+          "duty_cycle_limit": 0.25,
+          "gpu_work_limit_seconds": 120.0,
+          "gpu_work_seconds": 1.268656,
+          "max_continuous_gpu_seconds": 0.346588,
+          "required_break_limit_seconds": 4.0,
+          "required_break_seconds": 20.02507,
+          "wall_limit_seconds": 1200.0,
+          "wall_seconds": 25.343586
+        },
+        "hardware": {
+          "architecture": "applegpu_g13s",
+          "device_name": "Apple M1 Max",
+          "max_buffer_length": 20100448256,
+          "max_recommended_working_set_size": 26800603136,
+          "memory_size": 34359738368,
+          "resource_limit": 499000
+        },
+        "load_wall_seconds": 4.049502875015605,
+        "samples": [
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.34658754197880626,
+            "warmup": true
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.298336332954932,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.3186721249949187,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Here\u2019s a short sentence about apples",
+            "tokens": [
+              8291,
+              236858,
+              236751,
+              496,
+              2822,
+              13315,
+              1003,
+              36157
+            ],
+            "wall_seconds": 0.3050597079563886,
+            "warmup": false
+          }
+        ]
+      },
+      "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+      "service_health": {
+        "active_requests": 0,
+        "backend": "mlx_lm_reference",
+        "cancelled_requests": 0,
+        "completed_requests": 3,
+        "execution": "exact",
+        "failed_requests": 0,
+        "loaded_model": "mlx-community/gemma-3-1b-it-4bit",
+        "mode": "server",
+        "optimization": {
+          "configuration_only": true,
+          "engine_started": false,
+          "optimization_paused": false,
+          "paused": false,
+          "schema": 1
+        },
+        "queued_requests": 0,
+        "ready": true,
+        "service": "ironmule"
+      },
+      "sse": {
+        "done_markers": 1,
+        "text": "Here\u2019s a short sentence about apples",
+        "wall_seconds": 0.2868409169605002
+      },
+      "status": "passed",
+      "stop": {
+        "matched": true
+      }
+    },
+    {
+      "http": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "message": {
+              "content": "Crisp and juicy, apples are a",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1788760965,
+        "id": "chatcmpl-3c20404203c3462287a1a5bde3aafd05",
+        "model": "mlx-community/gemma-3-4b-it-4bit",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 16,
+          "total_tokens": 24
+        }
+      },
+      "model_id": "mlx-community/gemma-3-4b-it-4bit",
+      "product": [
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp and juicy, apples are a",
+          "tokens": [
+            165541,
+            236758,
+            532,
+            54127,
+            236764,
+            36157,
+            659,
+            496
+          ],
+          "wall_seconds": 0.4502598340041004,
+          "warmup": true
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp and juicy, apples are a",
+          "tokens": [
+            165541,
+            236758,
+            532,
+            54127,
+            236764,
+            36157,
+            659,
+            496
+          ],
+          "wall_seconds": 0.4348052919958718,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp and juicy, apples are a",
+          "tokens": [
+            165541,
+            236758,
+            532,
+            54127,
+            236764,
+            36157,
+            659,
+            496
+          ],
+          "wall_seconds": 0.44336408295203,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp and juicy, apples are a",
+          "tokens": [
+            165541,
+            236758,
+            532,
+            54127,
+            236764,
+            36157,
+            659,
+            496
+          ],
+          "wall_seconds": 0.48678058304358274,
+          "warmup": false
+        }
+      ],
+      "product_load_wall_seconds": 4.082626916992012,
+      "reference": {
+        "guard": {
+          "candidate_cooldown_seconds": 60.0,
+          "continuous_gpu_limit_seconds": 6.0,
+          "cooldown_seconds": 0.0,
+          "duty_cycle_limit": 0.25,
+          "gpu_work_limit_seconds": 120.0,
+          "gpu_work_seconds": 2.057442,
+          "max_continuous_gpu_seconds": 0.718519,
+          "required_break_limit_seconds": 4.0,
+          "required_break_seconds": 20.01722,
+          "wall_limit_seconds": 1200.0,
+          "wall_seconds": 26.662103
+        },
+        "hardware": {
+          "architecture": "applegpu_g13s",
+          "device_name": "Apple M1 Max",
+          "max_buffer_length": 20100448256,
+          "max_recommended_working_set_size": 26800603136,
+          "memory_size": 34359738368,
+          "resource_limit": 499000
+        },
+        "load_wall_seconds": 4.5870279999799095,
+        "samples": [
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp and juicy, apples are a",
+            "tokens": [
+              165541,
+              236758,
+              532,
+              54127,
+              236764,
+              36157,
+              659,
+              496
+            ],
+            "wall_seconds": 0.7185188750154339,
+            "warmup": true
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp and juicy, apples are a",
+            "tokens": [
+              165541,
+              236758,
+              532,
+              54127,
+              236764,
+              36157,
+              659,
+              496
+            ],
+            "wall_seconds": 0.4506220839684829,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp and juicy, apples are a",
+            "tokens": [
+              165541,
+              236758,
+              532,
+              54127,
+              236764,
+              36157,
+              659,
+              496
+            ],
+            "wall_seconds": 0.4294105000444688,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp and juicy, apples are a",
+            "tokens": [
+              165541,
+              236758,
+              532,
+              54127,
+              236764,
+              36157,
+              659,
+              496
+            ],
+            "wall_seconds": 0.4588906669523567,
+            "warmup": false
+          }
+        ]
+      },
+      "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+      "service_health": {
+        "active_requests": 0,
+        "backend": "mlx_lm_reference",
+        "cancelled_requests": 0,
+        "completed_requests": 3,
+        "execution": "exact",
+        "failed_requests": 0,
+        "loaded_model": "mlx-community/gemma-3-4b-it-4bit",
+        "mode": "server",
+        "optimization": {
+          "configuration_only": true,
+          "engine_started": false,
+          "optimization_paused": false,
+          "paused": false,
+          "schema": 1
+        },
+        "queued_requests": 0,
+        "ready": true,
+        "service": "ironmule"
+      },
+      "sse": {
+        "done_markers": 1,
+        "text": "Crisp and juicy, apples are a",
+        "wall_seconds": 0.43771112500689924
+      },
+      "status": "passed",
+      "stop": {
+        "matched": true
+      }
+    },
+    {
+      "http": {
+        "choices": [
+          {
+            "finish_reason": "length",
+            "index": 0,
+            "message": {
+              "content": "Crisp, juicy apples are a delicious",
+              "role": "assistant"
+            }
+          }
+        ],
+        "created": 1788761101,
+        "id": "chatcmpl-c72ffbe1fee74d5bba9e238fe252447c",
+        "model": "mlx-community/gemma-3-12b-it-4bit",
+        "object": "chat.completion",
+        "usage": {
+          "completion_tokens": 8,
+          "prompt_tokens": 16,
+          "total_tokens": 24
+        }
+      },
+      "model_id": "mlx-community/gemma-3-12b-it-4bit",
+      "product": [
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp, juicy apples are a delicious",
+          "tokens": [
+            165541,
+            236758,
+            236764,
+            54127,
+            36157,
+            659,
+            496,
+            14788
+          ],
+          "wall_seconds": 1.5008042499539442,
+          "warmup": true
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp, juicy apples are a delicious",
+          "tokens": [
+            165541,
+            236758,
+            236764,
+            54127,
+            36157,
+            659,
+            496,
+            14788
+          ],
+          "wall_seconds": 0.7936917920014821,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp, juicy apples are a delicious",
+          "tokens": [
+            165541,
+            236758,
+            236764,
+            54127,
+            36157,
+            659,
+            496,
+            14788
+          ],
+          "wall_seconds": 0.7931809169822372,
+          "warmup": false
+        },
+        {
+          "completion_tokens": 8,
+          "finish_reason": "length",
+          "prompt_tokens": 16,
+          "text": "Crisp, juicy apples are a delicious",
+          "tokens": [
+            165541,
+            236758,
+            236764,
+            54127,
+            36157,
+            659,
+            496,
+            14788
+          ],
+          "wall_seconds": 0.8025215420057066,
+          "warmup": false
+        }
+      ],
+      "product_load_wall_seconds": 5.704176458995789,
+      "reference": {
+        "guard": {
+          "candidate_cooldown_seconds": 60.0,
+          "continuous_gpu_limit_seconds": 6.0,
+          "cooldown_seconds": 0.0,
+          "duty_cycle_limit": 0.25,
+          "gpu_work_limit_seconds": 120.0,
+          "gpu_work_seconds": 4.148366,
+          "max_continuous_gpu_seconds": 1.689695,
+          "required_break_limit_seconds": 4.0,
+          "required_break_seconds": 20.020083,
+          "wall_limit_seconds": 1200.0,
+          "wall_seconds": 30.526437
+        },
+        "hardware": {
+          "architecture": "applegpu_g13s",
+          "device_name": "Apple M1 Max",
+          "max_buffer_length": 20100448256,
+          "max_recommended_working_set_size": 26800603136,
+          "memory_size": 34359738368,
+          "resource_limit": 499000
+        },
+        "load_wall_seconds": 6.357517874974292,
+        "samples": [
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp, juicy apples are a delicious",
+            "tokens": [
+              165541,
+              236758,
+              236764,
+              54127,
+              36157,
+              659,
+              496,
+              14788
+            ],
+            "wall_seconds": 1.689694957982283,
+            "warmup": true
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp, juicy apples are a delicious",
+            "tokens": [
+              165541,
+              236758,
+              236764,
+              54127,
+              36157,
+              659,
+              496,
+              14788
+            ],
+            "wall_seconds": 0.8137655419996008,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp, juicy apples are a delicious",
+            "tokens": [
+              165541,
+              236758,
+              236764,
+              54127,
+              36157,
+              659,
+              496,
+              14788
+            ],
+            "wall_seconds": 0.8328373329713941,
+            "warmup": false
+          },
+          {
+            "completion_tokens": 8,
+            "finish_reason": "length",
+            "prompt_tokens": 16,
+            "text": "Crisp, juicy apples are a delicious",
+            "tokens": [
+              165541,
+              236758,
+              236764,
+              54127,
+              36157,
+              659,
+              496,
+              14788
+            ],
+            "wall_seconds": 0.8120684580062516,
+            "warmup": false
+          }
+        ]
+      },
+      "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+      "service_health": {
+        "active_requests": 0,
+        "backend": "mlx_lm_reference",
+        "cancelled_requests": 0,
+        "completed_requests": 3,
+        "execution": "exact",
+        "failed_requests": 0,
+        "loaded_model": "mlx-community/gemma-3-12b-it-4bit",
+        "mode": "server",
+        "optimization": {
+          "configuration_only": true,
+          "engine_started": false,
+          "optimization_paused": false,
+          "paused": false,
+          "schema": 1
+        },
+        "queued_requests": 0,
+        "ready": true,
+        "service": "ironmule"
+      },
+      "sse": {
+        "done_markers": 1,
+        "text": "Crisp, juicy apples are a delicious",
+        "wall_seconds": 0.8029806669801474
+      },
+      "status": "passed",
+      "stop": {
+        "matched": true
+      }
+    }
+  ],
+  "os": "macOS-26.6.2-arm64-arm-64bit",
+  "performance_claim": false,
+  "python": "3.12.13",
+  "schema": "ironmule.product_gemma_smoke.v1",
+  "source_sha256_after": "1b2eecbfca31ab9795feb06351d043a8f316ed7906eda7b5de646ee67463a2a8",
+  "source_sha256_before": "1b2eecbfca31ab9795feb06351d043a8f316ed7906eda7b5de646ee67463a2a8",
+  "status": "passed",
+  "versions": {
+    "mlx": "0.32.0",
+    "mlx-lm": "0.31.3",
+    "numpy": "2.5.2"
+  }
+}
