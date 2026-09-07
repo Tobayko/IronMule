@@ -83,9 +83,9 @@ unveränderten MLX-LM-Callback nach Cache-/First-token-Evaluation: **keine reine
 GPU-Zeitstempel**, keine isoliert bewiesenen Compilerkosten. Der alte 6-s-Test
 konnte diese vollständig korrekten längeren Antworten nicht abwarten.
 
-Offen bleiben das separat vorregistrierte einstündige Serverprofil, eine
-weitergehende GPU-/Engpassdiagnose sowie autonome Optimierung/RL mit echten
-Reward-/Validierungsdaten. Keine Performanceaktivierung und kein allgemeiner
+Das separat vorregistrierte [einstündige Serverprofil ist inzwischen bestanden](PROD10S_RESULTS_2026-09-08.md).
+Offen bleiben eine weitergehende GPU-/Engpassdiagnose sowie autonome
+Optimierung/RL mit echten Reward-/Validierungsdaten. Keine Performanceaktivierung und kein allgemeiner
 Produktions-, Multi-Mac- oder Lernclaim aus dieser Integrationsmatrix.
 
 ## Reproduzierbare Quellen

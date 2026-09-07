@@ -14,7 +14,10 @@ bestehen Gemma 1B/4B/12B jeweils 35 vollständige native Anfragen einschließlic
 1.077-Token-Kontext, JSON/SSE, gleichzeitiger Clients und Warm-Recovery nach
 echtem Disconnect. Ein dabei nativ belegter Service-Abbruchfehler ist behoben;
 alle sechs Worker enden normal0. [Nachweise und Grenzen](docs/PROD10_RESULTS_2026-09-07.md).
-Das einstündige Serverprofil und autonome Optimierung/RL sind noch offen.
+Das [einstündige 12B-Serverprofil](docs/PROD10S_RESULTS_2026-09-08.md) ist ebenfalls
+bestanden: 798 weitere Anfragen, darunter 264 aus Vierfach-Batches, normaler
+Workerabschluss und unveränderte Identität. Speicheraussagen sind auf den
+Modellworker begrenzt. GPU-Detaildiagnose und autonome Optimierung/RL sind offen.
 
 Frühere, getrennt gültige Prüfschritte:
 

@@ -108,9 +108,12 @@ Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
 beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`):
 1. Die beobachteten Host-/Bibliotheksphasen und Speicherwerte durch gezielte
    GPU-/Engpassdiagnose ergänzen; keine reine GPU-Zeit aus Hostzeit erfinden.
-3. Echten Serverbetrieb mit längerer Nutzung, parallelen Anfragen, Abbruch,
-   Recovery und Speicherentwicklung prüfen; 1-h-Stabilitätsprofil als eigener
-   endlicher Versuch, keine unbegrenzte Hintergrundsession.
+3. Server-/Client-Prozessspeicher getrennt erfassen, bevor die belegte
+   Modellworker-Speicheraussage auf die gesamte Serveranwendung erweitert wird.
+   Mechanismus: getrennte Prozesse verhindern, dass Tester-/Journalhaltung als
+   Serverleck erscheint. Kill: vermischte PIDs/Zähler oder fehlende Telemetrie.
+   Die einstündige API-/Modellworker-Prüfung selbst ist beantwortet:
+   `docs/PROD10S_RESULTS_2026-09-08.md`; nicht für bessere Zahlen wiederholen.
 4. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
    Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
    bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
