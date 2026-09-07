@@ -2,9 +2,10 @@
 
 IronMule now includes a portable CLI and an OpenAI-compatible text chat API.
 The preview keeps one registered model in an isolated, persistent MLX worker.
-It is **not yet the autonomous optimizer**: optimization status explicitly says
-`configuration_only`, and the stock reference remains the default. Long-running
-server qualification, automatic configuration promotion and RL are still open.
+It now includes bounded automatic calibration jobs and a verified local history.
+The stock reference remains the default: automatic configuration promotion, an
+always-on background optimizer, RL and long-running server qualification are still
+open. Calibration does not silently enable an experimental backend.
 
 ## Start on an Apple Silicon Mac
 
@@ -72,6 +73,40 @@ or `IRONMULE_HOME` for a dedicated private directory. An existing shared/public
 directory is rejected rather than silently changing its permissions. Product
 state contains settings and model registrations, not prompts or generated text.
 In-flight text stays in memory; request logging and automatic uploads are off.
+
+## Automatic calibration jobs
+
+```sh
+ironmule optimize run --model mlx-community/gemma-3-1b-it-4bit --wait-ready 300
+ironmule optimize status
+ironmule optimize history --limit 100
+ironmule optimize pause
+ironmule optimize resume
+```
+
+The job waits for three spaced, eligible host observations before loading weights.
+It then owns the frozen 90-call reference/candidate protocol, including warmups,
+A/A, AB/BA, fresh workers and strict memory/time/identity checks. If no valid window
+appears, it exits with code 3 (`deferred`) and records the reason; it does not
+weaken thresholds, secretly retry or change the Mac's power settings.
+
+Use `--readiness-only` to exercise the wait/status path without loading a model.
+`--json` returns the full calibration report; the ordinary output is a concise
+summary. `history --after-seq N` pages verified metadata events. Model output and
+user messages are never journaled. A kernel-held lock, not an old PID/status file,
+proves a running calibration job. Interrupted jobs are not called successful.
+
+This stage is a standalone calibration job. Serving and calibration are serialized
+for the same configured state directory; it cannot duplicate a live serving model
+in that state. Separate state directories and other applications are not a global
+GPU scheduler, so do not launch concurrent GPU workloads to create calibration
+evidence. Sharing an online serving worker and automatic deferred-job rescheduling
+are later integration work. Pause ends a running job at its next checkpoint;
+resume clears the pause setting but does not create a hidden replacement job.
+
+A `calibration_signal` is limited evidence for the registered workload, not a
+deployment authorization. The evaluator independently checks the complete schedule,
+outputs, hardware/model/software identities and recorded resource timeline.
 
 ## Network exposure
 

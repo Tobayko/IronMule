@@ -12,7 +12,7 @@ import threading
 import time
 from typing import Any, Iterator
 
-from .errors import (BackendUnavailable, InvalidRequest,
+from .errors import (BackendUnavailable, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .types import GenerationRequest, ModelSpec
 
@@ -84,6 +84,14 @@ class ProductService:
         self._thread.start()
 
     def health(self) -> dict[str, Any]:
+        try:
+            optimization = self.store.optimization_status()
+        except StateError:
+            # Corrupt optimizer diagnostics disable optimization, not a healthy
+            # stock model. Model-registration admission remains independently
+            # validated for every actual request.
+            optimization = {"stage": "unavailable", "engine_started": False,
+                            "activation_allowed": False, "error_code": "optimization_status_invalid"}
         with self._lock:
             return {"service": "ironmule", "ready": bool(not self._closed.is_set() and self.backend is not None and self.backend.ready),
                     "mode": self.settings["mode"], "execution": "exact",
@@ -91,7 +99,7 @@ class ProductService:
                     "queued_requests": self._pending.qsize(), "active_requests": int(self._active is not None),
                     "completed_requests": self._completed, "failed_requests": self._failed,
                     "cancelled_requests": self._cancelled,
-                    "optimization": self.store.optimization_status()}
+                    "optimization": optimization}
 
     def models(self) -> list[dict[str, Any]]:
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",

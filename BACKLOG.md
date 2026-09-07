@@ -18,11 +18,11 @@ Versuchshistorie, geprüfte Konfigurationskombinationen und darauf aufbauendes R
 Die vorhandene R2-Auswertung wird zuerst separat korrigiert, ohne Originaldaten
 oder den eingefrorenen Holdout umzuschreiben.
 
-- **PROD1-B (Rest):** Modellgenerierung auch aus dem installierten Wheel außerhalb
-  des Quellbaums prüfen. Inventur, portable CLI/API, saubere CI-Installation und
-  echte kurze Source-Tree-Gemma-Matrix sind beantwortet; Ergebnisse stehen in
-  `docs/PRODUCT_CHECKPOINT_2026-09-07.md`. Gate: keine Entwickler-Worktrees oder
-  unbemerkten Source-Imports im installierten Modellpfad.
+- **PROD1-B (Rest):** installierte 12B-Generierung unter gültigen Speicherbedingungen
+  prüfen. Die unabhängige Installation sowie 1B-/4B-Generierung sind beantwortet
+  (`docs/PROD3_RESULTS_2026-09-07.md`); 12B wurde nach Modellladung vor der ersten
+  Anfrage wegen Swapwachstum gestoppt. Gate: keine Entwickler-Worktree-Imports,
+  echte vollständige Ausgaben und gültige Ressourcenlage.
   Kill: fehlende Hardwarequalifikation lässt den Pfad ausdrücklich unqualifiziert.
 - **PROD1-C:** Scheduler-/Cache-Korrekturen, autonome Suche, Kostenmodell und
   konservatives mehrstufiges RL. Gate: unabhängige, gepaarte End-to-End-Bestätigung
@@ -64,25 +64,49 @@ Kill: keine tatsächlich vermiedene Arbeit, sichtbare Abweichung, Ressourcenfehl
 oder kein Nettovorteil über Rauschen/Wrapperkosten. Quelldatei/Version werden exakt
 gebunden; eine neue Library-Version erbt den Kandidaten nicht ungeprüft.
 
-Rest: gepaarte vollständige Bestätigung auf 1B/4B/12B. Der 1B-Forward-Audit ist
-beantwortet; Ergebnisse und alle verworfenen Versuche stehen in
-`docs/PRODUCT_CHECKPOINT_2026-09-07.md`. Keine Leistungsfreigabe aus Teilmessungen.
+Rest: vollständige gültige 1B-/12B-Bestätigung. Der 4B-Produktlauf ist beantwortet:
+vollständiges Protokoll, aber kein qualifizierter Nettovorteil; nicht denselben
+Lauf auf einen günstigeren Zufallszug hin wiederholen. Ergebnisse stehen in
+`docs/PROD3_RESULTS_2026-09-07.md`. Keine Leistungsfreigabe aus Teilmessungen.
 
-## PROD3 — Kalibrierung auf belastbare Ruhephasen verschieben (2026-09-07)
+## PROD3-B — automatische Neuplanung und Online-Arbitration (2026-09-07)
 
-Mechanismus: Readiness-Warten als eigenen Zustand außerhalb eines Messversuchs
-führen. Vor einer Modellladung mehrere aufeinanderfolgende gültige öffentliche
-Energie-/Thermal-/CPU-/Speicherproben verlangen, bei Fremdlast ohne Modellladung
-begrenzt zurückstellen. Jeder spätere Versuch bleibt eigenständig dokumentiert;
-ein unabhängiger Evaluator behält unveränderte Schwellen und entscheidet über
-Aktivierung. Das ist Voraussetzung für automatische Kalibrierung ohne ständige
-Nutzerinteraktion, keine Erlaubnis, misslungene Messungen zu verbergen.
+Readiness-Warten, vollständige Historie und unabhängige Bewertung sind implementiert
+und auf echter Last beziehungsweise im vollständigen 4B-Protokoll beantwortet
+(`docs/PROD3_RESULTS_2026-09-07.md`). Offen bleibt der Weg von einem einmal gestarteten
+CLI-Auftrag zu dauerhaftem automatischem Betrieb.
+
+Mechanismus: zurückgestellte Aufträge budgetiert neu einplanen, Umweltfehler von
+Kandidatenfehlern unterscheiden und normale Inferenz priorisieren. Kein zweites
+Modell gegen einen laufenden Server laden; ein gemeinsamer Scheduler muss die
+vorhandene Modellsitzung ausdrücklich besitzen. Jeder neue Versuch erhält eine
+eigene Identität und unveränderte unabhängige Gates.
 
 Gate: reale Ready/Busy-Übergänge, begrenzte Wartezeit, keine Modellladung während
 einer verweigerten Phase, vollständige Historie einschließlich Deferred/Failed.
 Kill: Änderungen an Energieeinstellungen, Beenden fremder Prozesse, verdeckte
 Retries, Busy-Loop oder Aufweichen einer eingefrorenen Messschwelle. Wenn keine
 gültige Phase entsteht, bleibt die Produktreferenz aktiv und Optimierung offen.
+
+## PROD4 — Modelllade-Spitze vorab begrenzen (2026-09-07)
+
+Mechanismus: tatsächliche Lade-RSS-/MLX-Spitzen und Steady-State-Bedarf getrennt
+erfassen; Admission berücksichtigt den verfügbaren Speicher und temporäre
+Ladepuffer statt nur Gewichtsdateigröße und generischen Free-Prozentwert. Der
+installierte 12B-Lauf erzeugte nach Ladung 2.457.463.685 B zusätzlichen Swap, noch
+vor einer Generierung. Gate: real gemessene Lade-/Inferenzphasen mit unveränderter
+Tokenidentität, Byte-/Swapgrenzen und kontrolliertem Worker. Kill: nur verschobene
+Allocation, neue Kontext-/Qualitätsverluste oder Anheben der Grenze zum Bestehen.
+
+## PROD5 — Versionsprüfung an den geladenen Worker binden (2026-09-07)
+
+Mechanismus: der begrenzte Generator prüft derzeit zweimal pro Anfrage die
+Paketversion. Eine einmalige Bindung an die tatsächlich geladenen Funktionen kann
+Kontrollaufwand sparen, wenn Code-/Environmentänderungen weiterhin zuverlässig
+invalidieren. Noch kein gemessener Effekt. Gate: unabhängige API-Paare und
+Kompatibilitäts-/Änderungstests. Kill: stale Bindungen, umgangene Versionsprüfung
+oder kein Nettovorteil über Rauschen. Nicht als isoliert erfolgreicher Knopf mit
+anderen Kandidaten kombinieren, ohne die gesamte Konfiguration zu prüfen.
 
 ## C1 — Reste aus dem Codex-Review vom 2026-09-03
 

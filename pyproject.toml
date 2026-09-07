@@ -34,8 +34,11 @@ Issues = "https://github.com/Tobayko/IronMule/issues"
 Repository = "https://github.com/Tobayko/IronMule"
 
 [tool.setuptools]
-packages = ["ironmule", "ironmule_product"]
+packages = ["ironmule", "ironmule_product", "friday_evidence", "friday_evidence.migrations"]
 py-modules = ["ironmule_cli", "ironmule_inventory"]
+
+[tool.setuptools.package-data]
+friday_evidence = ["migrations/*.sql"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ironmule._version.__version__" }

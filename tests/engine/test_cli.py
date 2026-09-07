@@ -122,9 +122,9 @@ def test_status_reports_existing_profile_state_without_loading_a_model(monkeypat
 def test_help_lists_only_implemented_cli_commands(capsys):
     assert cli.main(["--help"]) == 0
     output = capsys.readouterr().out
-    assert "{setup|serve|doctor|benchmark|models|tune|revalidate|status|info}" in output
+    assert "{setup|serve|optimize|doctor|benchmark|models|tune|revalidate|status|info}" in output
     assert all(command in output for command in ("doctor", "benchmark", "models", "tune", "revalidate", "status", "info"))
-    assert "serve" in output and "setup" in output and "\n  cache " not in output
+    assert "serve" in output and "setup" in output and "optimize" in output and "\n  cache " not in output
 
 
 def test_cache_scan_imports_huggingface_hub_only_when_called(monkeypatch):
