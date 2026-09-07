@@ -11,6 +11,7 @@ import time
 
 import pytest
 
+import ironmule_product.backend as backend_module
 from ironmule_product.backend import MLXWorkerClient
 from ironmule_product.errors import BackendUnavailable, InvalidRequest, RequestTimeout
 from ironmule_product.types import GenerationRequest, ModelSpec
@@ -32,30 +33,38 @@ def test_parent_rejects_wrong_model_without_starting_worker(tmp_path: Path) -> N
     assert not client.ready
 
 
-def test_unavailable_device_or_missing_snapshot_is_clean_backend_error(tmp_path: Path) -> None:
+def test_unavailable_device_or_missing_snapshot_is_clean_backend_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # An empty snapshot is rejected before any device operation. This checks
     # the real worker's metadata failure, not GPU availability.
     client = MLXWorkerClient(_spec(tmp_path), startup_timeout=2)
     request = GenerationRequest("local/test", (("user", "hello"),))
+    launched: list[list[str]] = []
+    real_popen = backend_module.subprocess.Popen
+
+    def recording_popen(args, *popen_args, **popen_kwargs):
+        launched.append(list(args))
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", recording_popen)
     with pytest.raises(BackendUnavailable):
         client.start()
     assert not client.ready
+    assert launched and launched[0][1:3] == ["-I", "-u"]
 
 
 def test_worker_emits_bounded_protocol_error_for_malformed_input() -> None:
-    process = subprocess.Popen(
-        [sys.executable, "-u", str(WORKER), "--spec", "{}"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+    result = subprocess.run(
+        [sys.executable, "-I", "-S", "-u", str(WORKER), "--spec", "{}"],
+        capture_output=True,
+        timeout=2,
+        check=False,
     )
-    assert process.stdout is not None
-    line = process.stdout.readline(1024 * 1024)
-    event = json.loads(line)
+    assert result.returncode == 1, result.stderr.decode(errors="replace")
+    event = json.loads(result.stdout)
     assert event["type"] == "error"
     assert event["code"] == "backend_unavailable"
     assert "prompt" not in json.dumps(event).lower()
-    process.wait(timeout=2)
+    assert b"GenericAlias" not in result.stderr
 
 
 def test_timeout_marks_client_unusable_without_restart(tmp_path: Path) -> None:

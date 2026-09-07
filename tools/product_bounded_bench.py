@@ -14,6 +14,7 @@ import hashlib
 import http.client
 import importlib.metadata
 import json
+import os
 import math
 from pathlib import Path
 import platform
@@ -85,10 +86,16 @@ def _cell_checkpoint(environment: Any) -> dict[str, Any]:
     snapshot["low_power_mode_public_api"] = state["low_power_mode"]
     snapshot["thermal_state_public_api"] = state["thermal_state"]
     snapshot["load_ratio"] = load_ratio
+    snapshot["observed_unix_ns"] = time.time_ns()
+    reasons = []
+    if snapshot.get("power_source") != "AC":
+        reasons.append("AC power is required")
     if state["low_power_mode"] or state["thermal_state"] not in ALLOWED_THERMAL_STATES:
-        raise RuntimeError("power/thermal state failed the registered cell gate")
-    if load_ratio is None or load_ratio > MAX_CPU_LOAD_RATIO:
-        raise RuntimeError("CPU load exceeded the registered cell gate")
+        reasons.append("power/thermal state failed the registered cell gate")
+    if load_ratio is None or not math.isfinite(load_ratio) or load_ratio > MAX_CPU_LOAD_RATIO:
+        reasons.append("CPU load exceeded the registered cell gate")
+    snapshot["gate_reasons"] = reasons
+    snapshot["eligible"] = not reasons
     return snapshot
 
 
@@ -492,16 +499,28 @@ def run(model_id: str, output: Path, *, audit_only: bool) -> int:
             raise RuntimeError("pilot requires an active swap/memory gate with a readable swap baseline")
         report["memory_gate"] = memory_gate.record
         persist()
+
+        def checkpoint() -> dict[str, Any]:
+            # Keep the actual refused observation as well as its reason. A
+            # failed readiness sample is evidence, not a missing context.
+            sample = _cell_checkpoint(environment)
+            report.setdefault("readiness_samples", []).append(sample)
+            persist()
+            if not sample["eligible"]:
+                raise RuntimeError("; ".join(sample["gate_reasons"]))
+            return sample
+
         orders = WORKER_ORDERS[:1] if audit_only else WORKER_ORDERS
         for index, order in enumerate(orders):
             guard.before_candidate()
+            checkpoint()  # Refuse before loading weights, not after load.
             worker_result = {"worker_index": index, "limit_order": list(order), "status": "started", "limits": {}}
             report["workers"].append(worker_result)
             persist()
             try:
                 _run_worker(spec, index, order, guard, memory_gate, audit_only=audit_only,
                             worker_result=worker_result, progress=lambda _: persist(),
-                            checkpoint=lambda: _cell_checkpoint(environment))
+                            checkpoint=checkpoint)
             except Exception as exc:
                 worker_result.update(status="failed", error_type=type(exc).__name__, error=str(exc))
                 persist()
