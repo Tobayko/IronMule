@@ -12651,3 +12651,64 @@ aus den offenen Teilaufgaben entfernt; einstündiger Serverlauf, vertiefte
 GPU-Diagnose und autonome Optimierung/RL bleiben offen. Kein Gain-Claim aus
 den ungepaarten Stock-/Produktzeiten. Der Fehlversuch mit Code6e0eff… bleibt
 separat erhalten. Kein Modellprozess aus diesen Matrixprüfungen bleibt aktiv.
+
+### PROD10-S — gemischter einstündiger Serverlauf vorregistriert
+
+Meilenstein43f3122 ist nach ausdrücklichem Payload-/Datenschutzabgleich über
+denselben freigegebenen Git-Weg veröffentlicht; CI34161209907 ist erfolgreich.
+Die zunächst abgelehnte Veröffentlichung wurde nicht umgangen. Rekursive
+Prüfung des exakten Commits: keine Nutzerprompt-/Antworttexte, privaten Pfade,
+Hostnamen, Seriennummern, Benutzerkonten oder Zugangsdaten. Vergleichbare
+Messmetadaten waren im selben bestätigten eigenen öffentlichen Repository
+bereits vorhanden. Fremde DATA1-/UI-Änderungen bleiben unpubliziert.
+
+Vor dem ersten 1-h-Lauf erweitert PROD10-S ausschließlich dessen Ablauf um
+regelmäßige Vierfach-Clientbursts (an jedem nichtnull durch zwölf teilbaren
+Requestindex). Die drei Prompt-/Ausgabelimitfälle und der installierte
+Produktcode47c416fb… bleiben unverändert. Nach der Stunde wird ein gestarteter
+Batch beendet; es beginnt kein neuer. Abschließende Health-Counter müssen
+zu allen vollständigen Antworten und genau dem beabsichtigten Cancel passen.
+Scheduler-Idle wird vor der Momentaufnahme abgewartet. Teilfehler eines
+Soak-Batches werden vollständig aufgezeichnet, nicht nach dem ersten Fehler
+versteckt. Fünf reine Ablauf-/Cleanup-Tests bestanden (0,05s), Ruff-F und
+Whitespaceprüfung bestanden. Neue Spezifikation:
+`docs/PROD10_SERVER_SOAK_SPEC.md`. Dieser zusätzliche Harnessstand wird für
+den eigenen Lauf gebunden und ändert frühere Matrixberichte nicht.
+
+### 2026-09-08 — PROD10-S einstündige gemischte Serverprüfung bestanden
+
+Run `2c508d859f414ec9892c5a20cf1d0f35` ist terminal passed nach
+3.600,372174834s Dauerphase. 798 Soak-Anfragen (je266 long8/short32/long32),
+darunter264 in66 Vierer-Batches; mitSetup833 vollständige Anfragen. Indizes
+0–797 lückenlos,534 Einzel-Batches und66 Vierer-Batches. FinalerHealth:
+completed809,cancelled1,failed0,readytrue,active0,queued0. StockPID59147 und
+ProduktPID59238 normalExit0; kein Modellneustart. Alle fünf Vorher-/Nachher-
+Bindungen gleich,Code47c416fb…edf7b7b. 3.660 Ressourcenbeobachtungen ohneFehler.
+
+Luna-Review und Root-Read-only-Auditscript bestätigen Rohbericht/Journal,
+alleSoak-Text-/Usage-/Finishvergleiche und den terminalen kanonischenDigest.
+Das Journal enthält4.520 Ereignisse diesesLaufs (5.211 in dergesamtenDB).
+Der Validierungs-Skill führt zur ausdrücklichen Trennung von aktuellem
+physical_footprint_bytes undLifetimepeak. Im erstenReview genanntePeak-Mediane
+wurden für dieTrendaussage verworfen und durchaktuelleFootprint-Mediane ersetzt:
+Q1 8.771.180.712B,Q2 8.780.830.888B,Q3 8.781.936.808B,Q4 8.781.928.616B.
+Q4−Q1=10.747.904B(10,25MiB/0,123%),keinuniversellerLeakfreiheitbeweis.
+Auch dernarrativeBatch-Endefehlerwurdeberichtigt:792–795istderletzteViererbatch,
+danachnurzweiEinzelrequests796/797. EineersteQA-Exportserialisierung scheiterte
+anInteger-Objektschlüsseln; derSchemafixverwendetStrings, keineMesswertegeändert.
+
+MaximalerProzess-Footprint9.112.590.456B, maximalesSystemswapdelta258.736.128B,
+final116.129.792B. SystemswapnichtalleindemModellzuordnen. HTTPprüftkeine
+nichtübertragenenTokenIDs; direkteTokenhashesgehörenzurVormatrix. Elternprozess
+(Service/Controller/Testclients) wurde nichtseparatgemessen. DeshalbAnalyse-QA
+share_with_caveats stattpauschalerServer-/Leak-/GPUPerformancefreigabe.
+Reproduzierbarescript `tools/product_soak_audit.py`, AuditJSON und Ergebnisse
+in `docs/PROD10S_RESULTS_2026-09-08.md`. GPU-Fenster anDATA1freigegeben.
+
+Parallel entstand nur Quellcode für einen deaktivierten privaten Präfixcache;
+keineInstallation,keinModelleinsatzwährenddesSoaks. NachEnde23reineMetadata-
+Testsbestanden(0,05s),Ruff-Fbestanden. Hardware-/Alias-/Performancequalifikation
+bleibtoffen. FürGPU-DiagnoseistMetalSystemTrace lokalalsInstruments-Vorlage
+nachgewiesen. DerersteSandboxaufrufscheiterteamInstruments-Cachezugriff;
+derselbereineListenaufrufmitgeprüfterFreigabebestand. KeineOSSicherheits-
+einstellungengeändert,nochkeinenGPUTraceaufgezeichnet.
