@@ -12,7 +12,7 @@ import threading
 import time
 from typing import Any, Iterator
 
-from .errors import (BackendUnavailable, InvalidRequest, ModelNotFound,
+from .errors import (BackendUnavailable, InvalidRequest,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .types import GenerationRequest, ModelSpec
 

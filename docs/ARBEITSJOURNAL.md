@@ -11964,3 +11964,27 @@ Probe ist real vorab ausgeführt. Readiness wird jetzt auch vor Modellladung
 geprüft; abgewiesene numerische Beobachtungen werden vor dem Gate persistiert.
 CPU-, Speicher-, Duty- und Korrektheitsgrenzen wurden nicht gelockert und keine
 fremden Nutzer-/Systemprozesse beendet.
+
+### PROD2 — Mechanismus bestätigt, Messwerkzeug weiter abgesichert
+
+1B-Audit Versuch 3 besteht mit unverändertem Quellmanifest: bei Limits 1/8/32
+jeweils Referenz 3/10/34 gegen Kandidat 2/9/33 tatsächliche Model-Forwards.
+Vollständige Token-/Text-/Stop-/Count-Identität und HTTP-Abgleich bestehen in
+allen sechs Anfragen. Das ist ein Mechanismusbefund, kein Zeitgewinn.
+
+Der folgende volle Pilot Versuch 1 stoppt nach vier Rohmessungen vor dem ersten
+vollständigen AB/BA-Paar: `summarise` war im falschen Funktionsscope importiert.
+Der Import ist korrigiert; der Fehlversuch bleibt unverändert erhalten und
+wird nicht mit dem nächsten gepoolt. Nach zwei Importfehlern wurde zusätzlich
+Ruff 0.16.6 in einer isolierten Tool-Umgebung verwendet und in CI festgelegt.
+Die statische Produkt-/Harness-Prüfung besteht. Der validierte Runtime-
+`environment_sha256` war vorher und nachher identisch:
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Keine Projekt-Dependency wurde installiert/geändert; keine zusätzliche
+Environment-Mismatch-Invalidierung bestehender Bindungen entsteht dadurch.
+
+GitHub-CI `34096419184` für `5e87d73` ist auf Python 3.11 und 3.12 terminal grün,
+einschließlich sauberem Wheelbau/Installation und vollständiger Engine-Suite.
+Der aktuelle kleine Provenienzfix `ef71e9f` bezeichnet auch den Benutzer-Cache
+korrekt als lokalen statt ausschließlich projektlokalen Snapshot. Experimentelle
+Kandidaten bleiben inaktiv; die Produktreferenz ist weiter maßgeblich.

@@ -29,6 +29,16 @@ The separate CI-discovered worker-start repair adds Python isolated mode to
 prevent the package's `types.py` from shadowing the standard library; the
 generation algorithm remains unchanged. All attempted runs stay separate.
 
+## Amendment before 1B full pilot attempt 2
+
+The 1B audit attempt 3 passed all six traced calls, including exact outputs and
+forward-count deltas. Full pilot attempt 1 then stopped after four measured
+calls: `summarise` was imported in `run`, not in the function using it. The
+artifact retains those calls; it contains no completed AB/BA pair and cannot
+support an effect estimate. Move that import to its actual scope and add a
+pinned static undefined-name check (Ruff 0.16.6) to CI. No schedule, gate,
+budget or claim changes; the full pilot restarts as a separate new attempt.
+
 ## Scope and exact baseline
 
 The candidate is derived from the installed `mlx-lm==0.31.3` greedy
