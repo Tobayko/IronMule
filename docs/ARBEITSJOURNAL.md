@@ -12005,3 +12005,110 @@ Wheel gebaut/installiert. Die 16 expliziten Modell-Integrationen auf dem fremden
 CI-Runner sind keine lokale Gemma-Evidenz. `docs/PRODUCT_CHECKPOINT_2026-09-07.md`
 trennt umgesetzten Produktkern, bewiesenen Forward-Mechanismus, verworfene
 Leistungsmessung und verbleibende Arbeit. Hardwarefreigabe bleibt dauerhaft gültig.
+
+## 2026-09-07 — PROD3: installierbare automatische Kalibrierung
+
+Der vorherige Zielturn war Fortschritt: veröffentlichter Produktkern, reale
+Gemma-Prüfungen, reparierte CI und nachprüfbar verworfene Messversuche. Das volle
+Produktziel einschließlich autonomer Optimierung/RL bleibt unverändert offen.
+
+Neu implementiert: `ironmule optimize run/status/history/pause/resume`, echte
+zeitlich getrennte Readiness-Proben, begrenztes Warten ohne Modellladung,
+kernelgestützte Job-/Modellressourcen-Sperren, isolierte native HTTP-Versuche und
+ein unabhängiger Evaluator für den eingefrorenen 90-Anfragen-Plan. Die
+Aktivierungsbefugnis bleibt ausdrücklich ausgeschlossen, bis die gesonderte
+Deployment-Bestätigung und breitere Workloads qualifiziert sind.
+
+Gemeinsame Infrastruktur bleibt unter `friday_evidence`: neue generische
+append-only Event-DB mit SHA-Kette und echte Read-only-Verifikation, model-freie
+Identitäten und eine einzige Statistikimplementierung. Der unversiegelte Engine-
+Benchmark reexportiert diese Funktionen. Bestehende versiegelte Dateien wurden
+nicht verändert. Die SQLite-API bleibt auch auf Python-Builds ohne optionale
+Extension-Loading-Methode sicher: keine Erweiterung wird aktiviert, die SQL-
+Funktion wird zusätzlich per Authorizer verweigert. Quellen:
+[Python sqlite3](https://docs.python.org/3.11/library/sqlite3.html) und
+[SQLite Extension Loading](https://sqlite.org/c3ref/load_extension.html).
+
+Reviews/echte Randtests behoben unter anderem unzureichende Hash-Prüfung beim
+Lesen, manipulierbare Triggerdefinitionen, nur einmal gesetzte DB-Größenlimits,
+zu schnelle/replayte Readiness-Proben, fehlende optionale Objective-C-Selector-
+Prüfung und eine falsche Typannahme zur Metal-Unterstützung. Tokenizer-Dateien
+werden vollständig gebunden: die echten Gemma-tokenizer.json-Dateien haben
+33.384.568 B und brauchen eine gesonderte 64-MiB-Grenze bei gestreamtem Hashing;
+sonstige Metadaten bleiben auf 16 MiB begrenzt.
+
+Echte direkte Foundation-Proben stimmen mit der separaten Systemreferenz überein.
+M1 Max, 32 GPU-Kerne, Low Power aus und Thermal-State 0 sind nachgewiesen. Zwei
+Readiness-Aufträge auf tatsächlicher Fremdlast endeten nachvollziehbar deferred,
+mit insgesamt 20 verifizierten Ereignissen und ohne Modellladung. Der zweite
+beobachtete die unverändert ungeeignete Last über 60 Sekunden. Ein zusätzlicher
+`top`-Check zeigte auch reale hohe CPU-Nutzung; der Queue-Indikator wurde nicht
+als CPU-Prozentwert umgedeutet und die Grenze nicht abgesenkt.
+
+167 integrierte Produkt-/Evidenz-/Transporttests bestanden an einem Zwischenstand;
+weitere gezielte Tests der korrigierten Verträge sind protokolliert. Der vollständige
+abschließende Testlauf/CI folgt nach dem Quellen-Freeze der nativen Ausführung.
+
+Ein echtes Wheel wurde außerhalb des Repositories in eine frische Umgebung
+installiert: Python 3.12.13, MLX 0.32.0, mlx-lm 0.31.3, NumPy 2.5.2,
+Transformers 5.15.1. `python -I` lädt ausschließlich installierte Module; keine
+Entwickler-Worktree-Imports. SQL-Migrationen sind enthalten. Der Hash der
+validierten Projektumgebung blieb vor/nach unverändert:
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+
+Installierter 1B-Versuch `a367868f9d0c478b9af7d05b3e23541c` erreichte drei echte
+gültige Readiness-Proben, scheiterte dann vor Modellladung am Metal-String/Bool-
+Vertrag. Nach gezielter Identitätsprüfung und neuem Wheel startete ein separater
+Versuch `6f4209a4f4ac460eb13af163d4390e77`: 50 tatsächliche HTTP-Anfragen in zwei
+frischen Modellprozessen, alle bis dahin token-/text-/count-identisch. Der Lauf
+wurde nach dem fünften vollständigen Block bei `load_ratio=0.972119140625`
+gegen `0.8` als failed beendet. Budget: 18.277664 s konservative Inferenzarbeit,
+maximal 0.483936 s kontinuierlich, 208.210924 s Pausen, 59.996785 s zusätzliche
+Cooldown-Sleeps, 458.228270 s Mess-Wallzeit. Kein vollständiges 90er-Protokoll,
+keine angenommene Effektgröße und keine Aktivierung. Die 4B-/12B-Installations-
+matrix bleibt separat zu prüfen; neue Versuche verwenden dieselben Gates.
+
+Der optionale Dashboard-Skill wurde für eine lokale Metadaten-Verlaufansicht
+verwendet: vollständige Quelle, keine Modelltest-Zählung aus Readiness-only,
+keine CPU-Prozentbehauptung aus Load/Kern. Die kanonischen Snapshots sind valide.
+Der HTML-Builder scheiterte zunächst am sandboxierten Chromium-Start, danach
+auch mit Zugriff an horizontalem Overflow seines Readers. Kompaktere sichtbare
+Labels lösten den Readerfehler nicht. Es wird keine erfolgreich geprüfte HTML-
+Ansicht behauptet und der Verifier nicht umgangen; CLI/JSON-Historie funktioniert.
+
+### PROD3 — installierter 4B-Lauf vollständig, 12B speicherseitig verworfen
+
+`41c03fc4b8924b3b8905c7a64b8baf49` beendet die vollständigen 90 echten 4B-HTTP-
+Anfragen über drei frische, anschließend reaped Worker. Modell-, Hardware-,
+Environment- und Code-Identität stimmen vorher/nachher. Die unabhängige Bewertung
+ist `inconclusive`, mit unverändertem Aktivierungsverbot. Aus dem verifizierten
+Journal rekonstruierte Reports reproduzieren das Ergebnis exakt. Zahlen und
+Rohdatenreferenzen stehen in `docs/PROD3_RESULTS_2026-09-07.md`.
+
+Der anschließende installierte 12B-Versuch `53b470b27d6a4ac281e15454e699421e`
+lädt den echten Snapshot, wird aber vor der ersten Generierung wegen Swapwachstum
+von 1.698.368.061 B auf 4.155.831.746 B verworfen. Der eigene Worker wurde beendet.
+Kein neuer 12B-Ausgabenachweis, keine aufgeweichte Speichergrenze. PROD4 hält
+Lade-Spitzen/Admission als neuen Mechanismus mit Kill-Kriterium fest.
+
+Standard-Cache-Audit: projektlokaler/globaler HF-Cache enthalten die bekannten
+Gemma-1B/4B/12B-Snapshots; Ollama-Manifeste und LM-Studio-Modellverzeichnis sind
+nicht vorhanden. Qwen3.8 27B ist kein Gemma und wurde nicht in diese Matrix
+umetikettiert. Unbekannte benutzerdefinierte Cachepfade sind nicht als durchsucht
+behauptet.
+
+Abschließende lokale Gesamtsuite: `855 passed, 16 deselected`, 51,47 s.
+Ein vorheriger Testfehler war eine Assertion gegen das globale `sys.modules`,
+das andere Engine-Tests legitimerweise mit MLX befüllen. Die echte Identitäts-
+prüfung läuft jetzt in einem frischen `python -S`-Kind mit explizitem Importverbot
+für Inferenzmodule; der Fehler wurde nicht durch Entfernen der Prüfung verdeckt.
+Statische Prüfungen und `git diff --check` bestehen; Xcode-First-Launch ebenfalls.
+ProjectAtlas meldet 0.4.5-rc1. Bestehende versiegelte Dateien und ProjectAtlas-
+Quellen sind unverändert. Build-/fehlgeschlagene HTML-Artefakte wurden in den
+eigenen temporären Prüfbereich verschoben, nicht gelöscht.
+
+Der aktualisierte kanonische Verlaufssnapshot enthält 461 verifizierte Ereignisse
+und vier installierte Aufträge. Validator und App-Renderer akzeptierten die
+Übergabe; eine zusätzliche visuelle Bestätigung der App-Darstellung liegt nicht
+vor. Der fehlgeschlagene portable HTML-Check bleibt ausdrücklich offen. Das
+Rendererproblem verändert weder Messdaten noch Evaluatorentscheidungen.

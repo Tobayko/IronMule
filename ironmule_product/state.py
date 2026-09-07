@@ -406,14 +406,8 @@ class ProductStore:
         raise ModelNotFound(f"model is not registered: {model_id}")
 
     def optimization_status(self) -> dict[str, Any]:
-        value = self.settings()
-        return {
-            "schema": _SCHEMA,
-            "paused": value["optimization_paused"],
-            "optimization_paused": value["optimization_paused"],
-            "configuration_only": True,
-            "engine_started": False,
-        }
+        from .calibration import status
+        return status(self)
 
     def set_optimization_paused(self, paused: bool) -> dict[str, Any]:
         if type(paused) is not bool:
@@ -425,13 +419,7 @@ class ProductStore:
             value = _settings_value(raw)
             value["optimization_paused"] = paused
             _atomic_write(self._settings_path, value)
-            return {
-                "schema": _SCHEMA,
-                "paused": paused,
-                "optimization_paused": paused,
-                "configuration_only": True,
-                "engine_started": False,
-            }
+        return self.optimization_status()
 
 
 __all__ = ["ProductStore"]

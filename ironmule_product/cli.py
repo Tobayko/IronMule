@@ -124,12 +124,15 @@ def serve(argv: list[str]) -> int:
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
     from .backend import MLXWorkerClient
+    from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
     from .service import ProductService
 
     store = ProductStore(args.state_dir)
     store.settings()
     backend = service = server = None
+    lease = None
+    lease_entered = False
     previous_term = signal.getsignal(signal.SIGTERM)
 
     def stop(_signum, _frame):
@@ -139,6 +142,12 @@ def serve(argv: list[str]) -> int:
     try:
         spec = store.model(args.model) if args.model else None
         if spec is not None:
+            lease = model_lease(store)
+            try:
+                lease.__enter__()
+                lease_entered = True
+            except CalibrationFailure as exc:
+                raise InvalidRequest("model resources are in use by another IronMule operation") from exc
             backend = MLXWorkerClient(spec)
             backend.start()
         service = ProductService(store, backend=backend, spec=spec)
@@ -158,6 +167,65 @@ def serve(argv: list[str]) -> int:
             service.close()
         elif backend is not None:
             backend.close()
+        if lease_entered:
+            lease.__exit__(None, None, None)
+    return 0
+
+
+def optimize(argv: list[str]) -> int:
+    if not argv or argv[0] in ("-h", "--help"):
+        print("usage: ironmule optimize {run|status|history|pause|resume} [options]")
+        print("run waits for real host readiness and executes a fixed, bounded calibration; no automatic activation")
+        return 0
+    action, rest = argv[0], argv[1:]
+    if action not in ("run", "status", "history", "pause", "resume"):
+        raise InvalidRequest("unknown optimization command")
+    parser = _parser(f"optimize {action}", "Local automatic calibration with a verified metadata history.")
+    parser.add_argument("--json", action="store_true", help="include the full report (other commands always return JSON)")
+    if action == "run":
+        parser.add_argument("--model", required=True, help="registered local model id")
+        parser.add_argument("--wait-ready", type=float, default=300, help="maximum readiness wait, 0..900 seconds; eligibility thresholds do not change")
+        parser.add_argument("--readiness-only", action="store_true", help="verify readiness waiting without loading any model")
+    if action == "history":
+        parser.add_argument("--limit", type=int, default=100)
+        parser.add_argument("--after-seq", type=int, default=0)
+        parser.add_argument("--run-id")
+    args = parser.parse_args(rest)
+    from .calibration import CalibrationJob, history as read_history, status as read_status
+    from friday_evidence.events import EventJournalError
+
+    store = ProductStore(args.state_dir)
+    try:
+        if action == "status":
+            _print(read_status(store))
+        elif action == "history":
+            _print(read_history(store, limit=args.limit, after_seq=args.after_seq, run_id=args.run_id))
+        elif action in ("pause", "resume"):
+            _print(store.set_optimization_paused(action == "pause"))
+        else:
+            def progress(event):
+                if event["kind"] in ("run_started", "worker_started", "deferred", "run_finished"):
+                    print(json.dumps({"event": event["kind"], "run_id": event["run_id"]}), file=sys.stderr, flush=True)
+
+            job = CalibrationJob(store, args.model, max_wait_s=args.wait_ready,
+                                 readiness_only=args.readiness_only, on_event=progress)
+            previous = signal.getsignal(signal.SIGTERM)
+
+            def stop(_signum, _frame):
+                job.cancel.set()
+                raise KeyboardInterrupt
+
+            signal.signal(signal.SIGTERM, stop)
+            try:
+                report = job.run()
+            finally:
+                signal.signal(signal.SIGTERM, previous)
+            result = report if args.json else {key: report.get(key) for key in
+                     ("run_id", "status", "model_id", "error_code", "error_type", "error_stage", "error_detail", "evaluation", "activation_allowed")}
+            _print(result)
+            return 0 if report["status"] in ("measured", "ready") else 3 if report["status"] == "deferred" else 1
+    except EventJournalError as exc:
+        raise InvalidRequest("optimization history is unavailable or failed integrity checks") from exc
     return 0
 
 
@@ -167,6 +235,8 @@ def dispatch(command: str, argv: list[str]) -> int:
             return setup(argv)
         if command == "serve":
             return serve(argv)
+        if command == "optimize":
+            return optimize(argv)
         if command == "status":
             return status(argv)
         if command == "models" and argv:

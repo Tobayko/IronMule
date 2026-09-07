@@ -17,7 +17,7 @@ def _spec(tmp_path: Path, name: str = "org/model") -> ModelSpec:
     return ModelSpec(name, "rev-1", str(snapshot), 123)
 
 
-def test_setup_defaults_and_optimization_are_configuration_only(tmp_path):
+def test_setup_defaults_and_optimization_start_inactive(tmp_path):
     store = ProductStore(tmp_path / "state")
 
     with pytest.raises(StateError):

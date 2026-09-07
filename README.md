@@ -62,7 +62,9 @@ ironmule serve --model mlx-community/gemma-3-1b-it-4bit
 After installing the checkout below, follow the
 [product quick start](docs/PRODUCT_QUICKSTART.md) for JSON/SSE requests,
 model registration, server mode and TLS. This preview serves the stock MLX-LM
-reference: **autonomous optimization and RL are not yet enabled**. Existing
+reference. `ironmule optimize run` now performs bounded calibration with automatic
+readiness waiting and local history; **automatic deployment and RL are not yet
+enabled**. Existing
 Python runtime optimizations described below are a separate execution path.
 
 ### Install the checkout

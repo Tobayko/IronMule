@@ -515,6 +515,8 @@ rerunning the same control.
 
 Listed so the next person does not spend a week rediscovering them.
 
+- **PROD2/PROD3 4B short-prompt calibration (2026-09-07).** Complete installed 90-call protocol, exact outputs and resources valid, but all three caps remain below the frozen noise qualification; no adoption. See `PROD3_4B_installed_20260907_attempt1` and `docs/PROD3_RESULTS_2026-09-07.md`; do not rerun the same design for a luckier result.
+
 - **`Q3c` direct replication attempts (2026-08-31).** Run 1 was refused before
   a phase because load `8.294921875 > 8` (raw SHA-256
   `5270c0f38e50984cd26223aa2a9817982fc5a1861ddbe2caa3cff98393c9e8d5`); run 2

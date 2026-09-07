@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import json
 import os
-import statistics
 import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any
+
+from friday_evidence.statistics import paired_ratio, summarise
 
 RESEARCH = Path(__file__).resolve().parent.parent / "research"
 RAW = RESEARCH / "raw"
@@ -163,37 +164,6 @@ def interleave(arms: list[str], processes: int) -> list[list[str]]:
         order = list(arms) if index % 2 == 0 else list(reversed(arms))
         orders.append(order)
     return orders
-
-
-def summarise(samples: list[float]) -> dict[str, float]:
-    ordered = sorted(samples)
-    return {
-        "n": len(ordered),
-        "median": statistics.median(ordered),
-        "min": ordered[0],
-        "max": ordered[-1],
-        "p95": ordered[min(len(ordered) - 1, int(round(0.95 * (len(ordered) - 1))))],
-        "stdev": statistics.stdev(ordered) if len(ordered) > 1 else 0.0,
-    }
-
-
-def paired_ratio(candidate: list[float], baseline: list[float], resamples: int = 10000,
-                 seed: int = 20260825) -> dict[str, float]:
-    """Median paired ratio with a bootstrap interval. Pairs stay pairs when resampled."""
-    import random
-    pairs = [c / b for c, b in zip(candidate, baseline)]
-    rng = random.Random(seed)
-    medians = []
-    for _ in range(resamples):
-        draw = [pairs[rng.randrange(len(pairs))] for _ in range(len(pairs))]
-        medians.append(statistics.median(draw))
-    medians.sort()
-    return {
-        "median_ratio": statistics.median(pairs),
-        "ci_low": medians[int(0.025 * resamples)],
-        "ci_high": medians[int(0.975 * resamples)],
-        "pairs": pairs,
-    }
 
 
 def record(experiment_id: str, payload: dict[str, Any]) -> Path:

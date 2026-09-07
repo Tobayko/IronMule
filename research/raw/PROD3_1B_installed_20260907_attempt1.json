@@ -1,0 +1,273 @@
+{
+  "events": [
+    {
+      "kind": "run_started",
+      "payload": {
+        "max_wait_s": 120.0,
+        "model_id": "mlx-community/gemma-3-1b-it-4bit",
+        "plan_id": "1f462e2488edf295248662806214a4f9035c876857543459c275558e0eb3eb62",
+        "readiness_only": false,
+        "readiness_policy": {
+          "allowed_thermal_states": [
+            0,
+            1
+          ],
+          "max_gap_s": 15.0,
+          "max_load_ratio": 0.8,
+          "max_sample_age_s": 10.0,
+          "min_free_percent": 10.0,
+          "sample_interval_s": 5.0,
+          "stable_samples": 3
+        },
+        "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+        "specification": {
+          "cache": "fresh_private_per_request",
+          "cell_calls": [
+            [
+              "warmup",
+              "reference",
+              true
+            ],
+            [
+              "warmup",
+              "reference",
+              false
+            ],
+            [
+              "warmup",
+              "bounded_prefetch",
+              true
+            ],
+            [
+              "warmup",
+              "bounded_prefetch",
+              false
+            ],
+            [
+              "aa",
+              "reference",
+              false
+            ],
+            [
+              "aa",
+              "reference",
+              false
+            ],
+            [
+              "ab",
+              "reference",
+              false
+            ],
+            [
+              "ab",
+              "bounded_prefetch",
+              false
+            ],
+            [
+              "ba",
+              "bounded_prefetch",
+              false
+            ],
+            [
+              "ba",
+              "reference",
+              false
+            ]
+          ],
+          "decoding": "greedy",
+          "expected_calls": 90,
+          "limit_orders": [
+            [
+              1,
+              8,
+              32
+            ],
+            [
+              8,
+              32,
+              1
+            ],
+            [
+              32,
+              1,
+              8
+            ]
+          ],
+          "metric": "full_http_completion_wall_seconds",
+          "policy": {
+            "aa_noise_multiplier": 3.0,
+            "activation_allowed": false,
+            "bootstrap_resamples": 10000,
+            "bootstrap_seed": 20260907,
+            "min_effect_fraction": 0.02,
+            "peak_memory_fraction": 0.6,
+            "protocol": "prod3-exact-greedy-http-v1",
+            "schema": 1,
+            "swap_delta_limit_bytes": 268435456
+          },
+          "prompt_sha256": "90490aa0e7d9bbf04760a1ff67ae9f6ad4d42810524b596853fc5fdc58ac9ec3"
+        }
+      },
+      "prev_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "recorded_unix_ns": 1788774311990045000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 1,
+      "sha256": "c085858dedcd1b59cbc372427d31fd54f3a507830e9a3c0c5afe0dff3c75f092"
+    },
+    {
+      "kind": "readiness",
+      "payload": {
+        "decision": {
+          "consecutive": 1,
+          "eligible": true,
+          "reasons": [],
+          "stable": false
+        },
+        "model_loaded": false,
+        "observation": {
+          "cpu_count": 10,
+          "duration_seconds": 0.02156120794825256,
+          "errors": [],
+          "load_1m": 4.06591796875,
+          "load_ratio": 0.406591796875,
+          "low_power_mode": false,
+          "memory_free_percent": 64.0,
+          "memory_total_bytes": 34359738368,
+          "observed_monotonic": 412510.182350333,
+          "observed_unix_ns": 1788774311990880000,
+          "platform_supported": true,
+          "power_source": "ac",
+          "swap_used_bytes": 1706756669,
+          "thermal_state": 0
+        }
+      },
+      "prev_sha256": "c085858dedcd1b59cbc372427d31fd54f3a507830e9a3c0c5afe0dff3c75f092",
+      "recorded_unix_ns": 1788774312012948000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 2,
+      "sha256": "954da2a3f7f2cf3722f7b3e3e8e0708951112d1c09146f451c3f0673f3104c44"
+    },
+    {
+      "kind": "readiness",
+      "payload": {
+        "decision": {
+          "consecutive": 2,
+          "eligible": true,
+          "reasons": [],
+          "stable": false
+        },
+        "model_loaded": false,
+        "observation": {
+          "cpu_count": 10,
+          "duration_seconds": 0.046760291035752743,
+          "errors": [],
+          "load_1m": 3.740234375,
+          "load_ratio": 0.3740234375,
+          "low_power_mode": false,
+          "memory_free_percent": 64.0,
+          "memory_total_bytes": 34359738368,
+          "observed_monotonic": 412515.21233475,
+          "observed_unix_ns": 1788774317020870000,
+          "platform_supported": true,
+          "power_source": "ac",
+          "swap_used_bytes": 1706756669,
+          "thermal_state": 0
+        }
+      },
+      "prev_sha256": "954da2a3f7f2cf3722f7b3e3e8e0708951112d1c09146f451c3f0673f3104c44",
+      "recorded_unix_ns": 1788774317068397000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 3,
+      "sha256": "df8a8f63dd6fcc9db8b15fbe889d54412725c9f24ea46f0aba8fb2c9bfc36811"
+    },
+    {
+      "kind": "readiness",
+      "payload": {
+        "decision": {
+          "consecutive": 3,
+          "eligible": true,
+          "reasons": [],
+          "stable": true
+        },
+        "model_loaded": false,
+        "observation": {
+          "cpu_count": 10,
+          "duration_seconds": 0.04751754197059199,
+          "errors": [],
+          "load_1m": 3.5205078125,
+          "load_ratio": 0.35205078125,
+          "low_power_mode": false,
+          "memory_free_percent": 64.0,
+          "memory_total_bytes": 34359738368,
+          "observed_monotonic": 412520.267044791,
+          "observed_unix_ns": 1788774322075584000,
+          "platform_supported": true,
+          "power_source": "ac",
+          "swap_used_bytes": 1706756669,
+          "thermal_state": 0
+        }
+      },
+      "prev_sha256": "df8a8f63dd6fcc9db8b15fbe889d54412725c9f24ea46f0aba8fb2c9bfc36811",
+      "recorded_unix_ns": 1788774322123845000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 4,
+      "sha256": "dc5eccdcff1c7bd9693c078e3a62ffaec2cae006d17977eb18eb42da085e7225"
+    },
+    {
+      "kind": "validation",
+      "payload": {
+        "state": "binding_identity"
+      },
+      "prev_sha256": "dc5eccdcff1c7bd9693c078e3a62ffaec2cae006d17977eb18eb42da085e7225",
+      "recorded_unix_ns": 1788774322595234000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 5,
+      "sha256": "d6364d1a5618974b048456bc27eb4d8f3355f5874afeda3725267a10e5086ceb"
+    },
+    {
+      "kind": "run_finished",
+      "payload": {
+        "activation_allowed": false,
+        "attempted_calls": 0,
+        "budget": null,
+        "completed_calls": 0,
+        "error_code": "calibration_failed",
+        "evaluation": null,
+        "readiness_only": false,
+        "report_status": "failed",
+        "status": "failed"
+      },
+      "prev_sha256": "d6364d1a5618974b048456bc27eb4d8f3355f5874afeda3725267a10e5086ceb",
+      "recorded_unix_ns": 1788774323147246000,
+      "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+      "seq": 6,
+      "sha256": "fd81bddaa0bd039feaafa1bae907f8e6c220b8543ec981b8ba6fe85e1460b936"
+    }
+  ],
+  "events_sha256": "288f49a398f19e1565b3d576dcd47fb235e9129fbdc6df5e66b7065dcd200d34",
+  "exported_at": "2026-09-07T10:35:25.042884+00:00",
+  "report": {
+    "activation_allowed": false,
+    "budget": null,
+    "error_code": "calibration_failed",
+    "error_detail": null,
+    "error_stage": null,
+    "error_type": null,
+    "evaluation": null,
+    "memory_total_bytes": 34359738368,
+    "model_id": "mlx-community/gemma-3-1b-it-4bit",
+    "plan_id": "1f462e2488edf295248662806214a4f9035c876857543459c275558e0eb3eb62",
+    "resource_events": [],
+    "resource_valid": false,
+    "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+    "samples": [],
+    "schema": "ironmule.calibration.v1",
+    "status": "failed",
+    "swap_baseline_bytes": 1706756669,
+    "worker_timings": [],
+    "workers": []
+  },
+  "report_sha256": "b76c056cd3128843b1186ab8084b33915292f7cba154e4e4dfada387cb904d9c",
+  "schema": "ironmule.calibration_export.v1"
+}

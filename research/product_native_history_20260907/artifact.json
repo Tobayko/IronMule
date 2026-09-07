@@ -1,0 +1,1756 @@
+{
+  "surface": "dashboard",
+  "manifest": {
+    "version": 1,
+    "title": "IronMule · Kalibrierungsverlauf",
+    "generatedAt": "2026-09-07T10:38:55.679206+00:00",
+    "sources": [
+      {
+        "id": "journal",
+        "label": "Verifizierte lokale Optimierungshistorie",
+        "path": "optimization-events.json",
+        "query": {
+          "engine": "sqlite",
+          "language": "sql",
+          "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC;",
+          "description": "Vollständiger Export nach Schema- und SHA-256-Kettenprüfung; Aufträge aus run_started/run_finished, Sensorwerte aus readiness.",
+          "tables_used": [
+            "event_journal"
+          ],
+          "executed_at": "2026-09-07T10:38:55.679206+00:00",
+          "filters": [
+            "Vollständige Historie bis maximal 2000 Ereignisse; keine Stichprobe"
+          ],
+          "metric_definitions": {
+            "model_calls": "Summe completed_calls terminaler Aufträge; Readiness-only-Aufträge führen keine Modellgenerierung aus.",
+            "load_ratio": "load_1m geteilt durch logische CPU-Kerne; keine prozentuale CPU-Auslastung."
+          }
+        }
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# IronMule · Kalibrierungsverlauf\nLokaler, unveränderlicher Snapshot der verifizierten Ereignishistorie."
+      },
+      {
+        "id": "summary",
+        "type": "markdown",
+        "sourceId": "journal",
+        "body": "**4 Aufträge · 3 fehlgeschlagen · 0 zurückgestellt · 140 abgeschlossene Modellanfragen**\n\nReadiness-only ist kein Modelltest. Diese Ansicht begründet weder einen Speedup noch eine automatische Aktivierung."
+      },
+      {
+        "id": "load",
+        "type": "chart",
+        "chartId": "load_history"
+      },
+      {
+        "id": "runs",
+        "type": "table",
+        "tableId": "run_history"
+      },
+      {
+        "id": "scope",
+        "type": "markdown",
+        "sourceId": "journal",
+        "body": "## Geltungsbereich\nNur die hier protokollierten PROD3-Aufträge. Frühere Gemma-Tests sind separate Evidenz.\n\nLast pro Kern ist keine CPU-Prozentmessung. Low Power, Thermik, Speicher und zeitliche Stabilität sind zusätzliche Gates. Proben sind Einzelbeobachtungen; Zwischenräume bleiben unbeobachtet.\n\nKeine Prompts oder Modellantworten sind enthalten."
+      }
+    ],
+    "charts": [
+      {
+        "id": "load_history",
+        "title": "Last pro Kern und Readiness-Grenze",
+        "type": "line",
+        "dataset": "observations",
+        "sourceId": "journal",
+        "encodings": {
+          "x": {
+            "field": "probe",
+            "type": "quantitative"
+          },
+          "y": {
+            "fields": [
+              "load_ratio",
+              "gate"
+            ],
+            "type": "quantitative"
+          }
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "run_history",
+        "title": "Aufträge",
+        "dataset": "runs",
+        "sourceId": "journal",
+        "columns": [
+          {
+            "field": "start_utc",
+            "label": "Start (UTC)",
+            "type": "string"
+          },
+          {
+            "field": "model_label",
+            "label": "Modell",
+            "type": "string"
+          },
+          {
+            "field": "status",
+            "label": "Status",
+            "type": "string"
+          },
+          {
+            "field": "detail",
+            "label": "Ergebnis / Grund",
+            "type": "string"
+          },
+          {
+            "field": "model_calls",
+            "label": "Modellanfragen",
+            "type": "number"
+          }
+        ],
+        "defaultSort": {
+          "field": "start_utc",
+          "direction": "desc"
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "status": "ready",
+    "generatedAt": "2026-09-07T10:38:55.679206+00:00",
+    "datasets": {
+      "observations": [
+        {
+          "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+          "time": "2026-09-07T09:45:11.990880+00:00",
+          "probe": 1,
+          "load_ratio": 0.406591796875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 64.0,
+          "probe_seconds": 0.02156120794825256
+        },
+        {
+          "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+          "time": "2026-09-07T09:45:17.020870+00:00",
+          "probe": 2,
+          "load_ratio": 0.3740234375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 64.0,
+          "probe_seconds": 0.046760291035752743
+        },
+        {
+          "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+          "time": "2026-09-07T09:45:22.075584+00:00",
+          "probe": 3,
+          "load_ratio": 0.35205078125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 64.0,
+          "probe_seconds": 0.04751754197059199
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:21.398810+00:00",
+          "probe": 4,
+          "load_ratio": 0.60205078125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.02866883302340284
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:26.437572+00:00",
+          "probe": 5,
+          "load_ratio": 0.62587890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.051932709000539035
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:31.497509+00:00",
+          "probe": 6,
+          "load_ratio": 0.607763671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.02813458297168836
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:32.334391+00:00",
+          "probe": 7,
+          "load_ratio": 0.607763671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.023374457960017025
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:37.365830+00:00",
+          "probe": 8,
+          "load_ratio": 0.57509765625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 64.0,
+          "probe_seconds": 0.03061224997509271
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:42.403751+00:00",
+          "probe": 9,
+          "load_ratio": 0.53701171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.054890458995942026
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:42.464560+00:00",
+          "probe": 10,
+          "load_ratio": 0.53701171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.02354254201054573
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:47.496320+00:00",
+          "probe": 11,
+          "load_ratio": 0.526025390625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.05489529203623533
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:52.564204+00:00",
+          "probe": 12,
+          "load_ratio": 0.79619140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.032769833982456475
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T09:59:52.600023+00:00",
+          "probe": 13,
+          "load_ratio": 0.79619140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 63.0,
+          "probe_seconds": 0.026637874951120466
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:02.777926+00:00",
+          "probe": 14,
+          "load_ratio": 0.812744140625,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.02896108297863975
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:07.812533+00:00",
+          "probe": 15,
+          "load_ratio": 0.891796875,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.07212675001937896
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:12.893905+00:00",
+          "probe": 16,
+          "load_ratio": 0.948486328125,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.06171716598328203
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:17.965215+00:00",
+          "probe": 17,
+          "load_ratio": 0.920556640625,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.05268512497423217
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:23.027449+00:00",
+          "probe": 18,
+          "load_ratio": 0.846826171875,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.05266512499656528
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:28.089891+00:00",
+          "probe": 19,
+          "load_ratio": 0.796044921875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.028917457966599613
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:33.125274+00:00",
+          "probe": 20,
+          "load_ratio": 0.764306640625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.05299770797137171
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:38.187592+00:00",
+          "probe": 21,
+          "load_ratio": 0.735107421875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.026099624985363334
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:00:38.217268+00:00",
+          "probe": 22,
+          "load_ratio": 0.735107421875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.02363304200116545
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:01:21.489401+00:00",
+          "probe": 23,
+          "load_ratio": 0.558349609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.05198154196841642
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:01:21.547477+00:00",
+          "probe": 24,
+          "load_ratio": 0.558349609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.02598370797932148
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:01:26.579817+00:00",
+          "probe": 25,
+          "load_ratio": 0.665771484375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.02841795899439603
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:01:31.618897+00:00",
+          "probe": 26,
+          "load_ratio": 0.612451171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.06842008302919567
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:01:31.699724+00:00",
+          "probe": 27,
+          "load_ratio": 0.612451171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.08645395800704136
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:15.404462+00:00",
+          "probe": 28,
+          "load_ratio": 0.549267578125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.03101916698506102
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:15.442540+00:00",
+          "probe": 29,
+          "load_ratio": 0.549267578125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.023854332976043224
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:20.475048+00:00",
+          "probe": 30,
+          "load_ratio": 0.5533203125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.02766595798311755
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:25.514831+00:00",
+          "probe": 31,
+          "load_ratio": 0.8373046875,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.03949925000779331
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:30.566590+00:00",
+          "probe": 32,
+          "load_ratio": 0.82626953125,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.029058624990284443
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:35.604940+00:00",
+          "probe": 33,
+          "load_ratio": 0.79208984375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 62.0,
+          "probe_seconds": 0.03320979198906571
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:40.650293+00:00",
+          "probe": 34,
+          "load_ratio": 0.83271484375,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.028818291961215436
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:45.691099+00:00",
+          "probe": 35,
+          "load_ratio": 1.10234375,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.02930433297296986
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:50.730339+00:00",
+          "probe": 36,
+          "load_ratio": 1.0220703125,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.03871979197720066
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:02:55.784893+00:00",
+          "probe": 37,
+          "load_ratio": 0.940185546875,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.04010408301837742
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:00.840258+00:00",
+          "probe": 38,
+          "load_ratio": 0.888916015625,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.03514820896089077
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:05.888172+00:00",
+          "probe": 39,
+          "load_ratio": 0.881787109375,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.036779666028451174
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:10.938232+00:00",
+          "probe": 40,
+          "load_ratio": 0.819140625,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.03090304200304672
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:15.981977+00:00",
+          "probe": 41,
+          "load_ratio": 0.76953125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.0493189170374535
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:21.045630+00:00",
+          "probe": 42,
+          "load_ratio": 0.707861328125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.02411533403210342
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:26.081784+00:00",
+          "probe": 43,
+          "load_ratio": 0.6591796875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.025840624992270023
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:03:26.114132+00:00",
+          "probe": 44,
+          "load_ratio": 0.6591796875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.02360404096543789
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:04:10.989504+00:00",
+          "probe": 45,
+          "load_ratio": 0.503125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.05038662499282509
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:04:12.913867+00:00",
+          "probe": 46,
+          "load_ratio": 0.503125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.027129833993967623
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:12.954011+00:00",
+          "probe": 47,
+          "load_ratio": 0.546337890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.050072417012415826
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:18.017516+00:00",
+          "probe": 48,
+          "load_ratio": 0.502587890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.042365916015114635
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:23.072925+00:00",
+          "probe": 49,
+          "load_ratio": 0.4703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.048323667026124895
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:23.133204+00:00",
+          "probe": 50,
+          "load_ratio": 0.4703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.028482833004090935
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:29.873812+00:00",
+          "probe": 51,
+          "load_ratio": 0.532177734375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.041657541994936764
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:34.931589+00:00",
+          "probe": 52,
+          "load_ratio": 0.56962890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.03386824997141957
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:39.983799+00:00",
+          "probe": 53,
+          "load_ratio": 0.547998046875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.031510540982708335
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:05:40.026612+00:00",
+          "probe": 54,
+          "load_ratio": 0.547998046875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.026237750018481165
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:06:23.671017+00:00",
+          "probe": 55,
+          "load_ratio": 0.469384765625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.036174749955534935
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:06:23.720360+00:00",
+          "probe": 56,
+          "load_ratio": 0.469384765625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.03065375000005588
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:06:28.765028+00:00",
+          "probe": 57,
+          "load_ratio": 0.503857421875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.034931082976982
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:06:33.817077+00:00",
+          "probe": 58,
+          "load_ratio": 0.5275390625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.03231112501816824
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:06:33.861896+00:00",
+          "probe": 59,
+          "load_ratio": 0.5275390625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.02747199998702854
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "time": "2026-09-07T10:07:18.767375+00:00",
+          "probe": 60,
+          "load_ratio": 0.972119140625,
+          "gate": 0.8,
+          "eligible": false,
+          "model_loaded": true,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.04053787502925843
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:27.943289+00:00",
+          "probe": 61,
+          "load_ratio": 0.348291015625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.02585320803336799
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:32.991352+00:00",
+          "probe": 62,
+          "load_ratio": 0.320361328125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.03270745900226757
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:38.045480+00:00",
+          "probe": 63,
+          "load_ratio": 0.294677734375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 61.0,
+          "probe_seconds": 0.04260337504092604
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:40.762689+00:00",
+          "probe": 64,
+          "load_ratio": 0.279052734375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.02783670899225399
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:45.816504+00:00",
+          "probe": 65,
+          "load_ratio": 0.328759765625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.0280862080398947
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:50.868970+00:00",
+          "probe": 66,
+          "load_ratio": 0.406494140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.03709525003796443
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:50.931112+00:00",
+          "probe": 67,
+          "load_ratio": 0.406494140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.023590166005305946
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:12:55.974579+00:00",
+          "probe": 68,
+          "load_ratio": 0.38193359375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.03947695798706263
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:01.040379+00:00",
+          "probe": 69,
+          "load_ratio": 0.455419921875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.030894041992723942
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:01.086398+00:00",
+          "probe": 70,
+          "load_ratio": 0.455419921875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 60.0,
+          "probe_seconds": 0.02883354196092114
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:08.798053+00:00",
+          "probe": 71,
+          "load_ratio": 0.439501953125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 51.0,
+          "probe_seconds": 0.0328877079882659
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:13.854441+00:00",
+          "probe": 72,
+          "load_ratio": 0.404296875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 51.0,
+          "probe_seconds": 0.03808654099702835
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:18.908803+00:00",
+          "probe": 73,
+          "load_ratio": 0.371875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 51.0,
+          "probe_seconds": 0.03285974997561425
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:13:18.958710+00:00",
+          "probe": 74,
+          "load_ratio": 0.371875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 51.0,
+          "probe_seconds": 0.026966582983732224
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:03.799971+00:00",
+          "probe": 75,
+          "load_ratio": 0.2099609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.03283870901213959
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:03.850122+00:00",
+          "probe": 76,
+          "load_ratio": 0.2099609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.026846249995287508
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:08.898320+00:00",
+          "probe": 77,
+          "load_ratio": 0.193115234375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.026350375032052398
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:13.947972+00:00",
+          "probe": 78,
+          "load_ratio": 0.20166015625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.030045791994780302
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:13.994051+00:00",
+          "probe": 79,
+          "load_ratio": 0.20166015625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.027670082985423505
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:59.315137+00:00",
+          "probe": 80,
+          "load_ratio": 0.22099609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.036449916020501405
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:14:59.370742+00:00",
+          "probe": 81,
+          "load_ratio": 0.22099609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.0261272499919869
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:15:04.421371+00:00",
+          "probe": 82,
+          "load_ratio": 0.203271484375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.037302708020433784
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:15:09.488157+00:00",
+          "probe": 83,
+          "load_ratio": 0.186962890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.03044620802393183
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:15:09.537354+00:00",
+          "probe": 84,
+          "load_ratio": 0.186962890625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.026272792019881308
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:15:55.465446+00:00",
+          "probe": 85,
+          "load_ratio": 0.17822265625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.029743166000116616
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:15:57.601435+00:00",
+          "probe": 86,
+          "load_ratio": 0.17822265625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.031414083030540496
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:16:57.655894+00:00",
+          "probe": 87,
+          "load_ratio": 0.184375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.03282037499593571
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:02.713625+00:00",
+          "probe": 88,
+          "load_ratio": 0.185595703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.03439612500369549
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:07.772055+00:00",
+          "probe": 89,
+          "load_ratio": 0.2267578125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.0417117920005694
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:07.834844+00:00",
+          "probe": 90,
+          "load_ratio": 0.2267578125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.026705499971285462
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:15.028465+00:00",
+          "probe": 91,
+          "load_ratio": 0.2552734375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.04593916703015566
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:20.094812+00:00",
+          "probe": 92,
+          "load_ratio": 0.290869140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.043753875012043864
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:25.165384+00:00",
+          "probe": 93,
+          "load_ratio": 0.267529296875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.03407683299155906
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:17:25.219765+00:00",
+          "probe": 94,
+          "load_ratio": 0.267529296875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.026481709035579115
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:18:10.367620+00:00",
+          "probe": 95,
+          "load_ratio": 0.191845703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.05327841697726399
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:18:10.441784+00:00",
+          "probe": 96,
+          "load_ratio": 0.191845703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.025153708993457258
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:18:15.492410+00:00",
+          "probe": 97,
+          "load_ratio": 0.19248046875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.03858595801284537
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:18:20.557610+00:00",
+          "probe": 98,
+          "load_ratio": 0.26513671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.05401737499050796
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:18:20.632311+00:00",
+          "probe": 99,
+          "load_ratio": 0.26513671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.025469666987191886
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:19:06.594027+00:00",
+          "probe": 100,
+          "load_ratio": 0.31201171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.025559791014529765
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:19:06.638051+00:00",
+          "probe": 101,
+          "load_ratio": 0.31201171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.022986457974184304
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:19:11.682023+00:00",
+          "probe": 102,
+          "load_ratio": 0.28701171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.046261917043011636
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:19:16.755068+00:00",
+          "probe": 103,
+          "load_ratio": 0.264013671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.03742737497668713
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:19:16.816655+00:00",
+          "probe": 104,
+          "load_ratio": 0.264013671875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.02700483298394829
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:20:01.291020+00:00",
+          "probe": 105,
+          "load_ratio": 0.381201171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.030457000015303493
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:20:02.741777+00:00",
+          "probe": 106,
+          "load_ratio": 0.381201171875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.02697462501237169
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:02.794792+00:00",
+          "probe": 107,
+          "load_ratio": 0.3728515625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.029881375026889145
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:07.854368+00:00",
+          "probe": 108,
+          "load_ratio": 0.34296875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.03229724999982864
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:12.909210+00:00",
+          "probe": 109,
+          "load_ratio": 0.315478515625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.04125404095975682
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:12.971452+00:00",
+          "probe": 110,
+          "load_ratio": 0.315478515625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 57.0,
+          "probe_seconds": 0.025210375024471432
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:20.185668+00:00",
+          "probe": 111,
+          "load_ratio": 0.487939453125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 54.0,
+          "probe_seconds": 0.03528191597433761
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:25.249959+00:00",
+          "probe": 112,
+          "load_ratio": 0.46484375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 54.0,
+          "probe_seconds": 0.03069166699424386
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:30.312580+00:00",
+          "probe": 113,
+          "load_ratio": 0.467626953125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.03417462500510737
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:21:30.373083+00:00",
+          "probe": 114,
+          "load_ratio": 0.467626953125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.026871500012930483
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:22:16.553792+00:00",
+          "probe": 115,
+          "load_ratio": 0.278369140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.026960457966197282
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:22:16.603959+00:00",
+          "probe": 116,
+          "load_ratio": 0.278369140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.02382783399662003
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:22:21.652005+00:00",
+          "probe": 117,
+          "load_ratio": 0.2560546875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.03485208400525153
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:22:26.719936+00:00",
+          "probe": 118,
+          "load_ratio": 0.235546875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.04412212502211332
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:22:26.789363+00:00",
+          "probe": 119,
+          "load_ratio": 0.235546875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.024888999992981553
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:23:11.525856+00:00",
+          "probe": 120,
+          "load_ratio": 0.22861328125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.04091245902236551
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:23:11.594777+00:00",
+          "probe": 121,
+          "load_ratio": 0.22861328125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.02507533400785178
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:23:16.646946+00:00",
+          "probe": 122,
+          "load_ratio": 0.210302734375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.03233666601590812
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:23:21.711311+00:00",
+          "probe": 123,
+          "load_ratio": 0.19345703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.02856158302165568
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:23:21.765884+00:00",
+          "probe": 124,
+          "load_ratio": 0.19345703125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.025229667022358626
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:24:07.313176+00:00",
+          "probe": 125,
+          "load_ratio": 0.175732421875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.032134708017110825
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:24:09.655951+00:00",
+          "probe": 126,
+          "load_ratio": 0.28974609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.02898841700516641
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "time": "2026-09-07T10:24:09.709041+00:00",
+          "probe": 127,
+          "load_ratio": 0.28974609375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.02397791703697294
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:27:56.441619+00:00",
+          "probe": 128,
+          "load_ratio": 0.331494140625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.033030625025276095
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:01.499564+00:00",
+          "probe": 129,
+          "load_ratio": 0.328955078125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 55.0,
+          "probe_seconds": 0.023507833015173674
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:06.554366+00:00",
+          "probe": 130,
+          "load_ratio": 0.342626953125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 56.0,
+          "probe_seconds": 0.028625375009141862
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:11.874290+00:00",
+          "probe": 131,
+          "load_ratio": 0.339208984375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.02977312501752749
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:16.934889+00:00",
+          "probe": 132,
+          "load_ratio": 0.33603515625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.03330891695804894
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:22.005129+00:00",
+          "probe": 133,
+          "load_ratio": 0.30908203125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.04358491697348654
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:22.106307+00:00",
+          "probe": 134,
+          "load_ratio": 0.30908203125,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.02581841597566381
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:27.161922+00:00",
+          "probe": 135,
+          "load_ratio": 0.316357421875,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.038455542002338916
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:32.239645+00:00",
+          "probe": 136,
+          "load_ratio": 0.2990234375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.03865858301287517
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:32.311840+00:00",
+          "probe": 137,
+          "load_ratio": 0.2990234375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": false,
+          "free_memory_percent": 53.0,
+          "probe_seconds": 0.026559832971543074
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:42.103196+00:00",
+          "probe": 138,
+          "load_ratio": 0.2603515625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 36.0,
+          "probe_seconds": 0.04721062502358109
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:47.180268+00:00",
+          "probe": 139,
+          "load_ratio": 0.247509765625,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 36.0,
+          "probe_seconds": 0.040087707981001586
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:52.259650+00:00",
+          "probe": 140,
+          "load_ratio": 0.235693359375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 36.0,
+          "probe_seconds": 0.041900290991179645
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "time": "2026-09-07T10:28:52.334077+00:00",
+          "probe": 141,
+          "load_ratio": 0.235693359375,
+          "gate": 0.8,
+          "eligible": true,
+          "model_loaded": true,
+          "free_memory_percent": 36.0,
+          "probe_seconds": 0.027474750007968396
+        }
+      ],
+      "runs": [
+        {
+          "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+          "started": "2026-09-07T09:45:11.990045+00:00",
+          "start_utc": "2026-09-07 09:45:11",
+          "model": "mlx-community/gemma-3-1b-it-4bit",
+          "status": "failed",
+          "model_label": "gemma-3-1b-it-4bit",
+          "readiness_only": false,
+          "model_calls": 0,
+          "load_gate": 0.8,
+          "detail": "calibration_failed"
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "started": "2026-09-07T09:59:21.397787+00:00",
+          "start_utc": "2026-09-07 09:59:21",
+          "model": "mlx-community/gemma-3-1b-it-4bit",
+          "status": "failed",
+          "model_label": "gemma-3-1b-it-4bit",
+          "readiness_only": false,
+          "model_calls": 50,
+          "load_gate": 0.8,
+          "detail": "measurement_readiness_lost"
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "started": "2026-09-07T10:12:27.942034+00:00",
+          "start_utc": "2026-09-07 10:12:27",
+          "model": "mlx-community/gemma-3-4b-it-4bit",
+          "status": "finished",
+          "model_label": "gemma-3-4b-it-4bit",
+          "readiness_only": false,
+          "model_calls": 90,
+          "load_gate": 0.8,
+          "detail": "inconclusive"
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "started": "2026-09-07T10:27:56.440099+00:00",
+          "start_utc": "2026-09-07 10:27:56",
+          "model": "mlx-community/gemma-3-12b-it-4bit",
+          "status": "failed",
+          "model_label": "gemma-3-12b-it-4bit",
+          "readiness_only": false,
+          "model_calls": 0,
+          "load_gate": 0.8,
+          "detail": "swap_growth"
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "journal",
+      "label": "Verifizierte lokale Optimierungshistorie",
+      "path": "optimization-events.json",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC;",
+        "description": "Vollständiger Export nach Schema- und SHA-256-Kettenprüfung; Aufträge aus run_started/run_finished, Sensorwerte aus readiness.",
+        "tables_used": [
+          "event_journal"
+        ],
+        "executed_at": "2026-09-07T10:38:55.679206+00:00",
+        "filters": [
+          "Vollständige Historie bis maximal 2000 Ereignisse; keine Stichprobe"
+        ],
+        "metric_definitions": {
+          "model_calls": "Summe completed_calls terminaler Aufträge; Readiness-only-Aufträge führen keine Modellgenerierung aus.",
+          "load_ratio": "load_1m geteilt durch logische CPU-Kerne; keine prozentuale CPU-Auslastung."
+        }
+      }
+    }
+  ]
+}
