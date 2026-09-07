@@ -1,0 +1,339 @@
+--- a/ironmule_product/backend.py
++++ b/ironmule_product/backend.py
+@@ -29,0 +30 @@
++_DEFAULT_DEADLINE = object()
+@@ -53 +54 @@
+-    def __init__(self, spec: ModelSpec, *, startup_timeout: float = DEFAULT_TIMEOUT) -> None:
++    def __init__(self, spec: ModelSpec, *, startup_timeout: float | None = DEFAULT_TIMEOUT) -> None:
+@@ -56,3 +57,7 @@
+-        if (isinstance(startup_timeout, bool) or not isinstance(startup_timeout, (int, float))
+-                or not math.isfinite(startup_timeout) or startup_timeout <= 0):
+-            raise ValueError("startup_timeout must be finite and positive")
++        if startup_timeout is not None and (
++            isinstance(startup_timeout, bool)
++            or not isinstance(startup_timeout, (int, float))
++            or not math.isfinite(startup_timeout)
++            or startup_timeout <= 0
++        ):
++            raise ValueError("startup_timeout must be None or finite and positive")
+@@ -60 +65 @@
+-        self.startup_timeout = float(startup_timeout)
++        self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
+@@ -101 +106,5 @@
+-    def _send(self, payload: dict[str, Any], deadline: float | None = None) -> None:
++    def _send(
++        self,
++        payload: dict[str, Any],
++        deadline: float | None | object = _DEFAULT_DEADLINE,
++    ) -> None:
+@@ -107,2 +116,6 @@
+-        if deadline is None:
+-            deadline = time.monotonic() + self.startup_timeout
++        if deadline is _DEFAULT_DEADLINE:
++            deadline = (
++                None
++                if self.startup_timeout is None
++                else time.monotonic() + self.startup_timeout
++            )
+@@ -114,2 +127,2 @@
+-                remaining = deadline - time.monotonic()
+-                if remaining <= 0:
++                remaining = None if deadline is None else deadline - time.monotonic()
++                if remaining is not None and remaining <= 0:
+@@ -126 +139,2 @@
+-                        if not selector.select(remaining):
++                        wait = _CANCEL_POLL_SECONDS if remaining is None else min(remaining, _CANCEL_POLL_SECONDS)
++                        if not selector.select(wait) and remaining is not None and time.monotonic() >= deadline:
+@@ -140 +154 @@
+-        deadline: float,
++        deadline: float | None,
+@@ -156 +170 @@
+-                if time.monotonic() >= deadline:
++                if deadline is not None and time.monotonic() >= deadline:
+@@ -193,2 +207,2 @@
+-                remaining = deadline - time.monotonic()
+-                if remaining <= 0:
++                remaining = None if deadline is None else deadline - time.monotonic()
++                if remaining is not None and remaining <= 0:
+@@ -198 +212,5 @@
+-                wait = min(remaining, _CANCEL_POLL_SECONDS if cancel is not None else remaining)
++                wait = (
++                    _CANCEL_POLL_SECONDS
++                    if remaining is None
++                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None else remaining)
++                )
+@@ -205 +223 @@
+-                    if time.monotonic() >= deadline:
++                    if deadline is not None and time.monotonic() >= deadline:
+@@ -273 +291,5 @@
+-            startup_deadline = time.monotonic() + self.startup_timeout
++            startup_deadline = (
++                None
++                if self.startup_timeout is None
++                else time.monotonic() + self.startup_timeout
++            )
+@@ -285 +307,3 @@
+-                        poll_deadline = min(startup_deadline, time.monotonic() + _CANCEL_POLL_SECONDS)
++                        poll_deadline = time.monotonic() + _CANCEL_POLL_SECONDS
++                        if startup_deadline is not None:
++                            poll_deadline = min(startup_deadline, poll_deadline)
+@@ -290 +314 @@
+-                            if time.monotonic() >= startup_deadline:
++                            if startup_deadline is not None and time.monotonic() >= startup_deadline:
+@@ -294 +318 @@
+-                        if time.monotonic() >= startup_deadline:
++                        if startup_deadline is not None and time.monotonic() >= startup_deadline:
+@@ -383 +407 @@
+-        timeout: float = DEFAULT_TIMEOUT,
++        timeout: float | None = DEFAULT_TIMEOUT,
+@@ -401,3 +425,7 @@
+-        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+-                or not math.isfinite(timeout) or timeout <= 0):
+-            raise ValueError("timeout must be finite and positive")
++        if timeout is not None and (
++            isinstance(timeout, bool)
++            or not isinstance(timeout, (int, float))
++            or not math.isfinite(timeout)
++            or timeout <= 0
++        ):
++            raise ValueError("timeout must be None or finite and positive")
+@@ -422 +450 @@
+-            deadline = time.monotonic() + float(timeout)
++            deadline = None if timeout is None else time.monotonic() + float(timeout)
+--- a/ironmule_product/service.py
++++ b/ironmule_product/service.py
+@@ -58 +58 @@
+-    deadline: float
++    deadline: float | None
+@@ -125 +125,5 @@
+-            session = _Session(request, time.monotonic() + self.settings["request_timeout_s"])
++            timeout = self.settings["request_timeout_s"]
++            session = _Session(
++                request,
++                None if timeout is None else time.monotonic() + timeout,
++            )
+@@ -147,2 +151,2 @@
+-                remaining = session.deadline - time.monotonic()
+-                if remaining <= 0:
++                remaining = None if session.deadline is None else session.deadline - time.monotonic()
++                if remaining is not None and remaining <= 0:
+@@ -151 +155 @@
+-                    event = session.events.get(timeout=min(remaining, 0.1))
++                    event = session.events.get(timeout=0.1 if remaining is None else min(remaining, 0.1))
+@@ -164,2 +168,2 @@
+-            remaining = session.deadline - time.monotonic()
+-            if remaining <= 0:
++            remaining = None if session.deadline is None else session.deadline - time.monotonic()
++            if remaining is not None and remaining <= 0:
+@@ -169 +173 @@
+-                session.events.put(event, timeout=min(remaining, 0.1))
++                session.events.put(event, timeout=0.1 if remaining is None else min(remaining, 0.1))
+@@ -203,2 +207,2 @@
+-            remaining = session.deadline - time.monotonic()
+-            if remaining <= 0:
++            remaining = None if session.deadline is None else session.deadline - time.monotonic()
++            if remaining is not None and remaining <= 0:
+--- a/ironmule_product/state.py
++++ b/ironmule_product/state.py
+@@ -267 +267,4 @@
+-    if value["exact"] is not True or type(value["request_timeout_s"]) is not int or value["request_timeout_s"] != 120:
++    timeout = value["request_timeout_s"]
++    if value["exact"] is not True or not (
++        timeout is None or (type(timeout) is int and timeout > 0)
++    ):
+@@ -423,0 +427,13 @@
++    def set_request_timeout(self, timeout_s: int | None) -> dict[str, Any]:
++        """Configure the normal request SLO, or explicitly disable its deadline."""
++        if timeout_s is not None and (type(timeout_s) is not int or timeout_s <= 0):
++            raise StateError("request timeout must be None or a positive integer")
++        with _locked(self.root):
++            raw = _read_json(self._settings_path)
++            if raw is None:
++                raise StateError("product settings are not initialized")
++            value = _settings_value(raw)
++            value["request_timeout_s"] = timeout_s
++            _atomic_write(self._settings_path, value)
++        return dict(value)
++
+--- /dev/null
++++ b/friday_evidence/open_observation.py
+@@ -0,0 +1,179 @@
++"""Observation-only telemetry for an owned local worker.
++
++This module deliberately records resource state without making an admission,
++throttling, pause, or termination decision.  The caller owns worker lifecycle
++and persistence; this helper owns only in-memory samples and aggregate facts.
++"""
++
++from __future__ import annotations
++
++import math
++import subprocess
++import time
++from collections import Counter
++from collections.abc import Callable
++from typing import Any
++
++from friday_evidence.process_memory import ProcessMemoryError, sample_process_memory
++from ironmule_product.readiness import _swap_used
++
++SampleCallback = Callable[[dict[str, Any]], None]
++
++
++class Observer:
++    """Collect neutral, best-effort telemetry for one owned ``Popen`` worker.
++
++    Sampling never controls the process.  Missing measurements are represented
++    by ``None`` plus an error code rather than a synthetic numeric value.
++    """
++
++    def __init__(
++        self,
++        on_sample: SampleCallback | None = None,
++        interval_seconds: float = 1.0,
++    ) -> None:
++        if on_sample is not None and not callable(on_sample):
++            raise TypeError("on_sample must be callable or None")
++        if (
++            isinstance(interval_seconds, bool)
++            or not isinstance(interval_seconds, (int, float))
++            or not math.isfinite(float(interval_seconds))
++            or interval_seconds < 0
++        ):
++            raise ValueError("interval_seconds must be a finite non-negative number")
++        self.on_sample = on_sample
++        self.interval_seconds = float(interval_seconds)
++        self.process: subprocess.Popen[Any] | None = None
++        self.label = ""
++        self.rows: list[dict[str, Any]] = []
++        self._last_sample_monotonic_ns: int | None = None
++        self._swap_baseline_bytes: int | None = None
++        self._errors: Counter[str] = Counter()
++        self._skipped_interval = 0
++
++    def bind(self, process: subprocess.Popen[Any] | None, label: str) -> None:
++        """Bind an owned worker, or ``None`` when no worker is currently bound."""
++        if process is not None and not isinstance(process, subprocess.Popen):
++            raise TypeError("process must be subprocess.Popen or None")
++        if not isinstance(label, str):
++            raise TypeError("label must be str")
++        self.process = process
++        self.label = label
++
++    def sample(self, force: bool = False) -> dict[str, Any] | None:
++        """Record one due sample, returning ``None`` when interval-throttled.
++
++        ``force`` bypasses only this helper's observation cadence.  It does not
++        alter the owned process or imply that a measurement was available.
++        """
++        if not isinstance(force, bool):
++            raise TypeError("force must be bool")
++        observed_ns = time.monotonic_ns()
++        if (
++            not force
++            and self._last_sample_monotonic_ns is not None
++            and observed_ns - self._last_sample_monotonic_ns
++            < int(self.interval_seconds * 1_000_000_000)
++        ):
++            self._skipped_interval += 1
++            return None
++        self._last_sample_monotonic_ns = observed_ns
++
++        process = self.process
++        pid: int | None = None
++        errors: list[str] = []
++        row: dict[str, Any] = {
++            "observed_monotonic_ns": observed_ns,
++            "label": self.label,
++            "pid": None,
++            "rss_bytes": None,
++            "rss_source": None,
++            "physical_footprint_bytes": None,
++            "peak_footprint_bytes": None,
++            "wired_bytes": None,
++            "system_swap_used_bytes": None,
++            "system_swap_delta_bytes": None,
++            "errors": errors,
++        }
++
++        if process is None:
++            errors.append("worker_unbound")
++        else:
++            pid = process.pid
++            row["pid"] = pid
++            # Poll before rusage: never request RSS for a reaped owned PID.
++            returncode = process.poll()
++            if returncode is not None:
++                errors.append("worker_exited")
++            else:
++                try:
++                    memory = sample_process_memory(pid)
++                except ProcessMemoryError as exc:
++                    errors.append(exc.code)
++                except Exception:
++                    errors.append("process_memory_failed")
++                else:
++                    row["rss_bytes"] = memory["resident_bytes"]
++                    row["rss_source"] = "libproc"
++                    row["physical_footprint_bytes"] = memory["physical_footprint_bytes"]
++                    row["peak_footprint_bytes"] = memory["lifetime_peak_footprint_bytes"]
++                    row["wired_bytes"] = memory["wired_bytes"]
++
++        try:
++            swap_used, swap_error = _swap_used()
++        except Exception:
++            swap_used, swap_error = None, "swap_probe_failed"
++        if swap_error is not None:
++            errors.append(swap_error)
++        elif swap_used is not None:
++            row["system_swap_used_bytes"] = swap_used
++            if self._swap_baseline_bytes is None:
++                self._swap_baseline_bytes = swap_used
++            row["system_swap_delta_bytes"] = swap_used - self._swap_baseline_bytes
++
++        self.rows.append(row)
++        self._errors.update(errors)
++        if self.on_sample is not None:
++            try:
++                self.on_sample(row)
++            except Exception:
++                errors.append("on_sample_failed")
++                self._errors.update(("on_sample_failed",))
++        return row
++
++    def summary(self) -> dict[str, Any]:
++        """Return in-memory counts and maxima without judging resource use."""
++        def maximum(field: str) -> int | None:
++            values = [row[field] for row in self.rows if type(row[field]) is int]
++            return max(values) if values else None
++
++        latest_swap_delta = next(
++            (
++                row["system_swap_delta_bytes"]
++                for row in reversed(self.rows)
++                if type(row["system_swap_delta_bytes"]) is int
++            ),
++            None,
++        )
++        return {
++            "sample_count": len(self.rows),
++            "skipped_interval_count": self._skipped_interval,
++            "memory_sample_count": sum(row["rss_source"] == "libproc" for row in self.rows),
++            "swap_sample_count": sum(
++                type(row["system_swap_used_bytes"]) is int for row in self.rows
++            ),
++            "max_memory_bytes": {
++                "rss_bytes": maximum("rss_bytes"),
++                "physical_footprint_bytes": maximum("physical_footprint_bytes"),
++                "peak_footprint_bytes": maximum("peak_footprint_bytes"),
++                "wired_bytes": maximum("wired_bytes"),
++            },
++            "latest_system_swap_delta_bytes": latest_swap_delta,
++            "errors": dict(sorted(self._errors.items())),
++        }
++
++
++# A neutral descriptive spelling for integrations that prefer it.
++OpenObservation = Observer
++
++__all__ = ["Observer", "OpenObservation", "SampleCallback"]

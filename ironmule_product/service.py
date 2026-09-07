@@ -55,7 +55,7 @@ class StopFilter:
 @dataclass
 class _Session:
     request: GenerationRequest
-    deadline: float
+    deadline: float | None
     submitted_ns: int = field(default_factory=time.monotonic_ns)
     events: queue.Queue = field(default_factory=lambda: queue.Queue(maxsize=32))
     cancelled: threading.Event = field(default_factory=threading.Event)
@@ -122,7 +122,11 @@ class ProductService:
                 raise BackendUnavailable("requested model is registered but not loaded by this service")
             if request.request_id in self._sessions:
                 raise InvalidRequest("duplicate request id")
-            session = _Session(request, time.monotonic() + self.settings["request_timeout_s"])
+            timeout = self.settings["request_timeout_s"]
+            session = _Session(
+                request,
+                None if timeout is None else time.monotonic() + timeout,
+            )
             try:
                 self._pending.put_nowait(session)
             except queue.Full as exc:
@@ -144,11 +148,11 @@ class ProductService:
             while True:
                 if session.cancelled.is_set() or self._closed.is_set():
                     raise RequestCancelled("request cancelled")
-                remaining = session.deadline - time.monotonic()
-                if remaining <= 0:
+                remaining = None if session.deadline is None else session.deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
                     raise RequestTimeout("request deadline exceeded")
                 try:
-                    event = session.events.get(timeout=min(remaining, 0.1))
+                    event = session.events.get(timeout=0.1 if remaining is None else min(remaining, 0.1))
                 except queue.Empty:
                     continue
                 if isinstance(event, ProductError):
@@ -161,12 +165,12 @@ class ProductService:
 
     def _emit(self, session: _Session, event: Any) -> bool:
         while not self._closed.is_set() and not session.cancelled.is_set():
-            remaining = session.deadline - time.monotonic()
-            if remaining <= 0:
+            remaining = None if session.deadline is None else session.deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
                 session.backend_cancel.set()
                 return False
             try:
-                session.events.put(event, timeout=min(remaining, 0.1))
+                session.events.put(event, timeout=0.1 if remaining is None else min(remaining, 0.1))
                 return True
             except queue.Full:
                 continue
@@ -192,6 +196,43 @@ class ProductService:
                     self._active = None
                 self._pending.task_done()
 
+    def _drain_cancelled_stream(self, stream: Iterator[dict[str, Any]]) -> bool:
+        """Consume a cancelled backend request without delivering its content.
+
+        The backend's cancellation event has already been set.  Reaching its
+        terminal event keeps the persistent protocol synchronized; any drain
+        failure retires the backend instead of claiming warm recovery.
+        """
+        try:
+            for event in stream:
+                if event.get("type") == "done":
+                    return True
+        except Exception:
+            return False
+        return False
+
+    def _finish_cancelled(
+        self,
+        session: _Session,
+        stream: Iterator[dict[str, Any]] | None,
+        *,
+        terminal_seen: bool,
+    ) -> None:
+        session.backend_cancel.set()
+        drained = terminal_seen
+        if stream is not None and not drained:
+            drained = self._drain_cancelled_stream(stream)
+        if not drained and self.backend is not None:
+            # A partial or failed drain leaves protocol synchronization
+            # unknown. Retire this worker; never restart or retry here.
+            try:
+                self.backend.close()
+            except Exception:
+                pass
+        self._emit(session, RequestCancelled("request cancelled"))
+        with self._lock:
+            self._cancelled += 1
+
     def _perform(self, session: _Session) -> None:
         started = time.monotonic_ns()
         stop_filter = StopFilter(session.request.stop)
@@ -200,14 +241,16 @@ class ProductService:
         generated = 0
         prompt_tokens = 0
         try:
-            remaining = session.deadline - time.monotonic()
-            if remaining <= 0:
+            remaining = None if session.deadline is None else session.deadline - time.monotonic()
+            if remaining is not None and remaining <= 0:
                 raise RequestTimeout("request expired in queue")
             if self.backend is None or not self.backend.ready:
                 raise BackendUnavailable("model worker is unavailable")
             stream = self.backend.stream(session.request, cancel=session.backend_cancel, timeout=remaining)
             for event in stream:
                 if session.cancelled.is_set():
+                    if event.get("type") == "done":
+                        done = dict(event)
                     raise RequestCancelled("request cancelled")
                 kind = event.get("type")
                 if kind == "token":
@@ -248,20 +291,24 @@ class ProductService:
                 raise RequestCancelled("response delivery interrupted")
             with self._lock:
                 self._completed += 1
-        except RequestCancelled as exc:
-            self._emit(session, exc)
-            with self._lock:
-                self._cancelled += 1
+        except RequestCancelled:
+            self._finish_cancelled(session, stream, terminal_seen=done is not None)
         except ProductError as exc:
-            self._emit(session, exc)
-            with self._lock:
-                self._failed += 1
+            if session.cancelled.is_set():
+                self._finish_cancelled(session, stream, terminal_seen=done is not None)
+            else:
+                self._emit(session, exc)
+                with self._lock:
+                    self._failed += 1
         except Exception:
-            # Library exceptions can include prompt text. Never reflect their
-            # bodies or persist them as metadata.
-            self._emit(session, BackendUnavailable("model worker failed"))
-            with self._lock:
-                self._failed += 1
+            if session.cancelled.is_set():
+                self._finish_cancelled(session, stream, terminal_seen=done is not None)
+            else:
+                # Library exceptions can include prompt text. Never reflect
+                # their bodies or persist them as metadata.
+                self._emit(session, BackendUnavailable("model worker failed"))
+                with self._lock:
+                    self._failed += 1
         finally:
             if stream is not None:
                 try:

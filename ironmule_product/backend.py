@@ -27,6 +27,7 @@ MAX_PROTOCOL_LINE = 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
 DEFAULT_TIMEOUT = 120.0
 _CANCEL_POLL_SECONDS = 0.05
+_DEFAULT_DEADLINE = object()
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch"))
 CONTEXT_LIMIT = 8192
 
@@ -50,14 +51,18 @@ def _bounded_json_line(value: dict[str, Any]) -> bytes:
 class MLXWorkerClient:
     """A single persistent, GPU-only stock ``mlx_lm`` worker."""
 
-    def __init__(self, spec: ModelSpec, *, startup_timeout: float = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, spec: ModelSpec, *, startup_timeout: float | None = DEFAULT_TIMEOUT) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
-        if (isinstance(startup_timeout, bool) or not isinstance(startup_timeout, (int, float))
-                or not math.isfinite(startup_timeout) or startup_timeout <= 0):
-            raise ValueError("startup_timeout must be finite and positive")
+        if startup_timeout is not None and (
+            isinstance(startup_timeout, bool)
+            or not isinstance(startup_timeout, (int, float))
+            or not math.isfinite(startup_timeout)
+            or startup_timeout <= 0
+        ):
+            raise ValueError("startup_timeout must be None or finite and positive")
         self.spec = spec
-        self.startup_timeout = float(startup_timeout)
+        self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
         self._process: subprocess.Popen[bytes] | None = None
         self._ready_payload: dict[str, Any] | None = None
         self._stderr_thread: threading.Thread | None = None
@@ -98,21 +103,29 @@ class MLXWorkerClient:
         del buffer[: newline + 1]
         return frame
 
-    def _send(self, payload: dict[str, Any], deadline: float | None = None) -> None:
+    def _send(
+        self,
+        payload: dict[str, Any],
+        deadline: float | None | object = _DEFAULT_DEADLINE,
+    ) -> None:
         process = self._process
         if process is None or process.stdin is None:
             raise BackendUnavailable("backend worker is not running")
         encoded = _bounded_json_line(payload)
         fd = process.stdin.fileno()
-        if deadline is None:
-            deadline = time.monotonic() + self.startup_timeout
+        if deadline is _DEFAULT_DEADLINE:
+            deadline = (
+                None
+                if self.startup_timeout is None
+                else time.monotonic() + self.startup_timeout
+            )
         selector = selectors.DefaultSelector()
         try:
             os.set_blocking(fd, False)
             offset = 0
             while offset < len(encoded):
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
                     raise RequestTimeout("backend worker command timed out")
                 try:
                     written = os.write(fd, encoded[offset:])
@@ -123,7 +136,8 @@ class MLXWorkerClient:
                 except BlockingIOError:
                     selector.register(fd, selectors.EVENT_WRITE)
                     try:
-                        if not selector.select(remaining):
+                        wait = _CANCEL_POLL_SECONDS if remaining is None else min(remaining, _CANCEL_POLL_SECONDS)
+                        if not selector.select(wait) and remaining is not None and time.monotonic() >= deadline:
                             raise RequestTimeout("backend worker command timed out")
                     finally:
                         selector.unregister(fd)
@@ -137,7 +151,7 @@ class MLXWorkerClient:
 
     def _read_event(
         self,
-        deadline: float,
+        deadline: float | None,
         *,
         cancel: threading.Event | None = None,
         on_cancel: Any = None,
@@ -153,7 +167,7 @@ class MLXWorkerClient:
                 # Buffered output does not suspend the caller's deadline or
                 # cancellation. In particular, an eager producer must not
                 # starve cancellation by keeping this buffer non-empty.
-                if time.monotonic() >= deadline:
+                if deadline is not None and time.monotonic() >= deadline:
                     raise RequestTimeout("backend worker timed out")
                 if cancel is not None and cancel.is_set() and on_cancel is not None:
                     on_cancel()
@@ -190,19 +204,23 @@ class MLXWorkerClient:
                     if not isinstance(value, dict) or not isinstance(value.get("type"), str):
                         raise BackendUnavailable("backend emitted an invalid protocol event")
                     return value
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
                     raise RequestTimeout("backend worker timed out")
                 if cancel is not None and cancel.is_set() and on_cancel is not None:
                     on_cancel()
-                wait = min(remaining, _CANCEL_POLL_SECONDS if cancel is not None else remaining)
+                wait = (
+                    _CANCEL_POLL_SECONDS
+                    if remaining is None
+                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None else remaining)
+                )
                 selector.register(fd, selectors.EVENT_READ)
                 try:
                     events = selector.select(wait)
                 finally:
                     selector.unregister(fd)
                 if not events:
-                    if time.monotonic() >= deadline:
+                    if deadline is not None and time.monotonic() >= deadline:
                         raise RequestTimeout("backend worker timed out")
         finally:
             selector.close()
@@ -270,7 +288,11 @@ class MLXWorkerClient:
             self._stdout_buffer.clear()
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(self._process.stderr,), daemon=True)
             self._stderr_thread.start()
-            startup_deadline = time.monotonic() + self.startup_timeout
+            startup_deadline = (
+                None
+                if self.startup_timeout is None
+                else time.monotonic() + self.startup_timeout
+            )
             def call_startup_guard() -> None:
                 try:
                     startup_guard(self._process.pid)
@@ -282,16 +304,18 @@ class MLXWorkerClient:
                 else:
                     call_startup_guard()
                     while True:
-                        poll_deadline = min(startup_deadline, time.monotonic() + _CANCEL_POLL_SECONDS)
+                        poll_deadline = time.monotonic() + _CANCEL_POLL_SECONDS
+                        if startup_deadline is not None:
+                            poll_deadline = min(startup_deadline, poll_deadline)
                         try:
                             event = self._read_event(poll_deadline)
                         except RequestTimeout:
                             call_startup_guard()
-                            if time.monotonic() >= startup_deadline:
+                            if startup_deadline is not None and time.monotonic() >= startup_deadline:
                                 raise
                             continue
                         call_startup_guard()
-                        if time.monotonic() >= startup_deadline:
+                        if startup_deadline is not None and time.monotonic() >= startup_deadline:
                             raise RequestTimeout("backend worker startup timed out")
                         break
             except (BackendUnavailable, RequestTimeout):
@@ -380,7 +404,7 @@ class MLXWorkerClient:
         self,
         request: GenerationRequest,
         cancel: threading.Event | None = None,
-        timeout: float = DEFAULT_TIMEOUT,
+        timeout: float | None = DEFAULT_TIMEOUT,
         *,
         variant: str = "reference",
         trace_forwards: bool = False,
@@ -398,9 +422,13 @@ class MLXWorkerClient:
         payload = request.as_dict()
         payload.pop("request_id", None)
         GenerationRequest.from_payload(payload, exact=True)
-        if (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
-                or not math.isfinite(timeout) or timeout <= 0):
-            raise ValueError("timeout must be finite and positive")
+        if timeout is not None and (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not math.isfinite(timeout)
+            or timeout <= 0
+        ):
+            raise ValueError("timeout must be None or finite and positive")
         if cancel is not None and not isinstance(cancel, threading.Event):
             raise TypeError("cancel must be threading.Event or None")
         command = {"type": "generate", **request.as_dict(), "variant": variant,
@@ -419,7 +447,7 @@ class MLXWorkerClient:
                 self._stream_active = True
             completed = False
             cancel_sent = False
-            deadline = time.monotonic() + float(timeout)
+            deadline = None if timeout is None else time.monotonic() + float(timeout)
             token_count = 0
             prompt_tokens: int | None = None
 

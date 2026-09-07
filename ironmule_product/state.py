@@ -264,7 +264,10 @@ def _settings_value(value: Any) -> dict[str, Any]:
         raise StateError("settings state schema or mode is invalid")
     if not isinstance(value["mode"], str) or value["mode"] not in _MODES:
         raise StateError("settings state schema or mode is invalid")
-    if value["exact"] is not True or type(value["request_timeout_s"]) is not int or value["request_timeout_s"] != 120:
+    timeout = value["request_timeout_s"]
+    if value["exact"] is not True or not (
+        timeout is None or (type(timeout) is int and timeout > 0)
+    ):
         raise StateError("settings state has invalid exact or timeout policy")
     if value["max_pending"] != _MODES[value["mode"]] or type(value["max_pending"]) is not int:
         raise StateError("settings state has invalid pending limit")
@@ -420,6 +423,19 @@ class ProductStore:
             value["optimization_paused"] = paused
             _atomic_write(self._settings_path, value)
         return self.optimization_status()
+
+    def set_request_timeout(self, timeout_s: int | None) -> dict[str, Any]:
+        """Configure the normal request SLO, or explicitly disable its deadline."""
+        if timeout_s is not None and (type(timeout_s) is not int or timeout_s <= 0):
+            raise StateError("request timeout must be None or a positive integer")
+        with _locked(self.root):
+            raw = _read_json(self._settings_path)
+            if raw is None:
+                raise StateError("product settings are not initialized")
+            value = _settings_value(raw)
+            value["request_timeout_s"] = timeout_s
+            _atomic_write(self._settings_path, value)
+        return dict(value)
 
 
 __all__ = ["ProductStore"]

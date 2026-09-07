@@ -12526,3 +12526,128 @@ Nur dieser eine Worker ist belegt; keine vollständige Antwort und kein zweiter
 Modelllauf. Datenschutzkontrolle findet keine absoluten Pfade, Nutzerprompts
 oder Zugangsdaten im Rohbericht. Keine Kaggle-Sitzung wurde in dieser Aufgabe
 gestartet und keine ProjectAtlas-Quelle verändert.
+
+### PROD10 — Nutzer hebt künstliche Hardware-Testschutzgrenzen auf
+
+Neues aktives Ziel: „Schutz entfernen! Die restlichen Punkte durch arbeiten
+bis die Ergebnisse da sind“. Der Nutzerentscheid ist prospektiv in AGENTS.md
+und im offenen PROD10-Arbeitspaket verankert. Neue lokale Prüfungen haben keine
+6-s-/120-s-Arbeits-/Duty-/Pausen-/Readiness-/RSS-/Swap-Abbruchgates. OS-Schutz,
+Korrektheit, Privatsphäre, kontrollierte Prozesse und Cleanup bleiben erhalten;
+Kaggle-Free-Grenzen und versiegelte frühere Studien bleiben unverändert.
+
+ProjectAtlas wurde zuerst aufgerufen; Brief meldet erneut dependency closure
+10001, begrenzter Watch-Auftrag `index-2` scheitert terminal an der
+Publikationsdeadline. Daraufhin nur gezielte bekannte Quellpfade gelesen,
+keine ProjectAtlas-Quellen oder Datenbank manuell verändert.
+
+Sol ergänzt echte optionale Deadlines (`None`) in Backend/Service/State;
+Terra ergänzt eine rein beobachtende libproc-/Swap-Erfassung. Root baut den
+neuen separaten PROD10-Runner mit unabhängiger Stockreferenz, Phasenmarken,
+JSON/SSE, Vierfach-Clientburst und tatsächlichem Disconnect/Recovery-Test.
+Der vorhandene vermutete Disconnect→Worker-Retirement-Fehler wird zuerst nativ
+belegt, nicht vor der Baseline still geändert. Ein separates 1-h-Profil bleibt
+nach den erfolgreichen Integrations-/Recovery-Gates vorgesehen.
+
+DATA1 hatte lokale Messfenster. Zwei Subagenten führten entgegen der Wartevorgabe
+19 bzw. 7 reine Kontrolltests durch; keine MLX-/Modell-/GPU-Läufe. Die 19 Tests
+benötigten 1,6 s, absolute Zeiten wurden nicht erfasst. Mögliche zeitliche
+Überlappung wurde DATA1 transparent gemeldet; daraus wird keine Erklärung seiner
+A/A-Abbrüche abgeleitet. Nach DATA1-Ende folgten Root-Kontrollen: 11 gezielte
+Tests bestanden, später vier weitere Runner-/echte OS-Cleanup-Tests bestanden.
+Der erste breite Sandbox-Test bricht schon beim MLX-Import der Testsammlung ab
+(Exit134). Derselbe Softwarecheck mit freigegebenem Metal-Zugriff: 965 bestanden,
+16 deselected, 49,40 s. Kein Modellbenchmark wurde dadurch als bestanden erklärt.
+Ruff-F, Syntax- und Diff-Kontrolle bestanden.
+
+Isoliertes Wheel aus veröffentlichtem HEAD plus ausschließlich den vier eigenen
+Produkt-/Observer-Dateien gebaut; DATA1-/portable-/CLI-/pyproject-Änderungen wurden
+nicht eingebaut. Vor Installation Projektumgebung
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Installiertes Runtime-Codebinding jetzt
+`6e0efff8c63157a9c0117a0a19e30b587ad34345caeda40b0e1100bf504267ee`
+statt `e4a9002a…ca8689e`; Bibliotheksumgebung unverändert
+`6e32542c2cd4d2950ec828640d196c7e91be2b4790439041770c93cb7f60ee95`
+(Python3.12.13, MLX0.32.0, mlx-lm0.31.3, NumPy2.5.2, Transformers5.15.1).
+Kein historischer Produktlauf autorisiert dieses neue Codebinding automatisch;
+keine Optimierungsaktivierung war oder ist gesetzt. Projekt-venv unverändert.
+
+Es folgt zunächst der neue echte 12B-Matrixlauf gemäß
+`docs/PROD10_OPEN_VALIDATION_SPEC.md`, ohne künstliche Hardwaregates und ohne
+Retry. Bibliotheken/Modellcache/Harness bleiben währenddessen eingefroren.
+
+### PROD10-12B erster echter Durchgang — Langkontext erreicht, Cancel-Defekt belegt
+
+Die erste Ausführungsanfrage wurde vor Prozessstart durch Auto-Review mit
+Verweis auf die alten Schutzregeln abgelehnt. Kein Modell war gestartet. Nach
+erneutem schreibgeschütztem Abgleich des ausdrücklichen aktuellen Nutzerziels,
+des endlichen Workloads und des Hosts (32GiB, AC, Thermik0, LowPower aus,
+61% memory_free, Lastquote0,532, fehlerfreie Probe) wurde derselbe Lauf über
+denselben geprüften Werkzeugweg freigegeben. Keine Umgehung der Werkzeugsperre.
+
+Run `ebbb9c96d5944cf38254c784d88fba3a` führt 34 vollständige reale Anfragen aus:
+12 Stock, 12 Produkt, sechs JSON/SSE und vier gleichzeitige HTTP-Clients.
+Die drei Fälle long8/short32/long32 bleiben vollständig token-/text-/finish-/
+count-identisch. Der lange Kontext hat 1.077 Tokens. Aufgezeichnete Warm-
+Medianlaufzeiten: Stock long8 6,612369s, Produkt 6,452689s; Stock long32
+7,345819s, Produkt 7,207633s. Dies sind deskriptive Zeiten verschiedener
+Messoberflächen/Instrumentation, kein gepaarter Speedup- oder Aktivierungsclaim.
+Die Stock-Phasengrenze am ersten Token liegt für long8 bei 6,343–6,381s,
+rund 96,1% der Anfragezeit. Das ist ein Host-/Bibliotheksphasenbefund, kein
+reiner GPU-Zähler und kein isolierter Compilerkostenbeweis.
+
+Der anschließende echte SSE-Disconnect bestätigt den Fehler: cancellation
+gezählt, Queue/Active0, aber ready=false; Folgeanfrage HTTP503. Produktworker
+PID54014 wurde beendet (−15), StockPID53916 normal0; beide sind geerntet.
+177 echte libproc-/Swapbeobachtungen ohne Telemetriefehler. Maximaler
+Prozess-Footprint 9.108.822.352B, MLX-Peak 8.284.434.536B, getrennte Zähler.
+Letztes Swapdelta −32.117.883B. Alle Zwischenwerte bleiben im Journal, keine
+Ressourcenobergrenze entschied den Lauf. Terminal insgesamt failed/http_status_503.
+
+Rohbericht: `PROD10_12B_open_20260907_attempt1.json`. Die nachträgliche separate,
+modellfreie Identitätsprüfung bestätigt volle Gleichheit einschließlich Code
+`6e0efff8…504267ee`; sie liegt als eigener `..._identity_audit.json`-Bericht vor,
+der Fehlbericht bleibt unverändert. Sol repariert anschließend gezielt das
+vorzeitige Schließen des noch nicht leer gelesenen Backend-Streams, ohne
+Neustart oder Retry als vermeintlich erfolgreiche Recovery einzubauen.
+
+### PROD10 — gezielter Disconnect-Fix vor neuer nativer Verifikation
+
+Der Service signalisiert nach Consumer-Abbruch nun Cancel und liest denselben
+Backend-Iterator bis zur terminalen Antwort leer. Nur ein vollständig
+synchronisierter Kanal hält den warmen Worker; Drain-/Transportfehler beenden
+ihn weiterhin. Keine neue Modellsitzung, kein versteckter Restart/Retry.
+Cancel wird einmal gezählt; Service-Shutdown kann einen blockierten Drain
+über das vorhandene Beenden des eigenen Backendprozesses unterbrechen.
+
+18 gezielte Root-Tests (Deadline, Observer, Runner, Disconnect) bestanden in
+0,81s, Ruff-F bestanden. Neu gebautes isoliertes Fix-Wheel bleibt getrennt vom
+ersten Wheel. Nach Installation ohne Dependencies Codehash
+`47c416fb3ec3ae8f875a02e95abde01f554a0c5711eee5a0576f77b42edf7b7b`,
+Umgebung unverändert `6e32542c…7f60ee95`. Es folgt derselbe vorregistrierte
+12B-Workload als dokumentierte Fehlerfix-Verifikation, nicht als Wiederholung
+zur Verbesserung eines Performancewerts. Der erste Fail-Bericht bleibt erhalten.
+
+### PROD10 — alle lokalen Gemma-Snapshots bestehen einschließlich Warm-Recovery
+
+12B-Fix-Verifikation `94d609a41fd443b5a4d325446d8c00f7`, 1B
+`8957a3afb59140d794d47d6b5a596e2d` und 4B
+`4007fe06a4fe4572825a575ee29088b8` bestehen jeweils 35 vollständige native
+Anfragen plus echten Disconnect. Jeweils 12 Stock, 12 Produkt, sechs HTTP,
+vier gleichzeitige Clients und eine exakte Recovery-Antwort. Alle langen
+Prompts haben 1.077 Tokens, volle Ausgabeidentität in allen aufgezeichneten
+Wiederholungen. Nach Disconnect bleibt derselbe geladene Worker ready; kein
+Restart. Sechs unterschiedliche Stock-/Produkt-PIDs schließen normal mit 0.
+Source/Provider/Model-Metadaten/Installed-/Runtime-Identität vor/nach gleich,
+Code47c416fb…edf7b7b, keine Telemetriefehler.
+
+Luna verifiziert alle drei Rohberichte unabhängig gegen das kettenverifizierte
+Journal; vollständige Matrix, Identität, richtige Prozesszuordnung und
+Recovery bestätigt. Gesamtsuite nach Fix: 972 bestanden, 16 deselected,
+50,23s; darin liegen auch die unpublizierten UI-Adaptertests und der parallele
+CLI-Arbeitsstand. CI-Zahlen sind separat zu lesen. Xcode-First-Launch bestanden.
+Ergebnisse/Scope: `docs/PROD10_RESULTS_2026-09-07.md`. Integrationsmatrix ist
+aus den offenen Teilaufgaben entfernt; einstündiger Serverlauf, vertiefte
+GPU-Diagnose und autonome Optimierung/RL bleiben offen. Kein Gain-Claim aus
+den ungepaarten Stock-/Produktzeiten. Der Fehlversuch mit Code6e0eff… bleibt
+separat erhalten. Kein Modellprozess aus diesen Matrixprüfungen bleibt aktiv.
