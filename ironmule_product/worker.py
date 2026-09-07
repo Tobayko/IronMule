@@ -20,6 +20,8 @@ if __package__ in (None, ""):
     if _PACKAGE_ROOT not in sys.path:
         sys.path.insert(0, _PACKAGE_ROOT)
 
+from ironmule_product.model_policy import ModelPolicyError, validate_model_config
+
 
 PROTOCOL_VERSION = 1
 MAX_LINE = 1024 * 1024
@@ -102,6 +104,7 @@ def _load(spec: dict[str, Any]):
     actual_weights = sum(file.stat().st_size for file in weight_files)
     if actual_weights != expected_weights:
         raise RuntimeError("local model weight registration changed")
+    model_config = validate_model_config(str(path), spec.get("revision"))
     # Opening the MLX device is intentionally the first native operation and
     # happens before importing mlx_lm.  A headless host may terminate here;
     # the parent converts that into BackendUnavailable.
@@ -123,6 +126,7 @@ def _load(spec: dict[str, Any]):
         model, tokenizer = load(
             str(path),
             tokenizer_config={"trust_remote_code": False},
+            model_config=model_config,
             revision=spec["revision"],
         )
     return model, tokenizer, stream_generate, device
@@ -378,8 +382,8 @@ def main(argv: list[str] | None = None) -> int:
         if not isinstance(spec, dict):
             raise ValueError
         model, tokenizer, stream_generate, device = _load(spec)
-    except Exception:
-        _safe_error("backend_unavailable")
+    except Exception as exc:
+        _safe_error(getattr(exc, "code", "backend_unavailable") if isinstance(exc, ModelPolicyError) else "backend_unavailable")
         return 1
     import mlx.core as mx
     try:

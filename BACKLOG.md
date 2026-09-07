@@ -18,12 +18,6 @@ Versuchshistorie, geprüfte Konfigurationskombinationen und darauf aufbauendes R
 Die vorhandene R2-Auswertung wird zuerst separat korrigiert, ohne Originaldaten
 oder den eingefrorenen Holdout umzuschreiben.
 
-- **PROD1-B (Rest):** installierte 12B-Generierung unter gültigen Speicherbedingungen
-  prüfen. Die unabhängige Installation sowie 1B-/4B-Generierung sind beantwortet
-  (`docs/PROD3_RESULTS_2026-09-07.md`); 12B wurde nach Modellladung vor der ersten
-  Anfrage wegen Swapwachstum gestoppt. Gate: keine Entwickler-Worktree-Imports,
-  echte vollständige Ausgaben und gültige Ressourcenlage.
-  Kill: fehlende Hardwarequalifikation lässt den Pfad ausdrücklich unqualifiziert.
 - **PROD1-C:** Scheduler-/Cache-Korrekturen, autonome Suche, Kostenmodell und
   konservatives mehrstufiges RL. Gate: unabhängige, gepaarte End-to-End-Bestätigung
   gegen Produktreferenz und Standard-mlx_lm bei identischem Budget und Qualitätsgate.
@@ -64,10 +58,11 @@ Kill: keine tatsächlich vermiedene Arbeit, sichtbare Abweichung, Ressourcenfehl
 oder kein Nettovorteil über Rauschen/Wrapperkosten. Quelldatei/Version werden exakt
 gebunden; eine neue Library-Version erbt den Kandidaten nicht ungeprüft.
 
-Rest: vollständige gültige 1B-/12B-Bestätigung. Der 4B-Produktlauf ist beantwortet:
+Rest: vollständige gültige 12B-Performancebestätigung. Die 1B-/4B-Produktläufe sind beantwortet:
 vollständiges Protokoll, aber kein qualifizierter Nettovorteil; nicht denselben
 Lauf auf einen günstigeren Zufallszug hin wiederholen. Ergebnisse stehen in
-`docs/PROD3_RESULTS_2026-09-07.md`. Keine Leistungsfreigabe aus Teilmessungen.
+`docs/PROD3_RESULTS_2026-09-07.md` und `PROD6_1B_installed_20260907_attempt1`.
+Die kurze 12B-Generierungsregression ist keine Performancebestätigung.
 
 ## PROD3-B — automatische Neuplanung und Online-Arbitration (2026-09-07)
 
@@ -90,11 +85,17 @@ gültige Phase entsteht, bleibt die Produktreferenz aktiv und Optimierung offen.
 
 ## PROD4 — vorausschauende Speicheradmission (Rest, 2026-09-07)
 
+Die neue Footprint-Diagnose und kurze 12B-Generierung sind beantwortet:
+`docs/PROD4P_12B_RESULTS_2026-09-07.md`. Maximaler Prozess-Footprint beim Laden
+8.133.171.488 B, MLX-Inferenzpeak 7.327.146.968 B, kein zusätzlich beobachteter
+Swap unter der damaligen Systemlage. RSS ist kein vollständiger Kapazitätswert.
+
 Startup-Polling, echte Lade-Telemetrie und der Shutdown-Fix sind umgesetzt und
 beantwortet (`docs/PROD4_RESULTS_2026-09-07.md`); sie sind keine Vorabreserve.
-12B scheitert weiterhin vor `ready`: das systemweite Swapdelta springt in rund
+Im früheren 12B-Fehlerlauf sprang das systemweite Swapdelta in rund
 288 ms von +51.579.454 auf +468.587.643 B, während Prozess-RSS nur 792.756.224 B
-meldet. Die Wache beendet den eigenen Worker; MLX-Ladepeaks sind noch unbekannt.
+meldete. Die Wache beendete den eigenen Worker. Warum unterschiedliche
+Systemlagen diese gegensätzlichen Ergebnisse erzeugen, bleibt zu quantifizieren.
 
 Mechanismus: die tatsächlichen Allokationen in den Ladephasen mit öffentlichen
 MLX-Metriken untersuchen, anschließend Lade- und Inferenz-/KV-Bedarf getrennt
@@ -116,19 +117,12 @@ Kompatibilitäts-/Änderungstests. Kill: stale Bindungen, umgangene Versionsprü
 oder kein Nettovorteil über Rauschen. Nicht als isoliert erfolgreicher Knopf mit
 anderen Kandidaten kombinieren, ohne die gesamte Konfiguration zu prüfen.
 
-## PROD6 — Modellkonfiguration darf keine Python-Erweiterung nachladen (2026-09-07)
-
-Mechanismus: der installierte MLX-LM-0.31.3-Loader hat neben den eingebauten
-Modellklassen einen `config.model_file`-Pfad mit `exec_module`. Die bestehende
-Tokenizer-Option `trust_remote_code=False` sperrt diesen anderen Pfad nicht.
-Vor der breiten Modellaufnahme muss der Produktworker diesen Konfigurationspfad
-explizit ausschließen und Code-/Metadatenbindung weiterhin prüfen.
-Gate: Konfiguration mit ausführbarer Modelldatei wird vor deren Ausführung
-abgewiesen; die vorhandenen unveränderten Gemma-Snapshots bleiben lauffähig.
-Kill: stillschweigende Ausführung von Snapshot-Python, nicht erfasste alternative
-Loaderpfade oder Abschalten der Identitäts-/Kompatibilitätsprüfung.
-
 ## PROD7 — geprüfte lokale UI für Lade-/Kalibrierungsverlauf (2026-09-07)
+
+Nutzerfreigabe 2026-09-07: Die Ansicht wird direkt als lokale, schreibgeschützte
+Weboberfläche in IronMule integriert; Nutzer sollen keine Codex-Plugins brauchen.
+Der geprüfte Ereignis-/Statusadapter wird dafür als Datenbasis genutzt. Kein
+Modellstart beim Öffnen, keine Optimierungs-/Konfigurationsmutation durch die UI.
 
 Mechanismus: die verifizierten Load-screen- und Kalibrierungsereignisse in einer
 read-only lokalen Verlaufansicht zusammenführen, mit eindeutig getrennten

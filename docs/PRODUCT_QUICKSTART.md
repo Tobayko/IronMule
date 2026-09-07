@@ -95,8 +95,14 @@ then checks its actual process/MLX peaks before inference. A violation aborts
 the owned worker and retains the reason in history; polling is not a hard RAM
 reservation and can observe overshoot. Normal completion requires a clean
 worker exit. These calibration guards do not imply a global serving-memory
-scheduler. The installed 1B/4B load paths pass; 12B still exceeds the swap gate
-before readiness on this host ([load results](PROD4_RESULTS_2026-09-07.md)).
+scheduler. The earlier 12B swap failure is retained, but a subsequent installed
+12B load and short exact-reference generation test pass under their recorded
+host conditions ([12B results](PROD4P_12B_RESULTS_2026-09-07.md)). That does not
+qualify long contexts or sustained load, or establish a permanent memory fix.
+
+Model snapshots cannot opt into executable custom Python through `model_file`.
+The worker checks bounded configuration before opening MLX and explicitly
+disables that separate loader path; tokenizer remote code remains disabled.
 
 Use `--readiness-only` to exercise the wait/status path without loading a model.
 `--json` returns the full calibration report; the ordinary output is a concise
