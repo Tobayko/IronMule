@@ -12419,3 +12419,48 @@ aufgenommen. ProjectAtlas 0.4.5-rc1 und die lokale MCP-Root-/DB-Konfiguration
 sind geprüft. Keine ProjectAtlas-Quellen oder Modelle wurden verändert, keine
 Kaggle-Session wurde gestartet und kein Modellworker läuft aus diesen Prüfungen
 weiter.
+
+### Weitere echte Modellprüfungen — vollständiger 12B-Durchgang
+
+Der Nutzer priorisiert weiterhin echte Ausführung und bittet um effiziente
+Subagenten-Unterstützung. Ein Luna-Review bestätigt den noch offenen 12B-
+PROD3-90-Anfragen-Lauf; die beantworteten 1B-/4B-Performanceversuche werden nicht
+wiederholt. Ein Terra-Review priorisiert danach einen erfolgreichen längeren
+Kontext samt realem HTTP/SSE-Abgleich; der kurze Referenztest allein deckt das
+nicht ab. Beide Reviews sind ausschließlich statisch und keine Hardwaretests.
+
+Die parallel aktive DATA1-Aufgabe hat bestätigt, dass kein lokaler GPU-Lauf
+aktiv ist und sie GPU-Smokes/Captures sowie schwere lokale Tests bis zur
+Ende-Meldung zurückstellt. Ihre portable-/Backlog-Änderungen bleiben unberührt.
+Die isolierte Modellinstallation bleibt auf Codehash
+`e4a9002a0f18f6a8a5d6d8c524b8766624ae9325f58defd5d84c6e8bfca8689e`, MLX 0.32.0,
+MLX-LM 0.31.3, NumPy 2.5.2 und Transformers 5.15.1. Keine Installation und kein
+neuer Snapshot. Es folgt genau ein Lauf des bereits vorregistrierten 90er-
+Protokolls mit unveränderten Schwellen und ohne automatischen Retry.
+
+### Vollständige 12B-Kalibrierung terminal gültig — kein qualifizierter Gewinn
+
+Lauf `ef5b8f0273404145be3f03a4a793f499` endet mit 90/90 bestandenen echten
+HTTP-Anfragen und drei normal beendeten eigenen Workern (37641/39438/41195,
+jeweils Exitcode 0). Export `PROD6_12B_installed_20260907_attempt1.json` enthält
+1043 kettenverifizierte Ereignisse. Root und unabhängiges Luna-Review
+rekonstruieren Hashes, Schedule und `evaluate_report` exakt: `inconclusive`,
+keine Aktivierung. Modell-/Hardware-/Code-/Umgebungsidentität bleibt gleich.
+
+MLX-Peak 7.327.153.624 B; maximales beobachtetes Swapdelta 112.659.005 B,
+nicht null, aber unter 256 MiB. Arbeitszeitobergrenze 87,162684 s, längster
+Block 2,244864 s, Messfenster 827,125256 s. Bei Cap 1/8 wird ein Forward
+gespart, bei Cap 32 beendet EOS nach 13 Tokens und spart keinen. Die Ratios
+0,956525/0,968182/1,009565 überwinden die eingefrorenen Rauschschwellen nicht.
+Vollständige Grenzen stehen in `docs/PROD6_12B_RESULTS_2026-09-07.md`.
+PROD2 ist damit beantwortet und aus dem offenen Backlog entfernt; keine
+Wiederholung für einen günstigeren Zufallszug. DATA1 erhielt die Ende-Meldung
+für das reservierte GPU-Fenster. Kein eigener Modellworker bleibt aktiv.
+
+Der nächste separate Integrationsscreen PROD8 ist vor nativer Ausführung im
+Backlog vermerkt. Das Review des ersten Terra-Harnessentwurfs fand reale
+Kontrollfehler: PID-Abfrage nach Reaping, unvollständige gemeinsame Budgets,
+blockierende Pipe-/HTTP-Lesewege und fehlende terminale Fehlerhistorie.
+Der Entwurf wurde nicht mit einem Modell gestartet. Nach weiterhin offenen
+Reviewpunkten übernimmt Sol ausschließlich diese begrenzte Reparatur;
+Steuerungstests allein gelten ausdrücklich nicht als Hardwaretest.
