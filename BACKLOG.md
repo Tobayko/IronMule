@@ -92,6 +92,26 @@ Kompatibilitäts-/Änderungstests. Kill: stale Bindungen, umgangene Versionsprü
 oder kein Nettovorteil über Rauschen. Nicht als isoliert erfolgreicher Knopf mit
 anderen Kandidaten kombinieren, ohne die gesamte Konfiguration zu prüfen.
 
+## PROD9 — Langkontext: Phasenbudget statt vollständiger Anfrage als GPU-Block
+
+PROD8 ist beantwortet: erster echter Stock-12B-Aufruf mit 1.077 Prompttokens
+überschreitet den konservativen 6-s-Host-Timeout, keine vollständige Antwort,
+kein Produkt-/HTTP-Langkontextnachweis. Details:
+`docs/PROD8_12B_RESULTS_2026-09-07.md`. Diesen Versuch nicht wiederholen.
+
+Mechanismus: prüfen, ob öffentliche MLX-LM-Prefill-/Decode-Grenzen tatsächliche
+synchronisierte GPU-Arbeitsblöcke unter 6 s mit echten Pausen erlauben, ohne
+die ganze Antwortlatenz als ununterbrochene GPU-Arbeit zu behandeln. Das ist
+vorerst eine Hypothese, kein belegter schnellerer Pfad; insbesondere kann
+anderes Chunking Tokenentscheidungen ändern (bekannter P2-Negativbefund).
+Gate: zuerst belegbare öffentliche Grenzen und vorab freigegebener Entwurf,
+danach eigenständiges Protokoll mit unverändertem Ressourcenbudget und exakter
+Stock-/Produkt-Tokenidentität. Bestehenden versiegelten Code nicht verändern.
+Kill: bloße Umbenennung der Zeitmetrik, fehlende Synchronisations-/Pausenbelege,
+Identitätsbruch, versteckte Mehrarbeit oder nur eine erhöhte Schwelle.
+Keine Implementierung durch die vorliegende Testaufgabe autorisiert; erfolgreiche
+Langkontext-, Dauerlast-/Parallelitäts- und RL-Qualifikation bleiben offen.
+
 ## PROD7 — geprüfte lokale UI für Lade-/Kalibrierungsverlauf (2026-09-07)
 
 Nutzerfreigabe 2026-09-07: Die Ansicht wird direkt als lokale, schreibgeschützte
