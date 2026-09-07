@@ -12112,3 +12112,13 @@ und vier installierte Aufträge. Validator und App-Renderer akzeptierten die
 Übergabe; eine zusätzliche visuelle Bestätigung der App-Darstellung liegt nicht
 vor. Der fehlgeschlagene portable HTML-Check bleibt ausdrücklich offen. Das
 Rendererproblem verändert weder Messdaten noch Evaluatorentscheidungen.
+
+### PROD3 — GitHub-Verifikation abgeschlossen
+
+Code-Meilenstein `857d9fe` wurde auf `Codex/ironmule-product` veröffentlicht.
+GitHub-CI `34113548648` ist auf Python 3.11 und 3.12 terminal erfolgreich:
+sauberer Wheelbau, Installation, CLI-Smoke, statische Prüfungen und Engine-/
+Produktsuite. [CI-Protokoll](https://github.com/Tobayko/IronMule/actions/runs/34113548648).
+Die lokale Suite bleibt separat mit 855 bestandenen Tests dokumentiert; der
+fremde CI-Runner ersetzt keine M1-Max-Modellmessung. Keine Aktivierung und kein
+RL-Abschluss werden aus diesem Meilenstein abgeleitet.
