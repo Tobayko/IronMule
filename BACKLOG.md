@@ -18,9 +18,11 @@ Versuchshistorie, geprüfte Konfigurationskombinationen und darauf aufbauendes R
 Die vorhandene R2-Auswertung wird zuerst separat korrigiert, ohne Originaldaten
 oder den eingefrorenen Holdout umzuschreiben.
 
-- **PROD1-B:** alle lokalen Gemma-Snapshots inventarisieren, portable CLI/API und
-  Modell-/Backend-Verträge bereitstellen. Gate: saubere Installation ohne
-  Entwickler-Worktrees; echte Generierung auf jedem ausführbaren lokalen Gemma.
+- **PROD1-B (Rest):** Modellgenerierung auch aus dem installierten Wheel außerhalb
+  des Quellbaums prüfen. Inventur, portable CLI/API, saubere CI-Installation und
+  echte kurze Source-Tree-Gemma-Matrix sind beantwortet; Ergebnisse stehen in
+  `docs/PRODUCT_CHECKPOINT_2026-09-07.md`. Gate: keine Entwickler-Worktrees oder
+  unbemerkten Source-Imports im installierten Modellpfad.
   Kill: fehlende Hardwarequalifikation lässt den Pfad ausdrücklich unqualifiziert.
 - **PROD1-C:** Scheduler-/Cache-Korrekturen, autonome Suche, Kostenmodell und
   konservatives mehrstufiges RL. Gate: unabhängige, gepaarte End-to-End-Bestätigung
@@ -61,6 +63,26 @@ Ein früher EOS vor dem Limit erwartet ausdrücklich keinen Vorteil.
 Kill: keine tatsächlich vermiedene Arbeit, sichtbare Abweichung, Ressourcenfehler
 oder kein Nettovorteil über Rauschen/Wrapperkosten. Quelldatei/Version werden exakt
 gebunden; eine neue Library-Version erbt den Kandidaten nicht ungeprüft.
+
+Rest: gepaarte vollständige Bestätigung auf 1B/4B/12B. Der 1B-Forward-Audit ist
+beantwortet; Ergebnisse und alle verworfenen Versuche stehen in
+`docs/PRODUCT_CHECKPOINT_2026-09-07.md`. Keine Leistungsfreigabe aus Teilmessungen.
+
+## PROD3 — Kalibrierung auf belastbare Ruhephasen verschieben (2026-09-07)
+
+Mechanismus: Readiness-Warten als eigenen Zustand außerhalb eines Messversuchs
+führen. Vor einer Modellladung mehrere aufeinanderfolgende gültige öffentliche
+Energie-/Thermal-/CPU-/Speicherproben verlangen, bei Fremdlast ohne Modellladung
+begrenzt zurückstellen. Jeder spätere Versuch bleibt eigenständig dokumentiert;
+ein unabhängiger Evaluator behält unveränderte Schwellen und entscheidet über
+Aktivierung. Das ist Voraussetzung für automatische Kalibrierung ohne ständige
+Nutzerinteraktion, keine Erlaubnis, misslungene Messungen zu verbergen.
+
+Gate: reale Ready/Busy-Übergänge, begrenzte Wartezeit, keine Modellladung während
+einer verweigerten Phase, vollständige Historie einschließlich Deferred/Failed.
+Kill: Änderungen an Energieeinstellungen, Beenden fremder Prozesse, verdeckte
+Retries, Busy-Loop oder Aufweichen einer eingefrorenen Messschwelle. Wenn keine
+gültige Phase entsteht, bleibt die Produktreferenz aktiv und Optimierung offen.
 
 ## C1 — Reste aus dem Codex-Review vom 2026-09-03
 
