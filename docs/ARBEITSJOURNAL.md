@@ -12258,3 +12258,26 @@ Buildzwischenstände liegen wiederherstellbar im eigenen temporären Prüfbereic
 ProjectAtlas-Quellen und bestehende versiegelte Studien bleiben unverändert.
 Die neue Messhistorie liegt im verifizierten lokalen Journal und in Rohberichten;
 die zusätzliche visuell geprüfte UI-Projektion ist ausdrücklich als PROD7 offen.
+
+### PROD4 — Veröffentlichung und CI verifiziert
+
+Code-/Evidenz-Meilenstein `55fc794` ist auf `Codex/ironmule-product` im
+beauftragten Repository Tobayko/IronMule veröffentlicht. Die automatische
+Sicherheitsprüfung lehnte den ersten Push zunächst ab. Zusätzliche reine
+Leseprüfungen bestätigten identischen angemeldeten Nutzer/Eigentümer, ADMIN-
+Berechtigung, den bereits öffentlichen Produktquellcode und gleichartige
+öffentliche PROD3-Berichte. Nach diesen Prüfungen wurde derselbe Push regulär
+genehmigt; keine Umgehung und kein alternatives Übertragungsverfahren.
+
+[GitHub CI 34118816842](https://github.com/Tobayko/IronMule/actions/runs/34118816842)
+ist terminal erfolgreich auf macOS mit Python 3.11 und 3.12. Die lokale Suite
+mit 897 Tests und die tatsächlichen M1-Max-Load-only-Ergebnisse bleiben davon
+getrennte Nachweise. Der Produktstand ist weiterhin Alpha, 12B unqualifiziert,
+UI-Projektion/Admission/RL bleiben offen.
+
+ProjectAtlas meldet 0.4.5-rc1; die lokale `.projectatlas/projectatlas.mcp.json`
+stimmt mit der generierten Konfiguration für denselben Root/DB-/Config-Pfad
+überein. Wegen überschrittener inkrementeller Dependency-Closure wird der
+Navigationsindex mit einem begrenzten Vollscan erneuert. Kein ProjectAtlas-
+Quellcode und keine Modelle wurden dabei verändert.
+Der Vollscan `index-1` ist ohne Fehler abgeschlossen.
