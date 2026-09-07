@@ -39,31 +39,6 @@ Mechanismen mit Voraussetzungen und Kill-Kriterien fest: Interaktionsmodell/FQI,
 Scheduling × Cache, begrenzte evolutionäre Kernelsuche und gelernte Entwurfs-Heads.
 Alle sind unqualifiziert; R2 allein bietet keine neue Kontext-/Kombinationsabdeckung.
 
-## PROD2 — Unverbrauchte letzte Vorausberechnung vermeiden (2026-09-07)
-
-Mechanismus: installiertes mlx-lm 0.31.3 `generate_step` berechnet bei
-`n != max_tokens` schon `next_y`, bevor es `y` liefert. Am letzten vom Aufrufer
-verbrauchten Token wird dadurch noch ein zusätzlicher Model-Forward eingereicht.
-Bei frischem, nach der Antwort verworfenem Cache und greedy-Ausgabe wird dessen
-Ergebnis nicht benötigt. Ein begrenzter eigener Host-Loop kann diesen Forward
-auslassen und alle bisherigen Berechnungen der sichtbaren Tokens erhalten.
-
-Scope: zunächst lokale Gemma-Snapshots, keine geteilten/persistierten Prompt-Caches,
-kein Draft, keine Sampling-/Logit-Processor-/Embedding-Erweiterung. Keine Änderung
-an installierten Bibliotheken und keine Aktivierung vor Qualifikation.
-Test: zuerst echte Forward-Zähler plus vollständige Token-/Text-/Stop-Identität,
-dann gepaarte Baseline/Kandidat-Messungen je Modell und Ausgabelimit 1/8/32.
-Ein früher EOS vor dem Limit erwartet ausdrücklich keinen Vorteil.
-Kill: keine tatsächlich vermiedene Arbeit, sichtbare Abweichung, Ressourcenfehler
-oder kein Nettovorteil über Rauschen/Wrapperkosten. Quelldatei/Version werden exakt
-gebunden; eine neue Library-Version erbt den Kandidaten nicht ungeprüft.
-
-Rest: vollständige gültige 12B-Performancebestätigung. Die 1B-/4B-Produktläufe sind beantwortet:
-vollständiges Protokoll, aber kein qualifizierter Nettovorteil; nicht denselben
-Lauf auf einen günstigeren Zufallszug hin wiederholen. Ergebnisse stehen in
-`docs/PROD3_RESULTS_2026-09-07.md` und `PROD6_1B_installed_20260907_attempt1`.
-Die kurze 12B-Generierungsregression ist keine Performancebestätigung.
-
 ## PROD3-B — automatische Neuplanung und Online-Arbitration (2026-09-07)
 
 Readiness-Warten, vollständige Historie und unabhängige Bewertung sind implementiert

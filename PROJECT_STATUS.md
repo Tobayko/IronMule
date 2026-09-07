@@ -1,13 +1,30 @@
 # Projektstatus
 
-**Stand:** 1. September 2026 (Kurzfassung; vollständige Historie im Arbeitsjournal)
+**Stand:** 7. September 2026 (Produktprüfung; frühere Studien unten historisch)
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 Diese Datei ist der kompakte Einstieg: Gate-/Entscheidstabellen und Verweise.
 Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 [`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
 
-## Auditierter aktueller Stand
+## Aktuelle Produktprüfung — 2026-09-07
+
+Die lokal registrierten Gemma-3-Snapshots 1B/4B/12B wurden tatsächlich mit
+MLX/Metal ausgeführt. Auch das vollständige installierte 12B-Protokoll ist nun
+gültig beendet: 90/90 exakte HTTP-Anfragen, drei frische Worker mit Exitcode 0,
+MLX-Peak 7.327.153.624 B, maximales Swapdelta 112.659.005 B unter der festen
+256-MiB-Grenze. Unabhängige Auswertung: `inconclusive`, keine Aktivierung.
+Die vollständigen kurzen 1B-/4B-/12B-Kalibrierungen sind jeweils beantwortet,
+nicht zu einem gemeinsamen Performanceclaim gepoolt.
+
+Nachweise: [12B-Kalibrierung](docs/PROD6_12B_RESULTS_2026-09-07.md),
+[separate Lade-/Referenzprüfung](docs/PROD4P_12B_RESULTS_2026-09-07.md),
+[offene Arbeiten](BACKLOG.md). Längerer gültiger Kontext, Dauerlast/Parallelität,
+prognostische Admission, autonome Suche/RL und Multi-Mac bleiben offen.
+Die Hardware-/Downloadfreigabe in `AGENTS.md` ersetzt historische Einzel-
+freigabehürden; Messhygiene und eingefrorene Gates bleiben unverändert.
+
+## Historischer auditierter Studienstand
 
 | Bereich | Verifizierbarer Stand | Zulässige Aussage |
 | --- | --- | --- |
@@ -118,7 +135,7 @@ Dokumentationsabschnitte entstanden **danach**.
 | Langlauf nachgemessen (2026-09-03, repariert) | `379`-Prompt, `128`/`256` Ausgabe, `Core+R8`, `100 %` tokenidentisch: 4B `+13…14 %` Wall, 12B `+9…10 %` Wall. 12B/256 Baseline `10,9 s` > `6 s` — Nutzerentscheid-Ausnahme | **explorativ**; Kontinuitätsgrenze für diese Messung freigegeben (Journal) |
 | Sub-4-Bit / Double-Buffer / Prompt-Lookup (2026-09-03, repariert) | Sub-4-Bit-Decode `0,99x` (kein Gewinn); Double-Buffer `+0,42 %` Wall (Rauschen); Prompt-Lookup bricht Tokenidentität (Doc Q&A `41` gegen `40` Token) und ist auf 2/3 Tasks langsamer | **alle drei Gemini-„Durchbrüche" widerlegt**; `speculate_k` bleibt `0` |
 
-## Geltende Entscheide und Grenzen
+## Historische Entscheide und Grenzen (aktuelle Freigaben siehe oben)
 
 - **GO im exakten Scope:** begrenzter N8-Runtime-Prototyp, N10-Runtime-Prototyp,
   N8/N10-Shadow-Router (nur Shadow), Head-Skip-Runtime (Engineering-GO).
