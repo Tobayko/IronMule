@@ -21,6 +21,10 @@ Nachweise: [12B-Kalibrierung](docs/PROD6_12B_RESULTS_2026-09-07.md),
 [separate Lade-/Referenzprüfung](docs/PROD4P_12B_RESULTS_2026-09-07.md),
 [offene Arbeiten](BACKLOG.md). Längerer gültiger Kontext, Dauerlast/Parallelität,
 prognostische Admission, autonome Suche/RL und Multi-Mac bleiben offen.
+Der separate [12B-Langkontextversuch](docs/PROD8_12B_RESULTS_2026-09-07.md) mit
+1.077 Prompttokens ist am ersten Stock-Aufruf terminal am 6-s-Host-Zeitgate
+gescheitert; kein erfolgreicher Langkontext-/Produkt-/HTTP-Nachweis. Worker
+beendet, kein beobachtetes Swapwachstum, keine Wiederholung oder Grenzlockerung.
 Die Hardware-/Downloadfreigabe in `AGENTS.md` ersetzt historische Einzel-
 freigabehürden; Messhygiene und eingefrorene Gates bleiben unverändert.
 

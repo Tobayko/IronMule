@@ -12464,3 +12464,65 @@ blockierende Pipe-/HTTP-Lesewege und fehlende terminale Fehlerhistorie.
 Der Entwurf wurde nicht mit einem Modell gestartet. Nach weiterhin offenen
 Reviewpunkten übernimmt Sol ausschließlich diese begrenzte Reparatur;
 Steuerungstests allein gelten ausdrücklich nicht als Hardwaretest.
+
+Der vollständige 12B-Nachweis ist als `d0949cc` auf `Codex/ironmule-product`
+veröffentlicht. GitHub-CI `34154617013` ist terminal erfolgreich (saubere
+Wheel-Installation, CLI-/statische Kontrollen und modellfreie Engine-Suite
+auf Python 3.11 und 3.12). Diese CI ist kein Ersatz für die oben dokumentierten
+90 lokalen Metal-Anfragen. Xcode-First-Launch und Diff-Kontrolle bestanden;
+Projektumgebungs-Hash weiter
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+DATA1 hat nach Freigabe ein eigenes kurzes GPU-Fenster angemeldet; hier bleiben
+weitere native Versuche bis zu dessen Ende ausgesetzt.
+
+### PROD8 vor dem ersten Modelllauf eingefroren
+
+DATA1 hat das Ende seines GPU-Fensters bestätigt. Die reparierte PROD8-Fassung
+verwendet einen gemeinsamen Parent-BudgetGuard, pro Anfrage Timeout und
+Arbeitszeitobergrenze, 24 s feste Pause nach jedem Aufruf sowie 60 s Abstand
+zwischen Stock- und Produktworker. Readiness, Ressourcenwache, Teilresultate,
+terminale Fehler und tatsächliches Reaping werden protokolliert. Root hat
+zusätzlich Modellmetadaten-/Tokenizer-Hashes und die Bindung des installierten
+Codehashes an den vorherigen 12B-Lauf ergänzt. Keine Änderung an Runtime,
+Bibliotheken oder Modellcache; kein neuer Optimierungskandidat.
+
+Tokenizer-only-Vorprüfung: der unveränderte 88-Wiederholungen-Prompt ergibt
+1.077 Tokens im festen Bereich 1.000–1.100. Der erste direkte Transformers-
+Aufruf lieferte eine BatchEncoding-Struktur (Länge 2 ist kein Tokenmaß);
+mit dem in MLX-LM tatsächlich verwendeten `return_dict=False` ergibt sich
+die echte ID-Liste mit 1.077 Einträgen. Beide Vorprüfungen importierten kein
+MLX und luden kein Modell; es gab keine Promptanpassung nach Generierung oder
+Timing. Native Stock-Ausführung muss die Zahl separat bestätigen.
+
+Acht reine Kontrolltests bestanden (zuletzt 0,09 s), Ruff-F bestanden,
+CLI-help sowie Provider-/Kalibrierungs-/Metadatenbindung in der isolierten
+Installation geprüft. Sie sind kein Modellnachweis. Es folgt ein einzelner
+echter Durchgang mit maximal zehn Anfragen (Stock 4, Produkt 4, JSON/SSE je 1),
+unveränderten Speicher-/6-s-/Duty-Grenzen und ohne automatischen Retry.
+
+### PROD8 terminal: echte Referenz überschreitet den Host-Zeitdeckel
+
+Lauf `a04826bffa5b4fe9b626553603167706` lädt den Stock-12B-Snapshot tatsächlich
+auf `Device(gpu, 0)`, bestätigt 1.077 Prompttokens und beginnt den ersten
+Generierungsaufruf. Nach 6,002551458 s greift `stock_request_timeout`; keine
+vollständige Ausgabe, keine Produkt-/HTTP-/SSE-Stufe. PID 46891 ist nach
+kontrolliertem SIGTERM beendet/geerntet (−15). Elf Readiness- und 79
+Speicherbeobachtungen, maximal 0 B Swapdelta, RSS maximal 3.840.688.128 B.
+MLX-Ladepeak 7.188.274.696 B ist kein Inferenzpeak. Quellmanifest vor/nach gleich.
+
+`BudgetGuard` verwirft den zu langen Block vor Summenaufnahme: sein Nullwert
+ist ausdrücklich kein Null-GPU-Work-Nachweis. Das Request-Resource-Event und
+terminale Journal enthalten den realen fehlgeschlagenen 6,002551458-s-Aufruf.
+Der Rohbericht bleibt unverändert; Grenzwerte, Prompt und Kontext werden nicht
+nachgebessert, kein Retry. DATA1 hat die Ende-Meldung für das GPU-Fenster erhalten.
+Ergebnis/Limitierung: `docs/PROD8_12B_RESULTS_2026-09-07.md`. PROD8 verlässt den
+offenen Backlog; PROD9 hält die neue, ausdrücklich unqualifizierte Hypothese
+eines phasenweisen Budgets mit eigenen Correctness-/Synchronisationsgates fest.
+
+Unabhängiges Luna-Read-only-Review bestätigt 93 kettenverifizierte PROD8-Events
+(11 Readiness, 79 Speicher, 1 Request-Resource plus Start/Ende), exakt passende
+Roh-/Journalwerte und die Betriebssystemabfrage: PID 46891 existiert nicht mehr.
+Nur dieser eine Worker ist belegt; keine vollständige Antwort und kein zweiter
+Modelllauf. Datenschutzkontrolle findet keine absoluten Pfade, Nutzerprompts
+oder Zugangsdaten im Rohbericht. Keine Kaggle-Sitzung wurde in dieser Aufgabe
+gestartet und keine ProjectAtlas-Quelle verändert.
