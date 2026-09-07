@@ -12,7 +12,7 @@ from ironmule_product.evaluation import evaluate_report
 HASH = "a" * 64
 
 
-def _report(*, ratio: float = 0.9, completion_limit: bool = True) -> dict:
+def _report(*, ratio: float = 0.9, completion_limit: bool = True, clean_shutdown: bool = False) -> dict:
     identity = {
         "identity_sha256": HASH,
         "model_sha256": "b" * 64,
@@ -56,7 +56,7 @@ def _report(*, ratio: float = 0.9, completion_limit: bool = True) -> dict:
         start = 1.0 + worker * 260.0 + (index - worker * 30) * 5.0
         resource_events.append({"sample_index": index, "start_monotonic": start,
                                 "end_monotonic": start + 1.0, "upper_bound_seconds": 1.0})
-    return {
+    report = {
         "schema": "ironmule.calibration.v1",
         "plan_id": plan_id(),
         "status": "measured",
@@ -83,6 +83,20 @@ def _report(*, ratio: float = 0.9, completion_limit: bool = True) -> dict:
             "required_break_limit_seconds": 4.0,
         },
     }
+    if clean_shutdown:
+        report["load_monitor"] = {
+            "schema": "ironmule.load_monitor.v1",
+            "poll_interval_seconds": 0.25,
+            "swap_delta_limit_bytes": 256 * 1024**2,
+            "rss_limit_fraction": 0.60,
+            "mlx_peak_limit_fraction": 0.60,
+            "clean_shutdown_required": True,
+        }
+        report["worker_exit_codes"] = [
+            {"worker_index": i, "returncode": 0, "normal_shutdown": True}
+            for i in range(3)
+        ]
+    return report
 
 
 def test_valid_fixture_returns_math_only_calibration_signal() -> None:
@@ -110,6 +124,33 @@ def test_no_gain_is_classified_without_activation() -> None:
     result = evaluate_report(_report(ratio=1.0))
     assert result["verdict"] == "no_gain"
     assert result["activation_allowed"] is False
+
+
+def test_clean_shutdown_proof_is_required_for_new_load_monitor_reports() -> None:
+    report = _report(clean_shutdown=True)
+    assert evaluate_report(report)["verdict"] == "calibration_signal"
+    report["worker_exit_codes"][1]["returncode"] = -6
+    assert evaluate_report(report)["verdict"] == "invalid"
+    report = _report(clean_shutdown=True)
+    report["worker_exit_codes"][2]["normal_shutdown"] = False
+    assert evaluate_report(report)["verdict"] == "invalid"
+    report = _report(clean_shutdown=True)
+    report["worker_exit_codes"] = report["worker_exit_codes"][:2]
+    assert evaluate_report(report)["verdict"] == "invalid"
+    report = _report(clean_shutdown=True)
+    report["worker_exit_codes"][0]["worker_index"] = 99
+    assert evaluate_report(report)["verdict"] == "invalid"
+    for mutation in (
+        lambda value: value.pop("clean_shutdown_required"),
+        lambda value: value.update(clean_shutdown_required=False),
+        lambda value: value.update(poll_interval_seconds=0.5),
+        lambda value: value.update(swap_delta_limit_bytes=0),
+        lambda value: value.update(rss_limit_fraction=0.5),
+        lambda value: value.update(mlx_peak_limit_fraction=0.5),
+    ):
+        report = _report(clean_shutdown=True)
+        mutation(report["load_monitor"])
+        assert evaluate_report(report)["verdict"] == "invalid"
 
 
 def test_malformed_report_never_throws_and_fails_closed() -> None:

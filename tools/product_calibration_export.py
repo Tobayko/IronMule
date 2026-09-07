@@ -38,7 +38,9 @@ def export_run(database: Path, run_id: str) -> dict:
               "error_code": terminal.get("error_code"), "error_type": terminal.get("error_type"),
               "error_stage": terminal.get("error_stage"), "error_detail": terminal.get("error_detail"),
               "evaluation": terminal.get("evaluation"), "budget": terminal.get("budget")}
-    samples, resources, workers, timings = {}, {}, {}, {}
+    if "load_monitor" in start:
+        report["load_monitor"] = start["load_monitor"]
+    samples, resources, workers, timings, load_memory, exits = {}, {}, {}, {}, {}, {}
     for event in events:
         payload, kind = event["payload"], event["kind"]
         if kind == "readiness" and payload["decision"].get("stable") and "memory_total_bytes" not in report:
@@ -51,6 +53,15 @@ def export_run(database: Path, run_id: str) -> dict:
         if kind != "validation":
             continue
         state = payload.get("state")
+        if state in {"load_memory_sample", "load_memory_ready"}:
+            worker_index = payload.get("worker_index")
+            if type(worker_index) is int:
+                row = load_memory.setdefault(worker_index, {"worker_index": worker_index, "samples": [], "ready": None, "ready_observation": None})
+                if state == "load_memory_sample":
+                    row["samples"].append(payload.get("observation"))
+                else:
+                    row["ready"] = payload.get("ready")
+                    row["ready_observation"] = payload.get("observation")
         if state == "identity_bound":
             report["identity_before"] = payload["identity"]
         elif state == "evaluated":
@@ -61,6 +72,10 @@ def export_run(database: Path, run_id: str) -> dict:
             workers[worker["worker_index"]] = worker
             if "timing" in payload:
                 timings[worker["worker_index"]] = payload["timing"]
+            if "worker_exit" in payload:
+                exit_row = payload["worker_exit"]
+                if isinstance(exit_row, dict) and type(exit_row.get("worker_index")) is int:
+                    exits[exit_row["worker_index"]] = exit_row
         if "sample" in payload:
             samples[payload["sample"]["sample_index"]] = payload["sample"]
         elif "sample_index" in payload and payload.get("status") == "failed":
@@ -72,6 +87,10 @@ def export_run(database: Path, run_id: str) -> dict:
                   resource_events=[resources[k] for k in sorted(resources)],
                   workers=[workers[k] for k in sorted(workers)],
                   worker_timings=[timings[k] for k in sorted(timings)])
+    if load_memory:
+        report["worker_load_memory"] = [load_memory[k] for k in sorted(load_memory)]
+    if exits:
+        report["worker_exit_codes"] = [exits[k] for k in sorted(exits)]
     report["resource_valid"] = terminal["status"] == "finished" and report["status"] == "measured"
     return {"schema": "ironmule.calibration_export.v1", "exported_at": datetime.now(timezone.utc).isoformat(),
             "events_sha256": canonical_sha256(events), "report_sha256": canonical_sha256(report),

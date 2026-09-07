@@ -15,6 +15,7 @@ import json
 import math
 import os
 import secrets
+import sys
 import threading
 import time
 from typing import Any
@@ -38,6 +39,19 @@ _STATUS_NAME = "optimization-status.json"
 _ACTIVE_STAGES = {"waiting", "fingerprinting", "loading", "measuring", "cooldown", "evaluating"}
 _STAGES = _ACTIVE_STAGES | {"idle", "deferred", "failed", "cancelled", "finished"}
 _SAMPLE_TIMEOUT_S = 5.0
+
+
+def _load_monitor_spec() -> dict[str, Any]:
+    from .memory import POLL_INTERVAL_SECONDS, RSS_LIMIT_FRACTION, SWAP_DELTA_LIMIT_BYTES
+
+    return {
+        "schema": "ironmule.load_monitor.v1",
+        "poll_interval_seconds": POLL_INTERVAL_SECONDS,
+        "swap_delta_limit_bytes": SWAP_DELTA_LIMIT_BYTES,
+        "rss_limit_fraction": RSS_LIMIT_FRACTION,
+        "mlx_peak_limit_fraction": POLICY.peak_memory_fraction,
+        "clean_shutdown_required": True,
+    }
 
 
 class CalibrationFailure(RuntimeError):
@@ -261,10 +275,14 @@ class CalibrationJob:
         self.model_loaded = False
         self.deadline = 0.0
         self.readiness_policy = ReadinessPolicy()
+        self._active_load_guard = None
+        self._active_process = None
         self.report = {"schema": "ironmule.calibration.v1", "run_id": self.run_id,
                        "plan_id": plan_id(), "status": "started", "model_id": self.spec.model_id,
                        "revision": self.spec.revision, "samples": [], "workers": [],
-                       "resource_events": [], "worker_timings": [],
+                       "resource_events": [], "worker_timings": [], "worker_load_memory": [],
+                       "worker_exit_codes": [],
+                       "load_monitor": _load_monitor_spec(),
                        "resource_valid": False, "activation_allowed": False}
 
     def _emit(self, kind: str, payload: dict) -> None:
@@ -288,6 +306,12 @@ class CalibrationJob:
             raise CalibrationFailure("job_deadline", status="deferred")
         if self.guard is not None:
             self.guard.check_wall()
+        if self._active_load_guard is not None and self._active_process is not None:
+            from .memory import MemoryGuardError
+            try:
+                self._active_load_guard(self._active_process.pid)
+            except MemoryGuardError as exc:
+                raise CalibrationFailure(exc.code) from exc
 
     def _sleep(self, seconds: float) -> None:
         end = time.monotonic() + seconds
@@ -377,13 +401,65 @@ class CalibrationJob:
             process = None
             worker = {"worker_index": worker_index, "started": False, "closed": False, "pid": None}
             self.report["workers"].append(worker)
+            load_memory_row: dict[str, Any] = {"worker_index": worker_index, "samples": [], "ready": None, "ready_observation": None}
+            self.report["worker_load_memory"].append(load_memory_row)
             timing = {"worker_index": worker_index, "load_started_monotonic": time.monotonic(),
                       "ready_monotonic": None, "closed_monotonic": None}
             self.report["worker_timings"].append(timing)
+            exit_row = {"worker_index": worker_index, "returncode": None, "normal_shutdown": False}
+            self.report["worker_exit_codes"].append(exit_row)
+            from .memory import LoadMemoryGuard, MemoryGuardError
+
+            def on_load_memory_sample(observation: Any) -> None:
+                if not isinstance(observation, dict):
+                    raise CalibrationFailure("load_memory_observation_invalid")
+                saved = dict(observation)
+                load_memory_row["samples"].append(saved)
+                self._emit("validation", {"state": "load_memory_sample", "worker_index": worker_index,
+                                           "observation": saved})
+
+            try:
+                self._active_load_guard = LoadMemoryGuard(
+                    swap_baseline_bytes=self.report["swap_baseline_bytes"],
+                    memory_total_bytes=self.report["memory_total_bytes"],
+                    on_sample=on_load_memory_sample,
+                )
+            except MemoryGuardError as exc:
+                raise CalibrationFailure(getattr(exc, "code", "load_memory_guard_invalid")) from exc
+
+            def startup_guard(pid: int) -> None:
+                nonlocal process
+                process = client._process
+                if process is None or process.pid != pid:
+                    raise CalibrationFailure("worker_start_handle_missing")
+                self._active_process = process
+                worker["pid"] = pid
+                self._check()
+
             try:
                 started = time.monotonic()
-                client.start()
-                process = client._process
+                ready_payload = client.start(startup_guard=startup_guard)
+                if process is None or self._active_load_guard is None:
+                    raise CalibrationFailure("worker_start_handle_missing")
+                ready_keys = (
+                    "startup_wall_seconds", "process_peak_rss_bytes", "mlx_active_bytes",
+                    "mlx_peak_bytes", "mlx_cache_bytes", "recommended_working_set_bytes",
+                )
+                ready_metrics = {key: ready_payload.get(key) for key in ready_keys} if isinstance(ready_payload, dict) else {}
+                # Persist the raw bounded telemetry before validation so a
+                # failed peak/RSS check remains auditable.
+                self._emit("validation", {"state": "load_memory_ready", "worker_index": worker_index,
+                                           "ready": ready_metrics})
+                try:
+                    ready_observation = self._active_load_guard(process.pid, force=True)
+                    validated_ready = self._active_load_guard.validate_ready(ready_payload)
+                except MemoryGuardError as exc:
+                    raise CalibrationFailure(getattr(exc, "code", "load_memory_ready_invalid")) from exc
+                load_memory_row["ready"] = dict(validated_ready)
+                load_memory_row["ready_observation"] = dict(ready_observation) if isinstance(ready_observation, dict) else ready_observation
+                self._emit("validation", {"state": "load_memory_ready", "worker_index": worker_index,
+                                           "ready": load_memory_row["ready"],
+                                           "observation": load_memory_row["ready_observation"]})
                 if process is None:
                     raise CalibrationFailure("worker_start_missing_handle")
                 worker.update(started=True, pid=process.pid)
@@ -402,13 +478,30 @@ class CalibrationJob:
                             self._pace()
                             attempted = time.monotonic()
                             sample = None
+                            request_attempted = False
+                            measured_started = attempted
                             try:
+                                if self._active_load_guard is not None and self._active_process is not None:
+                                    try:
+                                        self._active_load_guard(self._active_process.pid, force=True)
+                                    except MemoryGuardError as exc:
+                                        raise CalibrationFailure(getattr(exc, "code", "load_memory_guard_failed")) from exc
+                                measured_started = time.monotonic()
+                                request_attempted = True
                                 sample, actual = _http_sample(paths, key, self.spec, descriptor)
                                 sample["identity_sha256"] = self.report["identity_before"]["identity_sha256"]
                                 self.report["samples"].append(sample)
                                 # Persist measured facts before any correctness/resource verdict.
                                 self._emit("sample", dict(sample))
-                                self._book_work(time.monotonic() - attempted, descriptor["sample_index"])
+                                # Include journal overhead in the conservative
+                                # resource interval, but exclude pre/post guard
+                                # probes from the hot request interval.
+                                self._book_work(time.monotonic() - measured_started, descriptor["sample_index"])
+                                if self._active_load_guard is not None and self._active_process is not None:
+                                    try:
+                                        self._active_load_guard(self._active_process.pid, force=True)
+                                    except MemoryGuardError as exc:
+                                        raise CalibrationFailure(getattr(exc, "code", "load_memory_guard_failed")) from exc
                                 before = expected.setdefault(limit, actual)
                                 sample["correctness"] = actual == before
                                 sample["tokens_match"] = actual["token_ids"] == before["token_ids"]
@@ -445,19 +538,38 @@ class CalibrationJob:
                                     fault["sample"] = dict(sample)
                                 else:
                                     self.report["samples"].append(dict(fault))
-                                    try:
-                                        self._book_work(time.monotonic() - attempted, descriptor["sample_index"])
-                                    except Exception as budget_error:
-                                        fault["budget_error_type"] = type(budget_error).__name__
+                                    if request_attempted:
+                                        try:
+                                            self._book_work(time.monotonic() - measured_started, descriptor["sample_index"])
+                                        except Exception as budget_error:
+                                            fault["budget_error_type"] = type(budget_error).__name__
                                 self._emit("validation", fault)
                                 raise
                         self._checkpoint()
             finally:
-                client.close()
+                self._active_load_guard = None
+                self._active_process = None
+                close_error = None
+                active_exception = sys.exc_info()[0] is not None
+                try:
+                    client.close()
+                except BaseException as exc:
+                    close_error = exc
                 self.model_loaded = False
-                worker["closed"] = process is None or process.poll() is not None
+                returncode = process.poll() if process is not None else None
+                exit_row["returncode"] = returncode
+                exit_row["normal_shutdown"] = bool(worker["started"] and returncode == 0 and close_error is None)
+                worker["closed"] = process is None or returncode is not None
                 timing["closed_monotonic"] = time.monotonic()
-                self._emit("validation", {"state": "worker_cleanup", "worker": dict(worker), "timing": dict(timing)})
+                cleanup_payload = {"state": "worker_cleanup", "worker": dict(worker), "timing": dict(timing),
+                                   "worker_exit": dict(exit_row)}
+                if close_error is not None:
+                    cleanup_payload["close_error_type"] = type(close_error).__name__
+                self._emit("validation", cleanup_payload)
+                if not active_exception and close_error is not None:
+                    raise CalibrationFailure("worker_close_failed") from close_error
+                if not active_exception and worker["started"] and returncode != 0:
+                    raise CalibrationFailure("worker_exit_nonzero")
                 if not worker["closed"]:
                     raise CalibrationFailure("worker_cleanup_failed")
             self._checkpoint()
@@ -487,6 +599,7 @@ class CalibrationJob:
                     self._emit("run_started", {"model_id": self.spec.model_id, "revision": self.spec.revision,
                                                "specification": specification(), "plan_id": plan_id(),
                                                "readiness_policy": asdict(self.readiness_policy),
+                                               "load_monitor": dict(self.report["load_monitor"]),
                                                "max_wait_s": self.max_wait_s, "readiness_only": self.readiness_only})
                     try:
                         if self.readiness_only:

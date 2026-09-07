@@ -8,12 +8,13 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-
-import pytest
+import time
+from types import SimpleNamespace
 
 from ironmule_product.calibration import CalibrationJob, _job_lease, history, status
 from ironmule_product.state import ProductStore, _atomic_write
 from ironmule_product.types import ModelSpec
+from friday_evidence.events import EventJournal
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -40,6 +41,14 @@ def test_zero_wait_readiness_only_defers_without_loading_worker(tmp_path: Path):
     assert [event["kind"] for event in journal["events"]] == [
         "run_started", "readiness", "deferred", "run_finished",
     ]
+    assert journal["events"][0]["payload"]["load_monitor"] == {
+        "schema": "ironmule.load_monitor.v1",
+        "poll_interval_seconds": 0.25,
+        "swap_delta_limit_bytes": 256 * 1024 * 1024,
+        "rss_limit_fraction": 0.60,
+        "mlx_peak_limit_fraction": 0.60,
+        "clean_shutdown_required": True,
+    }
     assert all(event["payload"].get("model_loaded") is not True for event in journal["events"])
 
 
@@ -129,6 +138,88 @@ def test_pause_resume_controls_calibration_status(tmp_path: Path):
     assert report["status"] == "deferred" and report["error_code"] == "paused"
     store.set_optimization_paused(False)
     assert status(store)["paused"] is False
+
+
+def test_check_polls_active_load_guard_without_recursing(tmp_path: Path):
+    store = _store(tmp_path)
+    job = CalibrationJob(store, "local/test", max_wait_s=0, readiness_only=True)
+    job.deadline = time.monotonic() + 10
+    calls = []
+
+    class Guard:
+        def __call__(self, pid, force=False):
+            calls.append((pid, force))
+            return {"pid": pid}
+
+    job._active_load_guard = Guard()
+    job._active_process = SimpleNamespace(pid=12345)
+    job._check()
+    assert calls == [(12345, False)]
+
+
+def test_export_reconstructs_load_memory_rows(tmp_path: Path):
+    database = tmp_path / "optimization.sqlite3"
+    run_id = "a" * 32
+    ready = {
+        "startup_wall_seconds": 0.5,
+        "process_peak_rss_bytes": 100,
+        "mlx_active_bytes": 50,
+        "mlx_peak_bytes": 80,
+        "mlx_cache_bytes": 10,
+        "recommended_working_set_bytes": 1000,
+        "rss_limit_bytes": 500,
+        "swap_delta_limit_bytes": 256 * 1024 * 1024,
+    }
+    load_monitor = {
+        "schema": "ironmule.load_monitor.v1",
+        "poll_interval_seconds": 0.25,
+        "swap_delta_limit_bytes": 256 * 1024**2,
+        "rss_limit_fraction": 0.60,
+        "mlx_peak_limit_fraction": 0.60,
+        "clean_shutdown_required": True,
+    }
+    with EventJournal(database) as journal:
+        journal.append(run_id, "run_started", {"plan_id": "plan", "model_id": "local/test", "revision": "revision", "load_monitor": load_monitor})
+        journal.append(run_id, "validation", {"state": "load_memory_sample", "worker_index": 0,
+                                                "observation": {"pid": 12345, "rss_bytes": 100, "swap_delta_bytes": 0, "errors": []}})
+        journal.append(run_id, "validation", {"state": "load_memory_ready", "worker_index": 0,
+                                                "ready": ready, "observation": {"pid": 12345, "rss_bytes": 100, "swap_delta_bytes": 0, "errors": []}})
+        journal.append(run_id, "validation", {"state": "worker_cleanup",
+                                                "worker": {"worker_index": 0, "started": True, "closed": True, "pid": 12345},
+                                                "worker_exit": {"worker_index": 0, "returncode": 0, "normal_shutdown": True}})
+        journal.append(run_id, "run_finished", {"status": "failed", "report_status": "failed"})
+
+    from tools.product_calibration_export import export_run
+
+    exported = export_run(database, run_id)
+    rows = exported["report"]["worker_load_memory"]
+    assert rows == [{
+        "worker_index": 0,
+        "samples": [{"errors": [], "pid": 12345, "rss_bytes": 100, "swap_delta_bytes": 0}],
+        "ready": ready,
+        "ready_observation": {"errors": [], "pid": 12345, "rss_bytes": 100, "swap_delta_bytes": 0},
+    }]
+    assert exported["report"]["load_monitor"] == load_monitor
+    assert exported["report"]["worker_exit_codes"] == [{"worker_index": 0, "returncode": 0, "normal_shutdown": True}]
+
+
+def test_export_preserves_legacy_report_shape_without_load_monitor_events(tmp_path: Path):
+    database = tmp_path / "optimization.sqlite3"
+    run_id = "b" * 32
+    with EventJournal(database) as journal:
+        journal.append(run_id, "run_started", {"plan_id": "plan", "model_id": "local/test", "revision": "revision"})
+        journal.append(run_id, "run_finished", {"status": "failed", "report_status": "failed"})
+
+    from tools.product_calibration_export import export_run
+
+    report = export_run(database, run_id)["report"]
+    assert set(report) == {
+        "schema", "run_id", "plan_id", "model_id", "revision", "status", "activation_allowed",
+        "resource_valid", "error_code", "error_type", "error_stage", "error_detail", "evaluation",
+        "budget", "samples", "resource_events", "workers", "worker_timings",
+    }
+    assert "load_monitor" not in report
+    assert "worker_load_memory" not in report
 
 
 def test_cli_optimize_help_works_without_site_packages():

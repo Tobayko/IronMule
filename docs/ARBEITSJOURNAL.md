@@ -12122,3 +12122,139 @@ Produktsuite. [CI-Protokoll](https://github.com/Tobayko/IronMule/actions/runs/34
 Die lokale Suite bleibt separat mit 855 bestandenen Tests dokumentiert; der
 fremde CI-Runner ersetzt keine M1-Max-Modellmessung. Keine Aktivierung und kein
 RL-Abschluss werden aus diesem Meilenstein abgeleitet.
+
+### PROD4 — Ladeüberwachung vorregistriert
+
+Die dauerhafte Hardwarefreigabe gilt unverändert. Aus dem realen 12B-Swapfehler
+folgt zuerst eine eng begrenzte Reparatur: tatsächliche Startup-RSS-/Swap-Probes,
+Worker-Peaks und frühere Abbrüche. Drei Luna-Subagenten bearbeiten getrennt
+Transport/Telemetrie, Sampler und Kalibrierungsintegration; das Review prüft
+insbesondere Fehlererhalt und tatsächliches reaping. Keine Grenzerhöhung.
+
+Die Recherche verwirft eine einfache Headroom-Formel: `os_proc_available_memory`
+ist laut installiertem öffentlichem SDK nicht auf macOS verfügbar und
+`free_count` enthält speculative pages bereits. Memory Pressure ist kein
+allokierbarer Bytevorrat. Quellen, Vorregistrierung und die Grenzen des Pollers
+stehen in `docs/PROD4_LOAD_MEMORY_SPEC.md`. Reale Load-only-Prüfungen folgen erst
+nach Codeprüfung/Installation; neue Leistungs- oder Generierungsergebnisse
+liegen für diesen Schnitt noch nicht vor.
+
+### PROD4 — Kontrollpfad geprüft und isolierte Installation erneuert
+
+Review-Korrekturen vor Hardware: fehlendes MLX-60%-Gate ergänzt, unzulässige
+Annahme `cache <= active-peak` entfernt, tatsächlich zulässiges `active <= peak`
+beibehalten. Fehlerzustände sind gelatcht; andere PIDs können keine gecachten
+Beobachtungen erben. Callback-Fehler behalten ihre Identität und ein langsamer
+Callback nach `ready` darf die Startup-Deadline nicht umgehen. Die CPU-/RSS-
+Kontrolltests verwenden echte Prozesse; synthetische Protocol-Frames bleiben
+ausdrücklich reine IPC-Grenzfälle, keine vorgetäuschte Inferenz.
+
+Die Gesamtsuite bestand mit 884 Tests, 16 deselected (48,66 s). Die danach
+präzisierte Startup-Deadline-Regression besteht ebenfalls in 30 Worker-Tests.
+Ruff-F über neue Produktpfade und betroffene Tests sowie Xcode-First-Launch
+bestehen. Der zusätzliche Load-only-Treiber wird separat vor Ausführung geprüft.
+
+Wheelbau erfolgreich; ausschließlich IronMule in der bereits unabhängigen
+temporären Testinstallation aktualisiert, keine MLX-/Modellinstallation.
+Versionsstand bleibt MLX 0.32.0, MLX-LM 0.31.3, NumPy 2.5.2, Transformers 5.15.1.
+Installierter Codehash vorher
+`81c88ebabf0b1a204c3d1d0f00586ec48dac30fb686a3c9cdb15be311df3e445`, danach
+`efcdd5d87a8d784aa3cf27e21feeb8d6fb7cf848f4d155578d1b499d66d37939`.
+Vorhandene PROD3-Evidenz autorisiert diesen neuen Code nicht automatisch.
+Die Projektumgebung wurde nicht verändert; ihr `environment_sha256` ist
+vorher/nachher `e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Bestehende versiegelte Pfade verlieren damit keine Paketumgebungsbindung.
+
+Beim gezielten Lesen des tatsächlichen Loaders fiel unabhängig davon dessen
+`config.model_file`-Python-Erweiterung auf. Sie ist nicht dieselbe Grenze wie
+Tokenizer-`trust_remote_code=False`; PROD6 erfasst diese offene Einschränkung mit
+Kill-Kriterium. Keiner der drei hier verwendeten Gemma-Konfigurationssnapshots
+enthält `model_file`. Es wird keine vollständige Repository-Sicherheitsprüfung
+aus dieser einzelnen Beobachtung abgeleitet.
+
+### PROD4 — erster realer Load-only-Lauf deckt Shutdown-Abort auf
+
+1B-Versuch `b19ed2ff79fe4d9c98731f7dcb219868` erfüllt die Lade-/Speichergates:
+64 reale Samples, kein positives Swapdelta, MLX-Peak 735.852.808 B,
+Darwin-Prozesspeak 1.697.595.392 B. Identität und Quellen vorher/nachher gleich.
+Die Ladung dauerte deskriptiv 2,9446 s; keine Geschwindigkeitsbehauptung.
+
+Der tatsächlich erfasste Returncode beim normalen Shutdown ist allerdings `-6`
+(SIGABRT). Der Treiber bezeichnet das beendete/reaped Kind bislang als `passed`,
+weil er nur dessen Ende prüft. Diese Rohdatei bleibt unverändert, wird aber
+**nicht als sauberer Produkterfolg** bewertet. 4B/12B werden zunächst ausgesetzt;
+PROD4-S enthält den neuen Defekt mit Mechanismus und Kill-Kriterium. Vor weiteren
+Modellläufen wird die genaue Ursache geprüft, der Lifecycle repariert und ein
+regulärer Shutdown zusätzlich gegatet. Keine Auto-Neustart-Funktion wird daraus
+vorzeitig eingeführt.
+
+### PROD4-S — Python-Shutdown-Defekt reproduziert und repariert
+
+Ein echter Pipe-/Kindprozess auf demselben `_receiver`-Pfad reproduziert vor der
+Reparatur `Fatal Python error: _enter_buffered_busy` und Returncode `-6`: der
+Daemon-Reader hält beim Interpreter-Shutdown den gepufferten stdin-Pfad offen.
+Ein passender macOS-Diagnosebericht für Modell-PID 9670 wurde nicht gefunden;
+der Fehlertext stammt aus der kontrollierten Prozessreproduktion, nicht aus
+einem erfundenen Modell-Crashlog.
+
+Shutdown/EOF liefern jetzt einen nichtblockierenden terminalen Queueeintrag;
+der Reader kehrt zurück und wird vor dem normalen Exit begrenzt gejoint.
+Bei voller Queue wird für den terminalen Eintrag Platz geschaffen. Reale
+Pipe-Regressionen prüfen offenen stdin beim Shutdown und volle Queue, ohne
+MLX-/Modellverhalten zu simulieren; 32 Worker-Tests bestehen.
+Der Treiber verlangt nun echten Exitcode 0 für normalen Erfolg und erhält
+zugleich ursprüngliche Memory-/Cancel-/Timeout-Gründe bei erzwungenen Abbrüchen.
+10 separate Treiber-/Klassifikationstests bestehen. Ein neuer installierter
+Modellversuch ist noch erforderlich; die erste Rohdatei bleibt unverändert.
+
+### PROD4-S — installierter 1B-Nachtest beendet sich regulär
+
+Nach getrenntem Wheelbau und Austausch nur des IronMule-Pakets lautet der neue
+installierte Codehash `0f0502605e9a25aa34ac2cbb895825b78f2887b88e93b1496dc313358f4d3532`.
+MLX/MLX-LM/NumPy/Transformers blieben identisch. Versuch
+`167dc2c155794c449040c25a96ead368` besteht einschließlich Exitcode 0 und
+`exit_class=clean`: 65 echte Speicherbeobachtungen, kein positives Swapdelta,
+MLX-Peak 735.852.808 B und Prozesspeak 1.701.330.944 B. Quellen/Identität sind
+vorher/nachher gleich. Die zweite Ladung dauerte deskriptiv 2,9904 s; dieser
+Kontrolltest begründet weiterhin keinen Leistungs- oder Generierungsgewinn.
+
+Der vorherige Gesamtsuitenlauf endete mit 896 bestandenen Tests und einem Fehler
+im neuen Full-Queue-Test: dessen Hauptthread nahm den vorgeladenen Work-Eintrag
+aus der Queue, bevor der Reader Shutdown einfügen konnte. Das war ein Rennen im
+Testaufbau, nicht ein neuer Modellbefund. Der Test joint nun zuerst den Reader
+begrenzt und prüft danach den terminalen Eintrag; beide Pipe-Lifecycle-Tests
+bestanden zehn Wiederholungen (20/20). Eine weitere Gesamtsuite läuft vor dem
+nächsten Modelltest. Alte Fehlversuche werden nicht gelöscht.
+
+### PROD4 — 4B regulär beendet; 12B während Ladung kontrolliert gestoppt
+
+Die abschließende Gesamtsuite besteht mit 897 Tests, 16 deselected (51,74 s).
+4B `789e41377bcd4e4e8b2f8ca73b49a669` besteht Load-only mit 68 tatsächlichen
+Speicherbeobachtungen, MLX-Peak 2.560.801.800 B, Prozesspeak 2.735.194.112 B,
+keinem positiven Swapdelta und regulärem Exitcode 0. Alle Identitäten und
+Quellmanifeste stimmen vorher/nachher überein. Keine Generierung/Speedupbehauptung.
+
+12B `f61b8b980aa841d3bfc4c7a5ccb9bdbd` bricht nach 14 Beobachtungen vor `ready`
+mit `swap_delta_exceeded` ab. Der letzte gemessene Sprung beträgt +468.587.643 B
+gegen die unveränderten 268.435.456 B; PID 12025 wird reaped mit -15 und korrekt
+als `forced_abort` eingestuft. Der erste verletzende Messwert liegt etwa 3,60 s
+nach Startup, das Prozessende nach 4,06 s. Kein Fehlergrund wird durch Cleanup
+überschrieben, keine Generierung oder neue 12B-Qualifikation wird behauptet.
+
+Ergebnisse und Grenzen stehen in `docs/PROD4_RESULTS_2026-09-07.md`. PROD4-S ist
+damit beantwortet und aus dem Backlog entfernt. PROD4 bleibt mit tatsächlichen
+Ladephasen/Admission offen; ein einzelner günstigerer oder früher abgebrochener
+Lauf ist kein gepaarter Speicher-/Performancegewinn. Der ursprüngliche
+SIGABRT-Rohbericht bleibt byteidentisch erhalten.
+
+Separates Read-only-Review: 269 Journal-Ereignisse kettenverifiziert; alle vier
+PROD4-Rohberichte stimmen in Samples, Worker-PIDs/Endzeiten/Returncodes und
+vorhandenen Identitäten mit dem Journal überein. Reale Abstände zwischen
+geschlossenem Worker und folgendem Start: 520,818 s, 167,831 s, 131,967 s.
+Keine privaten Pfade, Zugangsdaten oder Nutzerinhalte in den geprüften Strings.
+Die Projektumgebung bleibt abschließend auf Hash
+`e1f0d01f712dd25a1621f2d37a185632358b8858fc3709830addfe8b2a1a30b4`.
+Buildzwischenstände liegen wiederherstellbar im eigenen temporären Prüfbereich;
+ProjectAtlas-Quellen und bestehende versiegelte Studien bleiben unverändert.
+Die neue Messhistorie liegt im verifizierten lokalen Journal und in Rohberichten;
+die zusätzliche visuell geprüfte UI-Projektion ist ausdrücklich als PROD7 offen.

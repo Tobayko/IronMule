@@ -90,6 +90,14 @@ A/A, AB/BA, fresh workers and strict memory/time/identity checks. If no valid wi
 appears, it exits with code 3 (`deferred`) and records the reason; it does not
 weaken thresholds, secretly retry or change the Mac's power settings.
 
+Calibration also watches the starting worker's real RSS and system-wide swap,
+then checks its actual process/MLX peaks before inference. A violation aborts
+the owned worker and retains the reason in history; polling is not a hard RAM
+reservation and can observe overshoot. Normal completion requires a clean
+worker exit. These calibration guards do not imply a global serving-memory
+scheduler. The installed 1B/4B load paths pass; 12B still exceeds the swap gate
+before readiness on this host ([load results](PROD4_RESULTS_2026-09-07.md)).
+
 Use `--readiness-only` to exercise the wait/status path without loading a model.
 `--json` returns the full calibration report; the ordinary output is a concise
 summary. `history --after-seq N` pages verified metadata events. Model output and

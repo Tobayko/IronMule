@@ -31,6 +31,12 @@ WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch"))
 CONTEXT_LIMIT = 8192
 
 
+class _StartupGuardFailure(Exception):
+    def __init__(self, original: BaseException) -> None:
+        super().__init__(str(original))
+        self.original = original
+
+
 def _bounded_json_line(value: dict[str, Any]) -> bytes:
     try:
         encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8")
@@ -201,9 +207,39 @@ class MLXWorkerClient:
         finally:
             selector.close()
 
-    def start(self) -> dict[str, Any]:
+    @staticmethod
+    def _validate_startup_telemetry(event: dict[str, Any]) -> None:
+        telemetry_keys = {
+            "startup_wall_seconds", "process_peak_rss_bytes", "mlx_active_bytes",
+            "mlx_peak_bytes", "mlx_cache_bytes", "recommended_working_set_bytes",
+        }
+        if not telemetry_keys.intersection(event):
+            return  # Legacy transport fixtures may omit telemetry entirely.
+        if not telemetry_keys.issubset(event):
+            raise BackendUnavailable("backend startup telemetry is incomplete")
+        startup = event["startup_wall_seconds"]
+        try:
+            startup_float = float(startup)
+        except (OverflowError, TypeError, ValueError):
+            startup_float = math.inf
+        if (isinstance(startup, bool) or not isinstance(startup, (int, float))
+                or not math.isfinite(startup_float) or startup <= 0 or startup > 86400):
+            raise BackendUnavailable("backend startup telemetry is invalid")
+        byte_fields = {key: event[key] for key in telemetry_keys if key != "startup_wall_seconds"}
+        if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in byte_fields.values()):
+            raise BackendUnavailable("backend startup telemetry is invalid")
+        if byte_fields["process_peak_rss_bytes"] <= 0 or byte_fields["recommended_working_set_bytes"] <= 0:
+            raise BackendUnavailable("backend startup telemetry is invalid")
+        if event["mlx_peak_bytes"] < event["mlx_active_bytes"]:
+            raise BackendUnavailable("backend startup telemetry is inconsistent")
+
+    def start(self, *, startup_guard: Any = None) -> dict[str, Any]:
+        if startup_guard is not None and not callable(startup_guard):
+            raise TypeError("startup_guard must be callable or None")
         with self._lock:
             if self.ready:
+                if startup_guard is not None:
+                    raise ValueError("startup_guard cannot be applied to an already-ready worker")
                 assert self._ready_payload is not None
                 return dict(self._ready_payload)
             if not self._usable:
@@ -234,11 +270,47 @@ class MLXWorkerClient:
             self._stdout_buffer.clear()
             self._stderr_thread = threading.Thread(target=self._drain_stderr, args=(self._process.stderr,), daemon=True)
             self._stderr_thread.start()
+            startup_deadline = time.monotonic() + self.startup_timeout
+            def call_startup_guard() -> None:
+                try:
+                    startup_guard(self._process.pid)
+                except BaseException as exc:
+                    raise _StartupGuardFailure(exc) from exc
             try:
-                event = self._read_event(time.monotonic() + self.startup_timeout)
+                if startup_guard is None:
+                    event = self._read_event(startup_deadline)
+                else:
+                    call_startup_guard()
+                    while True:
+                        poll_deadline = min(startup_deadline, time.monotonic() + _CANCEL_POLL_SECONDS)
+                        try:
+                            event = self._read_event(poll_deadline)
+                        except RequestTimeout:
+                            call_startup_guard()
+                            if time.monotonic() >= startup_deadline:
+                                raise
+                            continue
+                        call_startup_guard()
+                        if time.monotonic() >= startup_deadline:
+                            raise RequestTimeout("backend worker startup timed out")
+                        break
             except (BackendUnavailable, RequestTimeout):
                 self._mark_unusable()
                 raise BackendUnavailable("stock MLX backend is unavailable")
+            except _StartupGuardFailure as failure:
+                try:
+                    self._mark_unusable()
+                except BaseException:
+                    pass
+                raise failure.original
+            except BaseException:
+                # A guard failure is caller-owned evidence (often a memory
+                # limit); never replace it with a generic backend error.
+                try:
+                    self._mark_unusable()
+                except BaseException:
+                    pass
+                raise
             if event.get("type") == "error":
                 self._mark_unusable()
                 raise BackendUnavailable("stock MLX backend is unavailable")
@@ -253,6 +325,11 @@ class MLXWorkerClient:
             ):
                 self._mark_unusable()
                 raise BackendUnavailable("backend readiness event is invalid")
+            try:
+                self._validate_startup_telemetry(event)
+            except BackendUnavailable:
+                self._mark_unusable()
+                raise
             self._ready_payload = event
             return dict(event)
 
