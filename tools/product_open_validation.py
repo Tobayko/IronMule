@@ -60,6 +60,11 @@ def cases():
     ]
 
 
+def soak_batch_indices(index):
+    """Finite predeclared schedule: a four-client burst every twelve requests."""
+    return list(range(index, index + 4)) if index > 0 and index % 12 == 0 else [index]
+
+
 def output_metadata(tokens, text, done):
     count = done["completion_tokens"]
     if type(count) is not int or count != len(tokens) or not tokens:
@@ -328,6 +333,16 @@ def health(port):
         connection.close()
 
 
+def idle_health(port, observer):
+    """Read final counters after already-completed clients leave the scheduler."""
+    while True:
+        value = health(port)
+        if value["active_requests"] == 0 and value["queued_requests"] == 0:
+            return value
+        observer.sample()
+        time.sleep(0.05)
+
+
 def disconnect_request(port, model):
     connection = http.client.HTTPConnection("127.0.0.1", port, timeout=None)
     payload = {"model": model, "messages": [{"role": "user", "content": "Count from 1 to 500, writing every integer in order, separated by commas. Do not skip any number."}],
@@ -380,6 +395,8 @@ def run(state_dir, model_id, output, *, soak_seconds=0):
     run_id = uuid.uuid4().hex
     source_paths = [Path(__file__), ROOT / "docs/PROD10_OPEN_VALIDATION_SPEC.md",
                     ROOT / "tools/product_long_context_reference.py", ROOT / "tools/product_load_screen.py"]
+    if soak_seconds:
+        source_paths.append(ROOT / "docs/PROD10_SERVER_SOAK_SPEC.md")
     manifest = lambda: {p.relative_to(ROOT).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in source_paths}
     report = {"schema": SCHEMA, "run_id": run_id, "model_id": model_id, "revision": spec.revision,
               "status": "started", "policy": POLICY, "source_before": manifest(),
@@ -513,13 +530,37 @@ def run(state_dir, model_id, output, *, soak_seconds=0):
                 soak_started = time.monotonic()
                 index = 0
                 while time.monotonic() - soak_started < soak_seconds:
-                    case = cases()[index % 3]
-                    sample = observed_call(lambda: http_sample(port, model_id, case, streaming=index % 2 == 1), observer)
-                    save({"backend": "soak", "case": case["name"], "index": index, **sample})
-                    assert_http(sample, baseline[case["name"]])
-                    index += 1
+                    indices = soak_batch_indices(index)
+                    with ThreadPoolExecutor(max_workers=len(indices)) as pool:
+                        futures = [pool.submit(http_sample, port, model_id, cases()[i % 3], streaming=i % 2 == 1)
+                                   for i in indices]
+                        while not all(f.done() for f in futures):
+                            observer.sample()
+                            time.sleep(0.05)
+                        first_error = None
+                        for i, future in zip(indices, futures):
+                            case = cases()[i % 3]
+                            try:
+                                sample = future.result()
+                                save({"backend": "soak", "case": case["name"], "index": i,
+                                      "concurrency": len(indices), "batch_index": index, **sample})
+                                assert_http(sample, baseline[case["name"]])
+                            except BaseException as exc:
+                                save({"backend": "soak_failure", "case": case["name"], "index": i,
+                                      "concurrency": len(indices), "batch_index": index,
+                                      "error_code": getattr(exc, "code", type(exc).__name__)})
+                                first_error = first_error or exc
+                        if first_error is not None:
+                            raise first_error
+                    index += len(indices)
                 report["soak"] = {"wall_seconds": time.monotonic() - soak_started, "requests": index}
-                report["health_final"] = health(port)
+                report["health_final"] = idle_health(port, observer)
+                final_health = report["health_final"]
+                if (not final_health["ready"] or final_health["failed_requests"] != 0
+                        or final_health["cancelled_requests"] != 1
+                        or final_health["completed_requests"] != 11 + index
+                        or final_health["active_requests"] != 0 or final_health["queued_requests"] != 0):
+                    raise ValidationFailure("server_final_counters_invalid")
                 server.shutdown()
                 server.server_close()
                 server_thread.join(timeout=5)

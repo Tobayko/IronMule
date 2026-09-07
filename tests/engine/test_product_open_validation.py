@@ -26,6 +26,14 @@ def test_case_definition_stays_fixed_and_finite():
     assert cases[0]["messages"][0]["content"].endswith("END-OF-PUBLIC-ORCHARD-NOTE.")
 
 
+def test_endurance_schedule_has_predeclared_periodic_four_client_bursts():
+    assert screen.soak_batch_indices(0) == [0]
+    assert screen.soak_batch_indices(11) == [11]
+    assert screen.soak_batch_indices(12) == [12, 13, 14, 15]
+    assert screen.soak_batch_indices(16) == [16]
+    assert screen.soak_batch_indices(24) == [24, 25, 26, 27]
+
+
 def test_output_digest_binds_tokens_text_finish_and_counts():
     done = {"prompt_tokens": 17, "completion_tokens": 2, "finish_reason": "length"}
     first = screen.output_metadata([1, 2], "public fixture", done)
