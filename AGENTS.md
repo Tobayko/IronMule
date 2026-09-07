@@ -118,7 +118,30 @@ gestern autorisiert war, fällt danach still in die Baseline.
 - Modelle bevorzugt weiter aus dem validierten projektlokalen Cache; ein neu
   geladenes Modell ist ein neuer Snapshot und erbt keine Evidenz.
 
-### Was dadurch ausdrücklich **nicht** entfällt
+### Neuer Nutzerentscheid 2026-09-07 — künstliche Testgrenzen entfernen
+
+Der Nutzer beauftragt ausdrücklich: „Schutz entfernen! Die restlichen Punkte
+durch arbeiten bis die Ergebnisse da sind“. Für neue lokale Produktprüfungen
+entfallen deshalb die bisherigen künstlichen BudgetGuard-Gates (6 s pro
+Arbeitsblock, 120 s Gesamtsumme, 25-%-Duty-Cycle, verpflichtende Pausen) sowie
+die pauschalen Readiness-/RSS-/Swap-Abbruchschwellen. Sie werden nicht bloß
+durch andere heimliche Limits ersetzt. Diese Änderung und die dafür nötige
+Test-/Budgetarchitektur sind hiermit beauftragt; keine erneute Einzelfreigabe.
+
+Das gilt prospektiv, nicht rückwirkend: versiegelte Studien, PROD3/PROD8-Code
+und Rohdaten behalten ihre ursprünglichen Regeln und negativen Ergebnisse.
+Neue Läufe tragen eine neue Protokoll-/Code-/Umgebungsidentität und werden
+nicht mit alten Läufen gepoolt. Ressourcen, Hostzustand und Zeiten werden
+weiter beobachtet und ehrlich berichtet, nicht als bestanden erfunden.
+
+Unberührt bleiben macOS-/Hardware-Thermalschutz, Datenschutz, Authentifizierung,
+Sandbox-/Werkzeugberechtigungen, Ausgabekorrektheit, kontrollierte Prozesse,
+Benutzerabbruch und nachweisliches Cleanup. Keine fremden Prozesse beenden,
+keine Energie-/OS-Sicherheitskonfiguration ändern. Kontext-/Token-/Protokoll-
+grenzen eines konkreten Produkttests sind explizite Testparameter, keine
+versteckten Ersatz-Hardwarelimits. Kaggle-Free-Quoten bleiben unverändert.
+
+### Historische Messregeln (neuer Nutzerentscheid oben hat Vorrang)
 
 Die folgenden Grenzen sind **keine** Freigabehürden, sondern Bedingungen dafür,
 dass eine Zahl überhaupt etwas bedeutet. Der zentrale Befund des Projekts ist,

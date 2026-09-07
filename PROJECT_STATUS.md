@@ -9,6 +9,15 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 
 ## Aktuelle Produktprüfung — 2026-09-07
 
+**Neu, PROD10:** Nach ausdrücklicher Aufhebung der künstlichen Hardware-Testgates
+bestehen Gemma 1B/4B/12B jeweils 35 vollständige native Anfragen einschließlich
+1.077-Token-Kontext, JSON/SSE, gleichzeitiger Clients und Warm-Recovery nach
+echtem Disconnect. Ein dabei nativ belegter Service-Abbruchfehler ist behoben;
+alle sechs Worker enden normal0. [Nachweise und Grenzen](docs/PROD10_RESULTS_2026-09-07.md).
+Das einstündige Serverprofil und autonome Optimierung/RL sind noch offen.
+
+Frühere, getrennt gültige Prüfschritte:
+
 Die lokal registrierten Gemma-3-Snapshots 1B/4B/12B wurden tatsächlich mit
 MLX/Metal ausgeführt. Auch das vollständige installierte 12B-Protokoll ist nun
 gültig beendet: 90/90 exakte HTTP-Anfragen, drei frische Worker mit Exitcode 0,

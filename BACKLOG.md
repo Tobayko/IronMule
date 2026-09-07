@@ -92,6 +92,37 @@ Kompatibilitäts-/Änderungstests. Kill: stale Bindungen, umgangene Versionsprü
 oder kein Nettovorteil über Rauschen. Nicht als isoliert erfolgreicher Knopf mit
 anderen Kandidaten kombinieren, ohne die gesamte Konfiguration zu prüfen.
 
+## PROD10 — freigegebene Produktprüfung ohne künstliche Hardwaregates
+
+Nutzerentscheid 2026-09-07: „Schutz entfernen! Die restlichen Punkte durch
+arbeiten bis die Ergebnisse da sind“. Die neue Ausführung entfernt die
+künstlichen 6-s-/Arbeitszeit-/Duty-/Pausen-/Readiness-/RSS-/Swap-Abbruchgates;
+sie bleiben nur historische Regeln der eingefrorenen Studien. OS-Schutz,
+Privatsphäre, Ausgabekorrektheit und Cleanup werden nicht abgeschaltet.
+
+Mechanismus: freie reale Ausführung mit getrenntem beobachtendem Ressourcen-
+und Phasenprotokoll; unabhängige Stock-Referenz vor Produktvergleich. Kein
+neuer Kernel oder RL-Policy ohne gemessenen Engpass bzw. valide Datenbasis.
+
+Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
+beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`):
+1. Die beobachteten Host-/Bibliotheksphasen und Speicherwerte durch gezielte
+   GPU-/Engpassdiagnose ergänzen; keine reine GPU-Zeit aus Hostzeit erfinden.
+3. Echten Serverbetrieb mit längerer Nutzung, parallelen Anfragen, Abbruch,
+   Recovery und Speicherentwicklung prüfen; 1-h-Stabilitätsprofil als eigener
+   endlicher Versuch, keine unbegrenzte Hintergrundsession.
+4. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
+   Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
+   bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
+   nur mit unabhängigem Nachweis behaupten; ein negativer Befund bleibt gültig.
+
+Gate: tatsächliche native Ausführung, vollständige Fehler-/Versuchshistorie,
+gebundene Modelle/Code/Umgebung, echte Ausgabeidentität und klare Grenzen jeder
+Aussage. Ein negativer Befund wird beantwortet, nicht durch Retry verborgen.
+Kill/Pivot: reproduzierbarer Funktionsfehler wird diagnostiziert und gezielt
+behoben; nicht aus Zeit-/Lastschutz künstlich als Hardwareunfähigkeit ableiten.
+Abgeschlossene Teilergebnisse jeweils dokumentieren und selektiv veröffentlichen.
+
 ## PROD9 — Langkontext: Phasenbudget statt vollständiger Anfrage als GPU-Block
 
 PROD8 ist beantwortet: erster echter Stock-12B-Aufruf mit 1.077 Prompttokens
@@ -109,8 +140,10 @@ danach eigenständiges Protokoll mit unverändertem Ressourcenbudget und exakter
 Stock-/Produkt-Tokenidentität. Bestehenden versiegelten Code nicht verändern.
 Kill: bloße Umbenennung der Zeitmetrik, fehlende Synchronisations-/Pausenbelege,
 Identitätsbruch, versteckte Mehrarbeit oder nur eine erhöhte Schwelle.
-Keine Implementierung durch die vorliegende Testaufgabe autorisiert; erfolgreiche
-Langkontext-, Dauerlast-/Parallelitäts- und RL-Qualifikation bleiben offen.
+Der spätere Nutzerentscheid PROD10 hebt die festen Hardware-Testbudgets auf;
+PROD9 ist damit zunächst eine zurückgestellte Diagnoseoption, keine notwendige
+Umgehung des alten 6-s-Limits. Erfolgreiche Langkontext-, Dauerlast-/Parallelitäts-
+und RL-Qualifikation bleiben bis zu ihren echten Ergebnissen offen.
 
 ## PROD7 — geprüfte lokale UI für Lade-/Kalibrierungsverlauf (2026-09-07)
 
