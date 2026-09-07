@@ -5,6 +5,63 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
+## PROD1 — IronMule als autonome lokale LLM-Umgebung (2026-09-05)
+
+Nutzerauftrag: den im Gespräch ausgearbeiteten Produktplan umsetzen; Live-Tests
+auf echter Hardware für alle lokal verfügbaren Gemma-Modelle und Veröffentlichung
+abgeschlossener Arbeit auf GitHub sind freigegeben. CLI/API, Desktop-/Serverprofil,
+Exact als Standard, optionaler Efficiency-Modus (Nichtunterlegenheit bis 0,5
+Prozentpunkte) und lokale Metadaten ohne gespeicherte Nutzerprompts bleiben gesetzt.
+
+Mechanismus: portable Backend-Grenze, unabhängiger Evaluator, vollständige
+Versuchshistorie, geprüfte Konfigurationskombinationen und darauf aufbauendes RL.
+Die vorhandene R2-Auswertung wird zuerst separat korrigiert, ohne Originaldaten
+oder den eingefrorenen Holdout umzuschreiben.
+
+- **PROD1-B:** alle lokalen Gemma-Snapshots inventarisieren, portable CLI/API und
+  Modell-/Backend-Verträge bereitstellen. Gate: saubere Installation ohne
+  Entwickler-Worktrees; echte Generierung auf jedem ausführbaren lokalen Gemma.
+  Kill: fehlende Hardwarequalifikation lässt den Pfad ausdrücklich unqualifiziert.
+- **PROD1-C:** Scheduler-/Cache-Korrekturen, autonome Suche, Kostenmodell und
+  konservatives mehrstufiges RL. Gate: unabhängige, gepaarte End-to-End-Bestätigung
+  gegen Produktreferenz und Standard-mlx_lm bei identischem Budget und Qualitätsgate.
+  Kill: kein belastbarer Nettovorteil, Korrektheits- oder Ressourcenverletzung:
+  Referenz beibehalten, keine Aktivierung.
+
+Aktueller Umsetzungsschnitt PROD1-B: dependency-freier Produktkern mit
+Modellregistrierung, realem HTTP-Transport, isoliertem Referenzworker und CLI.
+Steuerungs-/Protokolltests dürfen ohne erfundene Inferenz durchgeführt werden;
+Hardware-/Modellaussagen brauchen weiterhin echte Metal-Läufe.
+
+Zugriffsstand 2026-09-07: Metal, GitHub und Git-Schreibzugriff funktionieren über
+geprüfte Eskalationen. Die dauerhafte Hardwarefreigabe ist vorhanden. Der kurze
+Gemma-1B/4B/12B-Screen Versuch 2 ist bestanden; weitere Änderungen brauchen eine
+neue Prüfung. Keine CPU-Ersatzmessung als GPU-Nachweis verwenden.
+
+**Neue Recherche:** `docs/PRODUCT_RESEARCH_2026-09-05.md` hält vier konkrete
+Mechanismen mit Voraussetzungen und Kill-Kriterien fest: Interaktionsmodell/FQI,
+Scheduling × Cache, begrenzte evolutionäre Kernelsuche und gelernte Entwurfs-Heads.
+Alle sind unqualifiziert; R2 allein bietet keine neue Kontext-/Kombinationsabdeckung.
+
+## PROD2 — Unverbrauchte letzte Vorausberechnung vermeiden (2026-09-07)
+
+Mechanismus: installiertes mlx-lm 0.31.3 `generate_step` berechnet bei
+`n != max_tokens` schon `next_y`, bevor es `y` liefert. Am letzten vom Aufrufer
+verbrauchten Token wird dadurch noch ein zusätzlicher Model-Forward eingereicht.
+Bei frischem, nach der Antwort verworfenem Cache und greedy-Ausgabe wird dessen
+Ergebnis nicht benötigt. Ein begrenzter eigener Host-Loop kann diesen Forward
+auslassen und alle bisherigen Berechnungen der sichtbaren Tokens erhalten.
+
+Scope: zunächst lokale Gemma-Snapshots, keine geteilten/persistierten Prompt-Caches,
+kein Draft, keine Sampling-/Logit-Processor-/Embedding-Erweiterung. Keine Änderung
+an installierten Bibliotheken und keine Aktivierung vor Qualifikation.
+Test: zuerst echte Forward-Zähler plus vollständige Token-/Text-/Stop-Identität,
+dann gepaarte Baseline/Kandidat-Messungen je Modell und Ausgabelimit 1/8/32.
+Ein früher EOS vor dem Limit erwartet ausdrücklich keinen Vorteil.
+Kill: keine tatsächlich vermiedene Arbeit, sichtbare Abweichung, Ressourcenfehler
+oder kein Nettovorteil über Rauschen/Wrapperkosten. Quelldatei/Version werden exakt
+gebunden; eine neue Library-Version erbt den Kandidaten nicht ungeprüft.
+
 ## C1 — Reste aus dem Codex-Review vom 2026-09-03
 
 Die kritischen Defekte sind behoben (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03).

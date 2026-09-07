@@ -16,6 +16,7 @@ import json
 import platform
 import subprocess
 import sys
+from pathlib import Path
 from typing import Any, Iterable
 
 
@@ -52,11 +53,21 @@ def _load_optional(module_name: str, distribution: str) -> tuple[bool, str, str]
 
 
 def _probe_metal() -> tuple[bool, str]:
-    """Check Metal in a child process for the same isolation guarantee as imports."""
+    """Verify an actual GPU operation, not merely Metal support in the build.
+
+    ``metal.is_available()`` can be true in a sandbox that cannot open a
+    device. Keep both device creation and the tiny correctness check in the
+    child so a driver/import failure cannot terminate the diagnostic CLI.
+    """
     probe = (
-        "import importlib; "
-        "module=importlib.import_module('mlx.core'); "
-        "print('available' if module.metal.is_available() else 'unavailable')"
+        "import mlx.core as mx\n"
+        "if not mx.metal.is_available(): raise RuntimeError('Metal backend unavailable')\n"
+        "mx.device_info()\n"
+        "mx.set_default_device(mx.gpu)\n"
+        "a=mx.array([1,2,3], dtype=mx.int32)\n"
+        "b=mx.add(a,a,stream=mx.gpu); mx.eval(b)\n"
+        "if b.tolist()!=[2,4,6]: raise RuntimeError('GPU correctness check failed')\n"
+        "print('available')\n"
     )
     try:
         result = subprocess.run(
@@ -70,7 +81,7 @@ def _probe_metal() -> tuple[bool, str]:
                   if result.stderr.strip() else f"probe exited {result.returncode}")
         return False, f"isolated probe failed: {detail}"
     available = result.stdout.strip() == "available"
-    return available, "Metal available" if available else "Metal unavailable"
+    return available, "Metal GPU operation verified" if available else "Metal unavailable"
 
 
 def _cpu_name() -> str:
@@ -117,9 +128,18 @@ def doctor(argv: Iterable[str] = ()) -> int:
     parser = argparse.ArgumentParser(
         prog="ironmule doctor", description="Check IronMule runtime prerequisites."
     )
-    parser.parse_args(list(argv))
-    print("IronMule doctor")
+    parser.add_argument("--json", action="store_true", help="machine-readable diagnostic report")
+    args = parser.parse_args(list(argv))
     checks = _doctor_checks()
+    if args.json:
+        print(json.dumps({
+            "schema": "ironmule.doctor.v1",
+            "ready": all(ok for _, ok, _ in checks),
+            "checks": [{"name": name, "ok": ok, "detail": detail} for name, ok, detail in checks],
+            "performance_claim": False,
+        }, indent=2, sort_keys=True))
+        return 0 if all(ok for _, ok, _ in checks) else 1
+    print("IronMule doctor")
     for name, ok, detail in checks:
         print(f"[{'OK' if ok else 'FAIL'}] {name}: {detail}")
     failed = [name for name, ok, _ in checks if not ok]
@@ -220,6 +240,9 @@ def _run_revalidate(argv: list[str]) -> int:
 
 
 def _run_status(argv: list[str]) -> int:
+    if "--product" in argv or "--state-dir" in argv:
+        from ironmule_product.cli import dispatch
+        return dispatch("status", argv)
     parser = argparse.ArgumentParser(
         prog="ironmule status", description="Show the local hardware and profile status."
     )
@@ -299,6 +322,11 @@ def _cached_model(repo: Any) -> dict[str, Any]:
 
 
 def _run_models(argv: list[str]) -> int:
+    if argv[:1] and argv[0] in ("add", "remove", "registered"):
+        from ironmule_product.cli import dispatch
+        return dispatch("models", argv)
+    if argv[:1] == ["list"]:
+        return _run_model_inventory(argv[1:])
     parser = argparse.ArgumentParser(
         prog="ironmule models",
         description="List locally cached Hugging Face model snapshots without downloading.",
@@ -327,6 +355,46 @@ def _run_models(argv: list[str]) -> int:
             raise
         return _dependency_error("models", exc, dependency="huggingface_hub")
     print(json.dumps(result, indent=2, sort_keys=True, default=str))
+    return 0
+
+
+def _run_model_inventory(argv: list[str]) -> int:
+    """Inventory cache files without importing the model runtime."""
+    from ironmule_inventory import discover_models
+
+    parser = argparse.ArgumentParser(
+        prog="ironmule models list",
+        description="Inspect local snapshots without loading models or contacting a server.",
+    )
+    parser.add_argument("--family", default=None, help="model family filter, for example gemma")
+    parser.add_argument("--cache-root", action="append", type=Path, help="explicit HF hub directory; repeatable")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    args = parser.parse_args(argv)
+    roots = args.cache_root
+    if roots is None:
+        # This is a checkout convenience only, never an installed-product
+        # dependency. User/environment cache roots remain the library default.
+        local = Path(__file__).resolve().parent / ".friday-data" / "models" / "hub"
+        rows = discover_models(family=args.family, loader="mlx_lm")
+        if local.is_dir():
+            rows.extend(discover_models(cache_roots=[local], family=args.family, loader="mlx_lm"))
+        unique = {row["snapshot_path"]: row for row in rows}
+        rows = sorted(unique.values(), key=lambda row: (row["model_id"], row["revision"], row["snapshot_path"]))
+    else:
+        rows = discover_models(cache_roots=roots, family=args.family, loader="mlx_lm")
+    if args.json:
+        print(json.dumps({"schema": "ironmule.model_inventory.v1", "models": rows,
+                          "models_loaded": False, "hardware_qualified": False}, indent=2, sort_keys=True))
+    else:
+        print("Local model snapshots (metadata only; no model has been loaded)")
+        for row in rows:
+            print(f"{row['model_id']}  {row['revision']}  {row['status']}  {row['weight_bytes']} bytes")
+            for reason in row.get("reasons", ()):
+                print(f"  {reason}")
+            for warning in row.get("warnings", ()):
+                print(f"  warning: {warning}")
+        if not rows:
+            print("No matching cached snapshots found.")
     return 0
 
 
@@ -365,17 +433,22 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {doctor|benchmark|models|tune|revalidate|status|info} [options]")
+        print("usage: ironmule {setup|serve|doctor|benchmark|models|tune|revalidate|status|info} [options]")
         print("\ncommands:")
+        print("  setup        Initialize desktop/server product settings")
+        print("  serve        Serve a registered local model through HTTP/SSE")
         print("  doctor       Check Apple Silicon and MLX prerequisites")
         print("  benchmark   Run the existing reproducible local benchmark")
-        print("  models      List locally cached Hugging Face model snapshots")
+        print("  models      List cached models; `models list` also works without MLX")
         print("  tune        Tune or inspect the existing local profile (--show)")
         print("  revalidate  Canary-check the stored profile")
         print("  status       Show local hardware/profile status")
         print("  info        Show package information")
         return 0
     command, rest = args[0], args[1:]
+    if command in ("setup", "serve"):
+        from ironmule_product.cli import dispatch
+        return dispatch(command, rest)
     if command == "doctor":
         return doctor(rest)
     if command == "benchmark":
