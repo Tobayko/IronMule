@@ -15,6 +15,7 @@ import subprocess
 import sys
 import threading
 import time
+import uuid
 from collections.abc import Iterator
 from typing import Any
 
@@ -28,7 +29,9 @@ MAX_STDERR_BYTES = 256 * 1024
 DEFAULT_TIMEOUT = 120.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
-WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch"))
+WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine"))
+ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
+                                   "baseline_throughput", "core_throughput"))
 CONTEXT_LIMIT = 8192
 
 
@@ -51,7 +54,11 @@ def _bounded_json_line(value: dict[str, Any]) -> bytes:
 class MLXWorkerClient:
     """A single persistent, GPU-only stock ``mlx_lm`` worker."""
 
-    def __init__(self, spec: ModelSpec, *, startup_timeout: float | None = DEFAULT_TIMEOUT) -> None:
+    def __init__(self, spec: ModelSpec, *, startup_timeout: float | None = DEFAULT_TIMEOUT,
+                 execution_variant: str = "reference", prefix_cache_max_entries: int = 4,
+                 prefix_cache_max_bytes: int = 1024**3,
+                 trace_prompt_identity: bool = False,
+                 engine_configuration: str = "current_profile") -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if startup_timeout is not None and (
@@ -62,6 +69,23 @@ class MLXWorkerClient:
         ):
             raise ValueError("startup_timeout must be None or finite and positive")
         self.spec = spec
+        if not isinstance(execution_variant, str) or execution_variant not in WORKER_VARIANTS:
+            raise ValueError("unknown backend generation variant")
+        if any(type(value) is not int or not 1 <= value <= 2**63 - 1
+               for value in (prefix_cache_max_entries, prefix_cache_max_bytes)):
+            raise ValueError("prefix cache capacity must be a positive bounded integer")
+        self.execution_variant = execution_variant
+        if not isinstance(engine_configuration, str) or engine_configuration not in ENGINE_CONFIGURATIONS:
+            raise ValueError("unknown engine configuration")
+        if execution_variant != "current_engine" and engine_configuration != "current_profile":
+            raise ValueError("engine configuration requires current_engine")
+        self.engine_configuration = engine_configuration
+        if type(trace_prompt_identity) is not bool:
+            raise ValueError("trace_prompt_identity must be a boolean")
+        self.trace_prompt_identity = trace_prompt_identity
+        self.prefix_cache_max_entries = prefix_cache_max_entries
+        self.prefix_cache_max_bytes = prefix_cache_max_bytes
+        self.last_generation_metadata: dict[str, Any] | None = None
         self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
         self._process: subprocess.Popen[bytes] | None = None
         self._ready_payload: dict[str, Any] | None = None
@@ -241,7 +265,7 @@ class MLXWorkerClient:
         except (OverflowError, TypeError, ValueError):
             startup_float = math.inf
         if (isinstance(startup, bool) or not isinstance(startup, (int, float))
-                or not math.isfinite(startup_float) or startup <= 0 or startup > 86400):
+                or not math.isfinite(startup_float) or startup <= 0):
             raise BackendUnavailable("backend startup telemetry is invalid")
         byte_fields = {key: event[key] for key in telemetry_keys if key != "startup_wall_seconds"}
         if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in byte_fields.values()):
@@ -274,8 +298,17 @@ class MLXWorkerClient:
                 "DO_NOT_TRACK": "1",
             })
             try:
+                arguments = [sys.executable, "-I", "-u", str(worker), "--spec",
+                             json.dumps(self.spec.as_dict(), separators=(",", ":"))]
+                if self.execution_variant != "reference":
+                    arguments += ["--execution-variant", self.execution_variant]
+                if self.execution_variant == "prefix_reuse":
+                    arguments += ["--prefix-cache-max-entries", str(self.prefix_cache_max_entries),
+                                  "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
+                if self.execution_variant == "current_engine":
+                    arguments += ["--engine-configuration", self.engine_configuration]
                 self._process = subprocess.Popen(
-                    [sys.executable, "-I", "-u", str(worker), "--spec", json.dumps(self.spec.as_dict(), separators=(",", ":"))],
+                    arguments,
                     stdin=subprocess.PIPE,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -346,6 +379,7 @@ class MLXWorkerClient:
                 or event.get("revision") != self.spec.revision
                 or event.get("stop_handling") != "parent"
                 or event.get("context_limit", CONTEXT_LIMIT) != CONTEXT_LIMIT
+                or event.get("execution_variant", "reference") != self.execution_variant
             ):
                 self._mark_unusable()
                 raise BackendUnavailable("backend readiness event is invalid")
@@ -400,21 +434,71 @@ class MLXWorkerClient:
                             process.wait(timeout=2.0)
             self._mark_unusable()
 
+    @staticmethod
+    def _validate_prefix_metadata(value: Any) -> None:
+        if not isinstance(value, dict) or set(value) != {"status", "commit_status", "trace", "stats"}:
+            raise BackendUnavailable("backend prefix metadata is invalid")
+        trace, stats = value["trace"], value["stats"]
+        if not isinstance(value["status"], str) or value["status"] not in {"accepted", "discarded", "rejected", "cleared", "closed", "idle"}:
+            raise BackendUnavailable("backend prefix metadata is invalid")
+        if not isinstance(value["commit_status"], str) or not 1 <= len(value["commit_status"]) <= 128:
+            raise BackendUnavailable("backend prefix metadata is invalid")
+        trace_fields = {"status", "failure_type", "cache_hit", "cache_stored", "reused_tokens",
+                        "fallback_reason", "restore_host_ns", "capture_host_ns", "commit_host_ns"}
+        stat_fields = {"hits", "misses", "inserts", "skipped_oversize", "evictions", "entries", "bytes"}
+        if not isinstance(trace, dict) or set(trace) != trace_fields or not isinstance(stats, dict) or set(stats) != stat_fields:
+            raise BackendUnavailable("backend prefix metadata is invalid")
+        if (any(type(trace[k]) is not bool for k in ("cache_hit", "cache_stored"))
+                or any(not isinstance(trace[k], str) or not 1 <= len(trace[k]) <= 128
+                       for k in ("status", "failure_type", "fallback_reason"))
+                or any(type(trace[k]) is not int or not 0 <= trace[k] <= 2**63 - 1
+                       for k in ("reused_tokens", "restore_host_ns", "capture_host_ns", "commit_host_ns"))
+                or any(type(v) is not int or not 0 <= v <= 2**63 - 1 for v in stats.values())):
+            raise BackendUnavailable("backend prefix metadata is invalid")
+
+    def clear_prefix_cache(self) -> dict[str, Any]:
+        """Reset an already-loaded opt-in session without loading a model."""
+        with self._lock:
+            if self.execution_variant != "prefix_reuse" or not self.ready:
+                raise BackendUnavailable("prefix cache is not active")
+            if self._stream_active:
+                raise BackendUnavailable("cannot clear cache during an active request")
+            request_id = "cache-clear-" + uuid.uuid4().hex
+            try:
+                self._send({"type": "clear_prefix_cache", "request_id": request_id}, None)
+                event = self._read_event(None)
+                self._validate_prefix_metadata(event.get("prefix_cache"))
+                metadata = event["prefix_cache"]
+                if (event.get("type") != "prefix_cache_cleared" or event.get("request_id") != request_id
+                        or metadata["status"] != "cleared" or metadata["stats"]["entries"] != 0
+                        or metadata["stats"]["bytes"] != 0 or self._stdout_buffer):
+                    raise BackendUnavailable("prefix cache reset was not confirmed")
+                return metadata
+            except BaseException:
+                self._mark_unusable()
+                raise
+
     def stream(
         self,
         request: GenerationRequest,
         cancel: threading.Event | None = None,
         timeout: float | None = DEFAULT_TIMEOUT,
         *,
-        variant: str = "reference",
+        variant: str | None = None,
         trace_forwards: bool = False,
     ) -> Iterator[dict[str, Any]]:
         if not isinstance(request, GenerationRequest):
             raise InvalidRequest("request must be GenerationRequest")
         if request.model != self.spec.model_id:
             raise InvalidRequest("model is not registered for this backend")
-        if variant not in WORKER_VARIANTS:
+        variant = self.execution_variant if variant is None else variant
+        if not isinstance(variant, str) or variant not in WORKER_VARIANTS:
             raise InvalidRequest("unknown backend generation variant")
+        allowed = ({"current_engine"} if self.execution_variant == "current_engine" else
+                   {"reference", "prefix_reuse"} if self.execution_variant == "prefix_reuse" else
+                   {"reference", "bounded_prefetch"})
+        if variant not in allowed:
+            raise InvalidRequest("variant is not enabled for this worker")
         if type(trace_forwards) is not bool:
             raise InvalidRequest("trace_forwards must be a boolean")
         if not isinstance(request.request_id, str) or not request.request_id or len(request.request_id) > 256:
@@ -432,7 +516,7 @@ class MLXWorkerClient:
         if cancel is not None and not isinstance(cancel, threading.Event):
             raise TypeError("cancel must be threading.Event or None")
         command = {"type": "generate", **request.as_dict(), "variant": variant,
-                   "trace_forwards": trace_forwards}
+                   "trace_forwards": trace_forwards, "trace_prompt_identity": self.trace_prompt_identity}
         try:
             _bounded_json_line(command)
         except BackendUnavailable as exc:
@@ -445,6 +529,7 @@ class MLXWorkerClient:
                 if self._stream_active:
                     raise BackendUnavailable("backend worker supports one active request")
                 self._stream_active = True
+                self.last_generation_metadata = None
             completed = False
             cancel_sent = False
             deadline = None if timeout is None else time.monotonic() + float(timeout)
@@ -523,6 +608,27 @@ class MLXWorkerClient:
                         if self._stdout_buffer:
                             self._mark_unusable()
                             raise BackendUnavailable("backend emitted data after completion")
+                        if variant == "prefix_reuse":
+                            try:
+                                self._validate_prefix_metadata(event.get("prefix_cache"))
+                            except BackendUnavailable:
+                                self._mark_unusable()
+                                raise
+                            if (event["prefix_cache"]["stats"]["bytes"] > self.prefix_cache_max_bytes
+                                    or event["prefix_cache"]["stats"]["entries"] > self.prefix_cache_max_entries):
+                                self._mark_unusable()
+                                raise BackendUnavailable("backend prefix cache accounting is invalid")
+                        prompt_digest = event.get("prompt_ids_sha256")
+                        if self.trace_prompt_identity and (not isinstance(prompt_digest, str)
+                                or len(prompt_digest) != 64 or any(c not in "0123456789abcdef" for c in prompt_digest)):
+                            self._mark_unusable()
+                            raise BackendUnavailable("backend prompt identity is invalid")
+                        self.last_generation_metadata = {
+                            "variant": variant, "finish_reason": finish,
+                            "prompt_ids_sha256": prompt_digest,
+                            "prefix_cache": event.get("prefix_cache"),
+                            "engine": event.get("engine"),
+                        }
                         completed = True
                         yield event
                         return

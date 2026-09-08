@@ -12918,3 +12918,165 @@ Eine Koordinationsnachricht mit technischen Ergebnissen an die andere Aufgabe
 wurde von der Ausführungsprüfung abgelehnt und nicht anderweitig übertragen.
 Die datensparsame Ersatznachricht ausschließlich zum freienGPU-Testfenster
 ohne Messwerte/PIDs/Hashes wurde zugelassen. Aktuell keine eigenenModelljobs.
+
+### 2026-09-08 — Nutzerkorrektur: vorhandene Messdaten vor neuen Läufen prüfen
+
+Auf ausdrückliche Nachfrage wurden ausschließlich vorhandene Dateien und
+verifizierte Historien gelesen; keine neuen Modelltests oder Installationen.
+Die Formulierung „kein Geschwindigkeitsgewinn belegt“ war auf Projektebene zu
+pauschal. Sie gilt nur für die neue Worker-/Cacheeinbindung, nicht für die
+vorhandene IronMule-Evidenz.
+
+Wichtiger Fund: Das vollständige B39d-Combined-Roharchiv liegt nicht mehr unter
+`research/raw/`, sondern im lokalen `ironmule-evidence-archive`. Datei26.171.943B,
+SHA256 `3288db4fa0a5eab09b7415309f14ace1fbb5392df2d7c2a7bc5f7213712aeb71`,
+exakt gleich dem Digest in `research/raw/B39d_public_summary_20260828.json`.
+Eine erste Subagent-Aussage „lokal nicht vorhanden“ wurde damit widerlegt;
+aus einer Suche nur im öffentlichen Raw-Ordner darf keine globale Abwesenheit
+abgeleitet werden. Verifiziert:8Blöcke/32Children, alleExit0, jeArm240
+gemessene Requests, gesamt960. Die192 im Ledger zählen nur die Canonical-
+Snapshots ohne Messwiederholungen. D/A:18,05% wenigerWall und22,03% mehrRate;
+gegen den stärkeren bestehenden Throughput-ArmB sind es6,17% wenigerWall.
+Core-ArmeC/D verwenden `compiled_fixed_cache` plus `head_skip_prefill`, B/D
+Gruppierungsbreite4. Diese tatsächlichen Konfigurationen müssen im nächsten
+Baseline-Abgleich berücksichtigt werden; ein leerer anderer Profilordner
+belegt nicht, dass es keine gemessenen optimierten Konfigurationen gibt.
+
+Weitere vorhandene Evidenz: E10-Rohdaten enthalten sechs unabhängige Prozesse,
+12-Request-Sitzungen und Ratio0,62181527 (37,82% weniger Sessionzeit, samt
+Cacheaufbau); die historische Cold/Warm-Beschriftung ist laut Ledger ungenau
+und die allgemeine Tokenidentität bleibt planabhängig. E12 dokumentiert756
+Requests/14.369 Schritte ohne Abweichung innerhalb des deklarierten
+Wiederverwendungsplans, aber140abweichende Antworten gegenüber anderemPlan.
+E13-Summary/Archiv:352Fragen, Sessionratio0,20396956,20abweichende Antworten;
+kein allgemeiner Exact-Claim. D5-Rohdaten in `experiments/serve_gain` sind
+ebenfalls vorhanden, darunter1B897/32 mit30,402% wenigerWall, explizit
+explorativ (`formal_claim=false`), nicht als formaler neuer Workergewinn.
+
+Auch `prefix_cache_empirical_results.json` existiert (342-Token-Präfix,
+gemeldete8,87x/9,98x für4B/12B). Quellenprüfung begrenzt diesen Nachweis:
+Die alsTTFT bezeichnete Zahl ist `prefill_ns`, nicht vollständigeHTTP-Wall;
+die Datei speichert nicht die einzelnen Timingwiederholungen, und der Code
+vergleicht nur die erste Tokensequenz jeFrage statt aller Wiederholungen.
+Diese Zahlen dürfen nicht als 9,98-fache Gesamtbeschleunigung oder umfassende
+neue Exact-Qualifikation übernommen werden.
+
+`device-profile.sqlite3` enthält sechs kettenverifizierte Profilrecords.
+Vier davon haben keine A/A-Rauschmessung und werden vom vorhandenen
+`profile_for` nicht als servicefähige Optimierungsprofile gewählt. Ohne neue
+Maschinenprobe liefert dessen reine Modellauswahl für4B das Profil
+`device-20260903-150754` mit `head_skip`, für1B/12B keines. Dies ist keine
+aktuelle Hardware-/Codefreigabe, aber es widerlegt „keine Profildaten“.
+
+Konsequenz: Keine Wiederholung abgeschlossener Studien, um ihre grundsätzliche
+Wirksamkeit nochmals zu zeigen. Bestehende Rohdaten und konkrete Armkonfigurationen
+sind der Ausgangspunkt; neue Messungen nur für nachweislich fehlende aktuelle
+Integrations-/Kompatibilitäts- und Kombinationsfragen. Der neue PROD14-Wheel
+ist lediglich gebaut, noch nicht installiert oder nativ ausgeführt. Die vorher
+entstandenen uncommitteten Worker-/Adapteränderungen bleiben deaktiviert und
+werden nicht als gemessener Gewinn dargestellt.
+
+### 2026-09-08 — genehmigte Produktintegration: Kandidaten, Auswahlvertrag und neue native Einbindung
+
+Der Nutzer hat das Ziel ausdrücklich auf die vier Produktpunkte konkretisiert:
+vorhandene gemessene Core-/Cache-/Gruppierungsvarianten einbinden, ausschließlich
+die neue Einbindung prüfen, automatisch passende geprüfte Konfigurationen wählen
+und erst nach Abschluss mit Zahlen auf `main` veröffentlichen. Subagenten bleiben
+aufgabenbezogen/kostenbewusst beteiligt; dieser Schnitt verwendet Terra für die
+vorhandenen Engine-Konfigurationen, Sol für Transaktion/Auswahl/Protokoll und Luna
+für unabhängige Rohdaten-/Journalprüfung.
+
+Neue Module: `prefix_session.py` verzögert Cache-Commit bis zur mit Cancel
+synchronisierten normalen Workerabschlussentscheidung; `prefix_reuse.py` bleibt
+bytegleich zur bereits nativ geprüften Bibliothek. `engine_bridge.py` verwendet
+das bereits geladene Modell und die tatsächliche vorhandene Engine, keine zweite
+Modellladung und keine simulierte Tokenproduktion. B39d-A/B/C/D-Konfigurationen
+sind als explizite Kandidaten vorhanden: Core schaltet compiled_fixed_cache und
+head_skip_prefill ein, Throughput verwendet Breite4. `generate_many` ist im
+Bridge vorhanden; der Server-/Batchtransport und dessen native Qualifikation
+sind noch offen. Die normale Produktreferenz bleibt Standard.
+
+`selection.py` enthält einen noch nicht aktivierten, rein datenbasierten
+Auswahlvertrag: Modell-ID/Snapshot, Hardware, Umgebung, Code, Ausführungsmanifest,
+Anfrage-/Sitzungsprofil und unabhängige Heldout-Evidenz müssen passen. Fehlende
+Evidenz fällt auf `reference`, nicht auf einen unqualifizierten Engine-Arm.
+Train-/Validation-/Heldout-Cluster bleiben getrennt; lernende Vorschläge dürfen
+keine eigene Promotion erteilen. Kalte Sitzungskosten und vorhandene Cachetreffer
+werden getrennt beschrieben. Runtime-Anbindung und echte Auswahlprüfung offen.
+
+Prospektiv entfernt: Gewichts-Abbruch allein an Apples empfohlenem Working-Set
+und die künstliche24h-Obergrenze für Startup-Telemetrie. OS-Schutz, Daten-/
+Protokollvalidierung, Benutzerabbruch und Cleanup bleiben unverändert.
+Root-Review ergänzte außerdem die tatsächlichen Engine-Dateien in
+`friday_evidence.identity._code_identity`, ohne MLX im Controller zu importieren.
+Die vorherige Codebindung umfasste den neu ausführbaren Enginepfad noch nicht.
+
+Mehrere Fehler wurden vor erster Ausführung beseitigt: HTTP-Service-Close vor
+Cancel/Recovery hätte den Worker bereits beendet; die ursprüngliche Zählung
+zählte wiederverwendete Referenzen als neue Aufrufe; ein Commitstatus wurde mit
+einem Tracestatus verwechselt; der Abschlussdigest wurde vor späteren Feldern
+gebildet. Aktuell werden Cleanup und vollständiger Bericht innerhalb Journal/
+Modelllease abgeschlossen, reale Wiederverwendung und neue Generierungen getrennt
+gezählt und der vollständige finale Bericht kryptografisch gebunden.
+
+Der neue PROD14-Screen wiederholt keine Stock-Inferenz: Er liest jeModell vier
+stabile altePROD10-Ausgaben, prüft Modell-/Hardware-/Umgebungs-/Providerbindung
+und Dateihash und vergleicht jedes tatsächlich neu gerenderte Prompt-Hash.
+Keine alten Laufzeiten fließen in neue Speedup-Berechnungen ein. Bei geänderter
+Referenzbindung würde er `fresh_reference_required` melden, nicht implizit neu
+messen. Native Engine-Simulationstests wurden verworfen und durch reine JSON-
+Protokoll-/Fehlerfälle und tatsächliche isolierte Importprüfung ersetzt.
+
+Isoliertes Wheel aus dem lokalen Commit94f0021 plus ausschließlich eigenen
+Änderungen: drei neue Module, vier geänderte bestehende Pythondateien, keine
+DATA1-/UI-/CLI-Übernahme. SHA256
+`806b7472333363cc83110d27982f89627db96be86f0ae9f64b1cdb01c7e030bb`.
+Vor Installation Codea3d1b0e…803f8, danach
+`7b527cda282b35ee001be56ef2cf4536d3d0ef9506b50e321ffd6ecba21f54b4`.
+Environmenthash bleibt6e32542c…60ee95; nur das isolierte IronMule-Wheel ersetzt,
+keine Bibliotheken verändert. Alte Codequalifikationen werden nicht übernommen.
+113 fokussierte Kontrolltests und11 Subtests bestanden; weitere17 Identitätstests
+bestanden. Diese Ergebnisse sind keine Hardware- oder Performancebehauptung.
+
+Bereits terminal nativ bestanden, jeweils mit vollständig erhaltenem Oracle und
+unveränderten fünf Bindungen:1B Prefix `d0126c288aaf4cf4962d66ceaff709e8`,
+PID91405 Exit0, acht neue vollständige Antworten plus ein echter Cancel;
+1B Engine `d0d88076d8d944b6bbe210e8ea39f611`, PID91674 Exit0, sieben neue
+vollständige Antworten;4B Prefix `b40156e13aef4f8694ea7cbbd5203e08`, PID91910
+Exit0, acht neue Antworten plusCancel;4B Engine `0758212618484cf58036bb0f96bd3278`
+ebenfalls bestanden.12B Prefix `cf45ecdb0ec046de963bd906d97c6522`, PID92889
+Exit0, acht neue Antworten plusCancel bestanden.12B Engine ist bei diesem Eintrag
+noch aktiv; kein Ergebnis vorweggenommen.
+
+Die beobachteten systemweiten Swapdeltas sind nicht null: am letzten Sample der
+Prefixläufe1B/4B/12B +594.154.619/+1.227.421.123/+4.487.318.077B. Das ist nicht
+allein dem Modell zuzuordnen und keine Aussage über zusätzliche Modellbytes.
+Read-only-VM-/Prozesssicht zeigt erhebliche Kompression und normale parallele
+Desktopanwendungen; keine fremden Prozesse beendet, keine Systemeinstellungen
+geändert. Deshalb weiterhin ausschließlich Korrektheits-/Integrationsnachweise,
+keine Speedup- oder allgemeine Speicheraussage aus diesen Läufen.
+
+### 2026-09-08 — PROD14 einfacher Integrationsscreen vollständig beantwortet
+
+Auch12B Engine ist terminalpassed: Run `805eb9a6620e472085121dd73a79d34d`,
+PID93017 Exit0, sieben neue vollständige Antworten. Der4B-Engineworker war
+PID92625 und endete ebenfalls0. Damit sechs frische Candidateworker beendet,
+45 neue vollständige Generierungen, drei native partielle Cancels und24
+wiederverwendete Stock-Records; null neue Stock-Läufe. Der unabhängige Audit
+prüft jede tatsächliche Oracle-Datei samt Digest, neue Prompt-/Ausgabeidentität,
+Cacheaufbau/-treffer/-verwerfung, Recovery, Metadatenreihenfolge, Ressourcenzähler,
+alle fünf Bindungen und den vollständigen terminalen Berichtsdigest.
+Aktueller Export: `research/raw/PROD14_integration_audit_20260908.json`.
+Eine frühere Vier-Report-Zwischenfassung des abgeleiteten Auditexports blieb
+separat lokal erhalten; kein nativer Rohbericht wurde überschrieben.
+
+Alle Engine-Screens liefen mit `current_profile` und tatsächlichen BASELINE-
+Knobs; sie sind kein Core- oder W4-Gruppierungsnachweis. Die Ergebnisakte
+`docs/PROD14_INTEGRATION_RESULTS_2026-09-08.md` und der Projektstatus nennen
+diese Grenze ausdrücklich. Das GPU-Testfenster wurde ohne technische Messdaten
+an die andere Aufgabe freigegeben; aktuell kein eigener Modelllauf.
+
+Dieser Zwischenstand beantwortet nur die einfache neue Einbindung. Der aktive
+Gesamtauftrag bleibt vollständig offen bis Core-/Gruppierungstransport,
+passender aktueller Leistungsvergleich, tatsächliche automatische Auswahl
+und die abschließende Veröffentlichung auf `main` nachgewiesen sind.

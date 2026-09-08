@@ -95,7 +95,9 @@ class ProductService:
         with self._lock:
             return {"service": "ironmule", "ready": bool(not self._closed.is_set() and self.backend is not None and self.backend.ready),
                     "mode": self.settings["mode"], "execution": "exact",
-                    "backend": "mlx_lm_reference", "loaded_model": self.spec.model_id if self.spec else None,
+                    "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
+                                else getattr(self.backend, "execution_variant", "reference")),
+                    "loaded_model": self.spec.model_id if self.spec else None,
                     "queued_requests": self._pending.qsize(), "active_requests": int(self._active is not None),
                     "completed_requests": self._completed, "failed_requests": self._failed,
                     "cancelled_requests": self._cancelled,

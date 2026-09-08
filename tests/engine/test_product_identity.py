@@ -141,6 +141,8 @@ def test_code_manifest_uses_same_mlx_lm_label_for_installed_sources(
 
     monkeypatch.setattr(identity_module.importlib.metadata, "distribution", distribution)
     _, files = identity_module._code_identity()
+    assert "ironmule/runtime.py" in files
+    assert "ironmule/service.py" in files
     assert "mlx_lm/generate.py" in files
     assert not any(label.startswith("installed/mlx_lm/") for label in files)
 

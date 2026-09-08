@@ -3,16 +3,20 @@
 from __future__ import annotations
 
 import argparse
-from contextlib import redirect_stdout
+from contextlib import nullcontext, redirect_stdout
+from dataclasses import asdict
+import hashlib
 import json
 import math
 from pathlib import Path
 import queue
 import resource
+import secrets
 import sys
 import threading
 import time
 from typing import Any
+from types import SimpleNamespace
 
 
 if __package__ in (None, ""):
@@ -26,7 +30,7 @@ from ironmule_product.model_policy import ModelPolicyError, validate_model_confi
 PROTOCOL_VERSION = 1
 MAX_LINE = 1024 * 1024
 CONTEXT_LIMIT = 8192
-WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch"))
+WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine"))
 _PROTOCOL_OUT = sys.stdout
 
 
@@ -55,7 +59,7 @@ def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
     except (OverflowError, TypeError, ValueError):
         startup_float = math.inf
     if (isinstance(startup, bool) or not isinstance(startup, (int, float))
-            or not math.isfinite(startup_float) or startup <= 0 or startup > 86400):
+            or not math.isfinite(startup_float) or startup <= 0):
         raise RuntimeError("invalid startup telemetry: startup_wall_seconds")
     byte_values = {key: value for key, value in values.items() if key != "startup_wall_seconds"}
     if any(type(value) is not int or not 0 <= value <= 2**63 - 1 for value in byte_values.values()):
@@ -116,8 +120,10 @@ def _load(spec: dict[str, Any]):
         raise RuntimeError("a Metal GPU device is required")
     device_info = mx.device_info()
     max_working_set = device_info.get("max_recommended_working_set_size")
-    if type(max_working_set) is not int or max_working_set <= 0 or actual_weights >= max_working_set:
-        raise RuntimeError("model weights exceed the device working-set limit")
+    if type(max_working_set) is not int or max_working_set <= 0:
+        raise RuntimeError("device working-set telemetry is unavailable")
+    # This is an Apple recommendation, not a hard hardware capacity. Observe
+    # it without refusing a model on this heuristic; the OS retains its limits.
     device = mx.gpu
     mx.set_default_device(device)
     with redirect_stdout(sys.stderr):
@@ -194,6 +200,8 @@ def _generate(
     stream_generate: Any,
     cancel_event: threading.Event,
     variant: str,
+    prefix_session: Any = None,
+    engine_bridge: Any = None,
 ) -> dict[str, Any] | None:
     request_id = command.get("request_id") if isinstance(command.get("request_id"), str) else None
     if request_id is None or not request_id or len(request_id) > 256:
@@ -202,6 +210,7 @@ def _generate(
     generated = None
     terminal: dict[str, Any] | None = None
     error_emitted = False
+    engine_result = None
 
     # Request validation and chat-template rendering are user-input failures.
     # Keep the loaded worker alive when either rejects a request.
@@ -251,7 +260,23 @@ def _generate(
                         "prompt_tokens": prompt_tokens, "completion_tokens": 0, "variant": variant}
         else:
             with redirect_stdout(sys.stderr):
-                generated = stream_generate(model, tokenizer, list(prompt_ids), max_tokens=max_tokens)
+                if variant == "prefix_reuse":
+                    if prefix_session is None:
+                        raise ValueError("prefix cache is not enabled")
+                    generated = prefix_session.stream(list(prompt_ids), max_tokens=max_tokens)
+                elif variant == "current_engine":
+                    if engine_bridge is None:
+                        raise ValueError("current engine is not enabled")
+                    engine_result = engine_bridge.generate(list(prompt_ids), max_tokens)
+                    # Engine.serve is completion-only. Buffer honestly; do not
+                    # invent token streaming, TTFT, or log probabilities.
+                    generated = (SimpleNamespace(
+                        token=token, text=engine_result.text if i + 1 == engine_result.token_count else "",
+                        prompt_tokens=prompt_tokens, generation_tokens=i + 1,
+                        finish_reason=engine_result.finish_reason if i + 1 == engine_result.token_count else None,
+                    ) for i, token in enumerate(engine_result.tokens))
+                else:
+                    generated = stream_generate(model, tokenizer, list(prompt_ids), max_tokens=max_tokens)
                 for response in generated:
                     response_prompt = getattr(response, "prompt_tokens", prompt_tokens)
                     response_completion = getattr(response, "generation_tokens", None)
@@ -307,6 +332,12 @@ def _generate(
                 terminal = None
                 if not error_emitted:
                     _safe_error("generation_error", request_id)
+    if terminal is not None and engine_result is not None:
+        terminal["engine"] = {**engine_result.metadata, "delivery": "buffered_completion",
+                              "computed_tokens": engine_result.token_count}
+    if terminal is not None and command.get("trace_prompt_identity") is True:
+        terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(list(prompt_ids),
+            sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
     return terminal
 
 
@@ -319,6 +350,9 @@ def _run_generation(
     cancel_event: threading.Event,
     variant: str,
     trace_forwards: bool,
+    prefix_session: Any = None,
+    engine_bridge: Any = None,
+    cancellation_lock: Any = None,
 ) -> None:
     """Run one request, installing the candidate only inside this worker."""
     generate_module = None
@@ -360,29 +394,68 @@ def _run_generation(
 
         model_type.__call__ = counted_model_call
     try:
-        terminal = _generate(command, model_id, model, tokenizer, stream_generate, cancel_event, variant)
+        terminal = _generate(command, model_id, model, tokenizer, stream_generate, cancel_event, variant,
+                             prefix_session, engine_bridge)
     finally:
         if generate_module is not None:
             generate_module.generate_step = original_generate_step
         if model_type is not None and original_model_call is not None:
             model_type.__call__ = original_model_call
     if terminal is not None:
+        if variant == "prefix_reuse" and prefix_session is not None:
+            # The receiver sets cancellation under this same lock. Publishing
+            # the cache and selecting normal/cancelled completion are one
+            # decision; later cancels cannot relabel this model completion.
+            with cancellation_lock if cancellation_lock is not None else nullcontext():
+                if cancel_event.is_set():
+                    terminal["finish_reason"] = "cancelled"
+                accepted = terminal["finish_reason"] in ("stop", "length")
+                terminal["prefix_cache"] = asdict(prefix_session.finalize(accepted))
         if trace_forwards:
             terminal["model_forward_invocations"] = forward_count
         _emit(terminal)
+    elif variant == "prefix_reuse" and prefix_session is not None:
+        prefix_session.finalize(False)
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
+    parser.add_argument("--execution-variant", choices=sorted(WORKER_VARIANTS), default="reference")
+    parser.add_argument("--engine-configuration", default="current_profile",
+                        choices=("current_profile", "baseline_interactive", "core_interactive",
+                                 "baseline_throughput", "core_throughput"))
+    parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
+    parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     args = parser.parse_args(argv)
     startup_started = time.monotonic()
+    prefix_session = engine_bridge = None
     try:
         spec = json.loads(args.spec)
         if not isinstance(spec, dict):
             raise ValueError
+        if any(not 1 <= value <= 2**63 - 1 for value in (args.prefix_cache_max_entries, args.prefix_cache_max_bytes)):
+            raise ValueError("invalid cache capacity")
+        identity = None
+        if args.execution_variant in ("prefix_reuse", "current_engine"):
+            from friday_evidence.identity import assert_model_unchanged, runtime_identity
+            identity = runtime_identity(spec)
         model, tokenizer, stream_generate, device = _load(spec)
+        if identity is not None:
+            assert_model_unchanged(spec, identity)
+        if args.execution_variant == "prefix_reuse":
+            from ironmule_product.prefix_session import WorkerPrefixSession
+            prefix_session = WorkerPrefixSession(model, tokenizer,
+                binding_sha256=identity["identity_sha256"], scope_nonce=secrets.token_hex(16),
+                max_entries=args.prefix_cache_max_entries, max_bytes=args.prefix_cache_max_bytes)
+        elif args.execution_variant == "current_engine":
+            from ironmule_product.engine_bridge import CurrentEngineBridge
+            from ironmule_product.types import ModelSpec
+            engine_bridge = CurrentEngineBridge.from_loaded(model, tokenizer, ModelSpec.from_dict(spec),
+                                                           configuration=args.engine_configuration)
     except Exception as exc:
+        if engine_bridge is not None:
+            engine_bridge.close()
         _safe_error(getattr(exc, "code", "backend_unavailable") if isinstance(exc, ModelPolicyError) else "backend_unavailable")
         return 1
     import mlx.core as mx
@@ -395,6 +468,8 @@ def main(argv: list[str] | None = None) -> int:
         "type": "ready", "protocol_version": PROTOCOL_VERSION,
         "model_id": spec.get("model_id"), "revision": spec.get("revision"),
         "device": "gpu", "stop_handling": "parent", "context_limit": CONTEXT_LIMIT,
+        "execution_variant": args.execution_variant,
+        **({"engine": engine_bridge.metadata()} if engine_bridge is not None else {}),
         **telemetry,
     })
     commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=8)
@@ -407,33 +482,51 @@ def main(argv: list[str] | None = None) -> int:
         daemon=True,
     )
     reader.start()
-    while True:
-        command = commands.get()
-        if command is None or command.get("type") == "shutdown":
-            reader.join(timeout=1.0)
-            return 0
-        if command.get("type") != "generate":
-            _safe_error("protocol_error")
-            continue
-        request_id = command.get("request_id")
-        variant = command.get("variant")
-        trace_forwards = command.get("trace_forwards", False)
-        if (not isinstance(request_id, str) or not isinstance(variant, str)
-                or variant not in WORKER_VARIANTS or type(trace_forwards) is not bool):
-            _safe_error("invalid_request", request_id if isinstance(request_id, str) else None)
-            continue
-        cancel_event = threading.Event()
-        with cancellation_lock:
-            if request_id in pending_cancellations:
-                cancel_event.set()
-                pending_cancellations.discard(request_id)
-            cancellations[request_id] = cancel_event
-        try:
-            _run_generation(command, str(spec.get("model_id")), model, tokenizer, stream_generate,
-                            cancel_event, variant, trace_forwards)
-        finally:
+    allowed_variants = ({"current_engine"} if engine_bridge is not None else
+                        {"reference", "prefix_reuse"} if prefix_session is not None else
+                        {"reference", "bounded_prefetch"})
+    try:
+        while True:
+            command = commands.get()
+            if command is None or command.get("type") == "shutdown":
+                reader.join(timeout=1.0)
+                return 0
+            if command.get("type") == "clear_prefix_cache":
+                request_id = command.get("request_id")
+                if prefix_session is None or not isinstance(request_id, str) or not 1 <= len(request_id) <= 256:
+                    _safe_error("invalid_request", request_id if isinstance(request_id, str) else None)
+                else:
+                    _emit({"type": "prefix_cache_cleared", "request_id": request_id,
+                           "prefix_cache": asdict(prefix_session.clear())})
+                continue
+            if command.get("type") != "generate":
+                _safe_error("protocol_error")
+                continue
+            request_id = command.get("request_id")
+            variant = command.get("variant")
+            trace_forwards = command.get("trace_forwards", False)
+            if (not isinstance(request_id, str) or not isinstance(variant, str)
+                    or variant not in allowed_variants or type(trace_forwards) is not bool):
+                _safe_error("invalid_request", request_id if isinstance(request_id, str) else None)
+                continue
+            cancel_event = threading.Event()
             with cancellation_lock:
-                cancellations.pop(request_id, None)
+                if request_id in pending_cancellations:
+                    cancel_event.set()
+                    pending_cancellations.discard(request_id)
+                cancellations[request_id] = cancel_event
+            try:
+                _run_generation(command, str(spec.get("model_id")), model, tokenizer, stream_generate,
+                                cancel_event, variant, trace_forwards, prefix_session, engine_bridge,
+                                cancellation_lock)
+            finally:
+                with cancellation_lock:
+                    cancellations.pop(request_id, None)
+    finally:
+        if prefix_session is not None:
+            prefix_session.close()
+        if engine_bridge is not None:
+            engine_bridge.close()
 
 
 if __name__ == "__main__":

@@ -9,6 +9,14 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 
 ## Aktuelle Produktprüfung — 2026-09-08
 
+**Neu, PROD14:** Die neue Prefix-Worker- und vorhandene Engine-BASELINE-Einbindung
+bestehen auf1B/4B/12B den direkten und HTTP-Screen:45 neue vollständige Antworten,
+drei echte Cancels, sechs normale Workerabschlüsse. Vorhandene Stock-Ausgaben
+wurden wiederverwendet, nicht neu gemessen. [Nachweis](docs/PROD14_INTEGRATION_RESULTS_2026-09-08.md).
+Core-/Gruppierungs-Batchtransport, gepaarter Geschwindigkeitsvergleich und
+automatische Auswahl im laufenden Server sind weiterhin offen. Keine neue
+Speedup-/Aktivierungsbehauptung; systemweites Swapwachstum wird ausgewiesen.
+
 **Neu, PROD11/PROD12:** Der deaktivierte Präfixcache hat auf Gemma1B/4B/12B
 jeweils12 vollständige native Generierungen und elf Cache-/Isolationschecks
 bestanden, einschließlich exakter Ausgaben/Logprobs/Cachezustände. Noch kein
