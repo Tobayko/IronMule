@@ -219,7 +219,9 @@ def _code_identity() -> tuple[str, dict[str, str]]:
     project_root = Path(__file__).resolve().parents[1]
     paths: list[tuple[Path, Path, str]] = []
     python_suffix = frozenset((".py",))
-    for package in ("ironmule_product", "friday_evidence"):
+    # The product can now execute the existing Engine as an explicit candidate.
+    # Bind its files without importing the MLX-bearing package in the controller.
+    for package in ("ironmule", "ironmule_product", "friday_evidence"):
         package_root = project_root / package
         paths.extend((path, package_root, "") for path in _tree_files(package_root, suffixes=python_suffix))
     try:

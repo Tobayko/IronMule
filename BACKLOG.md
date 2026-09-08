@@ -152,6 +152,55 @@ einschließlich Aufbau/Verwaltung. Keine automatische Aktivierung vor dem Gate.
 Der abgeschlossene PROD10-S-Lauf und sein installierter Code bleiben als
 historische Referenz erhalten; Kandidateninstallationen bekommen neue Bindungen.
 
+### PROD14 — vollständiger HTTP-Vergleich mit privatem Cache und aktuellem Engine-Arm
+
+Mechanismus: den nativ korrekten Cache im tatsächlichen Worker-/HTTP-Pfad
+ausführen; Cachezustände erst an der mit Cancel synchronisierten normalen
+Modellabschlussentscheidung veröffentlichen. Alle Optionen bleiben ausdrücklich
+opt-in, keine globale Aktivierung. Cachekapazität bewirkt nur Eviction/Skip,
+keinen Abbruch der Modellgenerierung. Quellen von PROD11 bleiben nachvollziehbar.
+
+Vergleich: Stock-MLX-LM, unveränderter Produkt-Referenzpfad und der aktuelle
+IronMule-Enginepfad mit denselben kanonischen IDs unter demselben HTTP-Wrapper.
+Historische API-Unterschiede allein schließen den Engine-Arm nicht aus; er
+braucht eine native Exact-Qualifikation. Seine tatsächlich kompatible aktuelle
+Konfiguration wird ermittelt, alte E13/B39d/D5-Ratios werden nicht übertragen.
+Ein nicht vorhandenes gültiges Tuneprofil wird ehrlich als BASELINE ausgewiesen.
+
+Der einfache neue Worker-/HTTP-Screen für Prefix und Engine-BASELINE ist auf
+1B/4B/12B beantwortet (`docs/PROD14_INTEGRATION_RESULTS_2026-09-08.md`):45 neue
+vollständige Antworten, drei Cancels,24 wiederverwendete Oracle-Records und
+keine Stock-Neumessung. Nicht erneut durchführen.
+
+Offenes Gate: Core-/Gruppierungskonfigurationen samt Batchtransport qualifizieren;
+danach vorregistrierte gepaarte vollständige Sitzungen mit einem, zwei und
+acht identischen Requests, Cacheaufbau und Verwaltung innerhalb des Timings;
+Workerstart/Modellbindung separat ausweisen. Kein verstecktes Vorfüllen zwischen
+Sitzungen. Variierende Prompts als No-Hit-/Lebenszykluskontrolle. A/A-Rauschen,
+balancierte Reihenfolge, mehrere unabhängige Blöcke und feste Entscheidungsschwelle.
+Kill: Qualitätsbruch, falscher Cache-/Tenantzustand, ausgelassene Setupkosten,
+falsch benannter Bestbaseline-Arm oder kein belastbarer Nettovorteil: betreffende
+Variante nicht aktivieren. Native API-Prüfung darf Engine-Ausgabeinkompatibilität
+belegen, aber nicht bloß durch Weglassen der Engine behaupten.
+
+### PROD15 — automatisch passende geprüfte Konfiguration auswählen
+
+Nutzerentscheid 2026-09-08: die vier zuletzt genannten Produktpunkte umsetzen,
+einschließlich Core/Cache/Gruppierung, gezielter Prüfung der neuen Einbindung,
+automatischer Auswahl und abschließender Veröffentlichung auf `main`.
+Mechanismus: echte vorhandene Armkonfigurationen (insbesondere B39d A/B/C/D)
+als explizite Kandidaten übernehmen; ein leeres alternatives Profilverzeichnis
+ist kein Gegenbeweis zu diesen Messdaten. Ein modell-/hardware-/codegebundener
+Selektor verwendet unabhängig bestätigte vollständige Anfrage-/Sitzungswerte.
+Lernende Rangfolgen dürfen neue Kandidaten vorschlagen, nicht selbst ihre
+Qualifikation ersetzen. Keine Online-Experimente im Nutzeranfragepfad.
+Gate: vollständige aktuelle Bindung, unveränderte Exact-Ausgaben und unabhängige
+Holdout-Bestätigung gegenüber dem besten passenden Incumbent; echte automatische
+Auswahl im installierten Server auf allen drei lokalen Gemma-Modellen.
+Kill: altes/lückenhaftes/fremdes Profil, vermischter Train-/Holdout-Cluster,
+statische behauptete Gewinne ohne neue Integrationsdaten oder Auswahl einer
+schlechteren Variante: Referenz beibehalten und den Grund sichtbar protokollieren.
+
 ## PROD9 — Langkontext: Phasenbudget statt vollständiger Anfrage als GPU-Block
 
 PROD8 ist beantwortet: erster echter Stock-12B-Aufruf mit 1.077 Prompttokens
