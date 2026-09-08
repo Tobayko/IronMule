@@ -105,16 +105,15 @@ und Phasenprotokoll; unabhängige Stock-Referenz vor Produktvergleich. Kein
 neuer Kernel oder RL-Policy ohne gemessenen Engpass bzw. valide Datenbasis.
 
 Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
-beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`):
+beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`; getrennte Server-/Worker-
+Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`):
 1. Die beobachteten Host-/Bibliotheksphasen und Speicherwerte durch gezielte
    GPU-/Engpassdiagnose ergänzen; keine reine GPU-Zeit aus Hostzeit erfinden.
-3. Server-/Client-Prozessspeicher getrennt erfassen, bevor die belegte
-   Modellworker-Speicheraussage auf die gesamte Serveranwendung erweitert wird.
-   Mechanismus: getrennte Prozesse verhindern, dass Tester-/Journalhaltung als
-   Serverleck erscheint. Kill: vermischte PIDs/Zähler oder fehlende Telemetrie.
-   Die einstündige API-/Modellworker-Prüfung selbst ist beantwortet:
-   `docs/PROD10S_RESULTS_2026-09-08.md`; nicht für bessere Zahlen wiederholen.
-4. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
+   Diagnosepivot nach PROD10G Versuch2: vollständiger `.gputrace`-Capture ist
+   schwergewichtig und liefert Replay-, nicht ursprüngliche GPU-Zeit. Für
+   Original-Latenzen neues Metal-System-Trace-Protokoll verwenden; den
+   abgebrochenen Capture nicht als Hardwarefehler oder fertiges Profil werten.
+2. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
    Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
    bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
    nur mit unabhängigem Nachweis behaupten; ein negativer Befund bleibt gültig.
@@ -125,6 +124,33 @@ Aussage. Ein negativer Befund wird beantwortet, nicht durch Retry verborgen.
 Kill/Pivot: reproduzierbarer Funktionsfehler wird diagnostiziert und gezielt
 behoben; nicht aus Zeit-/Lastschutz künstlich als Hardwareunfähigkeit ableiten.
 Abgeschlossene Teilergebnisse jeweils dokumentieren und selektiv veröffentlichen.
+Nutzerentscheid 2026-09-08: Nach Abschluss der offenen Prüfungen das geprüfte
+Update einschließlich Messzahlen auf GitHub `main` veröffentlichen. Vorher
+Quell-/Datenprüfung, relevante Tests und Remote-Abgleich; keine ungeprüften
+parallelen Änderungen oder privaten GPU-Traces übernehmen, kein Force-Push.
+
+## PROD11 — exakte Präfix-Wiederverwendung und gemessene Optimierungswahl
+
+Mechanismus: PROD10 misst bei warmem 12B-long8 rund 96 % Host-/Bibliothekszeit
+vor dem ersten Token. Bei wiederholtem identischem Prompt-Präfix könnte ein
+korrekt geklonter vorhandener KV-Zustand diese erneute Arbeit vermeiden.
+Zuerst bestehende Project-Friday-/MLX-Cachepfade prüfen, insbesondere Gemma3-
+Rotationscaches und exakte Positions-/Tokenbindung. Keine neue Kernelbehauptung;
+ein ungenutzter Logit-Head kann durch MLX-Laziness bereits entfallen.
+Gate: private Scope-/Sitzungsisolation, tatsächliche bytegenaue Zustands-/
+Ausgabeprüfungen, vollständiger Vergleich einschließlich Cacheaufbau gegen
+Stock und den kompatiblen besten Projektstand. Danach erst eine autonome
+Wahl zwischen real gemessenen gültigen Konfigurationen; kein RL-Gain aus
+bloßem Replay, erfundenen Rewards oder einem einzelnen Messwert.
+Native Korrektheit für identische 1.077-Token-Prompts ist auf 1B/4B/12B
+beantwortet (`docs/PROD11_RESULTS_2026-09-08.md`), nicht wiederholen. Offen:
+gepaarter vollständiger Nutzen-/Produktvergleich, geprüfte Serving-Integration,
+Kontext-/Anfragevarianten und autonome Wahl; der Kandidat bleibt deaktiviert.
+Kill: fremder/promptfalscher Cache, falsche Position/Rotationszustände,
+Identitätsbruch, nicht begrenzbare Cache-Lebensdauer oder fehlender Nettovorteil
+einschließlich Aufbau/Verwaltung. Keine automatische Aktivierung vor dem Gate.
+Der abgeschlossene PROD10-S-Lauf und sein installierter Code bleiben als
+historische Referenz erhalten; Kandidateninstallationen bekommen neue Bindungen.
 
 ## PROD9 — Langkontext: Phasenbudget statt vollständiger Anfrage als GPU-Block
 

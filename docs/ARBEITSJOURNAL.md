@@ -12712,3 +12712,209 @@ bleibtoffen. FürGPU-DiagnoseistMetalSystemTrace lokalalsInstruments-Vorlage
 nachgewiesen. DerersteSandboxaufrufscheiterteamInstruments-Cachezugriff;
 derselbereineListenaufrufmitgeprüfterFreigabebestand. KeineOSSicherheits-
 einstellungengeändert,nochkeinenGPUTraceaufgezeichnet.
+
+### 2026-09-08 — Veröffentlichung nach Abschluss ausdrücklich auf main beauftragt
+
+Nutzerauftrag: „Sobald du fertig bist bring das Update mit den Zahlen auf
+GutHub Main“. Damit ist die öffentliche Veröffentlichung der geprüften
+Produktänderungen und ihrer Messberichte auf `Tobayko/IronMule`, Zielbranch
+`main`, ausdrücklich freigegeben. Die frühere ausstehende Payload-Zustimmung
+ist damit beantwortet; der Auftrag ist an den Abschluss der offenen Prüfungen
+gebunden, kein Auftrag zur sofortigen Veröffentlichung unfertiger Kandidaten.
+Commit `55cd69d` ist zum Zeitpunkt dieses Entscheids nur lokal vorhanden.
+Vor der Integration: genaue Commit-/Datenprüfung, relevante Tests, aktueller
+Remote-Abgleich und nachvollziehbarer Merge ohne Force-Push. Private Traces,
+Modellgewichte, Nutzerinhalte und ungeprüfte DATA1-/UI-Arbeiten bleiben außen vor.
+
+ProjectAtlas zuerst erneut aufgerufen: weiterhin `dependency_closure_limit`,
+10.001 Einträge. Der vorher dokumentierte begrenzte Refresh scheiterte bereits
+bei der Publikation; für diesen fokussierten Arbeitsstand wurden ausschließlich
+bekannte Backlog-/Ergebnis-/Harnessdateien direkt gelesen. Keine erneute breite
+Indexierung, kein Eingriff in ProjectAtlas. Terra prüft das neue native
+Präfix-Qualifikationsharness unabhängig und read-only; Sol schließt parallel
+den Capture-Harness-Review ab. Daraus folgt noch keine neue Hardwareaussage.
+
+### 2026-09-08 — native Harnessprüfung: Evidenzlücken vor Modellqualifikation korrigiert
+
+Root- und Terra-Review bestätigen die N−1-Callback-Grenze im tatsächlich
+installierten MLX-LM und das Erfassen der logischen Rotationscache-Zustände.
+Vor einem Präfix-Modelllauf wurden aber Testprogrammfehler gefunden: ungültiger
+Journal-Kind `run_completed`, keine periodische Beobachtung während Inferenz,
+fehlende partielle Kindresultate, Cleanup außerhalb der Modelllease und eine
+zu schwache Prüfung des bloßen Statusflags. Korrektur: vorhandener PROD10-
+Framereader/Cleanup, sofortige Phasenereignisse, vollständige Ausgabe-/Trace-/
+Checkpoint-Gates, vollständige installierte Modulbindung und Vergleich auch
+der Provider-Nachheridentität. Kein ersetzendes Generierungszeitlimit.
+Ein beim Editieren entstandener fehlender Klammerabschluss wurde bereits durch
+`py_compile` gefunden und vor irgendeinem Lauf korrigiert. Der Kandidat ist
+weiter deaktiviert, nicht installiert und noch nicht nativ qualifiziert.
+
+Der erste separate Capture-Aufruf `b1d144c453b94f0d846922063e75f1c0` scheitert
+vor GPU-Readiness: eigener Worker PID70675 normal beobachtet mit Exit1,
+null Modellantworten, kein Trace, alle fünf Vorher-/Nachherbindungen gleich.
+Rohbericht: `research/raw/PROD10G_12B_capture_20260908_attempt1.json`.
+Der isolierte reine `python -I .../product_gpu_capture.py --help`-Aufruf
+reproduziert den Grund: ein Top-Level-Import der benachbarten Harnessdatei
+ist unter `-I` nicht auflösbar. Kein Hardware- oder Modellfähigkeitsbefund.
+Eine explizite, manifestgebundene Hilfsdateiladung plus realer isolierter
+Startregression wird vor dem nächsten eigenständigen Versuch ergänzt.
+
+### 2026-09-08 — isolierter Capture-Start behoben und Präfixpaket vorbereitet
+
+Die exakt manifestgebundene Hilfsdatei wird nun über `importlib` geladen;
+kein Repo-Pfad wird in `sys.path` eingefügt. Der tatsächliche isolierte
+`python -I <Harness> --help`-Start besteht. Zusammen 45 reine Steuerungs-/
+Metadatatests für Capture, Präfixcache und Qualifikationsvertrag bestehen;
+sie sind keine Modellbeweise. Der Ruff-Aufruf im Projekt-Python ist nicht
+verfügbar (`No module named ruff`), kein Linter-Erfolg daraus abgeleitet.
+
+Eigenständiger Capture-Versuch 2 ist gestartet (Run
+`a47e6bb093584d3c8ac8f7479decb945`, Worker71104). Die drei unaufgezeichneten
+Warmups liefen tatsächlich und lieferten identische Referenzhashes; der
+anschließende private Capture war bei diesem Eintrag noch aktiv. Kein
+abschließendes Capture-/GPUzeit-Ergebnis vorweggenommen.
+
+Präfix-Wheel aus `git archive 55cd69d` der Paketdateien plus ausschließlich
+`ironmule_product/prefix_reuse.py` gebaut. Bytevergleich mit dem alten
+PROD10-Wheel: genau diese Pythondatei hinzugefügt, null entfernte oder
+geänderte bestehende Pythondateien; keine DATA1-/CLI-/pyproject-Übernahme.
+Wheel-SHA256 `bdf554cb3add5d12e1b20d273d7893ea11e8ad23a97a8ae6b359c28403a904d9`.
+Vor einer Installation ist der kontrollierte Runtime-Code weiter
+`47c416fb3ec3ae8f875a02e95abde01f554a0c5711eee5a0576f77b42edf7b7b`,
+Environment `6e32542c2cd4d2950ec828640d196c7e91be2b4790439041770c93cb7f60ee95`.
+Der erste Buildzugriff scheiterte am gesperrten uv-Cache; der geprüfte
+Buildaufruf bestand danach. Keine Installation während des Capture-Laufs.
+
+### 2026-09-08 — laufender Capture bestätigt, keine neue Modellqualifikation vorgetäuscht
+
+Capture-Controller71082 und eigener Worker71104 wurden nach über sieben
+Minuten per tatsächlicher Prozessabfrage als lebend bestätigt; Worker etwa
+88 % CPU. Der Request unter Instrumentierung ist noch nicht terminal, die
+drei vorherigen Referenzantworten sind vollständig. Die private Aufzeichnung
+belegt rund6,7GiB, auf dem Volume bleiben rund83GiB verfügbar. Laufende
+libproc-Beobachtungen kommen weiter ohne Fehler im Journal an. Das ist weder
+eine reine GPU-Zeit noch ein Speedup- oder Leakbefund; nicht erneut starten.
+Aktiver Toolhandle88791, Run `a47e6bb093584d3c8ac8f7479decb945`.
+
+Ein zusätzlicher eigener `sample`-Diagnoseprozess PID72476 lieferte nach über
+zwei Minuten keinen Stackbericht. Ausschließlich dieser Abtaster wurde per
+SIGTERM beendet, tatsächlicher Exit143 bestätigt; Capture71104 blieb aktiv.
+Kein Stackbefund erfunden und kein Modellzeitlimit eingeführt.
+
+Präfix-Qualifikationsvertrag zusätzlich um echte bytegetriebene Eviction
+zweier nativer Caches ergänzt, getrennt von Entrylimit und Oversize-Skip;
+insgesamt elf verlangte Checks. Installierter Kandidat muss nun ausdrücklich
+bytegleich zur gebundenen Quelldatei sein. Aktuell19 reine Protokolltests
+bestanden, dazu23 Cache-Metadatatests und5 Capture-Steuerungstests. Weiter
+keine native Präfixqualifikation und keine automatische Aktivierung.
+Sol implementiert währenddessen ausschließlich den separaten PROD12-
+Serverprozess-Speicherharness; Ausführung erst nach unabhängiger Prüfung.
+
+### 2026-09-08 — Diagnosepivot: ursprüngliche GPU-Zeit statt Vollcapture-Replay
+
+PROD10G Versuch2 ist nach mehr als14Minuten weiterhin im einzelnen
+instrumentierten Request, drei vorherige Stock-Antworten bleiben exakt.
+Die private Aufzeichnung belegt rund6,7GiB. Der vollständige Capture erhält
+aber nicht die gesuchte ursprüngliche GPU-Laufzeit: öffentliche MLX-/Apple-
+Dokumentation beschreibt `.gputrace` als Xcode-Replay-Weg; `xctrace export`
+liest Instruments-`.trace`, nicht diesen Capture. Deshalb wissenschaftlicher
+Werkzeugwechsel zu einem eigenständigen Metal-System-Trace-Protokoll für
+Originalzeitstempel. Keine vermeintliche GPU-Zeit aus Host-/Replayzeit ableiten.
+
+Der eigene Capture wird ausdrücklich per Ctrl-C abgebrochen, nicht nach
+einer neuen Generierungs-/Speichergrenze als ungeeignete Hardware bewertet.
+Kein automatischer Retry, kein erfolgreicher Capture behauptet, keine alten
+Messwerte geändert. Bei der ersten Nachprüfung ist Worker71104 nicht mehr
+vorhanden; Controller71082 führt noch Abschluss/Artefaktprüfung aus. Der
+genaue terminale Report und die tatsächlichen Exitcodes werden nachgereicht.
+Andere native Läufe/Installationen starten erst nach dessen Abschluss.
+
+GitHub `main` wurde read-only aktuell bestätigt:
+`dc6d32cbbe178842ba8b66827b3ea5a17b53d311`, ungeschützt. Noch kein Merge/Push;
+der beauftragte Main-Abschluss bleibt an die restlichen Prüfungen gebunden.
+
+### 2026-09-08 — PROD11 alle drei lokalen Gemma-Modelle nativ bestanden
+
+Capture-Versuch2 ist terminalfailed/KeyboardInterrupt, eigener Worker71104
+reaped mit −15; Controllerexit1. Alle fünf Bindungen sind unverändert und
+918 Ressourcenmesspunkte fehlerfrei. Drei Stock-Warmups sind vollständig,
+der Capture-Request ist nicht vollständig. Der historische Trace-Größenwert
+4.477.959.520.256B ist ungültig als Payload-/Plattenbelegung: unabhängige
+Metadata-Prüfung weist631.458 Symlink-Aliase nach, denen `Path.stat()` folgte.
+`du` meldet rund6,7GiB tatsächlich belegte Blöcke. Prospektive Messkorrektur
+verwendet lstat/scandir ohne Aliasverfolgung und dedupliziert Hardlinks;
+7 echte temporäre Dateisystem-/Steuerungstests bestehen. Rohbericht unverändert.
+
+Danach isoliertes Präfix-Wheel installiert: Code vorher47c416fb…edf7b7b,
+nachher `a3d1b0e28b8c5e22496005f99d79e2befb13f495709ca88333386adbb28803f8`.
+Environmenthash bleibt6e32542c…60ee95. Kandidaten-SHA256
+`1623c305b744ee45e402de25d0a68a881e28669f946e694ce5e4068c02912458`.
+Kein anderes Paket geändert, keine alte Codequalifikation übertragen und
+keine Optimierung aktiviert. Sämtliche bestehenden Paket-Pythondateien
+sind weiterhin bytegleich zum alten geprüften Wheel.
+
+Echte serielle Metal-Läufe, jeweils eigener 4-Stock/4-Kandidat/2-Klon/2-Recovery-
+Plan, zwei zusätzliche Prefill-Checkpoints und ein echter partieller Cancel:
+1B `cea97b6e012d43489e3033bf3e5ef9a8`, PID74147 Exit0;
+4B `94b6a5293b8b44fb878ef1b9be6e6a4a`, PID74385 Exit0;
+12B `5674042c94d5448fbc6b9b4e9385f68f`, PID74536 Exit0.
+Alle11Checks jeModell, Ausgaben/Logprobs/KanonischerCache exakt; alle fünf
+Bindungen unverändert,10/21/57 Ressourcenbeobachtungen ohneFehler.
+Cache.nbytes:29.483.008/154.025.984/436.469.760B. Kein Gesamt-RAM-/Speedupclaim.
+Der Validierungsworkflow trennt vollständig beantwortete Generierungen von
+Prefill-/Cancelarbeit, modellnahe Korrektheit von HTTP-/Produktleistung und
+belegte Cachebytes von physischem Prozessspeicher. Ergebnisakte:
+`docs/PROD11_RESULTS_2026-09-08.md`. Unabhängiger Read-only-Journal-/Rohbericht-
+Abgleich läuft über `tools/product_prefix_audit.py`; nie mit erfundenen GPUdaten.
+
+### 2026-09-08 — PROD11 Audit abgeschlossen; PROD12 nativ gestartet
+
+Unabhängiger read-only Abgleich aller drei PROD11-Läufe bestätigt26/37/73
+Ereignisse, jeweils genau einen Abschluss mit passendem Berichtsdigest,
+Journal-/Rohdatenidentität der Ressourcen und Kindresultate, elf Checks,
+vier echte Generierungstreffer jeModell (drei Hauptpfad plus ein Recovery),
+kanonische Cachegleichheit und alle Vorher-/Nachherbindungen. Ein Root-
+Gegencheck fand im ersten abgeleiteten QAexport einen reinen Darstellungsfehler:
+`cache_canonical_state_bytes` verwendete fälschlich die nachclose0B des
+Recoverycaches. Korrigierter Export
+`research/raw/PROD11_native_correctness_audit_20260908_v2.json` trennt die
+Checkpointbytes29.483.008/154.025.984/436.469.760 von0B geschlossenemRecoverycache.
+Kein nativer Rohbericht verändert und kein Modelllauf wiederholt.
+
+PROD12-Speicherharness mehrfach vor Ausführung geprüft: keine Quellbaum-
+Importumgehung unter `-I`, echtesPopen beim Samplerbesitzer, einzelne
+Telemetrieframes statt wachsender History im Server, frische Nachherbindung
+nachWorkerclose innerhalbModelllease, Fehlerresultate/Prozesspoll erhalten.
+Root verlängert die Journal-Lebenszeit bis durchFehlercleanup, damit während
+Shutdown gelieferte Ressourcen nicht in ein bereits geschlossenes Journal
+geschrieben werden. 8reineHarness-Tests sowie realer isolierterHelpstart
+bestanden. Lauf `507dcf6c589241e5be911b2ffeebe3d1` ist gestartet; eigener
+HTTP-ServerPID76059, separate echte Modellworker-Telemetrie imJournal.
+Noch kein Endergebnis bei diesem Eintrag.
+
+### 2026-09-08 — PROD12 abgeschlossen und unabhängig gegen Journal/Stock geprüft
+
+PROD12 Run507dcf6c589241e5be911b2ffeebe3d1 ist terminalpassed:16 echteHTTP-
+Anfragen, Gesundheitsstatusreadytrue/completed16/failed0/cancelled0/active0/
+queued0. Server76059 und Modellworker76061 beideExit0, tatsächlichreaped.
+79 Server- und73 Modellressourcenzeilen fehlerfrei. Footprint-Lifetimepeaks:
+Server62.489.152B, Modell9.106.823.312B; höchste aktuelleFootprints
+60.441.152/9.106.823.312B; RSSmaxima66.600.960/1.096.335.360B. Keine Addition
+überlappender oder zeitlich verschiedener Speicherzähler, keineLeakaussage.
+Alle5Bindungen vor/nach unverändert. Ergebnisakte
+`docs/PROD12_RESULTS_2026-09-08.md`; der beantwortete offeneServer-Speicherpunkt
+verlässt den Backlog im selben Änderungsschnitt.
+
+Luna-Read-only-Audit bestätigt170 Ereignisse und den terminalenDigest.
+Root verschärft danach die unabhängige Kontrolle: tatsächliche Stockdatei-
+Bindung und jedeHTTPText-/Usage-/Finishequality, jedePIDzuordnung, komplette
+nichtleereBindungen, finaleHealthcounter und privatePfad-/Textfelder.
+ErneuteAusführung besteht; aktuelleArtefaktfassung
+`research/raw/PROD12_server_memory_audit_20260908_v2.json`. Keine native
+Wiederholung, keine Raw-/Journaländerung. Beide Validierungs-Skills beeinflussen
+die Trennung von Speicherarten, Instrumentierung, Korrektheit und Performance.
+
+Eine Koordinationsnachricht mit technischen Ergebnissen an die andere Aufgabe
+wurde von der Ausführungsprüfung abgelehnt und nicht anderweitig übertragen.
+Die datensparsame Ersatznachricht ausschließlich zum freienGPU-Testfenster
+ohne Messwerte/PIDs/Hashes wurde zugelassen. Aktuell keine eigenenModelljobs.
