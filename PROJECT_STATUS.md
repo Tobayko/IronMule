@@ -1,13 +1,24 @@
 # Projektstatus
 
-**Stand:** 7. September 2026 (Produktprüfung; frühere Studien unten historisch)
+**Stand:** 8. September 2026 (Produktprüfung; frühere Studien unten historisch)
 **Zielgerät:** Apple M1 Max, 32 GB Unified Memory, 10-Core CPU, 32-Core GPU
 
 Diese Datei ist der kompakte Einstieg: Gate-/Entscheidstabellen und Verweise.
 Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 [`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
 
-## Aktuelle Produktprüfung — 2026-09-07
+## Aktuelle Produktprüfung — 2026-09-08
+
+**Neu, PROD11/PROD12:** Der deaktivierte Präfixcache hat auf Gemma1B/4B/12B
+jeweils12 vollständige native Generierungen und elf Cache-/Isolationschecks
+bestanden, einschließlich exakter Ausgaben/Logprobs/Cachezustände. Noch kein
+Performance- oder Aktivierungsnachweis. [Ergebnisse](docs/PROD11_RESULTS_2026-09-08.md).
+Die [getrennte Server-/Worker-Speichermessung](docs/PROD12_RESULTS_2026-09-08.md)
+ist mit16 echten12B-HTTP-Anfragen bestanden: Prozess-Footprint-Peak rund62,5MB
+Server bzw.9,11GB Modellworker, beide Exit0. Das ist keine Leak-/Kapazitäts-
+oder Speedupgarantie. Vollständiger Nutzenvergleich, GPU-Originalzeitdiagnose
+und autonome Optimierung/RL bleiben offen. Veröffentlichung auf `main` erst
+nach Abschluss der noch offenen beauftragten Prüfungen.
 
 **Neu, PROD10:** Nach ausdrücklicher Aufhebung der künstlichen Hardware-Testgates
 bestehen Gemma 1B/4B/12B jeweils 35 vollständige native Anfragen einschließlich
@@ -17,7 +28,8 @@ alle sechs Worker enden normal0. [Nachweise und Grenzen](docs/PROD10_RESULTS_202
 Das [einstündige 12B-Serverprofil](docs/PROD10S_RESULTS_2026-09-08.md) ist ebenfalls
 bestanden: 798 weitere Anfragen, darunter 264 aus Vierfach-Batches, normaler
 Workerabschluss und unveränderte Identität. Speicheraussagen sind auf den
-Modellworker begrenzt. GPU-Detaildiagnose und autonome Optimierung/RL sind offen.
+Modellworker dieses Dauerlaufs begrenzt; die getrennte kurze Servermessung oben
+erweitert diesen Lauf nicht rückwirkend. GPU-Detaildiagnose und RL sind offen.
 
 Frühere, getrennt gültige Prüfschritte:
 
@@ -31,8 +43,10 @@ nicht zu einem gemeinsamen Performanceclaim gepoolt.
 
 Nachweise: [12B-Kalibrierung](docs/PROD6_12B_RESULTS_2026-09-07.md),
 [separate Lade-/Referenzprüfung](docs/PROD4P_12B_RESULTS_2026-09-07.md),
-[offene Arbeiten](BACKLOG.md). Längerer gültiger Kontext, Dauerlast/Parallelität,
-prognostische Admission, autonome Suche/RL und Multi-Mac bleiben offen.
+[offene Arbeiten](BACKLOG.md). Die damals offenen festen Langkontext-/
+Dauerlast-/Parallelclientprofile sind inzwischen durch PROD10 beantwortet;
+größere Kontextabdeckung, prognostische Admission, autonome Suche/RL und
+Multi-Mac bleiben offen.
 Der separate [12B-Langkontextversuch](docs/PROD8_12B_RESULTS_2026-09-07.md) mit
 1.077 Prompttokens ist am ersten Stock-Aufruf terminal am 6-s-Host-Zeitgate
 gescheitert; kein erfolgreicher Langkontext-/Produkt-/HTTP-Nachweis. Worker
