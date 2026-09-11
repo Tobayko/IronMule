@@ -219,7 +219,11 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(captured["kwargs"]["shell"], False)
         environment = captured["kwargs"]["env"]
         self.assertEqual(environment["PATH"], "/usr/bin:/bin")
-        self.assertEqual(environment["PYTHONPATH"], str(Path(supervisor.__file__).resolve().parent.parent))
+        repository_root = Path(supervisor.__file__).resolve().parents[2]
+        self.assertEqual(
+            environment["PYTHONPATH"],
+            os.pathsep.join((str(repository_root), str(repository_root / "research"))),
+        )
         self.assertNotIn("HOME", environment)
         self.assertNotIn("VIRTUAL_ENV", environment)
         self.assertEqual(result["status"], "invalid")

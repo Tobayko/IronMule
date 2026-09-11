@@ -33,7 +33,9 @@ _ID_PATTERNS = (
 
 def dashboard_sources() -> list[Path]:
     return sorted(
-        path for path in ROOT.glob("friday_*/dashboard*.py")
+        path
+        for base in (ROOT, ROOT / "research")
+        for path in base.glob("friday_*/dashboard*.py")
         if path.is_file() and "__pycache__" not in path.parts
     )
 

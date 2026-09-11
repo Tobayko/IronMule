@@ -34,6 +34,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "research"))
 sys.path.insert(0, str(PROJECT_ROOT / "tools"))
 
 POINT_RUNNER = PROJECT_ROOT / "tools" / "run_r2_point.py"

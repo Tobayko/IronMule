@@ -25,7 +25,8 @@ from typing import Any, Iterable, Mapping, Sequence
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-
+if str(PROJECT_ROOT / "research") not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT / "research"))
 from friday_optimizer.campaign import CampaignPlan
 from friday_optimizer.candidates import CandidateRegistry
 from friday_optimizer.decisions import SelectionPolicy

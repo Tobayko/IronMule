@@ -671,6 +671,23 @@ entries; everything current goes here.
 
 ---
 
+## Known consequence of the 2026-09-11 repository layout change
+
+The research packages moved from the repository root into `research/`. Two sealed
+studies name a file by its old path inside their own provenance input list, so they
+can still be **replayed and verified** but can no longer **re-seal**:
+
+- `experiments/head_skip_formal/study.py` hashes `friday_h1/statistics.py`. Collecting
+  provenance now raises `unavailable provenance input`. Its 16 records verify, its
+  script and preregistration hashes match, and its verdict stands.
+- `docs/F1_INTEGRATION_VORREGISTRIERUNG.md` links `friday_optimizer/integration.py`.
+  The document is a hashed provenance input and must not be edited, so the link stays
+  as the record of the tree it was written against.
+
+Neither is fixed by editing a sealed file. Re-running either study on the current tree
+would be a new study with its own preregistration, which is what a moved source tree
+means anyway.
+
 ## Tier 1 — cheap, grounded, worth doing first
 
 ### `B56` — A per-request objective, not a per-runtime one

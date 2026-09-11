@@ -18,6 +18,7 @@ if os.path.abspath(sys.executable) != str(PROJECT_PYTHON):
 
 sys.path.insert(0, str(PROJECT_ROOT))
 
+sys.path.insert(0, str(PROJECT_ROOT / "research"))
 from friday_phase1b.cli import main  # noqa: E402
 
 

@@ -162,6 +162,7 @@ class Harness:
         import numpy as np
 
         sys.path.insert(0, str(PROJECT_ROOT))
+        sys.path.insert(0, str(PROJECT_ROOT / "research"))
         from friday_h0.benchmark import _generate_fixture
 
         self.guard = guard or BudgetGuard()

@@ -36,9 +36,9 @@ _CREATE = re.compile(r"^\s*CREATE\b", re.I)
 #: token SQLite names when the local schema lacks it. Each is a documented
 #: cross-package read, not a schema mismatch.
 _CROSS_PACKAGE = {
-    ("friday_h01/import_h0.py", "runs"),                     # imports the H0 study database
-    ("friday_h01/runner.py", "runs"),                        # same importer, reading H0 runs
-    ("friday_head_skip_runtime/policy.py", "record_sha256"),  # reads the sealed head-skip study
+    ("research/friday_h01/import_h0.py", "runs"),                     # imports the H0 study database
+    ("research/friday_h01/runner.py", "runs"),                        # same importer, reading H0 runs
+    ("research/friday_head_skip_runtime/policy.py", "record_sha256"),  # reads the sealed head-skip study
     # The SSOT index reads every study database read-only; those schemas are not its own.
     ("friday_evidence/ssot.py", "records"),
     ("friday_evidence/ssot.py", "bundles"),
@@ -87,18 +87,27 @@ def statements_of(path: Path) -> list[tuple[int, str]]:
     return found
 
 
+#: `friday_evidence` ships with the package and sits at the root; every other
+#: `friday_*` package is research and lives under `research/`.
+SOURCE_ROOTS = (ROOT, ROOT / "research")
+
+
+def _package_sources():
+    for base in SOURCE_ROOTS:
+        for path in base.glob("friday_*/*.py"):
+            if "__pycache__" not in path.parts:
+                yield path
+
+
 def packages() -> list[str]:
     return sorted({
-        path.parent.name for path in ROOT.glob("friday_*/*.py")
-        if "__pycache__" not in path.parts and statements_of(path)
+        path.parent.relative_to(ROOT).as_posix() for path in _package_sources()
+        if statements_of(path)
     })
 
 
 def test_the_sweep_still_finds_the_statements_it_is_meant_to_guard():
-    total = sum(
-        len(statements_of(path))
-        for path in ROOT.glob("friday_*/*.py") if "__pycache__" not in path.parts
-    )
+    total = sum(len(statements_of(path)) for path in _package_sources())
     assert total >= 150, f"only {total} statements found; the extractor has drifted"
 
 

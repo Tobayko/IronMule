@@ -43,6 +43,8 @@ def _already_recorded() -> set[tuple[str, int]]:
 
     if str(PROJECT_ROOT) not in sys.path:
         sys.path.insert(0, str(PROJECT_ROOT))
+    if str(PROJECT_ROOT / "research") not in sys.path:
+        sys.path.insert(0, str(PROJECT_ROOT / "research"))
     from friday_h0.provenance import collect_provenance
     from friday_h0.runner import run_id_for
 

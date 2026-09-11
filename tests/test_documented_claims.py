@@ -161,7 +161,7 @@ def test_chosen_constants_are_labelled_as_chosen():
     import sys as _sys
 
     sources = {
-        "DEFAULT_MIN_SAMPLES": ROOT / "friday_optimizer/replay.py",
+        "DEFAULT_MIN_SAMPLES": ROOT / "research/friday_optimizer/replay.py",
         "TIE_MARGIN": ROOT / "experiments/identity_forensics/gap_analysis.py",
         "RATE_TOLERANCE": ROOT / "experiments/w1_regime/regime_analysis.py",
         "PROMPT_TOLERANCE": ROOT / "experiments/w1_regime/measure_long_answer.py",

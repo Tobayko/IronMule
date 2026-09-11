@@ -22,7 +22,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / ".friday-data"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-
+if str(ROOT / "research") not in sys.path:
+    sys.path.insert(0, str(ROOT / "research"))
 #: (database, module, class, expected record count as the documents claim)
 RECORD_CHAINS = [
     ("head-skip-v1.sqlite3", "experiments.head_skip_formal.study", "Storage", 16),

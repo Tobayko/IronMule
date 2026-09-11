@@ -19,11 +19,18 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+#: The research tree is its own source root. Its packages keep flat names because
+#: their provenance manifests hash paths relative to it, so renaming them would
+#: change a run identity for no reason other than where the directory sits.
+RESEARCH = ROOT / "research"
 
 if sys.path[:1] != [str(ROOT)]:
     if str(ROOT) in sys.path:
         sys.path.remove(str(ROOT))
     sys.path.insert(0, str(ROOT))
+
+if str(RESEARCH) not in sys.path:
+    sys.path.insert(1, str(RESEARCH))
 
 
 # -- collection away from the target device -----------------------------------
