@@ -34,7 +34,7 @@ restart, UI work or automatic activation occurred.
 ## Current 2026-09-01 — Q4 final H17 contract frozen
 
 The final Q4 correction is the H17 protocol in
-[`research/raw/Q4_preregistration.md`](research/raw/Q4_preregistration.md), with its
+[`research/raw/Q4_preregistration.md`](../research/raw/Q4_preregistration.md), with its
 SHA-256 `975aa61a52498172a87f992e7847b999924693e6d1d0185f56627a58f63b1545` recorded
 in the companion file. A complete trajectory is exactly steps 0--16:
 11 `KNOB_DELTA` evaluations, 5 plan-matching `STRATEGY_SELECT` evaluations for the
@@ -68,7 +68,7 @@ integration is disclosed below and is not a performance result.
 
 ## Current 2026-09-01 — Q4 offline implementation verified
 
-The durable report is [`research/raw/Q4_implementation_report_20260901.md`](research/raw/Q4_implementation_report_20260901.md)
+The durable report is [`research/raw/Q4_implementation_report_20260901.md`](../research/raw/Q4_implementation_report_20260901.md)
 with SHA-256 `553b83dd5be114a546bee6e24654246b265947b1ad461148459148625dd13f65` and
 its companion SHA. The offline path is implemented and verified by `55/55` tests.
 The stable post-amendment import saw `285` inputs, skipped `2` derived

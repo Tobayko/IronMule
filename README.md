@@ -337,7 +337,7 @@ The [limits](docs/LIMITS.md), [runtime guide](docs/RUNTIME.md), and
 
 Contributions start with [CONTRIBUTING.md](CONTRIBUTING.md). Community benchmark
 submissions use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md)
-and the fields in [COMMUNITY_BENCHMARKS.md](COMMUNITY_BENCHMARKS.md).
+and the fields in [COMMUNITY_BENCHMARKS.md](docs/COMMUNITY_BENCHMARKS.md).
 
 ## Licence
 
@@ -356,6 +356,6 @@ measurement and self-calibration research the engine's numbers come from:
 device profiles measured per machine, a serving path that only enables a knob
 this device verified as token-identical, and the experiment record behind it.
 
-See **[README_PROJECT_FRIDAY.md](README_PROJECT_FRIDAY.md)**, the open work list
-in [`BACKLOG.md`](BACKLOG.md) and the append-only
+See **[README_PROJECT_FRIDAY.md](docs/README_PROJECT_FRIDAY.md)**, the open work list
+in [`BACKLOG.md`](docs/PROJECT_FRIDAY_BACKLOG.md) and the append-only
 [`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).

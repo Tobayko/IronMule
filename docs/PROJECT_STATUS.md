@@ -5,14 +5,14 @@
 
 Diese Datei ist der kompakte Einstieg: Gate-/Entscheidstabellen und Verweise.
 Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
-[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
+[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md).
 
 ## Aktuelle Produktprüfung — 2026-09-08
 
 **Neu, PROD14:** Die neue Prefix-Worker- und vorhandene Engine-BASELINE-Einbindung
 bestehen auf1B/4B/12B den direkten und HTTP-Screen:45 neue vollständige Antworten,
 drei echte Cancels, sechs normale Workerabschlüsse. Vorhandene Stock-Ausgaben
-wurden wiederverwendet, nicht neu gemessen. [Nachweis](docs/PROD14_INTEGRATION_RESULTS_2026-09-08.md).
+wurden wiederverwendet, nicht neu gemessen. [Nachweis](PROD14_INTEGRATION_RESULTS_2026-09-08.md).
 Core-/Gruppierungs-Batchtransport, gepaarter Geschwindigkeitsvergleich und
 automatische Auswahl im laufenden Server sind weiterhin offen. Keine neue
 Speedup-/Aktivierungsbehauptung; systemweites Swapwachstum wird ausgewiesen.
@@ -20,8 +20,8 @@ Speedup-/Aktivierungsbehauptung; systemweites Swapwachstum wird ausgewiesen.
 **Neu, PROD11/PROD12:** Der deaktivierte Präfixcache hat auf Gemma1B/4B/12B
 jeweils12 vollständige native Generierungen und elf Cache-/Isolationschecks
 bestanden, einschließlich exakter Ausgaben/Logprobs/Cachezustände. Noch kein
-Performance- oder Aktivierungsnachweis. [Ergebnisse](docs/PROD11_RESULTS_2026-09-08.md).
-Die [getrennte Server-/Worker-Speichermessung](docs/PROD12_RESULTS_2026-09-08.md)
+Performance- oder Aktivierungsnachweis. [Ergebnisse](PROD11_RESULTS_2026-09-08.md).
+Die [getrennte Server-/Worker-Speichermessung](PROD12_RESULTS_2026-09-08.md)
 ist mit16 echten12B-HTTP-Anfragen bestanden: Prozess-Footprint-Peak rund62,5MB
 Server bzw.9,11GB Modellworker, beide Exit0. Das ist keine Leak-/Kapazitäts-
 oder Speedupgarantie. Vollständiger Nutzenvergleich, GPU-Originalzeitdiagnose
@@ -32,8 +32,8 @@ nach Abschluss der noch offenen beauftragten Prüfungen.
 bestehen Gemma 1B/4B/12B jeweils 35 vollständige native Anfragen einschließlich
 1.077-Token-Kontext, JSON/SSE, gleichzeitiger Clients und Warm-Recovery nach
 echtem Disconnect. Ein dabei nativ belegter Service-Abbruchfehler ist behoben;
-alle sechs Worker enden normal0. [Nachweise und Grenzen](docs/PROD10_RESULTS_2026-09-07.md).
-Das [einstündige 12B-Serverprofil](docs/PROD10S_RESULTS_2026-09-08.md) ist ebenfalls
+alle sechs Worker enden normal0. [Nachweise und Grenzen](PROD10_RESULTS_2026-09-07.md).
+Das [einstündige 12B-Serverprofil](PROD10S_RESULTS_2026-09-08.md) ist ebenfalls
 bestanden: 798 weitere Anfragen, darunter 264 aus Vierfach-Batches, normaler
 Workerabschluss und unveränderte Identität. Speicheraussagen sind auf den
 Modellworker dieses Dauerlaufs begrenzt; die getrennte kurze Servermessung oben
@@ -49,13 +49,13 @@ MLX-Peak 7.327.153.624 B, maximales Swapdelta 112.659.005 B unter der festen
 Die vollständigen kurzen 1B-/4B-/12B-Kalibrierungen sind jeweils beantwortet,
 nicht zu einem gemeinsamen Performanceclaim gepoolt.
 
-Nachweise: [12B-Kalibrierung](docs/PROD6_12B_RESULTS_2026-09-07.md),
-[separate Lade-/Referenzprüfung](docs/PROD4P_12B_RESULTS_2026-09-07.md),
+Nachweise: [12B-Kalibrierung](PROD6_12B_RESULTS_2026-09-07.md),
+[separate Lade-/Referenzprüfung](PROD4P_12B_RESULTS_2026-09-07.md),
 [offene Arbeiten](BACKLOG.md). Die damals offenen festen Langkontext-/
 Dauerlast-/Parallelclientprofile sind inzwischen durch PROD10 beantwortet;
 größere Kontextabdeckung, prognostische Admission, autonome Suche/RL und
 Multi-Mac bleiben offen.
-Der separate [12B-Langkontextversuch](docs/PROD8_12B_RESULTS_2026-09-07.md) mit
+Der separate [12B-Langkontextversuch](PROD8_12B_RESULTS_2026-09-07.md) mit
 1.077 Prompttokens ist am ersten Stock-Aufruf terminal am 6-s-Host-Zeitgate
 gescheitert; kein erfolgreicher Langkontext-/Produkt-/HTTP-Nachweis. Worker
 beendet, kein beobachtetes Swapwachstum, keine Wiederholung oder Grenzlockerung.
@@ -195,8 +195,8 @@ Dokumentationsabschnitte entstanden **danach**.
 
 Der vollständige frühere Inhalt dieser Datei (alle Zyklen, Hashes, Preflights,
 Audits und Rohwerte) steht unverändert in
-[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md) unter
+[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md) unter
 „Archiv — vollständiger PROJECT_STATUS.md-Stand bis 2026-08-30".
-Weitere Einstiege: [`docs/ERGEBNISSE.md`](docs/ERGEBNISSE.md),
-[`BACKLOG.md`](BACKLOG.md), [`docs/KANDIDATENLISTE.md`](docs/KANDIDATENLISTE.md),
+Weitere Einstiege: [`docs/ERGEBNISSE.md`](ERGEBNISSE.md),
+[`BACKLOG.md`](BACKLOG.md), [`docs/KANDIDATENLISTE.md`](KANDIDATENLISTE.md),
 Studienakten unter `docs/*SPEC*.md` und `docs/*VORREGISTRIERUNG*.md`.

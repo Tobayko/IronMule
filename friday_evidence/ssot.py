@@ -42,7 +42,7 @@ SCHEMA_VERSION = 1
 SSOT_APPLICATION_ID = 0x46535354  # ASCII "FSST"
 
 SCAN_ROOTS = (".friday-data", "research", "experiments")
-EXTRA_FILES = ("EXPERIMENT_MATRIX.json",)
+EXTRA_FILES = ("docs/EXPERIMENT_MATRIX.json",)
 SKIP_DIR_NAMES = frozenset(
     {
         ".git",

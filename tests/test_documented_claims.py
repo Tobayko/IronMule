@@ -23,15 +23,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 #: (label, documented text, document, evidence file, raw value in that file)
 JSON_CLAIMS = [
-    ("persistent process ratio", "0,346968", "PROJECT_STATUS.md",
+    ("persistent process ratio", "0,346968", "docs/PROJECT_STATUS.md",
      "experiments/persistent_process/results.json", "0.34696789209993684"),
-    ("persistent process effect", "65,3032", "PROJECT_STATUS.md",
+    ("persistent process effect", "65,3032", "docs/PROJECT_STATUS.md",
      "experiments/persistent_process/results.json", "-65.30321079000632"),
-    ("cycle 16 ratio", "0,9295921887", "PROJECT_STATUS.md",
+    ("cycle 16 ratio", "0,9295921887", "docs/PROJECT_STATUS.md",
      "experiments/matmul_compile_ab/results.json", "0.9295921887"),
-    ("cycle 17 ratio", "0,9581074518", "PROJECT_STATUS.md",
+    ("cycle 17 ratio", "0,9581074518", "docs/PROJECT_STATUS.md",
      "experiments/batched_readback_compile/results.json", "0.9581074518"),
-    ("cycle 21 ratio", "1,000510010", "PROJECT_STATUS.md",
+    ("cycle 21 ratio", "1,000510010", "docs/PROJECT_STATUS.md",
      "experiments/fused_greedy_compile_v4/results.json", "1.000510009822041"),
 ]
 
@@ -86,7 +86,7 @@ def test_head_skip_numbers_match_the_sealed_database():
         connection.close()
     assert rows, "the sealed study carries no decision record"
     intervals = json.loads(rows[0][0])["intervals"]["all"]
-    status = document("PROJECT_STATUS.md")
+    status = document("docs/PROJECT_STATUS.md")
     for field, text, expected in HEAD_SKIP_CLAIMS:
         assert intervals[field] == pytest.approx(expected, abs=1e-12), field
         assert text in status, f"{field}: {text} is no longer in PROJECT_STATUS.md"

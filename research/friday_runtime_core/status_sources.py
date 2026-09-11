@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BACKLOG = PROJECT_ROOT / "BACKLOG.md"
+BACKLOG = PROJECT_ROOT / "docs" / "PROJECT_FRIDAY_BACKLOG.md"
 
 #: The knobs the project has measured, with the study that measured them. Shown
 #: when no device profile exists yet, so the screen is never empty — but marked
