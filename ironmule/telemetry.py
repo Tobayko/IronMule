@@ -62,6 +62,21 @@ class RequestMetrics:
         return (self.finished_ns - self.arrival_ns) / 1e6 if self.finished_ns else None
 
     @property
+    def decode_ms(self) -> float | None:
+        """From the first token to the last. Prefill is deliberately not in here."""
+        if not (self.finished_ns and self.first_token_ns):
+            return None
+        return (self.finished_ns - self.first_token_ns) / 1e6
+
+    @property
+    def decode_tokens_per_second(self) -> float | None:
+        """This request's own decode rate. Never a group's wall time over its width."""
+        decode = self.decode_ms
+        if not decode or self.generated_tokens < 2:
+            return None
+        return (self.generated_tokens - 1) / (decode / 1e3)
+
+    @property
     def inter_token_ms(self) -> list[float]:
         return [(b - a) / 1e6 for a, b in zip(self.token_times_ns, self.token_times_ns[1:])]
 
@@ -75,6 +90,8 @@ class RequestMetrics:
                 "visible_generated_tokens": self.visible_generated_tokens,
                 "service_ttft_ms": self.service_ttft_ms, "engine_ttft_ms": self.engine_ttft_ms,
                 "queue_wait_ms": self.queue_wait_ms, "latency_ms": self.latency_ms,
+                "decode_ms": self.decode_ms,
+                "decode_tokens_per_second": self.decode_tokens_per_second,
                 "inter_token_ms": self.inter_token_ms, "fell_back": self.fell_back}
 
 
@@ -92,6 +109,9 @@ class Telemetry:
     correctness_checked_requests: int = 0
     plan_switch_attempts: int = 0
     peak_memory_bytes: int = 0
+    #: The route a caller-facing router chose for this dispatch, if one did. Empty when
+    #: the mode was named by hand, which is how `Runtime` on its own always works.
+    routing: dict = field(default_factory=dict)
 
     def snapshot(self) -> dict:
         latencies = [m.latency_ms for m in self.requests if m.latency_ms is not None]
@@ -123,6 +143,7 @@ class Telemetry:
             "correctness_checked_requests": self.correctness_checked_requests,
             "plan_switch_attempts": self.plan_switch_attempts,
             "peak_memory_bytes": self.peak_memory_bytes,
+            "routing": dict(self.routing),
             "per_request": [m.as_dict() for m in self.requests],
         }
 
@@ -146,6 +167,9 @@ def _self_check() -> None:
     assert snap["mean_realised_width"] == 10 / 3
     assert snap["rounds"] == 3
     assert "per_request" in snap and snap["per_request"][0]["rid"] == "r0"
+    assert m.decode_ms == 6.0, "decode time starts at the first token"
+    assert abs(m.decode_tokens_per_second - 2 / 0.006) < 1e-6
+    assert snap["routing"] == {}, "an unrouted dispatch reports no route"
     assert not any("per_width" in k or "per_slot" in k for k in snap), \
         "no field may divide group time by width"
     print("telemetry self-check ok")

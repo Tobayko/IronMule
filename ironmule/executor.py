@@ -141,6 +141,11 @@ class AsyncGroupedB1Executor(_Runner):
             raise ValueError(f"max_width must be between 1 and {MAX_GROUP_WIDTH}")
         self.max_width = max_width
 
+    def _step_group(self, group: list[Session], capacity: int):
+        """One submission per session. A subclass may submit a group as one step."""
+
+        return [self.backend.step(s.state, s.tokens[-1], capacity) for s in group]
+
     def run(self, sessions: list[Session], capacity: int) -> None:
         started = now()
         pending = sorted(sessions, key=lambda s: (s.arrival_ms, s.rid))
@@ -161,7 +166,7 @@ class AsyncGroupedB1Executor(_Runner):
 
             group = active[:self.max_width]
             try:
-                handles = [self.backend.step(s.state, s.tokens[-1], capacity) for s in group]
+                handles = self._step_group(group, capacity)
                 self.backend.complete(handles)
                 stamp = now()
                 for session, handle in zip(group, handles):
@@ -201,11 +206,19 @@ class AsyncGroupedB1Executor(_Runner):
 
 
 def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
-                   capacity: int) -> list[Session]:
-    """Prefill every request under its own plan. Plans are applied, never chosen."""
+                   capacity: int, dispatch_ns: int | None = None) -> list[Session]:
+    """Prefill every request under its own plan. Plans are applied, never chosen.
+
+    `dispatch_ns` is when the caller handed these requests over. It defaults to now,
+    which is right when a dispatch is one `serve`. A caller that splits one dispatch
+    into several `serve` calls must pass the original timestamp, or every service TTFT
+    and latency after the first call would be measured from a moment the caller never
+    saw and the wait between the calls would vanish from the record.
+    """
     sessions = []
     for request in requests:
-        metrics = RequestMetrics(rid=request.rid, arrival_ns=now(),
+        metrics = RequestMetrics(rid=request.rid,
+                                 arrival_ns=now() if dispatch_ns is None else dispatch_ns,
                                  prompt_tokens=len(request.prompt_ids))
         metrics.engine_start_ns = now()
         state, first = backend.prefill(request.prompt_ids, request.plan, capacity)

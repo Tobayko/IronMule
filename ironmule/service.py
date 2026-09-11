@@ -6,6 +6,12 @@ Two service modes, chosen by the caller and never by the runtime:
   ThroughputMode    grouped batch-1 at width <= 4. Higher aggregate throughput and
                     much lower service TTFT under concurrency, at a measured cost in
                     median per-request latency.
+  PairedThroughputMode
+                    opt-in research mode: two ready requests share one weight sweep.
+                    Never a default, admitted only inside its qualified box.
+  AutomaticMode     opt-in rule-based choice between the two above, from the tuned
+                    profile's service-strategy record. Off unless asked for, and it
+                    keeps the established mode wherever the record does not apply.
 
 E15 and E16 measured that trade: +15% to +17% throughput, median latency +26% to
 +31%, tail latency -8% to -17%, and service TTFT falling roughly tenfold. Neither
@@ -31,6 +37,12 @@ from .telemetry import Telemetry
 CAPACITY_CEILING = 8192          # refuse rather than allocate an unbounded KV cache
 
 
+#: What a caller is optimising for this request. `None` means they did not say, and an
+#: unspecified request keeps whatever the runtime was already doing -- which is how every
+#: call written before B56 keeps its behaviour exactly.
+OBJECTIVES = ("latency", "throughput")
+
+
 @dataclass
 class Request:
     prompt_ids: Sequence[int]
@@ -38,12 +50,16 @@ class Request:
     plan: ExecutionPlan = field(default_factory=StrictOneShotPlan)
     arrival_ms: float = 0.0
     rid: str = ""
+    objective: str | None = None
 
     def __post_init__(self):
         if not self.rid:
             self.rid = uuid.uuid4().hex[:8]
         if self.max_tokens < 1:
             raise ValueError("max_tokens must be at least 1")
+        if self.objective is not None and self.objective not in OBJECTIVES:
+            raise ValueError(f"objective must be one of {OBJECTIVES} or None, "
+                             f"got {self.objective!r}")
 
 
 @dataclass
@@ -70,6 +86,186 @@ class ThroughputMode:
 
     def executor(self, backend, telemetry):
         return AsyncGroupedB1Executor(backend, telemetry, max_width=self.max_width)
+
+
+class PairedThroughputMode:
+    """Opt-in research mode: two ready requests share one weight sweep.
+
+    Off unless a caller names it. Admission runs once, on the first executor built for a
+    loaded engine, and refuses loudly outside the qualified model, hardware, library and
+    projection set: a caller who asked for this must not silently get something else.
+    Measured on a pair of requests only; a lone request runs the ordinary single path and
+    never waits for a partner. See `docs/BACKLOG.md` entries `B45` and `B46`.
+    """
+
+    name = "paired_throughput"
+
+    def __init__(self, *, share: bool = True, share_aligned: bool = False):
+        # `share_aligned` extends sharing to o_proj and down_proj. Off by default: it is
+        # qualified at kernel level (`B48`) but has not earned a product gate.
+        self.share = share
+        self.share_aligned = share_aligned
+        self.admission: dict | None = None
+        self._executor = None
+
+    def executor(self, backend, telemetry):
+        from .paired_research import PairedGroupedExecutor, admit
+        if self.admission is None:
+            self.admission = admit(backend.engine.model,
+                                   getattr(backend.engine, "model_identity", None))
+        self._executor = PairedGroupedExecutor(backend, telemetry, share=self.share,
+                                               share_aligned=self.share_aligned)
+        return self._executor
+
+    def status(self) -> dict:
+        """Disabled, admitted, and how the last run actually executed."""
+
+        executor = self._executor
+        return {
+            "mode": self.name,
+            "enabled": True,
+            "sharing": self.share,
+            "sharing_aligned_projections": self.share_aligned,
+            "admitted": self.admission is not None,
+            "admitted_projections": (self.admission or {}).get("admitted", 0),
+            "paired_steps": getattr(executor, "paired_steps", 0),
+            "solo_steps_no_partner": getattr(executor, "solo_steps", 0),
+        }
+
+
+def paired_status(mode) -> dict:
+    """One shape of status for any mode, so `disabled` is a real answer."""
+
+    reporter = getattr(mode, "status", None)
+    if reporter is None:
+        return {"mode": getattr(mode, "name", "unknown"), "enabled": False,
+                "sharing": False, "sharing_aligned_projections": False,
+                "admitted": False, "admitted_projections": 0,
+                "paired_steps": 0, "solo_steps_no_partner": 0}
+    return reporter()
+
+
+class _AutomaticExecutor:
+    """Chooses once per `serve`, before any decode step, then gets out of the way.
+
+    The number of ready requests is only known when the sessions arrive, which is also
+    the last moment at which nothing has been decoded yet. Choosing here means the state
+    change happens at a boundary the shipped executor already treats as safe, and no
+    check is added to the per-token path.
+    """
+
+    name = "automatic"
+
+    def __init__(self, mode, backend, telemetry):
+        self.mode, self.backend, self.telemetry = mode, backend, telemetry
+
+    def run(self, sessions, capacity) -> None:
+        delegate = self.mode.delegate_for(sessions, self.backend, self.telemetry)
+        delegate.run(sessions, capacity)
+
+
+class AutomaticMode:
+    """Rule-based choice between the established mode and the qualified paired path.
+
+    It selects nothing unless the caller opted in *and* the tuned profile carries a
+    complete service-strategy record admitting this machine, model, library build and
+    number of ready requests. Anything else keeps the established mode, which is what an
+    absent record, an older profile or an unknown configuration all mean.
+
+    Only facts known at decision time enter: how many requests are ready now, and the
+    identity of the machine, model and libraries. The response a request will produce is
+    not used, and no length is predicted.
+    """
+
+    name = "automatic"
+
+    def __init__(self, profile: dict | None = None, *, opt_in: bool = False,
+                 identity_sha256: str | None = None, fingerprint: str | None = None,
+                 mlx: str = "", mlx_lm: str = ""):
+        self.profile = profile
+        self.opt_in = bool(opt_in)
+        self.identity_sha256 = identity_sha256
+        self.fingerprint = fingerprint
+        self.mlx = mlx
+        self.mlx_lm = mlx_lm
+        self.decision: dict | None = None
+        # One decision per `serve`, counted so a run can show that nothing was added to
+        # the per-token path.
+        self.decisions_made = 0
+        self._established = ThroughputMode()
+        self._paired = PairedThroughputMode()
+
+    def executor(self, backend, telemetry):
+        return _AutomaticExecutor(self, backend, telemetry)
+
+    @staticmethod
+    def ready_now(sessions) -> int:
+        """How many requests are actually ready to take a step, not how many exist.
+
+        A request with a later arrival is held back by the scheduler, and one that
+        finished during prefill never takes a step at all. Counting the whole group
+        would claim a partner that is not there.
+        """
+
+        return sum(1 for session in sessions
+                   if getattr(session, "arrival_ms", 0.0) <= 0.0
+                   and not getattr(session, "done", False))
+
+    def delegate_for(self, sessions, backend, telemetry):
+        """The chosen executor, and the decision that produced it."""
+
+        from .service_strategy import STRATEGY_PAIRED, select
+
+        sessions = list(sessions)
+        ready_requests = self.ready_now(sessions)
+        decision = select(self.profile, opt_in=self.opt_in,
+                          ready_requests=ready_requests,
+                          identity_sha256=self.identity_sha256,
+                          fingerprint=self.fingerprint,
+                          mlx=self.mlx, mlx_lm=self.mlx_lm)
+        decision["ready_requests"] = ready_requests
+        decision["group_requests"] = len(sessions)
+        self.decisions_made += 1
+        if decision["strategy"] == STRATEGY_PAIRED:
+            try:
+                executor = self._paired.executor(backend, telemetry)
+            except Exception as exc:                      # noqa: BLE001 - deliberate
+                # The profile said yes, the loaded model said no. Refusing to the
+                # established mode is the documented answer for an unknown condition;
+                # falling through to the sequential net would be a silent downgrade.
+                decision["strategy"] = "throughput"
+                decision["reason"] = (
+                    f"profile admitted the paired path, the model refused it: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                decision["evidence_run_ids"] = []
+            else:
+                self.decision = decision
+                return executor
+        self.decision = decision
+        return self._established.executor(backend, telemetry)
+
+    def status(self) -> dict:
+        """What was chosen, why, and the runs that authorise it."""
+
+        from .service_strategy import STRATEGY_PAIRED
+
+        decision = self.decision or {}
+        chose_paired = decision.get("strategy") == STRATEGY_PAIRED
+        paired = self._paired.status() if chose_paired else paired_status(self._established)
+        return {
+            **paired,
+            "mode": self.name,
+            "opt_in": self.opt_in,
+            "strategy": decision.get("strategy", "throughput"),
+            "reason": decision.get("reason", "nothing served yet"),
+            "record_present": bool(decision.get("record_present", False)),
+            "ready_requests": decision.get("ready_requests", 0),
+            "group_requests": decision.get("group_requests", 0),
+            "decisions_made": self.decisions_made,
+            "evidence_run_ids": list(decision.get("evidence_run_ids", [])),
+            "correctness_contract": decision.get("correctness_contract", ""),
+        }
 
 
 class MLXBackend:
@@ -232,18 +428,30 @@ class Runtime:
     # -- construction ---------------------------------------------------------
     @classmethod
     def load(cls, model_id: str | None = None, mode=None, use_tuned_profile: bool = True,
-             revision: str | None = None):
+             revision: str | None = None, automatic_service_mode: bool = False):
+        """Load a model, and only on request let the profile choose the service mode.
+
+        `automatic_service_mode=True` is the opt-in. Without it nothing about the stored
+        profile can change which mode serves a request, which is why an older profile and
+        a profile carrying a new record behave identically until a caller asks.
+        """
+
         from .runtime import BASELINE, Knobs
         from .tune import DEFAULT_MODEL, load_engine, load_profile, resolve_local_model
         model_id = model_id or DEFAULT_MODEL
+        if automatic_service_mode and mode is not None:
+            raise ValueError("automatic_service_mode replaces an explicit mode; pass one")
         resolved = resolve_local_model(model_id, revision)
         knobs = BASELINE
-        if use_tuned_profile:
+        profile = None
+        if use_tuned_profile or automatic_service_mode:
             profile = load_profile(
                 model_id, revision=revision, model_identity=resolved.identity
             )
-            if profile:
+            if profile and use_tuned_profile:
                 knobs = Knobs(**profile["knobs"])
+        if automatic_service_mode:
+            mode = cls._automatic_mode(profile, resolved.identity)
         engine, tokenizer = load_engine(
             model_id, knobs, revision=revision, resolved_source=resolved
         )
@@ -251,6 +459,19 @@ class Runtime:
             engine, tokenizer, mode=mode, model_id=resolved.identity.model_id,
             model_identity=resolved.identity,
         )
+
+    @staticmethod
+    def _automatic_mode(profile: dict | None, identity):
+        """The opt-in mode, told once what this machine and library build are."""
+
+        import mlx.core as mx
+        import mlx_lm
+
+        from .hw import fingerprint
+        return AutomaticMode(profile, opt_in=True,
+                             identity_sha256=identity.identity_sha256,
+                             fingerprint=fingerprint(),
+                             mlx=mx.__version__, mlx_lm=mlx_lm.__version__)
 
     # -- helpers --------------------------------------------------------------
     def encode(self, text: str) -> list[int]:
@@ -267,7 +488,11 @@ class Runtime:
                                    name=name)
 
     # -- serving --------------------------------------------------------------
-    def serve(self, requests: Sequence[Request]) -> list[Result]:
+    def serve(self, requests: Sequence[Request],
+              dispatch_ns: int | None = None) -> list[Result]:
+        """Serve one group of requests. `dispatch_ns` says when the caller handed them
+        over, for a caller that splits one dispatch across several calls; it changes
+        recorded arrival only, never scheduling or output."""
         import mlx.core as mx
         if not requests:
             return []
@@ -278,7 +503,8 @@ class Runtime:
         self.telemetry = Telemetry(mode=self.mode.name)
         capacity = self.backend.capacity_for([len(r.prompt_ids) for r in requests],
                                              max(r.max_tokens for r in requests))
-        sessions = build_sessions(requests, self.backend, self.telemetry, capacity)
+        sessions = build_sessions(requests, self.backend, self.telemetry, capacity,
+                                  dispatch_ns=dispatch_ns)
 
         executor = self.mode.executor(self.backend, self.telemetry)
         try:

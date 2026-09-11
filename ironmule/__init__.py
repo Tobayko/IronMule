@@ -2,6 +2,12 @@
 
     import ironmule
 
+    rt = ironmule.AppleRuntime.load()      # loads, then routes each dispatch itself
+    print(rt.generate("Summarise this paragraph: ...").text)
+    print(rt.last_decision["route"], rt.last_decision["reason"])
+
+Or drive the modes by hand, which is what `AppleRuntime` does underneath:
+
     rt = ironmule.Runtime.load()                                  # interactive by default
 
     # one request
@@ -30,7 +36,9 @@ from .executor import MAX_GROUP_WIDTH, AsyncGroupedB1Executor, SequentialExecuto
 from .fingerprint import build as build_fingerprint, usable
 from .plans import RUNTIME_VERSION, ExecutionPlan, ReusableSessionPlan, StrictOneShotPlan
 from .runtime import BASELINE, Engine, Knobs, PrefixCache
-from .service import InteractiveMode, Request, Result, Runtime, ThroughputMode
+from .router import ROUTER_VERSION, AppleRuntime, ExecutionRouter, RouteDecision
+from .service import (AutomaticMode, InteractiveMode, PairedThroughputMode, Request,
+                      Result, Runtime, ThroughputMode)
 from .telemetry import RequestMetrics, Telemetry
 from .tune import (
     DEFAULT_MODEL, _stored_confirmation_valid, knobs_for, load_profile, revalidate, stale, tune,
@@ -41,10 +49,12 @@ __version__ = RUNTIME_VERSION
 __all__ = [
     # runtime
     "Runtime", "Request", "Result",
+    # the routed entry point: load a model and let it choose a qualified path
+    "AppleRuntime", "ExecutionRouter", "RouteDecision", "ROUTER_VERSION",
     # plans, chosen by the caller
     "ExecutionPlan", "StrictOneShotPlan", "ReusableSessionPlan",
     # service modes, chosen by the caller
-    "InteractiveMode", "ThroughputMode",
+    "InteractiveMode", "ThroughputMode", "PairedThroughputMode", "AutomaticMode",
     # executors, if a caller wants one directly
     "SequentialExecutor", "AsyncGroupedB1Executor", "MAX_GROUP_WIDTH",
     # observability and validity
