@@ -108,13 +108,24 @@ def _finite_number(value: Any) -> bool:
         return False
 
 
+# Knobs that did not exist when earlier profiles were written. A stored profile may
+# omit exactly these, and then they take their default, which is off. Nothing else may
+# be missing, and an unknown key is still refused: an old profile keeps its behaviour
+# rather than silently gaining a setting it was never measured with.
+KNOBS_ADDED_LATER = frozenset({"k3840_matvec"})
+
+
 def _exact_knobs(value: Any) -> Knobs | None:
-    """Decode a complete, canonical ten-field knob mapping."""
+    """Decode a canonical knob mapping, defaulting only knobs added after it was written."""
     if not isinstance(value, Mapping):
         return None
     raw = dict(value)
-    if set(raw) != set(BASELINE.as_dict()):
+    defaults = BASELINE.as_dict()
+    missing = set(defaults) - set(raw)
+    if set(raw) - set(defaults) or missing - KNOBS_ADDED_LATER:
         return None
+    for name in missing:
+        raw[name] = defaults[name]
     for name in (
         "fuse_projections", "compiled_fixed_cache", "fused_argmax",
         "head_skip_prefill", "prefill_into_fixed",
@@ -325,6 +336,9 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         verify_resolved_model(model_id, resolved)
     engine = Engine(model, tokenizer, knobs)
     engine.model_identity = resolved.identity if resolved is not None else None
+    # Admission runs here because it needs the identity, and only here: nothing in the
+    # per-token path may hash a model or re-check a version.
+    engine.admit_k3840(engine.model_identity)
     return engine, tokenizer
 
 

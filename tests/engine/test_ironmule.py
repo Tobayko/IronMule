@@ -11,6 +11,25 @@ from ironmule.fast import fuse_projections
 from ironmule.runtime import BASELINE, Engine, Knobs
 
 
+@pytest.fixture(autouse=True)
+def _restore_the_default_device():
+    """Put the default device back after every test in this file.
+
+    Several tests here move MLX to the CPU so a small model never competes for the GPU.
+    The default device is process global, and pytest-xdist gives a worker whole files in
+    sequence, so leaving it on the CPU silently changes what a later file measures. That
+    is what B53 turned out to be: `mx.quantized_matmul` followed the leaked CPU default
+    while a custom Metal kernel still ran on the GPU, and the two were compared as if they
+    were one device.
+    """
+
+    before = mx.default_device()
+    try:
+        yield
+    finally:
+        mx.set_default_device(before)
+
+
 def test_fingerprint_reacts_to_hardware_and_is_stable():
     facts = hw.static_facts()
     assert hw.fingerprint(facts) == hw.fingerprint(facts)

@@ -76,6 +76,15 @@ REVIEWED_SOURCE_MODULES = frozenset({
     "ironmule.ab", "ironmule.tune", "ironmule.runtime", "ironmule.model_identity",
     "ironmule.fast", "ironmule.hw", "ironmule.bench",
     "ironmule.q3f_child_guard",
+    # Reached from Engine.admit_k3840 when the opt-in kernel knob is set. Reviewed:
+    # it imports only mlx, mlx_lm and ironmule.hw, and contains no process, session
+    # or exec operation from OPERATION_SET.
+    "ironmule.qmv_k3840",
+    # Imported by ironmule.qmv_k3840 at module level. Reviewed: hashlib, json, typing
+    # and mlx only, no operation from OPERATION_SET. Listed even though the walker
+    # checks function-level imports, so the list stays a true statement of what the
+    # child can reach.
+    "ironmule.kernel_registry",
 })
 REVIEWED_STDLIB_MODULES = frozenset({
     "argparse", "ast", "collections", "dataclasses", "hashlib", "importlib",

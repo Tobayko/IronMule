@@ -31,6 +31,7 @@ class Knobs:
     speculate_ngram: int = 3       # longest prompt n-gram used to propose a draft
     capacity_slack: int = 0        # 0 -> capacity is auto sized to the workload
     wired_fraction: float = 0.0    # 0 -> leave the MLX wired limit alone
+    k3840_matvec: bool = False     # opt-in K=3840 decode kernel; admitted at load only
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -312,11 +313,25 @@ class Engine:
         self._previous_wired_limit: Any = _NO_WIRED_LIMIT
         self._wired_token: object | None = None
         self._closed = False
+        # The K=3840 kernel needs the model identity, which load_engine attaches after
+        # construction. It stays pending until admitted, so a directly built Engine runs
+        # the library path rather than an unchecked candidate.
+        self.k3840_admission: dict[str, Any] | None = None
+        self._k3840_pending = bool(knobs.k3840_matvec)
         if knobs.fuse_projections:
             fast.fuse_projections(model)
         if knobs.wired_fraction > 0:
-            from .hw import static_facts
-            applied = int(static_facts()["memory_bytes"] * knobs.wired_fraction)
+            # Read natively, not through `static_facts()`: that shells out, and the Q3f
+            # guard blocks a subprocess in a confirmation child (`B60`, `B62`). The meaning
+            # of the knob is unchanged — a fraction of installed physical memory.
+            from .hw import installed_memory_bytes
+            memory_bytes = installed_memory_bytes()
+            if not memory_bytes:
+                raise RuntimeError(
+                    "wired_fraction is set but the installed memory size is unavailable; "
+                    "refusing to apply a wired limit derived from an unknown total"
+                )
+            applied = int(memory_bytes * knobs.wired_fraction)
             with _WIRED_LIMIT_LOCK:
                 previous = mx.set_wired_limit(applied)
                 token = object()
@@ -338,6 +353,23 @@ class Engine:
                     raise
                 self._previous_wired_limit = previous
                 self._wired_token = token
+
+    def admit_k3840(self, identity: Any) -> dict[str, Any] | None:
+        """Admit the opt-in K=3840 decode kernel, once, before any token is produced.
+
+        Returns the admission record, or None when the knob is off. A refusal raises,
+        because a caller that asked for the candidate must not silently get something
+        else; the caller decides whether to fall back.
+        """
+
+        if not self._k3840_pending:
+            return None
+        from . import qmv_k3840  # noqa: PLC0415 - only imported when opted in
+
+        record = qmv_k3840.enable(self.model, identity)
+        self._k3840_pending = False
+        self.k3840_admission = record
+        return record
 
     def close(self) -> None:
         """Restore process-global state changed by this engine, at most once.

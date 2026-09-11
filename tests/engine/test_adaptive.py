@@ -18,6 +18,7 @@ from ironmule.adaptive import (
     AdaptiveOutcome,
     AdaptiveValidationError,
     EligibilityStatus,
+    KNOB_NAMES,
     KnobAction,
     Method,
     ReplayDataset,
@@ -99,7 +100,9 @@ def test_adaptive_module_has_only_stdlib_and_evidence_imports():
 
 def test_action_is_closed_defaulted_immutable_and_canonical():
     action = KnobAction()
-    assert len(action.to_dict()) == 12  # schema + ten knobs + derived ID
+    # Closed, and counted from the schema so a knob added to `Knobs` has to be
+    # mirrored here rather than quietly widening the space past a magic number.
+    assert set(action.to_dict()) == {"schema", "action_id", *KNOB_NAMES}
     assert action.key == KnobAction.from_dict(action.to_dict()).key
     assert action.action_id == KnobAction.from_dict(action.to_dict()).action_id
     with pytest.raises(FrozenInstanceError):
