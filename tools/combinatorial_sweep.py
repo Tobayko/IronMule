@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = PROJECT_ROOT
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "tools"))
 sys.path.insert(0, str(IRONMULE))

@@ -1,18 +1,10 @@
 """The single place test path setup happens.
 
-Two facts collide here. The repository has no ``tests/__init__.py``, so ``tests``
-is a namespace package whose ``__path__`` is rebuilt from ``sys.path`` on every
-import. The IronMule engine lives in a git worktree
-(``.worktrees/friday-optimizer-ironmule``) that has its **own** ``tests/`` tree.
-When a test module did ``sys.path.insert(0, <worktree>)`` at import time, the
-worktree's ``tests/test_benchmark.py`` shadowed the real one and
-``from tests.test_benchmark import FakeBackend`` failed during collection,
-aborting the whole suite under ``-n auto``.
-
-Fix: the repo root goes first (``tests`` resolves to ``<repo>/tests``); the
-IronMule worktree is only *appended*, so ``from ironmule.runtime import ...``
-resolves while the worktree's stray ``tests/`` sorts last in ``__path__`` and
-never wins.
+The repository has no ``tests/__init__.py``, so ``tests`` is a namespace package
+whose ``__path__`` is rebuilt from ``sys.path`` on every import. The repo root
+therefore goes first and stays first, so ``tests`` always resolves to
+``<repo>/tests`` and ``from ironmule.runtime import ...`` resolves to the engine
+that ships with this checkout. There is no second engine tree to shadow it.
 
 Since the two trees were merged there is a *third* ``test_benchmark.py``. The
 engine package's own now lives in ``tests/engine/`` together with the rest of its
@@ -27,31 +19,27 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = ROOT / ".worktrees" / "friday-optimizer-ironmule"
 
 if sys.path[:1] != [str(ROOT)]:
     if str(ROOT) in sys.path:
         sys.path.remove(str(ROOT))
     sys.path.insert(0, str(ROOT))
 
-if IRONMULE.is_dir() and str(IRONMULE) not in sys.path:
-    sys.path.append(str(IRONMULE))
-
 
 # -- collection away from the target device -----------------------------------
 #
 # The research suite is bound to *this* machine by design, not by accident. Its
 # evidence lives in gitignored SQLite databases under `.friday-data/`, its models
-# in a validated local cache, its engine in a pinned worktree under
-# `.worktrees/`, and several of its tests spawn `<repo>/.venv/bin/python` to
-# drive a measurement script end to end. AGENTS.md is explicit that a test
-# asserting MLX, Metal or model behaviour must have run on the target device --
+# in a validated local cache, and several of its tests spawn
+# `<repo>/.venv/bin/python` to drive a measurement script end to end. AGENTS.md
+# is explicit that a test asserting MLX, Metal or model behaviour must have run
+# on the target device --
 # so a CI runner is not a place where that suite can say anything true.
 #
 # The first attempt enumerated what was missing, one precondition at a time, and
-# each fix uncovered the next dependency: MLX, then the worktree, then `.venv`,
-# then the evidence databases, then the model cache. The list was the wrong
-# shape. One question replaces it: **is this the target device?** If it is not,
+# each fix uncovered the next dependency: MLX, then `.venv`, then the evidence
+# databases, then the model cache. The list was the wrong shape. One question
+# replaces it: **is this the target device?** If it is not,
 # the research tree is not collected at all, and CI checks the engine package --
 # which is exactly what it can check honestly.
 #
@@ -80,7 +68,6 @@ IS_TARGET_DEVICE = (ROOT / ".venv" / "bin" / "python").is_file() and (
 ENGINE_TESTS = Path(__file__).resolve().parent / "engine"
 
 _REQUIRES_MLX = _missing("mlx")
-_REQUIRES_ENGINE = not (IRONMULE / "ironmule" / "runtime.py").is_file()
 
 
 def _needs(path: Path, tokens: tuple[str, ...]) -> bool:
@@ -100,8 +87,6 @@ def collect_ignore_glob_hook(path: Path) -> bool:
         return True  # everything else is the research tree
     # On a target device the research tree can still be missing a piece.
     if _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx")):
-        return True
-    if _REQUIRES_ENGINE and _needs(path, ("friday-optimizer-ironmule",)):
         return True
     return False
 

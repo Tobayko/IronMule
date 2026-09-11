@@ -41,7 +41,7 @@ OUTPUT = Path(__file__).resolve().parent
 PREREGISTRATION = ROOT / "docs" / "H10_AMENDMENT_SPEKULATIONSPFAD.md"
 #: Attempts survive the process, because each retry is a fresh one.
 ATTEMPTS_FILE = OUTPUT / "amendment_4b_96_attempts.json"
-IRONMULE = ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = ROOT
 PATCHED_FILE = IRONMULE / "ironmule" / "runtime.py"
 
 _spec = importlib.util.spec_from_file_location(

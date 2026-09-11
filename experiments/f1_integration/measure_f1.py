@@ -29,12 +29,14 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-IRONMULE = ROOT / ".worktrees" / "friday-optimizer-ironmule"
+#: The engine lives in this repository. Re-running F1 still requires the commit it was
+#: measured at: a different commit is a different engine, and the harness refuses.
+IRONMULE = ROOT
 sys.path.insert(0, str(ROOT / "tools"))
 
 STUDY_ID = "f1-integration-warm-20260902-01"
 MODEL_ID = "mlx-community/gemma-3-4b-it-4bit"
-#: The bound IronMule checkout; the search contract names the same commit.
+#: The commit F1 measured through; the search contract names the same one.
 EXPECTED_IRONMULE_HEAD = "03e884cb28a05d090d20844460fc3afc8e738a91"
 
 OUTPUT_TOKENS = 32
@@ -85,7 +87,7 @@ def _ironmule_head() -> str:
         capture_output=True, text=True, check=False, timeout=10,
     )
     if completed.returncode != 0:
-        raise SystemExit("bound IronMule checkout is unreadable")
+        raise SystemExit("IronMule engine commit is unreadable")
     return completed.stdout.strip()
 
 

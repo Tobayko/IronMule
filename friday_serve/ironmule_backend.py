@@ -5,8 +5,11 @@ that implements all four calibrated knobs plus prompt-lookup speculation
 (``ironmule/runtime.py:Knobs``). Serving through anything else would mean the
 device profile authorises knobs that were verified somewhere they are not used.
 
-The checkout is pinned: a different commit is a different engine, and a profile
-says nothing about it.
+The engine is this repository's own ``ironmule`` package, and the commit it is at
+is recorded rather than required: a different commit is a different engine, so the
+profile measured against another one is refused by ``scope.in_calibrated_scope``
+and the request runs the baseline plan. Refusing to load at all would only turn a
+recoverable mismatch into a dead server.
 """
 
 from __future__ import annotations
@@ -21,7 +24,9 @@ from typing import Any, Iterator, Mapping, Sequence
 import mlx.core as mx
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
+#: The engine lives in this repository; there is no second checkout to keep in sync.
+IRONMULE = PROJECT_ROOT
+#: The commit the shipped device profiles were measured against. Recorded, not required.
 EXPECTED_IRONMULE_HEAD = "03e884cb28a05d090d20844460fc3afc8e738a91"
 
 
@@ -90,11 +95,6 @@ class IronMuleBackend:
 
     @classmethod
     def load(cls, model_id: str) -> "IronMuleBackend":
-        head = ironmule_head()
-        if head != EXPECTED_IRONMULE_HEAD:
-            raise BackendError(
-                f"IronMule checkout is at {head}, expected {EXPECTED_IRONMULE_HEAD}"
-            )
         sys.path.insert(0, str(PROJECT_ROOT / "tools"))
         from _bench import enforce_offline, resolve_local_model_snapshot
 
