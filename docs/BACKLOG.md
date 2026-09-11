@@ -454,20 +454,6 @@ decision about swap safety and needs its own entry with a kill criterion, most u
 with the threshold as a parameter and direct swap monitoring as the criterion rather
 than another constant in the source.
 
-### `R9` — `ironmule.tune` is the function, not the module
-
-**Mechanism.** `__init__.py:35` rebinds the name `tune` from the submodule to the
-function it exports. `import ironmule.tune as m` therefore yields the function; the
-module is reachable only through `importlib.import_module("ironmule.tune")`. It cost
-one debugging round while writing the `gpu_busy` regression test, and it will cost the
-same to anyone writing against the package.
-
-**Test.** One test that performs both accesses and asserts the type of each, so the
-behaviour is pinned for as long as it exists.
-
-**Kill.** Renaming breaks the public API. This closes with a major version bump, or
-with the decision to document the quirk permanently rather than change it.
-
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
@@ -599,6 +585,28 @@ Listed so the next person does not spend a week rediscovering them.
   and kernel fusion is not measured. The tuned gain against `BASELINE` is real, because
   `BASELINE` is what an untuned install actually runs; it is not a gain against a
   well-optimised floor.
+
+- **`R11` measurement is gated on swap, not on a byte count.** The literal
+  `12 * 1024**3` was wrong in both directions: it refused `gemma-3-12b-it-4bit` at a
+  `17.51 GB` block that never swapped, and it passed a run that had to be discarded
+  because swap climbed `2816 MB`. `ironmule/bench.py` now carries `MemoryGate`, which
+  aborts on a *delta* against the run's own swap baseline — an absolute value would
+  refuse every run on a machine already carrying backlog — with a coarse peak backstop
+  derived from `hw.memsize` rather than typed in. Wired into `e14b_arms.py`,
+  `e15_service.py` and `e12_window_falsification.py`; `e16_replication.py` keeps its
+  per-child ceiling, which was always coherent because it forks. The self-check replays
+  both reference runs from `B7`'s recorded numbers, so the gate is tested against what
+  actually happened rather than against what sounds reasonable. A gate that can read
+  neither swap nor installed memory reports itself `inert` instead of silently passing.
+
+- **`R9` `ironmule.tune` resolves to the function, not the module.** `__init__.py:35`
+  re-exports `tune` from `.tune`, rebinding the name in the package namespace, so
+  `import ironmule.tune as m` yields the function and the module is reachable only via
+  `importlib.import_module("ironmule.tune")`. Renaming would break the public API, so
+  this is documented rather than changed — the decision its kill criterion allowed for.
+  Checked across the package: exactly one of fifteen submodules is shadowed this way.
+  `tests/engine/test_ironmule.py` asserts that, so a second one cannot appear unnoticed; the
+  quirk stays a footnote instead of becoming a pattern.
 
 - **B27e mirrored cross-commit control.** Four fresh 4B processes, source-surface
   digest `ec242c…`, all correctness/resource gates green. OLD/D1 block ratios were
