@@ -2,9 +2,25 @@
 
 All notable public changes to IronMule are documented here. Measurements and research conclusions are preserved as recorded in [`research/LEDGER.md`](research/LEDGER.md); this changelog does not reinterpret them.
 
-## [Unreleased]
+## [0.1.0] — 2026-09-11
 
-Review follow-ups completed locally; this section is not a release or a performance claim.
+First tagged release. Everything below shipped in it; nothing was published
+before this tag, so the entries recorded as unreleased are part of it.
+
+- **The repository explains itself in figures that cannot drift.** Every README chart
+  is rendered by `tools/make_figures.py` from a committed evidence artifact, as
+  colourblind-safe SVG with the sample size, machine, model revision and source JSON
+  in its caption. A CI job regenerates them and fails on any byte difference. A
+  comparison section names what IronMule is worse at, with a citation per competitor
+  claim and "not measured" where nothing was measured.
+- **Fifteen research packages moved under `research/`.** The repository root now holds
+  the shipped package, the documents a reader needs first, and nothing else.
+  `friday_evidence` stays at the root because the published wheel imports it; the
+  wheel contains no part of the research tree.
+- **A clone works.** The serving and measurement paths reached the engine through a
+  gitignored git worktree, so a fresh clone failed before it reached a model. The
+  engine is resolved from the checkout, and a CI job installs a clone and runs the
+  README quick start verbatim on 3.11 and 3.12.
 
 - **The README no longer says the project has no HTTP server or streaming.** It has
   both. `ironmule serve` answers `POST /v1/chat/completions` and `GET /v1/models`,
@@ -135,9 +151,7 @@ Review follow-ups completed locally; this section is not a release or a performa
   4B control did not reproduce a D1 slowdown, but was order/temporal-drift sensitive;
   it also makes no neutrality or activation claim.
 
-## [0.1.0] — 2026-08-26
-
-Initial public release, prepared for publication.
+### Initial public surface
 
 - **Runtime:** MLX inference runtime for local LLMs on Apple Silicon with explicit execution plans, prefix KV caching, grouped batch-1 execution, correctness checks, telemetry, and validity fingerprints.
 - **Evidence:** Includes the preregistered experiment ledger, raw result summaries, negative findings, and the narrow validity domain in [`docs/LIMITS.md`](docs/LIMITS.md).

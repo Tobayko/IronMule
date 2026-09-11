@@ -79,6 +79,25 @@ git clone https://github.com/styler-ai/ProjectAtlas.git ProjectAtlas
 
 `ProjectAtlas/` is ignored, so the clone stays out of the repository.
 
+## Commits, branches and attribution
+
+- **Conventional Commits.** `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`,
+  `assets:`. Subject at most 72 characters, imperative. The body explains why, not what
+  changed line by line, and ends with one `Verified: <what you ran>` line.
+- **One logical change per commit.** A commit whose body needs to enumerate five
+  unrelated changes is five commits.
+- **Branch names** are `feat/<topic>`, `fix/<topic>`, `docs/<topic>` or
+  `research/<topic>`. Never name a branch after the tool that produced it.
+- **Attribution.** Where a tool materially authored code, add a single trailer:
+  `Co-Authored-By: Claude <noreply@anthropic.com>`. No model version, no session link,
+  no generated-with footer in the commit body or the pull request description.
+- **No emoji** in commits, pull requests, documentation, code comments or figure
+  captions.
+- **English everywhere.** German is allowed only in `docs/ARBEITSJOURNAL.md`, the
+  private work journal.
+- **No local paths, host names or personal addresses** in a tracked file. Before
+  committing, grep the diff for `/Users/`, `~/` and mail domains.
+
 ## Contributions and licence
 
 By contributing you grant the licensor the rights described in §10.6 of
