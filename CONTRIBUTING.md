@@ -66,6 +66,8 @@ A change that touches the executor, the plans or the cache must keep
 reasons, ragged lengths, early finishers, reversed order, staggered arrival, group
 widths one to four, fallback, and the absence of state aliasing.
 
+Releases follow [`docs/RELEASING.md`](docs/RELEASING.md).
+
 ## Optional local tooling
 
 [ProjectAtlas](https://github.com/styler-ai/ProjectAtlas) is a repository-navigation
