@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 640" width="1280" height="640" role="img" aria-label="IronMule: a measurement-first MLX inference engine for Apple Silicon">
+  <title>IronMule</title>
+  <desc>Wordmark, one-line pitch, and the headline chart motif: an A/A control on 1.0 with two measured gains below it.</desc>
+  <rect width="1280" height="640" fill="#111111"/>
+
+  <!-- mark -->
+  <g transform="translate(96 88)">
+    <rect x="0" y="0" width="88" height="88" rx="8" fill="none" stroke="#2E2E2E" stroke-width="2"/>
+    <g stroke="#0072B2" stroke-width="5" stroke-linecap="butt">
+      <line x1="15" y1="30" x2="15" y2="58"/>
+      <line x1="73" y1="30" x2="73" y2="58"/>
+      <line x1="15" y1="44" x2="73" y2="44"/>
+    </g>
+    <circle cx="35" cy="44" r="9.5" fill="#D55E00" stroke="#111111" stroke-width="3"/>
+  </g>
+
+  <text x="212" y="128" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="64" font-weight="700" letter-spacing="2" fill="#FFFFFF">IRONMULE</text>
+  <text x="214" y="166" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="19" letter-spacing="6.5" fill="#767676">MEASURE &#183; PROVE &#183; RUN</text>
+
+  <text x="96" y="252" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="31" fill="#E8E8E8">A measurement-first MLX inference engine for Apple Silicon.</text>
+  <text x="96" y="296" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="31" fill="#9A9A9A">Every performance claim is backed by a preregistered experiment.</text>
+
+  <!-- the headline chart motif, same geometry and colours as docs/assets/headline-ratios.svg -->
+  <g transform="translate(96 360)">
+    <line x1="0" y1="204" x2="1088" y2="204" stroke="#2E2E2E" stroke-width="2"/>
+    <!-- the 1.0 rule -->
+    <line x1="980" y1="0" x2="980" y2="204" stroke="#5A5A5A" stroke-width="2" stroke-dasharray="7 7"/>
+    <text x="966" y="196" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" fill="#767676">no change</text>
+
+    <!-- A/A control, on 1.0 -->
+    <g stroke="#0072B2" stroke-width="6" stroke-linecap="butt">
+      <line x1="956" y1="20" x2="1004" y2="20"/>
+      <line x1="956" y1="8" x2="956" y2="32"/>
+      <line x1="1004" y1="8" x2="1004" y2="32"/>
+    </g>
+    <circle cx="980" cy="20" r="10" fill="#0072B2" stroke="#111111" stroke-width="3"/>
+    <text x="920" y="26" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" fill="#9A9A9A">A/A control</text>
+
+    <!-- head-skip prefill -->
+    <g stroke="#D55E00" stroke-width="6" stroke-linecap="butt">
+      <line x1="666" y1="86" x2="702" y2="86"/>
+      <line x1="666" y1="74" x2="666" y2="98"/>
+      <line x1="702" y1="74" x2="702" y2="98"/>
+    </g>
+    <circle cx="684" cy="86" r="10" fill="#D55E00" stroke="#111111" stroke-width="3"/>
+    <text x="630" y="92" text-anchor="end" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" fill="#9A9A9A">head-skip prefill</text>
+
+    <!-- prefix cache -->
+    <g stroke="#009E73" stroke-width="6" stroke-linecap="butt">
+      <line x1="228" y1="152" x2="262" y2="152"/>
+      <line x1="228" y1="140" x2="228" y2="164"/>
+      <line x1="262" y1="140" x2="262" y2="164"/>
+    </g>
+    <circle cx="245" cy="152" r="10" fill="#009E73" stroke="#111111" stroke-width="3"/>
+    <text x="300" y="158" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="20" fill="#9A9A9A">prefix cache reuse</text>
+  </g>
+</svg>

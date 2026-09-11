@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 200" width="960" height="200" role="img" aria-label="IronMule">
+  <title>IronMule</title>
+  <desc>Wordmark beside the mark: a point estimate between two interval caps.</desc>
+  <rect width="960" height="200" rx="12" fill="#111111"/>
+  <g transform="translate(56 56)">
+    <rect x="0" y="0" width="88" height="88" rx="8" fill="none" stroke="#2E2E2E" stroke-width="2"/>
+    <g stroke="#0072B2" stroke-width="5" stroke-linecap="butt">
+      <line x1="15" y1="30" x2="15" y2="58"/>
+      <line x1="73" y1="30" x2="73" y2="58"/>
+      <line x1="15" y1="44" x2="73" y2="44"/>
+    </g>
+    <circle cx="35" cy="44" r="9.5" fill="#D55E00" stroke="#111111" stroke-width="3"/>
+  </g>
+  <text x="176" y="102" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="58" font-weight="700" letter-spacing="2" fill="#FFFFFF">IRONMULE</text>
+  <text x="178" y="138" font-family="Helvetica Neue, Helvetica, Arial, sans-serif" font-size="17" letter-spacing="6" fill="#767676">MEASURE &#183; PROVE &#183; RUN</text>
+  <g transform="translate(704 74)">
+    <line x1="0" y1="26" x2="200" y2="26" stroke="#2E2E2E" stroke-width="2"/>
+    <line x1="186" y1="-6" x2="186" y2="34" stroke="#767676" stroke-width="1.5" stroke-dasharray="4 4"/>
+    <g stroke="#009E73" stroke-width="4" stroke-linecap="butt">
+      <line x1="26" y1="6" x2="26" y2="22"/><line x1="48" y1="6" x2="48" y2="22"/><line x1="26" y1="14" x2="48" y2="14"/>
+    </g>
+    <circle cx="37" cy="14" r="6" fill="#009E73" stroke="#111111" stroke-width="2"/>
+    <g stroke="#D55E00" stroke-width="4" stroke-linecap="butt">
+      <line x1="112" y1="6" x2="112" y2="22"/><line x1="134" y1="6" x2="134" y2="22"/><line x1="112" y1="14" x2="134" y2="14"/>
+    </g>
+    <circle cx="123" cy="14" r="6" fill="#D55E00" stroke="#111111" stroke-width="2"/>
+    <g stroke="#0072B2" stroke-width="4" stroke-linecap="butt">
+      <line x1="175" y1="6" x2="175" y2="22"/><line x1="197" y1="6" x2="197" y2="22"/><line x1="175" y1="14" x2="197" y2="14"/>
+    </g>
+    <circle cx="186" cy="14" r="6" fill="#0072B2" stroke="#111111" stroke-width="2"/>
+  </g>
+</svg>
