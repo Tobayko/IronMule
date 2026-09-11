@@ -29,7 +29,7 @@ MAX_STDERR_BYTES = 256 * 1024
 DEFAULT_TIMEOUT = 120.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
-WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine"))
+WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
                                    "baseline_throughput", "core_throughput"))
 CONTEXT_LIMIT = 8192
@@ -58,7 +58,8 @@ class MLXWorkerClient:
                  execution_variant: str = "reference", prefix_cache_max_entries: int = 4,
                  prefix_cache_max_bytes: int = 1024**3,
                  trace_prompt_identity: bool = False,
-                 engine_configuration: str = "current_profile") -> None:
+                 engine_configuration: str = "current_profile",
+                 selection_evidence: list[Any] | tuple[Any, ...] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if startup_timeout is not None and (
@@ -85,7 +86,22 @@ class MLXWorkerClient:
         self.trace_prompt_identity = trace_prompt_identity
         self.prefix_cache_max_entries = prefix_cache_max_entries
         self.prefix_cache_max_bytes = prefix_cache_max_bytes
+        if selection_evidence is None:
+            selection_evidence = []
+        if not isinstance(selection_evidence, (list, tuple)) or len(selection_evidence) > 256:
+            raise ValueError("selection_evidence must be a bounded list of mappings")
+        try:
+            evidence_json = json.dumps(list(selection_evidence), ensure_ascii=False, separators=(",", ":"),
+                                       allow_nan=False)
+            evidence_copy = json.loads(evidence_json)
+        except (TypeError, ValueError, UnicodeError) as exc:
+            raise ValueError("selection_evidence must contain bounded JSON records") from exc
+        if (not isinstance(evidence_copy, list) or any(not isinstance(row, dict) for row in evidence_copy)
+                or len(evidence_json.encode("utf-8")) >= MAX_PROTOCOL_LINE):
+            raise ValueError("selection_evidence must contain bounded JSON records")
+        self.selection_evidence = evidence_copy
         self.last_generation_metadata: dict[str, Any] | None = None
+        self.last_batch_metadata: list[dict[str, Any]] | None = None
         self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
         self._process: subprocess.Popen[bytes] | None = None
         self._ready_payload: dict[str, Any] | None = None
@@ -100,6 +116,42 @@ class MLXWorkerClient:
     @property
     def ready(self) -> bool:
         return self._ready_payload is not None and self._process is not None and self._process.poll() is None and self._usable
+
+    @property
+    def batch_capacity(self) -> int:
+        """Configured request capacity, not proof of a qualified GPU group width."""
+        if (self.execution_variant == "current_engine"
+                and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
+            return 32
+        if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
+                and self._ready_payload.get("automatic_batch_qualified") is True):
+            return 32
+        return 1
+
+    def can_batch_requests(self, requests: Any) -> bool:
+        """Check metadata admission to the opt-in transport without model execution."""
+        if not isinstance(requests, (list, tuple)) or not 2 <= len(requests) <= self.batch_capacity:
+            return False
+        ids: set[str] = set()
+        commands = []
+        try:
+            for request in requests:
+                if not isinstance(request, GenerationRequest) or request.model != self.spec.model_id or request.stream:
+                    return False
+                if (not isinstance(request.request_id, str) or not request.request_id
+                        or len(request.request_id) > 256 or request.request_id in ids):
+                    return False
+                ids.add(request.request_id)
+                payload = request.as_dict()
+                payload.pop("request_id", None)
+                GenerationRequest.from_payload(payload, exact=True)
+                commands.append(request.as_dict())
+            _bounded_json_line({"type": "generate_batch", "batch_id": "batch-" + "b" * 32,
+                                "requests": commands, "variant": self.execution_variant,
+                                "trace_prompt_identity": self.trace_prompt_identity})
+        except (BackendUnavailable, InvalidRequest, TypeError, ValueError):
+            return False
+        return True
 
     def _drain_stderr(self, stream: Any) -> None:
         try:
@@ -179,6 +231,7 @@ class MLXWorkerClient:
         *,
         cancel: threading.Event | None = None,
         on_cancel: Any = None,
+        on_tick: Any = None,
     ) -> dict[str, Any]:
         process = self._process
         if process is None or process.stdout is None:
@@ -195,6 +248,8 @@ class MLXWorkerClient:
                     raise RequestTimeout("backend worker timed out")
                 if cancel is not None and cancel.is_set() and on_cancel is not None:
                     on_cancel()
+                if on_tick is not None:
+                    on_tick()
                 frame = self._frame_from_buffer(self._stdout_buffer)
                 if frame is not None:
                     try:
@@ -233,10 +288,12 @@ class MLXWorkerClient:
                     raise RequestTimeout("backend worker timed out")
                 if cancel is not None and cancel.is_set() and on_cancel is not None:
                     on_cancel()
+                if on_tick is not None:
+                    on_tick()
                 wait = (
                     _CANCEL_POLL_SECONDS
                     if remaining is None
-                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None else remaining)
+                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None or on_tick is not None else remaining)
                 )
                 selector.register(fd, selectors.EVENT_READ)
                 try:
@@ -307,6 +364,9 @@ class MLXWorkerClient:
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
                 if self.execution_variant == "current_engine":
                     arguments += ["--engine-configuration", self.engine_configuration]
+                if self.execution_variant == "automatic":
+                    arguments += ["--selection-evidence", json.dumps(
+                        self.selection_evidence, ensure_ascii=False, separators=(",", ":"), allow_nan=False)]
                 self._process = subprocess.Popen(
                     arguments,
                     stdin=subprocess.PIPE,
@@ -383,6 +443,9 @@ class MLXWorkerClient:
             ):
                 self._mark_unusable()
                 raise BackendUnavailable("backend readiness event is invalid")
+            if self.execution_variant == "automatic" and type(event.get("automatic_batch_qualified")) is not bool:
+                self._mark_unusable()
+                raise BackendUnavailable("backend automatic readiness is invalid")
             try:
                 self._validate_startup_telemetry(event)
             except BackendUnavailable:
@@ -456,6 +519,23 @@ class MLXWorkerClient:
                 or any(type(v) is not int or not 0 <= v <= 2**63 - 1 for v in stats.values())):
             raise BackendUnavailable("backend prefix metadata is invalid")
 
+    @staticmethod
+    def _valid_selection_metadata(value: Any) -> bool:
+        if not isinstance(value, dict) or set(value) != {
+            "candidate_id", "reason", "evidence_audit_id", "explored",
+            "rejected_evidence_records", "actual_backend", "actual_group_width",
+        }:
+            return False
+        return (isinstance(value["candidate_id"], str) and 1 <= len(value["candidate_id"]) <= 64
+                and isinstance(value["reason"], str) and 1 <= len(value["reason"]) <= 128
+                and (value["evidence_audit_id"] is None or isinstance(value["evidence_audit_id"], str)
+                     and 1 <= len(value["evidence_audit_id"]) <= 256)
+                and type(value["explored"]) is bool
+                and type(value["rejected_evidence_records"]) is int
+                and 0 <= value["rejected_evidence_records"] <= 256
+                and isinstance(value["actual_backend"], str) and 1 <= len(value["actual_backend"]) <= 64
+                and type(value["actual_group_width"]) is int and 1 <= value["actual_group_width"] <= 32)
+
     def clear_prefix_cache(self) -> dict[str, Any]:
         """Reset an already-loaded opt-in session without loading a model."""
         with self._lock:
@@ -478,6 +558,148 @@ class MLXWorkerClient:
                 self._mark_unusable()
                 raise
 
+    def complete_batch(
+        self,
+        requests: list[GenerationRequest] | tuple[GenerationRequest, ...],
+        *,
+        cancels: list[threading.Event | None] | tuple[threading.Event | None, ...] | None = None,
+        timeout: float | None = None,
+    ) -> list[dict[str, Any]]:
+        """Complete one real grouped engine session and return buffered events."""
+        if not self.can_batch_requests(requests):
+            raise InvalidRequest("requests are not eligible for grouped execution")
+        request_list = list(requests)
+        if cancels is None:
+            cancel_list: list[threading.Event | None] = [None] * len(request_list)
+        elif (not isinstance(cancels, (list, tuple)) or len(cancels) != len(request_list)
+              or any(value is not None and not isinstance(value, threading.Event) for value in cancels)):
+            raise TypeError("cancels must match requests and contain threading.Event or None")
+        else:
+            cancel_list = list(cancels)
+        if timeout is not None and (isinstance(timeout, bool) or not isinstance(timeout, (int, float))
+                                    or not math.isfinite(timeout) or timeout <= 0):
+            raise ValueError("timeout must be None or finite and positive")
+        batch_id = "batch-" + uuid.uuid4().hex
+        command = {"type": "generate_batch", "batch_id": batch_id,
+                   "requests": [request.as_dict() for request in request_list],
+                   "variant": self.execution_variant, "trace_prompt_identity": self.trace_prompt_identity}
+        try:
+            _bounded_json_line(command)
+        except BackendUnavailable as exc:
+            raise InvalidRequest("batch exceeds the backend protocol boundary") from exc
+
+        with self._lock:
+            if self._stream_active:
+                raise BackendUnavailable("backend worker supports one active operation")
+            self._stream_active = True
+            self.last_generation_metadata = None
+            self.last_batch_metadata = None
+            deadline = None if timeout is None else time.monotonic() + float(timeout)
+            request_by_id = {request.request_id: request for request in request_list}
+            events_by_id: dict[str, list[dict[str, Any]]] = {request.request_id: [] for request in request_list}
+            token_counts = {request.request_id: 0 for request in request_list}
+            prompt_counts: dict[str, int | None] = {request.request_id: None for request in request_list}
+            terminals: dict[str, dict[str, Any]] = {}
+            cancel_sent: set[str] = set()
+            dispatched = False
+
+            def poll_cancels() -> None:
+                for request, cancel in zip(request_list, cancel_list):
+                    if cancel is not None and cancel.is_set() and request.request_id not in cancel_sent:
+                        self._send({"type": "cancel", "request_id": request.request_id}, deadline)
+                        cancel_sent.add(request.request_id)
+
+            # The operation flag is protected by the lock, but inference is
+            # not: close() must remain able to acquire the lock and terminate
+            # this owned child while the worker is computing.
+            self._lock.release()
+            try:
+                if not self.ready:
+                    self.start()
+                self._send(command, deadline)
+                dispatched = True
+                poll_cancels()
+                while True:
+                    try:
+                        event = self._read_event(deadline, on_tick=poll_cancels)
+                    except RequestTimeout:
+                        self._mark_unusable()
+                        raise RequestTimeout("batch generation timed out")
+                    except BackendUnavailable:
+                        self._mark_unusable()
+                        raise
+                    poll_cancels()
+                    kind = event.get("type")
+                    if kind == "batch_done":
+                        ids = event.get("request_ids")
+                        if (event.get("batch_id") != batch_id or ids != [r.request_id for r in request_list]
+                                or set(terminals) != set(request_by_id) or self._stdout_buffer):
+                            raise BackendUnavailable("backend batch completion is invalid")
+                        rows = [{"request_id": request.request_id,
+                                 "events": events_by_id[request.request_id],
+                                 "metadata": terminals[request.request_id]}
+                                for request in request_list]
+                        self.last_batch_metadata = [dict(row["metadata"]) for row in rows]
+                        return rows
+                    request_id = event.get("request_id")
+                    if event.get("batch_id") != batch_id or request_id not in request_by_id or request_id in terminals:
+                        raise BackendUnavailable("backend batch response identity is invalid")
+                    request = request_by_id[request_id]
+                    if kind == "token":
+                        text, token_id = event.get("text"), event.get("token_id")
+                        prompt, completion = event.get("prompt_tokens"), event.get("completion_tokens")
+                        if (not isinstance(text, str) or type(token_id) is not int or token_id < 0
+                                or type(prompt) is not int or prompt < 0 or type(completion) is not int
+                                or completion != token_counts[request_id] + 1 or completion > request.max_tokens
+                                or (prompt_counts[request_id] is not None and prompt != prompt_counts[request_id])):
+                            raise BackendUnavailable("backend batch token event is invalid")
+                        prompt_counts[request_id] = prompt
+                        token_counts[request_id] += 1
+                        events_by_id[request_id].append(event)
+                    elif kind == "done":
+                        finish, prompt, completion = (event.get("finish_reason"), event.get("prompt_tokens"),
+                                                       event.get("completion_tokens"))
+                        engine = event.get("engine")
+                        digest = event.get("prompt_ids_sha256")
+                        if (finish not in {"stop", "length", "cancelled"} or type(prompt) is not int or prompt < 0
+                                or type(completion) is not int or not token_counts[request_id] <= completion <= request.max_tokens
+                                or (finish != "cancelled" and completion > token_counts[request_id] + 1)
+                                or (prompt_counts[request_id] is not None and prompt != prompt_counts[request_id])
+                                or event.get("variant") != self.execution_variant or not isinstance(engine, dict)
+                                or (finish == "cancelled" and request_id not in cancel_sent)):
+                            raise BackendUnavailable("backend batch completion event is invalid")
+                        if self.trace_prompt_identity and (not isinstance(digest, str) or len(digest) != 64
+                                or any(char not in "0123456789abcdef" for char in digest)):
+                            raise BackendUnavailable("backend batch prompt identity is invalid")
+                        events_by_id[request_id].append(event)
+                        selection = event.get("selection")
+                        if self.execution_variant == "automatic" and not self._valid_selection_metadata(selection):
+                            raise BackendUnavailable("backend automatic selection metadata is invalid")
+                        terminals[request_id] = {"variant": self.execution_variant, "finish_reason": finish,
+                                                 "prompt_ids_sha256": digest, "engine": engine,
+                                                 "selection": selection,
+                                                 "delivery": "buffered_completion"}
+                    elif kind == "error":
+                        raise BackendUnavailable("grouped engine generation failed")
+                    else:
+                        raise BackendUnavailable("backend emitted an unknown batch event")
+            except BaseException:
+                self.last_generation_metadata = {
+                    "batch_id": batch_id,
+                    "partial": [{"request_id": request.request_id,
+                                 "events": list(events_by_id[request.request_id]),
+                                 "metadata": terminals.get(request.request_id)}
+                                for request in request_list]
+                }
+                self.last_batch_metadata = [dict(terminals[request.request_id])
+                                            for request in request_list if request.request_id in terminals]
+                if dispatched:
+                    self._mark_unusable()
+                raise
+            finally:
+                self._lock.acquire()
+                self._stream_active = False
+
     def stream(
         self,
         request: GenerationRequest,
@@ -495,6 +717,7 @@ class MLXWorkerClient:
         if not isinstance(variant, str) or variant not in WORKER_VARIANTS:
             raise InvalidRequest("unknown backend generation variant")
         allowed = ({"current_engine"} if self.execution_variant == "current_engine" else
+                   {"automatic"} if self.execution_variant == "automatic" else
                    {"reference", "prefix_reuse"} if self.execution_variant == "prefix_reuse" else
                    {"reference", "bounded_prefetch"})
         if variant not in allowed:
@@ -623,11 +846,16 @@ class MLXWorkerClient:
                                 or len(prompt_digest) != 64 or any(c not in "0123456789abcdef" for c in prompt_digest)):
                             self._mark_unusable()
                             raise BackendUnavailable("backend prompt identity is invalid")
+                        selection = event.get("selection")
+                        if variant == "automatic" and not self._valid_selection_metadata(selection):
+                            self._mark_unusable()
+                            raise BackendUnavailable("backend automatic selection metadata is invalid")
                         self.last_generation_metadata = {
                             "variant": variant, "finish_reason": finish,
                             "prompt_ids_sha256": prompt_digest,
                             "prefix_cache": event.get("prefix_cache"),
                             "engine": event.get("engine"),
+                            "selection": selection,
                         }
                         completed = True
                         yield event

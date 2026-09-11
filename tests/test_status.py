@@ -37,6 +37,7 @@ from friday_runtime_core.status import decisions_section, signal_section  # noqa
 from friday_runtime_core.status_sources import (  # noqa: E402
     KNOWN_KNOBS,
     h0_board,
+    BACKLOG,
     open_backlog_entries,
     optimizer_decisions,
 )
@@ -187,8 +188,20 @@ class ContentTest(unittest.TestCase):
     def test_the_backlog_supplies_the_open_section(self) -> None:
         entries = open_backlog_entries()
         self.assertTrue(entries)
-        self.assertTrue(any(entry.startswith("D1") for entry in entries))
+        # Every shown entry is a real heading of BACKLOG.md. The identifiers are not
+        # pinned: which entry stands in the first eight is a question of what is open
+        # right now, and the file reorders as work is finished.
+        headings = [line[3:] for line in BACKLOG.read_text().splitlines()
+                    if line.startswith("## ")]
+        for entry in entries:
+            identifier, _, title = entry.partition("  ")
+            self.assertTrue(
+                any(head.startswith(f"{identifier} — ") for head in headings), entry
+            )
+            self.assertTrue(title)
         self.assertFalse(any("(neu 2026" in entry for entry in entries))
+        self.assertTrue(any(entry.startswith("D1")
+                            for entry in open_backlog_entries(limit=len(headings))))
 
     def test_closed_entries_do_not_appear_as_open(self) -> None:
         for entry in open_backlog_entries(limit=40):
