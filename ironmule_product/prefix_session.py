@@ -18,6 +18,7 @@ from .prefix_reuse import (
     PrefixReuseStats,
     PrefixReuseTrace,
     PrivatePrefixCache,
+    _prompt_key,
 )
 
 
@@ -175,6 +176,17 @@ class WorkerPrefixSession:
                 self._adapter = None
                 self._proxy = None
             raise
+
+    def reuse_available(self, prompt_ids: Sequence[int]) -> bool:
+        """Peek at identical-prompt availability without observing a cache hit.
+
+        This metadata-only query neither clones cache state nor changes LRU order
+        or counters.  It uses the cache's actual ownership lock so clear/close
+        cannot race a positive answer.
+        """
+        key = _prompt_key(prompt_ids)
+        with self._cache._lock:
+            return not self._cache._closed and key in self._cache._entries
 
     def finalize(self, accepted: bool) -> WorkerPrefixSessionMetadata:
         """Linearize the worker decision; caller holds its cancellation lock."""

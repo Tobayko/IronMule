@@ -67,6 +67,7 @@ _HISTORICAL_CONFIGURATIONS = {
     },
 }
 _CONFIGURATIONS = frozenset(("current_profile", *_HISTORICAL_CONFIGURATIONS))
+MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
 
 
 def _validate_spec(spec: Any) -> tuple[str, str, Path]:
@@ -97,7 +98,7 @@ def _validate_request(prompt_ids: Sequence[int], max_tokens: int) -> list[int]:
 
 
 def _validate_configuration(configuration: str) -> BridgeConfiguration:
-    if configuration not in _CONFIGURATIONS:
+    if not isinstance(configuration, str) or configuration not in _CONFIGURATIONS:
         choices = ", ".join(sorted(_CONFIGURATIONS))
         raise ValueError(f"unknown bridge configuration {configuration!r}; expected one of {choices}")
     return configuration  # type: ignore[return-value]
@@ -236,21 +237,18 @@ class CurrentEngineBridge:
         if self._closed:
             raise RuntimeError("CurrentEngineBridge is closed")
         ids = _validate_request(prompt_ids, max_tokens)
-        from ironmule.plans import StrictOneShotPlan
-        from ironmule.service import Request
-
         return self.generate_many([ids], max_tokens)[0]
 
     def generate_many(self, prompt_ids: Sequence[Sequence[int]],
                       max_tokens: int | Sequence[int]) -> list[EngineBridgeResult]:
-        """Serve at most four independent strict one-shot requests in input order."""
+        """Serve admitted strict requests; mode bounds the realised execution width."""
         if self._closed:
             raise RuntimeError("CurrentEngineBridge is closed")
         requests_ids = list(prompt_ids)
         if not requests_ids:
             return []
-        if len(requests_ids) > 4:
-            raise ValueError("generate_many accepts at most four requests")
+        if len(requests_ids) > MAX_GROUP_REQUESTS:
+            raise ValueError("generate_many accepts at most 32 requests")
         if type(max_tokens) is int:
             limits = [max_tokens] * len(requests_ids)
         else:
@@ -271,6 +269,9 @@ class CurrentEngineBridge:
         fallback_count = getattr(telemetry, "fallbacks", None)
         if type(fallback_count) is not int or fallback_count < 0:
             raise RuntimeError("IronMule returned invalid fallback telemetry")
+        widths = list(telemetry.realised_widths)
+        if any(type(width) is not int or not 1 <= width <= 4 for width in widths):
+            raise RuntimeError("IronMule returned invalid realised-width telemetry")
         results = []
         for raw, limit in zip(raw_results, limits):
             metadata = self.metadata()
@@ -283,6 +284,9 @@ class CurrentEngineBridge:
                 # Compatibility aliases for the original single-request consumer.
                 "fallback_count": fallback_count,
                 "fallback_used": fall_back,
+                "admitted_requests": len(validated),
+                "max_realised_width": max(widths) if widths else 0,
+                "grouped_rounds": len(widths),
             })
             results.append(_result_from_raw(raw, limit, metadata))
         return results

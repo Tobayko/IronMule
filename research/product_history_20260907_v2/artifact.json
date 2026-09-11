@@ -1,0 +1,663 @@
+{
+  "surface": "dashboard",
+  "manifest": {
+    "version": 1,
+    "title": "IronMule · Kalibrierungs- und Ladeverlauf",
+    "generatedAt": "2026-09-07T12:24:43.743144+00:00",
+    "snapshotDate": "2026-09-07T12:24:43.743144+00:00",
+    "sources": [
+      {
+        "id": "history",
+        "label": "Verifizierte lokale Optimierungs- und Ladehistorie",
+        "path": "optimization-events.json",
+        "query": {
+          "engine": "sqlite",
+          "language": "sql",
+          "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+          "executed_at": "2026-09-07T12:24:43.743144+00:00",
+          "description": "Zwei vollständige, separat kettengeprüfte Primärjournale; terminale Status und Modellanfragen werden aus den Ereignissen abgeleitet.",
+          "tables_used": [
+            "event_journal"
+          ],
+          "filters": [
+            "complete optimization and optional load sources, maximum 2000 events each"
+          ],
+          "transform_file": "tools/product_history_snapshot.py",
+          "metric_definitions": {
+            "attempts": "Anzahl eindeutiger run_started/run_finished-Aufträge.",
+            "completed_requests": "Anzahl eindeutiger finaler passed sample_index-Validierungen; Load-only ist nicht anwendbar.",
+            "failed_or_blocked_attempts": "Aufträge mit abgeleitetem failed, deferred oder interrupted Status."
+          },
+          "journal_provenance": [
+            "optimization",
+            "load"
+          ]
+        }
+      },
+      {
+        "id": "optimization",
+        "label": "Verifizierte lokale Ereignishistorie",
+        "path": "optimization.sqlite3",
+        "query": {
+          "engine": "sqlite",
+          "language": "sql",
+          "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+          "executed_at": "2026-09-07T12:24:43.743144+00:00",
+          "description": "Vollständiger Export nach SQLite-Schema- und SHA-256-Kettenprüfung.",
+          "tables_used": [
+            "event_journal"
+          ],
+          "filters": [
+            "complete source, maximum 2000 events"
+          ],
+          "chain_sha256": "30cb8563636470675b6bacf1474079cf54f6b703a4298032c43e410549527101",
+          "transform_file": "tools/product_history_snapshot.py"
+        }
+      },
+      {
+        "id": "load",
+        "label": "Verifizierte lokale Ereignishistorie",
+        "path": "load-screen.sqlite3",
+        "query": {
+          "engine": "sqlite",
+          "language": "sql",
+          "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+          "executed_at": "2026-09-07T12:24:43.743144+00:00",
+          "description": "Vollständiger Export nach SQLite-Schema- und SHA-256-Kettenprüfung.",
+          "tables_used": [
+            "event_journal"
+          ],
+          "filters": [
+            "complete source, maximum 2000 events"
+          ],
+          "chain_sha256": "4d2ead1049dfcf3caefefa6d83a195341a13920be375d85bc151b9c1d6d4e7cb",
+          "transform_file": "tools/product_history_snapshot.py"
+        }
+      }
+    ],
+    "cards": [
+      {
+        "id": "card_attempts",
+        "title": "Versuche",
+        "dataset": "totals",
+        "sourceId": "history",
+        "metrics": [
+          {
+            "label": "Versuche",
+            "field": "attempts",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "card_requests",
+        "title": "Abgeschlossene Modellanfragen",
+        "dataset": "totals",
+        "sourceId": "history",
+        "metrics": [
+          {
+            "label": "Anfragen",
+            "field": "completed_requests",
+            "format": "number"
+          }
+        ]
+      },
+      {
+        "id": "card_failed",
+        "title": "Fehlgeschlagen / zurückgestellt",
+        "dataset": "totals",
+        "sourceId": "history",
+        "metrics": [
+          {
+            "label": "Aufträge",
+            "field": "failed_or_blocked_attempts",
+            "format": "number"
+          }
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "summary",
+        "type": "metric-strip",
+        "cardIds": [
+          "card_attempts",
+          "card_requests",
+          "card_failed"
+        ],
+        "sourceId": "history"
+      },
+      {
+        "id": "title",
+        "type": "markdown",
+        "sourceId": "history",
+        "body": "# IronMule · Kalibrierungs- und Ladeverlauf\nLokaler, verifizierter Snapshot ohne Nutzerinhalte oder Modellantworten."
+      },
+      {
+        "id": "load",
+        "type": "chart",
+        "chartId": "load_history",
+        "sourceId": "history"
+      },
+      {
+        "id": "runs",
+        "type": "table",
+        "tableId": "run_history",
+        "sourceId": "history"
+      },
+      {
+        "id": "scope",
+        "type": "markdown",
+        "sourceId": "history",
+        "body": "Nur verifizierte lokale PROD3-/PROD4-Aufträge aus den angegebenen Primärjournalen. Readiness-only und Load-only sind keine Generierungs- oder Performancequalifikation. Legacy-Korrektur: ein roher Load-Status passed mit Worker-Returncode ungleich 0 wird hier als failed dargestellt; Rohstatus und Exitfelder bleiben erhalten."
+      }
+    ],
+    "charts": [
+      {
+        "id": "load_history",
+        "title": "12B Lade-Swapdelta (MiB) vs. 256 MiB Grenze",
+        "type": "line",
+        "dataset": "load_observations",
+        "sourceId": "history",
+        "encodings": {
+          "x": {
+            "field": "relative_elapsed_sec",
+            "type": "quantitative"
+          },
+          "y": {
+            "fields": [
+              "swap_delta_mib",
+              "swap_limit_mib"
+            ],
+            "type": "quantitative"
+          },
+          "color": {
+            "field": "trial",
+            "type": "nominal",
+            "legend": {
+              "title": "Versuch"
+            }
+          }
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "run_history",
+        "title": "Aufträge",
+        "dataset": "runs",
+        "sourceId": "history",
+        "columns": [
+          {
+            "field": "start_utc",
+            "label": "Versuch",
+            "type": "string"
+          },
+          {
+            "field": "model_label",
+            "label": "Modell",
+            "type": "string"
+          },
+          {
+            "field": "kind",
+            "label": "Art",
+            "type": "string"
+          },
+          {
+            "field": "status",
+            "label": "Status",
+            "type": "string"
+          },
+          {
+            "field": "completed_requests",
+            "label": "Anfragen",
+            "type": "number"
+          }
+        ],
+        "defaultSort": {
+          "field": "start_utc",
+          "direction": "desc"
+        }
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "status": "ready",
+    "generatedAt": "2026-09-07T12:24:43.743144+00:00",
+    "snapshotDate": "2026-09-07T12:24:43.743144+00:00",
+    "datasets": {
+      "totals": [
+        {
+          "attempts": 8,
+          "completed_requests": 140,
+          "failed_or_blocked_attempts": 5
+        }
+      ],
+      "runs": [
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "started_unix_ns": 1788781328536573000,
+          "start_utc": "2026-09-07T11:42:08.536573+00:00",
+          "model_id": "mlx-community/gemma-3-12b-it-4bit",
+          "model_label": "12B",
+          "kind": "load",
+          "raw_status": "failed",
+          "derived_status": "failed",
+          "status": "failed",
+          "raw_error_code": "swap_delta_exceeded",
+          "raw_exit_class": "forced_abort",
+          "raw_returncode": -15,
+          "terminal_completed_calls": null,
+          "completed_requests": 0,
+          "request_reconciliation": "not_applicable",
+          "detail": "swap_delta_exceeded",
+          "readiness_only": true,
+          "load_gate": null
+        },
+        {
+          "run_id": "789e41377bcd4e4e8b2f8ca73b49a669",
+          "trial": "789e4137",
+          "started_unix_ns": 1788781180209933000,
+          "start_utc": "2026-09-07T11:39:40.209933+00:00",
+          "model_id": "mlx-community/gemma-3-4b-it-4bit",
+          "model_label": "4B",
+          "kind": "load",
+          "raw_status": "passed",
+          "derived_status": "passed",
+          "status": "passed",
+          "raw_error_code": null,
+          "raw_exit_class": "clean",
+          "raw_returncode": 0,
+          "terminal_completed_calls": null,
+          "completed_requests": 0,
+          "request_reconciliation": "not_applicable",
+          "detail": "readiness_only",
+          "readiness_only": true,
+          "load_gate": null
+        },
+        {
+          "run_id": "167dc2c155794c449040c25a96ead368",
+          "trial": "167dc2c1",
+          "started_unix_ns": 1788780997172764000,
+          "start_utc": "2026-09-07T11:36:37.172764+00:00",
+          "model_id": "mlx-community/gemma-3-1b-it-4bit",
+          "model_label": "1B",
+          "kind": "load",
+          "raw_status": "passed",
+          "derived_status": "passed",
+          "status": "passed",
+          "raw_error_code": null,
+          "raw_exit_class": "clean",
+          "raw_returncode": 0,
+          "terminal_completed_calls": null,
+          "completed_requests": 0,
+          "request_reconciliation": "not_applicable",
+          "detail": "readiness_only",
+          "readiness_only": true,
+          "load_gate": null
+        },
+        {
+          "run_id": "b19ed2ff79fe4d9c98731f7dcb219868",
+          "trial": "b19ed2ff",
+          "started_unix_ns": 1788780457759954000,
+          "start_utc": "2026-09-07T11:27:37.759954+00:00",
+          "model_id": "mlx-community/gemma-3-1b-it-4bit",
+          "model_label": "1B",
+          "kind": "load",
+          "raw_status": "passed",
+          "derived_status": "failed",
+          "status": "failed",
+          "raw_error_code": null,
+          "raw_exit_class": null,
+          "raw_returncode": -6,
+          "terminal_completed_calls": null,
+          "completed_requests": 0,
+          "request_reconciliation": "not_applicable",
+          "detail": "raw passed corrected: worker returncode was not 0",
+          "readiness_only": true,
+          "load_gate": null
+        },
+        {
+          "run_id": "53b470b27d6a4ac281e15454e699421e",
+          "trial": "53b470b2",
+          "started_unix_ns": 1788776876440099000,
+          "start_utc": "2026-09-07T10:27:56.440099+00:00",
+          "model_id": "mlx-community/gemma-3-12b-it-4bit",
+          "model_label": "12B",
+          "kind": "calibration",
+          "raw_status": "failed",
+          "derived_status": "failed",
+          "status": "failed",
+          "raw_error_code": "swap_growth",
+          "raw_exit_class": null,
+          "raw_returncode": null,
+          "terminal_completed_calls": 0,
+          "completed_requests": 0,
+          "request_reconciliation": "match",
+          "detail": "swap_growth",
+          "readiness_only": false,
+          "load_gate": 0.8
+        },
+        {
+          "run_id": "41c03fc4b8924b3b8905c7a64b8baf49",
+          "trial": "41c03fc4",
+          "started_unix_ns": 1788775947942034000,
+          "start_utc": "2026-09-07T10:12:27.942034+00:00",
+          "model_id": "mlx-community/gemma-3-4b-it-4bit",
+          "model_label": "4B",
+          "kind": "calibration",
+          "raw_status": "finished",
+          "derived_status": "finished",
+          "status": "finished",
+          "raw_error_code": null,
+          "raw_exit_class": null,
+          "raw_returncode": null,
+          "terminal_completed_calls": 90,
+          "completed_requests": 90,
+          "request_reconciliation": "match",
+          "detail": "completed",
+          "readiness_only": false,
+          "load_gate": 0.8
+        },
+        {
+          "run_id": "6f4209a4f4ac460eb13af163d4390e77",
+          "trial": "6f4209a4",
+          "started_unix_ns": 1788775161397787000,
+          "start_utc": "2026-09-07T09:59:21.397787+00:00",
+          "model_id": "mlx-community/gemma-3-1b-it-4bit",
+          "model_label": "1B",
+          "kind": "calibration",
+          "raw_status": "failed",
+          "derived_status": "failed",
+          "status": "failed",
+          "raw_error_code": "measurement_readiness_lost",
+          "raw_exit_class": null,
+          "raw_returncode": null,
+          "terminal_completed_calls": 50,
+          "completed_requests": 50,
+          "request_reconciliation": "match",
+          "detail": "measurement_readiness_lost",
+          "readiness_only": false,
+          "load_gate": 0.8
+        },
+        {
+          "run_id": "a367868f9d0c478b9af7d05b3e23541c",
+          "trial": "a367868f",
+          "started_unix_ns": 1788774311990045000,
+          "start_utc": "2026-09-07T09:45:11.990045+00:00",
+          "model_id": "mlx-community/gemma-3-1b-it-4bit",
+          "model_label": "1B",
+          "kind": "calibration",
+          "raw_status": "failed",
+          "derived_status": "failed",
+          "status": "failed",
+          "raw_error_code": "calibration_failed",
+          "raw_exit_class": null,
+          "raw_returncode": null,
+          "terminal_completed_calls": 0,
+          "completed_requests": 0,
+          "request_reconciliation": "match",
+          "detail": "calibration_failed",
+          "readiness_only": false,
+          "load_gate": 0.8
+        }
+      ],
+      "load_observations": [
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:33.747323+00:00",
+          "relative_elapsed_sec": 25.21075,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.007664,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:34.024268+00:00",
+          "relative_elapsed_sec": 25.487695,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.009014,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:34.302777+00:00",
+          "relative_elapsed_sec": 25.766204,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.00751,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:34.578625+00:00",
+          "relative_elapsed_sec": 26.042052,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.007,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:34.854238+00:00",
+          "relative_elapsed_sec": 26.317665,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.006399,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:35.129942+00:00",
+          "relative_elapsed_sec": 26.593369,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.037899,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:35.395885+00:00",
+          "relative_elapsed_sec": 26.859312,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.018549,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:35.688824+00:00",
+          "relative_elapsed_sec": 27.152251,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.011599,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:35.969062+00:00",
+          "relative_elapsed_sec": 27.432489,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.051691,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:36.243008+00:00",
+          "relative_elapsed_sec": 27.706435,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.036671,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:36.501240+00:00",
+          "relative_elapsed_sec": 27.964667,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.061182,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:36.784017+00:00",
+          "relative_elapsed_sec": 28.247444,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.044471,
+          "swap_delta_mib": 0.0,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:37.047825+00:00",
+          "relative_elapsed_sec": 28.511252,
+          "load_ratio": null,
+          "eligible": true,
+          "probe_seconds": 0.011933,
+          "swap_delta_mib": 49.19000053405762,
+          "swap_limit_mib": 256
+        },
+        {
+          "run_id": "f61b8b980aa841d3bfc4c7a5ccb9bdbd",
+          "trial": "f61b8b98",
+          "model_label": "12B",
+          "kind": "load",
+          "time": "2026-09-07T11:42:37.339588+00:00",
+          "relative_elapsed_sec": 28.803015,
+          "load_ratio": null,
+          "eligible": false,
+          "probe_seconds": 0.008135,
+          "swap_delta_mib": 446.8800001144409,
+          "swap_limit_mib": 256
+        }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "history",
+      "label": "Verifizierte lokale Optimierungs- und Ladehistorie",
+      "path": "optimization-events.json",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+        "executed_at": "2026-09-07T12:24:43.743144+00:00",
+        "description": "Zwei vollständige, separat kettengeprüfte Primärjournale; terminale Status und Modellanfragen werden aus den Ereignissen abgeleitet.",
+        "tables_used": [
+          "event_journal"
+        ],
+        "filters": [
+          "complete optimization and optional load sources, maximum 2000 events each"
+        ],
+        "transform_file": "tools/product_history_snapshot.py",
+        "metric_definitions": {
+          "attempts": "Anzahl eindeutiger run_started/run_finished-Aufträge.",
+          "completed_requests": "Anzahl eindeutiger finaler passed sample_index-Validierungen; Load-only ist nicht anwendbar.",
+          "failed_or_blocked_attempts": "Aufträge mit abgeleitetem failed, deferred oder interrupted Status."
+        },
+        "journal_provenance": [
+          "optimization",
+          "load"
+        ]
+      }
+    },
+    {
+      "id": "optimization",
+      "label": "Verifizierte lokale Ereignishistorie",
+      "path": "optimization.sqlite3",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+        "executed_at": "2026-09-07T12:24:43.743144+00:00",
+        "description": "Vollständiger Export nach SQLite-Schema- und SHA-256-Kettenprüfung.",
+        "tables_used": [
+          "event_journal"
+        ],
+        "filters": [
+          "complete source, maximum 2000 events"
+        ],
+        "chain_sha256": "30cb8563636470675b6bacf1474079cf54f6b703a4298032c43e410549527101",
+        "transform_file": "tools/product_history_snapshot.py"
+      }
+    },
+    {
+      "id": "load",
+      "label": "Verifizierte lokale Ereignishistorie",
+      "path": "load-screen.sqlite3",
+      "query": {
+        "engine": "sqlite",
+        "language": "sql",
+        "sql": "SELECT seq, recorded_unix_ns, run_id, kind, payload_json, prev_sha256, sha256 FROM event_journal ORDER BY seq ASC",
+        "executed_at": "2026-09-07T12:24:43.743144+00:00",
+        "description": "Vollständiger Export nach SQLite-Schema- und SHA-256-Kettenprüfung.",
+        "tables_used": [
+          "event_journal"
+        ],
+        "filters": [
+          "complete source, maximum 2000 events"
+        ],
+        "chain_sha256": "4d2ead1049dfcf3caefefa6d83a195341a13920be375d85bc151b9c1d6d4e7cb",
+        "transform_file": "tools/product_history_snapshot.py"
+      }
+    }
+  ]
+}
