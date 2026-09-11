@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" role="img" aria-label="IronMule mark: a point estimate inside a confidence interval">
+  <title>IronMule</title>
+  <desc>A measured point between two interval caps, inside a square rule.</desc>
+  <rect x="4" y="4" width="120" height="120" rx="10" fill="#111111"/>
+  <rect x="4.75" y="4.75" width="118.5" height="118.5" rx="9.25" fill="none" stroke="#2E2E2E" stroke-width="1.5"/>
+  <!-- the interval: two caps and the bar between them -->
+  <g stroke="#0072B2" stroke-width="7" stroke-linecap="butt">
+    <line x1="26" y1="44" x2="26" y2="84"/>
+    <line x1="102" y1="44" x2="102" y2="84"/>
+    <line x1="26" y1="64" x2="102" y2="64"/>
+  </g>
+  <!-- the point estimate, left of centre because the measured ratio is below 1.0 -->
+  <circle cx="54" cy="64" r="13" fill="#D55E00" stroke="#111111" stroke-width="4"/>
+</svg>

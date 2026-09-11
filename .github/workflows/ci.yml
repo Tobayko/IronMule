@@ -50,6 +50,22 @@ jobs:
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
 
+  # A figure that no longer matches its evidence is a false claim on the front page.
+  # This regenerates every SVG from the committed artifacts and fails on any difference.
+  figures:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: figures match their evidence
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install the figure toolchain
+        run: python -m pip install "matplotlib>=3.8,<4"
+      - name: Regenerate and compare
+        run: python tools/make_figures.py --check
+
   # The README quick start is a contract. This job runs it the way a reader does:
   # a clone this workflow did not prepare, an editable install, and the commands
   # the README prints -- so a change that breaks the first five minutes fails here

@@ -27,6 +27,8 @@ keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-xdist>=3"]
 data = ["scikit-learn>=1.5,<2"]
+# Only tools/make_figures.py needs this; the runtime never imports it.
+figures = ["matplotlib>=3.8,<4"]
 
 [project.urls]
 Homepage = "https://github.com/Tobayko/IronMule"
