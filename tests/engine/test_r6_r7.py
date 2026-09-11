@@ -57,6 +57,21 @@ def _fake_load_engine(monkeypatch):
             self.tokenizer = tokenizer
             self.knobs = knobs
             self.model_identity = None
+            self.k3840_admission = None
+
+        def admit_k3840(self, identity):
+            """The Engine contract: `None` while the opt-in knob is off.
+
+            The double stops there on purpose. Admitting the kernel means checking
+            real hardware, a real library build and real projection shapes, and a
+            fake must never stand in for that evidence.
+            """
+
+            if getattr(self.knobs, "k3840_matvec", False):
+                raise NotImplementedError(
+                    "this double cannot admit the opt-in kernel; that needs the device"
+                )
+            return None
 
     def fake_load(source):
         seen["source"] = source
@@ -213,6 +228,39 @@ def test_revalidate_requires_token_identity_and_determinism(monkeypatch):
 
     result = tune.revalidate(max_tokens=17)
     assert result["verdict"] == "retune_required"
+
+
+def test_a_profile_written_before_a_knob_existed_keeps_its_behaviour():
+    """An older profile still loads, and the knob it never knew about stays off."""
+
+    older = BASELINE.as_dict()
+    del older["k3840_matvec"]
+
+    decoded = tune._exact_knobs(older)
+
+    assert decoded == BASELINE
+    assert decoded.k3840_matvec is False
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda knobs: knobs.pop("fused_argmax"),          # not a knob added later
+    lambda knobs: knobs.update(nonsense=1),           # unknown key
+])
+def test_a_knob_set_that_is_merely_incomplete_is_still_refused(mutate):
+    """Only knobs added after a profile was written may be defaulted into it."""
+
+    knobs = BASELINE.as_dict()
+    mutate(knobs)
+
+    assert tune._exact_knobs(knobs) is None
+
+
+def test_every_knob_defaulted_by_migration_defaults_to_off():
+    """A migrated knob must never arrive switched on."""
+
+    defaults = BASELINE.as_dict()
+    for name in tune.KNOBS_ADDED_LATER:
+        assert defaults[name] in (False, 0, 0.0)
 
 
 def test_corrupt_or_incomplete_profile_is_not_reused(monkeypatch):
@@ -579,7 +627,9 @@ def test_engine_close_restores_wired_limit_once(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
-    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    # `B62`: the wired branch reads the size natively now, because `static_facts()`
+    # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+    monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
 
     engine = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
     assert calls == [(123, 500)]
@@ -603,7 +653,9 @@ def test_nested_wired_engines_require_lifo_close(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
-    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    # `B62`: the wired branch reads the size natively now, because `static_facts()`
+    # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+    monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
     outer = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
     inner = runtime.Engine(object(), object(), Knobs(wired_fraction=0.8))
     assert current == 800
@@ -629,7 +681,9 @@ def test_wired_close_detects_external_mutation_after_restore(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
-    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    # `B62`: the wired branch reads the size natively now, because `static_facts()`
+    # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+    monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
     engine = runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
     runtime.mx.set_wired_limit(900)
 
@@ -662,7 +716,9 @@ def test_wired_registration_failure_restores_limit_without_owner_leak(monkeypatc
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
-    monkeypatch.setattr(hw, "static_facts", lambda: {"memory_bytes": 1_000})
+    # `B62`: the wired branch reads the size natively now, because `static_facts()`
+    # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+    monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
     before = list(runtime._WIRED_LIMIT_OWNERS)
     monkeypatch.setattr(runtime, "_register_wired_owner",
                         lambda *_args: (_ for _ in ()).throw(RuntimeError("register failed")))
