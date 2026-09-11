@@ -1,7 +1,7 @@
 # Kandidatenliste
 
 Studienakte, kein Backlog: offene Arbeit steht ausschließlich in
-[`../BACKLOG.md`](PROJECT_FRIDAY_BACKLOG.md). Diese Tabelle dokumentiert Kandidaten mit
+[`PROJECT_FRIDAY_BACKLOG.md`](PROJECT_FRIDAY_BACKLOG.md). Diese Tabelle dokumentiert Kandidaten mit
 ihren gemessenen bzw. terminalen Status (früher `EXPERIMENT_BACKLOG.md` im
 Root; verschoben am 2026-09-01, Backlog M1 Punkt 2).
 

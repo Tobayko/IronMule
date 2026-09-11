@@ -69,7 +69,7 @@ Der Weg zum stellbaren Tor kostet rund **`1250` gemessene Punkte**, also gegenü
 `352` weitere etwa **`41` Stunden**. Ich rate davon ab, aus drei Gründen:
 
 **Erstens: das Projekt hat die Frage fachlich schon beantwortet.**
-`docs/FABLE_ERFOLGSPFAD.md` (2026-09-01) legt dar, warum RL hier das falsche
+`docs/FABLE_SUCCESS_PATH.md` (2026-09-01) legt dar, warum RL hier das falsche
 Werkzeug ist — einstufige Wahl aus einer festen Liste ist ein Contextual Bandit,
 kein sequentielles Problem; RL braucht `10⁴`–`10⁶` Interaktionen. Der Aktionsraum
 hat **vier** messbare Einträge. Vier Dinge misst man einmal durch und weiß es
@@ -93,7 +93,7 @@ Untergrenze. Der teure Teil ist getan.
 2. **Das Kostenmodell bauen.** Aus den `352` Punkten lernen, welcher Knopf unter
    welchen Bedingungen hilft. Konkreter Nutzen: das Einmessen eines neuen Macs
    wird kürzer, weil das Modell die Reihenfolge der Versuche vorschlägt. Das ist
-   der Weg, den `FABLE_ERFOLGSPFAD` als tragfähig bezeichnet.
+   der Weg, den `FABLE_SUCCESS_PATH` als tragfähig bezeichnet.
 3. **R2 schließen** — mit dem Befund aus Abschnitt 2, nicht mit einem Nein.
 
 ## 5. Was zu entscheiden ist

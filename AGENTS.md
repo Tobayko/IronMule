@@ -236,7 +236,7 @@ Arbeitsjournal-Archiv).
 - `docs/TECHNISCHES_KONZEPT.md` — vollständiger Forschungs- und Realitätscheck.
 - `docs/IMPLEMENTIERUNGSPLAN.md` — priorisierte Phasen und Abbruchkriterien.
 - `docs/CODEX_START.md` — Startbriefing und erster Codex-Auftrag.
-- `PROJECT_STATUS.md` — nachprüfbarer lokaler Setup- und Teststand.
+- `docs/PROJECT_STATUS.md` — nachprüfbarer lokaler Setup- und Teststand.
 - `docs/PHASE1_MATMUL_SPEC.md` — vorregistrierte, speicher-/UI-neutrale Phase-1-Messspezifikation.
 - `docs/PHASE1A_ARCHITEKTURFREIGABE.md` — nicht freigegebener Architekturvorschlag für Speicher,
   Dashboard und isolierten Phase-1A-Worker.

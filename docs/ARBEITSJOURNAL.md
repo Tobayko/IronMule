@@ -8734,7 +8734,7 @@ M1 Punkt 5 (`.friday-data/models/`, 3,9 GB) bleibt offen im Backlog.
 ## 2026-09-01 — R0 und R1: Entscheidungslogging und Replay-Environment
 
 Reine Offline-Implementierung nach dem RL-Fahrplan in
-[`docs/FABLE_ERFOLGSPFAD.md`](FABLE_ERFOLGSPFAD.md). Kein Modellstart, kein
+[`docs/FABLE_SUCCESS_PATH.md`](FABLE_SUCCESS_PATH.md). Kein Modellstart, kein
 Hardwarelauf, keine versiegelte Datei berührt, keine bestehende SQLite-Datei
 verändert. Kein Lern-, Hardware- oder Performanceclaim.
 

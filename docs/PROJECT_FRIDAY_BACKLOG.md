@@ -578,7 +578,7 @@ Forensik zweier Werkzeuge, die ohnehin ersetzt sind.
 **Status:** offen; Korpus fehlt, Code und Kampagnenplanung stehen. R0/R1 am
 2026-09-01 implementiert, Kampagnenplanung am selben Tag — Ergebnisse im
 Arbeitsjournal unter „2026-09-01 — R0 und R1" und „2026-09-01 — R2-Korpus".
-Gesamtplan R0–R4: [`docs/FABLE_ERFOLGSPFAD.md`](FABLE_ERFOLGSPFAD.md).
+Gesamtplan R0–R4: [`docs/FABLE_SUCCESS_PATH.md`](FABLE_SUCCESS_PATH.md).
 
 **Mechanismus:** konservative Offline-RL-Verfahren ohne Live-Exploration
 (CQL/IQL-Klasse) über `friday_optimizer.replay`; Policy-Klasse klein und
