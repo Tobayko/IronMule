@@ -663,7 +663,7 @@ Die Unterscheidung ist die eigentliche Antwort dieses Eintrags. Holdout und
 ESS-Untergrenze werden nicht nachträglich angepasst.
 
 **Offen, als Entscheidung:** Optionen, Kosten und meine Empfehlung stehen in
-[`docs/FORSCHUNGSENTSCHEID_2026-09-05.md`](FORSCHUNGSENTSCHEID_2026-09-05.md).
+`docs/FORSCHUNGSENTSCHEID_2026-09-05.md`.
 Kurz: entweder den Korpus auf ~`1250` Punkte ausbauen (~`41` h) und das Tor wie
 eingefroren stellen, oder R2 mit diesem Befund schließen und den Korpus dem
 Kostenmodell plus BO zuführen. Empfohlen wird das Schließen. Die beschreibenden
@@ -1372,7 +1372,7 @@ Budget nicht reproduzierbar schlägt.
 
 Kandidaten-Studienakte: [`docs/KANDIDATENLISTE.md`](KANDIDATENLISTE.md)
 — kein zweites Backlog. Abgeschlossene Einträge stehen im
-[Arbeitsjournal](ARBEITSJOURNAL.md); die Repo-Hygiene M1 ist am
+`Arbeitsjournal`; die Repo-Hygiene M1 ist am
 2026-09-02 vollständig erledigt worden.
 
 ## U1 — Rückbau der zwölf Dashboards (neu 2026-09-02)

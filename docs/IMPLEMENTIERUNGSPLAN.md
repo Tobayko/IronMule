@@ -83,7 +83,7 @@ Aktuelle Reihenfolge:
    **NO-GO**, Cross-Device **NO-CLAIM**, weitere Modellrunden und ein breiterer
    Live-Suchraum bleiben **NO-GO**.
    Der aktuelle Entscheid steht in
-   [`docs/FORSCHUNGSENTSCHEID_2026-08-21.md`](FORSCHUNGSENTSCHEID_2026-08-21.md).
+   `docs/FORSCHUNGSENTSCHEID_2026-08-21.md`.
 9. **Evidenzgebundenen N8/N10-Shadow-Router prüfen — abgeschlossen; alle Gates
    bestanden.** Der getrennte Router wurde auf dem sauberen Commit `70bc451`
    versiegelt. Er verlangt gleichzeitig die exakte N8- und N10-Evidenz,

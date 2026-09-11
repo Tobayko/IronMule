@@ -8,7 +8,7 @@
 > Legacy-Beobachtungen**, auch wenn einzelne Läufe intern gepaart, repliziert und
 > correctness-geprüft waren. Sie belegen weder formales H1/H2 noch Cross-Device-
 > Übertragbarkeit. Die Korrektur ist nicht rückwirkend heilbar; siehe
-> [`FORSCHUNGSENTSCHEID_2026-08-21.md`](FORSCHUNGSENTSCHEID_2026-08-21.md).
+> `FORSCHUNGSENTSCHEID_2026-08-21.md`.
 
 > **Das wichtigste Ergebnis zuerst:** Auf diesem Gerät ist ein *ungepaarter*
 > Performancevergleich nahezu wertlos — die Streuung zwischen Läufen übertrifft
@@ -18,7 +18,7 @@
 
 
 Kompakte Übersicht der Beobachtungen mit ihrem heutigen Evidenzgrad. Die vollständige Herleitung samt
-Fehlversuchen steht in [`ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md); dieses Dokument
+Fehlversuchen steht in `ARBEITSJOURNAL.md`; dieses Dokument
 ist der Einstieg.
 
 **Gerät:** Apple M1 Max, 32 GB Unified Memory, 32-Core GPU, macOS.

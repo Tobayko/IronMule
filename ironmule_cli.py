@@ -414,6 +414,47 @@ def _run_benchmark(argv: list[str]) -> int:
         return _dependency_error("benchmark", exc)
 
 
+def _run_requalify(argv: list[str]) -> int:
+    """The only way out of REQUALIFICATION_REQUIRED, and a person has to ask for it.
+
+    It refuses unless monitoring actually took the action away and this machine still
+    matches what was qualified. A refusal leaves the reference in charge and says why.
+    """
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(prog="ironmule requalify", description=_run_requalify.__doc__)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--state", type=Path, default=None,
+                        help="the controller state file; defaults to the local store")
+    parser.add_argument("--out", type=Path, default=None,
+                        help="write the full record here as JSON")
+    parser.add_argument("--json", action="store_true", help="print the record instead of a summary")
+    parser.add_argument("--skip-readiness", action="store_true",
+                        help="spend the full comparison without checking first whether this "
+                             "machine is steady enough to measure on")
+    args = parser.parse_args(argv)
+
+    from ironmule.requalification import requalify
+
+    def progress(session, block, arm):
+        print(f"  session {session} block {block} {arm} done", flush=True)
+
+    record = requalify(args.model, state_path=args.state,
+                       readiness=not args.skip_readiness, on_progress=progress)
+    if args.out:
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        args.out.write_text(json.dumps(record, indent=2, sort_keys=True, default=str),
+                            encoding="utf-8")
+    if args.json:
+        print(json.dumps(record, indent=2, sort_keys=True, default=str))
+    else:
+        print(f"outcome: {record['outcome']}")
+        print(f"state:   {record['state']}")
+        print(f"reason:  {record['reason'] if 'reason' in record else record['decision']['reason']}")
+    return 0 if record["outcome"] in ("PASS", "NO_GAIN", "WORSE", "NOT_READY") else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         return _dispatch(argv)
@@ -433,7 +474,7 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {setup|serve|optimize|data|doctor|benchmark|models|tune|revalidate|status|info} [options]")
+        print("usage: ironmule {setup|serve|optimize|data|doctor|benchmark|models|tune|revalidate|requalify|status|info} [options]")
         print("\ncommands:")
         print("  setup        Initialize desktop/server product settings")
         print("  serve        Serve a registered local model through HTTP/SSE")
@@ -444,6 +485,7 @@ def _dispatch(argv: list[str] | None) -> int:
         print("  models      List cached models; `models list` also works without MLX")
         print("  tune        Tune or inspect the existing local profile (--show)")
         print("  revalidate  Canary-check the stored profile")
+        print("  requalify   Re-measure a locally learned action after monitoring took it away")
         print("  status       Show local hardware/profile status")
         print("  info        Show package information")
         return 0
@@ -464,6 +506,8 @@ def _dispatch(argv: list[str] | None) -> int:
         return _run_models(rest)
     if command == "revalidate":
         return _run_revalidate(rest)
+    if command == "requalify":
+        return _run_requalify(rest)
     if command == "status":
         return _run_status(rest)
     if command == "info":

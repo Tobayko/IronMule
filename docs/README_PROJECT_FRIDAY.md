@@ -6,18 +6,24 @@ product: every performance claim is bound to a preregistration, a sealed code ha
 paired AB/BA sampling, an A/A noise gate, and exact token identity. A number that has
 not passed that pipeline is labelled *exploratory*, not shipped.
 
-> **Status 2026-09-03.** A review (Codex) found that several benchmark harnesses added
-> during the 2026-09-02/03 "serving" work measured incorrectly (single-shot instead of
-> paired, lazy MLX graphs evaluated once, baseline truncated to candidate length) and
-> that a former auto-tuner wrote fabricated statistics into the sealed device profile.
-> The harnesses are repaired and the affected numbers were re-measured the same day on
-> real hardware (serial, one model in memory at a time). Result: `head_skip` +
-> `readback_every=8` give a token-identical **~+9…+25% end-to-end** depending on model
-> and answer length; the three headline "breakthroughs" of the Gemini phase —
-> sub-4-bit `1.24x`, double-buffering `+2.9%`, prompt-lookup `+29%` bit-exact — were
-> all measurement artifacts and are **refuted**. Numbers below are exploratory
-> (session noise floor MDE 2.86%). See `docs/ARBEITSJOURNAL.md` (entry
-> "Nachmessung 2026-09-03") and `docs/GEMINI_SELF_LEARNING_SYSTEM.md`.
+> **Status 2026-09-11.** The research tree now carries a complete local learning
+> lifecycle, measured end to end on one Apple M1 Max: cold start (`B75`), fourteen
+> sessions of temporal evidence (`B76`), a re-scoring that found the old verdict rule
+> defective and kept the verdict it produced (`B77`), a persistent controller (`B78`),
+> opt-in learned dispatch on real requests (`B79`), passive drift monitoring (`B80`),
+> explicit requalification with every refusal path exercised (`B81`), and one live
+> requalification that passed (`B82`). Learned dispatch is off by default. Nothing here
+> generalises to a second machine; `B73` still needs one.
+>
+> **Earlier status, kept.** A 2026-09-03 review found that several benchmark harnesses
+> added during the 2026-09-02/03 "serving" work measured incorrectly (single-shot
+> instead of paired, lazy MLX graphs evaluated once, baseline truncated to candidate
+> length) and that a former auto-tuner wrote fabricated statistics into the sealed
+> device profile. The harnesses were repaired and the affected numbers re-measured the
+> same day on real hardware. The three headline "breakthroughs" of the Gemini phase —
+> sub-4-bit `1.24x`, double-buffering `+2.9%`, prompt-lookup `+29%` bit-exact — were all
+> measurement artifacts and remain **refuted**. Those numbers are exploratory (session
+> noise floor MDE 2.86%). See `docs/GEMINI_SELF_LEARNING_SYSTEM.md`.
 
 ---
 
@@ -103,7 +109,7 @@ for edge and error cases and grounds no performance claim.
 
 The load-bearing results and their retractions live in
 [`docs/ERGEBNISSE.md`](ERGEBNISSE.md); the full history is in the append-only
-[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md).
+[`research/LEDGER.md`](../research/LEDGER.md).
 
 1. **Unpaired variance dwarfs the effects.** Run-to-run variance on the M1 Max is far
    larger than any optimisation gain measured; every calibration therefore uses paired
@@ -121,6 +127,27 @@ The load-bearing results and their retractions live in
    knob was verified token-identical on *this* device against *this* model snapshot.
 
 ---
+
+## The local learning lifecycle (`B75` to `B82`)
+
+Measured on one Apple M1 Max, `gemma-3-12b-it-4bit`, single short requests on the
+sequential path. Every study's preregistration and verdict is in
+[`research/LEDGER.md`](../research/LEDGER.md), including the ones that failed.
+
+| study | what it settled |
+| :-- | :-- |
+| `B75` | a fresh install measured its way to a defensible local decision in `286 s` |
+| `B76` | fourteen independent sessions: the sign is stable, the magnitude is not |
+| `B77` | the verdict rule that produced `B76`'s `FAIL` conflated three quantities; the verdict stands and the defect is documented |
+| `B78` | a persistent controller that qualifies nothing without enough evidence |
+| `B79` | the first dispatch a learned preference was allowed to change, opt-in, with an immediate reference fallback |
+| `B80` | passive drift monitoring: zero false alarms, a defined shift caught in eight observations |
+| `B81` | explicit requalification; two live attempts refused by their own gates, the reference kept serving |
+| `B82` | a readiness probe, then one live requalification that passed and handed the action back |
+
+**What is not shown.** Anything about a second machine, any other Apple Silicon
+generation, reinforcement learning, a universal gain, or activation by default. See
+[`docs/LIMITS.md`](LIMITS.md).
 
 ## License
 

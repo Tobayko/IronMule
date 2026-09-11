@@ -51,6 +51,61 @@ coordinate-descent or contextual-bandit comparison and has no sequential horizon
 so offline RL is not applicable. No BO/RL, performance, hardware or generalisation
 claim follows from the replay inventory.
 
+## The local learning lifecycle, as of `B82`
+
+The runtime can measure its own machine, learn a preference from that measurement, act
+on it, watch it, drop it and re-earn it. What that sentence is and is not evidence for:
+
+**Demonstrated, on one Apple M1 Max with 32 GB of unified memory:**
+
+| | study |
+| :-- | :-- |
+| cold-start learning from no prior knowledge, in under five minutes | `B75` |
+| the effect's sign stable over fourteen independent sessions | `B76` |
+| machine-state features make the forecast worse, not better | `B77` |
+| a persistent controller that never qualifies without enough evidence | `B78` |
+| evidence-gated learned dispatch on real requests, opt-in | `B79` |
+| passive drift monitoring that stays quiet through ordinary use | `B80` |
+| a fail-closed fallback, and a kill switch that survives a restart | `B79`, `B80` |
+| explicit requalification, and every way it must refuse | `B81` |
+| one live requalification that passed and handed the action back | `B82` |
+
+**Not demonstrated, and therefore not claimed:**
+
+- **Cross-hardware generalisation.** Every number here is one machine. `B73` is the
+  entry that needs a second real Mac and it has not run.
+- **Any other Apple Silicon generation.** M2, M3 and M4 are untested. The fingerprint
+  exists to refuse them rather than to guess.
+- **Reinforcement learning or a contextual bandit.** Neither is implemented. `B77`
+  measured a contextual model over load, free memory and swap as worse than a constant
+  one on prediction error, coverage and regret, so those features are excluded until new
+  evidence reopens the question.
+- **A universal performance gain.** The qualified action covers one model, one
+  quantisation, one shape and one workload class.
+- **Automatic activation.** `enable_local_learned_dispatch` defaults to `False` and
+  nothing in the system can change that on its own.
+
+**The qualified action's validity box.**
+
+| | |
+| :-- | :-- |
+| Action | the `(4, 8)` threadgroup geometry for the `K = 3840` quantised matvec |
+| Model | `mlx-community/gemma-3-12b-it-4bit`, bound by exact identity and revision |
+| Workload class | `single_short`: one request, no session plan, at most 32 new tokens |
+| Route | the sequential path only; grouped and paired routes are excluded at source |
+| Typical ratio | `0.965`, range `0.954` to `0.977` over fourteen sessions (`B76`) |
+| Reproduced | `0.9607`, `0.9584`, `0.9673` in one requalification (`B82`) |
+| Not typical | `B69`'s `0.8469`. `B77` found that run's A/A control an order of magnitude wider than `B76`'s, with the candidate interval overlapping it. The sign stands, the magnitude does not |
+
+**What a monitor may and may not conclude.** Observations from ordinary dispatches carry
+no counterfactual: the alternative did not run. They may move a qualified action to
+`REQUALIFICATION_REQUIRED` and can never create or strengthen a qualification. Only a
+paired comparison under the original gates moves the preference.
+
+**A drift alarm is not free and the threshold says so.** A shift counts only when it is
+both statistically clear and larger than the smallest gain the action's own qualified
+interval supports. Below that the action still wins and there is nothing to recheck.
+
 ## Apple-Silicon inference claims
 
 Apple's M4/M5 comparison is evidence for that specific MacBook Pro setup and

@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from .local_learner import CANDIDATE_QUALIFIED, LocalLearner, UNKNOWN
+from .monitoring import DriftMonitor, REQUALIFICATION_REQUIRED
 from .qmv_variant import (CORRECTNESS_CONTRACT, QUALIFIED_ACTION_ID, QUALIFIED_GEOMETRY,
                           VariantGate, VariantUnsupported, install, uninstall)
 
@@ -152,8 +153,12 @@ class LearnedDispatchActivation:
 
     def __init__(self, learner: LocalLearner | None, context: ActivationContext, *,
                  enabled: bool = False, state_path: Path | None = None,
-                 action_id: str = QUALIFIED_ACTION_ID):
+                 action_id: str = QUALIFIED_ACTION_ID,
+                 monitor: DriftMonitor | None = None):
         self.learner = learner
+        # `B80`, passive. It may take the candidate away and can never hand it back: only an
+        # explicit requalification producing comparative evidence does that.
+        self.monitor = monitor
         self.context = context
         self.action_id = action_id
         self.state_path = Path(state_path) if state_path else None
@@ -288,6 +293,14 @@ class LearnedDispatchActivation:
                                     workload_class)
         if self.gate.killed:
             return self._killed_record(workload_class)
+        # One attribute read. The monitor watches ordinary dispatches and, when the segment
+        # it built from them has moved away from its own baseline, the reference serves.
+        if self.monitor is not None and self.monitor.requalification_required:
+            if self.gate.active:
+                self.gate.close("requalification is required")
+            return ActivationRecord(REFERENCE, REFERENCE, REQUALIFICATION_REQUIRED, 0, "",
+                                    "passive monitoring requires a requalification before "
+                                    "this action is used again", workload_class)
 
         digest = self.learner.digest
         if digest != self._digest:
@@ -379,6 +392,8 @@ class LearnedDispatchActivation:
                 "gate": ({"active": self.gate.active, "killed": self.gate.killed,
                           "reason": self.gate.reason} if self.gate else None),
                 "killed_at_start": self.killed_at_start,
+                "requalification_required": (self.monitor.requalification_required
+                                             if self.monitor is not None else None),
                 "events": list(self.events)}
 
 
