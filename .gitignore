@@ -13,6 +13,8 @@ experiments/raw/
 
 # Private benchmark raw JSON and retained partials; publish only redacted summaries
 research/raw/*.json
+# and the same evidence when a study seals it per session, one directory deeper
+research/raw/**/*.json
 research/raw/.*.partial
 !research/raw/*_public_summary_*.json
 
