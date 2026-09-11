@@ -37,7 +37,7 @@ sys.path.insert(0, str(ROOT / "tools"))
 
 STUDY_ID = "kv-share-20260902-01"
 OUTPUT = Path(__file__).resolve().parent
-IRONMULE = ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = ROOT
 
 #: The serving default, so the rates are the rates the product would see.
 COMBINED = {"head_skip_prefill": True, "compiled_fixed_cache": True, "readback_every": 8}

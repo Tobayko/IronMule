@@ -29,7 +29,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "tools"))
-IRONMULE = ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = ROOT
 
 STUDY_ID = "identity-break-20260902-01"
 OUTPUT = Path(__file__).resolve().parent

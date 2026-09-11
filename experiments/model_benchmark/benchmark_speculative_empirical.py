@@ -21,7 +21,7 @@ from typing import Any
 # Path setup
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = PROJECT_ROOT
 if str(IRONMULE) not in sys.path:
     sys.path.insert(0, str(IRONMULE))
 

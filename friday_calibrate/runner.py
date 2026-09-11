@@ -40,7 +40,7 @@ from .profile import (
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-IRONMULE = PROJECT_ROOT / ".worktrees" / "friday-optimizer-ironmule"
+IRONMULE = PROJECT_ROOT
 
 #: The action space the speculative bandit will choose from. The curve measured
 #: here is its prior, so the two must be the same set.
