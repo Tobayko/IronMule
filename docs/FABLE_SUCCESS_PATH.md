@@ -1,8 +1,13 @@
 # Fable-Erfolgspfad
 
+> Renamed from `FABLE_ERFOLGSPFAD.md` on 2026-09-11. Two sealed preregistrations,
+> `F1_INTEGRATION_VORREGISTRIERUNG.md` and `R2_VORREGISTRIERUNG.md`, still name the
+> old file. Their bytes are recorded hashes and are not edited.
+
+
 Festgehalten am 2026-09-01 auf Nutzerauftrag. Zweck: andere Sessions sollen
 ohne Neuherleitung wissen, wo das Projekt steht, was freigegeben ist und
-welche Hebel zum Erfolg führen. Startpunkt bleibt `../BACKLOG.md` (Eintrag F1
+welche Hebel zum Erfolg führen. Startpunkt bleibt `PROJECT_FRIDAY_BACKLOG.md` (Eintrag F1
 verweist hierher).
 
 ## Standortbestimmung (2026-09-01)

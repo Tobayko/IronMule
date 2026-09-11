@@ -356,6 +356,7 @@ measurement and self-calibration research the engine's numbers come from:
 device profiles measured per machine, a serving path that only enables a knob
 this device verified as token-identical, and the experiment record behind it.
 
-See **[README_PROJECT_FRIDAY.md](docs/README_PROJECT_FRIDAY.md)**, the open work list
-in [`BACKLOG.md`](docs/PROJECT_FRIDAY_BACKLOG.md) and the append-only
-[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
+See **[the research overview](docs/README_PROJECT_FRIDAY.md)**, its open work list in
+[`docs/PROJECT_FRIDAY_BACKLOG.md`](docs/PROJECT_FRIDAY_BACKLOG.md) and the append-only
+work journal in [`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md), which is the one
+document kept in German.
