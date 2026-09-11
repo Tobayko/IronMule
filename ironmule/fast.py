@@ -129,8 +129,20 @@ def fuse_projections(model, *, check_version: bool = True) -> int:
 
 
 def _self_check() -> None:
-    """Fusion must be bit identical. Runs on CPU so it never competes for the GPU."""
+    """Fusion must be bit identical. Runs on CPU so it never competes for the GPU.
+
+    The default device is process global, so it is put back before returning: leaving it
+    on the CPU changes what everything after this computes on.
+    """
+    previous = mx.default_device()
     mx.set_default_device(mx.cpu)
+    try:
+        _self_check_body()
+    finally:
+        mx.set_default_device(previous)
+
+
+def _self_check_body() -> None:
     from mlx_lm.models.gemma3_text import ModelArgs, Gemma3Model
 
     args = ModelArgs(model_type="gemma3_text", hidden_size=64, num_hidden_layers=4,

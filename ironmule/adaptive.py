@@ -26,6 +26,7 @@ _KNOB_NAMES = (
     "speculate_ngram",
     "capacity_slack",
     "wired_fraction",
+    "k3840_matvec",
 )
 KNOB_NAMES = _KNOB_NAMES
 KNOB_DEFAULTS = (
@@ -34,6 +35,7 @@ KNOB_DEFAULTS = (
     ("prefill_into_fixed", False), ("readback_every", 1),
     ("speculate_k", 0), ("speculate_ngram", 3),
     ("capacity_slack", 0), ("wired_fraction", 0.0),
+    ("k3840_matvec", False),
 )
 # This is a declarative mirror for replay validation, never an execution plan.
 SEARCH_VALUES = (
@@ -43,7 +45,11 @@ SEARCH_VALUES = (
     ("capacity_slack", (128,)), ("wired_fraction", (0.6,)),
     ("fuse_projections", (True,)),
 )
-_BOOL_KNOBS = frozenset(_KNOB_NAMES[:5])
+# Named rather than sliced, so a boolean knob added at the end is still validated.
+_BOOL_KNOBS = frozenset({
+    "fuse_projections", "compiled_fixed_cache", "fused_argmax", "head_skip_prefill",
+    "prefill_into_fixed", "k3840_matvec",
+})
 _INT_KNOBS = frozenset({"readback_every", "speculate_k", "speculate_ngram", "capacity_slack"})
 _FLOAT_KNOBS = frozenset({"wired_fraction"})
 _UNKNOWN = {"unknown", "missing", "none", "null", "unavailable"}
@@ -209,9 +215,14 @@ class AdaptiveContext:
 
 @dataclass(frozen=True, slots=True)
 class KnobAction:
-    """The closed ten-knob action space; no callable or executable payload."""
+    """The closed knob action space; no callable or executable payload.
 
-    SCHEMA: ClassVar[str] = "ironmule.knob_action.v1"
+    It mirrors every `ironmule.runtime.Knobs` field, including ones no search may
+    propose. `k3840_matvec` is such a field: it is an opt-in kernel knob admitted
+    against real hardware at load, so it appears here but never in `SEARCH_VALUES`.
+    """
+
+    SCHEMA: ClassVar[str] = "ironmule.knob_action.v2"
 
     fuse_projections: bool = False
     compiled_fixed_cache: bool = False
@@ -223,6 +234,7 @@ class KnobAction:
     speculate_ngram: int = 3
     capacity_slack: int = 0
     wired_fraction: float = 0.0
+    k3840_matvec: bool = False
     action_id: str = ""
 
     def __post_init__(self) -> None:
