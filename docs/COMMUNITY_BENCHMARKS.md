@@ -4,7 +4,7 @@ This file is the planned structured collection for community measurements. It in
 
 ## How to submit
 
-Open [Submit an IronMule benchmark](.github/ISSUE_TEMPLATE/benchmark_submission.md) and paste the complete, unedited benchmark output. Keep one submission to one hardware/software/model/workload fingerprint. Do not merge values from different runs, round away uncertainty, or infer a general speedup.
+Open [Submit an IronMule benchmark](../.github/ISSUE_TEMPLATE/benchmark_submission.md) and paste the complete, unedited benchmark output. Keep one submission to one hardware/software/model/workload fingerprint. Do not merge values from different runs, round away uncertainty, or infer a general speedup.
 
 ## Collection schema
 
@@ -35,4 +35,4 @@ Each reviewed row will record these fields:
 
 No community submissions have been reviewed yet.
 
-The repository's own measured results remain in [`research/LEDGER.md`](research/LEDGER.md) and are not mixed into this community table. Every result must retain its validity domain; an Apple Silicon result on one model is not a claim about all Apple Silicon, local LLM, MLX inference, KV cache, TTFT, or batching workloads.
+The repository's own measured results remain in [`research/LEDGER.md`](../research/LEDGER.md) and are not mixed into this community table. Every result must retain its validity domain; an Apple Silicon result on one model is not a claim about all Apple Silicon, local LLM, MLX inference, KV cache, TTFT, or batching workloads.

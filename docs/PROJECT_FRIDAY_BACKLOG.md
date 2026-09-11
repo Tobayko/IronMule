@@ -578,7 +578,7 @@ Forensik zweier Werkzeuge, die ohnehin ersetzt sind.
 **Status:** offen; Korpus fehlt, Code und Kampagnenplanung stehen. R0/R1 am
 2026-09-01 implementiert, Kampagnenplanung am selben Tag — Ergebnisse im
 Arbeitsjournal unter „2026-09-01 — R0 und R1" und „2026-09-01 — R2-Korpus".
-Gesamtplan R0–R4: [`docs/FABLE_ERFOLGSPFAD.md`](docs/FABLE_ERFOLGSPFAD.md).
+Gesamtplan R0–R4: [`docs/FABLE_ERFOLGSPFAD.md`](FABLE_ERFOLGSPFAD.md).
 
 **Mechanismus:** konservative Offline-RL-Verfahren ohne Live-Exploration
 (CQL/IQL-Klasse) über `friday_optimizer.replay`; Policy-Klasse klein und
@@ -629,7 +629,7 @@ bei Optimization Memory plus deterministischer Suche plus BO; RL bleibt NO-GO
 und wird nicht als Abkürzung wiedereröffnet.
 
 **Stand 2026-09-04 — die Kampagne läuft.** Vorregistrierung samt Amendment A
-liegt in [`docs/R2_VORREGISTRIERUNG.md`](docs/R2_VORREGISTRIERUNG.md), beide vor
+liegt in [`docs/R2_VORREGISTRIERUNG.md`](R2_VORREGISTRIERUNG.md), beide vor
 dem ersten gezählten Punkt geschrieben. Erstes Fenster: **`68` Punkte, `0`
 Fehlschläge, `0` Tokenidentitätsbrüche**; Korpus von `2` auf `71` Labels.
 Werkzeuge: `tools/run_r2_point.py` (ein Punkt) und `tools/run_r2_campaign.py`
@@ -663,7 +663,7 @@ Die Unterscheidung ist die eigentliche Antwort dieses Eintrags. Holdout und
 ESS-Untergrenze werden nicht nachträglich angepasst.
 
 **Offen, als Entscheidung:** Optionen, Kosten und meine Empfehlung stehen in
-[`docs/FORSCHUNGSENTSCHEID_2026-09-05.md`](docs/FORSCHUNGSENTSCHEID_2026-09-05.md).
+[`docs/FORSCHUNGSENTSCHEID_2026-09-05.md`](FORSCHUNGSENTSCHEID_2026-09-05.md).
 Kurz: entweder den Korpus auf ~`1250` Punkte ausbauen (~`41` h) und das Tor wie
 eingefroren stellen, oder R2 mit diesem Befund schließen und den Korpus dem
 Kostenmodell plus BO zuführen. Empfohlen wird das Schließen. Die beschreibenden
@@ -1208,7 +1208,7 @@ gleichwertige Trainingslabels verwendet werden.
 **Status:** Architektur freigegeben am 2026-08-30 für die Offline-Implementierung;
 Hardwareläufe, automatische Aktivierung, Downloads und Installationen bleiben
 blockiert. Der Architekturvorschlag steht in
-[`docs/L1_GEMMA_OPTIMIZER_ARCHITEKTURVORSCHLAG.md`](docs/L1_GEMMA_OPTIMIZER_ARCHITEKTURVORSCHLAG.md).
+[`docs/L1_GEMMA_OPTIMIZER_ARCHITEKTURVORSCHLAG.md`](L1_GEMMA_OPTIMIZER_ARCHITEKTURVORSCHLAG.md).
 Der geprüfte Q2-Handover reduziert die geplante Implementierungsduplikation:
 IronMule `tune` wird über einen strikt gebundenen Adapter genutzt. Der
 Architekturvorschlag ist entsprechend aktualisiert; Hardware und Promotion bleiben
@@ -1370,9 +1370,9 @@ Budget nicht reproduzierbar schlägt.
 
 ---
 
-Kandidaten-Studienakte: [`docs/KANDIDATENLISTE.md`](docs/KANDIDATENLISTE.md)
+Kandidaten-Studienakte: [`docs/KANDIDATENLISTE.md`](KANDIDATENLISTE.md)
 — kein zweites Backlog. Abgeschlossene Einträge stehen im
-[Arbeitsjournal](docs/ARBEITSJOURNAL.md); die Repo-Hygiene M1 ist am
+[Arbeitsjournal](ARBEITSJOURNAL.md); die Repo-Hygiene M1 ist am
 2026-09-02 vollständig erledigt worden.
 
 ## U1 — Rückbau der zwölf Dashboards (neu 2026-09-02)

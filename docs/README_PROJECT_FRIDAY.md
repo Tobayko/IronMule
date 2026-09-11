@@ -102,8 +102,8 @@ for edge and error cases and grounds no performance claim.
 ## Empirical findings (bound to evidence)
 
 The load-bearing results and their retractions live in
-[`docs/ERGEBNISSE.md`](docs/ERGEBNISSE.md); the full history is in the append-only
-[`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md).
+[`docs/ERGEBNISSE.md`](ERGEBNISSE.md); the full history is in the append-only
+[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md).
 
 1. **Unpaired variance dwarfs the effects.** Run-to-run variance on the M1 Max is far
    larger than any optimisation gain measured; every calibration therefore uses paired

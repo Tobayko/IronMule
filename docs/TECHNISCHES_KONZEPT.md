@@ -285,7 +285,7 @@ Hypothesen, keine Projektclaims.
 ## E.1 Verifizierter lokaler Ausgangszustand
 
 Der historische Snapshot vom 15. August 2026 ist durch den autoritativen
-[PROJECT_STATUS.md](../PROJECT_STATUS.md)-Stand vom 19. August 2026 superseded. Die
+[PROJECT_STATUS.md](PROJECT_STATUS.md)-Stand vom 19. August 2026 superseded. Die
 aktuelle lokale Prüfung ergab beziehungsweise bestätigte:
 
 | Merkmal | Tatsächlicher Wert auf dem Zielgerät |
