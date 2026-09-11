@@ -433,11 +433,12 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {setup|serve|optimize|doctor|benchmark|models|tune|revalidate|status|info} [options]")
+        print("usage: ironmule {setup|serve|optimize|data|doctor|benchmark|models|tune|revalidate|status|info} [options]")
         print("\ncommands:")
         print("  setup        Initialize desktop/server product settings")
         print("  serve        Serve a registered local model through HTTP/SSE")
         print("  optimize     Run bounded automatic calibration and inspect its history")
+        print("  data         Collect portable optimizer evidence with free-only quotas")
         print("  doctor       Check Apple Silicon and MLX prerequisites")
         print("  benchmark   Run the existing reproducible local benchmark")
         print("  models      List cached models; `models list` also works without MLX")
@@ -447,6 +448,9 @@ def _dispatch(argv: list[str] | None) -> int:
         print("  info        Show package information")
         return 0
     command, rest = args[0], args[1:]
+    if command == "data":
+        from friday_evidence.portable.cli import main as data_main
+        return data_main(rest)
     if command in ("setup", "serve", "optimize"):
         from ironmule_product.cli import dispatch
         return dispatch(command, rest)

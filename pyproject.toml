@@ -26,6 +26,7 @@ keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-xdist>=3"]
+data = ["scikit-learn>=1.5,<2"]
 
 [project.urls]
 Homepage = "https://github.com/Tobayko/IronMule"
@@ -34,7 +35,7 @@ Issues = "https://github.com/Tobayko/IronMule/issues"
 Repository = "https://github.com/Tobayko/IronMule"
 
 [tool.setuptools]
-packages = ["ironmule", "ironmule_product", "friday_evidence", "friday_evidence.migrations"]
+packages = ["ironmule", "ironmule_product", "friday_evidence", "friday_evidence.migrations", "friday_evidence.portable"]
 py-modules = ["ironmule_cli", "ironmule_inventory"]
 
 [tool.setuptools.package-data]
