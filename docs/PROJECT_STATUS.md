@@ -5,7 +5,7 @@
 
 Diese Datei ist der kompakte Einstieg: Gate-/Entscheidstabellen und Verweise.
 Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
-[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md).
+`docs/ARBEITSJOURNAL.md`.
 
 ## Aktuelle Produktprüfung — 2026-09-08
 
@@ -195,7 +195,7 @@ Dokumentationsabschnitte entstanden **danach**.
 
 Der vollständige frühere Inhalt dieser Datei (alle Zyklen, Hashes, Preflights,
 Audits und Rohwerte) steht unverändert in
-[`docs/ARBEITSJOURNAL.md`](ARBEITSJOURNAL.md) unter
+`docs/ARBEITSJOURNAL.md` unter
 „Archiv — vollständiger PROJECT_STATUS.md-Stand bis 2026-08-30".
 Weitere Einstiege: [`docs/ERGEBNISSE.md`](ERGEBNISSE.md),
 [`BACKLOG.md`](BACKLOG.md), [`docs/KANDIDATENLISTE.md`](KANDIDATENLISTE.md),

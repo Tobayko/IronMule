@@ -4410,3 +4410,297 @@ Source `ironmule/qmv_variant.py`, `ironmule/activation.py`, harnesses
 
 **Status.** `B79_LEARNED_DISPATCH_CONFIRMED`. `B79` closes. `B80`, controlled continual
 learning during ordinary use without exploration, is not started here.
+
+## B80 — Watching a qualified action during ordinary use, and never learning from it (2026-09-11)
+
+**Verdict: `B80_CONTINUAL_MONITORING_PASS`**, on all ten gates. `B79`'s default is still
+`False` and nothing here can switch anything on.
+
+**The line this entry is really about.** A candidate dispatch that came back quickly says
+nothing about the reference, because the reference did not run. `B79` closed a loop on
+evidence gathered by studies, each with a reference arm, an A/A control and gates. Ordinary
+use has none of that. So `B80` splits the two kinds of record and keeps them apart
+structurally: *comparative* evidence carries a ratio measured against a reference arm and is
+the only thing that may move a preference; an *observation* is one real dispatch and may only
+ever raise doubt. `ironmule/monitoring.py` imports nothing from the controller, names it
+nowhere in its code, cannot construct an `Evidence` row, and has no field called `ratio`. A
+test parses the module and asserts each of those against the code rather than the prose.
+
+**The state machine, and the one exit it does not have.**
+
+| state | meaning | what it does |
+| :-- | :-- | :-- |
+| `WARMING_UP` | fewer than `15` observations in this segment | watches, says nothing |
+| `MONITORING` | a baseline exists and is frozen | compares each full window against it |
+| `REQUALIFICATION_REQUIRED` | the window moved | the reference serves, persistently |
+
+Nothing observational moves a segment back out of `REQUALIFICATION_REQUIRED`. Clearing it
+needs comparative evidence, which only an explicit requalification run produces, and ordinary
+use never produces it. That is the whole of `B80`'s answer to "what if the machine changed":
+stop using the candidate and say so, never test it on a user's request.
+
+**The drift rule, and the second version of it.** A window of `8` is compared, only when full,
+by median against the frozen baseline through a robust scale, at `5` standard errors, with a
+spread rule at `3x` the baseline's. The first run used that alone and sealed
+`B80_TOO_SENSITIVE`: on a machine whose ordinary spread is half a per cent, a robust z-score
+calls a one per cent move overwhelming, and requalifying over that costs a user a gain the move
+had not taken away. The second rule adds a floor that is derived rather than tuned — the shift
+must also exceed the smallest gain the controller's own qualified interval supports, here
+`1 - 0.9774 = 2.26%`. Below that the action still wins and there is nothing to recheck. Both
+records stand.
+
+**One preregistered expectation was wrong and it is not quietly corrected.** The first run
+listed a `3%` sustained shift as a false alarm. It is not: `B76` measured the action to be
+worth `2.3` to `4.6%`, so a sustained `3%` slowdown can erase the reason to use it. The second
+run lists it as a case worth catching and adds a `1%` sequence as the genuinely immaterial one.
+
+| sequence | shift | must requalify | did | observations to detection |
+| :-- | --: | :-- | :-- | --: |
+| `stable` | `1.00` | no | no | — |
+| `negligible` | `1.01` | no | no | — |
+| `mild` | `1.03` | yes | yes | `8` |
+| `drift_shift` | `1.25` | yes | yes | `8` |
+| `drift_variance` | spread `6x` | yes | yes | `13` |
+
+**False alarms: none, twice.** `200` trials of `100` observations each, resampled from `B79`'s
+real canary latencies: zero. The live shadow run of `60` ordinary dispatches: zero.
+
+**A segment is invalidated by change, never by the calendar.** The key is fingerprint, GPU
+architecture, model identity, model revision, quantisation, `mlx`, `mlx_lm`, workload class,
+action, the digest of the action's own code, and the action that actually ran. Any of them
+differing starts a new segment in `WARMING_UP`; the old one is retained, marked superseded and
+never consulted. All eight change cases behave that way. Age alone widens uncertainty and
+deletes nothing.
+
+**Including the action that ran, which was a defect until it was measured.** The segment key
+first held the qualified action's id but not the action taken, so a reference dispatch and a
+candidate dispatch of the same workload shared one baseline — and a reference dispatch is
+slower by construction. Every time the gate shut, the monitor would have seen drift. Fixed
+before any of it ran live, and a test holds it.
+
+**The shadow run: sixty ordinary requests, watched.** Activation opted in, the candidate ran in
+all sixty, token ids and stop reasons identical throughout, zero fallbacks, zero false alarms.
+One state transition, `WARMING_UP` to `MONITORING` at observation `15`.
+
+| measurement | value |
+| :-- | --: |
+| added per dispatch by the monitor check | `8.0 ns` |
+| share of a measured dispatch | `8.7e-09` |
+| the same as a ratio against an isolated `for_dispatch`, reported and not gated | `1.0386` |
+| `observe()`, once per dispatch after the answer exists | `6.7 us` |
+| monitor state on disk after `60` observations | `3694 bytes`, one segment |
+
+**A third denominator mistake, and it is the same one.** The first shadow run held the monitor
+check to a ratio against an isolated `for_dispatch` call and recorded a `FAIL` at `1.1345`. A
+guard measured in nanoseconds cannot be held to a denominator that small; `B79` already settled
+that a per-dispatch guard's reference is a dispatch. The check was corrected to that, and
+separately the flag it reads became a plain attribute instead of a property, which is a real
+improvement and cost nothing: `25 ns` became `8 ns`. The failing record is kept.
+
+**The state does not grow with use.** The monitor keeps a baseline and a window per segment,
+not the observations. Two thousand observations leave the file the same size as fifteen.
+
+**When a requalification actually becomes necessary.** When a full window's median sits more
+than five robust standard errors from its segment's baseline *and* more than the action's own
+smallest qualified gain away from it; or when the window's spread reaches three times the
+baseline's. On this machine, in `2026`, that is a sustained slowdown of about `2.3%` or more,
+caught in eight observations.
+
+**Raw data (local, `.gitignore`d).** `B80_replay_20260911.json`, the first rule, kept with its
+`TOO_SENSITIVE` verdict, and `…_v2.json`; `B80_shadow_canary_20260911.json`, kept with its
+`FAIL`, and `…_v2.json`; `B80_outcome_20260911.json`. Source `ironmule/monitoring.py`,
+harnesses `tools/b80_replay.py`, `tools/b80_shadow_canary.py`, `tools/b80_outcome.py`, tests
+`tests/test_b80_monitoring.py`.
+
+**Status.** `B80_CONTINUAL_MONITORING_PASS`. `B80` closes. `B81`, the explicit requalification
+run that can clear a `REQUALIFICATION_REQUIRED` state, is not started here; until it exists a
+requalification is cleared only by a person. Nothing is activated: the default stays `False`,
+the canary wrote to a scratch directory, the user's store carries no learning, monitoring or
+kill state, and nothing is committed or pushed.
+
+## B81 — The only way back, and the half of it this machine would let us prove (2026-09-11)
+
+**Verdict: `B81_SAFE_REFERENCE`**, on eleven gates, with the `PASS` branch covered by tests
+and not reached live. Two full recovery runs were made on this Mac. Neither requalification
+cleared its own gates, both left the machine on the reference with the requalification still
+required, and that is the fail-closed branch working rather than a failure of it.
+
+**What exists now.** `ironmule/requalification.py` and `ironmule requalify`: the only thing in
+the system that can move a segment out of `REQUALIFICATION_REQUIRED`. It is shipped code,
+because a product command cannot depend on a study tool, and it refuses to start unless
+monitoring actually took the action away, the machine still matches what was qualified, no kill
+record is present, and the machine has the memory and the quiet to measure.
+
+**A requalification is a qualification, not a reset.** Three independent sessions, three blocks
+each, one resident model per child, arms rotated, an A/A control in every block, byte identity
+for every admitted projection before a token is timed, `B65` in full, and a `25%` drift gate
+over blocks. Twenty-seven children, `189` comparative requests. No historical ratio enters the
+decision; a test asserts `B69`'s, `B75`'s and `B76`'s numbers appear nowhere in the module.
+
+| permitted transition | what causes it |
+| :-- | :-- |
+| `CANDIDATE_QUALIFIED` → `REQUALIFICATION_REQUIRED` | `B80` drift |
+| `REQUALIFICATION_REQUIRED` → `CANDIDATE_QUALIFIED` | an explicit run that passes |
+| `REQUALIFICATION_REQUIRED` → `REFERENCE_ONLY` | an explicit run finding no gain, or worse |
+| `REQUALIFICATION_REQUIRED` → itself | an invalid run, changing nothing |
+
+Nothing observational appears in that table, and a test drives five hundred candidate-friendly
+observations at a requalified state without moving it.
+
+**Old evidence is never deleted.** A requalification opens an epoch: the previous state file is
+copied to `local_learning.<stamp>.epoch.json`, the monitor's baselines are archived beside it
+so the next baseline describes the machine as it is now, the new rows carry their own
+`B81_requalification_<stamp>_session_NN` ids, and a lineage file records every event in order.
+
+**The live sequence, twice.** A qualified controller, a drift state written only by the
+harness, a fresh runtime, the explicit command, a real comparison, another fresh runtime.
+
+| step | attempt 1 | attempt 2 |
+| :-- | :-- | :-- |
+| before the drift | `candidate` | `candidate` |
+| drift produced by the harness | yes | yes |
+| fifty candidate-friendly observations after it | state kept | state kept |
+| after a restart | `reference` | `reference` |
+| requalification outcome | `INVALID` | `INVALID` |
+| after a second restart | `reference` | `reference` |
+| wall time | `795 s` | `826 s` |
+
+Both runs were refused for the same reason: a block deviated past the drift gate. The gate
+refused rather than believing the numbers.
+
+**Why, and it is the interesting part.** The machine was too noisy to read, and its own A/A
+controls say so.
+
+| run | A/A medians | largest A/A half width | sessions clearing the gate |
+| :-- | :-- | --: | --: |
+| `B76`, fourteen sessions | median `1.0000`, `SD` `0.0069` | `0.0193` max offset | `13` of `14` |
+| attempt 1 | `1.0067`, `0.8508`, `0.9673` | `0.2297` | `2` of `3` |
+| attempt 2 | `0.9228`, `1.0829`, `1.0370` | `0.1996` | `1` of `3` |
+
+**And the candidate looked wonderful while that was true**, which is exactly `B77`'s account of
+`B69`. Attempt 1's session `1` read `0.7995` with an A/A control at `0.8508`; attempt 2's
+session `0` read `0.8173` with a control at `0.9228`. A reference arm that runs slow inflates
+the apparent gain, the A/A arm shows it, and the gate that reads the A/A arm is what stops a
+`20%` "gain" from being recorded. `B69` had no such gate. This is the clearest corroboration of
+`B77`'s reading that the project has produced, and it arrived by accident.
+
+**The `PASS` branch was not reached live and is not chased.** It is covered by tests: a passing
+comparison restores `CANDIDATE_QUALIFIED` from new evidence with new ids, archives the previous
+epoch byte for byte, and clears the requalification record. A third live attempt would be
+running until the answer is the one wanted, so two are recorded and both stand.
+
+**Costs, and what a user actually pays.** `795` and `826` seconds, `27` model loads, `189`
+comparative requests per run. Outside a requalification the cost is nothing: the dispatch path
+does not import the module at all, which is checked at the import level, and `B80`'s `8 ns`
+per-dispatch monitor check is unchanged. A user stays on the reference from the moment
+monitoring takes the action away until a requalification passes — on this machine, across both
+attempts, that is still ongoing. A machine too noisy to measure keeps its user on the
+reference, which is the safe end of that trade.
+
+**One of my own checks failed and it is kept.** The first outcome record sealed `B81_FAIL`
+because the check for "the dispatch path is untouched" grepped the router's source for the word
+`requalification` and matched a comment. Checking prose instead of structure is the same
+mistake this session has now made in three studies; the corrected check reads the import table.
+Both records stand.
+
+**Raw data (local, `.gitignore`d).** `B81_recovery_preregistration_20260911.json`,
+`B81_recovery_20260911.json`, `B81_recovery_20260911_attempt2.json`,
+`B81_outcome_20260911.json`, kept with its `FAIL`, and `…_v2.json`. Source
+`ironmule/requalification.py`, the `requalify` command in `ironmule_cli.py`, harnesses
+`tools/b81_recovery.py`, `tools/b81_outcome.py`, tests `tests/test_b81_requalification.py`.
+
+**Status.** `B81_SAFE_REFERENCE`. `B81` closes on the mechanism. `B82` is the one live pass the
+machine owes this entry. Nothing is activated: both runs used scratch directories, the user's
+store carries no learning, monitoring, kill or lineage state, `enable_local_learned_dispatch`
+still defaults to `False`, and nothing is committed or pushed.
+
+## B82 — The live pass, with a cheap check in front of the expensive one (2026-09-11)
+
+**Verdict: `B82_LIVE_REQUALIFICATION_PASS`**, on all ten gates. The loop this project has been
+building since `B75` now closes end to end on real hardware:
+
+`unknown` → evidence collected → preference learned → persisted → used in a real dispatch →
+drift detected → reference → requalified → used in a real dispatch again.
+
+**What was added, and it is small.** `ironmule/readiness.py`: the reference run against itself,
+three blocks of two children, on the same workload and the same process lifecycle a
+requalification uses. It never runs the candidate, so it cannot predict which action wins; a
+test reads the syntax tree to prove there is exactly one child spec and that it says
+`reference`. Every limit is `requalification`'s own — the A/A offset and half width, the drift
+gate, `B65`, token identity, zero fallbacks — and a test asserts the module defines none of them
+itself. A bar set from the runs it is meant to filter would not be a bar.
+
+**`NOT_READY` is a result.** No comparison starts, nothing retries inside the call, nothing
+waits. The reference keeps serving and the requalification stays required. `ironmule requalify`
+now runs the probe first by default and `--skip-readiness` is the way to spend the comparison
+anyway.
+
+**One run, and it was the pass.** The probe read the machine at `0.9988` with a half width of
+`0.0069` — `B76`'s own noise level — and one full `B81` requalification followed, unchanged.
+
+| session | ratio | 95% CI | A/A | A/A half width |
+| --: | --: | :-- | --: | --: |
+| `0` | `0.9607` | `[0.9566; 0.9655]` | `0.9976` | `0.0038` |
+| `1` | `0.9584` | `[0.9559; 0.9617]` | `0.9913` | `0.0097` |
+| `2` | `0.9673` | `[0.9512; 0.9690]` | `1.0019` | `0.0086` |
+
+Every interval entirely below `1.0`, every A/A control clearing its gate, no disturbed block, no
+fallback, tokens and stop reasons identical throughout. The three ratios sit on top of `B76`'s
+`0.9648` from fourteen sessions, which is corroboration nobody arranged.
+
+**And the state moved exactly one step.** `CANDIDATE_QUALIFIED`, rebuilt from three
+`B81_requalification_20260911T141105Z_session_NN` rows and nothing older. The previous epoch and
+the monitor's baselines were archived, the requalification record was cleared, the lineage reads
+`requalification_started` then `requalification_pass`, and a runtime started afterwards
+dispatched the candidate.
+
+| step | effective action |
+| :-- | :-- |
+| before the drift | `candidate` |
+| after the drift and a restart | `reference` |
+| after the requalification and a restart | `candidate` |
+
+**What the probe cost, against what it guards.**
+
+| | wall time | model loads |
+| :-- | --: | --: |
+| readiness probe | `145 s` | `6` |
+| full requalification | `667 s` | `27` |
+| `B81`'s two invalid runs | `1621 s` | `54` |
+
+The probe is `21.8%` of a comparison. Outside a requalification it costs nothing at all: the
+dispatch path does not import it.
+
+**Would it have saved `B81`?** Half of it, and the honest answer is stated rather than the
+flattering one. A requalification session's A/A arm *is* reference against reference over three
+blocks, the same shape the probe uses, so the recorded controls can be judged by the same rule.
+A probe runs *before* a comparison, so the counterfactual is each attempt's first session
+control, not its worst.
+
+| attempt | first session A/A | probe would have | outcome that happened |
+| :-- | :-- | :-- | :-- |
+| `B81` attempt 1 | `1.0067`, half width `0.0095` | passed | `INVALID` |
+| `B81` attempt 2 | `0.9228`, half width `0.1996` | failed | `INVALID` |
+
+One of the two would have been prevented, saving `826 s`. The other would not: its machine was
+quiet when it started and was disturbed during its second session. That is the limitation, and
+it is the reason the real run keeps its own gates. No preflight existed during `B81` and none is
+retrofitted into its records.
+
+**The same mistake, a third and fourth time, and then fixed properly.** Two of this entry's own
+tests failed because they searched the module's *text* for words that appear in its prose — and
+one of them cut the docstring off at the last statement, which keeps only the final function and
+silently passes checks the rest of the file would fail. Both now read the syntax tree: a loop is
+a `While` node, a wait is a call to `sleep`, and the code boundary is the first statement after
+the docstring. That is the end of a class of error this session made in `B77`, `B80`, `B81` and
+here.
+
+**Raw data (local, `.gitignore`d).** `B82_live_preregistration_20260911.json`,
+`B82_live_20260911.json`. Source `ironmule/readiness.py`, the readiness gate in
+`ironmule/requalification.py` and `--skip-readiness` in `ironmule_cli.py`, harness
+`tools/b82_live.py`, tests `tests/test_b82_readiness.py`.
+
+**Status.** `B82_LIVE_REQUALIFICATION_PASS`. `B82` closes, and `B81` closes completely with it.
+Nothing is activated: the run used a scratch directory, the user's store carries no learning,
+monitoring, kill or lineage state, `enable_local_learned_dispatch` still defaults to `False`,
+and nothing is committed or pushed.

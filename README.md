@@ -4,8 +4,9 @@
 
 # IronMule
 
-**A measurement-first MLX inference engine for Apple Silicon: every performance claim
-is backed by a preregistered experiment with an A/A control and a confidence interval.**
+**A self-calibrating, evidence-gated local LLM runtime for Apple Silicon. It measures its
+own machine, learns which execution paths that machine has actually earned, and falls
+back to the reference the moment the evidence stops holding.**
 
 <p align="center">
   <a href="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml"><img src="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -16,11 +17,21 @@ is backed by a preregistered experiment with an A/A control and a confidence int
 
 IronMule runs local LLM inference on a Mac through MLX. It chooses between low
 single-request latency and higher aggregate throughput, reuses shared prompt prefixes,
-separates service TTFT from engine TTFT, and records which MLX optimisations are both
-faster **and** token-identical on your machine.
+and separates service TTFT from engine TTFT.
+
+What makes it different is what happens after that. A fresh install knows nothing about
+your Mac and serves the reference path. From there it can run the whole loop on its own
+hardware:
+
+**measure → learn → qualify → act → monitor → fall back → requalify**
+
+Every step is gated on evidence this machine produced, and every gate fails closed. No
+optimisation is used because it looked good elsewhere, and none keeps being used once
+the machine stops behaving the way it did when the evidence was taken.
 
 It runs locally. It does not upload prompts, silently download models, or hide a cloud
-service behind the API. Model downloads require an explicit command.
+service behind the API. Model downloads require an explicit command. Learned dispatch is
+**off by default** and needs an explicit opt-in.
 
 > [!IMPORTANT]
 > The published performance evidence was measured on one Apple M1 Max with 32 GB of
@@ -54,6 +65,55 @@ flowchart LR
 **Service TTFT and engine TTFT are separate numbers.** Service TTFT includes the queue
 wait a real caller experiences; engine TTFT does not. Reporting only the second one
 makes a busy server look fast, so both are recorded per request.
+
+### The local learning lifecycle
+
+A qualified optimisation is not a setting someone turned on. It is the end of a path
+that starts at the reference and returns there whenever an answer is missing.
+
+```mermaid
+flowchart LR
+  U["unknown<br/>serve the reference"] --> CH["characterise<br/>probe this machine"]
+  CH --> EV["local evidence<br/>paired, A/A controlled"]
+  EV --> L["local learner<br/>preference with uncertainty"]
+  L --> Q{"qualified?"}
+  Q -- "no" --> U
+  Q -- "yes, and opted in" --> CA["candidate<br/>runs the qualified path"]
+  CA --> M["passive monitor<br/>ordinary dispatches only"]
+  M --> D{"drift?"}
+  D -- "no" --> CA
+  D -- "yes" --> RF["reference<br/>requalification required"]
+  RF --> RD{"readiness<br/>reference vs reference"}
+  RD -- "not ready" --> RF
+  RD -- "ready" --> RQ["explicit requalification<br/>full paired comparison"]
+  RQ -- "pass" --> CA
+  RQ -- "no gain, worse or invalid" --> RF
+
+  classDef ref fill:#FFFFFF,stroke:#767676,stroke-width:1px,color:#1A1A1A
+  classDef gate fill:#FFFFFF,stroke:#0072B2,stroke-width:1.5px,color:#1A1A1A
+  classDef act fill:#FFFFFF,stroke:#D55E00,stroke-width:1.5px,color:#1A1A1A
+  class U,CH,EV,L,RF ref
+  class Q,D,RD gate
+  class CA,M,RQ act
+```
+
+**Every unqualified case is the reference.** A foreign machine fingerprint, a different
+model revision, another MLX build, a workload class the evidence never covered, a
+correctness difference, a resource gate, a control too noisy to read, an interval that
+touches `1.0`, a missing or damaged state file — each one ends at the reference, and
+each one says which condition failed.
+
+| stage | what it is | what it may do |
+| :-- | :-- | :-- |
+| local learner | a persistent preference per action and workload class, with its uncertainty | qualify an action from **comparative** evidence only |
+| learned dispatch | one substitution, `reference → qualified candidate`, opt-in | change what runs, and never choose a third thing |
+| passive monitor | ordinary dispatches, no experiments in the user path | raise doubt, never qualify anything |
+| readiness | the reference run against itself | say whether the machine is steady enough to measure |
+| requalification | a full paired comparison a person starts | restore the candidate, or leave the reference |
+
+A monitor watching a fast candidate cannot conclude the candidate is fast: the
+alternative did not run. Only a comparison against a reference arm, under the same
+gates, may move the preference.
 
 ### Choosing a mode
 
@@ -107,6 +167,52 @@ when only the last position's logits are. The instrumented split sums to the
 uninstrumented call at `1.0000x`, so the instrument did not move what it measured.
 5 repeats, 322 prompt tokens, first token identical in both arms. Source:
 [`research/raw/E1-prefill-breakdown.json`](research/raw/E1-prefill-breakdown.json).
+
+### What the learned path is worth, on the one path it was measured on
+
+The learned action currently qualified on this machine is a threadgroup geometry for the
+`K = 3840` quantised matvec, on Gemma 3 12B, for single short requests on the sequential
+path. Its evidence is `B76`: fourteen independent sessions, each three blocks of three
+fresh processes, with an A/A control in every block.
+
+| | |
+| :-- | --: |
+| sessions where the candidate was faster | `14 / 14` |
+| typical ratio, candidate over reference | `0.965` |
+| observed range | `0.954` to `0.977` |
+| between-session standard deviation | `0.0069` |
+| A/A control over the same fourteen sessions | median `1.0000`, largest offset `0.0193` |
+
+That is roughly **3 to 4 per cent less runtime on the measured path**, and the spread is
+part of the claim rather than a footnote to it: `B76` found the *sign* stable and the
+*magnitude* variable, so a single number is not what this buys.
+
+**Reproduced through the full lifecycle.** `B82` drove the same machine through drift, a
+fall back to the reference, and one explicit requalification, which measured the action
+again from scratch:
+
+| requalification session | ratio | 95% interval |
+| --: | --: | :-- |
+| `0` | `0.9607` | `[0.9566; 0.9655]` |
+| `1` | `0.9584` | `[0.9559; 0.9617]` |
+| `2` | `0.9673` | `[0.9512; 0.9690]` |
+
+> [!IMPORTANT]
+> These numbers describe **one machine, one model, one quantisation and one workload
+> class**: an Apple M1 Max, `gemma-3-12b-it-4bit`, 4-bit group-size 64, single short
+> requests on the sequential path. They do not transfer to another Mac, another model or
+> another workload, and the runtime refuses to apply them there.
+
+**An earlier confirmation of the same action reported a much larger gain and is not used
+as the typical figure.** `B69` measured `0.8469`; `B77` later showed that run's own A/A
+control was an order of magnitude wider than `B76`'s, with its candidate interval
+overlapping its own control. The sign stands and the magnitude does not. The record is
+kept unchanged in the [ledger](research/LEDGER.md) — see `B69`, `B77`, `B81` and `B82`.
+
+**The opt-in canary is a safety result, not a benchmark.** `B79` ran thirty real
+dispatches with the learned path enabled and checked correctness, fallbacks and the kill
+switch. Its before-and-after controls detect a gross regression; they are not a paired
+design and are not offered as a performance measurement.
 
 ### Figures that do not exist yet
 
@@ -426,6 +532,16 @@ receives a request later should dispatch it later, which is what a server does a
 - **Exact validity fingerprints:** bind hardware, framework, model revision, complete
   manifest, architecture, quantisation, tokenizer, plan, mode, and workload; legacy
   incomplete profiles fail closed.
+- **A local hardware learner:** a persistent, per-workload preference built only from
+  comparative evidence this machine produced, stored with its uncertainty rather than as
+  a single gain figure.
+- **Evidence-gated learned dispatch, off by default:** `enable_local_learned_dispatch`
+  defaults to `False`; with it set, one substitution is possible and only where every
+  admission axis agrees.
+- **Passive drift monitoring:** ordinary dispatches are observed, never steered. A
+  sustained shift beyond what the action is worth takes the action away.
+- **Explicit requalification:** `ironmule requalify` re-measures the action under the
+  gates that qualified it, after a cheap readiness probe says the machine can be read.
 
 ## Commands
 
@@ -440,12 +556,27 @@ receives a request later should dispatch it later, which is what a server does a
 | `ironmule benchmark` | Compare interactive and throughput modes locally |
 | `ironmule tune` | Measure candidates and write or inspect a local profile |
 | `ironmule revalidate` | Canary-check the stored profile against the current setup |
+| `ironmule requalify` | Re-measure a learned action after monitoring took it away |
 | `ironmule status` | Show local hardware and profile status |
 | `ironmule info` | Show package information |
 
 Run `ironmule --help` or `ironmule <command> --help` for options.
 
 ## Limitations
+
+**Demonstrated, on one Apple M1 Max:** the complete local learning cycle end to end;
+cold-start learning from no prior knowledge; evidence-gated learned dispatch; passive
+drift monitoring; a fail-closed fallback to the reference; explicit requalification; and
+one live requalification that passed and handed the action back.
+
+**Not demonstrated, and not claimed:** cross-hardware generalisation; behaviour on any
+other Apple Silicon generation; reinforcement learning or a contextual bandit; a
+universal performance gain; and automatic activation as a default. A second real Mac is
+what `B73` needs and there is not one.
+
+IronMule is **not** a reinforcement learning system. It is a local hardware learner with
+a non-contextual estimator: a contextual model over machine-state features was measured
+in `B77` and was worse than a constant one on prediction error, coverage and regret.
 
 - It does not download or redistribute model weights.
 - It does not offer sampling: decoding is greedy, so `temperature` and `top_p` are
@@ -487,6 +618,11 @@ The [limits](docs/LIMITS.md), [runtime guide](docs/RUNTIME.md), and
 | Path | What is there |
 | :-- | :-- |
 | `ironmule/` | The engine: runtime, execution plans, service modes, router, telemetry, tuning |
+| `ironmule/local_learner.py` | The persistent local preference, its evidence intake and its estimators |
+| `ironmule/activation.py` | The one place a learned preference may change a dispatch, off by default |
+| `ironmule/monitoring.py` | Passive drift detection over ordinary dispatches |
+| `ironmule/requalification.py` | The explicit comparison that can restore a learned action |
+| `ironmule/readiness.py` | The cheap reference-against-reference check in front of it |
 | `ironmule_product/` | The local service: worker isolation, HTTP server, state, calibration |
 | `friday_evidence/` | Evidence schema and statistics the engine and the service both use |
 | `tools/make_figures.py` | Every README figure, rendered from a committed artifact |
@@ -521,7 +657,12 @@ measurement and self-calibration research the engine's numbers come from:
 device profiles measured per machine, a serving path that only enables a knob
 this device verified as token-identical, and the experiment record behind it.
 
-See **[the research overview](docs/README_PROJECT_FRIDAY.md)**, its open work list in
-[`docs/PROJECT_FRIDAY_BACKLOG.md`](docs/PROJECT_FRIDAY_BACKLOG.md) and the append-only
-work journal in [`docs/ARBEITSJOURNAL.md`](docs/ARBEITSJOURNAL.md), which is the one
-document kept in German.
+Every study is in the [ledger](research/LEDGER.md) with its preregistration, including
+the ones that failed. `B76` sealed a verdict its own rule produced wrongly and `B77`
+documents that defect rather than rewriting it; `B81` closed on the reference after two
+requalifications the machine was too noisy to support. Those records are kept as
+measured.
+
+See **[the research overview](docs/README_PROJECT_FRIDAY.md)**, the open work list in
+[`docs/BACKLOG.md`](docs/BACKLOG.md) and the longer research backlog in
+[`docs/PROJECT_FRIDAY_BACKLOG.md`](docs/PROJECT_FRIDAY_BACKLOG.md).

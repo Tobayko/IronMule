@@ -88,12 +88,14 @@ request later should dispatch it later, which is what a server does anyway.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from dataclasses import asdict, dataclass, replace, field
 from typing import Mapping, Any, Sequence
 
 from .activation import ActivationContext, LearnedDispatchActivation, OFF
 from .local_learner import IntakeContext, LocalLearner, default_state_path
+from .monitoring import DriftMonitor, Observation, default_action_code_digest
 from .plans import ExecutionPlan, StrictOneShotPlan, plan_kind
 from .service import (AutomaticMode, InteractiveMode, PairedThroughputMode, Request,
                       Result, Runtime, ThroughputMode, paired_status)
@@ -307,6 +309,11 @@ class ExecutionRouter:
             evidence_run_ids=("E15", "E16", "B55"), **facts)
 
 
+def monitor_path(state_path: Path) -> Path:
+    """The monitor's own file, beside the controller's."""
+    return Path(state_path).with_name(Path(state_path).stem + "_monitoring.json")
+
+
 class AppleRuntime:
     """A loaded model that routes itself. Thin: it owns a `Runtime` and a decision.
 
@@ -328,11 +335,19 @@ class AppleRuntime:
     """
 
     def __init__(self, runtime: Runtime, router: ExecutionRouter,
-                 activation: LearnedDispatchActivation | None = None):
+                 activation: LearnedDispatchActivation | None = None,
+                 monitor: DriftMonitor | None = None,
+                 monitor_path: Path | None = None,
+                 action_code_digest: str = ""):
         self.runtime = runtime
         self.router = router
         # `B79`. None means the reference, which is what every caller before B79 gets.
         self.activation = activation
+        # `B80`, passive and off the hot path: an observation is built once per dispatch,
+        # after the answer exists, in the same place the other diagnostics live.
+        self.monitor = monitor
+        self.monitor_path = monitor_path
+        self.action_code_digest = action_code_digest
         self.decisions: list[dict[str, Any]] = []
 
     # -- construction ---------------------------------------------------------
@@ -381,9 +396,19 @@ class AppleRuntime:
         # this context. A profile cannot switch it on and neither can an environment
         # variable; a persisted kill record outranks the flag.
         quantisation = getattr(resolved.identity, "quantisation", None) or {}
-        activation = LearnedDispatchActivation(
-            learner,
-            ActivationContext(
+        # `B80`, passive. Restored fail-closed like everything else: an unreadable monitor
+        # state leaves one that watches from scratch, and a stored requalification survives.
+        # The drift rule's material floor is derived from the controller, not chosen: the
+        # smallest gain its own qualified interval supports. A slowdown below that leaves the
+        # action still winning, so there is nothing to requalify.
+        qualified = [learner.recommendation(action, workload_class)
+                     for (action, workload_class) in learner._recommendations]
+        intervals = [row.prediction_interval[1] for row in qualified
+                     if row.prediction_interval is not None
+                     and row.local_learning_state == "CANDIDATE_QUALIFIED"]
+        material_floor = max(0.0, 1.0 - max(intervals)) if intervals else 0.0
+        monitor = DriftMonitor.restore(monitor_path(state_path), state_path, material_floor)
+        activation_context = ActivationContext(
                 hardware_fingerprint=hw_fingerprint(),
                 gpu_architecture=str(mx.device_info().get("architecture", "")),
                 model_id=model_id,
@@ -391,15 +416,21 @@ class AppleRuntime:
                 model_revision=getattr(resolved.identity, "revision", "") or "",
                 quantization_bits=int(quantisation.get("bits", 0)),
                 quantization_group_size=int(quantisation.get("group_size", 0)),
-                mlx=mx.__version__, mlx_lm=mlx_lm.__version__),
+                mlx=mx.__version__, mlx_lm=mlx_lm.__version__)
+        activation = LearnedDispatchActivation(
+            learner, activation_context,
             enabled=enable_local_learned_dispatch,
-            state_path=state_path)
+            state_path=state_path, monitor=monitor)
         if activation.enabled:
             activation.install_on(runtime.engine.model, resolved.identity)
-        return cls(runtime, router, activation)
+        return cls(runtime, router, activation, monitor=monitor,
+                   monitor_path=monitor_path(state_path),
+                   action_code_digest=default_action_code_digest())
 
     # -- pass-through ---------------------------------------------------------
     def close(self) -> None:
+        if self.monitor is not None and self.monitor_path is not None:
+            self.monitor.save(self.monitor_path)
         self.runtime.close()
 
     def __enter__(self):
@@ -534,6 +565,7 @@ class AppleRuntime:
         # `B70`, shadow only, once per dispatch. The route is already chosen and every
         # cohort already served when this runs, so it annotates history.
         annotated = [self.router.annotate(decision) for decision in cohorts]
+        monitoring = self._observe(annotated, cohort_records)
         return {
             "router_version": ROUTER_VERSION,
             "silicon": [{"request_ids": list(decision.request_ids),
@@ -544,6 +576,7 @@ class AppleRuntime:
                                 "shadow": decision.local_learning}
                                for decision in annotated],
             "activation": [row.get("activation") for row in cohort_records],
+            "monitoring": monitoring,
             "dispatch_wall_ms": (time.perf_counter_ns() - dispatch_ns) / 1e6,
             "requests": len(requests),
             "mixed_objectives": len(cohorts) > 1,
@@ -571,6 +604,54 @@ class AppleRuntime:
             "fallback_reasons": [],
         }
 
+    def _observe(self, annotated, cohort_records) -> list[dict[str, Any]]:
+        """`B80`. One observation per cohort, built after the answer exists.
+
+        This is observational evidence: what one real dispatch did, with no counterfactual.
+        It can raise doubt about a qualified action and can never qualify one.
+        """
+        if self.monitor is None or not self.activation:
+            return []
+        from .hw import memory_pressure_level, swap_used_bytes
+
+        context = getattr(self.activation, "context", None)
+        if context is None:
+            return []
+        outcomes = []
+        transitions_before = len(self.monitor.transitions)
+        for decision, record in zip(annotated, cohort_records):
+            activation = record.get("activation") or {}
+            telemetry = record.get("telemetry") or {}
+            if not decision.workload_class:
+                continue
+            observation = Observation(
+                observed_at=datetime.now(timezone.utc).isoformat(),
+                hardware_fingerprint=context.hardware_fingerprint,
+                gpu_architecture=context.gpu_architecture,
+                model_identity_sha256=context.model_identity_sha256,
+                model_revision=context.model_revision,
+                quantization_bits=context.quantization_bits,
+                quantization_group_size=context.quantization_group_size,
+                mlx=context.mlx, mlx_lm=context.mlx_lm,
+                workload_class=decision.workload_class,
+                action_id=self.activation.action_id,
+                action_code_digest=self.action_code_digest or "unknown",
+                effective_action=activation.get("effective_action", "reference"),
+                end_to_end_ms=float(record.get("cohort_wall_ms") or 0.0) or 1e-6,
+                service_ttft_ms=telemetry.get("service_ttft_p50_ms"),
+                tokens_per_second=telemetry.get("aggregate_tokens_per_second"),
+                new_tokens=int(decision.max_new_tokens),
+                prompt_tokens=int(decision.max_prompt_tokens),
+                fallbacks=int(telemetry.get("fallbacks") or 0),
+                correctness_errors=int(telemetry.get("correctness_errors") or 0),
+                memory_pressure_level=memory_pressure_level(),
+                swap_used_bytes=swap_used_bytes(),
+                controller_digest=activation.get("controller_digest") or "")
+            outcomes.append(self.monitor.observe(observation))
+        if len(self.monitor.transitions) != transitions_before and self.monitor_path:
+            self.monitor.save(self.monitor_path)
+        return outcomes
+
     def generate(self, prompt: str | None = None, *, prompt_ids: Sequence[int] | None = None,
                  plan: ExecutionPlan | None = None, max_tokens: int = 64,
                  objective: str | None = None) -> Result:
@@ -588,6 +669,7 @@ class AppleRuntime:
             "qualified_profile": self.router.qualified,
             "local_learning": (self.router.local_learner.as_dict()
                                if self.router.local_learner is not None else None),
+            "monitoring": (self.monitor.as_dict() if self.monitor is not None else None),
             "local_learned_dispatch": (self.activation.status()
                                        if self.activation is not None else
                                        {"enabled": False, "default_enabled": False,

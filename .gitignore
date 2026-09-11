@@ -43,3 +43,14 @@ experiments/raw/
 
 # Optional local developer tooling, not a product dependency (see CONTRIBUTING.md)
 ProjectAtlas/
+
+# Internal working documents: agent instructions, the German work journals and the
+# research decision memos. They stay on the machine and out of the published tree.
+/AGENTS.md
+docs/ANWEISUNGEN_UND_DOKUMENTE.md
+docs/ARBEITSJOURNAL.md
+docs/ARBEITSJOURNAL_ENGINE.md
+docs/AUSBAUPLAN_UMSETZUNG_2026-09-02.md
+docs/CODEX_START.md
+docs/FORSCHUNGSENTSCHEID_2026-08-21.md
+docs/FORSCHUNGSENTSCHEID_2026-09-05.md

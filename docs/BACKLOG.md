@@ -788,29 +788,20 @@ or if the run cannot pass the resource gates it is measured under, the knob is r
 `ironmule.tune.SEARCH` rather than left in it. A knob that survives confirmation but never
 wins one does not belong in a search that feeds a profile.
 
-### `B80` — Continual learning during ordinary use, with nothing to explore
+**Closed by `B82`, and worth keeping as a note.** The local loop is demonstrated end to end on
+one machine: unknown state, evidence, a learned preference, persistence, a real dispatch, drift,
+the reference, an explicit requalification, and a real dispatch again. Everything still off by
+default. What remains open about local learning is not a mechanism but a second machine, which
+is `B73`.
 
-**Mechanism.** `B79` closed the loop once, on evidence gathered by studies. Every session it
-learned from was a preregistered measurement with its own reference arm, its own A/A control
-and its own gates. Ordinary use has none of those: a user's dispatches are all candidate or all
-reference, never both, so nothing in them estimates a ratio. The open question is whether a
-running installation can add *valid* local evidence without ever exploring — without serving a
-single request on a path chosen to learn from rather than to answer it.
-
-**Test.** The only honest source is a paired measurement the user did not pay for: a reference
-arm run when the machine is otherwise idle, against the candidate arm from the same period,
-under the same gates `B76` used, with the A/A control that decides whether either can be read.
-Gate on the controller's state moving only through the same `decide_state` every other path
-uses, on `B79`'s kill criteria staying armed throughout, and on the interval that qualified the
-action being re-checked against the widened evidence after every update.
-
-**Kill.** If valid evidence cannot be produced without exploring in the user path, continual
-learning stops here and the controller stays a thing that is updated by studies. A preference
-learned from unpaired production traffic is a preference learned from whatever else the machine
-was doing, which `B77` already measured as worse than knowing nothing.
-
-**Not authorised by `B79`.** `B79_LEARNED_DISPATCH_CONFIRMED` says a qualified action can be
-dispatched safely. It says nothing about earning a qualification during use.
+**Dead end, measured, do not re-run.** `B82`: judging a module's behaviour by searching its
+source text for words. Four studies in one session wrote a check that matched the module's own
+prose rather than its code — `B77`'s historical-ratio guard, `B80`'s separation check, `B81`'s
+dispatch-path check, and two of `B82`'s own. One of them also cut the docstring at the *last*
+statement, which keeps only the final function and passes checks the rest of the file would
+fail. Structural claims are checked on the syntax tree: imports in the import table, loops as
+`While` nodes, waits as calls to `sleep`, and the code boundary at the first statement after the
+docstring.
 
 **Dead end, measured, do not re-run.** `B76`: a contextual model over `load_1min`,
 `memory_free_percent` and `swap_used_gb` predicting the `(4, 8)` stack ratio on this machine.
