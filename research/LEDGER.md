@@ -2692,3 +2692,1721 @@ Status is terminal `FAILED`, `promotion_allowed=false`, fallback
 `BASE/current incumbent`. Do not retry or pool Q3f with Q3e/Q3d/Q3c, and do not
 claim historical Q2 reproduction or a new speed gain. A future child-visibility
 hardening requires explicit authorization and a new preregistration.
+
+## B55 — One router over the qualified paths (2026-09-10)
+
+**Question.** Over a mixed dispatch sequence, does an `AppleRuntime`/`ExecutionRouter`
+layer reach the faster fixed service mode on each workload, and does the wrapper itself
+cost anything against naming that mode by hand?
+
+**Design.** One process, one model load, four arms over the same loaded engine:
+`I_interactive` and `T_throughput` named by hand, `R_routed` (`objective="throughput"`)
+and `L_routed_latency` (`objective="latency"`). Workloads: one, two and four requests
+dispatched together, 48 requested tokens each, `mlx-community/gemma-3-4b-it-4bit`
+revision `93724907d4ed`, identity `2730e8b1…`, hardware `dc652d66f24ac207`, MLX `0.32.0`,
+mlx-lm `0.31.3`, tuned knobs from the same-day autotuner confirmation
+(`14.71%` faster end to end, tokens identical). Sixteen blocks, arm order rotated by
+block index. Correctness gates the timing and is not derived from it.
+
+**Result: `ROUTER_REACHES_BEST`.** Token IDs, physical token counts and stop reasons were
+identical across all four arms for all `224` compared requests. Zero fallbacks, zero swap
+growth. Paired per-block ratios, median with `95%` bootstrap over `10,000` resamples:
+
+| workload | `R/T_throughput` | `R/I_interactive` | `T/I` | `L/I_interactive` |
+| :-- | --: | --: | --: | --: |
+| one request | `1.0017` [1.0001; 1.0027] | `1.0008` [0.9974; 1.0037] | `0.9987` | `1.0012` [0.9911; 1.0055] |
+| two requests | `0.9951` [0.9882; 1.0028] | `0.9274` [0.9245; 0.9380] | `0.9353` | `1.0001` [0.9983; 1.0020] |
+| four requests | `1.0001` [0.9970; 1.0022] | `0.8260` [0.8250; 0.8265] | `0.8261` | `1.0021` [0.9966; 1.0117] |
+| mixed total | `0.9979` [0.9937; 1.0027] | `0.8807` [0.8768; 0.8841] | `0.8819` | `1.0011` [0.9974; 1.0053] |
+
+**What this is and is not.** The router *matches* the better fixed mode everywhere and is
+`11.9%` faster than a fixed `InteractiveMode` over the mixed sequence. It does **not**
+beat a fixed `ThroughputMode` on wall time; on this workload that mode is never worse.
+What a fixed mode cannot do is cover both objectives, and the per-request median latency
+is where the trade is visible:
+
+| workload | `I_interactive` | `T_throughput` | `R_routed` | `L_routed_latency` |
+| :-- | --: | --: | --: | --: |
+| one request | `615.0 ms` | `612.3 ms` | `612.2 ms` | `612.0 ms` |
+| two requests | `614.9 ms` | `1075.1 ms` | `1072.8 ms` | `680.6 ms` |
+| four requests | `1827.2 ms` | `1949.2 ms` | `1947.7 ms` | `1818.5 ms` |
+
+At two ready requests grouping buys `+7.7%` aggregate tokens per second at `+74.9%`
+median per-request latency; at four it buys `+24.4%` for `+6.7%`. That is the `E15`/`E16` trade at this workload, no dispatch-time fact resolves
+it, and so `objective` is a caller parameter rather than a guess. `L_routed_latency` took
+the sequential route on every workload, as preregistered.
+
+**A wrapper that changed what it measured.** Attempt 1 returned
+`ROUTER_DOES_NOT_REACH_BEST`: the routed single request was `3.7%` slower than naming its
+mode by hand. Direct profiling located all of it — `router.decide()` cost `0.006 ms` and
+`Telemetry.snapshot()` `0.020 ms`, while two `sysctl(8)` subprocess swap probes cost
+`17.4 ms` of a `21 ms` overhead. `ironmule.hw.swap_used_bytes` now reads `vm.swapusage`
+through `sysctlbyname`, measured at `0.0015 ms` and byte-exact against `sysctl -n`.
+Attempt 2 then passed. Attempts 3 and 4 re-bound the evidence to the shipped code after
+the `objective` parameter was added; attempt 3's eight mirrored blocks could not resolve
+the `2%` equivalence margin against a measured per-dispatch spread near `5%`, so
+sixteen rotated blocks were preregistered before attempt 4 rather than argued for after
+it. All four attempts are kept.
+
+**Raw data (local, `.gitignore`d).**
+`research/raw/B55_router_preregistration_20260910.json` (`2,722 B`,
+`093cfe85…`), `…_v3.json` (`3,319 B`, `4cfdd323…`),
+`B55_router_20260910.json` (attempt 1, `479,729 B`, `7abd9f22…`),
+`…_attempt2.json` (`479,709 B`, `6dda93c3…`),
+`…_attempt3.json` (`794,798 B`, `ba4fea12…`),
+`…_attempt4.json` (`1,580,059 B`, `d83951b5…`).
+Measured sources digest `c2d11dec…`. Harness `tools/b55_execution_router.py`.
+
+**Status.** MEASURED. Valid for this machine, this model revision, this MLX/mlx-lm build
+and this workload only. The paired route was never selected: no service-strategy record
+is stored in this profile, so `AutomaticMode` correctly kept the established mode.
+
+## B27 — Evidence-bound execution strategies, closed (2026-09-10)
+
+The architecture track asked whether the qualified fast paths could be selected through
+one explicit contract without weakening fail-closed correctness. D1 built the contract
+off the import graph, D2 bound exact model identity into fingerprints and profiles, and
+`B27d`/`B27e` ended `INCONCLUSIVE_POTENTIAL_REGRESSION` and `ORDER_OR_TEMPORAL_DRIFT`
+respectively — the entries above hold those results.
+
+`B55` answers the remaining question. `ironmule/router.py` selects between the existing
+paths using only dispatch-time facts, refuses everything on an unqualified fingerprint,
+never substitutes an execution plan, and delegates the throughput/paired split to the
+profile record that already owned it. It required no parallel execution implementation
+and added no per-token check. B27 is closed; `B56` to `B59` in `docs/BACKLOG.md` are the
+questions it left open.
+
+## B56 — A per-request objective, and the one case it cannot cover (2026-09-10)
+
+**What shipped.** `Request.objective` (`latency`, `throughput`, or `None`),
+`AppleRuntime.serve(..., objective=...)`, and `ExecutionRouter.plan()`, which splits a
+dispatch into one cohort per objective under `ironmule.dispatch.objective_cohorts.v1`:
+resolve each request's objective (request, else dispatch, else runtime), partition
+preserving caller order, order cohorts by `(earliest arrival, latency before throughput)`,
+serve each on the route the router picks sharing one dispatch timestamp, return results in
+caller order. A request that names nothing inherits the runtime objective, so every call
+written before this behaves identically.
+
+**Result: `B56_NO_GO`** on the preregistered rule, from the binding run
+(`…_attempt4.json`, 16 rotated blocks, stable, load `2.90` to `3.57`, `608` requests,
+zero fallbacks, zero swap growth).
+
+| criterion | outcome |
+| :-- | :-- |
+| `C1` correctness | **pass** — tokens, counts and stop reasons identical to a pure `InteractiveMode` reference |
+| `C2` routing overhead | **fail** — medians `1.0000` to `1.0044`, but CI uppers reach `1.0232` against a `1.02` margin |
+| `C3` latency protection | **fail** — only on staggered arrival |
+| `C4` throughput reach | **pass** |
+| `C5` determinism | **pass** — zero route disagreements over 16 blocks |
+| `C6` no starvation | **pass** |
+
+`C2` is a power statement, not a cost statement, and must be read as one. Every median sits
+within `0.5%` of `1.0`; the intervals are simply too wide at this block count to *certify*
+`±2%`. No extension to significance was run.
+
+`C3`, against matched latency-only controls (same prompts, same positions, same declared
+arrivals):
+
+| comparison | ratio |
+| :-- | --: |
+| one latency + one throughput, simultaneous | `0.9815` [0.9736; 1.0143] |
+| two latency + two throughput, simultaneous | `1.0004` [0.9921; 1.0082] |
+| staggered: latency arrives after the cohort starts | `2.1116` [2.0925; 2.1645] |
+
+A hand-written caller doing the same split measured `2.1211` [2.0927; 2.1538] on that last
+row. The staggered failure is the device, not the routing.
+
+**Attempts kept.** Attempt 1 compared a mixed workload's latency requests against a
+different workload's, confounding prompt mix with the question; matched controls moved
+`W5` from `1.0197` to `1.0030`. Attempt 3 was contaminated — an unrelated editor language
+server started mid-run and the hand-written arm's wall time doubled from `810` to
+`1640 ms` over blocks 9 to 14 — and produced `BLOCKED`-grade noise before the stability
+gates existed. Two gates were added afterwards, both of which can only *block* a verdict:
+a `4.0` load ceiling at start, and any block deviating more than `25%` from the median.
+
+**Status.** MEASURED, `NO_GO`. The feature is implemented and the default is unchanged.
+`objective="latency"` is a **dispatch preference, not a latency guarantee**;
+`last_decision["latency_protected"]` reports which case a dispatch was in.
+
+## B56b — An own dispatch does not protect a late latency request (2026-09-10)
+
+**Question.** `B56` left one case open. `B56a`'s earlier `1.00x` for "its own dispatch"
+measured the request with *no throughput work running at all*, so it measured an empty
+machine and answered nothing. This measures the case that was actually asked about.
+
+**Design.** Two OS processes, each with its own resident model and its own submission to
+the device. `A_child` (solo on the child's engine, the floor), `A_control` (A/A),
+`A_parent` (cross-engine control, because `B` measures on one engine and `C` on the
+other), `B_router` (today's router, one dispatch, the request waits), `C_own` (the parent
+serves the cohort while the child serves the latency request from its own process at the
+same `60 ms`). `time.perf_counter_ns` is system-wide on macOS, so both processes' stamps
+lie on one axis and the concurrency check is a direct comparison. Twelve repetitions,
+rotated order, two separate confirmation sessions.
+
+**Result: `B56b_SESSION_NO_GO` in both sessions**, on `G1`, reproducibly.
+
+| gate | limit | session 1 | session 2 | |
+| :-- | --: | --: | --: | :-- |
+| `G1` protection, `C/A` | < 1.30 | `1.5013` [1.4520; 1.5067] | `1.4702` [1.4418; 1.5199] | **fail** |
+| `G2` beats waiting, `C/B` | < 0.75 | `0.4858` | `0.4861` | pass |
+| `G3` cohort not starved, `C/B` | < 1.25 | `1.2357` | `1.2190` | pass |
+| `G4` A/A control | contains 1.0 | `1.0005` | `0.9978` | pass |
+| `G4b` engine control | 0.95–1.05 | `1.0285` | `1.0219` | pass |
+| `G5` correctness | identity | identical | identical | pass |
+| `G6` concurrency | overlap | `629.6 ms` | `635.7 ms` | pass |
+| `G7` resources | see below | clean | clean | pass |
+
+**The concurrency was real and is not the problem.** The child's queue time was `0.03 ms`,
+its whole life sat inside the cohort's window, and the overlap was `630 ms`. What the
+device does with two submission streams is share itself: the latency request's own decode
+rate falls from `75.1` to `50.0` tokens per second, its latency rises from `426` to
+`639 ms`, and the cohort's completion rises from `811` to `1001 ms`. Work is conserved.
+
+An own dispatch therefore **halves the wait** (`1319` to `639 ms`) and **does not protect**:
+`1.50x` solo, against a `1.30x` limit fixed before the run. No threshold was moved and no
+session was extended.
+
+**`G7`, because two resident models are part of what `C` costs.** Zero swapouts,
+system free memory `34-36%`, combined peak RSS `7.53-7.54 GB` — `21.9%` of the installed
+`34.36 GB`, against a `60%` ceiling of `20.6 GB`. MLX peak per process and the model's own
+weight bytes are in the record. The cost is real but was never the binding constraint.
+
+**Semantics.** No preemption is claimed or measured. Nothing here inspects the device
+scheduler; what is reported is the observed outcome of two submission streams.
+
+**Consequence.** `own_dispatch` is not pursued and does not enter any stack. The
+single-resident-model variant with two command queues is **not** started: it was
+conditional on `GO`.
+
+**Raw data (local, `.gitignore`d).** `B56_objective_routing_preregistration_20260910.json`
+and `…_v2.json`; `B56_objective_routing_20260910{,_attempt2,_attempt3,_attempt4}.json`;
+`B56_staggered_alternatives_20260910.json`;
+`B56b_own_dispatch_preregistration_20260910{,_v2}.json`;
+`B56b_own_dispatch_20260910_session{1,2}.json`. Harnesses
+`tools/b56_objective_routing.py`, `tools/b56b_own_dispatch.py`,
+`tools/b56b_latency_worker.py`.
+
+**Status.** MEASURED, `NO_GO`. Valid for this machine, this model revision, this MLX and
+mlx-lm build and this workload only.
+
+## B57 — The best combination this machine has earned, executed rather than added (2026-09-10)
+
+**Design.** `tools/b57_stack_composition.py` executes each combination of already qualified
+levers as one candidate and measures it whole, because `prefix`, the tuned knob set and the
+paired path were each measured against a different denominator and adding their percentages
+describes nothing. `ironmule/stacks.py` reduces the candidate set before anything runs and
+records why each dropped candidate was dropped. Selection and confirmation are separate
+runs. Preregistered as `B57_stack_composition_preregistration_20260910.json`; `…_v2.json`
+repeats the identical design with the current binding, because `ironmule/stacks.py` gained
+the `own_dispatch` refused record after `v1` was written. Only that one file differs.
+
+**Plans are not compared across plan kinds.** A prefix stack's reference is the same plan
+with reuse dropped — same chunked prefill, same tokens — never a strict-plan stack. `E9`
+measured the two plans up to `4.31` logits apart.
+
+### 4B — `CONFIRMED`
+
+Admitted `A`, `A_t`, `B`, `B_t`, `E`. `C` never ran: this model does not admit the paired
+path. `D` fell to the source's own exclusion, `D_single` to the kernel's activation hold.
+
+Both phases: `12` blocks, tokens, counts and stop reasons identical within plan kind, zero
+fallbacks, zero swapouts, free memory never below `70%`, peak RSS `3.77 GB`, no block
+beyond the `25%` drift limit, swap unchanged.
+
+| class | reference | stack | median | 95% CI |
+| :-- | :-- | :-- | --: | :-- |
+| `session_warm` | cold prefix | `E` | `0.4512` | `[0.4497; 0.4532]` |
+| `pair_session` | cold prefix | `E` | `0.4307` | `[0.4297; 0.4342]` |
+
+The other six classes keep their reference; every `E` interval there contains `1.0`.
+
+**Read the winner with its caveat.** Selection named `B` and `B_t`; confirmation named `E`.
+`B` and `E` overlap almost completely in both classes and the adoption rule takes the lower
+median, which is `E` by a margin inside the noise. What is adopted is
+`tuned_knobs + prefix_cache + objective_router`, and what is *shown* is that prefix reuse is
+the whole effect.
+
+**Attempt kept.** A concurrent session ran a confirmation on the same model at `13:48`
+(`…_4b_confirmation.json`, `CONFIRMED`, same gates clean) whose selection had refused to
+start on a `4.17` load average. Its confirmation stands on its own; it has no selection
+before it, so the complete pair is the one recorded here.
+
+### 12B — `BLOCKED`
+
+Unlocked by the `B61` profile, so `C` is admitted here for the first time. Selection was
+clean on every gate — swapout delta `0`, free memory never below `57%`, peak RSS `8.40 GB`
+(`24.5%` of installed against a `60%` ceiling), swap *falling* `10.90` to `10.16 GB`.
+
+| class | reference | stack | selection | confirmation |
+| :-- | :-- | :-- | --: | --: |
+| `pair_short` | `A_t` | `C` | `0.9366` `[0.9193; 0.9480]` | `0.9315` `[0.9174; 0.9436]` |
+| `pair_staggered` | `A_t` | `C` | `0.9493` `[0.9409; 0.9601]` | `0.9448` `[0.9386; 0.9508]` |
+| `pair_long` | `A_t` | `C` | `0.9691` `[0.9682; 0.9733]` | `0.9686` `[0.9595; 0.9718]` |
+| `pair_session` | cold prefix | `C` | `0.3353` `[0.3340; 0.3376]` | `0.3342` `[0.3319; 0.3361]` |
+| `session_warm` | cold prefix | `B`/`E` | `0.3528` | `0.3558` `[0.3543; 0.3579]` |
+
+**The confirmation's verdict is `BLOCKED`, and it is not a measurement failure.** Tokens,
+counts and stop reasons identical, zero fallbacks, no disturbed block, free memory `56-57%`
+throughout, peak RSS constant at `8.40 GB`. One gate fired: the preregistered rule blocks on
+*any* swapout, and the counter moved once, by `17642` pages between block `1` and block `2`,
+then stayed flat for ten blocks. Swap *used* fell monotonically across the whole run,
+`10.13` to `9.42 GB` — the machine was unwinding the swap the `B61` confirmation had built,
+not starving this one.
+
+`C` on `12B` is therefore **not qualified**. The numbers agree across two independent runs
+and are recorded, but a blocked confirmation is not a confirmation. No threshold was moved
+and the run was not repeated: repeating a run because its verdict was unwelcome is the
+failure mode the gate exists to prevent, and whether one clean repetition is authorised is
+not a decision this study takes for itself.
+
+**Raw data (local, `.gitignore`d).** `B57_stack_composition_preregistration_20260910{,_v2}.json`;
+`B57_stack_composition_20260910_{selection,confirmation}.json`;
+`B57_stack_composition_20260910_4b_confirmation.json`;
+`B57_stack_composition_20260910_12b_{selection,confirmation}.json`.
+
+**Status.** 4B `CONFIRMED`. 12B `BLOCKED` on the resource gate. Valid for this machine,
+these model revisions, this MLX and mlx-lm build and this workload only.
+
+## B60 — The 12B autotuner did not run out of memory; one knob cannot survive a guarded child (2026-09-10)
+
+**What was known.** The `12B` tune printed `confirming the screening winner with a paired
+A/B ...` and produced nothing after it. No profile was written, and the run captured no
+return code, no wait status and no stderr, so *how* it ended was never recorded. The
+surviving stdout had been through a `tail`, which is why the first six screening decisions
+and any traceback are missing from it — absence of a traceback there is not evidence that
+none was raised. Frozen before anything new ran, in `B60_12b_abort_freeze_20260910.json`.
+
+**The suspicion that was wrong.** The unified log for `13:25` to `13:31` shows the kernel
+reaping an idle process about once a second, available memory falling to `5.96 GB` and the
+compressor reaching `23.08 GB` on a `34.36 GB` machine. Real, severe, and **not the
+mechanism**. No `JetsamEvent` report was written that day, on a machine that does write them.
+
+**The cause, reproduced.** `Engine.__init__` takes the `wired_fraction > 0` branch and calls
+`ironmule.hw.static_facts()` for the installed memory size. `static_facts()` is not cached
+and reads every fact through `_sysctl()`, which shells out with `subprocess.run`. The Q3f
+child guard is installed before any project import in a confirmation child and blocks
+`subprocess.Popen`. The constructor therefore raises `GuardViolation` and the child **exits
+with status 1** — not signalled, not killed, not out of memory.
+
+Three arms through `ironmule.ab.run` unchanged, one child, one repeat, no warmup, four
+tokens, on a `1B` model:
+
+| arm | outcome |
+| :-- | :-- |
+| `wired_fraction=0.0` | child completed |
+| `wired_fraction=0.6` | `ABRunError: child 0 exited with status 1` |
+| `fuse_projections=True` | child completed |
+
+The knob is the discriminator; nothing here depends on the model, the machine's memory or
+its load.
+
+**Then on the model that actually failed.** A lifecycle harness owning its own `Popen`,
+budget fixed beforehand at eight tokens and one repeat, behind the same guard and through
+the same `load_engine`:
+
+| condition | end | duration | child peak RSS | stages reached |
+| :-- | :-- | --: | --: | :-- |
+| `A` = screening keeps `wired_fraction=0.6` | exit status `1`, `GuardViolation` | `13.1 s` | `7.41 GB` | `before_load` only |
+| `B` = same, that knob off | exit status `0`, 8 tokens, deterministic | `16.7 s` | `8.23 GB` | through `after_close` |
+
+Both clean on resources: zero swapouts, no swap growth, free memory never below `46%`.
+Condition `B` reported MLX active `7.19 GB`, peak `8.53 GB`, cache `5.24 GB` from inside the
+child.
+
+**What this explains.** The `12B` screening kept `wired_fraction=0.6`, `tune()` handed
+exactly that candidate to `confirm()`, the first child died within seconds, `ab.run` raised
+`ABRunError`, `tune()` does not catch it, and the process ended with a traceback on a stream
+the run did not keep. `4B` never hit it because its screening rejected the knob.
+
+**What is not claimed.** Nothing here says what caused the memory pressure in that window,
+only that the confirmation did not need it to fail. The screening winner of the aborted run
+remains unrecoverable and the aborted run is not relabelled.
+
+**The defect is left standing.** `wired_fraction` cannot survive a confirmation on any
+machine, so it can never enter a profile. The repair is `hw._sysctl` reading through
+`sysctlbyname` instead of a subprocess, exactly as `swap_used_bytes` already does since
+`B55`. Not applied: it is a change to shipped code and its own decision. Open as `B62`.
+
+**Raw data (local, `.gitignore`d).** `B60_12b_abort_freeze_20260910.json`,
+`B60_wired_fraction_guard_conflict_20260910.json`,
+`B60_12b_child_diagnosis_preregistration_20260910{,_v2}.json`,
+`B60_12b_child_diagnosis_20260910_condition{A,B}.json`. Harness
+`tools/b60_12b_child_diagnosis.py`, test `tests/test_b60_diagnosis.py`.
+
+**Status.** SOLVED. `B60` closes.
+
+## B61 — A 12B profile, screened without the knob that cannot be confirmed (2026-09-10)
+
+**Design.** `ironmule.tune.SEARCH` loses exactly one entry, `wired_fraction`, in the tuning
+process only. Every other entry keeps its order and values, `ironmule/tune.py` is not edited
+and the shipped default is unchanged. `tune()` itself runs unchanged: coordinate descent
+with token identity at every step, then the standard paired confirmation over six fresh
+processes and seven repeats, and a profile stored only if that confirmation is accepted.
+The parent owns the tune process this time, so the return code, the decoded wait status and
+both streams are captured whatever happens.
+
+**Result: `PROFILE_CONFIRMED`.** `679.3 s`, exit status `0`.
+
+| | |
+| :-- | :-- |
+| gain | `7.97%` end to end |
+| `total_ns` | median `0.9203`, CI `[0.9095; 0.9285]` |
+| `prefill_ns` | median `0.9204`, CI `[0.9161; 0.9223]` |
+| `decode_ns` | median `0.9207`, CI `[0.8998; 0.9499]` |
+| identity | tokens, counts and stop reasons identical, deterministic |
+| knobs | `compiled_fixed_cache`, `head_skip_prefill`, `readback_every=2` |
+
+**`fuse_projections` is rejected here and was kept by the aborted screening.** That is
+coordinate descent's path dependence, not a contradiction: with `wired_fraction=0.6` the
+running best stood at `0.9034` and `0.8978` improved it; without it the running best is
+`0.9218` and `0.9343` does not. The aborted run's screening winner is now permanently
+unrecoverable, and no longer matters.
+
+**What the confirmation cost.** Free memory fell to `19%`, the swapout counter grew by
+`1 200 416` pages and swap in use went from `9.00` to `24.06 GB`. No process was ended, the
+protective floor at `8%` free was never reached, child peak RSS `10.82 GB`. Two resident
+`12B` models is what that costs, and it is the same pressure the aborted run showed — where
+it was never the cause.
+
+**Attempt kept.** Attempt 1 failed in `0.1 s` with `AttributeError: 'function' object has no
+attribute 'SEARCH'`: `ironmule.tune` as an attribute is the re-exported function, not the
+module, so the search was never patched. The captured return code and stderr said so
+immediately, which is the whole point of owning the process.
+
+**Raw data (local, `.gitignore`d).**
+`B61_12b_tune_without_wired_preregistration_20260910{,_v2}.json`,
+`B61_12b_tune_without_wired_20260910.json`, `…_attempt2.json`. Harness
+`tools/b61_12b_tune_without_wired.py`.
+
+**Status.** MEASURED, `GO`. A confirmed `12B` profile now exists for fingerprint
+`dc652d66f24ac207`, which is what admitted `C` in `B57`.
+
+## B63 — One authorised repetition, blocked by the same gate (2026-09-10)
+
+**What was authorised.** Exactly one replacement confirmation of `12B` stack `C`, on
+measurement code proven byte-identical to the blocked run — combined digest
+`49212d837b055bc5` in both records, no source file differing. It replaces nothing
+evidentially: both sessions are kept, neither is relabelled, and results are never pooled.
+
+**One thing was added, and it was a start condition, not a gate.** The blocked run had
+started while this machine was still unwinding the swap `B61`'s two-resident-model
+confirmation had built. So the session was preregistered not to begin until the `vm_stat`
+Swapouts counter read the same value at every 30-second sample across a complete
+900-second window, with `gpu_busy` empty and the 1-minute load below `3.0` at the end.
+Every threshold inside the harness stayed exactly where it was.
+
+**The machine broke one window on its own.** With nothing measuring, the counter jumped
+`19704` pages at `15:22` and the observation restarted. It settled afterwards and the run
+began at `15:49` on a window that had held `1635` seconds, nearly twice the requirement, at
+load `2.60`. Nothing was purged, restarted, signalled or tuned.
+
+**Result: `BLOCKED`, on the same gate.** Nine blocks flat, one burst of `28984` pages
+between block `8` and block `9`, two blocks flat. Swap *in use* fell across the whole run,
+`8.33` to `7.11 GB`, the same signature as the first blocked session.
+
+Everything else passed: tokens, counts and stop reasons identical within plan kind, zero
+fallbacks, no disturbed block, free memory `37-46%`, MLX peak `8.85 GB`.
+
+**The four classes, side by side and not pooled.** Neither session is a confirmation, and
+two blocked runs do not add up to one.
+
+| class | reference | `B63` session | earlier blocked session |
+| :-- | :-- | --: | --: |
+| `pair_short` | `A_t` | `0.9397` `[0.9211; 0.9669]` | `0.9315` `[0.9174; 0.9436]` |
+| `pair_staggered` | `A_t` | `0.9437` `[0.9337; 0.9614]` | `0.9448` `[0.9386; 0.9508]` |
+| `pair_long` | `A_t` | `0.9705` `[0.9651; 0.9773]` | `0.9686` `[0.9595; 0.9718]` |
+| `pair_session` | cold prefix | `0.3316` `[0.3250; 0.3423]` | `0.3342` `[0.3319; 0.3361]` |
+
+`pair_session` is the whole executed stack against the same plan with reuse dropped. It is
+not a paired-path gain and is not read as one.
+
+**What stands, and what does not.** Across one clean selection and two blocked
+confirmations, `C`'s interval lies entirely below `1.0` in all four throughput classes and
+correctness is identical every time. That is consistent, and it is still not a
+qualification: the adoption rule requires the resource gates as well, and they did not
+pass. No threshold was moved to make them pass, and by the preregistered stopping rule
+there is no third session.
+
+**`C` on `12B`: NOT QUALIFIED.**
+
+**Open, deliberately.** The gate blocks on *any* swapout, on a machine that holds a
+multi-gigabyte swap file and reorganises it on its own schedule — while swap in use was
+*falling* through both runs. Whether "any swapout" is the right instrument on this machine
+is a question about the gate, not about `C`. Changing it is a threshold change and is not
+done here.
+
+**Raw data (local, `.gitignore`d).**
+`B63_12b_stack_c_replacement_preregistration_20260910.json`,
+`B63_12b_stack_c_replacement_20260910.json` (outcome plus the full pre-start observation
+trace), `B57_stack_composition_20260910_12b_confirmation_b63.json`.
+
+**Status.** MEASURED, `BLOCKED`. `B63` closes.
+
+## B62 — The wired-limit path reads the machine natively (2026-09-10)
+
+**The defect, as `B60` proved it.** `Engine.__init__` read the installed memory size through
+`hw.static_facts()`, which is uncached and reaches every fact via `_sysctl()`, a
+`subprocess.run`. The Q3f child guard blocks `subprocess.Popen` in a confirmation child, so
+any `Engine` built with `wired_fraction > 0` raised `GuardViolation` and the child exited
+with status `1`, on every model and every machine. A knob that sits in
+`ironmule.tune.SEARCH` and can never survive the confirmation that follows it is a trap, not
+a knob.
+
+**What changed, and what deliberately did not.** `hw.installed_memory_bytes()` reads
+`hw.memsize` through `sysctlbyname` on the `ctypes`/libc path that `swap_used_bytes` has
+used for `vm.swapusage` since `B55`. The single caller in the `wired_fraction` branch uses
+it. `static_facts()` is **not** rebuilt: it runs in the parent, where a subprocess costs
+nothing that matters, and every other caller keeps it. Two source files, one new function,
+one changed call site.
+
+| check | result |
+| :-- | :-- |
+| `sysctlbyname` vs `sysctl -n hw.memsize` | equal, `34359738368` |
+| `static_facts()["memory_bytes"]` | equal to both |
+| `wired_fraction=0.6` in a guarded child | completes, zero guard events (`ABRunError` before) |
+| `wired_fraction=0.0` | branch not taken, limit untouched |
+| `fuse_projections=True` control | unchanged, completes |
+| subprocess started by the branch | none, asserted by wrapping `Popen` |
+| hardware fingerprint | `dc652d66f24ac207`, unchanged |
+| stored `4B` and `12B` profiles | load, still accepted, `14.71%` and `7.97%` |
+
+**Fail-closed, and it is stricter than before.** An unavailable size now raises and leaves
+the process-global wired limit untouched. Before the change a failed read produced
+`int(None or 0) * fraction = 0` and silently applied a zero wired limit — a wrong limit
+presented as a working one.
+
+**The meaning of the knob is unchanged**: a fraction of installed physical memory, asserted
+at `0.25`, `0.6` and `1.0`.
+
+**Tests.** Seven targeted tests. Four wired-limit tests in `tests/engine/test_r6_r7.py`
+stubbed `hw.static_facts` to fake the size and now stub `hw.installed_memory_bytes`; no
+assertion was weakened and the expected applied limits are identical. Full suite: two
+failures, both the pre-existing parallel-execution flakes in the process-cleanup gates
+(`test_q3f_real_cleanup_keeps_external_process_alive`,
+`test_real_macos_process_identity_and_cleanup_reap`). Both pass sequentially, neither file
+references the wired path, and the `B55` entry already records the flake as machine process
+noise.
+
+**Nothing is rehabilitated.** `wired_fraction` is not put back into any profile or tuner.
+Both stored profiles still carry `0.0` and neither was retuned. Whether the knob pays, and
+what it does to memory and the wired limit under a confirmation, needs its own
+preregistered study — the fix removes the trap, it does not answer the question.
+
+**Raw data (local, `.gitignore`d).** `B62_native_memsize_20260910.json`. Tests
+`tests/test_b62_wired_fraction_native_memsize.py`.
+
+**Status.** `FIX_CONFIRMED`. `B62` closes.
+
+## B65 — The gate was measuring the machine, not the run (2026-09-10)
+
+**The question.** Two `12B` stack `C` confirmations were blocked by one criterion and
+nothing else: `swapout_counter_delta` must be `0`. Whether that criterion describes memory
+pressure on macOS, or describes a machine that holds a swap file, is a question about the
+gate. It was asked without re-measuring anything.
+
+**The decisive evidence was already recorded.** During `B63`'s pre-start observation window
+— nothing measuring, no model loaded, no GPU work — the system-wide swapout counter moved
+by `19704` pages. The old gate would have blocked a window in which nothing ran. A criterion
+that fires on an empty machine is not measuring the run.
+
+**Why it does that.** `vm_stat`'s `Swapouts` is system-wide and monotone. It counts every
+page this machine wrote to swap for any reason, compacting a swap file it already holds
+included. Apple does not define memory pressure that way, and its own answer —
+`kern.memorystatus_vm_pressure_level` — is readable without starting a process.
+
+**Native probes.** `host_statistics64` with `HOST_VM_INFO64` gives every figure `vm_stat`
+prints, and `sysctlbyname` gives the pressure level. Both now live in `ironmule/hw.py`
+beside `swap_used_bytes`. Verified by sandwiching the shell reading between two native ones:
+a monotone counter moves between reads, so equality is the wrong test — a first attempt
+asserted it and failed on `pageins` by exactly `1`.
+
+**The candidate gate, written before any trace was scored.** Block if macOS's pressure level
+is anything but normal at any probe or cannot be read; if free memory falls below `10%`; if
+peak RSS exceeds `60%` of installed memory; if swap in use ever exceeds its value at run
+start; if any block deviates more than `25%` from the median; on any fallback or correctness
+difference; or on any missing probe. Three of those thresholds are unchanged from the
+shipped gate, one is Apple's own semantics, and the swap criterion is a **zero-growth
+budget** — chosen so that no number has to be picked and no burst size can be tuned around.
+The swapout counter stays in the record as evidence and stops being a verdict.
+
+| class | runs | old gate | candidate |
+| :-- | --: | :-- | :-- |
+| quiet | `6` | `0` blocked | `0` blocked |
+| starved | `1` | blocked | blocked |
+| idle control, nothing measuring | `1` | **blocked** | not blocked |
+
+The starved run is `B61`'s tune confirmation with two resident `12B` models: swap in use rose
+`15.56 GB` and free memory fell to `19%`. A sweep of every other resource trace in
+`research/raw` scored three more, all in agreement.
+
+**The two disputed runs were excluded from the evidence by construction.** `C`'s own blocked
+sessions are scored and labelled `disputed`, and neither the verdict nor any threshold was
+derived from them.
+
+**Residual risk, stated plainly.** Sensitivity rests on one run with independent evidence of
+starvation. The candidate is strictly at least as strict as the old gate on every criterion
+that describes the run itself; the only criterion it drops is the one shown to fire on an
+empty machine.
+
+**Twelve tests** exercise the gate's arithmetic against the harness's own
+`evaluate_resource_gate`, not a copy of it, including the assertion that the legacy gate
+still blocks unchanged.
+
+**Raw data (local, `.gitignore`d).** `B65_gate_semantics_preregistration_20260910.json`,
+`B65_gate_semantics_20260910{,_with_sweep,_final}.json`. Harness
+`tools/b65_gate_semantics.py`, tests `tests/test_b65_pressure_gate.py`.
+
+**Status.** `GATE_CONFIRMED`. The gate is selectable in the harness and `legacy` remains the
+default, so an existing command reproduces exactly what it did before. `B65` closes.
+
+## B67 — 12B stack C, confirmed (2026-09-10)
+
+**What this is.** The first confirmation of `12B` stack `C` under the gate `B65` qualified.
+It is not a repetition of `B63` and does not stand in for it: `B63`'s two sessions stay
+`BLOCKED`, and nothing here is pooled with them. Exactly one confirmation was authorised.
+
+**One thing changed.** The resource gate. Workload classes, prompts, stacks, references,
+block count, arm rotation, statistic, equivalence margin, adoption rule, correctness rule,
+drift limit, free-memory floor, RSS ceiling, load ceiling and the concurrent-process check
+are identical.
+
+**Result: `CONFIRMED`.** Twelve blocks, tokens, counts and stop reasons identical within
+plan kind, zero fallbacks, no disturbed block, free memory never below `40%`, peak RSS
+`5.98 GB`, macOS pressure level `normal` at every probe, swap in use `6.94` to `6.81 GB`.
+
+**And it did not need the new gate.** The swapout counter delta was `0`. This confirmation
+would have passed the old gate too, which is worth saying: the result does not depend on the
+change that made it possible to ask for it.
+
+| class | reference | stack | median | 95% CI |
+| :-- | :-- | :-- | --: | :-- |
+| `pair_short` | `A_t` | `C` | `0.9302` | `[0.9139; 0.9449]` |
+| `pair_staggered` | `A_t` | `C` | `0.9457` | `[0.9319; 0.9521]` |
+| `pair_long` | `A_t` | `C` | `0.9680` | `[0.9655; 0.9703]` |
+| `pair_session` | cold prefix | `C` | `0.3360` | `[0.3320; 0.3411]` |
+| `session_warm` | cold prefix | `B` | `0.3553` | `[0.3539; 0.3582]` |
+
+The four throughput classes are separate results and are never summed. `pair_session` is the
+whole executed stack against the same plan with reuse dropped; it is not a paired-path gain,
+and the `0.336` and the `0.930` describe different references and cannot be combined.
+`single_short`, `single_long` and `session_new` keep their reference.
+
+**Raw data (local, `.gitignore`d).**
+`B67_12b_stack_c_under_qualified_gate_preregistration_20260910.json`,
+`B57_stack_composition_20260910_12b_confirmation_b67.json`,
+`COMPOSITION_PROFILE_STATE_20260910.json`.
+
+**Status.** MEASURED, `CONFIRMED`. Nothing is activated: no product profile is written and no
+default changes. Valid for this machine, this model revision, this MLX and mlx-lm build and
+this workload only.
+
+## B66 — Silicon characterisation: what this M1 Max actually charges for (2026-09-10)
+
+**Method.** The shape inventory decided what was worth touching before any axis was opened:
+every distinct quantised matmul each model runs, counted, and timed at the widths the
+runtime really uses. Two MLP shapes carry `65%` of measured decode time on `4B` and `69%` on
+`12B`, and both already run within a few per cent of the bandwidth `E4`'s size curve predicts
+for their size. Everything else on either model is below `10%`.
+
+Each axis is a paired, order-rotated block design **with an A/A arm**, because the
+inventory's own numbers moved by more than `20%` between two runs of the same shape. The
+A/A arm is the same work under a different name and it sets the floor a candidate has to
+clear.
+
+### The three strongest patterns
+
+**1. Output rows per simdgroup, not threads per threadgroup.** On `K=3840, N=15360` — the
+shape carrying `48%` of `12B` decode — geometry `(4, 8)` beats `mx.quantized_matmul` by `8`
+to `10%`, byte identical, in two independent runs (`0.9179` `[0.8893; 0.9452]` and `0.9011`
+`[0.8609; 0.9250]`) against an A/A arm at `1.0109`. At fixed rows, moving from `32` to `256`
+threads per threadgroup changes almost nothing; moving from `2` to `8` rows per simdgroup is
+worth about twenty percentage points. All twelve geometries were byte identical to the
+library; `values_per_thread` was held fixed because changing it changes the order the partial
+sums are added in, which is a different execution plan and not a geometry change.
+
+**2. A submission boundary costs `230` to `270 us`.** One kernel behind its own `eval`
+reaches `52 GB/s` on `4B` and `88 GB/s` on `12B`; sixteen behind one `eval` reach `235` and
+`258 GB/s`. That is about forty times the `6.41 us` per dispatch `E5` measured, and it is why
+grouping, prefix reuse and the paired path all pay: each one puts more work between two
+synchronisation points.
+
+**3. The grouped-width boundary is `16`, not `4`.** `M=8` costs what `M=16` costs in total,
+so every width from `5` to `16` pays the sixteen-row price, and `4` to `16` halves the cost
+per row. `E2` and `E3` saw this on synthetic shapes; this is the first measurement on the
+shapes these models run.
+
+| cost per row vs `M=4` | `M=1` | `M=2` | `M=8` | `M=16` |
+| :-- | --: | --: | --: | --: |
+| `12B` | `1.382` | `1.115` | `0.966` | `0.486` |
+| `4B` | `1.832` | `1.248` | `1.003` | `0.505` |
+
+### Per axis
+
+| axis | outcome |
+| :-- | :-- |
+| shape inventory and cost | `CHARACTERIZATION_GAIN` |
+| grouped width | `CHARACTERIZATION_GAIN`, no confirmed class to prove it in |
+| threadgroup geometry | `CHARACTERIZATION_GAIN`, stack proof `NOT_STARTED` |
+| cache residency | `CHARACTERIZATION_GAIN`, `4` to `5%`, not a knob |
+| eval round trip | `CHARACTERIZATION_GAIN`, explains an existing knob |
+| command queues | `NO_USEFUL_GAIN` |
+| CPU QoS and ANE | not investigated; nothing pointed at either |
+
+Two MLX GPU streams are slower than one on both models (`1.1279` and `1.2316`, A/A at
+parity), which is `B56b` again inside one process: the device shares itself and the extra
+synchronisation is a cost.
+
+**A confounded arm, kept.** The first cache axis ran one kernel behind its own `eval` against
+twelve behind one, so it measured a submission boundary and reported the smaller working set
+as two to five times *slower*. It is kept in the record and replaced, not corrected in place
+— and the confound became pattern 2.
+
+**A tripwire that did its job.** Parameterising the geometry inside `ironmule/qmv_k3840.py`,
+with defaults unchanged, tripped
+`tests/test_qmv_k3840_integration.py::test_the_kernel_source_is_the_studied_one`, which
+requires the shipped module to contain the `B42`/`B43` source verbatim. The change was
+reverted in full. The variant is built and installed by the harness only; the shipped kernel
+keeps its qualified source, its default geometry and its activation hold.
+
+### The stack proof, and why there is no profile parameter
+
+`(4, 8)` reached the one gate that matters: a confirmed complete stack of its own workload
+class. It never got through it.
+
+The planned proof is `NOT_STARTED`. Its readiness condition — a 1-minute load below `3.0` on
+three consecutive samples — was never met across two attempts and `196` samples, of which
+exactly one was below `3.0`, the lowest `2.82`. No threshold was moved to start it.
+
+A separate exploratory run was then authorised explicitly, without the readiness condition
+and with every runtime gate in force. It returned `EXPLORATORY_INVALID`: the `B65` resource
+gate blocked it because swap in use rose `3.40 GB` during the first child, from `8.67` to
+`12.08 GB`, and stayed there. macOS's own pressure level read normal at every probe and free
+memory rose, so it is the swap criterion that fired.
+
+That run's three class ratios all sat entirely below `1.0` — `0.9301`, `0.9306`, `0.9398` —
+with correctness identical in all six processes. **They are not a result.** A number from a
+run whose gate failed is not evidence, and treating it as one is the failure mode the gate
+exists to prevent. `B65` qualified that gate hours earlier on independent evidence, and it
+has now blocked this project's own candidate. That is the gate working.
+
+`silicon_profile.v1` therefore carries **no confirmed parameter**. Its candidate list carries
+`(4, 8)` with its shape, model, workload classes, correctness contract, isolated effect and
+the full history of both failed proofs.
+
+**Paired × geometry: `NOT_RUN`**, gated on `(4, 8)` being confirmed. Starting it would be
+composing on a result that does not exist.
+
+**`M=16` multi-token verification: `NO_GO`**, decided on arithmetic over existing
+measurements with no model run. Break-even needs `74%` per-token acceptance at width `2` and
+`86%` at width `16`; the n-gram drafter this runtime has delivers `17%`, giving `1.20`
+accepted tokens per forward against `1.74` to `6.48` required — short by `1.49` to `5.38`
+times. The step at `16` is real and does help: width `16` needs less acceptance than width
+`8` because the two cost almost the same. It still lands far short. The KV cost is
+`393 KB` per speculative token and is not what fails, and exact greedy verification is
+plausible and is not what fails either. Earlier speculation `NO-GO`s stand unchanged.
+
+**Raw data (local, `.gitignore`d).** `B66_shape_inventory_20260910.json`;
+`B66_axes_{12b,4b}_20260910.json`; `B66_axes_{12b,4b}_cache_eval_20260910.json`;
+`B66_stack_proof_preregistration_20260910.json`; `B66_stack_proof_20260910_not_started.json`;
+`B66_FORCED_LOAD_EXPLORATORY_preregistration_20260910.json` and `…_20260910.json`;
+`B66_m16_multitoken_arithmetic_20260910.json`;
+`B66_silicon_profile_20260910{,_v2}.json`. Harnesses
+`tools/b66_silicon_characterisation.py`, `tools/b66_axes.py`, `tools/b66_stack_proof.py`.
+
+**Status.** MEASURED. Characterisation complete, no parameter qualified, nothing activated.
+
+## B68 — MLX's command buffer limits, closed on this fingerprint (2026-09-10)
+
+**Question.** `B66` measured a submission boundary at `230` to `270 us` and every confirmed
+win this project holds works by putting more work between two of them. MLX 0.32.0 has its
+own boundary nothing here had touched: `CommandEncoder::needs_commit()` commits when either
+`max_ops_per_buffer` or `max_mb_per_buffer` is exceeded, both read once per process from
+`MLX_MAX_OPS_PER_BUFFER` and `MLX_MAX_MB_PER_BUFFER`. Verified in the installed headers, not
+assumed; the values are not exposed to Python, which is why the limit was observed rather
+than asserted.
+
+**A commit is not a synchronize**, and the measurement was built so that no buffer count
+could be mistaken for a speed claim. None is reported.
+
+**The microbenchmark said no first.** A chain of identical tiny kernels behind one `eval`
+shows **no step at 50 operations** under the default: a forced commit costs nothing visible
+on its own. And raising the limits *costs* — at `250` operations the default takes
+`1584.3 us` against `1998.5 us` at `400/400`, `26%` slower. The plausible reading is that
+committing early lets the GPU start while the CPU keeps encoding, and a larger buffer removes
+that overlap. That is a reading, not a proof: nothing here observed the overlap. The chain
+works on `262 KB` per step, so only the operations axis was probed.
+
+**The real sweep agreed.** Four rounds, all six configurations per round in rotated order,
+a fresh process each with the environment set before the first MLX access, both models, the
+workload classes from the confirmed composition profile. `48` children, zero failures, zero
+command buffer errors, zero token or stop-reason differences, resource gate passed.
+
+**Not one arm on either model in either class has an interval below `1.0`.** Three are
+outright losses:
+
+| model / class | configuration | median | 95% CI |
+| :-- | :-- | --: | :-- |
+| `4B` `session_warm` | `ops_mb_400` | `1.0257` | `[1.0124; 1.0383]` |
+| `4B` `single_short` | `ops_mb_400` | `1.0162` | `[1.0063; 1.1132]` |
+| `4B` `session_warm` | `ops_default_mb_400` | `1.0117` | `[1.0006; 1.0575]` |
+
+The best medians anywhere — `0.9904` and `0.9930` on `4B`, `0.9958` and `0.9978` on `12B` —
+all carry intervals containing `1.0`.
+
+**No confirmation session was run.** The design admits only the best plausible candidate and
+there is none; running a confirmation on an arm whose selection interval contains `1.0` is
+looking for significance rather than testing for it.
+
+**The axes cannot be separated for a gain, because there is no gain to attribute.** The two
+single-axis arms sit at parity or worse everywhere. Nothing here claims which limit fired.
+
+**`4B`: `DEFAULT_WINS`. `12B`: `DEFAULT_WINS`.** MLX `50/50` stays the reference on this
+hardware, this MLX build and these models, and the command buffer axis closes. The negative
+evidence is the result. The project rule stands: a closed entry is evidence, not a ban, and a
+new mechanism or new hardware evidence may reopen it by naming this one.
+
+**Nothing enters `silicon_profile`.** `(4, 8)` remains a candidate without a stack proof,
+paired × geometry remains `NOT_RUN`, two command queues and `M=16` with the n-gram drafter
+remain `NO_GO`.
+
+**Raw data (local, `.gitignore`d).**
+`B68_command_buffer_limits_preregistration_20260910.json`,
+`B68_command_buffer_probe_20260910.json`, `B68_command_buffer_sweep_20260910.json`,
+`B68_command_buffer_outcome_20260910.json`. Harness `tools/b68_command_buffers.py`.
+
+**Status.** MEASURED, `DEFAULT_WINS` on both models. `B68` closes.
+
+## B69 — The `(4, 8)` geometry, confirmed against the stack (2026-09-10)
+
+**What was outstanding.** `B66` measured the geometry beating `mx.quantized_matmul` by `8` to
+`10%` on the shape carrying `48%` of `12B` decode, byte identical, twice, against an A/A arm
+at parity. Whether that reached a stack was unknown in both directions: the planned proof
+never started, and the authorised exploratory run was blocked when swap in use rose `3.40 GB`
+during its first child.
+
+**The memory problem was removed at its cause, not tolerated.** That growth came from each
+child loading the `12B` twice, once per arm, so two model images passed through one process.
+Here each child loads one model, runs one arm and exits. A block is three such children: the
+reference, the candidate, and the reference again under another name as the A/A control.
+Six blocks, arm order rotated. Model load and warmup are measured and reported separately and
+are not inside the stack time.
+
+**On the readiness condition, plainly.** The earlier proof waited for a `1`-minute load below
+`3.0`, a threshold chosen for that launcher and never met across two attempts and `196`
+samples. This run used the harness's own long-standing gate, load at or below `4.0`, and
+preregistered that choice with its reason: the AB/BA rotation, the A/A arm and the `25%`
+drift gate are the instruments that decide whether a moderately busy machine produced a
+usable measurement. It started at load `3.89`.
+
+**Result: `STACK_CONFIRMED` in all three classes.** Six complete blocks, zero child failures,
+zero token or stop-reason differences, zero fallbacks, no disturbed block, resource gate
+passed with **zero swap growth**, free memory never below `53.2%`, peak child RSS `8.40 GB`.
+
+| class | reference stack | candidate | 95% CI | A/A control |
+| :-- | :-- | --: | :-- | :-- |
+| `single_short` | `A` | `0.8469` | `[0.7580; 0.9488]` | `1.0054` `[0.8880; 1.0576]` |
+| `single_long` | `A` | `0.8806` | `[0.7369; 0.9554]` | `1.0038` `[0.9501; 1.0229]` |
+| `session_warm` | `B` | `0.9020` | `[0.7934; 0.9305]` | `1.0010` `[0.9840; 1.0376]` |
+
+**It survives losing any block.** A leave-one-block-out check, post hoc and not part of the
+verdict, keeps every interval entirely below `1.0` in every class; the worst case is
+`0.9661`. Block `1` is an outlier in all three classes and in the A/A arm too, which points
+at that block's reference child having been disturbed rather than at the candidate.
+
+**The gain is bigger than the kernel measurement predicted, and that is not explained here.**
+`8` to `10%` against the library on one shape arrived as `10` to `15%` of complete stack
+time. The isolated benchmark ran four distinct weight buffers, `132 MB`, on one shape; the
+stack runs `241` projections over four shapes out of `6.6 GB` of weights, so the two sit in
+different bandwidth and cache regimes. A number arriving larger than predicted is a reason to
+look, not a reason to celebrate.
+
+**Correctness came first, every time.** All `241` admitted projections were compared byte for
+byte against `mx.quantized_matmul` on their own buffers before a single token was timed, in
+every candidate child of every block. A projection that differed would have been left on the
+library path and recorded rather than timed; none did.
+
+**Nothing shipped changed and nothing is activated.** `ironmule/qmv_k3840.py` keeps its
+qualified source, its default geometry and its activation hold; the variant is built and
+installed by the harness. The parameter enters `silicon_profile.v1` as evidence bound to this
+fingerprint, this MLX and mlx-lm build, this model revision, this shape, these three classes
+and this code digest. The four `12B` throughput classes are outside it entirely: their
+confirmed stack is `C`, and the source keeps this kernel apart from the paired path.
+
+**Raw data (local, `.gitignore`d).** `B69_stack_proof_preregistration_20260910.json`,
+`B69_stack_proof_20260910.json`, `B66_silicon_profile_20260910_v3.json`. Harness
+`tools/b69_stack_proof.py`, which builds the variant through `tools/b66_stack_proof.py` so
+the geometry under test is the source `B66` measured.
+
+**Status.** MEASURED, `STACK_CONFIRMED`. `B69` closes.
+
+## B70 — A silicon profile the router can read and must not obey (2026-09-10)
+
+**What shipped.** `ironmule/silicon_profile.py`: a fail-closed loader, a pure matcher, and
+the empty data contract `B71` will fill. The router may load a profile, match it and report
+what it found. It may not route differently because of it.
+
+**The loader refuses rather than guesses.** Exact schema, exact field sets at both levels, no
+silent defaults, no coercion, a digest that must recompute over the parameters as written,
+unique ids, and a refusal to load any profile whose `activation` claims anything but `none`.
+A profile that cannot be fully understood is not partially believed.
+
+**The matcher is pure and cheap.** No subprocess, no model hash, no file read, no GPU call,
+no network. Fifteen conditions, short-circuited most-selective-first, and the first failure
+is named. A dispatch is given a class name by a fixed rule over facts the router already has,
+and a dispatch that fits no named class is unnamed and matches nothing — which is the correct
+answer rather than a nearest guess.
+
+**Where the diagnostic runs, and why it moved.** `B55` is the standard: a wrapper that added
+nothing to the work still made a routed request `3.7%` slower, because a telemetry field
+shelled out. The same discipline caught two implementations here.
+
+| implementation | worst ratio against `decide()` | gate `≤ 1.02` |
+| :-- | --: | :-- |
+| eager inside `decide()`, copying the finished decision | `2.4815` | fail |
+| the same, optimised: hand-built dict, short-circuit, constructed context | `2.0010` | fail |
+| once per dispatch, in the record builder | `1.0069` | pass |
+
+Both failures are kept. A `4.3 us` decision cannot absorb a diagnostic that allocates
+anything, so the diagnostic left the decision. **The final `1.00` is by construction, not an
+achievement**: arm B's `decide()` *is* arm A's. The number that means something is the
+annotation itself, `3.2` to `7.3 us` once per dispatch, against a `12B` `single_short`
+dispatch that `B69` measured at roughly `400 ms`.
+
+That move is also what makes the shadow claim structural instead of a promise: `decide()`
+cannot read what it does not compute.
+
+**Matching, as measured.** `single_short` and `session_warm` match their own parameters; a
+two- or four-request throughput dispatch is unnamed and matches nothing, which is right —
+the confirmed stack there is `C`, and the source keeps the kernel apart from the paired path.
+Every mismatch in fingerprint, GPU architecture, library version, model identity, revision,
+quantisation, `K`, decode width, `N`, class, objective or evidence status refuses.
+
+**An error this found in its own data.** The first strict profile carried the `4B` model
+revision on a `12B` parameter, because the value was typed rather than read. The loader
+accepted it — it validates the shape of a field, not its truth — and every match then refused
+with `model revision does not match`. The effect was fail-closed, so a wrong profile could
+only ever cause *no* match and never a wrong one. That is the design working, and it is still
+a real limitation worth writing down. Both files are kept, the wrong one as it was written.
+
+**Nothing is activated.** No `(4, 8)` dispatch, no kernel released, `ironmule/qmv_k3840.py`
+untouched, no default changed, no product profile. Every loaded parameter carries
+`activation: none` and the loader refuses any other value.
+
+**Tests.** `44` in `tests/test_b70_silicon_profile.py`. Every negative case asserts the
+router's decision is identical; the positive case asserts only the two diagnostic fields
+differ. Full suite: two failures in the process-cleanup gates, and they fail with
+`ironmule/router.py` and `ironmule/silicon_profile.py` removed from the tree entirely, which
+is how that was established rather than assumed.
+
+**Verdict: `B70_PASS`.**
+
+**Raw data (local, `.gitignore`d).** `silicon_profile_v1_20260910.json` and
+`…_corrected.json`; `B70_router_overhead_20260910{,_attempt2,_final}.json`;
+`B70_silicon_profile_shadow_20260910.json`. Harness `tools/b70_router_overhead.py`.
+
+**Status.** `B70` closes. Activation remains a separate decision with its own evidence.
+
+## B71 — A machine describes itself, and says what it could not measure (2026-09-10)
+
+**The decision, written before any probe ran.** A fingerprint is exact and predicts nothing:
+it says whether a machine has been seen, never what a machine like it will do. The question
+this vector exists for is whether a Mac nobody has tuned can estimate, in minutes, whether a
+known optimisation is worth trying — concretely the `K = 3840` geometry `(4, 8)` that `B69`
+confirmed here against the complete `12B` stack, which today costs a full tune plus a
+six-block proof to answer.
+
+**What was built.** `ironmule/characterization.py`: a versioned, strictly validated
+`HardwareCharacterizationVector` split into static facts, measured responses and the
+conditions they were measured under, with dimensionless relations derived from its own
+measurements. No single combined score: a machine fast at one thing and slow at another is
+exactly the case one number destroys. Every measured field defaults to `None` and the
+serialised form carries an explicit `missing` list that must agree with the vector or it will
+not load.
+
+**The probe set runs on an untuned machine.** No model is loaded, no profile is read, nothing
+needs to exist first. Six probes, every one a mechanism `E4`, `B66` or `B68` already
+established, and no open search anywhere. Declared budget `420 s`; used `1.7 s`.
+
+**Three runs, and the second and third were forced by the first.** `v1` used seven repeats
+and no A/A arm, and reported a geometry ratio of `0.95` with a spread of `0.58`. `v2` raised
+repeats to `25` and added an A/A arm, which measured a noise floor of `0.9885` with a
+relative spread of `0.606` — and so made the candidate at `1.0024` unreadable. It also
+exposed a unit error: a nanosecond half range recorded as the spread of a
+bytes-per-nanosecond value. `v3` fixes the unit, keeps the design, and draws the consequence:
+a geometry number is emitted only when its own A/A arm clears a threshold fixed before the
+run. All three runs are kept.
+
+| relation | `v1` | `v2` | `v3` | span | earlier independent measurement |
+| :-- | --: | --: | --: | --: | :-- |
+| `cache_to_dram_ratio` | `0.9447` | `0.9442` | `0.9466` | `0.3%` | `B66`: `0.9471` |
+| `m8_cost_per_row_vs_m4` | `1.0428` | `1.0361` | `1.0246` | `1.8%` | `B66`: `0.966` |
+| `m16_cost_per_row_vs_m1` | `0.3861` | `0.3908` | `0.3980` | `3.0%` | `B66`: `0.352` |
+| `k_unaligned_to_aligned_ratio` | `1.0712` | `1.1531` | `1.2382` | `14.5%` | — |
+| `eval_fixed_over_one_kernel` | `1.0435` | `1.8379` | `1.0413` | `76.3%` | `B66`: `2.38` |
+| `geometry_4_8_ratio` | `0.9527` | `1.0024` | withheld | — | `B66`: `0.9011` |
+
+**Three features carry information here.** Cache residency, and the two width relations:
+stable across three runs to within `3%` and agreeing with an independent earlier measurement
+of the same quantity taken under a different design.
+
+**Two are not yet usable.** `eval_fixed_over_one_kernel` swung `1.04`, `1.84`, `1.04`, while
+`v3`'s per-point increments are consistent at `113` to `126 us` — so the marginal cost is
+solid and the two-endpoint fit for the fixed part is not. That needs a better estimator, not
+a better machine. `k_unaligned_to_aligned_ratio` is directionally consistent, the unaligned
+`K` always costing more, but not yet a number to compare machines with.
+
+**The uncomfortable part.** The feature the primary decision most needs is the one the probe
+set refused to emit. `B66` measured that same quantity at `0.9179` and `0.9011` against an
+A/A arm at `1.0109`, using twelve blocks with rotated arm order; the quick probe uses one
+sequential pass and cannot reject an outlier. So either the probe adopts a blocked design and
+stops being a few seconds long, or a quick characterisation honestly cannot answer the
+geometry question on a busy machine. Both are acceptable and neither is decided here.
+
+**A correction to this entry's own analysis, made before it was reported.** The first outcome
+record listed `geometry_4_8_ratio` as informative because its `v1` and `v2` values agreed to
+`5.1%`. They agreed inside a noise band of `0.606`. A number that agrees with itself inside a
+band that swamps it has not been measured twice, it has been guessed twice. The rule now
+reads: a relation the vector withholds is never informative, however well its withheld values
+agree. Both records are kept.
+
+**Nothing is called redundant.** Two relations that move together on one machine could be
+independent on another memory system, and a redundancy claim needs variation that one machine
+cannot supply.
+
+**`H1` is not tested and is not testable here.** A compact vector describing optimisation
+response better than a chip name needs more than one chip; every dataset row carries identical
+hardware features, so nothing can separate a hardware effect from a constant. What a second
+Mac would settle is written into the preregistration: run this probe set and then `B69`'s
+stack proof on a machine with a materially different memory system, and `H1` survives if the
+minutes-long geometry response has the same sign as the hours-long stack result on both, with
+the bandwidth and cache relations differing in the direction that predicts it. It is refuted
+if similar vectors give opposite stack results, or similar stack results come from clearly
+different vectors. Two machines settle a sign, not a magnitude.
+
+**`B72`'s dataset exists and nothing is trained.** `49` rows of
+`hardware_features, workload_features, action, measured_cost, uncertainty, evidence_id,
+validity`: `6` from `B69`'s confirmed stack proof, `23` isolated kernel responses from
+`B66`, `20` from `B68`'s closed command buffer axis. Five sources are excluded by name and
+reason, every one `BLOCKED`, `EXPLORATORY_INVALID`, `NOT_STARTED` or confounded.
+
+**Verdict: `B71_PASS`, at the ceiling one machine allows —
+`VECTOR_IMPLEMENTED_AND_SELF_CONSISTENT`.** The router is untouched: `characterization.py` is
+not imported by it. Nothing is activated.
+
+**Raw data (local, `.gitignore`d).**
+`B71_quick_characterization_preregistration_20260910{,_v2,_v3}.json`,
+`B71_vector_m1max_20260910{,_v2,_v3}.json`,
+`B71_self_characterization_20260910{,_corrected}.json`,
+`B72_cost_dataset_20260910.json`. Harnesses `tools/b71_quick_characterization.py`,
+`tools/b71_dataset.py`, tests `tests/test_b71_characterization.py`.
+
+**Status.** `B71` closes.
+
+## B72 — A cost model that abstains, and the data that leaves it no choice (2026-09-10)
+
+**What it is.** `hardware + workload + action -> expected cost + uncertainty`, in shadow
+only. Three models, all CPU-local and deterministic, none larger than `1.3 kB`: a per-context
+mean lookup as the honest baseline, a closed-form ridge, and a depth-three regression tree
+written out because scikit-learn is not installed. The router is not touched and nothing here
+runs at dispatch time.
+
+**The split is by study and the holdout was frozen first.** `B69` is the sealed holdout,
+`B66`'s `4B` axes the validation, everything else train. Zero leakage. And the consequence is
+a property of the evidence, not a design choice: the four studies measure **three different
+quantities against three different references** — complete stack time against a confirmed
+stack, complete stack time against MLX's default buffer limits, and isolated kernel time
+against a library call or against width four. A study-level split is therefore also a
+metric-level split.
+
+**Verdict: `B72_DATA_INSUFFICIENT`.** Every model abstained on every sealed-holdout context.
+Three reasons stack, and each is a fact about the data rather than about the models.
+
+The holdout's action, `k3840_geometry_4_8`, appears in no training row, so there is nothing
+to predict it from. The hardware block is **constant across all `49` rows** — one machine —
+so nothing fitted here learned anything from hardware. And one action family compares actions
+that do different amounts of work: the grouped-width rows report total time against width
+four across `M = 1` to `16`, so picking the cheapest picks the smallest batch and means
+nothing.
+
+| model | holdout RMSE | 95% coverage | median half width | size | inference |
+| :-- | --: | --: | --: | --: | --: |
+| context mean lookup | `0.1116` | `1.00` | `0.2535` | `873 B` | `0.23 us` |
+| regression tree, depth 3 | `0.0959` | `0.83` | `0.0930` | `634 B` | `0.53 us` |
+| ridge | `0.0867` | `0.50` | `0.0193` | `1304 B` | `0.69 us` |
+
+Ridge has the best holdout RMSE and the worst calibration: its intervals cover the truth half
+the time when they claim `95%`. Better error and worse honesty, on a set of contexts where it
+correctly refused to decide anyway. That combination is why RMSE was never the decision
+metric here.
+
+**The unknown-Mac test cannot be run on this data, in either direction.** The brief asks that
+stripping the hardware features make the model widen its interval or abstain. It cannot: the
+hardware block never varies in training, so nothing was learned from it and nothing can be
+unlearned by removing it. Reporting that as passed would be the same error `B71` had to
+correct — calling a number meaningful from inside its own noise band.
+
+**Two defects this found, both mine, both recorded.** The first run reported the hardware
+block as *varying* in training, because a standard deviation of `1e-16` across identical
+floats passed a `> 0` test. And the first run scored one grouped-width context as a correct
+top-1 choice, on a metric whose actions do unequal work; that family now abstains with that
+reason stated. `B71`'s export should carry cost per row for it rather than total time.
+
+**A process note worth keeping.** A patch to the ablation silently did not apply because its
+search string had a typo, and the run that followed reported a passing ablation that had
+never executed. It was caught by reading the record rather than the summary line. Every
+string replacement into a measurement harness gets an assertion from here on.
+
+**`B73`'s data contract, defined and not started.** Fast probes are the three `B71` measured
+stable to within `3%` and in agreement with `B66`: cache residency and the two width
+relations. Deep probes are the two it could not pin down: the geometry response, whose A/A
+arm had a relative spread of `0.606`, and the eval fit, which swung `1.04`, `1.84`, `1.04`.
+The rule is that a deep probe runs only when a fast pass abstained *and* the missing feature
+is the one the abstention named. Never speculatively, never as a sweep.
+
+**Raw data (local, `.gitignore`d).** `B72_cost_model_20260910{,_v2,_v3}.json`, all three
+kept. Harness `tools/b72_cost_model.py`, tests `tests/test_b72_cost_model.py`.
+
+**A correction to this entry's own verdict, forced by re-reading the criterion.** The
+`PASS` condition reads *beats the trivial baseline meaningfully **or** abstains correctly*.
+The verdict tree implemented only the first half, so a run in which every model refused —
+correctly — fell through to `DATA_INSUFFICIENT`. That used a statement about the data as a
+statement about the run.
+
+Re-run on the **same dataset**, same models, same alpha, same tree depth, same split and same
+thresholds, with both branches present: **`B72_PASS`**. All twelve abstentions were
+re-derived from the split rather than trusted — an unseen action had to really be absent from
+training, an incomparable metric had to really be one — and all twelve are grounded. Nothing
+was re-measured; no model was loaded for this.
+
+Both statements stand and they are about different things. The **pipeline** passes: holdout
+cleanly separated, every refusal correct and grounded, no confident extrapolation, router
+untouched, overhead measured, models deterministic and serialisable. The **evidence** is
+still insufficient: every model refused because the holdout's action had no training
+evidence, and the same record carries that as `data_insufficiency_also_holds`. A `PASS` here
+is about the machinery and never about the evidence — reading it as *the cost model works*
+is the error the abstain mechanism exists to prevent.
+
+**Gate review, added after the fact and not to soften the verdict.** The seven `PASS`
+conditions were never walked one by one, so they were, in
+`B72_gate_review_20260910.json`. Against the **replay**, six are met and one is met partly:
+uncertainty is usable for ridge, which puts `8` of `9` holdout rows inside its stated `95%`
+interval and misses the ninth in the safe direction, and it is **not** usable for the tree,
+which stated a half width of `0.0104` while choosing an action `0.1531` worse than the best.
+Confidently wrong is the failure an interval exists to prevent.
+
+Against the **original run**, the condition is not met and is not claimed to be. `B72` closed
+`DATA_INSUFFICIENT`; the replay passed on data `B74` made rankable. Those are two runs and
+neither replaces the other.
+
+Worth stating because it could be read the other way: `B74` was written to make ranking
+semantically valid, not to make a model win. It *removed* an action family from scoring,
+which can only reduce what a model is credited with, and it *added* the reference as a
+competing action, which gave a model a new way to be wrong. The tree promptly was.
+
+**Status.** `B72` closes as `DATA_INSUFFICIENT`, which the entry named in advance as a valid
+result. What is missing is not a better model. It is a second machine, and rows whose costs
+are comparable across the actions they rank.
+
+## B74 — Rows that may be ranked, and the replay they made possible (2026-09-10)
+
+**What was broken.** `B72` could not score `B71`'s export for two reasons it found while
+trying. The grouped-width rows report total time across `M = 1` to `16`, so ranking them
+picks the smallest batch. And every study named its actions after itself, so a study-level
+split left every held-out action unseen by construction.
+
+**What `B74` changed, and only that.** No model, no hardware measurement, no route. Every row
+gained a comparison context, the set it may compete in, its work units, a normalised cost and
+the method that produced it — or an explicit refusal.
+
+Three repairs did the work. **One intervention, one name**: `B66` timed the `(4, 8)` geometry
+against a library call and `B69` timed the same intervention inside a stack, and two names
+hid that. **The reference is an action**: the baseline each set was measured against now
+appears at `1.0`, because a choice between alternatives to something nobody can pick is not
+the decision anyone faces. And **the width family is never ranked**: cost per row is a valid
+unit, and grouped width is still not a free action, because a dispatch cannot choose a width
+larger than the number of ready requests. Those rows stay in the dataset as context.
+
+**`B74_PASS`.** Eight comparable sets, three of them usable as top-1 tests outside training,
+all eight quality checks green, ten rows excluded by name and reason, no study on both sides.
+
+**The replay changed one thing in `B72`: the input path.** Same three models, same alpha,
+same tree depth, same split rule, same abstain thresholds.
+
+| model | decided | top-1 | mean regret | catastrophic | holdout RMSE | 95% coverage |
+| :-- | --: | --: | --: | --: | --: | --: |
+| context mean lookup | `0/3` | — | — | `0` | `0.0784` | `0.89` |
+| regression tree, depth 3 | `1/3` | `0` | `0.1531` | **`1`** | `0.0781` | `0.89` |
+| ridge | `3/3` | `3` | `0.0000` | `0` | `0.0203` | `0.89` |
+
+**The caveat that matters more than the table.** A policy that needs no model at all — always
+pick the one action that is not a reference — scores `3` of `3` on this holdout, exactly what
+ridge scored. **Top-1 is therefore not evidence that a cost model was learned.** What ridge
+adds beyond that policy is magnitude: holdout RMSE `0.0203` against the baseline's `0.0784`.
+That is the part worth anything, and it rests on three contexts.
+
+**One transfer happened and is not a rule.** Ridge predicted the stack cost of the `(4, 8)`
+geometry from its isolated cost against a library call, and got the sign and roughly the
+magnitude right. `E5` measured a case where exactly that transfer failed — fusion's `6%`
+bandwidth prediction arrived as `0%` in decode. One instance where it worked is one instance.
+
+**The tree failed outright.** It abstained on two contexts and on the third chose the
+reference over the geometry: top-1 wrong, regret `0.1531`, a catastrophic mistake by the
+`0.05` threshold fixed beforehand. Three models, one useful, one silent, one wrong.
+
+**The ablation, read correctly.** Both models abstain with the hardware block removed, and
+the fail-closed *policy* is what refused, not the models' uncertainty: ridge's interval moved
+`0.0181` to `0.0191`. On one machine the hardware block is constant, so nothing was learned
+from it and nothing can be unlearned by taking it away. The policy did the work; the model
+could not have. That is the same limit `B72` reported and it has not moved.
+
+**What this does not show.** Anything about hardware. `B74` shows the action-cost task is now
+correctly defined. `B73` on a machine nobody has tuned remains the first cross-hardware
+evidence, and nothing here brings it closer.
+
+**Raw data (local, `.gitignore`d).** `B74_comparable_dataset_20260910{,_v2}.json`,
+`…_v2_v1shape.json`, `B72_replay_after_b74_20260910.json`, `B74_outcome_20260910.json`.
+Harness `tools/b74_comparable_dataset.py`, tests `tests/test_b74_comparable_dataset.py`.
+
+**Status.** `B74_PASS`, and `B72` replays as `B72_PASS` on a holdout small enough that a
+constant policy matches its top-1. `B74` closes.
+
+## B73 — The cross-hardware test, and the gate that refused it (2026-09-10)
+
+**`B73_NOT_STARTED`.** There is one machine, and its fingerprint `dc652d66f24ac207` is the
+frozen model's training fingerprint. A prediction made on it would be a memory rather than a
+forecast, and would look excellent for exactly that reason. The harness checks this first and
+exits.
+
+None of the four preregistered verdicts is claimed. `TRANSFER_SIGNAL`, `SAFE_ABSTAIN`,
+`TRANSFER_FAIL` and `INVALID` all describe what happened during a run. Nothing ran.
+
+**What was done instead, and it is the part that had to happen now.** The `B72` dataset and
+the ridge state are **frozen before any unknown machine exists**, which is the only moment a
+freeze is worth anything: coefficients, feature names, scaling, residual spread, policy
+thresholds, known actions, known metrics, and the digest of the training design matrix.
+Carried to a second Mac unchanged, with its digest checked on arrival, it cannot have been
+chosen to suit what that machine turns out to be.
+
+The harness is complete and gated in both directions. `predict` refuses to run on a training
+machine. `verdict` refuses a prediction whose file is newer than the ground truth it is
+compared against, so the sealing order is enforced by the filesystem rather than by
+intention. Nine tests hold those gates.
+
+**What the harness already knows it will say, written down before a second machine exists.**
+On any unknown machine the prediction abstains, and the reason is structural rather than
+cautious: no coefficient on a hardware feature was fitted against variation, because the
+hardware block is constant across every training row. On unseen hardware those coefficients
+multiply values the model has never seen move. So the expected verdict on a second Mac is
+`B73_SAFE_ABSTAIN`, and reaching `B73_TRANSFER_SIGNAL` would need a third machine's worth of
+variation to fit against, not a better policy. Recording that now means an abstention there
+reads as the design working rather than as a disappointment.
+
+**Preconditions for a real run.** A Mac whose fingerprint is not `dc652d66f24ac207`; MLX
+`0.32.0` and mlx-lm `0.31.3`, or the qualification conditions restated for other builds; the
+same Gemma `12B` revision `86cc6a8dedbc456dd0e4af01a9d09f396f77e558` in its cache; about
+`11 GB` free for one resident model per process; and the frozen model carried across with its
+digest verified.
+
+**The order, which the files enforce.** Check, then `B71`'s probe set unchanged, then a
+sealed prediction, then at most one deep probe for exactly the feature an abstention named
+and exactly one second sealed prediction, then `B69`'s stack proof unchanged, then the
+verdict, and only then any learning from the new machine — which never overwrites the sealed
+prediction.
+
+**`H1` is still untested**, and no bandit or reinforcement learning starts until a
+cross-hardware signal is shown to exist.
+
+**Raw data (local, `.gitignore`d).** `B73_frozen_model_20260910.json`,
+`B73_eligibility_20260910.json`, `B73_not_started_20260910.json`. Harness
+`tools/b73_cross_hardware.py`, tests `tests/test_b73_cross_hardware.py`.
+
+**Status.** `NOT_STARTED`, waiting on hardware and on nothing else.
+
+## B75 — A fresh install learns this machine, in under five minutes (2026-09-10)
+
+**The question a new user actually faces.** Everything IronMule knows about this Mac was
+earned over many studies. Starting with no profile, no known winners and no performance
+history, can the system measure its way to a decision it is entitled to act on, and what does
+that cost?
+
+**The isolation is structural.** `tools/b75_cold_start.py` opens no `B66`, `B69`, `B72` or
+`B74` record and no `silicon_profile`; a test greps the source for each name. It imports
+`B69`'s child process as measuring machinery and none of its numbers. Static facts a fresh
+install would also have — SoC, memory, GPU generation, library versions — are used. The
+history stayed sealed until a separate tool opened it, after the decision was written.
+
+**The learner started with the reference and nothing else**, and took three steps.
+
+| step | cost | decision |
+| :-- | --: | :-- |
+| fast probes, `B71`'s set unchanged | `1.21 s` | `MEASURE_MORE`, target named |
+| deep probe, blocked and rotated, A/A gated | `0.29 s` | `CANDIDATE` |
+| local qualification, `4` blocks, one arm per process | `285.01 s` | `CANDIDATE` |
+
+`time_to_useful_hardware_knowledge`: **`286.5 s`**, three probes, twelve model loads. The
+characterisation itself is `1.5 s` of that; the rest is the qualification, which is the price
+of being allowed to act rather than to guess.
+
+**The local qualification stands on its own.** `single_short`, candidate `0.9624`
+`[0.9563; 0.9630]` against the reference, A/A arm `0.9931` with a half width of `0.0053`,
+tokens and stop reasons identical across arms in all four blocks, zero fallbacks, no
+disturbed block, `B65` resource gate passed, and every admitted projection byte-checked
+against the library before a token was timed. No historical number entered it.
+
+**Verdict: `B75_LOCAL_LEARNING_CONFIRMED`**, with regret zero against the measured optimum.
+
+**The more useful finding is the disagreement.** Two independent qualifications of the same
+intervention on the same machine, both passing every gate:
+
+| run | blocks | median | 95% CI |
+| :-- | --: | --: | :-- |
+| `B75` cold start | `4` | `0.9624` | `[0.9563; 0.9630]` |
+| `B69` stack proof | `6` | `0.8469` | `[0.7580; 0.9488]` |
+
+**The intervals do not overlap.** The sign agrees and the magnitude does not. Both runs are
+valid by their own rules and they were taken hours apart on a machine whose load moves. That
+is a caution about how much any single confirmation's *magnitude* is worth here, and it is
+worth more than the confirmation itself.
+
+**One wrong turn, recorded, and it was safe.** The first cold-start run answered `REFERENCE`
+from a fast-probe point estimate of `0.9376` that carried no interval: the decision logic read
+`no interval below 1.0` as `no evidence for the candidate`. A safe answer for a wrong reason,
+and it skipped the deep probe the design exists to trigger. Fixed — a number without a spread
+now asks to be measured rather than being read as silence — and the first run is kept.
+
+**Would the reference fallback have protected a user?** In every branch this run could have
+taken. The reference is what a fresh install serves until it has earned something else, every
+failure mode observed here ends there, and the only cost of that safety is the gain itself.
+
+**What this does not show.** Anything about another Mac. `B75` is a cold start on hardware
+IronMule has measured before, in a state denied access to those measurements. Whether the
+knowledge transfers is `B73`, and `B73` has not run.
+
+**Raw data (local, `.gitignore`d).** `B75_cold_start_preregistration_20260910.json`,
+`B75_cold_start_20260910.json` (the first attempt, kept), `…_v2.json` (the sealed decision),
+`B75_ground_truth_20260910.json`. Harnesses `tools/b75_cold_start.py`,
+`tools/b75_ground_truth.py`, tests `tests/test_b75_cold_start.py`.
+
+**Status.** `B75_LOCAL_LEARNING_CONFIRMED`. Nothing is activated: no product profile, no
+kernel released, no default changed. `B75` closes.
+
+## B76 — Fourteen sessions say the gain is stable and the state model is not (2026-09-11)
+
+**What the disagreement demanded.** `B69` qualified the `(4, 8)` geometry at `0.8469`
+`[0.7580; 0.9488]` and `B75` qualified the same intervention on the same machine at `0.9624`
+`[0.9563; 0.9630]`. Both passed every gate. The intervals do not overlap, and two runs cannot
+say whether that is ordinary between-session variation or one run meeting a state the other
+did not. `B76` measured the temporal distribution directly, on a preregistered three-hour
+budget, and sealed every prediction before its ground truth existed.
+
+**Fourteen sessions, fourteen valid, nothing blocked.** Three blocks of three children each,
+one `12B` image per process, arm order rotated across sessions and blocks, `single_short`
+primary. Zero child failures, zero token or stop-reason differences, zero fallbacks, zero
+disturbed blocks, `B65` passed in every session. Peak child RSS `8.41 GB` of `34.36 GB`, free
+memory never below `55.4%`, swap in use `5.87` to `5.93 GB` across the whole run, `1`-minute
+load between `4.37` and `6.89`. The run used `7173 s` of its `10800 s` and stopped at the
+preregistered maximum, not at the budget.
+
+**The load gate was deliberately not applied, and it is why the study exists.** `B69` starts
+only at a `1`-minute load at or below `4.0`. Every `B76` session began above it. A study of
+natural state variation that runs only on a quiet machine has removed its own independent
+variable; `gpu_busy` stayed the hard gate, and correctness, `B65` and the drift gate decided
+usability. Nothing was tuned, purged or stopped.
+
+**`H1` holds without exception.** All fourteen session intervals lie entirely below `1.0`.
+
+| statistic | `single_short` |
+| :-- | --: |
+| session ratios | `0.9543` to `0.9767` |
+| mean | `0.9647` |
+| between-session `SD`, total | `0.0069` |
+| mean within-session `SD` | `0.0055` |
+| `tau`, between-session after removing measurement error | `0.0042` |
+| total over within-session variance | `1.59` |
+
+**`H2` holds, and it is small.** There is real between-session variation beyond measurement
+error, `tau = 0.0042`, but it is smaller than the within-session error itself and the whole
+observed range spans `2.2` percentage points. The A/A arm agrees: median `0.99999` over
+fourteen sessions, `SD` `0.0069`, largest offset `0.0193`. Session `0`'s A/A half width was
+`0.0754` and failed the `B75` gate; it was kept, as preregistered, because excluding noisy
+sessions would answer `H2` by construction.
+
+**`H3` is refuted, and that is the result.** On the eight sessions where both models
+predicted, the constant baseline beat the state-aware ridge on every metric.
+
+| model | `MAE` | 95% coverage | action accuracy | total regret | abstain rate |
+| :-- | --: | --: | --: | --: | --: |
+| `A_constant` | `0.0044` | `1.00` | `0.857` | `0.0750` | `0.143` |
+| `B_ridge` | `0.0087` | `0.75` | `0.571` | `0.2037` | `0.429` |
+| `C_bayes` | `0.0044` | `1.00` | `0.857` | `0.0750` | `0.143` |
+
+Load, free memory and swap doubled the prediction error and cost `2.7` times the regret. The
+standardised coefficients are `-0.0004`, `-0.0036` and `+0.0028` against a between-session
+`SD` of `0.0069`: three features fitted to a spread that is mostly measurement error.
+
+**`H4` holds for the model that carries its own uncertainty.** `C_bayes` covered `100%` in
+both halves while its half width fell from `0.0214` to `0.0152`. It tightened without ever
+missing. `time_to_calibrated_knowledge` is session `2`, after two valid sessions: the first
+sealed prediction that named an action, named the right one, and contained the ground truth.
+
+**Verdict as sealed: `B76_LOCAL_LEARNING_FAIL`**, and the rule that produced it is defective.
+It fires when any model places an interval of half width below `0.02` that the ground truth
+falls outside. `B_ridge` did so twice, at sessions `6` and `9`, missing by `0.0018` and
+`0.0048` — while choosing `CANDIDATE` correctly both times, with zero regret. The threshold
+is an absolute `0.02` on a quantity whose entire between-session `SD` is `0.0069`, so every
+interval in this study is "confident" by construction and the rule reduces to "any coverage
+miss". It was preregistered and it stands; it is not rewritten to produce a nicer answer.
+
+**What the study actually shows, stated separately from its verdict label.** The action is
+stable and the state model is not. Fourteen out of fourteen sessions below `1.0`, a constant
+model perfectly calibrated at `100%` coverage with zero confident misses, and a state-feature
+model that is worse on error, coverage, action and regret. Read against the preregistered
+definitions that is `B76_STABLE_ACTION_VARIABLE_GAIN` on the primary model and a failure of
+the state-aware arm specifically. Both readings are in the record.
+
+**Secondary classes agree and are tighter.** `single_long` `0.9674` `[0.9652; 0.9693]`,
+`session_warm` `0.9657` `[0.9623; 0.9667]`, fourteen sessions each, same fixed design.
+
+**`B69` and `B75` placed beside it, not pooled.** `B76`'s predictive interval is
+`[0.9513; 0.9783]`.
+
+| run | median | quantile in `B76` | `z` against `B76` | inside |
+| :-- | --: | --: | --: | :-- |
+| `B75` cold start | `0.9624` | `0.36` | `-0.35` | yes |
+| `B69` stack proof | `0.8469` | `0.00` | `-17.1` | no |
+
+`B75` is an ordinary draw from the distribution `B76` measured. `B69` is not, by seventeen
+predictive standard deviations. The disagreement is not between-session variation on this
+machine: `B69` met a state that fourteen consecutive sessions did not reproduce, and its
+magnitude must not be read as this machine's typical effect. What that state was is not in
+either record, which is the finding. `B69`'s sign and its `STACK_CONFIRMED` are untouched.
+
+**Consequence for a later bandit or `RL`, and for `B73`.** A contextual policy over these
+machine-state features is not supported: the context carried no signal and made a calibrated
+predictor worse. What is supported is a non-contextual estimator with an explicit interval
+that abstains until it has two sessions. `B73` gains a sharper question — a second Mac is
+compared against `0.9647 ± 0.0069` from fourteen sessions rather than against one
+confirmation, and `B69`'s outlier says the first thing to record there is machine state.
+
+**Raw data (local, `.gitignore`d).** `B76_temporal_learning_preregistration_20260910.json`,
+`B76_temporal_learning_20260910.json`, `B76_historical_context_20260910.json`, and
+`B76_sessions_20260910/` with twenty-eight `write_once` files: one sealed prediction and one
+result per session. Harnesses `tools/b76_temporal_learning.py`,
+`tools/b76_historical_context.py`, tests `tests/test_b76_temporal_learning.py`.
+
+**Status.** `B76` closes. Nothing is activated: no profile written, no default moved, no
+kernel released, no threshold changed, nothing committed or pushed.
+
+## B77 — The rule was wrong, the study was not, and B69's control says why (2026-09-11)
+
+**What was scored again, and what was not.** `B76`'s twenty-eight `write_once` files, read from
+disk. No prediction was re-fitted, no model re-run, no measurement taken. `B76`'s historical
+verdict `B76_LOCAL_LEARNING_FAIL` stands exactly as sealed; what follows is a separate reading
+of the same evidence under four quantities that the old rule collapsed into one.
+
+| name | meaning |
+| :-- | :-- |
+| `CALIBRATION_MISS` | the ground truth lies outside the predicted interval |
+| `ACTION_ERROR` | the predicted best action is not the measured best action |
+| `CONFIDENT_ACTION_ERROR` | the interval lies wholly on one side of `1.0` and the measured truth wholly on the other |
+| `REGRET` | the continuous cost of the action taken against the measured optimum |
+
+No absolute threshold enters any of them.
+
+**Verdict: `B77_RULE_DEFECT_CONFIRMED`.** The old rule flagged two predictions, both `B_ridge`,
+at sessions `6` and `9`. Both chose `CANDIDATE`, which was the measured best action in every
+valid session, and both carried zero regret. The misses were `0.0018` and `0.0048`. Across all
+three models and all fourteen sessions there is **not one `CONFIDENT_ACTION_ERROR`**. The
+threshold was an absolute `0.02` half width on a quantity whose between-session `SD` is
+`0.0069`, so every interval in the study was narrower than it and the rule reduced to "any
+coverage miss at all".
+
+**The re-score, from the sealed files.**
+
+| model | `MAE` | `RMSE` | coverage | interval score | action errors | confident | cumulative regret | abstain | `MAE` / between-session `SD` |
+| :-- | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| `A_constant` | `0.00577` | `0.00703` | `1.00` | `0.0368` | `2` | `0` | `0.0750` | `0.14` | `0.84` |
+| `B_ridge` | `0.00874` | `0.01134` | `0.75` | `0.0680` | `6` | `0` | `0.2037` | `0.43` | `1.27` |
+| `C_bayes` | `0.00586` | `0.00719` | `1.00` | `0.0366` | `2` | `0` | `0.0750` | `0.14` | `0.85` |
+
+**Every action error in the study is an abstention.** Not one model ever chose a losing
+direction. All regret is gain forgone while evidence was still being gathered, never a loss
+taken. `B_ridge`'s prediction error is larger than the entire between-session spread it exists
+to predict; the two non-contextual estimators sit below it.
+
+**The hypotheses, re-read from prospective predictions only.** `H1` holds, `14` of `14`
+sessions measured `CANDIDATE` as the best action. `H2` holds and is small, `tau = 0.0042`
+against a within-session `SD` of `0.0055`. `H3` is refuted on the eight sessions where all
+three predicted: `A_constant` `0.00437`, `C_bayes` `0.00427`, `B_ridge` `0.00874`, with
+coverage `1.00`, `1.00` and `0.75`. `H4` holds: `C_bayes` kept `100%` coverage in both halves
+while its half width fell from `0.0220` to `0.0157`.
+
+**Model choice, lexicographic and not by `RMSE`.** No confident action error, then least
+regret, then usable coverage, then least prediction error, then least complexity. Ranking:
+`A_constant`, `C_bayes`, `B_ridge`. `B_ridge` cannot win on a later key while its features
+worsen both prediction and regret, and it does not.
+
+**`A_constant` and `C_bayes` are the same answer.** Identical action sequence in all fourteen
+sessions, identical cumulative regret, identical coverage, and a `MAE` gap of `0.000092`, which
+is `1.3%` of the between-session `SD`. Stated plainly: **no learning contextual mechanism is
+needed here at present.** The data does not distinguish the two, so the choice between a plain
+mean and a Bayesian posterior is a design preference, not a result.
+
+**`B69`'s `0.8469` against `B76`'s fourteen sessions, not pooled.** Empirical quantile `0.00`,
+`z = -17.1` against a session `SD` of `0.0069`, `0.1074` below the nearest `B76` session, and
+the intervals do not overlap.
+
+**What is identical between the two studies.** All seven shared source files byte for byte,
+including `qmv_k3840.py`, `runtime.py`, `service.py`, `plans.py` and the `b69_stack_proof`
+harness `B76` imports as its measuring machinery. `mlx 0.32.0`, `mlx_lm 0.31.3`, the same
+platform and the same fingerprint. The same single `27`-token sequence and the same `eos` stop
+reason in every child of both. Five repeats, two warmups, the same reference definition, one
+arm per process, and a model load of `9.57` against `9.76 s`.
+
+**What differs, and it is not speed.** The axis that separates them is measurement dispersion.
+
+| | `B69` | `B76` |
+| :-- | --: | --: |
+| A/A control, `single_short` | `1.0054` `[0.8880; 1.0576]`, half width `0.0848` | median `1.0000`, `SD` `0.0069`, largest offset `0.0193` |
+| block ratios, `single_short` | `6` blocks, `0.684` to `0.9577`, spread `0.274` | `42` blocks, `0.9466` to `0.9863`, spread `0.0397`, `SD` `0.0101` |
+| reference arm wall | `1132.2 ms`, relative range `0.334` | `1075.4 ms`, relative range `0.035` |
+| candidate arm wall | `938.0 ms` | `1036.3 ms`, and `B69`'s median falls outside this range |
+
+**`B69`'s candidate interval overlaps its own A/A control** over `[0.8880; 0.9488]`. `B69`
+predates the A/A gate that `B75` introduced and `B76` kept; its verdict required the candidate
+interval below `1.0` and that condition was met, and it is not reopened here. But its own
+control would not clear that gate, its worst block reads as a `32%` gain, and dropping that one
+block lifts its upper bound to `0.9577`, inside `B76`'s observed range.
+
+**Where the gap sits, as arithmetic on medians from both sealed records.** `B69` as measured
+`0.8284`; holding the reference at `B76`'s level `0.8722`; holding the candidate at `B76`'s
+level `0.9153`; `B76` as measured `0.9637`. Both arms moved and both moved the ratio the same
+way, so neither alone accounts for the gap. **No cause is claimed**, and machine state is not
+offered as the sole explanation, because five axes differ and dispersion is the largest of them.
+
+**Nothing shipped carries the disputed magnitude.** `B69`'s ratio appears in no profile,
+no default and no released kernel; the `silicon_profile` data contract holds none of it. The
+sign and `B69`'s `STACK_CONFIRMED` are untouched.
+
+**The next runtime step, and its limits.** The supported mechanism is `reference` → collect
+valid local evidence → non-contextual estimator with an explicit interval → `candidate` only
+when that interval clears `1.0` outright. Load, free memory and swap stay out until new
+evidence reopens `H3`. No reinforcement learner and no contextual bandit is built on those
+features. `B73` remains the cross-hardware test and gains one requirement from here: a second
+machine's A/A dispersion is reported before any magnitude it produces is quoted.
+
+**Raw data (local, `.gitignore`d).** `B77_rule_review_20260911.json`, the first pass, kept, and
+`B77_rule_review_20260911_v2.json`, which adds the A/A, dispersion and arm-decomposition axes.
+Harness `tools/b77_rule_review.py`, tests `tests/test_b77_rule_review.py`.
+
+**Status.** `B77_RULE_DEFECT_CONFIRMED`. `B77` closes. `B76`'s historical verdict is unchanged.
+Nothing is activated: no threshold rewritten in any shipped path, no profile, no default, no
+kernel, nothing committed or pushed.
+
+## B78 — A controller that remembers this machine and is allowed to do nothing (2026-09-11)
+
+**What exists now.** `ironmule/local_learner.py`: a persistent, per-action, per-workload-class
+state machine over locally qualified evidence, wired into `ExecutionRouter.annotate` as
+annotation and into nothing else. `B75` showed a fresh install can measure its way to a local
+decision; `B76` showed the sign of that decision holds over fourteen sessions while the
+magnitude moves; `B77` showed machine-state features made the forecast worse and that a plain
+mean and a Bayesian posterior are the same answer here. This is the persistent form of exactly
+that much.
+
+**Verdict: `B78_LOCAL_CONTROLLER_PASS`**, on all seven preregistered conditions.
+
+**Four states and one way out of each.** `UNKNOWN` is where every install starts and it serves
+the reference. `COLLECTING` serves the reference while evidence accumulates.
+`CANDIDATE_QUALIFIED` is the only state that would name anything else, and `REFERENCE_ONLY`
+is where a measurably slower candidate or an unreadable control ends. A candidate needs all of
+it: a matching fingerprint, model identity, model revision, `mlx` and `mlx_lm`; evidence that
+passed correctness and the `B65` gate and is not `BLOCKED` or `INVALID`; at least `3`
+independent sessions; a pooled A/A control within `0.05` of `1.0` with a spread at most
+`0.05`; and both estimators placing their whole `95%` predictive interval below `1.0`.
+
+**Both estimators, because `B77` could not pick one.** `B77` measured the running mean and the
+Bayesian posterior as identical in action, identical in regret, identical in coverage, with a
+prediction-error gap of `1.3%` of the between-session spread. A choice the evidence does not
+support is not made: both must clear the boundary, which is the conservative reading rather
+than a coin toss dressed as a decision. No load, memory or swap feature is an input.
+
+**A preference is not a gain, and they are stored apart.** `action_preference` carries
+`preferred`, `confidence`, the reason and how many sessions support the sign.
+`expected_gain_distribution` carries the observed ratios, both estimators and their spread.
+Nothing anywhere stores a single number as though `15%` were a property of the silicon, and a
+test fails if a gain ever appears inside a preference.
+
+**The inclusion rule, written into the code rather than a ledger.** Evidence enters the
+preference when it passes identity, correctness, `B65` and is `VALID`. It enters the gain
+distribution only if it *also* carries its own A/A control within `0.05` of `1.0` at a half
+width of at most `0.05`. `B69` is valid historical evidence and its sign stands, but `B77`
+measured its control at a half width of `0.0848` with its candidate interval overlapping that
+control, so its magnitude is recorded and never averaged in. The replay demonstrates this
+rather than asserting it: offering `B69` to a fully-fed controller leaves the gain
+distribution byte for byte unchanged.
+
+**The cold start, walked forward and sealed at every step.** Fifteen rows, `B75`'s
+qualification then `B76`'s fourteen sessions in measured order, each step written `write_once`
+before the next was offered.
+
+| step | evidence | state | recommended |
+| --: | :-- | :-- | :-- |
+| `0` | none | `UNKNOWN` | `reference` |
+| `1` | `B75` | `COLLECTING` | `reference` |
+| `2`, `3` | `B76` sessions `0`, `1` | `COLLECTING` | `reference` |
+| `4` | `B76` session `2` | `CANDIDATE_QUALIFIED` | `candidate` |
+| `5` to `15` | the remaining sessions | `CANDIDATE_QUALIFIED` | `candidate` |
+
+**It took four sessions, not three, and the reason is the point.** `B76`'s session `0` carried
+an A/A half width of `0.0754`. It is accepted, it counts towards the sign, and it is excluded
+from the scale, so the third *gain-eligible* session arrived one step later than the third
+accepted one. The controller reached its minimum on the evidence that could set a scale rather
+than on a count.
+
+**Final state, from evidence only.** `CANDIDATE_QUALIFIED`, estimated ratio `0.9648`,
+predictive interval `[0.9522; 0.9774]`, `15` sessions accepted of which `14` are
+gain-eligible. It recommends, and nothing reads the recommendation.
+
+**Fail closed, checked case by case.** Fifty tests. A foreign fingerprint, model identity,
+model revision, `mlx` or `mlx_lm` build is refused with the axis that failed named.
+`BLOCKED`, `INVALID`, failed correctness and a failed `B65` gate are each refused by name. A
+row with an unknown field, a missing field, a non-finite number, or a ratio outside its own
+interval is refused before it becomes evidence. The same evidence id is never counted twice.
+A control too wide or sitting off `1.0` qualifies nothing. One session at `1.30` added to a
+qualified controller widens the interval back over `1.0` and stops the recommendation. A
+missing state file, an unparseable one, a foreign schema, a tampered digest and a state
+written for another machine each leave a controller that knows nothing. Every one of them ends
+at `reference`.
+
+**The router is untouched, and structurally so.** `ExecutionRouter.decide` does not contain
+the strings `local_learner` or `local_learning`, which a test asserts, so its cost cannot
+depend on a controller. The recommendation is attached in `annotate()`, once per dispatch,
+after the route exists, as one mapping lookup against a dictionary the controller built when
+its evidence last changed.
+
+| measurement | value |
+| :-- | --: |
+| `decide()` with controller over without | `0.9936` `[0.9902; 1.0081]` |
+| equivalence margin, from `B70` | `0.02` |
+| added per annotation | `38.5 ns` |
+| measured dispatch, `B76` reference arm `single_short` | `1075.4 ms` |
+| share of one measured dispatch | `3.6e-08` |
+
+**The first overhead pass recorded a `FAIL` and it is kept.** It applied `B70`'s hot-path
+margin to an `annotate`-against-`annotate` ratio, which compares a diagnostic with itself and
+is not a dispatch overhead. The denominator was wrong, not the result; the second pass
+reports the hot-path ratio against that margin and the annotation against a dispatch this
+machine actually measured. Both records stand.
+
+**Raw data (local, `.gitignore`d).** `B78_cold_start_replay_20260911.json` and `…_v2.json`
+with `B78_replay_steps_20260911_v2/`, sixteen sealed steps; `B78_shadow_overhead_20260911.json`
+and `…_v2.json`; `B78_outcome_20260911.json`. Source `ironmule/local_learner.py`, harnesses
+`tools/b78_cold_start_replay.py`, `tools/b78_shadow_overhead.py`, `tools/b78_outcome.py`,
+tests `tests/test_b78_local_learner.py`.
+
+**Status.** `B78_LOCAL_CONTROLLER_PASS`. `B78` closes. Shadow only: no `RouteDecision` is
+changed, no kernel activated, no default moved, no product path touched, nothing committed or
+pushed. `B79` is the controlled opt-in activation with an immediate reference fallback and is
+not started here.
+
+## B79 — The first dispatch this project has let a learned preference change (2026-09-11)
+
+**Verdict: `B79_LEARNED_DISPATCH_CONFIRMED`**, on all eleven conditions, and the default is
+still `False`.
+
+**What is now shown, end to end, on one machine.** Unknown local state, evidence collected,
+a preference learned, the knowledge persisted, and the learned action used in a real dispatch.
+That is not reinforcement learning and not cross-hardware learning, and neither is claimed.
+
+**Three pieces of new shipped code, all small.** `ironmule/qmv_variant.py` installs the
+`(4, 8)` geometry from `qmv_k3840`'s own body through the same kernel registry, proving every
+projection byte-identical to `mx.quantized_matmul` on its own weights before swapping it, and
+undoing the whole installation if any projection differs. Until now that installer lived only
+in `tools/b66_stack_proof.py`, and a shipped dispatch cannot depend on a study tool.
+`ironmule/activation.py` is the one place a preference may change what runs.
+`AppleRuntime.load` gained `enable_local_learned_dispatch=False`.
+
+**Admission agrees on every axis or nothing is installed.** Hardware fingerprint, GPU
+architecture, model identity, model revision, `mlx`, `mlx_lm`, quantisation, `K`, the admitted
+projection widths, the action id, the controller state digest, the correctness contract, and a
+local preference of `CANDIDATE_QUALIFIED`. The first failing axis is the reason. Only the
+workload classes the controller itself qualified are offered, and only the `interactive` route:
+nothing is carried across to paired, throughput, `single_long` or `session_warm`.
+
+**No magnitude decides anything.** The activation reads the controller's state and its evidence
+count. A test asserts that the strings `estimated_ratio`, `prediction_interval` and
+`predicted_ratio` appear nowhere in the layer. `B76` measured a stable sign with a magnitude
+that moves, and a switch thrown on a moving number is a switch thrown on noise.
+
+**The preflight, every step of the measured history, with activation opted in.**
+
+| step | controller | effective action |
+| --: | :-- | :-- |
+| `0` | `UNKNOWN` | `reference` |
+| `1` to `3` | `COLLECTING` | `reference` |
+| `4` to `15` | `CANDIDATE_QUALIFIED` | `candidate` |
+
+The first candidate step is the first qualified step, exactly. Opting out is `reference` at
+every step. Every other route and every unqualified workload class is `reference` at every
+step, including after qualification.
+
+**The canary: thirty real dispatches, and the safety paths exercised rather than assumed.**
+Four phases in four processes, each with its own `12B` image, all asking the same question.
+
+| phase | dispatches | activation | median |
+| :-- | --: | :-- | --: |
+| `control_before` | `5` | off | `963.2 ms` |
+| `canary` | `30` | on, candidate ran in all thirty | `921.4 ms` |
+| `control_after` | `5` | off | `967.5 ms` |
+| `after_kill` | `5` | opted in, came up disabled | `966.3 ms` |
+
+Token ids and stop reasons identical across all forty-five dispatches. Zero fallbacks, zero
+runtime errors, `B65` passed, no kill fired during the canary. The canary over its controls is
+`0.9563`, which detects the absence of a gross regression and is **not** a qualification of the
+gain: it is a before/after control, not a paired design, and `B76` is where the gain was
+measured.
+
+**The kill switch was written and then obeyed across a process boundary.** After the canary a
+kill record was written and a further process started with activation opted in. It came up
+disabled and served the reference for every dispatch. An unreadable kill record counts as
+killed rather than as absent. New valid local evidence that widens the interval back over `1.0`
+kills activation too, which a test drives with one session at `1.30`.
+
+**Two defects of my own, both found by measuring and both fixed in the code.** The activation
+decision called the controller's `as_dict()` on every dispatch, which rebuilds every estimator
+over every row: `62x` the cost of a route decision. The digest is now computed when evidence
+changes, and the per-dispatch records are built once per shape. Separately, a shut gate called
+`mx.quantized_matmul` directly, which is byte-identical and roughly twice as fast as the
+`nn.QuantizedLinear` it replaced -- and that is exactly why it was wrong. A fallback quicker
+than the thing it falls back to is a third path, and nothing was qualified on a third path. The
+shut gate now calls the original module. Both failing measurements are kept.
+
+| measurement | value |
+| :-- | --: |
+| projection, opted in and not eligible, over reference | `0.9989` `[0.9856; 1.0113]` |
+| projection, candidate eligible, over reference | `0.9723` `[0.9601; 0.9907]` |
+| added per dispatch by the activation decision | `253 ns` |
+| share of a measured dispatch | `2.7e-07` |
+| the same against an isolated `decide()`, reported and not gated | `1.0613` |
+
+The `2%` margin is applied at each level against the reference that level has. A user who opts
+in and dispatches something unqualified pays nothing measurable per projection. The
+per-dispatch guard costs `253 ns` because it re-reads the controller digest every dispatch,
+which is what catches a controller that changed underneath a running process; making it cheaper
+would mean checking less often, which is not an optimisation. `decide()` still names neither
+the controller nor the activation layer, which a test asserts.
+
+**Nothing is switched on.** `enable_local_learned_dispatch` defaults to `False`. The canary
+wrote its controller state and its kill record to a scratch directory; the user's own store was
+never written and carries no local learning state. No profile, no default, no product path, no
+commit, no push.
+
+**Raw data (local, `.gitignore`d).** `B79_canary_preregistration_20260911.json`,
+`B79_preflight_replay_20260911.json` and `…_v2.json`, `B79_canary_20260911.json` and
+`…_v2.json`, `B79_overhead_20260911.json` through `…_v4.json`, `B79_outcome_20260911.json`.
+Source `ironmule/qmv_variant.py`, `ironmule/activation.py`, harnesses
+`tools/b79_preflight_replay.py`, `tools/b79_canary.py`, `tools/b79_overhead.py`,
+`tools/b79_outcome.py`, tests `tests/test_b79_activation.py`.
+
+**Status.** `B79_LEARNED_DISPATCH_CONFIRMED`. `B79` closes. `B80`, controlled continual
+learning during ordinary use without exploration, is not started here.

@@ -12576,6 +12576,99 @@ Es folgt zunächst der neue echte 12B-Matrixlauf gemäß
 `docs/PROD10_OPEN_VALIDATION_SPEC.md`, ohne künstliche Hardwaregates und ohne
 Retry. Bibliotheken/Modellcache/Harness bleiben währenddessen eingefroren.
 
+## 2026-09-07 — DATA1 portable Datenerhebung implementiert und real geprüft
+
+Nutzerauftrag: akzeptierten Apple-/NVIDIA-/TPU-Datenplan implementieren;
+ausschließlich Gratisressourcen, je GPU-/TPU-Fenster min(10 %, 2 Stunden),
+maximal 15 Minuten pro Job, erster Smoke 3 Minuten. Lernziel: gleiche
+Ausführungsqualität mit geringerem Messaufwand. Terra implementierte Runner/
+Budget, Sol Corpus/Lernen, Luna gezielte CLI-/UI-Regressionsprüfungen;
+Integration, reale Läufe und Nachprüfung erfolgten im Haupttask.
+
+Neue optionale CLI `ironmule data`, versionierte Spezifikationen und Reports,
+gehashte echte Gemma-Tensorcaptures, native MLX/CUDA-T4/JAX-TPU-Adapter,
+private/offline Kaggle-Bundles, append-only Quotenreservierung mit Abgleich,
+lokaler Supervisor, Ausführungsbelege für Trainingslabels, deterministische
+leakagefreie Dataset-Projektion, einmalig versiegelter Holdout und CPU-Replay
+mit Ridge/GBDT/GP-BO. Ein Replay kann keine Performancepromotion aussprechen.
+Gemeinsame Statistik, Storage, Guard und Journal stammen aus `friday_evidence`.
+Versiegelte Pakete und vorhandene R2-Berichte bleiben unverändert.
+
+Die ProjectAtlas-Orientierung erfolgte zuerst. MCP und CLI meldeten selbst nach
+vollständigem Indexabgleich `dependency_closure_limit`; gezielte direkte Reads
+der bereits identifizierten Dateien waren der dokumentierte Fallback.
+Keine ProjectAtlas-Quelldatei wurde verändert.
+
+Fehler und Lösungen: private Verzeichnisse wurden anfangs über `parents=True`
+mit zu offenen Elternrechten angelegt; vor Hardwarestart abgewiesen, Erstellung
+korrigiert, ursprünglicher Fehler erhalten. Der Legacy-CLI-Test importiert MLX
+bereits bei Sammlung; Sandbox-Abort, darauf echter Metal-Zugriff und einzelne
+Testprozesse statt xdist-Wiederanlauf. Quotenparser zunächst an realem CLI-Output
+gescheitert: Kaggle 2.2.4 liefert `.00h` und naive UTC-Zeitstempel; gegen den
+installierten SDK-Code korrigiert, 36-Sekunden-Rundung explizit berücksichtigt.
+Mutable Speicherzähler wurden aus Hardwareidentitäten in separate Ressourcen-
+Samples verschoben. Ungeprüfte JSON-Importe erzeugen keine Trainingslabels.
+Direkte Worker schreiben Teilereignisse sofort; fehlgeschlagene/censored Reports
+bleiben Diagnose statt durch spätere erfolgreiche Läufe zu verschwinden.
+
+Reale Hardware: Capture `544ced2f03204a12bf4e2824a936129c`, tatsächliches
+Tensorpaar `36×1152×1024`, 9,000978 s Capture-Wall, 0,089744 s erfasste
+Gerätearbeit, 4,009962 s Pflichtpause, 10 Ressourcenbeobachtungen, Null-Swapdelta,
+Exit 0. Capture `29aa8c0fb723487c95c04138eea9314e`, `274×1152×6912`,
+16,348193 s Wall, 0,095753 s erfasste Arbeit, 12,01942 s Pflichtpause,
+Null-Swapdelta, Exit 0. Beide verwenden echte Inputs aus dem lokalen
+Gemma-1B-Snapshot; FP32-Dense-Replay ist keine quantisierte LLM-Inferenzbehauptung.
+
+Smoke 1 wurde vor GPU-Start wegen Systemlast zurückgestellt. Smoke 2
+`bf371897d29b4c34b9aea337580d7355` hat reale Metal-Ausführung und verifizierten
+Import bestanden. A/A-Studien `4dba2c2d6c1b4dee9c96ab14d3064c55` und
+`c77f0649b3644a39af44d86a92782ebd`: jeweils fünf Warmup-Paare und zwölf echte
+Messpaare. Unsicherheit 6,6802386 % bzw. 16,1426115 % gegen eingefrorene
+2,5 %. Terminal `censored` vor Kandidatenvergleich, keine Trainingslabels und
+kein Speedup. Quellbindungen hielten; Swapdelta jeweils 0 B; Worker beendet.
+Parallele Aufgabe meldete danach zwei kurze CPU-Kontrollsuiten, deren Überlappung
+nicht rekonstruierbar ist. Keine belegte Rauschursache und kein sicherer
+Fremdlastfreiheitsclaim. Ursprüngliche Gates/Ergebnisse bleiben unverändert.
+
+Kaggle: Zugang vorhanden, im MCP-Feld für einen Variablennamen lag ein Literal-
+Token. Nach ausdrücklicher Nutzerfreigabe nur im Prozessspeicher für den
+offiziellen Dienst verwendet; kein Token in Projektartefakten gespeichert.
+CLI/SDK authentifizieren Konto `tobayko`: GPU 30 h, TPU 20 h, beide unbenutzt,
+Reset 2026-09-12. Keine eigenen Notebooks gefunden; das beweist keine vollständige
+accountweite Sitzungsfreiheit. SDK liefert keine Bezahlverknüpfungs-/Free-SKU-
+Bestätigung; in-app Browser ist nicht angemeldet. Deshalb kein Upload oder
+Cloud-Job, keine verbrauchte Accelerator-Quote. MCP-Werkzeugliste erreichbar,
+geschütztes MCP-Quotenwerkzeug meldete dagegen `Unauthenticated`; CLI bleibt
+der nachweislich funktionierende Zugang. Globale MCP-Konfiguration unverändert.
+
+Kaggle 2.2.4 und das Test-Wheel wurden in getrennten Werkzeugumgebungen
+installiert. Die MLX-Umgebung wurde nicht installiert/aktualisiert; vorab
+erfasster Paket-Set-Hash `9e37ae946cc0c0a5227517ef894c6240467f4fd2c9c59478b74b4514ed1841df`
+bindet die inspizierten Runtime-Paketversionen (kein Ersatz für Environment-Hashes
+der jeweiligen Studien). Keine alte Studie autorisiert neuen Code automatisch.
+
+Verifikation: 57 gezielte Tests bestanden in 0,46 s (56 DATA1 plus bestehender
+CLI-Hilfetest), Compileprüfung und Diff-Whitespaceprüfung bestanden. Baseline
+zuvor 63 Tests und sieben Untertests bestanden. Ein Hilfetext-Regressionstest
+wurde an die tatsächlich neue `data`-Schnittstelle angepasst. Wheel gebaut und
+`data status`/`data train` aus separater Installation ohne MLX erfolgreich;
+Training bleibt `no_learning_claim`. Browser zeigt reale Captures, Import,
+Fehlversuche, Last-Deferred und zensierte Rohpaare. Details und offene Gates:
+`docs/DATA1_PORTABLE_COLLECTION.md`, Backlog DATA1. Keine Daten veröffentlicht,
+keine Runtimepromotion und keine ProjectAtlas-Codeänderung.
+
+DATA1-Abschlusskontrolle: aktuelles Wheel zusätzlich unter
+`.friday-data/portable/final-wheel/` gebaut (0,587 s, keine Installation).
+Runtime-Paket-Set-Hash nach allen Werkzeuginstallationen identisch zum oben
+festgehaltenen Vorherwert. Echte HTTP-Prüfung der laufenden Anzeige bestätigt
+2 reale Captures, 2 eindeutige Fälle, 24 Messpaare, 2 zensierte Studien und
+80 sichtbare jüngste Historienereignisse; POST wird mit 405, fremder Host mit
+403 abgewiesen. Browserdarstellung geprüft. Letzte echte GPU-Quotenabfrage
+meldet weiterhin 108000 Sekunden verfügbar und 0 verbraucht; Beobachtung in
+`.friday-data/portable/quota-gpu-final.json`. Build-Zwischenverzeichnisse wurden
+aus dem Root in den eigenen DATA1-Artefaktbereich verschoben und bleiben
+wiederherstellbar. Fremde parallele Änderungen wurden nicht gestaged oder committet.
+
 ### PROD10-12B erster echter Durchgang — Langkontext erreicht, Cancel-Defekt belegt
 
 Die erste Ausführungsanfrage wurde vor Prozessstart durch Auto-Review mit
@@ -12651,6 +12744,45 @@ aus den offenen Teilaufgaben entfernt; einstündiger Serverlauf, vertiefte
 GPU-Diagnose und autonome Optimierung/RL bleiben offen. Kein Gain-Claim aus
 den ungepaarten Stock-/Produktzeiten. Der Fehlversuch mit Code6e0eff… bleibt
 separat erhalten. Kein Modellprozess aus diesen Matrixprüfungen bleibt aktiv.
+
+## 2026-09-07 — DATA1-Zielkorrektur: Bestleistung als Mindestziel
+
+Direkter Nutzerentscheid: „Ziel sind mindestens die maximale Beschleunigung die
+wir schon erreicht haben!“ Damit ersetzt maximale End-to-End-Beschleunigung das
+bisher primäre Messkostenziel. Datenerhebung bleibt Mittel zu diesem Ziel;
+Kaggle bleibt ausschließlich kostenlos und im bestehenden Kontingentbudget.
+
+Ein unabhängiges Sol-Read-only-Audit und eigene gezielte Quellenprüfung trennen
+die Vergleichsmaßstäbe: E13 dokumentiert Sessionratio 0,2039695603648146
+(79,603 % weniger Zeit, 4,9027x) für acht Fragen mit gemeinsamem Dokument. Das
+ist eine sekundäre Performancekennzahl mit 20/352 divergierenden Antworten;
+die historische Qualitätsverlustgrenze beträgt 1,1364 Prozentpunkte. Sie ist
+keine Exact-Freigabe. D5 dokumentiert auf der exakten 1B-897/32-Zelle
+0,6959773070789428 (30,402 % weniger Zeit, 1,4368x), aber explorativ mit
+formal_claim=false, sechs Paaren und dirty Provenienz. B39d ist auf dem
+12B-Sechs-Anfragen/48-Token-Serverprofil qualifiziert: Wallratio 0,8194867050
+und getrennt Rate-Ratio 1,2202787058. Keine dieser Referenzen ist eine
+pauschale Hardware-/Workload-Garantie; E13 muss unter dem aktuell verlangten
+Qualitätsvertrag neu geprüft werden. Zurückgezogene Gemini-Zahlen und isolierte
+Tensor-/TTFT-Werte werden nicht als globale End-to-End-Bestleistung verwendet.
+
+Prospektive Implementierung: `portable/objectives.py` enthält die versionierte
+Zielmatrix. `ironmule.learning.v2` und `ironmule.offline-policy.v2` tragen das
+Leistungsziel ausdrücklich. Validation wählt nach tatsächlich ausgewählter
+Ausführungsgeschwindigkeit je Hardware-/Modellgruppe; Vorhersage-RMSE ist nur
+nachgeordnet. Die Proxy-Orakellatte ist nun Laufzeitratio <=1,0 statt <=1,05
+(keine Aussage über einen Prozentpunkt Qualitätsverlust). Vergleichsmethoden
+werden zuerst nach Laufzeit, dann nach Suchkosten priorisiert. Kostenreduktion
+bleibt ausgewiesen, ist aber kein primäres Freigabegate mehr. Vollständige native
+Inferenznachweise gegen Stock und den besten kompatiblen IronMule-Stand sind
+weiter nötig; `runtime_goal_met` und `performance_claim` bleiben derzeit false.
+Bestehende Messungen, Rauschschwellen und verbrauchte Holdouts unverändert.
+
+Backlog und DATA1-Dokumentation angepasst. Verifikation: 59 reine portable
+Kontrolltests bestanden in 0,45 s, einschließlich Regression für falsche
+Variantenreihenfolge trotz kleinerem RMSE. CLI-/Lernstatus liefert das neue Ziel
+mit `no_learning_claim`. Keine neue Modell-/GPU-Ausführung, keine Installation,
+kein Kaggle-Verbrauch und keine Änderungen an parallelen Produktfixes.
 
 ### PROD10-S — gemischter einstündiger Serverlauf vorregistriert
 
@@ -12976,6 +13108,52 @@ ist lediglich gebaut, noch nicht installiert oder nativ ausgeführt. Die vorher
 entstandenen uncommitteten Worker-/Adapteränderungen bleiben deaktiviert und
 werden nicht als gemessener Gewinn dargestellt.
 
+## 2026-09-08 — DATA1 realer Kaggle-T4-Smoke
+
+Nutzerauftrag: Kaggle real testen; bei Fehler stoppen, Ursache beheben und keine
+weiteren Browser-Tabs erzeugen. Browser und CLI bestätigten vorab 0 aktive Events,
+30 h GPU/20 h TPU und keine angezeigte Cloud-Verknüpfung. Der erste
+modellabgeleitete Upload wurde von der automatischen Freigabeprüfung abgewiesen
+und nicht ausgeführt. Sichere Ersatzform: privater code-only Smoke mit auf Kaggle
+deterministisch erzeugten kleinen Matrizen, Internet aus, 180-s-Serverlimit,
+60-s-Arbeitsziel, keine Modell-/Tensorartefakte und kein Performanceclaim.
+
+Versuch `abae09b0e92c4d6da784026a2b646eae` erzeugte tatsächlich eine private
+Kaggle-Version, lief aber mit `Accelerator None` und meldete nach 4,763 s
+`cuda_unavailable`; Providerquote weiterhin 0,00 h. Danach sofort gestoppt, kein
+automatischer Retry. Browserdiagnose zeigte die fehlende Telefonverifizierung.
+Zusatzfehler: Kaggle leitete den tatsächlichen Slug aus dem Titel ab, wodurch
+CLI/MCP zunächst den falschen Metadaten-Slug adressierten. Richtiger privater
+Slug und Output wurden über `Your Work` gefunden. Von Diagnoseklicks erzeugte
+doppelte Tabs geschlossen; danach bestehende Tabs wiederverwendet.
+
+Lokale Korrektur: AccountPreflight verlangt nun bestätigte Accelerator-
+Voraussetzungen; Titel muss exakt zum Slug auflösbar sein; echte Providerfehler
+frieren den Quotencontroller ein. Ein eingefrorener Versuch kann nur append-only
+mit terminalem Status, frischer gleicher Quote und gehashtem Reviewbeleg
+abgeschlossen werden; Reservierung wird nicht erstattet. Dataset-Ready wird vor
+einem datenbasierten Job abgewartet. 35 gezielte Kontrolltests bestanden.
+
+Nach Nutzeraktion bestätigte der Browser `Phone verification: Verified`, weiterhin
+0 aktive Events und `GPU T4 x2` als auswählbare Gratisoption. Der alte Fehlversuch
+wurde mit voller 300-s-Reservierung reviewed/reconciled. Neuer Versuch
+`7c88ef1c0ddf42a3b442839fcec81fe9`, privater Slug
+`tobayko/ironmule-provider-smoke-7c88ef1c`: terminal `complete/passed`, Browser
+`Successful`, 0 aktive Events. Reale Hardware Tesla T4, Compute Capability 7.5,
+15.636.037.632 B Gerätespeicher; PyTorch 2.10.0+cu128, CUDA 12.8, TF32 aus.
+Der FP32-Matmul-Smoke stimmt mit NumPy-CPU überein; `hardware_verified=true`,
+`correctness_verified=true`, `performance_claim=false`, Diagnoselaufzeit
+11,82234222 s. Der lokale Ledger berechnet konservativ 300 s, bleibt unfrozen;
+Kaggle zeigt weiterhin 0,00/30 h.
+
+Kaggle MCP wurde nicht übergangen: Toolinventar erreichbar; `get_notebook_info`
+für den korrekten privaten Slug scheitert mit fehlender `kernels.get`-Berechtigung,
+Sessionstatus mit `Unauthenticated`. Deshalb Dreifachnachweis aus Browser,
+offizieller CLI 2.2.4 und heruntergeladenem Ergebnis. TPU v5e-8 wird im Konto
+angeboten, doch Kaggle weist auf zusätzliche Identitätsprüfung für manche TPUs
+hin; kein TPU-Job gestartet. Keine Änderung der Gratisgrenzen und keine neue
+Inferenz-/Speedupbehauptung.
+
 ### 2026-09-08 — genehmigte Produktintegration: Kandidaten, Auswahlvertrag und neue native Einbindung
 
 Der Nutzer hat das Ziel ausdrücklich auf die vier Produktpunkte konkretisiert:
@@ -13080,3 +13258,1712 @@ Dieser Zwischenstand beantwortet nur die einfache neue Einbindung. Der aktive
 Gesamtauftrag bleibt vollständig offen bis Core-/Gruppierungstransport,
 passender aktueller Leistungsvergleich, tatsächliche automatische Auswahl
 und die abschließende Veröffentlichung auf `main` nachgewiesen sind.
+
+### 2026-09-08 — lokaler PROD14-Zwischenstand und vollständige Loopback-Kontrolle
+
+Lokaler Commit `df15e59` sichert ausschließlich die eigenen Module, gezielten
+Tests, sechs nativen Integrationsberichte und ihren Audit. Keine parallelen
+DATA1-/UI-Dateien oder Journalabschnitte übernommen; kein Push/Merge aufmain.
+Die kombinierte Kontrollsuite lieferte142passed,23 wegen gesperrtem Loopback
+übersprungene Tests und11Subtests. Der anschließende freigegebene tatsächliche
+Loopback-Lauf des HTTP-Testfiles bestand28/28 ohneSkip (11,62s). Die Compiler-
+und Whitespaceprüfungen bestanden; dies ergänzt, ersetzt aber nicht die45
+echten neuen Modellgenerierungen. Sämtliche eigenen Modellworker sind beendet.
+
+### 2026-09-09 — SSOT: ein Index über alle Messdaten, mit Urheberzuordnung
+
+Nutzerauftrag: aus allen vorhandenen Messdaten eine einzige Quelle machen und in
+der Datenbank unterscheiden, welches Modell die Daten erarbeitet hat. Umgesetzt
+als abgeleiteter Gesamtindex `friday_evidence/ssot.py` mit CLI `tools/ssot.py`
+und Dokumentation `docs/SSOT.md`.
+
+Vorgefundene Lage: 19 SQLite-Studiendatenbanken in sechs verschiedenen
+Tabellenformen (`records`, `evidence_records`, `bundles`, `optimization_records`,
+`event_journal`, das relationale H0-Schema) und über 400 JSON-/JSONL-Dateien in
+`research/`, `experiments/` und `.friday-data/`, zusammen rund 108 MB. Die
+`records`-Form ist nicht einheitlich: je nach Studie heißt die Nutzlast
+`report_json` oder `payload_json`, der Schlüssel `record_id`, `entity_key` oder
+`seq`. Der Leser toleriert das spaltenweise, statt Studien umzuschreiben.
+
+Ergebnis eines vollständigen Neuaufbaus: 417 Quellen, 1745 Läufe, 300 084
+Metrikwerte, 0 unlesbare Quellen, 32 s Laufzeit, 56 MB Index. Quellen werden nur
+read-only geöffnet; die mtimes aller versiegelten Studiendatenbanken sind
+unverändert. Der Index liegt in `.friday-data/` und ist damit weiterhin nicht
+Teil des öffentlichen Baums.
+
+Urheberzuordnung: `runs.agent` plus `runs.agent_source`, das die Evidenzstufe
+benennt. Verteilung aktuell claude 1230, codex 467, gemini 10, unattributed 38.
+Diese Zahlen sind ungleich belastbar. 377 claude- und 150 codex-Läufe stammen
+aus einem in der Provenienz referenzierten Commit, 51 aus dem Archivmanifest,
+160 aus der Dateihistorie. Dagegen ruhen 753 claude-Läufe allein auf der
+Schreibzeit von `optimizer-v2.sqlite3`, dessen Datensätze fast alle ein leeres
+`created_at` tragen; das ist die schwächste Stufe und sagt nur, wer zuletzt
+geschrieben hat. `h0` und `h01` entstanden vor dem ersten Commit des
+Repositories und bleiben ohne Zuordnung. Commits ohne `Co-Authored-By: Claude`
+und ohne `feat(gemini):`-Scope werden diesem Codex-getriebenen Baum zugerechnet;
+auch das ist eine Schlussfolgerung, kein Beleg, und als `repo_default_codex`
+kenntlich.
+
+Zwei bestehende Wächtertests wurden erweitert, nicht umgangen:
+`tests/test_shipped_sql.py` kennt die studienfremden Lesezugriffe des Index als
+dokumentierte Cross-Package-Reads, `tests/test_sealed_evidence.py` führt
+`ssot.sqlite3` als ableitbaren Index statt als unbelegte Evidenzdatenbank.
+`tests/test_ssot.py` prüft Neuaufbau, Unverändertheit der Quellen, Flachlegung
+inklusive Array-Zusammenfassung und alle drei Commit-Zuordnungsregeln: 4 passed.
+Die Gesamtsuite meldet weiterhin vier von dieser Arbeit unabhängige Fehlschläge
+(`test_q3d_stability_gate`, `test_q3f_child_guard`, `test_status` D1-Eintrag,
+`test_product_variant_contract`).
+
+Keine Messung auf Hardware, keine Leistungsaussage: der Index liest vorhandene
+Evidenz und erzeugt keine.
+
+## 2026-09-09 — Journalexporte im Index: ein Lauf je Ereignis
+
+Auftrag: die neuen IronMule-Messdaten in die maßgebliche Datenbank übernehmen,
+ohne eine zweite Datenbank zu eröffnen. Maßgeblich ist `.friday-data/ssot.sqlite3`,
+der abgeleitete Gesamtindex; geschrieben wird er ausschließlich über
+`python3 tools/ssot.py build`. Die Studiendatenbanken bleiben ihre eigenen
+Rohbestände, `research.sqlite3` ist eine davon und kein Gesamtindex.
+
+Befund vor der Arbeit: alle 417 Quellen waren erfasst, keine Drift, keine
+fehlerhafte Quelle. Neun Dateien der Produktmessungen vom 7./8. September sind
+jedoch Exporte hashverketteter Journale und lagen als je ein einziger Lauf im
+Index. 4376 Ereignisse mit eigener `run_id`, eigenem `kind` und eigenem Status
+waren damit nicht einzeln auffindbar, obwohl dieselben Ereignisse aus einer
+`event_journal`-Tabelle längst einzeln indiziert werden. Der Reader liest solche
+Exporte jetzt in derselben Körnung wie die Tabelle: `run_id:seq` als native ID,
+Kettenhash und Vorgängerhash als Provenienz, Ereigniszeit als Beobachtungszeit.
+Der Envelope bleibt zusätzlich als eigener Lauf erhalten, damit bestehende
+Einträge unverändert bleiben.
+
+Neuaufbau in 37,414 s: 417 Quellen unverändert, 0 fehlerhaft, Läufe 1745 auf
+6121, Metriken 300.084 auf 351.280. Alle 417 Quelldateien sind byteidentisch
+geblieben (SHA-256 vorher/nachher), die 632.660 Dateien unter
+`.friday-data/profiles` und `profiles` in Größe und Schreibzeit unverändert; der
+Import fasst keine Kalibrierungsprofile an.
+
+Nichts wurde ergänzt oder geschätzt. 26 Ereignisse tragen keinen numerischen
+Wert und bleiben ohne Metrik, Statusfelder bleiben leer, wo das Ereignis keines
+nennt. Negative und abgebrochene Läufe stehen mit ihrem eigenen Status im Index:
+14 `run_finished` mit `failed`, 6 mit `finished`, 6 mit `passed`.
+
+Dubletten sind sichtbar, nicht bereinigt: 730 Kettenhashes stehen in mehr als
+einer Quelle. `research/product_history_20260907_v3` ist eine exakte Kopie von
+`_v2` (gleicher Envelope-Hash `c8c26214…`, gleiche 730 Ereignisse, nur andere
+`generated_at`); 461 dieser Ereignisse liegen zusätzlich in
+`product_native_history_20260907` und in den vier PROD3-Rohdateien. Die Rohdaten
+bleiben, die Überschneidung ist über die Provenienz abfragbar.
+
+Zuordnung: 4385 Journalexport-Läufe gehen an Codex, davon 2923 über die
+Dateihistorie und 1462 über `commit_at_time` — die beiden `product_history`-
+Exporte sind nicht versioniert, stärkere Evidenz gibt es dort nicht. Gesamt jetzt
+codex 4843, claude 1230, gemini 10, unattributed 38.
+
+Keine Messung auf Hardware, keine Leistungsaussage: der Index liest vorhandene
+Evidenz und erzeugt keine. `tests/test_ssot.py` prüft die neue Form mit einem
+Journalexport aus zwei Ereignissen: 5 passed, zusammen mit
+`test_sealed_evidence.py` und `test_shipped_sql.py` 34 passed.
+
+## 2026-09-09 — B24 beantwortet, B15 beerdigt, Richtung neu begründet
+
+Auftrag: B24 und den B15-Offlinetest ausführen, danach den aussichtsreichsten Weg
+weiterverfolgen und die Ergebnisse in der Datenbank ablegen. Beide Messungen sind
+echte Hardwareläufe auf dem M1 Max; `gpu_busy()` war vor jedem Start frei.
+
+**B24.** Das Instrument, das dem Tier-2-Block gefehlt hat, existiert jetzt:
+`xcrun xctrace` mit der Vorlage `Metal System Trace`. Die GPU-Zeitleiste trägt keine
+Prozesskennung, deshalb werden ihre Compute-Intervalle über die Command-Buffer-IDs an
+die eigenen Submissions gebunden; die Encoderzahl stimmt danach exakt mit der Zahl der
+Compute-Intervalle überein, was die Zuordnung bestätigt. Der Messabschnitt wird über
+eine halbe Sekunde Ruhe vom Laden und vom Warmlauf getrennt. Je Modell drei Läufe zu
+32 Schritten, ungruppiert, Batch 1, greedy.
+
+| Modell | Geräteanteil | Gerät ms | Host ms | Schritt ms | Encoder | Command Buffer |
+| :-- | --: | --: | --: | --: | --: | --: |
+| 1B | 0,684 | 5,81 | 2,72 | 8,48 | 16,0 | 16,1 |
+| 4B | 0,753 | 9,96 | 3,27 | 13,23 | 22,0 | 26,3 |
+| 12B | 0,833 | 27,46 | 5,50 | 32,86 | 35,0 | 56,1 |
+
+Das Gerät hält die Mehrheit des Schritts, und sein Anteil steigt mit der Modellgröße,
+während die Hostzeit fast flach bleibt. Damit ist jede reine Hostoptimierung gedeckelt:
+höchstens 32 % bei 1B, 25 % bei 4B, 17 % bei 12B, bevor überhaupt etwas davon entfernt
+ist. Die harte Abhängigkeit, die B8, B9 und B10 blockierte, ist aufgelöst.
+
+Zwei Grenzen bleiben ausdrücklich stehen. Encoder sind keine Dispatches, ein
+Compute-Encoder kann mehrere Kernel enthalten; die Zahl von rund 510 Kerneln je Schritt
+ist damit weder bestätigt noch widerlegt und braucht einen Lauf mit aktivierter
+Shader-Timeline. Und dies ist eine einzelne ungruppierte Sitzung: die in E14b gemessene
+Sättigung der Hostsubmission bei vier gruppierten Sitzungen wird davon nicht berührt.
+
+**B24R, abgeleitet.** Mit gemessener Gerätezeit lässt sich der Gewichtsdurchlauf
+bepreisen. Die gelesenen Bytes sind die Parameter des Sprachmodells wie geladen, der
+Boden teilt sie durch 324 GB/s, die beste je im Ledger erreichte Bandbreite. Bei 4B und
+12B läuft das Gerät bereits bei rund 80 % davon, und zwei Drittel eines 12B-Schritts
+sind ein unvermeidbarer einzelner Durchlauf durch die Gewichte. Hostarbeit und
+Geräteüberhang zusammen sind 40 % bei 4B und 33 % bei 12B, beide Anteile fallen mit der
+Modellgröße. Der Boden ist optimistisch: er stammt von einer großen Matmul und zählt
+keinen Cache-Verkehr. Die Ausnahme ist 1B mit 38,9 % erreichter Bandbreite, wo der
+Überhang der größte Einzelposten ist; das ist das E4-Regime kleiner Matmuls, kein
+Hostproblem.
+
+**B15.** Auf `gemma-3-4b-it-4bit` über 72 echte Decodeschritte offline geprüft. Die
+Schranke ist korrekt implementiert, der gewählte Token stimmte in 72 von 72 Fällen mit
+dem vollen Argmax überein. Sie greift trotzdem nicht: bei k=16384 überleben 95,5 % der
+262.208 Zeilen, bei k=4096 sind es 98,5 %, gegen ein Abbruchkriterium von 25 %. Der
+Grund ist Geometrie, nicht Clusterqualität. Die Schranke bräuchte einen Clusterradius
+von 0,106, k-means erreicht 0,387; und in einer Stichprobe von 256 Zeilen liegen im
+Mittel nur 1,25 Zeilen innerhalb des nötigen Radius, bei einem mittleren
+Nächste-Nachbar-Abstand von 0,235. Der nötige Radius verlangte ungefähr einen Cluster
+je Zeile, dann kosten die Zentroide mehr als die Zeilen, die sie ersetzen. Die
+Zeilennormen sind fast gleich, deshalb schneidet die reine Normschranke 0,02 % weg.
+B15 steht als Tier 0.
+
+**Folge für die Rangfolge.** Jeder Hosteintrag konkurriert um 24,7 % eines 4B- und
+16,7 % eines 12B-Schritts, jeder Kerneleintrag um 15,5 % beziehungsweise 16,1 %
+Geräteüberhang über einem Boden, den das Gerät zu vier Fünfteln schon erreicht. Nicht
+gedeckelt sind allein die Einträge, die weniger Bytes je Token lesen. Das stellt B13,
+B14 und B19 vor B8, B9 und B10, aus Messungen statt aus Geschmack.
+
+Ablage: `research/raw/B24_metal_trace_series_20260909_attempt1.json`,
+`B24R_roofline_20260909_attempt1.json`, `B15_4B_offline_bound_20260909_attempt1.json`,
+alle drei im Index (`runs.agent = claude` über `payload_field`, die stärkste
+Evidenzstufe). Traces bleiben außerhalb des Repositories. `tests/test_b24_trace_report.py`
+prüft die Referenzauflösung des Trace-Exports und die Phasentrennung: 2 passed.
+
+## 2026-09-09 — Shader-Timeline, und daraus 3,4 Prozent auf einem 12B-Schritt
+
+Auftrag: den Shader-Timeline-Lauf ausführen, die neuen Erkenntnisse zu einem Erfolg
+führen und dabei kombinieren, was sich kombinieren lässt. Alle Läufe auf echter
+Hardware, `gpu_busy()` vor jedem Start frei.
+
+**Die Instrumentierung.** `xctrace` allein zeichnet Encoder auf, und ein Compute-Encoder
+kann viele Kernel enthalten. Wird dem Template das Instrument `Metal GPU Counters`
+beigegeben, schaltet sich die Shader-Timeline zu, die jeden Shaderlauf mit Namen und
+Dauer aufzeichnet. Damit ist die letzte offene Frage aus B24 beantwortbar geworden.
+
+**B24S.** Sechzehn gemessene Schritte je Modell, nur Compute-Shader des eigenen
+Prozesses. Der Anteil der quantisierten Matrix-Vektor-Kernel an der GPU-Zeit liegt bei
+99,32 Prozent (1B), 99,60 (4B) und 99,79 (12B). Alles andere zusammen, Normen,
+Additionen, RoPE, Aufmerksamkeit und sämtliche Kopien, ist 0,2 bis 0,7 Prozent. Kopien
+sind bis zu 15,6 Prozent der Intervalle und nie mehr als 0,4 Prozent der Zeit. Damit ist
+die Idee, eine Datenkopie durch Adressarithmetik zu ersetzen, auf diesem Pfad erledigt:
+dort ist nichts zu holen. Die Zahl der quantisierten Matmuls je Schritt wurde außerhalb
+der Aufnahme exakt gezählt, durch Zählen der `QuantizedLinear`-Aufrufe: 183, 239, 337.
+Die Timeline meldet weniger Intervalle, aggregiert also Dispatches eines Shaders je
+Kick. Ihre Intervallzahl ist eine Untergrenze für die Kernelzahl, nicht die Dispatchzahl.
+
+**Der Fund.** Die Timeline zeigte, dass MLX zwischen zwei Varianten desselben Kernels
+wählt. `affine_qmv_fast` läuft nur, wenn die Reduktionsdimension ein Vielfaches von 512
+ist. Die drei lokalen Gemmas fallen unterschiedlich auf diese Grenze, und die gemessenen
+Zeitanteile folgen ihr exakt: 1B (1152 und 6912, beide daneben) 98,6 Prozent im langsamen
+Kernel, 4B (2560 und 10240, beide auf der Grenze) 99,6 Prozent im schnellen, 12B (3840
+daneben, 15360 darauf) 74,1 zu 25,7.
+
+**B41K.** Der Preis der Grenze, auf dem Gerät gemessen, acht verschachtelte Blöcke mit
+wechselnder Richtung: 4096 erreicht 362 GB/s, während 3840, 4032 und 4160 alle bei 306
+bis 310 liegen. Der Sprung von 17,6 Prozent sitzt auf der Grenze, nicht an der Größe.
+Ein erster Anlauf maß nur Synchronisationskosten von rund 240 Mikrosekunden je Aufruf
+und wurde verworfen; gemessen wird jetzt eine Kette von 64 Aufrufen je Synchronisation.
+
+**B41P.** Das Polstern ist arithmetisch exakt. Angehängte Nullgewichte mit Skala und
+Bias null ergeben nach `dequantize` exakt 0,0, der Eingang ist dort ebenfalls null, jedes
+zusätzliche Produkt ist null mal null. Kein vorhandenes Byte wird angefasst, nichts wird
+neu quantisiert. Auf 12B, 241 gepolsterte Linears, alle von 3840 auf 4096, sechs
+verschachtelte und reihenfolgebalancierte Blöcke zu 20 Greedy-Schritten: Referenz 31,34
+ms, Kandidat 30,29 ms, gepaartes Verhältnis 0,9657. Schneller in sechs von sechs Blöcken,
+Verhältnisse 0,9485 bis 0,9831, und die Arme überlappen nicht. **3,4 Prozent auf einem
+12B-Dekodierschritt.**
+
+Die Nullkontrolle auf 4B polsterte nichts, weil dort jede Form bereits ausgerichtet ist,
+und maß minus 0,44 Prozent bei einer Logitdifferenz von exakt 0,0. Der Messaufbau trägt
+also keinen eigenen Bias.
+
+**Das offene Gate.** Die Token waren über 20 Schritte identisch, die maximale absolute
+Logitdifferenz beträgt 0,53. Die zusätzlichen Spalten tragen nichts bei; die Differenz
+entsteht, weil der andere Kernel in anderer Reihenfolge summiert. Nach der Regel von B2
+ist das eine Planänderung, keine einfache Optimierung. Dazu kommen 6,7 Prozent mehr
+Gewichtsbytes und ein Polsterkernel je verschiedenem Eingangsvektor.
+
+**Wo es nicht wirkt.** 1B maß minus 5,8 Prozent, also langsamer. Seine 1152 polstern auf
+1536, ein Byteplus von 33 Prozent, das der Bandbreitengewinn nicht zurückzahlt. Der
+Eintrag ist größenabhängig: er gewinnt nur, wo der Abstand zur nächsten Grenze klein ist.
+
+Ablage: `research/raw/B24S_shader_timeline_20260909_attempt1.json`,
+`B41K_qmv_shapes_20260909_attempt1.json`, `B41P_padded_qmv_12b_20260909_attempt1.json`,
+`B41P_padded_qmv_4b_control_20260909_attempt1.json`; alle im Index mit
+`runs.agent = claude` über `payload_field`. Werkzeuge: `tools/b24_shader_report.py`,
+`tools/bench_qmv_shapes.py`, `tools/b41_padded_qmv_ab.py`. Traces bleiben außerhalb des
+Repositories. `tests/test_padded_qmv.py` hält beide Hälften des Befunds fest, die exakte
+Null der gepolsterten Gewichte und die trotzdem fehlende Bitgleichheit: 3 passed.
+
+**Nachtrag B41C, Bandbreitendecke.** Auf die Frage nach der höchsten je erreichten
+Bandbreite zeigte der Index 362,3 GB/s aus B41K. Der Wert hatte einen Vorbehalt, der
+geprüft wurde: bei N=4096 sind die Gewichte 8,4 MB, und eine Kette liest sie innerhalb
+des 48 MB großen System Level Cache mehrfach. Gleicher Kernel, K=4096, N so gewachsen,
+dass der Gewichtssatz den Cache verlässt, fünf verschachtelte Blöcke: 409,2 GB/s bei
+37,7 MB im Cache, danach Abfall auf 324,6 bis 343,7 GB/s im Speicherregime. Der höchste
+je gemessene Wert des Projekts ist also ein Cachewert; aus dem Speicher liegt die Decke
+bei 334 bis 344 GB/s. Das bestätigt den von E4 geliehenen Boden von 324 GB/s, auf dem
+die B24R-Roofline ruht: sie steht, und die 80 Prozent Auslastung eines 12B-Schritts
+messen sich an einer echten Decke. Der relative 512-Effekt bleibt unberührt, weil beide
+Arme unter denselben Bedingungen liefen und der Modelltest 7,2 GB je Token liest.
+Ablage: `research/raw/B41C_bandwidth_ceiling_20260909_attempt1.json`.
+
+## 2026-09-09 — B42: spezialisierter K=3840-Kernel, bitgleich, Kernel GO, Modell UNKLAR
+
+Auftrag: einen bitidentischen, auf K=3840 spezialisierten Matrix-Vektor-Kernel für
+Gemma 12B testen. Kein Padding, kein Wechsel zu `qmv_fast`, keine allgemeine
+Optimierungssuche. Alle Läufe auf dem M1 Max, `gpu_busy()` vor jedem Start frei.
+
+**Grundlage.** Der Index kennt keinen früheren Versuch dieser Art. Tier 0 sperrt einen
+eigenen Metal-Kernel nur ohne Profilerbeleg; den liefert B24S. Die MLX-Metal-Quellen
+liegen nicht im installierten Paket, nur die vorkompilierte `mlx.metallib`. Die Quellen
+der installierten Version 0.32.0 wurden deshalb aus dem öffentlichen Repository zum
+Lesen geholt und gegen die Kernelnamen der Metallib abgeglichen.
+
+**Die Identität steht vor der Messung fest.** `qmv_impl` arbeitet mit
+`values_per_thread = 8` und `block_size = 256`. Die Schleife läuft, solange
+`k < in_vec_size - block_size`, also bei K=3840 vierzehn von fünfzehn Blöcken über
+`qdot` und der fünfzehnte über `qdot_safe` mit auf genau 8 geklemmtem `remaining`. Bei
+`N == values_per_thread` sind `load_vector_safe` und `qdot_safe` zeichengleich zu ihren
+unsicheren Zwillingen. Eine feste Schleife über fünfzehn `qdot`-Blöcke behält damit jede
+Teilsumme in derselben Reihenfolge und spart die Klemmung, den Zweig und die
+Bereichsarithmetik. Übersetzt mit `math_mode: "safe"`, ohne zusätzliche Fast-Math-Freiheit.
+
+**Reihenfolge der Gates.** Zuerst wurde eine unveränderte Übertragung von `qmv_impl`
+mit Laufzeitdimensionen gebaut; sie reproduziert `mx.quantized_matmul` byteweise, bevor
+irgendetwas spezialisiert wurde. Dann die Spezialisierung, geprüft auf 21 echten
+Projektionen von Gemma 12B mit 21 echten Decode-Aktivierungen aus einem dokumentierten
+Modelllauf (B42C, 903 MB Gewichte, jede Aktivierung und jeder Gewichtssatz über SHA-256
+gebunden). Beide Kernel treffen die Referenzbytes in jedem Fall. Im Modell stimmen über
+vier Läufe Token, Logit-Digest des ersten Schritts und der Digest des gesamten
+KV-Caches überein.
+
+**Kernelebene**, zwei Läufe zu 40 verschachtelten Blöcken über 903 MB echte Gewichte:
+der spezialisierte Kernel liegt gegen die zeichengleiche Übertragung bei 0,9037
+(KI 0,882 bis 0,922) und 0,9263 (KI 0,887 bis 0,960), beide Intervalle vollständig
+unter 1,0. Gegen `mx.quantized_matmul` 0,9493 und 0,9192. Sieben bis zehn Prozent
+schneller als der Code, aus dem er spezialisiert wurde.
+
+**Modellebene**, vorregistriert auf 20 Blöcke zu 32 Schritten, ein residentes Modell,
+keine Verlängerung: Versuch 1 ergibt 0,9458 mit KI 0,9325 bis 0,9563, 16 von 20 Blöcken
+schneller, Erfolgsregel erfüllt. Versuch 2 mit identischem Design ergibt 0,9549 mit KI
+0,9028 bis 1,0128, 14 von 20 Blöcken, Regel verfehlt. Die Mediane stimmen überein, die
+Signifikanz nicht. Spitzenspeicher 7,33 GB.
+
+**Warum das Modellergebnis verrauschter ist als das Kernelergebnis.** Die Maschine hielt
+durchgehend 11,2 GB Swap und eine Last um 4 aus fremden Prozessen. Die Schrittzeiten
+wanderten über die Läufe von 33 auf 61 ms, während die gepaarten Verhältnisse standen.
+Der Effekt überlebt diese Drift in der Richtung und scheitert an ihr in der Signifikanz.
+Kein Lauf wurde nachträglich verlängert.
+
+**Verworfen (B42R).** Vollständiges Ausrollen der fünfzehn Blöcke: 7,136-fach langsamer
+bei intakter Bitgleichheit. Dispatch mit `init_value=0`: ein zusätzlicher Dispatch je
+Aufruf, 68,1 statt 61,5 Command Buffer pro Schritt, der Modellarm wurde negativ. Zwei
+residente Modelle: 14,52 GB Spitzenspeicher und 49 ms Schrittzeit gegen 7,33 GB und
+33 ms mit einem. Erste Erfassung: nahm den Prefill-Vektor über 17 Token statt des
+Decode-Vektors, vor jeder Zeitmessung verworfen.
+
+**Ergebnis: Kernel GO, Modell UNKLAR.** Keine Aktivierung im Standardpfad, kein Commit.
+Der nächste Schritt ist eine Replikation des Modellarms auf einer ruhigen Maschine.
+
+Ablage: `research/raw/B42_qmv_k3840_20260909_attempt1.json` und `_attempt2`,
+`B42M_qmv_k3840_model_20260909_attempt1.json` und `_attempt2`,
+`B42C_qmv_capture_20260909_manifest.json`, `B42R_qmv_k3840_rejected_20260909.json`;
+alle im Index mit `runs.agent = claude` über `payload_field`. Werkzeuge:
+`tools/b42_qmv_kernel.py`, `tools/b42_capture_qmv_inputs.py`, `tools/b42_qmv_bench.py`,
+`tools/b42_model_ab.py`. Aktivierungstensoren und Traces bleiben außerhalb des
+Repositories.
+
+## 2026-09-09 — B43: Bestätigung des K=3840-Kernels, Modell GO
+
+Auftrag: den Modelltest des bitidentischen K=3840-Kernels replizieren, zwei
+vorregistrierte Sitzungen in frischen Prozessen, belastbare Entscheidung.
+
+**Messbereitschaft.** Netzbetrieb, keine thermische Warnung, 82 Prozent Speicher frei.
+Der entscheidende Punkt war die Unterscheidung zwischen belegtem Swap und tatsächlicher
+Auslagerung: bei 9,6 GB belegtem Swap zählte eine Zwölf-Sekunden-Probe null Swapouts,
+null Pageouts und 68 Swapins. Der belegte Swap ruhte in diesem Fenster. Das sagt nichts
+über die früheren Läufe: die Probe fand nach ihnen statt, nicht während ihnen. Die
+Ursache der damaligen Zeitdrift bleibt ungeklärt. Keine fremden Prozesse beendet, keine
+Systemänderung, keine Schutzgrenze gelockert.
+
+**Vorregistrierung.** Zwei Sitzungen, je ein residentes Modell, 20 gepaarte Blöcke zu 32
+Greedy-Schritten, drei Arme einschließlich A/A-Nullkontrolle, ausgewogene Reihenfolge,
+95-Prozent-Bootstrap über 10.000 Ziehungen auf den gepaarten Blöcken. Erfolgsregel:
+beide Sitzungen mit Kandidatenintervall vollständig unter 1,0, Nullkontrolle enthält 1,0,
+vollständige Identität von Token, Logits, KV-Zustand und Stop-Verhalten, Driftspanne
+höchstens 1,5, keine Swapouts. Budget zwei Sitzungen, keine Verlängerung, keine
+Blockauswahl.
+
+| Sitzung | Referenz | Kandidat | Verhältnis | KI | Blöcke | A/A-KI | Drift |
+| :-- | --: | --: | --: | :-- | --: | :-- | --: |
+| 1 | 31,48 ms | 31,06 ms | 0,9872 | 0,9844 bis 0,9899 | 20 von 20 | 0,9971 bis 1,0050 | 1,020 |
+| 2 | 31,45 ms | 31,14 ms | 0,9900 | 0,9876 bis 0,9914 | 18 von 20 | 0,9973 bis 1,0052 | 1,020 |
+
+Beide Intervalle liegen vollständig unter 1,0, beide Nullkontrollen enthalten 1,0, beide
+Sitzungen melden null Swapouts, Spitzenspeicher 7,33 GB, und Token, Logits, KV-Zustand
+und Stop-Verhalten sind identisch. **Modell GO.**
+
+**Die ehrliche Größe des Gewinns ist 1,0 bis 1,3 Prozent eines Dekodierschritts**, nicht
+die 4,5 bis 5,4 Prozent der früheren Läufe. Jene liefen bei Schrittzeiten von 43 bis 61
+Millisekunden gegen die 31 Millisekunden dieser Sitzungen; die Drift hat das Verhältnis
+aufgebläht, nicht der Kernel es verdient. Die früheren Läufe bleiben unverändert erhalten
+und werden nicht mit diesen zusammengelegt.
+
+Gültigkeitsbereich: ein Prompt, eine Maschine, ein MLX-Stand, 4-Bit-Gewichte, Greedy,
+Batch 1, ungruppiert. Prefill nutzt weiter den Bibliothekspfad; nur der Decode-Aufruf mit
+einem Token ist ersetzt. Fremdlast war vorhanden und wurde gemessen, nicht entfernt.
+Keine Aktivierung im Standardpfad, kein Commit, kein Push.
+
+Ablage: `research/raw/B43S1_qmv_k3840_model_20260909.json`,
+`B43S2_qmv_k3840_model_20260909.json`, `B43_qmv_k3840_confirmation_20260909.json` mit
+Prüfsummen beider Sitzungen und der Kandidatenwerkzeuge; alle im Index.
+
+## 2026-09-09 — B44: der K=3840-Kernel als Opt-in-Knopf, standardmäßig aus
+
+Auftrag: den bestätigten Kernel in einen minimalen, standardmäßig deaktivierten
+Opt-in-Pfad überführen und die Integration auf echter Hardware prüfen.
+
+**Korrektur vorab.** Die frühere Formulierung, die Swap-Probe habe eine Swap-Ursache der
+Zeitdrift widerlegt, war eine unbelegte Kausalbehauptung. Die Probe fand nach den
+driftbelasteten Läufen statt, nicht während ihnen. Sie ist in Arbeitsjournal, Backlog und
+Ergebnisdatei zurückgezogen; die Ursache der Drift bleibt ungeklärt.
+
+**Was integriert wurde.** Ein Knopf `k3840_matvec` im vorhandenen `Knobs`-Dataclass,
+standardmäßig `False`. Der Kernel ist der Kandidat aus B42/B43, unverändert kopiert; ein
+Test hält fest, dass die ausgelieferte Quelle die qualifizierte weiterhin enthält. Kein
+zweites Laufzeitsystem, kein neuer Konfigurationsweg.
+
+**Zulassung eng und einmalig.** `ironmule/qmv_k3840.py` prüft Hardware-Fingerprint,
+MLX- und mlx_lm-Version, Modellidentität und Architektur, danach je Projektion Bitbreite,
+Gruppengröße, Datentypen, Ausgabebreite, Skalengeometrie und Puffergrößen. K=3840 allein
+lässt nichts zu. Die Prüfung läuft in `load_engine`, nachdem die Identität angehängt ist
+und bevor ein Token entsteht. Ein direkt konstruierter `Engine` hat keine Identität und
+bleibt deshalb auf dem Bibliothekspfad. Im Token-Pfad wird kein Modell gehasht, keine
+Version erneut geprüft und keine Synchronisation ergänzt. Eine Ablehnung wirft, statt
+still etwas anderes zu liefern; `disable()` stellt die Originalmodule für den Rückfall
+wieder her.
+
+**Was nie dorthin geleitet wird.** Prefill und jede Mehrtoken-Eingabe nehmen den
+Bibliotheksaufruf auf denselben Puffern, byteweise geprüft. Sampling, Batching,
+gruppierte Ausführung und jede Form außerhalb der zugelassenen Menge erreichen den Kernel
+nicht.
+
+**Korrektheit (B44).** Das Modell wurde zweimal über den gewöhnlichen Weg geladen, Knopf
+aus und Knopf an, über vier vorher festgelegte Prompts einschließlich einer Fortsetzung
+über 96 Schritte. Token, das Logit-Bitmuster jedes Schritts, der gesamte KV-Cache, das
+Stop-Verhalten und die Schrittzahl sind in allen vier identisch, auch bei dem Prompt, der
+nach 23 Schritten selbst stoppte. 241 Projektionen zugelassen, 0 abgelehnt.
+
+**Geschwindigkeit (B44M)**, vorregistriert, 20 gepaarte Blöcke zu 32 Schritten, ein
+residentes Modell, ein Lauf: Verhältnis 0,9921 mit KI 0,9909 bis 0,9950, 18 von 20
+Blöcken schneller, A/A-Nullkontrolle bestanden. Referenzschritt 32,67 ms, Kandidat
+32,45 ms, Drift 1,019, null Swapouts, Spitzenspeicher 7,33 GB. **INTEGRATION GO.**
+
+**Die Integration behält den Vorteil, aber nicht ganz.** B43 bestätigte 1,0 bis 1,3
+Prozent für den Studienprototyp; der ausgelieferte Pfad misst 0,8 Prozent, Intervall 0,5
+bis 0,9. Wohin der Rest geht, ist nicht belegt: beide wurden in verschiedenen
+Messaufbauten und nie gegeneinander gemessen. Die Modulgrenze als Ursache ist eine
+Hypothese, kein Befund.
+
+Gültigkeitsbereich: ein Prompt für die Zeitmessung, vier für die Korrektheit, eine
+Maschine, MLX 0.32.0, diese Gemma-12B-Revision, Vier-Bit-Gewichte, Greedy, Batch 1,
+ungruppierter Ein-Token-Decode. Das Modell-GO aus B43 bleibt auf seine eigenen
+Bedingungen begrenzt.
+
+Der Knopf bleibt `False`. Keine Aktivierung, kein Commit, kein Push. Ablage:
+`research/raw/B44_k3840_integration_20260909.json`,
+`B44M_k3840_integration_ab_20260909.json`; Code in `ironmule/qmv_k3840.py`,
+`ironmule/runtime.py`, `ironmule/tune.py`; Tests in
+`tests/test_qmv_k3840_integration.py`.
+
+## 2026-09-09 — B45: ein Gewichtsdurchlauf für zwei Anfragen, Kernel GO, Modell GO
+
+Auftrag: einen bitidentischen Forschungsprototyp entwickeln, der Gewichtsblöcke für zwei
+unabhängige Decode-Anfragen gemeinsam lädt. Zielschwelle mindestens zehn Prozent weniger
+Gesamtzeit für dasselbe Anfragepaar.
+
+**Korrektur vorab.** Die Aussage, die Modulgrenze erkläre die Differenz zwischen
+Prototyp und ausgeliefertem Pfad, war ohne direkten Vergleich eine Hypothese. Sie ist in
+Backlog und Journal als solche gekennzeichnet.
+
+**Ist die Hypothese neu?** MLX hat mit `qmv_wide_impl` bereits einen Kernel, der mehrere
+Vektoren an einer Gewichtsgruppe vorbeiführt. Er rechnet aber anders: er dekodiert jede
+Gruppe explizit in Register und teilt eine Zeile über `k_lanes` mit einer
+Shuffle-Leiter. MLX lehnt ihn hier zusätzlich ab, `use_qmv_wide` verlangt
+Architekturgeneration 15 und dieser M1 Max ist `applegpu_g13s`. Der neue Unterschied ist
+die Auflage: Thread-Zuordnung, `qdot`-Ausdruck, Blockgröße, Teilsummenreihenfolge und
+`simd_sum` bleiben exakt die des qualifizierten Kernels, nur ein zweiter
+Aktivierungsvektor kommt hinzu. Geteilt wird das Laden, nicht die Arithmetik. Die
+früheren Ablehnungen betreffen andere Wege: B28 änderte die Rechnung und scheiterte am
+KV-Hash, B29c überlappte ganze Sitzungen und las die Gewichte je Sitzung einmal.
+
+**Kernel (B45K).** 18 echte Projektionen mit je zwei verschiedenen echten Aktivierungen
+aus zwei dokumentierten Modellläufen; drei Aktivierungspaare waren identisch und wurden
+ausgeschlossen, weil derselbe Vektor nicht zweimal verwendet werden darf. Gegen zwei
+asynchron eingereihte Bibliotheksaufrufe: 0,7335 mit KI 0,7280 bis 0,7486, 20 von 20
+Blöcken unter der Schwelle. Derselbe Kernel zweimal aufgerufen liegt bei 0,9022, das
+Teilen allein trägt 0,8206. Bitgleichheit auf jedem Fall, A/A bestanden, null Swapouts.
+**KERNEL GO.** Breite 4 wurde nicht versucht; die Schwelle galt für Breite 2 und ist dort
+erreicht.
+
+**Potenzial (B45P, abgeleitet).** Die K=3840-Projektionen sind 61,7 Prozent eines
+12B-Schritts. Das Kernelverhältnis darauf angewandt projiziert 0,836 für ein Paar, obere
+Schranke 0,845. Der Modelltest war damit gerechtfertigt.
+
+**Modell (B45M).** Zwei Prompts, getrennte KV-Caches, getrennte Attention, nur die
+geprüften Projektionen gemeinsam. Der Prefill bleibt unverändert je Anfrage. Zwei
+Sitzungen zu je zehn rotierten Blöcken: 0,8233 mit KI 0,8125 bis 0,8270 und 0,8228 mit KI
+0,8125 bis 0,8262, beide zehn von zehn Blöcken unter der Schwelle, beide bitgleich in
+Token, Logits und KV-Zustand für beide Anfragen, null Swapouts, Spitzenspeicher 7,46 GB.
+**MODELL GO**: ein Anfragepaar ist 17,7 Prozent schneller fertig als nacheinander.
+
+**Die Aufteilung ist entscheidend.** Von den 17,7 Prozent stammen rund 9,7 aus der
+Ablaufplanung der gepaarten Schleife, die nichts teilt, und rund 8,7 aus dem gemeinsamen
+Gewichtsladen. Die Gesamtzahl als Gewinn der Gewichts-Wiederverwendung auszugeben, wäre
+falsch.
+
+**Was es nicht ist.** Kein schnellerer Einzelchat: das Paaren lässt die erste Anfrage auf
+die zweite warten, der serielle Arm liefert Anfrage eins nach etwa der halben Zeit des
+Paares. Kein Vergleich gegen den gruppierten Serverpfad von IronMule; die Basis ist der
+unveränderte Modellaufruf, zweimal ausgeführt. Die Einzel-Latenzen sind abgeleitet, nicht
+gemessen.
+
+**Stärkster verbleibender Engpass.** Die nicht geteilten Projektionen. `o_proj` bei
+K=4096 und `down_proj` bei K=15360 lesen ihre Gewichte weiter je Anfrage, und zusammen
+mit Attention, Normen und Ausgabekopf sind sie die 38 Prozent eines Schritts, die dieser
+Weg nicht berührt.
+
+Status: Forschungsprototyp. Nichts ist in einen Laufzeitpfad verdrahtet, kein Knopf
+ergänzt, `k3840_matvec` unverändert und weiter aus. Ablage:
+`research/raw/B45K_shared_weight_kernel_20260909.json`,
+`B45P_shared_weight_potential_20260909.json`,
+`B45M_two_request_model_20260909.json` und `_confirm`,
+`B45_shared_weight_verdict_20260909.json`. Werkzeuge:
+`tools/b45_shared_weight_kernel.py`, `tools/b45_shared_weight_bench.py`,
+`tools/b45_two_request_model.py`.
+
+## 2026-09-09 — B46: Paarung gegen den ausgelieferten Throughput-Pfad, Produktziel GO
+
+Auftrag: den Zweier-Prototyp in einen isolierten, standardmäßig deaktivierten
+Forschungsmodus des bestehenden Anfrageablaufs überführen und gegen IronMules aktuellen
+Throughput-Pfad entscheiden.
+
+**Was die frühere Zahl nicht sagen konnte.** B45 maß 17,7 Prozent gegen serielle
+Ausführung. Die Produktreferenz ist nicht seriell, sondern `ThroughputMode`, der bereite
+Anfragen bereits gruppiert und asynchron einreiht. Erst dieser Vergleich beantwortet die
+Produktfrage.
+
+**Anschluss.** `ironmule/paired_research.py` erbt vom ausgelieferten
+`AsyncGroupedB1Executor`. Admission, Sitzungen, Stop-Regeln, Telemetrie und der
+sequentielle Rückfall sind die vorhandenen; nur der innere Gruppenschritt ist neu, über
+einen `_step_group`-Einhängepunkt, der das ausgelieferte Verhalten unverändert lässt. Mit
+`share=False` läuft dieselbe Paarung mit getrennten Projektionen, das ist die Kontrolle.
+Eine einzelne Anfrage nimmt den gewöhnlichen Einzelpfad, nichts wartet auf einen Partner.
+240 Projektionen zugelassen unter der vollständigen Modell-, Hardware-, Bibliotheks- und
+Formprüfung. Der Zweier-Kernel liegt eingefroren als `ironmule/qmv_shared.py` im Paket.
+
+**Korrektheit vor Geschwindigkeit.** Auf Schrittebene stimmen Logit-Bitmuster und
+KV-Digest mit dem ausgelieferten Decode-Körper überein, für beide Anfragen und in beiden
+Modi. Auf Dienstebene stimmen Token, Stop-Grund und Ausgabetext mit Arm A überein, über
+Einzelanfrage, gleichzeitige Ankunft, versetzte Ankunft, ungleiche Ausgabelängen und
+einen langen Lauf.
+
+**Zwei vorregistrierte Sitzungen, je zehn rotierte Blöcke, ein residentes Modell:**
+
+| | Sitzung 1 | Sitzung 2 |
+| :-- | --: | --: |
+| C geteilt gegen A ausgeliefert | 0,8734 [0,8705; 0,8749] | 0,8719 [0,8688; 0,8745] |
+| B nur gepaart gegen A | 0,9773 | 0,9782 |
+| Teilen allein, C gegen B | 0,8924 | 0,8927 |
+| A/A-Nullkontrolle | bestanden | bestanden |
+| Abschlusslatenz C gegen A | 0,873 und 0,856 | 0,872 und 0,856 |
+
+Beide Intervalle liegen vollständig unter der 0,90-Schwelle, in jedem Block. **PRODUKTZIEL
+GO**: dasselbe Anfragepaar ist 12,7 bis 12,8 Prozent schneller fertig als auf dem
+ausgelieferten Throughput-Pfad, ohne Rückfälle, null Swapouts, Spitzenspeicher unverändert.
+
+**Woher der Gewinn kommt.** Die Paarung allein bringt 2,2 Prozent, weil Arm A bereits
+gruppiert. Das gemeinsame Gewichtsladen bringt 10,7 Prozent. Gegen die serielle Basis aus
+B45 sah der Ablaufplanungsanteil weit größer aus; gegen den echten Produktpfad
+verschwindet er fast.
+
+**Diesmal keine Latenzkosten.** Beide Anfragen sind früher fertig, 12,8 und 14,5 Prozent,
+und die Service-TTFT bleibt in allen Armen bei rund 230 Millisekunden. Alle Latenzen
+stammen direkt aus der Telemetrie des Laufzeitsystems, keine wurde aus der Paarzeit
+abgeleitet.
+
+**Gültigkeitsbereich.** Zwei feste Prompts zu je 24 Token, Greedy, eine Maschine, MLX
+0.32.0, diese Gemma-12B-Revision, Vier-Bit-Gewichte. Geteilt werden nur die
+K=3840-Projektionen im Ein-Token-Decode, der Prefill bleibt unverändert. Der Fall mit
+langer Ausgabe erreichte kein natürliches EOS, das Stop-Verhalten ist damit nur für
+Längenstops geprüft. Lade- und Kompilierzeit liegen außerhalb der Zahlen.
+
+**Stärkster verbleibender Engpass.** Die nicht geteilten Projektionen: `o_proj` bei
+K=4096, `down_proj` bei K=15360, dazu Attention und Ausgabekopf.
+
+Status: Forschungsmodus, kein Standard. Kein Knopf an der ausgelieferten Oberfläche
+ergänzt, `k3840_matvec` unverändert und weiter aus, keine Aktivierung, kein Commit, kein
+Push. Ablage: `research/raw/B46S1_paired_campaign_20260909.json`,
+`B46S2_paired_campaign_20260909.json`, `B46_paired_product_verdict_20260909.json` mit
+Prüfsummen beider Sitzungen.
+
+## 2026-09-09 — B47: der Zweierpfad als Opt-in-Modus, Standard AUS, OPT-IN BEREIT
+
+Auftrag: den bestätigten Zweierpfad zu einem lokal nutzbaren, standardmäßig
+deaktivierten Opt-in-Feature machen, die offenen Betriebsfälle schließen und den normalen
+Benutzerweg prüfen.
+
+**Oberfläche.** `PairedThroughputMode` steht neben `InteractiveMode` und `ThroughputMode`
+in `ironmule/service.py` und wird genauso gewählt. Ein CLI-Flag gibt es nicht, weil Modi
+in diesem Laufzeitsystem eine Bibliothekswahl sind; `docs/PAIRED_OPT_IN.md` hält die
+tatsächlichen Aufrufe fest. `paired_status(mode)` antwortet für jeden Modus, damit
+*deaktiviert* eine echte Antwort ist, und unterscheidet aktiviert, zugelassen, als Paar
+ausgeführte Schritte und Schritte mangels Partner allein. Die Zulassung läuft einmal beim
+Laden; im Token-Pfad wird kein Modell gehasht und keine Version erneut geprüft.
+
+**Betriebsfälle auf echter Modellberechnung.** Eine Anfrage stoppte nach 19 Schritten auf
+einem echten Endtoken, während die andere bis 64 lief; Token und Stop-Gründe identisch.
+Ungleiche Längen von 6 und 20 Token liefen identisch und kehrten zum Einzelpfad zurück.
+Ein später Partner wurde erst an einer Schrittgrenze aufgenommen: vier Solo-Schritte,
+dann dreizehn gepaarte. Eine einzelne Anfrage wartete nie, null gepaarte Schritte.
+Ein injizierter Fehler im gemeinsamen Schritt wurde vom vorhandenen Rückfall gefangen,
+beide Anfragen liefen vollständig durch, keine doppelten Token. Der Fehlerfall ist als
+Ablauftest gekennzeichnet und ersetzt keinen echten Fehlernachweis.
+
+**Die offene Lücke.** Ein Abbruch während gemeinsamer Arbeit war nicht prüfbar:
+`ironmule.service.Request` hat keinen Abbruch-Handle und `serve()` läuft bis zum Ende.
+Das ist als Lücke dokumentiert, nicht als bestanden ausgegeben, und es wurde kein neuer
+Server gebaut, um einen zu erzeugen.
+
+**Integrationskosten, acht rotierte Blöcke, ein Lauf.** Der Opt-in-Modus gegen den
+ausgelieferten Throughput-Pfad: 0,8748 mit KI 0,8729 bis 0,8782, acht von acht Blöcken
+unter der Schwelle. Gegen den Forschungsstand aus B46: 0,9983 mit KI 0,9928 bis 1,0034,
+das Intervall enthält 1,0. Die Verpackung als Service-Modus bringt also keine messbare
+Zusatzarbeit in den Anfragepfad. A/A bestanden, null Swapouts.
+
+**Benutzerweg.** Laden mit Standard, Status meldet deaktiviert. Modus benennen,
+Einzelanfrage: null gepaarte Schritte. Anfragepaar: gepaarte Schritte protokolliert,
+Ausgabe identisch zu einem unabhängigen Bibliothekslauf. Zurück auf `ThroughputMode`,
+Ausgabe weiterhin identisch. Neu laden: Standard wieder aus. **OPT-IN BEREIT.**
+
+Standard bleibt aus. Keine Aktivierung, kein Commit, kein Push. Der separate Knopf
+`k3840_matvec` ist ein anderes Feature und bleibt unverändert und aus. Ablage:
+`research/raw/B47_operational_cases_20260909.json`,
+`B47U_opt_in_release_20260909.json`; Bedienung in `docs/PAIRED_OPT_IN.md`; Tests in
+`tests/test_paired_opt_in.py`.
+
+## 2026-09-09 — B48: Teilen auch für K=15360 und K=4096, Kernel ja, Produktziel nein
+
+Auftrag: das bitidentische gemeinsame Gewichtslesen auf die bisher nicht geteilten
+Projektionen erweitern, Ziel mindestens fünf Prozent kürzere Paar-Abschlusszeit gegenüber
+dem aktuellen PairedThroughputMode.
+
+**Ein anderer Kernel, keine Vergrößerung.** K=4096 und K=15360 sind Vielfache von 512,
+also läuft dort `qmv_fast_impl`: 16 Werte je Thread, 512er-Blöcke, kein Restpfad und
+keine Rückverschiebung der Ausgabezeile. Den 3840er-Kernel zu vergrößern hätte die
+Summenreihenfolge verändert, deshalb eine eigene Übertragung, byteweise gegen die
+Bibliothek geprüft, bevor ein zweiter Aktivierungsvektor dazukam.
+
+**Priorisierung aus dem Paarprofil.** Mit bereits geteiltem K=3840 verteilt sich die
+GPU-Zeit auf unseren geteilten Kernel mit 33,9 Prozent, die Bibliotheks-`qmv_fast` beider
+ausgerichteter Familien mit 22,3, die einfache `qmv` des Ausgabekopfs mit 7,3 und die
+Prefill-Matrixmultiplikationen mit 34,8. Nach Bytes aufgeteilt entfallen rund 17,6 Prozent
+auf `down_proj` und 4,7 auf `o_proj`, deshalb kam K=15360 zuerst.
+
+**Kernelebene**, echte Matrizen deutlich über Cachegröße, 20 rotierte Blöcke: K=15360
+liegt bei 0,7874 gegen zwei Bibliotheksaufrufe, K=4096 bei 0,8110, beide bitgleich.
+Entscheidend ist die Aufteilung: der reine Teilungseffekt beträgt nur 6,1 beziehungsweise
+7,6 Prozent, gegenüber 17,9 Prozent bei der 3840er Form. `qmv_fast` liest bereits mehr je
+Thread, es bleibt weniger doppelter Verkehr zu entfernen. **KERNEL GO** für beide.
+
+**Vorab abgeleitet.** Diese Teilungsterme auf die gemessenen Anteile angewandt ergeben
+1,4 Prozent der Paar-GPU-Zeit. Das liegt unter der Fünf-Prozent-Schwelle auf Wanduhrzeit,
+und es stand vor dem Produktlauf fest, nicht danach.
+
+**Produktebene**, zwei vorregistrierte Sitzungen gegen den aktuellen Opt-in-Pfad: 0,9903
+mit KI 0,9823 bis 0,9937 und 0,9920 mit KI 0,9879 bis 0,9970. Ein von zehn beziehungsweise
+null von zehn Blöcken unter der Schwelle. A/A bestanden, Bitgleichheit sauber, echtes EOS
+in beiden Sitzungen beobachtet, null Swapouts, Latenzen innerhalb der vorab gesetzten
+Grenze. **ZIEL NICHT ERREICHT.** Der Zusatzgewinn ist real und statistisch von 1,0
+getrennt, aber rund ein Prozent gegen ein Ziel von fünf. Ableitung und Messung stimmen
+überein, das ist der brauchbare Teil.
+
+**Was das nicht sagt.** Der Gesamtvorsprung gegenüber ThroughputMode wurde hier nicht neu
+gemessen und ist nicht impliziert. Prozentgewinne aus getrennten Studien werden nicht
+addiert.
+
+**Korrektur.** Gemessen wurde die Kombination, nicht die beiden Familien einzeln, und sie
+wurde hier als Obergrenze für jede einzelne beschrieben. Das folgt nicht: Registerdruck
+und Ablaufplanung können zwei Änderungen wechselwirken lassen, eine einzelne Familie muss
+also nicht unter dem Paar liegen. Keine der Einzelvarianten wurde gemessen, es wird keine
+Aussage über sie gemacht. Die Aufteilung des `qmv_fast`-Anteils nach Bytes ist ebenfalls
+eine Schätzung, keine Messung: beide Formen laufen im selben Kernel und das Profil
+aggregiert nach Namen.
+
+Der K=3840-Opt-in-Pfad bleibt unverändert und weiter der qualifizierte. Die Erweiterung
+existiert als `PairedThroughputMode(share_aligned=True)`, standardmäßig aus, und bleibt
+aus: sie hat ihre Schwelle nicht erreicht. Kein Commit, kein Push. Ablage:
+`research/raw/B48P_paired_profile_20260909.json`,
+`B48K15360_fast_shared_20260909.json`, `B48K4096_fast_shared_20260909.json`,
+`B48D_fast_shared_potential_20260909.json`, `B48S1_aligned_product_20260909.json`,
+`B48S2_aligned_product_20260909.json`, `B48_aligned_sharing_verdict_20260909.json`.
+
+## 2026-09-09 — B49: ein Gewichtsdurchlauf für vier Anfragen, Kernel NO-GO
+
+Auftrag: gemeinsames Gewichtslesen für vier gleichzeitig bereite Anfragen bei K=3840
+testen, Ziel mindestens fünf Prozent kürzere Gesamtabschlusszeit gegenüber dem
+qualifizierten Zweierpfad.
+
+**Korrektur vorab.** Die Aussage, die kombinierte Erweiterung aus B48 sei eine bewiesene
+Obergrenze für ihre Einzelvarianten, folgt nicht: Registerdruck und Ablaufplanung können
+wechselwirken. Keine der Einzelvarianten wurde gemessen, es wird keine Aussage über sie
+gemacht. Die Aufteilung des Zeitanteils nach Bytes bleibt eine Schätzung. Beides ist in
+Backlog und Journal korrigiert, ohne neue Messungen.
+
+**Der Kandidat.** Der Generator des qualifizierten K=3840-Kernels nimmt die Breite bereits
+als Parameter, also bleibt die Arithmetik je Anfrage unverändert: gleiche
+Thread-Zuordnung, acht Werte je Thread, 256er-Blöcke, gleiches Skalarprodukt, gleiche
+Summenreihenfolge, gleiche Reduktion. Es wächst allein der Registerbedarf, von 24 auf 48
+Skalare je Thread. Der vorhandene Bestand betrifft die Scheduler-Breite, nicht das
+Teilen innerhalb eines Kernelaufrufs; der Ansatz ist neu.
+
+**Kernelebene**, 18 echte Projektionen mit je vier verschiedenen echten Aktivierungen aus
+vier dokumentierten Modellläufen, 903 MB je Durchlauf, 20 rotierte Blöcke: vier geteilt
+gegen vier Bibliotheksaufrufe 0,8061, zwei geteilte Paare gegen dieselbe Basis 0,7216,
+und entscheidend **vier geteilt gegen zwei geteilte Paare 1,1084 mit KI 1,1014 bis
+1,1205, null von zwanzig Blöcken zugunsten des Vierers.** Alle vier Ausgaben sind
+bitgleich zu unabhängigen Bibliotheksaufrufen, A/A bestanden, null Swapouts.
+**KERNEL NO-GO.** Die Breite vier schlägt die Bibliothek weiterhin, verliert aber gegen
+die Breite zwei, die sie ersetzen würde, um elf Prozent in jedem einzelnen Block.
+
+**Die Ursache ist nicht gemessen.** Der Quelltext zeigt den verdoppelten Registerbedarf,
+das ist der naheliegende Verdacht. Metal exponiert hier über `xctrace` aber weder einen
+Register- noch einen Spill-Zähler, und der Occupancy-Strom ist zu groß für einen
+verhältnismäßigen Export. Es wurde kein Zähler erfunden; die Aussage bleibt eine Lesart
+des Quelltexts, kein Befund.
+
+**Kein Modelltest, und keiner offen.** Der Auftrag knüpft ihn an ausreichendes gemessenes
+Potenzial. Die Breite vier ist langsamer als das, was sie ersetzen würde. Produktvergleich
+und die beiden Bestätigungssitzungen entfallen: Potenzial-Gate nicht bestanden. Sie sind
+keine offenen Aufgaben.
+
+**Abgeschlossen.** Untersuchung vollständig, Leistungsentscheidung NO-GO für den
+getesteten Kandidaten. Ein negativer Befund schließt den Eintrag ab. Der Registerbedarf
+bleibt eine unbestätigte Erklärung: gezählte Quelltextvariablen sind kein gemessener
+Hardware-Registerverbrauch.
+
+Der ausgelieferte Zweierpfad bleibt unverändert, `share_aligned` weiter False, die Breite
+vier existiert nur als Studienwerkzeug und wurde nie in einen Modus verdrahtet. Kein
+Commit, kein Push. Ablage: `research/raw/B49K_quad_shared_kernel_20260909.json`,
+`B49_quad_shared_verdict_20260909.json`.
+
+## 2026-09-09 — B50: Einsatzübersicht für den Zweierpfad
+
+Auftrag: feststellen, unter welchen Lastbedingungen der qualifizierte Zweierpfad
+gegenüber ThroughputMode nützt, neutral bleibt oder schadet. Keine neuen Kernel.
+
+**Vorregistrierung.** Acht Lastfälle mit Prompts, die in dieser Arbeitslinie noch nie
+zum Bauen oder Abstimmen eines Kernels gedient haben: kurze und lange Eingaben, kurze und
+lange angeforderte Ausgaben, Einzelanfrage, gleichzeitige und versetzte Ankunft, dazu
+vier Anfragen als zwei Zweiergruppen. Sechs rotierte Blöcke je Fall, drei Arme mit
+A/A-Kontrolle, 95-Prozent-Bootstrap, Schwellen vorab: VORTEIL nur bei Intervall
+vollständig unter 1,0 und keiner Einzel-Latenz über 1,05; SCHADEN bei Intervall über 1,0
+oder einer Latenzregression; UNKLAR bei gescheiterter Nullkontrolle oder Intervallbreite
+über 0,10. Auswahl und Bestätigung als getrennte Läufe.
+
+**Ergebnis, beide Läufe stimmen in jedem Fall überein, kein Fall mit Schaden:**
+
+| Lastfall | Urteil | Auswahl | Bestätigung |
+| :-- | :-- | --: | --: |
+| Einzelanfrage, kurze Ausgabe | kein Vorteil | 0,9965 | 1,0045 |
+| Einzelanfrage, lange Ausgabe | kein Vorteil | 0,9983 | 1,0028 |
+| Paar, kurze Eingabe, 8 Token | Vorteil | 0,9207 | 0,9225 |
+| Paar, kurze Eingabe, 48 Token | Vorteil | 0,8537 | 0,8513 |
+| Paar, lange Eingabe, 8 Token | Vorteil | 0,9604 | 0,9651 |
+| Paar, lange Eingabe, 48 Token | Vorteil | 0,8876 | 0,8836 |
+| Paar, versetzte Ankunft | Vorteil | 0,8882 | 0,8917 |
+| Vier Anfragen als zwei Paare | Vorteil | 0,9411 | 0,9481 |
+
+Kein Durchschnitt berichtet: er würde eine Regression verdecken, und der Punkt der
+Tabelle ist, dass keine auftrat. Korrektheit je Fall vor jeder Zeitmessung geprüft, Token,
+Stop-Grund und Ausgabetext identisch. Die bitweise Logit- und KV-Gleichheit stammt aus
+den Schrittprüfungen in B46 und B47 und wird von dieser Matrix nicht neu belegt.
+
+**Gedeckte Auswahlregeln**, alle nur mit zur Entscheidungszeit bekannten Merkmalen: zwei
+gleichzeitig bereite Anfragen sind die Voraussetzung, eine einzelne zeigt null gepaarte
+Schritte und keinen Effekt. Mehr angeforderte Token bringen mehr, 48 gaben 0,85 bis 0,89
+gegen 0,92 bis 0,97 bei acht. Längere Eingaben bringen weniger, weil der Prefill je
+Anfrage bleibt. Einschränkung: alle acht Fälle stoppten am Tokenlimit, ein früh auf einem
+echten Endtoken endender Auftrag verbringt weniger geteilte Schritte und gewänne weniger.
+Die tatsächlich erzeugte Antwortlänge wird als Merkmal nicht verwendet.
+
+**Anschlussfähigkeit.** `load_profile` und `save_profile` schlüsseln auf
+Hardware-Fingerprint und Modellidentität und führen einen Knobs-Satz. Der Zweierpfad ist
+ein Service-Modus, kein Knopf, passt also ohne Schemaänderung nicht in den vorhandenen
+Profildatensatz. Es wurde keine automatische Auswahl aktiviert und keine Profildatenbank
+angelegt.
+
+Laden und Kompilieren kosten einmalig 13,1 Sekunden, außerhalb aller Zeitfenster und für
+beide Arme gleich. Standard bleibt aus, Viererpfad und `share_aligned` deaktiviert, kein
+Commit, kein Push. Ablage: `research/raw/B50S_load_matrix_selection_20260909.json`,
+`B50C_load_matrix_confirmation_20260909.json`,
+`B50_paired_deployment_guide_20260909.json`.
+
+## 2026-09-09 — B51: die Identitätslücke der acht Lastfälle geschlossen
+
+Auftrag: die acht gespeicherten Lastfälle nicht nur auf gleiche Token, sondern auf
+gleiche Logit-Bitmuster je Schritt und gleichen KV-Zustand je Anfrage prüfen, und dabei
+echte Endtoken einbeziehen. Keine neue Leistungsstudie.
+
+**Warum überhaupt.** B50 verglich Token, Stop-Grund und Ausgabetext. Das ist schwächer
+als gleiche Logits: zwei verschiedene Verteilungen können denselben Argmax haben. Die
+bitweise Gleichheit stammte aus B45 und B46 und galt für deren Prompts, nicht für die
+acht Lastfälle. Frühere Bitgleichheit wurde nicht auf ungeprüfte Fälle übertragen.
+
+**Verfahren, außerhalb jeder Zeitmessung.** Jeder Lastfall läuft zweimal durch den
+Dekodierpfad, einmal auf dem ausgelieferten Körper, einmal über den gepaarten Schritt.
+Verglichen werden das vollständige Logit-Bitmuster jedes Schritts als fortgeschriebener
+SHA-256 über die rohen Bytes, der vollständige KV-Zustand je Anfrage am Ende, die
+Tokenfolgen, der Stop-Grund und die Schrittzahl. Ankunftszeiten werden nicht variiert:
+sie ändern die Gruppierung, nicht die Arithmetik je Anfrage, und Gruppierungsvarianten
+sind auf Dienstebene durch B46 und B50 abgedeckt. Ein erst später eintreffender Partner
+wird hier folglich nicht ausgeführt; dieser Fall steht in B47. Die Methodenzeile des
+Datensatzes nennt ihn mit, was für diesen Lauf zu weit gefasst ist.
+
+**Zwei echte Endtoken-Fälle ergänzt.** Ein Satzpunkt oder ein erzwungener Stopp zählt
+nicht. Gewählt wurden zwei Prompts, die auf einem echten Endtoken enden. Im ersten Fall
+stoppte eine Anfrage nach 19 Schritten auf einem Endtoken, während die andere bis 64
+weiterlief; damit ist der Übergang Paar → Einzelpfad und der spätere Alleingang belegt.
+Im zweiten Fall endeten beide auf einem echten Endtoken, bei 19 und 17 Schritten, also
+unterschiedlich.
+
+**Ergebnis: zehn Fälle, alles identisch.** Acht Lastfälle plus zwei Endtoken-Fälle,
+insgesamt 22 Anfragen. Logits bitgleich, KV-Zustand bitgleich, Token gleich, Stop-Grund
+gleich, Schrittzahl gleich, in jedem einzelnen Fall. Der Vierer-Fall lief als zwei Paare
+und ist ebenfalls bitgleich.
+
+**Was weiterhin offen bleibt.** Ein Abbruch während gemeinsamer Arbeit ist nicht geprüft,
+weil `ironmule.service.Request` keinen Abbruch-Handle trägt und `serve()` bis zum Ende
+läuft. Das bleibt eine Schnittstellengrenze, kein bestandener Test.
+
+Kein Commit, kein Push. Ablage: `research/raw/B51_identity_gap_20260909.json`,
+Werkzeug `tools/b51_identity_gap.py`.
+
+## 2026-09-09 — B52: regelbasierte Modusauswahl aus dem Profil, Standard AUS, BEREIT
+
+Auftrag: die vorhandenen Service-Modi ausdrücklich wählbar und regelbasiert aus dem
+bestehenden Profilweg auswählen. Keine neuen Kernel, kein RL, keine neue Datenbank.
+
+**Ein Datensatz neben den Knöpfen, kein neuer Knopf.** Ein Service-Modus ändert, wie
+Anfragen gruppiert werden, nicht wie ein Kernel rechnet, also wird er nicht als `Knobs`-
+Feld ausgegeben. `ironmule/service_strategy.py` legt einen versionierten Datensatz
+`ironmule.tuned_profile.service_strategy.v1` neben die Knöpfe: Strategie, zulässiger
+Bereich mit Hardware-Fingerprint, Modellidentität, MLX- und mlx_lm-Version sowie
+Mindest- und Höchstzahl gleichzeitig bereiter Anfragen, dazu der Korrektheitsvertrag und
+die belegenden Lauf-IDs. Ein Datensatz, dem ein Feld fehlt, wird verworfen statt teilweise
+geglaubt; das Lesen liefert dann dasselbe wie ein Profil ohne Datensatz, nämlich nichts.
+
+**Migration nur auf einer Arbeitskopie.** Geschrieben wird ausschließlich über
+`tune.save_profile`, den vorhandenen autorisierten Weg mit seinen Identitätsprüfungen.
+Das Werkzeug verweigert den Lauf, wenn `IRONMULE_HOME` nicht auf eine Arbeitskopie zeigt.
+Auf dieser Maschine existiert überhaupt kein Produktprofil: `~/.ironmule/profiles.json`
+gab es vor dem Lauf nicht und gibt es danach nicht. Die Arbeitskopie erhielt ein Profil
+mit ausschließlich den Pflichtfeldern und `BASELINE`-Knöpfen, ohne erfundene Zeitwerte.
+Geprüft und bestanden: Profil ohne Datensatz lädt und wählt nichts, Anhängen und erneutes
+Laden liefert den Datensatz zurück, die Knöpfe bleiben unverändert, und ohne Opt-in wählt
+auch ein vollständiger Datensatz nichts.
+
+**Die Regel.** Nur nach ausdrücklichem `automatic_service_mode=True` und vollständiger
+Profilzulassung wird überhaupt entschieden. Es zählen nur zur Entscheidungszeit bekannte
+Merkmale: wie viele Anfragen jetzt bereit sind, und die Identität von Maschine, Modell und
+Bibliotheken. Die später erzeugte Antwortlänge geht nicht ein, und aus den beiden
+Tokenlimits aus B50 wurde kein Schwellenwert abgeleitet; der zugelassene Bereich ist die
+Zahl bereit stehender Anfragen, zwei bis vier, genau die von B50 gemessenen Fälle.
+Gewartet wird auf niemanden. Bei unbekannter Bedingung bleibt der bisherige Modus.
+Sagt das Profil ja und verweigert das geladene Modell die Zulassung, fällt die Auswahl
+ebenfalls auf den etablierten Modus zurück, nicht in das sequentielle Sicherheitsnetz.
+
+**Entschieden wird einmal je `serve`.** Die Zahl bereiter Anfragen steht erst fest, wenn
+die Sitzungen da sind, und das ist zugleich der letzte Moment, in dem noch kein Token
+erzeugt wurde. Im Token-Pfad kommt nichts hinzu: 9 Entscheidungen auf 9 Aufrufe im
+Zeitteil, 3 auf 3 im Benutzerweg.
+
+**Benutzerweg auf echter Hardware, Gemma 12B.** Laden ohne Opt-in: Modus `interactive`,
+Status meldet deaktiviert, der Datensatz wird nicht einmal gelesen. Laden mit Opt-in:
+Modus `automatic`, Status vor der ersten Anfrage nennt „nothing served yet“. Eine
+Anfrage: etablierter Modus, Begründung nennt `ready_requests`. Zwei Anfragen: gepaarter
+Pfad, 23 gemeinsame Schritte. Vier Anfragen: gepaarter Pfad als zwei Paare, 46 gemeinsame
+Schritte. Ausgaben in allen drei Fällen identisch zu unabhängigen `InteractiveMode`-Läufen
+auf denselben Prompts. Unbekannte Konfiguration, ein Datensatz mit fremder MLX-Version:
+abgelehnt mit `outside the admitted range: ['mlx']`, Ausgabe weiterhin identisch. Zurück
+auf `ThroughputMode`: Status wieder deaktiviert. Der Status nennt jederzeit Strategie,
+Zulassungsgrund und Evidenz-IDs.
+
+**Kosten der Automatik, vorregistriert.** Frage: kostet die automatische Wahl etwas
+gegenüber der manuellen Wahl derselben Strategie. Acht rotierte Blöcke, drei Arme mit
+A/A-Kontrolle, 95-Prozent-Bootstrap über 10.000 Ziehungen, Äquivalenzgrenze vorab auf
+±2 Prozent festgelegt. Vorab festgehalten: ein Intervall, das nur 1,0 enthält, ist kein
+Äquivalenznachweis; es muss vollständig innerhalb von 0,98 bis 1,02 liegen.
+
+| Verhältnis | Median | KI95 |
+| :-- | --: | :-- |
+| automatisch / manuell gepaart | 1,0045 | 0,9961 bis 1,0106 |
+| A/A-Kontrolle | 0,9960 | 0,9908 bis 1,0020 |
+
+Das Intervall liegt vollständig innerhalb der vorab gesetzten Grenze, die A/A-Kontrolle
+enthält 1,0, null Swapouts, kein Rückfall. **BEREIT.**
+
+**Nachtrag zur Messhistorie.** Dieser Eintrag nannte zunächst zwei Läufe. Belegt ist nur
+einer: die erste Ausführung schrieb denselben Dateinamen und wurde von der zweiten
+überschrieben. Ihre Rohdaten sind verloren und werden nicht rekonstruiert; keine ihrer
+Zahlen steht in einer Freigabeaussage. Der Vorgang ist in
+`research/raw/B52P_evidence_provenance_20260909.json` festgehalten. Maßgeblich für die
+Freigabe ist der spätere Lauf `B52R_automatic_selection_release_20260909`, siehe den
+Eintrag zur Stabilisierung. Nicht gemessen und nicht erneut
+behauptet wird der Gewinn des Zweierpfads selbst; der steht in B46 und B50.
+
+Standard bleibt aus: ohne `automatic_service_mode=True` erreicht kein Profil die Auswahl.
+Keine Aktivierung, keine Produktmigration, kein Commit, kein Push. `share_aligned` bleibt
+aus, der Viererpfad bleibt Studienwerkzeug. Ablage:
+`research/raw/B52_preregistration_20260909.json`,
+`B52_automatic_selection_20260909.json`; Werkzeug `tools/b52_automatic_selection.py`;
+Tests in `tests/test_service_strategy.py`; Bedienung in `docs/PAIRED_OPT_IN.md`.
+
+## 2026-09-10 — Stabilisierung für eine nachvollziehbare Freigabe: 13 rote Tests, ein Evidenzverlust
+
+Auftrag: den Gesamtstand freigabefähig machen. Keine neuen Funktionen, keine
+Optimierungen. Zwei offene Probleme: rote Tests und eine überschriebene Messung.
+
+**Die Testbaseline war 13, nicht 10.** Der frühere Bericht hatte nur die letzten zehn
+Zeilen der Zusammenfassung gesehen. Aufgenommen über JUnit-XML: 5655 Tests, 13
+Fehlschläge, 0 Fehler, 20 übersprungen. Drei davon, die Bitgleichheitsprüfung der
+`K=3840`-Kernel für die Breiten 2048, 4096 und 15360, fielen nur im Gesamtlauf und nur in
+einem von drei Läufen aus.
+
+**Die drei sporadischen Fehlschläge sind nicht geschlossen.** Einzeln, parallel und unter
+sechsfacher GPU-Konkurrenz liefen 1260 Wiederholungen fehlerfrei. Die beobachteten Bytes
+waren keine Zufallsdaten, sondern plausible bfloat16-Werte anderer Größe, was auf andere
+Eingaben deutet, nicht auf einen kaputten Kernel. Die Eingaben sind jetzt gesät, damit ein
+künftiger Fehlschlag reproduzierbar ist und die Eingabesumme in der Fehlermeldung steht.
+Ohne Wiederholung bleibt die Ursache offen; das ist kein behobener Defekt.
+
+**Dabei gefunden und belegt: `mx.fast.metal_kernel` schlüsselt seinen Cache nach dem
+Namen.** Zwei Kernel gleichen Namens mit verschiedenem Quelltext im selben Prozess
+ergeben stillschweigend den zuerst kompilierten. Nachgewiesen mit einem Zweizeilen-Kernel:
+beide Aufrufe gaben das Ergebnis des ersten. Im Baum teilen sich `tools/b42_qmv_kernel.py`
+und `ironmule/qmv_k3840.py` die Namen `qmv_port` und `qmv_k3840`; `qmv_k3840_shared_x{w}`
+tragen `b45`, `b49` und `ironmule/qmv_shared.py`; `qmv_fast_k{k}_x{w}` tragen `b48` und
+`ironmule/qmv_fast_shared.py`. Alle diese Quellen sind derzeit byteidentisch, geprüft über
+den an `metal_kernel` übergebenen Text, die Kollision also heute harmlos. Kein Kernel
+wurde umbenannt, weil das den Inferenzpfad berührt hätte. Stattdessen prüft
+`test_one_metal_kernel_name_carries_one_source` jede Namensgruppe; der Wächter wurde durch
+eine eingespielte Abweichung als wirksam nachgewiesen.
+
+**Die zehn reproduzierbaren Fehlschläge, jeder nach Ursache:**
+
+* **Veraltetes Testdouble, fünf Tests.** `FakeLoadedEngine` in `tests/engine/test_r6_r7.py`
+  kannte `Engine.admit_k3840` nicht. Das Double erfüllt den Vertrag jetzt für den
+  ausgeschalteten Knopf und verweigert ausdrücklich, eine Zulassung zu spielen: die
+  braucht echte Hardware, echten Bibliotheksbau und echte Projektionsformen.
+* **Produktionsprüfung, zwei Tests.** `Engine.admit_k3840` macht `ironmule.qmv_k3840` vom
+  Modellkind erreichbar, und der Q3f-Wächter lässt nur geprüfte Module zu. Das Modul wurde
+  geprüft: es importiert nur `mlx`, `mlx_lm` und `ironmule.hw` und enthält keine
+  Operation aus `OPERATION_SET`. Erst danach in die Liste aufgenommen. Die Prüfung selbst
+  wurde nicht entfernt.
+* **Schemaproblem, ein Test.** `ironmule/adaptive.py` spiegelt die Knopfmenge und kannte
+  `k3840_matvec` nicht. Nachgetragen, `KnobAction` auf `v2` gehoben, `_BOOL_KNOBS` von
+  einer Positionsscheibe auf ausgeschriebene Namen umgestellt, damit ein neuer
+  Wahrheitswert-Knopf tatsächlich geprüft wird. Bewusst **nicht** in `SEARCH_VALUES`: ein
+  Opt-in-Kernelknopf, der beim Laden gegen echte Hardware zugelassen wird, darf von einer
+  Suche nicht vorgeschlagen werden. In keiner gespeicherten Datei stand eine `action_id`,
+  geprüft über 1108 Optimierer-Datensätze und 392 Korpuseinträge.
+* **Echter Produktionsdefekt, ein Test.** In `ironmule_product/backend.py` hatte eine
+  fehlerhafte Einfügung `_validate_prefix_metadata` zerschnitten: die neue Methode
+  `_valid_selection_metadata` lag mitten darin, und der gesamte Prüfkörper hing hinter
+  deren `return` als toter Code. Der Worker akzeptierte damit fehlerhafte
+  Präfix-Cache-Metadaten. Körper zurückgeführt, Auswahlprüfung unverändert gelassen.
+* **Veraltete Dokumentationserwartung, ein Test.** `test_the_backlog_supplies_the_open_section`
+  verlangte `D1` unter den ersten acht offenen Einträgen. `D1` steht weiter in
+  `BACKLOG.md`, nur nicht mehr auf Platz acht, weil neue Abschnitte davor kamen. Der Test
+  prüft jetzt, dass jeder angezeigte Eintrag eine echte Überschrift der Datei ist und
+  einen Titel trägt, und sucht `D1` über die ganze Datei statt über einen Rang.
+
+**Dabei gefunden: alte Profile luden nicht mehr.** `_exact_knobs` verlangte
+Mengengleichheit mit dem aktuellen Knopfsatz. Ein Profil, das vor `k3840_matvec`
+geschrieben wurde, fiel damit durch, `load_profile` gab `None` zurück, und der Nutzer
+verlor seine Abstimmung stillschweigend. Jetzt darf ein gespeichertes Profil genau die
+Knöpfe aus `KNOBS_ADDED_LATER` weglassen; sie nehmen dann ihre Vorgabe, und die ist aus.
+Ein fehlender älterer Knopf und ein unbekannter Schlüssel werden weiter abgelehnt.
+`research/q3_build_replay.py` traf derselbe Bruch bei gespeicherten Q2-Daten; dort muss
+das Profil auf jedem Knopf übereinstimmen, den es nennt, und jeder ungenannte Knopf auf
+seiner Vorgabe stehen.
+
+**Tatsächliche Bereitschaft statt Gruppengröße.** Die Auswahlregel zählte
+`len(sessions)`, also angemeldete Anfragen, und nannte das Ergebnis dennoch
+`ready_requests`. Sie zählt jetzt Sitzungen, die angekommen sind und nicht schon fertig
+sind, und berichtet `group_requests` daneben. Zwei angemeldete Anfragen, von denen eine
+noch nicht angekommen ist, ergeben eine bereite Anfrage und damit den etablierten Modus.
+Auf Ausführungsebene war das schon richtig: `PairedGroupedExecutor` paart nur, was der
+Scheduler an einer Schrittgrenze zugelassen hat. Zwei Ablauftests mit gezählter Uhr statt
+echtem Warten belegen den späten Partner und den nie gepaarten Nachzügler.
+
+**Messhistorie: EVIDENZVERLUST, ein Lauf.** Die erste B52-Ausführung schrieb denselben
+Dateinamen wie die zweite und wurde überschrieben. Gesucht wurde in `research/raw`, im
+inhaltsadressierten Evidenzarchiv, in den APFS-Schnappschüssen und im SSOT-Index. Der
+jüngste lokale Schnappschuss ist `2026-09-09-080820`, die Datei entstand am selben Tag um
+20:45; der Index wurde nach dem zweiten Lauf vollständig neu gebaut und atomar ersetzt.
+Der Lauf ist unwiederbringlich. Er wird nicht rekonstruiert, keine seiner Zahlen steht in
+einer Freigabeaussage, und es werden nicht zwei belegte Läufe behauptet. Festgehalten in
+`B52P_evidence_provenance_20260909` mit getrennten Lauf-IDs, Prüfsummen des erhaltenen
+Datensatzes und der Liste der durchsuchten Quellen.
+
+**Damit das nicht wieder passiert.** Rohdaten werden über `write_once` geschrieben: eine
+vorhandene Datei wird verweigert, geschrieben wird in `.partial` und atomar umgesetzt.
+Jeder Messdatensatz trägt jetzt eine Codebindung, einen SHA-256 je gemessene Datei plus
+einen über alle in Reihenfolge, weil eine Git-Revision in einem uncommitteten Baum nichts
+bindet. Keine neue Datenbank, derselbe zentrale Ablageweg.
+
+**Freigabemessung auf dem reparierten Baum.** Weil die Bereitschaftsregel den
+Auswahlpfad ändert, wurde neu vorregistriert und neu gemessen, nicht auf den älteren
+Datensatz verwiesen. Vorregistrierung `B52R_preregistration_20260909`, Äquivalenzgrenze
+weiterhin ±2 Prozent, acht rotierte Blöcke, A/A-Kontrolle.
+
+| Verhältnis | Median | KI95 |
+| :-- | --: | :-- |
+| automatisch / manuell gepaart | 0,9973 | 0,9937 bis 1,0018 |
+| A/A-Kontrolle | 1,0055 | 0,9958 bis 1,0068 |
+
+Benutzerweg vollständig bestanden: eine Anfrage bleibt beim etablierten Modus, zwei teilen
+23 Schritte, vier laufen als zwei Paare mit 46, versetzte Ankunft ergibt eine bereite
+Anfrage und den etablierten Modus, fremde MLX-Version wird mit
+`outside the admitted range: ['mlx']` abgelehnt, und jede Ausgabe ist identisch zu einem
+unabhängigen `InteractiveMode`-Lauf. Null Swapouts, kein Rückfall, 9 Entscheidungen auf 9
+Aufrufe. Codebindung `6d77cadbee61f4b1`. **FREIGABESTAND BEREIT.**
+
+**Testbilanz nach den Reparaturen.** 5675 Tests ohne Modell: 5655 bestanden, 0
+fehlgeschlagen, 20 übersprungen; die übersprungenen sind Pakete ohne ausgelieferte
+Skripte. GPU-Modelltests seriell auf echter Hardware: 15 bestanden, 1 übersprungen, weil
+`IRONMULE_QWEN_MODEL` nicht gesetzt ist. Das ist eine fehlende Voraussetzung, kein
+bestandenes Gate.
+
+Fehlender Anfrageabbruch bleibt Schnittstellengrenze: `ironmule.service.Request` trägt
+keinen Abbruch-Handle und `serve()` läuft bis zum Ende. Standard bleibt aus, kein
+Produktprofil angelegt, kein Commit, kein Push. Ablage:
+`research/raw/B52P_evidence_provenance_20260909.json`,
+`B52R_preregistration_20260909.json`,
+`B52R_automatic_selection_release_20260909.json`; Werkzeuge
+`tools/b52_automatic_selection.py`, `tools/b52_evidence_provenance.py`.
+
+## 2026-09-10 — B53 offen, B54 geschlossen: FREIGABE BLOCKIERT
+
+Auftrag: B53 klären und B54 absichern, bevor der Stand als freigegeben gilt. Keine neuen
+Funktionen.
+
+**B54 ist bestätigt und behoben.** MLX-Issue #3832 beschreibt genau den hier gemessenen
+Effekt: der Cache für eigene Kernel schlüsselt nach dem Namen, in
+`Device::get_library(name_, …)`, und die Invalidierung bei geändertem Quelltext wirkt über
+`eval`-Grenzen, aber nicht innerhalb eines Batches. Betroffen sind `0.31.1`, `0.31.2` und
+`0.32.0`. Auf dieser Maschine reproduziert: zwei Kernel gleichen Namens, einer addiert 1,
+einer addiert 100, beide vor demselben `eval` abgesetzt, beide liefern 1.
+
+Der Name wird jetzt nicht mehr gewählt, sondern abgeleitet. `ironmule/kernel_registry.py`
+bildet einen SHA-256 über die vollständige Erzeugungsspezifikation: Basisname, Quelle,
+Header, Ein- und Ausgabenamen, Zeilenkontiguität, Atomflag, Compileroptionen und
+Templatewerte. Gleiche Quellbytes sind eben noch keine gleiche Spezifikation, deshalb
+stehen Optionen und Templatewerte mit im Digest. Berechnet wird er einmal je
+Spezialisierung beim Import, nie je Aufruf und nie je Token; die Registry verweigert einen
+Bezeichner, der für eine zweite Spezifikation stehen würde. Alle sieben Erzeugungswege
+sind umgestellt, drei ausgelieferte Module und vier Studienkopien. Acht Kernel sind
+registriert, einer je Spezialisierung; byteidentische Kopien fallen bewusst auf einen
+Namen zusammen, denn das ist der Fall, den MLX richtig behandelt.
+
+**Arithmetik unverändert.** Kein Kernelquelltext, keine Compileroption, keine
+MLX-Version wurde angefasst. Geändert hat sich allein der Schlüssel, unter dem MLX
+zwischenspeichert.
+
+**Nachweise nach der Umbenennung, auf echter Hardware.** B51 vollständig wiederholt: zehn
+Fälle, 22 Anfragen, Logit-Bitmuster je Schritt und vollständiger KV-Zustand je Anfrage
+identisch zu unabhängigen Bibliotheksläufen, gleiche Schrittzahlen wie vor der
+Umbenennung. Die vorregistrierte begrenzte Nichtregressionsprüfung für den einen
+berührten Laufzeitpfad: der Zweierpfad behält seinen Vorsprung gegenüber dem
+ausgelieferten Throughput-Pfad mit 0,8751 bei KI 0,8714 bis 0,8772, acht von acht Blöcken
+unter der Schwelle 0,90, A/A bestanden, null Swapouts.
+
+**Als Befund stehengelassen.** `tools/b42_qmv_kernel.py` und `ironmule/qmv_k3840.py`
+deklarieren beide `COMPILE_OPTIONS = {"math_mode": "safe"}` und übergeben es nie. Diese
+Kernel kompilieren also unter MLXs Vorgabe. Das zu übergeben würde die Arithmetik ändern,
+was dieser Auftrag ausschließt. Der Digest hält die tatsächlich übergebenen Optionen fest,
+derzeit keine, damit die Abweichung nicht mehr unsichtbar bleibt.
+
+**B53 bleibt offen, und der wertvolle Teil ist eine neue Messung.** Die aufgezeichnete
+Abweichung lässt sich jetzt einordnen: eine andere, ebenso korrekte Summationsreihenfolge
+verschiebt das Ergebnis einer echten dequantisierten Gemma-Projektionszeile um höchstens
+0,0017 bfloat16-Einheiten der letzten Stelle, relativ 6,9e-6, über 64 Zeilen und 64
+zufällige Reihenfolgen. Die aufgezeichnete Abweichung beträgt bis zu 23 Einheiten.
+Reassoziation scheidet damit um vier Größenordnungen aus. Es bleibt genau eine Lesart:
+**die beiden Arme haben nicht dieselben Bytes gelesen.** Welcher von beiden falsch lag,
+ist weiterhin unbekannt.
+
+**Was nicht reproduziert hat.** Vorab festgelegt auf zwölf Läufe je Bedingung, ohne
+Nachschlag bei Grün: zwölf Gesamtläufe unter der repositoryeigenen Parallelisierung mit
+396 exakten Vergleichen, darunter eine neue Kontrolle Bibliothek gegen Bibliothek, und
+zwölf Läufe der Datei allein in frischen Prozessen. Null Abweichungen. Dazu 3000
+Vergleiche mit 32 sentinelgefüllten Puffern der Ausgabeform, die unmittelbar vor jedem
+Aufruf freigegeben wurden: kein Sentinel erreichte je eine Ausgabe. Die
+Pufferwiederverwendung ist damit nicht gezeigt.
+
+**B54 erklärt B53 nicht.** Jeder kollidierende Kernelname trug byteidentischen Quelltext,
+die Kollision konnte also kein Ergebnis verändern.
+
+**Zwei Tests waren verlorengegangen.** Eine frühere Umschreibung dieser Datei hatte
+`test_3840_is_a_whole_number_of_blocks` und
+`test_the_shape_constant_is_built_once_per_geometry` mit abgeschnitten. Beide sind
+wiederhergestellt.
+
+**Testbilanz.** Ohne Modell 5691 Tests, 5671 bestanden, 0 fehlgeschlagen, 20 übersprungen.
+GPU-Tests seriell 16, davon 15 bestanden und einer übersprungen, weil
+`IRONMULE_QWEN_MODEL` fehlt; eine fehlende Voraussetzung ist kein bestandenes Gate. Ein
+erster serieller GPU-Lauf hatte `test_real_macos_process_identity_and_cleanup_reap`
+verloren, weil die Prozessliste während des Abklingens der Kampagne nicht auswertbar war;
+bei ruhiger Maschine bestanden, mit 517 eigenen Prozessen weit unter der Schranke 4096.
+Beide Läufe sind abgelegt, der Fehlschlag wird nicht wegerklärt.
+
+**Ergebnis: FREIGABE BLOCKIERT.** Die Lücke ist benannt und einzeln: eine
+Bitgleichheitsprüfung der `K=3840`-Kernel ist einmal fehlgeschlagen, die Ursache ist
+unbekannt, und 24 vorregistrierte Läufe haben sie nicht wiederholt. Eine
+Bitgleichheitsaussage mit einer unerklärten Gegenbeobachtung ist keine Aussage. B52 bleibt
+davon unberührt gemessen, aber der Gesamtstand ist nicht freigabefähig, solange B53 offen
+ist. Standard bleibt aus, kein Commit, kein Push. Ablage:
+`research/raw/B53_observed_failure_20260909.json`,
+`B53_diagnosis_preregistration_20260910.json`,
+`B53_buffer_lifetime_preregistration_20260910.json`, `B53_buffer_lifetime_20260910.json`,
+`B53_reassociation_bound_20260910.json`,
+`B54_verification_preregistration_20260910.json`, `B51R_identity_gap_20260910.json`,
+`B54R_paired_nonregression_20260910.json`, `B5X_release_status_20260910.json`;
+JUnit-Dateien unter `.friday-data/b53-evidence/`.
+
+## 2026-09-10 — B53 lokalisiert, soweit diese Plattform es zulässt: DIAGNOSE ABGESCHLOSSEN, B53 OFFEN
+
+Auftrag: B53 mit neuen Diagnosemitteln eingrenzen statt weiter blind zu wiederholen. B54
+bleibt geschlossen, keine neue Optimierung.
+
+**Zuerst eine Rücknahme.** Der Eintrag von gestern behauptete, Reassoziation sei um vier
+Größenordnungen ausgeschlossen und die beiden Arme hätten folglich nicht dieselben Bytes
+gelesen. Das ist zurückgenommen. Die Messung dahinter lief auf frischen Ziehungen desselben
+Generators, nicht auf den verlorenen Eingaben der Fehlmessung, und sie nutzte ein
+optimistisches Fehlermodell mit einem eps je Summe. Mit der klassischen Schranke für
+rekursive float32-Summation, 2·(n−1)·eps·Σ|Terme| bei n = 3840, sieht es anders aus:
+
+| Größe | Wert |
+| :-- | --: |
+| zufällige Reihenfolgen auf dieser Last | 0,06 Einheiten der letzten Stelle |
+| dieselben Terme ohne ihren Mittelwert | 208 Einheiten |
+| größte aufgezeichnete Abweichung | 23 Einheiten |
+| klassische Schranke, absolut | 2,32 |
+| größte aufgezeichnete Differenz, absolut | 5,75 |
+
+Die Summationsreihenfolge liegt also innerhalb eines Faktors 2,5 an der aufgezeichneten
+Differenz und bei Auslöschung darüber. **Reassoziation ist nicht ausgeschlossen.** Einer
+der fünf aufgezeichneten Werte liegt sogar vollständig innerhalb der Schranke. Der
+zurückgenommene Datensatz bleibt erhalten, er wird nicht umetikettiert.
+
+Dokumentiert sind jetzt außerdem die ULP-Definition, die Datentypen und der Umgang mit
+Sonderwerten: die letzte Stelle ist der Abstand der beiden benachbarten bfloat16-Zahlen um
+|v|, gewonnen durch Abschneiden auf die oberen 16 Bit und Inkrement; bei v = 0 existiert
+keine letzte Stelle, dort wird der kleinste normale Abstand eingesetzt und die Zeile
+markiert; NaN und Unendlich werden verweigert statt gemessen. Die Eingaben der Fehlmessung
+sind ausdrücklich als fehlend gekennzeichnet.
+
+**Adressierung sauber, hergeleitet statt vermutet.** Für jede zugelassene Form wurden die
+minimalen und maximalen Lese- und Schreibindizes in geschlossener Form abgeleitet. Der
+größte Gewichts-, Skalen- und Aktivierungsindex liegt jeweils genau eins unter der Grenze
+des gebundenen Puffers, jede Ausgabezeile wird geschrieben, keine zweimal. Eine Breite, die
+kein Vielfaches von acht ist, lässt zwei Simdgruppen auf dieselben Zeilen treten; genau die
+verweigert `_admit_projection`. Vektorladeausrichtung, Skalen- und Bias-Geometrie und die
+Argumentreihenfolge an jeder Aufrufstelle stimmen mit der Erzeugung überein. Keine
+Arithmetik geändert.
+
+**Diese Herleitung trägt mehr Gewicht als geplant, denn Apples Diagnose greift hier
+nicht.** Mit `MTL_DEBUG_LAYER=1`, `MTL_SHADER_VALIDATION=1` und
+`MTL_SHADER_VALIDATION_REPORT_TO_STDERR=1`, gesetzt vor jeder Metal-Initialisierung in
+getrennten Kindprozessen, meldet das Protokoll `Metal API Validation Enabled` und
+`Metal GPU Validation Enabled`. Trotzdem wird weder ein Lesezugriff vier Elemente hinter
+einem Vier-Element-Puffer noch einer vier Millionen Elemente dahinter gemeldet, und keiner
+bricht ab. Ein Zugriff über die Puffergrenze hinaus ist in einem über
+`mx.fast.metal_kernel` gebauten Kernel auf dieser Plattform still. Der betroffene
+Aufrufweg auf gespeicherten echten Gemma-Aktivierungen und -Gewichten, drei Projektionen
+der Breiten 2048, 4096 und 15360, zeigte unter dieser Umgebung keine Abweichung. **Das
+wird nicht als bestandene Prüfung berichtet**, weil die Instrumentierung nicht nachweisbar
+war. Ein sauberer Validator beweist ohnehin nicht die Abwesenheit sämtlicher Fehler.
+
+**Der Ablauf macht keinen Unterschied.** Konfiguration A, der ursprüngliche Weg mit
+globalem Zufallszustand und einem `eval` am Ende, gegen Konfiguration B mit explizitem
+lokalem PRNG-Schlüssel, einmal materialisierten und geprüften Eingaben und über die ganze
+Prüfung gehaltenen Puffern: je 576 exakte Vergleiche, drei Arme einschließlich Bibliothek
+gegen Bibliothek, null Abweichungen, keine Eingabe wurde je verändert. Alles läuft auf dem
+Standardstream. Dass B besteht, erklärt A nicht, deshalb liefen beide.
+
+**Budget eingehalten.** Genau drei Diagnosekonfigurationen, wie vorregistriert:
+Originalablauf, materialisierte Eingaben, Shader-Validierung. Keine weitere
+Gesamtsuite-Kampagne, kein Nachschlag.
+
+**Offen, mit zwei benannten Kandidaten.** Ein Unterschied in Reihenfolge oder Mathematikmodus
+zwischen MLXs eigenem Kernel und diesen eigenen Kernen, plausibel gemacht durch die
+deklarierten und nie übergebenen `COMPILE_OPTIONS` und von der klassischen Summenschranke
+nicht ausschließbar. Oder ein Fehler im Kernelpfad von MLX, den auf dieser Maschine keine
+Python-Sonde und kein verfügbarer Validator sieht. Der nächste billige Schritt ist die
+Mathematikmodus-Frage an einem Wegwerfkernel, nicht am ausgelieferten.
+
+**Ergebnis: DIAGNOSE ABGESCHLOSSEN, B53 OFFEN, Freigabe des betroffenen Kernelpfads
+weiter BLOCKIERT.** B54 bleibt unabhängig geschlossen; sein Fix beweist keine B53-Ursache,
+denn alle kollidierenden Namen trugen byteidentischen Quelltext. Standard bleibt aus, kein
+Produktprofil, kein Commit, kein Push. Ablage:
+`research/raw/B53_localisation_preregistration_20260910.json`,
+`B53_cancellation_bound_v2_20260910.json`, `B53_static_addressing_20260910.json`,
+`B53_shader_validation_20260910.json`, `B53_shader_validation_probe_20260910.json`,
+`B53_flow_comparison_20260910.json`, `B53_localisation_outcome_20260910.json`;
+echte Eingaben und Validator-Protokolle unter `.friday-data/b53-inputs/` und
+`.friday-data/b53-evidence/`.
+
+## 2026-09-10 — B53: der Compilervertrag belegt, Mathematikmodus ausgeschlossen, B53 weiter OFFEN
+
+Auftrag: B53 mit belegtem Compilervertrag und gezielter Fehlerlokalisierung prüfen. Kein
+weiterer Zufalls-Stresstest.
+
+**Der Vertrag steht im installierten Paket, nicht in einer Annahme.** Das Wheel liefert
+seine eigenen Header mit. `mlx/backend/common/metal_kernel.h` deklariert
+`MathMode {Safe = 0, Relaxed = 1, Fast = 2}` und `CompileOptions.math_mode = MathMode::Safe`;
+die Docstring der Python-Bindung sagt dasselbe. In `libmlx.dylib` liegt der Selektor
+`setMathMode:`, der Modus erreicht den Metal-Compiler also über diese Eigenschaft und nicht
+über einen Kommandozeilenschalter. Absicht, Übergabe und Wirkung getrennt festgehalten:
+die Module deklarieren `{"math_mode": "safe"}`, übergeben nichts, und die Vorgabe ist
+bereits Safe. Alle drei stimmen überein. Der Registry-Digest deckt genau die Spezifikation,
+die tatsächlich an MLX geht; für beide Kernel geprüft.
+
+**Trennprüfung mit belegter Aussagekraft.** Dieselben gespeicherten echten Bytes, dieselbe
+Quelle, getrennte inhaltsgebundene Namen, drei Modi. Ergebnis auf drei echten
+Gemma-Projektionen der Breiten 2048, 4096 und 15360: Default und explizit Safe sind
+byteidentisch zueinander und zur unveränderten Bibliothek. Der Fast-Arm weicht auf jeder
+Projektion ab. Dazu 96 konstruierte endliche Fälle mit Auslöschung und an
+bfloat16-Rundungsgrenzen: alle 96 zeigen eine Abweichung, und ausschließlich im Fast-Arm.
+Diese Eingaben sind ausdrücklich synthetische Diagnose und keine Modell- oder
+Leistungsevidenz. Fast ist Kontrolle, kein Produktmodus.
+
+Die Konstruktion kann die Modi also nachweislich unterscheiden, doppelt: über den eigenen
+Fast-Arm und über eine kleine Zusatzkontrolle mit einer langen Multiplikations-Additions-
+Kette. Meine erste Kontrolle über `exp(-inf)` unterschied die Modi nicht und war damit
+wertlos; sie ist ersetzt, der erste Datensatz bleibt erhalten.
+
+**Damit ist der Mathematikmodus als Erklärung für B53 erledigt.** Explizit Safe ergibt
+dieselben wirksamen Optionen wie die Vorgabe, und das ist keine Reparatur von B53, sondern
+das Streichen eines Kandidaten. Die deklarierten und nie übergebenen `COMPILE_OPTIONS`
+sind eine Dokumentationsabweichung ohne Wirkung; beide Module sagen das jetzt im Quelltext,
+damit niemand sie „repariert" und dabei nur den Kernelbezeichner ändert.
+
+**Zweite Rücknahme.** Meine gestrige Lesart, Shader-Validierung instrumentiere
+`mx.fast.metal_kernel` hier nicht, ist auf *nicht belegt* zurückgestuft. Die Kontrollen
+lasen vier und dann vier Millionen Elemente hinter einem Vier-Element-Tensor. Eine
+Tensorgrenze ist keine Metal-Puffergrenze: MLX bedient kleine Arrays aus großen Heaps, der
+Zugriff lag also sehr wahrscheinlich innerhalb des gebundenen Puffers, und dort schweigt
+ein Validator zu Recht. Die Python-Oberfläche zeigt nur aggregierte Speicherzähler und
+`nbytes` des Tensors; die Länge des gebundenen `MTLBuffer` ist von hier nicht erreichbar,
+ein Zugriff außerhalb also nicht nachweisbar. Deshalb keine neue Validator-Kampagne, und
+das saubere Ergebnis bleibt unbeansprucht.
+
+**Kein Defekt belegt, also keine Reparatur.** Es blieb kein Abweichungsfall in den
+geprüften Armen, folglich gab es keine erste abweichende Zwischenstufe einzugrenzen. Die
+verlorenen historischen Eingaben bleiben verloren, und Fehlergrenzen anderer Ziehungen
+erklären die damaligen 23 Einheiten der letzten Stelle nicht.
+
+**Ergebnis: B53 OFFEN.** Ein Kandidat ist gestrichen, einer bleibt: ein Fehler im
+Kernelpfad von MLX, den auf dieser Maschine keine verfügbare Diagnose sieht. Die
+Summationsreihenfolge ist formal weiter nicht ausgeschlossen, doch beide Kerne
+transkribieren die Reihenfolge der Bibliothek und stimmen inzwischen in jedem echten und
+konstruierten Fall byteweise mit ihr überein. Der bestehende Bibliothekspfad bleibt
+nutzbar, die `K=3840`-Beschleunigung bleibt gesperrt. B54 bleibt unabhängig geschlossen.
+Kein Commit, kein Push, kein Produktprofil. Ablage:
+`research/raw/B53_compiler_contract_preregistration_20260910.json`,
+`B53_compiler_contract_20260910.json`, `B53_compiler_contract_v2_20260910.json`,
+`B53_contract_outcome_20260910.json`; Binärprüfsummen des installierten MLX in
+`.friday-data/b53-evidence/CHECKSUMS_MLX_BINARY.txt`.
+
+## 2026-09-10 — B53: der isolierte Metal-Vergleich ist BLOCKIERT, eine Schlussfolgerung zurückgenommen
+
+Auftrag: einen isolierten direkten Metal-Vergleich bauen, um B53 einzugrenzen. Ergebnis:
+der nötige Buildweg fehlt, und es wurde nichts stillschweigend ersetzt.
+
+**Zuerst eine Rücknahme.** Der gestrige Eintrag schloss mit „ein Kandidat bleibt: ein
+Fehler im Kernelpfad von MLX". Das ist als Schlussfolgerung zurückgenommen. Den
+Mathematikmodus auszuschließen streicht eine Erklärung; es macht die zuletzt genannte
+Vermutung nicht zur Antwort, und die Menge möglicher Ursachen wurde nie aufgezählt. Eine
+unerklärte Beobachtung bleibt unerklärt. Ebenso gilt: dass Default und explizit Safe im
+geprüften Korpus identisch sind, sagt nichts über die historische Abweichung, deren
+Eingaben nie erfasst wurden.
+
+**Was der Vergleich gebraucht hätte.** Eine kleine gemeinsame `.metallib`, einmal aus der
+unveränderten Spezialkernelquelle übersetzt, geladen von zwei unabhängigen Wegen: einer
+minimalen nativen MLX-Erweiterung und einem eigenständigen Objective-C++-Programm ohne MLX
+im Prozess, dazu die unveränderten Arme A und B als Kontrollen.
+
+**Was vorhanden ist.** Metal-Framework und Header aus dem installierten SDK, `clang` und
+`clang++`, MLX-Header und `libmlx.dylib`, und in dieser Bibliothek ist
+`Device::get_library(name, path)` exportiert. MLX könnte eine externe Bibliotheksdatei
+also über ihren Pfad laden, sobald es eine gäbe.
+
+**Was fehlt, genau eines.** Der Offline-Shader-Compiler. Die Datei `metal` im
+Toolchain-Verzeichnis ist ein Treiber-Stub, der die Ausführung verweigert und die fehlende
+Komponente selbst benennt: `cannot execute tool 'metal' due to missing Metal Toolchain;
+use: xcodebuild -downloadComponent MetalToolchain`. `metallib` fehlt ganz. Die Nachrüstung
+wäre eine Systemänderung und damit ausgeschlossen.
+
+**Drei Ersatzwege geprüft und verworfen.** Übersetzung zur Laufzeit in jedem Prozess über
+`newLibraryWithSource:` — dann laden die Wege nicht dieselbe Datei, und genau das war der
+Zweck. Eine über `serializeToURL:` geschriebene `MTLDynamicLibrary` — ein anderes Artefakt,
+treiberspezifisch, und MLXs Lader erwartet eine `.metallib`; das als „dieselbe Datei" zu
+verkaufen wäre der stille Ersatz, den der Auftrag verbietet. Die mitgelieferte
+`mlx.metallib` — sie enthält MLXs eigene Kernel, nicht die untersuchte Quelle.
+
+**Ergebnis: BLOCKIERT.** Kein Vergleichsprogramm gebaut, kein Korpus gefahren, keine
+Messung. B53 bleibt offen, B54 bleibt geschlossen, die `K=3840`-Beschleunigung bleibt
+gesperrt und der Bibliothekspfad unverändert nutzbar. Kein Produktprofil, kein Commit,
+kein Push. Ablage: `research/raw/B53_metal_toolchain_audit_20260910.json`,
+`B53_scope_limits_20260910.json`.
+
+## 2026-09-10 — B53: Toolchain installiert, vier Arme verglichen, keine Reproduktion
+
+Auftrag: ausschließlich Apples fehlende Metal Toolchain installieren und danach den
+isolierten Metal-Vergleich durchführen.
+
+**Installation, und nur sie.** `xcodebuild -downloadComponent MetalToolchain` lud
+`Metal Toolchain 17F109`, 688 MB. Kein macOS-, Xcode- oder MLX-Update, kein Wechsel der
+aktiven Entwicklerumgebung, keine weiteren Pakete, keine Sicherheitsänderungen. Es kam
+keine Rechteabfrage und keine Lizenzbestätigung, es war also keine Benutzeraktion nötig.
+Zustand vorher und nachher liegen als Prüfsummen und Werkzeugversionen ab. Alte Messungen
+wurden nicht auf den neuen Werkzeugstand umetikettiert.
+
+**Vorhandensein ist nicht Funktionsfähigkeit.** Ein minimaler Shader wurde zu `.air` und
+`.metallib` übersetzt, aus einem eigenständigen Programm geladen und auf der GPU
+ausgeführt: Eingaben 1, 2, 3, 4 plus sieben ergaben 8, 9, 10, 11. Erst danach ging es
+weiter.
+
+**Ein gemeinsames Artefakt.** Eine `.metallib` aus dem unveränderten Kernelkörper und
+Hilfsheader von `tools/b42_qmv_kernel.py`, abgegriffen genau so, wie das Modul sie an MLX
+übergibt. Ergänzt wurde allein die Funktionssignatur, weil MLX sie zur Laufzeit selbst
+erzeugt und ein Offline-Übersetzer sie ausgeschrieben braucht; sie enthält keine
+Arithmetik. Der Offline-Compiler steht per Vorgabe auf schneller Mathematik
+(`__FAST_MATH__ 1`), MLX übersetzt eigene Kernel dagegen safe, deshalb wurde
+`-fmetal-math-mode=safe` übergeben und protokolliert. Compilerbau, SDK, Sprachversion 400,
+Optionen und alle Prüfsummen stehen im Datensatz.
+
+**Vier Arme.** A ist der unveränderte Bibliotheksaufruf, B der vorhandene
+`mx.fast.metal_kernel`-Aufruf, C ein natives MLX-Programm, das die Datei über
+`Device::get_library(name, path)` und `Device::get_kernel` lädt, D ein eigenständiges
+Metal-Programm ohne MLX im Prozess, das exakt dieselbe Datei und Funktion lädt. A und B
+blieben unverändert. C und D verwenden eigene Puffer ohne Suballokation, protokollieren
+jede gebundene Länge und jeden Offset, laden Eingaben byteweise, halten die Puffer bis zur
+bestätigten Fertigstellung und prüfen den Command-Buffer-Status vor jedem Lesen. Beide
+setzen `32 x 2·ceil(N/8)` Threads in `32 x 2`-Threadgruppen ab und meldeten identische
+Bindungstabellen, etwa `w=3932160/3932160 ... out=4096/4096`, Status 4.
+
+**Ergebnis: keine Reproduktion.** Zuerst eine reale Projektion allein zur Vertragsprüfung,
+dann der vorab festgelegte Korpus: drei echte Gemma-Projektionen und sechs eingefrorene
+synthetische Fälle mit Auslöschung oder an bfloat16-Rundungsgrenzen, getrennt
+ausgewiesen. Neun Fälle, je genau eine einzige Ausgabe über alle vier Arme.
+
+**Was das heißt und was nicht.** Es streicht eine Erklärung über den Aufrufweg oder den
+Bibliothekslader für diese Eingaben. Es sagt nichts über die Eingaben, die damals
+abwichen; die sind verloren. Und B gegen C ändert auch den Übersetzungsweg, war also nie
+ein reiner Aufrufwegvergleich. Vier übereinstimmende Arme bedeuten „keine Reproduktion",
+nicht „B53 gelöst".
+
+Installationserfolg, Vergleichsbefund und Eintragsstand bleiben getrennt: Installation
+erfolgreich und nachgewiesen funktionsfähig, Vergleich ohne Reproduktion, **B53 weiter
+OFFEN**. B54 bleibt geschlossen, die `K=3840`-Beschleunigung bleibt gesperrt, der
+Bibliothekspfad unverändert nutzbar. Kein Produktprofil, kein Commit, kein Push. Ablage:
+`research/raw/B53_isolated_metal_preregistration_20260910.json`,
+`B53_shared_metallib_20260910.json`, `B53_four_arm_contract_20260910.json`,
+`B53_four_arm_comparison_20260910.json`, `B53_isolated_outcome_20260910.json`;
+Bauartefakte und Programme unter `.friday-data/b53-metal/`, eingefrorener Korpus unter
+`.friday-data/b53-corpus/`.
+
+## 2026-09-10 — Nachtrag: B53 hat reproduziert, und der falsche Arm ist die Bibliothek
+
+Unmittelbar nach dem Vierer-Vergleich lief die Gesamtsuite zur Kontrolle. Sie fiel, und
+diesmal lag die Sonde bereit: alle drei Breiten in einem Worker, Dumps vor dem Fehlschlag
+geschrieben, mit Eingaben, beiden Bibliotheksauswertungen, beiden Kernelausgaben,
+Kernelidentitäten und dem ersten abweichenden Byte.
+
+**Was die Dumps zeigen.** Die Bibliothek reproduziert sich selbst exakt, ist im Lauf also
+stabil. Übertragung und Spezialkernel sind byteidentisch zueinander; zwischen ihnen lag
+die Abweichung nie. Beide weichen von der Bibliothek ab.
+
+**Wer recht hat, gerechnet statt angenommen.** Die gespeicherten quantisierten Gewichte
+dequantisiert und die Skalarprodukte in float64 gerechnet: `mx.quantized_matmul` liegt bei
+jeder Breite rund 5,6 Prozent daneben, beide eigenen Kernel bei rund 0,8 Prozent, also
+etwa der Auflösung einer bfloat16-Ausgabe.
+
+| Breite | Bibliothek | Kernel |
+| --: | --: | --: |
+| 2048 | 5,61 % | 0,78 % |
+| 4096 | 5,62 % | 0,72 % |
+| 15360 | 5,56 % | 0,86 % |
+
+**Das dreht die Erzählung dieses Eintrags um.** Seit der ersten Beobachtung galt die
+Bibliothek als Referenz und die Kernel als Kandidat. Auf der Reproduktion ist es
+umgekehrt, und das passt zu den damals aufgezeichneten Bytes: der Kernelwert war der
+plausible, der *erwartete* lag mehrere Prozent daneben. Alle früheren Datensätze bleiben
+unverändert erhalten, ihre Lesart ist hiermit korrigiert.
+
+**Der Mechanismus fehlt weiter.** Vier Verdächtige, die der reproduzierende Worker
+tatsächlich ausgeführt hatte, wurden je in einem frischen Prozess auf denselben
+gespeicherten Bytes wiederholt: nichts davor, eine absichtliche Namenskollision mit
+verschiedenen Quellen, ein gepatchtes und zurückgesetztes `mx.fast.metal_kernel`, und ein
+gewöhnlicher eigener Kernelaufruf. In allen vieren stimmt die Bibliothek mit beiden
+Kerneln überein. Außerhalb des fehlerhaften Prozesses ist sie in Ordnung.
+
+**Stand.** Installation erfolgreich und nachgewiesen funktionsfähig. Vierer-Vergleich auf
+seinem Korpus ohne Reproduktion. Gesamtsuite mit Reproduktion, Eingaben gesichert, falscher
+Arm identifiziert, Mechanismus offen, nichts repariert. **B53 bleibt OFFEN.**
+`tests/test_qmv_k3840.py` bleibt rot: die Stolperdrahtprüfung hat ausgelöst und bleibt so.
+B54 bleibt geschlossen. Die Sperre der `K=3840`-Beschleunigung bleibt bestehen, ist nach
+diesem Befund aber vorsichtshalber und nicht mehr zielgenau, denn die Reproduktion zeigt
+auf den Bibliotheksaufruf. Kein Produktprofil, kein Commit, kein Push. Ablage:
+`research/raw/B53_reproduction_analysis_20260910.json`,
+`B53_library_poisoning_20260910.json`, `B53_phase_outcome_20260910.json`; Dumps unter
+`.friday-data/b53-dumps/`.
+
+## 2026-09-10 — B53 gelöst: ein durchgereichtes Standardgerät, kein Kernelfehler
+
+Auftrag: B53 über den Zustand des fehlerhaften Suite-Workers isolieren, kleiner
+reproduzierbarer Auslöser statt weiterem grünem Gesamtlauf.
+
+**Die Ursache.** `tests/engine/test_ironmule.py` setzt achtmal
+`mx.set_default_device(mx.cpu)`, damit ein kleines Modell nie um die GPU konkurriert, und
+stellt es kein einziges Mal zurück. `pytest-xdist` gibt einem Worker ganze Dateien
+nacheinander, ein Worker, der diese Datei ausgeführt hat, behält also die CPU als Vorgabe
+für jede weitere Datei. `mx.quantized_matmul` folgt dem Standardgerät, ein eigener
+Metal-Kernel kann nur auf der GPU laufen. Der Vergleich hielt damit einen Arm auf der CPU
+und einen auf der GPU und nannte den Unterschied eine verletzte Bitgleichheit.
+
+**Auf den gesicherten Bytes belegt.** Auf allen drei Dumps: `quantized_matmul` auf der CPU
+reproduziert exakt die gespeicherten Bibliotheksbytes, auf der GPU exakt die gespeicherten
+Kernelbytes. Drei Zustände, je in einem frischen Prozess auf denselben Eingaben: mit
+CPU-Vorgabe tritt der Fehler auf, unangetastet ist es sauber, und einmal auf CPU gesetzt
+und zurückgestellt ist es ebenfalls sauber.
+
+**Weder die Kernel noch MLX waren defekt.** Übertragung und Spezialkernel waren die ganze
+Zeit byteidentisch zueinander, und MLXs quantisiertes Matmul rechnet auf jedem Gerät
+richtig. Es wurden zwei Geräte verglichen, als wären sie eines.
+
+**Reparatur an der Ursache.** Eine autouse-Fixture in der leckenden Datei merkt sich das
+Standardgerät und stellt es nach jedem Test zurück. `ironmule/fast.py::_self_check` stellt
+es ebenfalls in einem `finally` zurück; es ist ein Skript-Einstiegspunkt und war nie Teil
+von `fuse_projections`. `tests/test_qmv_k3840.py` benennt jetzt seinen Aufrufvertrag: es
+prüft, dass das Standardgerät die GPU ist, und sagt warum, damit ein künftiges Leck als
+Leck scheitert statt wie ein Kernelfehler auszusehen. Kein Test entfernt, keine Toleranz
+gelockert, kein globales GPU-Erzwingen.
+
+**Abhilfe nachgewiesen.** Die leckende und die vergleichende Datei laufen in einem Prozess
+in der Reihenfolge des Workers und bestehen. Die neue Vertragsprüfung löst aus und nennt
+das Gerät, wenn die Vorgabe auf CPU bleibt. B51 vollständig wiederholt: zehn Fälle, 22
+Anfragen, Logit-Bitmuster je Schritt und vollständiger KV-Zustand je Anfrage identisch zu
+unabhängigen Bibliotheksläufen. Gesamtsuite ohne Modell 5691 Tests, 0 Fehlschläge, 20
+übersprungen.
+
+**B53 GESCHLOSSEN.** Die historischen Eingaben bleiben verloren; die Ursache ist an der
+Reproduktion belegt, deren Eingaben gesichert wurden. B54 bleibt geschlossen. Die Sperre
+der `K=3840`-Beschleunigung wurde gegen einen Defekt verhängt, der nicht in ihr lag; hier
+wird trotzdem nichts aktiviert: Standard bleibt aus, kein Produktprofil, und das Aufheben
+der Sperre ist eine eigene Entscheidung mit eigener Evidenz. Kein Commit, kein Push.
+Ablage: `research/raw/B53_device_trigger_20260910.json`,
+`B51S_identity_gap_20260910.json`, `B53_resolution_20260910.json`.
+
+**Was es gekostet hat.** Fünf Diagnosephasen behandelten die Bibliothek als Referenz und
+die Kernel als Kandidaten, und der Eintrag musste zweimal eine daraus gezogene
+Schlussfolgerung zurücknehmen. Die erste Sonde, die ihre Eingaben mitsicherte, hat es in
+einem einzigen Vergleich entschieden. Ein Stolperdraht, der die Fehlerdaten behält, ist
+mehr wert als beliebig viele saubere Wiederholungen.
+
+## 2026-09-10 — B55: eine Routingschicht über die belegten Pfade, und was sie kostete
+
+**Auftrag.** IronMule soll ein hardwarebewusster Runtime-Wrapper für lokale LLMs auf
+Apple Silicon werden: Modell laden, und die Runtime entscheidet selbst, welcher bereits
+belegte Ausführungspfad für diesen Request sinnvoll ist. Keine zweite Runtime, keine neue
+Optimierung, solange der Wrapper nicht selbst korrekt arbeitet.
+
+**Neue Projektregel, dauerhaft festgehalten.** Tier 0, `NO-GO` und jeder geschlossene
+Kill-Eintrag sind ab sofort historische Evidenz, kein dauerhaftes Verbot. Wiedereröffnung
+ist erlaubt bei neuer Hardwareevidenz, verändertem Mechanismus oder neuer
+Implementierung, und kostet genau eines: der neue Eintrag nennt den alten, zitiert dessen
+Kill-Kriterium und benennt die erfüllte Bedingung. Steht in `AGENTS.md`, `BACKLOG.md`,
+`docs/BACKLOG.md`. `HARDWARE_AWARE_INFERENCE_ARCHITECTURE.md` sagte, Custom-Metal-Arbeit
+sei „begründet ausgeschlossen"; das ist korrigiert. Das Argument galt gegen *eine*
+Erwartung — dass ein einzelner Kernel die Tokenabweichung zwischen Breiten behebt — und
+nie gegen eigene Metal-Pfade als solche. `B42`/`B44` ist genau so ein Pfad und zugelassen.
+
+**Was gebaut wurde.** `ironmule/router.py`: `ExecutionRouter` ist eine reine Funktion von
+Dispatch-Zeit-Fakten, `AppleRuntime` hält eine `Runtime` und eine Entscheidung. Vier
+Regeln halten es dicht. Nur Dispatch-Zeit-Fakten. Ein Einzelrequest wartet nie auf einen
+Partner. Ein unbekannter Fingerprint fällt auf den sicheren Pfad — `load_profile`
+schließt bereits gegen fremde Maschine, Revision und Bibliotheksversion. Und der Router
+wechselt **keinen** Ausführungsplan: `E9` hat Pläne bis zu `4,31` Logits auseinander
+gemessen, also bleibt das eine Entscheidung des Aufrufers. Die Throughput/Paired-Aufteilung
+delegiert der Router an `AutomaticMode`, das sie schon besaß; ein zweiter Mechanismus
+dafür wäre genau der Fehler, den `B54` teuer gemacht hat.
+
+**Der Autotuner lief zuerst.** Ohne Profil ist diese Maschine unqualifiziert und der
+Router verweigert korrekterweise jede Wahl. `ironmule.tune()` auf `gemma-3-4b-it-4bit`:
+`14,71%` schneller Ende zu Ende, Token identisch, paired CI `[0,8412; 0,9281]`.
+Knopfsatz `compiled_fixed_cache`, `fused_argmax`, `head_skip_prefill`, `readback_every=2`.
+
+**Versuch 1 war ein NO-GO, und das war der Wert des Tages.** Der geroutete Einzelrequest
+lief `3,7%` langsamer als der von Hand benannte Modus — der Wrapper fiel durch sein
+eigenes Gate. Direkte Profilierung statt weiterer Blöcke: `router.decide()` kostet
+`0,006 ms`, `Telemetry.snapshot()` `0,020 ms`, und **zwei `sysctl(8)`-Subprozesse für die
+Swap-Sonde kosten `17,4 ms` von `21 ms`**. Ein Telemetriefeld, das die Zahl verändert,
+über die es berichtet, ist keine Telemetrie. `ironmule.hw.swap_used_bytes` liest
+`vm.swapusage` jetzt über `sysctlbyname`: `0,0015 ms`, byteexakt gegen `sysctl -n`
+geprüft. Faktor `5800`.
+
+**Versuch 3 hatte ein Designproblem, kein Ergebnis.** Nach dem Einbau des
+`objective`-Parameters riss die Zwei-Request-Last die `2%`-Äquivalenzgrenze knapp
+(`CI` bis `1,0234`). Die Ursache war Streuung, nicht Kosten: eine enge verschränkte
+A/B-Messung zeigte pro Dispatch rund `±5%`. Acht gespiegelte Blöcke tragen das nicht, und
+Spiegelung setzt bei vier Armen denselben Arm auf beide Seiten einer Blockgrenze.
+Sechzehn Blöcke mit rotierender Armreihenfolge wurden **vorher** neu vorregistriert
+(`B55_router_preregistration_20260910_v3.json`), nicht hinterher begründet. Alle vier
+Versuche bleiben erhalten.
+
+**Versuch 4: `ROUTER_REACHES_BEST`.** `224` verglichene Requests, Token-IDs, Zählungen und
+Stop-Gründe über alle vier Arme identisch, null Fallbacks, kein Swap-Wachstum. Der Router
+erreicht auf jeder Last den besseren festen Modus und ist über die gemischte Sequenz
+`11,9%` schneller als ein festes `InteractiveMode`. Zahlen im Ledger unter `B55`.
+
+**Was der Router nicht kann, und das steht so im Ledger.** Er schlägt ein festes
+`ThroughputMode` auf Wanduhrzeit nicht — auf dieser Last ist dieser Modus nie schlechter.
+Der eigentliche Befund liegt auf der anderen Achse: bei zwei bereiten Requests kauft
+Gruppierung `+7,7%` aggregierte Token pro Sekunde für `+74,9%` Medianlatenz pro Request.
+Kein Dispatch-Zeit-Fakt löst diesen Konflikt auf, also ist `objective` ein Parameter des
+Aufrufers und keine Vermutung. `objective="latency"` blieb auf jeder Last sequenziell und
+lag innerhalb der Grenze am `InteractiveMode`-Arm. Ein fester Modus deckt eine Achse ab,
+diese Runtime beide.
+
+**Der geroutete Paired-Pfad ist unbelegt.** Diese Maschine trägt keinen
+Service-Strategy-Datensatz, also hat `AutomaticMode` korrekt beim etablierten Modus
+bleiben müssen. Das ist ein bestandener Fail-Closed-Test und kein Beleg für die
+Paired-Route unter Routing. Offen als `B58`.
+
+**Testlage.** `3177` Tests, `21` übersprungen, `2542` Subtests, sequenziell `0` Fehler.
+Unter `-n auto` fällt `test_q3f_real_cleanup_keeps_external_process_alive` gelegentlich:
+das Gate verlangt, dass jeder neue Prozess gleicher UID als unbeteiligt bewiesen werden
+kann, und ein `mdworker_shared`, der zwischen den beiden Snapshots startet, kann das
+nicht. Ursache ist Prozess-Rauschen der Maschine — auch der parallele Testlauf selbst —
+nicht der Code; gegen `HEAD` verhält es sich identisch. Nicht angefasst: ein absichtlich
+striktes Cleanup-Gate lockert man nicht nebenbei.
+
+**Backlog.** `B27` ist geschlossen, das Ergebnis steht im Ledger. Neu offen: `B56`
+(Objective pro Request statt pro Runtime), `B57` (Kernel pro Form über das Profil
+qualifizieren), `B58` (Paired-Route unter echter Ankunftsfolge), `B59` (nativer
+Metal-Pfad gegen `mx.fast.metal_kernel`, mit der Erwartung, dass er nichts bringt, weil
+Decode bandbreitengebunden ist).
+
+## 2026-09-10 — B57/B60/B61: die Komposition auf 4B, und was den 12B-Autotuner wirklich beendet hat
+
+**Auftrag.** Zuerst die vorregistrierte 4B-Composition unverändert zu Ende führen, danach den
+abgebrochenen 12B-Autotuner minimal und sicher diagnostizieren. Ziel: `C` auf 12B entweder
+qualifizierbar machen oder sauber als `BLOCKED` einstufen. Keine Silicon-Characterization.
+
+**Die 4B-Composition steht.** Selektion und Bestätigung getrennt, je zwölf Blöcke, Token,
+Zählungen und Stop-Gründe innerhalb der Plan-Art identisch, null Fallbacks, null Swapouts,
+freier Speicher nie unter `70%`, Peak-RSS `3,77 GB`. Zwei Klassen nehmen einen Stack auf:
+`session_warm` bei `0,4512` und `pair_session` bei `0,4307`, beide gegen denselben Plan mit
+fallengelassener Wiederverwendung. Sechs Klassen behalten ihre Referenz. `C` lief auf 4B nie
+— dieses Modell admittiert den Paired-Pfad nicht.
+
+**Ein Vorbehalt, der in die Zahl gehört.** Die Selektion nannte `B` und `B_t`, die
+Bestätigung `E`. Die Intervalle überlappen fast vollständig, und die Adoptionsregel nimmt den
+kleineren Median. Aufgenommen ist `tuned_knobs + prefix_cache + objective_router`; gezeigt ist,
+dass die Prefix-Wiederverwendung der ganze Effekt ist.
+
+**Eine parallele Session maß dasselbe gleichzeitig.** Deren Selektion hatte am Lastgate mit
+`4,17` abgelehnt, deren Skript den Exit-Code nicht geprüft und die Bestätigung trotzdem
+gestartet. Das Ergebnis ist gültig und bleibt erhalten, aber ohne Selektion davor. Der
+`gpu_busy`-Gate hat meinen Lauf korrekt so lange zurückgehalten. Zwei Agenten auf einer GPU
+brauchen mehr als ein Gate im Messwerkzeug.
+
+**Der 12B-Abbruch war kein Speicherproblem.** Der Verdacht lag auf Swap-Wachstum und
+`wired_fraction=0.6`, und der Unified Log stützte ihn scheinbar: freier Speicher auf `5,96 GB`,
+Compressor auf `23,08 GB`, sekündliches Reaping von Idle-Prozessen. Alles echt, alles nicht der
+Mechanismus. Es wurde an diesem Tag kein einziger `JetsamEvent`-Report geschrieben, auf einer
+Maschine, die solche schreibt.
+
+**Die Ursache steht auf drei Armen.** `Engine.__init__` nimmt bei `wired_fraction > 0` den Zweig
+nach `ironmule.hw.static_facts()`, und das liest jede Angabe über einen `sysctl`-Subprozess.
+Der Q3f-Guard blockiert `subprocess.Popen` im Bestätigungs-Child, also wirft der Konstruktor
+`GuardViolation` und das Kind endet mit Status `1` — nicht signalisiert, nicht gekillt, nicht
+speicherlos. Über `ab.run` unverändert auf einem `1B`-Modell: `0.0` läuft durch, `0.6` scheitert,
+`fuse_projections=True` läuft durch. Auf dem `12B` selbst dasselbe, `13,1 s`, Peak-RSS `7,41 GB`,
+und mit abgeschaltetem Knopf `Status 0` und acht deterministische Token.
+
+**Was der abgebrochene Lauf gekostet hat, war nicht die Maschine, sondern der Stream.** Der
+Traceback wurde geschrieben und ging in eine Pipe, die ihn verwarf. Fünf Minuten Unified-Log-
+Lesen und zwei Minuten `1B`-Reproduktion haben entschieden, was aus dem Speicherdruck heraus
+nicht zu entscheiden war. Ein Harness, der Returncode und beide Ströme besitzt, war die ganze
+Reparatur.
+
+**Der Defekt bleibt stehen.** `wired_fraction` kann auf keiner Maschine eine Bestätigung
+überleben und daher nie in ein Profil gelangen. Die Reparatur wäre `hw._sysctl` über
+`sysctlbyname`, genau wie `swap_used_bytes` es seit `B55` macht. Nicht angewendet: das ist
+ausgelieferter Code und eine eigene Entscheidung. Offen als `B62`.
+
+**Das 12B-Profil steht.** Screening ohne genau diesen einen Eintrag, `tune()` sonst unverändert,
+Bestätigung regulär über sechs Prozesse: `7,97%`, `CI [0,9095; 0,9285]`, Token identisch.
+`fuse_projections` wird diesmal verworfen — Pfadabhängigkeit des Koordinatenabstiegs, nicht ein
+Widerspruch. Die Bestätigung selbst kostete `19%` freien Speicher und `15 GB` Swap-Wachstum,
+weil zwei `12B`-Modelle gleichzeitig resident sind. Genau der Druck, den der abgebrochene Lauf
+zeigte, und dort ebenfalls nicht die Ursache.
+
+**`C` ist gemessen und trotzdem nicht qualifiziert.** Mit dem Profil war `C` zum ersten Mal
+zugelassen und gewinnt alle vier Throughput-Klassen: `0,9315`, `0,9448`, `0,9686` gegen den
+gruppierten Pfad und `0,3342` gegen den kalten Prefix. Die Selektion war auf jedem Gate sauber.
+Die Bestätigung ist `BLOCKED`, an einem einzigen Gate: die Regel blockt bei *jedem* Swapout, und
+der Zähler sprang einmal um `17642` Seiten zwischen Block `1` und `2` und blieb danach zehn
+Blöcke flach. Belegter Swap fiel über den ganzen Lauf, `10,13` auf `9,42 GB` — die Maschine
+räumte auf, was `B61` hinterlassen hatte.
+
+**Nicht wiederholt.** Die Zahlen stimmen über zwei unabhängige Läufe überein, aber eine
+blockierte Bestätigung ist keine Bestätigung. Einen Lauf zu wiederholen, weil sein Verdikt nicht
+gefällt, ist genau der Fehler, gegen den das Gate steht. Ob eine einzige saubere Wiederholung
+autorisiert wird, steht als `B63` im Backlog und ist keine Entscheidung der Studie über sich
+selbst.
+
+**Backlog.** `B60` geschlossen, Ergebnis im Ledger. Neu offen: `B62` (der `_sysctl`-Subprozess
+im Wired-Limit-Zweig), `B63` (eine Wiederholung der blockierten 12B-Bestätigung, oder keine).
+Kein Commit, kein Push.
+
+## 2026-09-10 — B63 und B62: eine autorisierte Wiederholung, und der Knopf, der nie bestätigt werden konnte
+
+**B63, die eine autorisierte Wiederholung.** Messcode byteidentisch zum blockierten Lauf,
+kombinierter Digest `49212d837b055bc5` in beiden Datensätzen. Neu war nur eine
+Startbedingung, kein Gate: nicht beginnen, bevor der Swapout-Zähler `900` Sekunden lang bei
+jedem Sample denselben Wert liest, danach `gpu_busy` leer und Last unter `3,0`.
+
+**Die Maschine hat das Fenster einmal von selbst gerissen.** Ohne jede Messung sprang der
+Zähler um `19 704` Seiten, die Beobachtung begann neu. Später war es ruhig, `1635` Sekunden
+flach, Last `2,60`, und der Lauf startete. Nichts wurde gepurgt, neu gestartet, beendet oder
+getunt.
+
+**Wieder `BLOCKED`, am selben Gate.** Neun Blöcke flach, ein Ausbruch von `28 984` Seiten,
+zwei Blöcke flach. Belegter Swap fiel über den ganzen Lauf von `8,33` auf `7,11 GB`, dieselbe
+Signatur wie beim ersten Mal. Alles andere bestand: Token identisch, null Fallbacks, kein
+gestörter Block, freier Speicher `37` bis `46 %`, MLX-Peak `8,85 GB`.
+
+**Über drei Läufe stimmen die Zahlen und trotzdem ist nichts qualifiziert.** In der sauberen
+Selektion und in beiden blockierten Bestätigungen liegt `C`s Intervall in allen vier
+Throughput-Klassen vollständig unter `1,0`, und die Korrektheit ist jedes Mal identisch. Die
+Adoptionsregel verlangt zusätzlich die Ressourcengates, und die bestanden nicht. Keine
+Schwelle verschoben, keine dritte Sitzung. `C` auf `12B` bleibt **nicht qualifiziert**.
+
+**Was daran unangenehm ist, und offen bleibt.** Das Gate blockt bei *jedem* Swapout, auf
+einer Maschine, die eine mehrere Gigabyte große Swapdatei hält und sie nach eigenem Zeitplan
+umräumt, während der belegte Swap in beiden Läufen fiel. Ob „jeder Swapout" hier das richtige
+Instrument ist, ist eine Frage über das Gate, nicht über `C`. Eine Regel, die nach einem von
+ihr blockierten Lauf gelockert wird, kann diesen Lauf nicht nachträglich segnen. Offen als
+`B65`, und die beiden Sitzungen bleiben blockiert, was immer dort herauskommt.
+
+**B62, der belegte Produktionsdefekt.** `Engine.__init__` las die Speichergröße über
+`static_facts()`, das für jede Angabe einen `sysctl`-Subprozess startet. Der Q3f-Guard
+blockiert `subprocess.Popen` im Bestätigungs-Child, also endete jedes Kind mit
+`wired_fraction > 0` bei Status `1`. Ein Knopf, der in `SEARCH` steht und die darauf folgende
+Bestätigung niemals überleben kann, ist keine Option, sondern eine Falle.
+
+**Der Fix ist schmal, weil die Infrastruktur schon da war.** `hw.installed_memory_bytes()`
+liest `hw.memsize` über `sysctlbyname` auf demselben ctypes-Pfad, den `swap_used_bytes` seit
+`B55` für `vm.swapusage` benutzt, und genau eine Aufrufstelle wechselt. `static_facts()`
+bleibt, wie es war: es läuft im Elternprozess, wo ein Subprozess nichts kostet, das zählt.
+Zwei Quelldateien, eine neue Funktion, eine geänderte Zeile.
+
+**Geprüft, nicht angenommen.** Wert gleich `sysctl -n hw.memsize`. Der vorher scheiternde Arm
+läuft im bewachten Kind durch, mit null Guard-Ereignissen; die beiden Kontrollarme unverändert.
+Kein Subprozess im Zweig, durch Umschließen von `Popen` festgestellt. Fingerprint
+`dc652d66f24ac207` unverändert, beide gespeicherten Profile laden und bleiben akzeptiert.
+
+**Fail-closed ist jetzt strenger als vorher.** Eine nicht lesbare Größe wirft und lässt das
+prozessglobale Wired-Limit unangetastet. Vorher ergab ein fehlgeschlagener Lesevorgang
+`int(None or 0) * fraction = 0` und setzte still ein Nullimit — ein falsches Limit, das wie
+ein funktionierendes aussah.
+
+**Vier bestehende Tests mussten mitziehen.** Sie stubbten `hw.static_facts`, um die Größe zu
+fälschen, und stubben jetzt `hw.installed_memory_bytes`. Keine Behauptung abgeschwächt, die
+erwarteten Limits identisch. Gesamtsuite: zwei Fehlschläge, beide die bereits in `B55`
+protokollierten Parallel-Flakes der Prozess-Cleanup-Gates. Sequenziell grün, und keine der
+beiden Dateien berührt den Wired-Pfad.
+
+**Nichts rehabilitiert.** `wired_fraction` kommt nicht in ein Profil und nicht in einen Tuner
+zurück. Beide gespeicherten Profile tragen weiter `0,0`, keines wurde nachgetunt. Ob der Knopf
+sich lohnt, ist eine eigene vorregistrierte Studie: `B64`.
+
+**Backlog.** `B62` und `B63` geschlossen, Ergebnisse im Ledger. Neu offen: `B64` (lohnt sich
+`wired_fraction`, jetzt wo er bestätigt werden kann), `B65` (ist „jeder Swapout" das richtige
+Gate auf dieser Maschine), `B66` (Silicon Characterization gegen den jeweils besten
+bestätigten vollständigen Stack, vorbereitet und nicht gestartet). Kein Commit, kein Push.
+
+## 2026-09-10 — B65 und B67: das Gate maß die Maschine, nicht den Lauf
+
+**Der Befund kostete keine einzige neue Modellmessung.** Während des B63-Vorstartfensters,
+in dem nichts gemessen wurde, kein Modell geladen war und keine GPU-Arbeit lief, bewegte
+sich der systemweite Swapout-Zähler um `19 704` Seiten. Das alte Gate hätte ein Fenster
+blockiert, in dem gar nichts stattfand. Ein Kriterium, das auf einer leeren Maschine
+auslöst, misst nicht den Lauf.
+
+**Warum es das tut.** `vm_stat`s `Swapouts` ist systemweit und monoton. Es zählt jede Seite,
+die diese Maschine aus irgendeinem Grund in den Swap schreibt, auch das Kompaktieren einer
+Swapdatei, die sie ohnehin hält. Apple definiert Speicherdruck nicht so, und die eigene
+Antwort des Systems, `kern.memorystatus_vm_pressure_level`, ist ohne Subprozess lesbar.
+
+**Native Sonden.** `host_statistics64` mit `HOST_VM_INFO64` liefert jede Zahl, die `vm_stat`
+druckt; die Druckstufe kommt über `sysctlbyname`. Beide liegen jetzt in `ironmule/hw.py`
+neben `swap_used_bytes`. Geprüft, indem die Schalenmessung zwischen zwei native gelegt wird:
+ein monotoner Zähler läuft zwischen zwei Lesungen weiter, Gleichheit ist die falsche Prüfung.
+Der erste Versuch verlangte sie und scheiterte an `pageins` um exakt `1`.
+
+**Das Kandidatengate wurde vor der ersten Auswertung geschrieben.** Drei seiner Schwellen
+sind unverändert übernommen, eine ist Apples eigene Semantik, und die Swap-Bedingung ist ein
+Nullbudget — gewählt, damit keine Zahl gewählt werden muss und keine Ausbruchsgröße
+umgangen werden kann. Der Swapout-Zähler bleibt als Evidenz im Datensatz und hört auf, ein
+Urteil zu sein.
+
+**Trennung.** Sechs ruhige Läufe bestehen beide Gates. Der eine Lauf mit unabhängigem Beleg
+für Aushungern — B61s Tune-Bestätigung mit zwei residenten Modellen, Swap `+15,56 GB`,
+freier Speicher auf `19 %` — wird von beiden blockiert. Die Leerlaufkontrolle wird nur vom
+alten blockiert. Ein Korpusdurchlauf über die restlichen Ressourcenspuren fand drei weitere,
+alle einig.
+
+**Die beiden strittigen C-Läufe sind konstruktiv aus der Evidenz ausgeschlossen.** Sie
+werden bewertet, tragen aber weder zum Urteil noch zu einer Schwelle bei, und sie bleiben
+BLOCKED.
+
+**Restrisiko, offen gesagt.** Die Empfindlichkeit steht auf einem einzigen ausgehungerten
+Lauf. Das neue Gate ist auf jedem Kriterium, das den Lauf beschreibt, mindestens so streng
+wie das alte, und lässt genau das eine fallen, das auf einer leeren Maschine auslöst.
+
+**Ein Testfehler, der beinahe durchging.** Die ersten zwölf Gate-Tests prüften eine Kopie
+der Logik im Testmodul. Eine Kopie kann grün bleiben, während der Harness abdriftet. Das
+Gate steht jetzt als `evaluate_resource_gate` an einer Stelle, und die Tests rufen genau
+diese, samt der Zusicherung, dass das alte Gate unverändert weiterblockt.
+
+**B67: `C` auf 12B ist bestätigt.** Erste Bestätigung unter dem qualifizierten Gate,
+ausdrücklich keine Wiederholung von B63. Zwölf Blöcke, Token identisch, null Fallbacks, kein
+gestörter Block, freier Speicher nie unter `40 %`, Druckstufe an jeder Sonde normal.
+`pair_short` `0,9302`, `pair_staggered` `0,9457`, `pair_long` `0,9680` gegen den gruppierten
+Pfad, `pair_session` `0,3360` gegen den kalten Prefix.
+
+**Und es hätte das neue Gate nicht gebraucht.** Der Swapout-Zähler blieb bei Delta `0`. Der
+Lauf hätte auch das alte Gate bestanden. Das gehört gesagt: das Ergebnis hängt nicht an der
+Änderung, die es möglich gemacht hat, danach zu fragen.
+
+**Backlog.** `B65` geschlossen, Ergebnis im Ledger. `B66` freigegeben, weil beide Modelle
+jetzt einen bestätigten vollständigen Stack als Referenz haben. `B64` bleibt offen. Kein
+Produktprofil, keine Aktivierung, kein Commit, kein Push.

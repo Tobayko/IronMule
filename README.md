@@ -128,10 +128,77 @@ cached commit is recommended; without it, exactly one cached revision must exist
 loading fails closed. See the [runtime guide](docs/RUNTIME.md) for concurrent
 requests, throughput mode, reusable sessions, and exact model identity.
 
+### Let the runtime choose the path
+
+`Runtime` never changes the service mode you gave it. `AppleRuntime` is the entry point
+for the other case: load a model and let it pick, per dispatch, from the paths this
+machine has already qualified.
+
+```python
+import ironmule
+
+runtime = ironmule.AppleRuntime.load()          # or objective="latency"
+
+print(runtime.generate("Explain unified memory.").text)
+print(runtime.last_decision["route"], runtime.last_decision["reason"])
+```
+
+One request takes the sequential path immediately and never waits for a partner.
+Several requests handed over together are grouped, and the tuned profile decides from
+there whether the paired path applies. An unqualified machine, model revision or library
+build routes nothing at all. The router reports an execution plan; it never substitutes
+one, because plans change the output.
+
+`objective` names the trade rather than guessing it. `B55` measured it on an M1 Max with
+Gemma 3 4B: at two ready requests, grouping bought `+7.7%` aggregate tokens per second
+and cost `+74.9%` median per-request latency. `objective="latency"` keeps every dispatch
+sequential. See [`research/LEDGER.md`](research/LEDGER.md) entry `B55` for the full
+comparison against both fixed modes.
+
+### One dispatch, two objectives
+
+A request may name its own objective, so a chat stream and a batch job can share one
+loaded model:
+
+```python
+from ironmule import Request
+
+results = runtime.serve([
+    Request(prompt_ids=chat, objective="latency"),
+    Request(prompt_ids=batch_a, objective="throughput"),
+    Request(prompt_ids=batch_b, objective="throughput"),
+])
+print(runtime.last_decision["route_by_request"])
+print(runtime.last_decision["latency_protected"])
+```
+
+A request that names nothing inherits the runtime's objective, so code written before
+this existed behaves exactly as it did. The dispatch is split into one cohort per
+objective, latency first, and the latency requests are never grouped with anything.
+
+**`objective="latency"` is a dispatch preference, not a latency guarantee.** When both
+objectives arrive together the preference holds: a latency request beside a foreign
+throughput request measured `0.98` and `1.00` against matched controls. When it becomes
+servable *after* a throughput cohort has already started, it does not: `B56` measured it
+at `2.11x` its own latency, and a hand-written caller doing the same split measured
+`2.12x`, so this is the device rather than the routing.
+
+Nothing available inside that dispatch fixes it. Letting the request join the group costs
+`2.05x` and loses the latency path as well. Giving it its own process and its own
+submission to the GPU halves the wait but still costs `1.50x` solo, reproducibly across
+two confirmation sessions, because two submission streams share one device: the request's
+decode rate falls from `75` to `50` tokens per second while the cohort's completion rises
+by `22%`. `B56b` is `NO_GO` and that path is not pursued.
+
+`last_decision["latency_protected"]` reports which case a dispatch was in. A caller that
+receives a request later should dispatch it later, which is what a server does anyway.
+
 ## What IronMule includes
 
 - **Two service modes:** choose low single-request latency or higher aggregate
   throughput.
+- **One router over both:** `AppleRuntime` picks a qualified path per dispatch from
+  facts known at dispatch, and records the route, the reason and the evidence.
 - **Prefix KV-cache reuse:** reuse a declared shared prompt without silently changing
   the execution plan.
 - **Correctness checks and safe fallback:** failed grouped work restarts on the
