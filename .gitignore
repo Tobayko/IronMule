@@ -40,3 +40,6 @@ experiments/raw/
 .idea/
 .vscode/
 .worktrees/
+
+# Optional local developer tooling, not a product dependency (see CONTRIBUTING.md)
+ProjectAtlas/

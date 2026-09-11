@@ -48,19 +48,36 @@ positive ones are worth anything.
 
 ```bash
 pip install -e ".[dev]"
-pytest tests/test_ironmule_runtime.py -q              # fast, no model needed
-pytest tests/test_ironmule_runtime_integration.py -q  # needs a local model snapshot
+pytest tests/engine -q -m "not integration"   # fast, no model needed
+pytest tests/engine -q -m integration         # needs a local model snapshot
 python -m ironmule.benchmark --requests 6 --max-tokens 48
 ```
+
+`tests/engine/` is the engine package's own suite and runs on any Mac. The rest of
+`tests/` is the research suite: it binds to the machine that holds this project's
+measured evidence and removes itself from collection anywhere else.
 
 Before opening an environment or installation issue, run `ironmule doctor` and include
 its output. To share a result from another Mac, use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md)
 and paste the complete benchmark output.
 
 A change that touches the executor, the plans or the cache must keep
-`tests/test_ironmule_runtime.py` green. Those tests cover token identity, stop
+`tests/engine/test_ironmule_runtime.py` green. Those tests cover token identity, stop
 reasons, ragged lengths, early finishers, reversed order, staggered arrival, group
 widths one to four, fallback, and the absence of state aliasing.
+
+## Optional local tooling
+
+[ProjectAtlas](https://github.com/styler-ai/ProjectAtlas) is a repository-navigation
+tool some of this project's development uses. It is not a dependency of IronMule and
+nothing in the package, the tests or CI imports it. Clone it beside your checkout if
+you want it:
+
+```bash
+git clone https://github.com/styler-ai/ProjectAtlas.git ProjectAtlas
+```
+
+`ProjectAtlas/` is ignored, so the clone stays out of the repository.
 
 ## Contributions and licence
 
