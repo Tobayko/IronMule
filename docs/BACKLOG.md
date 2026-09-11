@@ -175,14 +175,13 @@ user-approved legal review and resulting documents.
 | `B6` | Cost ratio of `M=4` vs `M=1` against model size | hours | 0, it is a precondition | none |
 | `B26` | Qwen3.8 27B: same size, different family | hours | 0, it separates two explanations | none |
 | `B30` | Widen Qwen grouped batch-1 groups to 5/6 | days | 0 – 10% | medium, throughput/correctness |
-| `B8` | Native decode loop, no Python per operation | weeks | 10 – 25% absolute | low |
-| `B9` | Record the decode step once, replay it | weeks | 10 – 30% absolute | low |
-| `B10` | Fewer kernels per step | weeks | 5 – 15% | low |
+| `B8` | Native decode loop, no Python per operation | weeks | **at most 32/25/17% at 1B/4B/12B** (`B24`) | low |
+| `B9` | Record the decode step once, replay it | weeks | **at most 32/25/17% at 1B/4B/12B** (`B24`) | low |
+| `B10` | Fewer kernels per step | weeks | **at most 0.7% of GPU time** (`B24S`) | low |
 | `B11` | Layer-level pipelining across the group | weeks | 5 – 15% | medium |
 | `B12` | Jump the `M=8` valley to width 16 | days | up to 40% throughput | **high** |
 | `B13` | Speculative decoding with a real draft model | weeks | 1.5 – 3x at 27B, **rejected once at 4B** | low if verified greedily |
 | `B14` | A draft head on the target model | months | 2 – 3x | low if verified greedily |
-| `B15` | Exact-but-pruned `lm_head` | weeks | up to 16% at 4B, ~5% at 27B | low if the bound is proved |
 | `B16` | Lower or mixed weight precision | days | 20 – 40% | **high**, quality |
 | `B17` | KV cache quantisation | days | 0 – 5% | medium |
 | `B18` | Adaptive layer skip | weeks | 10 – 40% | **high**, quality |
@@ -191,8 +190,16 @@ user-approved legal review and resulting documents.
 | `B21` | Small projections on the CPU while the GPU runs | weeks | 0 – 10% | medium |
 | `B22` | Two processes, one GPU | days | 0, it is a control | none |
 | `B23` | Weight layout tuned for `M=1` | weeks | 0 – 20% | low |
-| `B24` | Real GPU counters instead of wall clock | days | 0, it is instrumentation | none |
+| `B24` | Real GPU counters instead of wall clock | **answered 2026-09-09** | 0, it is instrumentation | none |
 | `B27` | Evidence-bound execution strategies | audit first, then weeks | 0 immediate; prevents regressions and unsafe reuse | low for audit, medium for routing |
+| `B41` | Pad the reduction dimension to 512 | **measured 2026-09-09** | **3.4% at 12B**, -5.8% at 1B, 0 at 4B | medium, logit difference |
+| `B42` | `K=3840`-specialised matvec, bit-identical | **confirmed 2026-09-09** | **7-10% kernel, 1.0-1.3% model** (`B43`) | none, identity proven |
+| `B44` | The same kernel as an opt-in knob, default off | **integrated 2026-09-09** | **0.8% shipped** (`B44M`) | none, identity proven |
+| `B45` | One weight sweep for two requests | **prototype 2026-09-09** | **17.7% vs serial** (`B45M`) | none, identity proven; latency trade |
+| `B46` | The same pairing against the shipped throughput path | **measured 2026-09-09** | **12.7-12.8% vs `ThroughputMode`** (`B46`) | none, identity proven; no latency cost |
+| `B47` | That pairing as an opt-in mode, default off | **opt-in ready 2026-09-09** | **12.5% through the shipped surface** (`B47U`) | none; cancellation untested |
+| `B48` | Sharing `K=4096` and `K=15360` as well | **goal not met 2026-09-09** | kernel yes, **~1% product**, gate was 5% | none, identity proven |
+| `B49` | One sweep for four requests at `K=3840` | **kernel no-go 2026-09-09** | **11% slower than two shared pairs** | none, identity proven |
 
 ---
 
@@ -463,55 +470,42 @@ with the decision to document the quirk permanently rather than change it.
 
 ---
 
-## Architecture track — audit first, not a performance claim
+## Tier 0 — measured and rejected. Re-open only under the rule below.
 
-### `B27` — Evidence-bound execution strategies
+### Rejected is not forbidden (project rule, 2026-09-10)
 
-**Mechanism.** The repository already contains qualified fast paths, fingerprints,
-raw measurements and conservative runtime fallbacks, but they are not yet expressed
-through one explicit contract equivalent to `ExecutionStrategy + ValidityDomain +
-EvidenceRecord = TrustedExecutionProfile`. Representing the existing paths through
-that contract should let the runtime select only strategies whose evidence matches the
-current hardware, model, framework and workload, while a regression gate prevents a
-cleaner architecture from silently discarding a measured gain. The first stage is
-read-only inventory and baseline capture; it changes no routing decision.
+Tier 0, `NO-GO` and every closed kill entry are **historical evidence, not a permanent
+ban**. They record what a specific mechanism cost on a specific fingerprint, and that is
+exactly how far they reach.
 
-**Test.** Inventory the ledger, preregistrations, raw results and all runtime selection
-boundaries; reproduce the current `main` correctness and performance baseline; produce
-a gap analysis; then, only after architecture approval, encode one existing qualified
-path without changing its observable selection or fallback behaviour. Require exact
-token/stop/count equivalence and a before/after regression comparison under the same
-fingerprint and workload.
+Any of them may be re-opened when one of three things is new:
 
-**Kill/Pivot.** If the current evidence cannot be reconstructed with raw samples and
-provenance, if the abstraction requires a parallel execution implementation, or if it
-weakens fail-closed correctness/fallback semantics, stop at the audit and keep the
-current deterministic routing. Any evidence-domain mismatch must yield
-`REVALIDATION_REQUIRED` or the baseline, never an inferred promotion.
+* **new hardware evidence** — a different chip, memory size, MLX/mlx-lm build or model
+  revision than the one the entry was measured on;
+* **a changed mechanism** — the reason the entry died no longer applies, stated
+  explicitly against the old entry's own kill criterion;
+* **a new implementation** — a different code path, kernel or execution route, not a
+  re-run of the same one.
 
-**Current result.** D1 was approved and implemented as a non-imported stdlib-only
-contract on commit `0b14eb6`; it has no persistence, selection or activation path.
-B27d preserved token/resource correctness and found no 12B regression, but its 4B
-post/pre screen was common-mode 5.7–6.4% slower in both Interactive and Throughput
-arms and therefore remains `INCONCLUSIVE_POTENTIAL_REGRESSION`. B27e did not reproduce
-a consistent D1 slowdown: block 0 was within 2%, while mirrored block 1 made the
-first-running D1 appear 5.8–7.9% faster than OLD. Its frozen class is
-`ORDER_OR_TEMPORAL_DRIFT`, so B27d formally remains inconclusive. The execution
-surfaces are byte-identical and D1 stays off the runtime import graph; no neutrality,
-causality, qualification or activation claim is made.
+Re-opening costs one thing: the new entry must name the old entry, quote the old kill
+criterion, and say which of the three conditions above is met. Repeating an experiment
+with no such statement is still forbidden, because that is what wastes GPU time. Refusing
+a method *only* because an older attempt failed is equally forbidden, because that is what
+freezes a runtime.
 
-Approved D2 is complete: Runtime fingerprint v2 and tuned-profile conditions v2 bind
-exact local revision, complete manifest, architecture, quantisation and tokenizer;
-incomplete legacy profiles fail closed. The same-day D2b 4B/12B post screen had exact
-identities/outputs/resources, zero domain drift or hard failures and passed every 5%
-gate, yielding `NO_REGRESSION_OBSERVED`. D2 added no D1 persistence, strategy
-selection, routing or activation. This closes the former `R6` identity entry. B27
-remains open only at the next explicit architecture decision, not by extending D2 or
-rerunning the same control.
-
----
-
-## Tier 0 — already dead. Do not re-run these.
+- **`B15` exact-but-pruned `lm_head` (2026-09-09).** Measured offline on
+  `gemma-3-4b-it-4bit` over 72 real greedy decode steps: with a correct
+  Cauchy-Schwarz cluster bound, `95.5%` of the 262,208 rows survive at `k=16384`
+  and `98.5%` at `k=4096`, against a kill threshold of `25%`. The token was exact
+  on 72 of 72 steps, so the bound is right and the geometry is the problem. The
+  bound needs a cluster radius of `0.106`; k-means reaches `0.387`. It is not a
+  clustering failure: sampling 256 rows, only `1.25` rows on average lie within
+  the required radius of any row, and the mean nearest-neighbour distance is
+  `0.235`. Achieving the radius would need roughly one cluster per row, and the
+  centroids alone would then cost more than the rows they replace. Row norms are
+  nearly uniform (`0.006` to `1.085`, median `1.000`), so the pure norm bound
+  prunes `0.02%`. Experiment `B15_4B_offline_bound_20260909_attempt1`; do not
+  re-run with a different clustering.
 
 - **PROD8 12B 1077-token integration screen (2026-09-07).** First real stock-reference request hit the frozen 6 s host deadline (6.002551 s observed); owned worker reaped, no product/HTTP run. Experiment `PROD8_12B_long_context_20260907_attempt1`; no shorter-context or relaxed-limit retry. Phase-aware follow-up hypothesis: root `BACKLOG.md` PROD9.
 
@@ -670,6 +664,822 @@ entries; everything current goes here.
 ---
 
 ## Tier 1 — cheap, grounded, worth doing first
+
+### `B56` — A per-request objective, not a per-runtime one
+
+**Mechanism.** `B55` measured the latency/throughput trade at `+7.7%` aggregate tokens
+per second for `+74.9%` median per-request latency at two ready requests. `objective` is
+currently set once, at `AppleRuntime.load`. A server answering a chat stream and a batch
+job from the same loaded model wants both at once, and the objective is a dispatch-time
+fact the caller already knows — it can travel on the `Request` the way an execution plan
+does. The router would then group only the requests whose callers accepted the trade.
+
+**Test.** Add the field, route a mixed dispatch where some requests carry `latency` and
+some `throughput`, and measure against two fixed arms under the `B55` protocol: token
+identity per request, per-request median latency for each objective class, and aggregate
+throughput. Sixteen rotated blocks, `2%` equivalence margin.
+
+**Kill.** If splitting a dispatch by objective costs more than it saves — because the
+throughput class loses the width the latency class took away — the objective stays a
+runtime-level setting and this entry closes with the measured width curve.
+
+### `B57` — Qualify a kernel per shape, through the profile
+
+**Mechanism.** `k3840_matvec` is admitted at load, against one `K`, by
+`Engine.admit_k3840`. `ironmule/kernel_registry.py` already derives one MLX kernel name
+per whole specification, so several specialisations can coexist without the
+ml-explore/mlx#3832 collision that `B54` closed. What is missing is the record that says
+*which shapes* a kernel is qualified for on this fingerprint, so the router can select
+one per dispatch instead of per load. The tuned profile already carries exactly this
+shape of record for the service strategy (`ironmule/service_strategy.py`): strategy,
+validity range, correctness contract, evidence run IDs.
+
+**Test.** Extend that record to kernels, qualify one shape end to end against the library
+path with bit-exact outputs, and measure the routed selection against a fixed
+library-only arm under the `B55` protocol. Only shapes with stored evidence may activate.
+
+**Kill.** If per-shape selection cannot be made bit-exact against the library path for
+the shapes it would select, or if the selection cost exceeds the kernel's gain at every
+qualified shape, kernels stay load-time knobs.
+
+### `B58` — Does the paired route survive real concurrency?
+
+**Mechanism.** `B45` to `B50` measured `PairedThroughputMode` on a request *pair*:
+`12.7-12.8%` earlier completion. `B52` measured that choosing it from the profile costs
+nothing against naming it. Neither measured it under a stream of arrivals, where the
+number of ready requests moves between rounds and a partner may not exist when the round
+starts. `B55` never exercised it at all — this machine's profile carries no
+service-strategy record, so `AutomaticMode` correctly kept the established mode
+throughout, which means the routed paired path is currently untested end to end.
+
+**Test.** Write a service-strategy record for this fingerprint from the `B45`/`B46`
+evidence, then run the `B55` protocol with staggered arrivals so ready counts vary within
+a dispatch. Gate on token identity per request, `paired_steps` versus `solo_steps`, and
+per-request latency against the grouped path.
+
+**Kill.** If the paired route wins only when both requests are ready at dispatch — a
+condition a real arrival stream rarely meets — it stays an explicitly named mode and is
+never routed to automatically.
+
+### `B59` — Is a native Metal path faster than `mx.fast.metal_kernel`?
+
+**Mechanism.** Custom kernels currently reach the GPU through
+`mx.fast.metal_kernel`, which compiles from source at first use and dispatches through
+MLX's own primitive. A native MLX extension or a prebuilt `.metallib` removes the
+source-compile step and part of the dispatch wrapper. Whether that is measurable at
+decode shapes is unknown; the reasonable prior is that it is not, because decode at width
+one is bandwidth bound (`E4`: `104` to `324 GB/s` over `1.4` to `360 MB`) and dispatch is
+not the binding constraint. This entry exists to measure that rather than assume it in
+either direction.
+
+**Test.** Build the same `k3840` matvec three ways — `mx.fast.metal_kernel`, a native
+extension, a prebuilt `.metallib` — assert byte-identical outputs against the library
+path on the captured inputs, and compare dispatch and end-to-end decode time under the
+`B55` protocol.
+
+**Kill.** If the three paths are within the `2%` equivalence margin at decode shapes,
+`mx.fast.metal_kernel` stays the only kernel path and this entry closes. "Closer to the
+hardware" is not a result.
+
+### `B64` — Now that `wired_fraction` can be confirmed, does it pay?
+
+**Mechanism.** `B62` removed the trap: the knob no longer starts a subprocess in a guarded
+child, so a candidate that keeps it can now reach and survive a confirmation. Nothing about
+that says it is worth keeping. The only evidence that it buys anything is one screening
+ratio, `0.9034`, from the `12B` run that then died — a single-process screening number,
+never confirmed, and taken on a machine whose memory behaviour under a wired limit is
+exactly what is in question. `B61` re-screened without it and reached `0.9218` on other
+knobs, so the two numbers are not comparable and must not be subtracted.
+
+**Test.** Its own preregistered study, on the `12B` where the screening once kept it: the
+standard paired confirmation of the current confirmed candidate against the same candidate
+plus `wired_fraction=0.6`, with the wired limit's effect on free memory, swap and MLX active
+and peak bytes recorded around every child, and the existing swapout and free-memory gates
+unchanged. A wired limit of `20.6 GB` on a `34.36 GB` machine is the thing being measured,
+not a side condition, so the resource trace is a result and not a diagnostic.
+
+**Kill.** If the interval against the unmodified candidate does not lie entirely below `1.0`,
+or if the run cannot pass the resource gates it is measured under, the knob is removed from
+`ironmule.tune.SEARCH` rather than left in it. A knob that survives confirmation but never
+wins one does not belong in a search that feeds a profile.
+
+### `B80` — Continual learning during ordinary use, with nothing to explore
+
+**Mechanism.** `B79` closed the loop once, on evidence gathered by studies. Every session it
+learned from was a preregistered measurement with its own reference arm, its own A/A control
+and its own gates. Ordinary use has none of those: a user's dispatches are all candidate or all
+reference, never both, so nothing in them estimates a ratio. The open question is whether a
+running installation can add *valid* local evidence without ever exploring — without serving a
+single request on a path chosen to learn from rather than to answer it.
+
+**Test.** The only honest source is a paired measurement the user did not pay for: a reference
+arm run when the machine is otherwise idle, against the candidate arm from the same period,
+under the same gates `B76` used, with the A/A control that decides whether either can be read.
+Gate on the controller's state moving only through the same `decide_state` every other path
+uses, on `B79`'s kill criteria staying armed throughout, and on the interval that qualified the
+action being re-checked against the widened evidence after every update.
+
+**Kill.** If valid evidence cannot be produced without exploring in the user path, continual
+learning stops here and the controller stays a thing that is updated by studies. A preference
+learned from unpaired production traffic is a preference learned from whatever else the machine
+was doing, which `B77` already measured as worse than knowing nothing.
+
+**Not authorised by `B79`.** `B79_LEARNED_DISPATCH_CONFIRMED` says a qualified action can be
+dispatched safely. It says nothing about earning a qualification during use.
+
+**Dead end, measured, do not re-run.** `B76`: a contextual model over `load_1min`,
+`memory_free_percent` and `swap_used_gb` predicting the `(4, 8)` stack ratio on this machine.
+Fourteen sessions, ridge at `alpha 1.0`, sealed prospectively, re-scored by `B77`. Prediction
+error `0.0087` against a constant model's `0.0058`, coverage `0.75` against `1.00`, cumulative
+regret `0.2037` against `0.0750`. Its error is larger than the entire between-session spread it
+exists to predict. Those three features carry no signal about this effect at this spread. A
+different feature set needs a mechanism first, not another fit.
+
+**Dead end, measured, do not re-run.** `B77`: choosing between a plain mean and a Bayesian
+posterior on this evidence. Identical action sequence across fourteen sessions, identical
+regret, identical coverage, a prediction-error gap of `1.3%` of the between-session `SD`. The
+data does not distinguish them and no further comparison will until the spread moves.
+
+### `B73` — A second Mac, which is what most of this now needs
+
+**Mechanism.** Four separate entries have reached the same wall. `B71`'s `H1` cannot be
+tested on one machine. `B72`'s hardware axis does not vary. `B69`'s confirmed geometry is
+bound to one fingerprint and nobody knows whether it is a property of this chip or of Apple
+GPUs. `B66`'s width step at `16` and its submission-boundary cost are the same. One machine
+has produced everything it can.
+
+**Test.** Run, on a Mac with a materially different memory system, exactly what already
+exists and in this order: `B71`'s probe set, then a tune, then `B57`'s composition study, then
+`B69`'s stack proof for `(4, 8)`. Nothing new is written for it. Every harness already fails
+closed on an unknown fingerprint, so the second machine's results cannot contaminate this
+one's.
+
+**Kill.** If the second machine's vector and its stack results agree in sign with this one's,
+`H1` survives its first real test and a third machine becomes worth arguing about. If they
+disagree, the vector is a description of one machine and the entries built on it say so. Either
+outcome is a result; not having a second machine is not.
+
+**Sharpened by `B76` and `B77`.** The comparison target is no longer one confirmation. Fourteen
+sessions on this M1 Max put `single_short` at `0.9647` with a between-session `SD` of `0.0069`,
+so a second machine is measured against a distribution and a disagreement has a scale. `B77`
+then found that what separates `B69`'s `0.8469` from those sessions is dispersion, not speed:
+`B69`'s A/A control ran at a half width of `0.0848` against `B76`'s `SD` of `0.0069`, and its
+candidate interval overlaps its own control. So the second machine reports its A/A dispersion
+and its machine state **before** any magnitude it produces is quoted, and a magnitude whose A/A
+arm fails the `B75` gate is recorded without being quoted at all.
+
+### `B66` — Silicon characterisation, against the best confirmed complete stack
+
+**Mechanism.** Every lever measured so far moves work around the device. None has asked what
+the device wants: threadgroup size, grid geometry, cache locality, how many command queues
+are worth having, register pressure, and how all of those change with shape. `E4` measured
+decode at width one as bandwidth bound between `104` and `324 GB/s` over `1.4` to `360 MB`,
+which is the prior — it says dispatch geometry should not matter much at decode, and says
+nothing about prefill, about grouped widths, or about the paired path's shared sweep.
+
+**Test.** Profile the shapes this runtime actually executes, then compare each candidate
+geometry against the *best confirmed complete stack* for that workload class, never against
+a microbenchmark and never against a sum of earlier percentages. On `4B` that reference is
+the confirmed composition profile; on `12B` the throughput classes have no confirmed stack
+yet — `B63` blocked — so either that resolves first or `12B` is characterised against `A_t`
+and `B` and said to be so.
+
+**Kill.** A geometry that does not beat its own reference as a fully executed stack does not
+enter one, however good it looks in isolation. If decode geometry turns out to be as
+bandwidth-bound as `E4` predicts, that closes the decode half of the entry and the work
+continues on prefill and on grouped widths, or stops.
+
+**Released.** `B67` confirmed `12B` stack `C`, so both models now have a confirmed complete
+stack to measure against: on `4B` the composition profile's adopted stacks, on `12B` `C` for
+the four throughput classes and `B` for `session_warm`. Every other class on both models
+keeps its reference, and a geometry candidate for one of those is measured against that
+reference, not against a stack that was never adopted.
+
+**Not combinatorial.** Only candidates a profile run actually points at. A geometry that
+looks good in a microbenchmark and is not indicated by the profile does not get a run.
+### `B53` — A leaked default device, not a kernel defect — closed
+
+**The cause.** `tests/engine/test_ironmule.py` calls `mx.set_default_device(mx.cpu)` eight
+times so a small model never competes for the GPU, and restores it none. `pytest-xdist`
+hands a worker whole files in sequence, so a worker that ran that file kept the CPU as its
+default for every later file it was given. `mx.quantized_matmul` follows the default
+device; a custom Metal kernel can only run on the GPU. The comparison then held one arm on
+the CPU and one on the GPU and called the difference a bit-identity failure.
+
+**Proved on the retained bytes.** All three dumps from the reproduction:
+
+| running `quantized_matmul` on | matches |
+| :-- | :-- |
+| the CPU | the stored **library** bytes, exactly |
+| the GPU | the stored **kernel** bytes, exactly |
+
+Three states, each in a fresh process on the same stored inputs: the CPU default
+reproduces the failure, an untouched default is clean, and setting the CPU and putting it
+back is clean. Experiment `B53_device_trigger_20260910`.
+
+**Nothing was wrong with the kernels or with MLX.** The transcription and the specialised
+kernel were byte-identical to each other throughout, and MLX's quantised matmul is correct
+on each device. Two devices were compared as if they were one.
+
+**Repair, at the cause.** An autouse fixture in the leaking file records the default device
+and puts it back after every test. `ironmule/fast.py::_self_check` restores it in a
+`finally` as well; it is a script entry point and was never part of `fuse_projections`.
+`tests/test_qmv_k3840.py` now states its call contract: it asserts the default device is
+the GPU and says why, so a future leak fails as a leak rather than looking like a kernel
+defect. No test was removed, no tolerance loosened, and nothing forces the GPU globally.
+
+**Remedy demonstrated.** The leaking file and the comparison file run in one process, in
+the worker's own order, and pass. The new contract check fires, with the device named,
+when the default is left on the CPU. `B51` rerun in full: ten cases, 22 requests, logit
+bit patterns per step and the whole KV state per request identical to independent library
+runs (`B51S_identity_gap_20260910`). Unit suite `5691` tests, `0` failures.
+
+**Closed.** The original inputs stay lost; the cause is established on the reproduction
+whose inputs were kept. Resolution `B53_resolution_20260910`.
+
+**What it cost, and the lesson.** Five phases of diagnosis treated the library as the
+reference and the kernels as the candidate, and the entry twice had to withdraw a
+conclusion drawn from that framing. The first probe that saved its inputs settled it in
+one comparison. A tripwire that keeps the failing data is worth more than any number of
+clean repetitions.
+
+### `B54` — One Metal kernel name, several modules — closed
+
+**Confirmed upstream.** `ml-explore/mlx#3832`: the custom-kernel library cache is keyed by
+kernel name in `Device::get_library(name_, …)`, and the stale-source invalidation works
+across `eval` boundaries but **not inside one batch**. Affected releases `0.31.1`,
+`0.31.2` and `0.32.0`. Reproduced here on `0.32.0` with a two-line kernel: the `+100.0f`
+variant returned the `+1.0f` result.
+
+**Fixed by deriving the name.** `ironmule/kernel_registry.py` builds every Metal kernel in
+this repository under a name that is a digest over the whole specification: base name,
+source, header, input and output names, the row-contiguity and atomic flags, the compile
+options and the template values. Equal source bytes are not equal specifications, so the
+options and template are in the digest too. The digest is computed once per specialisation
+at import, never per call and never per token, and the registry refuses an identifier that
+would stand for a second specification. Eight kernels are now registered, one per
+specialisation; the copies whose sources are byte-identical collapse onto one name, which
+is the case MLX handles correctly.
+
+**Arithmetic untouched.** No kernel source, no compile option and no MLX version changed.
+Only the key MLX caches under.
+
+**Verified on the device after the rename.** `B51` rerun in full: ten cases, 22 requests,
+logit bit patterns per step and the whole KV state per request identical to independent
+library runs, same step counts as the run before the rename
+(`B51R_identity_gap_20260910`). The limited non-regression preregistered for the one
+runtime path the rename touches: the paired path keeps its advantage over the shipped
+throughput path at `0.8751`, CI `0.8714 – 0.8772`, eight of eight blocks under the `0.90`
+gate, A/A control passing, zero swapouts (`B54R_paired_nonregression_20260910`).
+
+**Left as a finding, not changed.** `tools/b42_qmv_kernel.py` and `ironmule/qmv_k3840.py`
+both define `COMPILE_OPTIONS = {"math_mode": "safe"}` and never pass it, so those kernels
+compile under MLX's default math mode. Passing it would change the arithmetic, which this
+work was not allowed to do. The digest records the options actually passed, which is
+`None`, so the discrepancy can no longer hide.
+
+### `B52` — The profile chooses the service mode, only when asked
+
+**The question.** `B50` produced rules a person can follow. Can the runtime follow them
+itself, from the tuned profile, without ever turning itself on?
+
+**Not a knob.** A service mode changes how requests are grouped, not how a kernel
+computes, so it is not a `Knobs` field. `ironmule/service_strategy.py` puts a versioned
+record beside the knobs, `ironmule.tuned_profile.service_strategy.v1`: the strategy, the
+admitted range (hardware fingerprint, model identity, MLX and mlx_lm versions, and the
+minimum and maximum number of simultaneously ready requests), the correctness contract,
+and the run ids that evidence it. A record missing any field reads back as absent, so an
+incomplete record and an older profile mean exactly the same thing: choose nothing.
+
+**Three gates, all of which must open.** An explicit `automatic_service_mode=True` at
+load; a complete record in the profile; and this machine, model, library build and ready
+count inside the admitted range. Ready means ready: a request that has not arrived yet, or
+that finished during prefill, is not counted as a partner, and the status reports the
+group size beside it. Only facts known at decision time enter, so the response
+a request will eventually produce is not used and no length is predicted. The admitted
+range is the ready count, `2` to `4`, which is exactly what `B50` measured. Nothing waits
+for a partner. If the profile admits the paired path and the loaded model then refuses
+admission, the choice falls back to the established mode rather than through to the
+sequential safety net.
+
+**One decision per `serve`.** The ready count is only known once the sessions exist,
+which is also the last moment before any token is produced. Measured: `9` decisions for
+`9` calls in the timed part, `3` for `3` in the user path. Nothing is added per token.
+
+**Migration on a working copy only.** Writing goes through `tune.save_profile`, the
+existing authorised path. The tool refuses to run unless `IRONMULE_HOME` points at a
+working copy. This machine has no product profile at all — `~/.ironmule/profiles.json`
+did not exist before the run and does not exist after it.
+
+**User path, Gemma 12B, real hardware.** Without the opt-in the record is never read.
+With it: one request keeps the established mode, two share `23` steps, four run as two
+pairs sharing `46`, and a pair whose partner has not arrived yet keeps the established
+mode on one ready request out of a group of two. Every output is identical to an
+independent `InteractiveMode` run. A record naming a foreign MLX version is refused with
+the reason naming the field. Assigning `ThroughputMode` returns the runtime to the
+established mode.
+
+**What the automation costs, preregistered at ±2 per cent.** Eight rotated blocks, an
+A/A control, a 95 per cent bootstrap over 10.000 resamples. The release run is
+`B52R_automatic_selection_release_20260909`, measured on the tree after the stabilisation
+repairs and carrying a source binding over every file it measures. Automatic over manually
+naming the same strategy: median `0.9973`, CI `0.9937 – 1.0018`, inside the margin. A/A
+control `1.0055`, CI `0.9958 – 1.0068`. Zero swapouts, no fallback.
+
+**One earlier execution is lost.** The first run wrote the same output path as the second
+and was overwritten; it is unrecoverable and none of its numbers enters a release claim.
+`B52P_evidence_provenance_20260909` records the loss, the sources searched for it, and the
+checksums of what survived. Raw records are now written once and atomically, and every
+measuring record carries its own code binding. An interval that
+merely contains `1.0` was fixed in advance as *not* equivalence, which is why the margin
+was set before the run. **READY, off by default.**
+
+**Closed.** The paired path's own gain is `B46` and `B50` and is not re-derived here.
+Experiment `B52_automatic_selection_20260909`, tool `tools/b52_automatic_selection.py`,
+tests `tests/test_service_strategy.py`.
+
+### `B51` — The eight load cases, bit-identical in logits and KV state
+
+**The gap.** `B50` compared tokens, stop reasons and text. Two different distributions
+can share an argmax, so that is weaker than equal logits. The bit-level identity came
+from `B45` and `B46` and held for their prompts, not for the eight load cases. It was not
+carried over.
+
+**What was compared, outside every timed region.** Each case decodes twice, once on the
+shipped body and once through the paired step: the full logit bit pattern of every step,
+the whole KV state of every request, the token sequences, the stop reason and the step
+count.
+
+**Two real end-token cases added.** A full stop or a forced stop is not evidence. One
+request stopped on a genuine end token after `19` steps while the other ran to `64`,
+which exercises the pair-to-single transition and the later lone request. In the second
+case both stopped on a real end token, at `19` and `17` steps.
+
+**Result: ten cases, 22 requests, everything identical.** Logits, KV state, tokens, stop
+reason and step count all match, in every case, including the four-request case running
+as two pairs.
+
+**Not in this run.** Arrival times are not varied, so a partner joining late is not
+exercised here despite the record's method note; that case is `B47`, on real model
+computation. Cancellation mid-flight stays open: `ironmule.service.Request` carries no
+cancel handle and `serve()` runs to completion. An interface limit, not a pass.
+
+**Closed.** Experiment `B51_identity_gap_20260909`, tool `tools/b51_identity_gap.py`.
+
+### `B49` — Width four shares one sweep and loses to two shared pairs
+
+**The question.** `B45` shares one weight sweep between two requests. Four ready requests
+could ride one sweep instead of two. The generator already took the width, so the
+per-request arithmetic is untouched: same thread mapping, same eight values per thread,
+same 256-value blocks, same `qdot`, same partial-sum order, same `simd_sum`. Only the
+register demand grows, from 24 scalars per thread to 48.
+
+**Not a repeat.** `E3`'s decode-width sweep and `B1` are about the scheduler's group
+width. This is about how many activations ride one weight load inside one kernel call.
+
+**Kernel level, 18 real projections with four different real activations each, 903 MB per
+sweep, 20 rotated blocks:**
+
+| comparison | median | CI95 | blocks under `0.95` |
+| :-- | --: | :-- | --: |
+| four shared / four library calls | `0.8061` | `0.7970 – 0.8115` | 20 / 20 |
+| two shared pairs / four library calls | `0.7216` | `0.7165 – 0.7429` | 20 / 20 |
+| **four shared / two shared pairs** | **`1.1084`** | **`1.1014 – 1.1205`** | **0 / 20** |
+
+All four outputs are bit-identical to independent library calls. A/A control passes, `0`
+swapouts. **KERNEL NO-GO.** Width four still beats the library, but it loses to the width
+two it would replace, by `11%`, in every single block.
+
+**The cause is not measured.** The kernel source shows twice as many scalars per thread,
+and that is the obvious suspect, but counting scalars in source is not a measurement of
+hardware register usage or spilling. Metal exposes no register or spill counter through
+`xctrace` here and the occupancy stream is too large to export proportionately. No
+counter was invented, so register pressure remains an unconfirmed explanation.
+
+**No model test, and none pending.** The brief gates it on sufficient measured
+potential. Width four is slower than what it would replace, so the product comparison and
+the two confirmation sessions do not apply: potential gate not passed. They are not open
+work.
+
+**Closed.** Investigation complete, performance decision NO-GO for the tested candidate.
+A negative finding closes the entry.
+
+**Status.** The shipped two-request path is untouched, `share_aligned` stays `False`, and
+width four exists only as study tooling. It was never wired into a mode.
+
+### `B48` — Sharing the aligned projections too: kernel yes, product no
+
+**A different kernel, not a widened one.** `K=4096` and `K=15360` are multiples of 512,
+so the library runs `qmv_fast_impl`: 16 values per thread, 512-value blocks, no tail path
+and no `used_out_row` step-back. Enlarging the `K=3840` kernel would have changed the
+reduction order, so this is a separate transcription, checked byte for byte against the
+library before a second activation was added.
+
+**Where the paired path spends its time now (`B48P`).** With `K=3840` already shared:
+our shared kernel `33.9%` of GPU time, library `qmv_fast` (both aligned families)
+`22.3%`, library plain `qmv` (the `lm_head`) `7.3%`, prefill matrix matmuls `34.8%`.
+Splitting the `qmv_fast` share by bytes puts `down_proj` at about `17.6%` and `o_proj` at
+`4.7%`, so `K=15360` was taken first.
+
+**Kernel level, real matrices well past the cache, 20 rotated blocks:**
+
+| family | bytes per sweep | shared / two library calls | sharing alone | bit-identical |
+| :-- | --: | --: | --: | :-- |
+| `K=15360` | `199 MB` | `0.7874` `[0.7728, 0.7910]` | `0.9392` `[0.9242, 0.9496]` | yes |
+| `K=4096` | `159 MB` | `0.8110` `[0.8040, 0.8244]` | `0.9245` `[0.9148, 0.9465]` | yes |
+
+**KERNEL GO** for both. Note the split: most of the `shared / library` figure is the
+transcription itself, and the sharing term alone is `6.1%` and `7.6%`, far below the
+`17.9%` the `K=3840` shape gave. `qmv_fast` already reads more per thread, so there is
+less duplicate traffic left to remove.
+
+**Derived beforehand (`B48D`).** Applying those sharing terms to the measured shares puts
+the available saving at `1.4%` of paired GPU time. That is under the `5%` wall-clock
+gate, and it was written down before the product run rather than after it.
+
+**Product level, two preregistered sessions against the current opt-in path:**
+
+| | session 1 | session 2 |
+| :-- | --: | --: |
+| candidate / `PairedThroughputMode()` | `0.9903` `[0.9823, 0.9937]` | `0.9920` `[0.9879, 0.9970]` |
+| blocks under `0.95` | 1 / 10 | 0 / 10 |
+| A/A null control | passes | passes |
+| completion latency | `0.992`, `0.990` | `0.992`, `0.991` |
+
+Identity clean in both, a genuine EOS observed in both, `0` swapouts. **GOAL NOT MET.**
+The extension is real and statistically separated from `1.0`, worth about `1%`, against a
+`5%` goal. The derivation and the measurement agree, which is the useful part.
+
+**A correction.** The combination was measured, not the two families separately, and it
+was described here as an upper bound for either alone. That does not follow: register
+pressure and scheduling can make two changes interact, so a single family is not
+guaranteed to land below the pair. Neither single variant was measured, and no claim is
+made about them. The byte-based split of the `qmv_fast` share is likewise an estimate,
+not a measurement: both shapes run the same kernel and the profile aggregates by name.
+
+**What this does not say.** The total against `ThroughputMode` was not remeasured and is
+not implied; percentages from separate studies are not added.
+
+**Status.** The `K=3840` opt-in path is untouched and still the qualified one. The
+extension exists as `PairedThroughputMode(share_aligned=True)`, off by default, and stays
+off: it did not earn its gate.
+
+### `B47` — The paired path as an opt-in mode, off by default
+
+**The surface.** `PairedThroughputMode` sits beside `InteractiveMode` and
+`ThroughputMode` in `ironmule/service.py` and is chosen the same way. There is no CLI
+flag because modes are a library choice in this runtime; `docs/PAIRED_OPT_IN.md` records
+the actual calls. `paired_status(mode)` answers for any mode, so *disabled* is a real
+answer, and it separates enabled, admitted, steps that shared a load, and steps taken
+alone for want of a partner. Admission runs once at load; nothing per token hashes a
+model or re-checks a version.
+
+**Operational cases, on real model computation (`B47`).**
+
+| case | result |
+| :-- | :-- |
+| genuine EOS on one side | request one stopped on a real end token after 19 steps while the other ran to 64; tokens and stop reasons identical |
+| unequal lengths | 6 and 20 tokens, identical, and the pair returned to the single path |
+| late partner | 4 solo steps, then 13 paired: a partner joins only at a step boundary |
+| lone request | 0 paired steps, 7 solo: it never waits |
+| injected fault in the shared step | existing fallback caught it, both requests completed with no duplicate tokens |
+
+**The gap that stays open.** Cancellation mid-flight could not be exercised:
+`ironmule.service.Request` has no cancel handle and `serve()` runs to completion. Reported
+as a gap rather than a pass, and no new server was built to manufacture one.
+
+**The surface costs nothing measurable (`B47U`), 8 rotated blocks, one run:**
+
+| comparison | median | CI95 |
+| :-- | --: | :-- |
+| opt-in mode / shipped `ThroughputMode` | `0.8748` | `0.8729 – 0.8782` |
+| opt-in mode / the `B46` research build | `0.9983` | `0.9928 – 1.0034` |
+
+The gate still holds at `0.8748`, and the interval against the research build contains
+`1.0`, so wrapping it in a service mode added no measurable work to the request path.
+A/A control passes, `0` swapouts.
+
+**User walk.** Load with the default and status reports disabled. Name the mode, run one
+request: `0` paired steps. Run a pair: paired steps recorded, output identical to an
+independent library run. Switch back to `ThroughputMode`, output still identical. Reload:
+default off again. **OPT-IN READY.**
+
+**Status.** Default off. Nothing activates it, no commit, no push, and the separate
+`k3840_matvec` knob is a different feature that stays untouched and off.
+
+### `B46` — Pairing against the shipped throughput path
+
+**What the earlier number could not say.** `B45` measured `17.7%` against running two
+requests one after the other. The product reference is not serial execution: it is
+`ThroughputMode`, which already groups ready requests and submits them asynchronously.
+This entry measures against that.
+
+**How it attaches.** `ironmule/paired_research.py` subclasses the shipped
+`AsyncGroupedB1Executor`, so admission, sessions, stop rules, telemetry and the
+sequential fallback are the existing ones; only the group's inner step changes, through a
+new `_step_group` hook that leaves the shipped behaviour identical. With `share=False`
+the same pairing runs with separate projections, which is the control. A lone request
+takes the ordinary single path and nothing waits for a partner. 240 projections admitted
+under the full model, hardware, library and shape gate.
+
+**Correctness, before any timing.** At step level, logit bit patterns and KV digests
+match the shipped decode body for both requests, in both `share` modes. At service level,
+tokens, stop reasons and output text match `A` across a single request, simultaneous
+arrival, staggered arrival, unequal output lengths and a long run.
+
+**Two preregistered sessions, 10 rotated blocks, one resident model:**
+
+| | session 1 | session 2 |
+| :-- | --: | --: |
+| `C` shared / `A` shipped | `0.8734` `[0.8705, 0.8749]` | `0.8719` `[0.8688, 0.8745]` |
+| `B` paired only / `A` | `0.9773` | `0.9782` |
+| sharing alone, `C` / `B` | `0.8924` | `0.8927` |
+| A/A null control | passes | passes |
+| completion latency, `C` / `A` | `0.873`, `0.856` | `0.872`, `0.856` |
+
+Both intervals lie entirely below the `0.90` gate, in every block. **PRODUCT GO**: the
+same pair of requests completes `12.7` to `12.8%` sooner than on the shipped throughput
+path, with no fallbacks, `0` swapouts and peak memory unchanged.
+
+**Where the win comes from.** Pairing by itself buys `2.2%`, because `A` already groups.
+The shared weight load buys `10.7%`. Against the serial baseline `B45` used, the
+scheduling term looked far larger; against the real product path it nearly disappears.
+
+**No latency cost this time.** Both requests finish sooner, `12.8%` and `14.5%`, and
+service TTFT is unchanged at about `230 ms` in every arm. The serial comparison in `B45`
+made the first request wait; against a path that already groups, it does not.
+
+**Validity.** Two fixed prompts, 24 tokens each, greedy, one machine, MLX `0.32.0`, this
+Gemma 12B revision, 4-bit weights. Only `K=3840` projections at single-token decode are
+shared; prefill is untouched. The long-output case never reached a natural EOS, so stop
+behaviour is verified for length stops only. Load and compile time are outside the
+numbers.
+
+**Strongest remaining bottleneck.** The projections that are not shared: `o_proj` at
+`K=4096`, `down_proj` at `K=15360`, plus attention and the output head.
+
+**Status.** Research mode, not a default. No knob was added to the shipped surface, the
+`k3840_matvec` knob is untouched and still off, and nothing activates this.
+
+### `B45` — One weight sweep, two requests, bit-identical per request
+
+**Why this is not `qmv_wide_impl`.** MLX already streams several vectors past one weight
+group, and declines to here: `use_qmv_wide` needs architecture generation 15 or newer for
+affine quantisation and this M1 Max is `applegpu_g13s`. It is also a different
+computation, decoding each group into registers and splitting a row across `k_lanes` with
+a shuffle ladder. This entry keeps `qmv_impl`'s thread mapping, `qdot` expression, block
+size, partial-sum order and `simd_sum` reduction, and only adds a second activation. What
+is shared is the load, not the arithmetic. `B28` changed the computation and failed on the
+KV hash; `B29c` overlapped whole sessions and still read the weights once per session.
+
+**Kernel (`B45K`), 18 real projections with two different real activations each, 20
+rotated blocks:**
+
+| comparison | median | CI95 | blocks at or under `0.90` |
+| :-- | --: | :-- | --: |
+| shared width 2 / two library calls | `0.7335` | `0.7280 – 0.7486` | 20 / 20 |
+| same kernel, called twice / library | `0.9022` | `0.8852 – 0.9121` | 9 / 20 |
+| sharing alone (shared / called twice) | `0.8206` | `0.8132 – 0.8243` | 20 / 20 |
+
+Bit identity holds on every case; a difference would have locked the variant before any
+timing. A/A control passes, `0` swapouts. **KERNEL GO**, well past the gate. Width 4 was
+not attempted: the gate was set for width 2 and cleared there.
+
+**Potential (`B45P`, derived).** The `K=3840` projections are `61.7%` of a 12B step
+(`B24` × `B24S`). Applying the measured kernel ratio to that share projects `0.836` for a
+pair, upper bound `0.845`, so the model gate was worth testing.
+
+**Model (`B45M`), two prompts, separate KV caches, separate attention, shared projections
+only, two sessions of 10 rotated blocks:**
+
+| session | shared / serial | CI95 | blocks at or under `0.90` | scheduling alone | sharing alone |
+| :-- | --: | :-- | --: | --: | --: |
+| 1 | `0.8233` | `0.8125 – 0.8270` | 10 / 10 | `0.9027` | `0.9127` |
+| 2 | `0.8228` | `0.8125 – 0.8262` | 10 / 10 | `0.9035` | `0.9113` |
+
+Both sessions clear the gate, both are bit-identical in tokens, logits and KV state for
+both requests, `0` swapouts, peak memory `7.46 GB`. **MODEL GO**: a pair of requests
+finishes `17.7%` sooner than running them one after the other.
+
+**The split matters.** Of that `17.7%`, roughly `9.7%` is the paired loop's scheduling,
+which shares nothing, and roughly `8.7%` is the shared weight load. Reporting the total
+as a weight-reuse win would be wrong.
+
+**What this is not.** Not a faster single chat: pairing makes the first request wait for
+the second, and the serial arm delivers request one at about half the pair's wall time.
+Not a comparison against IronMule's grouped server path; the baseline here is the
+unmodified model call run twice. Not a general model gain.
+
+**Strongest remaining bottleneck.** The projections that are not shared. `o_proj` at
+`K=4096` and `down_proj` at `K=15360` still read their weights once per request, and with
+attention, norms and the output head they are the `38%` of a step this cannot touch.
+
+**Status.** Research prototype. Nothing is wired into a runtime path, no knob was added,
+and the shipped `k3840_matvec` is untouched and still off.
+
+### `B44` — The `K=3840` kernel as an opt-in knob, off by default
+
+**What shipped.** One knob, `k3840_matvec`, added to the existing `Knobs` dataclass and
+default `False`. The kernel is the `B42`/`B43` candidate copied unchanged;
+`tests/test_qmv_k3840_integration.py` asserts the shipped source still contains the
+qualified one. No second runtime, no new configuration mechanism.
+
+**Admission is narrow and paid once.** `ironmule/qmv_k3840.py` checks the hardware
+fingerprint, the MLX and mlx_lm versions, the model identity digest and the architecture,
+then every projection's bit width, group size, dtypes, output width, scale geometry and
+buffer sizes. `K == 3840` alone admits nothing. It runs inside `load_engine`, after the
+identity is attached and before any token; an `Engine` built directly has no identity and
+therefore stays on the library path. Nothing in the per-token path hashes a model,
+re-checks a version or adds a synchronisation. A refusal raises rather than silently
+substituting, and `disable()` restores the original module objects for a fallback.
+
+**What is never routed there.** Prefill and every multi-token input take the library
+call on the same buffers, verified byte for byte. Sampling, batching, grouped execution
+and any shape outside the admitted set never reach the kernel.
+
+**Correctness of the integration (`B44`).** The model was loaded twice through the
+ordinary route, knob off and knob on, over four preregistered prompts including a
+96-step continuation. Tokens, the logit bit pattern of every step, the whole KV cache,
+the stop behaviour and the step count are identical in all four, including the prompt
+that stopped early at 23 steps. 241 projections admitted, 0 declined.
+
+**Speed of the integration (`B44M`), preregistered, 20 paired blocks of 32 steps, one
+resident model, one run:**
+
+| | median | CI95 | blocks below 1 |
+| :-- | --: | :-- | --: |
+| candidate / reference | `0.9921` | `0.9909 – 0.9950` | 18 / 20 |
+| A/A null control | passes, interval contains `1.0` | | |
+
+Reference step `32.67 ms`, candidate `32.45 ms`, drift `1.019`, `0` swapouts, peak
+memory `7.33 GB`. **INTEGRATION GO.**
+
+**The integration keeps most of the win, not all of it.** `B43` confirmed `1.0` to
+`1.3%` for the study prototype; the shipped path measures `0.8%`, interval `0.5` to
+`0.9%`. Where the remainder goes is not established: the two were measured in different
+harnesses and never against each other, so "the module boundary costs it" is a
+hypothesis, not a finding. The knob stays `False`; nothing activates it.
+
+**Validity.** One prompt for the timing, four for correctness, one machine, MLX `0.32.0`,
+this Gemma 12B revision, 4-bit weights, greedy, batch 1, ungrouped single-token decode.
+The `B43` model GO stays bounded by its own conditions and is not extended by this entry.
+
+### `B42` — A `K=3840` quantised matvec kernel, bit-identical by construction
+
+**Mechanism.** `B24S` put `99.79%` of a 12B decode step's GPU time in the quantised
+matrix-vector kernel, and `B41` showed MLX runs its slow variant there because `3840` is
+not a multiple of 512. `B41`'s padding bought speed at the cost of bit identity. This
+entry keeps the arithmetic and specialises the kernel instead: no padding, no switch to
+`qmv_fast`, same reduction order.
+
+**The source proves the identity before any measurement.** In MLX `0.32.0`,
+`qmv_impl` uses `values_per_thread = 8` and `block_size = 256`. Its loop runs while
+`k < in_vec_size - block_size`, so at `K = 3840` fourteen of fifteen blocks go through
+`qdot` and the fifteenth through `qdot_safe` with `remaining` clamped to exactly `8`.
+At `N == values_per_thread`, `load_vector_safe` and `qdot_safe` are character-identical
+to `load_vector` and `qdot`. Fixing the loop at fifteen `qdot` blocks therefore keeps
+every partial sum in the same order while dropping the clamp, the branch and the
+bounds arithmetic. Compiled with `math_mode: "safe"`, no extra fast-math freedom.
+
+**Bit identity, measured.** A transcription of `qmv_impl` with runtime dimensions
+reproduces `mx.quantized_matmul` byte for byte first, so the harness is proven before
+anything is specialised. Then, on 21 real Gemma 12B projections with 21 real decode
+activations captured from a live run (`B42C`), both the transcription and the
+specialisation match the reference bytes on every case. In the model, four separate
+runs agree on tokens, on the first-step logits digest and on the whole KV cache digest.
+
+**Kernel level, two runs of 40 interleaved blocks over 903 MB of real weights:**
+
+| comparison | run 1 median | run 1 CI95 | run 2 median | run 2 CI95 |
+| :-- | --: | :-- | --: | :-- |
+| `k3840` / transcription | `0.9037` | `0.882 – 0.922` | `0.9263` | `0.887 – 0.960` |
+| `k3840` / `mx.quantized_matmul` | `0.9493` | `0.901 – 0.995` | `0.9192` | `0.851 – 0.969` |
+
+Both runs put the interval entirely below `1.0`. The kernel is `7` to `10%` faster than
+the code it was specialised from.
+
+**Model level, preregistered at 20 blocks of 32 steps, one resident model, no extension:**
+
+| run | ratio | CI95 | blocks below 1 | rule met |
+| :-- | --: | :-- | --: | :-- |
+| attempt1 | `0.9458` | `0.9325 – 0.9563` | 16 / 20 | yes |
+| attempt2 | `0.9549` | `0.9028 – 1.0128` | 14 / 20 | no |
+
+The medians agree at `4.5` to `5.4%` faster, but only the first run's interval clears
+`1.0`. Peak memory `7.33 GB`, swap unchanged by the arm. **Kernel: GO. Model: UNCLEAR
+at this point**, resolved by `B43` below.
+
+**`B43` — confirmation, two preregistered sessions in fresh processes (2026-09-09).**
+Readiness first: a twelve-second probe before the study counted `0` swapouts and `0`
+pageouts against `9.6 GB` of occupied swap, so occupancy alone is not paging. That probe
+runs after the earlier sessions, not during them, and therefore says nothing about what
+caused their drift; that cause is still unknown. Both sessions then ran on a quiet
+machine, one resident model,
+20 paired blocks of 32 greedy steps, three arms including an A/A null control, balanced
+order, 95% percentile bootstrap over the paired blocks.
+
+| session | reference step | candidate step | paired ratio | CI95 | blocks below 1 | A/A CI95 | drift |
+| :-- | --: | --: | --: | :-- | --: | :-- | --: |
+| 1 | `31.48 ms` | `31.06 ms` | `0.9872` | `0.9844 – 0.9899` | 20 / 20 | `0.9971 – 1.0050` | `1.020` |
+| 2 | `31.45 ms` | `31.14 ms` | `0.9900` | `0.9876 – 0.9914` | 18 / 20 | `0.9973 – 1.0052` | `1.020` |
+
+Both intervals lie entirely below `1.0`, both null controls contain `1.0`, both sessions
+report `0` swapouts, drift of `1.02`, peak memory `7.33 GB`, and identical tokens,
+logits, KV state and stop behaviour. **Model: GO.**
+
+The honest size of the win is `1.0` to `1.3%` of a decode step, not the `4.5` to `5.4%`
+the earlier runs showed. Those ran at step times of `43` to `61 ms` against these `31 ms`;
+the drift inflated the ratio rather than the kernel earning it. The earlier runs are kept
+as recorded and are not pooled with these.
+
+**Why the model result is noisier than the kernel result.** The machine held `11.2 GB`
+of swap and a load average near `4` throughout, from processes this study does not own.
+Step times drifted from `33 ms` to `61 ms` across runs while the paired ratios stayed
+put. The effect survives that drift in direction and fails it in significance, and no
+run was extended to fix that.
+
+**Rejected on the way (`B42R`).** Full unrolling of the fifteen blocks: `7.136x` slower,
+bit identity intact. Dispatching with `init_value=0`: one extra dispatch per call,
+`68.1` command buffers per step against `61.5`, and the model arm turned negative. Two
+resident models: `14.52 GB` peak and a step time of `49 ms`, against `7.33 GB` and
+`33 ms` with one.
+
+**Next.** Replicate the model arm on a quiet machine before any activation decision.
+Nothing here is wired into the standard path.
+
+### `B41` — Pad the reduction dimension so the fast quantised kernel runs
+
+**Mechanism.** `B24S` measured that 99.3 to 99.8% of a decode step's GPU time is one
+kernel family, the quantised matrix-vector product, and that MLX picks between two
+variants of it. `affine_qmv_fast` runs only when the reduction dimension is a multiple
+of 512. The three local Gemmas fall differently on that boundary, and the measured time
+shares follow it exactly:
+
+| model | hidden | intermediate | plain `qmv` | `qmv_fast` |
+| :-- | --: | --: | --: | --: |
+| 1B | `1152` (no) | `6912` (no) | `98.6%` | `0.8%` |
+| 4B | `2560` (yes) | `10240` (yes) | `0.0%` | `99.6%` |
+| 12B | `3840` (no) | `15360` (yes) | `74.1%` | `25.7%` |
+
+**Price of the boundary (`B41K`).** A microbenchmark on the device, eight interleaved
+blocks with alternating direction, `N=4096`, batch 1: `4096` reaches `362 GB/s` while
+`3840`, `4032` and `4160` all sit at `306` to `310`. The jump is `17.6%` and it sits on
+the boundary alone, not on size. Those absolute numbers are cache-assisted: at `N=4096`
+the weights are `8.4 MB` and a chain rereads them inside the `48 MB` system level cache
+(`B41C`). The comparison is unaffected, both arms ran under the same conditions, and the
+model-level result below reads `7.2 GB` per token, far past any cache.
+
+**The bandwidth ceiling this competes against (`B41C`).** Same kernel, `K=4096`, `N`
+swept so the weight set crosses the cache, five interleaved blocks:
+
+| weights | resident in | median | best |
+| --: | :-- | --: | --: |
+| `9.4 MB` | cache | `264.5 GB/s` | `315.8` |
+| `18.9 MB` | cache | `358.0` | `367.2` |
+| `37.7 MB` | cache | `406.2` | `409.2` |
+| `75.5 MB` | memory | `319.9` | `324.6` |
+| `151.0 MB` | memory | `334.1` | `338.5` |
+| `302.0 MB` | memory | `342.2` | `343.7` |
+
+`409 GB/s` is the highest this project has ever measured and it is a cache read. Out of
+memory, where a model's weights actually live, the ceiling is `334` to `344 GB/s`. That
+confirms the `324 GB/s` floor `B24R` borrowed from `E4`: the roofline it derived stands,
+and a 12B step's device time is `80%` of a ceiling that is real.
+
+**The padding is arithmetically exact.** Appending zero packed weights with zero scales
+and zero biases makes `dequantize` return exactly `0.0` for the new columns, and the
+input is zero there, so every added product is `0 * 0`. No existing byte is touched and
+nothing is requantised. `tests/test_padded_qmv.py` asserts the zero.
+
+**Result on a real model (`B41P`).** 12B, 241 padded linears, all `3840 -> 4096`, six
+interleaved order-balanced blocks of 20 greedy steps:
+
+| | median step | paired ratio |
+| :-- | --: | --: |
+| reference | `31.34 ms` | |
+| padded | `30.29 ms` | `0.9657` |
+
+Faster in six blocks of six, ratios `0.9485` to `0.9831`, and the two arms do not
+overlap: reference `31.14` to `31.82 ms`, candidate `30.09` to `30.62`. **`3.4%` off a
+12B decode step.** The 4B null control padded nothing, as every 4B shape is already
+aligned, and measured `-0.44%` with a logit difference of exactly `0.0`: the harness
+carries no bias of its own.
+
+**What it costs, and the open gate.** Tokens were identical over 20 steps, but the
+maximum absolute logit difference is `0.53`, and in the microbenchmark `2.1e-07` on a
+128-row case. The added columns contribute nothing; the difference is the other kernel
+reducing in a different order. Under `B2`'s rule, any nonzero logit difference makes
+this a plan change, not a drop-in optimisation. It also costs `6.7%` more weight bytes
+and one pad kernel per distinct input vector.
+
+**Where it does not work.** 1B measured `-5.8%`, slower. Its `1152` pads to `1536`, a
+`33%` byte increase that the `17.6%` bandwidth gain cannot repay, and its host share is
+the largest of the three. The entry is size-dependent: it wins only where the distance
+to the next boundary is small relative to the gain.
+
+**Next.** Qualify it as an explicit opt-in plan against the exact-output contract, or
+hold the padded weights so that the per-call pad disappears. Do not activate it while
+the logit difference is unqualified.
 
 ### `B38` — Exact Gemma 12B core-profile activation/canary
 
@@ -902,13 +1712,12 @@ which number is being reported before starting — see the warning at the top.
 **Test.** Port one decode step, measure it standalone against the Python path first.
 No integration until that microbenchmark says the premise is right.
 
-**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
-run found that `submission_ns` is not host work: on identical work and shapes, arm B
-submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
-The larger window is larger *because the device runs inside it*. The four-way split
-therefore measures wall-clock windows, not host and device cost separately — so the
-question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
-answered with that instrument at all. Size these with real GPU counters or not at all.
+**`B24` discharged this dependency on 2026-09-09.** The four-way wall-clock split
+could not separate host from device cost; the Metal System Trace can. Measured on an
+ungrouped batch-1 step, host time is `2.72 ms` at 1B, `3.27` at 4B and `5.50` at 12B,
+against steps of `8.48`, `13.23` and `32.86 ms`. That is the ceiling for anything here:
+at most `32% / 25% / 17%`, falling as the model grows. Encoders per step are `16 / 22 /
+35`, but encoders are not dispatches, so the `~510 kernels` premise is still unmeasured.
 
 **Kill.** Under `2x` improvement on the isolated step. Then `6.41 µs` is Metal's
 enqueue cost rather than Python's, and `B9` becomes the only remaining route.
@@ -926,13 +1735,12 @@ fingerprint mechanism was built to police, not to encourage.
 **Test.** Prototype outside IronMule: a hand-built ICB replaying one transformer
 block, timed against the same block through MLX.
 
-**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
-run found that `submission_ns` is not host work: on identical work and shapes, arm B
-submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
-The larger window is larger *because the device runs inside it*. The four-way split
-therefore measures wall-clock windows, not host and device cost separately — so the
-question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
-answered with that instrument at all. Size these with real GPU counters or not at all.
+**`B24` discharged this dependency on 2026-09-09.** The four-way wall-clock split
+could not separate host from device cost; the Metal System Trace can. Measured on an
+ungrouped batch-1 step, host time is `2.72 ms` at 1B, `3.27` at 4B and `5.50` at 12B,
+against steps of `8.48`, `13.23` and `32.86 ms`. That is the ceiling for anything here:
+at most `32% / 25% / 17%`, falling as the model grows. Encoders per step are `16 / 22 /
+35`, but encoders are not dispatches, so the `~510 kernels` premise is still unmeasured.
 
 **Kill.** The replay is not meaningfully faster, or the shapes turn out not to be
 stable enough across steps to reuse an encoding. Highest ceiling of anything in Tier 2
@@ -946,16 +1754,19 @@ happens to a naive attempt: fusing q/k/v removed 102 matmul dispatches but added
 cancelled exactly. The lesson is that fusion must not reintroduce kernels — a real
 custom kernel for the block, not a rearrangement of existing primitives.
 
-**Test.** Count kernels honestly first. `LIMITS.md` records that MLX exposes no
-machine-readable dispatch counter, so this depends on `B24`.
+**Largely closed by `B24S` (2026-09-09).** The shader timeline puts `99.3` to `99.8%`
+of a decode step's GPU time in the quantised matrix-vector kernel. Everything this entry
+would fuse away, norms and adds and copies together, is `0.2` to `0.7%`. Fewer kernels
+is no longer the question; the one kernel that matters is, and `B41` is what came of
+looking at it. The dispatch count itself is still unmeasured, and no longer needed to
+size this entry.
 
-**Depends on `B24`, and it is a hard dependency, not a preference.** The `B7` scaling
-run found that `submission_ns` is not host work: on identical work and shapes, arm B
-submits `73.53 ms` then waits `10.11`, while arm A submits `50.85` and waits `48.79`.
-The larger window is larger *because the device runs inside it*. The four-way split
-therefore measures wall-clock windows, not host and device cost separately — so the
-question every Tier 2 entry turns on, how much of a decode step is Python, cannot be
-answered with that instrument at all. Size these with real GPU counters or not at all.
+**`B24` discharged this dependency on 2026-09-09.** The four-way wall-clock split
+could not separate host from device cost; the Metal System Trace can. Measured on an
+ungrouped batch-1 step, host time is `2.72 ms` at 1B, `3.27` at 4B and `5.50` at 12B,
+against steps of `8.48`, `13.23` and `32.86 ms`. That is the ceiling for anything here:
+at most `32% / 25% / 17%`, falling as the model grows. Encoders per step are `16 / 22 /
+35`, but encoders are not dispatches, so the `~510 kernels` premise is still unmeasured.
 
 **Kill.** Kernel count is already near the floor for the primitives available, or a
 fused block kernel underperforms the library's tuned matmuls — which is the usual
@@ -1060,25 +1871,6 @@ the fingerprint discipline directly.
 
 **Kill.** `B13` fails, or the head cannot be trained to acceptance meaningfully above
 an independent draft's.
-
-### `B15` — An `lm_head` that is exact but does not read all 262k rows
-
-**Mechanism.** Gemma 3's vocabulary is ~262k, so `lm_head` moves `377 MB` at 4B and
-about `704 MB` at 27B. Greedy decoding needs only the argmax, not the full logit
-vector. Cluster the vocabulary once, compute cluster upper bounds, and only evaluate
-rows in clusters whose bound can still win. With a correct bound the result is
-**exactly** the same token, not an approximation.
-
-**Evidence against.** `E3` measured `lm_head` at `288 GB/s`, the best achieved
-bandwidth in the whole model — this is the efficient part. The pruning logic adds
-kernels, and `E5` is the cautionary tale about adding kernels to save bandwidth.
-
-**Test.** Offline first: on real hidden states, what fraction of rows survives a
-correct bound? If it is not below a quarter, stop.
-
-**Kill.** Survival fraction too high, or the added dispatches eat the saving. Note the
-share falls with model size (~16% at 4B, ~5% at 27B), so this is the wrong direction
-for the scaling problem even if it works.
 
 ### `B16` — Lower or mixed precision
 
@@ -1216,14 +2008,86 @@ of them might be answered *differently*.
 
 **Kill.** Nothing. This is the entry to do first if Tier 2 is ever seriously attempted.
 
+**B24 answered (2026-09-09).** Instruments 16.0 `Metal System Trace` records
+what MLX does not expose. Joining the compute-channel GPU intervals to the
+process's own command buffer ids, over 32 measured greedy decode steps after a
+quiet gap, three runs per model:
+
+| model | GPU share of step | GPU ms | host ms | step ms | encoders/step | command buffers/step |
+| :-- | --: | --: | --: | --: | --: | --: |
+| `gemma-3-1b-it-4bit` | `0.684` | `5.81` | `2.72` | `8.48` | `16.0` | `16.1` |
+| `gemma-3-4b-it-4bit` | `0.753` | `9.96` | `3.27` | `13.23` | `22.0` | `26.3` |
+| `gemma-3-12b-it-4bit` | `0.833` | `27.46` | `5.50` | `32.86` | `35.0` | `56.1` |
+
+The device, not the host, holds the majority of an ungrouped batch-1 decode step,
+and its share **rises** with model size while host time stays nearly flat. That
+caps every host-side entry: removing all host time is worth at most `32%` at 1B,
+`25%` at 4B and `17%` at 12B, before any of it is actually removable.
+
+**What the device time then says about direction (`B24R`, derived).** With device
+time measured, the weight sweep can be priced. Bytes are the language model's own
+parameters as loaded; the floor divides them by `324 GB/s`, the best bandwidth the
+ledger has ever achieved (`E4`, on a large matmul, so the floor is optimistic and KV
+traffic is not counted):
+
+| model | weight bytes read per token | achieved | share of best measured | bandwidth floor | device slack | host |
+| :-- | --: | --: | --: | --: | --: | --: |
+| `gemma-3-1b-it-4bit` | `732.5 MB` | `126.0 GB/s` | `38.9%` | `26.7%` of step | `41.9%` | `32.0%` |
+| `gemma-3-4b-it-4bit` | `2.561 GB` | `257.1 GB/s` | `79.4%` | `59.7%` of step | `15.5%` | `24.7%` |
+| `gemma-3-12b-it-4bit` | `7.186 GB` | `261.7 GB/s` | `80.8%` | `67.5%` of step | `16.1%` | `16.7%` |
+
+At 4B and 12B the device already runs at about `80%` of the best bandwidth this project
+has ever measured, and two thirds of a 12B step is an unavoidable single sweep of the
+weights. Host work and device slack together are `40%` at 4B and `33%` at 12B, and both
+shares shrink as the model grows. Nothing that reorganises execution can pass that;
+only reading fewer bytes per token can — speculation, true batching, or KV geometry.
+The exception is 1B, where achieved bandwidth is `38.9%` and the slack is the largest
+single share of the step: small matmuls, the `E4` regime, not a host problem.
+Experiment `B24R_roofline_20260909_attempt1`.
+
+**Kernel level (`B24S`).** Adding the `Metal GPU Counters` instrument to the same
+template turns on the shader timeline, which records every shader run with its name and
+duration. Sixteen measured steps per model, compute shaders of the traced process only:
+
+| model | shader intervals/step | quantised matmul calls/step | matmul share of GPU time | everything else | copy intervals/step | copy share of GPU time |
+| :-- | --: | --: | --: | --: | --: | --: |
+| 1B | `68.1` | `183` | `99.32%` | `0.68%` | `9.2` (13.5%) | `0.371%` |
+| 4B | `100.6` | `239` | `99.60%` | `0.40%` | `15.7` (15.6%) | `0.0008%` |
+| 12B | `277.2` | `337` | `99.79%` | `0.21%` | `4.6` (1.6%) | `0.00002%` |
+
+Two things follow. **There is no kernel overhead to remove.** Norms, adds, rope,
+attention and every copy together are `0.2` to `0.7%` of GPU time, so a perfect
+superoptimiser that deleted all of them would return under half a percent of a step.
+**Copies exist but are free.** They are up to `15.6%` of the intervals and never more
+than `0.4%` of the time, which closes the "replace a copy with address arithmetic" idea
+on this path: there is nothing there to win.
+
+The matmul call count is exact and comes from outside the trace, by counting
+`QuantizedLinear` invocations in one step: `26 x 7 + 1`, `34 x 7 + 1`, `48 x 7 + 1`. The
+shader timeline reports fewer intervals than that, so an interval aggregates dispatches
+of one shader within a kick. Interval counts are a floor on kernels, never the dispatch
+count, and the `~510 kernels per step` figure stays unmeasured. What the timeline does
+settle is where the time goes, and that answer is unambiguous. It also found the split
+between `affine_qmv` and `affine_qmv_fast` that became `B41`.
+
+**What it does not settle.** Encoders are not dispatches — one compute encoder can
+hold several kernels — so the `~510 kernels per step` figure is neither confirmed
+nor refuted. That needs `Shader Timeline: Enabled`, which this recording had off.
+The measurement is one ungrouped session; `E14b`'s host saturation was measured
+with four grouped sessions and is not contradicted by this. Experiment
+`B24_metal_trace_series_20260909_attempt1`, `tools/b24_decode_workload.py` and
+`tools/b24_trace_report.py`; traces stay outside the repository.
+
 **B24 capture smoke (2026-08-27).** Installed MLX `0.32` exposed start/stop
 capture support and memory counters, but no public machine-readable counter or
 profile names were identified. The first tiny smoke failed because the capture
 layer was not inserted. A retry with `MTL_CAPTURE_ENABLED=1` succeeded for a
 tiny 64-element matmul and produced `/private/tmp/ironmule_b24_enabled_smoke.gputrace`;
 there was no timing/performance claim and no crash. The trace is intentionally
-not copied into the repository. B24 remains open for one model decode trace and
-Xcode analysis, using Apple's [GPU counter statistics guidance](https://developer.apple.com/documentation/xcode/analyzing-apple-gpu-performance-using-counter-statistics)
+not copied into the repository. That decode trace has since been taken with
+`xctrace` rather than Xcode, see the entry above; what remains open is only the
+dispatch count, which needs `Shader Timeline: Enabled`. Apple's
+[GPU counter statistics guidance](https://developer.apple.com/documentation/xcode/analyzing-apple-gpu-performance-using-counter-statistics)
 and [Metal developer tools](https://developer.apple.com/metal/tools/); MLX's
 available [active-memory](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.get_active_memory.html)
 and [peak-memory](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.get_peak_memory.html)
@@ -1241,6 +2105,13 @@ scheduler with a different unit of work.
 `B8` and `B9` shrink the published gain while making the product faster. `B13` and
 `B14` raise both. If the goal is a number that goes up *and* means something, the
 speculative branch is the honest one to push.
+
+`B24` and `B24R` now put numbers on that sentence. Every host entry competes for
+`24.7%` of a 4B step and `16.7%` of a 12B one, and that share falls as the model grows.
+Every kernel entry competes for the `15.5%` and `16.1%` of device slack above a
+bandwidth floor the device already reaches four fifths of. The entries that read fewer
+bytes per token are the only ones not bounded by either number, which puts `B13`, `B14`
+and `B19` ahead of `B8`, `B9` and `B10` on measured grounds rather than on taste.
 
 ## Rules that apply to every entry here
 

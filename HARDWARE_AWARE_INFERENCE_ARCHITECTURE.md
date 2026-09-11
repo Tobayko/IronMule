@@ -98,8 +98,11 @@ Größenordnung typischer Abstände zwischen den beiden führenden Token.
 Daraus folgen zwei Dinge für diese Architektur:
 
 **Kein einzelner Kernel ist das Ziel.** Die Ursache ist über jede Schicht verteilt.
-Custom-Metal-Arbeit ist damit nicht mangels Beleg gesperrt, sondern begründet
-ausgeschlossen.
+Ein einzelner Kernel behebt die Tokenabweichung zwischen Breiten also nicht. Das ist ein
+Argument gegen *diese* Erwartung an Custom-Metal-Arbeit, kein Verbot davon: seit der
+Projektregel „Verworfen heißt nicht verboten" (10.09.2026, `AGENTS.md`) bleibt jeder
+eigene Metal-Pfad zulässig, sobald er bitgleich gegen den Bibliothekspfad seiner eigenen
+Form belegt ist. `B42`/`B44` (`k3840_matvec`) ist genau so ein Pfad und ist zugelassen.
 
 **Jeder Modus, der Formen ändert, trägt dieses Risiko.** Das ist kein Implementierungs-
 mangel, den man beheben könnte, sondern eine Eigenschaft der Rechengenauigkeit. Ein

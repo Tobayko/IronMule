@@ -21,6 +21,27 @@ and against it, a test, and the result that would close it.
 Read **Tier 0** before proposing an optimisation. It records what has already been
 measured and rejected, and each of those entries cost real GPU time to learn.
 
+### Rejected is not forbidden (project rule, 2026-09-10)
+
+Tier 0, `NO-GO` and every closed kill entry are **historical evidence, not a permanent
+ban**. They record what a specific mechanism cost on a specific fingerprint, and that is
+exactly how far they reach.
+
+Any of them may be re-opened when one of three things is new:
+
+* **new hardware evidence** — a different chip, memory size, MLX/mlx-lm build or model
+  revision than the one the entry was measured on;
+* **a changed mechanism** — the reason the entry died no longer applies, stated
+  explicitly against the old entry's own kill criterion;
+* **a new implementation** — a different code path, kernel or execution route, not a
+  re-run of the same one.
+
+Re-opening costs one thing: the new entry must name the old entry, quote the old kill
+criterion, and say which of the three conditions above is met. Repeating an experiment
+with no such statement is still forbidden, because that is what wastes GPU time. Refusing
+a method *only* because an older attempt failed is equally forbidden, because that is what
+freezes a runtime.
+
 Three conventions:
 
 1. **Work from it.** Work that is not an entry gets added as one first. An entry needs a

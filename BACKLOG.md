@@ -5,6 +5,61 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
+### Verworfen heißt nicht verboten (Projektregel, 10.09.2026)
+
+Tier 0, `NO-GO` und jeder geschlossene Kill-Eintrag sind **historische Evidenz, kein
+dauerhaftes Verbot**. Sie halten fest, was ein bestimmter Mechanismus auf einem
+bestimmten Fingerprint gekostet hat — und genau so weit reichen sie.
+
+Jeder davon darf erneut untersucht werden, sobald eines von drei Dingen neu ist:
+
+* **neue Hardwareevidenz** — anderer Chip, andere Speichergröße, anderer MLX-/mlx-lm-Build
+  oder andere Modellrevision als die, auf der gemessen wurde;
+* **veränderter Mechanismus** — der Grund des Scheiterns gilt nicht mehr, ausdrücklich
+  gegen das Kill-Kriterium des alten Eintrags begründet;
+* **neue Implementierung** — ein anderer Codepfad, Kernel oder Ausführungsweg, nicht der
+  erneute Lauf desselben.
+
+Die Wiedereröffnung kostet genau eines: Der neue Eintrag nennt den alten, zitiert dessen
+Kill-Kriterium und benennt, welche der drei Bedingungen erfüllt ist. Ein Experiment ohne
+diese Angabe zu wiederholen bleibt verboten, denn das verbrennt GPU-Zeit. Eine Methode
+allein deshalb auszuschließen, weil ein älterer Versuch scheiterte, ist ebenso verboten,
+denn das friert eine Runtime ein.
+
+## DATA1 — Portable Datenerhebung: offene Hardware-/Lerngates (2026-09-07)
+
+Nutzerauftrag: den akzeptierten Apple-/NVIDIA-/TPU-Plan implementieren. Nutzerkorrektur
+2026-09-07: primär maximale End-to-End-Beschleunigung, mindestens die historischen
+Bestwerte der jeweils vergleichbaren Workload; geringerer Messaufwand ist sekundär.
+Mechanismus: native Matmul-Runner, echte Tensorcaptures, versionierte Provenienz und
+ein eigener Within-Backend-Split; vorhandene L1-/R2-Evidenz bleibt unverändert.
+Kaggle: 0 EUR, je GPU-/TPU-Fenster min(10 % bestätigter Gratisquote, 2 h), höchstens
+15 min pro Job, erster Smoke 3 min, eine Sitzung, Reservierung vor Start und
+bestätigtes Ende/Quotenabgleich vor jedem Folgestart. Kein automatischer Retry.
+Implementierung und geprüfte Ergebnisse stehen in `docs/DATA1_PORTABLE_COLLECTION.md`.
+CUDA-Smoke auf echter Kaggle-T4 ist beantwortet; offen bleiben TPU-Zugang/Smoke,
+unabhängige Train-/Validation-/Holdout-Abdeckung und native Suchpolicy-Bestätigung.
+Mechanismus des nächsten Datengates: eigenständige, vorab registrierte Messdesigns
+aus der beobachteten A/A-Streuung ableiten; die zwölf-Paar-Designs auf den zwei
+geprüften Apple-Fällen nicht für einen günstigeren Zufallswert wiederholen.
+Die A/A-Läufe `4dba2c2d6c1b4dee9c96ab14d3064c55` und
+`c77f0649b3644a39af44d86a92782ebd` verfehlten 2,5 % mit 6,68/16,14 %;
+Rohdaten bleiben Diagnose, die bisherige Hardware-/Lernqualifikation unverändert.
+Gate: reale TPU-Ausführung, auflösbare A/A-Messung und unabhängige Coverage
+innerhalb des unveränderten Geld-/Quotenbudgets; andernfalls weiter kein Lernclaim.
+Leistungsgate: aktuelle bestbekannte IronMule-Konfiguration als zusätzlicher
+Vergleichsarm neben dem nativen Stock-Backend. Historische Zielmarken: E13
+Shared-Prefix-Sitzung Ratio <=0,2039695604 (Qualität neu unter aktuellem Vertrag
+prüfen), D5 exakte 1B-Einzelanfrage <=0,6959773071 (erneut qualifizieren),
+B39d 12B-Serverwall <=0,8194867050 bzw. Rate >=1,2202787058.
+Diese verschiedenen Scopes nicht zu einem universellen Faktor vermischen.
+Der Matmul-Proxy darf nicht 5 % unter dem eigenen beobachteten Optimum bleiben;
+ein Kostenplus allein verwirft keine schnellere Variante innerhalb des Budgets.
+Erreicht ist das Nutzerziel erst durch neue vollständige native Inferenznachweise;
+Pilotdaten, Kostensparen und ein Offline-Replay allein reichen nicht.
+Kill: unklare Gratisquote/Sitzung, Korrektheits- oder Ressourcenfehler, fehlende
+unabhängige Gruppen oder kein Lernvorteil lassen den betreffenden Pfad gesperrt.
+
 ## PROD1 — IronMule als autonome lokale LLM-Umgebung (2026-09-05)
 
 Nutzerauftrag: den im Gespräch ausgearbeiteten Produktplan umsetzen; Live-Tests
@@ -107,12 +162,17 @@ neuer Kernel oder RL-Policy ohne gemessenen Engpass bzw. valide Datenbasis.
 Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
 beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`; getrennte Server-/Worker-
 Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`):
-1. Die beobachteten Host-/Bibliotheksphasen und Speicherwerte durch gezielte
-   GPU-/Engpassdiagnose ergänzen; keine reine GPU-Zeit aus Hostzeit erfinden.
-   Diagnosepivot nach PROD10G Versuch2: vollständiger `.gputrace`-Capture ist
-   schwergewichtig und liefert Replay-, nicht ursprüngliche GPU-Zeit. Für
-   Original-Latenzen neues Metal-System-Trace-Protokoll verwenden; den
-   abgebrochenen Capture nicht als Hardwarefehler oder fertiges Profil werten.
+1. **Beantwortet 2026-09-09.** Das Metal-System-Trace-Protokoll steht und liefert
+   originale Gerätezeit: `xctrace`, Compute-Kanal, GPU-Intervalle über die eigenen
+   Command-Buffer-IDs zugeordnet (`tools/b24_decode_workload.py`,
+   `tools/b24_trace_report.py`, Experiment `B24_metal_trace_series_20260909_attempt1`).
+   Ungruppierter Batch-1-Decodeschritt, je drei Läufe: Geräteanteil 68,4 % bei 1B,
+   75,3 % bei 4B, 83,3 % bei 12B; Hostzeit 2,72 / 3,27 / 5,50 ms bei Schritten von
+   8,48 / 13,23 / 32,86 ms. Die abgeleitete Roofline
+   (`B24R_roofline_20260909_attempt1`) setzt den unvermeidbaren Gewichtsdurchlauf auf
+   59,7 % eines 4B- und 67,5 % eines 12B-Schritts. Offen bleibt allein die
+   Dispatchzahl; sie braucht einen Lauf mit aktivierter Shader-Timeline. Der
+   abgebrochene 6,7-GB-`.gputrace` bleibt Replay-Zeit und wird nicht verwendet.
 2. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
    Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
    bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
@@ -1349,3 +1409,47 @@ bleibt jede Zeile vollständig.
 **Kill:** bleibt die Hashbindung bindend, entfallen `2898` der `4431` Zeilen
 nicht, und der Nettogewinn ist `1533` statt `4000`. Das ist immer noch der
 größte Einzelblock des Projekts, und es gehört so in `PROJECT_STATUS.md`.
+
+## SSOT1 — belastbare Urheberzuordnung der Messdaten (neu 2026-09-09)
+
+Der Gesamtindex steht (`friday_evidence/ssot.py`, `docs/SSOT.md`): 417 Quellen,
+1745 Läufe, 300 084 Metrikwerte, Quellen unverändert. Offen ist die Qualität der
+Spalte `runs.agent`, nicht ihre Existenz.
+
+**Befund.** Nur 578 Läufe ruhen auf einem referenzierten Commit oder dem
+Archivmanifest. 753 hängen an `file_mtime` von `optimizer-v2.sqlite3`, dessen
+Datensätze fast alle ein leeres `created_at` tragen; 38 (`h0`, `h01`) entstanden
+vor dem ersten Commit und bleiben `unattributed`. Commits ohne Claude-Trailer und
+ohne `feat(gemini):`-Scope werden pauschal Codex zugerechnet.
+
+**Mechanismus.** Messwerkzeuge schreiben den erzeugenden Agenten selbst in ihre
+Provenienz; `payload_field` liest bereits `agent`, `produced_by`, `measured_by`,
+`author_agent` und `agent_id`. Zusätzlich die Kette in `optimization_records`
+(`prev_record_hash`, `seq`) nutzen, um die vorhandenen vier echten `created_at`
+vorwärts zu propagieren, statt die Dateizeit zu verwenden.
+
+**Gate:** Anteil `file_mtime` unter 5 % der Läufe, und jeder neue Lauf ab
+Einführung trägt `payload_field` oder `provenance_commit`. Rückwirkend wird
+nichts umgeschrieben; alte Läufe behalten ihre schwache Stufe samt Etikett.
+
+**Kill:** Lässt sich die Zeitkette in `optimizer-v2` nicht ohne Annahme schließen,
+bleibt der Block bei `file_mtime` und wird in `docs/SSOT.md` als solcher geführt.
+Eine geratene Zuordnung ist schlechter als eine sichtbar schwache.
+
+## SSOT2 — Index in der lokalen UI und als Regressionsgrenze (neu 2026-09-09)
+
+Der Index wird bisher nur über `tools/ssot.py query` gelesen. `AGENTS.md`
+verlangt für relevante Messwerte zusätzlich eine kleine lokale UI mit Historie.
+
+**Mechanismus.** `tools/friday.py status` um eine SSOT-Sicht erweitern (Studien,
+Agenten, jüngste Läufe, Metrik-Zeitreihe), statt einen dreizehnten
+`dashboard.py` zu bauen — siehe U1. Danach eine Regressionsgrenze: eine Metrik,
+die gegen ihre eigene Historie im Index geprüft wird, statt gegen eine
+handgepflegte Zahl in einer Ergebnisdatei.
+
+**Gate:** `status --ssot` und `--json` liefern denselben Snapshot; eine
+absichtlich verschlechterte Metrik wird von der Regressionsgrenze erkannt.
+
+**Kill:** Bleibt der Index für die UI zu grob (155 601 verschiedene Metrikpfade,
+davon die meisten nur einmal belegt), wird zuerst eine Namenskonvention für
+vergleichbare Metriken gebraucht; ohne die trägt keine Zeitreihe.
