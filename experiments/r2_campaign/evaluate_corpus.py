@@ -21,6 +21,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+sys.path.insert(0, str(PROJECT_ROOT / "research"))
 STUDY_ID = "r2-corpus-eval-20260905-01"
 CAMPAIGN_PREFIX = "r2-corpus-20260904-01."
 #: Frozen in the preregistration: the last 20 % of the sealed draw order.

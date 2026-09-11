@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(ROOT / "research"))
 from friday_optimizer.evaluator import MetricSample  # noqa: E402
 from friday_optimizer.integration import evaluate_integration  # noqa: E402
 

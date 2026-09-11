@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(ROOT / "research"))
 from friday_optimizer.integration import prefill_share, project_request_ratio  # noqa: E402
 
 # Datasheet, Apple M1 Max, 32-core GPU. Stated, never measured here.

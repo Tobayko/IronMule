@@ -10,6 +10,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+sys.path.insert(0, str(PROJECT_ROOT / "research"))
 from friday_avo_router.cli import main  # noqa: E402
 
 

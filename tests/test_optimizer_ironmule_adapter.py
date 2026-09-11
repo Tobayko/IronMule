@@ -169,7 +169,7 @@ class AdapterTests(unittest.TestCase):
         self.assertEqual(baseline.args[1], "status")
         self.assertEqual(spec.args[1], "tune")
         worker_path = Path(spec.cwd) / "friday_ironmule_stage_worker.py"
-        real_worker = Path(__file__).resolve().parents[1] / "friday_optimizer" / "ironmule_stage_worker.py"
+        real_worker = Path(__file__).resolve().parents[1] / "research" / "friday_optimizer" / "ironmule_stage_worker.py"
         self.assertEqual(worker_path.read_bytes(), real_worker.read_bytes())
         self.assertTrue(os.stat(worker_path).st_mode & 0o111)
         staged_spec = __import__("json").loads((Path(spec.cwd) / "stage_spec.json").read_text(encoding="utf-8"))

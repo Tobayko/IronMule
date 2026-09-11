@@ -25,10 +25,18 @@ from friday_optimizer.real_session import FingerprintReport
 PYTHON = Path(__file__).parents[1] / ".venv" / "bin" / "python"
 
 
+ROOT = Path(__file__).parents[1]
+
+
 def run_cli(*arguments: str) -> subprocess.CompletedProcess[str]:
+    # The research tree is its own source root, so a child interpreter is told
+    # about it rather than relying on the parent's `sys.path`.
+    environment = {**os.environ,
+                   "PYTHONPATH": os.pathsep.join((str(ROOT), str(ROOT / "research")))}
     return subprocess.run(
         [str(PYTHON), "-m", "friday_optimizer", *arguments],
-        cwd=Path(__file__).parents[1],
+        cwd=ROOT,
+        env=environment,
         text=True,
         capture_output=True,
         check=False,

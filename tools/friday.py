@@ -196,6 +196,7 @@ def cmd_status(rest: list[str]) -> int:
                           "known": sorted(known)}))
         return 64
     sys.path.insert(0, str(PROJECT_ROOT))
+    sys.path.insert(0, str(PROJECT_ROOT / "research"))
     import time
 
     from friday_runtime_core import status as ui

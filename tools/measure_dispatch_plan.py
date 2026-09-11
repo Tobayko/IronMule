@@ -152,6 +152,7 @@ def run(n: int, blocks: int, replicates: int) -> dict[str, object]:
     import numpy as np
 
     sys.path.insert(0, str(PROJECT_ROOT))
+    sys.path.insert(0, str(PROJECT_ROOT / "research"))
     from friday_h0.benchmark import _generate_fixture
 
     guard.before_candidate()

@@ -23,6 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(ROOT / "research"))
 from friday_serve.speculation import (  # noqa: E402
     ACTIONS,
     SpeculationBandit,

@@ -323,7 +323,7 @@ class H01StorageTests(unittest.TestCase):
                 self.assertEqual(storage.count(), 0)
 
     def test_exact_schema_rejects_extra_missing_changed_column_index_and_trigger(self) -> None:
-        migration_path = Path(__file__).parents[1] / "friday_h01" / "migrations" / "0001_initial.sql"
+        migration_path = Path(__file__).parents[1] / "research" / "friday_h01" / "migrations" / "0001_initial.sql"
         registered = migration_path.read_text(encoding="utf-8")
         mutations = {
             "extra_table": (

@@ -37,6 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+sys.path.insert(0, str(ROOT / "research"))
 from friday_optimizer.integration import project_request_ratio  # noqa: E402
 
 #: F1's own six pairs, docs/ARBEITSJOURNAL.md "2026-09-02 - F1 warmer Arm

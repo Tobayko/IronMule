@@ -42,6 +42,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "research"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 STUDY_ID = "switch-point-20260902-01"

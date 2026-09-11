@@ -42,7 +42,8 @@ class ProvenanceTests(unittest.TestCase):
 
     def _copy_project_fixture(self, temporary: str) -> Path:
         root = Path(temporary)
-        shutil.copytree(ROOT / "friday_h0", root / "friday_h0")
+        # The fixture mirrors the real layout: the package lives under research/.
+        shutil.copytree(ROOT / "research" / "friday_h0", root / "research" / "friday_h0")
         (root / "docs").mkdir()
         shutil.copy2(ROOT / "docs/PHASE1_MATMUL_SPEC.md", root / "docs/PHASE1_MATMUL_SPEC.md")
         return root
@@ -52,7 +53,7 @@ class ProvenanceTests(unittest.TestCase):
             fixture = self._copy_project_fixture(temporary)
             context = _test_root(fixture)
             before = _collect_provenance_for_tests(context)
-            aggregation = fixture / "friday_h0/aggregation.py"
+            aggregation = fixture / "research/friday_h0/aggregation.py"
             aggregation.write_bytes(aggregation.read_bytes() + b"\n# isolated hash fixture\n")
             after = _collect_provenance_for_tests(context)
             self.assertNotEqual(before.code_sha256, after.code_sha256)
@@ -60,8 +61,8 @@ class ProvenanceTests(unittest.TestCase):
     def test_provenance_rejects_allowlisted_symlink(self):
         with tempfile.TemporaryDirectory() as temporary:
             fixture = self._copy_project_fixture(temporary)
-            target = fixture / "friday_h0/aggregation.py"
-            replacement = fixture / "friday_h0/aggregation.real.py"
+            target = fixture / "research/friday_h0/aggregation.py"
+            replacement = fixture / "research/friday_h0/aggregation.real.py"
             target.rename(replacement)
             try:
                 target.symlink_to(replacement)

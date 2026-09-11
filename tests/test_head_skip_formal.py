@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import sqlite3
+import os
 import subprocess
 import sys
 import tempfile
@@ -156,11 +157,19 @@ def complete_history(ratio: float = 0.8) -> list[dict[str, object]]:
     return [prereg, *calibration, summary, seal, *confirmation, decision]
 
 
+#: The study is sealed, so its own `sys.path` setup predates the research tree
+#: becoming a source root. The harness supplies the root rather than editing a file
+#: whose bytes are part of a recorded hash.
+RESEARCH_ENV = {**os.environ,
+                "PYTHONPATH": os.pathsep.join((str(ROOT), str(ROOT / "research")))}
+
+
 class HeadSkipFormalTests(unittest.TestCase):
     def test_self_check_and_release_gate_are_offline(self) -> None:
         checked = subprocess.run(
             [sys.executable, str(SCRIPT), "self-check"],
             cwd=ROOT,
+            env=RESEARCH_ENV,
             capture_output=True,
             text=True,
             check=False,
@@ -171,6 +180,7 @@ class HeadSkipFormalTests(unittest.TestCase):
             gated = subprocess.run(
                 [sys.executable, str(SCRIPT), "--database", str(database), "seal"],
                 cwd=ROOT,
+                env=RESEARCH_ENV,
                 capture_output=True,
                 text=True,
                 check=False,
