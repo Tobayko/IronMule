@@ -120,7 +120,17 @@ def _q2_actions(profile: dict[str, Any], adaptive: Any) -> list[Any]:
             current = candidate
         elif trial.get("disposition") != "rejected":
             raise ValueError("Q2 trial disposition is not closed")
-    if current.as_dict() != profile.get("knobs"):
+    # The Q2 profile was written before later knobs existed. It still has to match on
+    # every knob it names, and every knob it does not name has to be at its default;
+    # an old profile keeps its behaviour, it does not silently gain a new setting.
+    stored_knobs = profile.get("knobs")
+    if not isinstance(stored_knobs, dict) or not set(stored_knobs) <= set(adaptive.KNOB_NAMES):
+        raise ValueError("Q2 profile knobs are not a subset of the knob schema")
+    final = current.as_dict()
+    baseline = adaptive.KnobAction.baseline().as_dict()
+    if ({name: final[name] for name in stored_knobs} != stored_knobs
+            or any(final[name] != baseline[name]
+                   for name in set(adaptive.KNOB_NAMES) - set(stored_knobs))):
         raise ValueError("Q2 final profile knobs do not match accepted trial path")
     if len({action.action_id for action in actions}) != 12:
         raise ValueError("Q2 sequential candidate actions are not unique")
