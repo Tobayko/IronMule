@@ -130,6 +130,10 @@ def test_the_device_profile_chain_still_verifies():
     assert records, "the device-profile chain is empty"
 
 
+#: Rebuildable indexes over the sealed databases; they hold no evidence of their own.
+DERIVED = {"ssot.sqlite3"}
+
+
 def test_no_sealed_database_is_left_unchecked():
     """A new sealed database must be added here, not quietly ignored."""
 
@@ -137,6 +141,6 @@ def test_no_sealed_database_is_left_unchecked():
         pytest.skip("no evidence directory in this checkout")
     known = {entry[0] for entry in RECORD_CHAINS} | {
         "optimizer-v2.sqlite3", "research.sqlite3", "h0.sqlite3", "h01.sqlite3", "device-profile.sqlite3",
-    }
+    } | DERIVED
     present = {path.name for path in DATA.glob("*.sqlite3")}
     assert not (present - known), f"unverified evidence databases: {sorted(present - known)}"

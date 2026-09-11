@@ -39,6 +39,14 @@ _CROSS_PACKAGE = {
     ("friday_h01/import_h0.py", "runs"),                     # imports the H0 study database
     ("friday_h01/runner.py", "runs"),                        # same importer, reading H0 runs
     ("friday_head_skip_runtime/policy.py", "record_sha256"),  # reads the sealed head-skip study
+    # The SSOT index reads every study database read-only; those schemas are not its own.
+    ("friday_evidence/ssot.py", "records"),
+    ("friday_evidence/ssot.py", "bundles"),
+    ("friday_evidence/ssot.py", "optimization_records"),
+    ("friday_evidence/ssot.py", "status_events"),
+    ("friday_evidence/ssot.py", "scalar_metrics"),
+    ("friday_evidence/ssot.py", "correctness_metrics"),
+    ("friday_evidence/ssot.py", "raw_samples"),
 }
 
 
