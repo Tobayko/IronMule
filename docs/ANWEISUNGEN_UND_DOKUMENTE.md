@@ -2,7 +2,7 @@
 
 ## Nutzeranforderung (maßgeblich)
 
-Der Nutzer hat beauftragt, alle bisher erarbeiteten Informationen in `/Users/tobiasburandt/Project_Friday`
+Der Nutzer hat beauftragt, alle bisher erarbeiteten Informationen in `<repo>`
 zu schreiben, ProjectAtlas von `https://github.com/styler-ai/ProjectAtlas` zu installieren und für
 weitere Codex-Arbeiten zu verwenden. Xcode ist auf dem Zielgerät installiert. Das Forschungsziel bleibt
 ein skeptisch geprüfter, sicherer Hardware-Optimization-Loop.

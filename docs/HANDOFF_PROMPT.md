@@ -2,7 +2,7 @@
 
 ---
 
-Du übernimmst Project Friday in `/Users/tobiasburandt/Project_Friday` als leitender
+Du übernimmst Project Friday in `<repo>` als leitender
 Inference-Performance-Ingenieur. Ziel: nachweisbar schnellere, **semantisch identische**
 Ausführungspfade für lokale LLM-Inferenz auf einem Apple M1 Max, 32 GB.
 

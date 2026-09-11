@@ -54,11 +54,11 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _HEAD = re.compile(r"^[0-9a-f]{40}$")
 _EMPTY_PYTHONPATH_SHA256 = hashlib.sha256(b"").hexdigest()
 
-# This is deliberately explicit.  The active Claude checkout is never a
-# production adapter target, even when a caller forgets to pass a forbidden
-# path list.  Tests can pass a different explicit list for their temporary
-# repositories.
-CURRENT_IRONMULE_WORKTREE = "/Users/tobiasburandt/Project_Friday/.worktrees/ironmule-b7"
+# The checkout this module is running from is never a production adapter target,
+# even when a caller forgets to pass a forbidden path list. Derived rather than
+# typed: a literal path is right on one machine, and stale the moment the tree
+# moves. Tests pass their own explicit list for temporary repositories.
+CURRENT_IRONMULE_WORKTREE = str(Path(__file__).resolve().parents[2])
 DEFAULT_FORBIDDEN_CHECKOUTS = (CURRENT_IRONMULE_WORKTREE,)
 
 # Files whose bytes affect the command and result contract.  A production

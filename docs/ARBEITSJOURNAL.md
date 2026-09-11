@@ -243,9 +243,9 @@
 ## 2026-08-19 — Root-Git-Statusfehler und korrekte Sauberkeitsprüfung
 
 - Der gerade beobachtete Root-Git-Check `git status --short` im Verzeichnis
-  `/Users/tobiasburandt/Project_Friday` endete mit Exit `128`; `git diff --stat` im selben
+  `<repo>` endete mit Exit `128`; `git diff --stat` im selben
   Root endete mit Exit `129`. Ursache ist, dass der Project-Friday-Root kein Git-Worktree ist.
-  Ausschließlich das verschachtelte `/Users/tobiasburandt/Project_Friday/ProjectAtlas/`
+  Ausschließlich das verschachtelte `<repo>/ProjectAtlas/`
   ist versioniert.
 - Erfolgreiche Handhabung: Git-Sauberkeit wird ausschließlich mit
   `git -C ProjectAtlas status --short` geprüft. Root-Dokumentänderungen werden unabhängig
@@ -594,7 +594,7 @@
 ### Fehler, Ursachen und erfolgreiche Lösungen
 
 - Hauptursache des Canary-NO-GO: `Path(sys.executable).resolve()` wandelt den lexikalischen
-  venv-Launcher `/Users/tobiasburandt/Project_Friday/.venv/bin/python` in den
+  venv-Launcher `<repo>/.venv/bin/python` in den
   Basisinterpreter `/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/bin/python3.12`
   um (`same=false`). Die bereinigte Worker-Umgebung verliert dadurch die venv-
   Paketsuche. Erfolgreiche Handhabung war fail-closed Persistenz und Stopp vor A/A.
@@ -1310,7 +1310,7 @@
   Zwischenbeleg, weil der Inline-Harness anschließend durch einen reproduzierbaren
   Projekt-Runner ersetzt wurde.
 - Finaler persistenter H0.1-Guardrunner
-  `/Users/tobiasburandt/Project_Friday/.venv/bin/python -m tools.run_h01_guard`:
+  `<repo>/.venv/bin/python -m tools.run_h01_guard`:
   Exit `0`, `49/49` Tests, `2234/2234` Subtests, `0` Failures, `0` Errors, `0` Skips,
   interne Wall `19.018361374968663 s`, Self-User `18.890795 s`, Self-System
   `0.156917 s`, Child-User/System jeweils `0`, Peak-RSS `44,924,928 B`; extern
@@ -1433,7 +1433,7 @@
 
 ### Einmaliges Produktionsinventar, read-only
 
-- Preflight: `/Users/tobiasburandt/Project_Friday/.friday-data/h0.sqlite3`, regulär,
+- Preflight: `<repo>/.friday-data/h0.sqlite3`, regulär,
   kein Symlink, Device `16777229`, Inode `229166267`, UID `501`, Mode `0600`, Größe
   `1,781,760 B`, SHA-256
   `4478c1b47d92ea64ccb14a06056cb0062b2efd8f7804513defc56831a0fe5c51`;
@@ -3076,7 +3076,7 @@ des Atlas-Index.
 **Orientierungsfehler und Lösung.** Der erste Refresh-Versuch adressierte
 irrtümlich `ProjectAtlas/target/release/projectatlas`; dort liegt in diesem
 Checkout kein Binary. `command -v projectatlas` identifizierte die gepinnte
-Runtime unter `/Users/tobiasburandt/.local/bin/projectatlas`. Der CLI kennt
+Runtime unter `~/.local/bin/projectatlas`. Der CLI kennt
 `atlas_session_brief` nur als MCP-Tool, nicht als `session-brief`-Subcommand;
 dieser Fehlaufruf änderte nichts. Auch `search --path-only` existiert nicht;
 Ignore-Verifikation erfolgte stattdessen über `ignore list`, `config` und die
@@ -4616,7 +4616,7 @@ Source-Hash und Kernelname blieben unverändert. Der erste Runtime-CLI-Check
 nahm irrtümlich `.projectatlas/bin/projectatlas` an und meldete
 `no such file or directory`; dieser Projektpfad existiert nicht. Der bereits
 von Atlas gemeldete kanonische Launcher
-`/Users/tobiasburandt/.local/bin/projectatlas` bestätigte anschließend Runtime
+`~/.local/bin/projectatlas` bestätigte anschließend Runtime
 `0.4.5-rc1`, Major `3`, MCP/SQLite/TOON sowie die erwarteten Fähigkeiten; die
 projektlokale MCP-JSON-Datei ließ sich fehlerfrei parsen. `git diff --check`
 blieb grün.
@@ -6250,7 +6250,7 @@ und die spätere reine Kontaminationskorrektur
 
 **Sicherheits- und Laufregel.** Die Modellläufe wurden ausschließlich außerhalb
 der Sandbox mit `require_escalated` auf dem vorhandenen Projektinterpreter
-`/Users/tobiasburandt/Project_Friday/.venv/bin/python` ausgeführt. Der temporäre
+`<repo>/.venv/bin/python` ausgeführt. Der temporäre
 Worker `/private/tmp/b35_worker.py` erzwingt Offlinepfade, einen
 `signal.alarm`-Hardtimeout von 840 s innerhalb des Prozesses und wurde zusätzlich
 mit einem 900-s-Perl-Timeout gestartet. Pro OS-Prozess wurde das Modell genau
@@ -6385,7 +6385,7 @@ efficiency_above_one_input_consistency gewarnt. Der Helper verändert keine
 Runtime-, Profil-, Correctness-, Swap- oder Crash-Gates und erzeugt keinen
 Performanceanspruch.
 
-CPU-Test: /Users/tobiasburandt/Project_Friday/.venv/bin/python -m pytest
+CPU-Test: <repo>/.venv/bin/python -m pytest
 tests/test_benchmark.py im Worktree, außerhalb der Sandbox, 25 passed.
 Keine Modelle, MLX-/Metal-/ANE-Läufe, Downloads oder Installationen.
 
@@ -6401,7 +6401,7 @@ inconclusive. Zero-Step setzt Decode und Roofline auf not_applicable, der
 Gesamtstatus bleibt inconclusive; der Helper kennt keinen EOS-Grund.
 
 Der finale CPU-only Lauf war:
-/Users/tobiasburandt/Project_Friday/.venv/bin/python -m pytest
+<repo>/.venv/bin/python -m pytest
 tests/test_benchmark.py — 37 passed, exit 0. Keine Modell-, MLX-, Metal-,
 ANE-, Download- oder Installationsläufe.
 
@@ -6416,7 +6416,7 @@ bleiben unverändert. B36a wird durch Parent und Child neben B36 geprüft.
 Zusätzlich wurden der reale memory_pressure-Output, strikte Child-Identity,
 vollständige Repeat-Token-/Stop-/Decode-Step-Semantik und Partial-Evidence
 explizit abgesichert. Der finale CPU-only Lauf:
-/Users/tobiasburandt/Project_Friday/.venv/bin/python -m pytest
+<repo>/.venv/bin/python -m pytest
 tests/test_b36_core_profile.py — 36 passed, exit 0. Kein 12B-, Modell-,
 MLX-, Metal- oder ANE-Lauf.
 
@@ -8059,7 +8059,7 @@ Sie sind historisch und nicht der aktuelle Projektstatus.
   `d9071855d3b1dc6318aa8c832c66c368314ef9ce4ff790911dd4a96939fdaf24`, Bundle
   `1de0c11763c38462420bb74277d8018b2db1517f9eb17e234938b27681a8c41b`.
 - Ursache: `Path(sys.executable).resolve()` kollabiert den lexikalischen Launcher
-  `/Users/tobiasburandt/Project_Friday/.venv/bin/python` zum Basisinterpreter
+  `<repo>/.venv/bin/python` zum Basisinterpreter
   `/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/bin/python3.12`;
   dadurch fehlt in der bereinigten Worker-Umgebung die venv-Paketsuche.
 - Minimaler Vorschlag: den fest erwarteten absoluten, aber lexikalischen venv-Launcher an
@@ -8118,7 +8118,7 @@ Der `177`-er Scope ist historisch und anders enumeriert; er ist mit dem aktuelle
   `mx.matmul`, `mx.eval`, `mx.synchronize`, `mx.compile` sowie
   `mx.metal.get_active_memory/get_peak_memory/get_cache_memory/reset_peak_memory/
   set_memory_limit/clear_cache`
-- ProjectAtlas-Runtime 0.4.5-rc1 unter `/Users/tobiasburandt/.local/bin/projectatlas`
+- ProjectAtlas-Runtime 0.4.5-rc1 unter `~/.local/bin/projectatlas`
 - ProjectAtlas-Codex-Plugin 0.4.5-rc1 installiert; offizieller Marketplace auf `v0.4.5-rc1`
 - Codex-MCP-Server `projectatlas` aktiviert und auf die Project-Friday-Datenbank versioniert
 - Historischer Setup-Snapshot (nicht aktuell): `projectatlas init` und anschließender
@@ -8141,8 +8141,8 @@ Der `177`-er Scope ist historisch und anders enumeriert; er ist mit dem aktuelle
 
 ## Projektintegration
 
-- Repository: `/Users/tobiasburandt/Project_Friday/ProjectAtlas`
-- Projektlokale ProjectAtlas-Daten: `/Users/tobiasburandt/Project_Friday/.projectatlas/`
+- Repository: `<repo>/ProjectAtlas`
+- Projektlokale ProjectAtlas-Daten: `<repo>/.projectatlas/`
 - generierte MCP-Dateien: `projectatlas.mcp.json`, `projectatlas.claude.mcp.json`,
   `projectatlas.opencode.json`
 - vollständiges Konzept kopiert nach `docs/TECHNISCHES_KONZEPT.md`
@@ -11146,7 +11146,7 @@ Empirischer gepaarter Benchmark auf M1 Max über 3 Promptfamilien (QA, Coding, R
   - **140/140 Unittests laufen zu 100 % grün.**
 
 ### 11. Fehlerbehebung: .zshrc Startup-Fehler & friday.py monitor/autotune CLI Dispatch (2026-09-03)
-- **Problem 1 (.zshrc:source:7: no such file or directory: /Users/tobiasburandt/.local/bin/env):**
+- **Problem 1 (.zshrc:source:7: no such file or directory: ~/.local/bin/env):**
   - **Ursache:** In `~/.zshrc` wurde `source $HOME/.local/bin/env` unkonditioniert aufgerufen, obwohl keine Datei `env` im Verzeichnis `$HOME/.local/bin/` existiert.
   - **Lösung:** In `~/.zshrc` Zeile 7 durch `[ -f "$HOME/.local/bin/env" ] && source "$HOME/.local/bin/env"` abgesichert.
   - **Verifikation:** Interaktiver Shell-Start (`zsh -i -c "exit"`) liefert Exit Code 0 ohne Fehlerausgabe.

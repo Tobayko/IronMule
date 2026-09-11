@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 PYTHON_BIN="${PYTHON_BIN:-$ROOT/.venv/bin/python}"
-PROJECTATLAS_BIN="${PROJECTATLAS_BIN:-/Users/tobiasburandt/.local/bin/projectatlas}"
+PROJECTATLAS_BIN="${PROJECTATLAS_BIN:-$HOME/.local/bin/projectatlas}"
 
 echo "== Xcode =="
 xcodebuild -version

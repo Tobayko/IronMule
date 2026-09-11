@@ -12,7 +12,7 @@ kein GPU-Compiler und keine Hardwareabstraktion.
 - Checkout: `ProjectAtlas/`
 - Commit beim Klonen: `1f576921f2c824976a591d57be53e871dcd19cd8`
 - Runtime: `0.4.5-rc1`
-- Runtime-Pfad: `/Users/tobiasburandt/.local/bin/projectatlas`
+- Runtime-Pfad: `~/.local/bin/projectatlas`
 - Codex-Marketplace: `projectatlas`, Ref `v0.4.5-rc1`
 
 ## Verwendung

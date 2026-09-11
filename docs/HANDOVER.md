@@ -285,7 +285,7 @@ The standalone `python -m ironmule.bench` self-check exited `0` and was green. T
 correct non-integration suite also passed:
 
 ```text
-/Users/tobiasburandt/Project_Friday/.venv/bin/python -m pytest -n0 -m 'not integration'
+<repo>/.venv/bin/python -m pytest -n0 -m 'not integration'
 250 passed, 13 deselected in 6.22s
 ```
 
