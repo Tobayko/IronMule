@@ -6,6 +6,13 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 Review follow-ups completed locally; this section is not a release or a performance claim.
 
+- **The README no longer says the project has no HTTP server or streaming.** It has
+  both. `ironmule serve` answers `POST /v1/chat/completions` and `GET /v1/models`,
+  streams server-sent events when the body sets `"stream": true`, and reports queue
+  depth on `/health`. The routes are documented in `docs/HTTP.md`. The real limits
+  are named instead: greedy decoding only, and concurrent requests queue rather than
+  interleaving through one engine.
+
 - **Measurement is gated on swap, not on a hard-coded byte count (`R11`).** The literal
   `12 * 1024**3` in three research harnesses was wrong in both directions: it refused
   `gemma-3-12b-it-4bit` at a `17.51 GB` block that never swapped, and it passed a run

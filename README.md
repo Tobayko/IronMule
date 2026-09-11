@@ -48,9 +48,9 @@ tensor batches, and the public benchmark fails when the two modes change the out
 
 ## Quick start
 
-### Local HTTP service preview
+### Serve it
 
-This development branch adds a persistent, isolated model service:
+A persistent, isolated model service with an OpenAI-compatible API:
 
 ```bash
 ironmule setup --mode desktop
@@ -59,13 +59,17 @@ ironmule models add mlx-community/gemma-3-1b-it-4bit
 ironmule serve --model mlx-community/gemma-3-1b-it-4bit
 ```
 
-After installing the checkout below, follow the
-[product quick start](docs/PRODUCT_QUICKSTART.md) for JSON/SSE requests,
-model registration, server mode and TLS. This preview serves the stock MLX-LM
-reference. `ironmule optimize run` now performs bounded calibration with automatic
-readiness waiting and local history; **automatic deployment and RL are not yet
-enabled**. Existing
-Python runtime optimizations described below are a separate execution path.
+`POST /v1/chat/completions` answers with one JSON completion, or with
+server-sent events when the body carries `"stream": true`. `GET /v1/models`
+lists the registered models with their exact snapshot revisions, and
+`/health` reports queue depth and completion counters. See
+[`docs/HTTP.md`](docs/HTTP.md) for the routes and
+[`docs/PRODUCT_QUICKSTART.md`](docs/PRODUCT_QUICKSTART.md) for server mode and TLS.
+
+The service runs the stock MLX-LM reference path. `ironmule optimize run` performs
+bounded calibration with readiness waiting and local history; **automatic
+deployment is not enabled**. The Python runtime optimizations described below are
+a separate execution path.
 
 ### Install the checkout
 
@@ -267,6 +271,10 @@ and [E12](research/LEDGER.md#e12--falsification-test-at-the-sliding-window-bound
 
 | Command | Purpose |
 | :-- | :-- |
+| `ironmule setup` | Initialize desktop or server product settings |
+| `ironmule serve` | Serve a registered model over an OpenAI-compatible HTTP API |
+| `ironmule optimize` | Run bounded local calibration and inspect its history |
+| `ironmule data` | Collect portable optimizer evidence under free-only quotas |
 | `ironmule doctor` | Check Apple Silicon, Python, MLX, and Metal prerequisites |
 | `ironmule models` | List cached Hugging Face model snapshots without downloading |
 | `ironmule benchmark` | Compare interactive and throughput modes locally |
@@ -280,7 +288,10 @@ Run `ironmule --help` or `ironmule <command> --help` for options.
 ## What it deliberately does not do
 
 - It does not download or redistribute model weights.
-- It does not provide a hosted API server, streaming, or sampling mode.
+- It does not offer sampling: decoding is greedy, so `temperature` and `top_p` are
+  accepted and ignored.
+- It does not interleave concurrent requests through one engine. They queue and are
+  served in arrival order.
 - It does not automatically select a plan that can change model output.
 - It does not use true tensor batching or claim that every model becomes faster.
 - It does not treat a single benchmark run as proof.
