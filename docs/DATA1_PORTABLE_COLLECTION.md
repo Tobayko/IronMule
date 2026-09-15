@@ -117,6 +117,27 @@ an Version 2.2.4 gebunden; die Rundungsauflösung wird konservativ berücksichti
 Kaggle dokumentiert den genauen Startpunkt der Quoten-/Timeout-Uhr nicht. Die
 Zulassungskontrolle ist deshalb kein Versprechen sekundengenauer Providerabrechnung.
 
+### DATA2: Gemma-Inferenz-Smoke auf der T4
+
+```sh
+ironmule data provider-smoke --backend cuda --workload gemma3-1b --owner tobayko \
+  --accelerator NvidiaTeslaT4 --account-preflight /absolute/path/account-preflight.json \
+  --use-codex-kaggle-credentials --execute
+```
+
+Dieselbe Reservierungs-, Push- und Abgleichslogik wie der Matmul-Smoke; hochgeladen
+wird nur `probe.py`. Das Notebook hängt `google/gemma-3/transformers/gemma-3-1b-it/1`
+über `model_sources` an; vorher muss die Gemma-Lizenz auf Kaggle im Browser
+akzeptiert sein. Im Gast lädt Transformers das Modell in FP32 auf die T4 (TF32 aus,
+eager attention) und erzeugt greedy 32 Tokens für einen festen Prompt. Bestanden ist
+der Smoke nur, wenn zwei `generate`-Läufe und eine manuelle KV-Cache-Schleife exakt
+dieselben Token-IDs liefern und die Gastarbeit höchstens 60 s dauert. Ladezeit, TTFT,
+Decode-Rate und Spitzen-Speicher sind Diagnose (`performance_claim=false`). Die
+Gewichte werden nicht gehasht; die Identität ist der unveränderliche Kaggle-Versions-
+Handle plus Hashes der kleinen Konfigurations-/Tokenizerdateien und Dateigrößen.
+Der Test `test_gemma_guest_manual_loop_matches_generate_on_cpu` prüft nur den Codepfad
+mit winzigen Zufallsgewichten auf der CPU, keine Hardware- oder Modellqualität.
+
 ## Evidenz und Lernen
 
 `friday_evidence.portable` ergänzt die gemeinsame Evidenzbibliothek. Alte L1-/R2-
