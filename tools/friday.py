@@ -189,7 +189,7 @@ def cmd_status(rest: list[str]) -> int:
     and it is the leaner build besides.
     """
 
-    known = {"--json", "--plain", "--decisions", "--signals", "--all"}
+    known = {"--json", "--plain", "--decisions", "--signals", "--ssot", "--all"}
     unknown = [item for item in rest if item not in known]
     if unknown:
         print(json.dumps({"error": "unknown option", "given": unknown,
@@ -217,6 +217,28 @@ def cmd_status(rest: list[str]) -> int:
         sections.append(ui.signal_section(src.h0_board()))
     if everything or "--decisions" in rest:
         sections.append(ui.decisions_section(src.optimizer_decisions()))
+    if everything or "--ssot" in rest:
+        from friday_evidence import ssot
+        import sqlite3
+
+        try:
+            corpus = ssot.status()
+            records = corpus['recent']
+            lines = (
+                f"Sources: {corpus['sources']}; unique objects: {corpus['objects']}",
+                f"Canonical records: {corpus['runs']}; source occurrences: {corpus['occurrences']}",
+                f"Indexed metrics: {corpus['metrics']}; schema: {corpus['schema_version']}",
+                f"Legacy non-finite JSON payloads: {corpus['nonstandard_payloads']} (original values retained)",
+                "Source originals are retained. Run tools/ssot.py verify --check-sources for an integrity audit.",
+            )
+            rows = tuple(ui.Row(name=row['study'],
+                                columns=(row['native_id'], str(row['status'] or 'unknown')),
+                                state='off') for row in records)
+            sections.append(ui.Section(title="Evidence corpus", headings=("Study", "Record", "Status"),
+                                       rows=rows, lines=lines))
+        except (OSError, sqlite3.Error, ssot.SsotError) as exc:
+            sections.append(ui.Section(title="Evidence corpus",
+                                       lines=(f"Unavailable ({type(exc).__name__}); rebuild with tools/ssot.py build.",)))
     sections.append(ui.open_section(src.open_backlog_entries()))
     snapshot = ui.Status(generated_at=time.strftime("%Y-%m-%d %H:%M"), sections=tuple(sections))
     if "--json" in rest:
