@@ -144,8 +144,11 @@ def _run_text(command: list[str], timeout: float = COMMAND_TIMEOUT_SECONDS) -> s
             or not Path(command[0]).is_file() or not os.access(command[0], os.X_OK)):
         return _CommandText("", False)
     try:
+        # The C locale keeps parsed numbers stable: under a German locale `ps` prints %cpu
+        # as "0,0", which the inventory parser correctly rejects as malformed.
         completed = subprocess.run(command, capture_output=True, text=True,
-                                   timeout=timeout, check=False)
+                                   timeout=timeout, check=False,
+                                   env={**os.environ, "LC_ALL": "C"})
     except (OSError, subprocess.SubprocessError):
         return _CommandText("", False)
     limit = MAX_PS_OUTPUT if command in (

@@ -77,9 +77,14 @@ def test_timeout_marks_client_unusable_without_restart(tmp_path: Path) -> None:
 
 
 def _attached_transport(tmp_path: Path, body: str) -> MLXWorkerClient:
-    """Attach a real subprocess that exercises only the JSON pipe transport."""
+    """Attach a real subprocess that exercises only the JSON pipe transport.
+
+    Children in this file start with ``-S`` like the product worker's ``-I -S``: a host
+    ``sitecustomize`` (Debian's writes to stderr on Kaggle) must not leak into
+    stderr-exact assertions or slow the start past a sub-second timeout.
+    """
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", body],
+        [sys.executable, "-S", "-u", "-c", body],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -270,7 +275,7 @@ def test_receiver_shutdown_returns_without_daemon_finalization_abort(tmp_path: P
         "assert q.get()['type']=='shutdown'"
     )
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", code], cwd=tmp_path,
+        [sys.executable, "-S", "-u", "-c", code], cwd=tmp_path,
         env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
@@ -292,7 +297,7 @@ def test_receiver_full_queue_shutdown_is_bounded(tmp_path: Path) -> None:
         "t.join(timeout=2); assert not t.is_alive(); assert q.get_nowait()['type']=='shutdown'"
     )
     process = subprocess.Popen(
-        [sys.executable, "-u", "-c", code], cwd=tmp_path,
+        [sys.executable, "-S", "-u", "-c", code], cwd=tmp_path,
         env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
         stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     )
@@ -312,7 +317,7 @@ def test_startup_guard_exception_is_preserved_and_child_is_reaped(tmp_path, monk
 
     def fake_popen(*args, **kwargs):
         process = real_popen(
-            [sys.executable, "-u", "-c", "import time; time.sleep(5)"],
+            [sys.executable, "-S", "-u", "-c", "import time; time.sleep(5)"],
             stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
             env=kwargs.get("env"),
         )
@@ -338,7 +343,7 @@ def test_startup_guard_is_polled_until_timeout_and_child_is_reaped(tmp_path, mon
 
     def fake_popen(*args, **kwargs):
         process = real_popen(
-            [sys.executable, "-u", "-c", "import time; time.sleep(5)"],
+            [sys.executable, "-S", "-u", "-c", "import time; time.sleep(5)"],
             stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
             env=kwargs.get("env"),
         )
@@ -363,7 +368,7 @@ def test_slow_startup_guard_cannot_bypass_absolute_deadline(tmp_path, monkeypatc
                 f"'model_id':{spec.model_id!r},'revision':{spec.revision!r},"
                 "'device':'gpu','stop_handling':'parent'}), flush=True); time.sleep(5)")
         process = real_popen(
-            [sys.executable, "-u", "-c", body],
+            [sys.executable, "-S", "-u", "-c", body],
             stdin=kwargs.get("stdin"), stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"),
             env=kwargs.get("env"),
         )

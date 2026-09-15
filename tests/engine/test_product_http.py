@@ -282,7 +282,9 @@ def test_handler_saturation_returns_429_then_recovers():
             connection = socket.create_connection(("127.0.0.1", server.server_port), timeout=3)
             connection.sendall(request_bytes)
             held.append(connection)
-        assert service.all_active.wait(timeout=5), "64 handler slots did not become active"
+        # A readiness wait, not a latency claim: under parallel test load on a 4-core host
+        # (Kaggle, PORT1) 64 handler threads took longer than 5 s to start.
+        assert service.all_active.wait(timeout=30), "64 handler slots did not become active"
 
         connection, response, payload = raw_request(
             server,
