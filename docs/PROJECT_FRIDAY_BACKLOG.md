@@ -83,6 +83,44 @@ Stand 2026-09-15: blockiert vor dem ersten Lauf — Kaggle-MCP meldet für
 `google/gemma-3` "User has not consented to terms of use"; die Lizenz muss der
 Nutzer selbst im Browser akzeptieren.
 
+## PORT1 — Rest (2026-09-15)
+
+Das Nutzerziel "auf CUDA mindestens so gut wie auf Apple, möglichst besser" ist erreicht
+und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen Apple
+0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
+Budgetregel bleibt: bis 10 h je Kaggle-Woche, 0 EUR, ein Lauf, kein Auto-Retry,
+Notebook nach Archivierung löschen. Offen:
+
+- **PORT1-E Nutzerentscheidung: fp32 automatisch auf Turing/Volta?** Mechanismus:
+  bei CUDA mit Compute Capability < 8 und bf16-Checkpoint `compute_dtype="float32"`
+  als Default statt nur als `doctor`-Empfehlung. Dagegen steht die Projektregel
+  "keine automatische Plan-Auswahl", denn die Tokens weichen von Stock-bf16 ab (4B
+  2/6, 12B 4/6 identisch). Kill: Nutzer lehnt ab — dann bleibt es opt-in.
+- **PORT1-D Apple-Hebel `MLX_MAX_OPS_PER_BUFFER`.** Dieselbe Variable dimensioniert
+  Metal-Command-Buffer; Mac-Smoke n=1: 0,96–0,97 im Arm D. Nicht übernommen, weil der
+  Darwin-Pfad unverändert bleiben muss. Test: `graphs.py` auf dem Mac, 5 Wdh.,
+  eigene Vorregistrierung. Kill: Intervall schließt 1 ein oder Tokenbruch.
+- **PORT1-F einmaliger Absturz der 4B-bf16-`tune`-Bestätigung (Lauf `632b904f`).**
+  `ab`-Kind Exit 1 ohne stderr, damals mit `MLX_MAX_MB_PER_BUFFER=4000`; mit dem
+  ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
+  Test: `ironmule tune --model 4B` nativ einmal auf der T4 (~20 min). Kill:
+  reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
+- Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (zwei sehen Debians
+  kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
+  langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
+
+## DATA3 — Rest (2026-09-15)
+
+Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
+
+- **DATA3-B `IRONMULE_HOME` doppelt belegt.** Runtime-Store (`hw.py`/`tune.py`,
+  `mkdir` 0755) und Produktwurzel (`state.py`, verlangt 0700) nutzen dasselbe
+  Verzeichnis; nach `benchmark` scheitert `setup`, plattformunabhängig. Test:
+  Produktwurzel unter `IRONMULE_HOME/product` wie im Default. Kill: bestehende
+  Nutzerzustände würden unauffindbar — dann Migration oder nur klare Fehlermeldung.
+- DATA2 (Transformers-Referenz) bleibt blockiert, bis die Gemma-Lizenz auf Kaggle
+  akzeptiert ist.
+
 ## PROD1 — IronMule als autonome lokale LLM-Umgebung (2026-09-05)
 
 Nutzerauftrag: den im Gespräch ausgearbeiteten Produktplan umsetzen; Live-Tests
