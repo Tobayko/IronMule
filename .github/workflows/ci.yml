@@ -61,8 +61,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Pinned to the release the committed SVGs were rendered with: 3.11.2 writes different
+      # bytes for the same data, which would read as drift.
       - name: Install the figure toolchain
-        run: python -m pip install "matplotlib>=3.8,<4"
+        run: python -m pip install "matplotlib==3.11.1"
       - name: Regenerate and compare
         run: python tools/make_figures.py --check
 
