@@ -153,18 +153,6 @@ release dry run with tag/version equality. Submission is always opt-in.
 **Kill.** Hidden upload, private prompt leakage, non-reproducible metadata, or unsigned/
 unverifiable final artifacts. Publishing a tag/release requires separate user approval.
 
-### `L1` — Clarify the source-available licence before enterprise claims
-
-**Mechanism.** Developer/company summaries and concrete SaaS, consulting, internal-use,
-fork and commercial-contact examples reduce ambiguity; independent legal review is the
-authority, not repository code.
-
-**Test.** Counsel-reviewed text and examples agree with `LICENSE.md`; no telemetry or
-phone-home enforcement is introduced.
-
-**Kill.** This entry cannot close on an engineering opinion. It closes only with the
-user-approved legal review and resulting documents.
-
 | | idea | effort | guessed payoff | correctness risk |
 | :-- | :-- | :-- | :-- | :-- |
 | `B1` | Width sweep at 27B | hours | 0 – 5% | low, gated by token identity |

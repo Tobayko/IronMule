@@ -27,4 +27,4 @@ Command and complete output:
 
 - [ ] I did not download or add model weights or large dependencies.
 - [ ] I did not change a benchmark result without updating the source evidence and explaining why.
-- [ ] I understand that IronMule is fair-code/source-available, not OSI open source.
+- [ ] I agree that my contribution is licensed under the Apache License 2.0.
