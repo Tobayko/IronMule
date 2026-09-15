@@ -1,0 +1,388 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "ironmole-result.v1"
+    },
+    "runId": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "COMPLETE",
+        "PARTIAL",
+        "GUARD_FAILED",
+        "POLICY_BLOCKED",
+        "INFRASTRUCTURE_ERROR",
+        "BYPASS",
+        "RETURN_TO_AGENT"
+      ]
+    },
+    "strategy": {
+      "type": "string",
+      "enum": [
+        "BYPASS",
+        "REFERENCE_PLAN",
+        "OPTIMIZED_PLAN",
+        "RETURN_TO_AGENT"
+      ]
+    },
+    "planId": {
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "bundle": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "snapshotId": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "repositoryId": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_-]{0,63}$"
+            },
+            "searchSemantics": {
+              "type": "string",
+              "const": "literal_case_sensitive_line.v1"
+            },
+            "matches": {
+              "maxItems": 500,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "line": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "fileSha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  }
+                },
+                "required": [
+                  "path",
+                  "line",
+                  "fileSha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "excerpts": {
+              "maxItems": 500,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "startLine": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "endLine": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "fileSha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "snapshotId": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "text": {
+                    "type": "string",
+                    "maxLength": 2000000
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  "totalLines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "path",
+                  "startLine",
+                  "endLine",
+                  "fileSha256",
+                  "snapshotId",
+                  "text",
+                  "sha256",
+                  "totalLines"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "provenance": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "text_matches"
+                },
+                "server": {
+                  "type": "string",
+                  "const": "ironmole.repository"
+                },
+                "adapterVersion": {
+                  "type": "string",
+                  "const": "1.0.0"
+                },
+                "contract": {
+                  "type": "string",
+                  "const": "repository-tools.v1"
+                },
+                "snapshotVerified": {
+                  "type": "boolean",
+                  "const": true
+                }
+              },
+              "required": [
+                "kind",
+                "server",
+                "adapterVersion",
+                "contract",
+                "snapshotVerified"
+              ],
+              "additionalProperties": false
+            },
+            "completeness": {
+              "type": "string",
+              "enum": [
+                "complete",
+                "partial"
+              ]
+            },
+            "truncationReasons": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "MAX_MATCHES",
+                  "OUTPUT_BUDGET"
+                ]
+              }
+            },
+            "continuation": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "totalMatches": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "returnedMatches": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "nextOffset": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "snapshotId",
+            "repositoryId",
+            "searchSemantics",
+            "matches",
+            "excerpts",
+            "provenance",
+            "completeness",
+            "truncationReasons",
+            "continuation",
+            "totalMatches",
+            "returnedMatches",
+            "nextOffset"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "handoff": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "taskType": {
+              "type": "string",
+              "const": "repository_context_bundle.v1"
+            },
+            "planId": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "planVersion": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "violatedAssumption": {
+              "type": "string",
+              "maxLength": 160
+            },
+            "completedSteps": {
+              "maxItems": 600,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "failedSteps": {
+              "maxItems": 600,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "unknownOutcomes": {
+              "maxItems": 600,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "validResults": {
+              "maxItems": 600,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "invalidResults": {
+              "maxItems": 600,
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "remainingGoal": {
+              "type": "string",
+              "maxLength": 300
+            },
+            "continuationConstraints": {
+              "maxItems": 10,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "retainedResultsRef": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 80
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "detailsTruncated": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "taskType",
+            "planId",
+            "planVersion",
+            "reason",
+            "violatedAssumption",
+            "completedSteps",
+            "failedSteps",
+            "unknownOutcomes",
+            "validResults",
+            "invalidResults",
+            "remainingGoal",
+            "continuationConstraints",
+            "retainedResultsRef",
+            "detailsTruncated"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "version",
+    "runId",
+    "status",
+    "strategy",
+    "planId",
+    "bundle",
+    "handoff"
+  ],
+  "additionalProperties": false
+}

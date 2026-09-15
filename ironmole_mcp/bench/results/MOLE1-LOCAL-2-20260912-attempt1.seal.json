@@ -1,0 +1,58 @@
+{
+  "runId": "MOLE1-LOCAL-2-20260912-attempt1",
+  "seal": "adee1a84f3e9be6bb4f8bbe206cf33bb697f0d55f56df62f99792eaf2143bf50",
+  "inputs": {
+    "bench/PREREGISTRATION.md": "ae9ab42407bed54b8923be02a564e5776ae777af81dfd2b5562b17c7b881bc23",
+    "bench/fixtures.ts": "a691026909c14773cca36ae1127549f9c34a7ded273a2175abadad5c160b050c",
+    "bench/harness.ts": "549a82bb86f01b9990e82c112e6cc28c1144c4aeeafa9dfad7ecee5cdf528de7",
+    "bench/report.py": "f204f813d1cca222c0780d7c931acb2884ad199ac78b5de3cbf8b689afb3dce1",
+    "bench/run.ts": "18088621433c5fd04f213367f90244343aca1b0912a3b4c25b6c2ad96bd96dce",
+    "bench/seal.ts": "6211c013f246bc93984b098c1e312162cdd16b9d225fd5d472356668923163c3",
+    "bench/worker.ts": "16f9598c4810379d8d0a5d514c48953fd01f009470ba9ec9806d1ce8020186cf",
+    "package-lock.json": "4273195df56e26068d04f746a9dd30c834343f2184c1a718b934dc8cfb5ea5bb",
+    "package.json": "f60aaeb43a52a3bb4ad2c4c8203c885a97432522a235eaec824ce7ef6d805552",
+    "schemas/adapter-contract.json": "bf26fd53d37a1111f91a1df6ae4f4f54565d99924602ee7a38a011554bbd13cd",
+    "schemas/agent-metrics.schema.json": "0decfc792f961ec74bfb7ab0ed25955092e7a2a6201fd50e800ad6c8dafbdc07",
+    "schemas/host.schema.json": "0ffdcb696737d9d1dba6158adda4e0fc02b2a0bf0efe31a71b44512ee903571a",
+    "schemas/moleir.schema.json": "2818f144194dac1f06d78e871b576ffc23835d03e9a6cb1b49ee258686b13614",
+    "schemas/read-input.schema.json": "5f7de647424187ac493890249bb96a4a36a92112cea95f8e066c2dc16a75b135",
+    "schemas/read-output.schema.json": "e8ad79a94d21ff47bd515ddc90b5320a6e6bcc42d3bdbb7e2b5b6948f3ba2fb3",
+    "schemas/result.schema.json": "bdb21e686c81b30f0330b65d1e8986f84fea7228baed68a33c0d1be67ad26fee",
+    "schemas/search-input.schema.json": "61cd939037c3467bc5ab81caa4b450101f4db97c729abdd9f6a0970959cb20a8",
+    "schemas/search-output.schema.json": "a903e721fbe1fb36632c601fbf74189c0efcba0a83278c9928622fd9b7885ef7",
+    "schemas/snapshot.schema.json": "87c94e29c292096a0720f7fc396d1f1d209017630db42d4d3dabad51e56dd116",
+    "schemas/task.schema.json": "ba78f67364ac7a76cb523b0db4ba85a534a6d7dd4c69412916b4368d8155c469",
+    "src/adapter.ts": "ae9151cf7af40985c84e5fe0480f62fae0325b2a43fa4942aad0921a49c98204",
+    "src/agent-adapter.ts": "1c8d6aae4a59565a45eb0a3d0d55bae811c1fab1fa124e7f1fa3d47d384ce6da",
+    "src/bundle.ts": "cd14d0bbe26ead1435f6d9e414cbe2110b5ac96dd327dbd7db0933bbe0c7731d",
+    "src/cli.ts": "08d730bb3fa6a38a546862c032720c2b49ae8256e3bbfcaeea23aeea22689fb7",
+    "src/contracts.ts": "ca11a577602dd34c05b1f8e72496510832d8eb396de28965731e7aa1339e8ce1",
+    "src/host.ts": "b2a0cd72bc28284ebf68034555501ddd47e5543962167d03b8d64d161020191a",
+    "src/ir.ts": "fbc30ade7429705375a6ee34304a583f7c13472f63a3b27515fc2d2dc7d8a687",
+    "src/registry.ts": "4a58f7fbdd44eff1e23c435c25fa18f6fc386878508647c72b77ca62c47a9070",
+    "src/runtime.ts": "0fee4a1ccf3c76b108da18e28adfa3e57a935f932a5182089142d1acaa8f5def",
+    "src/schema-export.ts": "3857ad904f578f8d5e23d2319042709e7d444e5833f959d35c1dd6adb5fc5621",
+    "src/snapshot.ts": "0e1bd32d8ba7be88b5148f4c8a5e0d5936cd6ac9dd74f7bdce8467fe2ae6067e",
+    "src/store.ts": "fc18d330559523c17e94fa955c625c5461c30f0c85895d1866e478bbf5318639",
+    "src/trace.ts": "9a066a66a91e9eee34c3fd39c2300e470d05581bebaf1ffbee5fa047913afe6e",
+    "src/util.ts": "02b0e0da84150b449d6da372fb39fa2c2dee2c689d9a80103f1d1cfa404cebf9",
+    "tsconfig.json": "85ee1e27d1d88c6f919919a8bd521cf37a8b6b4664531e348ccf24601e4c8b58",
+    "../friday_evidence/statistics.py": "40eb9f28edee4236c5656b84f4409f95bfa98ae60c83d4c5b5f09958aa6a61b4"
+  },
+  "createdAt": "2026-09-12T06:43:03.604Z",
+  "environment": {
+    "node": "v25.5.0",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M1 Max"
+  },
+  "criteria": {
+    "ratioUpper": 0.95,
+    "p95Ratio": 1.05,
+    "expectedUses": 100
+  },
+  "unavailable": {
+    "A_DIRECT_AGENT": "No configured model agent adapter; not executed.",
+    "B_PTC": "No actual PTC adapter; not executed."
+  }
+}

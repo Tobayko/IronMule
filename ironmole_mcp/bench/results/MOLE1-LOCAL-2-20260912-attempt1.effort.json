@@ -1,0 +1,424 @@
+{
+  "runId": "MOLE1-LOCAL-2-20260912-attempt1",
+  "finalEvaluationChildWallMs": 57149.17566799999,
+  "childMeasurements": [
+    {
+      "arm": "C_AA",
+      "block": 0,
+      "childWallMs": 737.119584,
+      "sourceSha256": "2337134a3043c26c43cc1e0029bb1166e902558b868554dc18d076c190eea2d2"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 0,
+      "childWallMs": 724.4425829999991,
+      "sourceSha256": "04cd6f08f5a03b94c9e3f775e01e0991d5c77972bb3f990e58a0d7314a6f1b6f"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 0,
+      "childWallMs": 1208.2795839999999,
+      "sourceSha256": "6992bf5586f7ee08db7b1a03020146ebf1290177870e3114b56139342cb36642"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 0,
+      "childWallMs": 1207.4685830000003,
+      "sourceSha256": "30183df7db64a1a506b0756d4f50be6e59fc025108abf9a32425897874639adf"
+    },
+    {
+      "arm": "MERGE",
+      "block": 0,
+      "childWallMs": 845.0122499999998,
+      "sourceSha256": "cd9a0ab9a4e301dafbe7513d017eeb20751d8dbf81d2cc6fe95393e6304d6f32"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 0,
+      "childWallMs": 929.7682910000003,
+      "sourceSha256": "8ef1f034e635e1817d1d4f1644bb9aa74adc98d6db0e1316f2083b01de8f1b91"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 0,
+      "childWallMs": 1208.222875,
+      "sourceSha256": "d109e256d30538c4dfd3c967c7e6cca878801296cdd60dbc55ff29190bd64696"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 0,
+      "childWallMs": 1223.5651669999997,
+      "sourceSha256": "c970036dbdc441f23298989cb8277889eb98ee7f85a701febb3c09564054e086"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 0,
+      "childWallMs": 1223.6176249999999,
+      "sourceSha256": "e46c0aeb6ed6ec35955b6cc60970f354f157318f5b3f9234c33e0d02c4b959fb"
+    },
+    {
+      "arm": "C_AA",
+      "block": 1,
+      "childWallMs": 727.5232919999999,
+      "sourceSha256": "914892337c3e1a2b47a24a2a0fdafa7fc2e60a1c06df5a512610ff7d29bfa22d"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 1,
+      "childWallMs": 733.8943749999999,
+      "sourceSha256": "68f164a85b40738dc45b0379ec5cee7f75ad1b1e7d5b519f686ae9f55af0aa3f"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 1,
+      "childWallMs": 1269.2568750000028,
+      "sourceSha256": "82e5f81159fcde0d4933b5245ea8a395270f54f7dd3b9e6f1e7e1a4be7c8ffb9"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 1,
+      "childWallMs": 1297.9774579999994,
+      "sourceSha256": "db077da3378961c54e9de2192a8c6f590868f41fbc2399a63c5a24e7e0f94692"
+    },
+    {
+      "arm": "MERGE",
+      "block": 1,
+      "childWallMs": 840.0032920000012,
+      "sourceSha256": "48c8e7a2ed0158ca6d3fbc57193bcde8db205be7589710319889f25da5357ac0"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 1,
+      "childWallMs": 962.6572090000009,
+      "sourceSha256": "f43ed9fcc09c5d363f71c5198d4a337dec6060fe77c0b3d77f3a31ccd6649dc9"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 1,
+      "childWallMs": 1182.0885830000007,
+      "sourceSha256": "2837ca90ed966230cfb1209eb405aabd62503d3d71d014259b80841468402e6a"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 1,
+      "childWallMs": 1222.621792,
+      "sourceSha256": "307b50af3ccf22a8db5aec2181e95788fa718e08a55dbbe825feac890447faea"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 1,
+      "childWallMs": 1268.166083,
+      "sourceSha256": "66373ed3a15924b9ce86a3c6a0e79ebbcbbd5907dadfbbbbfa39658269daa7f3"
+    },
+    {
+      "arm": "C_AA",
+      "block": 2,
+      "childWallMs": 748.7701660000021,
+      "sourceSha256": "0fc2c289c7df1bf28be8c8429b8db8fe157397d79481d0a2dc8859734143dea6"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 2,
+      "childWallMs": 763.6549589999995,
+      "sourceSha256": "3b4f915f126b5993a2b0f163c274e471b115e9235bebab20231a62aca64b43fa"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 2,
+      "childWallMs": 1217.7242499999993,
+      "sourceSha256": "1a32d3601a333155dbefc3ac6c20a2593c9ddf7c64a6e80ab5f296c6c32c88ca"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 2,
+      "childWallMs": 1226.266208000001,
+      "sourceSha256": "0200b23862fc0f562e42923653ae41c37780ee5b20cc05caf10a23f25b6a5e66"
+    },
+    {
+      "arm": "MERGE",
+      "block": 2,
+      "childWallMs": 830.0169999999998,
+      "sourceSha256": "4ed4c8dbd8d552eac7aecd41038d219e84a0a68fec892a650b0b2944de550ddf"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 2,
+      "childWallMs": 931.276249999999,
+      "sourceSha256": "0da8cd19251dc34e3e3f5c6fd4fe80e4c8b58a81a4159bfe6cf06bc18ebbad56"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 2,
+      "childWallMs": 1212.0368329999983,
+      "sourceSha256": "a636c51a4d5cb20d3cba173a4e43cb3703db1b6faf2047a50cec066269d8d87d"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 2,
+      "childWallMs": 1242.225875,
+      "sourceSha256": "3b1fe60768e9a9b425de95c906b4139026587f0e0e48622c773f468d0bc17a34"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 2,
+      "childWallMs": 1266.867875,
+      "sourceSha256": "bc5e9dbde256150e1c99893db03deae5bf1e86fd6c3378c0798f5d551377cf35"
+    },
+    {
+      "arm": "C_AA",
+      "block": 3,
+      "childWallMs": 730.185125,
+      "sourceSha256": "2b8da5c425730ea1a38245206196aaa94b41f56db4680f20c32e81b8365be93a"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 3,
+      "childWallMs": 727.504917000002,
+      "sourceSha256": "eca31348de5b2e7e9bdbf5e9b8d0fafe94989dbe9764a601185a253282e37f03"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 3,
+      "childWallMs": 1240.403207999996,
+      "sourceSha256": "6278b0486820f27ddd28bc20b8d531f188830b0f7c58becc27028f2596d5e328"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 3,
+      "childWallMs": 1253.7193340000013,
+      "sourceSha256": "4955555abf506232aacb4673afa06f16dc94766f9d274f361061912b1fa979ac"
+    },
+    {
+      "arm": "MERGE",
+      "block": 3,
+      "childWallMs": 816.5352500000008,
+      "sourceSha256": "d4826ff5edc7883193ffdccac62b84073fd04188c0042e9aba9729173d1dcfab"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 3,
+      "childWallMs": 972.3915000000052,
+      "sourceSha256": "1b397dacf9b4f288c16b31b72e19f134cbb88d3da364f4d717ab4e50ce845a83"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 3,
+      "childWallMs": 1261.157041999999,
+      "sourceSha256": "0a695ca2fed917f0b9bcf7bda7070f29e388aeaee30879e6532a2995fee0e91d"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 3,
+      "childWallMs": 1225.6895000000004,
+      "sourceSha256": "b05aa120bb9d52781facf54f8c740f82073e55ff2d39a55583d67c6da695d0eb"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 3,
+      "childWallMs": 1256.5096249999988,
+      "sourceSha256": "ccbfff9888d5a9fc6018d9f31314005f20e6201b7f1aa6d07ba45c40093de3c9"
+    },
+    {
+      "arm": "C_AA",
+      "block": 4,
+      "childWallMs": 752.9961669999975,
+      "sourceSha256": "1d7aec8c691a61b268ce251e271033ef54c329ddd07ec6503495c898d661d405"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 4,
+      "childWallMs": 744.432249999998,
+      "sourceSha256": "59f51a37167ff7c02acef79fcbff389d211112982c15ce58942d2468df5a05b1"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 4,
+      "childWallMs": 1251.911,
+      "sourceSha256": "e5d44fae3f4b82ea4d0bcd8f3833b3b1eced8717f83a67c0b84a31091dab178b"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 4,
+      "childWallMs": 1262.6479160000017,
+      "sourceSha256": "3e43f5bc4485d62dd720b46fa8bb9c1bec81e67cb4aa920135ddbc162a7cb138"
+    },
+    {
+      "arm": "MERGE",
+      "block": 4,
+      "childWallMs": 857.2067499999976,
+      "sourceSha256": "d1fdf260f05f01697d5f27403672425a17c64f52a93246a656013862a17334bf"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 4,
+      "childWallMs": 969.1804170000032,
+      "sourceSha256": "fe07066dd2034de1cad6db52301f38b9cc57b7ac190f8d523e860c855ddba2a7"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 4,
+      "childWallMs": 1246.5862500000003,
+      "sourceSha256": "5dc23c6807003a85f7624ffb13cfb664fa2bc192241fcd50e0c0cd606bbb2193"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 4,
+      "childWallMs": 1238.5762079999986,
+      "sourceSha256": "64ba85c3db5c0c053e3140077b37530cf65f027cec7e83f0f851e67a322e99e7"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 4,
+      "childWallMs": 1245.9140419999967,
+      "sourceSha256": "e32c94bad23b3a4c3af917202377aadd7a5d15cba4125fcda72471c9ed58b1e5"
+    },
+    {
+      "arm": "C_AA",
+      "block": 5,
+      "childWallMs": 770.7817500000019,
+      "sourceSha256": "345c60c5e48e3f62870798bb30336a43c58ffbe430b1885d1c7f5a49445b9d82"
+    },
+    {
+      "arm": "C_WORKFLOW",
+      "block": 5,
+      "childWallMs": 758.594124999996,
+      "sourceSha256": "63f83edf1b61c77f4da24fe8fb4161b10e91b01154b3a560ee0c6e7f6c78cc87"
+    },
+    {
+      "arm": "DEDUP",
+      "block": 5,
+      "childWallMs": 1284.7503750000033,
+      "sourceSha256": "886dc6a795a76d67f00d1c35a907bd3975a55c6f5b246c37bce2f3a2a532029d"
+    },
+    {
+      "arm": "D_ADAPTIVE",
+      "block": 5,
+      "childWallMs": 1297.2589589999989,
+      "sourceSha256": "cd787198162f8e2eb6ad585c27322418b6744c13365541665e45b06e6915ede9"
+    },
+    {
+      "arm": "MERGE",
+      "block": 5,
+      "childWallMs": 876.2927080000009,
+      "sourceSha256": "2e64284c8f604fd3b96dab3a7308b6ef81f127a0d73c91ab749010ad01b41a5a"
+    },
+    {
+      "arm": "PARALLEL",
+      "block": 5,
+      "childWallMs": 978.6832919999943,
+      "sourceSha256": "6a9b33ccc938abd431af5a574902e328d58312ca1d541765caf7280f9a5fc81d"
+    },
+    {
+      "arm": "PREPARATION",
+      "block": 5,
+      "childWallMs": 1266.908374999999,
+      "sourceSha256": "f3a6c055332786bb99a27b51a7d5c6f7395e01d4d3b91316d3c5f9d9db1a78c5"
+    },
+    {
+      "arm": "REBUILD",
+      "block": 5,
+      "childWallMs": 1332.659541000001,
+      "sourceSha256": "a07727248ea6415325f3475bc8976a269b8bd9bd67cc54fde103501410b7efc4"
+    },
+    {
+      "arm": "REFERENCE",
+      "block": 5,
+      "childWallMs": 1279.1751249999943,
+      "sourceSha256": "a90f9bdd968172c2270d083a018a4f71c5ded899897a65f363d1103b771fcf56"
+    }
+  ],
+  "contrastsToReferenceClusteredByBlock": {
+    "REBUILD": {
+      "median_ratio": 0.9636980342684334,
+      "ci_low": 0.9344998208425954,
+      "ci_high": 1.0009531398723546,
+      "pairs": [
+        0.9354089621078308,
+        0.9934432267318244,
+        1.0084630530128846,
+        0.965125924595927,
+        0.9622701439409397,
+        0.9335906795773601
+      ]
+    },
+    "PARALLEL": {
+      "median_ratio": 0.6738575380417572,
+      "ci_low": 0.6541843873153358,
+      "ci_high": 0.724934972969124,
+      "pairs": [
+        0.639786080687542,
+        0.7278062532961478,
+        0.6713356517532096,
+        0.7220636926421002,
+        0.6685826939431296,
+        0.6763794243303047
+      ]
+    },
+    "DEDUP": {
+      "median_ratio": 0.9774971691374905,
+      "ci_low": 0.9614050691414242,
+      "ci_high": 1.0172928282556843,
+      "pairs": [
+        0.9580095704630704,
+        1.0381533682538788,
+        0.964800567819778,
+        0.9797832400744833,
+        0.9752110982004978,
+        0.9964322882574898
+      ]
+    },
+    "MERGE": {
+      "median_ratio": 0.6856779392685642,
+      "ci_low": 0.6332421900816769,
+      "ci_high": 0.7118517380301579,
+      "pairs": [
+        0.6994462811713565,
+        0.7060447861691965,
+        0.6719095973657719,
+        0.6083348977750311,
+        0.6581494823883227,
+        0.7176586898911191
+      ]
+    },
+    "PREPARATION": {
+      "median_ratio": 0.968541041966868,
+      "ci_low": 0.9419274333028107,
+      "ci_high": 0.9910386838967735,
+      "pairs": [
+        0.9683715293525654,
+        0.9348650455137795,
+        0.9687105545811705,
+        0.9794724239582617,
+        1.0026049438352853,
+        0.948989821091842
+      ]
+    },
+    "C_WORKFLOW": {
+      "median_ratio": 0.49228009703974307,
+      "ci_low": 0.46369379875416195,
+      "ci_high": 0.5103870777594579,
+      "pairs": [
+        0.5129089881818191,
+        0.5022947448711024,
+        0.5078651673370969,
+        0.4822654492083837,
+        0.45015252017086715,
+        0.47723507733745674
+      ]
+    },
+    "D_ADAPTIVE": {
+      "median_ratio": 0.9938581994932869,
+      "ci_low": 0.9509858265582004,
+      "ci_high": 1.0121555421511048,
+      "pairs": [
+        0.9586289703046142,
+        0.9933508745272905,
+        0.9433426828117866,
+        0.9955636007235069,
+        0.9943655244592834,
+        1.0287474835787027
+      ]
+    }
+  },
+  "note": "Child wall time includes cold sweeps, warmups, repeated measurements, correctness checks, traces, startup and shutdown; excludes controller/report overhead. No model continuation was measured."
+}

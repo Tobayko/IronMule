@@ -1,0 +1,158 @@
+{
+  "irVersion": "moleir.v1",
+  "taskType": "repository_context_bundle.v1",
+  "taskContractVersion": "1.0.0",
+  "planVersion": 2,
+  "origin": "manual",
+  "adapter": "ironmole.repository",
+  "adapterVersion": "1.0.0",
+  "adapterContract": "repository-tools.v1",
+  "limits": {
+    "maxNodes": 32,
+    "maxCalls": 501,
+    "maxDurationMs": 15000,
+    "maxIntermediateBytes": 16000000
+  },
+  "nodes": [
+    {
+      "id": "authorize",
+      "op": "GUARD",
+      "dependsOn": [],
+      "check": "host_ready",
+      "input": null
+    },
+    {
+      "id": "search",
+      "op": "CALL",
+      "dependsOn": [
+        "authorize"
+      ],
+      "tool": "repo.search",
+      "args": {
+        "repositoryId": {
+          "source": "task",
+          "field": "repositoryId"
+        },
+        "snapshotId": {
+          "source": "task",
+          "field": "snapshotId"
+        },
+        "query": {
+          "source": "task",
+          "field": "query"
+        },
+        "searchSemantics": {
+          "source": "task",
+          "field": "searchSemantics"
+        },
+        "pathFilters": {
+          "source": "task",
+          "field": "pathFilters"
+        },
+        "limit": {
+          "source": "task",
+          "field": "maxMatches"
+        }
+      }
+    },
+    {
+      "id": "check_search",
+      "op": "GUARD",
+      "dependsOn": [
+        "search"
+      ],
+      "check": "search_valid",
+      "input": {
+        "source": "node",
+        "node": "search"
+      }
+    },
+    {
+      "id": "ranges",
+      "op": "PROJECT",
+      "dependsOn": [
+        "check_search"
+      ],
+      "input": {
+        "source": "node",
+        "node": "search"
+      },
+      "context": {
+        "source": "task",
+        "field": "contextLines"
+      },
+      "projection": "context_ranges"
+    },
+    {
+      "id": "filter",
+      "op": "FILTER",
+      "dependsOn": [],
+      "input": {
+        "source": "node",
+        "node": "ranges"
+      },
+      "predicate": "nonempty_range"
+    },
+    {
+      "id": "dedup",
+      "op": "DEDUP",
+      "dependsOn": [],
+      "input": {
+        "source": "node",
+        "node": "filter"
+      },
+      "key": "path_start_end_hash",
+      "enabled": true
+    },
+    {
+      "id": "merge",
+      "op": "MERGE",
+      "dependsOn": [],
+      "input": {
+        "source": "node",
+        "node": "dedup"
+      },
+      "mode": "overlapping_intervals"
+    },
+    {
+      "id": "read",
+      "op": "BOUNDED_MAP",
+      "dependsOn": [],
+      "input": {
+        "source": "node",
+        "node": "merge"
+      },
+      "tool": "repo.read",
+      "binding": "range_and_task_identity",
+      "maxItems": 500,
+      "concurrency": 4
+    },
+    {
+      "id": "check_reads",
+      "op": "GUARD",
+      "dependsOn": [],
+      "input": {
+        "source": "node",
+        "node": "read"
+      },
+      "check": "reads_valid"
+    },
+    {
+      "id": "return",
+      "op": "RETURN",
+      "dependsOn": [
+        "check_reads"
+      ],
+      "matches": {
+        "source": "node",
+        "node": "search"
+      },
+      "reads": {
+        "source": "node",
+        "node": "read"
+      },
+      "format": "context_bundle.v1",
+      "preparation": "indexed"
+    }
+  ]
+}
