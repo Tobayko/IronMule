@@ -292,3 +292,22 @@ class CommandTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_status_ssot_uses_the_shared_corpus_and_reports_unavailability():
+    from tools.friday import cmd_status
+    import contextlib
+    import io
+
+    outputs = []
+    for flags in (['--ssot', '--json'], ['--ssot', '--plain']):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            assert cmd_status(flags) == 0
+        outputs.append(output.getvalue())
+    payload = json.loads(outputs[0])
+    section = next(s for s in payload['sections'] if s['title'] == 'Evidence corpus')
+    assert section['lines']
+    for line in section['lines']:
+        assert line in outputs[1]
+    assert '\033' not in outputs[1]

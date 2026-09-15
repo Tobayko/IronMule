@@ -1,20 +1,11 @@
-"""Single source of truth: one read-only SQLite index over every measurement source.
+"""Lossless evidence corpus with canonical records and explicit source occurrences.
 
-Sources stay untouched. Sealed study databases and raw JSON are opened read-only and
-never rewritten; this module only builds a derived index next to them. Rebuild is a
-full, atomic replace, so the index can always be thrown away and regenerated.
+Original files, trace-buffer aliases and reachable historical Git data are preserved
+by content hash. Repeated exports share verified record identity; independent runs
+are never collapsed merely because their values agree. This is a local, regenerable
+corpus, not authority to qualify a runtime path or rewrite sealed source evidence.
 
-Every run carries the agent that produced it in `runs.agent`, with `runs.agent_source`
-naming the evidence used, strongest first:
-
-* `payload_field` — the measurement itself names its agent.
-* `provenance_commit` — provenance references a commit; that commit's attribution wins.
-* `archive_manifest` — the content-addressed archive records the producing commit.
-* `git_history` — newest commit that touched the file.
-* `commit_trailer` / `commit_scope` — `Co-Authored-By: Claude ...` / `feat(gemini): ...`.
-* `repo_default_codex` — a commit with neither marker; this tree is Codex-driven
-  (`AGENTS.md`), so it is attributed to Codex. That is an inference, not a receipt.
-* `no_evidence` — nothing attributable; the run stays `unattributed`.
+Attribution retains its evidence label. An unmarked commit establishes no AI author.
 """
 
 from __future__ import annotations
@@ -22,6 +13,7 @@ from __future__ import annotations
 import argparse
 import bisect
 import hashlib
+import io
 import json
 import math
 import os
@@ -29,8 +21,11 @@ import re
 import sqlite3
 import subprocess
 import statistics
+import tempfile
 import time
+import zlib
 from collections.abc import Iterable, Iterator, Sequence
+from contextlib import closing
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -38,10 +33,10 @@ from urllib.parse import quote
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SSOT_PATH = PROJECT_ROOT / ".friday-data" / "ssot.sqlite3"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 SSOT_APPLICATION_ID = 0x46535354  # ASCII "FSST"
 
-SCAN_ROOTS = (".friday-data", "research", "experiments")
+SCAN_ROOTS = (".friday-data", "research", "experiments", "profiles")
 EXTRA_FILES = ("docs/EXPERIMENT_MATRIX.json",)
 SKIP_DIR_NAMES = frozenset(
     {
@@ -58,7 +53,11 @@ SKIP_DIR_NAMES = frozenset(
         "ProjectAtlas",
     }
 )
-SKIP_RELATIVE_DIRS = frozenset({".friday-data/models"})
+SKIP_RELATIVE_DIRS = frozenset({".friday-data/models", ".friday-data/tooling"})
+DATA_SUFFIXES = frozenset({".json", ".jsonl", ".sqlite3", ".sqlite", ".db",
+                           ".partial", ".csv", ".tsv", ".npy", ".npz", ".bin"})
+SQLITE_SUFFIXES = frozenset({".sqlite3", ".sqlite", ".db"})
+OBJECT_CHUNK_BYTES = 1 << 20
 
 INLINE_PAYLOAD_LIMIT = 1 << 20  # payloads above this are addressed by source path + hash
 ARRAY_SUMMARY_THRESHOLD = 32
@@ -90,41 +89,78 @@ CREATE TABLE ssot_meta (
     project_root TEXT NOT NULL,
     builder_sha256 TEXT NOT NULL
 );
+CREATE TABLE source_objects (
+    sha256 TEXT PRIMARY KEY,
+    bytes INTEGER NOT NULL,
+    chunks INTEGER NOT NULL
+);
+CREATE TABLE source_chunks (
+    sha256 TEXT NOT NULL REFERENCES source_objects(sha256),
+    ordinal INTEGER NOT NULL,
+    compressed BLOB NOT NULL,
+    PRIMARY KEY (sha256, ordinal)
+) WITHOUT ROWID;
 CREATE TABLE sources (
     source_id INTEGER PRIMARY KEY,
     path TEXT NOT NULL UNIQUE,
     shape TEXT NOT NULL,
     bytes INTEGER NOT NULL,
-    sha256 TEXT NOT NULL,
+    sha256 TEXT NOT NULL REFERENCES source_objects(sha256),
     mtime_unix_ns INTEGER NOT NULL,
     run_count INTEGER NOT NULL,
     agent TEXT NOT NULL,
     agent_source TEXT NOT NULL,
-    error TEXT
+    error TEXT,
+    link_target TEXT,
+    origin TEXT NOT NULL DEFAULT 'filesystem',
+    git_blob TEXT
 );
-CREATE TABLE runs (
+CREATE TABLE payloads (
+    sha256 TEXT PRIMARY KEY,
+    json TEXT NOT NULL,
+    bytes INTEGER NOT NULL,
+    format TEXT NOT NULL CHECK(format IN ('json', 'legacy_nonfinite_json'))
+);
+CREATE TABLE canonical_records (
     run_id INTEGER PRIMARY KEY,
+    canonical_key TEXT NOT NULL UNIQUE,
     source_id INTEGER NOT NULL REFERENCES sources(source_id),
     study TEXT NOT NULL,
     native_id TEXT NOT NULL,
     kind TEXT,
     status TEXT,
     observed_at_unix_ns INTEGER,
-    payload_json TEXT,
-    payload_sha256 TEXT NOT NULL,
+    payload_sha256 TEXT NOT NULL REFERENCES payloads(sha256),
     payload_bytes INTEGER NOT NULL,
     provenance_json TEXT,
     agent TEXT NOT NULL,
     agent_detail TEXT,
     agent_source TEXT NOT NULL,
-    metrics_truncated INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(source_id, native_id)
+    metrics_truncated INTEGER NOT NULL DEFAULT 0
 );
-CREATE INDEX idx_runs_study ON runs(study, observed_at_unix_ns DESC);
-CREATE INDEX idx_runs_status ON runs(status);
-CREATE INDEX idx_runs_agent ON runs(agent, study);
+CREATE INDEX idx_runs_study ON canonical_records(study, observed_at_unix_ns DESC);
+CREATE INDEX idx_runs_status ON canonical_records(status);
+CREATE INDEX idx_runs_agent ON canonical_records(agent, study);
+CREATE TABLE record_occurrences (
+    source_id INTEGER NOT NULL REFERENCES sources(source_id),
+    native_id TEXT NOT NULL,
+    run_id INTEGER NOT NULL REFERENCES canonical_records(run_id),
+    provenance_json TEXT,
+    agent TEXT NOT NULL,
+    agent_detail TEXT,
+    agent_source TEXT NOT NULL,
+    PRIMARY KEY (source_id, native_id)
+) WITHOUT ROWID;
+CREATE VIEW runs AS
+SELECT r.*, CASE WHEN p.bytes <= 1048576 THEN p.json ELSE NULL END AS payload_json,
+       p.format AS payload_format
+FROM canonical_records r JOIN payloads p ON p.sha256 = r.payload_sha256;
+CREATE VIEW origins AS
+SELECT o.run_id, s.path AS source_path, o.native_id, o.provenance_json,
+       o.agent, o.agent_detail, o.agent_source
+FROM record_occurrences o JOIN sources s ON s.source_id = o.source_id;
 CREATE TABLE metrics (
-    run_id INTEGER NOT NULL REFERENCES runs(run_id),
+    run_id INTEGER NOT NULL REFERENCES canonical_records(run_id),
     path TEXT NOT NULL,
     value REAL NOT NULL,
     PRIMARY KEY (run_id, path)
@@ -152,6 +188,7 @@ class Run:
     observed_at_unix_ns: int | None = None
     provenance: object | None = None
     extra_metrics: dict[str, float] = field(default_factory=dict)
+    identity: str | None = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +227,16 @@ def _sha256_file(path: Path) -> tuple[str, int]:
 
 def _canonical(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _payload_format(value: object) -> str:
+    """Preserve historical infinities/test vectors while labeling their encoding."""
+
+    try:
+        json.dumps(value, allow_nan=False)
+        return "json"
+    except ValueError:
+        return "legacy_nonfinite_json"
 
 
 def _parse_time(value: object) -> int | None:
@@ -276,10 +323,7 @@ def summarise(prefix: str, numbers: Sequence[float]) -> dict[str, float]:
 
 
 def _load_json(text: str) -> object:
-    try:
-        return json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return {"unparsed_text": text[:4096]}
+    return json.loads(text)
 
 
 # --------------------------------------------------------------------------- adapters
@@ -343,7 +387,7 @@ def _optimization_runs(connection: sqlite3.Connection) -> Iterator[Run]:
     for row in connection.execute("SELECT * FROM optimization_records"):
         payload = row["payload"]
         if isinstance(payload, bytes):
-            payload = payload.decode("utf-8", "replace")
+            payload = payload.decode("utf-8")
         yield Run(
             native_id=row["record_id"],
             payload=_load_json(payload),
@@ -364,7 +408,20 @@ def _journal_runs(connection: sqlite3.Connection) -> Iterator[Run]:
             status=_first(payload, STATUS_KEYS),
             observed_at_unix_ns=row["recorded_unix_ns"],
             provenance={"sha256": row["sha256"], "prev_sha256": row["prev_sha256"]},
+            identity=_journal_identity({**dict(row), "payload": payload}),
         )
+
+
+def _journal_identity(event: dict) -> str:
+    """Deduplicate an event only after recomputing its actual content identity."""
+
+    from .canonical import canonical_sha256
+
+    body = {key: event[key] for key in
+            ("seq", "recorded_unix_ns", "run_id", "kind", "payload", "prev_sha256")}
+    if canonical_sha256(body) != event["sha256"]:
+        raise SsotError("journal event digest does not match its contents")
+    return "journal:" + event["sha256"]
 
 
 def _journal_export_runs(document: object) -> list[Run] | None:
@@ -387,6 +444,7 @@ def _journal_export_runs(document: object) -> list[Run] | None:
                 "prev_sha256": event["prev_sha256"],
                 "journal": event.get("source_id"),
             },
+            identity=_journal_identity(event),
         )
         for event in events
     ]
@@ -454,7 +512,8 @@ SQLITE_ADAPTERS = (
 
 
 def _sqlite_source(path: Path) -> tuple[str, list[Run]]:
-    with _read_only(path) as connection:
+    connection = _read_only(path)
+    try:
         tables = {
             row["name"]
             for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -462,23 +521,27 @@ def _sqlite_source(path: Path) -> tuple[str, list[Run]]:
         for shape, required, adapter in SQLITE_ADAPTERS:
             if required <= tables:
                 return shape, list(adapter(connection))
-    return "sqlite_unknown", []
+    finally:
+        connection.close()
+    raise SsotError("unsupported evidence database schema")
 
 
 def _json_source(path: Path) -> tuple[str, list[Run]]:
     if path.suffix == ".jsonl":
         runs = []
-        with path.open("r", encoding="utf-8", errors="replace") as handle:
+        with path.open("r", encoding="utf-8") as handle:
             for number, line in enumerate(handle, start=1):
                 line = line.strip()
                 if line:
                     runs.append(_json_run(f"{path.stem}:{number}", _load_json(line)))
         return "jsonl", runs
-    document = _load_json(path.read_text(encoding="utf-8", errors="replace"))
+    document = _load_json(path.read_text(encoding="utf-8"))
     events = _journal_export_runs(document)
     if events is None:
         return "json", [_json_run(path.stem, document)]
-    return "journal_export", [_json_run(path.stem, document), *events]
+    # The source object retains the complete envelope. Indexing it as another
+    # measurement would count every embedded event's metrics a second time.
+    return "journal_export", events
 
 
 def _json_run(native_id: str, document: object) -> Run:
@@ -509,19 +572,25 @@ def _git(root: Path, *arguments: str) -> str:
 
 
 def _attribute_commit(sha: str, subject: str, body: str) -> Attribution:
+    authors = {}
     for line in body.splitlines():
-        lowered = line.lower()
-        claimed = "claude" in lowered or "anthropic" in lowered
-        if lowered.startswith("co-authored-by:") and claimed:
-            name = line.split(":", 1)[1].split("<")[0].strip()
-            return Attribution("claude", name or None, "commit_trailer")
+        if not line.lower().startswith("co-authored-by:"):
+            continue
+        name = line.split(":", 1)[1].split("<")[0].strip()
+        for agent in KNOWN_AGENTS:
+            if re.search(r"\b" + agent + r"\b", name.lower()):
+                authors[agent] = name
+    if len(authors) == 1:
+        agent, name = next(iter(authors.items()))
+        return Attribution(agent, name, "commit_trailer")
+    if authors:
+        return Attribution("multiple", ", ".join(sorted(authors)), "commit_trailer")
     head = subject[:60]
     if "(" in head and ")" in head:
         scope = head[head.index("(") + 1 : head.index(")")].strip().lower()
         if scope in KNOWN_AGENTS:
             return Attribution(scope, subject[:160], "commit_scope")
-    # ponytail: this tree is Codex-driven (AGENTS.md); an unmarked commit is Codex work.
-    return Attribution("codex", sha[:12], "repo_default_codex")
+    return UNATTRIBUTED
 
 
 def commit_log(root: Path = PROJECT_ROOT) -> list[tuple[str, int, Attribution]]:
@@ -652,27 +721,220 @@ class Attributor:
 
 
 def discover(root: Path) -> list[Path]:
-    """Every measurement file the index covers, in stable order."""
+    """Inventory data and archived inputs without descending into installed tools."""
 
-    found: list[Path] = []
+    root = root.resolve()
+    found: set[Path] = set()
     skip_dirs = {root / item for item in SKIP_RELATIVE_DIRS}
     for name in SCAN_ROOTS:
         base = root / name
         if not base.is_dir():
             continue
-        for path in base.rglob("*"):
-            if not path.is_file() or path.suffix not in {".json", ".jsonl", ".sqlite3"}:
-                continue
-            if SKIP_DIR_NAMES & set(path.parts):
-                continue
-            if any(parent in skip_dirs for parent in path.parents):
-                continue
-            found.append(path)
+        for directory, dirs, names in os.walk(base):
+            parent = Path(directory)
+            dirs[:] = sorted(d for d in dirs if d not in SKIP_DIR_NAMES
+                             and parent / d not in skip_dirs
+                             and not (parent / d).is_symlink())
+            for filename in names:
+                path = parent / filename
+                if filename == ".DS_Store" or path.suffix in {".lock", ".building"}:
+                    continue
+                if filename.endswith(("-wal", "-shm", "-journal")):
+                    continue
+                if name != ".friday-data" and path.suffix not in DATA_SUFFIXES:
+                    continue
+                if path.is_symlink():
+                    target = path.resolve()
+                    if not target.is_relative_to(root) or any(d in target.parents for d in skip_dirs):
+                        raise SsotError(f"evidence alias leaves the evidence roots: {path.relative_to(root)}")
+                    if not path.exists():
+                        raise SsotError(f"evidence alias is broken: {path.relative_to(root)}")
+                if not path.is_file():
+                    continue
+                if path.suffix in SQLITE_SUFFIXES and _is_ssot(path):
+                    continue
+                found.add(path)
     for name in EXTRA_FILES:
         candidate = root / name
         if candidate.is_file():
-            found.append(candidate)
-    return sorted(set(found))
+            found.add(candidate)
+    return sorted(found)
+
+
+def _source_fingerprints(paths: Iterable[Path]) -> dict[Path, tuple[str, int, str | None]]:
+    """Hash shared trace-buffer targets once while retaining every original alias."""
+
+    cache = {}
+    result = {}
+    for path in paths:
+        info = path.stat()
+        identity = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+        if identity not in cache:
+            cache[identity] = _sha256_file(path)
+        result[path] = (*cache[identity], os.readlink(path) if path.is_symlink() else None)
+    return result
+
+
+def _is_ssot(path: Path) -> bool:
+    connection = None
+    try:
+        connection = _read_only(path)
+        return connection.execute("PRAGMA application_id").fetchone()[0] == SSOT_APPLICATION_ID
+    except sqlite3.Error:
+        return False
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def _store_blocks(connection: sqlite3.Connection, blocks: Iterable[bytes], digest: str, size: int) -> None:
+    if connection.execute("SELECT 1 FROM source_objects WHERE sha256=?", (digest,)).fetchone():
+        return
+    connection.execute("INSERT INTO source_objects VALUES(?,?,0)", (digest, size))
+    observed = hashlib.sha256()
+    observed_bytes = 0
+    chunks = 0
+    for block in blocks:
+        observed.update(block)
+        observed_bytes += len(block)
+        connection.execute("INSERT INTO source_chunks VALUES(?,?,?)",
+                           (digest, chunks, zlib.compress(block)))
+        chunks += 1
+    if observed.hexdigest() != digest or observed_bytes != size:
+        raise SsotError("source changed while preserving its bytes")
+    connection.execute("UPDATE source_objects SET chunks=? WHERE sha256=?", (chunks, digest))
+
+
+def _store_object(connection: sqlite3.Connection, path: Path, digest: str, size: int,
+                  reuse_from: Path | None = None) -> None:
+    """Retain original bytes once; reuse only independently verified compressed objects."""
+
+    if connection.execute("SELECT 1 FROM source_objects WHERE sha256=?", (digest,)).fetchone():
+        return
+    if reuse_from is not None:
+        row = connection.execute("SELECT bytes FROM previous.source_objects WHERE sha256=?", (digest,)).fetchone()
+        if row is not None and row[0] == size:
+            for _ in source_content(digest, reuse_from):
+                pass
+            connection.execute("INSERT INTO source_objects SELECT * FROM previous.source_objects WHERE sha256=?", (digest,))
+            connection.execute("INSERT INTO source_chunks SELECT * FROM previous.source_chunks WHERE sha256=?", (digest,))
+            return
+    with path.open("rb") as handle:
+        _store_blocks(connection, iter(lambda: handle.read(OBJECT_CHUNK_BYTES), b""), digest, size)
+
+
+def _git_data_objects(root: Path) -> list[tuple[str, str]]:
+    """Reachable historical data blobs, excluding tools, credentials and model weights."""
+
+    if not (root / ".git").exists():
+        return []
+    try:
+        listing = subprocess.check_output(
+            ["git", "-C", str(root), "rev-list", "--objects", "--all"],
+            text=True, stderr=subprocess.PIPE, timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise SsotError("cannot inventory historical Git data") from exc
+    rows = []
+    for line in listing.splitlines():
+        oid, separator, relative = line.partition(" ")
+        if not separator or not re.fullmatch(r"[0-9a-f]{40,64}", oid):
+            continue
+        if not (relative.startswith(("research/", "experiments/", "profiles/")) or relative in EXTRA_FILES):
+            continue
+        if Path(relative).suffix not in DATA_SUFFIXES:
+            continue
+        rows.append((oid, relative))
+    return sorted(set(rows))
+
+
+def _archive_scopes(root: Path) -> dict[str, set[str]]:
+    """The existing archive manifest explicitly identifies copies of one artifact."""
+
+    manifest = root / ARCHIVE_MANIFEST
+    if not manifest.is_file():
+        return {}
+    scopes: dict[str, set[str]] = {}
+    for entry in json.loads(manifest.read_text(encoding="utf-8"))["entries"]:
+        names = scopes.setdefault(entry["sha256"], set())
+        if "file" in entry:
+            names.add(Path(entry["file"]).name)
+        stored = entry.get("stored_as") or entry.get("duplicate_of")
+        if stored:
+            names.add(Path(stored).name)
+    return scopes
+
+
+def _ingest_git_history(connection: sqlite3.Connection, root: Path,
+                        objects: Sequence[tuple[str, str]], attributor: Attributor) -> int:
+    """Retain old versions as source occurrences, never as new repeated experiments."""
+
+    for oid, relative in objects:
+        content = subprocess.check_output(["git", "-C", str(root), "cat-file", "blob", oid])
+        digest = hashlib.sha256(content).hexdigest()
+        _store_blocks(connection, iter(lambda h=io.BytesIO(content): h.read(OBJECT_CHUNK_BYTES), b""),
+                      digest, len(content))
+        original = connection.execute("SELECT source_id,run_count FROM sources WHERE path=? AND sha256=?",
+                                      (relative, digest)).fetchone()
+        # An unchanged Git blob is the very same current source, not another run.
+        if original is not None:
+            run_count = original["run_count"] if isinstance(original, sqlite3.Row) else original[1]
+            runs = []
+            shape = "git_alias"
+        elif Path(relative).suffix in {".json", ".jsonl", ".partial"}:
+            decoded = content.decode("utf-8")
+            if Path(relative).suffix == ".jsonl":
+                runs = [_json_run(f"{Path(relative).stem}:{number}", _load_json(line))
+                        for number, line in enumerate(decoded.splitlines(), 1) if line.strip()]
+            else:
+                document = _load_json(decoded)
+                runs = _journal_export_runs(document)
+                if runs is None:
+                    runs = [_json_run(Path(relative).stem, document)]
+            run_count, shape = len(runs), "git_history"
+        else:
+            runs, run_count, shape = [], 0, "git_artifact"
+        cursor = connection.execute(
+            "INSERT INTO sources(path,shape,bytes,sha256,mtime_unix_ns,run_count,agent,agent_source,origin,git_blob)"
+            " VALUES(?,?,?,?,0,?,'unattributed','git_blob','git',?)",
+            (f"git:{oid}:{relative}", shape, len(content), digest, run_count, oid),
+        )
+        source_id = int(cursor.lastrowid)
+        if original is not None:
+            connection.execute(
+                "INSERT INTO record_occurrences SELECT ?,native_id,run_id,provenance_json,agent,agent_detail,agent_source"
+                " FROM record_occurrences WHERE source_id=?", (source_id, original[0]),
+            )
+        else:
+            _insert_runs(connection, source_id, f"history/{Path(relative).parent}", runs,
+                         attributor, UNATTRIBUTED, 0)
+    return len(objects)
+
+
+def _check_archive(connection: sqlite3.Connection, root: Path) -> int:
+    manifest = root / ARCHIVE_MANIFEST
+    if not manifest.is_file():
+        return 0
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    entries = document["entries"]
+    if len(entries) != document["total_entries"]:
+        raise SsotError("historical archive entry count does not match its manifest")
+    digests = set()
+    for entry in entries:
+        stored = entry.get("stored_as") or entry.get("duplicate_of")
+        if not isinstance(stored, str):
+            raise SsotError("historical archive entry has no stored source")
+        path = (manifest.parent / stored).resolve()
+        if not path.is_relative_to(manifest.parent.resolve()):
+            raise SsotError("historical archive source escapes its directory")
+        row = connection.execute("SELECT sha256, bytes FROM sources WHERE path=?",
+                                 (path.relative_to(root).as_posix(),)).fetchone()
+        if row is None or tuple(row) != (entry["sha256"], entry["bytes"]):
+            raise SsotError(f"historical archive source is missing or changed: {stored}")
+        digests.add(entry["sha256"])
+    if len(digests) != document["unique_files"]:
+        raise SsotError("historical archive unique-object count does not match its manifest")
+    return len(entries)
 
 
 def _study(path: Path, root: Path) -> str:
@@ -682,74 +944,104 @@ def _study(path: Path, root: Path) -> str:
     return "/".join(relative.parts[:-1]) or relative.parts[0]
 
 
-def build(ssot_path: Path = DEFAULT_SSOT_PATH, root: Path = PROJECT_ROOT) -> dict[str, object]:
-    """Rebuild the index from scratch and atomically replace the previous one."""
+def build(ssot_path: Path = DEFAULT_SSOT_PATH, root: Path = PROJECT_ROOT,
+          *, reuse_from: Path | None = None) -> dict[str, object]:
+    """Build a complete, lossless corpus and publish it only after validation."""
 
-    ssot_path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = ssot_path.with_name(ssot_path.name + ".building")
-    temporary.unlink(missing_ok=True)
+    root, ssot_path = root.resolve(), ssot_path.absolute()
+    if ssot_path.is_symlink() or (ssot_path.exists() and not _is_ssot(ssot_path)):
+        raise SsotError("output must be absent or an existing derived SSOT database")
+    ssot_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    sources = discover(root)
+    history = _git_data_objects(root)
+    fingerprints = _source_fingerprints(sources)
+    archive_scopes = _archive_scopes(root)
+    attributor = Attributor(root)
+    if reuse_from is not None:
+        reuse_from = reuse_from.resolve()
+        if not _is_ssot(reuse_from):
+            raise SsotError("reuse input must be a derived SSOT corpus")
+    fd, name = tempfile.mkstemp(prefix=ssot_path.name + ".", suffix=".building",
+                                dir=ssot_path.parent)
+    os.close(fd)
+    temporary = Path(name)
     started = time.time_ns()
     builder_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    attributor = Attributor(root)
-    totals = {"sources": 0, "runs": 0, "metrics": 0, "failed_sources": 0}
-
+    totals = {"sources": 0, "runs": 0, "occurrences": 0, "metrics": 0, "failed_sources": 0}
     connection = sqlite3.connect(temporary)
     try:
+        connection.execute("PRAGMA foreign_keys=ON")
         connection.executescript(SCHEMA)
         connection.execute(f"PRAGMA application_id={SSOT_APPLICATION_ID}")
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-        for source_path in discover(root):
-            if source_path.resolve() == ssot_path.resolve():
+        if reuse_from is not None:
+            connection.execute("ATTACH DATABASE ? AS previous",
+                               (f"file:{quote(str(reuse_from), safe='/')}?mode=ro",))
+        for source_path in sources:
+            if source_path == ssot_path:
                 continue
-            digest, size = _sha256_file(source_path)
-            error: str | None = None
-            try:
-                shape, runs = (
-                    _sqlite_source(source_path)
-                    if source_path.suffix == ".sqlite3"
-                    else _json_source(source_path)
-                )
-            except (sqlite3.Error, OSError, ValueError, RecursionError) as exc:
-                shape, runs, error = "unreadable", [], f"{type(exc).__name__}: {exc}"[:400]
-                totals["failed_sources"] += 1
-            relative = str(source_path.relative_to(root))
+            for suffix in ("-wal", "-journal"):
+                sidecar = Path(str(source_path) + suffix)
+                if source_path.suffix in SQLITE_SUFFIXES and sidecar.exists() and sidecar.stat().st_size:
+                    raise SsotError(f"source has an active SQLite journal: {source_path.name}")
+            digest, size, link_target = fingerprints[source_path]
+            _store_object(connection, source_path, digest, size, reuse_from)
+            if source_path.suffix in SQLITE_SUFFIXES:
+                shape, runs = _sqlite_source(source_path)
+            elif source_path.suffix in {".json", ".jsonl"}:
+                shape, runs = _json_source(source_path)
+            elif source_path.suffix == ".partial":
+                try:
+                    shape, runs = _json_source(source_path)
+                    shape = "partial_" + shape
+                except (ValueError, UnicodeError):
+                    shape, runs = "partial_artifact", []
+            else:
+                shape, runs = "artifact", []
+            relative = source_path.relative_to(root).as_posix()
             source_agent = attributor.for_source(relative)
             cursor = connection.execute(
                 "INSERT INTO sources(path, shape, bytes, sha256, mtime_unix_ns, run_count, agent,"
-                " agent_source, error) VALUES(?,?,?,?,?,?,?,?,?)",
-                (
-                    relative,
-                    shape,
-                    size,
-                    digest,
-                    source_path.stat().st_mtime_ns,
-                    len(runs),
-                    source_agent.agent,
-                    source_agent.source,
-                    error,
-                ),
+                " agent_source, error, link_target) VALUES(?,?,?,?,?,?,?,?,NULL,?)",
+                (relative, shape, size, digest, source_path.stat().st_mtime_ns, len(runs),
+                 source_agent.agent, source_agent.source, link_target),
             )
             source_id = int(cursor.lastrowid)
             totals["sources"] += 1
-            totals["runs"] += len(runs)
-            totals["metrics"] += _insert_runs(
-                connection,
-                source_id,
-                _study(source_path, root),
-                runs,
-                attributor,
-                source_agent,
-                source_path.stat().st_mtime_ns,
-            )
+            totals["occurrences"] += len(runs)
+            scope = "archive:" + digest if source_path.name in archive_scopes.get(digest, set()) else None
+            _insert_runs(connection, source_id, _study(source_path, root), runs, attributor,
+                         source_agent, source_path.stat().st_mtime_ns, source_scope=scope)
+        totals["archive_entries"] = _check_archive(connection, root)
+        totals["git_history_objects"] = _ingest_git_history(connection, root, history, attributor)
+        if _git_data_objects(root) != history:
+            raise SsotError("Git data history changed during the build")
+        if set(discover(root)) != set(sources):
+            raise SsotError("source inventory changed during the build")
+        after = _source_fingerprints(sources)
+        for path, expected in fingerprints.items():
+            if after[path] != expected:
+                raise SsotError(f"source changed during the build: {path.relative_to(root)}")
+        totals["runs"] = connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        totals["sources"] = connection.execute("SELECT COUNT(*) FROM sources").fetchone()[0]
+        totals["occurrences"] = connection.execute("SELECT COUNT(*) FROM record_occurrences").fetchone()[0]
+        totals["metrics"] = connection.execute("SELECT COUNT(*) FROM metrics").fetchone()[0]
+        totals["objects"] = connection.execute("SELECT COUNT(*) FROM source_objects").fetchone()[0]
+        totals["duplicate_occurrences"] = totals["occurrences"] - totals["runs"]
         connection.execute(
             "INSERT INTO ssot_meta(singleton, schema_version, built_at_unix_ns, project_root,"
-            " builder_sha256) VALUES(1,?,?,?,?)",
-            (SCHEMA_VERSION, started, str(root), builder_sha),
+            " builder_sha256) VALUES(1,?,?,?,?)", (SCHEMA_VERSION, started, str(root), builder_sha),
         )
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise SsotError("the corpus has unresolved references")
         connection.commit()
+        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise SsotError("the corpus failed SQLite integrity verification")
+        connection.close()
+        os.replace(temporary, ssot_path)
     finally:
         connection.close()
-    os.replace(temporary, ssot_path)
+        temporary.unlink(missing_ok=True)
     totals["database"] = str(ssot_path)
     totals["build_seconds"] = round((time.time_ns() - started) / 1e9, 3)
     return totals
@@ -763,10 +1055,10 @@ def _insert_runs(
     attributor: "Attributor",
     source_agent: Attribution,
     written_at_unix_ns: int,
-) -> int:
-    written = 0
+    *, source_scope: str | None = None,
+) -> None:
     seen: set[str] = set()
-    for run in runs:
+    for ordinal, run in enumerate(runs):
         native_id = run.native_id
         if native_id in seen:
             native_id = f"{native_id}#{len(seen)}"
@@ -774,46 +1066,152 @@ def _insert_runs(
         observed_at = run.observed_at_unix_ns or _document_time(run.payload)
         payload = _canonical(run.payload)
         payload_bytes = len(payload.encode("utf-8"))
+        payload_sha = hashlib.sha256(payload.encode("utf-8")).hexdigest()
         metrics = flatten_metrics(run.payload)
         metrics.update(run.extra_metrics)
         truncated = int(len(metrics) >= MAX_METRICS_PER_RUN)
         attribution = attributor.for_run(run, source_agent, written_at_unix_ns)
+        provenance = _canonical(run.provenance) if run.provenance is not None else None
+        identifier = (_first(run.payload, ("run_id", "record_id", "experiment_id"))
+                      or (native_id if re.fullmatch(r"[0-9a-f]{64}", native_id) else None))
+        if run.identity:
+            key = run.identity
+        elif identifier:
+            # Equal values do not establish identity. Bind the original identifier
+            # together with all measurement/provenance context, not its filename.
+            identity = [identifier, run.kind, run.status, observed_at, payload_sha,
+                        provenance, run.extra_metrics]
+            key = "record:" + hashlib.sha256(_canonical(identity).encode()).hexdigest()
+        elif source_scope:
+            key = f"{source_scope}:{ordinal}"
+        else:
+            # Unknown identity remains a distinct observation; only its stored
+            # content is deduplicated. Never erase a repetition based on its value.
+            key = f"location:{source_id}:{native_id}"
+        connection.execute("INSERT OR IGNORE INTO payloads VALUES(?,?,?,?)",
+                           (payload_sha, payload, payload_bytes, _payload_format(run.payload)))
         cursor = connection.execute(
-            "INSERT INTO runs(source_id, study, native_id, kind, status, observed_at_unix_ns,"
-            " payload_json, payload_sha256, payload_bytes, provenance_json, agent, agent_detail,"
-            " agent_source, metrics_truncated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (
-                source_id,
-                study,
-                native_id,
-                run.kind,
-                run.status,
-                observed_at,
-                payload if payload_bytes <= INLINE_PAYLOAD_LIMIT else None,
-                hashlib.sha256(payload.encode("utf-8")).hexdigest(),
-                payload_bytes,
-                _canonical(run.provenance) if run.provenance is not None else None,
-                attribution.agent,
-                attribution.detail,
-                attribution.source,
-                truncated,
-            ),
+            "INSERT OR IGNORE INTO canonical_records(canonical_key, source_id, study, native_id,"
+            " kind, status, observed_at_unix_ns, payload_sha256, payload_bytes, provenance_json,"
+            " agent, agent_detail, agent_source, metrics_truncated) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (key, source_id, study, native_id, run.kind, run.status, observed_at,
+             payload_sha, payload_bytes, provenance, attribution.agent, attribution.detail,
+             attribution.source, truncated),
         )
-        run_id = int(cursor.lastrowid)
-        connection.executemany(
-            "INSERT OR IGNORE INTO metrics(run_id, path, value) VALUES(?,?,?)",
-            ((run_id, path, value) for path, value in metrics.items()),
-        )
-        written += len(metrics)
-    return written
+        row = connection.execute("SELECT run_id,payload_sha256 FROM canonical_records WHERE canonical_key=?",
+                                 (key,)).fetchone()
+        run_id = row[0]
+        if row[1] != payload_sha:
+            raise SsotError("one canonical identity has conflicting payloads")
+        connection.execute("INSERT INTO record_occurrences VALUES(?,?,?,?,?,?,?)",
+                           (source_id, native_id, run_id, provenance, attribution.agent,
+                            attribution.detail, attribution.source))
+        if cursor.rowcount:
+            connection.executemany("INSERT INTO metrics(run_id,path,value) VALUES(?,?,?)",
+                                   ((run_id, path, value) for path, value in metrics.items()))
+
 
 
 # --------------------------------------------------------------------------- read
 
 
-def status(ssot_path: Path = DEFAULT_SSOT_PATH) -> dict[str, object]:
-    with _read_only(ssot_path) as connection:
+def source_content(digest: str, ssot_path: Path = DEFAULT_SSOT_PATH) -> Iterator[bytes]:
+    """Recover exact original bytes from the corpus, without requiring the old path."""
+
+    connection = _read_only(ssot_path)
+    try:
+        expected = connection.execute("SELECT bytes,chunks FROM source_objects WHERE sha256=?",
+                                      (digest,)).fetchone()
+        if expected is None:
+            raise SsotError("source object does not exist")
+        observed, size, count = hashlib.sha256(), 0, 0
+        for row in connection.execute("SELECT ordinal,compressed FROM source_chunks WHERE sha256=? ORDER BY ordinal",
+                                      (digest,)):
+            if row["ordinal"] != count:
+                raise SsotError("source object has missing chunks")
+            decoder = zlib.decompressobj()
+            block = decoder.decompress(row["compressed"], OBJECT_CHUNK_BYTES + 1)
+            if len(block) > OBJECT_CHUNK_BYTES or not decoder.eof or decoder.unused_data:
+                raise SsotError("source object has an invalid compressed chunk")
+            size += len(block)
+            count += 1
+            observed.update(block)
+            yield block
+        if (size, count, observed.hexdigest()) != (expected["bytes"], expected["chunks"], digest):
+            raise SsotError("source object content does not match its identity")
+    finally:
+        connection.close()
+
+
+def verify(ssot_path: Path = DEFAULT_SSOT_PATH, *, check_sources: bool = False) -> dict[str, object]:
+    """Independently read every stored object and check references and optional originals."""
+
+    connection = _read_only(ssot_path)
+    try:
         meta = connection.execute("SELECT * FROM ssot_meta").fetchone()
+        if meta is None or meta["schema_version"] != SCHEMA_VERSION:
+            raise SsotError("SSOT schema is outdated; rebuild the derived corpus")
+        if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise SsotError("SQLite integrity check failed")
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise SsotError("corpus contains unresolved references")
+        objects = connection.execute("SELECT sha256 FROM source_objects ORDER BY sha256").fetchall()
+        byte_count = 0
+        for row in objects:
+            for block in source_content(row["sha256"], ssot_path):
+                byte_count += len(block)
+        for row in connection.execute("SELECT sha256,json,bytes,format FROM payloads"):
+            content = row["json"].encode("utf-8")
+            if hashlib.sha256(content).hexdigest() != row["sha256"] or len(content) != row["bytes"]:
+                raise SsotError("a canonical payload does not match its identity")
+            if _payload_format(json.loads(row["json"])) != row["format"]:
+                raise SsotError("a payload encoding label does not match its contents")
+        missing = connection.execute(
+            "SELECT s.path FROM sources s LEFT JOIN record_occurrences o USING(source_id)"
+            " GROUP BY s.source_id HAVING COUNT(o.run_id) != s.run_count"
+        ).fetchall()
+        if missing:
+            raise SsotError("source record coverage is incomplete")
+        root = Path(meta["project_root"])
+        checked = 0
+        if check_sources:
+            indexed = set()
+            rows = connection.execute("SELECT path,sha256,bytes,link_target FROM sources WHERE origin='filesystem'").fetchall()
+            current = _source_fingerprints(root / row["path"] for row in rows)
+            for row in rows:
+                path = root / row["path"]
+                if current[path] != (row["sha256"], row["bytes"], row["link_target"]):
+                    raise SsotError(f"original source changed: {row['path']}")
+                indexed.add(path)
+                checked += 1
+            if indexed != set(discover(root)):
+                raise SsotError("current source inventory differs from the corpus")
+            _check_archive(connection, root)
+            history = connection.execute("SELECT git_blob,sha256,bytes FROM sources WHERE origin='git'").fetchall()
+            if {row['git_blob'] for row in history} != {oid for oid, _ in _git_data_objects(root)}:
+                raise SsotError("Git data history differs from the corpus")
+            for row in history:
+                content = subprocess.check_output(["git", "-C", str(root), "cat-file", "blob", row['git_blob']])
+                if (hashlib.sha256(content).hexdigest(), len(content)) != (row['sha256'], row['bytes']):
+                    raise SsotError("historical Git object differs from the corpus")
+                checked += 1
+        return {"state": "verified", "objects": len(objects), "original_bytes": byte_count,
+                "original_sources_checked": checked,
+                "runs": connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
+                "occurrences": connection.execute("SELECT COUNT(*) FROM record_occurrences").fetchone()[0]}
+    finally:
+        connection.close()
+
+
+def status(ssot_path: Path = DEFAULT_SSOT_PATH) -> dict[str, object]:
+    with closing(_read_only(ssot_path)) as connection:
+        meta = connection.execute("SELECT * FROM ssot_meta").fetchone()
+        if meta is None or meta["schema_version"] != SCHEMA_VERSION:
+            raise SsotError("SSOT schema is outdated; rebuild the derived corpus")
+        recent = [dict(row) for row in connection.execute(
+            "SELECT study,native_id,status,observed_at_unix_ns FROM runs "
+            "ORDER BY observed_at_unix_ns DESC,run_id DESC LIMIT 8"
+        )]
         studies = [
             dict(row)
             for row in connection.execute(
@@ -844,6 +1242,9 @@ def status(ssot_path: Path = DEFAULT_SSOT_PATH) -> dict[str, object]:
             "built_at_unix_ns": meta["built_at_unix_ns"] if meta else None,
             "sources": connection.execute("SELECT count(*) FROM sources").fetchone()[0],
             "runs": connection.execute("SELECT count(*) FROM runs").fetchone()[0],
+            "objects": connection.execute("SELECT count(*) FROM source_objects").fetchone()[0],
+            "original_bytes": connection.execute("SELECT sum(bytes) FROM source_objects").fetchone()[0],
+            "occurrences": connection.execute("SELECT count(*) FROM record_occurrences").fetchone()[0],
             "metrics": connection.execute("SELECT count(*) FROM metrics").fetchone()[0],
             "distinct_metric_paths": connection.execute(
                 "SELECT count(DISTINCT path) FROM metrics"
@@ -851,12 +1252,16 @@ def status(ssot_path: Path = DEFAULT_SSOT_PATH) -> dict[str, object]:
             "shapes": shapes,
             "agents": agents,
             "studies": studies,
+            "recent": recent,
+            "nonstandard_payloads": connection.execute(
+                "SELECT COUNT(*) FROM payloads WHERE format != 'json'"
+            ).fetchone()[0],
             "unreadable_sources": failed,
         }
 
 
 def query(sql: str, ssot_path: Path = DEFAULT_SSOT_PATH, limit: int = 200) -> list[dict]:
-    with _read_only(ssot_path) as connection:
+    with closing(_read_only(ssot_path)) as connection:
         rows = connection.execute(sql).fetchmany(limit)
         return [dict(row) for row in rows]
 
@@ -874,7 +1279,7 @@ def metric_paths(
         sql += " WHERE m.path LIKE ?"
         parameters = (f"%{pattern}%",)
     sql += " GROUP BY m.path ORDER BY runs DESC, m.path LIMIT ?"
-    with _read_only(ssot_path) as connection:
+    with closing(_read_only(ssot_path)) as connection:
         return [dict(row) for row in connection.execute(sql, parameters + (limit,))]
 
 
@@ -889,8 +1294,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="friday ssot", allow_abbrev=False)
     parser.add_argument("--database", type=Path, default=DEFAULT_SSOT_PATH)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("build", allow_abbrev=False)
+    building = commands.add_parser("build", allow_abbrev=False)
+    building.add_argument("--reuse", type=Path, help="reuse verified source objects from an existing corpus")
     commands.add_parser("status", allow_abbrev=False)
+    verification = commands.add_parser("verify", allow_abbrev=False)
+    verification.add_argument("--check-sources", action="store_true")
+    export = commands.add_parser("export-source", allow_abbrev=False)
+    export.add_argument("sha256")
+    export.add_argument("output", type=Path)
     sql = commands.add_parser("query", allow_abbrev=False)
     sql.add_argument("sql")
     sql.add_argument("--limit", type=int, default=200)
@@ -900,13 +1311,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(list(argv) if argv is not None else None)
     try:
         if args.command == "build":
-            _print(build(args.database))
+            _print(build(args.database, reuse_from=args.reuse))
         elif args.command == "status":
             _print(status(args.database))
+        elif args.command == "verify":
+            _print(verify(args.database, check_sources=args.check_sources))
+        elif args.command == "export-source":
+            created = False
+            try:
+                fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                created = True
+                with os.fdopen(fd, "wb") as handle:
+                    for block in source_content(args.sha256, args.database):
+                        handle.write(block)
+            except Exception:
+                if created:
+                    args.output.unlink(missing_ok=True)
+                raise
+            _print({"state": "exported", "sha256": args.sha256, "output": str(args.output)})
         elif args.command == "query":
             _print(query(args.sql, args.database, args.limit))
         elif args.command == "metrics":
             _print(metric_paths(args.pattern, args.database, args.limit))
+    except (SsotError, ValueError, UnicodeError, KeyError, zlib.error) as exc:
+        _print({"state": "integrity_error", "detail": str(exc)})
+        return 65
     except sqlite3.Error as exc:
         _print({"state": "sqlite_error", "detail": str(exc)})
         return 65
@@ -928,6 +1357,8 @@ __all__ = [
     "metric_paths",
     "query",
     "status",
+    "source_content",
+    "verify",
 ]
 
 

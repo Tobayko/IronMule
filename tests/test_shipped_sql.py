@@ -47,6 +47,8 @@ _CROSS_PACKAGE = {
     ("friday_evidence/ssot.py", "scalar_metrics"),
     ("friday_evidence/ssot.py", "correctness_metrics"),
     ("friday_evidence/ssot.py", "raw_samples"),
+    # Rebuilds reuse verified objects from the previous corpus, attached as `previous`.
+    ("friday_evidence/ssot.py", "no such table: previous."),
 }
 
 

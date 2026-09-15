@@ -1410,7 +1410,38 @@ bleibt jede Zeile vollständig.
 nicht, und der Nettogewinn ist `1533` statt `4000`. Das ist immer noch der
 größte Einzelblock des Projekts, und es gehört so in `PROJECT_STATUS.md`.
 
+## SSOT3 — Canonical evidence corpus and repository consolidation (2026-09-12)
+
+User goal: one SSOT containing the historical data without duplicate records,
+clear repository ownership, and a verified GitHub update. The existing SSOT is a
+derived index: a read-only audit found 45 repeated source copies and 1742 repeated
+payload occurrences among 6305 indexed rows; equal payloads alone do not prove
+equal measurements. Six installed-tool metadata files also entered the index.
+
+**Mechanism:** inventory all evidence roots and the historical archive; retain
+original bytes once by content hash, link every original location and record
+occurrence, and expose canonical measurements only when identity proves equivalence.
+Separate source coverage, duplicate elimination and ambiguous identity in the audit.
+Route the existing status interface and current documentation to that same store.
+Preserve sealed inputs, distinct repetitions and original attribution evidence.
+
+**Gate:** complete source/manifest reconciliation; every retained source recoverable
+with its original hash; no original source modified; no duplicate canonical identity;
+no conflation of independent measurements; reproducible rebuild and independent
+readback; targeted and package/CI checks pass; public diff contains no private data;
+remote commit and its CI are verified after the authorized push.
+
+**Kill/pivot:** if identity cannot establish equivalence, preserve distinct records
+and report the ambiguity. A missing or unreadable source prevents a completeness
+claim. Do not repair historical evidence or delete unique data to make counts pass.
+Any unresolved scope remains here until the complete user objective is verified.
+
 ## SSOT1 — belastbare Urheberzuordnung der Messdaten (neu 2026-09-09)
+
+**SSOT3 update (2026-09-12):** unmarked commits now remain `unattributed`;
+the default-Codex inference has been removed from the derived corpus. Original
+evidence is unchanged. Explicit actor provenance and the time-chain question below
+remain open; the following counts describe the earlier inventory.
 
 Der Gesamtindex steht (`friday_evidence/ssot.py`, `docs/SSOT.md`): 417 Quellen,
 1745 Läufe, 300 084 Metrikwerte, Quellen unverändert. Offen ist die Qualität der
@@ -1438,8 +1469,10 @@ Eine geratene Zuordnung ist schlechter als eine sichtbar schwache.
 
 ## SSOT2 — Index in der lokalen UI und als Regressionsgrenze (neu 2026-09-09)
 
-Der Index wird bisher nur über `tools/ssot.py query` gelesen. `AGENTS.md`
-verlangt für relevante Messwerte zusätzlich eine kleine lokale UI mit Historie.
+**SSOT3 update (2026-09-12):** `tools/friday.py status --ssot` and `--json`
+now expose the same corpus snapshot and recent canonical records through the
+existing status interface. The context-aware metric regression gate below remains
+open; the corpus does not authorize a threshold or a runtime optimisation.
 
 **Mechanismus.** `tools/friday.py status` um eine SSOT-Sicht erweitern (Studien,
 Agenten, jüngste Läufe, Metrik-Zeitreihe), statt einen dreizehnten
