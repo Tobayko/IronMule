@@ -56,6 +56,7 @@ def _parser() -> argparse.ArgumentParser:
     dashboard.add_argument("--port", type=int, default=8789)
     probe = sub.add_parser("provider-smoke", allow_abbrev=False)
     probe.add_argument("--backend", choices=("cuda", "tpu"), required=True)
+    probe.add_argument("--workload", choices=("matmul", "gemma3-1b"), default="matmul")
     probe.add_argument("--owner", required=True)
     probe.add_argument("--accelerator", required=True)
     probe.add_argument("--account-preflight", type=Path, required=True)
@@ -333,12 +334,12 @@ def _dispatch(args) -> dict | None:
         return None
     if command == "provider-smoke":
         if not args.execute:
-            return {"status":"planned", "backend":args.backend,
+            return {"status":"planned", "backend":args.backend, "workload":args.workload,
                     "accelerator":args.accelerator, "hardware_started":False,
                     "performance_claim":False}
         from .kaggle_probe import load_account_preflight, run_provider_smoke
         return run_provider_smoke(state_dir=args.state_dir, backend=args.backend,
-            owner=args.owner, accelerator=args.accelerator,
+            owner=args.owner, accelerator=args.accelerator, workload=args.workload,
             account=load_account_preflight(args.account_preflight),
             executable=_kaggle_executable(args.kaggle_executable))
     raise ContractError("unknown_data_command")

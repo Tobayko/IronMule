@@ -60,6 +60,29 @@ Pilotdaten, Kostensparen und ein Offline-Replay allein reichen nicht.
 Kill: unklare Gratisquote/Sitzung, Korrektheits- oder Ressourcenfehler, fehlende
 unabhängige Gruppen oder kein Lernvorteil lassen den betreffenden Pfad gesperrt.
 
+## DATA2 — Echte Gemma-Inferenz auf Kaggle-T4 als Stock-Referenz (2026-09-14)
+
+Nutzerauftrag 2026-09-14: echte GPU-Inferenz auf Kaggle, erster Lauf Gemma 3 1B IT
+in FP32, Gewichte aus Kaggle Models `google/gemma-3/transformers/gemma-3-1b-it/1`.
+DATA1 hat auf der T4 bisher nur FP32-Matmul geprüft; vollständige Inferenz fehlt.
+Mechanismus: `provider-smoke` erhält die Workload `gemma3-1b`. Dieselbe Konto-,
+Quoten-, Reservierungs- und Abgleichslogik; das private Notebook ohne Internet lädt
+nur Code hoch und hängt das Modell über `model_sources` an. Im Gast: Transformers
+auf `cuda:0`, TF32 aus, fester Chat-Prompt, Greedy, 32 neue Tokens. Korrektheit:
+eine manuelle KV-Cache-Greedy-Schleife muss tokenidentisch zu `model.generate` sein,
+zwei `generate`-Läufe untereinander ebenfalls. TTFT, Decode-Rate, Gesamtzeit und
+Spitzen-Speicher sind nur Diagnose. Metal-Kernels laufen dort nicht; das ist die
+Stock-Referenz einer NVIDIA-Zelle, kein IronMule-Beschleunigungspfad.
+Gate: bestätigte T4, Modell angehängt, beide Tokenvergleiche exakt, Gastarbeit
+<=60 s, Job <=180 s, verifizierter Output, `performance_claim=false`.
+Kill: nicht angehängtes oder lizenzgesperrtes Modell, Tokenabweichung, OOM,
+überschrittene Gastzeit, unklare Quote/Sitzung — kein Retry mit gelockerten
+Grenzen; eine Änderung braucht einen neuen Eintrag. Gültigkeitsdomäne nur Kaggle-T4;
+keine Aussage über MLX/Metal oder den Mac, keine Übertragung von Zielmarken.
+Stand 2026-09-15: blockiert vor dem ersten Lauf — Kaggle-MCP meldet für
+`google/gemma-3` "User has not consented to terms of use"; die Lizenz muss der
+Nutzer selbst im Browser akzeptieren.
+
 ## PROD1 — IronMule als autonome lokale LLM-Umgebung (2026-09-05)
 
 Nutzerauftrag: den im Gespräch ausgearbeiteten Produktplan umsetzen; Live-Tests

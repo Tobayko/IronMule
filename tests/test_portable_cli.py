@@ -161,3 +161,69 @@ def test_provider_smoke_defaults_to_plan_and_uploads_no_model_payload(tmp_path: 
     assert "mlx-community" not in source
     assert "/kaggle/input" not in source
     assert "performance_claim\":False" in source
+
+
+def test_gemma_inference_smoke_plans_private_model_attached_notebook(tmp_path: Path, capsys) -> None:
+    from friday_evidence.portable.kaggle import _local_slug
+    from friday_evidence.portable.kaggle_probe import GEMMA3_1B_HANDLE, ProbeError, _kernel_metadata
+
+    preflight = tmp_path / "preflight.json"
+    preflight.write_text("{}", encoding="utf-8")
+    assert main(["--state-dir", str(tmp_path / "state"), "provider-smoke",
+                 "--backend", "cuda", "--workload", "gemma3-1b", "--owner", "owner",
+                 "--accelerator", "NvidiaTeslaT4",
+                 "--account-preflight", str(preflight)]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert (result["status"], result["workload"], result["hardware_started"]) == ("planned", "gemma3-1b", False)
+    assert not (tmp_path / "state").exists()
+
+    metadata = _kernel_metadata(owner="owner", run_id="c" * 32, backend="cuda",
+                                accelerator="NvidiaTeslaT4", workload="gemma3-1b")
+    assert metadata["model_sources"] == [GEMMA3_1B_HANDLE]
+    assert metadata["is_private"] is True and metadata["enable_internet"] is False
+    assert "dataset_sources" not in metadata
+    assert _local_slug(metadata["title"]) == metadata["id"].split("/", 1)[1]
+    assert "model_sources" not in _kernel_metadata(owner="owner", run_id="c" * 32, backend="cuda",
+                                                   accelerator="NvidiaTeslaT4", workload="matmul")
+
+    source = _source("cuda", "c" * 32, "gemma3-1b")
+    compile(source, "probe.py", "exec")
+    assert repr(GEMMA3_1B_HANDLE) in source
+    assert '"performance_claim": False' in source
+    with pytest.raises(ProbeError):
+        _source("tpu", "c" * 32, "gemma3-1b")
+
+
+@pytest.mark.integration
+def test_gemma_guest_manual_loop_matches_generate_on_cpu(tmp_path: Path) -> None:
+    """Code-path check with random tiny weights; not hardware or model-quality evidence."""
+    import shutil
+    import time
+
+    torch = pytest.importorskip("torch")
+    transformers = pytest.importorskip("transformers")
+    snapshots = sorted(Path.home().glob(
+        ".cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/*"))
+    if not snapshots:
+        pytest.skip("local Gemma 3 tokenizer snapshot absent")
+    model_dir = tmp_path / "input" / "gemma"
+    model_dir.mkdir(parents=True)
+    for name in ("tokenizer.json", "tokenizer.model", "tokenizer_config.json",
+                 "special_tokens_map.json", "added_tokens.json"):
+        if (snapshots[-1] / name).exists():
+            shutil.copy(snapshots[-1] / name, model_dir / name)
+    torch.manual_seed(0)
+    config = transformers.Gemma3TextConfig(
+        vocab_size=262144, hidden_size=64, intermediate_size=128, num_hidden_layers=2,
+        num_attention_heads=2, num_key_value_heads=1, head_dim=32,
+        max_position_embeddings=1024, sliding_window=512)
+    transformers.Gemma3ForCausalLM(config).save_pretrained(model_dir)
+    transformers.GenerationConfig(bos_token_id=2, eos_token_id=[1, 106], pad_token_id=0).save_pretrained(model_dir)
+
+    namespace = {"__name__": "probe"}
+    exec(compile(_source("cuda", "d" * 32, "gemma3-1b"), "probe.py", "exec"), namespace)
+    located = namespace["locate_model"](tmp_path / "input")
+    result = namespace["run_inference"](located, torch.device("cpu"), time.monotonic() + 600)
+    assert result["model_type"].startswith("gemma3")
+    assert 1 <= len(result["generated_token_ids"]) <= 32
+    assert namespace["model_identity"](located)["weight_file_bytes"]
