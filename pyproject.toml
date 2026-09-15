@@ -9,7 +9,7 @@ description = "Run and benchmark local LLM inference on Apple Silicon with MLX, 
 readme = "README.md"
 authors = [{ name = "Tobias Abenthum" }]
 requires-python = ">=3.10"
-license = "LicenseRef-IronMule-2.0"
+license = "Apache-2.0"
 license-files = ["LICENSE.md"]
 dependencies = ["mlx>=0.32,<0.33", "mlx-lm>=0.31.3,<0.32", "numpy>=1.24"]
 classifiers = [

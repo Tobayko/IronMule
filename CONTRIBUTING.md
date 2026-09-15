@@ -102,6 +102,6 @@ git clone https://github.com/styler-ai/ProjectAtlas.git ProjectAtlas
 
 ## Contributions and licence
 
-By contributing you grant the licensor the rights described in §10.6 of
-[`LICENSE.md`](LICENSE.md). No copyright assignment is required and you keep all
-other rights in your contribution.
+IronMule is open source under the [Apache License 2.0](LICENSE.md). Contributions are
+accepted under the same licence (section 5 of the licence); no copyright assignment is
+required.

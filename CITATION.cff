@@ -24,6 +24,6 @@ keywords:
   - prefix caching
   - batching
   - reproducible research
-license: "IronMule License 2.0"
+license: "Apache-2.0"
 version: "0.1.0"
 date-released: "2026-08-25"
