@@ -38,9 +38,51 @@ def _finite_number(value: Any) -> bool:
         return False
 
 
+def _linux() -> bool:
+    return platform.system() == "Linux"
+
+
+def _linux_meminfo() -> tuple[dict[str, int] | None, str | None]:
+    """`/proc/meminfo` in bytes: the Linux source for memory, free memory and swap."""
+    try:
+        with open("/proc/meminfo", encoding="ascii") as stream:
+            rows = [line.split() for line in stream]
+    except (OSError, UnicodeDecodeError):
+        return None, "meminfo_probe_failed"
+    values = {}
+    for row in rows:
+        if len(row) >= 2 and row[1].isdigit():
+            values[row[0].rstrip(":")] = int(row[1]) * (1024 if len(row) > 2 and row[2] == "kB" else 1)
+    if not {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"} <= set(values) or values["MemTotal"] <= 0:
+        return None, "meminfo_invalid"
+    return values, None
+
+
+def _linux_thermal_state() -> tuple[int | None, str | None]:
+    """Map NVIDIA thermal slowdown to NSProcessInfo's scale: active -> serious (2), else nominal."""
+    for field in ("clocks_event_reasons", "clocks_throttle_reasons"):  # newer, older drivers
+        output, error = _command(["nvidia-smi", f"--query-gpu={field}.hw_thermal_slowdown,"
+                                  f"{field}.sw_thermal_slowdown", "--format=csv,noheader"],
+                                 "thermal_probe_failed")
+        if not error:
+            break
+    if error or output is None or not output.strip():
+        return None, error or "thermal_probe_failed"
+    return (2 if "active" in output.lower().replace("not active", "") else 0), None
+
+
 def _foundation_state() -> tuple[bool | None, int | None, str | None]:
     """Read public NSProcessInfo flags through the Objective-C runtime."""
 
+    if _linux():
+        # Linux has no process-visible low-power mode; ACPI's platform profile is closest.
+        try:
+            with open("/sys/firmware/acpi/platform_profile", encoding="ascii") as stream:
+                low_power = stream.read().strip() in {"low-power", "quiet", "cool"}
+        except OSError:
+            low_power = False
+        thermal, error = _linux_thermal_state()
+        return low_power, thermal, error
     if platform.system() != "Darwin":
         return None, None, "foundation_unsupported_platform"
     try:
@@ -121,6 +163,9 @@ def hardware_identity() -> dict[str, Any]:
         return {"chip_name": _HARDWARE_CACHE["chip_name"], "gpu_devices": [dict(item) for item in _HARDWARE_CACHE["gpu_devices"]], "hardware_errors": list(_HARDWARE_CACHE["hardware_errors"])}
     errors: list[str] = []
     supported = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    if _linux():
+        _HARDWARE_CACHE = _linux_hardware_identity()
+        return {"chip_name": _HARDWARE_CACHE["chip_name"], "gpu_devices": [dict(item) for item in _HARDWARE_CACHE["gpu_devices"]], "hardware_errors": list(_HARDWARE_CACHE["hardware_errors"])}
     if not supported:
         _HARDWARE_CACHE = {"chip_name": None, "gpu_devices": [], "hardware_errors": ["hardware_unsupported_platform"]}
         return {"chip_name": None, "gpu_devices": [], "hardware_errors": ["hardware_unsupported_platform"]}
@@ -170,7 +215,52 @@ def hardware_identity() -> dict[str, Any]:
     return {"chip_name": chip_name, "gpu_devices": [dict(item) for item in devices], "hardware_errors": sorted(set(errors))}
 
 
+def _linux_hardware_identity() -> dict[str, Any]:
+    errors: list[str] = []
+    chip_name = None
+    try:
+        with open("/proc/cpuinfo", encoding="utf-8") as stream:
+            for line in stream:
+                if line.startswith("model name"):
+                    chip_name = _safe_technical_string(line.split(":", 1)[1].strip())
+                    break
+    except (OSError, UnicodeDecodeError):
+        pass
+    if chip_name is None:
+        errors.append("chip_name_invalid")
+    output, error = _hardware_command(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], "gpu_probe_failed")
+    devices = [] if error or output is None else [
+        {"model": _safe_technical_string(line.strip()), "cores": None, "metal_support": None}
+        for line in output.splitlines() if line.strip()]
+    if not devices:
+        errors.append(error or "gpu_devices_unavailable")
+    if any(device["model"] is None for device in devices):
+        errors.append("gpu_model_unavailable")
+    return {"chip_name": chip_name, "gpu_devices": devices, "hardware_errors": sorted(set(errors))}
+
+
 def _power_source() -> tuple[str, str | None]:
+    if _linux():
+        # A host with no battery (servers, cloud VMs) runs on mains by construction.
+        try:
+            supplies = [os.path.join("/sys/class/power_supply", name) for name in os.listdir("/sys/class/power_supply")]
+        except OSError:
+            supplies = []
+        on_battery = False
+        for supply in supplies:
+            try:
+                with open(os.path.join(supply, "type"), encoding="ascii") as stream:
+                    kind = stream.read().strip()
+                if kind == "Mains":
+                    with open(os.path.join(supply, "online"), encoding="ascii") as stream:
+                        if stream.read().strip() == "1":
+                            return "ac", None
+                elif kind == "Battery":
+                    with open(os.path.join(supply, "status"), encoding="ascii") as stream:
+                        on_battery = on_battery or stream.read().strip() == "Discharging"
+            except OSError:
+                continue
+        return ("battery", None) if on_battery else ("ac", None)
     output, error = _command(["pmset", "-g", "ps"], "power_probe_failed")
     if error:
         return "unknown", error
@@ -188,6 +278,9 @@ def _sysctl_value(name: str, error_code: str) -> tuple[str | None, str | None]:
 
 
 def _memory_total() -> tuple[int | None, str | None]:
+    if _linux():
+        info, error = _linux_meminfo()
+        return (info["MemTotal"], None) if info else (None, error)
     output, error = _sysctl_value("hw.memsize", "memory_total_probe_failed")
     if error or output is None:
         return None, error
@@ -199,6 +292,9 @@ def _memory_total() -> tuple[int | None, str | None]:
 
 
 def _cpu_count() -> tuple[int | None, str | None]:
+    if _linux():
+        count = os.cpu_count()
+        return (count, None) if count else (None, "cpu_count_invalid")
     output, error = _sysctl_value("hw.logicalcpu", "cpu_count_probe_failed")
     if error or output is None:
         return None, error
@@ -209,6 +305,9 @@ def _cpu_count() -> tuple[int | None, str | None]:
 
 
 def _swap_used() -> tuple[int | None, str | None]:
+    if _linux():
+        info, error = _linux_meminfo()
+        return (info["SwapTotal"] - info["SwapFree"], None) if info else (None, error)
     output, error = _sysctl_value("vm.swapusage", "swap_probe_failed")
     if error or output is None:
         return None, error
@@ -222,6 +321,9 @@ def _swap_used() -> tuple[int | None, str | None]:
 
 
 def _memory_free_percent() -> tuple[float | None, str | None]:
+    if _linux():
+        info, error = _linux_meminfo()
+        return (100.0 * info["MemAvailable"] / info["MemTotal"], None) if info else (None, error)
     output, error = _command(["memory_pressure", "-Q"], "memory_free_probe_failed")
     if error or output is None:
         return None, error
@@ -241,7 +343,7 @@ def probe() -> dict[str, Any]:
     observed_unix_ns = time.time_ns()
     observed_monotonic = started
     errors: list[str] = []
-    supported = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
+    supported = (platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}) or _linux()
 
     power_source, error = _power_source()
     if error:

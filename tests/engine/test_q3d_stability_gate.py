@@ -4,6 +4,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -284,6 +285,7 @@ def test_cleanup_unknown_first_snapshot_still_attempts_safe_known_orphan_kill(mo
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
 def test_real_macos_process_identity_and_cleanup_reap():
     if os.name != "posix":
         pytest.skip("start_new_session and getsid are POSIX-only")

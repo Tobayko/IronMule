@@ -43,15 +43,28 @@ def _emit(value: dict[str, Any]) -> None:
     _PROTOCOL_OUT.flush()
 
 
+def _working_set_bytes(mx: Any) -> Any:
+    # Metal reports Apple's recommended working set; MLX's CUDA backend only the
+    # device's total memory (DATA3, Kaggle T4).
+    info = mx.device_info()
+    return info.get("max_recommended_working_set_size", info.get("total_memory"))
+
+
+def _gpu_available(mx: Any) -> bool:
+    cuda = getattr(mx, "cuda", None)
+    return bool(mx.metal.is_available() or (cuda is not None and cuda.is_available()))
+
+
 def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
     values: dict[str, Any] = {
         "startup_wall_seconds": time.monotonic() - startup_started,
-        # Darwin reports ru_maxrss in bytes (unlike Linux's KiB convention).
-        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+        # Darwin reports ru_maxrss in bytes, Linux in KiB.
+        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        * (1 if sys.platform == "darwin" else 1024),
         "mlx_active_bytes": mx.get_active_memory(),
         "mlx_peak_bytes": mx.get_peak_memory(),
         "mlx_cache_bytes": mx.get_cache_memory(),
-        "recommended_working_set_bytes": mx.device_info().get("max_recommended_working_set_size"),
+        "recommended_working_set_bytes": _working_set_bytes(mx),
     }
     startup = values["startup_wall_seconds"]
     try:
@@ -142,12 +155,14 @@ def _load(spec: dict[str, Any]):
     # the parent converts that into BackendUnavailable.
     import mlx.core as mx
 
-    # A compiled-in Metal backend is not proof that the current process may
+    from ironmule.hw import apply_cuda_graph_defaults
+    apply_cuda_graph_defaults()  # before the first GPU operation reads them
+
+    # A compiled-in GPU backend is not proof that the current process may
     # open the device. Force that check before mlx_lm creates native streams.
-    if not mx.metal.is_available():
-        raise RuntimeError("a Metal GPU device is required")
-    device_info = mx.device_info()
-    max_working_set = device_info.get("max_recommended_working_set_size")
+    if not _gpu_available(mx):
+        raise RuntimeError("a Metal or CUDA GPU device is required")
+    max_working_set = _working_set_bytes(mx)
     if type(max_working_set) is not int or max_working_set <= 0:
         raise RuntimeError("device working-set telemetry is unavailable")
     # This is an Apple recommendation, not a hard hardware capacity. Observe
@@ -722,6 +737,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
+    parser.add_argument("--compute-dtype", choices=("float32",), default=None)
     args = parser.parse_args(argv)
     startup_started = time.monotonic()
     prefix_session = engine_bridge = automatic_runtime = None
@@ -741,6 +757,11 @@ def main(argv: list[str] | None = None) -> int:
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
         model, tokenizer, stream_generate, device = _load(spec)
+        if args.compute_dtype == "float32":
+            if args.execution_variant != "reference":
+                raise ValueError("compute_dtype is available on the reference worker only")
+            import mlx.core as mx
+            model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
         if identity is not None:
             assert_model_unchanged(spec, identity)
         if args.execution_variant == "prefix_reuse":

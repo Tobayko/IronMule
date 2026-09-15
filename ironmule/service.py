@@ -428,7 +428,8 @@ class Runtime:
     # -- construction ---------------------------------------------------------
     @classmethod
     def load(cls, model_id: str | None = None, mode=None, use_tuned_profile: bool = True,
-             revision: str | None = None, automatic_service_mode: bool = False):
+             revision: str | None = None, automatic_service_mode: bool = False,
+             compute_dtype: str | None = None):
         """Load a model, and only on request let the profile choose the service mode.
 
         `automatic_service_mode=True` is the opt-in. Without it nothing about the stored
@@ -446,14 +447,16 @@ class Runtime:
         profile = None
         if use_tuned_profile or automatic_service_mode:
             profile = load_profile(
-                model_id, revision=revision, model_identity=resolved.identity
+                model_id, revision=revision, model_identity=resolved.identity,
+                compute_dtype=compute_dtype,
             )
             if profile and use_tuned_profile:
                 knobs = Knobs(**profile["knobs"])
         if automatic_service_mode:
             mode = cls._automatic_mode(profile, resolved.identity)
         engine, tokenizer = load_engine(
-            model_id, knobs, revision=revision, resolved_source=resolved
+            model_id, knobs, revision=revision, resolved_source=resolved,
+            compute_dtype=compute_dtype,
         )
         return cls(
             engine, tokenizer, mode=mode, model_id=resolved.identity.model_id,
@@ -543,8 +546,12 @@ class Runtime:
                     workload: dict | None = None) -> dict:
         if self.model_identity is None:
             raise ModelIdentityError("Runtime fingerprint requires exact model identity")
-        return build_fingerprint(self.model_id, self.quantisation,
-                                 plan_kind(plan or StrictOneShotPlan()),
+        kind = plan_kind(plan or StrictOneShotPlan())
+        compute_dtype = getattr(self.engine, "compute_dtype", None)
+        if compute_dtype:
+            # A numeric plan changes output: its evidence must never match a native record.
+            kind = f"{kind}@{compute_dtype}"
+        return build_fingerprint(self.model_id, self.quantisation, kind,
                                  self.mode.name, workload,
                                  model_identity=self.model_identity)
 

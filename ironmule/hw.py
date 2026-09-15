@@ -159,6 +159,12 @@ def installed_memory_bytes() -> int | None:
     enter a profile. Only the one caller in that path needs the number; `static_facts()`
     runs in the parent and is left exactly as it was.
     """
+    if platform.system() != "Darwin":
+        # Linux (MLX CUDA): sysconf, still no subprocess for the Q3f guard.
+        try:
+            return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) or None
+        except (OSError, ValueError, AttributeError):
+            return None
     try:
         value = ctypes.c_uint64()
         size = ctypes.c_size_t(ctypes.sizeof(value))
@@ -204,11 +210,77 @@ def static_facts() -> dict[str, Any]:
     try:
         import mlx.core as mx  # noqa: PLC0415 - optional at fingerprint time
         facts["mlx"] = getattr(mx, "__version__", None) or _mlx_version()
-        facts["gpu_available"] = mx.metal.is_available()
+        cuda = getattr(mx, "cuda", None)
+        facts["gpu_available"] = bool(mx.metal.is_available()
+                                      or (cuda is not None and cuda.is_available()))
     except ImportError:
         facts["mlx"] = None
         facts["gpu_available"] = False
+    if facts["system"] != "Darwin":
+        facts.update(_linux_facts(facts["gpu_available"]))
     return facts
+
+
+# PORT1 (Kaggle T4): for devices its table does not list, MLX's CUDA backend commits a CUDA
+# graph every 20 ops or 100 MB. At 400/4000 IronMule's best 1B arm ran at 0.77x, tokens
+# identical (`experiments/kaggle_compat/results/port1-perf-00bb9890`). The MB limit is left
+# at MLX's 100: with 4000 a 4B tune child and a 12B float32 load ran out of memory on the
+# 16 GB T4 (`port1-run5-632b904f`), while decode's gain comes from fewer, larger op graphs.
+CUDA_GRAPH_DEFAULTS = {"MLX_MAX_OPS_PER_BUFFER": "400"}
+
+
+def apply_cuda_graph_defaults() -> dict[str, str]:
+    """Size CUDA graph commits for pre-Ampere GPUs unless the caller already chose.
+
+    Linux only: the same variables size Metal command buffers, and the Apple path stays
+    unchanged. Only compute capability below 8 (Volta/Turing) is touched, which is where
+    MLX uses its generic default and where the evidence was measured; A100/H100-class
+    devices keep MLX's own per-device values. MLX reads the variables once, at the first
+    GPU operation, so callers run this before loading a model. Returns what it set.
+    """
+    if platform.system() != "Linux" or all(name in os.environ for name in CUDA_GRAPH_DEFAULTS):
+        return {}
+    try:
+        import mlx.core as mx  # noqa: PLC0415
+
+        if not mx.cuda.is_available() or int(mx.device_info().get("compute_capability_major", 99)) >= 8:
+            return {}
+    except Exception:  # noqa: BLE001 - no CUDA device, nothing to size
+        return {}
+    applied = {name: value for name, value in CUDA_GRAPH_DEFAULTS.items() if name not in os.environ}
+    os.environ.update(applied)
+    return applied
+
+
+def _linux_facts(gpu_available: bool) -> dict[str, Any]:
+    """The fingerprint fields sysctl fills on a Mac, for Linux hosts running MLX CUDA.
+
+    The Darwin path never calls this, so Mac fingerprints and their profiles are unchanged.
+    Without it every Linux host shares one fingerprint and a profile tuned on one GPU
+    would be applied on another. The GPU name and memory go into `chip` because the
+    fingerprint's key set is fixed.
+    """
+    cpu = None
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                cpu = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    gpu = None
+    if gpu_available:
+        try:
+            import mlx.core as mx  # noqa: PLC0415
+
+            info = mx.device_info()
+            if info.get("device_name"):
+                gpu = f"{info['device_name']} {int(info.get('total_memory', 0)) // 2**20} MiB"
+        except Exception:  # noqa: BLE001 - a missing device name leaves the field empty
+            gpu = None
+    return {"chip": " + ".join(part for part in (cpu, gpu) if part) or None,
+            "cpu_logical": os.cpu_count() or 0,
+            "memory_bytes": installed_memory_bytes() or 0}
 
 
 def _mlx_version() -> str | None:
@@ -294,6 +366,7 @@ def measure(repeats: int = 5) -> dict[str, float]:
     """
     import mlx.core as mx
 
+    apply_cuda_graph_defaults()  # the first GPU operation of `tune` happens here
     results: dict[str, float] = {"probe_version": PROBE_VERSION}
 
     # Kernel dispatch cost: many dependent, trivially sized kernels.

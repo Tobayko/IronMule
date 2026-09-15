@@ -195,6 +195,7 @@ def test_q3f_guard_unavailable_operation_rolls_back_wrappers_in_isolated_child()
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
 def test_q3f_native_kqueue_monitor_detects_libc_fork():
     module_path = ROOT / "ironmule" / "q3f_child_guard.py"
     code = (
@@ -291,6 +292,7 @@ def test_q3f_attribution_rejects_foreign_uid_and_malformed_comm():
 
 
 @pytest.mark.integration
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
 def test_q3f_real_cleanup_keeps_external_process_alive():
     worker = None
     unrelated = None

@@ -305,9 +305,24 @@ def gpu_busy() -> str | None:
     return None
 
 
+# Opt-in numeric plans. `float32` computes a bf16 checkpoint in float32: on GPUs that emulate
+# bf16 (NVIDIA below compute capability 8) it ran Gemma 3 4B/12B at about 0.5x the stock wall
+# time and matched the float32 reference computed on Apple Silicon to 1e-5 nats, while stock
+# bf16 differed from Apple's bf16 by 0.06 (PORT1). It changes output, so it is never chosen
+# for a caller and never searched by `tune`; profiles and fingerprints keep it separate.
+COMPUTE_DTYPES = ("float32",)
+
+
+def _check_compute_dtype(compute_dtype: str | None) -> str | None:
+    if compute_dtype is not None and compute_dtype not in COMPUTE_DTYPES:
+        raise ValueError(f"compute_dtype must be one of {COMPUTE_DTYPES} or None")
+    return compute_dtype
+
+
 def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
                 revision: str | None = None,
-                resolved_source: ResolvedModelSource | None = None) -> tuple[Engine, Any]:
+                resolved_source: ResolvedModelSource | None = None,
+                compute_dtype: str | None = None) -> tuple[Engine, Any]:
     """Load a model under a caller-selectable local/offline policy.
 
     Offline loads resolve exactly one local source and attach its path-free identity
@@ -317,6 +332,9 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     """
     from mlx_lm import load
 
+    from .hw import apply_cuda_graph_defaults
+    apply_cuda_graph_defaults()
+    _check_compute_dtype(compute_dtype)
     if resolved_source is not None and offline is not True:
         raise ValueError("resolved_source is valid only for offline loading")
     if revision is not None and offline is not True:
@@ -334,7 +352,13 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     model, tokenizer = load(source)
     if resolved is not None:
         verify_resolved_model(model_id, resolved)
+    if compute_dtype == "float32":
+        import mlx.core as mx
+        # Floating parameters only; packed quantised weights stay integer. Before the Engine
+        # exists, so fused projections and compiled caches see the final dtype.
+        model.set_dtype(mx.float32)
     engine = Engine(model, tokenizer, knobs)
+    engine.compute_dtype = compute_dtype
     engine.model_identity = resolved.identity if resolved is not None else None
     # Admission runs here because it needs the identity, and only here: nothing in the
     # per-token path may hash a model or re-check a version.
@@ -388,12 +412,13 @@ def _is_unsupported_candidate(exc: BaseException) -> bool:
 
 
 def confirm(model_id: str, baseline: Knobs, candidate: Knobs, prompt: str,
-            max_tokens: int) -> dict[str, Any]:
+            max_tokens: int, compute_dtype: str | None = None) -> dict[str, Any]:
     """Screening found a candidate; a paired A/B decides whether it is real."""
     from . import ab
     return ab.run({"baseline": baseline, "candidate": candidate},
                   processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
-                  max_tokens=max_tokens, model=model_id, prompt=prompt)
+                  max_tokens=max_tokens, model=model_id, prompt=prompt,
+                  compute_dtype=compute_dtype)
 
 
 def _confirmation_decision(value: Any, *, expected_baseline: Knobs,
@@ -616,7 +641,7 @@ def _legacy_confirmation_valid(value: Mapping[str, Any]) -> bool:
 
 
 def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
-               max_tokens: int = 32) -> dict[str, Any]:
+               max_tokens: int = 32, compute_dtype: str | None = None) -> dict[str, Any]:
     """Canary: does this machine's stored winner still beat the untuned path?
 
     Hysteresis is deliberate. Measurement noise must not be able to flip the
@@ -626,13 +651,15 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
 
     resolved = resolve_local_model(model_id)
     profile = load_profile(
-        model_id, require_compatible=False, model_identity=resolved.identity
+        model_id, require_compatible=False, model_identity=resolved.identity,
+        compute_dtype=compute_dtype,
     )
     if profile is None:
         return {"verdict": "no_profile"}
     result = ab.run({"baseline": BASELINE, "stored": Knobs(**profile["knobs"])},
                     processes=REVALIDATE_PROCESSES, repeats=5, warmup=2,
-                    max_tokens=max_tokens, model=model_id, prompt=prompt)
+                    max_tokens=max_tokens, model=model_id, prompt=prompt,
+                    compute_dtype=compute_dtype)
     # The canary's child already tokenizes the exact prompt it measures.  Use
     # that observed length rather than the profile's old workload as the
     # comparison input; this catches materially changed prompts reliably.
@@ -648,7 +675,7 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
         # Keep compatibility with a small test/dry-run harness that omits raw
         # child details, while still measuring the current prompt itself.
         engine, tokenizer = load_engine(
-            model_id, BASELINE, resolved_source=resolved
+            model_id, BASELINE, resolved_source=resolved, compute_dtype=compute_dtype
         )
         try:
             prompt_tokens = len(prompt_ids(tokenizer, prompt))
@@ -672,7 +699,8 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
 
 
 def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens: int = 32,
-         repeats: int = 5, force: bool = False, confirm_winner: bool = True) -> dict[str, Any]:
+         repeats: int = 5, force: bool = False, confirm_winner: bool = True,
+         compute_dtype: str | None = None) -> dict[str, Any]:
     busy = gpu_busy()
     if busy and not force:
         raise RuntimeError(f"another model process is running, refusing to measure ({busy})")
@@ -681,7 +709,8 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
     resolved = resolve_local_model(model_id)
     engine = None
     try:
-        engine, tokenizer = load_engine(model_id, BASELINE, resolved_source=resolved)
+        engine, tokenizer = load_engine(model_id, BASELINE, resolved_source=resolved,
+                                        compute_dtype=_check_compute_dtype(compute_dtype))
         ids = prompt_ids(tokenizer, prompt)
         eos = _eos_ids(tokenizer)
 
@@ -705,7 +734,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                         _close_engine(engine)
                         engine = None
                         engine, tokenizer = load_engine(
-                            model_id, candidate, resolved_source=resolved
+                            model_id, candidate, resolved_source=resolved, compute_dtype=compute_dtype
                         )
                     else:
                         engine.knobs = candidate
@@ -727,7 +756,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                         _close_engine(engine)
                         engine = None
                         engine, tokenizer = load_engine(
-                            model_id, best, resolved_source=resolved
+                            model_id, best, resolved_source=resolved, compute_dtype=compute_dtype
                         )
                     else:
                         engine.knobs = best
@@ -751,7 +780,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                     _close_engine(engine)
                     engine = None
                     engine, tokenizer = load_engine(
-                        model_id, best, resolved_source=resolved
+                        model_id, best, resolved_source=resolved, compute_dtype=compute_dtype
                     )
                 else:
                     engine.knobs = best
@@ -767,7 +796,8 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             # Keep the screening winner bound to the evidence before a rejected
             # confirmation resets the profile to BASELINE.
             confirmation_candidate_knobs = best.as_dict()
-            raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens)
+            raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,
+                                       compute_dtype=compute_dtype)
             accepted, rejection_reason = _confirmation_decision(
                 raw_confirmation, expected_baseline=BASELINE, expected_candidate=best
             )
@@ -832,6 +862,8 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             "hardware": hardware,
             "tuned_at": time.time(),
         }
+        if compute_dtype is not None:
+            profile["compute_dtype"] = compute_dtype
         save_profile(profile)
         print(f"tuned: {gain*100:.2f}% faster end to end, tokens identical, stored in {PROFILES}")
         return profile
@@ -849,6 +881,13 @@ def _all_profiles() -> dict[str, Any]:
         return {}
 
 
+def _profile_key(hardware_fingerprint: str, identity: ModelIdentity,
+                 compute_dtype: str | None = None) -> str:
+    """Native-precision keys are unchanged; a numeric plan gets its own slot."""
+    key = f"{hardware_fingerprint}/{identity.identity_sha256}"
+    return key if compute_dtype is None else f"{key}/{compute_dtype}"
+
+
 def save_profile(profile: dict[str, Any]) -> None:
     identity = ModelIdentity.from_dict(profile["model_identity"])
     conditions_record = profile.get("conditions")
@@ -859,7 +898,7 @@ def save_profile(profile: dict[str, Any]) -> None:
             or not _conditions_match_identity(conditions_record, identity)):
         raise ModelIdentityError("profile conditions do not match exact model identity")
     profiles = _all_profiles()
-    profiles[f"{profile['fingerprint']}/{identity.identity_sha256}"] = profile
+    profiles[_profile_key(profile["fingerprint"], identity, profile.get("compute_dtype"))] = profile
     STORE.mkdir(parents=True, exist_ok=True)
     PROFILES.write_text(json.dumps(profiles, indent=2, sort_keys=True))
 
@@ -867,7 +906,8 @@ def save_profile(profile: dict[str, Any]) -> None:
 def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = True,
                  revision: str | None = None,
                  model_identity: ModelIdentity | None = None,
-                 expected_candidate: Knobs | None = None) -> dict[str, Any] | None:
+                 expected_candidate: Knobs | None = None,
+                 compute_dtype: str | None = None) -> dict[str, Any] | None:
     """Return a valid profile, rejecting current identity drift by default.
 
     ``require_compatible=False`` is reserved for ``revalidate()``, which needs
@@ -877,8 +917,9 @@ def load_profile(model_id: str = DEFAULT_MODEL, *, require_compatible: bool = Tr
     identity = model_identity or resolve_local_model(model_id, revision).identity
     if not Path(model_id).expanduser().is_dir() and model_id != identity.model_id:
         raise ModelIdentityError("profile model_id does not match exact identity")
-    profile = _all_profiles().get(f"{fingerprint()}/{identity.identity_sha256}")
-    if not isinstance(profile, dict) or profile.get("model_id") != identity.model_id:
+    profile = _all_profiles().get(_profile_key(fingerprint(), identity, _check_compute_dtype(compute_dtype)))
+    if (not isinstance(profile, dict) or profile.get("model_id") != identity.model_id
+            or profile.get("compute_dtype") != compute_dtype):
         return None
     if not _profile_numeric_metrics_valid(profile):
         return None
@@ -969,20 +1010,23 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-check", action="store_true")
     parser.add_argument("--revalidate", action="store_true", help="canary-check the stored profile")
     parser.add_argument("--no-confirm", action="store_true", help="skip the paired A/B confirmation")
+    parser.add_argument("--compute-dtype", choices=COMPUTE_DTYPES, default=None,
+                        help="opt-in numeric plan; changes output, tuned and stored separately")
     args = parser.parse_args(argv)
 
     if args.self_check:
         _self_check()
         return 0
     if args.show:
-        profile = load_profile(args.model)
+        profile = load_profile(args.model, compute_dtype=args.compute_dtype)
         print(json.dumps(profile, indent=2, sort_keys=True) if profile else "no profile for this hardware yet")
         return 0
     if args.revalidate:
-        print(json.dumps(revalidate(args.model, max_tokens=args.max_tokens), indent=2, default=str))
+        print(json.dumps(revalidate(args.model, max_tokens=args.max_tokens,
+                                    compute_dtype=args.compute_dtype), indent=2, default=str))
         return 0
     tune(args.model, max_tokens=args.max_tokens, repeats=args.repeats, force=args.force,
-         confirm_winner=not args.no_confirm)
+         confirm_winner=not args.no_confirm, compute_dtype=args.compute_dtype)
     return 0
 
 

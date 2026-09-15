@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "ironmule"
 dynamic = ["version"]
-description = "Run and benchmark local LLM inference on Apple Silicon with MLX, correctness checks, and reproducible evidence"
+description = "Run and benchmark local LLM inference with MLX on Apple Silicon and NVIDIA CUDA, with correctness checks and reproducible evidence"
 readme = "README.md"
 authors = [{ name = "Tobias Abenthum" }]
 requires-python = ">=3.10"
@@ -17,6 +17,7 @@ classifiers = [
   "Environment :: GPU",
   "Intended Audience :: Developers",
   "Operating System :: MacOS :: MacOS X",
+  "Operating System :: POSIX :: Linux",
   "Programming Language :: Python :: 3",
   "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
@@ -26,6 +27,8 @@ keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-xdist>=3"]
+# Linux with an NVIDIA GPU: MLX's CUDA backend (validated on a Tesla T4, CUDA 12).
+cuda = ["mlx[cuda12]>=0.32,<0.33"]
 data = ["scikit-learn>=1.5,<2"]
 # Only tools/make_figures.py needs this; the runtime never imports it.
 figures = ["matplotlib>=3.8,<4"]

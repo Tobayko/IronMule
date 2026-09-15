@@ -120,6 +120,9 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
+    parser.add_argument("--compute-dtype", choices=("float32",), default=None,
+                        help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere); "
+                             "about 2x faster there, changes output")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
@@ -148,7 +151,7 @@ def serve(argv: list[str]) -> int:
                 lease_entered = True
             except CalibrationFailure as exc:
                 raise InvalidRequest("model resources are in use by another IronMule operation") from exc
-            backend = MLXWorkerClient(spec)
+            backend = MLXWorkerClient(spec, compute_dtype=args.compute_dtype)
             backend.start()
         service = ProductService(store, backend=backend, spec=spec)
         server = create_server(service, host=args.host, port=args.port,

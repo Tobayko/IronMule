@@ -355,7 +355,8 @@ class AppleRuntime:
     def load(cls, model_id: str | None = None, revision: str | None = None,
              use_tuned_profile: bool = True, objective: str = "throughput",
              enable_local_learned_dispatch: bool = False,
-             local_state_path: "Path | None" = None) -> "AppleRuntime":
+             local_state_path: "Path | None" = None,
+             compute_dtype: str | None = None) -> "AppleRuntime":
         """Load once, with the tuned knobs this machine confirmed, and route from then on.
 
         The knob set — including `k3840_matvec`, which `Engine.admit_k3840` re-checks
@@ -369,12 +370,15 @@ class AppleRuntime:
         from .tune import DEFAULT_MODEL, load_profile, resolve_local_model
 
         model_id = model_id or DEFAULT_MODEL
+        if compute_dtype is not None and enable_local_learned_dispatch:
+            # Local learning and its qualified actions were measured at native precision.
+            raise ValueError("local learned dispatch is not available with compute_dtype")
         resolved = resolve_local_model(model_id, revision)
         profile = (load_profile(model_id, revision=revision,
-                                model_identity=resolved.identity)
+                                model_identity=resolved.identity, compute_dtype=compute_dtype)
                    if use_tuned_profile else None)
         runtime = Runtime.load(model_id, revision=revision,
-                               use_tuned_profile=use_tuned_profile)
+                               use_tuned_profile=use_tuned_profile, compute_dtype=compute_dtype)
         # `B78`, shadow only. Restored fail-closed: missing, corrupt, or written for
         # another machine, model or library build all leave a learner that knows nothing,
         # and a learner that knows nothing annotates nothing.
