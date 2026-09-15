@@ -1,0 +1,31 @@
+{
+  "name": "ironmole",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Experimental, provider-independent bounded MCP task runtime",
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <26"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "test": "npm run build && node --test --test-concurrency=1 dist/tests/*.test.js",
+    "schemas": "npm run build && node dist/src/schema-export.js",
+    "demo": "npm run build && node dist/src/cli.js demo",
+    "benchmark": "npm run build && node dist/bench/run.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "ajv": "8.20.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "typescript": "6.0.2"
+  },
+  "overrides": {
+    "range-parser": "1.2.1",
+    "jose": "6.2.4"
+  }
+}

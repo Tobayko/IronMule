@@ -1,0 +1,47 @@
+{
+  "server": "ironmole.repository",
+  "adapterVersion": "1.0.0",
+  "contractVersion": "repository-tools.v1",
+  "protocol": "2025-11-25",
+  "tools": [
+    "repo.search",
+    "repo.read"
+  ],
+  "resources": "host-authorized registered immutable text snapshots",
+  "effects": [
+    "snapshot_read"
+  ],
+  "consistency": "content-addressed; hash checked per binding and read",
+  "concurrency": {
+    "max": 4,
+    "sameSnapshotReads": true,
+    "resourceApprovalRequired": true
+  },
+  "timeoutMs": 3000,
+  "retries": 0,
+  "limits": {
+    "nodes": 32,
+    "matches": 500,
+    "calls": 501,
+    "concurrency": 4,
+    "taskMs": 15000,
+    "toolMs": 3000,
+    "inputBytes": 16384,
+    "toolOutputBytes": 2000000,
+    "intermediateBytes": 16000000,
+    "outputBytes": 1048576,
+    "fileBytes": 262144,
+    "snapshotBytes": 8388608,
+    "files": 1000
+  },
+  "cancellation": "Stop scheduling; cancel requests; no rollback guarantee; timed-out outcomes unknown.",
+  "cache": "Tool result caches disabled, including cross-run reuse.",
+  "unsupported": [
+    "sampling",
+    "elicitation",
+    "resource_links",
+    "prompts",
+    "unknown tools",
+    "server instructions as policy"
+  ]
+}

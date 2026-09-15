@@ -21,6 +21,23 @@ net gain leaves the reference active. Historical sealed artifacts stay unchanged
 
 ## Read this before optimising anything
 
+### MOLE1 — Remaining agent-level MCP comparison (2026-09-12)
+
+**Mechanism.** Provenance-bound same-task plans may amortize model orchestration and
+validation across repeated `repository_context_bundle.v1` requests. The local MVP is
+complete in `ironmole_mcp/`; results moved to `research/LEDGER.md` MOLE1 and
+`ironmole_mcp/docs/RESULTS.md`. IronMule inference remains unchanged.
+
+**Remaining test.** Supply real direct-agent and actual Programmatic Tool Calling
+adapters, record final responses, actual usage/pricing and handoff/continuation costs,
+and evaluate whole held-out repositories against the strongest stored workflow.
+Local synthetic MCP timings cannot replace these measurements.
+
+**Kill.** Any contract/permission violation or no amortized advantage inside the
+preregistered quality, cost and latency limits leaves adaptation unqualified. Missing
+agent evidence leaves the full hypothesis unanswered. LOCAL-1/LOCAL-2 already found
+no adaptive benefit in their local regime; do not repeat those unchanged experiments.
+
 **Making the runtime faster usually makes the headline number smaller.** The shipped
 gain is `+11.81%` to `+19.24%`, and it is a *ratio*: recovered overhead over total step
 time. Grouped batch-1 works by overlapping device execution with host submission
@@ -445,6 +462,11 @@ than another constant in the source.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **MOLE1 local adaptive route and indexed preparation.** Experiments
+  `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
+  no adaptive benefit over C; LOCAL-2 preparation missed its 5% benefit gate.
+  Full results: `ironmole_mcp/docs/RESULTS.md`. Agent-level comparisons remain open.
 
 ### Rejected is not forbidden (project rule, 2026-09-10)
 

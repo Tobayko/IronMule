@@ -4704,3 +4704,37 @@ here.
 Nothing is activated: the run used a scratch directory, the user's store carries no learning,
 monitoring, kill or lineage state, `enable_local_learned_dispatch` still defaults to `False`,
 and nothing is committed or pushed.
+
+## MOLE1 — Experimental MCP task runtime, local evidence only (2026-09-12)
+
+A separate strict TypeScript package, `ironmole_mcp/`, implements one bounded task,
+`repository_context_bundle.v1`, through the official MCP SDK. It provides immutable
+text snapshots, per-inner-call authorization, typed MoleIR, reference/optimized plans,
+structured deoptimization, private traces, SQLite plan lifecycle and a bounded miner.
+IronMule's MLX runtime, frozen studies and model qualifications are unchanged.
+
+The hypothesis was whether reuse/adaptation beats strong workflows after complete
+cost and latency accounting. The manual seed does not establish learning. Full model
+and Programmatic Tool Calling comparisons were unavailable and remain unexecuted.
+
+`MOLE1-LOCAL-2-20260912-attempt1`: Apple M1 Max, macOS arm64, Node 25.5.0, MCP SDK
+1.29.0 / protocol 2025-11-25. Nine arms, six subprocess blocks per arm, four measured
+repetitions of four held-out synthetic cases: 864/864 expected-output checks passed.
+Stored optimized workflow C, width selected as 2 on separate data: median 12.537 ms,
+p95 14.416 ms. Conservative adaptive D: median 27.627 ms, p95 49.079 ms. D/C clustered
+paired ratio 2.2884, 95% interval [2.0240, 2.4228]. A/A 0.9961, interval
+[0.9508, 1.0603]. No candidate activated; adaptive added value is not demonstrated.
+Indexed preparation also missed the preregistered 5% benefit gate. Model tokens,
+billed cost, final agent response and end-to-end amortization remain unknown.
+
+The preceding `MOLE1-LOCAL-1-20260912-attempt1` retained 768 correct samples and the
+same no-adaptive-benefit conclusion; LOCAL-2 added an explicitly preregistered
+preparation implementation/arm. The two implementations are not pooled. Both sealed
+input records and outcomes are preserved. Final local suite: 31 passed, zero skipped,
+including real MCP calls and Codex configuration parsing/command execution.
+
+[Architecture and commands](../ironmole_mcp/README.md),
+[full result and limitations](../ironmole_mcp/docs/RESULTS.md),
+[preregistration](../ironmole_mcp/bench/PREREGISTRATION.md),
+[raw samples](../ironmole_mcp/bench/results/MOLE1-LOCAL-2-20260912-attempt1.raw.json).
+The remaining agent-level question stays in `docs/BACKLOG.md` MOLE1.
