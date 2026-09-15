@@ -41,10 +41,16 @@ def test_failed_optional_probe_isolated_from_parent_import_state(monkeypatch):
 def test_doctor_reports_missing_prerequisites_without_runtime_import(monkeypatch, capsys):
     monkeypatch.setattr(cli.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(cli.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(cli, "_probe_gpu", lambda backend: (False, f"{backend} unavailable"))
     assert cli.main(["doctor"]) == 1
     output = capsys.readouterr().out
-    assert "Apple Silicon architecture" in output
+    assert "MLX CUDA device" in output and "Apple Silicon architecture" not in output
     assert "MLX" in output and "MLX-LM" in output
+    monkeypatch.setattr(cli.platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")
+    cli.main(["doctor"])
+    output = capsys.readouterr().out
+    assert "Apple Silicon architecture" in output and "MLX Metal device" in output
 
 
 def test_benchmark_dispatch_preserves_arguments(monkeypatch):

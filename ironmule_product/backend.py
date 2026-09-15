@@ -59,9 +59,16 @@ class MLXWorkerClient:
                  prefix_cache_max_bytes: int = 1024**3,
                  trace_prompt_identity: bool = False,
                  engine_configuration: str = "current_profile",
-                 selection_evidence: list[Any] | tuple[Any, ...] | None = None) -> None:
+                 selection_evidence: list[Any] | tuple[Any, ...] | None = None,
+                 compute_dtype: str | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
+        if compute_dtype not in (None, "float32"):
+            raise ValueError("compute_dtype must be None or float32")
+        if compute_dtype is not None and execution_variant != "reference":
+            raise ValueError("compute_dtype is available on the reference worker only")
+        # Opt-in numeric plan (PORT1): changes output, reported in health.
+        self.compute_dtype = compute_dtype
         if startup_timeout is not None and (
             isinstance(startup_timeout, bool)
             or not isinstance(startup_timeout, (int, float))
@@ -359,6 +366,8 @@ class MLXWorkerClient:
                              json.dumps(self.spec.as_dict(), separators=(",", ":"))]
                 if self.execution_variant != "reference":
                     arguments += ["--execution-variant", self.execution_variant]
+                if self.compute_dtype is not None:
+                    arguments += ["--compute-dtype", self.compute_dtype]
                 if self.execution_variant == "prefix_reuse":
                     arguments += ["--prefix-cache-max-entries", str(self.prefix_cache_max_entries),
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]

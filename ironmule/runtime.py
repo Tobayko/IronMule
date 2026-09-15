@@ -321,6 +321,11 @@ class Engine:
         if knobs.fuse_projections:
             fast.fuse_projections(model)
         if knobs.wired_fraction > 0:
+            if not mx.metal.is_available():
+                # MLX's CUDA `set_wired_limit` is a no-op returning 0, which `close()` would
+                # read as a foreign change (PORT1, Kaggle T4). "unsupported" lets tune skip it.
+                raise ValueError("wired_fraction is unsupported without Metal: "
+                                 "MLX's CUDA backend has no wired limit")
             # Read natively, not through `static_facts()`: that shells out, and the Q3f
             # guard blocks a subprocess in a confirmation child (`B60`, `B62`). The meaning
             # of the knob is unchanged — a fraction of installed physical memory.

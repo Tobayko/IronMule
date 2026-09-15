@@ -149,7 +149,8 @@ def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
         mx.reset_peak_memory()
         engine = None
         try:
-            engine, tok = load_engine(spec.get("model", DEFAULT_MODEL), knobs)
+            engine, tok = load_engine(spec.get("model", DEFAULT_MODEL), knobs,
+                                      compute_dtype=spec.get("compute_dtype"))
             ids = prompt_ids(tok, spec.get("prompt", DEFAULT_PROMPT))
             eos = _eos_ids(tok)
             for _ in range(spec["warmup"]):
@@ -456,7 +457,7 @@ def validate_result(result: Any, *, processes: int, repeats: int, warmup: int,
 
 def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: int = 2,
         max_tokens: int = 32, model: str | None = None, prompt: str | None = None,
-        *, child_timeout_seconds: float | None = None,
+        *, child_timeout_seconds: float | None = None, compute_dtype: str | None = None,
         before_child=None, on_child=None, on_child_start=None) -> dict[str, Any]:
     """Spawn children, collect raw samples, and expose bounded progress hooks.
 
@@ -490,6 +491,8 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
         spec_base["model"] = model
     if prompt is not None:
         spec_base["prompt"] = prompt
+    if compute_dtype is not None:
+        spec_base["compute_dtype"] = compute_dtype
 
     children = []
     for index, order in enumerate(orders):

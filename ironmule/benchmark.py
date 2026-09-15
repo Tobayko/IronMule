@@ -669,16 +669,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plan", choices=["strict", "reusable"], default="strict")
     parser.add_argument("--model", default=None)
     parser.add_argument("--json", type=Path, default=None)
+    parser.add_argument("--compute-dtype", choices=("float32",), default=None,
+                        help="opt-in numeric plan for GPUs that emulate bf16; changes output")
     args = parser.parse_args(argv)
     if args.requests < 1 or args.max_tokens < 1:
         parser.error("--requests and --max-tokens must be positive")
 
-    rt = ironmule.Runtime.load(model_id=args.model)
+    rt = ironmule.Runtime.load(model_id=args.model, compute_dtype=args.compute_dtype)
     result = run_protocol(
         rt, ironmule, requests=args.requests, max_tokens=args.max_tokens,
         plan_name=args.plan, warmup=args.warmup, repeats=args.repeats,
     )
     result["model"] = getattr(rt, "model_id", args.model)
+    result["compute_dtype"] = args.compute_dtype
     _print_report(result, result["model"])
     if args.json:
         args.json.write_text(json.dumps(result, indent=1, sort_keys=True, default=str))

@@ -49,6 +49,7 @@ def test_the_wired_branch_starts_no_subprocess(monkeypatch):
     applied = []
     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
                         lambda value: applied.append(value) or 0)
+    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
     Engine(object(), object(), Knobs(wired_fraction=0.6))
     assert started == [], f"the wired branch shelled out: {started}"
     assert applied == [int(hw.installed_memory_bytes() * 0.6)]
@@ -58,6 +59,7 @@ def test_zero_leaves_the_limit_alone(monkeypatch):
     touched = []
     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
                         lambda value: touched.append(value) or 0)
+    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
     engine = Engine(object(), object(), BASELINE)
     assert BASELINE.wired_fraction == 0.0
     assert touched == []
@@ -69,6 +71,7 @@ def test_an_unavailable_size_fails_closed(monkeypatch):
     touched = []
     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
                         lambda value: touched.append(value) or 0)
+    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: None)
     with pytest.raises(RuntimeError, match="installed memory size is unavailable"):
         Engine(object(), object(), Knobs(wired_fraction=0.6))
@@ -88,6 +91,7 @@ def test_the_meaning_of_the_knob_is_unchanged(monkeypatch):
     applied = []
     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
                         lambda value: applied.append(value) or 0)
+    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
     for fraction in (0.25, 0.6, 1.0):
         Engine(object(), object(), Knobs(wired_fraction=fraction))
     total = hw.installed_memory_bytes()

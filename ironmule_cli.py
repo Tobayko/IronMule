@@ -52,22 +52,22 @@ def _load_optional(module_name: str, distribution: str) -> tuple[bool, str, str]
     return True, version, "importable (isolated probe)"
 
 
-def _probe_metal() -> tuple[bool, str]:
-    """Verify an actual GPU operation, not merely Metal support in the build.
+def _probe_gpu(backend: str) -> tuple[bool, str]:
+    """Verify an actual GPU operation, not merely Metal or CUDA support in the build.
 
-    ``metal.is_available()`` can be true in a sandbox that cannot open a
-    device. Keep both device creation and the tiny correctness check in the
-    child so a driver/import failure cannot terminate the diagnostic CLI.
+    ``is_available()`` can be true in a sandbox that cannot open a device. Keep
+    both device creation and the tiny correctness check in the child so a
+    driver/import failure cannot terminate the diagnostic CLI.
     """
     probe = (
         "import mlx.core as mx\n"
-        "if not mx.metal.is_available(): raise RuntimeError('Metal backend unavailable')\n"
+        f"if not mx.{backend.lower()}.is_available(): raise RuntimeError('{backend} backend unavailable')\n"
         "mx.device_info()\n"
         "mx.set_default_device(mx.gpu)\n"
         "a=mx.array([1,2,3], dtype=mx.int32)\n"
         "b=mx.add(a,a,stream=mx.gpu); mx.eval(b)\n"
         "if b.tolist()!=[2,4,6]: raise RuntimeError('GPU correctness check failed')\n"
-        "print('available')\n"
+        "i=mx.device_info(); print('available', i.get('compute_capability_major', ''), i.get('compute_capability_minor', ''))\n"
     )
     try:
         result = subprocess.run(
@@ -80,8 +80,16 @@ def _probe_metal() -> tuple[bool, str]:
         detail = (result.stderr.strip().splitlines()[-1]
                   if result.stderr.strip() else f"probe exited {result.returncode}")
         return False, f"isolated probe failed: {detail}"
-    available = result.stdout.strip() == "available"
-    return available, "Metal GPU operation verified" if available else "Metal unavailable"
+    words = result.stdout.split()
+    available = bool(words) and words[0] == "available"
+    if not available:
+        return False, f"{backend} unavailable"
+    detail = f"{backend} GPU operation verified"
+    if backend == "CUDA" and len(words) == 3 and words[1].isdigit() and int(words[1]) < 8:
+        # PORT1: bf16 is emulated below Ampere; float32 ran Gemma 3 4B/12B at about half the time.
+        detail += (f"; compute capability {words[1]}.{words[2]} emulates bf16, consider "
+                   "--compute-dtype float32 (about 2x faster, output differs from bf16)")
+    return True, detail
 
 
 def _cpu_name() -> str:
@@ -105,10 +113,19 @@ def _cpu_name() -> str:
 
 def _doctor_checks() -> list[tuple[str, bool, str]]:
     machine = platform.machine().lower()
-    checks: list[tuple[str, bool, str]] = [
-        ("Apple Silicon architecture", machine in {"arm64", "aarch64"},
-         f"{machine} ({_cpu_name()})"),
-        ("macOS", platform.system() == "Darwin", platform.system()),
+    system = platform.system()
+    if system == "Darwin":
+        backend = "Metal"
+        checks: list[tuple[str, bool, str]] = [
+            ("Apple Silicon architecture", machine in {"arm64", "aarch64"},
+             f"{machine} ({_cpu_name()})"),
+            ("macOS", True, system),
+        ]
+    else:
+        # MLX's CUDA backend ships Linux wheels: `pip install "mlx[cuda12]"`.
+        backend = "CUDA"
+        checks = [("Linux", system == "Linux", f"{system} {machine} ({_cpu_name()})")]
+    checks += [
         ("Python", sys.version_info[:2] >= MIN_PYTHON,
          f"{platform.python_version()} (requires >= {MIN_PYTHON[0]}.{MIN_PYTHON[1]})"),
     ]
@@ -119,8 +136,8 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
     numpy_ok, numpy_version, numpy_detail = _load_optional("numpy", "numpy")
     checks.append(("NumPy", numpy_ok, f"{numpy_version}; {numpy_detail}"))
 
-    metal_ok, metal_detail = _probe_metal() if mlx_ok else (False, "MLX unavailable")
-    checks.append(("MLX Metal device", metal_ok, metal_detail))
+    gpu_ok, gpu_detail = _probe_gpu(backend) if mlx_ok else (False, "MLX unavailable")
+    checks.append((f"MLX {backend} device", gpu_ok, gpu_detail))
     return checks
 
 

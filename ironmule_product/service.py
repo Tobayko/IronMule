@@ -103,7 +103,9 @@ class ProductService:
                             "activation_allowed": False, "error_code": "optimization_status_invalid"}
         with self._lock:
             result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self.backend is not None and self.backend.ready),
-                    "mode": self.settings["mode"], "execution": "exact",
+                    "mode": self.settings["mode"],
+                    "execution": ("exact" if getattr(self.backend, "compute_dtype", None) is None
+                                  else f"exact@{self.backend.compute_dtype}"),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
                                 else getattr(self.backend, "execution_variant", "reference")),
                     "loaded_model": self.spec.model_id if self.spec else None,

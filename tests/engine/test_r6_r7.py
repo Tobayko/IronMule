@@ -627,6 +627,7 @@ def test_engine_close_restores_wired_limit_once(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
     # `B62`: the wired branch reads the size natively now, because `static_facts()`
     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
@@ -653,6 +654,7 @@ def test_nested_wired_engines_require_lifo_close(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
     # `B62`: the wired branch reads the size natively now, because `static_facts()`
     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
@@ -681,6 +683,7 @@ def test_wired_close_detects_external_mutation_after_restore(monkeypatch):
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
     # `B62`: the wired branch reads the size natively now, because `static_facts()`
     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
@@ -716,6 +719,7 @@ def test_wired_registration_failure_restores_limit_without_owner_leak(monkeypatc
         return previous
 
     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
+    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
     # `B62`: the wired branch reads the size natively now, because `static_facts()`
     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
@@ -1339,3 +1343,58 @@ def test_ab_child_preserves_generation_error_when_close_also_fails(monkeypatch):
     with pytest.raises(ValueError, match="generation failed") as error:
         ab._child(spec)
     assert any("cleanup failed" in note for note in error.value.__notes__)
+
+
+def test_wired_fraction_is_unsupported_without_metal(monkeypatch):
+    # MLX's CUDA backend returns 0 from set_wired_limit, which close() would misread as a
+    # foreign change (PORT1, Kaggle T4). The knob is refused before touching the limit.
+    from ironmule import runtime
+
+    touched = []
+    monkeypatch.setattr(runtime.mx, "set_wired_limit", lambda value: touched.append(value) or 0)
+    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: False)
+    with pytest.raises(ValueError, match="unsupported"):
+        runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
+    assert touched == []
+
+
+def test_cuda_graph_defaults_only_touch_pre_ampere_linux_and_respect_the_caller(monkeypatch):
+    import types
+
+    from ironmule import hw
+
+    def fake_mlx(major):
+        core = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True),
+                                     device_info=lambda: {"compute_capability_major": major})
+        monkeypatch.setitem(sys.modules, "mlx", types.SimpleNamespace(core=core))
+        monkeypatch.setitem(sys.modules, "mlx.core", core)
+
+    for name in hw.CUDA_GRAPH_DEFAULTS:
+        monkeypatch.delenv(name, raising=False)
+    fake_mlx(7)
+    monkeypatch.setattr(hw.platform, "system", lambda: "Darwin")
+    assert hw.apply_cuda_graph_defaults() == {}, "the Apple path must stay unchanged"
+    monkeypatch.setattr(hw.platform, "system", lambda: "Linux")
+    fake_mlx(8)
+    assert hw.apply_cuda_graph_defaults() == {}, "Ampere and newer keep MLX's per-device values"
+    fake_mlx(7)
+    assert hw.apply_cuda_graph_defaults() == {"MLX_MAX_OPS_PER_BUFFER": "400"}
+    assert "MLX_MAX_MB_PER_BUFFER" not in os.environ, "the memory bound stays MLX's"
+    monkeypatch.setenv("MLX_MAX_OPS_PER_BUFFER", "20")
+    assert hw.apply_cuda_graph_defaults() == {}
+    assert os.environ["MLX_MAX_OPS_PER_BUFFER"] == "20", "an explicit caller value wins"
+
+
+def test_compute_dtype_is_opt_in_validated_and_stored_apart():
+    import types
+
+    # `ironmule.tune` is shadowed by the re-exported function; import names directly.
+    from ironmule.tune import SEARCH, _check_compute_dtype, _profile_key
+
+    identity = types.SimpleNamespace(identity_sha256="abc")
+    assert _profile_key("hw", identity) == "hw/abc", "native profiles keep their key"
+    assert _profile_key("hw", identity, "float32") == "hw/abc/float32"
+    assert _check_compute_dtype(None) is None
+    with pytest.raises(ValueError, match="compute_dtype"):
+        _check_compute_dtype("float16")
+    assert all(name != "compute_dtype" for name, _ in SEARCH), "tune must never pick a numeric plan"

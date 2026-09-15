@@ -418,3 +418,21 @@ def test_ready_start_with_guard_is_explicitly_rejected(tmp_path):
         assert client.ready
     finally:
         client.close()
+
+
+def test_worker_accepts_metal_or_cuda_device_facts() -> None:
+    from types import SimpleNamespace
+
+    from ironmule_product.worker import _gpu_available, _working_set_bytes
+
+    def fake(metal: bool, cuda, info: dict):
+        return SimpleNamespace(metal=SimpleNamespace(is_available=lambda: metal),
+                               cuda=None if cuda is None else SimpleNamespace(is_available=lambda: cuda),
+                               device_info=lambda: info)
+
+    metal = fake(True, None, {"max_recommended_working_set_size": 7, "total_memory": 9})
+    assert _gpu_available(metal) and _working_set_bytes(metal) == 7
+    # MLX's CUDA backend (Kaggle T4, DATA3) has no recommended working set.
+    cuda = fake(False, True, {"total_memory": 15_000_000_000})
+    assert _gpu_available(cuda) and _working_set_bytes(cuda) == 15_000_000_000
+    assert not _gpu_available(fake(False, False, {}))
