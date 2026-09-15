@@ -1,0 +1,115 @@
+{
+ "schema": "ironmule.port1-cuda-graphs.v1",
+ "model_id": "mlx-community/gemma-3-4b-it-4bit",
+ "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+ "knobs": {},
+ "settings": {
+  "mlx_default": {
+   "MLX_MAX_OPS_PER_BUFFER": "20",
+   "MLX_MAX_MB_PER_BUFFER": "100"
+  },
+  "default": {}
+ },
+ "reps": 2,
+ "runs": {
+  "mlx_default": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     24052.204061,
+     24413.029327
+    ],
+    "median_ms": 24232.616694,
+    "outputs_sha256": "774c4a6fcc5134a49cb543a44a229ca19f068ea710ae7452c865600bfae7d41a",
+    "peak_memory_bytes": 2783494360,
+    "graph_env": {
+     "MLX_MAX_OPS_PER_BUFFER": "20",
+     "MLX_MAX_MB_PER_BUFFER": "100"
+    }
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     25423.486381,
+     25712.898338
+    ],
+    "median_ms": 25568.192359499997,
+    "outputs_sha256": "774c4a6fcc5134a49cb543a44a229ca19f068ea710ae7452c865600bfae7d41a",
+    "peak_memory_bytes": 2783240440,
+    "graph_env": {
+     "MLX_MAX_OPS_PER_BUFFER": "20",
+     "MLX_MAX_MB_PER_BUFFER": "100"
+    }
+   }
+  ],
+  "default": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     24626.719794,
+     24977.24009
+    ],
+    "median_ms": 24801.979941999998,
+    "outputs_sha256": "774c4a6fcc5134a49cb543a44a229ca19f068ea710ae7452c865600bfae7d41a",
+    "peak_memory_bytes": 2802896920,
+    "graph_env": {
+     "MLX_MAX_OPS_PER_BUFFER": "400",
+     "MLX_MAX_MB_PER_BUFFER": "4000"
+    }
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     25085.749105,
+     25333.259577
+    ],
+    "median_ms": 25209.504341,
+    "outputs_sha256": "774c4a6fcc5134a49cb543a44a229ca19f068ea710ae7452c865600bfae7d41a",
+    "peak_memory_bytes": 2802896920,
+    "graph_env": {
+     "MLX_MAX_OPS_PER_BUFFER": "400",
+     "MLX_MAX_MB_PER_BUFFER": "4000"
+    }
+   }
+  ]
+ },
+ "measure": 2,
+ "requests": 6,
+ "max_tokens": 48,
+ "summary": {
+  "mlx_default": {
+   "ratio_vs_first_setting_per_rep": [
+    1.0,
+    1.0
+   ],
+   "peak_memory_bytes": [
+    2783494360,
+    2783240440
+   ],
+   "median_ratio": 1.0,
+   "token_identity": true
+  },
+  "default": {
+   "ratio_vs_first_setting_per_rep": [
+    1.023495739448599,
+    0.9859713188380044
+   ],
+   "peak_memory_bytes": [
+    2802896920,
+    2802896920
+   ],
+   "median_ratio": 1.0047335291433017,
+   "token_identity": true
+  }
+ },
+ "seconds": 484.66377544403076,
+ "performance_claim": false
+}

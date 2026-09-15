@@ -1,0 +1,12 @@
+model mlx-community/gemma-3-4b-it-4bit
+plan strict   requests 6   warmup 2   repeats 6
+
+mode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread
+interactive          28047.5           10.3           10.3        23916.2[27798.8; 28268.4]
+throughput           27054.1           10.6           10.6        22927.9[26958.0; 27083.9]
+
+throughput gain +3.52%   outer-wall ratio 0.9648 95% CI [0.9587; 0.9694]
+identical answers in both modes: True
+wrote /kaggle/working/benchmark-4b.json
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'

@@ -1,0 +1,77 @@
+{
+ "schema": "ironmule.data3-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.5,
+   "tail": "Tue Sep 15 05:36:48 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 580.159.04             Driver Version: 580.159.04     CUDA Version: 13.0     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |\n| N/A   52C    P8             11W /   70W |       0MiB /  15360MiB |      0%      Default |\n|                                         |                        |                  N/A |\n+-----------------------------------------+------------------------+----------------------+\n|   1  Tesla T4                       Off |   00000000:00:05.0 Off |                    0 |\n| N/A   55C    P8             12W /   70W |       0MiB /  15360MiB |      0%      Default |\n|                                         |                        |                  N/A |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|  No running processes found                                                             |\n+-----------------------------------------------------------------------------------------+\nPython 3.12.13\nldd (Ubuntu GLIBC 2.35-0ubuntu3.8) 2.35\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.2,
+   "tail": "5fde53f940852c92f30d5f30fe6377d88e17c9a4\n"
+  },
+  "venv": {
+   "exit": 1,
+   "seconds": 0.2,
+   "tail": "Error: Command '['/tmp/im/bin/python3', '-m', 'ensurepip', '--upgrade', '--default-pip']' returned non-zero exit status 1.\n"
+  },
+  "install": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im/bin/python: No module named pip\n"
+  },
+  "freeze": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im/bin/python: No module named pip\n"
+  },
+  "mlx_gpu_smoke": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<stdin>\", line 1, in <module>\nModuleNotFoundError: No module named 'mlx'\n"
+  },
+  "cli_info": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cli_doctor": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cli_status": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cli_models": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "download_gemma-3-1b-it-4bit": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "download_gemma-3-4b-it-4bit": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "download_gemma-3-12b-it-4bit": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "pytest": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im/bin/python: No module named pytest\n"
+  }
+ },
+ "finished": true
+}

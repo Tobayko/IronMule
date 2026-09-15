@@ -1,0 +1,245 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+.FFF                                                                     [100%]
+=================================== FAILURES ===================================
+_________ test_cancellation_is_polled_while_waiting_and_finishes_once __________
+
+    def events() -> Iterator[dict[str, Any]]:
+        with self._lock:
+            if self._stream_active:
+                raise BackendUnavailable("backend worker supports one active request")
+            self._stream_active = True
+            self.last_generation_metadata = None
+        completed = False
+        cancel_sent = False
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        token_count = 0
+        prompt_tokens: int | None = None
+    
+        def request_cancel() -> None:
+            nonlocal cancel_sent
+            if not cancel_sent:
+                self._send({"type": "cancel", "request_id": request.request_id}, deadline)
+                cancel_sent = True
+        try:
+            if not self.ready:
+                self.start()
+            if cancel is not None and cancel.is_set():
+                completed = True
+                yield {"type": "done", "request_id": request.request_id, "finish_reason": "cancelled",
+                       "prompt_tokens": 0, "completion_tokens": 0, "variant": variant,
+                       **({"model_forward_invocations": 0} if trace_forwards else {})}
+                return
+            self._send(command, deadline)
+            while True:
+                try:
+>                   event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+ironmule_product/backend.py:788: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ironmule_product.backend.MLXWorkerClient object at 0x7d425f6a1100>
+deadline = 1008.957143991, cancel = <threading.Event at 0x7d425f461370: set>
+on_cancel = <function MLXWorkerClient.stream.<locals>.events.<locals>.request_cancel at 0x7d425f4334c0>
+on_tick = None
+
+    def _read_event(
+        self,
+        deadline: float | None,
+        *,
+        cancel: threading.Event | None = None,
+        on_cancel: Any = None,
+        on_tick: Any = None,
+    ) -> dict[str, Any]:
+        process = self._process
+        if process is None or process.stdout is None:
+            raise BackendUnavailable("backend worker is not running")
+        fd = process.stdout.fileno()
+        selector = selectors.DefaultSelector()
+        try:
+            os.set_blocking(fd, False)
+            while True:
+                # Buffered output does not suspend the caller's deadline or
+                # cancellation. In particular, an eager producer must not
+                # starve cancellation by keeping this buffer non-empty.
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise RequestTimeout("backend worker timed out")
+                if cancel is not None and cancel.is_set() and on_cancel is not None:
+                    on_cancel()
+                if on_tick is not None:
+                    on_tick()
+                frame = self._frame_from_buffer(self._stdout_buffer)
+                if frame is not None:
+                    try:
+                        value = json.loads(frame.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise BackendUnavailable("backend emitted invalid protocol data") from exc
+                    if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                        raise BackendUnavailable("backend emitted an invalid protocol event")
+                    return value
+                try:
+                    while True:
+                        capacity = MAX_PROTOCOL_LINE + 1 - len(self._stdout_buffer)
+                        if capacity <= 0 and b"\n" not in self._stdout_buffer:
+                            raise BackendUnavailable("backend protocol message is too large")
+                        chunk = os.read(fd, min(65536, max(1, capacity)))
+                        if not chunk:
+                            if self._stdout_buffer:
+                                raise BackendUnavailable("backend emitted an unterminated protocol frame")
+                            raise BackendUnavailable("backend worker exited before completing the protocol")
+                        self._stdout_buffer.extend(chunk)
+                        if b"\n" in self._stdout_buffer or len(chunk) < 65536:
+                            break
+                except BlockingIOError:
+                    pass
+                frame = self._frame_from_buffer(self._stdout_buffer)
+                if frame is not None:
+                    try:
+                        value = json.loads(frame.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise BackendUnavailable("backend emitted invalid protocol data") from exc
+                    if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                        raise BackendUnavailable("backend emitted an invalid protocol event")
+                    return value
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise RequestTimeout("backend worker timed out")
+                if cancel is not None and cancel.is_set() and on_cancel is not None:
+                    on_cancel()
+                if on_tick is not None:
+                    on_tick()
+                wait = (
+                    _CANCEL_POLL_SECONDS
+                    if remaining is None
+                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None or on_tick is not None else remaining)
+                )
+                selector.register(fd, selectors.EVENT_READ)
+                try:
+                    events = selector.select(wait)
+                finally:
+                    selector.unregister(fd)
+                if not events:
+                    if deadline is not None and time.monotonic() >= deadline:
+>                       raise RequestTimeout("backend worker timed out")
+E                       ironmule_product.errors.RequestTimeout: backend worker timed out
+
+ironmule_product/backend.py:312: RequestTimeout
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_cancellation_is_polled_wh0')
+
+    def test_cancellation_is_polled_while_waiting_and_finishes_once(tmp_path: Path) -> None:
+        body = (
+            "import json, select, sys; sys.stdin.buffer.readline(); "
+            "readable,_,_=select.select([sys.stdin],[],[],1); "
+            "json.loads(sys.stdin.buffer.readline()); "
+            "sys.stdout.write(json.dumps({'type':'done','request_id':'request-1','finish_reason':'cancelled','prompt_tokens':0,'completion_tokens':0,'variant':'reference'})+'\\n'); sys.stdout.flush()"
+        )
+        client = _attached_transport(tmp_path, body)
+        cancel = threading.Event()
+        timer = threading.Timer(.03, cancel.set)
+        try:
+            timer.start()
+>           events = list(client.stream(_request(max_tokens=1), cancel=cancel, timeout=.5))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/engine/test_product_worker.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def events() -> Iterator[dict[str, Any]]:
+        with self._lock:
+            if self._stream_active:
+                raise BackendUnavailable("backend worker supports one active request")
+            self._stream_active = True
+            self.last_generation_metadata = None
+        completed = False
+        cancel_sent = False
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        token_count = 0
+        prompt_tokens: int | None = None
+    
+        def request_cancel() -> None:
+            nonlocal cancel_sent
+            if not cancel_sent:
+                self._send({"type": "cancel", "request_id": request.request_id}, deadline)
+                cancel_sent = True
+        try:
+            if not self.ready:
+                self.start()
+            if cancel is not None and cancel.is_set():
+                completed = True
+                yield {"type": "done", "request_id": request.request_id, "finish_reason": "cancelled",
+                       "prompt_tokens": 0, "completion_tokens": 0, "variant": variant,
+                       **({"model_forward_invocations": 0} if trace_forwards else {})}
+                return
+            self._send(command, deadline)
+            while True:
+                try:
+                    event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                except RequestTimeout:
+                    self._mark_unusable()
+>                   raise RequestTimeout("generation timed out")
+E                   ironmule_product.errors.RequestTimeout: generation timed out
+
+ironmule_product/backend.py:791: RequestTimeout
+_______ test_receiver_shutdown_returns_without_daemon_finalization_abort _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_receiver_shutdown_returns0')
+
+    def test_receiver_shutdown_returns_without_daemon_finalization_abort(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=8); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "assert q.get()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:282: AssertionError
+_________________ test_receiver_full_queue_shutdown_is_bounded _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-1/test_receiver_full_queue_shutd0')
+
+    def test_receiver_full_queue_shutdown_is_bounded(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=1); q.put({'type':'work'}); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "t.join(timeout=2); assert not t.is_alive(); assert q.get_nowait()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:304: AssertionError
+=========================== short test summary info ============================
+FAILED tests/engine/test_product_worker.py::test_cancellation_is_polled_while_waiting_and_finishes_once
+FAILED tests/engine/test_product_worker.py::test_receiver_shutdown_returns_without_daemon_finalization_abort
+FAILED tests/engine/test_product_worker.py::test_receiver_full_queue_shutdown_is_bounded
+3 failed, 1 passed in 1.47s

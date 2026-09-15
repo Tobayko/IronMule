@@ -1,0 +1,11 @@
+ ironmule/hw.py                                    |  43 ++++++++-
+ ironmule_cli.py                                   |  35 +++++---
+ ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-
+ ironmule_product/worker.py                        |  28 ++++--
+ pyproject.toml                                    |   5 +-
+ tests/engine/test_cli.py                          |   8 +-
+ tests/engine/test_ironmule_runtime_integration.py |   9 +-
+ tests/engine/test_product_worker.py               |  18 ++++
+ tests/engine/test_q3d_stability_gate.py           |   2 +
+ tests/engine/test_q3f_child_guard.py              |   2 +
+ 10 files changed, 227 insertions(+), 27 deletions(-)

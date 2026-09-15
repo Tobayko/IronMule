@@ -1,0 +1,22 @@
+ ironmule/ab.py                                    |   7 +-
+ ironmule/benchmark.py                             |   5 +-
+ ironmule/hw.py                                    |  75 +++++++++++++++-
+ ironmule/router.py                                |  10 ++-
+ ironmule/runtime.py                               |   5 ++
+ ironmule/service.py                               |  17 ++--
+ ironmule/tune.py                                  |  84 ++++++++++++-----
+ ironmule_cli.py                                   |  47 ++++++----
+ ironmule_product/backend.py                       |  11 ++-
+ ironmule_product/cli.py                           |   5 +-
+ ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-
+ ironmule_product/service.py                       |   4 +-
+ ironmule_product/worker.py                        |  37 ++++++--
+ pyproject.toml                                    |   8 +-
+ tests/engine/test_cli.py                          |   8 +-
+ tests/engine/test_ironmule_runtime_integration.py |   9 +-
+ tests/engine/test_product_worker.py               |  18 ++++
+ tests/engine/test_q3d_stability_gate.py           |   2 +
+ tests/engine/test_q3f_child_guard.py              |   2 +
+ tests/engine/test_r6_r7.py                        |  59 ++++++++++++
+ tests/test_b62_wired_fraction_native_memsize.py   |   4 +
+ 21 files changed, 457 insertions(+), 64 deletions(-)

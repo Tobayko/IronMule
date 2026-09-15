@@ -1,0 +1,28 @@
+{
+  "activation_allowed": false,
+  "load_monitor": {
+    "clean_shutdown_required": true,
+    "mlx_peak_limit_fraction": 0.6,
+    "poll_interval_seconds": 0.25,
+    "rss_limit_fraction": 0.6,
+    "schema": "ironmule.load_monitor.v1",
+    "swap_delta_limit_bytes": 268435456
+  },
+  "model_id": "mlx-community/gemma-3-1b-it-4bit",
+  "plan_id": "1f462e2488edf295248662806214a4f9035c876857543459c275558e0eb3eb62",
+  "resource_events": [],
+  "resource_valid": false,
+  "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+  "run_id": "93ac09fe020440f78b5bfee180c9b253",
+  "samples": [],
+  "schema": "ironmule.calibration.v1",
+  "status": "ready",
+  "worker_exit_codes": [],
+  "worker_load_memory": [],
+  "worker_timings": [],
+  "workers": []
+}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"event": "run_started", "run_id": "93ac09fe020440f78b5bfee180c9b253"}
+{"event": "run_finished", "run_id": "93ac09fe020440f78b5bfee180c9b253"}

@@ -1,0 +1,1526 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+bringing up nodes...
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+bringing up nodes...
+
+...................s.................................................... [  5%]
+..s..........s.s.ss.s......s....s......s..s......s.....s......s..s...... [ 11%]
+..s...s.......s....................................ss..s.s.............. [ 17%]
+..........uuuuuuu............................uuuu....................... [ 22%]
+........................................................................ [ 27%]
+........................................................................ [ 33%]
+........................................................................ [ 39%]
+........................................................................ [ 45%]
+........................................................................ [ 50%]
+.....................................................F.................. [ 56%]
+..........................F.................F........................... [ 62%]
+..........................................s............................. [ 68%]
+.F.........................s.........s.................................. [ 73%]
+...........................s............................................ [ 79%]
+........................................................................ [ 85%]
+.................................ss..................................... [ 91%]
+.....ss.s............................................................... [ 96%]
+.........................s.............                                  [100%]
+=================================== FAILURES ===================================
+_________ test_cancellation_is_polled_while_waiting_and_finishes_once __________
+[gw1] linux -- Python 3.12.13 /tmp/im/bin/python
+
+    def events() -> Iterator[dict[str, Any]]:
+        with self._lock:
+            if self._stream_active:
+                raise BackendUnavailable("backend worker supports one active request")
+            self._stream_active = True
+            self.last_generation_metadata = None
+        completed = False
+        cancel_sent = False
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        token_count = 0
+        prompt_tokens: int | None = None
+    
+        def request_cancel() -> None:
+            nonlocal cancel_sent
+            if not cancel_sent:
+                self._send({"type": "cancel", "request_id": request.request_id}, deadline)
+                cancel_sent = True
+        try:
+            if not self.ready:
+                self.start()
+            if cancel is not None and cancel.is_set():
+                completed = True
+                yield {"type": "done", "request_id": request.request_id, "finish_reason": "cancelled",
+                       "prompt_tokens": 0, "completion_tokens": 0, "variant": variant,
+                       **({"model_forward_invocations": 0} if trace_forwards else {})}
+                return
+            self._send(command, deadline)
+            while True:
+                try:
+>                   event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+ironmule_product/backend.py:788: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <ironmule_product.backend.MLXWorkerClient object at 0x7a2f3e92c050>
+deadline = 595.465283515, cancel = <threading.Event at 0x7a2f41984440: set>
+on_cancel = <function MLXWorkerClient.stream.<locals>.events.<locals>.request_cancel at 0x7a2f3e926520>
+on_tick = None
+
+    def _read_event(
+        self,
+        deadline: float | None,
+        *,
+        cancel: threading.Event | None = None,
+        on_cancel: Any = None,
+        on_tick: Any = None,
+    ) -> dict[str, Any]:
+        process = self._process
+        if process is None or process.stdout is None:
+            raise BackendUnavailable("backend worker is not running")
+        fd = process.stdout.fileno()
+        selector = selectors.DefaultSelector()
+        try:
+            os.set_blocking(fd, False)
+            while True:
+                # Buffered output does not suspend the caller's deadline or
+                # cancellation. In particular, an eager producer must not
+                # starve cancellation by keeping this buffer non-empty.
+                if deadline is not None and time.monotonic() >= deadline:
+                    raise RequestTimeout("backend worker timed out")
+                if cancel is not None and cancel.is_set() and on_cancel is not None:
+                    on_cancel()
+                if on_tick is not None:
+                    on_tick()
+                frame = self._frame_from_buffer(self._stdout_buffer)
+                if frame is not None:
+                    try:
+                        value = json.loads(frame.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise BackendUnavailable("backend emitted invalid protocol data") from exc
+                    if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                        raise BackendUnavailable("backend emitted an invalid protocol event")
+                    return value
+                try:
+                    while True:
+                        capacity = MAX_PROTOCOL_LINE + 1 - len(self._stdout_buffer)
+                        if capacity <= 0 and b"\n" not in self._stdout_buffer:
+                            raise BackendUnavailable("backend protocol message is too large")
+                        chunk = os.read(fd, min(65536, max(1, capacity)))
+                        if not chunk:
+                            if self._stdout_buffer:
+                                raise BackendUnavailable("backend emitted an unterminated protocol frame")
+                            raise BackendUnavailable("backend worker exited before completing the protocol")
+                        self._stdout_buffer.extend(chunk)
+                        if b"\n" in self._stdout_buffer or len(chunk) < 65536:
+                            break
+                except BlockingIOError:
+                    pass
+                frame = self._frame_from_buffer(self._stdout_buffer)
+                if frame is not None:
+                    try:
+                        value = json.loads(frame.decode("utf-8"))
+                    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                        raise BackendUnavailable("backend emitted invalid protocol data") from exc
+                    if not isinstance(value, dict) or not isinstance(value.get("type"), str):
+                        raise BackendUnavailable("backend emitted an invalid protocol event")
+                    return value
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise RequestTimeout("backend worker timed out")
+                if cancel is not None and cancel.is_set() and on_cancel is not None:
+                    on_cancel()
+                if on_tick is not None:
+                    on_tick()
+                wait = (
+                    _CANCEL_POLL_SECONDS
+                    if remaining is None
+                    else min(remaining, _CANCEL_POLL_SECONDS if cancel is not None or on_tick is not None else remaining)
+                )
+                selector.register(fd, selectors.EVENT_READ)
+                try:
+                    events = selector.select(wait)
+                finally:
+                    selector.unregister(fd)
+                if not events:
+                    if deadline is not None and time.monotonic() >= deadline:
+>                       raise RequestTimeout("backend worker timed out")
+E                       ironmule_product.errors.RequestTimeout: backend worker timed out
+
+ironmule_product/backend.py:312: RequestTimeout
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/popen-gw1/test_cancellation_is_polled_wh0')
+
+    def test_cancellation_is_polled_while_waiting_and_finishes_once(tmp_path: Path) -> None:
+        body = (
+            "import json, select, sys; sys.stdin.buffer.readline(); "
+            "readable,_,_=select.select([sys.stdin],[],[],1); "
+            "json.loads(sys.stdin.buffer.readline()); "
+            "sys.stdout.write(json.dumps({'type':'done','request_id':'request-1','finish_reason':'cancelled','prompt_tokens':0,'completion_tokens':0,'variant':'reference'})+'\\n'); sys.stdout.flush()"
+        )
+        client = _attached_transport(tmp_path, body)
+        cancel = threading.Event()
+        timer = threading.Timer(.03, cancel.set)
+        try:
+            timer.start()
+>           events = list(client.stream(_request(max_tokens=1), cancel=cancel, timeout=.5))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/engine/test_product_worker.py:175: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def events() -> Iterator[dict[str, Any]]:
+        with self._lock:
+            if self._stream_active:
+                raise BackendUnavailable("backend worker supports one active request")
+            self._stream_active = True
+            self.last_generation_metadata = None
+        completed = False
+        cancel_sent = False
+        deadline = None if timeout is None else time.monotonic() + float(timeout)
+        token_count = 0
+        prompt_tokens: int | None = None
+    
+        def request_cancel() -> None:
+            nonlocal cancel_sent
+            if not cancel_sent:
+                self._send({"type": "cancel", "request_id": request.request_id}, deadline)
+                cancel_sent = True
+        try:
+            if not self.ready:
+                self.start()
+            if cancel is not None and cancel.is_set():
+                completed = True
+                yield {"type": "done", "request_id": request.request_id, "finish_reason": "cancelled",
+                       "prompt_tokens": 0, "completion_tokens": 0, "variant": variant,
+                       **({"model_forward_invocations": 0} if trace_forwards else {})}
+                return
+            self._send(command, deadline)
+            while True:
+                try:
+                    event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                except RequestTimeout:
+                    self._mark_unusable()
+>                   raise RequestTimeout("generation timed out")
+E                   ironmule_product.errors.RequestTimeout: generation timed out
+
+ironmule_product/backend.py:791: RequestTimeout
+_______ test_receiver_shutdown_returns_without_daemon_finalization_abort _______
+[gw1] linux -- Python 3.12.13 /tmp/im/bin/python
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/popen-gw1/test_receiver_shutdown_returns0')
+
+    def test_receiver_shutdown_returns_without_daemon_finalization_abort(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=8); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "assert q.get()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:282: AssertionError
+_________________ test_receiver_full_queue_shutdown_is_bounded _________________
+[gw1] linux -- Python 3.12.13 /tmp/im/bin/python
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/popen-gw1/test_receiver_full_queue_shutd0')
+
+    def test_receiver_full_queue_shutdown_is_bounded(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=1); q.put({'type':'work'}); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "t.join(timeout=2); assert not t.is_alive(); assert q.get_nowait()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:304: AssertionError
+______________ test_handler_saturation_returns_429_then_recovers _______________
+[gw0] linux -- Python 3.12.13 /tmp/im/bin/python
+
+    def test_handler_saturation_returns_429_then_recovers():
+        service = SaturationService()
+        try:
+            server = create_server(service, port=0)
+        except PermissionError as exc:
+            pytest.skip(f"loopback bind denied by test environment: {exc}")
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        held: list[socket.socket] = []
+        try:
+            request_bytes = f"GET /health HTTP/1.1\r\nHost: 127.0.0.1:{server.server_port}\r\n\r\n".encode("ascii")
+            for _ in range(64):
+                connection = socket.create_connection(("127.0.0.1", server.server_port), timeout=3)
+                connection.sendall(request_bytes)
+                held.append(connection)
+>           assert service.all_active.wait(timeout=5), "64 handler slots did not become active"
+E           AssertionError: 64 handler slots did not become active
+E           assert False
+E            +  where False = wait(timeout=5)
+E            +    where wait = <threading.Event at 0x7f88b5fddb80: unset>.wait
+E            +      where <threading.Event at 0x7f88b5fddb80: unset> = <test_product_http.SaturationService object at 0x7f88b5fdc650>.all_active
+
+tests/engine/test_product_http.py:285: AssertionError
+----------------------------- Captured stderr call -----------------------------
+--------------------------------------------------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49160)
+
+----------------------------------------Exception occurred during processing of request from ('127.0.0.1', 49162)----------------------------------------
+Exception occurred during processing of request from
+Exception occurred during processing of request from ----------------------------------------
+Exception occurred during processing of request from 
+('127.0.0.1', 49164)('127.0.0.1', 49156)
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from  ----------------------------------------
+('127.0.0.1', 49172)
+
+('127.0.0.1', 49138)Exception occurred during processing of request from ('127.0.0.1', 49166)
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49180)Exception occurred during processing of request from
+---------------------------------------- 
+('127.0.0.1', 49142)
+
+Exception occurred during processing of request fromException occurred during processing of request from ('127.0.0.1', 49190)
+ ('127.0.0.1', 49192)----------------------------------------
+
+Exception occurred during processing of request from--------------------------------------------------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49214)Traceback (most recent call last):
+
+ ----------------------------------------Traceback (most recent call last):
+('127.0.0.1', 49198)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+Traceback (most recent call last):
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+Exception occurred during processing of request from ('127.0.0.1', 49216)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49258)Exception occurred during processing of request from ('127.0.0.1', 49218)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Exception occurred during processing of request from ('127.0.0.1', 49232)
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+('127.0.0.1', 49242)Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+--------------------------------------------------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------('127.0.0.1', 49268)
+
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49284)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Exception occurred during processing of request from ('127.0.0.1', 49228)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+Exception occurred during processing of request from  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+('127.0.0.1', 49266)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+('127.0.0.1', 49304)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+ ('127.0.0.1', 49292)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 49340)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+
+Traceback (most recent call last):
+Traceback (most recent call last):
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+--------------------------------------------------------------------------------
+Exception occurred during processing of request from  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+('127.0.0.1', 49326)
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+('127.0.0.1', 49316)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+ConnectionResetError: [Errno 104] Connection reset by peer
+Exception occurred during processing of request from  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+('127.0.0.1', 49356)
+
+   File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+ConnectionResetError: [Errno 104] Connection reset by peer
+--------------------------------------------------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+('127.0.0.1', 49346)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+
+----------------------------------------
+ConnectionResetError: [Errno 104] Connection reset by peer
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+--------------------------------------------------------------------------------  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Exception occurred during processing of request from
+
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Exception occurred during processing of request fromTraceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+('127.0.0.1', 46112)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+ConnectionResetError: [Errno 104] Connection reset by peer
+ Exception occurred during processing of request from   File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+----------------------------------------Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+('127.0.0.1', 46104)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46146)
+Traceback (most recent call last):
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Exception occurred during processing of request from
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46200)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------Exception occurred during processing of request from('127.0.0.1', 46126)   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+----------------------------------------
+ConnectionResetError: [Errno 104] Connection reset by peer
+('127.0.0.1', 46164)
+
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+----------------------------------------
+   File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+----------------------------------------Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+Exception occurred during processing of request from
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------Exception occurred during processing of request from  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+('127.0.0.1', 46138) 
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ 
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request fromException occurred during processing of request fromException occurred during processing of request from ('127.0.0.1', 46228)
+ConnectionResetError: [Errno 104] Connection reset by peer
+  ('127.0.0.1', 46212)
+Traceback (most recent call last):
+----------------------------------------
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+('127.0.0.1', 46230)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+Exception occurred during processing of request fromException occurred during processing of request from ('127.0.0.1', 46150)ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46258)
+
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+Traceback (most recent call last):
+('127.0.0.1', 46180)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46244)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+('127.0.0.1', 46192)
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46266)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ ----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Exception occurred during processing of request from  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+Exception occurred during processing of request from ('127.0.0.1', 46254)
+
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+----------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+('127.0.0.1', 46194)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+ ('127.0.0.1', 46276)
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------Exception occurred during processing of request from ('127.0.0.1', 46292)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46308)----------------------------------------
+Exception occurred during processing of request from  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+Traceback (most recent call last):
+
+
+Exception occurred during processing of request from ('127.0.0.1', 46328)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46348)  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+ ('127.0.0.1', 46316)----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46396)Traceback (most recent call last):
+----------------------------------------ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46354)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+----------------------------------------
+
+--------------------------------------------------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+
+----------------------------------------
+Exception occurred during processing of request from   File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+
+Exception occurred during processing of request from  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Exception occurred during processing of request from  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+('127.0.0.1', 46380)
+--------------------------------------------------------------------------------
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+   File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+Exception occurred during processing of request from  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46428)
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+----------------------------------------ConnectionResetError: [Errno 104] Connection reset by peer
+--------------------------------------------------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+('127.0.0.1', 46420)  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+ConnectionResetError: [Errno 104] Connection reset by peer
+
+Exception occurred during processing of request from
+   File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+----------------------------------------ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 46366)Exception occurred during processing of request from   File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+ ('127.0.0.1', 46336)
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+('127.0.0.1', 46434)  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+
+----------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+   File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+('127.0.0.1', 46448)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+('127.0.0.1', 46408)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+Exception occurred during processing of request fromTraceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+----------------------------------------
+Traceback (most recent call last):
+ Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+('127.0.0.1', 46454)  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+----------------------------------------  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+----------------------------------------
+
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+----------------------------------------ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+--------------------------------------------------------------------------------
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+----------------------------------------
+----------------------------------------  File "/usr/lib/python3.12/http/server.py", line 408, in handle_one_request
+    self.raw_requestline = self.rfile.readline(65537)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+
+ConnectionResetError: [Errno 104] Connection reset by peer
+----------------------------------------
+=============================== warnings summary ===============================
+tests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=221) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/engine/test_product_worker.py::test_cancellation_is_polled_while_waiting_and_finishes_once
+FAILED tests/engine/test_product_worker.py::test_receiver_shutdown_returns_without_daemon_finalization_abort
+FAILED tests/engine/test_product_worker.py::test_receiver_full_queue_shutdown_is_bounded
+FAILED tests/engine/test_product_http.py::test_handler_saturation_returns_429_then_recovers
+4 failed, 1216 passed, 32 skipped, 1 warning, 11 subtests passed in 470.19s (0:07:50)

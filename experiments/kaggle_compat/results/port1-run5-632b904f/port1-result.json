@@ -1,0 +1,72 @@
+{
+ "schema": "ironmule.port1-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "name, driver_version, memory.total [MiB]\nTesla T4, 580.159.04, 15360 MiB\nTesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.1,
+   "tail": " ironmule/hw.py                                    |  73 ++++++++++++++-\n ironmule/runtime.py                               |   5 ++\n ironmule/tune.py                                  |   2 +\n ironmule_cli.py                                   |  35 +++++---\n ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-\n ironmule_product/worker.py                        |  31 +++++--\n pyproject.toml                                    |   5 +-\n tests/engine/test_cli.py                          |   8 +-\n tests/engine/test_ironmule_runtime_integration.py |   9 +-\n tests/engine/test_product_worker.py               |  18 ++++\n tests/engine/test_q3d_stability_gate.py           |   2 +\n tests/engine/test_q3f_child_guard.py              |   2 +\n tests/engine/test_r6_r7.py                        |  42 +++++++++\n tests/test_b62_wired_fraction_native_memsize.py   |   4 +\n 14 files changed, 313 insertions(+), 27 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.7,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.0/20.0 MB 77.0 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.57s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im /usr\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 21.4,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 48 packages in 1.50s\n   Building ironmule @ file:///tmp/IronMule\nDownloading numpy (15.9MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading scipy (33.7MiB)\nDownloading pygments (1.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading transformers (11.7MiB)\nDownloading tokenizers (3.2MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\n Downloaded pygments\n Downloaded sentencepiece\n      Built ironmule @ file:///tmp/IronMule\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 48 packages in 19.57s\nInstalled 48 packages in 128ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==3.32.6\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.1\n + psutil==7.2.2\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==3.32.6\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.1\npsutil==7.2.2\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_1b": {
+   "exit": 0,
+   "seconds": 6.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\n"
+  },
+  "download_4b": {
+   "exit": 0,
+   "seconds": 13.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "download_12b": {
+   "exit": 0,
+   "seconds": 47.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-12b-it-4bit/snapshots/86cc6a8dedbc456dd0e4af01a9d09f396f77e558\n"
+  },
+  "abcd_1b_graph_defaults": {
+   "exit": 0,
+   "seconds": 228.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nB/A 0.8033 [0.7956; 0.8111]\nC/A 0.8818 [0.8700; 0.8920]\nD/A 0.6648 [0.6539; 0.6751]\nD/B 0.8229 [0.8108; 0.8486]\nD/C 0.7535 [0.7475; 0.7614]\ntoken identity True\n"
+  },
+  "precision_4b": {
+   "exit": 0,
+   "seconds": 515.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nA16 26930\nA32 15066\nD32 14260\n{\n \"ratios\": {\n  \"A32/A16\": 0.5594284703204553,\n  \"D32/A16\": 0.5295248931183968\n },\n \"teacher_forced_top1_agreement\": 0.9795918367346939,\n \"generated_identical_requests\": 2,\n \"first_divergence_A32\": [\n  null,\n  0,\n  0,\n  19,\n  44,\n  null\n ],\n \"D32_equals_A32\": true\n}\n"
+  },
+  "cli_tune_4b": {
+   "exit": 1,
+   "seconds": 1003.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nbaseline 11977.61 ms  (prefill 10157.10, decode 1820.51) 23 tokens, capacity 384\n  compiled_fixed_cache=  True  ratio 1.0133  rejected: no gain\n  fused_argmax=  True  ratio 0.9999  rejected: no gain\n  head_skip_prefill=  True  ratio 0.8497  kept\n  prefill_into_fixed=  True  ratio 0.8564  rejected: no gain\n  readback_every=     2  ratio 0.8511  rejected: no gain\n  readback_every=     4  ratio 0.8664  rejected: no gain\n  readback_every=     8  ratio 0.8682  rejected: no gain\n  speculate_k=     4  ratio 1.3408  rejected: no gain\n  capacity_slack=   128  ratio 0.8542  rejected: no gain\n  wired_fraction=   0.6  unsupported (wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit)\n  fuse_projections=  True  ratio 0.8628  rejected: no gain\nconfirming the screening winner with a paired A/B ...\nTraceback (most recent call last):\n  File \"/tmp/im/bin/ironmule\", line 10, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 469, in main\n    return _dispatch(argv)\n           ^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 513, in _dispatch\n    return _run_tune(rest)\n           ^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 218, in _run_tune\n    return int(tune_module.main(argv))\n               ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 986, in main\n    tune(args.model, max_tokens=args.max_tokens, repeats=args.repeats, force=args.force,\n  File \"/tmp/IronMule/ironmule/tune.py\", line 772, in tune\n    raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens)\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 396, in confirm\n    return ab.run({\"baseline\": baseline, \"candidate\": candidate},\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/ab.py\", line 581, in run\n    raise ABRunError(\nironmule.ab.ABRunError: child 0 exited with status 1\n"
+  },
+  "profile_4b": {
+   "exit": 0,
+   "seconds": 10.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nnull\n"
+  },
+  "precision_12b": {
+   "exit": 1,
+   "seconds": 480.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nA16 84480\nTraceback (most recent call last):\n  File \"/tmp/precision.py\", line 61, in <module>\n    rt32, _, out32 = arm(\"A32\", ironmule.BASELINE, ironmule.InteractiveMode, mx.float32)\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/precision.py\", line 35, in arm\n    results, snapshot = bench._run(rt, ironmule, mode(), requests)\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/benchmark.py\", line 148, in _run\n    results = rt.serve(requests)\n              ^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/service.py\", line 506, in serve\n    sessions = build_sessions(requests, self.backend, self.telemetry, capacity,\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/executor.py\", line 224, in build_sessions\n    state, first = backend.prefill(request.prompt_ids, request.plan, capacity)\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/service.py\", line 288, in prefill\n    state, token = self.engine._prefill(list(prompt_ids), capacity)\n                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/runtime.py\", line 551, in _prefill\n    mx.eval(logits)\nRuntimeError: cudaGraphInstantiate(&handle_, graph, nullptr, nullptr, 0) failed: out of memory\n"
+  }
+ },
+ "finished": true
+}

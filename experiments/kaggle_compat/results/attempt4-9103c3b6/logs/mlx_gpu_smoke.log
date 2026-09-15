@@ -1,0 +1,3 @@
+mlx 0.32.0 device Device(gpu, 0) cuda True
+matmul ok (1024, 1024)
+qmm ok max_abs_diff 1.52587890625e-05

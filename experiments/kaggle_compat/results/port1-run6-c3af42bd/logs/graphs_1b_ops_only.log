@@ -1,0 +1,55 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+mlx_default 0 3249.960953 0
+ops400 0 2634.232712 0
+ops400_mb4000 0 2614.614107 0
+ops400 1 2738.889724 0
+ops400_mb4000 1 2748.111903 0
+mlx_default 1 3150.666906 0
+ops400_mb4000 2 2643.213856 0
+mlx_default 2 3159.200164 0
+ops400 2 2669.459721 0
+{
+ "mlx_default": {
+  "ratio_vs_first_setting_per_rep": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "peak_memory_bytes": [
+   792009040,
+   792096352,
+   792062288
+  ],
+  "median_ratio": 1.0,
+  "token_identity": true
+ },
+ "ops400": {
+  "ratio_vs_first_setting_per_rep": [
+   0.8105428803901079,
+   0.8693047553786697,
+   0.8449796095287871
+  ],
+  "peak_memory_bytes": [
+   893176736,
+   893176736,
+   893176736
+  ],
+  "median_ratio": 0.8449796095287871,
+  "token_identity": true
+ },
+ "ops400_mb4000": {
+  "ratio_vs_first_setting_per_rep": [
+   0.8045063140178595,
+   0.8722318115465044,
+   0.8366718532494987
+  ],
+  "peak_memory_bytes": [
+   893176736,
+   893176736,
+   893176736
+  ],
+  "median_ratio": 0.8366718532494987,
+  "token_identity": true
+ }
+}

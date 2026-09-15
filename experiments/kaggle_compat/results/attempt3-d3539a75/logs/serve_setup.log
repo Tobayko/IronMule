@@ -1,0 +1,24 @@
+{
+  "models_loaded": false,
+  "next": "ironmule models add <cached-model-id>",
+  "settings": {
+    "exact": true,
+    "max_pending": 8,
+    "mode": "desktop",
+    "optimization_paused": false,
+    "request_timeout_s": 120,
+    "schema": 1
+  },
+  "state_dir": "/tmp/ironmule-product"
+}
+{
+  "hardware_qualified": false,
+  "models_loaded": false,
+  "registered": {
+    "model_id": "mlx-community/gemma-3-1b-it-4bit",
+    "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "weight_bytes": 732577304
+  },
+  "warnings": []
+}

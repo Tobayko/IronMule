@@ -1,0 +1,52 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+default 0 3701.13265 0
+graphs_off 0 3316.87147 0
+ops100_mb1000 0 2962.341522 0
+ops400_mb4000 0 2743.810054 0
+graphs_off 1 3435.603525 0
+ops100_mb1000 1 3000.855878 0
+ops400_mb4000 1 2727.453979 0
+default 1 3534.557321 0
+ops100_mb1000 2 3030.377925 0
+ops400_mb4000 2 2737.995995 0
+default 2 3335.361541 0
+graphs_off 2 3396.707086 0
+{
+ "default": {
+  "ratio_vs_default_per_rep": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "median_ratio": 1.0,
+  "token_identity": true
+ },
+ "graphs_off": {
+  "ratio_vs_default_per_rep": [
+   0.8961774093668327,
+   0.9720039068507725,
+   1.0183924723739566
+  ],
+  "median_ratio": 0.9720039068507725,
+  "token_identity": true
+ },
+ "ops100_mb1000": {
+  "ratio_vs_default_per_rep": [
+   0.8003878277640225,
+   0.8490047283066824,
+   0.9085605526564413
+  ],
+  "median_ratio": 0.8490047283066824,
+  "token_identity": true
+ },
+ "ops400_mb4000": {
+  "ratio_vs_default_per_rep": [
+   0.7413433436383319,
+   0.7716536276821071,
+   0.8208993122164204
+  ],
+  "median_ratio": 0.7716536276821071,
+  "token_identity": true
+ }
+}

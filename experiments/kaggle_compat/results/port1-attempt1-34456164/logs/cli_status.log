@@ -1,0 +1,8 @@
+{
+  "hardware_fingerprint": "7b2dba9e90970d08",
+  "model": "mlx-community/gemma-3-1b-it-4bit",
+  "profile_status": "missing",
+  "profile_store": "/tmp/ironmule-home/profiles.json"
+}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'

@@ -1,0 +1,30 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "models_loaded": false,
+  "next": "ironmule models add <cached-model-id>",
+  "settings": {
+    "exact": true,
+    "max_pending": 8,
+    "mode": "desktop",
+    "optimization_paused": false,
+    "request_timeout_s": 120,
+    "schema": 1
+  },
+  "state_dir": "/tmp/ironmule-product"
+}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "hardware_qualified": false,
+  "models_loaded": false,
+  "registered": {
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "weight_bytes": 3400569562
+  },
+  "warnings": [
+    "weight index shard set differs from mlx_lm direct model*.safetensors selection (index=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'], selected=['model.safetensors'])"
+  ]
+}

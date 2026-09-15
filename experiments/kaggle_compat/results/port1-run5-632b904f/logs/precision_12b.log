@@ -1,0 +1,25 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+A16 84480
+Traceback (most recent call last):
+  File "/tmp/precision.py", line 61, in <module>
+    rt32, _, out32 = arm("A32", ironmule.BASELINE, ironmule.InteractiveMode, mx.float32)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/precision.py", line 35, in arm
+    results, snapshot = bench._run(rt, ironmule, mode(), requests)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/benchmark.py", line 148, in _run
+    results = rt.serve(requests)
+              ^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/service.py", line 506, in serve
+    sessions = build_sessions(requests, self.backend, self.telemetry, capacity,
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/executor.py", line 224, in build_sessions
+    state, first = backend.prefill(request.prompt_ids, request.plan, capacity)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/service.py", line 288, in prefill
+    state, token = self.engine._prefill(list(prompt_ids), capacity)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/runtime.py", line 551, in _prefill
+    mx.eval(logits)
+RuntimeError: cudaGraphInstantiate(&handle_, graph, nullptr, nullptr, 0) failed: out of memory

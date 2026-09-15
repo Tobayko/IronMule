@@ -1,0 +1,101 @@
+{
+ "schema": "ironmule.data3-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.5,
+   "tail": "Tue Sep 15 06:32:52 2026       \n+-----------------------------------------------------------------------------------------+\n| NVIDIA-SMI 580.159.04             Driver Version: 580.159.04     CUDA Version: 13.0     |\n+-----------------------------------------+------------------------+----------------------+\n| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |\n| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |\n|                                         |                        |               MIG M. |\n|=========================================+========================+======================|\n|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |\n| N/A   44C    P8             11W /   70W |       0MiB /  15360MiB |      0%      Default |\n|                                         |                        |                  N/A |\n+-----------------------------------------+------------------------+----------------------+\n|   1  Tesla T4                       Off |   00000000:00:05.0 Off |                    0 |\n| N/A   47C    P8             11W /   70W |       0MiB /  15360MiB |      0%      Default |\n|                                         |                        |                  N/A |\n+-----------------------------------------+------------------------+----------------------+\n\n+-----------------------------------------------------------------------------------------+\n| Processes:                                                                              |\n|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |\n|        ID   ID                                                               Usage      |\n|=========================================================================================|\n|  No running processes found                                                             |\n+-----------------------------------------------------------------------------------------+\nPython 3.12.13\nldd (Ubuntu GLIBC 2.35-0ubuntu3.8) 2.35\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.5,
+   "tail": "5fde53f940852c92f30d5f30fe6377d88e17c9a4\n ironmule_product/worker.py          | 28 ++++++++++++++++++++--------\n tests/engine/test_product_worker.py | 18 ++++++++++++++++++\n 2 files changed, 38 insertions(+), 8 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 6.5,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.0/20.0 MB 77.8 MB/s eta 0:00:00\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: /tmp/im\nActivate with: source /tmp/im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 21.0,
+   "tail": "Using Python 3.12.13 environment at: /tmp/im\nResolved 48 packages in 1.35s\n   Building ironmule @ file:///tmp/IronMule\nDownloading scipy (33.7MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading hf-xet (4.3MiB)\nDownloading pygments (1.2MiB)\nDownloading numpy (15.9MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading mlx-cuda-12 (80.7MiB)\n Downloaded pygments\n Downloaded sentencepiece\n      Built ironmule @ file:///tmp/IronMule\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 48 packages in 19.33s\nInstalled 48 packages in 132ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==3.32.6\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.0\n + mlx-cuda-12==0.32.0\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.1\n + psutil==7.2.2\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "annotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==3.32.6\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.0\nmlx-cuda-12==0.32.0\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.1\npsutil==7.2.2\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\nUsing Python 3.12.13 environment at: /tmp/im\n"
+  },
+  "mlx_gpu_smoke": {
+   "exit": 0,
+   "seconds": 1.4,
+   "tail": "mlx 0.32.0 device Device(gpu, 0) cuda True\nmatmul ok (1024, 1024)\nqmm ok max_abs_diff 1.52587890625e-05\n"
+  },
+  "download_gemma-3-1b-it-4bit": {
+   "exit": 0,
+   "seconds": 10.5,
+   "tail": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"
+  },
+  "serve_setup": {
+   "exit": 0,
+   "seconds": 2.3,
+   "tail": "{\n  \"models_loaded\": false,\n  \"next\": \"ironmule models add <cached-model-id>\",\n  \"settings\": {\n    \"exact\": true,\n    \"max_pending\": 8,\n    \"mode\": \"desktop\",\n    \"optimization_paused\": false,\n    \"request_timeout_s\": 120,\n    \"schema\": 1\n  },\n  \"state_dir\": \"/tmp/ironmule-product\"\n}\n{\n  \"hardware_qualified\": false,\n  \"models_loaded\": false,\n  \"registered\": {\n    \"model_id\": \"mlx-community/gemma-3-1b-it-4bit\",\n    \"revision\": \"2d44e83dc9e80843d22fb941d3d699a0b1351aa6\",\n    \"snapshot_path\": \"/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\",\n    \"weight_bytes\": 732577304\n  },\n  \"warnings\": []\n}\n"
+  }
+ },
+ "serve_http": {
+  "health": {
+   "service": "ironmule",
+   "ready": true,
+   "mode": "desktop",
+   "execution": "exact",
+   "backend": "mlx_lm_reference",
+   "loaded_model": "mlx-community/gemma-3-1b-it-4bit",
+   "queued_requests": 0,
+   "active_requests": 0,
+   "completed_requests": 0,
+   "failed_requests": 0,
+   "cancelled_requests": 0,
+   "optimization": {
+    "schema": 1,
+    "paused": false,
+    "optimization_paused": false,
+    "configuration_only": false,
+    "engine_started": false,
+    "stage": "idle",
+    "run_id": null,
+    "model_id": null,
+    "model_loaded": false,
+    "activation_allowed": false,
+    "updated_unix_ns": null,
+    "last_verdict": null
+   }
+  },
+  "completion": {
+   "id": "chatcmpl-b7ce1e0a80b049d4925583002c14eea2",
+   "object": "chat.completion",
+   "created": 1789454080,
+   "model": "mlx-community/gemma-3-1b-it-4bit",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "Certainly! Here are five words that say \u201chello\u201d:\n\n**Hello!**"
+     },
+     "finish_reason": "length"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 16,
+    "total_tokens": 31
+   }
+  },
+  "health_error": "URLError(ConnectionRefusedError(111, 'Connection refused'))",
+  "stream_tail": "ces\":[{\"index\":0,\"delta\":{\"content\":\"\\u201d:\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"\\n\\n\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"**\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"Hello\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"!\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"**\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-f1b3d81ce2364eb98f5bb86edb78f584\",\"object\":\"chat.completion.chunk\",\"created\":1789454081,\"model\":\"mlx-community/gemma-3-1b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"length\"}],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":16,\"total_tokens\":31}}\n\ndata: [DONE]\n\n",
+  "server_exit": 0,
+  "log_tail": "{\"service\": \"ironmule\", \"host\": \"127.0.0.1\", \"port\": 8080, \"ready\": true}\n"
+ },
+ "finished": true
+}

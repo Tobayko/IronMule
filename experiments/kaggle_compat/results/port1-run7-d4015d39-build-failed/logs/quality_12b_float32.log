@@ -1,0 +1,6 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/quality.py", line 18, in <module>
+    import mlx.core as mx
+ModuleNotFoundError: No module named 'mlx'

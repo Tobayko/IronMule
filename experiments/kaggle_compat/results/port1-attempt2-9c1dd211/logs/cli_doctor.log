@@ -1,0 +1,39 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "checks": [
+    {
+      "detail": "Linux x86_64 (x86_64)",
+      "name": "Linux",
+      "ok": true
+    },
+    {
+      "detail": "3.12.13 (requires >= 3.10)",
+      "name": "Python",
+      "ok": true
+    },
+    {
+      "detail": "0.32.2; importable (isolated probe)",
+      "name": "MLX",
+      "ok": true
+    },
+    {
+      "detail": "0.31.3; importable (isolated probe)",
+      "name": "MLX-LM",
+      "ok": true
+    },
+    {
+      "detail": "2.5.3; importable (isolated probe)",
+      "name": "NumPy",
+      "ok": true
+    },
+    {
+      "detail": "CUDA GPU operation verified",
+      "name": "MLX CUDA device",
+      "ok": true
+    }
+  ],
+  "performance_claim": false,
+  "ready": true,
+  "schema": "ironmule.doctor.v1"
+}

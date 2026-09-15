@@ -1,0 +1,135 @@
+{
+ "schema": "ironmule.port1-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "name, driver_version, memory.total [MiB]\nTesla T4, 580.159.04, 15360 MiB\nTesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 1.9,
+   "tail": " ironmule/ab.py                                    |   7 +-\n ironmule/benchmark.py                             |   5 +-\n ironmule/hw.py                                    |  75 +++++++++++++++-\n ironmule/router.py                                |  10 ++-\n ironmule/runtime.py                               |   5 ++\n ironmule/service.py                               |  17 ++--\n ironmule/tune.py                                  |  84 ++++++++++++-----\n ironmule_cli.py                                   |  47 ++++++----\n ironmule_product/backend.py                       |  11 ++-\n ironmule_product/cli.py                           |   5 +-\n ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-\n ironmule_product/service.py                       |   4 +-\n ironmule_product/worker.py                        |  37 ++++++--\n pyproject.toml                                    |   5 +-\n tests/engine/test_cli.py                          |   8 +-\n tests/engine/test_ironmule_runtime_integration.py |   9 +-\n tests/engine/test_product_worker.py               |  18 ++++\n tests/engine/test_q3d_stability_gate.py           |   2 +\n tests/engine/test_q3f_child_guard.py              |   2 +\n tests/engine/test_r6_r7.py                        |  59 ++++++++++++\n tests/test_b62_wired_fraction_native_memsize.py   |   4 +\n 21 files changed, 455 insertions(+), 63 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 7.7,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 77.2 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.33s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im /usr\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 23.1,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 49 packages in 1.13s\n   Building ironmule @ file:///tmp/IronMule\nDownloading pygments (1.2MiB)\nDownloading numpy (15.9MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading pyarrow (47.8MiB)\nDownloading scipy (33.7MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading hf-xet (4.3MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\n Downloaded pygments\n      Built ironmule @ file:///tmp/IronMule\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 49 packages in 19.26s\nInstalled 49 packages in 2.55s\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==3.32.6\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.1\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==3.32.6\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.1\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_4b": {
+   "exit": 0,
+   "seconds": 15.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "download_12b": {
+   "exit": 0,
+   "seconds": 30.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-12b-it-4bit/snapshots/86cc6a8dedbc456dd0e4af01a9d09f396f77e558\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 16.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "cli_doctor": {
+   "exit": 0,
+   "seconds": 6.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nIronMule doctor\n[OK] Linux: Linux x86_64 (x86_64)\n[OK] Python: 3.12.13 (requires >= 3.10)\n[OK] MLX: 0.32.2; importable (isolated probe)\n[OK] MLX-LM: 0.31.3; importable (isolated probe)\n[OK] NumPy: 2.5.3; importable (isolated probe)\n[OK] MLX CUDA device: CUDA GPU operation verified; compute capability 7.5 emulates bf16, consider --compute-dtype float32 (about 2x faster, output differs from bf16)\n\nAll runtime prerequisites are available.\n"
+  },
+  "cli_tune_4b_float32": {
+   "exit": 0,
+   "seconds": 351.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nbaseline 2095.08 ms  (prefill 1024.73, decode 1070.73) 23 tokens, capacity 384\n  compiled_fixed_cache=  True  ratio 1.0057  rejected: no gain\n  fused_argmax=  True  ratio 1.0517  rejected: no gain\n  head_skip_prefill=  True  ratio 1.0004  rejected: no gain\n  prefill_into_fixed=  True  ratio 1.1342  rejected: no gain\n  readback_every=     2  ratio 1.1388  rejected: no gain\n  readback_every=     4  ratio 1.2120  rejected: no gain\n  readback_every=     8  ratio 1.1855  rejected: no gain\n  speculate_k=     4  ratio 2.7650  rejected: no gain\n  capacity_slack=   128  ratio 1.1433  rejected: no gain\n  wired_fraction=   0.6  unsupported (wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit)\n  fuse_projections=  True  ratio 1.1199  rejected: no gain\ntuned: 0.00% faster end to end, tokens identical, stored in /tmp/ironmule-home/profiles.json\n"
+  },
+  "cli_tune_show_4b_float32": {
+   "exit": 0,
+   "seconds": 11.6,
+   "tail": "ted: no gain\"\n    },\n    {\n      \"decode_ns\": 1153586779,\n      \"disposition\": \"rejected\",\n      \"knob\": \"head_skip_prefill\",\n      \"prefill_ns\": 941316137,\n      \"ratio\": 1.00036134832408,\n      \"total_ns\": 2095835263,\n      \"value\": true,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 1183436240,\n      \"disposition\": \"rejected\",\n      \"knob\": \"prefill_into_fixed\",\n      \"prefill_ns\": 1195879157,\n      \"ratio\": 1.1341856665102732,\n      \"total_ns\": 2376207676,\n      \"value\": true,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 1206648562,\n      \"disposition\": \"rejected\",\n      \"knob\": \"readback_every\",\n      \"prefill_ns\": 1179310236,\n      \"ratio\": 1.1388399662655075,\n      \"total_ns\": 2385958798,\n      \"value\": 2,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 1341360549,\n      \"disposition\": \"rejected\",\n      \"knob\": \"readback_every\",\n      \"prefill_ns\": 1198259735,\n      \"ratio\": 1.211962298056644,\n      \"total_ns\": 2539155802,\n      \"value\": 4,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 1316291594,\n      \"disposition\": \"rejected\",\n      \"knob\": \"readback_every\",\n      \"prefill_ns\": 1164335382,\n      \"ratio\": 1.1855414791412489,\n      \"total_ns\": 2483802120,\n      \"value\": 8,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 4640616112,\n      \"disposition\": \"rejected\",\n      \"knob\": \"speculate_k\",\n      \"prefill_ns\": 1154166202,\n      \"ratio\": 2.7650199364156434,\n      \"total_ns\": 5792933019,\n      \"value\": 4,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"decode_ns\": 1217976857,\n      \"disposition\": \"rejected\",\n      \"knob\": \"capacity_slack\",\n      \"prefill_ns\": 1175096381,\n      \"ratio\": 1.1433494895639242,\n      \"total_ns\": 2395406602,\n      \"value\": 128,\n      \"verdict\": \"rejected: no gain\"\n    },\n    {\n      \"disposition\": \"unsupported\",\n      \"knob\": \"wired_fraction\",\n      \"reason\": \"ValueError: wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit\",\n      \"value\": 0.6,\n      \"verdict\": \"unsupported\"\n    },\n    {\n      \"decode_ns\": 1189342403,\n      \"disposition\": \"rejected\",\n      \"knob\": \"fuse_projections\",\n      \"prefill_ns\": 1156854859,\n      \"ratio\": 1.1198614213070357,\n      \"total_ns\": 2346197262,\n      \"value\": true,\n      \"verdict\": \"rejected: no gain\"\n    }\n  ],\n  \"tuned_at\": 1789478076.1749852,\n  \"tuned_decode_ns\": 1070727081,\n  \"tuned_ns\": 2095078210,\n  \"tuned_prefill_ns\": 1024725161\n}\n"
+  },
+  "benchmark_4b_float32": {
+   "exit": 0,
+   "seconds": 309.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nmodel mlx-community/gemma-3-4b-it-4bit\nplan strict   requests 6   warmup 2   repeats 6\n\nmode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread\ninteractive          15703.2           18.3           18.3        15009.0[15475.4; 15825.6]\nthroughput           14947.3           19.3           19.3        14257.3[14844.8; 15015.5]\n\nthroughput gain +4.98%   outer-wall ratio 0.9502 95% CI [0.9486; 0.9581]\nidentical answers in both modes: True\nwrote /kaggle/working/benchmark-4b-float32.json\n"
+  },
+  "serve_setup": {
+   "exit": 0,
+   "seconds": 0.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"models_loaded\": false,\n  \"next\": \"ironmule models add <cached-model-id>\",\n  \"settings\": {\n    \"exact\": true,\n    \"max_pending\": 8,\n    \"mode\": \"desktop\",\n    \"optimization_paused\": false,\n    \"request_timeout_s\": 120,\n    \"schema\": 1\n  },\n  \"state_dir\": \"/tmp/ironmule-product\"\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"hardware_qualified\": false,\n  \"models_loaded\": false,\n  \"registered\": {\n    \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n    \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n    \"snapshot_path\": \"/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n    \"weight_bytes\": 3400569562\n  },\n  \"warnings\": [\n    \"weight index shard set differs from mlx_lm direct model*.safetensors selection (index=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'], selected=['model.safetensors'])\"\n  ]\n}\n"
+  },
+  "cross_12b": {
+   "exit": 0,
+   "seconds": 1259.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 88611.618551 0\nironmule_exact 0 86080.681414 0\nironmule_fp32 0 43332.633495 0\nironmule_exact 1 86067.989933 0\nironmule_fp32 1 43392.703825 0\nstock 1 88201.173381 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9714378635850859,\n   0.9758145683755777\n  ],\n  \"median_ratio\": 0.9736262159803317,\n  \"max_ratio\": 0.9758145683755777,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.48901751489913375,\n   0.4919742239432328\n  ],\n  \"median_ratio\": 0.4904958694211833,\n  \"max_ratio\": 0.4919742239432328,\n  \"identical_requests\": 4,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "quality_12b_float32": {
+   "exit": 0,
+   "seconds": 137.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_fp32': 2.289576768875122}\n1 {'nll_fp32': 5.465695381164551}\n2 {'nll_fp32': 6.651272773742676}\n3 {'nll_fp32': 5.3019208908081055}\n4 {'nll_fp32': 5.894225120544434}\n5 {'nll_fp32': 6.40167236328125}\n6 {'nll_fp32': 7.786131858825684}\n7 {'nll_fp32': 8.368080139160156}\n8 {'nll_fp32': 7.390585899353027}\n9 {'nll_fp32': 5.998104095458984}\n10 {'nll_fp32': 7.652809143066406}\n11 {'nll_fp32': 6.510692119598389}\n12 {'nll_fp32': 6.703068256378174}\n13 {'nll_fp32': 6.449837684631348}\n14 {'nll_fp32': 5.494693279266357}\n15 {'nll_fp32': 4.999475955963135}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-12b-it-4bit\",\n \"revision\": \"86cc6a8dedbc456dd0e4af01a9d09f396f77e558\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"only\": \"float32\",\n \"ppl_fp32\": 497.634119963332,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 136.51434302330017\n}\n"
+  }
+ },
+ "serve_http": {
+  "health": {
+   "service": "ironmule",
+   "ready": true,
+   "mode": "desktop",
+   "execution": "exact@float32",
+   "backend": "mlx_lm_reference",
+   "loaded_model": "mlx-community/gemma-3-4b-it-4bit",
+   "queued_requests": 0,
+   "active_requests": 0,
+   "completed_requests": 0,
+   "failed_requests": 0,
+   "cancelled_requests": 0,
+   "optimization": {
+    "schema": 1,
+    "paused": false,
+    "optimization_paused": false,
+    "configuration_only": false,
+    "engine_started": false,
+    "stage": "idle",
+    "run_id": null,
+    "model_id": null,
+    "model_loaded": false,
+    "activation_allowed": false,
+    "updated_unix_ns": null,
+    "last_verdict": null
+   }
+  },
+  "health_error": "URLError(ConnectionRefusedError(111, 'Connection refused'))",
+  "completion": {
+   "id": "chatcmpl-a28c72d2da7e41408a81e94dea58fbd3",
+   "object": "chat.completion",
+   "created": 1789478408,
+   "model": "mlx-community/gemma-3-4b-it-4bit",
+   "choices": [
+    {
+     "index": 0,
+     "message": {
+      "role": "assistant",
+      "content": "Hello, it\u2019s lovely to meet!"
+     },
+     "finish_reason": "stop"
+    }
+   ],
+   "usage": {
+    "prompt_tokens": 15,
+    "completion_tokens": 10,
+    "total_tokens": 25
+   }
+  },
+  "stream": " {\"id\":\"chatcmpl-231c828b2a5b491eb2b6e90a86b0728f\",\"object\":\"chat.completion.chunk\",\"created\":1789478409,\"model\":\"mlx-community/gemma-3-4b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" lovely\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-231c828b2a5b491eb2b6e90a86b0728f\",\"object\":\"chat.completion.chunk\",\"created\":1789478409,\"model\":\"mlx-community/gemma-3-4b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" to\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-231c828b2a5b491eb2b6e90a86b0728f\",\"object\":\"chat.completion.chunk\",\"created\":1789478409,\"model\":\"mlx-community/gemma-3-4b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\" meet\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-231c828b2a5b491eb2b6e90a86b0728f\",\"object\":\"chat.completion.chunk\",\"created\":1789478409,\"model\":\"mlx-community/gemma-3-4b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"!\"},\"finish_reason\":null}]}\n\ndata: {\"id\":\"chatcmpl-231c828b2a5b491eb2b6e90a86b0728f\",\"object\":\"chat.completion.chunk\",\"created\":1789478409,\"model\":\"mlx-community/gemma-3-4b-it-4bit\",\"choices\":[{\"index\":0,\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":15,\"completion_tokens\":10,\"total_tokens\":25}}\n\ndata: [DONE]\n\n",
+  "server_exit": 0
+ },
+ "finished": true
+}

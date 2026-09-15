@@ -1,0 +1,222 @@
+{
+ "schema": "ironmule.port1-cuda-graphs.v1",
+ "model_id": "mlx-community/gemma-3-1b-it-4bit",
+ "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+ "knobs": {
+  "compiled_fixed_cache": true,
+  "fused_argmax": true,
+  "head_skip_prefill": true,
+  "readback_every": 2,
+  "capacity_slack": 128,
+  "fuse_projections": true
+ },
+ "settings": {
+  "default": {},
+  "graphs_off": {
+   "MLX_USE_CUDA_GRAPHS": "0"
+  },
+  "ops100_mb1000": {
+   "MLX_MAX_OPS_PER_BUFFER": "100",
+   "MLX_MAX_MB_PER_BUFFER": "1000"
+  },
+  "ops400_mb4000": {
+   "MLX_MAX_OPS_PER_BUFFER": "400",
+   "MLX_MAX_MB_PER_BUFFER": "4000"
+  }
+ },
+ "reps": 3,
+ "runs": {
+  "default": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3379.450761,
+     3701.13265,
+     3798.897013
+    ],
+    "median_ms": 3701.13265,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3534.557321,
+     3408.575819,
+     3547.485916
+    ],
+    "median_ms": 3534.557321,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 2,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3239.950044,
+     3335.361541,
+     3388.788414
+    ],
+    "median_ms": 3335.361541,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   }
+  ],
+  "graphs_off": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3282.35971,
+     3360.439382,
+     3316.87147
+    ],
+    "median_ms": 3316.87147,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3268.597091,
+     3435.603525,
+     3585.374829
+    ],
+    "median_ms": 3435.603525,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 2,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3288.362825,
+     3437.61567,
+     3396.707086
+    ],
+    "median_ms": 3396.707086,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   }
+  ],
+  "ops100_mb1000": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     2913.946693,
+     2962.341522,
+     3067.183679
+    ],
+    "median_ms": 2962.341522,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3040.432918,
+     3000.855878,
+     2998.308054
+    ],
+    "median_ms": 3000.855878,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 2,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     3030.377925,
+     3123.704255,
+     3001.617862
+    ],
+    "median_ms": 3030.377925,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   }
+  ],
+  "ops400_mb4000": [
+   {
+    "rep": 0,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     2743.052431,
+     2848.85409,
+     2743.810054
+    ],
+    "median_ms": 2743.810054,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 1,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     2738.954462,
+     2727.453979,
+     2709.895007
+    ],
+    "median_ms": 2727.453979,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   },
+   {
+    "rep": 2,
+    "exit": 0,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n",
+    "walls_ms": [
+     2727.318144,
+     2737.995995,
+     2739.534132
+    ],
+    "median_ms": 2737.995995,
+    "outputs_sha256": "22c2a037e0270372e6a76f0e3045faeb575f436235e6227fef802884a85fae50"
+   }
+  ]
+ },
+ "summary": {
+  "default": {
+   "ratio_vs_default_per_rep": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "median_ratio": 1.0,
+   "token_identity": true
+  },
+  "graphs_off": {
+   "ratio_vs_default_per_rep": [
+    0.8961774093668327,
+    0.9720039068507725,
+    1.0183924723739566
+   ],
+   "median_ratio": 0.9720039068507725,
+   "token_identity": true
+  },
+  "ops100_mb1000": {
+   "ratio_vs_default_per_rep": [
+    0.8003878277640225,
+    0.8490047283066824,
+    0.9085605526564413
+   ],
+   "median_ratio": 0.8490047283066824,
+   "token_identity": true
+  },
+  "ops400_mb4000": {
+   "ratio_vs_default_per_rep": [
+    0.7413433436383319,
+    0.7716536276821071,
+    0.8208993122164204
+   ],
+   "median_ratio": 0.7716536276821071,
+   "token_identity": true
+  }
+ },
+ "seconds": 292.4668548107147,
+ "performance_claim": false
+}

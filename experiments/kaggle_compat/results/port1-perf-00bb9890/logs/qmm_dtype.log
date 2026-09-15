@@ -1,0 +1,12 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{'dtype': 'mlx.core.bfloat16', 'shape': [10240, 2560], 'ms_per_call': 0.5090097812496808}
+{'dtype': 'mlx.core.bfloat16', 'shape': [2560, 10240], 'ms_per_call': 0.45806729687480896}
+{'dtype': 'mlx.core.bfloat16', 'shape': [2560, 2560], 'ms_per_call': 0.11404000000059256}
+{'dtype': 'mlx.core.float16', 'shape': [10240, 2560], 'ms_per_call': 0.15191281250004351}
+{'dtype': 'mlx.core.float16', 'shape': [2560, 10240], 'ms_per_call': 0.1494328593745209}
+{'dtype': 'mlx.core.float16', 'shape': [2560, 2560], 'ms_per_call': 0.04783482812431572}
+{'dtype': 'mlx.core.float32', 'shape': [10240, 2560], 'ms_per_call': 0.26862987500031466}
+{'dtype': 'mlx.core.float32', 'shape': [2560, 10240], 'ms_per_call': 0.2664691093752225}
+{'dtype': 'mlx.core.float32', 'shape': [2560, 2560], 'ms_per_call': 0.07426732812465531}
+{"schema": "ironmule.port1-qmm-dtype.v1", "device": "Device(gpu, 0)", "rows": [{"dtype": "mlx.core.bfloat16", "shape": [10240, 2560], "ms_per_call": 0.5090097812496808}, {"dtype": "mlx.core.bfloat16", "shape": [2560, 10240], "ms_per_call": 0.45806729687480896}, {"dtype": "mlx.core.bfloat16", "shape": [2560, 2560], "ms_per_call": 0.11404000000059256}, {"dtype": "mlx.core.float16", "shape": [10240, 2560], "ms_per_call": 0.15191281250004351}, {"dtype": "mlx.core.float16", "shape": [2560, 10240], "ms_per_call": 0.1494328593745209}, {"dtype": "mlx.core.float16", "shape": [2560, 2560], "ms_per_call": 0.04783482812431572}, {"dtype": "mlx.core.float32", "shape": [10240, 2560], "ms_per_call": 0.26862987500031466}, {"dtype": "mlx.core.float32", "shape": [2560, 10240], "ms_per_call": 0.2664691093752225}, {"dtype": "mlx.core.float32", "shape": [2560, 2560], "ms_per_call": 0.07426732812465531}]}

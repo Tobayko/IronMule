@@ -1,0 +1,107 @@
+{
+ "schema": "ironmule.port1-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "name, driver_version, memory.total [MiB]\nTesla T4, 580.159.04, 15360 MiB\nTesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.9,
+   "tail": " ironmule/hw.py                                    |  43 ++++++++-\n ironmule_cli.py                                   |  35 +++++---\n ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-\n ironmule_product/worker.py                        |  28 ++++--\n pyproject.toml                                    |   5 +-\n tests/engine/test_cli.py                          |   8 +-\n tests/engine/test_ironmule_runtime_integration.py |   9 +-\n tests/engine/test_product_worker.py               |  18 ++++\n tests/engine/test_q3d_stability_gate.py           |   2 +\n tests/engine/test_q3f_child_guard.py              |   2 +\n 10 files changed, 227 insertions(+), 27 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 7.0,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.0/20.0 MB 52.4 MB/s eta 0:00:00\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 37.1,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 48 packages in 2.71s\n   Building ironmule @ file:///tmp/IronMule\nDownloading pygments (1.2MiB)\nDownloading scipy (33.7MiB)\nDownloading hf-xet (4.3MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading numpy (15.9MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 48 packages in 34.03s\nInstalled 48 packages in 121ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==3.32.6\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.1\n + psutil==7.2.2\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "annotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==3.32.6\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.1\npsutil==7.2.2\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\nUsing Python 3.12.13 environment at: im\n"
+  },
+  "cli_doctor": {
+   "exit": 0,
+   "seconds": 6.6,
+   "tail": "{\n  \"checks\": [\n    {\n      \"detail\": \"Linux x86_64 (x86_64)\",\n      \"name\": \"Linux\",\n      \"ok\": true\n    },\n    {\n      \"detail\": \"3.12.13 (requires >= 3.10)\",\n      \"name\": \"Python\",\n      \"ok\": true\n    },\n    {\n      \"detail\": \"0.32.2; importable (isolated probe)\",\n      \"name\": \"MLX\",\n      \"ok\": true\n    },\n    {\n      \"detail\": \"0.31.3; importable (isolated probe)\",\n      \"name\": \"MLX-LM\",\n      \"ok\": true\n    },\n    {\n      \"detail\": \"2.5.3; importable (isolated probe)\",\n      \"name\": \"NumPy\",\n      \"ok\": true\n    },\n    {\n      \"detail\": \"CUDA GPU operation verified\",\n      \"name\": \"MLX CUDA device\",\n      \"ok\": true\n    }\n  ],\n  \"performance_claim\": false,\n  \"ready\": true,\n  \"schema\": \"ironmule.doctor.v1\"\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "download_1b": {
+   "exit": 0,
+   "seconds": 12.2,
+   "tail": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"
+  },
+  "download_4b": {
+   "exit": 0,
+   "seconds": 25.0,
+   "tail": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n"
+  },
+  "cli_models": {
+   "exit": 2,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nusage: ironmule models [-h] [--model MODEL]\nironmule models: error: unrecognized arguments: --family gemma --json\n"
+  },
+  "cli_status": {
+   "exit": 0,
+   "seconds": 6.0,
+   "tail": "{\n  \"hardware_fingerprint\": \"7b2dba9e90970d08\",\n  \"model\": \"mlx-community/gemma-3-1b-it-4bit\",\n  \"profile_status\": \"missing\",\n  \"profile_store\": \"/tmp/ironmule-home/profiles.json\"\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "pytest": {
+   "exit": 1,
+   "seconds": 477.3,
+   "tail": "quest()\n  File \"/usr/lib/python3.12/http/server.py\", line 408, in handle_one_request\n    self.raw_requestline = self.rfile.readline(65537)\n                           ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 720, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n----------------------------------------  File \"/usr/lib/python3.12/socket.py\", line 720, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\nConnectionResetError: [Errno 104] Connection reset by peer\n----------------------------------------\n  File \"/usr/lib/python3.12/socket.py\", line 720, in readinto\n    return self._sock.recv_into(b)\n           ^^^^^^^^^^^^^^^^^^^^^^^\n----------------------------------------\n\nConnectionResetError: [Errno 104] Connection reset by peer\nConnectionResetError: [Errno 104] Connection reset by peer\n----------------------------------------\n----------------------------------------\n=============================== warnings summary ===============================\ntests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running\n  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=283) is multi-threaded, use of fork() may lead to deadlocks in the child.\n    self.pid = os.fork()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nFAILED tests/engine/test_product_worker.py::test_cancellation_is_polled_while_waiting_and_finishes_once\nFAILED tests/engine/test_product_worker.py::test_receiver_shutdown_returns_without_daemon_finalization_abort\nFAILED tests/engine/test_product_worker.py::test_receiver_full_queue_shutdown_is_bounded\nFAILED tests/engine/test_product_http.py::test_handler_saturation_returns_429_then_recovers\n4 failed, 1213 passed, 32 skipped, 1 warning, 11 subtests passed in 476.49s (0:07:56)\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "cli_tune_1b": {
+   "exit": 1,
+   "seconds": 160.6,
+   "tail": "baseline 894.82 ms  (prefill 377.95, decode 514.98) 32 tokens, capacity 384\n  compiled_fixed_cache=  True  ratio 0.8953  kept\n  fused_argmax=  True  ratio 0.8987  rejected: no gain\n  head_skip_prefill=  True  ratio 0.8180  kept\n  prefill_into_fixed=  True  ratio 0.8086  kept\n  readback_every=     2  ratio 0.7715  kept\n  readback_every=     4  ratio 0.7695  rejected: no gain\n  readback_every=     8  ratio 0.7433  kept\n  speculate_k=     4  ratio 1.4180  rejected: no gain\n  capacity_slack=   128  ratio 0.7387  kept\n  wired_fraction=   0.6  ratio 0.7394  rejected: no gain\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/im/bin/ironmule\", line 10, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 469, in main\n    return _dispatch(argv)\n           ^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 513, in _dispatch\n    return _run_tune(rest)\n           ^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule_cli.py\", line 218, in _run_tune\n    return int(tune_module.main(argv))\n               ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 984, in main\n    tune(args.model, max_tokens=args.max_tokens, repeats=args.repeats, force=args.force,\n  File \"/tmp/IronMule/ironmule/tune.py\", line 751, in tune\n    _close_engine(engine)\n  File \"/tmp/IronMule/ironmule/tune.py\", line 357, in _close_engine\n    close()\n  File \"/tmp/IronMule/ironmule/runtime.py\", line 409, in close\n    raise error\nRuntimeError: wired limit changed externally while this engine was live\n"
+  },
+  "cli_tune_show_1b": {
+   "exit": 0,
+   "seconds": 3.3,
+   "tail": "no profile for this hardware yet\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "cli_revalidate_1b": {
+   "exit": 0,
+   "seconds": 3.4,
+   "tail": "{\n  \"verdict\": \"no_profile\"\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "benchmark_1b": {
+   "exit": 0,
+   "seconds": 126.2,
+   "tail": "model mlx-community/gemma-3-1b-it-4bit\nplan strict   requests 6   warmup 2   repeats 6\n\nmode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread\ninteractive           4857.6           59.3           59.3         4669.1[4804.4; 5099.9]\nthroughput            4534.7           63.5           63.5         4342.9[4416.5; 4644.5]\n\nthroughput gain +7.10%   outer-wall ratio 0.9290 95% CI [0.9100; 0.9431]\nidentical answers in both modes: True\nwrote /kaggle/working/benchmark-1b.json\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "benchmark_4b": {
+   "exit": 0,
+   "seconds": 467.7,
+   "tail": "model mlx-community/gemma-3-4b-it-4bit\nplan strict   requests 6   warmup 2   repeats 6\n\nmode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread\ninteractive          28047.5           10.3           10.3        23916.2[27798.8; 28268.4]\nthroughput           27054.1           10.6           10.6        22927.9[26958.0; 27083.9]\n\nthroughput gain +3.52%   outer-wall ratio 0.9648 95% CI [0.9587; 0.9694]\nidentical answers in both modes: True\nwrote /kaggle/working/benchmark-4b.json\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "serve_setup": {
+   "exit": 0,
+   "seconds": 0.2,
+   "tail": "{\n  \"models_loaded\": false,\n  \"next\": \"ironmule models add <cached-model-id>\",\n  \"settings\": {\n    \"exact\": true,\n    \"max_pending\": 8,\n    \"mode\": \"desktop\",\n    \"optimization_paused\": false,\n    \"request_timeout_s\": 120,\n    \"schema\": 1\n  },\n  \"state_dir\": \"/tmp/ironmule-product\"\n}\n{\n  \"hardware_qualified\": false,\n  \"models_loaded\": false,\n  \"registered\": {\n    \"model_id\": \"mlx-community/gemma-3-1b-it-4bit\",\n    \"revision\": \"2d44e83dc9e80843d22fb941d3d699a0b1351aa6\",\n    \"snapshot_path\": \"/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\",\n    \"weight_bytes\": 732577304\n  },\n  \"warnings\": []\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n"
+  },
+  "optimize_readiness": {
+   "exit": 0,
+   "seconds": 10.6,
+   "tail": "{\n  \"activation_allowed\": false,\n  \"load_monitor\": {\n    \"clean_shutdown_required\": true,\n    \"mlx_peak_limit_fraction\": 0.6,\n    \"poll_interval_seconds\": 0.25,\n    \"rss_limit_fraction\": 0.6,\n    \"schema\": \"ironmule.load_monitor.v1\",\n    \"swap_delta_limit_bytes\": 268435456\n  },\n  \"model_id\": \"mlx-community/gemma-3-1b-it-4bit\",\n  \"plan_id\": \"1f462e2488edf295248662806214a4f9035c876857543459c275558e0eb3eb62\",\n  \"resource_events\": [],\n  \"resource_valid\": false,\n  \"revision\": \"2d44e83dc9e80843d22fb941d3d699a0b1351aa6\",\n  \"run_id\": \"93ac09fe020440f78b5bfee180c9b253\",\n  \"samples\": [],\n  \"schema\": \"ironmule.calibration.v1\",\n  \"status\": \"ready\",\n  \"worker_exit_codes\": [],\n  \"worker_load_memory\": [],\n  \"worker_timings\": [],\n  \"workers\": []\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"event\": \"run_started\", \"run_id\": \"93ac09fe020440f78b5bfee180c9b253\"}\n{\"event\": \"run_finished\", \"run_id\": \"93ac09fe020440f78b5bfee180c9b253\"}\n"
+  },
+  "optimize_run": {
+   "exit": "timeout",
+   "seconds": 900.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"event\": \"run_started\", \"run_id\": \"250188409cfd44719831b3f451044677\"}\n{\"event\": \"worker_started\", \"run_id\": \"250188409cfd44719831b3f451044677\"}\n{\"event\": \"worker_started\", \"run_id\": \"250188409cfd44719831b3f451044677\"}\n{\"event\": \"worker_started\", \"run_id\": \"250188409cfd44719831b3f451044677\"}\n"
+  }
+ },
+ "serve_http": {
+  "health": null,
+  "health_error": "URLError(ConnectionRefusedError(111, 'Connection refused'))",
+  "server_exit": 1
+ },
+ "finished": true
+}

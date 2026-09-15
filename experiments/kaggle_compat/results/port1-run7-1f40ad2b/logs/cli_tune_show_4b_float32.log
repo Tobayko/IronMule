@@ -1,0 +1,233 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "baseline_decode_ns": 1070727081,
+  "baseline_ns": 2095078210,
+  "baseline_prefill_ns": 1024725161,
+  "compute_dtype": "float32",
+  "conditions": {
+    "chip": "Intel(R) Xeon(R) CPU @ 2.00GHz + Tesla T4 15360 MiB",
+    "conditions_schema": "ironmule.tuned_profile.conditions.v2",
+    "execution_plan": "single_shot",
+    "fingerprint": "4a417284545c8326",
+    "gpu_cores": null,
+    "max_tokens": 32,
+    "memory_bytes": 33659379712,
+    "mlx": "0.32.2",
+    "mlx_lm": "0.31.3",
+    "model_architecture": "gemma3",
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_identity_sha256": "b6c9856a3dd9e18ae68857cfa10edf9d330f933597d286941fb72711c684f5d5",
+    "model_manifest_sha256": "8e1bcf0932fa33c60d6f6dc89df464975808f2579601af4befa9879950808442",
+    "model_revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "os": "",
+    "power_source": "unknown",
+    "prompt_tokens": 322,
+    "quantisation": {
+      "bits": 4,
+      "group_size": 64
+    },
+    "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+    "runtime_version": "0.1.0",
+    "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+  },
+  "confirmation": null,
+  "confirmation_candidate_knobs": null,
+  "confirmation_evidence": null,
+  "fingerprint": "4a417284545c8326",
+  "gain": 0.0,
+  "hardware": {
+    "fingerprint": "4a417284545c8326",
+    "measured": {
+      "dispatch_us": 7.813267578038463,
+      "gemv_gbps_large": 32.04788513381902,
+      "gemv_gbps_small": 14.200316713459202,
+      "gemv_size_sensitivity": 2.2568429831880943,
+      "probe_version": 2
+    },
+    "static": {
+      "chip": "Intel(R) Xeon(R) CPU @ 2.00GHz + Tesla T4 15360 MiB",
+      "cpu_efficiency": 0,
+      "cpu_logical": 4,
+      "cpu_performance": 0,
+      "gpu_available": true,
+      "gpu_cores": null,
+      "machine": "x86_64",
+      "memory_bytes": 33659379712,
+      "mlx": "0.32.2",
+      "os_release": "6.12.90+",
+      "python": "3.12.13",
+      "system": "Linux"
+    }
+  },
+  "knobs": {
+    "capacity_slack": 0,
+    "compiled_fixed_cache": false,
+    "fuse_projections": false,
+    "fused_argmax": false,
+    "head_skip_prefill": false,
+    "k3840_matvec": false,
+    "prefill_into_fixed": false,
+    "readback_every": 1,
+    "speculate_k": 0,
+    "speculate_ngram": 3,
+    "wired_fraction": 0.0
+  },
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "model_identity": {
+    "architecture": "gemma3",
+    "identity_sha256": "b6c9856a3dd9e18ae68857cfa10edf9d330f933597d286941fb72711c684f5d5",
+    "manifest_bytes": 3439897526,
+    "manifest_file_count": 14,
+    "model_id": "mlx-community/gemma-3-4b-it-4bit",
+    "model_manifest_sha256": "8e1bcf0932fa33c60d6f6dc89df464975808f2579601af4befa9879950808442",
+    "quantisation": {
+      "bits": 4,
+      "group_size": 64
+    },
+    "quantisation_sha256": "4952fcd6b27eda69be81c1a695ca32544e62b6b6edc197d191ea132c0afc314b",
+    "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "schema": "ironmule.model_identity.v1",
+    "tokenizer_file_count": 6,
+    "tokenizer_sha256": "afbd505ba5b2603a0a7e0c09e6d51672c448953e8fc1f7141e98fd0c264d7129"
+  },
+  "token_count": 23,
+  "tokens": [
+    2717,
+    3723,
+    107,
+    236782,
+    107,
+    138,
+    236775,
+    65127,
+    236779,
+    547,
+    1083,
+    623,
+    152884,
+    236779,
+    8114,
+    236779,
+    196542,
+    236775,
+    107,
+    236783,
+    107,
+    2717,
+    106
+  ],
+  "trials": [
+    {
+      "decode_ns": 1056793095,
+      "disposition": "rejected",
+      "knob": "compiled_fixed_cache",
+      "prefill_ns": 1050252475,
+      "ratio": 1.0057123643131203,
+      "total_ns": 2107046060,
+      "value": true,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1120690070,
+      "disposition": "rejected",
+      "knob": "fused_argmax",
+      "prefill_ns": 1086902441,
+      "ratio": 1.0516643166271105,
+      "total_ns": 2203318994,
+      "value": true,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1153586779,
+      "disposition": "rejected",
+      "knob": "head_skip_prefill",
+      "prefill_ns": 941316137,
+      "ratio": 1.00036134832408,
+      "total_ns": 2095835263,
+      "value": true,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1183436240,
+      "disposition": "rejected",
+      "knob": "prefill_into_fixed",
+      "prefill_ns": 1195879157,
+      "ratio": 1.1341856665102732,
+      "total_ns": 2376207676,
+      "value": true,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1206648562,
+      "disposition": "rejected",
+      "knob": "readback_every",
+      "prefill_ns": 1179310236,
+      "ratio": 1.1388399662655075,
+      "total_ns": 2385958798,
+      "value": 2,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1341360549,
+      "disposition": "rejected",
+      "knob": "readback_every",
+      "prefill_ns": 1198259735,
+      "ratio": 1.211962298056644,
+      "total_ns": 2539155802,
+      "value": 4,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1316291594,
+      "disposition": "rejected",
+      "knob": "readback_every",
+      "prefill_ns": 1164335382,
+      "ratio": 1.1855414791412489,
+      "total_ns": 2483802120,
+      "value": 8,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 4640616112,
+      "disposition": "rejected",
+      "knob": "speculate_k",
+      "prefill_ns": 1154166202,
+      "ratio": 2.7650199364156434,
+      "total_ns": 5792933019,
+      "value": 4,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "decode_ns": 1217976857,
+      "disposition": "rejected",
+      "knob": "capacity_slack",
+      "prefill_ns": 1175096381,
+      "ratio": 1.1433494895639242,
+      "total_ns": 2395406602,
+      "value": 128,
+      "verdict": "rejected: no gain"
+    },
+    {
+      "disposition": "unsupported",
+      "knob": "wired_fraction",
+      "reason": "ValueError: wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit",
+      "value": 0.6,
+      "verdict": "unsupported"
+    },
+    {
+      "decode_ns": 1189342403,
+      "disposition": "rejected",
+      "knob": "fuse_projections",
+      "prefill_ns": 1156854859,
+      "ratio": 1.1198614213070357,
+      "total_ns": 2346197262,
+      "value": true,
+      "verdict": "rejected: no gain"
+    }
+  ],
+  "tuned_at": 1789478076.1749852,
+  "tuned_decode_ns": 1070727081,
+  "tuned_ns": 2095078210,
+  "tuned_prefill_ns": 1024725161
+}

@@ -1,0 +1,39 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+baseline 11977.61 ms  (prefill 10157.10, decode 1820.51) 23 tokens, capacity 384
+  compiled_fixed_cache=  True  ratio 1.0133  rejected: no gain
+  fused_argmax=  True  ratio 0.9999  rejected: no gain
+  head_skip_prefill=  True  ratio 0.8497  kept
+  prefill_into_fixed=  True  ratio 0.8564  rejected: no gain
+  readback_every=     2  ratio 0.8511  rejected: no gain
+  readback_every=     4  ratio 0.8664  rejected: no gain
+  readback_every=     8  ratio 0.8682  rejected: no gain
+  speculate_k=     4  ratio 1.3408  rejected: no gain
+  capacity_slack=   128  ratio 0.8542  rejected: no gain
+  wired_fraction=   0.6  unsupported (wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit)
+  fuse_projections=  True  ratio 0.8628  rejected: no gain
+confirming the screening winner with a paired A/B ...
+Traceback (most recent call last):
+  File "/tmp/im/bin/ironmule", line 10, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "/tmp/IronMule/ironmule_cli.py", line 469, in main
+    return _dispatch(argv)
+           ^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule_cli.py", line 513, in _dispatch
+    return _run_tune(rest)
+           ^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule_cli.py", line 218, in _run_tune
+    return int(tune_module.main(argv))
+               ^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/tune.py", line 986, in main
+    tune(args.model, max_tokens=args.max_tokens, repeats=args.repeats, force=args.force,
+  File "/tmp/IronMule/ironmule/tune.py", line 772, in tune
+    raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/tune.py", line 396, in confirm
+    return ab.run({"baseline": baseline, "candidate": candidate},
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/ab.py", line 581, in run
+    raise ABRunError(
+ironmule.ab.ABRunError: child 0 exited with status 1

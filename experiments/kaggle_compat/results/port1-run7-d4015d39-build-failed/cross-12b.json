@@ -1,0 +1,101 @@
+{
+ "schema": "ironmule.port1-cross.v1",
+ "model_id": "mlx-community/gemma-3-12b-it-4bit",
+ "revision": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+ "configs": [
+  {
+   "name": "stock",
+   "env": {
+    "MLX_MAX_OPS_PER_BUFFER": "20",
+    "MLX_MAX_MB_PER_BUFFER": "100"
+   },
+   "knobs": {},
+   "mode": "interactive"
+  },
+  {
+   "name": "ironmule_exact",
+   "env": {},
+   "knobs": {
+    "head_skip_prefill": true
+   },
+   "mode": "throughput"
+  },
+  {
+   "name": "ironmule_fp32",
+   "env": {},
+   "knobs": {
+    "head_skip_prefill": true
+   },
+   "mode": "throughput",
+   "dtype": "float32"
+  }
+ ],
+ "reps": 2,
+ "measure": 1,
+ "runs": {
+  "stock": [
+   {
+    "rep": 0,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   },
+   {
+    "rep": 1,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   }
+  ],
+  "ironmule_exact": [
+   {
+    "rep": 0,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   },
+   {
+    "rep": 1,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   }
+  ],
+  "ironmule_fp32": [
+   {
+    "rep": 0,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   },
+   {
+    "rep": 1,
+    "exit": 1,
+    "stderr_tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/cross.py\", line 92, in <module>\n    child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n  File \"/tmp/cross.py\", line 24, in child\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+   }
+  ]
+ },
+ "summary": {
+  "stock": {
+   "ratio_vs_reference_per_rep": [],
+   "median_ratio": null,
+   "max_ratio": null,
+   "identical_requests": null,
+   "deterministic_across_processes": true,
+   "failed_processes": 2
+  },
+  "ironmule_exact": {
+   "ratio_vs_reference_per_rep": [],
+   "median_ratio": null,
+   "max_ratio": null,
+   "identical_requests": null,
+   "deterministic_across_processes": true,
+   "failed_processes": 2
+  },
+  "ironmule_fp32": {
+   "ratio_vs_reference_per_rep": [],
+   "median_ratio": null,
+   "max_ratio": null,
+   "identical_requests": null,
+   "deterministic_across_processes": true,
+   "failed_processes": 2
+  }
+ },
+ "seconds": 0.4107499122619629,
+ "performance_claim": false
+}

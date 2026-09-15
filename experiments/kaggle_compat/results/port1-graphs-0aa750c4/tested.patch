@@ -1,0 +1,680 @@
+diff --git a/ironmule/hw.py b/ironmule/hw.py
+index 5e0e56e..ea7cbed 100644
+--- a/ironmule/hw.py
++++ b/ironmule/hw.py
+@@ -159,6 +159,12 @@ def installed_memory_bytes() -> int | None:
+     enter a profile. Only the one caller in that path needs the number; `static_facts()`
+     runs in the parent and is left exactly as it was.
+     """
++    if platform.system() != "Darwin":
++        # Linux (MLX CUDA): sysconf, still no subprocess for the Q3f guard.
++        try:
++            return int(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")) or None
++        except (OSError, ValueError, AttributeError):
++            return None
+     try:
+         value = ctypes.c_uint64()
+         size = ctypes.c_size_t(ctypes.sizeof(value))
+@@ -204,13 +210,77 @@ def static_facts() -> dict[str, Any]:
+     try:
+         import mlx.core as mx  # noqa: PLC0415 - optional at fingerprint time
+         facts["mlx"] = getattr(mx, "__version__", None) or _mlx_version()
+-        facts["gpu_available"] = mx.metal.is_available()
++        cuda = getattr(mx, "cuda", None)
++        facts["gpu_available"] = bool(mx.metal.is_available()
++                                      or (cuda is not None and cuda.is_available()))
+     except ImportError:
+         facts["mlx"] = None
+         facts["gpu_available"] = False
++    if facts["system"] != "Darwin":
++        facts.update(_linux_facts(facts["gpu_available"]))
+     return facts
+ 
+ 
++# PORT1 (Kaggle T4): for devices its table does not list, MLX's CUDA backend commits a CUDA
++# graph every 20 ops or 100 MB. At 400/4000 IronMule's best 1B arm ran at 0.77x, tokens
++# identical (`experiments/kaggle_compat/results/port1-perf-00bb9890`).
++CUDA_GRAPH_DEFAULTS = {"MLX_MAX_OPS_PER_BUFFER": "400", "MLX_MAX_MB_PER_BUFFER": "4000"}
++
++
++def apply_cuda_graph_defaults() -> dict[str, str]:
++    """Size CUDA graph commits for pre-Ampere GPUs unless the caller already chose.
++
++    Linux only: the same variables size Metal command buffers, and the Apple path stays
++    unchanged. Only compute capability below 8 (Volta/Turing) is touched, which is where
++    MLX uses its generic default and where the evidence was measured; A100/H100-class
++    devices keep MLX's own per-device values. MLX reads the variables once, at the first
++    GPU operation, so callers run this before loading a model. Returns what it set.
++    """
++    if platform.system() != "Linux" or all(name in os.environ for name in CUDA_GRAPH_DEFAULTS):
++        return {}
++    try:
++        import mlx.core as mx  # noqa: PLC0415
++
++        if not mx.cuda.is_available() or int(mx.device_info().get("compute_capability_major", 99)) >= 8:
++            return {}
++    except Exception:  # noqa: BLE001 - no CUDA device, nothing to size
++        return {}
++    applied = {name: value for name, value in CUDA_GRAPH_DEFAULTS.items() if name not in os.environ}
++    os.environ.update(applied)
++    return applied
++
++
++def _linux_facts(gpu_available: bool) -> dict[str, Any]:
++    """The fingerprint fields sysctl fills on a Mac, for Linux hosts running MLX CUDA.
++
++    The Darwin path never calls this, so Mac fingerprints and their profiles are unchanged.
++    Without it every Linux host shares one fingerprint and a profile tuned on one GPU
++    would be applied on another. The GPU name and memory go into `chip` because the
++    fingerprint's key set is fixed.
++    """
++    cpu = None
++    try:
++        for line in Path("/proc/cpuinfo").read_text().splitlines():
++            if line.startswith("model name"):
++                cpu = line.split(":", 1)[1].strip()
++                break
++    except OSError:
++        pass
++    gpu = None
++    if gpu_available:
++        try:
++            import mlx.core as mx  # noqa: PLC0415
++
++            info = mx.device_info()
++            if info.get("device_name"):
++                gpu = f"{info['device_name']} {int(info.get('total_memory', 0)) // 2**20} MiB"
++        except Exception:  # noqa: BLE001 - a missing device name leaves the field empty
++            gpu = None
++    return {"chip": " + ".join(part for part in (cpu, gpu) if part) or None,
++            "cpu_logical": os.cpu_count() or 0,
++            "memory_bytes": installed_memory_bytes() or 0}
++
++
+ def _mlx_version() -> str | None:
+     try:
+         from importlib.metadata import version  # noqa: PLC0415
+@@ -294,6 +364,7 @@ def measure(repeats: int = 5) -> dict[str, float]:
+     """
+     import mlx.core as mx
+ 
++    apply_cuda_graph_defaults()  # the first GPU operation of `tune` happens here
+     results: dict[str, float] = {"probe_version": PROBE_VERSION}
+ 
+     # Kernel dispatch cost: many dependent, trivially sized kernels.
+diff --git a/ironmule/runtime.py b/ironmule/runtime.py
+index aa1e259..f37531f 100644
+--- a/ironmule/runtime.py
++++ b/ironmule/runtime.py
+@@ -321,6 +321,11 @@ class Engine:
+         if knobs.fuse_projections:
+             fast.fuse_projections(model)
+         if knobs.wired_fraction > 0:
++            if not mx.metal.is_available():
++                # MLX's CUDA `set_wired_limit` is a no-op returning 0, which `close()` would
++                # read as a foreign change (PORT1, Kaggle T4). "unsupported" lets tune skip it.
++                raise ValueError("wired_fraction is unsupported without Metal: "
++                                 "MLX's CUDA backend has no wired limit")
+             # Read natively, not through `static_facts()`: that shells out, and the Q3f
+             # guard blocks a subprocess in a confirmation child (`B60`, `B62`). The meaning
+             # of the knob is unchanged — a fraction of installed physical memory.
+diff --git a/ironmule/tune.py b/ironmule/tune.py
+index 71d4be9..2795bc4 100644
+--- a/ironmule/tune.py
++++ b/ironmule/tune.py
+@@ -317,6 +317,8 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
+     """
+     from mlx_lm import load
+ 
++    from .hw import apply_cuda_graph_defaults
++    apply_cuda_graph_defaults()
+     if resolved_source is not None and offline is not True:
+         raise ValueError("resolved_source is valid only for offline loading")
+     if revision is not None and offline is not True:
+diff --git a/ironmule_cli.py b/ironmule_cli.py
+index 1ee4e14..7e928bd 100644
+--- a/ironmule_cli.py
++++ b/ironmule_cli.py
+@@ -52,16 +52,16 @@ def _load_optional(module_name: str, distribution: str) -> tuple[bool, str, str]
+     return True, version, "importable (isolated probe)"
+ 
+ 
+-def _probe_metal() -> tuple[bool, str]:
+-    """Verify an actual GPU operation, not merely Metal support in the build.
++def _probe_gpu(backend: str) -> tuple[bool, str]:
++    """Verify an actual GPU operation, not merely Metal or CUDA support in the build.
+ 
+-    ``metal.is_available()`` can be true in a sandbox that cannot open a
+-    device. Keep both device creation and the tiny correctness check in the
+-    child so a driver/import failure cannot terminate the diagnostic CLI.
++    ``is_available()`` can be true in a sandbox that cannot open a device. Keep
++    both device creation and the tiny correctness check in the child so a
++    driver/import failure cannot terminate the diagnostic CLI.
+     """
+     probe = (
+         "import mlx.core as mx\n"
+-        "if not mx.metal.is_available(): raise RuntimeError('Metal backend unavailable')\n"
++        f"if not mx.{backend.lower()}.is_available(): raise RuntimeError('{backend} backend unavailable')\n"
+         "mx.device_info()\n"
+         "mx.set_default_device(mx.gpu)\n"
+         "a=mx.array([1,2,3], dtype=mx.int32)\n"
+@@ -81,7 +81,7 @@ def _probe_metal() -> tuple[bool, str]:
+                   if result.stderr.strip() else f"probe exited {result.returncode}")
+         return False, f"isolated probe failed: {detail}"
+     available = result.stdout.strip() == "available"
+-    return available, "Metal GPU operation verified" if available else "Metal unavailable"
++    return available, f"{backend} GPU operation verified" if available else f"{backend} unavailable"
+ 
+ 
+ def _cpu_name() -> str:
+@@ -105,10 +105,19 @@ def _cpu_name() -> str:
+ 
+ def _doctor_checks() -> list[tuple[str, bool, str]]:
+     machine = platform.machine().lower()
+-    checks: list[tuple[str, bool, str]] = [
+-        ("Apple Silicon architecture", machine in {"arm64", "aarch64"},
+-         f"{machine} ({_cpu_name()})"),
+-        ("macOS", platform.system() == "Darwin", platform.system()),
++    system = platform.system()
++    if system == "Darwin":
++        backend = "Metal"
++        checks: list[tuple[str, bool, str]] = [
++            ("Apple Silicon architecture", machine in {"arm64", "aarch64"},
++             f"{machine} ({_cpu_name()})"),
++            ("macOS", True, system),
++        ]
++    else:
++        # MLX's CUDA backend ships Linux wheels: `pip install "mlx[cuda12]"`.
++        backend = "CUDA"
++        checks = [("Linux", system == "Linux", f"{system} {machine} ({_cpu_name()})")]
++    checks += [
+         ("Python", sys.version_info[:2] >= MIN_PYTHON,
+          f"{platform.python_version()} (requires >= {MIN_PYTHON[0]}.{MIN_PYTHON[1]})"),
+     ]
+@@ -119,8 +128,8 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
+     numpy_ok, numpy_version, numpy_detail = _load_optional("numpy", "numpy")
+     checks.append(("NumPy", numpy_ok, f"{numpy_version}; {numpy_detail}"))
+ 
+-    metal_ok, metal_detail = _probe_metal() if mlx_ok else (False, "MLX unavailable")
+-    checks.append(("MLX Metal device", metal_ok, metal_detail))
++    gpu_ok, gpu_detail = _probe_gpu(backend) if mlx_ok else (False, "MLX unavailable")
++    checks.append((f"MLX {backend} device", gpu_ok, gpu_detail))
+     return checks
+ 
+ 
+diff --git a/ironmule_product/readiness.py b/ironmule_product/readiness.py
+index dd473e4..9167893 100644
+--- a/ironmule_product/readiness.py
++++ b/ironmule_product/readiness.py
+@@ -38,9 +38,51 @@ def _finite_number(value: Any) -> bool:
+         return False
+ 
+ 
++def _linux() -> bool:
++    return platform.system() == "Linux"
++
++
++def _linux_meminfo() -> tuple[dict[str, int] | None, str | None]:
++    """`/proc/meminfo` in bytes: the Linux source for memory, free memory and swap."""
++    try:
++        with open("/proc/meminfo", encoding="ascii") as stream:
++            rows = [line.split() for line in stream]
++    except (OSError, UnicodeDecodeError):
++        return None, "meminfo_probe_failed"
++    values = {}
++    for row in rows:
++        if len(row) >= 2 and row[1].isdigit():
++            values[row[0].rstrip(":")] = int(row[1]) * (1024 if len(row) > 2 and row[2] == "kB" else 1)
++    if not {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"} <= set(values) or values["MemTotal"] <= 0:
++        return None, "meminfo_invalid"
++    return values, None
++
++
++def _linux_thermal_state() -> tuple[int | None, str | None]:
++    """Map NVIDIA thermal slowdown to NSProcessInfo's scale: active -> serious (2), else nominal."""
++    for field in ("clocks_event_reasons", "clocks_throttle_reasons"):  # newer, older drivers
++        output, error = _command(["nvidia-smi", f"--query-gpu={field}.hw_thermal_slowdown,"
++                                  f"{field}.sw_thermal_slowdown", "--format=csv,noheader"],
++                                 "thermal_probe_failed")
++        if not error:
++            break
++    if error or output is None or not output.strip():
++        return None, error or "thermal_probe_failed"
++    return (2 if "active" in output.lower().replace("not active", "") else 0), None
++
++
+ def _foundation_state() -> tuple[bool | None, int | None, str | None]:
+     """Read public NSProcessInfo flags through the Objective-C runtime."""
+ 
++    if _linux():
++        # Linux has no process-visible low-power mode; ACPI's platform profile is closest.
++        try:
++            with open("/sys/firmware/acpi/platform_profile", encoding="ascii") as stream:
++                low_power = stream.read().strip() in {"low-power", "quiet", "cool"}
++        except OSError:
++            low_power = False
++        thermal, error = _linux_thermal_state()
++        return low_power, thermal, error
+     if platform.system() != "Darwin":
+         return None, None, "foundation_unsupported_platform"
+     try:
+@@ -121,6 +163,9 @@ def hardware_identity() -> dict[str, Any]:
+         return {"chip_name": _HARDWARE_CACHE["chip_name"], "gpu_devices": [dict(item) for item in _HARDWARE_CACHE["gpu_devices"]], "hardware_errors": list(_HARDWARE_CACHE["hardware_errors"])}
+     errors: list[str] = []
+     supported = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
++    if _linux():
++        _HARDWARE_CACHE = _linux_hardware_identity()
++        return {"chip_name": _HARDWARE_CACHE["chip_name"], "gpu_devices": [dict(item) for item in _HARDWARE_CACHE["gpu_devices"]], "hardware_errors": list(_HARDWARE_CACHE["hardware_errors"])}
+     if not supported:
+         _HARDWARE_CACHE = {"chip_name": None, "gpu_devices": [], "hardware_errors": ["hardware_unsupported_platform"]}
+         return {"chip_name": None, "gpu_devices": [], "hardware_errors": ["hardware_unsupported_platform"]}
+@@ -170,7 +215,52 @@ def hardware_identity() -> dict[str, Any]:
+     return {"chip_name": chip_name, "gpu_devices": [dict(item) for item in devices], "hardware_errors": sorted(set(errors))}
+ 
+ 
++def _linux_hardware_identity() -> dict[str, Any]:
++    errors: list[str] = []
++    chip_name = None
++    try:
++        with open("/proc/cpuinfo", encoding="utf-8") as stream:
++            for line in stream:
++                if line.startswith("model name"):
++                    chip_name = _safe_technical_string(line.split(":", 1)[1].strip())
++                    break
++    except (OSError, UnicodeDecodeError):
++        pass
++    if chip_name is None:
++        errors.append("chip_name_invalid")
++    output, error = _hardware_command(["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"], "gpu_probe_failed")
++    devices = [] if error or output is None else [
++        {"model": _safe_technical_string(line.strip()), "cores": None, "metal_support": None}
++        for line in output.splitlines() if line.strip()]
++    if not devices:
++        errors.append(error or "gpu_devices_unavailable")
++    if any(device["model"] is None for device in devices):
++        errors.append("gpu_model_unavailable")
++    return {"chip_name": chip_name, "gpu_devices": devices, "hardware_errors": sorted(set(errors))}
++
++
+ def _power_source() -> tuple[str, str | None]:
++    if _linux():
++        # A host with no battery (servers, cloud VMs) runs on mains by construction.
++        try:
++            supplies = [os.path.join("/sys/class/power_supply", name) for name in os.listdir("/sys/class/power_supply")]
++        except OSError:
++            supplies = []
++        on_battery = False
++        for supply in supplies:
++            try:
++                with open(os.path.join(supply, "type"), encoding="ascii") as stream:
++                    kind = stream.read().strip()
++                if kind == "Mains":
++                    with open(os.path.join(supply, "online"), encoding="ascii") as stream:
++                        if stream.read().strip() == "1":
++                            return "ac", None
++                elif kind == "Battery":
++                    with open(os.path.join(supply, "status"), encoding="ascii") as stream:
++                        on_battery = on_battery or stream.read().strip() == "Discharging"
++            except OSError:
++                continue
++        return ("battery", None) if on_battery else ("ac", None)
+     output, error = _command(["pmset", "-g", "ps"], "power_probe_failed")
+     if error:
+         return "unknown", error
+@@ -188,6 +278,9 @@ def _sysctl_value(name: str, error_code: str) -> tuple[str | None, str | None]:
+ 
+ 
+ def _memory_total() -> tuple[int | None, str | None]:
++    if _linux():
++        info, error = _linux_meminfo()
++        return (info["MemTotal"], None) if info else (None, error)
+     output, error = _sysctl_value("hw.memsize", "memory_total_probe_failed")
+     if error or output is None:
+         return None, error
+@@ -199,6 +292,9 @@ def _memory_total() -> tuple[int | None, str | None]:
+ 
+ 
+ def _cpu_count() -> tuple[int | None, str | None]:
++    if _linux():
++        count = os.cpu_count()
++        return (count, None) if count else (None, "cpu_count_invalid")
+     output, error = _sysctl_value("hw.logicalcpu", "cpu_count_probe_failed")
+     if error or output is None:
+         return None, error
+@@ -209,6 +305,9 @@ def _cpu_count() -> tuple[int | None, str | None]:
+ 
+ 
+ def _swap_used() -> tuple[int | None, str | None]:
++    if _linux():
++        info, error = _linux_meminfo()
++        return (info["SwapTotal"] - info["SwapFree"], None) if info else (None, error)
+     output, error = _sysctl_value("vm.swapusage", "swap_probe_failed")
+     if error or output is None:
+         return None, error
+@@ -222,6 +321,9 @@ def _swap_used() -> tuple[int | None, str | None]:
+ 
+ 
+ def _memory_free_percent() -> tuple[float | None, str | None]:
++    if _linux():
++        info, error = _linux_meminfo()
++        return (100.0 * info["MemAvailable"] / info["MemTotal"], None) if info else (None, error)
+     output, error = _command(["memory_pressure", "-Q"], "memory_free_probe_failed")
+     if error or output is None:
+         return None, error
+@@ -241,7 +343,7 @@ def probe() -> dict[str, Any]:
+     observed_unix_ns = time.time_ns()
+     observed_monotonic = started
+     errors: list[str] = []
+-    supported = platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}
++    supported = (platform.system() == "Darwin" and platform.machine().lower() in {"arm64", "aarch64"}) or _linux()
+ 
+     power_source, error = _power_source()
+     if error:
+diff --git a/ironmule_product/worker.py b/ironmule_product/worker.py
+index cbb616f..aa4ae0c 100644
+--- a/ironmule_product/worker.py
++++ b/ironmule_product/worker.py
+@@ -43,15 +43,28 @@ def _emit(value: dict[str, Any]) -> None:
+     _PROTOCOL_OUT.flush()
+ 
+ 
++def _working_set_bytes(mx: Any) -> Any:
++    # Metal reports Apple's recommended working set; MLX's CUDA backend only the
++    # device's total memory (DATA3, Kaggle T4).
++    info = mx.device_info()
++    return info.get("max_recommended_working_set_size", info.get("total_memory"))
++
++
++def _gpu_available(mx: Any) -> bool:
++    cuda = getattr(mx, "cuda", None)
++    return bool(mx.metal.is_available() or (cuda is not None and cuda.is_available()))
++
++
+ def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
+     values: dict[str, Any] = {
+         "startup_wall_seconds": time.monotonic() - startup_started,
+-        # Darwin reports ru_maxrss in bytes (unlike Linux's KiB convention).
+-        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
++        # Darwin reports ru_maxrss in bytes, Linux in KiB.
++        "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
++        * (1 if sys.platform == "darwin" else 1024),
+         "mlx_active_bytes": mx.get_active_memory(),
+         "mlx_peak_bytes": mx.get_peak_memory(),
+         "mlx_cache_bytes": mx.get_cache_memory(),
+-        "recommended_working_set_bytes": mx.device_info().get("max_recommended_working_set_size"),
++        "recommended_working_set_bytes": _working_set_bytes(mx),
+     }
+     startup = values["startup_wall_seconds"]
+     try:
+@@ -142,12 +155,14 @@ def _load(spec: dict[str, Any]):
+     # the parent converts that into BackendUnavailable.
+     import mlx.core as mx
+ 
+-    # A compiled-in Metal backend is not proof that the current process may
++    from ironmule.hw import apply_cuda_graph_defaults
++    apply_cuda_graph_defaults()  # before the first GPU operation reads them
++
++    # A compiled-in GPU backend is not proof that the current process may
+     # open the device. Force that check before mlx_lm creates native streams.
+-    if not mx.metal.is_available():
+-        raise RuntimeError("a Metal GPU device is required")
+-    device_info = mx.device_info()
+-    max_working_set = device_info.get("max_recommended_working_set_size")
++    if not _gpu_available(mx):
++        raise RuntimeError("a Metal or CUDA GPU device is required")
++    max_working_set = _working_set_bytes(mx)
+     if type(max_working_set) is not int or max_working_set <= 0:
+         raise RuntimeError("device working-set telemetry is unavailable")
+     # This is an Apple recommendation, not a hard hardware capacity. Observe
+diff --git a/pyproject.toml b/pyproject.toml
+index b620f73..347e6e2 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
+ [project]
+ name = "ironmule"
+ dynamic = ["version"]
+-description = "Run and benchmark local LLM inference on Apple Silicon with MLX, correctness checks, and reproducible evidence"
++description = "Run and benchmark local LLM inference with MLX on Apple Silicon and NVIDIA CUDA, with correctness checks and reproducible evidence"
+ readme = "README.md"
+ authors = [{ name = "Tobias Abenthum" }]
+ requires-python = ">=3.10"
+@@ -17,6 +17,7 @@ classifiers = [
+   "Environment :: GPU",
+   "Intended Audience :: Developers",
+   "Operating System :: MacOS :: MacOS X",
++  "Operating System :: POSIX :: Linux",
+   "Programming Language :: Python :: 3",
+   "Topic :: Scientific/Engineering :: Artificial Intelligence",
+ ]
+@@ -26,6 +27,8 @@ keywords = ["mlx", "apple-mlx", "apple-silicon", "local-llm", "local-ai",
+ 
+ [project.optional-dependencies]
+ dev = ["pytest>=8", "pytest-xdist>=3"]
++# Linux with an NVIDIA GPU: MLX's CUDA backend (validated on a Tesla T4, CUDA 12).
++cuda = ["mlx[cuda12]>=0.32,<0.33"]
+ data = ["scikit-learn>=1.5,<2"]
+ # Only tools/make_figures.py needs this; the runtime never imports it.
+ figures = ["matplotlib>=3.8,<4"]
+diff --git a/tests/engine/test_cli.py b/tests/engine/test_cli.py
+index 896bf03..38ad587 100644
+--- a/tests/engine/test_cli.py
++++ b/tests/engine/test_cli.py
+@@ -41,10 +41,16 @@ def test_failed_optional_probe_isolated_from_parent_import_state(monkeypatch):
+ def test_doctor_reports_missing_prerequisites_without_runtime_import(monkeypatch, capsys):
+     monkeypatch.setattr(cli.platform, "machine", lambda: "x86_64")
+     monkeypatch.setattr(cli.platform, "system", lambda: "Linux")
++    monkeypatch.setattr(cli, "_probe_gpu", lambda backend: (False, f"{backend} unavailable"))
+     assert cli.main(["doctor"]) == 1
+     output = capsys.readouterr().out
+-    assert "Apple Silicon architecture" in output
++    assert "MLX CUDA device" in output and "Apple Silicon architecture" not in output
+     assert "MLX" in output and "MLX-LM" in output
++    monkeypatch.setattr(cli.platform, "machine", lambda: "arm64")
++    monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")
++    cli.main(["doctor"])
++    output = capsys.readouterr().out
++    assert "Apple Silicon architecture" in output and "MLX Metal device" in output
+ 
+ 
+ def test_benchmark_dispatch_preserves_arguments(monkeypatch):
+diff --git a/tests/engine/test_ironmule_runtime_integration.py b/tests/engine/test_ironmule_runtime_integration.py
+index 0e39d02..09e96a1 100644
+--- a/tests/engine/test_ironmule_runtime_integration.py
++++ b/tests/engine/test_ironmule_runtime_integration.py
+@@ -85,8 +85,13 @@ def test_runtime_exposes_exact_path_free_model_identity(pair):
+     assert identity is not None
+     assert identity.model_id == "mlx-community/gemma-3-4b-it-4bit"
+     assert identity.revision == "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+-    assert identity.model_manifest_sha256 == \
+-        "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
++    # The manifest covers every snapshot file, so the digest pins the snapshot's shape:
++    # the reference Mac cache holds 12 files; a full `snapshot_download` (Kaggle, DATA3)
++    # adds README.md and .gitattributes to the same revision.
++    assert identity.model_manifest_sha256 == {
++        12: "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae",
++        14: "8e1bcf0932fa33c60d6f6dc89df464975808f2579601af4befa9879950808442",
++    }[identity.to_dict()["manifest_file_count"]]
+     assert identity.quantisation == {"bits": 4, "group_size": 64}
+     assert "/Users/" not in json.dumps(identity.to_dict())
+     record = rt.fingerprint(
+diff --git a/tests/engine/test_product_worker.py b/tests/engine/test_product_worker.py
+index 1caac48..2a0142c 100644
+--- a/tests/engine/test_product_worker.py
++++ b/tests/engine/test_product_worker.py
+@@ -418,3 +418,21 @@ def test_ready_start_with_guard_is_explicitly_rejected(tmp_path):
+         assert client.ready
+     finally:
+         client.close()
++
++
++def test_worker_accepts_metal_or_cuda_device_facts() -> None:
++    from types import SimpleNamespace
++
++    from ironmule_product.worker import _gpu_available, _working_set_bytes
++
++    def fake(metal: bool, cuda, info: dict):
++        return SimpleNamespace(metal=SimpleNamespace(is_available=lambda: metal),
++                               cuda=None if cuda is None else SimpleNamespace(is_available=lambda: cuda),
++                               device_info=lambda: info)
++
++    metal = fake(True, None, {"max_recommended_working_set_size": 7, "total_memory": 9})
++    assert _gpu_available(metal) and _working_set_bytes(metal) == 7
++    # MLX's CUDA backend (Kaggle T4, DATA3) has no recommended working set.
++    cuda = fake(False, True, {"total_memory": 15_000_000_000})
++    assert _gpu_available(cuda) and _working_set_bytes(cuda) == 15_000_000_000
++    assert not _gpu_available(fake(False, False, {}))
+diff --git a/tests/engine/test_q3d_stability_gate.py b/tests/engine/test_q3d_stability_gate.py
+index e61d18d..637bbc2 100644
+--- a/tests/engine/test_q3d_stability_gate.py
++++ b/tests/engine/test_q3d_stability_gate.py
+@@ -4,6 +4,7 @@ import json
+ import os
+ import signal
+ import subprocess
++import sys
+ from pathlib import Path
+ 
+ import pytest
+@@ -284,6 +285,7 @@ def test_cleanup_unknown_first_snapshot_still_attempts_safe_known_orphan_kill(mo
+ 
+ 
+ @pytest.mark.integration
++@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
+ def test_real_macos_process_identity_and_cleanup_reap():
+     if os.name != "posix":
+         pytest.skip("start_new_session and getsid are POSIX-only")
+diff --git a/tests/engine/test_q3f_child_guard.py b/tests/engine/test_q3f_child_guard.py
+index ae78168..3b13413 100644
+--- a/tests/engine/test_q3f_child_guard.py
++++ b/tests/engine/test_q3f_child_guard.py
+@@ -195,6 +195,7 @@ def test_q3f_guard_unavailable_operation_rolls_back_wrappers_in_isolated_child()
+ 
+ 
+ @pytest.mark.integration
++@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
+ def test_q3f_native_kqueue_monitor_detects_libc_fork():
+     module_path = ROOT / "ironmule" / "q3f_child_guard.py"
+     code = (
+@@ -291,6 +292,7 @@ def test_q3f_attribution_rejects_foreign_uid_and_malformed_comm():
+ 
+ 
+ @pytest.mark.integration
++@pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
+ def test_q3f_real_cleanup_keeps_external_process_alive():
+     worker = None
+     unrelated = None
+diff --git a/tests/engine/test_r6_r7.py b/tests/engine/test_r6_r7.py
+index 0d35315..5dca08a 100644
+--- a/tests/engine/test_r6_r7.py
++++ b/tests/engine/test_r6_r7.py
+@@ -627,6 +627,7 @@ def test_engine_close_restores_wired_limit_once(monkeypatch):
+         return previous
+ 
+     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
++    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
+     # `B62`: the wired branch reads the size natively now, because `static_facts()`
+     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
+@@ -653,6 +654,7 @@ def test_nested_wired_engines_require_lifo_close(monkeypatch):
+         return previous
+ 
+     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
++    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
+     # `B62`: the wired branch reads the size natively now, because `static_facts()`
+     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
+@@ -681,6 +683,7 @@ def test_wired_close_detects_external_mutation_after_restore(monkeypatch):
+         return previous
+ 
+     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
++    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
+     # `B62`: the wired branch reads the size natively now, because `static_facts()`
+     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
+@@ -716,6 +719,7 @@ def test_wired_registration_failure_restores_limit_without_owner_leak(monkeypatc
+         return previous
+ 
+     monkeypatch.setattr(runtime.mx, "set_wired_limit", set_limit)
++    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: True)  # PORT1: Metal-only knob
+     # `B62`: the wired branch reads the size natively now, because `static_facts()`
+     # shells out and the Q3f guard blocks a subprocess in a confirmation child.
+     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: 1_000)
+@@ -1339,3 +1343,41 @@ def test_ab_child_preserves_generation_error_when_close_also_fails(monkeypatch):
+     with pytest.raises(ValueError, match="generation failed") as error:
+         ab._child(spec)
+     assert any("cleanup failed" in note for note in error.value.__notes__)
++
++
++def test_wired_fraction_is_unsupported_without_metal(monkeypatch):
++    # MLX's CUDA backend returns 0 from set_wired_limit, which close() would misread as a
++    # foreign change (PORT1, Kaggle T4). The knob is refused before touching the limit.
++    from ironmule import runtime
++
++    touched = []
++    monkeypatch.setattr(runtime.mx, "set_wired_limit", lambda value: touched.append(value) or 0)
++    monkeypatch.setattr(runtime.mx.metal, "is_available", lambda: False)
++    with pytest.raises(ValueError, match="unsupported"):
++        runtime.Engine(object(), object(), Knobs(wired_fraction=0.5))
++    assert touched == []
++
++
++def test_cuda_graph_defaults_only_touch_pre_ampere_linux_and_respect_the_caller(monkeypatch):
++    import types
++
++    from ironmule import hw
++
++    def fake_mlx(major):
++        core = types.SimpleNamespace(cuda=types.SimpleNamespace(is_available=lambda: True),
++                                     device_info=lambda: {"compute_capability_major": major})
++        monkeypatch.setitem(sys.modules, "mlx", types.SimpleNamespace(core=core))
++        monkeypatch.setitem(sys.modules, "mlx.core", core)
++
++    for name in hw.CUDA_GRAPH_DEFAULTS:
++        monkeypatch.delenv(name, raising=False)
++    fake_mlx(7)
++    monkeypatch.setattr(hw.platform, "system", lambda: "Darwin")
++    assert hw.apply_cuda_graph_defaults() == {}, "the Apple path must stay unchanged"
++    monkeypatch.setattr(hw.platform, "system", lambda: "Linux")
++    fake_mlx(8)
++    assert hw.apply_cuda_graph_defaults() == {}, "Ampere and newer keep MLX's per-device values"
++    fake_mlx(7)
++    monkeypatch.setenv("MLX_MAX_OPS_PER_BUFFER", "20")
++    assert hw.apply_cuda_graph_defaults() == {"MLX_MAX_MB_PER_BUFFER": "4000"}
++    assert os.environ["MLX_MAX_OPS_PER_BUFFER"] == "20", "an explicit caller value wins"
+diff --git a/tests/test_b62_wired_fraction_native_memsize.py b/tests/test_b62_wired_fraction_native_memsize.py
+index 1cfc4c2..45e9870 100644
+--- a/tests/test_b62_wired_fraction_native_memsize.py
++++ b/tests/test_b62_wired_fraction_native_memsize.py
+@@ -49,6 +49,7 @@ def test_the_wired_branch_starts_no_subprocess(monkeypatch):
+     applied = []
+     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
+                         lambda value: applied.append(value) or 0)
++    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
+     Engine(object(), object(), Knobs(wired_fraction=0.6))
+     assert started == [], f"the wired branch shelled out: {started}"
+     assert applied == [int(hw.installed_memory_bytes() * 0.6)]
+@@ -58,6 +59,7 @@ def test_zero_leaves_the_limit_alone(monkeypatch):
+     touched = []
+     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
+                         lambda value: touched.append(value) or 0)
++    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
+     engine = Engine(object(), object(), BASELINE)
+     assert BASELINE.wired_fraction == 0.0
+     assert touched == []
+@@ -69,6 +71,7 @@ def test_an_unavailable_size_fails_closed(monkeypatch):
+     touched = []
+     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
+                         lambda value: touched.append(value) or 0)
++    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
+     monkeypatch.setattr(hw, "installed_memory_bytes", lambda: None)
+     with pytest.raises(RuntimeError, match="installed memory size is unavailable"):
+         Engine(object(), object(), Knobs(wired_fraction=0.6))
+@@ -88,6 +91,7 @@ def test_the_meaning_of_the_knob_is_unchanged(monkeypatch):
+     applied = []
+     monkeypatch.setattr("ironmule.runtime.mx.set_wired_limit",
+                         lambda value: applied.append(value) or 0)
++    monkeypatch.setattr("ironmule.runtime.mx.metal.is_available", lambda: True)
+     for fraction in (0.25, 0.6, 1.0):
+         Engine(object(), object(), Knobs(wired_fraction=fraction))
+     total = hw.installed_memory_bytes()

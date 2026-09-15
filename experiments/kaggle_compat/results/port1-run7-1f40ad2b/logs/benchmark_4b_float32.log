@@ -1,0 +1,12 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+model mlx-community/gemma-3-4b-it-4bit
+plan strict   requests 6   warmup 2   repeats 6
+
+mode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread
+interactive          15703.2           18.3           18.3        15009.0[15475.4; 15825.6]
+throughput           14947.3           19.3           19.3        14257.3[14844.8; 15015.5]
+
+throughput gain +4.98%   outer-wall ratio 0.9502 95% CI [0.9486; 0.9581]
+identical answers in both modes: True
+wrote /kaggle/working/benchmark-4b-float32.json

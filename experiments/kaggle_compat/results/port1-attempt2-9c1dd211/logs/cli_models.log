@@ -1,0 +1,33 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "models": [
+    {
+      "last_modified": 1789460277.0860872,
+      "repo_id": "mlx-community/gemma-3-1b-it-4bit",
+      "revisions": [
+        {
+          "commit_hash": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+          "last_modified": 1789460277.0860872,
+          "size_on_disk": 771863590,
+          "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6"
+        }
+      ],
+      "size_on_disk": 771863590
+    },
+    {
+      "last_modified": 1789460285.3156667,
+      "repo_id": "mlx-community/gemma-3-4b-it-4bit",
+      "revisions": [
+        {
+          "commit_hash": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+          "last_modified": 1789460285.3156667,
+          "size_on_disk": 3439897526,
+          "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+        }
+      ],
+      "size_on_disk": 3439897526
+    }
+  ],
+  "warnings": []
+}

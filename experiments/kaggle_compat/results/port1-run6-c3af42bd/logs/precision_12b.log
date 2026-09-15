@@ -1,0 +1,22 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+A16 81340
+A32 40956
+D32 39622
+{
+ "ratios": {
+  "A32/A16": 0.5035201084629461,
+  "D32/A16": 0.48711414259039715
+ },
+ "teacher_forced_top1_agreement": 0.9863945578231292,
+ "generated_identical_requests": 4,
+ "first_divergence_A32": [
+  16,
+  null,
+  39,
+  null,
+  null,
+  null
+ ],
+ "D32_equals_A32": true
+}

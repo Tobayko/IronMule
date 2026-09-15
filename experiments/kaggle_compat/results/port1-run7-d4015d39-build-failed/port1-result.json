@@ -1,0 +1,87 @@
+{
+ "schema": "ironmule.port1-kaggle.v1",
+ "commit": "5fde53f940852c92f30d5f30fe6377d88e17c9a4",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "name, driver_version, memory.total [MiB]\nTesla T4, 580.159.04, 15360 MiB\nTesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.1,
+   "tail": " ironmule/ab.py                                    |   7 +-\n ironmule/benchmark.py                             |   5 +-\n ironmule/hw.py                                    |  75 +++++++++++++++-\n ironmule/router.py                                |  10 ++-\n ironmule/runtime.py                               |   5 ++\n ironmule/service.py                               |  17 ++--\n ironmule/tune.py                                  |  84 ++++++++++++-----\n ironmule_cli.py                                   |  47 ++++++----\n ironmule_product/backend.py                       |  11 ++-\n ironmule_product/cli.py                           |   5 +-\n ironmule_product/readiness.py                     | 104 +++++++++++++++++++++-\n ironmule_product/service.py                       |   4 +-\n ironmule_product/worker.py                        |  37 ++++++--\n pyproject.toml                                    |   8 +-\n tests/engine/test_cli.py                          |   8 +-\n tests/engine/test_ironmule_runtime_integration.py |   9 +-\n tests/engine/test_product_worker.py               |  18 ++++\n tests/engine/test_q3d_stability_gate.py           |   2 +\n tests/engine/test_q3f_child_guard.py              |   2 +\n tests/engine/test_r6_r7.py                        |  59 ++++++++++++\n tests/test_b62_wired_fraction_native_memsize.py   |   4 +\n 21 files changed, 457 insertions(+), 64 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 7.6,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 86.9 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.34s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/im /usr\n"
+  },
+  "install": {
+   "exit": 1,
+   "seconds": 0.8,
+   "tail": "ld_wheel\n             return self._get_build_requires(config_settings, requirements=[])\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/build_meta.py\", line 301, in _get_build_requires\n             self.run_setup()\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/build_meta.py\", line 317, in run_setup\n             exec(code, locals())  # noqa: S102 # exec is intentional here\n             ^^^^^^^^^^^^^^^^^^^^\n           File \"<string>\", line 1, in <module>\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/__init__.py\", line 117, in setup\n             return distutils.core.setup(**attrs)  # type: ignore[return-value]\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/_distutils/core.py\", line 142, in setup\n             dist.parse_config_files()\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/_virtualenv.py\", line 21, in parse_config_files\n             result = old_parse_config_files(self, *args, **kwargs)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/dist.py\", line 762, in parse_config_files\n             pyprojecttoml.apply_configuration(self, filename, ignore_option_errors)\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/config/pyprojecttoml.py\", line 73, in apply_configuration\n             return _apply(dist, config, filepath)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/config/_apply_pyprojecttoml.py\", line 61, in apply\n             dist._finalize_license_expression()\n           File \"/root/.cache/uv/builds-v0/.tmpP8tfsg/lib/python3.12/site-packages/setuptools/dist.py\", line 430, in _finalize_license_expression\n             raise InvalidConfigError(\n         setuptools.errors.InvalidConfigError: License classifiers have been superseded by license expressions (see https://peps.python.org/pep-0639/). Please remove:\n\n         License :: OSI Approved :: Apache Software License\n\nhint: Build failures usually indicate a problem with the package or the build environment\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\n"
+  },
+  "download_4b": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "download_12b": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "download_wikitext": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\nModuleNotFoundError: No module named 'huggingface_hub'\n"
+  },
+  "cli_doctor": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cli_tune_4b_float32": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cli_tune_show_4b_float32": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "benchmark_4b_float32": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "serve_setup": {
+   "exit": 127,
+   "seconds": 0.0,
+   "tail": "/bin/sh: 1: ironmule: not found\n"
+  },
+  "cross_12b": {
+   "exit": 0,
+   "seconds": 0.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 None 1\nironmule_exact 0 None 1\nironmule_fp32 0 None 1\nironmule_exact 1 None 1\nironmule_fp32 1 None 1\nstock 1 None 1\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 2\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 2\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 2\n }\n}\n"
+  },
+  "quality_12b_float32": {
+   "exit": 1,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/quality.py\", line 18, in <module>\n    import mlx.core as mx\nModuleNotFoundError: No module named 'mlx'\n"
+  }
+ },
+ "serve_http": {
+  "health": null,
+  "health_error": "URLError(ConnectionRefusedError(111, 'Connection refused'))",
+  "server_exit": 127
+ },
+ "finished": true
+}

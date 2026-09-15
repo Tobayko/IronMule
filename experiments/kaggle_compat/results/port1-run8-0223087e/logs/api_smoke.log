@@ -1,0 +1,19 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "None": {
+  "text": "The sky appears blue due to a phenomenon called Rayleigh scattering, where sunlight is scattered by the tiny air molecules in the atmosphere",
+  "plan": "strict_one_shot",
+  "engine_dtype": null
+ },
+ "float32": {
+  "text": "The sky appears blue due to a phenomenon called Rayleigh scattering, where sunlight is scattered by the tiny air molecules in the atmosphere",
+  "plan": "strict_one_shot@float32",
+  "engine_dtype": "float32"
+ },
+ "apple_runtime_float32": {
+  "text": "The sky appears blue due to a phenomenon called Rayleigh scattering, where sunlight is scattered by the tiny air molecules in the atmosphere",
+  "route": "reference"
+ },
+ "learned_dispatch_refused": "local learned dispatch is not available with compute_dtype"
+}

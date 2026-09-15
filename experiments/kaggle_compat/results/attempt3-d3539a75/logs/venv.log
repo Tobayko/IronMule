@@ -1,0 +1,5 @@
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 20.0/20.0 MB 87.9 MB/s eta 0:00:00
+warning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?
+Using CPython 3.12.13 interpreter at: /usr/bin/python3
+Creating virtual environment at: /tmp/im
+Activate with: source /tmp/im/bin/activate

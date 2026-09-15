@@ -1,0 +1,3 @@
+no profile for this hardware yet
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'

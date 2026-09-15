@@ -1,0 +1,4 @@
+5fde53f940852c92f30d5f30fe6377d88e17c9a4
+ ironmule_product/worker.py          | 28 ++++++++++++++++++++--------
+ tests/engine/test_product_worker.py | 18 ++++++++++++++++++
+ 2 files changed, 38 insertions(+), 8 deletions(-)

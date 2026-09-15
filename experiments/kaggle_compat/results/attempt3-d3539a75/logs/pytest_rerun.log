@@ -1,0 +1,135 @@
+....................FF............F................F.........F......F... [ 97%]
+..                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_receiver_shutdown_returns_without_daemon_finalization_abort _______
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_receiver_shutdown_returns0')
+
+    def test_receiver_shutdown_returns_without_daemon_finalization_abort(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=8); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "assert q.get()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:282: AssertionError
+_________________ test_receiver_full_queue_shutdown_is_bounded _________________
+
+tmp_path = PosixPath('/tmp/pytest-of-root/pytest-0/test_receiver_full_queue_shutd0')
+
+    def test_receiver_full_queue_shutdown_is_bounded(tmp_path: Path) -> None:
+        code = (
+            "import queue, threading; from ironmule_product.worker import _receiver; "
+            "q=queue.Queue(maxsize=1); q.put({'type':'work'}); c={}; p=set(); lock=threading.Lock(); "
+            "t=threading.Thread(target=_receiver,args=(q,c,p,lock),daemon=True); t.start(); "
+            "t.join(timeout=2); assert not t.is_alive(); assert q.get_nowait()['type']=='shutdown'"
+        )
+        process = subprocess.Popen(
+            [sys.executable, "-u", "-c", code], cwd=tmp_path,
+            env={**os.environ, "PYTHONPATH": str(ROOT)}, stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        try:
+            assert process.stdin is not None and process.stderr is not None
+            process.stdin.write(b'{"type":"shutdown"}\n')
+            process.stdin.flush()
+            assert process.wait(timeout=3) == 0
+>           assert process.stderr.read() == b""
+E           assert b"Error in si...med 'wrapt'\n" == b''
+E             
+E             Use -v to get more diff
+
+tests/engine/test_product_worker.py:304: AssertionError
+______________ test_real_macos_process_identity_and_cleanup_reap _______________
+
+    @pytest.mark.integration
+    def test_real_macos_process_identity_and_cleanup_reap():
+        if os.name != "posix":
+            pytest.skip("start_new_session and getsid are POSIX-only")
+        baseline = q3b._capture_process_baseline()
+>       assert baseline["valid"] is True
+E       assert False is True
+
+tests/engine/test_q3d_stability_gate.py:291: AssertionError
+_______________ test_q3f_native_kqueue_monitor_detects_libc_fork _______________
+
+    @pytest.mark.integration
+    def test_q3f_native_kqueue_monitor_detects_libc_fork():
+        module_path = ROOT / "ironmule" / "q3f_child_guard.py"
+        code = (
+            "import ctypes, importlib.util, json, os, time; "
+            f"s=importlib.util.spec_from_file_location('g', {str(module_path)!r}); "
+            "g=importlib.util.module_from_spec(s); s.loader.exec_module(g); g.install(); "
+            "libc=ctypes.CDLL(None); libc.fork.restype=ctypes.c_int; pid=libc.fork(); "
+            "os._exit(0) if pid == 0 else None; detected=False; "
+            "\nfor _ in range(20):\n"
+            "    try: g.ledger()\n"
+            "    except g.GuardViolation: detected=True; break\n"
+            "    time.sleep(0.01)\n"
+            "os.waitpid(pid, 0); print(json.dumps({'detected': detected, 'native_events': bool(g.failure_marker().get('native_events'))}))"
+        )
+        completed = subprocess.run([sys.executable, "-c", code], capture_output=True,
+                                   text=True, check=False, timeout=10)
+        assert completed.returncode == 0, completed.stderr
+>       assert json.loads(completed.stdout) == {"detected": True, "native_events": True}
+E       AssertionError: assert {'detected': ...vents': False} == {'detected': ...events': True}
+E         
+E         Differing items:
+E         {'detected': False} != {'detected': True}
+E         {'native_events': False} != {'native_events': True}
+E         Use -v to get more diff
+
+tests/engine/test_q3f_child_guard.py:215: AssertionError
+______________ test_q3f_real_cleanup_keeps_external_process_alive ______________
+
+    @pytest.mark.integration
+    def test_q3f_real_cleanup_keeps_external_process_alive():
+        worker = None
+        unrelated = None
+        try:
+            baseline = q3b._capture_process_baseline()
+>           assert baseline["valid"] is True
+E           assert False is True
+
+tests/engine/test_q3f_child_guard.py:299: AssertionError
+_____________ test_runtime_exposes_exact_path_free_model_identity ______________
+
+pair = (<ironmule.service.Runtime object at 0x7b28b51e1f40>, <module 'ironmule' from '/tmp/IronMule/ironmule/__init__.py'>)
+
+    def test_runtime_exposes_exact_path_free_model_identity(pair):
+        rt, ironmule = pair
+        identity = rt.model_identity
+        assert identity is not None
+        assert identity.model_id == "mlx-community/gemma-3-4b-it-4bit"
+        assert identity.revision == "93724907d4ed1745d2fe50baadf3b0b01a65abf2"
+>       assert identity.model_manifest_sha256 == \
+            "a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae"
+E       AssertionError: assert '8e1bcf0932fa...9879950808442' == 'a405b1a73ee9...0edc663e857ae'
+E         
+E         - a405b1a73ee9fac816ed7cfeab45b70a26f031843467a4aa4030edc663e857ae
+E         + 8e1bcf0932fa33c60d6f6dc89df464975808f2579601af4befa9879950808442
+
+tests/engine/test_ironmule_runtime_integration.py:88: AssertionError
+=========================== short test summary info ============================
+FAILED tests/engine/test_product_worker.py::test_receiver_shutdown_returns_without_daemon_finalization_abort
+FAILED tests/engine/test_product_worker.py::test_receiver_full_queue_shutdown_is_bounded
+FAILED tests/engine/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap
+FAILED tests/engine/test_q3f_child_guard.py::test_q3f_native_kqueue_monitor_detects_libc_fork
+FAILED tests/engine/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive
+FAILED tests/engine/test_ironmule_runtime_integration.py::test_runtime_exposes_exact_path_free_model_identity
+6 failed, 68 passed in 317.01s (0:05:17)

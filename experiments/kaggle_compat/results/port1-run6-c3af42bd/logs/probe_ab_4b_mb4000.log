@@ -1,0 +1,8 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+exit 0 {'MLX_MAX_OPS_PER_BUFFER': '400', 'MLX_MAX_MB_PER_BUFFER': '4000'}
+stdout istic": true, "logical_tokens": [2717, 3723, 107, 236782, 107, 138, 236775, 65127], "logical_tokens_per_repeat": [[2717, 3723, 107, 236782, 107, 138, 236775, 65127]], "mlx_peak_bytes": 6384783920, "physical_tokens_per_repeat": [[2717, 3723, 107, 236782, 107, 138, 236775, 65127]], "prefill_ns": [8203887771], "prompt_tokens": 322, "stop_reasons": ["length"], "token_counts": [{"logical": 8, "physical": 8}], "total_ns": [8765363953]}}, "guard": {"events": [], "installed": true, "version": "ironmule.q3f_child_guard.v1"}, "mlx_peak_bytes": 6384783920, "order": ["baseline", "candidate"], "pid": 326}
+
+stderr Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+

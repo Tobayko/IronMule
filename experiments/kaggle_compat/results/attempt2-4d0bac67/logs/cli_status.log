@@ -1,0 +1,7 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+ironmule: model is not cached: no local snapshot of 'mlx-community/gemma-3-4b-it-4bit'
+
+IronMule does not download models. Fetch it once yourself, then re-run:
+    hf download mlx-community/gemma-3-4b-it-4bit
+    ironmule models    # confirm it is cached

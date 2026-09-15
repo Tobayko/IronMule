@@ -1,0 +1,12 @@
+IronMule doctor
+[FAIL] Apple Silicon architecture: x86_64 (x86_64)
+[FAIL] macOS: Linux
+[OK] Python: 3.12.13 (requires >= 3.10)
+[OK] MLX: 0.32.0; importable (isolated probe)
+[OK] MLX-LM: 0.31.3; importable (isolated probe)
+[OK] NumPy: 2.5.3; importable (isolated probe)
+[FAIL] MLX Metal device: isolated probe failed: RuntimeError: Metal backend unavailable
+
+Missing or unavailable prerequisites: Apple Silicon architecture, macOS, MLX Metal device
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
