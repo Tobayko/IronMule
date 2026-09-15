@@ -2,6 +2,26 @@
 
 All notable public changes to IronMule are documented here. Measurements and research conclusions are preserved as recorded in [`research/LEDGER.md`](research/LEDGER.md); this changelog does not reinterpret them.
 
+## [Unreleased]
+
+- **Open source under Apache-2.0.** The fair-code licence and `COMMERCIAL.md` are gone;
+  `LICENSE.md`, `pyproject.toml` and `CITATION.cff` carry Apache-2.0.
+- **NVIDIA CUDA on Linux.** `pip install -e ".[cuda]"`. `doctor`, hardware fingerprint,
+  readiness, `tune`, `revalidate`, `benchmark`, `serve` and `optimize run` work on MLX's
+  CUDA backend; verified on a Kaggle Tesla T4 with Gemma 3 1B, 4B and 12B. The Apple path
+  is unchanged. On GPUs below compute capability 8 IronMule sets
+  `MLX_MAX_OPS_PER_BUFFER=400` unless the caller chose a value; `wired_fraction` is
+  refused without Metal instead of crashing `tune`.
+- **`compute_dtype="float32"`**, an opt-in numeric plan for GPUs that emulate bf16:
+  `Runtime.load`, `AppleRuntime.load` and `--compute-dtype` on `tune`, `revalidate`,
+  `benchmark` and `serve`. It changes output, so it is never chosen automatically, is kept
+  apart in profiles and fingerprints, and `doctor` recommends it where it applies.
+  Measurements: `research/LEDGER.md` entries `PORT1`.
+- **Tests independent of the host.** The Q3 process inventory reads `ps` in the C locale,
+  worker transport tests start children without `site`, and macOS-only process tests are
+  skipped elsewhere.
+- **A shorter README** for first-time users.
+
 ## [0.1.0] — 2026-09-11
 
 First tagged release. Everything below shipped in it; nothing was published
