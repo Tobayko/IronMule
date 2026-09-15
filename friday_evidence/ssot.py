@@ -968,7 +968,9 @@ def build(ssot_path: Path = DEFAULT_SSOT_PATH, root: Path = PROJECT_ROOT,
     started = time.time_ns()
     builder_sha = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
     totals = {"sources": 0, "runs": 0, "occurrences": 0, "metrics": 0, "failed_sources": 0}
-    connection = sqlite3.connect(temporary)
+    # uri=True lets ATTACH open the previous corpus read-only by URI; SQLite builds that do
+    # not enable URI filenames by default (Python 3.11 on macOS) refuse it otherwise.
+    connection = sqlite3.connect(temporary, uri=True)
     try:
         connection.execute("PRAGMA foreign_keys=ON")
         connection.executescript(SCHEMA)
