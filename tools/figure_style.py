@@ -25,13 +25,35 @@ RULE = "#B0B0B0"         # the 1.0 line, axis rules, error-bar caps
 TEXT = "#1A1A1A"
 MUTED = "#5A5A5A"
 GRID = "#E4E4E4"
+PAPER = "white"
+
+#: The two palettes, by the same role names. GitHub serves whichever theme the
+#: reader chose, so a figure exists twice; the dark values keep Okabe-Ito's hues
+#: and only lift them off a dark ground, so both renderings read as one figure.
+LIGHT = {name: globals()[name] for name in
+         ("CONTROL", "CANDIDATE", "BASELINE", "SECONDARY", "ACCENT", "RULE",
+          "TEXT", "MUTED", "GRID", "PAPER")}
+DARK = {
+    "CONTROL": "#56B4E9",
+    "CANDIDATE": "#F0873C",
+    "BASELINE": "#9AA4AE",
+    "SECONDARY": "#1FC99B",
+    "ACCENT": "#E8A0C4",
+    "RULE": "#6E7681",
+    "TEXT": "#E6EDF3",
+    "MUTED": "#9198A1",
+    "GRID": "#2A3038",
+    "PAPER": "#0D1117",  # GitHub's own dark canvas, so nothing frames the figure
+}
 
 #: Every figure is this wide so they stack in a README without jumping.
 WIDTH_IN = 8.6
 
 
-def configure(matplotlib: Any) -> None:
-    """Apply the shared look and make SVG output deterministic."""
+def configure(matplotlib: Any, theme: str = "light") -> None:
+    """Apply the shared look for one theme and make SVG output deterministic."""
+
+    globals().update(DARK if theme == "dark" else LIGHT)
 
     matplotlib.use("Agg")
     # Without a fixed salt, matplotlib derives clip-path and gradient ids from
@@ -42,9 +64,12 @@ def configure(matplotlib: Any) -> None:
     matplotlib.rcParams["svg.fonttype"] = "none"
     matplotlib.rcParams.update({
         "figure.dpi": 100,
-        "figure.facecolor": "white",
-        "axes.facecolor": "white",
+        "figure.facecolor": PAPER,
+        "axes.facecolor": PAPER,
         "axes.edgecolor": RULE,
+        # Legend labels and any unstyled text follow the theme too, or the dark
+        # rendering writes black on black.
+        "text.color": TEXT,
         "axes.labelcolor": TEXT,
         "axes.titlecolor": TEXT,
         "axes.titlesize": 12,
@@ -73,5 +98,5 @@ def save(fig: Any, path: Any) -> None:
     fig.savefig(path, format="svg", bbox_inches="tight", metadata={"Date": None})
 
 
-__all__ = ["ACCENT", "BASELINE", "CANDIDATE", "CONTROL", "GRID", "MUTED", "RULE",
-           "SECONDARY", "TEXT", "WIDTH_IN", "configure", "save"]
+__all__ = ["ACCENT", "BASELINE", "CANDIDATE", "CONTROL", "DARK", "GRID", "LIGHT", "MUTED",
+           "PAPER", "RULE", "SECONDARY", "TEXT", "WIDTH_IN", "configure", "save"]

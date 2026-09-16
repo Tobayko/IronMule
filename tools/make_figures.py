@@ -18,6 +18,7 @@ import json
 import sys
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import matplotlib
 
@@ -33,9 +34,40 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 ASSETS = ROOT / "docs" / "assets"
 
+#: Set by `render` for the theme being drawn: "" for light, "-dark" for the one
+#: GitHub serves to readers on a dark background.
+SUFFIX = ""
+
+
+def emit(fig: Any, name: str) -> str:
+    """Write one figure under the current theme's name and return that name."""
+
+    relative = f"docs/assets/{name}{SUFFIX}.svg"
+    style.save(fig, ASSETS / f"{name}{SUFFIX}.svg")
+    return relative
+
+
 HEAD_SKIP = Path("experiments/head_skip_formal/results.json")
 PREFIX_CACHE = Path("research/raw/E10-prefix-cache-session-ab.json")
 PREFILL_PHASES = Path("research/raw/E1-prefill-breakdown.json")
+
+#: PORT1, per model: Apple's balanced A/B/C/D square and the T4's fresh-process
+#: cross run. Each file carries its own device's stock reference, so a bar only
+#: ever compares a machine with itself.
+CROSS = (
+    ("Gemma 3 1B",
+     Path("experiments/kaggle_compat/results/apple-abcd/abcd-1b.json"),
+     Path("experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-1b.json"),
+     "ironmule"),
+    ("Gemma 3 4B",
+     Path("experiments/kaggle_compat/results/apple-abcd/abcd-4b.json"),
+     Path("experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-4b.json"),
+     "ironmule_exact"),
+    ("Gemma 3 12B",
+     Path("experiments/kaggle_compat/results/apple-abcd/abcd-12b.json"),
+     Path("experiments/kaggle_compat/results/port1-run7-1f40ad2b/cross-12b.json"),
+     "ironmule_exact"),
+)
 
 #: Every figure states the machine it was measured on. One machine, said once.
 DEVICE = "Apple M1 Max, 32 GB unified memory"
@@ -85,7 +117,7 @@ def paired_ratios() -> dict:
         for edge in (low, high):
             ax.plot([edge, edge], [y - 0.12, y + 0.12], color=colour, linewidth=2.4)
         ax.plot([ratio], [y], marker="o", markersize=8, color=colour,
-                markeredgecolor="white", markeredgewidth=1.4, zorder=3)
+                markeredgecolor=style.PAPER, markeredgewidth=1.4, zorder=3)
         ax.annotate(f"{ratio:.4f}  [{low:.4f}, {high:.4f}]", (ratio, y),
                     textcoords="offset points", xytext=(0, 12), ha="center",
                     fontsize=9, color=style.TEXT)
@@ -102,10 +134,10 @@ def paired_ratios() -> dict:
     ax.set_title("Measured gains, with the control that makes them readable")
     ax.grid(axis="y", visible=False)
 
-    style.save(fig, ASSETS / "headline-ratios.svg")
+    written = emit(fig, "headline-ratios")
     plt.close(fig)
     return {
-        "figure": "docs/assets/headline-ratios.svg",
+        "figure": written,
         "sources": [HEAD_SKIP.as_posix(), PREFIX_CACHE.as_posix()],
         "device": DEVICE,
         "models": [head["sealed_identity"]["model_id"]],
@@ -146,10 +178,10 @@ def session_ratios() -> dict:
     ax.legend(loc="center right")
     ax.grid(axis="x", visible=False)
 
-    style.save(fig, ASSETS / "session-ratios.svg")
+    written = emit(fig, "session-ratios")
     plt.close(fig)
     return {
-        "figure": "docs/assets/session-ratios.svg",
+        "figure": written,
         "sources": [HEAD_SKIP.as_posix()],
         "device": DEVICE,
         "models": [head["sealed_identity"]["model_id"]],
@@ -195,10 +227,10 @@ def prefill_phases() -> dict:
     ax.legend(loc="lower right")
     ax.grid(axis="y", visible=False)
 
-    style.save(fig, ASSETS / "prefill-phases.svg")
+    written = emit(fig, "prefill-phases")
     plt.close(fig)
     return {
-        "figure": "docs/assets/prefill-phases.svg",
+        "figure": written,
         "sources": [PREFILL_PHASES.as_posix()],
         "device": DEVICE,
         "models": ["mlx-community/gemma-3-4b-it-4bit"],
@@ -209,16 +241,87 @@ def prefill_phases() -> dict:
     }
 
 
-FIGURES = (paired_ratios, session_ratios, prefill_phases)
+# -- figure 4: the same runtime on two very different GPUs --------------------
+
+def cross_platform_speedup() -> dict:
+    """How much faster each model runs, per device, against that device's stock.
+
+    The float32 arm is drawn apart from the two exact arms because it is not the
+    same computation: it reproduces Apple's float32 result rather than the T4's
+    emulated bf16 one, which is why IronMule never selects it by itself.
+    """
+
+    groups, sources, models = [], [], []
+    for label, apple_path, t4_path, exact_arm in CROSS:
+        apple, t4 = load(apple_path), load(t4_path)
+        sources += [apple_path.as_posix(), t4_path.as_posix()]
+        models.append(apple["model_id"])
+        bars = [("Apple M1 Max, identical tokens",
+                 1 / apple["wall_ratios"]["D/A"]["median_ratio"], style.CANDIDATE),
+                ("NVIDIA Tesla T4, identical tokens",
+                 1 / t4["summary"][exact_arm]["median_ratio"], style.SECONDARY)]
+        if "ironmule_fp32" in t4["summary"]:
+            bars.append(("Tesla T4, opt-in float32 plan",
+                         1 / t4["summary"]["ironmule_fp32"]["median_ratio"], style.ACCENT))
+        groups.append((label, bars))
+
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 4.0))
+    height, labelled, ticks = 0.24, set(), []
+    for index, (label, bars) in enumerate(groups):
+        centre = len(groups) - 1 - index
+        ticks.append(centre)
+        for slot, (name, speedup, colour) in enumerate(bars):
+            y = centre + ((len(bars) - 1) / 2 - slot) * height
+            ax.barh(y, speedup, height=height * 0.86, color=colour,
+                    label=None if name in labelled else name)
+            labelled.add(name)
+            ax.annotate(f"{speedup:.2f}×   +{(speedup - 1) * 100:.0f}%", (speedup, y),
+                        textcoords="offset points", xytext=(6, 0), va="center",
+                        fontsize=9, color=style.TEXT)
+
+    ax.axvline(1.0, color=style.RULE, linewidth=1.2, linestyle="--", zorder=3)
+    ax.annotate("stock reference", (1.0, len(groups) - 0.52), textcoords="offset points",
+                xytext=(6, 0), fontsize=9, color=style.MUTED, va="center")
+    ax.set_yticks(ticks)
+    ax.set_yticklabels([label for label, _ in groups])
+    ax.set_xlim(0, 2.45)
+    ax.set_ylim(-0.5, len(groups) - 0.35)
+    ax.set_xlabel("times faster than the stock reference on the same device")
+    ax.set_title("One runtime, two GPUs, the same answers")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=3, fontsize=9)
+
+    written = emit(fig, "cross-platform-speedup")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": sources,
+        "device": "Apple M1 Max, 32 GB unified memory; Kaggle NVIDIA Tesla T4, 15 GB",
+        "models": models,
+        "samples": "Apple: 6 repeats of a balanced A/B/C/D square, 6 requests x 48 tokens; "
+                   "T4: interleaved fresh processes, the same workload, stock pinned to "
+                   "MLX's own graph limits",
+        "intervals": "none; median wall-time ratio per arm, inverted to a speed-up",
+    }
+
+
+FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup)
 
 
 def render(destination: Path) -> list[dict]:
-    global ASSETS
+    """Draw every figure once per theme. Light first, so its bytes are stable."""
+
+    global ASSETS, SUFFIX
     previous, ASSETS = ASSETS, destination
+    manifest = []
     try:
-        return [figure() for figure in FIGURES]
+        for theme, SUFFIX in (("light", ""), ("dark", "-dark")):
+            style.configure(matplotlib, theme)
+            manifest += [dict(figure(), theme=theme) for figure in FIGURES]
     finally:
-        ASSETS = previous
+        ASSETS, SUFFIX = previous, ""
+        style.configure(matplotlib)
+    return manifest
 
 
 def main(argv: list[str] | None = None) -> int:
