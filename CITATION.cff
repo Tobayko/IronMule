@@ -9,15 +9,19 @@ authors:
     website: "https://github.com/Tobayko"
 repository-code: "https://github.com/Tobayko/IronMule"
 abstract: >-
-  IronMule is a local inference runtime for MLX on Apple silicon. It provides
-  explicit execution plans, grouped batch-1 execution at width four, a safe
-  sequential fallback, and telemetry that separates service time-to-first-token
-  from engine time-to-first-token. Every performance claim is backed by a
-  preregistered experiment with raw data, including four optimisations that were
-  measured and dropped.
+  IronMule is a local inference runtime for MLX on Apple silicon and on NVIDIA
+  GPUs through MLX's CUDA backend. It provides explicit execution plans, grouped
+  batch-1 execution at width four, a safe sequential fallback, an
+  OpenAI-compatible local server, and telemetry that separates service
+  time-to-first-token from engine time-to-first-token. An optimisation is used
+  only where it reproduces the reference tokens exactly. Every performance claim
+  is backed by a preregistered experiment with raw data, including the
+  optimisations that were measured and dropped.
 keywords:
   - MLX
   - Apple silicon
+  - NVIDIA CUDA
+  - local LLM
   - LLM inference
   - inference runtime
   - KV cache
@@ -26,4 +30,4 @@ keywords:
   - reproducible research
 license: "Apache-2.0"
 version: "0.1.0"
-date-released: "2026-08-25"
+date-released: "2026-09-11"

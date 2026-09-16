@@ -642,7 +642,7 @@ z
 " style="fill: #767676"/>
     </g>
     <g id="text_23">
-     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start" x="521.469687" y="174.643156" transform="rotate(-0 521.469687 174.643156)">full head</text>
+     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start; fill: #1a1a1a" x="521.469687" y="174.643156" transform="rotate(-0 521.469687 174.643156)">full head</text>
     </g>
     <g id="patch_18">
      <path d="M 494.869687 188.893898 
@@ -653,7 +653,7 @@ z
 " style="fill: #d55e00"/>
     </g>
     <g id="text_24">
-     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start" x="521.469687" y="188.893898" transform="rotate(-0 521.469687 188.893898)">head skip</text>
+     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start; fill: #1a1a1a" x="521.469687" y="188.893898" transform="rotate(-0 521.469687 188.893898)">head skip</text>
     </g>
    </g>
   </g>

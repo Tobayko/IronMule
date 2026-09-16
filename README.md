@@ -1,24 +1,28 @@
 <div align="center">
 
-  <img src="docs/assets/ironmule-badge.jpg" alt="IronMule logo" width="220">
+  <img src="docs/assets/ironmule-badge.jpg" alt="IronMule logo" width="190">
 
-  <br><br>
+  <h1>IronMule</h1>
 
-  <img src="docs/assets/ironmule-wordmark.svg" alt="IronMule" width="760">
-
-  <p><strong>Run local LLMs faster on your own hardware — with the exact same answers.</strong></p>
+  <p><strong>Local LLM inference on Apple Silicon and NVIDIA — up to 1.8× faster,<br>
+  with byte-identical output.</strong></p>
 
   <p>
     <a href="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml"><img src="https://github.com/Tobayko/IronMule/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <img src="https://img.shields.io/badge/Python-3.10+-38bdf8" alt="Python 3.10+">
-    <img src="https://img.shields.io/badge/Apple_Silicon-Metal-ff9100" alt="Apple Silicon">
-    <img src="https://img.shields.io/badge/NVIDIA-CUDA-76b900" alt="NVIDIA CUDA">
     <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Apache_2.0-facc15" alt="License: Apache 2.0"></a>
   </p>
 
   <p>
+    <img src="https://img.shields.io/badge/Apple_Silicon-Metal-ff9100" alt="Apple Silicon, Metal">
+    <img src="https://img.shields.io/badge/NVIDIA-CUDA-76b900" alt="NVIDIA CUDA">
+    <img src="https://img.shields.io/badge/speed-up_to_%2B82%25-8b5cf6" alt="Up to 82 percent faster">
+    <img src="https://img.shields.io/badge/output-token--identical-22c55e" alt="Token-identical output">
+  </p>
+
+  <p>
+    <a href="#how-much-faster"><strong>Benchmarks</strong></a> ·
     <a href="#quick-start"><strong>Quick start</strong></a> ·
-    <a href="#results"><strong>Results</strong></a> ·
     <a href="#how-it-works"><strong>How it works</strong></a> ·
     <a href="docs/HTTP.md"><strong>HTTP API</strong></a> ·
     <a href="docs/LIMITS.md"><strong>Limits</strong></a>
@@ -30,21 +34,93 @@
 
 ## What is IronMule?
 
-IronMule is an open-source runtime for running large language models locally. It sits on
-top of [MLX](https://github.com/ml-explore/mlx) and works on **Apple Silicon Macs** and on
-**Linux with an NVIDIA GPU**.
+**IronMule is an open-source local LLM inference runtime and OpenAI-compatible server for
+Apple Silicon Macs (Metal) and Linux machines with an NVIDIA GPU (CUDA).** It runs on top
+of [MLX](https://github.com/ml-explore/mlx) and serves models such as Gemma 3 fully
+offline, on your own hardware.
 
 It makes inference faster by choosing a better way to run the same model — reusing work,
 skipping work that is not needed, and grouping requests — **without changing the output**.
 Every speed-up has to prove on your machine that it returns the same tokens as the plain
 reference path. If it cannot prove that, IronMule simply uses the reference.
 
-- **Faster:** up to about 1.8× on the measured workloads (see [Results](#results)).
-- **Same answers:** optimisations are checked token by token against the reference.
-- **Private:** runs fully offline. No prompts are uploaded, no models are downloaded
-  unless you ask.
-- **Easy to use:** an OpenAI-compatible HTTP server and a small Python API.
-- **Honest:** every number comes from a committed measurement, including the failures.
+- **Up to +82% faster** (1.82× on Gemma 3 1B, NVIDIA T4) and **+61%** on the same model on
+  an M1 Max — every token identical to the reference. [All numbers](#how-much-faster).
+- **Same answers, or no speed-up:** each optimisation is checked token by token before it
+  is ever used.
+- **Private by default:** fully offline. No prompts leave the machine, no model is
+  downloaded unless you ask for it.
+- **Drop-in:** an OpenAI-compatible HTTP server (`/v1/chat/completions`, streaming) and a
+  three-line Python API.
+- **Honest:** every number here comes from a committed measurement, including the ones
+  that failed.
+
+## How much faster?
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/cross-platform-speedup-dark.svg">
+  <img src="docs/assets/cross-platform-speedup.svg" alt="Speed-up per model on an Apple M1 Max and an NVIDIA Tesla T4, each against the stock MLX reference on that same device" width="100%">
+</picture>
+
+Same model, same prompts, greedy decoding, each device against its own stock MLX
+reference — **higher is faster**.
+
+| Model (4-bit) | Apple M1 Max | NVIDIA Tesla T4 | T4, opt-in `--compute-dtype float32` |
+| :-- | --: | --: | --: |
+| Gemma 3 1B | **1.61× · +61%** | **1.82× · +82%** | — |
+| Gemma 3 4B | **1.27× · +27%** | 1.05× · +5% | **1.91× · +91%** |
+| Gemma 3 12B | **1.11× · +11%** | 1.03× · +3% | **2.04× · +104%** |
+
+Every run in the first two columns returned the same tokens as its reference — the
+speed-up costs nothing in output. As wall-time ratios, which is how the raw data records
+them: 0.623, 0.787 and 0.898 on the M1 Max, 0.550, 0.951 and 0.974 on the T4.
+
+**The float32 column is a plan you switch on yourself.** Older NVIDIA GPUs (below compute
+capability 8) have no native bf16, so MLX emulates it — badly enough that 4B and 12B barely
+move otherwise. `--compute-dtype float32` computes the same weights in float32 instead:
+about twice as fast on the T4, with a perplexity that matches float32 on Apple Silicon to
+within 0.0001 nats per text chunk. Because it changes the output relative to bf16, IronMule
+never turns it on by itself; `ironmule doctor` recommends it where it pays.
+
+### Where the speed comes from
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/headline-ratios-dark.svg">
+  <img src="docs/assets/headline-ratios.svg" alt="Paired ratios with 95 percent bootstrap intervals for the A/A control, head-skip prefill, and warm and cold prefix cache reuse" width="100%">
+</picture>
+
+Individual optimisations on the M1 Max with Gemma 3 4B, each against an A/A control that
+measures the machine's own noise (1.0028, so anything inside ±0.6% is not a result):
+
+| Optimisation | Measured ratio | In plain terms |
+| :-- | --: | :-- |
+| Head-skip prefill | 0.846 | prompt processing **+18% faster** |
+| Prefix cache, warm | 0.622 | repeated questions on one document **+61% faster** |
+| Prefix cache, cold | 0.621 | **+61%**, even on the first session |
+
+<details>
+<summary>Two more figures: every session, and where prefill time actually goes</summary>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/session-ratios-dark.svg">
+  <img src="docs/assets/session-ratios.svg" alt="Head-skip prefill and the A/A control, session by session" width="100%">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/prefill-phases-dark.svg">
+  <img src="docs/assets/prefill-phases.svg" alt="Median prefill phase times with and without head skip, log scale" width="100%">
+</picture>
+
+</details>
+
+Every figure on this page is rendered from committed measurement data by
+`tools/make_figures.py`, and CI fails if a figure stops matching the data behind it.
+
+> [!IMPORTANT]
+> These numbers were measured on one Apple M1 Max (32 GB) and one Kaggle Tesla T4. They
+> are not a promise for every machine or model. Run `ironmule benchmark` on yours. Details:
+> [research/LEDGER.md](research/LEDGER.md) (entries `PORT1`, `B39d`, `E16`) and
+> [docs/LIMITS.md](docs/LIMITS.md).
 
 ## Quick start
 
@@ -124,40 +200,10 @@ print(result.text)
 | One chat, fastest reply | `InteractiveMode` (default) | Lowest latency per request |
 | Several requests at once | `ThroughputMode` | More tokens per second in total |
 | Many questions about one document | `ReusableSessionPlan` | The shared prompt is computed once |
-| Older NVIDIA GPU (Turing, Volta) | `--compute-dtype float32` | About 2× faster on 4B and 12B; see below |
+| Older NVIDIA GPU (Turing, Volta) | `--compute-dtype float32` | About 2× faster on 4B and 12B, [see above](#how-much-faster) |
 
 `ironmule tune` measures the available optimisations on your machine and keeps only the
 ones that are faster **and** produce identical tokens.
-
-## Results
-
-Same model, same prompts, greedy decoding. The number is IronMule's wall time divided by
-the stock MLX reference on the same device — **lower is faster**.
-
-| Model (4-bit) | Apple M1 Max | NVIDIA Tesla T4 |
-| :-- | --: | --: |
-| Gemma 3 1B | 0.62 | **0.55** |
-| Gemma 3 4B | 0.79 | 0.95 · **0.52** with `float32` |
-| Gemma 3 12B | 0.90 | 0.97 · **0.49** with `float32` |
-
-All IronMule runs produced the same tokens as the stock reference, except the `float32`
-column. Older NVIDIA GPUs (below compute capability 8) have no native bf16, so MLX emulates
-it. `--compute-dtype float32` computes the same model in float32 instead: on the T4 that is
-about twice as fast, and its perplexity matches float32 on Apple Silicon to within 0.0001
-nats per text chunk. Because it changes the output relative to bf16, IronMule never turns
-it on by itself; `ironmule doctor` suggests it where it helps.
-
-<img src="docs/assets/headline-ratios.svg" alt="Paired ratios with 95 percent bootstrap intervals for the A/A control, head-skip prefill, and warm and cold prefix cache reuse" width="100%">
-
-The chart shows individual optimisations on the M1 Max with Gemma 3 4B, each against an
-A/A control that measures the machine's own noise. It is rendered from committed data by
-`tools/make_figures.py`, and CI fails if it stops matching.
-
-> [!IMPORTANT]
-> These numbers were measured on one Apple M1 Max (32 GB) and one Kaggle Tesla T4. They
-> are not a promise for every machine or model. Run `ironmule benchmark` on yours. Details:
-> [research/LEDGER.md](research/LEDGER.md) (entries `PORT1`, `B39d`, `E16`) and
-> [docs/LIMITS.md](docs/LIMITS.md).
 
 ## How it works
 
@@ -220,7 +266,9 @@ and rejected stay documented in [docs/BACKLOG.md](docs/BACKLOG.md).
 
 Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). A performance claim
 needs a measurement; community benchmark results use the fields in
-[docs/COMMUNITY_BENCHMARKS.md](docs/COMMUNITY_BENCHMARKS.md).
+[docs/COMMUNITY_BENCHMARKS.md](docs/COMMUNITY_BENCHMARKS.md). Also:
+[code of conduct](CODE_OF_CONDUCT.md) and [security policy](SECURITY.md) — report a
+vulnerability privately, never in an issue.
 
 ```bash
 pip install -e ".[dev]"
@@ -235,3 +283,11 @@ study with its preregistration, raw data and the experiments that failed. Start 
 
 IronMule is open source under the [Apache License 2.0](LICENSE.md). You can use, modify and
 distribute it, including in commercial products.
+
+<div align="center">
+  <br>
+  <strong>Faster local inference, or your tokens back.</strong><br>
+  <sub>If IronMule saved you time on your own machine, a star helps the next person find
+  it — and a <a href="docs/COMMUNITY_BENCHMARKS.md">benchmark from your hardware</a> helps
+  even more.</sub>
+</div>

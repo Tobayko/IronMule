@@ -285,7 +285,7 @@ L 529.233125 22.318125
      </g>
     </g>
     <g id="text_15">
-     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start" x="354.125859" y="106.364898" transform="rotate(-0 354.125859 106.364898)">A/A control (baseline against itself)</text>
+     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start; fill: #1a1a1a" x="354.125859" y="106.364898" transform="rotate(-0 354.125859 106.364898)">A/A control (baseline against itself)</text>
     </g>
     <g id="line2d_23">
      <g>
@@ -293,7 +293,7 @@ L 529.233125 22.318125
      </g>
     </g>
     <g id="text_16">
-     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start" x="354.125859" y="120.615641" transform="rotate(-0 354.125859 120.615641)">head-skip prefill against baseline</text>
+     <text style="font-size: 9.5px; font-family: 'DejaVu Sans', 'Helvetica', 'Arial', 'Bitstream Vera Sans', 'Computer Modern Sans Serif', 'Lucida Grande', 'Verdana', 'Geneva', 'Lucid', 'Avant Garde', sans-serif; text-anchor: start; fill: #1a1a1a" x="354.125859" y="120.615641" transform="rotate(-0 354.125859 120.615641)">head-skip prefill against baseline</text>
     </g>
    </g>
   </g>

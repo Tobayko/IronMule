@@ -43,6 +43,46 @@ DECISION_CLAIMS = [
     ("experiments/fused_greedy_compile_v4/results.json", "fused_greedy_compile_inconclusive"),
 ]
 
+#: The README speed table, one cell per entry: the text it prints and the run it
+#: came from. A speed-up is 1/ratio, so a re-measured run moves both halves.
+README_SPEEDUPS = [
+    ("1B on the M1 Max", "1.61× · +61%",
+     "experiments/kaggle_compat/results/apple-abcd/abcd-1b.json",
+     ("wall_ratios", "D/A", "median_ratio")),
+    ("4B on the M1 Max", "1.27× · +27%",
+     "experiments/kaggle_compat/results/apple-abcd/abcd-4b.json",
+     ("wall_ratios", "D/A", "median_ratio")),
+    ("12B on the M1 Max", "1.11× · +11%",
+     "experiments/kaggle_compat/results/apple-abcd/abcd-12b.json",
+     ("wall_ratios", "D/A", "median_ratio")),
+    ("1B on the T4", "1.82× · +82%",
+     "experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-1b.json",
+     ("summary", "ironmule", "median_ratio")),
+    ("4B on the T4", "1.05× · +5%",
+     "experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-4b.json",
+     ("summary", "ironmule_exact", "median_ratio")),
+    ("4B on the T4, float32", "1.91× · +91%",
+     "experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-4b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+    ("12B on the T4", "1.03× · +3%",
+     "experiments/kaggle_compat/results/port1-run7-1f40ad2b/cross-12b.json",
+     ("summary", "ironmule_exact", "median_ratio")),
+    ("12B on the T4, float32", "2.04× · +104%",
+     "experiments/kaggle_compat/results/port1-run7-1f40ad2b/cross-12b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+]
+
+#: The same table's per-optimisation rows, which print a ratio and a percentage.
+README_MECHANISMS = [
+    ("head-skip prefill", "0.846", "+18%",
+     "experiments/head_skip_formal/results.json",
+     ("calculated_decision", "intervals", "all", "ratio")),
+    ("prefix cache, warm", "0.622", "+61%",
+     "research/raw/E10-prefix-cache-session-ab.json", ("ratio_warm", "median_ratio")),
+    ("prefix cache, cold", "0.621", "+61%",
+     "research/raw/E10-prefix-cache-session-ab.json", ("ratio_cold", "median_ratio")),
+]
+
 #: The head-skip study lives in a sealed database rather than a JSON file.
 HEAD_SKIP_DATABASE = ROOT / ".friday-data" / "head-skip-v1.sqlite3"
 HEAD_SKIP_CLAIMS = [
@@ -92,6 +132,37 @@ def test_head_skip_numbers_match_the_sealed_database():
         assert text in status, f"{field}: {text} is no longer in PROJECT_STATUS.md"
     # Six confirmation sessions, all token-identical, is what the table claims.
     assert intervals["sessions"] == 6
+
+
+def _measured(evidence: str, path: tuple[str, ...]) -> float:
+    payload = json.loads((ROOT / evidence).read_text())
+    for key in path:
+        payload = payload[key]
+    return payload
+
+
+@pytest.mark.parametrize("label,text,evidence,path", README_SPEEDUPS,
+                         ids=[entry[0].replace(" ", "-") for entry in README_SPEEDUPS])
+def test_the_readme_speed_table_matches_the_run_behind_each_cell(label, text, evidence, path):
+    """The README is the first thing a stranger reads, so it is pinned hardest.
+
+    Both directions are checked: the printed cell must be what the run says,
+    and the run's number must still be the one the README prints.
+    """
+
+    speedup = 1 / _measured(evidence, path)
+    assert text == f"{speedup:.2f}× · +{(speedup - 1) * 100:.0f}%", label
+    assert text in document("README.md"), f"{label}: {text} is no longer in the README"
+
+
+@pytest.mark.parametrize("label,ratio,percent,evidence,path", README_MECHANISMS,
+                         ids=[entry[0].replace(" ", "-").replace(",", "") for entry in README_MECHANISMS])
+def test_the_readme_mechanism_table_matches_its_study(label, ratio, percent, evidence, path):
+    measured = _measured(evidence, path)
+    assert ratio == f"{measured:.3f}", label
+    assert percent == f"+{(1 / measured - 1) * 100:.0f}%", label
+    readme = document("README.md")
+    assert ratio in readme and percent in readme, f"{label}: no longer in the README"
 
 
 def test_the_ledger_would_notice_a_changed_number():

@@ -21,6 +21,19 @@ All notable public changes to IronMule are documented here. Measurements and res
   worker transport tests start children without `site`, and macOS-only process tests are
   skipped elsewhere.
 - **A shorter README** for first-time users.
+- **The README leads with the measured speed-ups**, as a speed-up factor and a percentage
+  per model and device, above a new `cross-platform-speedup.svg` rendered from the PORT1
+  runs. Every cell is pinned to its raw result by `tests/test_documented_claims.py`, so a
+  number cannot drift away from the run it came from. The wordmark banner is gone; the
+  badge is the only mark.
+- **Every figure exists in both themes.** `tools/make_figures.py` renders a light and a
+  dark variant of each figure and the README picks one with `prefers-color-scheme`, so a
+  reader on GitHub's dark theme no longer gets a white panel. The dark palette keeps
+  Okabe-Ito's hues and the same role-to-colour mapping; CI checks both variants.
+- **A social preview card built from the evidence.** `tools/make_social_preview.py` reads
+  the same runs the README cites, so the card GitHub shows when a link is shared cannot
+  claim a number the data does not support.
+- **A security policy and a code of conduct**, plus a `CITATION.cff` that says CUDA.
 
 ## [0.1.0] — 2026-09-11
 
