@@ -1,0 +1,8 @@
+{
+ "model_id": "mlx-community/gemma-4-26b-a4b-it-4bit",
+ "gb_on_disk": 15.34,
+ "loaded": true,
+ "weights_bytes": 14203734936,
+ "text": "<|channel>thought\n*   Topic: Why the sky is blue.\n    *",
+ "peak_memory_bytes": 14304458208
+}

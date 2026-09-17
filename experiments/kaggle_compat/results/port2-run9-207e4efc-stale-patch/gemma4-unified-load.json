@@ -1,0 +1,6 @@
+{
+ "model_id": "mlx-community/gemma-4-12b-it-4bit",
+ "expected": "gemma4_unified is not implemented in mlx-lm 0.31.3",
+ "loaded": false,
+ "error": "ValueError: Model type gemma4_unified not supported."
+}
