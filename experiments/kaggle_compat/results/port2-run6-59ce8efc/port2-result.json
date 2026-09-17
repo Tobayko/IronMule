@@ -1,0 +1,108 @@
+{
+ "schema": "ironmule.port2-kaggle.v6",
+ "commit": "8064419f409366e08f8e651e747f483d9c0483df",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB]\n0, Tesla T4, 15360 MiB\n1, Tesla T4, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 3.1,
+   "tail": " ironmule/fast.py              | 263 +++++++++++++++++++++++++++++++-----------\n ironmule/runtime.py           |  20 +++-\n ironmule/service.py           |  35 ++++++\n ironmule/tune.py              |  11 +-\n tests/engine/test_ironmule.py |  95 ++++++++++++++-\n 5 files changed, 349 insertions(+), 75 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 11.5,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 74.3 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.70s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 23.1,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 44 packages in 1.46s\n   Building ironmule @ file:///tmp/IronMule\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading numpy (15.9MiB)\nDownloading pyarrow (47.8MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading scipy (33.7MiB)\nDownloading pygments (1.2MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading hf-xet (4.3MiB)\nDownloading tokenizers (3.2MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 44 packages in 21.15s\nInstalled 44 packages in 311ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==3.32.7\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.1\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==3.32.7\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.1\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_gemma3-4b": {
+   "exit": 0,
+   "seconds": 28.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 16.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "download_gptoss-20b": {
+   "exit": 0,
+   "seconds": 50.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gpt-oss-20b-MXFP4-Q4/snapshots/f356f2747216d7e98fee755df25987459fc19089\n"
+  },
+  "cross_fp16_gemma3-4b": {
+   "exit": 0,
+   "seconds": 625.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 25738.169856 0\nironmule_fp32 0 13463.078813 0\nironmule_fp16 0 8232.850947 0\nironmule_fp32 1 13988.386304 0\nironmule_fp16 1 8112.43209 0\nstock 1 26804.382416 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5230783264048408,\n   0.5218693751977695\n  ],\n  \"median_ratio\": 0.5224738508013052,\n  \"max_ratio\": 0.5230783264048408,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp16\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.319869322219147,\n   0.30265319917080236\n  ],\n  \"median_ratio\": 0.3112612606949747,\n  \"max_ratio\": 0.319869322219147,\n  \"identical_requests\": 0,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_fp16_qwen3-8b": {
+   "exit": 0,
+   "seconds": 588.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 47867.771072 0\nironmule_fp32 0 25840.188754 0\nironmule_fp16 0 14874.107953 0\nironmule_fp32 1 25351.770978 0\nironmule_fp16 1 14809.10335 0\nstock 1 47884.774461 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5398243572931909,\n   0.529432815824326\n  ],\n  \"median_ratio\": 0.5346285865587584,\n  \"max_ratio\": 0.5398243572931909,\n  \"identical_requests\": 5,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp16\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.31073324744173286,\n   0.30926538793789976\n  ],\n  \"median_ratio\": 0.3099993176898163,\n  \"max_ratio\": 0.31073324744173286,\n  \"identical_requests\": 5,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_fp16_gptoss-20b": {
+   "exit": 0,
+   "seconds": 1495.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 118038.628329 0\nironmule_fp32 0 33209.104751 0\nironmule_fp16 0 23542.786416 0\nironmule_fp32 1 33298.932869 0\nironmule_fp16 1 23433.252791 0\nstock 1 117937.764944 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.2813409916831532,\n   0.2823432586229798\n  ],\n  \"median_ratio\": 0.2818421251530665,\n  \"max_ratio\": 0.2823432586229798,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp16\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.1994498474718039,\n   0.19869168117715927\n  ],\n  \"median_ratio\": 0.19907076432448156,\n  \"max_ratio\": 0.1994498474718039,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "quality16_gemma3-4b_bf16": {
+   "exit": 0,
+   "seconds": 241.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 2.758978843688965}\n1 {'nll_bf16': 4.500776767730713}\n2 {'nll_bf16': 4.136030673980713}\n3 {'nll_bf16': 4.803227424621582}\n4 {'nll_bf16': 3.913957357406616}\n5 {'nll_bf16': 4.885228633880615}\n6 {'nll_bf16': 4.587038040161133}\n7 {'nll_bf16': 4.6926960945129395}\n8 {'nll_bf16': 5.727599143981934}\n9 {'nll_bf16': 5.522043704986572}\n10 {'nll_bf16': 4.583499908447266}\n11 {'nll_bf16': 5.269989967346191}\n12 {'nll_bf16': 5.781798362731934}\n13 {'nll_bf16': 4.43317174911499}\n14 {'nll_bf16': 4.507172584533691}\n15 {'nll_bf16': 3.980971097946167}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"only\": \"bf16\",\n \"ppl_bf16\": 102.54085168400623,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 240.03725218772888\n}\n"
+  },
+  "quality16_gemma3-4b_float16": {
+   "exit": 0,
+   "seconds": 56.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_float16': 3.3847415447235107}\n1 {'nll_float16': 5.493348121643066}\n2 {'nll_float16': 5.272514820098877}\n3 {'nll_float16': 5.37969970703125}\n4 {'nll_float16': 4.458895683288574}\n5 {'nll_float16': 5.671095848083496}\n6 {'nll_float16': 5.4283342361450195}\n7 {'nll_float16': 5.318911552429199}\n8 {'nll_float16': 6.462753772735596}\n9 {'nll_float16': 6.319396495819092}\n10 {'nll_float16': 5.244483947753906}\n11 {'nll_float16': 5.735293388366699}\n12 {'nll_float16': 6.442714691162109}\n13 {'nll_float16': 4.844821929931641}\n14 {'nll_float16': 5.2958478927612305}\n15 {'nll_float16': 4.7682366371154785}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"only\": \"float16\",\n \"ppl_float16\": 209.5721647406451,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 55.22127819061279\n}\n"
+  },
+  "quality16_qwen3-8b_bf16": {
+   "exit": 0,
+   "seconds": 446.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 {'nll_bf16': 2.1972408294677734}\n1 {'nll_bf16': 2.7138633728027344}\n2 {'nll_bf16': 2.638066291809082}\n3 {'nll_bf16': 2.647608757019043}\n4 {'nll_bf16': 2.5224905014038086}\n5 {'nll_bf16': 2.660344123840332}\n6 {'nll_bf16': 2.8172783851623535}\n7 {'nll_bf16': 2.7418429851531982}\n8 {'nll_bf16': 3.093982696533203}\n9 {'nll_bf16': 2.916029453277588}\n10 {'nll_bf16': 2.5976920127868652}\n11 {'nll_bf16': 2.6529927253723145}\n12 {'nll_bf16': 3.003232955932617}\n13 {'nll_bf16': 2.6030349731445312}\n14 {'nll_bf16': 2.6343531608581543}\n15 {'nll_bf16': 2.7913997173309326}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"only\": \"bf16\",\n \"ppl_bf16\": 14.909011202956986,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 445.64797949790955\n}\n"
+  },
+  "quality16_qwen3-8b_float16": {
+   "exit": 0,
+   "seconds": 89.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 {'nll_float16': 2.1943013668060303}\n1 {'nll_float16': 2.7186508178710938}\n2 {'nll_float16': 2.635352611541748}\n3 {'nll_float16': 2.649014472961426}\n4 {'nll_float16': 2.52012038230896}\n5 {'nll_float16': 2.654644012451172}\n6 {'nll_float16': 2.8129897117614746}\n7 {'nll_float16': 2.745833396911621}\n8 {'nll_float16': 3.0882625579833984}\n9 {'nll_float16': 2.9169070720672607}\n10 {'nll_float16': 2.5925023555755615}\n11 {'nll_float16': 2.6507415771484375}\n12 {'nll_float16': 2.9947896003723145}\n13 {'nll_float16': 2.6011924743652344}\n14 {'nll_float16': 2.6317853927612305}\n15 {'nll_float16': 2.7873494625091553}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"only\": \"float16\",\n \"ppl_float16\": 14.874559374152732,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 88.39236545562744\n}\n"
+  },
+  "download_shard_qwen38-27b": {
+   "exit": 0,
+   "seconds": 69.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/10c35caafbb80f7dc6a7a432cdd11af10a6d4818\n"
+  },
+  "shard_qwen38-27b": {
+   "exit": 0,
+   "seconds": 121.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3.8-27B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 1,\n \"size\": 2,\n \"device\": \"Device(gpu, 1)\",\n \"ok\": false,\n \"error\": \"RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\"\n}\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3.8-27B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 0,\n \"size\": 2,\n \"device\": \"Device(gpu, 0)\",\n \"ok\": false,\n \"error\": \"RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\"\n}\n"
+  },
+  "download_shard_qwen3-8b": {
+   "exit": 0,
+   "seconds": 0.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "shard_qwen3-8b": {
+   "exit": 0,
+   "seconds": 52.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 1,\n \"size\": 2,\n \"device\": \"Device(gpu, 1)\",\n \"load_seconds\": 23.7,\n \"weights_bytes_this_rank\": 2654234632,\n \"text\": \"<think>\\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because sunlight interacts with the Earth's atmosphere. When sunlight, which is white and contains\",\n \"seconds\": 24.28,\n \"tokens_per_second\": 1.98,\n \"peak_memory_bytes\": 2679220240,\n \"prompt_tokens\": 19,\n \"ok\": true\n}\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 0,\n \"size\": 2,\n \"device\": \"Device(gpu, 0)\",\n \"load_seconds\": 23.7,\n \"weights_bytes_this_rank\": 2654234632,\n \"text\": \"<think>\\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because sunlight interacts with the Earth's atmosphere. When sunlight, which is white and contains\",\n \"seconds\": 24.27,\n \"tokens_per_second\": 1.98,\n \"peak_memory_bytes\": 2679220240,\n \"prompt_tokens\": 19,\n \"ok\": true\n}\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

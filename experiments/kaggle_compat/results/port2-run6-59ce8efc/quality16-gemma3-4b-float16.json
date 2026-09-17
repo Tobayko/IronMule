@@ -1,0 +1,62 @@
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/gemma-3-4b-it-4bit",
+ "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "rows": [
+  {
+   "nll_float16": 3.3847415447235107
+  },
+  {
+   "nll_float16": 5.493348121643066
+  },
+  {
+   "nll_float16": 5.272514820098877
+  },
+  {
+   "nll_float16": 5.37969970703125
+  },
+  {
+   "nll_float16": 4.458895683288574
+  },
+  {
+   "nll_float16": 5.671095848083496
+  },
+  {
+   "nll_float16": 5.4283342361450195
+  },
+  {
+   "nll_float16": 5.318911552429199
+  },
+  {
+   "nll_float16": 6.462753772735596
+  },
+  {
+   "nll_float16": 6.319396495819092
+  },
+  {
+   "nll_float16": 5.244483947753906
+  },
+  {
+   "nll_float16": 5.735293388366699
+  },
+  {
+   "nll_float16": 6.442714691162109
+  },
+  {
+   "nll_float16": 4.844821929931641
+  },
+  {
+   "nll_float16": 5.2958478927612305
+  },
+  {
+   "nll_float16": 4.7682366371154785
+  }
+ ],
+ "only": "float16",
+ "ppl_float16": 209.5721647406451,
+ "device": "Device(gpu, 0)",
+ "seconds": 55.22127819061279
+}

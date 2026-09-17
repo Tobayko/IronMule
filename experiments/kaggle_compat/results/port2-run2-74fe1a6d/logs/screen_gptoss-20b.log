@@ -1,0 +1,22 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+ "revision": "f356f2747216d7e98fee755df25987459fc19089",
+ "max_tokens": 16,
+ "ok": true,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "baseline_matches_stock": true,
+ "tuned_full_error": "FusionUnsupported: no verified fused body for attention mlx_lm.models.gpt_oss or MLP mlx_lm.models.gpt_oss",
+ "tuned_profile_reduced": true,
+ "tokens_identical": true,
+ "tuned_matches_stock": true,
+ "tuned_over_baseline_generate": 0.954,
+ "device": "Device(gpu, 0)"
+}
+{'knobs': 'stock', 'cache_kinds': ['kv']}
+{'knobs': {}, 'load_seconds': 76.6, 'n_layers': 24, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 11181750536, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 19.258, 'decode_tokens_per_second': 0.83, 'warmup_tokens_match': True, 'peak_memory_bytes': 11301428504}
+{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': False}, 'load_seconds': 76.9, 'n_layers': 24, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 11181750536, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 18.372, 'decode_tokens_per_second': 0.87, 'warmup_tokens_match': True, 'peak_memory_bytes': 11274810736}

@@ -1,0 +1,30 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+0 {'nll_bf16': 5.158421993255615}
+1 {'nll_bf16': 4.97990608215332}
+2 {'nll_bf16': 5.036932945251465}
+3 {'nll_bf16': 4.938009262084961}
+4 {'nll_bf16': 5.052279472351074}
+5 {'nll_bf16': 4.662470817565918}
+6 {'nll_bf16': 5.745222568511963}
+7 {'nll_bf16': 5.604795455932617}
+8 {'nll_bf16': 4.95477294921875}
+9 {'nll_bf16': 4.959178924560547}
+10 {'nll_bf16': 4.651480674743652}
+11 {'nll_bf16': 4.290423393249512}
+12 {'nll_bf16': 5.44995641708374}
+13 {'nll_bf16': 4.630699634552002}
+14 {'nll_bf16': 4.3647541999816895}
+15 {'nll_bf16': 5.071136951446533}
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+ "revision": "f356f2747216d7e98fee755df25987459fc19089",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "only": "bf16",
+ "ppl_bf16": 144.30117505290718,
+ "device": "Device(gpu, 0)",
+ "seconds": 2067.9654574394226
+}

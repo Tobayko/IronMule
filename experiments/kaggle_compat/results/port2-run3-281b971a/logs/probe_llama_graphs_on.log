@@ -1,0 +1,7 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.
+{'arm': 'unfused', 'fuse_projections': False, 'contiguous_barrier': False, 'cuda_graphs': 'on', 'text': 'The sky appears blue because of a phenomenon called scattering, where sunlight interacts with the tiny molecules of gases in the atmosphere, such as nitrogen and oxygen, causing the', 'self_consistent': True, 'seconds': 53.4, 'matches_reference': True}
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  cudaStreamSynchronize(stream_) failed: an illegal memory access was encountered
+Aborted (core dumped)

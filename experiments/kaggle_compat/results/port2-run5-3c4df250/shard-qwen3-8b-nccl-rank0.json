@@ -1,0 +1,12 @@
+{
+ "schema": "ironmule.port2-shard.v1",
+ "arm": "tensor_parallel",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "backend_env": "unset",
+ "performance_claim": false,
+ "rank": 0,
+ "size": 2,
+ "device": "Device(gpu, 0)",
+ "ok": false,
+ "error": "RuntimeError: There is no Stream(gpu, 1) in current thread."
+}

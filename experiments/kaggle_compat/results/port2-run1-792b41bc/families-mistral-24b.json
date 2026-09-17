@@ -1,0 +1,14 @@
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+ "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "max_tokens": 24,
+ "arms": [],
+ "ok": false,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "error": "AttributeError: 'Model' object has no attribute 'make_cache'",
+ "failed_after_arms": 0,
+ "device": "Device(gpu, 0)"
+}

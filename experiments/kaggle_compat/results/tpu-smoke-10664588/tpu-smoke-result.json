@@ -1,0 +1,159 @@
+{
+ "schema": "ironmule.tpu-smoke.v1",
+ "performance_claim": false,
+ "stages": {
+  "inventory": {
+   "exit": 0,
+   "value": {
+    "jax": "0.10.2",
+    "device_count": 8,
+    "tpu_devices": 8,
+    "devices": [
+     {
+      "repr": "TPU_0(process=0,(0,0,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 0,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_1(process=0,(1,0,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 1,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_2(process=0,(0,1,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 2,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_3(process=0,(1,1,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 3,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_4(process=0,(0,2,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 4,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_5(process=0,(1,2,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 5,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_6(process=0,(0,3,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 6,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     },
+     {
+      "repr": "TPU_7(process=0,(1,3,0,0))",
+      "platform": "tpu",
+      "device_kind": "TPU v5 lite",
+      "id": 7,
+      "hbm_limit_bytes": 16909332480,
+      "hbm_in_use_bytes": 27136
+     }
+    ]
+   },
+   "seconds": 20.32
+  },
+  "stack": {
+   "exit": 0,
+   "value": {
+    "python": "3.12.13",
+    "packages": [
+     "flax==0.12.7",
+     "jax==0.10.2",
+     "jaxlib==0.10.2",
+     "jaxtyping==0.3.11",
+     "keras-core==0.1.7",
+     "keras-cv==0.9.0",
+     "keras-hub==0.29.1",
+     "keras-nlp==0.29.1",
+     "keras==3.15.0",
+     "libtpu==0.0.17",
+     "optax==0.2.8",
+     "orbax-checkpoint==0.12.1",
+     "tensorflow-datasets==4.9.10",
+     "tensorflow-hub==0.16.1",
+     "tensorflow-io-gcs-filesystem==0.37.1",
+     "tensorflow-io==0.37.1",
+     "tensorflow-metadata==1.21.0",
+     "tensorflow-probability==0.25.0",
+     "tensorflow-text==2.20.1",
+     "tensorflow==2.20.0",
+     "tensorflow_cpu==2.20.0",
+     "torch @ https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+     "torch_xla @ https://storage.googleapis.com/pytorch-xla-releases/wheels/tpuvm/torch_xla-2.8.0-cp312-cp312-manylinux_2_28_x86_64.whl",
+     "torchaudio @ https://download.pytorch.org/whl/cpu/torchaudio-2.8.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+     "torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.23.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl",
+     "transformers==5.12.1"
+    ]
+   },
+   "seconds": 1.22
+  },
+  "correctness": {
+   "exit": 0,
+   "value": {
+    "shape_exact": true,
+    "finite": true,
+    "allclose_rtol_2e-4": true,
+    "max_abs_diff": 3.4332275390625e-05,
+    "device": "TPU_0(process=0,(0,0,0,0))"
+   },
+   "seconds": 0.59
+  },
+  "decode_shapes": {
+   "exit": 0,
+   "value": {
+    "bfloat16": {
+     "milliseconds_per_matmul": {
+      "qkv_4096x6144": 0.0707,
+      "gate_up_4096x24576": 0.2703,
+      "down_12288x4096": 0.1369
+     }
+    },
+    "float32": {
+     "milliseconds_per_matmul": {
+      "qkv_4096x6144": 0.1368,
+      "gate_up_4096x24576": 0.5356,
+      "down_12288x4096": 0.2695
+     }
+    }
+   },
+   "seconds": 1.43
+  },
+  "real_decode_feasibility": {
+   "exit": 0,
+   "value": {
+    "torch_xla": true,
+    "flax": true,
+    "transformers": true,
+    "jax.experimental.pallas": true,
+    "mlx": "absent: ModuleNotFoundError"
+   },
+   "seconds": 25.61
+  }
+ },
+ "finished": true
+}

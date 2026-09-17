@@ -1,0 +1,20 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Qwen3-14B-4bit",
+ "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+ "max_tokens": 16,
+ "ok": true,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "baseline_matches_stock": true,
+ "tokens_identical": true,
+ "tuned_matches_stock": true,
+ "tuned_over_baseline_generate": 0.9791,
+ "device": "Device(gpu, 0)"
+}
+{'knobs': 'stock', 'cache_kinds': ['kv']}
+{'knobs': {}, 'load_seconds': 56.0, 'n_layers': 40, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 8308297736, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 7.233, 'decode_tokens_per_second': 2.21, 'warmup_tokens_match': True, 'peak_memory_bytes': 8377589448}
+{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 55.5, 'n_layers': 40, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 8308297736, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 7.082, 'decode_tokens_per_second': 2.26, 'warmup_tokens_match': True, 'peak_memory_bytes': 8971763112}

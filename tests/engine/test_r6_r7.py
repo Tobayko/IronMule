@@ -1394,7 +1394,15 @@ def test_compute_dtype_is_opt_in_validated_and_stored_apart():
     identity = types.SimpleNamespace(identity_sha256="abc")
     assert _profile_key("hw", identity) == "hw/abc", "native profiles keep their key"
     assert _profile_key("hw", identity, "float32") == "hw/abc/float32"
+    assert _profile_key("hw", identity, "float16") == "hw/abc/float16"
     assert _check_compute_dtype(None) is None
+    # Both plans are selectable and each keeps its own profile key; neither is ever chosen.
+    # `float16` joined `float32` in PORT2, where it ran Qwen 3 8B at 0.31 of stock and
+    # doubled Gemma 3 4B's perplexity — which is exactly why it is opt-in and unsearched.
+    assert _check_compute_dtype("float16") == "float16"
+    assert _check_compute_dtype("float32") == "float32"
     with pytest.raises(ValueError, match="compute_dtype"):
-        _check_compute_dtype("float16")
+        _check_compute_dtype("bfloat16")
+    with pytest.raises(ValueError, match="compute_dtype"):
+        _check_compute_dtype("float64")
     assert all(name != "compute_dtype" for name, _ in SEARCH), "tune must never pick a numeric plan"

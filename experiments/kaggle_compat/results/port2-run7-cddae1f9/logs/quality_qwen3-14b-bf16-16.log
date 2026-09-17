@@ -1,0 +1,31 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors
+0 {'nll_bf16': 2.0239651203155518}
+1 {'nll_bf16': 2.632028818130493}
+2 {'nll_bf16': 2.507960319519043}
+3 {'nll_bf16': 2.5078301429748535}
+4 {'nll_bf16': 2.3304147720336914}
+5 {'nll_bf16': 2.5773465633392334}
+6 {'nll_bf16': 2.6549301147460938}
+7 {'nll_bf16': 2.624605178833008}
+8 {'nll_bf16': 2.9483652114868164}
+9 {'nll_bf16': 2.8673527240753174}
+10 {'nll_bf16': 2.461200714111328}
+11 {'nll_bf16': 2.550814628601074}
+12 {'nll_bf16': 2.893439769744873}
+13 {'nll_bf16': 2.3561973571777344}
+14 {'nll_bf16': 2.5447628498077393}
+15 {'nll_bf16': 2.623976707458496}
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/Qwen3-14B-4bit",
+ "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "only": "bf16",
+ "ppl_bf16": 13.053736792360644,
+ "device": "Device(gpu, 0)",
+ "seconds": 901.3654367923737
+}

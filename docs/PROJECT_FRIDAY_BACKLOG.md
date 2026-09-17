@@ -109,6 +109,75 @@ Notebook nach Archivierung löschen. Offen:
   kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
   langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
 
+## PORT2 — Rest (2026-09-16)
+
+Beantwortet in `research/LEDGER.md` PORT2: fünf weitere Familien tragen, das getunte Profil
+überträgt sich unverändert, drei eigene Defekte gefunden und behoben, ein vierter durch
+Verweigerung geschlossen, Decke der einen Karte vermessen, TPU-Gate aus DATA1 geschlossen.
+Rohdaten `experiments/kaggle_compat/results/port2-run1-*` bis `-run6-*` und `tpu-smoke-*`.
+Budget: Nutzerentscheidung 2026-09-16, die 10-h-Woche entfällt. Nutzerauflage 2026-09-17,
+nie ins Limit laufen: von der Gratisquote bleiben **6 h GPU von 30 h und 4 h TPU von 20 h
+als Reserve stehen** (Reset 2026-09-19). Vor jedem Submit entscheidet `quota_guard.py`
+anhand der geplanten `sessionTimeoutSeconds`; unterschreitet der Rest die Reserve, wird der
+Lauf verkleinert oder wartet auf den Reset. 0 EUR, kein Auto-Retry, Notebook nach
+Archivierung löschen. Offen:
+
+- **PORT2-A `float16` für die übrigen Modelle qualifizieren.** Mechanismus: `float16` läuft
+  auf Turing bei 0,31 (Gemma 3 4B, Qwen 3 8B) und 0,199 (gpt-oss 20B) der Stockzeit, also
+  nochmal rund 1,7x unter `float32`. Das Gate entscheidet aber je Modell, nicht je Gerät:
+  Qwen 3 8B besteht mit `0,997689 [0,996051; 0,999454]`, Gemma 3 4B verfehlt katastrophal
+  mit `2,043792 [1,874; 2,244]`, Perplexität von 102,54 auf 209,57. Test: WikiText-2, 16 x
+  512, bootstrap, je ein Prozess pro Präzision, für gpt-oss 20B, Qwen 3 14B, Qwen 3.5 9B und
+  Mistral 3 24B. Kill: verfehltes Intervall lässt `float16` für dieses Modell gesperrt; kein
+  Modell bekommt den Plan ohne eigene Messung, und `doctor` empfiehlt ihn nie.
+- **PORT2-B warum kostet `float32` ausgerechnet llama 3.1.** Dreimal reproduziert (1,4764 /
+  1,5182 / 1,5365), während jede andere Familie zwischen 0,28 und 0,55 liegt. Die
+  4-bit-Matvec-Diagnostik schließt `quantized_matmul` aus: an llamas eigenen Formen 0,577,
+  an Qwen 3 8Bs identischen Attention-Formen 0,580 — beide sagen Gewinn voraus. Verbleibende
+  Unterschiede: `Llama3RoPE` schiebt eigene `freqs` in `mx.fast.rope`, und llamas `lm_head`
+  ist ungebunden mit 128 256 Zeilen. Test: beide einzeln in bf16 gegen float32 zeitlich
+  messen, mit Qwen 3 8B als Kontrolle. Kill: liegt die Differenz in keinem von beiden, ist
+  die Anomalie unerklärt und `doctor` muss llama-Familien von der `float32`-Empfehlung
+  ausnehmen.
+- **PORT2-C zwei Karten für Modelle, die auf eine nicht passen.** Tensor-Parallelität über
+  den Ring-Backend funktioniert (Qwen 3 8B, 2,65 GB je Rank, Tokens identisch zur
+  Einzelkarten-Referenz); der nccl-Backend nicht (`There is no Stream(gpu, 1) in current
+  thread`). Qwen3.8 27B (16,05 GB) starb trotzdem an `cudaMallocAsync … out of memory` unter
+  `sharded_load`, Ort nicht lokalisiert. Test: aktiven Speicher vor und nach `sharded_load`
+  drucken und prüfen, ob dort vor dem Sharden das ganze Modell materialisiert wird. Kill:
+  materialisiert es vollständig, ist der Weg über `sharded_load` für Checkpoints über einer
+  Karte versperrt und braucht einen eigenen Ladepfad.
+- **PORT2-D IronMule kann keiner verteilten Gruppe beitreten.** Einzelprozess; die
+  Zwei-Karten-Messung oben ist stock mlx-lm. Mechanismus für einen Eintrag: `Runtime` müsste
+  eine `mx.distributed.Group` annehmen und alle Ränge dasselbe Programm fahren. Nicht
+  eröffnet, solange PORT2-C nicht zeigt, dass oberhalb einer Karte überhaupt etwas lädt.
+- **PORT2-E Mistrals `float32`-Qualitätsgate fehlt.** 512er-Chunks laufen bei 13,26 GB
+  Gewichten plus fp32-Logits über 131k Vokabular in `cudaMallocAsync … out of memory`. Test:
+  256er-Chunks, sonst unverändert. Kill: passt auch das nicht, bleibt für Mistral jede
+  fp32-Aussage unqualifiziert und der gemessene 0,5487 bleibt reine Geschwindigkeit.
+- **PORT2-F gpt-oss `float32` hat ein zu breites Intervall.** `0,992749 [0,918655; 1,064954]`
+  bei 12 Chunks, gepaart über zwei Prozesse. Test: 32 Chunks. Kill: bleibt das Intervall
+  breiter als das Gate, trägt gpt-oss keine Qualitätsaussage, egal wie schnell der Plan ist.
+- **PORT2-G `fuse_projections` schreibt in place um und wirft mittendrin.** Wer eine eigene
+  Modellinstanz an `Engine` übergibt und `FusionUnsupported` fängt, behält ein halb
+  umgeschriebenes Modell. Innerhalb von `load_engine` folgenlos, weil die Instanz verworfen
+  wird. Test: fusionierte und unfusionierte Blöcke nach einem Abbruch zählen. Kill: es gibt
+  keinen Aufrufer außerhalb von `load_engine` — dann bleibt es eine Notiz.
+- **PORT2-H der gemessene Stack ist nicht der aufgezeichnete.** `ironmule/stacks.py` führt
+  mlx `0.32.0`, Kaggle installiert `0.32.2`. Die Gemma-3-4B-Kontrolle zeigt, dass der
+  `float32`-Vorteil den Sprung überlebt (0,5086 gegen PORT1s 0,5246), aber der Eintrag in
+  `stacks.py` stimmt nicht mehr. Test: Stackeintrag nachziehen oder begründet festschreiben.
+- **TPU.** Gate aus DATA1 geschlossen, Ergebnis im Ledger. Was bleibt: MLX hat kein
+  TPU-Gerät, IronMule läuft dort nicht, und keine PORT2-Zahl ist übertragbar. Eine echte
+  Dekodierung über `torch_xla` läuft als reine Stock-Referenz; sie qualifiziert nichts an
+  IronMule und darf nie neben die T4-Zahlen als Beschleunigung gestellt werden — dense bf16
+  gegen 4-bit ist nicht dieselbe Operation.
+- Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (Debians kaputter
+  `sitecustomize` im Kind-stderr, plus ein 0,5-s-Abbruchtest an der langsameren
+  Kind-Startzeit). Unabhängig davon scheitert `test_q3f_real_cleanup_keeps_external_process_alive`
+  seit 2026-09-16 auch auf dem Mac, und zwar auf sauberem HEAD ohne die PORT2-Änderungen;
+  kein Regress aus dieser Arbeit, aber offen.
+
 ## DATA3 — Rest (2026-09-15)
 
 Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
@@ -119,7 +188,10 @@ Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
   Produktwurzel unter `IRONMULE_HOME/product` wie im Default. Kill: bestehende
   Nutzerzustände würden unauffindbar — dann Migration oder nur klare Fehlermeldung.
 - DATA2 (Transformers-Referenz) bleibt blockiert, bis die Gemma-Lizenz auf Kaggle
-  akzeptiert ist.
+  akzeptiert ist. Anmerkung 2026-09-16: PORT2 hat gezeigt, dass eine lizenzfreie
+  Stock-Referenz genügt — `families.py` dekodiert greedy an IronMule vorbei, und auf der
+  TPU läuft dasselbe über `torch_xla` mit Qwen-Gewichten. DATA2 braucht die Gemma-Lizenz
+  also nur noch, wenn ausdrücklich Gemma die Referenz sein soll.
 
 ## PROD1 — IronMule als autonome lokale LLM-Umgebung (2026-09-05)
 

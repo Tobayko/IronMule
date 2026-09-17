@@ -7,7 +7,7 @@ import mlx.nn as nn
 import pytest
 
 from ironmule import hw, runtime
-from ironmule.fast import fuse_projections
+from ironmule.fast import FusionUnsupported, fuse_projections
 from ironmule.runtime import BASELINE, Engine, Knobs
 
 
@@ -51,7 +51,8 @@ def test_fusion_is_bit_identical():
     reference = model(tokens)
     mx.eval(reference)
 
-    assert fuse_projections(model, check_version=False) == 4
+    # Two projection groups per block: attention q/k/v and the MLP's gate/up.
+    assert fuse_projections(model, check_version=False) == 8
     fused = model(tokens)
     mx.eval(fused)
     assert mx.array_equal(fused, reference).item()
@@ -60,6 +61,29 @@ def test_fusion_is_bit_identical():
 def test_fusion_refuses_an_unverified_library():
     with pytest.raises(Exception):
         fuse_projections(object(), check_version=True)
+
+
+def test_fusion_refuses_an_architecture_it_was_not_transcribed_from():
+    """The bodies are transcriptions, so an untranscribed block must keep its own.
+
+    Qwen 2 is the trap: close enough to Qwen 3 to look fusible, different enough that the
+    Qwen 3 body would be wrong. PORT2 run 1 found the general form of this — one Gemma 3
+    body applied to every architecture, which on a SwiGLU model computes GELU instead.
+    """
+    mx.set_default_device(mx.cpu)
+    from mlx_lm.models.qwen2 import ModelArgs, Qwen2Model
+
+    model = Qwen2Model(ModelArgs(model_type="qwen2", hidden_size=64, num_hidden_layers=4,
+                                 intermediate_size=128, num_attention_heads=4,
+                                 num_key_value_heads=2, vocab_size=128, rms_norm_eps=1e-5,
+                                 max_position_embeddings=256))
+    nn.quantize(model, group_size=32, bits=4)
+    mx.eval(model.parameters())
+    with pytest.raises(FusionUnsupported):
+        fuse_projections(model, check_version=False)
+    for block in model.layers:
+        assert hasattr(block.self_attn, "q_proj")
+        assert hasattr(block.mlp, "gate_proj")
 
 
 def test_capacity_is_sized_to_the_workload():
@@ -306,3 +330,70 @@ def test_only_tune_is_shadowed_by_a_re_export():
     module = importlib.import_module("ironmule.tune")
     assert isinstance(module, types.ModuleType)
     assert module.tune is ironmule.tune
+
+
+def test_fused_bodies_copy_every_split_half_out_of_the_fused_buffer():
+    """Each consumer downstream of the split must get a copy, not a strided view.
+
+    Upstream hands `rope`, the cache and the attention kernel a fresh matmul output. A
+    fused body hands them a slice of one larger buffer unless it copies. PORT2 run 3
+    measured what that costs on a Kaggle T4: fused llama returned
+    `'_REF, , , The, was. The, The, ...'`, disagreed with itself between two calls in one
+    process, and aborted the process under CUDA graph capture; the same arm with the copy
+    restored reproduced the unfused reference exactly. Counting the copies is what makes
+    removing them fail here instead of on a GPU nobody is watching.
+    """
+    mx.set_default_device(mx.cpu)
+    from mlx_lm.models.llama import LlamaModel, ModelArgs
+
+    model = LlamaModel(ModelArgs(model_type="llama", hidden_size=64, num_hidden_layers=1,
+                                 intermediate_size=128, num_attention_heads=4,
+                                 num_key_value_heads=2, head_dim=16, vocab_size=128,
+                                 rms_norm_eps=1e-5))
+    nn.quantize(model, group_size=32, bits=4)
+    mx.eval(model.parameters())
+    assert fuse_projections(model, check_version=False) == 2
+
+    calls = []
+    original = mx.contiguous
+
+    def counting_contiguous(array, *args, **kwargs):
+        calls.append(array.shape)
+        return original(array, *args, **kwargs)
+
+    mx.contiguous = counting_contiguous
+    try:
+        mx.eval(model(mx.array([[3, 9, 27]])))
+    finally:
+        mx.contiguous = original
+
+    # One block: queries, keys and values from the attention split, gate and up from the MLP.
+    assert len(calls) == 5, calls
+
+
+
+def test_throughput_mode_is_refused_on_a_hybrid_cache():
+    """A recurrent cache layer is not separable per sequence, so a group shares it.
+
+    PORT2 run 4 measured this on a Kaggle T4 with Qwen 3.5 9B, whose layers alternate a
+    gated-delta `ArraysCache` with a `KVCache`: every throughput arm disagreed with the
+    sequential reference on two or three of six requests, and the arm with no knobs at all
+    produced two different output digests on two runs. The guard has to fire on the mode
+    alone, because no knob was responsible.
+    """
+    from mlx_lm.models.cache import ArraysCache, KVCache
+
+    from ironmule.service import InteractiveMode, ThroughputMode, _refuse_grouping_on_a_hybrid_cache
+
+    class Stub:
+        def __init__(self, cache):
+            self._cache = cache
+            self.model = SimpleNamespace(make_cache=lambda: cache, layers=[None] * len(cache))
+
+    hybrid = Stub([ArraysCache(size=2), KVCache(), ArraysCache(size=2), KVCache()])
+    plain = Stub([KVCache(), KVCache()])
+
+    _refuse_grouping_on_a_hybrid_cache(plain, ThroughputMode())      # all-KV: allowed
+    _refuse_grouping_on_a_hybrid_cache(hybrid, InteractiveMode())    # sequential: allowed
+    with pytest.raises(ValueError, match="recurrent cache layers"):
+        _refuse_grouping_on_a_hybrid_cache(hybrid, ThroughputMode())

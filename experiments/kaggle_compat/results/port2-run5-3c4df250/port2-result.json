@@ -1,0 +1,98 @@
+{
+ "schema": "ironmule.port2-kaggle.v5",
+ "commit": "8064419f409366e08f8e651e747f483d9c0483df",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB]\n0, Tesla T4, 15360 MiB\n1, Tesla T4, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 3.1,
+   "tail": " ironmule/fast.py              | 263 +++++++++++++++++++++++++++++++-----------\n ironmule/runtime.py           |  20 +++-\n ironmule/service.py           |  35 ++++++\n tests/engine/test_ironmule.py |  95 ++++++++++++++-\n 4 files changed, 341 insertions(+), 72 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.3,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 55.7 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.35s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 39.6,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 44 packages in 2.70s\n   Building ironmule @ file:///tmp/IronMule\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading numpy (15.9MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading scipy (33.7MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading hf-xet (4.3MiB)\nDownloading transformers (11.7MiB)\nDownloading pygments (1.2MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading pyarrow (47.8MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 44 packages in 36.62s\nInstalled 44 packages in 112ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==3.32.7\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.1\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==3.32.7\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.1\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 23.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "download_qwen35-9b": {
+   "exit": 0,
+   "seconds": 25.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.5-9B-MLX-4bit/snapshots/938d8919941c6e7efd3c7150eff7fe9d12afa631\n"
+  },
+  "download_mistral-24b": {
+   "exit": 0,
+   "seconds": 80.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\n"
+  },
+  "devices": {
+   "exit": 0,
+   "seconds": 3.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 Device(gpu, 0) matmul ok True active 33554448\n1 Device(gpu, 1) matmul ok True active 33554448\nmlx 0.32.2 distributed available True\n"
+  },
+  "shard_reference": {
+   "exit": 0,
+   "seconds": 89.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"reference\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n \"device\": \"Device(gpu, 0)\",\n \"performance_claim\": false,\n \"text\": \"<think>\\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because\",\n \"seconds\": 52.98,\n \"tokens_per_second\": 0.6,\n \"peak_memory_bytes\": 4668143176,\n \"prompt_tokens\": 19\n}\n"
+  },
+  "shard_qwen3_8b_ring": {
+   "exit": 0,
+   "seconds": 28.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 0,\n \"size\": 2,\n \"device\": \"Device(gpu, 0)\",\n \"load_seconds\": 8.7,\n \"weights_bytes_this_rank\": 2654234632,\n \"text\": \"<think>\\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because\",\n \"seconds\": 17.1,\n \"tokens_per_second\": 1.87,\n \"peak_memory_bytes\": 2679220240,\n \"prompt_tokens\": 19,\n \"ok\": true\n}\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 1,\n \"size\": 2,\n \"device\": \"Device(gpu, 1)\",\n \"load_seconds\": 8.7,\n \"weights_bytes_this_rank\": 2654234632,\n \"text\": \"<think>\\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because\",\n \"seconds\": 17.11,\n \"tokens_per_second\": 1.87,\n \"peak_memory_bytes\": 2679220240,\n \"prompt_tokens\": 19,\n \"ok\": true\n}\n"
+  },
+  "shard_qwen3_8b_nccl": {
+   "exit": 0,
+   "seconds": 10.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 1,\n \"size\": 2,\n \"device\": \"Device(gpu, 1)\",\n \"ok\": false,\n \"error\": \"IndexError: vector::_M_range_check: __n (which is 1) >= this->size() (which is 1)\"\n}\n{\n \"schema\": \"ironmule.port2-shard.v1\",\n \"arm\": \"tensor_parallel\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"backend_env\": \"unset\",\n \"performance_claim\": false,\n \"rank\": 0,\n \"size\": 2,\n \"device\": \"Device(gpu, 0)\",\n \"ok\": false,\n \"error\": \"RuntimeError: There is no Stream(gpu, 1) in current thread.\"\n}\n"
+  },
+  "hybrid_guard": {
+   "exit": 0,
+   "seconds": 133.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"throughput_refused\": \"throughput mode is unsupported on a model with recurrent cache layers (24 of 32 layers): grouped execution has been measured to change tokens and to do so non-deterministically. Use interactive mode, or see PORT2 in the backlog.\",\n \"interactive_text\": \"Thinking Process:\\n\\n1.  **Analyze the Request:**\\n    *\",\n \"interactive_tokens\": [\n  90700,\n  8340,\n  25,\n  271,\n  16,\n  13,\n  220,\n  2972,\n  2014,\n  53983,\n  279,\n  5952,\n  64700,\n  198,\n  262,\n  348\n ]\n}\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "quality_mistral_bf16": {
+   "exit": 0,
+   "seconds": 826.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n0 {'nll_bf16': 1.6705987453460693}\n1 {'nll_bf16': 2.1425094604492188}\n2 {'nll_bf16': 1.8914766311645508}\n3 {'nll_bf16': 2.0539095401763916}\n4 {'nll_bf16': 2.0579116344451904}\n5 {'nll_bf16': 2.143418312072754}\n6 {'nll_bf16': 2.1567153930664062}\n7 {'nll_bf16': 2.205329418182373}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit\",\n \"revision\": \"2a1d5eabfc504747bdc24178394821a1efc0edde\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 8,\n \"chunk_tokens\": 512,\n \"only\": \"bf16\",\n \"ppl_bf16\": 7.692406257064659,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 824.7804787158966\n}\n"
+  },
+  "quality_mistral_float32": {
+   "exit": 1,
+   "seconds": 119.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\nTraceback (most recent call last):\n  File \"/tmp/quality.py\", line 61, in <module>\n    mx.eval(nll32)\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n"
+  },
+  "qmm_llama_shapes": {
+   "exit": 0,
+   "seconds": 6.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{'dtype': 'mlx.core.bfloat16', 'shape': [6144, 4096], 'ms_per_call': 0.506816843746094}\n{'dtype': 'mlx.core.bfloat16', 'shape': [28672, 4096], 'ms_per_call': 2.3410814999991203}\n{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 14336], 'ms_per_call': 1.1748865781271434}\n{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 4096], 'ms_per_call': 0.33916574999892646}\n{'dtype': 'mlx.core.float16', 'shape': [6144, 4096], 'ms_per_call': 0.1647134218814017}\n{'dtype': 'mlx.core.float16', 'shape': [28672, 4096], 'ms_per_call': 0.7546332656218624}\n{'dtype': 'mlx.core.float16', 'shape': [4096, 14336], 'ms_per_call': 0.37927993749775624}\n{'dtype': 'mlx.core.float16', 'shape': [4096, 4096], 'ms_per_call': 0.1155336562490561}\n{'dtype': 'mlx.core.float32', 'shape': [6144, 4096], 'ms_per_call': 0.2906805156257519}\n{'dtype': 'mlx.core.float32', 'shape': [28672, 4096], 'ms_per_call': 1.3462298124977679}\n{'dtype': 'mlx.core.float32', 'shape': [4096, 14336], 'ms_per_call': 0.6812929531250234}\n{'dtype': 'mlx.core.float32', 'shape': [4096, 4096], 'ms_per_call': 0.19931260937511297}\n{\"schema\": \"ironmule.port1-qmm-dtype.v1\", \"device\": \"Device(gpu, 0)\", \"shapes\": [[6144, 4096], [28672, 4096], [4096, 14336], [4096, 4096]], \"rows\": [{\"dtype\": \"mlx.core.bfloat16\", \"shape\": [6144, 4096], \"ms_per_call\": 0.506816843746094}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [28672, 4096], \"ms_per_call\": 2.3410814999991203}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [4096, 14336], \"ms_per_call\": 1.1748865781271434}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [4096, 4096], \"ms_per_call\": 0.33916574999892646}, {\"dtype\": \"mlx.core.float16\", \"shape\": [6144, 4096], \"ms_per_call\": 0.1647134218814017}, {\"dtype\": \"mlx.core.float16\", \"shape\": [28672, 4096], \"ms_per_call\": 0.7546332656218624}, {\"dtype\": \"mlx.core.float16\", \"shape\": [4096, 14336], \"ms_per_call\": 0.37927993749775624}, {\"dtype\": \"mlx.core.float16\", \"shape\": [4096, 4096], \"ms_per_call\": 0.1155336562490561}, {\"dtype\": \"mlx.core.float32\", \"shape\": [6144, 4096], \"ms_per_call\": 0.2906805156257519}, {\"dtype\": \"mlx.core.float32\", \"shape\": [28672, 4096], \"ms_per_call\": 1.3462298124977679}, {\"dtype\": \"mlx.core.float32\", \"shape\": [4096, 14336], \"ms_per_call\": 0.6812929531250234}, {\"dtype\": \"mlx.core.float32\", \"shape\": [4096, 4096], \"ms_per_call\": 0.19931260937511297}]}\n"
+  },
+  "qmm_qwen_shapes": {
+   "exit": 0,
+   "seconds": 6.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{'dtype': 'mlx.core.bfloat16', 'shape': [6144, 4096], 'ms_per_call': 0.5117456562544476}\n{'dtype': 'mlx.core.bfloat16', 'shape': [24576, 4096], 'ms_per_call': 2.024344703123404}\n{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 12288], 'ms_per_call': 1.0222192343718461}\n{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 4096], 'ms_per_call': 0.34431699999970533}\n{'dtype': 'mlx.core.float16', 'shape': [6144, 4096], 'ms_per_call': 0.1686962656251012}\n{'dtype': 'mlx.core.float16', 'shape': [24576, 4096], 'ms_per_call': 0.6694143593719559}\n{'dtype': 'mlx.core.float16', 'shape': [4096, 12288], 'ms_per_call': 0.3205957031298112}\n{'dtype': 'mlx.core.float16', 'shape': [4096, 4096], 'ms_per_call': 0.12108845312752692}\n{'dtype': 'mlx.core.float32', 'shape': [6144, 4096], 'ms_per_call': 0.3025131406246828}\n{'dtype': 'mlx.core.float32', 'shape': [24576, 4096], 'ms_per_call': 1.1696542968735457}\n{'dtype': 'mlx.core.float32', 'shape': [4096, 12288], 'ms_per_call': 0.5927139062507081}\n{'dtype': 'mlx.core.float32', 'shape': [4096, 4096], 'ms_per_call': 0.19926612500142937}\n{\"schema\": \"ironmule.port1-qmm-dtype.v1\", \"device\": \"Device(gpu, 0)\", \"shapes\": [[6144, 4096], [24576, 4096], [4096, 12288], [4096, 4096]], \"rows\": [{\"dtype\": \"mlx.core.bfloat16\", \"shape\": [6144, 4096], \"ms_per_call\": 0.5117456562544476}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [24576, 4096], \"ms_per_call\": 2.024344703123404}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [4096, 12288], \"ms_per_call\": 1.0222192343718461}, {\"dtype\": \"mlx.core.bfloat16\", \"shape\": [4096, 4096], \"ms_per_call\": 0.34431699999970533}, {\"dtype\": \"mlx.core.float16\", \"shape\": [6144, 4096], \"ms_per_call\": 0.1686962656251012}, {\"dtype\": \"mlx.core.float16\", \"shape\": [24576, 4096], \"ms_per_call\": 0.6694143593719559}, {\"dtype\": \"mlx.core.float16\", \"shape\": [4096, 12288], \"ms_per_call\": 0.3205957031298112}, {\"dtype\": \"mlx.core.float16\", \"shape\": [4096, 4096], \"ms_per_call\": 0.12108845312752692}, {\"dtype\": \"mlx.core.float32\", \"shape\": [6144, 4096], \"ms_per_call\": 0.3025131406246828}, {\"dtype\": \"mlx.core.float32\", \"shape\": [24576, 4096], \"ms_per_call\": 1.1696542968735457}, {\"dtype\": \"mlx.core.float32\", \"shape\": [4096, 12288], \"ms_per_call\": 0.5927139062507081}, {\"dtype\": \"mlx.core.float32\", \"shape\": [4096, 4096], \"ms_per_call\": 0.19926612500142937}]}\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

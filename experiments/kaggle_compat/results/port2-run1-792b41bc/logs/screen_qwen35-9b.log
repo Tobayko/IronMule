@@ -1,0 +1,19 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Qwen3.5-9B-MLX-4bit",
+ "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+ "max_tokens": 24,
+ "ok": true,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "tuned_full_error": "FusionUnsupported: block has no self_attn/mlp pair",
+ "tuned_profile_reduced": true,
+ "tokens_identical": false,
+ "tuned_over_baseline_generate": 0.6715,
+ "device": "Device(gpu, 0)"
+}
+{'knobs': {}, 'load_seconds': 39.2, 'n_layers': 32, 'cache_kinds': ['arrays', 'kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 5038041608, 'stop_reason': 'length', 'generate_seconds': 72.682, 'decode_tokens_per_second': 0.33, 'peak_memory_bytes': 5544692544}
+{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': False}, 'load_seconds': 37.7, 'n_layers': 32, 'cache_kinds': ['arrays', 'kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 10076083216, 'stop_reason': 'length', 'generate_seconds': 48.809, 'decode_tokens_per_second': 0.49, 'peak_memory_bytes': 11755537504}

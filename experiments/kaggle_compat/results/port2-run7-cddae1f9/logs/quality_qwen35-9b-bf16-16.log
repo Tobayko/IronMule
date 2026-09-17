@@ -1,0 +1,31 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (297053 > 262144). Running this sequence through the model will result in indexing errors
+0 {'nll_bf16': nan}
+1 {'nll_bf16': nan}
+2 {'nll_bf16': nan}
+3 {'nll_bf16': nan}
+4 {'nll_bf16': nan}
+5 {'nll_bf16': nan}
+6 {'nll_bf16': nan}
+7 {'nll_bf16': nan}
+8 {'nll_bf16': nan}
+9 {'nll_bf16': nan}
+10 {'nll_bf16': nan}
+11 {'nll_bf16': nan}
+12 {'nll_bf16': nan}
+13 {'nll_bf16': nan}
+14 {'nll_bf16': nan}
+15 {'nll_bf16': nan}
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/Qwen3.5-9B-MLX-4bit",
+ "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "only": "bf16",
+ "ppl_bf16": NaN,
+ "device": "Device(gpu, 0)",
+ "seconds": 547.324268579483
+}

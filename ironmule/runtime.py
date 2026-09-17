@@ -141,6 +141,20 @@ def _trunk(model):
     return _text(model).model
 
 
+def _new_cache(model):
+    """The model's own cache, by mlx-lm's contract rather than by one optional method.
+
+    `make_cache` is optional in mlx-lm: only a model that needs something other than a
+    plain per-layer `KVCache` defines it, which is why Gemma 3 has one. Calling it
+    directly made every architecture without one — Qwen 3, Mistral 3 — fail to load with
+    `'Model' object has no attribute 'make_cache'` (PORT2 run 1). `make_prompt_cache`
+    defers to the method when it exists and builds the default otherwise.
+    """
+    from mlx_lm.models.cache import make_prompt_cache
+
+    return make_prompt_cache(_text(model))
+
+
 def _project(model, hidden):
     """The output projection, honouring tied embeddings."""
     text = _text(model)
@@ -474,7 +488,7 @@ class Engine:
                  "layers": [{"keys": c.keys, "values": c.values} for c in caches]}, hidden)
 
     def _empty_state(self, capacity: int):
-        probe = self.model.make_cache()
+        probe = _new_cache(self.model)
         kinds = _cache_kinds(probe)  # validate before invoking the model with the cache
         _trunk(self.model)(mx.array([[0]]), cache=probe)
         if all(kind == "kv" for kind in kinds):
@@ -516,7 +530,7 @@ class Engine:
             return self._prefill_chunked(prompt_ids, capacity, self.prefix_cache)
         ids = mx.array(prompt_ids)[None, :]
         if self.knobs.prefill_into_fixed:
-            probe = self.model.make_cache()
+            probe = _new_cache(self.model)
             kinds = _cache_kinds(probe)
             _ = _trunk(self.model)(mx.array([[prompt_ids[0]]]), cache=probe)
             if all(kind == "kv" for kind in kinds):
@@ -537,7 +551,7 @@ class Engine:
             else:
                 state = _state_from_caches(caches, position)
         else:
-            cache = self.model.make_cache()
+            cache = _new_cache(self.model)
             _cache_kinds(cache)
             hidden = _trunk(self.model)(ids, cache=cache)
 

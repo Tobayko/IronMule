@@ -1,0 +1,12 @@
+{
+ "schema": "ironmule.port2-shard.v1",
+ "arm": "tensor_parallel",
+ "model_id": "mlx-community/Qwen3.8-27B-4bit",
+ "backend_env": "unset",
+ "performance_claim": false,
+ "rank": 0,
+ "size": 2,
+ "device": "Device(gpu, 0)",
+ "ok": false,
+ "error": "RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory"
+}

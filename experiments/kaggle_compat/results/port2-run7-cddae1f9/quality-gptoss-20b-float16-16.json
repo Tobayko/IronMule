@@ -1,0 +1,62 @@
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+ "revision": "f356f2747216d7e98fee755df25987459fc19089",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "rows": [
+  {
+   "nll_float16": 5.256930351257324
+  },
+  {
+   "nll_float16": 4.97501277923584
+  },
+  {
+   "nll_float16": 5.104119777679443
+  },
+  {
+   "nll_float16": 4.868108749389648
+  },
+  {
+   "nll_float16": 5.178238868713379
+  },
+  {
+   "nll_float16": 4.682591438293457
+  },
+  {
+   "nll_float16": 5.834168434143066
+  },
+  {
+   "nll_float16": 5.497529029846191
+  },
+  {
+   "nll_float16": 5.126413345336914
+  },
+  {
+   "nll_float16": 4.80699348449707
+  },
+  {
+   "nll_float16": 4.634770393371582
+  },
+  {
+   "nll_float16": 4.017368316650391
+  },
+  {
+   "nll_float16": 5.352726936340332
+  },
+  {
+   "nll_float16": 4.736156463623047
+  },
+  {
+   "nll_float16": 4.379397869110107
+  },
+  {
+   "nll_float16": 5.239343166351318
+  }
+ ],
+ "only": "float16",
+ "ppl_float16": 145.56414342378662,
+ "device": "Device(gpu, 0)",
+ "seconds": 415.92707443237305
+}

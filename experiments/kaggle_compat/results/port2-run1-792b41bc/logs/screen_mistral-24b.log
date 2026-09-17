@@ -1,0 +1,19 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+ "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "max_tokens": 24,
+ "ok": false,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "error": "AttributeError: 'Model' object has no attribute 'make_cache'",
+ "failed_after_arms": 0,
+ "device": "Device(gpu, 0)"
+}
+terminate called after throwing an instance of 'std::runtime_error'
+  what():  Destroy(handle_) failed: driver shutting down
+Aborted (core dumped)

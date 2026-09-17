@@ -70,6 +70,57 @@ README_SPEEDUPS = [
     ("12B on the T4, float32", "2.04× · +104%",
      "experiments/kaggle_compat/results/port1-run7-1f40ad2b/cross-12b.json",
      ("summary", "ironmule_fp32", "median_ratio")),
+    ("Gemma 3 4B on the T4", "1.07× · +7%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-gemma3-4b.json",
+     ("summary", "ironmule_fused", "median_ratio")),
+    ("Gemma 3 4B on the T4, float32", "1.91× · +91%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-gemma3-4b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+    ("Gemma 3 4B on the T4, float16", "3.21× · +221%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-gemma3-4b.json",
+     ("summary", "ironmule_fp16", "median_ratio")),
+    ("Llama 3.1 8B on the T4", "1.03× · +3%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-llama31-8b.json",
+     ("summary", "ironmule_fused", "median_ratio")),
+    ("Qwen 3 8B on the T4", "1.04× · +4%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-qwen3-8b.json",
+     ("summary", "ironmule_fused", "median_ratio")),
+    ("Qwen 3 8B on the T4, float32", "1.87× · +87%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-qwen3-8b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+    ("Qwen 3 8B on the T4, float16", "3.23× · +223%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-qwen3-8b.json",
+     ("summary", "ironmule_fp16", "median_ratio")),
+    ("Qwen 3 14B on the T4", "1.03× · +3%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-qwen3-14b.json",
+     ("summary", "ironmule_fused", "median_ratio")),
+    ("Qwen 3 14B on the T4, float32", "1.94× · +94%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-qwen3-14b.json",
+     ("summary", "ironmule_fused_fp32", "median_ratio")),
+    ("gpt-oss 20B on the T4", "1.03× · +3%",
+     "experiments/kaggle_compat/results/port2-run2-74fe1a6d/cross-gptoss-20b.json",
+     ("summary", "ironmule_exact", "median_ratio")),
+    ("gpt-oss 20B on the T4, float32", "3.55× · +255%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-gptoss-20b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+    ("gpt-oss 20B on the T4, float16", "5.02× · +402%",
+     "experiments/kaggle_compat/results/port2-run6-59ce8efc/cross-fp16-gptoss-20b.json",
+     ("summary", "ironmule_fp16", "median_ratio")),
+    ("Mistral 24B on the T4", "1.01× · +1%",
+     "experiments/kaggle_compat/results/port2-run3-281b971a/cross-mistral-lean.json",
+     ("summary", "ironmule_lean", "median_ratio")),
+    ("Mistral 24B on the T4, float32", "1.82× · +82%",
+     "experiments/kaggle_compat/results/port2-run3-281b971a/cross-mistral-lean.json",
+     ("summary", "ironmule_lean_fp32", "median_ratio")),
+]
+
+#: The one documented cell where a plan is *slower* than stock. It cannot share the
+#: formatter above, which prints a leading "+", and leaving it unpinned would make the
+#: single unflattering number in the README the only one that could drift.
+README_REGRESSIONS = [
+    ("Llama 3.1 8B on the T4, float32", "0.66× · \u221234%",
+     "experiments/kaggle_compat/results/port2-run4-c86664a3/cross-fused-llama31-8b.json",
+     ("summary", "ironmule_fused_fp32", "median_ratio")),
 ]
 
 #: The same table's per-optimisation rows, which print a ratio and a percentage.
@@ -152,6 +203,15 @@ def test_the_readme_speed_table_matches_the_run_behind_each_cell(label, text, ev
 
     speedup = 1 / _measured(evidence, path)
     assert text == f"{speedup:.2f}× · +{(speedup - 1) * 100:.0f}%", label
+    assert text in document("README.md"), f"{label}: {text} is no longer in the README"
+
+
+@pytest.mark.parametrize("label,text,evidence,path", README_REGRESSIONS,
+                         ids=[entry[0].replace(" ", "-") for entry in README_REGRESSIONS])
+def test_the_readme_prints_its_one_slowdown_exactly(label, text, evidence, path):
+    speedup = 1 / _measured(evidence, path)
+    assert speedup < 1, f"{label}: no longer a slowdown, move it to README_SPEEDUPS"
+    assert text == f"{speedup:.2f}\u00d7 \u00b7 \u2212{(1 - speedup) * 100:.0f}%", label
     assert text in document("README.md"), f"{label}: {text} is no longer in the README"
 
 

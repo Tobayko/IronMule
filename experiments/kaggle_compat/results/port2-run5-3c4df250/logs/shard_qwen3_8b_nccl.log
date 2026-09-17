@@ -1,0 +1,30 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-shard.v1",
+ "arm": "tensor_parallel",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "backend_env": "unset",
+ "performance_claim": false,
+ "rank": 1,
+ "size": 2,
+ "device": "Device(gpu, 1)",
+ "ok": false,
+ "error": "IndexError: vector::_M_range_check: __n (which is 1) >= this->size() (which is 1)"
+}
+{
+ "schema": "ironmule.port2-shard.v1",
+ "arm": "tensor_parallel",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "backend_env": "unset",
+ "performance_claim": false,
+ "rank": 0,
+ "size": 2,
+ "device": "Device(gpu, 0)",
+ "ok": false,
+ "error": "RuntimeError: There is no Stream(gpu, 1) in current thread."
+}

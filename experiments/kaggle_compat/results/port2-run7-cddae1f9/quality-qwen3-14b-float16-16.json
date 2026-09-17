@@ -1,0 +1,62 @@
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/Qwen3-14B-4bit",
+ "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "rows": [
+  {
+   "nll_float16": 2.0236692428588867
+  },
+  {
+   "nll_float16": 2.6350717544555664
+  },
+  {
+   "nll_float16": 2.5151357650756836
+  },
+  {
+   "nll_float16": 2.5058865547180176
+  },
+  {
+   "nll_float16": 2.332629919052124
+  },
+  {
+   "nll_float16": 2.5789713859558105
+  },
+  {
+   "nll_float16": 2.6554410457611084
+  },
+  {
+   "nll_float16": 2.627647638320923
+  },
+  {
+   "nll_float16": 2.950435161590576
+  },
+  {
+   "nll_float16": 2.868502378463745
+  },
+  {
+   "nll_float16": 2.4633026123046875
+  },
+  {
+   "nll_float16": 2.5554418563842773
+  },
+  {
+   "nll_float16": 2.893660545349121
+  },
+  {
+   "nll_float16": 2.3519721031188965
+  },
+  {
+   "nll_float16": 2.5412473678588867
+  },
+  {
+   "nll_float16": 2.625715494155884
+  }
+ ],
+ "only": "float16",
+ "ppl_float16": 13.069688270531714,
+ "device": "Device(gpu, 0)",
+ "seconds": 158.82428669929504
+}

@@ -82,6 +82,54 @@ about twice as fast on the T4, with a perplexity that matches float32 on Apple S
 within 0.0001 nats per text chunk. Because it changes the output relative to bf16, IronMule
 never turns it on by itself; `ironmule doctor` recommends it where it pays.
 
+### Six more model families, same card
+
+The table above is one family. These are the others, measured the same way on the same free
+Kaggle T4 — stock MLX and IronMule in fresh, interleaved processes, six requests of 48
+greedy tokens, median of two repetitions. Every model is a 4-bit `mlx-community` checkpoint
+at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
+
+| Model (4-bit) | Weights | Exact, same tokens | `--compute-dtype float32` | `--compute-dtype float16` |
+| :-- | --: | --: | --: | --: |
+| Gemma 3 4B | 2.50 GB | **1.07× · +7%** | **1.91× · +91%** | 3.21× · +221%, **fails its quality gate** |
+| Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
+| Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
+| Qwen 3 14B | 8.31 GB | **1.03× · +3%** | **1.94× · +94%** | gate passed, speed not measured |
+| gpt-oss 20B | 11.18 GB | **1.03× · +3%** | **3.55× · +255%** | 5.02× · +402%, gate not yet qualified |
+| Mistral Small 3.2 24B | 13.26 GB | **1.01× · +1%** | **1.82× · +82%** | not measured |
+
+Every exact arm returned the same tokens as its stock reference on all six requests. The
+exact gain past Gemma 3 is small — one to seven per cent, not the 82 per cent Gemma 3 1B
+reaches — and the numeric plan is where an older NVIDIA card is won.
+
+**A numeric plan is per model, and the quality gate is what says so.** WikiText-2 raw test,
+16 chunks of 512 tokens, perplexity ratio against the checkpoint's own bfloat16 with a
+10 000-sample bootstrap; a plan passes when the upper bound stays under 1.005.
+
+| Plan | Model | Perplexity ratio | Verdict |
+| :-- | :-- | :-- | :-- |
+| `float32` | Llama 3.1 8B | 1.000126 `[0.999993; 1.000260]` | passes |
+| `float32` | Qwen 3 8B | 0.997817 `[0.996177; 0.999584]` | passes |
+| `float16` | Qwen 3 8B | 0.997689 `[0.996051; 0.999454]` | passes |
+| `float16` | Qwen 3 14B | 1.001222 `[0.999873; 1.002603]` | passes |
+| `float16` | Gemma 3 4B | 2.043792 `[1.873506; 2.244196]` | **fails** — perplexity 102.5 → 209.6 |
+
+Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
+Gemma 3. So neither plan is ever enabled for you, and neither is recommended for a model
+that has not passed this gate on your own hardware.
+
+**The ceiling on one card.** A single MLX process uses a single device, so 15360 MiB is the
+budget. Mistral Small 3.2 24B loads at 13.26 GB and runs; its `float32` arm peaks at
+15.24 GB and still fits; 16.05 GB does not load. Tensor parallelism across both T4s of a
+Kaggle cell works with MLX's ring backend and halves per-rank weights with identical tokens,
+but that is stock mlx-lm — IronMule is single-process and cannot join a distributed group.
+
+**None of this transfers to a TPU.** MLX has two device types, `cpu` and `gpu`; there is no
+TPU backend, so IronMule does not run there. It is also the wrong lesson to carry: on a
+Kaggle TPU v5e a decode step's matmuls cost 0.478 ms in bfloat16 and 0.942 ms in float32, so
+bfloat16 is native and twice as fast. The whole `--compute-dtype` idea exists only because
+Turing emulates bfloat16 and is slower at it than at float32.
+
 ### Where the speed comes from
 
 <picture>

@@ -1,0 +1,17 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+ "revision": "f356f2747216d7e98fee755df25987459fc19089",
+ "max_tokens": 24,
+ "ok": false,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "tuned_full_error": "FusionUnsupported: biased projections are not fused",
+ "error": "RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory",
+ "failed_after_arms": 1,
+ "device": "Device(gpu, 0)"
+}
+{'knobs': {}, 'load_seconds': 137.9, 'n_layers': 24, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 11181750472, 'stop_reason': 'length', 'generate_seconds': 148.542, 'decode_tokens_per_second': 0.16, 'peak_memory_bytes': 11408546920}

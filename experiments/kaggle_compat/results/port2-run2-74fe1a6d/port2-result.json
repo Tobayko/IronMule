@@ -1,0 +1,1096 @@
+{
+ "schema": "ironmule.port2-kaggle.v2",
+ "commit": "8064419f409366e08f8e651e747f483d9c0483df",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "name, driver_version, memory.total [MiB]\nTesla T4, 580.159.04, 15360 MiB\nTesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          27           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.5,
+   "tail": " ironmule/fast.py              | 244 +++++++++++++++++++++++++++++++-----------\n ironmule/runtime.py           |  20 +++-\n tests/engine/test_ironmule.py |  28 ++++-\n 3 files changed, 222 insertions(+), 70 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 10.0,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 69.9 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.91s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 23.7,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 49 packages in 1.62s\n   Building ironmule @ file:///tmp/IronMule\nDownloading tokenizers (3.2MiB)\nDownloading numpy (15.9MiB)\nDownloading scipy (33.7MiB)\nDownloading pygments (1.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading pyarrow (47.8MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading transformers (11.7MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded sentencepiece\n Downloaded pygments\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 49 packages in 21.68s\nInstalled 49 packages in 143ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==3.32.7\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.1\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==3.32.7\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.1\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "fusion_self_check": {
+   "exit": 0,
+   "seconds": 11.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n<frozen runpy>:128: RuntimeWarning: 'ironmule.fast' found in sys.modules after import of package 'ironmule', but prior to execution of 'ironmule.fast'; this may result in unpredictable behaviour\nfast self-check ok: gemma3_text 4 blocks fused, output bit identical\nfast self-check ok: llama 4 blocks fused, output bit identical\nfast self-check ok: qwen3 4 blocks fused, output bit identical\nfast self-check ok: qwen2 refused, projections untouched\n"
+  },
+  "pytest_fusion": {
+   "exit": 0,
+   "seconds": 3.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n....................                                                     [100%]\n20 passed in 2.51s\n"
+  },
+  "download_gemma3-4b": {
+   "exit": 0,
+   "seconds": 23.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "screen_gemma3-4b": {
+   "exit": 0,
+   "seconds": 173.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tokens_identical\": true,\n \"tuned_matches_stock\": true,\n \"tuned_over_baseline_generate\": 0.9201,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 24.1, 'n_layers': 34, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 2561222704, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 2.127, 'decode_tokens_per_second': 7.52, 'warmup_tokens_match': True, 'peak_memory_bytes': 2591725440}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 24.0, 'n_layers': 34, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 2561222704, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 1.957, 'decode_tokens_per_second': 8.18, 'warmup_tokens_match': True, 'peak_memory_bytes': 2749492064}\n"
+  },
+  "download_llama31-8b": {
+   "exit": 0,
+   "seconds": 28.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Llama-3.1-8B-Instruct-4bit/snapshots/90215b22ec18e72f623dde2ea7af4097025160e2\n"
+  },
+  "screen_llama31-8b": {
+   "exit": 0,
+   "seconds": 137.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/Llama-3.1-8B-Instruct-4bit\",\n \"revision\": \"90215b22ec18e72f623dde2ea7af4097025160e2\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tokens_identical\": false,\n \"tuned_matches_stock\": false,\n \"tuned_over_baseline_generate\": 0.9791,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 30.4, 'n_layers': 32, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 4517407752, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 1.148, 'decode_tokens_per_second': 13.94, 'warmup_tokens_match': True, 'peak_memory_bytes': 4608702552}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 30.4, 'n_layers': 32, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 4517407752, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 1.124, 'decode_tokens_per_second': 14.24, 'warmup_tokens_match': False, 'peak_memory_bytes': 4900961424}\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 24.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "screen_qwen3-8b": {
+   "exit": 0,
+   "seconds": 117.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tokens_identical\": true,\n \"tuned_matches_stock\": true,\n \"tuned_over_baseline_generate\": 0.9636,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 30.2, 'n_layers': 36, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 4607731720, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 3.873, 'decode_tokens_per_second': 4.13, 'warmup_tokens_match': True, 'peak_memory_bytes': 4668208840}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 30.5, 'n_layers': 36, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 4607731720, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 3.732, 'decode_tokens_per_second': 4.29, 'warmup_tokens_match': True, 'peak_memory_bytes': 5013050744}\n"
+  },
+  "download_qwen35-9b": {
+   "exit": 0,
+   "seconds": 20.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.5-9B-MLX-4bit/snapshots/938d8919941c6e7efd3c7150eff7fe9d12afa631\n"
+  },
+  "screen_qwen35-9b": {
+   "exit": 0,
+   "seconds": 234.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/Qwen3.5-9B-MLX-4bit\",\n \"revision\": \"938d8919941c6e7efd3c7150eff7fe9d12afa631\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tuned_full_error\": \"FusionUnsupported: block has no self_attn/mlp pair\",\n \"tuned_profile_reduced\": true,\n \"tokens_identical\": true,\n \"tuned_matches_stock\": true,\n \"tuned_over_baseline_generate\": 0.9679,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['arrays', 'kv']}\n{'knobs': {}, 'load_seconds': 41.1, 'n_layers': 32, 'cache_kinds': ['arrays', 'kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 5038041616, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 4.391, 'decode_tokens_per_second': 3.64, 'warmup_tokens_match': True, 'peak_memory_bytes': 5271585520}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': False}, 'load_seconds': 40.8, 'n_layers': 32, 'cache_kinds': ['arrays', 'kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 5038041616, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 4.25, 'decode_tokens_per_second': 3.76, 'warmup_tokens_match': True, 'peak_memory_bytes': 5273699056}\n"
+  },
+  "download_qwen3-14b": {
+   "exit": 0,
+   "seconds": 32.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\n"
+  },
+  "screen_qwen3-14b": {
+   "exit": 0,
+   "seconds": 199.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/Qwen3-14B-4bit\",\n \"revision\": \"a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tokens_identical\": true,\n \"tuned_matches_stock\": true,\n \"tuned_over_baseline_generate\": 0.9791,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 56.0, 'n_layers': 40, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 8308297736, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 7.233, 'decode_tokens_per_second': 2.21, 'warmup_tokens_match': True, 'peak_memory_bytes': 8377589448}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 55.5, 'n_layers': 40, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 8308297736, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 7.082, 'decode_tokens_per_second': 2.26, 'warmup_tokens_match': True, 'peak_memory_bytes': 8971763112}\n"
+  },
+  "download_gptoss-20b": {
+   "exit": 0,
+   "seconds": 42.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gpt-oss-20b-MXFP4-Q4/snapshots/f356f2747216d7e98fee755df25987459fc19089\n"
+  },
+  "screen_gptoss-20b": {
+   "exit": 0,
+   "seconds": 582.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/gpt-oss-20b-MXFP4-Q4\",\n \"revision\": \"f356f2747216d7e98fee755df25987459fc19089\",\n \"max_tokens\": 16,\n \"ok\": true,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tuned_full_error\": \"FusionUnsupported: no verified fused body for attention mlx_lm.models.gpt_oss or MLP mlx_lm.models.gpt_oss\",\n \"tuned_profile_reduced\": true,\n \"tokens_identical\": true,\n \"tuned_matches_stock\": true,\n \"tuned_over_baseline_generate\": 0.954,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 76.6, 'n_layers': 24, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 11181750536, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 19.258, 'decode_tokens_per_second': 0.83, 'warmup_tokens_match': True, 'peak_memory_bytes': 11301428504}\n{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': False}, 'load_seconds': 76.9, 'n_layers': 24, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 11181750536, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 18.372, 'decode_tokens_per_second': 0.87, 'warmup_tokens_match': True, 'peak_memory_bytes': 11274810736}\n"
+  },
+  "download_mistral-24b": {
+   "exit": 0,
+   "seconds": 52.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\n"
+  },
+  "screen_mistral-24b": {
+   "exit": 0,
+   "seconds": 381.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n{\n \"schema\": \"ironmule.port2-families.v1\",\n \"model_id\": \"mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit\",\n \"revision\": \"2a1d5eabfc504747bdc24178394821a1efc0edde\",\n \"max_tokens\": 16,\n \"ok\": false,\n \"performance_claim\": false,\n \"mlx\": \"0.32.2\",\n \"mlx_lm\": \"0.31.3\",\n \"baseline_matches_stock\": true,\n \"tuned_full_error\": \"RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\",\n \"error\": \"RuntimeError: cudaPeekAtLastError() failed: out of memory\",\n \"failed_after_arms\": 2,\n \"device\": \"Device(gpu, 0)\"\n}\n{'knobs': 'stock', 'cache_kinds': ['kv']}\n{'knobs': {}, 'load_seconds': 87.4, 'n_layers': 40, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 13260570632, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 9.867, 'decode_tokens_per_second': 1.62, 'warmup_tokens_match': True, 'peak_memory_bytes': 13329911224}\n"
+  },
+  "cross_gemma3-4b": {
+   "exit": 0,
+   "seconds": 547.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 27745.339412 0\nironmule_exact 0 26358.377366 0\nironmule_fp32 0 14118.654353 0\nironmule_exact 1 25688.14745 0\nironmule_fp32 1 13975.89458 0\nstock 1 27493.296732 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9500109901196547,\n   0.9343422034979548\n  ],\n  \"median_ratio\": 0.9421765968088047,\n  \"max_ratio\": 0.9500109901196547,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.508865800606988,\n   0.5083382584574944\n  ],\n  \"median_ratio\": 0.5086020295322412,\n  \"max_ratio\": 0.508865800606988,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_llama31-8b": {
+   "exit": 0,
+   "seconds": 329.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 16165.272738 0\nironmule_exact 0 None -6\nironmule_fp32 0 None -6\nironmule_exact 1 None -6\nironmule_fp32 1 None -6\nstock 1 16643.284712 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 2\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 2\n }\n}\n"
+  },
+  "cross_qwen3-8b": {
+   "exit": 0,
+   "seconds": 734.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 49306.203058 0\nironmule_exact 0 47607.467163 0\nironmule_fp32 0 26899.259095 0\nironmule_exact 1 47658.968577 0\nironmule_fp32 1 26889.877245 0\nstock 1 49449.890472 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9655472173957151,\n   0.9637830968298288\n  ],\n  \"median_ratio\": 0.964665157112772,\n  \"max_ratio\": 0.9655472173957151,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5455552735090511,\n   0.543780319599006\n  ],\n  \"median_ratio\": 0.5446677965540285,\n  \"max_ratio\": 0.5455552735090511,\n  \"identical_requests\": 5,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_qwen35-9b": {
+   "exit": 0,
+   "seconds": 919.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 56593.206509 0\nironmule_exact 0 54493.060046 0\nironmule_fp32 0 29512.976617 0\nironmule_exact 1 54614.527256 0\nironmule_fp32 1 29596.172284 0\nstock 1 56440.493964 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.962890484696851,\n   0.9676479318348157\n  ],\n  \"median_ratio\": 0.9652692082658334,\n  \"max_ratio\": 0.9676479318348157,\n  \"identical_requests\": 3,\n  \"deterministic_across_processes\": false,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5214932752097473,\n   0.5243783355772474\n  ],\n  \"median_ratio\": 0.5229358053934974,\n  \"max_ratio\": 0.5243783355772474,\n  \"identical_requests\": 5,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_qwen3-14b": {
+   "exit": 0,
+   "seconds": 1330.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 91047.348735 0\nironmule_exact 0 88626.482516 0\nironmule_fp32 0 47545.623111 0\nironmule_exact 1 88724.6601 0\nironmule_fp32 1 47354.481362 0\nstock 1 91099.678586 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9734109092396955,\n   0.9739294526296497\n  ],\n  \"median_ratio\": 0.9736701809346726,\n  \"max_ratio\": 0.9739294526296497,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5222076619648204,\n   0.5198095327778394\n  ],\n  \"median_ratio\": 0.5210085973713299,\n  \"max_ratio\": 0.5222076619648204,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "cross_gptoss-20b": {
+   "exit": 0,
+   "seconds": 1767.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 121688.558384 0\nironmule_exact 0 118124.602144 0\nironmule_fp32 0 34624.815799 0\nironmule_exact 1 118130.852686 0\nironmule_fp32 1 34447.686232 0\nstock 1 121965.045479 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9707124787463288,\n   0.9685631831813635\n  ],\n  \"median_ratio\": 0.9696378309638461,\n  \"max_ratio\": 0.9707124787463288,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.2845363299459761,\n   0.2824390061653461\n  ],\n  \"median_ratio\": 0.2834876680556611,\n  \"max_ratio\": 0.2845363299459761,\n  \"identical_requests\": 2,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "quality_gemma3-4b": {
+   "exit": 0,
+   "seconds": 268.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 2.758978843688965, 'nll_fp32': 2.762406826019287, 'kl': 0.0021068700589239597, 'top1': 0.9765625}\n1 {'nll_bf16': 4.500776767730713, 'nll_fp32': 4.494680881500244, 'kl': 0.011283528991043568, 'top1': 0.958984375}\n2 {'nll_bf16': 4.136030673980713, 'nll_fp32': 4.143155574798584, 'kl': 0.00901745818555355, 'top1': 0.970703125}\n3 {'nll_bf16': 4.803227424621582, 'nll_fp32': 4.786593437194824, 'kl': 0.0077009559608995914, 'top1': 0.955078125}\n4 {'nll_bf16': 3.913957357406616, 'nll_fp32': 3.9167280197143555, 'kl': 0.0045843361876904964, 'top1': 0.9609375}\n5 {'nll_bf16': 4.885228633880615, 'nll_fp32': 4.982058048248291, 'kl': 0.031519681215286255, 'top1': 0.9140625}\n6 {'nll_bf16': 4.587038040161133, 'nll_fp32': 4.611645698547363, 'kl': 0.0073661794885993, 'top1': 0.953125}\n7 {'nll_bf16': 4.6926960945129395, 'nll_fp32': 4.668121337890625, 'kl': 0.012428905814886093, 'top1': 0.955078125}\n8 {'nll_bf16': 5.727599143981934, 'nll_fp32': 5.875487327575684, 'kl': 0.10876239836215973, 'top1': 0.869140625}\n9 {'nll_bf16': 5.522043704986572, 'nll_fp32': 5.492588996887207, 'kl': 0.017770100384950638, 'top1': 0.951171875}\n10 {'nll_bf16': 4.583499908447266, 'nll_fp32': 4.63020658493042, 'kl': 0.009897246025502682, 'top1': 0.9375}\n11 {'nll_bf16': 5.269989967346191, 'nll_fp32': 5.229658603668213, 'kl': 0.020998358726501465, 'top1': 0.935546875}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 12,\n \"chunk_tokens\": 512,\n \"ppl_bf16\": 100.99680473584942,\n \"ppl_fp32\": 102.7992041659351,\n \"ppl_ratio_fp32_over_bf16\": 1.0178461034960435,\n \"ppl_ratio_ci\": [\n  0.990878377714877,\n  1.05159097747294\n ],\n \"mean_kl_bf16_fp32\": 0.020286334950166445,\n \"top1_agreement\": 0.94482421875,\n \"quality_gate_upper_below_1_005\": false,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 267.1169593334198\n}\n"
+  },
+  "quality_llama31-8b": {
+   "exit": 0,
+   "seconds": 178.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (288937 > 131072). Running this sequence through the model will result in indexing errors\n0 {'nll_bf16': 1.927730917930603, 'nll_fp32': 1.9274260997772217, 'kl': 9.369845429318957e-06, 'top1': 0.998046875}\n1 {'nll_bf16': 2.377246379852295, 'nll_fp32': 2.3775084018707275, 'kl': 8.342997716681566e-06, 'top1': 0.998046875}\n2 {'nll_bf16': 2.407392978668213, 'nll_fp32': 2.40718936920166, 'kl': 8.315726518048905e-06, 'top1': 0.998046875}\n3 {'nll_bf16': 2.428225040435791, 'nll_fp32': 2.4286551475524902, 'kl': 7.197685590654146e-06, 'top1': 1.0}\n4 {'nll_bf16': 2.4765524864196777, 'nll_fp32': 2.4767069816589355, 'kl': 8.050499673117884e-06, 'top1': 0.998046875}\n5 {'nll_bf16': 2.6087613105773926, 'nll_fp32': 2.608842134475708, 'kl': 8.338982297573239e-06, 'top1': 0.998046875}\n6 {'nll_bf16': 2.657613515853882, 'nll_fp32': 2.6577365398406982, 'kl': 9.163652975985315e-06, 'top1': 0.998046875}\n7 {'nll_bf16': 2.7104623317718506, 'nll_fp32': 2.7106575965881348, 'kl': 7.544922937086085e-06, 'top1': 0.994140625}\n8 {'nll_bf16': 2.995795249938965, 'nll_fp32': 2.9959969520568848, 'kl': 7.46033356335829e-06, 'top1': 0.998046875}\n9 {'nll_bf16': 2.641355037689209, 'nll_fp32': 2.641219139099121, 'kl': 7.559176083304919e-06, 'top1': 0.998046875}\n10 {'nll_bf16': 2.492388963699341, 'nll_fp32': 2.492546558380127, 'kl': 6.672687050013337e-06, 'top1': 1.0}\n11 {'nll_bf16': 2.538041591644287, 'nll_fp32': 2.5385937690734863, 'kl': 9.979545211535878e-06, 'top1': 0.998046875}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Llama-3.1-8B-Instruct-4bit\",\n \"revision\": \"90215b22ec18e72f623dde2ea7af4097025160e2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 12,\n \"chunk_tokens\": 512,\n \"ppl_bf16\": 12.450952803368487,\n \"ppl_fp32\": 12.452522640732258,\n \"ppl_ratio_fp32_over_bf16\": 1.0001260817054374,\n \"ppl_ratio_ci\": [\n  0.9999932944999448,\n  1.0002600292622594\n ],\n \"mean_kl_bf16_fp32\": 8.166337920556543e-06,\n \"top1_agreement\": 0.998046875,\n \"quality_gate_upper_below_1_005\": true,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 177.01668310165405\n}\n"
+  },
+  "quality_qwen3-8b": {
+   "exit": 0,
+   "seconds": 455.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 {'nll_bf16': 2.1972408294677734, 'nll_fp32': 2.193685531616211, 'kl': 0.0010702327126637101, 'top1': 0.990234375}\n1 {'nll_bf16': 2.7138633728027344, 'nll_fp32': 2.715669870376587, 'kl': 0.0011507128365337849, 'top1': 0.9765625}\n2 {'nll_bf16': 2.638066291809082, 'nll_fp32': 2.634289503097534, 'kl': 0.000992758315987885, 'top1': 0.970703125}\n3 {'nll_bf16': 2.647608757019043, 'nll_fp32': 2.648466110229492, 'kl': 0.0009931197855621576, 'top1': 0.982421875}\n4 {'nll_bf16': 2.5224905014038086, 'nll_fp32': 2.52023983001709, 'kl': 0.0010536746121942997, 'top1': 0.98828125}\n5 {'nll_bf16': 2.660344123840332, 'nll_fp32': 2.6543688774108887, 'kl': 0.000967065745498985, 'top1': 0.978515625}\n6 {'nll_bf16': 2.8172783851623535, 'nll_fp32': 2.812410593032837, 'kl': 0.0010314327664673328, 'top1': 0.96875}\n7 {'nll_bf16': 2.7418429851531982, 'nll_fp32': 2.7450578212738037, 'kl': 0.0013828098308295012, 'top1': 0.9765625}\n8 {'nll_bf16': 3.093982696533203, 'nll_fp32': 3.088672399520874, 'kl': 0.0011816760525107384, 'top1': 0.974609375}\n9 {'nll_bf16': 2.916029453277588, 'nll_fp32': 2.9167323112487793, 'kl': 0.0009556585573591292, 'top1': 0.982421875}\n10 {'nll_bf16': 2.5976920127868652, 'nll_fp32': 2.592411756515503, 'kl': 0.0011505610309541225, 'top1': 0.978515625}\n11 {'nll_bf16': 2.6529927253723145, 'nll_fp32': 2.651207208633423, 'kl': 0.0012445366010069847, 'top1': 0.98046875}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 12,\n \"chunk_tokens\": 512,\n \"ppl_bf16\": 14.633098906372382,\n \"ppl_fp32\": 14.601160099309508,\n \"ppl_ratio_fp32_over_bf16\": 0.9978173586287342,\n \"ppl_ratio_ci\": [\n  0.9961770917809496,\n  0.9995836091934635\n ],\n \"mean_kl_bf16_fp32\": 0.001097853237297386,\n \"top1_agreement\": 0.97900390625,\n \"quality_gate_upper_below_1_005\": true,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 453.7389349937439\n}\n"
+  },
+  "quality_qwen35-9b": {
+   "exit": 1,
+   "seconds": 165.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (297053 > 262144). Running this sequence through the model will result in indexing errors\nTraceback (most recent call last):\n  File \"/tmp/quality.py\", line 54, in <module>\n    mx.eval(nll16, nll32, kl, top1)\nRuntimeError: cudaGraphInstantiate(&handle_, graph, nullptr, nullptr, 0) failed: out of memory\n"
+  }
+ },
+ "models": [
+  {
+   "key": "gemma3-4b",
+   "model_id": "mlx-community/gemma-3-4b-it-4bit",
+   "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+   "gb": 2.5,
+   "model_type": "gemma3"
+  },
+  {
+   "key": "llama31-8b",
+   "model_id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+   "revision": "90215b22ec18e72f623dde2ea7af4097025160e2",
+   "gb": 4.52,
+   "model_type": "llama"
+  },
+  {
+   "key": "qwen3-8b",
+   "model_id": "mlx-community/Qwen3-8B-4bit",
+   "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+   "gb": 4.61,
+   "model_type": "qwen3"
+  },
+  {
+   "key": "qwen35-9b",
+   "model_id": "mlx-community/Qwen3.5-9B-MLX-4bit",
+   "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+   "gb": 5.95,
+   "model_type": "qwen3_5"
+  },
+  {
+   "key": "qwen3-14b",
+   "model_id": "mlx-community/Qwen3-14B-4bit",
+   "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+   "gb": 8.31,
+   "model_type": "qwen3"
+  },
+  {
+   "key": "gptoss-20b",
+   "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+   "revision": "f356f2747216d7e98fee755df25987459fc19089",
+   "gb": 11.18,
+   "model_type": "gpt_oss"
+  },
+  {
+   "key": "mistral-24b",
+   "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+   "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+   "gb": 13.26,
+   "model_type": "mistral3"
+  }
+ ],
+ "screening": {
+  "gemma3-4b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/gemma-3-4b-it-4bit",
+   "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tokens_identical": true,
+   "tuned_matches_stock": true,
+   "tuned_over_baseline_generate": 0.9201,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "The sky appears blue because of a phenomenon called Rayleigh scattering, where sunlight is scattered",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 24.1,
+     "n_layers": 34,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 2561222704,
+     "text": "The sky appears blue because of a phenomenon called Rayleigh scattering, where sunlight is scattered",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "9a850a44",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 1012.552596,
+      "engine_ttft_ms": 1012.547651,
+      "queue_wait_ms": 0.004945,
+      "latency_ms": 2126.182087,
+      "decode_ms": 1113.629491,
+      "decode_tokens_per_second": 13.469470879879923,
+      "inter_token_ms": [
+       69.581426,
+       74.10163,
+       76.178782,
+       76.225854,
+       74.618253,
+       74.631099,
+       74.216339,
+       74.727133,
+       74.54409,
+       76.095376,
+       74.952623,
+       71.635147,
+       74.698512,
+       73.897177,
+       73.52605
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 2.127,
+     "decode_tokens_per_second": 7.52,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 2591725440
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": true
+     },
+     "load_seconds": 24.0,
+     "n_layers": 34,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": true,
+     "fused_gate_up": true,
+     "weights_bytes": 2561222704,
+     "text": "The sky appears blue because of a phenomenon called Rayleigh scattering, where sunlight is scattered",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "8f51f53b",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 861.584622,
+      "engine_ttft_ms": 861.579812,
+      "queue_wait_ms": 0.00481,
+      "latency_ms": 1956.17239,
+      "decode_ms": 1094.587768,
+      "decode_tokens_per_second": 13.703789169330458,
+      "inter_token_ms": [
+       66.067048,
+       73.703829,
+       72.777199,
+       74.120282,
+       72.819567,
+       72.78302,
+       72.344573,
+       72.742595,
+       75.189277,
+       72.757261,
+       73.637329,
+       75.588764,
+       71.963977,
+       73.459942,
+       74.633105
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 1.957,
+     "decode_tokens_per_second": 8.18,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 2749492064
+    }
+   ]
+  },
+  "llama31-8b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+   "revision": "90215b22ec18e72f623dde2ea7af4097025160e2",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tokens_identical": false,
+   "tuned_matches_stock": false,
+   "tuned_over_baseline_generate": 0.9791,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "The sky appears blue because of a phenomenon called scattering, where sunlight interacts with the",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 30.4,
+     "n_layers": 32,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 4517407752,
+     "text": "The sky appears blue because of a phenomenon called scattering, where sunlight interacts with the",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "a92cfc6e",
+      "prompt_tokens": 46,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 440.93548,
+      "engine_ttft_ms": 440.93097,
+      "queue_wait_ms": 0.00451,
+      "latency_ms": 1147.007727,
+      "decode_ms": 706.072247,
+      "decode_tokens_per_second": 21.244284935051414,
+      "inter_token_ms": [
+       47.384866,
+       46.027604,
+       48.314951,
+       46.941875,
+       45.671253,
+       48.134571,
+       46.998826,
+       45.790723,
+       48.364579,
+       47.141991,
+       45.884414,
+       47.921122,
+       47.394283,
+       46.013358,
+       48.087831
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 1.148,
+     "decode_tokens_per_second": 13.94,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 4608702552
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": true
+     },
+     "load_seconds": 30.4,
+     "n_layers": 32,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": true,
+     "fused_gate_up": true,
+     "weights_bytes": 4517407752,
+     "text": " interest>plom widthListenerRequestrite      method ($ h.x../ Anision",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "82b1e413",
+      "prompt_tokens": 46,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 422.916304,
+      "engine_ttft_ms": 422.912364,
+      "queue_wait_ms": 0.00394,
+      "latency_ms": 1122.916631,
+      "decode_ms": 700.000327,
+      "decode_tokens_per_second": 21.428561418372027,
+      "inter_token_ms": [
+       44.052471,
+       48.347444,
+       47.518821,
+       45.570216,
+       47.497258,
+       46.790063,
+       45.803117,
+       46.668182,
+       47.535689,
+       46.206917,
+       46.809269,
+       47.222149,
+       46.408907,
+       46.36543,
+       47.204394
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 1.124,
+     "decode_tokens_per_second": 14.24,
+     "warmup_tokens_match": false,
+     "peak_memory_bytes": 4900961424
+    }
+   ]
+  },
+  "qwen3-8b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/Qwen3-8B-4bit",
+   "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tokens_identical": true,
+   "tuned_matches_stock": true,
+   "tuned_over_baseline_generate": 0.9636,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "<think>\nOkay, the user wants to know why the sky is blue in two",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 30.2,
+     "n_layers": 36,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 4607731720,
+     "text": "<think>\nOkay, the user wants to know why the sky is blue in two",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "6079e6fa",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 1702.280218,
+      "engine_ttft_ms": 1702.275439,
+      "queue_wait_ms": 0.004779,
+      "latency_ms": 3872.518467,
+      "decode_ms": 2170.238249,
+      "decode_tokens_per_second": 6.911683547606667,
+      "inter_token_ms": [
+       140.988665,
+       146.734896,
+       145.42162,
+       147.132558,
+       146.928421,
+       142.978717,
+       144.721956,
+       143.879846,
+       144.703157,
+       146.589181,
+       145.773097,
+       144.347933,
+       142.507216,
+       143.339569,
+       144.191417
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 3.873,
+     "decode_tokens_per_second": 4.13,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 4668208840
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": true
+     },
+     "load_seconds": 30.5,
+     "n_layers": 36,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": true,
+     "fused_gate_up": true,
+     "weights_bytes": 4607731720,
+     "text": "<think>\nOkay, the user wants to know why the sky is blue in two",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "fba1107f",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 1549.193276,
+      "engine_ttft_ms": 1549.187895,
+      "queue_wait_ms": 0.005381,
+      "latency_ms": 3731.330667,
+      "decode_ms": 2182.137391,
+      "decode_tokens_per_second": 6.873994305705015,
+      "inter_token_ms": [
+       140.780571,
+       145.146438,
+       146.257128,
+       145.214025,
+       146.402489,
+       145.529438,
+       144.738088,
+       145.06901,
+       146.429501,
+       146.039212,
+       146.178272,
+       145.562139,
+       146.434982,
+       147.297001,
+       145.059097
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 3.732,
+     "decode_tokens_per_second": 4.29,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 5013050744
+    }
+   ]
+  },
+  "qwen35-9b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/Qwen3.5-9B-MLX-4bit",
+   "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tuned_full_error": "FusionUnsupported: block has no self_attn/mlp pair",
+   "tuned_profile_reduced": true,
+   "tokens_identical": true,
+   "tuned_matches_stock": true,
+   "tuned_over_baseline_generate": 0.9679,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *",
+     "cache_kinds": [
+      "arrays",
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 41.1,
+     "n_layers": 32,
+     "cache_kinds": [
+      "arrays",
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 5038041616,
+     "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "138be67e",
+      "prompt_tokens": 21,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 1974.874972,
+      "engine_ttft_ms": 1974.869,
+      "queue_wait_ms": 0.005972,
+      "latency_ms": 4389.548493,
+      "decode_ms": 2414.673521,
+      "decode_tokens_per_second": 6.212019914720388,
+      "inter_token_ms": [
+       159.00552,
+       160.338095,
+       159.866766,
+       161.053839,
+       161.283506,
+       160.260758,
+       161.070314,
+       161.496511,
+       161.28168,
+       159.975572,
+       161.692276,
+       163.520494,
+       161.753188,
+       159.342038,
+       162.732964
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 4.391,
+     "decode_tokens_per_second": 3.64,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 5271585520
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": false
+     },
+     "load_seconds": 40.8,
+     "n_layers": 32,
+     "cache_kinds": [
+      "arrays",
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 5038041616,
+     "text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "12d262e7",
+      "prompt_tokens": 21,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 1821.1564,
+      "engine_ttft_ms": 1821.151478,
+      "queue_wait_ms": 0.004922,
+      "latency_ms": 4248.930994,
+      "decode_ms": 2427.774594,
+      "decode_tokens_per_second": 6.178497804973734,
+      "inter_token_ms": [
+       159.305153,
+       161.587089,
+       161.517816,
+       161.463894,
+       161.10715,
+       161.300822,
+       163.136733,
+       163.168581,
+       162.750919,
+       162.280258,
+       162.850945,
+       162.344286,
+       161.101603,
+       161.881898,
+       161.977447
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 4.25,
+     "decode_tokens_per_second": 3.76,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 5273699056
+    }
+   ]
+  },
+  "qwen3-14b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/Qwen3-14B-4bit",
+   "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tokens_identical": true,
+   "tuned_matches_stock": true,
+   "tuned_over_baseline_generate": 0.9791,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "<think>\nOkay, the user wants a two-sentence explanation of why the sky",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 56.0,
+     "n_layers": 40,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 8308297736,
+     "text": "<think>\nOkay, the user wants a two-sentence explanation of why the sky",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "ffbbe19a",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 3038.605942,
+      "engine_ttft_ms": 3038.600782,
+      "queue_wait_ms": 0.00516,
+      "latency_ms": 7232.541665,
+      "decode_ms": 4193.935723,
+      "decode_tokens_per_second": 3.576592725953898,
+      "inter_token_ms": [
+       273.377109,
+       277.366051,
+       278.231237,
+       279.758602,
+       282.056956,
+       280.378179,
+       279.440854,
+       278.936304,
+       280.009372,
+       280.023866,
+       278.844374,
+       281.765527,
+       280.70214,
+       280.814593,
+       282.230559
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 7.233,
+     "decode_tokens_per_second": 2.21,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 8377589448
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": true
+     },
+     "load_seconds": 55.5,
+     "n_layers": 40,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": true,
+     "fused_gate_up": true,
+     "weights_bytes": 8308297736,
+     "text": "<think>\nOkay, the user wants a two-sentence explanation of why the sky",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "0a974ce8",
+      "prompt_tokens": 19,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 2823.670072,
+      "engine_ttft_ms": 2823.664504,
+      "queue_wait_ms": 0.005568,
+      "latency_ms": 7080.901709,
+      "decode_ms": 4257.231637,
+      "decode_tokens_per_second": 3.5234164544004583,
+      "inter_token_ms": [
+       278.29513,
+       282.505994,
+       283.063621,
+       284.921984,
+       284.372433,
+       283.618288,
+       282.248066,
+       284.530895,
+       284.849846,
+       283.169758,
+       287.047619,
+       284.851807,
+       284.951995,
+       285.829523,
+       282.974678
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 7.082,
+     "decode_tokens_per_second": 2.26,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 8971763112
+    }
+   ]
+  },
+  "gptoss-20b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+   "revision": "f356f2747216d7e98fee755df25987459fc19089",
+   "max_tokens": 16,
+   "ok": true,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tuned_full_error": "FusionUnsupported: no verified fused body for attention mlx_lm.models.gpt_oss or MLP mlx_lm.models.gpt_oss",
+   "tuned_profile_reduced": true,
+   "tokens_identical": true,
+   "tuned_matches_stock": true,
+   "tuned_over_baseline_generate": 0.954,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "<|channel|>analysis<|message|>The user asks: \"Explain in two sentences why the sky is",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 76.6,
+     "n_layers": 24,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 11181750536,
+     "text": "<|channel|>analysis<|message|>The user asks: \"Explain in two sentences why the sky is",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "43a95a91",
+      "prompt_tokens": 77,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 18102.245778,
+      "engine_ttft_ms": 18102.240479,
+      "queue_wait_ms": 0.005299,
+      "latency_ms": 19257.1189,
+      "decode_ms": 1154.873122,
+      "decode_tokens_per_second": 12.988439781179704,
+      "inter_token_ms": [
+       70.519449,
+       80.353696,
+       78.834309,
+       77.524435,
+       75.280933,
+       75.454888,
+       78.575267,
+       79.269922,
+       80.028685,
+       78.480035,
+       76.012033,
+       75.112979,
+       76.393833,
+       77.647598,
+       75.38506
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 19.258,
+     "decode_tokens_per_second": 0.83,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 11301428504
+    },
+    {
+     "knobs": {
+      "compiled_fixed_cache": true,
+      "fused_argmax": true,
+      "head_skip_prefill": true,
+      "readback_every": 2,
+      "capacity_slack": 128,
+      "fuse_projections": false
+     },
+     "load_seconds": 76.9,
+     "n_layers": 24,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 11181750536,
+     "text": "<|channel|>analysis<|message|>The user asks: \"Explain in two sentences why the sky is",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "c65f75ba",
+      "prompt_tokens": 77,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 17210.749728,
+      "engine_ttft_ms": 17210.744206,
+      "queue_wait_ms": 0.005522,
+      "latency_ms": 18371.203855,
+      "decode_ms": 1160.454127,
+      "decode_tokens_per_second": 12.925974108755097,
+      "inter_token_ms": [
+       75.263521,
+       79.385382,
+       77.380348,
+       74.935787,
+       77.193755,
+       77.684188,
+       78.483977,
+       77.552065,
+       77.186199,
+       76.098503,
+       77.240931,
+       77.484515,
+       79.804694,
+       78.469566,
+       76.290696
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 18.372,
+     "decode_tokens_per_second": 0.87,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 11274810736
+    }
+   ]
+  },
+  "mistral-24b": {
+   "schema": "ironmule.port2-families.v1",
+   "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+   "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+   "max_tokens": 16,
+   "ok": false,
+   "performance_claim": false,
+   "mlx": "0.32.2",
+   "mlx_lm": "0.31.3",
+   "baseline_matches_stock": true,
+   "tuned_full_error": "RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory",
+   "error": "RuntimeError: cudaPeekAtLastError() failed: out of memory",
+   "failed_after_arms": 2,
+   "device": "Device(gpu, 0)",
+   "arms": [
+    {
+     "knobs": "stock",
+     "text": "The sky appears blue because molecules in the air scatter shorter (blue and violet)",
+     "cache_kinds": [
+      "kv"
+     ]
+    },
+    {
+     "knobs": {},
+     "load_seconds": 87.4,
+     "n_layers": 40,
+     "cache_kinds": [
+      "kv"
+     ],
+     "fused_qkv": false,
+     "fused_gate_up": false,
+     "weights_bytes": 13260570632,
+     "text": "The sky appears blue because molecules in the air scatter shorter (blue and violet)",
+     "stop_reason": "length",
+     "metrics": {
+      "rid": "1ff25efe",
+      "prompt_tokens": 14,
+      "generated_tokens": 16,
+      "physical_generated_tokens": 16,
+      "stop_reason": "length",
+      "visible_generated_tokens": 16,
+      "service_ttft_ms": 3021.961864,
+      "engine_ttft_ms": 3021.957475,
+      "queue_wait_ms": 0.004389,
+      "latency_ms": 9866.508366,
+      "decode_ms": 6844.546502,
+      "decode_tokens_per_second": 2.1915257637035483,
+      "inter_token_ms": [
+       448.283801,
+       455.22079,
+       453.041672,
+       454.803541,
+       452.969872,
+       454.802265,
+       454.332723,
+       457.818264,
+       457.273418,
+       456.912478,
+       459.718415,
+       459.182279,
+       458.134793,
+       459.527991,
+       462.5242
+      ],
+      "fell_back": false
+     },
+     "warmup_seconds": 0.0,
+     "generate_seconds": 9.867,
+     "decode_tokens_per_second": 1.62,
+     "warmup_tokens_match": true,
+     "peak_memory_bytes": 13329911224
+    }
+   ]
+  }
+ },
+ "performance_claim": false,
+ "survivors": [
+  "gemma3-4b",
+  "llama31-8b",
+  "qwen3-8b",
+  "qwen35-9b",
+  "qwen3-14b",
+  "gptoss-20b"
+ ],
+ "finished": true
+}

@@ -1,0 +1,5 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+0 Device(gpu, 0) matmul ok True active 33554448
+1 Device(gpu, 1) matmul ok True active 33554448
+mlx 0.32.2 distributed available True

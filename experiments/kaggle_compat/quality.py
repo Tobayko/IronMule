@@ -25,12 +25,24 @@ CHUNKS = int(sys.argv[5]) if len(sys.argv) > 5 else 16
 CHUNK_TOKENS = int(sys.argv[6]) if len(sys.argv) > 6 else 512
 
 started = time.time()
-# QUALITY_ONLY=float32 loads a single float32 copy (12B does not fit twice on 16 GB): it
-# yields per-chunk NLL to compare against another device's float32 reference.
+# QUALITY_ONLY loads a single precision, because a checkpoint above about 6 GB does not fit
+# twice on a 15 GB card. `float32` yields per-chunk NLL to compare against another device's
+# float32 reference; `bf16` is the other half of that pair, so two processes on the same
+# card can be compared where one process cannot hold both (PORT2: gpt-oss 20B, Mistral 24B).
+# In single-precision mode `bf16` means the checkpoint's own dtype and anything else names
+# an opt-in compute plan (`float32`, `float16`), so two processes form one comparable pair.
 ONLY = os.environ.get("QUALITY_ONLY")
-bf16, tokenizer = (None, None) if ONLY else load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION)
-fp32, tok32 = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION, compute_dtype="float32")
-tokenizer = tokenizer or tok32
+if ONLY and ONLY != "bf16":
+    single, tokenizer = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION,
+                                    compute_dtype=ONLY)
+    bf16, fp32 = None, single
+elif ONLY == "bf16":
+    single, tokenizer = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION)
+    bf16, fp32 = single, None
+else:
+    bf16, tokenizer = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION)
+    fp32, _ = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION,
+                          compute_dtype="float32")
 ids = tokenizer.encode(open(TEXT, encoding="utf-8").read())
 rows = []
 for index in range(CHUNKS):
@@ -39,12 +51,22 @@ for index in range(CHUNKS):
         break
     inputs, targets = mx.array([chunk[:-1]]), mx.array(chunk[1:])
     positions = mx.arange(CHUNK_TOKENS)
+    if ONLY == "bf16":
+        logits = bf16.model(inputs)[0].astype(mx.float32)
+        lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        nll = -mx.mean(lp[positions, targets])
+        mx.eval(nll)
+        rows.append({"nll_bf16": nll.item()})
+        print(index, rows[-1], flush=True)
+        del lp
+        mx.clear_cache()
+        continue
     logits32 = fp32.model(inputs)[0].astype(mx.float32)
     lp32 = logits32 - mx.logsumexp(logits32, axis=-1, keepdims=True)
     nll32 = -mx.mean(lp32[positions, targets])
     if ONLY:
         mx.eval(nll32)
-        rows.append({"nll_fp32": nll32.item()})
+        rows.append({f"nll_{ONLY}": nll32.item()})
     else:
         logits16 = bf16.model(inputs)[0].astype(mx.float32)
         lp16 = logits16 - mx.logsumexp(logits16, axis=-1, keepdims=True)
@@ -59,9 +81,10 @@ for index in range(CHUNKS):
     mx.clear_cache()
 
 if ONLY:
+    key = f"nll_{ONLY}"
     report = {"schema": "ironmule.port1-quality.v1", "model_id": MODEL_ID, "revision": REVISION,
               "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "rows": rows, "only": ONLY,
-              "ppl_fp32": math.exp(st.mean(r["nll_fp32"] for r in rows)),
+              f"ppl_{ONLY}": math.exp(st.mean(r[key] for r in rows)),
               "device": str(mx.default_device()), "seconds": time.time() - started}
     with open(OUT, "w") as stream:
         json.dump(report, stream, indent=1)

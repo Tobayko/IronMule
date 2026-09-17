@@ -1,0 +1,110 @@
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+ "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "max_tokens": 16,
+ "arms": [
+  {
+   "knobs": "stock",
+   "tokens": [
+    1784,
+    21283,
+    10249,
+    10991,
+    3147,
+    15382,
+    1294,
+    1278,
+    4864,
+    19684,
+    24701,
+    1319,
+    23493,
+    1321,
+    90317,
+    1041
+   ],
+   "text": "The sky appears blue because molecules in the air scatter shorter (blue and violet)",
+   "cache_kinds": [
+    "kv"
+   ]
+  },
+  {
+   "knobs": {},
+   "load_seconds": 87.4,
+   "n_layers": 40,
+   "cache_kinds": [
+    "kv"
+   ],
+   "fused_qkv": false,
+   "fused_gate_up": false,
+   "weights_bytes": 13260570632,
+   "tokens": [
+    1784,
+    21283,
+    10249,
+    10991,
+    3147,
+    15382,
+    1294,
+    1278,
+    4864,
+    19684,
+    24701,
+    1319,
+    23493,
+    1321,
+    90317,
+    1041
+   ],
+   "text": "The sky appears blue because molecules in the air scatter shorter (blue and violet)",
+   "stop_reason": "length",
+   "metrics": {
+    "rid": "1ff25efe",
+    "prompt_tokens": 14,
+    "generated_tokens": 16,
+    "physical_generated_tokens": 16,
+    "stop_reason": "length",
+    "visible_generated_tokens": 16,
+    "service_ttft_ms": 3021.961864,
+    "engine_ttft_ms": 3021.957475,
+    "queue_wait_ms": 0.004389,
+    "latency_ms": 9866.508366,
+    "decode_ms": 6844.546502,
+    "decode_tokens_per_second": 2.1915257637035483,
+    "inter_token_ms": [
+     448.283801,
+     455.22079,
+     453.041672,
+     454.803541,
+     452.969872,
+     454.802265,
+     454.332723,
+     457.818264,
+     457.273418,
+     456.912478,
+     459.718415,
+     459.182279,
+     458.134793,
+     459.527991,
+     462.5242
+    ],
+    "fell_back": false
+   },
+   "warmup_seconds": 0.0,
+   "generate_seconds": 9.867,
+   "decode_tokens_per_second": 1.62,
+   "warmup_tokens_match": true,
+   "peak_memory_bytes": 13329911224
+  }
+ ],
+ "ok": false,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "baseline_matches_stock": true,
+ "tuned_full_error": "RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory",
+ "error": "RuntimeError: cudaPeekAtLastError() failed: out of memory",
+ "failed_after_arms": 2,
+ "device": "Device(gpu, 0)"
+}

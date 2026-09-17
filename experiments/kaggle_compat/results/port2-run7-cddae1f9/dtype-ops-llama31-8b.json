@@ -1,0 +1,49 @@
+{
+ "schema": "ironmule.port2-dtype-ops.v1",
+ "model_id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+ "revision": "90215b22ec18e72f623dde2ea7af4097025160e2",
+ "device": "Device(gpu, 0)",
+ "dtypes": {
+  "None": {
+   "rope_class": "Llama3RoPE",
+   "rope_has_own_freqs": true,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "rope_ms": 0.02725,
+   "lm_head_ms": 5.64582,
+   "norm_ms": 0.02393,
+   "peak_memory_bytes": 5609338160
+  },
+  "float32": {
+   "rope_class": "Llama3RoPE",
+   "rope_has_own_freqs": true,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "rope_ms": 0.02627,
+   "lm_head_ms": 5.15266,
+   "norm_ms": 0.02664,
+   "peak_memory_bytes": 9034848424,
+   "vs_bf16": {
+    "rope_ms": 0.964,
+    "lm_head_ms": 0.9127,
+    "norm_ms": 1.1132
+   }
+  },
+  "float16": {
+   "rope_class": "Llama3RoPE",
+   "rope_has_own_freqs": true,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "rope_ms": 0.02723,
+   "lm_head_ms": 2.9003,
+   "norm_ms": 0.02692,
+   "peak_memory_bytes": 9067690152,
+   "vs_bf16": {
+    "rope_ms": 0.9993,
+    "lm_head_ms": 0.5137,
+    "norm_ms": 1.1249
+   }
+  }
+ },
+ "performance_claim": false
+}

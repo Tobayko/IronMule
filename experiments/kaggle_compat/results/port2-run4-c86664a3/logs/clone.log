@@ -1,0 +1,7 @@
+/tmp/ironmule.patch:473: new blank line at EOF.
++
+warning: 1 line adds whitespace errors.
+ ironmule/fast.py              | 263 +++++++++++++++++++++++++++++++-----------
+ ironmule/runtime.py           |  20 +++-
+ tests/engine/test_ironmule.py |  68 ++++++++++-
+ 3 files changed, 279 insertions(+), 72 deletions(-)

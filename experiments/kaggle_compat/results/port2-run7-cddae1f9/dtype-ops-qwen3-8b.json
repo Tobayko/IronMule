@@ -1,0 +1,30 @@
+{
+ "schema": "ironmule.port2-dtype-ops.v1",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+ "device": "Device(gpu, 0)",
+ "dtypes": {
+  "None": {
+   "rope_class": "RoPE",
+   "rope_has_own_freqs": false,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+  },
+  "float32": {
+   "rope_class": "RoPE",
+   "rope_has_own_freqs": false,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+  },
+  "float16": {
+   "rope_class": "RoPE",
+   "rope_has_own_freqs": false,
+   "tied_embeddings": false,
+   "hidden": 512,
+   "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+  }
+ },
+ "performance_claim": false
+}

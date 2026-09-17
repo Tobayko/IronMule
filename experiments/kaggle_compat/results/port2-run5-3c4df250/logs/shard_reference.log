@@ -1,0 +1,15 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "schema": "ironmule.port2-shard.v1",
+ "arm": "reference",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+ "device": "Device(gpu, 0)",
+ "performance_claim": false,
+ "text": "<think>\nOkay, the user wants to know why the sky is blue in two sentences. Let me start by recalling the basic explanation. The sky appears blue because",
+ "seconds": 52.98,
+ "tokens_per_second": 0.6,
+ "peak_memory_bytes": 4668143176,
+ "prompt_tokens": 19
+}

@@ -1,0 +1,21 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Ignoring clean_up_tokenization_spaces=True for BPE tokenizer TokenizersBackend. The clean_up_tokenization post-processing step is designed for WordPiece tokenizers and is destructive for BPE (it strips spaces before punctuation). Set clean_up_tokenization_spaces=False to suppress this warning, or set clean_up_tokenization_spaces_for_bpe_even_though_it_will_corrupt_output=True to force cleanup anyway.
+{
+ "schema": "ironmule.port2-families.v1",
+ "model_id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+ "revision": "90215b22ec18e72f623dde2ea7af4097025160e2",
+ "max_tokens": 16,
+ "ok": true,
+ "performance_claim": false,
+ "mlx": "0.32.2",
+ "mlx_lm": "0.31.3",
+ "baseline_matches_stock": true,
+ "tokens_identical": false,
+ "tuned_matches_stock": false,
+ "tuned_over_baseline_generate": 0.9791,
+ "device": "Device(gpu, 0)"
+}
+{'knobs': 'stock', 'cache_kinds': ['kv']}
+{'knobs': {}, 'load_seconds': 30.4, 'n_layers': 32, 'cache_kinds': ['kv'], 'fused_qkv': False, 'fused_gate_up': False, 'weights_bytes': 4517407752, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 1.148, 'decode_tokens_per_second': 13.94, 'warmup_tokens_match': True, 'peak_memory_bytes': 4608702552}
+{'knobs': {'compiled_fixed_cache': True, 'fused_argmax': True, 'head_skip_prefill': True, 'readback_every': 2, 'capacity_slack': 128, 'fuse_projections': True}, 'load_seconds': 30.4, 'n_layers': 32, 'cache_kinds': ['kv'], 'fused_qkv': True, 'fused_gate_up': True, 'weights_bytes': 4517407752, 'stop_reason': 'length', 'warmup_seconds': 0.0, 'generate_seconds': 1.124, 'decode_tokens_per_second': 14.24, 'warmup_tokens_match': False, 'peak_memory_bytes': 4900961424}

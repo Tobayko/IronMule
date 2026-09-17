@@ -1,0 +1,15 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{'dtype': 'mlx.core.bfloat16', 'shape': [6144, 4096], 'ms_per_call': 0.506816843746094}
+{'dtype': 'mlx.core.bfloat16', 'shape': [28672, 4096], 'ms_per_call': 2.3410814999991203}
+{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 14336], 'ms_per_call': 1.1748865781271434}
+{'dtype': 'mlx.core.bfloat16', 'shape': [4096, 4096], 'ms_per_call': 0.33916574999892646}
+{'dtype': 'mlx.core.float16', 'shape': [6144, 4096], 'ms_per_call': 0.1647134218814017}
+{'dtype': 'mlx.core.float16', 'shape': [28672, 4096], 'ms_per_call': 0.7546332656218624}
+{'dtype': 'mlx.core.float16', 'shape': [4096, 14336], 'ms_per_call': 0.37927993749775624}
+{'dtype': 'mlx.core.float16', 'shape': [4096, 4096], 'ms_per_call': 0.1155336562490561}
+{'dtype': 'mlx.core.float32', 'shape': [6144, 4096], 'ms_per_call': 0.2906805156257519}
+{'dtype': 'mlx.core.float32', 'shape': [28672, 4096], 'ms_per_call': 1.3462298124977679}
+{'dtype': 'mlx.core.float32', 'shape': [4096, 14336], 'ms_per_call': 0.6812929531250234}
+{'dtype': 'mlx.core.float32', 'shape': [4096, 4096], 'ms_per_call': 0.19931260937511297}
+{"schema": "ironmule.port1-qmm-dtype.v1", "device": "Device(gpu, 0)", "shapes": [[6144, 4096], [28672, 4096], [4096, 14336], [4096, 4096]], "rows": [{"dtype": "mlx.core.bfloat16", "shape": [6144, 4096], "ms_per_call": 0.506816843746094}, {"dtype": "mlx.core.bfloat16", "shape": [28672, 4096], "ms_per_call": 2.3410814999991203}, {"dtype": "mlx.core.bfloat16", "shape": [4096, 14336], "ms_per_call": 1.1748865781271434}, {"dtype": "mlx.core.bfloat16", "shape": [4096, 4096], "ms_per_call": 0.33916574999892646}, {"dtype": "mlx.core.float16", "shape": [6144, 4096], "ms_per_call": 0.1647134218814017}, {"dtype": "mlx.core.float16", "shape": [28672, 4096], "ms_per_call": 0.7546332656218624}, {"dtype": "mlx.core.float16", "shape": [4096, 14336], "ms_per_call": 0.37927993749775624}, {"dtype": "mlx.core.float16", "shape": [4096, 4096], "ms_per_call": 0.1155336562490561}, {"dtype": "mlx.core.float32", "shape": [6144, 4096], "ms_per_call": 0.2906805156257519}, {"dtype": "mlx.core.float32", "shape": [28672, 4096], "ms_per_call": 1.3462298124977679}, {"dtype": "mlx.core.float32", "shape": [4096, 14336], "ms_per_call": 0.6812929531250234}, {"dtype": "mlx.core.float32", "shape": [4096, 4096], "ms_per_call": 0.19931260937511297}]}

@@ -1,0 +1,24 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "throughput_refused": "throughput mode is unsupported on a model with recurrent cache layers (24 of 32 layers): grouped execution has been measured to change tokens and to do so non-deterministically. Use interactive mode, or see PORT2 in the backlog.",
+ "interactive_text": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *",
+ "interactive_tokens": [
+  90700,
+  8340,
+  25,
+  271,
+  16,
+  13,
+  220,
+  2972,
+  2014,
+  53983,
+  279,
+  5952,
+  64700,
+  198,
+  262,
+  348
+ ]
+}

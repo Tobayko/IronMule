@@ -1,0 +1,7 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+<frozen runpy>:128: RuntimeWarning: 'ironmule.fast' found in sys.modules after import of package 'ironmule', but prior to execution of 'ironmule.fast'; this may result in unpredictable behaviour
+fast self-check ok: gemma3_text 4 blocks fused, output bit identical
+fast self-check ok: llama 4 blocks fused, output bit identical
+fast self-check ok: qwen3 4 blocks fused, output bit identical
+fast self-check ok: qwen2 refused, projections untouched

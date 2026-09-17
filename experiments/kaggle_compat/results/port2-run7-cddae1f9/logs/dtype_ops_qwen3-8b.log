@@ -1,0 +1,28 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+None {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."}
+float32 {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."}
+float16 {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."}
+{
+ "None": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+ },
+ "float32": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+ },
+ "float16": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "error": "ValueError: [rope] dims must not exceed the input's last dimension (127) but got 128."
+ }
+}

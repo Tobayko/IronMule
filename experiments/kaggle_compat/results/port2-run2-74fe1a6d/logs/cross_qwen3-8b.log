@@ -1,0 +1,43 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+stock 0 49306.203058 0
+ironmule_exact 0 47607.467163 0
+ironmule_fp32 0 26899.259095 0
+ironmule_exact 1 47658.968577 0
+ironmule_fp32 1 26889.877245 0
+stock 1 49449.890472 0
+{
+ "stock": {
+  "ratio_vs_reference_per_rep": [
+   1.0,
+   1.0
+  ],
+  "median_ratio": 1.0,
+  "max_ratio": 1.0,
+  "identical_requests": 6,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_exact": {
+  "ratio_vs_reference_per_rep": [
+   0.9655472173957151,
+   0.9637830968298288
+  ],
+  "median_ratio": 0.964665157112772,
+  "max_ratio": 0.9655472173957151,
+  "identical_requests": 6,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_fp32": {
+  "ratio_vs_reference_per_rep": [
+   0.5455552735090511,
+   0.543780319599006
+  ],
+  "median_ratio": 0.5446677965540285,
+  "max_ratio": 0.5455552735090511,
+  "identical_requests": 5,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ }
+}

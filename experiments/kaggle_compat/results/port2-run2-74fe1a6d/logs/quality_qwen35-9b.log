@@ -1,0 +1,7 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (297053 > 262144). Running this sequence through the model will result in indexing errors
+Traceback (most recent call last):
+  File "/tmp/quality.py", line 54, in <module>
+    mx.eval(nll16, nll32, kl, top1)
+RuntimeError: cudaGraphInstantiate(&handle_, graph, nullptr, nullptr, 0) failed: out of memory
