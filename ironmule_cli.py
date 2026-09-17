@@ -86,10 +86,27 @@ def _probe_gpu(backend: str) -> tuple[bool, str]:
         return False, f"{backend} unavailable"
     detail = f"{backend} GPU operation verified"
     if backend == "CUDA" and len(words) == 3 and words[1].isdigit() and int(words[1]) < 8:
-        # PORT1: bf16 is emulated below Ampere; float32 ran Gemma 3 4B/12B at about half the time.
-        detail += (f"; compute capability {words[1]}.{words[2]} emulates bf16, consider "
-                   "--compute-dtype float32 (about 2x faster, output differs from bf16)")
+        # This used to advise `--compute-dtype float32` on every such card. PORT2 measured
+        # that the answer is per architecture, not per device: right for Gemma 3 and Qwen 3,
+        # a 34% loss on Llama 3.1, and silent about float16 being both the fastest option
+        # measured (+223% on Qwen 3) and the one that doubles Gemma 3's perplexity.
+        detail += (f"; compute capability {words[1]}.{words[2]} emulates bf16, so a numeric "
+                   "plan can pay — but which one is per model: " + _numeric_plan_summary())
     return True, detail
+
+
+def _numeric_plan_summary() -> str:
+    """One line per architecture that has a measurement, from the plan table itself."""
+    try:
+        from ironmule.numeric_plans import CUDA_PRE_AMPERE, MEASUREMENTS, recommend
+    except ImportError:  # doctor must still run when the package cannot be imported
+        return "run `ironmule plans` for the measured table"
+    lines = []
+    for architecture in sorted({row.architecture for row in MEASUREMENTS}):
+        rows = [row for row in MEASUREMENTS if row.architecture == architecture]
+        plan, _ = recommend(architecture, CUDA_PRE_AMPERE)
+        lines.append(f"{rows[0].label}={plan or 'none'}")
+    return ", ".join(lines) + " (see `ironmule plans` for the numbers behind each)"
 
 
 def _cpu_name() -> str:
@@ -472,6 +489,50 @@ def _run_requalify(argv: list[str]) -> int:
     return 0 if record["outcome"] in ("PASS", "NO_GAIN", "WORSE", "NOT_READY") else 1
 
 
+def _run_plans(argv: Iterable[str] = ()) -> int:
+    """Print the measured numeric-plan table, which is the only reason to trust any of it.
+
+    Speed alone would be an advertisement. Each row prints what it cost in quality next to
+    what it gained in time, and says plainly when the quality could not be established, so
+    an unqualified plan cannot be mistaken for a qualified one.
+    """
+    parser = argparse.ArgumentParser(
+        prog="ironmule plans",
+        description="Opt-in numeric plans, and the measurement behind each.")
+    parser.add_argument("--json", action="store_true", help="machine-readable output")
+    args = parser.parse_args(list(argv))
+    from ironmule.numeric_plans import CUDA_PRE_AMPERE, MEASUREMENTS, QUALITY_BOUND, recommend
+
+    if args.json:
+        print(json.dumps({
+            "schema": "ironmule.numeric_plans.v1", "quality_bound": QUALITY_BOUND,
+            "rows": [{"architecture": row.architecture, "plan": row.plan, "device": row.device,
+                      "wall_ratio": row.wall_ratio, "speedup_percent": row.speedup_percent,
+                      "quality_ratio": row.quality_ratio,
+                      "quality_interval": list(row.quality_interval) if row.quality_interval else None,
+                      "verdict": row.verdict(), "models": list(row.models),
+                      "wall_evidence": row.wall_evidence} for row in MEASUREMENTS],
+        }, indent=1))
+        return 0
+    print("IronMule numeric plans")
+    print(f"  measured on NVIDIA below compute capability 8; quality bound {QUALITY_BOUND}")
+    print(f"  {'architecture':16} {'plan':9} {'vs stock':>10} {'perplexity ratio':>28}  verdict")
+    for row in MEASUREMENTS:
+        quality = ("not measured" if not row.quality_known
+                   else f"{row.quality_ratio:.6f} [{row.quality_interval[0]:.4f}; "
+                        f"{row.quality_interval[1]:.4f}]")
+        change = f"{row.speedup_percent:+.0f}%"
+        print(f"  {row.label:16} {row.plan:9} {change:>10} {quality:>28}  {row.verdict()}")
+    print()
+    for architecture in sorted({row.architecture for row in MEASUREMENTS}):
+        _, reason = recommend(architecture, CUDA_PRE_AMPERE)
+        print(f"  {reason}")
+    print("\n  A plan is never chosen for you. `recommended` means measured faster with the")
+    print("  whole quality interval inside the bound; `unqualified` means the speed is real")
+    print("  and the quality is not established; `refused` means IronMule will not load it.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     try:
         return _dispatch(argv)
@@ -491,13 +552,14 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {setup|serve|optimize|data|doctor|benchmark|models|tune|revalidate|requalify|status|info} [options]")
+        print("usage: ironmule {setup|serve|optimize|data|doctor|plans|benchmark|models|tune|revalidate|requalify|status|info} [options]")
         print("\ncommands:")
         print("  setup        Initialize desktop/server product settings")
         print("  serve        Serve a registered local model through HTTP/SSE")
         print("  optimize     Run bounded automatic calibration and inspect its history")
         print("  data         Collect portable optimizer evidence with free-only quotas")
         print("  doctor       Check Apple Silicon and MLX prerequisites")
+        print("  plans        Show which opt-in numeric plan is measured for which model")
         print("  benchmark   Run the existing reproducible local benchmark")
         print("  models      List cached models; `models list` also works without MLX")
         print("  tune        Tune or inspect the existing local profile (--show)")
@@ -515,6 +577,8 @@ def _dispatch(argv: list[str] | None) -> int:
         return dispatch(command, rest)
     if command == "doctor":
         return doctor(rest)
+    if command == "plans":
+        return _run_plans(rest)
     if command == "benchmark":
         return _run_benchmark(rest)
     if command == "tune":

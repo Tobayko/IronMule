@@ -359,6 +359,19 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         verify_resolved_model(model_id, resolved)
     if compute_dtype is not None:
         import mlx.core as mx
+
+        from .numeric_plans import architecture_of, check, device_class
+        # After the load, because the architecture is a property of what mlx-lm built, not
+        # of what the config claims. Refuses only a plan measured to ruin this architecture
+        # on this device class; an unmeasured one passes, because opt-in means the caller
+        # may have evidence this project does not.
+        try:
+            info = mx.device_info() if mx.cuda.is_available() else None
+        except Exception:  # noqa: BLE001 - no CUDA device is not this guard's business
+            info = None
+        architecture = architecture_of(model)
+        if architecture is not None:
+            check(architecture, compute_dtype, device_class(info))
         # Floating parameters only; packed quantised weights stay integer. Before the Engine
         # exists, so fused projections and compiled caches see the final dtype.
         # Spelled out rather than `getattr(mx, compute_dtype)`: the Q3f child guard scans

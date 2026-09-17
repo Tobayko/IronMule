@@ -85,7 +85,18 @@ REVIEWED_SOURCE_MODULES = frozenset({
     # checks function-level imports, so the list stays a true statement of what the
     # child can reach.
     "ironmule.kernel_registry",
+    # Reached from load_engine when a caller asks for a numeric plan, to refuse one this
+    # project measured to ruin that architecture. Reviewed: a frozen table of floats and
+    # strings plus predicates over it, importing only dataclasses, typing and
+    # ironmule.runtime, with no operation from OPERATION_SET and no dynamic call path.
+    "ironmule.numeric_plans",
 })
+#: The bare names a relative import inside the package can use. Derived from the allowlist
+#: rather than repeated, because the two must agree: a name missing here resolves to a
+#: top-level module and is rejected as unreviewed even though it is on the list, which is a
+#: confusing way to say "you forgot to add it in two places".
+_LOCAL_MODULE_NAMES = frozenset(
+    name.split(".", 1)[1] for name in REVIEWED_SOURCE_MODULES if name.startswith("ironmule."))
 REVIEWED_STDLIB_MODULES = frozenset({
     "argparse", "ast", "collections", "dataclasses", "hashlib", "importlib",
     "json", "math", "os", "pathlib", "re", "resource", "secrets", "signal",
@@ -427,7 +438,7 @@ def _normalise_local_module(module: str | None, current: str) -> str:
         return "ironmule.q3f_child_guard"
     if module.startswith("ironmule."):
         return module
-    if module in {"tune", "runtime", "model_identity", "fast", "hw", "bench"}:
+    if module in _LOCAL_MODULE_NAMES:
         return "ironmule." + module
     return module
 
