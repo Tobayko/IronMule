@@ -518,9 +518,11 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
     print(f"  measured on NVIDIA below compute capability 8; quality bound {QUALITY_BOUND}")
     print(f"  {'architecture':16} {'plan':9} {'vs stock':>10} {'perplexity ratio':>28}  verdict")
     for row in MEASUREMENTS:
-        quality = ("not measured" if not row.quality_known
-                   else f"{row.quality_ratio:.6f} [{row.quality_interval[0]:.4f}; "
-                        f"{row.quality_interval[1]:.4f}]")
+        if row.quality_known:
+            quality = (f"{row.quality_ratio:.6f} [{row.quality_interval[0]:.4f}; "
+                       f"{row.quality_interval[1]:.4f}]")
+        else:
+            quality = "gate unusable" if row.quality_note else "not measured"
         change = f"{row.speedup_percent:+.0f}%"
         print(f"  {row.label:16} {row.plan:9} {change:>10} {quality:>28}  {row.verdict()}")
     print()

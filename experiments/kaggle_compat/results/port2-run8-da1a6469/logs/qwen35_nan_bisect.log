@@ -1,0 +1,33 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (297053 > 262144). Running this sequence through the model will result in indexing errors
+64 {'nll': 2.7354021072387695, 'finite': True, 'logits_finite': True}
+128 {'nll': 2.329909086227417, 'finite': True, 'logits_finite': True}
+256 {'nll': 2.2478342056274414, 'finite': True, 'logits_finite': True}
+512 {'nll': nan, 'finite': False, 'logits_finite': False}
+{
+ "model_id": "mlx-community/Qwen3.5-9B-MLX-4bit",
+ "loader": "mlx_lm.load",
+ "lengths": {
+  "64": {
+   "nll": 2.7354021072387695,
+   "finite": true,
+   "logits_finite": true
+  },
+  "128": {
+   "nll": 2.329909086227417,
+   "finite": true,
+   "logits_finite": true
+  },
+  "256": {
+   "nll": 2.2478342056274414,
+   "finite": true,
+   "logits_finite": true
+  },
+  "512": {
+   "nll": NaN,
+   "finite": false,
+   "logits_finite": false
+  }
+ }
+}

@@ -1,0 +1,38 @@
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+ "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 8,
+ "chunk_tokens": 128,
+ "rows": [
+  {
+   "nll_bf16": 2.1332387924194336
+  },
+  {
+   "nll_bf16": 2.485525608062744
+  },
+  {
+   "nll_bf16": 2.1988847255706787
+  },
+  {
+   "nll_bf16": 2.5141232013702393
+  },
+  {
+   "nll_bf16": 2.639413356781006
+  },
+  {
+   "nll_bf16": 2.640500068664551
+  },
+  {
+   "nll_bf16": 2.7522873878479004
+  },
+  {
+   "nll_bf16": 2.765768527984619
+  }
+ ],
+ "only": "bf16",
+ "ppl_bf16": 12.381676877236892,
+ "device": "Device(gpu, 0)",
+ "seconds": 345.80038046836853
+}

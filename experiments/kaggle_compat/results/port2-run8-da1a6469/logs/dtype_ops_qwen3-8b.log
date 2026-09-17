@@ -1,0 +1,50 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+None {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "head_dim": 128, "rope_ms": 0.02576, "lm_head_ms": 6.51766, "norm_ms": 0.02454, "peak_memory_bytes": 5627768544}
+float32 {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "head_dim": 128, "rope_ms": 0.0253, "lm_head_ms": 5.98871, "norm_ms": 0.02771, "peak_memory_bytes": 9215496200}
+float16 {"rope_class": "RoPE", "rope_has_own_freqs": false, "tied_embeddings": false, "hidden": 512, "head_dim": 128, "rope_ms": 0.02728, "lm_head_ms": 3.37406, "norm_ms": 0.02206, "peak_memory_bytes": 9254400008}
+{
+ "None": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "head_dim": 128,
+  "rope_ms": 0.02576,
+  "lm_head_ms": 6.51766,
+  "norm_ms": 0.02454,
+  "peak_memory_bytes": 5627768544
+ },
+ "float32": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "head_dim": 128,
+  "rope_ms": 0.0253,
+  "lm_head_ms": 5.98871,
+  "norm_ms": 0.02771,
+  "peak_memory_bytes": 9215496200,
+  "vs_bf16": {
+   "rope_ms": 0.9821,
+   "lm_head_ms": 0.9188,
+   "norm_ms": 1.1292
+  }
+ },
+ "float16": {
+  "rope_class": "RoPE",
+  "rope_has_own_freqs": false,
+  "tied_embeddings": false,
+  "hidden": 512,
+  "head_dim": 128,
+  "rope_ms": 0.02728,
+  "lm_head_ms": 3.37406,
+  "norm_ms": 0.02206,
+  "peak_memory_bytes": 9254400008,
+  "vs_bf16": {
+   "rope_ms": 1.059,
+   "lm_head_ms": 0.5177,
+   "norm_ms": 0.8989
+  }
+ }
+}

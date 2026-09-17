@@ -1,0 +1,103 @@
+{
+ "schema": "ironmule.port2-kaggle.v8",
+ "commit": "8064419f409366e08f8e651e747f483d9c0483df",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB]\n0, Tesla T4, 15360 MiB\n1, Tesla T4, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.6,
+   "tail": " ironmule/fast.py              | 263 +++++++++++++++++++++++++++++++-----------\n ironmule/runtime.py           |  20 +++-\n ironmule/service.py           |  35 ++++++\n ironmule/tune.py              |  11 +-\n tests/engine/test_ironmule.py |  95 ++++++++++++++-\n 5 files changed, 349 insertions(+), 75 deletions(-)\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 9.4,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.1/20.1 MB 63.5 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.67s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 24.4,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 44 packages in 1.88s\n   Building ironmule @ file:///tmp/IronMule\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading pygments (1.2MiB)\nDownloading numpy (15.9MiB)\nDownloading scipy (33.7MiB)\nDownloading tokenizers (3.2MiB)\nDownloading pyarrow (47.8MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading hf-xet (4.3MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-nccl-cu12 (326.3MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\n Downloaded pygments\n      Built ironmule @ file:///tmp/IronMule\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 44 packages in 22.25s\nInstalled 44 packages in 120ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.0\n + fsspec==2026.7.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.31.0\n + idna==3.19\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.31.2\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.1\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.0\nfsspec==2026.7.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.31.0\nidna==3.19\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.31.2\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.1\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_llama31-8b": {
+   "exit": 0,
+   "seconds": 25.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Llama-3.1-8B-Instruct-4bit/snapshots/90215b22ec18e72f623dde2ea7af4097025160e2\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 32.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "download_qwen35-9b": {
+   "exit": 0,
+   "seconds": 20.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.5-9B-MLX-4bit/snapshots/938d8919941c6e7efd3c7150eff7fe9d12afa631\n"
+  },
+  "download_gptoss-20b": {
+   "exit": 0,
+   "seconds": 65.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gpt-oss-20b-MXFP4-Q4/snapshots/f356f2747216d7e98fee755df25987459fc19089\n"
+  },
+  "download_mistral-24b": {
+   "exit": 0,
+   "seconds": 58.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "dtype_ops_qwen3-8b": {
+   "exit": 0,
+   "seconds": 129.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nNone {\"rope_class\": \"RoPE\", \"rope_has_own_freqs\": false, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.02576, \"lm_head_ms\": 6.51766, \"norm_ms\": 0.02454, \"peak_memory_bytes\": 5627768544}\nfloat32 {\"rope_class\": \"RoPE\", \"rope_has_own_freqs\": false, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.0253, \"lm_head_ms\": 5.98871, \"norm_ms\": 0.02771, \"peak_memory_bytes\": 9215496200}\nfloat16 {\"rope_class\": \"RoPE\", \"rope_has_own_freqs\": false, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.02728, \"lm_head_ms\": 3.37406, \"norm_ms\": 0.02206, \"peak_memory_bytes\": 9254400008}\n{\n \"None\": {\n  \"rope_class\": \"RoPE\",\n  \"rope_has_own_freqs\": false,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.02576,\n  \"lm_head_ms\": 6.51766,\n  \"norm_ms\": 0.02454,\n  \"peak_memory_bytes\": 5627768544\n },\n \"float32\": {\n  \"rope_class\": \"RoPE\",\n  \"rope_has_own_freqs\": false,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.0253,\n  \"lm_head_ms\": 5.98871,\n  \"norm_ms\": 0.02771,\n  \"peak_memory_bytes\": 9215496200,\n  \"vs_bf16\": {\n   \"rope_ms\": 0.9821,\n   \"lm_head_ms\": 0.9188,\n   \"norm_ms\": 1.1292\n  }\n },\n \"float16\": {\n  \"rope_class\": \"RoPE\",\n  \"rope_has_own_freqs\": false,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.02728,\n  \"lm_head_ms\": 3.37406,\n  \"norm_ms\": 0.02206,\n  \"peak_memory_bytes\": 9254400008,\n  \"vs_bf16\": {\n   \"rope_ms\": 1.059,\n   \"lm_head_ms\": 0.5177,\n   \"norm_ms\": 0.8989\n  }\n }\n}\n"
+  },
+  "dtype_ops_llama31-8b": {
+   "exit": 0,
+   "seconds": 128.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nNone {\"rope_class\": \"Llama3RoPE\", \"rope_has_own_freqs\": true, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.03051, \"lm_head_ms\": 5.74661, \"norm_ms\": 0.02759, \"peak_memory_bytes\": 5609338160}\nfloat32 {\"rope_class\": \"Llama3RoPE\", \"rope_has_own_freqs\": true, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.03341, \"lm_head_ms\": 5.25983, \"norm_ms\": 0.02472, \"peak_memory_bytes\": 9034848424}\nfloat16 {\"rope_class\": \"Llama3RoPE\", \"rope_has_own_freqs\": true, \"tied_embeddings\": false, \"hidden\": 512, \"head_dim\": 128, \"rope_ms\": 0.03083, \"lm_head_ms\": 2.98272, \"norm_ms\": 0.0246, \"peak_memory_bytes\": 9067690152}\n{\n \"None\": {\n  \"rope_class\": \"Llama3RoPE\",\n  \"rope_has_own_freqs\": true,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.03051,\n  \"lm_head_ms\": 5.74661,\n  \"norm_ms\": 0.02759,\n  \"peak_memory_bytes\": 5609338160\n },\n \"float32\": {\n  \"rope_class\": \"Llama3RoPE\",\n  \"rope_has_own_freqs\": true,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.03341,\n  \"lm_head_ms\": 5.25983,\n  \"norm_ms\": 0.02472,\n  \"peak_memory_bytes\": 9034848424,\n  \"vs_bf16\": {\n   \"rope_ms\": 1.0951,\n   \"lm_head_ms\": 0.9153,\n   \"norm_ms\": 0.896\n  }\n },\n \"float16\": {\n  \"rope_class\": \"Llama3RoPE\",\n  \"rope_has_own_freqs\": true,\n  \"tied_embeddings\": false,\n  \"hidden\": 512,\n  \"head_dim\": 128,\n  \"rope_ms\": 0.03083,\n  \"lm_head_ms\": 2.98272,\n  \"norm_ms\": 0.0246,\n  \"peak_memory_bytes\": 9067690152,\n  \"vs_bf16\": {\n   \"rope_ms\": 1.0105,\n   \"lm_head_ms\": 0.519,\n   \"norm_ms\": 0.8916\n  }\n }\n}\n"
+  },
+  "qwen35_nan_bisect": {
+   "exit": 0,
+   "seconds": 198.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (297053 > 262144). Running this sequence through the model will result in indexing errors\n64 {'nll': 2.7354021072387695, 'finite': True, 'logits_finite': True}\n128 {'nll': 2.329909086227417, 'finite': True, 'logits_finite': True}\n256 {'nll': 2.2478342056274414, 'finite': True, 'logits_finite': True}\n512 {'nll': nan, 'finite': False, 'logits_finite': False}\n{\n \"model_id\": \"mlx-community/Qwen3.5-9B-MLX-4bit\",\n \"loader\": \"mlx_lm.load\",\n \"lengths\": {\n  \"64\": {\n   \"nll\": 2.7354021072387695,\n   \"finite\": true,\n   \"logits_finite\": true\n  },\n  \"128\": {\n   \"nll\": 2.329909086227417,\n   \"finite\": true,\n   \"logits_finite\": true\n  },\n  \"256\": {\n   \"nll\": 2.2478342056274414,\n   \"finite\": true,\n   \"logits_finite\": true\n  },\n  \"512\": {\n   \"nll\": NaN,\n   \"finite\": false,\n   \"logits_finite\": false\n  }\n }\n}\n"
+  },
+  "quality_mistral-24b-bf16-8": {
+   "exit": 0,
+   "seconds": 347.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n0 {'nll_bf16': 2.1332387924194336}\n1 {'nll_bf16': 2.485525608062744}\n2 {'nll_bf16': 2.1988847255706787}\n3 {'nll_bf16': 2.5141232013702393}\n4 {'nll_bf16': 2.639413356781006}\n5 {'nll_bf16': 2.640500068664551}\n6 {'nll_bf16': 2.7522873878479004}\n7 {'nll_bf16': 2.765768527984619}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit\",\n \"revision\": \"2a1d5eabfc504747bdc24178394821a1efc0edde\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 8,\n \"chunk_tokens\": 128,\n \"only\": \"bf16\",\n \"ppl_bf16\": 12.381676877236892,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 345.80038046836853\n}\n"
+  },
+  "quality_mistral-24b-float32-8": {
+   "exit": 0,
+   "seconds": 138.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n0 {'nll_float32': 2.1314351558685303}\n1 {'nll_float32': 2.4879655838012695}\n2 {'nll_float32': 2.1983742713928223}\n3 {'nll_float32': 2.5079891681671143}\n4 {'nll_float32': 2.638800621032715}\n5 {'nll_float32': 2.6350436210632324}\n6 {'nll_float32': 2.74820613861084}\n7 {'nll_float32': 2.7660672664642334}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit\",\n \"revision\": \"2a1d5eabfc504747bdc24178394821a1efc0edde\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 8,\n \"chunk_tokens\": 128,\n \"only\": \"float32\",\n \"ppl_float32\": 12.357154762237188,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 136.58919191360474\n}\n"
+  },
+  "quality_gptoss-20b-float16-32": {
+   "exit": 0,
+   "seconds": 894.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_float16': 5.256930351257324}\n1 {'nll_float16': 4.97501277923584}\n2 {'nll_float16': 5.104119777679443}\n3 {'nll_float16': 4.868108749389648}\n4 {'nll_float16': 5.178238868713379}\n5 {'nll_float16': 4.682591438293457}\n6 {'nll_float16': 5.834168434143066}\n7 {'nll_float16': 5.497529029846191}\n8 {'nll_float16': 5.126413345336914}\n9 {'nll_float16': 4.80699348449707}\n10 {'nll_float16': 4.634770393371582}\n11 {'nll_float16': 4.017368316650391}\n12 {'nll_float16': 5.352726936340332}\n13 {'nll_float16': 4.736156463623047}\n14 {'nll_float16': 4.379397869110107}\n15 {'nll_float16': 5.239343166351318}\n16 {'nll_float16': 5.0602946281433105}\n17 {'nll_float16': 5.159136772155762}\n18 {'nll_float16': 5.383495330810547}\n19 {'nll_float16': 4.619507312774658}\n20 {'nll_float16': 3.810990333557129}\n21 {'nll_float16': 3.6291146278381348}\n22 {'nll_float16': nan}\n23 {'nll_float16': nan}\n24 {'nll_float16': nan}\n25 {'nll_float16': 3.923804759979248}\n26 {'nll_float16': 3.812324047088623}\n27 {'nll_float16': 3.7418301105499268}\n28 {'nll_float16': 4.10075569152832}\n29 {'nll_float16': 3.6974496841430664}\n30 {'nll_float16': 4.044856548309326}\n31 {'nll_float16': 4.50897216796875}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gpt-oss-20b-MXFP4-Q4\",\n \"revision\": \"f356f2747216d7e98fee755df25987459fc19089\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 32,\n \"chunk_tokens\": 512,\n \"only\": \"float16\",\n \"ppl_float16\": NaN,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 892.178403377533\n}\n"
+  },
+  "quality_gptoss-20b-float32-32": {
+   "exit": 0,
+   "seconds": 904.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_float32': 5.242998123168945}\n1 {'nll_float32': 4.979914665222168}\n2 {'nll_float32': 5.116170883178711}\n3 {'nll_float32': 4.927405834197998}\n4 {'nll_float32': 5.174160957336426}\n5 {'nll_float32': 4.681307792663574}\n6 {'nll_float32': 5.840495586395264}\n7 {'nll_float32': 5.470156192779541}\n8 {'nll_float32': 5.132664680480957}\n9 {'nll_float32': 4.7438554763793945}\n10 {'nll_float32': 4.622949123382568}\n11 {'nll_float32': 4.0144805908203125}\n12 {'nll_float32': 5.355604648590088}\n13 {'nll_float32': 4.709737777709961}\n14 {'nll_float32': 4.365077018737793}\n15 {'nll_float32': 5.232124328613281}\n16 {'nll_float32': 5.062485694885254}\n17 {'nll_float32': 5.159341812133789}\n18 {'nll_float32': 5.374942779541016}\n19 {'nll_float32': 4.6197967529296875}\n20 {'nll_float32': 3.8037197589874268}\n21 {'nll_float32': 3.6350975036621094}\n22 {'nll_float32': 2.6712698936462402}\n23 {'nll_float32': 3.7477142810821533}\n24 {'nll_float32': 3.001995086669922}\n25 {'nll_float32': 3.912890672683716}\n26 {'nll_float32': 3.890683650970459}\n27 {'nll_float32': 3.7408854961395264}\n28 {'nll_float32': 4.11659049987793}\n29 {'nll_float32': 3.732483148574829}\n30 {'nll_float32': 4.0651469230651855}\n31 {'nll_float32': 4.4791483879089355}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gpt-oss-20b-MXFP4-Q4\",\n \"revision\": \"f356f2747216d7e98fee755df25987459fc19089\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 32,\n \"chunk_tokens\": 512,\n \"only\": \"float32\",\n \"ppl_float32\": 91.7876723699958,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 902.3984427452087\n}\n"
+  },
+  "quality_gptoss-20b-bf16-32": {
+   "exit": "timeout",
+   "seconds": 1698.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 5.158421993255615}\n1 {'nll_bf16': 4.97990608215332}\n2 {'nll_bf16': 5.036932945251465}\n3 {'nll_bf16': 4.938009262084961}\n4 {'nll_bf16': 5.052279472351074}\n5 {'nll_bf16': 4.662470817565918}\n6 {'nll_bf16': 5.745222568511963}\n7 {'nll_bf16': 5.604795455932617}\n8 {'nll_bf16': 4.95477294921875}\n9 {'nll_bf16': 4.959178924560547}\n10 {'nll_bf16': 4.651480674743652}\n11 {'nll_bf16': 4.290423393249512}\n12 {'nll_bf16': 5.44995641708374}\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

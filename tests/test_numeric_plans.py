@@ -22,6 +22,25 @@ from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASUREMENTS, QUALITY_BOUND
 
 ROOT = Path(__file__).resolve().parents[1]
 
+
+@pytest.fixture(autouse=True)
+def _restore_the_default_device():
+    """Put the default device back after every test in this file.
+
+    The device is process-global and pytest-xdist hands a worker whole files in sequence,
+    so a file that leaves it on the CPU changes what a later file measures. Leaving it out
+    here made `tests/test_qmv_k3840.py` compare a Metal kernel against a CPU library call
+    and fail six ways — which is exactly the B53 failure this project already documented
+    once, reproduced by adding a file without its guard.
+    """
+    import mlx.core as mx
+
+    before = mx.default_device()
+    try:
+        yield
+    finally:
+        mx.set_default_device(before)
+
 #: The paired gates were computed across two processes, because the two precisions do not
 #: fit on one card together. Same seed and draw count as the analysis that produced them.
 BOOTSTRAP_SEED = 20260916
@@ -40,6 +59,9 @@ PAIRED = {
     ("mlx_lm.models.gpt_oss", "float32"): (
         "port2-run7-cddae1f9/quality-gptoss-20b-bf16-16.json",
         "port2-run7-cddae1f9/quality-gptoss-20b-float32-24.json", "nll_float32"),
+    ("mlx_lm.models.ministral3", "float32"): (
+        "port2-run8-da1a6469/quality-mistral-24b-bf16-8.json",
+        "port2-run8-da1a6469/quality-mistral-24b-float32-8.json", "nll_float32"),
 }
 RESULTS = ROOT / "experiments" / "kaggle_compat" / "results"
 
@@ -97,6 +119,25 @@ def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
     check(gemma, None, CUDA_PRE_AMPERE)
 
 
+def test_gemma_4_keeps_no_quality_interval_and_says_why():
+    """The one row where a gate exists and is deliberately not used.
+
+    Gemma 4's float32 gate measured 0.974548 [0.945572; 1.003527] — an upper bound inside
+    the 1.005 bound, which would read as `recommended`. Its bfloat16 reference scores a
+    perplexity of 22 212 on the same text where Gemma 3 4B scores 100.5, so the ratio
+    compares two numbers that mean nothing. This asserts the absence is deliberate, because
+    the obvious "fix" is to paste the interval in and call the plan qualified.
+    """
+    rows = measurements_for("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
+    assert rows, "Gemma 4 has measured speed and must stay in the table"
+    for row in rows:
+        assert row.quality_interval is None, f"{row.plan}: an unusable gate is not a gate"
+        assert row.quality_note and "22212" in row.quality_note, f"{row.plan}: say why"
+        assert row.verdict() == "unqualified", row.plan
+    _, reason = recommend("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
+    assert "22212" in reason, "the reason a plan is unqualified must reach the caller"
+
+
 def test_only_a_faster_and_qualified_plan_is_ever_recommended():
     for architecture in {row.architecture for row in MEASUREMENTS}:
         plan, reason = recommend(architecture, CUDA_PRE_AMPERE)
@@ -108,6 +149,8 @@ def test_only_a_faster_and_qualified_plan_is_ever_recommended():
         assert row.quality_interval[1] < QUALITY_BOUND, f"{architecture}: recommended past the bound"
     # The one architecture that earns a recommendation, and the fastest of its two plans.
     assert recommend("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)[0] == "float16"
+    # The largest checkpoint that runs on one card earns a recommendation too.
+    assert recommend("mlx_lm.models.ministral3", CUDA_PRE_AMPERE)[0] == "float32"
     assert recommend("mlx_lm.models.llama", CUDA_PRE_AMPERE)[0] is None
     assert "no numeric plan has been measured" in recommend("nobody.measured.this", CUDA_PRE_AMPERE)[1]
 

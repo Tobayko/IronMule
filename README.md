@@ -91,12 +91,22 @@ at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
 
 | Model (4-bit) | Weights | Exact, same tokens | `--compute-dtype float32` | `--compute-dtype float16` |
 | :-- | --: | --: | --: | --: |
+| Gemma 4 E2B | 3.55 GB | **1.11× · +11%** | 2.43× · +143%, gate unusable | 3.94× · +294%, gate unusable |
+| Gemma 4 E4B | 5.15 GB | **1.08× · +8%** | 2.23× · +123%, gate unusable | 3.69× · +269%, gate unusable |
+| Gemma 4 E4B qat | 6.80 GB | **1.09× · +9%** | 1.73× · +73%, gate unusable | 3.18× · +218%, gate unusable |
 | Gemma 3 4B | 2.50 GB | **1.07× · +7%** | **1.91× · +91%** | 3.21× · +221%, **fails its quality gate** |
 | Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
 | Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
 | Qwen 3 14B | 8.31 GB | **1.03× · +3%** | **1.94× · +94%** | gate passed, speed not measured |
 | gpt-oss 20B | 11.18 GB | **1.03× · +3%** | **3.55× · +255%** | 5.02× · +402%, gate not yet qualified |
 | Mistral Small 3.2 24B | 13.26 GB | **1.01× · +1%** | **1.82× · +82%** | not measured |
+
+Gemma 4 gives the largest exact gain of any family here, and it gets it with projection
+fusion switched off — its block body is not one IronMule has transcribed, so fusion refuses
+it. Its numeric plans say `gate unusable` rather than a number because the gate ran and the
+result cannot be used: the bfloat16 reference it measures against scores a perplexity of
+22 212 on the text where Gemma 3 4B scores 100.5, through the same harness. Chat decoding is
+fine and token-identical to stock, so the speed is real and the quality is unestablished.
 
 Every exact arm returned the same tokens as its stock reference on all six requests. The
 exact gain past Gemma 3 is small — one to seven per cent, not the 82 per cent Gemma 3 1B
@@ -112,6 +122,7 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `float32` | Qwen 3 8B | 0.997817 `[0.996177; 0.999584]` | passes |
 | `float16` | Qwen 3 8B | 0.997689 `[0.996051; 0.999454]` | passes |
 | `float16` | Qwen 3 14B | 1.001222 `[0.999873; 1.002603]` | passes |
+| `float32` | Mistral Small 3.2 24B | 0.998019 `[0.996057; 0.999910]` | passes |
 | `float16` | Gemma 3 4B | 2.043792 `[1.873506; 2.244196]` | **fails** — perplexity 102.5 → 209.6 |
 
 Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
@@ -119,8 +130,9 @@ Gemma 3. So neither plan is ever enabled for you, and neither is recommended for
 that has not passed this gate on your own hardware.
 
 **The ceiling on one card.** A single MLX process uses a single device, so 15360 MiB is the
-budget. Mistral Small 3.2 24B loads at 13.26 GB and runs; its `float32` arm peaks at
-15.24 GB and still fits; 16.05 GB does not load. Tensor parallelism across both T4s of a
+budget. The largest checkpoint measured to run is Gemma 4 26B-A4B: 15.34 GB on disk,
+14.20 GB resident, peak 14.30 GB, decoding correctly. Mistral Small 3.2 24B runs at 13.26 GB
+and its `float32` arm peaks at 15.24 GB and still fits. 16.05 GB does not load. Tensor parallelism across both T4s of a
 Kaggle cell works with MLX's ring backend and halves per-rank weights with identical tokens,
 but that is stock mlx-lm — IronMule is single-process and cannot join a distributed group.
 

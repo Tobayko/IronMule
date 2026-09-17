@@ -1,0 +1,23 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.
+0 {'nll_float32': 2.1314351558685303}
+1 {'nll_float32': 2.4879655838012695}
+2 {'nll_float32': 2.1983742713928223}
+3 {'nll_float32': 2.5079891681671143}
+4 {'nll_float32': 2.638800621032715}
+5 {'nll_float32': 2.6350436210632324}
+6 {'nll_float32': 2.74820613861084}
+7 {'nll_float32': 2.7660672664642334}
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+ "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 8,
+ "chunk_tokens": 128,
+ "only": "float32",
+ "ppl_float32": 12.357154762237188,
+ "device": "Device(gpu, 0)",
+ "seconds": 136.58919191360474
+}
