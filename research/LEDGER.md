@@ -4975,3 +4975,60 @@ the dtype ordering — on v5e, dense bfloat16 costs 0.478 ms across a decode ste
 float32 costs 0.942 ms, so bf16 is native and twice as fast. On the T4 it is emulated and
 *slower* than float32. The entire `compute_dtype` line is a Turing artefact, not a portable
 result, and PORT1 and PORT2 must be read that way.
+
+## PORT2, continued — Gemma 4, two dead hypotheses, and a plan the runtime enforces (2026-09-17)
+
+Three more Kaggle runs on the same 2 x Tesla T4 cell close what the first six left open.
+
+**Gemma 4 splits into three answers before a measurement.** `gemma4` is implemented in
+mlx-lm 0.31.3 as `gemma4_text`; `gemma4_unified` is implemented nowhere, and 0.31.3 is the
+latest release on PyPI, so the 12B checkpoints — 6.74 GB and 10.99 GB, both of which would
+fit — cannot run on MLX at all (`ValueError: Model type gemma4_unified not supported`). Of
+what remains, E2B, E4B and E4B-qat fit one card and 26B-A4B and 31B do not.
+
+| Gemma 4 (4-bit) | weights | exact | `float32` | `float16` |
+| :-- | --: | --: | --: | --: |
+| E2B | 3.55 GB | **0.8999** (+11%) | 0.4107 (+143%) | 0.2536 (+294%) |
+| E4B | 5.15 GB | **0.9250** (+8%) | 0.4486 (+123%) | 0.2708 (+269%) |
+| E4B qat | 6.80 GB | **0.9186** (+9%) | 0.5790 (+73%) | 0.3144 (+218%) |
+
+Every exact arm is 6/6 token-identical to stock and matches a greedy decode that never
+touches IronMule. This is the largest exact gain of any family measured, and it is earned
+with projection fusion refused: Gemma 4's attention takes `shared_kv` and `offset`, returns
+a tuple, drops `k_proj`/`v_proj` on KV-shared layers and runs a GeGLU MLP, so the
+module-to-body table has no entry for it and says so by name.
+
+**Its quality gate ran and cannot be used.** Against its own bfloat16, float32 measured
+0.974548 [0.945572; 1.003527] — an upper bound inside the 1.005 bound. The reference is
+worthless: that bfloat16 arm scores a perplexity of 22 212 on WikiText-2 where Gemma 3 4B
+scores 100.5 and Qwen 3 8B 14.9 through the same harness. Chat decoding is correct and
+token-identical, so the speed stands and the quality does not. Both rows are carried with
+no interval and a note, because the tempting repair is to paste the number in.
+
+**The one-card ceiling is higher than Mistral showed.** Gemma 4 26B-A4B loads and decodes
+at 14.20 GB resident, peak 14.30 GB of 15360 MiB — a 26B MoE on a free T4. 16.05 GB still
+does not load.
+
+**Mistral Small 3.2 24B's float32 gate passes at 128-token chunks:** 0.998019
+[0.996057; 0.999910]. 512 and 256 ran out of memory; 128 fits. The largest checkpoint that
+runs on one card now has a qualified plan at +82%, not just a speed.
+
+**Two hypotheses for llama's float32 loss, both dead with a control.** Run 5 excluded
+`quantized_matmul`: at llama's own shapes float32/bfloat16 is 0.577 and at Qwen 3 8B's
+identical attention shapes 0.580. Run 8 excluded the untied 128256-row `lm_head`: it costs
+5.747 ms in bfloat16 and gains 8.5% from float32, while Qwen 3's costs *more*, 6.518 ms,
+gains the same 8.1%, and Qwen 3 still wins end to end. `rope` and `norm` are 0.03 ms and
+irrelevant in both. Llama 3.1 pays for float32 somewhere neither of the obvious places.
+
+**Qwen 3.5's non-finite loss has a threshold.** Through `mlx_lm.load` with no IronMule, the
+bfloat16 teacher-forced NLL is 2.7354 at 64 tokens, 2.3299 at 128, 2.2478 at 256 and NaN at
+512, with non-finite logits. An upstream defect in the gated-delta path on CUDA, not the
+"model talks nonsense" that run 2 looked like.
+
+**What the product does with all this.** `ironmule/numeric_plans.py` carries each cell with
+the run it came from; `ironmule plans` prints speed beside quality; `doctor` names the table
+instead of advising float32 on every pre-Ampere card; and `load_engine` refuses exactly one
+combination — Gemma 3 with float16 — because it is the only one measured to ruin the output
+rather than merely fail to prove itself. `tests/test_numeric_plans.py` re-derives every
+number, bootstraps included. Raw data: `experiments/kaggle_compat/results/port2-run8-*`,
+`port2-run9b-*`, and `port2-run9-*-stale-patch` for the attempt that ran without the fixes.

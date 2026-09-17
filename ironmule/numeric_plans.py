@@ -53,6 +53,10 @@ class PlanMeasurement:
     quality_ratio: float | None = None
     quality_interval: tuple[float, float] | None = None
     quality_evidence: tuple[str, str] | None = None
+    #: Set when a gate ran but its result cannot be used. "not measured" and "measured and
+    #: unusable" are different facts, and printing them the same way invites someone to
+    #: paste the unusable number in as if it counted.
+    quality_note: str | None = None
 
     @property
     def label(self) -> str:
@@ -182,8 +186,39 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_evidence=f"{_R}/port2-run3-281b971a/cross-mistral-lean.json",
         wall_arm="ironmule_lean_fp32",
         models=("mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",),
-        # The gate could not be run: at 13.26 GB of weights the two precisions do not fit
-        # on one 15360 MiB card, and 512, 256 and 128-token chunks all ran out of memory.
+        # 512 and 256-token chunks ran out of memory at 13.26 GB of weights; 128 fits, so
+        # the largest checkpoint that runs on one card also has a gate, and passes it.
+        quality_ratio=0.9980194835285368,
+        quality_interval=(0.9960571974819411, 0.9999098222387136),
+        quality_evidence=(f"{_R}/port2-run8-da1a6469/quality-mistral-24b-float32-8.json",
+                          "paired-with-bf16"),
+    ),
+    # Gemma 4 deliberately carries no quality interval, and the reason has to be read
+    # before anyone "completes" these rows. The gate ran and produced
+    # 0.974548 [0.945572; 1.003527] for float32 — an upper bound inside the bound, which
+    # would make it `recommended`. It is not usable: the bfloat16 reference it is measured
+    # against has a perplexity of 22 212 on WikiText-2, where Gemma 3 4B scores 100.5 and
+    # Qwen 3 8B 14.9 on the same text through the same harness. A ratio between two numbers
+    # that mean nothing is not evidence of anything, so the speed stands on its own and the
+    # verdict stays `unqualified` until the reference itself is explained. `PORT2-I` in the
+    # backlog carries that; chat decoding is fine and token-identical to stock.
+    PlanMeasurement(
+        architecture="mlx_lm.models.gemma4_text", plan="float32", device=CUDA_PRE_AMPERE,
+        wall_ratio=0.41069269598397673,
+        wall_evidence=f"{_R}/port2-run9b-e8751c84/cross-gemma4-e2b.json",
+        wall_arm="ironmule_fp32",
+        models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
+                "mlx-community/gemma-4-E4B-it-qat-4bit"),
+        quality_note="gate ran; its bfloat16 reference scores perplexity 22212, so unusable",
+    ),
+    PlanMeasurement(
+        architecture="mlx_lm.models.gemma4_text", plan="float16", device=CUDA_PRE_AMPERE,
+        wall_ratio=0.253552451835916,
+        wall_evidence=f"{_R}/port2-run9b-e8751c84/cross-gemma4-e2b.json",
+        wall_arm="ironmule_fp16",
+        models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
+                "mlx-community/gemma-4-E4B-it-qat-4bit"),
+        quality_note="gate ran; its bfloat16 reference scores perplexity 22212, so unusable",
     ),
 )
 
@@ -255,9 +290,11 @@ def recommend(architecture: str, device: str | None) -> tuple[str | None, str]:
     for row in refused:
         parts.append(f"{row.plan} is refused ({row.quality_ratio:.4f} perplexity ratio)")
     for row in unqualified:
-        detail = ("no quality gate could be run" if not row.quality_known
-                  else f"its quality interval [{row.quality_interval[0]:.4f}; "
-                       f"{row.quality_interval[1]:.4f}] is too wide to qualify")
+        if row.quality_known:
+            detail = (f"its quality interval [{row.quality_interval[0]:.4f}; "
+                      f"{row.quality_interval[1]:.4f}] is too wide to qualify")
+        else:
+            detail = row.quality_note or "no quality gate could be run"
         parts.append(f"{row.plan} is faster (+{row.speedup_percent:.0f}%) but {detail}")
     for row in slower:
         parts.append(f"{row.plan} measured slower ({row.wall_ratio:.4f} of stock)")

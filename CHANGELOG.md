@@ -4,6 +4,22 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Gemma 4 measured, and the largest exact gain in the set.** E2B `+11%`, E4B `+8%`,
+  E4B-qat `+9%`, every arm token-identical to a stock greedy decode — earned with
+  projection fusion refused, because Gemma 4's block body is not one IronMule has
+  transcribed. Its numeric plans reach `+143%` and `+294%` but carry no quality verdict:
+  the gate ran and its bfloat16 reference scores perplexity 22 212 where Gemma 3 4B scores
+  100.5, so the ratio is not evidence. The Gemma 4 12B checkpoints cannot run on MLX at
+  all — they declare `gemma4_unified`, which mlx-lm 0.31.3 does not implement.
+- **The one-card ceiling is 14.20 GB resident**, not the 13.26 GB Mistral showed: Gemma 4
+  26B-A4B loads and decodes at 14.20 GB, peak 14.30 GB of 15360 MiB.
+- **Mistral Small 3.2 24B's `float32` plan is qualified**, `0.998019 [0.996057; 0.999910]`
+  at 128-token chunks. The largest checkpoint that runs on one card now has a gate behind
+  its `+82%`, not just a stopwatch.
+- **`ironmule plans`**, and `doctor` names it. The old advice — `--compute-dtype float32`
+  on every NVIDIA GPU below compute capability 8 — is gone; the answer is per architecture.
+  `load_engine` refuses exactly one measured-ruinous combination and nothing else.
+
 - **Six more model families on NVIDIA, measured.** Llama 3.1 8B, Qwen 3 8B and 14B,
   Qwen 3.5 9B, gpt-oss 20B and Mistral Small 3.2 24B on a free Kaggle T4, all 4-bit at a
   pinned revision, every exact arm token-identical to stock: `+7%` (Gemma 3 4B), `+3%`

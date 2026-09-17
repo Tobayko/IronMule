@@ -130,15 +130,29 @@ Archivierung löschen. Offen:
   512, bootstrap, je ein Prozess pro Präzision, für gpt-oss 20B, Qwen 3 14B, Qwen 3.5 9B und
   Mistral 3 24B. Kill: verfehltes Intervall lässt `float16` für dieses Modell gesperrt; kein
   Modell bekommt den Plan ohne eigene Messung, und `doctor` empfiehlt ihn nie.
+- **PORT2-I Gemma 4s Referenz-Perplexität ist 22 212.** Auf demselben WikiText-2-Text, durch
+  dieselbe Harness, erreicht Gemma 3 4B 100,5 und Qwen 3 8B 14,9. Chat-Dekodierung ist
+  korrekt und tokenidentisch zu Stock, nur die teacher-forced Auswertung entgleist. Damit
+  ist jedes Qualitätsverhältnis für Gemma 4 wertlos, und beide Plan-Zeilen tragen bewusst
+  kein Intervall. Mechanismus-Verdacht: dieselbe Klasse wie Qwen 3.5s NaN — eine lange,
+  teacher-forced Sequenz auf einem Pfad mit KV-Sharing. Test: Perplexität über Chunklängen
+  64/128/256/512 bisektieren, wie bei Qwen 3.5, und gegen ein Modell derselben Familie ohne
+  KV-Sharing halten. Kill: bleibt sie auch bei 64 Tokens absurd, liegt es an der Harness
+  und nicht am Modell, und dann ist jede bisherige Perplexitätszahl zu prüfen.
 - **PORT2-B warum kostet `float32` ausgerechnet llama 3.1.** Dreimal reproduziert (1,4764 /
   1,5182 / 1,5365), während jede andere Familie zwischen 0,28 und 0,55 liegt. Die
   4-bit-Matvec-Diagnostik schließt `quantized_matmul` aus: an llamas eigenen Formen 0,577,
   an Qwen 3 8Bs identischen Attention-Formen 0,580 — beide sagen Gewinn voraus. Verbleibende
-  Unterschiede: `Llama3RoPE` schiebt eigene `freqs` in `mx.fast.rope`, und llamas `lm_head`
-  ist ungebunden mit 128 256 Zeilen. Test: beide einzeln in bf16 gegen float32 zeitlich
-  messen, mit Qwen 3 8B als Kontrolle. Kill: liegt die Differenz in keinem von beiden, ist
-  die Anomalie unerklärt und `doctor` muss llama-Familien von der `float32`-Empfehlung
-  ausnehmen.
+  Unterschiede waren `Llama3RoPE` und der ungebundene 128 256-Zeilen-`lm_head`. **Beide sind
+  mit Kontrolle erledigt** (Lauf 8): llamas `lm_head` kostet 5,747 ms in bf16 und gewinnt
+  8,5 % durch float32 — Qwen 3s kostet mit 6,518 ms *mehr*, gewinnt dieselben 8,1 %, und
+  Qwen 3 gewinnt trotzdem end-to-end. `rope` und `norm` liegen bei 0,03 ms und sind in
+  beiden irrelevant. Die Anomalie liegt damit weder in `quantized_matmul` (Lauf 5) noch in
+  der Ausgabeprojektion. Nächster Test: Phasenzeiten Prefill gegen Decode je dtype, und die
+  KV-Cache-Größe in float32 gegen bf16, wieder mit Qwen 3 8B als Kontrolle. Diese zwei
+  Kandidaten nicht erneut messen — das ist der Zweck dieses Eintrags. Kill: findet auch das
+  nichts, bleibt die Anomalie unerklärt und `numeric_plans` trägt llama als `slower`, was
+  es bereits tut.
 - **PORT2-C zwei Karten für Modelle, die auf eine nicht passen.** Tensor-Parallelität über
   den Ring-Backend funktioniert (Qwen 3 8B, 2,65 GB je Rank, Tokens identisch zur
   Einzelkarten-Referenz); der nccl-Backend nicht (`There is no Stream(gpu, 1) in current
