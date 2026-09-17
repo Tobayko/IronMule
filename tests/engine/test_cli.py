@@ -126,11 +126,32 @@ def test_status_reports_existing_profile_state_without_loading_a_model(monkeypat
 
 
 def test_help_lists_only_implemented_cli_commands(capsys):
+    """The usage line, the description list and the dispatcher must name one set.
+
+    This used to pin the usage line as a literal string, which says nothing about whether
+    the commands in it exist and breaks on every addition without checking the thing the
+    test is named after. Adding `plans` is what showed that up: the literal failed while
+    the command worked.
+    """
+    import re
+
     assert cli.main(["--help"]) == 0
     output = capsys.readouterr().out
-    assert "{setup|serve|optimize|data|doctor|benchmark|models|tune|revalidate|requalify|status|info}" in output
-    assert all(command in output for command in ("doctor", "benchmark", "models", "tune", "revalidate", "requalify", "status", "info"))
-    assert "serve" in output and "setup" in output and "optimize" in output and "\n  cache " not in output
+    usage = set(re.search(r"usage: ironmule \{([^}]+)\}", output).group(1).split("|"))
+    described = set(re.findall(r"^  (\w+)\s{2,}\S", output, flags=re.MULTILINE))
+    assert usage == described, f"usage and description disagree: {usage ^ described}"
+    # Every listed name must appear as a literal inside `_dispatch`, which is the only
+    # place a command becomes reachable. Read from the AST rather than by grepping text,
+    # so the tuple form `command in ("setup", "serve", "optimize")` counts too.
+    import ast
+
+    tree = ast.parse((Path(__file__).resolve().parents[2] / "ironmule_cli.py").read_text())
+    dispatch = next(node for node in ast.walk(tree)
+                    if isinstance(node, ast.FunctionDef) and node.name == "_dispatch")
+    literals = {node.value for node in ast.walk(dispatch)
+                if isinstance(node, ast.Constant) and isinstance(node.value, str)}
+    assert usage <= literals, f"listed but never dispatched: {sorted(usage - literals)}"
+    assert "\n  cache " not in output, "a command that was removed must not linger in help"
 
 
 def test_cache_scan_imports_huggingface_hub_only_when_called(monkeypatch):
