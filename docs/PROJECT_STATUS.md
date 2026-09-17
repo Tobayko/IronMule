@@ -190,6 +190,13 @@ Dokumentationsabschnitte entstanden **danach**.
   Self-Learning.
 - Reale Hardwareläufe nur manuell, AC-only, fremdlastfrei, maximal 30 Minuten,
   je Lauf einzeln freigegeben.
+- **Kein Epsilon-Logging im Regelbetrieb** (R1b, geschlossen 2026-09-02, hierher
+  übernommen beim Aufräumen des Backlogs am 2026-09-17): es existiert kein realer
+  Messpfad mit sachlich offenem Kandidaten. Die Entwurfsbreite war der einzige, und S1
+  hat sie geschlossen — Spekulation gewinnt bei jeder Breite `1`–`4`, der Abstand
+  zwischen den besten liegt mit `0,016` im Rauschen. Exploration ohne
+  Informationsgehalt. Damit bleibt **R2s Kampagne (`40` Blöcke, rund zwanzig Stunden
+  gegatete Messzeit) der einzige Korpusweg.**
 
 ## Vollständige Historie
 

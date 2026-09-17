@@ -5,6 +5,28 @@ Voraussetzungen, messbare Gates und ein Abbruch- oder Pivotkriterium. Erledigte
 Einträge werden entfernt; Ergebnisse und verworfene Wege wandern in
 `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` oder die jeweilige Studienakte.
 
+## Geschlossen und entfernt am 2026-09-17
+
+Die Regel war lange notiert und nicht angewandt: neun Einträge standen als „beantwortet",
+„geschlossen" oder „abgeschlossen" weiter in der Liste offener Arbeit. Sie sind raus. Wer
+über eine Querverweisung hier landet, findet das Ergebnis an der genannten Stelle; der
+vollständige Wortlaut steht in der Git-Historie vor diesem Aufräumen.
+
+| Eintrag | Ergebnis liegt in |
+| :-- | :-- |
+| `PORT2` — sieben Modellfamilien auf CUDA, Gemma 4, numerische Pläne | `research/LEDGER.md`, beide PORT2-Einträge |
+| `F1` — abgeschlossen 2026-09-02 | `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` |
+| `W1` — beantwortet 2026-09-02 | Rest steht in `P1`, das offen bleibt |
+| `R1b` — Kill-Kriterium erfüllt 2026-09-02 | `PROJECT_STATUS.md`, historische Entscheide |
+| `S1` — der Bandit hat keine Rechtfertigung | `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` |
+| `M1` — beantwortet durch `D5` | `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` |
+| `D2` — `friday_serve` ist derselbe Decoder | `research/LEDGER.md`, `PROJECT_STATUS.md` |
+| `D5` — `friday_serve` liefert `15,61 %` | `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` |
+| `S3` — Spekulation nicht tokenidentisch, Grund bf16 | `docs/ARBEITSJOURNAL.md`, `PROJECT_STATUS.md` |
+
+`R1b` war der einzige, dessen Urteil nirgends sonst stand, obwohl sein eigener Text es
+verlangte. Es steht jetzt in `PROJECT_STATUS.md` und wurde erst danach hier gelöscht.
+
 ### Verworfen heißt nicht verboten (Projektregel, 10.09.2026)
 
 Tier 0, `NO-GO` und jeder geschlossene Kill-Eintrag sind **historische Evidenz, kein
@@ -108,89 +130,6 @@ Notebook nach Archivierung löschen. Offen:
 - Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (zwei sehen Debians
   kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
   langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
-
-## PORT2 — Rest (2026-09-16)
-
-Beantwortet in `research/LEDGER.md` PORT2: fünf weitere Familien tragen, das getunte Profil
-überträgt sich unverändert, drei eigene Defekte gefunden und behoben, ein vierter durch
-Verweigerung geschlossen, Decke der einen Karte vermessen, TPU-Gate aus DATA1 geschlossen.
-Rohdaten `experiments/kaggle_compat/results/port2-run1-*` bis `-run6-*` und `tpu-smoke-*`.
-Budget: Nutzerentscheidung 2026-09-16, die 10-h-Woche entfällt. Nutzerauflage 2026-09-17,
-nie ins Limit laufen: von der Gratisquote bleiben **6 h GPU von 30 h und 4 h TPU von 20 h
-als Reserve stehen** (Reset 2026-09-19). Vor jedem Submit entscheidet `quota_guard.py`
-anhand der geplanten `sessionTimeoutSeconds`; unterschreitet der Rest die Reserve, wird der
-Lauf verkleinert oder wartet auf den Reset. 0 EUR, kein Auto-Retry, Notebook nach
-Archivierung löschen. Offen:
-
-- **PORT2-A `float16` für die übrigen Modelle qualifizieren.** Mechanismus: `float16` läuft
-  auf Turing bei 0,31 (Gemma 3 4B, Qwen 3 8B) und 0,199 (gpt-oss 20B) der Stockzeit, also
-  nochmal rund 1,7x unter `float32`. Das Gate entscheidet aber je Modell, nicht je Gerät:
-  Qwen 3 8B besteht mit `0,997689 [0,996051; 0,999454]`, Gemma 3 4B verfehlt katastrophal
-  mit `2,043792 [1,874; 2,244]`, Perplexität von 102,54 auf 209,57. Test: WikiText-2, 16 x
-  512, bootstrap, je ein Prozess pro Präzision, für gpt-oss 20B, Qwen 3 14B, Qwen 3.5 9B und
-  Mistral 3 24B. Kill: verfehltes Intervall lässt `float16` für dieses Modell gesperrt; kein
-  Modell bekommt den Plan ohne eigene Messung, und `doctor` empfiehlt ihn nie.
-- **PORT2-I Gemma 4s Referenz-Perplexität ist 22 212.** Auf demselben WikiText-2-Text, durch
-  dieselbe Harness, erreicht Gemma 3 4B 100,5 und Qwen 3 8B 14,9. Chat-Dekodierung ist
-  korrekt und tokenidentisch zu Stock, nur die teacher-forced Auswertung entgleist. Damit
-  ist jedes Qualitätsverhältnis für Gemma 4 wertlos, und beide Plan-Zeilen tragen bewusst
-  kein Intervall. Mechanismus-Verdacht: dieselbe Klasse wie Qwen 3.5s NaN — eine lange,
-  teacher-forced Sequenz auf einem Pfad mit KV-Sharing. Test: Perplexität über Chunklängen
-  64/128/256/512 bisektieren, wie bei Qwen 3.5, und gegen ein Modell derselben Familie ohne
-  KV-Sharing halten. Kill: bleibt sie auch bei 64 Tokens absurd, liegt es an der Harness
-  und nicht am Modell, und dann ist jede bisherige Perplexitätszahl zu prüfen.
-- **PORT2-B warum kostet `float32` ausgerechnet llama 3.1.** Dreimal reproduziert (1,4764 /
-  1,5182 / 1,5365), während jede andere Familie zwischen 0,28 und 0,55 liegt. Die
-  4-bit-Matvec-Diagnostik schließt `quantized_matmul` aus: an llamas eigenen Formen 0,577,
-  an Qwen 3 8Bs identischen Attention-Formen 0,580 — beide sagen Gewinn voraus. Verbleibende
-  Unterschiede waren `Llama3RoPE` und der ungebundene 128 256-Zeilen-`lm_head`. **Beide sind
-  mit Kontrolle erledigt** (Lauf 8): llamas `lm_head` kostet 5,747 ms in bf16 und gewinnt
-  8,5 % durch float32 — Qwen 3s kostet mit 6,518 ms *mehr*, gewinnt dieselben 8,1 %, und
-  Qwen 3 gewinnt trotzdem end-to-end. `rope` und `norm` liegen bei 0,03 ms und sind in
-  beiden irrelevant. Die Anomalie liegt damit weder in `quantized_matmul` (Lauf 5) noch in
-  der Ausgabeprojektion. Nächster Test: Phasenzeiten Prefill gegen Decode je dtype, und die
-  KV-Cache-Größe in float32 gegen bf16, wieder mit Qwen 3 8B als Kontrolle. Diese zwei
-  Kandidaten nicht erneut messen — das ist der Zweck dieses Eintrags. Kill: findet auch das
-  nichts, bleibt die Anomalie unerklärt und `numeric_plans` trägt llama als `slower`, was
-  es bereits tut.
-- **PORT2-C zwei Karten für Modelle, die auf eine nicht passen.** Tensor-Parallelität über
-  den Ring-Backend funktioniert (Qwen 3 8B, 2,65 GB je Rank, Tokens identisch zur
-  Einzelkarten-Referenz); der nccl-Backend nicht (`There is no Stream(gpu, 1) in current
-  thread`). Qwen3.8 27B (16,05 GB) starb trotzdem an `cudaMallocAsync … out of memory` unter
-  `sharded_load`, Ort nicht lokalisiert. Test: aktiven Speicher vor und nach `sharded_load`
-  drucken und prüfen, ob dort vor dem Sharden das ganze Modell materialisiert wird. Kill:
-  materialisiert es vollständig, ist der Weg über `sharded_load` für Checkpoints über einer
-  Karte versperrt und braucht einen eigenen Ladepfad.
-- **PORT2-D IronMule kann keiner verteilten Gruppe beitreten.** Einzelprozess; die
-  Zwei-Karten-Messung oben ist stock mlx-lm. Mechanismus für einen Eintrag: `Runtime` müsste
-  eine `mx.distributed.Group` annehmen und alle Ränge dasselbe Programm fahren. Nicht
-  eröffnet, solange PORT2-C nicht zeigt, dass oberhalb einer Karte überhaupt etwas lädt.
-- **PORT2-E Mistrals `float32`-Qualitätsgate fehlt.** 512er-Chunks laufen bei 13,26 GB
-  Gewichten plus fp32-Logits über 131k Vokabular in `cudaMallocAsync … out of memory`. Test:
-  256er-Chunks, sonst unverändert. Kill: passt auch das nicht, bleibt für Mistral jede
-  fp32-Aussage unqualifiziert und der gemessene 0,5487 bleibt reine Geschwindigkeit.
-- **PORT2-F gpt-oss `float32` hat ein zu breites Intervall.** `0,992749 [0,918655; 1,064954]`
-  bei 12 Chunks, gepaart über zwei Prozesse. Test: 32 Chunks. Kill: bleibt das Intervall
-  breiter als das Gate, trägt gpt-oss keine Qualitätsaussage, egal wie schnell der Plan ist.
-- **PORT2-G `fuse_projections` schreibt in place um und wirft mittendrin.** Wer eine eigene
-  Modellinstanz an `Engine` übergibt und `FusionUnsupported` fängt, behält ein halb
-  umgeschriebenes Modell. Innerhalb von `load_engine` folgenlos, weil die Instanz verworfen
-  wird. Test: fusionierte und unfusionierte Blöcke nach einem Abbruch zählen. Kill: es gibt
-  keinen Aufrufer außerhalb von `load_engine` — dann bleibt es eine Notiz.
-- **PORT2-H der gemessene Stack ist nicht der aufgezeichnete.** `ironmule/stacks.py` führt
-  mlx `0.32.0`, Kaggle installiert `0.32.2`. Die Gemma-3-4B-Kontrolle zeigt, dass der
-  `float32`-Vorteil den Sprung überlebt (0,5086 gegen PORT1s 0,5246), aber der Eintrag in
-  `stacks.py` stimmt nicht mehr. Test: Stackeintrag nachziehen oder begründet festschreiben.
-- **TPU.** Gate aus DATA1 geschlossen, Ergebnis im Ledger. Was bleibt: MLX hat kein
-  TPU-Gerät, IronMule läuft dort nicht, und keine PORT2-Zahl ist übertragbar. Eine echte
-  Dekodierung über `torch_xla` läuft als reine Stock-Referenz; sie qualifiziert nichts an
-  IronMule und darf nie neben die T4-Zahlen als Beschleunigung gestellt werden — dense bf16
-  gegen 4-bit ist nicht dieselbe Operation.
-- Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (Debians kaputter
-  `sitecustomize` im Kind-stderr, plus ein 0,5-s-Abbruchtest an der langsameren
-  Kind-Startzeit). Unabhängig davon scheitert `test_q3f_real_cleanup_keeps_external_process_alive`
-  seit 2026-09-16 auch auf dem Mac, und zwar auf sauberem HEAD ohne die PORT2-Änderungen;
-  kein Regress aus dieser Arbeit, aber offen.
 
 ## DATA3 — Rest (2026-09-15)
 
@@ -487,17 +426,6 @@ Offen bleiben vier eng umrissene Punkte:
    gesperrt). Ob die `< 1,0`-Latte allgemein für künftige Serving-Knöpfe gilt,
    bleibt offene Nutzerentscheidung.
 
-## F1 — abgeschlossen am 2026-09-02
-
-**Warmer Arm gemessen und bestanden:** `13,99 %` end-to-end, Ratio-Median
-`0,8600567`, KI `[0,853444; 0,873056]`, `6` Paare, Tokenidentität `6/6`,
-A/A-Rauschen `0,612 %`, Status `qualified` gegen die Schwelle `10 %`. Ergebnis in
-`docs/ERGEBNISSE.md`.
-
-**Kalter Arm entfällt.** Er maß den persistenten Modellprozess mit. `friday_serve`
-hält den Prozess, also gibt es den kalten Fall im Auslieferungspfad nicht mehr —
-die Frage ist gegenstandslos, nicht offen. Keine Hardwarezeit dafür.
-
 ## P1 — Prefill-Hebelklasse; die Decode-Klasse ist erschöpft
 
 **Status:** offen, direkt nach F1. Herleitung im Arbeitsjournal unter
@@ -567,27 +495,6 @@ bleibt die Klasse geschlossen. Ab `203` generierten Token kippt die Rechnung
 zugunsten der Decode-Klasse; diese Priorisierung gilt ausdrücklich nur für die
 registrierte kurze Antwort.
 
-## W1 — beantwortet am 2026-09-02, Rest steht in P1
-
-**Gemessen.** Zwei gegatete Läufe, je `66 s`. Kontrolle `32` Token
-`63,83` tok/s, Langlauf `256` Token `72,36` tok/s. Verdikt `rate_improves`,
-gemessene Änderung `+13,36 %` gegen vorhergesagte `−3,58 %`.
-
-**Das Vorwissen war falsch.** Die aus zwei Studienpunkten abgeleitete
-Kontextabnahme (`−0,01786` tok/s je Token) ist widerlegt; dominierend ist
-Aufwärmen, nicht Kontextwachstum. Innerhalb des langen Laufs steigt die Rate
-weiter (`68,34` auf `77,23`), der stationäre Zustand ist bei `256` Token noch
-nicht erreicht.
-
-**Priorisierung bleibt.** Kreuzungspunkt `271` statt `267` Token; bei `256`
-führt `head_skip` mit `5,02 %` gegen `4,74 %`. Der kombinierte Gewinn `9,76 %`
-liegt unter F1s `10 %`-Schwelle — F1 bleibt damit auf das kurze Antwortregime
-beschränkt, wie in seiner Vorregistrierung festgehalten.
-
-**Offen bleibt nur**, ob das Zielregime dieses Projekts kurz oder lang ist.
-Das ist eine Produktentscheidung, keine Messfrage, und gehört zu P1.
-Herleitung im Arbeitsjournal unter „2026-09-02 — W1 gelaufen".
-
 ## G1 — Ist `max_load_1m = 0.75` die richtige Grenze? (neu 2026-09-02)
 
 **Status:** offen, Entscheidung des Nutzers. Betrifft **jeden** künftigen
@@ -652,73 +559,6 @@ identisch (`experiments/batch_width_identity/`).
 
 **Nicht gangbar:** den Effekt aus den Zahlen anderer Fremdlasten hochrechnen —
 dieselbe Fehlerklasse wie E04 (Phasenratios multiplizieren).
-
-## R1b — geschlossen am 2026-09-02: Kill-Kriterium erfüllt
-
-**Die Frage war,** ob ein realer Messpfad existiert, dessen Kandidat sachlich
-offen ist — ohne einen solchen erntet `epsilon_greedy`-Logging im Regelbetrieb
-nichts, und R2s Kampagne bleibt der einzige Korpusweg.
-
-**Die Entwurfsbreite war der Kandidat, und S1 hat sie geschlossen.** Gemessen
-gewinnt Spekulation bei jeder Breite `1`–`4`, und der Abstand zwischen den
-besten liegt mit `0,016` im Rauschen. Ein Kandidat, dessen Alternativen sich
-nicht messbar unterscheiden, erzeugt Explorationsdaten ohne Informationsgehalt.
-Ohne Bandit gibt es zudem keinen stochastischen Entscheidungsstrom.
-
-**Damit greift das eingetragene Kill-Kriterium:** es findet sich kein Pfad mit
-sachlich offenem Kandidaten, Epsilon-Logging im Regelbetrieb entfällt, und
-**R2s Kampagne (`40` Blöcke, rund zwanzig Stunden gegatete Messzeit) bleibt der
-einzige Korpusweg.** Das gehört so in `PROJECT_STATUS.md`.
-
-## S1 — beantwortet am 2026-09-02: der Bandit hat keine Rechtfertigung
-
-**Gemessen.** Sweeps über Breiten `0..4` auf `journal` und `tests` (4B,
-`ngram 3`), dazu `experiments/lookup_order/` mit `3` Wiederholungen je Arm in
-beiden Messrichtungen, bei `64` und `96` Token. Zwölf Messungen je Breite,
-Tokenidentität durchgehend.
-
-**Spekulation gewinnt auf `journal` bei jeder Breite, in beiden Richtungen, bei
-beiden Antwortlängen** (`1,003`–`1,059`). Auf `tests` ebenso (`1,021`–`1,056`).
-Die beste Breite wechselt zwischen `1` und `3` bei einem Abstand von `0,016` —
-die Wahl zwischen den Breiten liegt im Rauschen, das Ob nicht.
-
-**Die Prämisse des Banditen fällt damit.** Sie lautete „der Gewinn liegt im
-Abschalten" und stützte sich auf `journal 0,992` und `tests 0,974` aus
-`experiments/prompt_lookup/real/results.json`. Diese Verluste reproduzieren
-nicht. Es gibt nichts zuverlässig abzuschalten; eine feste Entwurfsbreite im
-Bereich `1`–`3` ist das, was die Evidenz trägt. `friday_serve/speculation.py`
-bleibt im Baum, wird aber nicht als Standard verdrahtet.
-
-**Nebenbefund, ebenfalls ein Negativergebnis.** Der Verdacht, die
-Einzelschussmessung in `tools/measure_prompt_lookup.py:196-201` (jeder Arm
-einmal, aufsteigend, Baseline zuerst) verwechsle Aufwärmdrift mit Entwurfsbreite,
-war **falsch**: der Ordnungseffekt beträgt `-0,0159` bis `+0,0008`.
-
-**Terminal:** Phase 3 des Ausbauplans entfällt. `friday_serve/speculation.py`
-behält eine feste Entwurfsbreite; das Thompson Sampling wird nicht verdrahtet.
-Welcher Wert es wird, entscheidet D5 — die Breiten `1`–`3` liegen hier innerhalb
-von `0,016`, also wird der Wert dort gemessen und nicht hier geraten.
-
-Herleitung im Arbeitsjournal unter „2026-09-02 — D2 bestanden, und die Prämisse
-von Phase 3 hält nicht".
-
-## M1 — beantwortet am 2026-09-02 durch D5, nicht durch Forensik
-
-**Die Frage war,** welcher von zwei widersprüchlichen Messharnessen recht hatte.
-Sie wird nicht durch einen Vergleich der beiden beantwortet, sondern dadurch,
-dass beide ersetzt sind: `friday_serve` ist seit D2 gegen
-`mlx_lm.stream_generate` äquivalenzgeprüft und damit das einzige Werkzeug mit
-belegter Referenz.
-
-**D5 misst Spekulation durch `friday_serve` und zeigt, dass die Streitfrage
-falsch gestellt war.** Beide alten Harnesse maßen bei fester Antwortlänge und
-variierten die Entwurfsbreite. Gemessen entscheidet aber das Verhältnis von
-Antwortlänge zu Prompt: auf `897`/`32` verliert Spekulation bei jeder Breite
-über `1`, auf `897`/`96` (S1) gewinnt sie bei jeder. Zwei Werkzeuge, die
-verschiedene Antwortlängen benutzten, mussten sich widersprechen.
-
-Messzeit ist damit in die Zahl geflossen, die das Projekt braucht, statt in eine
-Forensik zweier Werkzeuge, die ohnehin ersetzt sind.
 
 ## R2 — Offline-RL auf dem geloggten Korpus
 
@@ -845,19 +685,6 @@ Evidenz. `prefill_step_size` wird `not_applicable` erwartet, siehe P1.
 einzigen Knopf, ist die Bauform nicht übertragbar und der Community-Anspruch
 fällt. Das gehört dann so in `PROJECT_STATUS.md`.
 
-## D2 — beantwortet am 2026-09-02: `friday_serve` ist derselbe Decoder
-
-**Gemessen.** `friday_serve.Server.generate` gegen `mlx_lm.stream_generate`,
-drei Promptfamilien (`897`, `54`, `16` Prompttoken), `24` Token, alle Knöpfe aus.
-Verdikt `equivalent`, Tokenfolgen identisch auf allen drei. Budget `5,93 s` GPU.
-Rohdaten `experiments/serve_equivalence/equivalence.json`.
-
-**Offen bleibt der zweite Teil:** derselbe Vergleich mit einem Geräteprofil, das
-Knöpfe verifiziert hat. Der hängt an `D1`, und `D1` hängt an einem sauberen
-Arbeitsbaum — `collect_provenance` verweigert einen Lauf auf ungetracktem Stand,
-und das zu Recht: ein Geräteprofil ist dauerhafte Evidenz und muss an einen
-Commit gebunden sein.
-
 ## D3 — Profilerlauf Prefill, nur Diagnose (neu 2026-09-02)
 
 **Status:** offen, braucht eine Freigabe. Liefert **keinen** Kandidaten.
@@ -876,42 +703,6 @@ Prefill-Rechenklasse geschlossen und die verbleibenden Prozentpunkte gelten als
 nicht hebbar. Zusammen mit der Korrektur an Kandidat 5 heißt das: das
 `20 %`-Ziel ist unter strikter Identität auf dem kurzen Workload nicht
 erreichbar, und das gehört so in `PROJECT_STATUS.md`.
-
-## D5 — gemessen am 2026-09-02: `friday_serve` liefert `15,61 %`
-
-**Die Zahl, für die das Projekt da war.** `friday_serve` gegen sich selbst,
-Knöpfe aus gegen Knöpfe an, gepaart, Tokenidentität terminal, alle Arme gehalten.
-
-| Regime | A/A | `combined` | 95%-KI |
-| --- | --- | --- | --- |
-| 4B `897`/`32` | `3,69 %` | **`15,61 %`** | `[0,8417; 0,8566]` |
-| 4B `897`/`256` | `2,21 %` | **`14,10 %`** | `[0,8543; 0,8641]` |
-| 1B `897`/`32` | `14,25 %` | **`30,40 %`** | `[0,6726; 0,7659]` |
-
-Rohdaten in `experiments/serve_gain/`, Herleitung im Arbeitsjournal unter
-„2026-09-02 — D5".
-
-**Offen bleiben drei Punkte, jeder mit eigenem Kill-Kriterium.**
-
-1. **Die 1B-Zerlegung trägt nicht.** Bei `14,25 %` A/A-Rauschen schließt
-   `fixed_compiled` die `1,0` ein und `head_skip` streift sie. Die Kombination
-   ist belegt, die Einzelknöpfe sind es nicht. *Mechanismus:* Paarzahl aus dem
-   gemessenen 1B-Rauschen ableiten statt vom 4B zu übernehmen — eine Konsequenz
-   für `friday_calibrate`, nicht nur für diese Studie. *Kill:* bleibt das
-   Rauschen auch bei mehr Paaren so hoch, ist das 1B auf diesem Gerät kein
-   Messziel und nur die Kombination wird berichtet.
-2. **Antwortlängen über `287` Token sind nicht messbar.**
-   `BudgetPolicy.continuous_gpu_limit_s = 6,0` begrenzt den ununterbrochenen
-   GPU-Block; `512` Token brauchen rund acht Sekunden. *Kill:* bleibt die
-   Grenze, gilt jede Aussage dieses Projekts nur bis `287` generierte Token, und
-   das gehört so in `PROJECT_STATUS.md`. Die Grenze zu senken, damit eine Studie
-   läuft, ist ausdrücklich **nicht** vorgesehen — sie steht auf ihren
-   Sachgründen oder gar nicht.
-3. **Das 4B-A/A-Rauschen war `3,69 %` gegen F1s `0,612 %` am selben Tag.**
-   Sechsfach, unerklärt. Für `combined` (`15,61 %`) irrelevant, für
-   `bundled_readback` (`1,14 %`) nicht. *Kill:* lässt sich die Differenz nicht
-   auf eine Ursache zurückführen, gelten kleine Effekte auf diesem Gerät als
-   nicht auflösbar und `bundled_readback` fällt aus dem Auslieferungspfad.
 
 ## S2 — Zwei Spekulationsimplementierungen, und die Barriere erklärt es nicht
 
@@ -950,81 +741,6 @@ Implementierungen kann gelöscht werden.
 **Kill/Pivot:** ist die Frage nur noch akademisch — der Dispatcher ist nicht
 gebaut, `speculate_k` bleibt `0` —, bleibt der Eintrag als Warnung stehen und
 kostet keine Messzeit. Er wird erst wieder relevant, wenn D4 revidiert wird.
-
-## S3 — beantwortet am 2026-09-02: die Spekulation ist nicht tokenidentisch, und der Grund ist bf16
-
-**Status:** Ursache gemessen, Zweig 1 (Numerik) bestätigt. Der Bruch
-reproduziert sofort in Paar `0`; erster divergierender Index `10`, `j = 0`
-(ungegattertes Token, Entwurf leer), Logits `75,0` gegen `74,5` — bei bf16
-**exakt ein ULP**, benachbarte darstellbare Zahlen. Ein Forward der Breite `3`
-statt `1` kippt das ohne jede Anomalie. Die Identitätsbehauptung „per
-Konstruktion" hält damit dauerhaft nicht.
-
-**Offen bleibt allein die Konsequenz**, nicht die Ursache: `friday_serve/speculation.py`
-stützt seine Freigabe ohne Geräteprofil auf diese Behauptung — siehe S4.
-
-**Nicht geschlossen:** der Nachspieler der Iterationsgrenzen ist gegen den
-Engine-Zähler nur für `acceptance` geprüft, nicht für die Grenzen selbst; der
-Warmup, der ihm den gesunden Fall liefern sollte, war selbst gebrochen. Die
-Zweigzuordnung `j = 0` steht damit unter der Annahme korrekter
-Iterationsgrenzen.
-
-**Befund, gemessen.** H1.0, `4B`, versiegelter `897`-Token-Prompt, `128`
-generierte Token, Entwurfsbreite `2`: `token_identity_broken:pair_0`
-(`experiments/switch_point/switch_4b_128_w2.json`). Bei `32`, `48`, `64` und
-`96` hielt die Identität bei allen Breiten, bei `128` hielt sie bei Breite `1`.
-
-**Warum das schwer wiegt.** `ironmule/runtime.py:_decode_speculative` übernimmt
-ein Entwurfstoken nur, wenn es dem entspricht, was das Modell selbst für diese
-Position gewählt hat. Identität ist dort eine Eigenschaft der Konstruktion, kein
-Messergebnis. Der Bruch heißt also: entweder die Konstruktion hält nicht, was
-sie behauptet, oder die Verifikation vergleicht nicht das, was sie zu
-vergleichen glaubt. `friday_serve/speculation.py` stützt seine Freigabe ohne
-Geräteprofil ausdrücklich auf diese Identitätsbehauptung — sie ist damit offen.
-
-**Zwei Zweige, beide offen. Der Eintrag trägt bewusst nicht nur einen.**
-
-1. **Numerik/Formabhängigkeit.** `_body` kompiliert je `(capacity, width)`; der
-   Referenzarm läuft mit `width = 1`, der Kandidat mit `width = k+1`. Zwei
-   kompilierte Graphen, andere Kernel, andere Reduktionswege — an einer knappen
-   Position könnte der `argmax` kippen. **Am 2026-09-02 gemessen und bestätigt**
-   (`experiments/identity_break/identity_break.json`): der Bruch reproduziert
-   sich sofort (Paar `0` von `10`), sitzt bei Index `10` als **freies Token**
-   einer Iteration ohne Entwurf, und die divergierenden Token sind `44505` gegen
-   `3797` — exakt Top-1 und Top-2 an Position `10` in
-   `experiments/identity_forensics/logit_gap.json`, Logits `75,0` gegen `74,5`.
-   **Das frühere Gegenargument war falsch:** `0,500` ist bei dieser Größenordnung
-   kein großer Abstand, sondern genau ein ULP. Aus derselben Datei ablesbar —
-   alle Logits in `[32, 64)` sind Vielfache von `0,25`, alle in `[64, 128)`
-   Vielfache von `0,5`, also das bf16-Raster. Die beiden Token sind benachbarte
-   darstellbare Zahlen; ein Forward der Breite `3` statt `1` kippt das ohne
-   Anomalie.
-2. **Akzeptanzlogik und Cache-Rücknahme.** `accepted`-Aufbau,
-   `state["position"]["offset"] = mx.array(offset - 1, ...)`, die Maske über
-   verworfene Slots. Durchgerechnet wirkt die Rücknahme konsistent — der nächste
-   Forward überschreibt die verworfenen Positionen —, aber „nichts gefunden" ist
-   kein Ausschluss.
-
-**Gate der Folgestudie:** an der **ersten divergierenden Position** den
-Top-2-Abstand protokollieren, dazu beide Tokenfolgen und den Index. Nur der
-erste Wert prüft etwas; das Minimum der Familie prüft nichts. Ist der Abstand
-dort groß, fällt Zweig 1 und die Suche geht in die Akzeptanzlogik. Ist er nahe
-null, ist Zweig 1 belegt, und die Identitätsbehauptung ist grundsätzlich nur bis
-auf Gleichstände haltbar.
-
-**Beweislast, offen und benannt.** Der Lauf hat den Bruch erkannt und die beiden
-Sequenzen mit dem Prozess weggeworfen; `switch_4b_128_w2.json` enthält die
-Meldung und keine Evidenz. `friday_calibrate.runner.Sample` trägt nur
-`token_sha256`, die Folge stirbt bereits in `build_runner.run()`. Der Dump
-(Feld für die Token-IDs, `on_break`-Callback in `paired_arms`) war gebaut und
-wurde bewusst zurückgebaut, um die Amendment-Zelle nicht mit zwei Fassungen des
-Messkerns zu messen. Er gehört zur Vorregistrierung dieser Folgestudie, mit
-eigenem Test.
-
-**Kill/Pivot:** lässt sich der Bruch nicht auf eine Ursache zurückführen, darf
-Spekulation im Auslieferungspfad **nicht** als tokenidentisch geführt werden.
-Dann ist sie ein Kandidat mit Qualitätsgate wie jeder andere — was der Nutzer
-am 2026-09-02 ausgeschlossen hat — und fällt damit aus dem Auslieferungspfad.
 
 ## P3 — Die Paarzahlregel kennt nur ihre beiden Ränder (neu 2026-09-02)
 
