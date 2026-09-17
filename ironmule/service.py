@@ -78,6 +78,40 @@ class InteractiveMode:
         return SequentialExecutor(backend, telemetry)
 
 
+def _refuse_grouping_on_a_hybrid_cache(engine: Any, mode: Any) -> None:
+    """Grouped execution is unqualified on a model with recurrent cache layers.
+
+    Measured on a Kaggle T4 (PORT2 run 4, Qwen 3.5 9B, whose layers alternate an
+    `ArraysCache` gated-delta state with a `KVCache`): every throughput arm disagreed with
+    the sequential reference on 2-3 of 6 requests, and an arm with *no knobs at all* was
+    already non-deterministic across processes — two runs of the same arm produced two
+    different output digests. The bisection therefore names the grouped path itself, not
+    any knob: a per-layer recurrent state is not separable per sequence the way keys and
+    values are, so a group shares what it must not share.
+
+    Refusing costs a hybrid model its throughput mode and nothing else. Letting it through
+    costs correctness, silently and irreproducibly, which the knob contract forbids.
+    """
+    if getattr(mode, "name", None) != "throughput":
+        return
+    from .runtime import _cache_kinds, _new_cache
+
+    model = getattr(engine, "model", None)
+    if model is None:
+        return
+    try:
+        kinds = _cache_kinds(_new_cache(model))
+    except Exception:  # noqa: BLE001 - an unreadable cache is not this guard's business
+        return
+    if "arrays" in kinds:
+        raise ValueError(
+            "throughput mode is unsupported on a model with recurrent cache layers "
+            f"({kinds.count('arrays')} of {len(kinds)} layers): grouped execution has been "
+            "measured to change tokens and to do so non-deterministically. Use interactive "
+            "mode, or see PORT2 in the backlog."
+        )
+
+
 class ThroughputMode:
     name = "throughput"
 
@@ -397,6 +431,7 @@ class Runtime:
             self.engine = engine
             self.tokenizer = tokenizer
             self.mode = mode or InteractiveMode()
+            _refuse_grouping_on_a_hybrid_cache(engine, self.mode)
             self.model_identity = identity
             self.model_id = identity.model_id if identity is not None else model_id
             self.quantisation = identity.quantisation if identity is not None else quantisation

@@ -310,7 +310,12 @@ def gpu_busy() -> str | None:
 # time and matched the float32 reference computed on Apple Silicon to 1e-5 nats, while stock
 # bf16 differed from Apple's bf16 by 0.06 (PORT1). It changes output, so it is never chosen
 # for a caller and never searched by `tune`; profiles and fingerprints keep it separate.
-COMPUTE_DTYPES = ("float32",)
+# `float16` is the same idea one step further and is unqualified: the 4-bit matvec
+# diagnostic at llama 3.1 8B and Qwen 3 8B shapes on a T4 (PORT2 run 5) puts it at 0.32-0.33
+# of bf16 against float32's 0.58, so it could be worth about another 1.75x — but float16's
+# exponent range is not bf16's, and no quality gate has been run on it. It is selectable so
+# it can be measured; nothing recommends it until that measurement exists.
+COMPUTE_DTYPES = ("float32", "float16")
 
 
 def _check_compute_dtype(compute_dtype: str | None) -> str | None:
@@ -352,11 +357,14 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     model, tokenizer = load(source)
     if resolved is not None:
         verify_resolved_model(model_id, resolved)
-    if compute_dtype == "float32":
+    if compute_dtype is not None:
         import mlx.core as mx
         # Floating parameters only; packed quantised weights stay integer. Before the Engine
         # exists, so fused projections and compiled caches see the final dtype.
-        model.set_dtype(mx.float32)
+        # Spelled out rather than `getattr(mx, compute_dtype)`: the Q3f child guard scans
+        # this surface statically and refuses a dynamic attribute lookup, which is the right
+        # call — a plan name coming from a CLI flag must not become a module attribute path.
+        model.set_dtype(mx.float32 if compute_dtype == "float32" else mx.float16)
     engine = Engine(model, tokenizer, knobs)
     engine.compute_dtype = compute_dtype
     engine.model_identity = resolved.identity if resolved is not None else None

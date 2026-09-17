@@ -4871,3 +4871,107 @@ counts: 1B exact 0.550 against Apple's 0.623; 4B 0.525 and 12B 0.490 with the op
 plan against Apple's 0.787 and 0.8195. Without opting in, 4B and 12B stay token-identical to
 stock but gain only 5% and 3%. Raw data: `experiments/kaggle_compat/results/port1-run5-*`,
 `port1-run6-*`, `port1-run7-*`, `apple-abcd/`.
+
+## PORT2 — Five more model families on the same free T4, and what generalised (2026-09-16)
+
+PORT1 measured IronMule on one family. This asked whether that holds past Gemma 3 and how
+large a checkpoint a free Kaggle cell takes. Six Kaggle runs on a 2 x Tesla T4 cell
+(15360 MiB each, 4 cores, mlx `0.32.2`, mlx-lm `0.31.3`) plus one TPU run. Every arm is
+4-bit `mlx-community` weights at a pinned revision; `cross.py` runs stock and IronMule in
+fresh interleaved processes on `ironmule benchmark`'s workload (6 strict requests, 48
+tokens). Raw data: `experiments/kaggle_compat/results/port2-run1-*` through `-run6-*` and
+`tpu-smoke-*`.
+
+**It generalises, and the tuned profile transfers unchanged.** PORT1's 1B-confirmed knob
+profile was carried over without a fresh search. Wall ratio against stock, median of two
+repetitions, tokens identical to stock in every exact arm:
+
+| | exact | `float32` | `float16` | weights |
+| :-- | --: | --: | --: | --: |
+| Gemma 3 4B (`gemma3`) | 0.9339 | 0.5225 | 0.3113 | 2.50 GB |
+| Llama 3.1 8B (`llama`) | 0.9668 | **1.4764** | — | 4.52 GB |
+| Qwen 3 8B (`qwen3`) | 0.9631 | 0.5346 | **0.3100** | 4.61 GB |
+| Qwen 3.5 9B (`qwen3_5`, hybrid) | 0.9653 | 0.5229 | — | 5.95 GB |
+| Qwen 3 14B (`qwen3`) | 0.9684 | 0.5157 | — | 8.31 GB |
+| gpt-oss 20B (`gpt_oss`, MoE) | 0.9696 | 0.2818 | **0.1991** | 11.18 GB |
+| Mistral 3.2 24B (`mistral3`) | 0.9889 | 0.5487 | — | 13.26 GB |
+
+The exact arm is a real but small gain everywhere — 1 to 7 per cent, far from Gemma 3 1B's
+0.550. The numeric plan is where the card is won, and the largest checkpoint wins most:
+gpt-oss 20B at 0.199 of stock is a five-fold speed-up on free hardware.
+
+**The ceiling.** One process uses one device, so 15360 MiB is the budget. Mistral 3.2 24B
+loads at 13.26 GB and decodes correctly (peak 13.52 GB; its `float32` arm peaks at 15.24 GB,
+which fits). Its *tuned* profile does not — the compiled graph runs out of memory, so it
+runs on `head_skip_prefill` alone. 16.05 GB does not load at all. Tensor parallelism across
+both T4s works with the ring backend and halves per-rank weights (Qwen 3 8B: 2.65 GB per
+rank, tokens identical to the single-card reference; the nccl backend fails with
+`There is no Stream(gpu, 1) in current thread`), but Qwen3.8 27B still died of
+`cudaMallocAsync … out of memory` under `sharded_load`, so the ceiling is not yet lifted in
+practice. IronMule is single-process and cannot join a distributed group at all.
+
+**`float16` is a per-model plan, and the quality gate is what says so.** WikiText-2 raw
+test, 16 x 512 tokens, perplexity ratio against the checkpoint's own bf16 with a 10000-sample
+bootstrap: Qwen 3 8B `0.997689 [0.996051; 0.999454]`, max |ΔNLL| 0.0084 — inside the 1.005
+bound, and slightly *better* than bf16. Gemma 3 4B `2.043792 [1.874; 2.244]`: perplexity
+doubles from 102.54 to 209.57, max |ΔNLL| 1.14, no value non-finite. Same device, same
+plan, opposite verdicts. `float16` is therefore selectable and never recommended; nothing
+may enable it for a model that has not passed this gate. `float32` quality: Llama 3.1 8B
+`1.000126 [0.999993; 1.000260]` and Qwen 3 8B `0.997817 [0.996177; 0.999584]` both pass;
+Gemma 3 4B is `1.017846 [0.990878; 1.051591]`, which independently replicates PORT1's own
+`1.020 [0.991; 1.054]` on that model. gpt-oss 20B, paired across two processes because
+11.2 GB does not fit twice: `0.992749 [0.918655; 1.064954]` at 12 chunks — no degradation
+visible, interval far too wide to qualify.
+
+**Three defects this found in IronMule, all fixed here.**
+
+*One optional method taken as required.* `model.make_cache()` is optional in mlx-lm; only a
+model needing something other than a per-layer `KVCache` defines it, which is why Gemma 3
+has one. IronMule called it directly, so Qwen 3 8B and 14B and Mistral 3 24B never loaded —
+three of six candidates, including the largest. `runtime.py` now goes through
+`make_prompt_cache`, the actual contract.
+
+*One block body applied to every architecture.* `fast.py`'s projection fusion transcribed
+Gemma 3's `__call__` and was pinned to the mlx-lm version but not to the module. On llama it
+raised on the missing `q_norm`; the silent case is worse, because the same body computes
+`gelu_approx` where llama and Qwen 3 want `swiglu`, and the MLP had already been rewritten
+when the attention failure surfaced. Only the order prevented someone measuring wrong
+tokens. There is now a module-to-body table (`gemma3_text`, `llama`, `qwen3`, and
+`ministral3` for its MLP alone), unlisted modules keep their own projections, and fusing
+nothing raises instead of reporting a knob that rewrote nothing.
+
+*One strided view where upstream hands a fresh array.* With the body fixed, fused llama
+returned `'_REF, , , The, was. The, The, …'`, disagreed with itself between two calls in one
+process, and with CUDA graph capture on aborted the process outright
+(`cudaGraphInstantiate … an illegal memory access was encountered`). Three arms, graphs off:
+unfused reproduced the reference, fused did not, and fused with an `mx.contiguous` after the
+split did. Gemma 3 and Qwen 3 survived without it only because their QK norm materialises
+queries and keys before `mx.fast.rope` sees them; llama has no QK norm, so nothing did.
+Every split half is now copied out, in all bodies. Re-measured on real weights the copies
+cost nothing: Gemma 3 4B 0.9339 against 0.9422, Qwen 3 8B 0.9631 against 0.9647, Qwen 3 14B
+0.9684 against 0.9737, all 6/6 identical.
+
+**One defect found and closed by refusal, not by a fix.** On Qwen 3.5 9B, whose layers
+alternate a gated-delta `ArraysCache` with a `KVCache`, every grouped arm disagreed with the
+sequential reference on two or three of six requests and was not deterministic across
+processes — two runs of one arm, two output digests. The bisection is unambiguous: an arm
+with *no knobs at all* in throughput mode was already 3/6 and non-deterministic, so it is the
+grouped path, not any knob. A per-layer recurrent state is not separable per sequence the way
+keys and values are. `Runtime` now refuses throughput mode when any cache layer is recurrent,
+verified on the model itself (`24 of 32 layers`), and interactive is unaffected.
+
+**Llama 3.1 is the one family where `float32` costs instead of paying**, reproduced three
+times at 1.4764, 1.5182 and 1.5365 while every other family lands between 0.28 and 0.55. The
+4-bit matvec diagnostic excludes the obvious cause: at llama's own shapes `float32/bfloat16`
+is 0.577 and at Qwen 3 8B's — whose attention shapes are identical — it is 0.580. Both
+predict a gain. Whatever llama pays for `float32` is outside `quantized_matmul`.
+
+**The TPU, and what it says about all of the above.** Kaggle's free TPU SKU is 8 x TPU v5
+lite with 16.9 GB HBM each, jax `0.10.2`, `libtpu 0.0.17`, flax, `torch_xla 2.8` and
+transformers 5.12; MLX is not installed and has no TPU device type, so IronMule cannot run
+there and no PORT2 number transfers. DATA1's TPU correctness gate passes: float32 matmul
+against numpy, max abs diff `3.43e-5`, allclose at rtol 2e-4. The diagnostic that matters is
+the dtype ordering — on v5e, dense bfloat16 costs 0.478 ms across a decode step's matmuls and
+float32 costs 0.942 ms, so bf16 is native and twice as fast. On the T4 it is emulated and
+*slower* than float32. The entire `compute_dtype` line is a Turing artefact, not a portable
+result, and PORT1 and PORT2 must be read that way.

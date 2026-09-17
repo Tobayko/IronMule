@@ -4,6 +4,34 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Six more model families on NVIDIA, measured.** Llama 3.1 8B, Qwen 3 8B and 14B,
+  Qwen 3.5 9B, gpt-oss 20B and Mistral Small 3.2 24B on a free Kaggle T4, all 4-bit at a
+  pinned revision, every exact arm token-identical to stock: `+7%` (Gemma 3 4B), `+3%`
+  (Llama 3.1 8B, Qwen 3 14B, gpt-oss 20B), `+4%` (Qwen 3 8B), `+1%` (Mistral 24B). With the
+  opt-in `float32` plan: `+91%`, `+87%`, `+94%`, `+255%`, `+82%` — and `−34%` on Llama 3.1,
+  the one family where it costs. Measurements: `research/LEDGER.md` entry `PORT2`; every
+  README cell is pinned to its raw run by `tests/test_documented_claims.py`.
+- **`compute_dtype="float16"`**, a second opt-in numeric plan, selectable and never
+  recommended. On the T4 it runs Qwen 3 8B at `+223%` and gpt-oss 20B at `+402%`, but it is
+  a per-model plan and the quality gate is what says so: Qwen 3 8B passes at
+  `0.997689 [0.996051; 0.999454]` and Qwen 3 14B at `1.001222 [0.999873; 1.002603]`, while
+  Gemma 3 4B fails outright at `2.043792 [1.873506; 2.244196]`, perplexity 102.5 to 209.6.
+- **Fixed: IronMule required `model.make_cache()`, which mlx-lm makes optional.** Qwen 3
+  and Mistral 3 could not load at all. The runtime now goes through `make_prompt_cache`.
+- **Fixed: projection fusion applied Gemma 3's block body to every architecture.** It
+  raised on llama's missing `q_norm`, and would silently have computed GELU where llama and
+  Qwen 3 want SwiGLU. Fusion is now pinned to the module it was transcribed from
+  (`gemma3_text`, `llama`, `qwen3`, and `ministral3` for its MLP), anything else keeps its
+  own projections, and fusing nothing raises instead of reporting a knob that did nothing.
+- **Fixed: a fused body handed strided views where upstream hands fresh arrays.** Fused
+  llama returned corrupted text, disagreed with itself between two calls in one process,
+  and aborted the process under CUDA graph capture. Every split half is now copied out with
+  `mx.contiguous`; re-measured, the copies cost nothing.
+- **Throughput mode is refused on a model with recurrent cache layers.** On Qwen 3.5 9B,
+  whose layers alternate a gated-delta `ArraysCache` with a `KVCache`, grouped execution
+  disagreed with the sequential reference on two or three of six requests and was not
+  deterministic across processes — with no knobs set at all. Interactive mode is unaffected.
+
 - **Open source under Apache-2.0.** The fair-code licence and `COMMERCIAL.md` are gone;
   `LICENSE.md`, `pyproject.toml` and `CITATION.cff` carry Apache-2.0.
 - **NVIDIA CUDA on Linux.** `pip install -e ".[cuda]"`. `doctor`, hardware fingerprint,
