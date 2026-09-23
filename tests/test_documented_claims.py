@@ -141,6 +141,15 @@ README_SPEEDUPS = [
      ("summary", "ironmule_fp16", "median_ratio")),
 ]
 
+README_SPEEDUPS += [
+    ("Qwen 3 8B on the T4, native", "4.97× · +397%",
+     "experiments/kaggle_compat/results/perf1-run7-080bfab7/cross-native-qwen3-8b.json",
+     ("summary", "ironmule_native", "median_ratio")),
+    ("Qwen 3 14B on the T4, native", "4.81× · +381%",
+     "experiments/kaggle_compat/results/perf1-run7-080bfab7/cross-native-qwen3-14b.json",
+     ("summary", "ironmule_native", "median_ratio")),
+]
+
 #: The one documented cell where a plan is *slower* than stock. It cannot share the
 #: formatter above, which prints a leading "+", and leaving it unpinned would make the
 #: single unflattering number in the README the only one that could drift.
