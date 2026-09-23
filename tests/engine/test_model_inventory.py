@@ -72,6 +72,27 @@ def test_inventory_reports_complete_snapshot_and_resolves_refs(tmp_path):
     json.dumps(rows)
 
 
+def test_hub_wide_blob_store_counts_as_available_but_a_sibling_repository_does_not(tmp_path):
+    # huggingface_hub >= 1.32 links snapshots to `<hub>/blobs/<xx>/<sha>`.
+    hub = tmp_path / "hub"
+    repository, snapshot = _snapshot(hub)
+    shared = hub / "blobs" / "09" / "0949"
+    shared.parent.mkdir(parents=True)
+    shared.write_bytes(b"weight")
+    (snapshot / "model.safetensors").unlink()
+    (snapshot / "model.safetensors").symlink_to(shared)
+    assert discover_models([hub])[0]["status"] == "available"
+
+    sibling = hub / "models--org--other" / "blobs" / "weights"
+    sibling.parent.mkdir(parents=True)
+    sibling.write_bytes(b"weight")
+    (snapshot / "model.safetensors").unlink()
+    (snapshot / "model.safetensors").symlink_to(sibling)
+    row = next(r for r in discover_models([hub]) if r["model_id"] == "google/gemma-3-1b-it")
+    assert row["status"] != "available"
+    assert any("escapes" in reason for reason in row["reasons"])
+
+
 def test_inventory_marks_missing_blob_and_unsafe_index_incomplete_or_error(tmp_path):
     hub = tmp_path / "hub"
     _, snapshot = _snapshot(hub)

@@ -87,7 +87,12 @@ def _sha256_file(path: Path) -> str:
 
 def _files(root: Path) -> tuple[dict[str, Any], ...]:
     rows = []
-    allowed_root = root.parent.parent if root.parent.name == "snapshots" else root
+    if root.parent.name == "snapshots":
+        repo = root.parent.parent
+        # huggingface_hub 1.32 moved blobs from `models--*/blobs` to one hub-wide `blobs/`.
+        allowed_roots = (repo.resolve(), (repo.parent / "blobs").resolve())
+    else:
+        allowed_roots = (root.resolve(),)
     for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         if path.is_symlink() and not path.is_file():
             raise ModelIdentityError(f"broken model symlink: {path.relative_to(root).as_posix()}")
@@ -95,11 +100,14 @@ def _files(root: Path) -> tuple[dict[str, Any], ...]:
             continue
         if path.is_symlink():
             try:
-                path.resolve(strict=True).relative_to(allowed_root)
-            except (OSError, ValueError) as exc:
+                target = path.resolve(strict=True)
+            except OSError as exc:
                 raise ModelIdentityError(
                     f"model symlink escapes its allowed root: {path.relative_to(root).as_posix()}"
                 ) from exc
+            if not any(target.is_relative_to(allowed) for allowed in allowed_roots):
+                raise ModelIdentityError(
+                    f"model symlink escapes its allowed root: {path.relative_to(root).as_posix()}")
         relative = path.relative_to(root).as_posix()
         rows.append({"path": relative, "bytes": path.stat().st_size,
                      "sha256": _sha256_file(path)})
