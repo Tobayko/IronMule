@@ -1,5 +1,6 @@
 # Local ProjectAtlas state and generated host configs
 .projectatlas/
+docs/PROJECTATLAS_INTEGRATION.md
 
 # Local Python environments and experiment output
 .venv/
