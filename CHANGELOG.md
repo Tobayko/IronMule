@@ -4,6 +4,10 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Chat replies stop at the end of their turn.** Gemma 3's config names only `<eos>` as end
+  token while its chat template closes every turn with `<end_of_turn>`, so a served reply
+  ran on to `max_tokens`. The worker now treats known end-of-turn markers in the vocabulary
+  as end of sequence; tokens before the stop are unchanged.
 - **`--compute-dtype native`: IronMule's own CUDA kernels for GPUs that emulate bfloat16.**
   On NVIDIA below compute capability 8 (Turing, Volta) the bf16 checkpoint stays and its
   4-bit matmuls run on a native kernel (decode) and one float16 tensor-core GEMM (prefill).

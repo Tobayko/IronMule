@@ -441,3 +441,24 @@ def test_worker_accepts_metal_or_cuda_device_facts() -> None:
     cuda = fake(False, True, {"total_memory": 15_000_000_000})
     assert _gpu_available(cuda) and _working_set_bytes(cuda) == 15_000_000_000
     assert not _gpu_available(fake(False, False, {}))
+
+
+def test_chat_end_of_turn_marker_stops_generation() -> None:
+    from ironmule_product.worker import stop_at_end_of_turn
+
+    class Tokenizer:
+        def __init__(self, vocab):
+            self.vocab, self.eos_token_ids = vocab, {1}
+
+        def get_vocab(self):
+            return self.vocab
+
+        def add_eos_token(self, token):
+            self.eos_token_ids.add(self.vocab[token])
+
+    gemma = Tokenizer({"<eos>": 1, "<end_of_turn>": 106, "hello": 7})
+    stop_at_end_of_turn(gemma)
+    assert gemma.eos_token_ids == {1, 106}
+    plain = Tokenizer({"<eos>": 1, "hello": 7})
+    stop_at_end_of_turn(plain)
+    assert plain.eos_token_ids == {1}

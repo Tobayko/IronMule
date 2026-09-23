@@ -31,6 +31,9 @@ PROTOCOL_VERSION = 1
 MAX_LINE = 1024 * 1024
 CONTEXT_LIMIT = 8192
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
+# Markers chat templates close a turn with (Gemma, Llama 3, ChatML/Qwen, Phi).
+# ponytail: a known list; derive the marker from the chat template if a family is ever missed.
+END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
 _PROTOCOL_OUT = sys.stdout
 
 
@@ -178,7 +181,22 @@ def _load(spec: dict[str, Any]):
             model_config=model_config,
             revision=spec["revision"],
         )
+    stop_at_end_of_turn(tokenizer)
     return model, tokenizer, stream_generate, device
+
+
+def stop_at_end_of_turn(tokenizer: Any) -> None:
+    """Treat the chat template's end-of-turn marker as end of sequence.
+
+    Some checkpoints name only the plain end token in config.json: Gemma 3 lists `<eos>`
+    but ends every chat turn with `<end_of_turn>`, so a served reply ran on to
+    max_tokens repeating it. Adding the marker changes where generation stops, never a
+    token before that point, and every serving path shares this tokenizer.
+    """
+    vocab = tokenizer.get_vocab()
+    for marker in END_OF_TURN:
+        if marker in vocab:
+            tokenizer.add_eos_token(marker)
 
 
 def _receiver(
