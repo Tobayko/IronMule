@@ -39,7 +39,7 @@ the selected tool and its contract before running it; unrelated work does not ne
 all experiments or the entire ledger.
 
 ProjectAtlas is optional package-development tooling under CONTRIBUTING. For the
-Project Friday research workflow, follow [docs/PROJECTATLAS_INTEGRATION.md](docs/PROJECTATLAS_INTEGRATION.md):
+Project Friday research workflow, follow the local, untracked `docs/PROJECTATLAS_INTEGRATION.md`:
 use the installed, version-matched skill and MCP context first, with its CLI fallback
 and incremental freshness policy. Initialize only absent local state. A documented
 tool failure permits direct navigation; index output is never benchmark evidence.
