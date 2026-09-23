@@ -305,7 +305,189 @@ def cross_platform_speedup() -> dict:
     }
 
 
-FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup)
+PERF1 = Path("experiments/kaggle_compat/results")
+#: PERF1 run 2: stock and the native plan's kernels in fresh processes on one T4 cell.
+PERF1_E2E = (("Qwen 3 8B", "qwen3-8b"), ("Qwen 3 14B", "qwen3-14b"))
+PERF1_E2E_DIR = PERF1 / "perf1-run2-baddcb2b"
+#: PERF1 run 8: the row kernel and the tensor-core kernel serving the same 8 requests.
+PERF1_SERVER_DIR = PERF1 / "perf1-run8-aa90d4d2"
+#: PERF1 run 5: one gate per path the plan changes, against stock bf16 on the same path.
+PERF1_GATES = (
+    ("Qwen 3 8B, decode path", "perf1-run5-a9559a15/gate-qwen3-8b-kernel-decode.json",
+     "perf1-run5-a9559a15/gate-qwen3-8b-stock-decode.json"),
+    ("Qwen 3 8B, prefill path", "perf1-run5-a9559a15/gate-qwen3-8b-p16-prefill.json",
+     "perf1-run5-a9559a15/gate-qwen3-8b-stock-prefill.json"),
+    ("Qwen 3 14B, prefill path", "perf1-run5-a9559a15/gate-qwen3-14b-p16-prefill.json",
+     "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json"),
+)
+T4 = "Kaggle NVIDIA Tesla T4 (compute capability 7.5), 15 GB"
+
+
+# -- figure 5: the native plan, decode and time to first token -----------------
+def t4_native_kernels() -> dict:
+    """What IronMule's own kernels do on a GPU that emulates bf16.
+
+    Two measures with different units, so two panels with their own axis rather
+    than one chart with two scales. Both arms of a model come from the same run.
+    """
+
+    rows, sources = [], []
+    for label, key in PERF1_E2E:
+        stock_path = PERF1_E2E_DIR / f"e2e-{key}-stock.json"
+        native_path = PERF1_E2E_DIR / f"e2e-{key}-kernel+p16.json"
+        rows.append((label, load(stock_path), load(native_path)))
+        sources += [stock_path.as_posix(), native_path.as_posix()]
+
+    fig, axes = plt.subplots(1, 2, figsize=(style.WIDTH_IN, 3.3), sharey=True)
+    height = 0.36
+    panels = ((axes[0], "decode_tps_median", 1.0, "Decode, tokens per second", True),
+              (axes[1], "ttft_ms_median", 1e-3, "Time to first token, 512 tokens", False))
+    for axis, metric, scale, title, higher in panels:
+        top = 0.0
+        for index, (label, stock, native) in enumerate(rows):
+            centre = len(rows) - 1 - index
+            before, after = stock[metric] * scale, native[metric] * scale
+            top = max(top, before, after)
+            axis.barh(centre + height / 2, before, height * 0.86, color=style.BASELINE,
+                      label="stock MLX, bf16" if index == 0 else None)
+            axis.barh(centre - height / 2, after, height * 0.86, color=style.CANDIDATE,
+                      label="IronMule --compute-dtype native" if index == 0 else None)
+            change = (f"{after / before:.1f}×" if higher else f"\u2212{(1 - after / before) * 100:.0f}%")
+            unit = "" if higher else " s"
+            axis.annotate(f"{before:.1f}{unit}", (before, centre + height / 2), textcoords="offset points",
+                          xytext=(5, 0), va="center", fontsize=9, color=style.MUTED)
+            axis.annotate(f"{after:.{1 if higher else 2}f}{unit} \u00b7 {change}", (after, centre - height / 2),
+                          textcoords="offset points", xytext=(5, 0), va="center", fontsize=9,
+                          color=style.TEXT, fontweight="bold")
+        axis.set_xlim(0, top * 1.42)
+        axis.set_title(title, fontsize=10.5, loc="left")
+        axis.set_xlabel("higher is better" if higher else "lower is better", fontsize=9, color=style.MUTED)
+        axis.grid(axis="y", visible=False)
+    axes[0].set_yticks(range(len(rows)))
+    axes[0].set_yticklabels([label for label, _, _ in reversed(rows)])
+    fig.suptitle("A free T4 without bf16 arithmetic, with IronMule's own kernels",
+                 fontsize=12, fontweight="bold", color=style.TEXT)
+    fig.legend(*axes[0].get_legend_handles_labels(), loc="lower center", ncol=2, fontsize=9,
+               bbox_to_anchor=(0.5, -0.06))
+    fig.subplots_adjust(left=0.13, right=0.98, top=0.8, bottom=0.2, wspace=0.12)
+
+    written = emit(fig, "t4-native-kernels")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": sources,
+        "device": T4,
+        "models": ["mlx-community/Qwen3-8B-4bit", "mlx-community/Qwen3-14B-4bit"],
+        "samples": "one fresh process per arm, one warm generation then 3 measured generations of "
+                   "a 512-token prompt and 128 greedy tokens; decode and TTFT are the medians",
+        "intervals": "none; screening medians from one cell (PERF1 run 2)",
+    }
+
+
+# -- figure 6: serving eight requests at once ------------------------------------
+def t4_server_batching() -> dict:
+    """Continuous batching, where a kernel either shares one pass over the weights or not."""
+
+    arms = (("row kernel (decode path of the plan)", "server-qwen3-8b-kernel+p16-free.json", style.SECONDARY),
+            ("tensor-core kernel for 2..16 rows", "server-qwen3-8b-kernel+mma+p16-free.json", style.CANDIDATE))
+    data = [(name, load(PERF1_SERVER_DIR / file)["widths"], colour) for name, file, colour in arms]
+    widths = (("one request at a time", "1"), ("eight requests at once", "8"))
+
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 3.2))
+    height, top = 0.36, 0.0
+    control = data[0][1]["8"]["aggregate_tps"]
+    for index, (label, width) in enumerate(widths):
+        centre = len(widths) - 1 - index
+        for slot, (name, rows, colour) in enumerate(data):
+            value = rows[width]["aggregate_tps"]
+            top = max(top, value)
+            y = centre + (0.5 - slot) * height
+            ax.barh(y, value, height * 0.86, color=colour, label=name if index == 0 else None)
+            note = f"{value:.1f} tok/s"
+            if slot == 1 and width == "8":
+                note += f" \u00b7 {value / control:.2f}× the row kernel"
+            ax.annotate(note, (value, y), textcoords="offset points", xytext=(5, 0), va="center",
+                        fontsize=9, color=style.TEXT, fontweight="bold" if slot == 1 else "normal")
+    ax.set_yticks(range(len(widths)))
+    ax.set_yticklabels([label for label, _ in reversed(widths)])
+    ax.set_xlim(0, top * 1.55)
+    ax.set_xlabel("aggregate tokens per second across 8 different requests, Qwen 3 8B, higher is better")
+    ax.set_title("A server's batch: tensor cores read each weight once for all requests")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.24), ncol=2, fontsize=9)
+
+    written = emit(fig, "t4-server-batching")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": [(PERF1_SERVER_DIR / file).as_posix() for _, file, _ in arms],
+        "device": T4,
+        "models": ["mlx-community/Qwen3-8B-4bit"],
+        "samples": "8 different chat requests, greedy, 128 tokens each, mlx-lm's continuous-batching "
+                   "BatchGenerator; both arms in the same run (PERF1 run 8)",
+        "intervals": "none; one pass per width after a warm pass",
+    }
+
+
+def _perplexity_ratio(candidate: Path, reference: Path) -> tuple[float, float, float]:
+    """Ratio and 95% chunk-bootstrap interval, the method `tests/test_numeric_plans.py` pins."""
+
+    import math
+    import random
+    import statistics
+
+    rows = list(zip(load(reference)["chunk_nll"], load(candidate)["chunk_nll"]))
+    rng = random.Random(20260916)
+
+    def ratio(sample):
+        return math.exp(statistics.mean(b for _, b in sample) - statistics.mean(a for a, _ in sample))
+
+    draws = sorted(ratio([rng.choice(rows) for _ in rows]) for _ in range(10000))
+    return ratio(rows), draws[250], draws[9750]
+
+
+# -- figure 7: what the plan costs in quality -------------------------------------
+def t4_native_quality() -> dict:
+    """The gate each changed path had to pass, with the bound it had to stay under."""
+
+    gates = [(label, *_perplexity_ratio(PERF1 / candidate, PERF1 / reference))
+             for label, candidate, reference in PERF1_GATES]
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 2.9))
+    for index, (label, value, low, high) in enumerate(gates):
+        y = len(gates) - 1 - index
+        ax.errorbar(value, y, xerr=[[value - low], [high - value]], fmt="o", color=style.CANDIDATE,
+                    ecolor=style.CANDIDATE, elinewidth=2, capsize=4, markersize=7, zorder=4)
+        # A fixed column right of the bound, so no label ever crosses the line it is judged by.
+        ax.annotate(f"{value:.4f} [{low:.4f}; {high:.4f}]", (1.0056, y), va="center", fontsize=9,
+                    color=style.TEXT)
+    ax.axvline(1.0, color=style.RULE, linewidth=1.2, linestyle="--", zorder=2)
+    ax.axvline(1.005, color=style.ACCENT, linewidth=1.6, zorder=2)
+    ax.annotate("same as stock bf16", (1.0, len(gates) - 0.45), textcoords="offset points", xytext=(4, 0),
+                fontsize=8.5, color=style.MUTED)
+    ax.annotate("quality bound 1.005", (1.005, len(gates) - 0.45), textcoords="offset points",
+                xytext=(4, 0), fontsize=8.5, color=style.ACCENT)
+    ax.set_yticks(range(len(gates)))
+    ax.set_yticklabels([label for label, *_ in reversed(gates)])
+    ax.set_xlim(0.994, 1.0118)
+    ax.set_ylim(-0.6, len(gates) - 0.2)
+    ax.set_xlabel("perplexity ratio against stock bf16 on WikiText-2, 16 x 512 tokens, lower is better")
+    ax.set_title("The quality gate: every path the plan changes stays inside the bound")
+    ax.grid(axis="y", visible=False)
+
+    written = emit(fig, "t4-native-quality")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": [(PERF1 / path).as_posix() for _, a, b in PERF1_GATES for path in (a, b)],
+        "device": T4,
+        "models": ["mlx-community/Qwen3-8B-4bit", "mlx-community/Qwen3-14B-4bit"],
+        "samples": "16 chunks of 512 tokens per arm; decode path teacher-forced through the cache",
+        "intervals": "95% chunk bootstrap, 10000 draws, seed 20260916",
+    }
+
+
+FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup,
+           t4_native_kernels, t4_server_batching, t4_native_quality)
 
 
 def render(destination: Path) -> list[dict]:

@@ -124,17 +124,68 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `float16` | Qwen 3 14B | 1.001222 `[0.999873; 1.002603]` | passes |
 | `float32` | Mistral Small 3.2 24B | 0.998019 `[0.996057; 0.999910]` | passes |
 | `float16` | Gemma 3 4B | 2.043792 `[1.873506; 2.244196]` | **fails** — perplexity 102.5 → 209.6 |
+| `native`, decode path | Qwen 3 8B | 0.997356 `[0.995672; 0.999090]` | passes |
+| `native`, prefill path | Qwen 3 8B | 0.998839 `[0.997220; 1.000515]` | passes |
+| `native`, prefill path | Qwen 3 14B | 1.000510 `[0.998894; 1.002001]` | passes |
 
 Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
 Gemma 3. So neither plan is ever enabled for you, and neither is recommended for a model
 that has not passed this gate on your own hardware.
+
+### IronMule's own kernels: five times faster on a free T4
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-native-kernels-dark.svg">
+  <img src="docs/assets/t4-native-kernels.svg" alt="Decode tokens per second and time to first token for Qwen 3 8B and 14B on a Tesla T4, stock MLX against IronMule's native plan" width="100%">
+</picture>
+
+A T4 has no bfloat16 arithmetic, and MLX's CUDA matmuls accumulate in the activation type, so
+a bf16 checkpoint spends every decode step in emulation — Qwen 3 8B ran at 6.3 tokens per second
+on a card whose memory bandwidth allows about 70. `--compute-dtype native` keeps the checkpoint
+and does its 4-bit matmuls on IronMule's own CUDA kernels instead: decode reads bfloat16 as raw
+bits and accumulates in float32, prefill dequantises to float16 and runs one tensor-core GEMM.
+
+| Model (4-bit) | `ironmule benchmark` workload | Decode | Time to first token, 512 tokens |
+| :-- | --: | --: | --: |
+| Qwen 3 8B | **4.97× · +397%** | 6.3 → 32.5 tok/s | 27.2 s → 0.76 s |
+| Qwen 3 14B | **4.81× · +381%** | 3.4 → 17.0 tok/s | 49.7 s → 1.27 s |
+
+The first column is IronMule's own product path against stock, fresh interleaved processes as
+in the tables above; on Qwen 3 8B all six requests returned the same tokens as stock. It is for
+NVIDIA GPUs below compute capability 8 (Turing, Volta), refused anywhere else, checked against a
+float32 reference on the model's own weights before it is installed, and `ironmule plans`
+recommends it for Qwen 3 there. Like every numeric plan it changes the arithmetic, so it has to
+pass the quality gate on every path it touches:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-native-quality-dark.svg">
+  <img src="docs/assets/t4-native-quality.svg" alt="Perplexity ratio with 95 percent bootstrap intervals for the native plan's decode and prefill paths, all inside the 1.005 bound" width="100%">
+</picture>
+
+**Serving several requests at once.** The decode kernel reads the weights once per request. A
+second kernel, built on the T4's tensor cores, multiplies each weight with up to 16 requests in
+one pass, which is what a server with several open conversations needs:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-server-batching-dark.svg">
+  <img src="docs/assets/t4-server-batching.svg" alt="Aggregate tokens per second for eight different requests, one at a time and eight at once, row kernel against tensor-core kernel" width="100%">
+</picture>
+
+Eight different requests at once reach 94.7 tokens per second on Qwen 3 8B, 2.62 times the row
+kernel in the same run, and the median wait for a first token drops from 26 s to 0.54 s because
+nobody queues. This one is measured, not shipped: batched answers in bf16 are not always the
+same as answers served alone, and IronMule's server promises exactly that, so it waits for its
+own opt-in mode (`docs/PROJECT_FRIDAY_BACKLOG.md`, PERF1-K). Everything here: `research/LEDGER.md`,
+PERF1, and `experiments/kaggle_compat/results/perf1-run*/`.
 
 **The ceiling on one card.** A single MLX process uses a single device, so 15360 MiB is the
 budget. The largest checkpoint measured to run is Gemma 4 26B-A4B: 15.34 GB on disk,
 14.20 GB resident, peak 14.30 GB, decoding correctly. Mistral Small 3.2 24B runs at 13.26 GB
 and its `float32` arm peaks at 15.24 GB and still fits. 16.05 GB does not load. Tensor parallelism across both T4s of a
 Kaggle cell works with MLX's ring backend and halves per-rank weights with identical tokens,
-but that is stock mlx-lm — IronMule is single-process and cannot join a distributed group.
+but that is stock mlx-lm — IronMule is single-process and cannot join a distributed group —
+and it is slow: the ring backend reduces over TCP twice per layer per token, and Qwen 3 8B
+decoded at a third of one card's speed (PERF1).
 
 **None of this transfers to a TPU.** MLX has two device types, `cpu` and `gpu`; there is no
 TPU backend, so IronMule does not run there. It is also the wrong lesson to carry: on a
