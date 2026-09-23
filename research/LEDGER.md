@@ -5241,3 +5241,103 @@ fixes: `ironmule models add` registered Qwen 3 8B without `--revision`; `ironmul
 --compute-dtype native` reported `"execution": "exact@native"` in health, answered JSON and SSE,
 and four concurrent requests in 8.06 s (sequential reference worker); clean exit. `ironmule plans`
 prints the `native` row. PERF1 used about 5.6 h of Kaggle's free GPU quota in total, 0 EUR.
+
+## PERF1, continued — two cards lift the ceiling to 32B, and batching grows with the model (2026-09-23)
+
+One T4 holds 15360 MiB and 16.05 GB does not load (PORT2). Tensor parallelism halves the
+weights per card but reduces twice per layer per token over TCP (0.34x, run 1). PERF1-O split
+by layers instead: `perf1.py` gives each `mlx.launch` rank half the layers (the last rank the
+first half, mlx-lm's convention), wraps the first and last local layer with the hand-over
+(`recv_like` before, `send` plus one `all_gather` after), leaves the model's own forward
+untouched and never reads the other rank's layers from disk. Checked on the Mac before
+submission: Qwen 3 0.6B and Qwen3.8 27B give the same 128 tokens pipelined as in one process,
+on both ranks, and mlx-lm's batch server completes pipelined. Kaggle 2 x Tesla T4, mlx
+`0.32.2`, mlx-lm `0.31.3`, IronMule `69f99373`, perf1 `e2e` protocol (one warm and three
+measured generations, 128 greedy tokens, 512-token prompt; 256 for the Qwen 3.5 family, whose
+bf16 path is non-finite at 512 on CUDA). Screening, one process pair per arm. Raw data and the
+submitted notebooks: `experiments/kaggle_compat/results/perf1-run11-7b29bb97/`,
+`perf1-run12-c4c35978/`.
+
+**Run 11 answered the gate and failed on everything it was for.** Qwen 3 8B `kernel+p16`
+pipelined reproduced the single-card tokens on both ranks, and every model over 16 GB then ran
+out of memory in `mx.eval(model.parameters())`, on both ranks, at about 10 GB per rank. The
+ranks had chosen their card with `mx.Device(gpu, rank)`. Loaded weights live in MLX's managed
+memory, and where they land is not pinned by the default device; both ranks' halves on card 0
+would explain it, but run 11 recorded no per-card memory. Run 12 set `CUDA_VISIBLE_DEVICES` to
+the rank before MLX starts and printed `nvidia-smi` after loading: 9551 MiB on each card for
+Qwen 3 32B, 9935 MiB for Qwen3.6 35B-A3B, and the loads fit. PORT2's tensor-parallel OOM on
+Qwen3.8 27B used the same card selection and may have the same cause; not tested. Run 11 also
+showed that `mlx.launch` exits 0 when every rank has failed, so run 12 counted a stage only if
+its result file existed.
+
+| run 12, two T4s pipelined | decode tok/s | TTFT | tokens vs stock (128) |
+| :-- | --: | --: | :-- |
+| Qwen 3 32B (18.43 GB) stock | 1.566 | 110.1 s | — |
+| Qwen 3 32B `kernel+p16` | **8.540** | **2.91 s** | 128 identical |
+| Qwen3.6 35B-A3B (20.4 GB, MoE) stock | 5.111 | 29.5 s | — |
+| Qwen3.6 35B-A3B `kernel+p16` | 5.693 | 25.7 s | diverge at 1 |
+| Qwen 3 8B `kernel+p16`, one card / pipelined | 42.882 / 22.262 | 0.57 / 0.68 s | identical (gate) |
+
+A 32B model now runs on the free cell: decode +445% and TTFT -97% against stock over the same
+two cards, tokens identical. The 35B MoE gains only 11%, because its experts go through
+`gather_qmm`, which neither kernel routes; both of its outputs are coherent answers to the prompt
+and part at the second token, so it has a speed and no quality claim. The pipeline itself costs
+the 8B half its decode rate (0.515x in run 11, 0.519x in run 12, about 22 ms per token): the
+hand-over goes through host memory and TCP twice per token, which a larger model hides better.
+
+**Batching grows with the model (PERF1-K's pre-measurement).** Eight different requests, widths 1
+and 8, `kernel+mma` against its in-run control:
+
+| aggregate tok/s at width 8 | control | `mma` | ratio | median TTFT at 8 |
+| :-- | --: | --: | --: | --: |
+| Mistral 3.2 24B, one card (run 11) | 8.802 (`kernel`) | 15.168 | **1.72x** | 37.0 s / 36.7 s |
+| Qwen 3 32B, two cards (run 12) | 8.287 (`kernel+p16`) | 20.403 | **2.46x** | 3.15 s / 2.21 s |
+
+Both pass PERF1-K's 1.2x. Run 12's `kernel+mma` on Mistral (15.367, no in-run control) repeats run
+11's 15.168. Batched answers are again not all equal to the width-1 answers (Mistral 3/8, 32B 2/8
+at width 8), as run 6 found for every bf16 arm.
+
+**Mistral 3.2 24B on one card.** Stock decoded at 2.140 tok/s and the kernel at 11.431, **+434%**,
+128/128 tokens identical (run 11). TTFT stays at stock's 80 s, because `p16` does not fit: stock
+already peaks at 14.34 GB, the whole float16 head (131072 rows) ran out of memory in run 11, and
+32768-row slices still did in run 12, in the e2e prefill and in the server's prompt batch.
+
+**Qwen3.8 27B loads on two cards and is not usable there.** The stock arm decoded for 9 min and
+then failed `measure`'s own check: its repetitions produced different tokens. `kernel+p16` died in
+`cudaGraphInstantiate … out of memory`. PORT2 already found the Qwen 3.5 family's gated-delta path
+non-finite at 512 tokens and its grouped arms non-deterministic on CUDA; the 35B MoE of the same
+family was deterministic here. Runs 11-12 used about 2.3 h of free GPU quota, 0 EUR.
+
+## PERF1, continued — the prefill fits, and CUDA graphs break Qwen 3.5's determinism (2026-09-23)
+
+Run 13 (`perf1-run13-93ae1f80`, same cell type and pins as run 12) fixed what runs 11-12 left
+broken, with its rules fixed in the notebook before it ran. Raw data and the submitted notebook:
+`experiments/kaggle_compat/results/perf1-run13-93ae1f80/`.
+
+**Why `p16` ran out of memory.** Run 12's peaks already said it: 8B and 32B `p16` sat about 3 GB
+above their weights, because every float16 copy of a prefill lives until its command buffer
+finishes, and the 131072- or 248320-row head alone is four to eight such copies. Slicing did not
+help while the slices lived together. `PERF1_P16_SYNC=1` evaluates each slice's product at once,
+so one copy exists at a time. On the Mac (Qwen3.8 27B, 512 tokens, diagnostic only) that cut the
+peak from 18.90 to 16.42 GB with identical tokens; on the T4 the first rung was enough.
+
+| run 13 | control | fixed | |
+| :-- | --: | --: | :-- |
+| Mistral 3.2 24B TTFT, one card | 77.6 s (`kernel`) | **1.68 s** (`kernel+p16`, sync) | 128 tokens identical, peak 13.84 GB against 14.34 |
+| Mistral 3.2 24B server, width 8 | 15.744 tok/s (`kernel+mma`) | **31.050** (`kernel+mma+p16`) | median TTFT 35.5 s -> 1.56 s |
+| Qwen3.8 27B decode, two cards, graphs off | 1.911 tok/s (stock) | **8.819** (`kernel+p16`, sync) | TTFT 48.0 s -> 5.0 s, diverge at 7 |
+
+Mistral's single-stream decode was 11.810 tok/s in the `p16` arm against 13.336 in its control,
+although decode takes the same path in both (the row kernel); the 11% is unexplained, and across
+runs this model's kernel arm has measured 11.43, 11.95 and 13.34.
+
+**Qwen 3.5's lost determinism is CUDA graphs, upstream.** With `measure` recording every
+repetition instead of throwing: Qwen3.8 27B stock over two cards with CUDA graphs on diverged
+between repetitions at tokens 8 and 7; with `MLX_USE_CUDA_GRAPHS=0` all repetitions were
+identical, at 1.911 against 1.936 tok/s, so graphs buy almost nothing here. Qwen 3.5 9B on one
+card, no pipeline, graphs on, also diverged (third repetition at token 14). No prefill logit was
+non-finite in any arm at 256 tokens. On CUDA mlx-lm runs this family's gated delta as a Python
+loop per token (its fused kernel is Metal-only), and the resulting graph is not replayed
+deterministically. PORT2 attributed Qwen 3.5 9B's non-deterministic grouped arms to the grouped
+path, with graphs on; that attribution is now in doubt (PERF1-T). 27B runs at 8239 MiB per card.
+Run 13 used about 0.8 h of free GPU quota, 0 EUR.

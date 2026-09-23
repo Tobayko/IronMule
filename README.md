@@ -173,7 +173,11 @@ one pass, which is what a server with several open conversations needs:
 
 Eight different requests at once reach 94.7 tokens per second on Qwen 3 8B, 2.62 times the row
 kernel in the same run, and the median wait for a first token drops from 26 s to 0.54 s because
-nobody queues. This one is measured, not shipped: batched answers in bf16 are not always the
+nobody queues. On Mistral Small 3.2 24B, the largest dense model that fits one card, the same
+comparison gives 15.168 against 8.802 tokens per second, and its single stream decodes at 11.431
+tokens per second instead of 2.140, tokens identical. With the prefill kept to one float16
+copy at a time, its first token arrives after 1.68 s instead of 77.6 s, and eight requests
+reach 31.05 tokens per second. This one is measured, not shipped: batched answers in bf16 are not always the
 same as answers served alone, and IronMule's server promises exactly that, so it waits for its
 own opt-in mode (`docs/PROJECT_FRIDAY_BACKLOG.md`, PERF1-K). Everything here: `research/LEDGER.md`,
 PERF1, and `experiments/kaggle_compat/results/perf1-run*/`.
@@ -186,6 +190,14 @@ Kaggle cell works with MLX's ring backend and halves per-rank weights with ident
 but that is stock mlx-lm — IronMule is single-process and cannot join a distributed group —
 and it is slow: the ring backend reduces over TCP twice per layer per token, and Qwen 3 8B
 decoded at a third of one card's speed (PERF1).
+
+**Two cards, split by layers.** The PERF1 harness can instead give each T4 half of the layers
+and hand over once per token. That runs Qwen 3 32B (18.43 GB) on the free cell, 9551 MiB per
+card, decoding at 1.566 tokens per second stock and 8.54 with the native kernels, tokens
+identical; with the tensor-core kernel eight requests at once reach 20.403 tokens per second,
+2.46 times the row kernel in the same run. The hand-over costs Qwen 3 8B half its decode rate,
+and this is harness code around stock mlx-lm, not an IronMule mode (`research/LEDGER.md`,
+PERF1, "two cards lift the ceiling to 32B").
 
 **None of this transfers to a TPU.** MLX has two device types, `cpu` and `gpu`; there is no
 TPU backend, so IronMule does not run there. It is also the wrong lesson to carry: on a
