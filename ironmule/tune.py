@@ -315,7 +315,10 @@ def gpu_busy() -> str | None:
 # of bf16 against float32's 0.58, so it could be worth about another 1.75x — but float16's
 # exponent range is not bf16's, and no quality gate has been run on it. It is selectable so
 # it can be measured; nothing recommends it until that measurement exists.
-COMPUTE_DTYPES = ("float32", "float16")
+# `native` keeps the bf16 checkpoint and computes its 4-bit matmuls with IronMule's own CUDA
+# kernels instead of emulated bf16 (`ironmule/cuda_native.py`, PERF1); CUDA below compute
+# capability 8 only, refused everywhere else.
+COMPUTE_DTYPES = ("float32", "float16", "native")
 
 
 def _check_compute_dtype(compute_dtype: str | None) -> str | None:
@@ -377,9 +380,15 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         # Spelled out rather than `getattr(mx, compute_dtype)`: the Q3f child guard scans
         # this surface statically and refuses a dynamic attribute lookup, which is the right
         # call — a plan name coming from a CLI flag must not become a module attribute path.
-        model.set_dtype(mx.float32 if compute_dtype == "float32" else mx.float16)
+        if compute_dtype != "native":
+            model.set_dtype(mx.float32 if compute_dtype == "float32" else mx.float16)
     engine = Engine(model, tokenizer, knobs)
     engine.compute_dtype = compute_dtype
+    engine.native_admission = None
+    if compute_dtype == "native":
+        from .cuda_native import install
+        # After the Engine, because projection fusion builds fresh quantised modules.
+        engine.native_admission = install(engine.model, info)
     engine.model_identity = resolved.identity if resolved is not None else None
     # Admission runs here because it needs the identity, and only here: nothing in the
     # per-token path may hash a model or re-check a version.

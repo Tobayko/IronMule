@@ -63,8 +63,8 @@ class MLXWorkerClient:
                  compute_dtype: str | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
-        if compute_dtype not in (None, "float32"):
-            raise ValueError("compute_dtype must be None or float32")
+        if compute_dtype not in (None, "float32", "native"):
+            raise ValueError("compute_dtype must be None, float32 or native")
         if compute_dtype is not None and execution_variant != "reference":
             raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.

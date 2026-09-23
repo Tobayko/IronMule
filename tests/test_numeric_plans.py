@@ -64,12 +64,36 @@ PAIRED = {
         "port2-run8-da1a6469/quality-mistral-24b-float32-8.json", "nll_float32"),
 }
 RESULTS = ROOT / "experiments" / "kaggle_compat" / "results"
+#: Plans whose gate is several (candidate, reference) pairs of per-chunk NLL lists, one per
+#: path the plan changes; the row must carry the pair with the highest upper bound.
+CHUNK_GATES = {
+    ("mlx_lm.models.qwen3", "native"): (
+        ("perf1-run5-a9559a15/gate-qwen3-8b-kernel-decode.json",
+         "perf1-run5-a9559a15/gate-qwen3-8b-stock-decode.json"),
+        ("perf1-run5-a9559a15/gate-qwen3-8b-p16-prefill.json",
+         "perf1-run5-a9559a15/gate-qwen3-8b-stock-prefill.json"),
+        ("perf1-run5-a9559a15/gate-qwen3-14b-p16-prefill.json",
+         "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json")),
+}
 
 
 def _paired_gate(bf16_file: str, other_file: str, other_key: str):
     bf16 = json.loads((RESULTS / bf16_file).read_text())["rows"]
     other = json.loads((RESULTS / other_file).read_text())["rows"][:len(bf16)]
     rows = [(a["nll_bf16"], b[other_key]) for a, b in zip(bf16, other)]
+    rng = random.Random(BOOTSTRAP_SEED)
+
+    def ratio(sample):
+        return math.exp(st.mean(b for _, b in sample) - st.mean(a for a, _ in sample))
+
+    draws = sorted(ratio([rng.choice(rows) for _ in rows]) for _ in range(BOOTSTRAP_DRAWS))
+    return ratio(rows), (draws[250], draws[9750])
+
+
+def _chunk_gate(candidate_file: str, reference_file: str):
+    reference = json.loads((RESULTS / reference_file).read_text())["chunk_nll"]
+    candidate = json.loads((RESULTS / candidate_file).read_text())["chunk_nll"]
+    rows = list(zip(reference, candidate))
     rng = random.Random(BOOTSTRAP_SEED)
 
     def ratio(sample):
@@ -92,7 +116,10 @@ def test_every_wall_ratio_is_the_one_its_run_recorded(row):
                               if row.quality_known])
 def test_every_quality_interval_is_the_one_its_run_supports(row):
     key = (row.architecture, row.plan)
-    if key in PAIRED:
+    if key in CHUNK_GATES:
+        ratio, interval = max((_chunk_gate(*pair) for pair in CHUNK_GATES[key]),
+                              key=lambda gate: gate[1][1])
+    elif key in PAIRED:
         ratio, interval = _paired_gate(*PAIRED[key])
     else:
         payload = json.loads((ROOT / row.quality_evidence[0]).read_text())
@@ -147,8 +174,9 @@ def test_only_a_faster_and_qualified_plan_is_ever_recommended():
         row = next(r for r in measurements_for(architecture, CUDA_PRE_AMPERE) if r.plan == plan)
         assert row.wall_ratio < 1.0, f"{architecture}: recommended a plan that is slower"
         assert row.quality_interval[1] < QUALITY_BOUND, f"{architecture}: recommended past the bound"
-    # The one architecture that earns a recommendation, and the fastest of its two plans.
-    assert recommend("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)[0] == "float16"
+    # Qwen 3 earns a recommendation, and the fastest of its three plans: `native` (0.20 of
+    # stock, PERF1) ahead of `float16` (0.31, PORT2).
+    assert recommend("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)[0] == "native"
     # The largest checkpoint that runs on one card earns a recommendation too.
     assert recommend("mlx_lm.models.ministral3", CUDA_PRE_AMPERE)[0] == "float32"
     assert recommend("mlx_lm.models.llama", CUDA_PRE_AMPERE)[0] is None

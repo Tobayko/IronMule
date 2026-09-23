@@ -669,7 +669,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--plan", choices=["strict", "reusable"], default="strict")
     parser.add_argument("--model", default=None)
     parser.add_argument("--json", type=Path, default=None)
-    parser.add_argument("--compute-dtype", choices=("float32",), default=None,
+    parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16; changes output")
     args = parser.parse_args(argv)
     if args.requests < 1 or args.max_tokens < 1:
