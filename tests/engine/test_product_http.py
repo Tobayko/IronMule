@@ -546,3 +546,29 @@ def test_literal_ipv6_loopback_uses_native_ipv6_listener():
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_chat_page_is_served_without_a_key_while_the_api_still_needs_one():
+    service = ControlService()
+    try:
+        server = create_server(service, port=0, api_key="local-secret")
+    except PermissionError as exc:
+        pytest.skip(f"loopback bind denied by test environment: {exc}")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+        connection.request("GET", "/")
+        response = connection.getresponse()
+        page = response.read().decode("utf-8")
+        connection.close()
+        assert response.status == 200
+        assert response.getheader("Content-Type") == "text/html; charset=utf-8"
+        assert "connect-src 'self'" in response.getheader("Content-Security-Policy")
+        assert "/v1/chat/completions" in page and "textContent" in page and "innerHTML" not in page
+        status, payload = request(server, "GET", "/v1/models")
+        assert status == 401 and payload["error"]["code"] == "unauthorized"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)

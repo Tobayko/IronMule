@@ -54,3 +54,7 @@ docs/AUSBAUPLAN_UMSETZUNG_2026-09-02.md
 docs/CODEX_START.md
 docs/FORSCHUNGSENTSCHEID_2026-08-21.md
 docs/FORSCHUNGSENTSCHEID_2026-09-05.md
+
+# Local package builds (pip or uv installing from this checkout)
+build/
+*.egg-info/

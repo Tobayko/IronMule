@@ -7,6 +7,8 @@ from pathlib import Path
 import subprocess
 import sys
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -62,3 +64,14 @@ def test_doctor_help_exposes_json_without_probing():
     )
     assert result.returncode == 0, result.stderr
     assert "--json" in result.stdout
+
+
+def test_start_downloads_nothing_when_the_user_declines(tmp_path, monkeypatch, capsys):
+    import ironmule_product.cli as product_cli
+
+    monkeypatch.setattr(product_cli, "inventory_rows", lambda roots=None: [])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "n")
+    monkeypatch.setattr(product_cli, "serve", lambda _argv: pytest.fail("must not serve"))
+    monkeypatch.setattr(product_cli, "models", lambda *_args: pytest.fail("must not download or register"))
+    assert product_cli.start(["--state-dir", str(tmp_path / "state")]) == 1
+    assert "nothing downloaded" in capsys.readouterr().err

@@ -36,6 +36,7 @@ when it is ready:
 
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
+| `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below |
 | `GET` | `/health` | service, mode, backend, loaded model, queue and completion counters |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |
