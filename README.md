@@ -247,9 +247,24 @@ Every figure on this page is rendered from committed measurement data by
 
 ## Quick start
 
-### 1. Install
+On an Apple Silicon Mac or a Linux machine with an NVIDIA GPU, two commands:
 
-You need Python 3.10 or newer. The package is installed from this repository.
+```bash
+curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
+ironmule start
+```
+
+The first installs IronMule as its own command, with its own Python and without admin
+rights. The second asks before it downloads a model (Gemma 3 4B, 3.4 GB), loads it and opens
+a chat in your browser at `http://127.0.0.1:8080`. Everything runs on your machine. Stop it
+with Ctrl+C; the next `ironmule start` goes straight to the chat. Another model:
+`ironmule start --model mlx-community/Qwen3-4B-Instruct-2507-4bit`.
+
+The rest of this section is the same thing step by step, for developers.
+
+### 1. Install from source
+
+You need Python 3.10 or newer.
 
 ```bash
 git clone https://github.com/Tobayko/IronMule.git
@@ -290,7 +305,8 @@ ironmule models add mlx-community/gemma-3-1b-it-4bit --download
 ironmule serve --model mlx-community/gemma-3-1b-it-4bit
 ```
 
-The server listens on `http://127.0.0.1:8080` and speaks the OpenAI chat API:
+The server listens on `http://127.0.0.1:8080`: open that address in a browser to chat, or use
+the OpenAI chat API:
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
@@ -360,6 +376,7 @@ tensor batching) is never chosen automatically.
 
 | Command | What it does |
 | :-- | :-- |
+| `ironmule start` | Get a model, serve it and open the chat in your browser |
 | `ironmule doctor` | Check Python, MLX and the GPU (Metal or CUDA) |
 | `ironmule setup` | Create local settings |
 | `ironmule models` | List and register cached models |

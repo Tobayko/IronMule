@@ -20,6 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
+from .chat_page import CHAT_PAGE
 from .errors import InvalidRequest, ProductError
 from .types import GenerationRequest, MAX_REQUEST_BYTES
 
@@ -299,6 +300,19 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(encoded)
 
+    def _send_chat_page(self) -> None:
+        encoded = CHAT_PAGE.encode("utf-8")
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(encoded)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'unsafe-inline'; "
+                         "style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; "
+                         "form-action 'none'; frame-ancestors 'none'")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        self.wfile.write(encoded)
+
     def _send_error(self, error: ProductError, *, close: bool = False) -> None:
         if close:
             self.close_connection = True
@@ -391,6 +405,10 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
             self._validate_boundary()
         except ProductError as error:
             self._send_error(error, close=True)
+            return
+        if self._path() == "/":
+            # The page is static and holds no data; every call it makes still authenticates.
+            self._send_chat_page()
             return
         if not self._authenticate():
             return

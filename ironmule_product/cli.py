@@ -3,14 +3,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 from pathlib import Path
 import signal
 import sys
+import threading
 from typing import Any
 
-from .errors import InvalidRequest, ModelNotFound, ProductError
+from .errors import InvalidRequest, ModelNotFound, ProductError, StateError
 from .state import ProductStore
 from .types import ModelSpec
 
@@ -175,6 +178,60 @@ def serve(argv: list[str]) -> int:
     return 0
 
 
+DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"  # 3.4 GB, not gated; every IronMule study measured it
+
+
+def _open_when_ready(url: str) -> None:
+    import time
+    import urllib.request
+    import webbrowser
+
+    for _ in range(600):  # the page answers once the model is loaded; give it five minutes
+        try:
+            urllib.request.urlopen(url, timeout=1).close()
+        except OSError:
+            time.sleep(0.5)
+            continue
+        webbrowser.open(url)
+        return
+
+
+def start(argv: list[str]) -> int:
+    parser = _parser("start", "Set up, get one model (asking before any download), serve it and open the chat page.")
+    parser.add_argument("--model", help=f"model to chat with (default: the one already registered, else {DEFAULT_MODEL})")
+    parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--yes", action="store_true", help="download the model without asking")
+    parser.add_argument("--no-browser", action="store_true", help="only print the chat address")
+    args = parser.parse_args(argv)
+    store = ProductStore(args.state_dir)
+    try:
+        store.settings()
+    except StateError:
+        store.setup("desktop")
+    state = ["--state-dir", str(store.root)]
+    registered = [spec.model_id for spec in store.models()]
+    model = args.model or (registered[0] if registered else DEFAULT_MODEL)
+    if model not in registered:
+        add = [model, *state]
+        if not any(row["model_id"] == model and row["status"] == "available" for row in inventory_rows()):
+            try:
+                answer = "y" if args.yes else input(f"Download {model} from Hugging Face now? [Y/n] ")
+            except EOFError:
+                answer = "n"
+            if answer.strip().lower() not in ("", "y", "yes"):
+                print("ironmule: nothing downloaded; answer yes, pass --yes, or pick a cached model with --model",
+                      file=sys.stderr)
+                return 1
+            add.append("--download")
+        with contextlib.redirect_stdout(io.StringIO()):  # the registry's JSON is noise here
+            models("add", add)
+    url = f"http://127.0.0.1:{args.port}/"
+    print(f"Loading {model}. The chat opens at {url} once it is ready; Ctrl+C stops IronMule.", flush=True)
+    if not args.no_browser:
+        threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
+    return serve(["--model", model, "--port", str(args.port), *state])
+
+
 def optimize(argv: list[str]) -> int:
     if not argv or argv[0] in ("-h", "--help"):
         print("usage: ironmule optimize {run|status|history|pause|resume} [options]")
@@ -234,6 +291,8 @@ def optimize(argv: list[str]) -> int:
 
 def dispatch(command: str, argv: list[str]) -> int:
     try:
+        if command == "start":
+            return start(argv)
         if command == "setup":
             return setup(argv)
         if command == "serve":

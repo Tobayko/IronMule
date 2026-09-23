@@ -4,6 +4,11 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Install with one line, chat with one command.** `install.sh` installs uv if needed and
+  IronMule as an isolated tool (the CUDA build on Linux with an NVIDIA GPU); `ironmule
+  start` sets up local settings, asks before downloading a model (Gemma 3 4B by default),
+  serves it and opens a chat page that `ironmule serve` now shows at `/`. The page is one
+  static file with no external resources; it only sets model output as text.
 - **Chat replies stop at the end of their turn.** Gemma 3's config names only `<eos>` as end
   token while its chat template closes every turn with `<end_of_turn>`, so a served reply
   ran on to `max_tokens`. The worker now treats known end-of-turn markers in the vocabulary
