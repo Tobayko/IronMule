@@ -4,6 +4,12 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Models load again with huggingface_hub 1.32.** It links snapshots into one hub-wide
+  `blobs/` store; the model-identity check, the model inventory behind `ironmule models add`
+  and the product's runtime identity allowed only `models--*/blobs`, so every model was
+  refused or listed as unavailable. The hub-wide store is now allowed for HF repositories —
+  nothing else; a link into a sibling repository or out of a local snapshot still fails.
+
 - **Gemma 4 measured, and the largest exact gain in the set.** E2B `+11%`, E4B `+8%`,
   E4B-qat `+9%`, every arm token-identical to a stock greedy decode — earned with
   projection fusion refused, because Gemma 4's block body is not one IronMule has

@@ -82,7 +82,10 @@ def _safe_regular(path: Path, root: Path, *, metadata: bool, maximum: int | None
         resolved = path.resolve(strict=True)
     except (OSError, RuntimeError) as exc:
         raise IdentityError(f"snapshot file is missing or broken: {path.name}") from exc
-    if not _inside(resolved, root):
+    # huggingface_hub 1.32 moved blobs from `models--*/blobs` to one hub-wide `blobs/`; that
+    # store belongs to an HF repository root only, never to a local snapshot directory.
+    hub_blobs = root.name.startswith("models--") and _inside(resolved, (root.parent / "blobs").resolve())
+    if not _inside(resolved, root) and not hub_blobs:
         raise IdentityError(f"snapshot file escapes its root: {path.name}")
     try:
         info = os.stat(resolved, follow_symlinks=False)

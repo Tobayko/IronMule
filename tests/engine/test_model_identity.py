@@ -89,6 +89,26 @@ def test_local_symlink_cannot_escape_but_hf_blob_link_is_allowed(tmp_path):
     assert build_model_identity("org/model", snapshot).revision == "revision"
 
 
+def test_hub_wide_blob_store_is_allowed_but_not_a_sibling_repo(tmp_path):
+    # huggingface_hub >= 1.32 links snapshots to `<hub>/blobs/<xx>/<sha>`.
+    hub = tmp_path / "hub"
+    blob = hub / "blobs" / "09" / "0949"
+    blob.parent.mkdir(parents=True)
+    blob.write_text("weights")
+    snapshot = model_dir(hub / "models--org--model" / "snapshots" / "revision")
+    (snapshot / "model.safetensors").unlink()
+    (snapshot / "model.safetensors").symlink_to(blob)
+    assert build_model_identity("org/model", snapshot).revision == "revision"
+
+    sibling = hub / "models--org--other" / "blobs" / "abc"
+    sibling.parent.mkdir(parents=True)
+    sibling.write_text("other weights")
+    (snapshot / "model.safetensors").unlink()
+    (snapshot / "model.safetensors").symlink_to(sibling)
+    with pytest.raises(ModelIdentityError, match="escapes"):
+        build_model_identity("org/model", snapshot)
+
+
 def test_cached_resolution_requires_one_exact_revision(tmp_path):
     first = model_dir(tmp_path / "snapshots" / "first")
     second = model_dir(tmp_path / "snapshots" / "second")

@@ -154,8 +154,11 @@ def _safe_child(snapshot: Path, name: str) -> Path:
 def _check_file(path: Path, repository: Path, *, label: str) -> tuple[bool, str | None]:
     """Check existence and HF-style symlink containment without reading bytes."""
 
+    # huggingface_hub 1.32 moved blobs from `models--*/blobs` to one hub-wide `blobs/`.
+    allowed = (repository.resolve(strict=False), (repository.parent / "blobs").resolve(strict=False))
     try:
-        path.resolve(strict=False).relative_to(repository.resolve(strict=False))
+        if not any(path.resolve(strict=False).is_relative_to(root) for root in allowed):
+            raise ValueError(path)
     except (OSError, ValueError, RuntimeError) as exc:
         if isinstance(exc, ValueError):
             return False, f"{label} path escapes model cache entry"
@@ -169,7 +172,8 @@ def _check_file(path: Path, repository: Path, *, label: str) -> tuple[bool, str 
     if path.is_symlink():
         try:
             target = path.resolve(strict=True)
-            target.relative_to(repository.resolve(strict=False))
+            if not any(target.is_relative_to(root) for root in allowed):
+                raise ValueError(target)
         except (OSError, ValueError, RuntimeError) as exc:
             if isinstance(exc, ValueError):
                 return False, f"{label} symlink escapes model cache entry"

@@ -76,6 +76,31 @@ def test_hf_blob_symlink_inside_repository_root_is_allowed(tmp_path: Path) -> No
     assert identity["model_files"][0]["name"] == "model.safetensors"
 
 
+def test_hub_wide_blob_store_is_allowed_for_hf_repositories_only(tmp_path: Path) -> None:
+    # huggingface_hub >= 1.32 links snapshots to `<hub>/blobs/<xx>/<sha>`.
+    hub = tmp_path / "hub"
+    snapshot = hub / "models--org--model" / "snapshots" / "rev"
+    snapshot.mkdir(parents=True)
+    blob = hub / "blobs" / "09" / "0949"
+    blob.parent.mkdir(parents=True)
+    blob.write_bytes(b"blob")
+    (snapshot / "model.safetensors").symlink_to(blob)
+    (snapshot / "config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    (snapshot / "tokenizer.model").write_bytes(b"tok")
+    spec = {"model_id": "org/model", "revision": "rev", "snapshot_path": str(snapshot), "weight_bytes": 4}
+    assert runtime_identity(spec)["model_files"][0]["size"] == 4
+
+    (tmp_path / "local").mkdir()
+    local_spec, local = _snapshot(tmp_path / "local")
+    (local.parent / "blobs").mkdir()
+    (local.parent / "blobs" / "model").write_bytes(b"weights")
+    (local / "model.safetensors").unlink()
+    (local / "model.safetensors").symlink_to(local.parent / "blobs" / "model")
+    with pytest.raises(IdentityError, match="escapes"):
+        runtime_identity(local_spec)
+
+
 def test_snapshot_symlink_escape_is_rejected(tmp_path: Path) -> None:
     spec, path = _snapshot(tmp_path)
     outside = tmp_path / "outside.safetensors"
