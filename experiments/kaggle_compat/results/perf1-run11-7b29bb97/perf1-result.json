@@ -1,0 +1,139 @@
+{
+ "schema": "ironmule.perf1-kaggle.v11",
+ "commit": "69f9937370456a18740213555e9bcd752ce60dd6",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 3.2,
+   "tail": ""
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.0,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 55.3 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.34s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 39.8,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 41 packages in 2.62s\n   Building ironmule @ file:///tmp/IronMule\nDownloading pygments (1.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading tokenizers (3.2MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading transformers (11.7MiB)\nDownloading numpy (15.9MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading mlx-cuda-12 (83.0MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 41 packages in 36.87s\nInstalled 41 packages in 102ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.1\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.2\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.1\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.2\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 35.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "e2e_qwen3-8b_single": {
+   "exit": 0,
+   "seconds": 46.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [592.27, 598.2, 610.11], \"ttft_ms_median\": 598.2, \"decode_tps\": [42.235, 41.576, 41.495], \"decode_tps_median\": 41.576, \"routed\": {\"kernel\": 128524, \"k32\": 0, \"p16\": 1012, \"mma\": 0, \"mma2\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 7635738984, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "e2e_qwen3-8b_pipe": {
+   "exit": 0,
+   "seconds": 78.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [689.64, 718.52, 748.9], \"ttft_ms_median\": 718.52, \"decode_tps\": [22.203, 21.408, 21.155], \"decode_tps_median\": 21.408, \"routed\": {\"kernel\": 64516, \"k32\": 0, \"p16\": 508, \"mma\": 0, \"mma2\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 4733276296, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {\"rank\": 0, \"size\": 2, \"layers\": [18, 36], \"weights_bytes_this_rank\": 2653930504}, \"mode\": \"e2e\"}\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [683.21, 710.8, 749.96], \"ttft_ms_median\": 710.8, \"decode_tps\": [22.17, 21.384, 21.142], \"decode_tps_median\": 21.384, \"routed\": {\"kernel\": 64516, \"k32\": 0, \"p16\": 508, \"mma\": 0, \"mma2\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 4733276296, \"device\": \"Device(gpu, 1)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {\"rank\": 1, \"size\": 2, \"layers\": [0, 18], \"weights_bytes_this_rank\": 2653930504}, \"mode\": \"e2e\"}\n"
+  },
+  "download_qwen3-32b": {
+   "exit": 0,
+   "seconds": 105.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-32B-4bit/snapshots/bcaaf7f538adf166c1080a2befdb4f6019f66639\n"
+  },
+  "e2e_qwen3-32b_stock": {
+   "exit": 0,
+   "seconds": 49.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code 1 \u001b[0m\n"
+  },
+  "e2e_qwen3-32b_kernel+p16": {
+   "exit": 0,
+   "seconds": 45.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Socket 57 was closed by the peer\n[ring] Too many send/recv errors. Failing pending tasks...\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 860, in pipelined\n    mx.eval(mx.distributed.all_sum(mx.array(1.0), group=group, stream=mx.cpu))\nRuntimeError: [ring] connection to a peer was lost\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code 1 \u001b[0m\n"
+  },
+  "download_qwen38-27b": {
+   "exit": 0,
+   "seconds": 80.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.8-27B-4bit/snapshots/10c35caafbb80f7dc6a7a432cdd11af10a6d4818\n"
+  },
+  "e2e_qwen38-27b_stock": {
+   "exit": 0,
+   "seconds": 103.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nterminate called after throwing an instance of 'std::runtime_error'\n  what():  Destroy(handle_) failed: driver shutting down\n\u001b[33m[WARN] Node with rank 1 exited with code -6 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code -15 \u001b[0m\n"
+  },
+  "e2e_qwen38-27b_kernel+p16": {
+   "exit": 0,
+   "seconds": 35.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code -15 \u001b[0m\n"
+  },
+  "download_qwen36-35b-a3b": {
+   "exit": 0,
+   "seconds": 91.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.6-35B-A3B-4bit/snapshots/38740b847e4cb78f352aba30aa41c76e08e6eb46\n"
+  },
+  "e2e_qwen36-35b-a3b_stock": {
+   "exit": 0,
+   "seconds": 81.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n\u001b[33m[WARN] Node with rank 0 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n"
+  },
+  "e2e_qwen36-35b-a3b_kernel+p16": {
+   "exit": 0,
+   "seconds": 46.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code 1 \u001b[0m\n"
+  },
+  "server_qwen3-32b_kernel+p16": {
+   "exit": 0,
+   "seconds": 102.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\nterminate called after throwing an instance of 'std::runtime_error'\n  what():  Destroy(handle_) failed: driver shutting down\n\u001b[33m[WARN] Node with rank 1 exited with code -6 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code 1 \u001b[0m\n"
+  },
+  "server_qwen3-32b_kernel+mma+p16": {
+   "exit": 0,
+   "seconds": 91.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 883, in main\n    model, tokenizer, pipe = pipelined(path)\n                             ^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 859, in pipelined\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n\u001b[33m[WARN] Node with rank 1 exited with code 1 \u001b[0m\n\u001b[33m[WARN] Node with rank 0 exited with code -15 \u001b[0m\n"
+  },
+  "download_mistral-24b": {
+   "exit": 0,
+   "seconds": 68.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\n"
+  },
+  "e2e_mistral-24b_stock": {
+   "exit": 0,
+   "seconds": 678.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n{\"arm\": \"stock\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [79689.81, 79668.06, 79632.26], \"ttft_ms_median\": 79668.06, \"decode_tps\": [2.144, 2.14, 2.14], \"decode_tps_median\": 2.14, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"mma\": 0, \"mma2\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 14338007240, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "e2e_mistral-24b_kernel+p16": {
+   "exit": 1,
+   "seconds": 26.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\nTraceback (most recent call last):\n  File \"/tmp/perf1.py\", line 912, in <module>\n    main()\n  File \"/tmp/perf1.py\", line 888, in main\n    report = measure(model, tokenizer, arm)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 466, in measure\n    generate(model, ids)  # warmup: JIT, graph capture, allocator\n    ^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/perf1.py\", line 450, in generate\n    mx.eval(y)\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n"
+  },
+  "e2e_mistral-24b_kernel": {
+   "exit": 0,
+   "seconds": 389.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n{\"arm\": \"kernel\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [80082.89, 79886.16, 79873.68], \"ttft_ms_median\": 79886.16, \"decode_tps\": [11.431, 11.44, 11.387], \"decode_tps_median\": 11.431, \"routed\": {\"kernel\": 142748, \"k32\": 0, \"p16\": 0, \"mma\": 0, \"mma2\": 0, \"fallback\": 1124}, \"peak_memory_bytes\": 14338007240, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "server_mistral-24b_kernel": {
+   "exit": 0,
+   "seconds": 476.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n1 {'wall_s': 166.624, 'aggregate_tps': 6.146, 'ttft_ms': [19594.9, 35927.6, 75936.5, 92303.7, 110638.2, 127557.1, 141472.8, 155336.9], 'ttft_ms_median': 101471.0, 'identical_to_width1': 8}\n8 {'wall_s': 116.337, 'aggregate_tps': 8.802, 'ttft_ms': [37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0], 'ttft_ms_median': 37020.0, 'identical_to_width1': 5}\n{\"arm\": \"kernel\", \"requests\": 8, \"new_tokens\": 128, \"widths\": {\"1\": {\"wall_s\": 166.624, \"aggregate_tps\": 6.146, \"ttft_ms\": [19594.9, 35927.6, 75936.5, 92303.7, 110638.2, 127557.1, 141472.8, 155336.9], \"ttft_ms_median\": 101471.0, \"identical_to_width1\": 8}, \"8\": {\"wall_s\": 116.337, \"aggregate_tps\": 8.802, \"ttft_ms\": [37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0, 37020.0], \"ttft_ms_median\": 37020.0, \"identical_to_width1\": 5}}, \"arith\": \"free\", \"routed\": {\"kernel\": 362490, \"k32\": 0, \"p16\": 0, \"mma\": 0, \"mma2\": 0, \"fallback\": 2810}, \"peak_memory_bytes\": 13998826936, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\", \"pipeline\": {}, \"mode\": \"server\"}\n"
+  },
+  "server_mistral-24b_kernel+mma": {
+   "exit": 0,
+   "seconds": 335.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] The tokenizer you are loading from '/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde' with an incorrect regex pattern: https://huggingface.co/mistralai/Mistral-Small-3.1-24B-Instruct-2503/discussions/84#69121093e8b480e709447d5e. This will lead to incorrect tokenization. You should set the `fix_mistral_regex=True` flag when loading this tokenizer to fix this issue.\n1 {'wall_s': 172.812, 'aggregate_tps': 5.926, 'ttft_ms': [17161.3, 33222.6, 60918.9, 77042.1, 95063.5, 112283.8, 137949.4, 161379.6], 'ttft_ms_median': 86052.8, 'identical_to_width1': 8}\n8 {'wall_s': 67.512, 'aggregate_tps': 15.168, 'ttft_ms': [36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1], 'ttft_ms_median': 36714.1, 'identical_to_width1': 3}\n{\"arm\": \"kernel+mma\", \"requests\": 8, \"new_tokens\": 128, \"widths\": {\"1\": {\"wall_s\": 172.812, \"aggregate_tps\": 5.926, \"ttft_ms\": [17161.3, 33222.6, 60918.9, 77042.1, 95063.5, 112283.8, 137949.4, 161379.6], \"ttft_ms_median\": 86052.8, \"identical_to_width1\": 8}, \"8\": {\"wall_s\": 67.512, \"aggregate_tps\": 15.168, \"ttft_ms\": [36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1, 36714.1], \"ttft_ms_median\": 36714.1, \"identical_to_width1\": 3}}, \"arith\": \"free\", \"routed\": {\"kernel\": 289992, \"k32\": 0, \"p16\": 0, \"mma\": 73341, \"mma2\": 0, \"fallback\": 1967}, \"peak_memory_bytes\": 13998826936, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde\", \"pipeline\": {}, \"mode\": \"server\"}\n"
+  }
+ },
+ "performance_claim": false,
+ "gate": {
+  "single_tokens": true,
+  "rank0_identical": true,
+  "rank1_identical": true,
+  "pass": true
+ },
+ "finished": true
+}

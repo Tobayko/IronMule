@@ -1,0 +1,59 @@
+[{"stream_name":"stdout","time":0.733283976,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.9532196539999997,"data":"== clone: exit=0 3.2s\n"}
+,{"stream_name":"stdout","time":11.942265518,"data":"== venv: exit=0 8.0s\n"}
+,{"stream_name":"stdout","time":51.731292277,"data":"== install: exit=0 39.8s\n"}
+,{"stream_name":"stdout","time":51.819781626,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":87.636582096,"data":"== download_qwen3-8b: exit=0 35.8s\n"}
+,{"stream_name":"stdout","time":133.723576032,"data":"== e2e_qwen3-8b_single: exit=0 46.1s\n"}
+,{"stream_name":"stdout","time":211.829911747,"data":"== e2e_qwen3-8b_pipe: exit=0 78.1s\n"}
+,{"stream_name":"stdout","time":317.343122121,"data":"== download_qwen3-32b: exit=0 105.5s\n"}
+,{"stream_name":"stdout","time":366.358639685,"data":"== e2e_qwen3-32b_stock: exit=0 49.0s\n"}
+,{"stream_name":"stdout","time":411.780773911,"data":"== e2e_qwen3-32b_kernel+p16: exit=0 45.4s\n"}
+,{"stream_name":"stdout","time":492.352333722,"data":"== download_qwen38-27b: exit=0 80.6s\n"}
+,{"stream_name":"stdout","time":595.47262915,"data":"== e2e_qwen38-27b_stock: exit=0 103.1s\n"}
+,{"stream_name":"stdout","time":630.524412391,"data":"== e2e_qwen38-27b_kernel+p16: exit=0 35.1s\n"}
+,{"stream_name":"stdout","time":722.353723223,"data":"== download_qwen36-35b-a3b: exit=0 91.8s\n"}
+,{"stream_name":"stdout","time":803.431060876,"data":"== e2e_qwen36-35b-a3b_stock: exit=0 81.1s\n"}
+,{"stream_name":"stdout","time":849.388606736,"data":"== e2e_qwen36-35b-a3b_kernel+p16: exit=0 46.0s\n"}
+,{"stream_name":"stdout","time":951.563154588,"data":"== server_qwen3-32b_kernel+p16: exit=0 102.2s\n"}
+,{"stream_name":"stdout","time":1042.572500046,"data":"== server_qwen3-32b_kernel+mma+p16: exit=0 91.0s\n"}
+,{"stream_name":"stdout","time":1111.021605754,"data":"== download_mistral-24b: exit=0 68.4s\n"}
+,{"stream_name":"stdout","time":1789.224449795,"data":"== e2e_mistral-24b_stock: exit=0 678.2s\n"}
+,{"stream_name":"stdout","time":1815.305600298,"data":"== e2e_mistral-24b_kernel+p16: exit=1 26.1s\n"}
+,{"stream_name":"stdout","time":2204.977704263,"data":"== e2e_mistral-24b_kernel: exit=0 389.7s\n"}
+,{"stream_name":"stdout","time":2681.294959791,"data":"== server_mistral-24b_kernel: exit=0 476.3s\n"}
+,{"stream_name":"stdout","time":3017.20701459,"data":"== server_mistral-24b_kernel+mma: exit=0 335.9s\n"}
+,{"stream_name":"stdout","time":3017.207560897,"data":"{\n"}
+,{"stream_name":"stdout","time":3017.207579541,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207584822,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":3017.20759126,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207598852,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207601951,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":3017.2076184,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207623668,"data":" \"e2e_qwen3-8b_single\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207627988,"data":" \"e2e_qwen3-8b_pipe\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207632936,"data":" \"download_qwen3-32b\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207637967,"data":" \"e2e_qwen3-32b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207642567,"data":" \"e2e_qwen3-32b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207647024,"data":" \"download_qwen38-27b\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207653968,"data":" \"e2e_qwen38-27b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207658375,"data":" \"e2e_qwen38-27b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":3017.20766853,"data":" \"download_qwen36-35b-a3b\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207682905,"data":" \"e2e_qwen36-35b-a3b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207686284,"data":" \"e2e_qwen36-35b-a3b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":3017.20768868,"data":" \"server_qwen3-32b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207691007,"data":" \"server_qwen3-32b_kernel+mma+p16\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207693254,"data":" \"download_mistral-24b\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207695547,"data":" \"e2e_mistral-24b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207697752,"data":" \"e2e_mistral-24b_kernel+p16\": 1,\n"}
+,{"stream_name":"stdout","time":3017.207700902,"data":" \"e2e_mistral-24b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207723635,"data":" \"server_mistral-24b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":3017.207727594,"data":" \"server_mistral-24b_kernel+mma\": 0\n"}
+,{"stream_name":"stdout","time":3017.207731549,"data":"}\n"}
+,{"stream_name":"stderr","time":3019.3149754,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":3019.315036465,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":3019.549615937,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":3019.549643585,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":3020.665676885,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":3021.795587016,"data":"[NbConvertApp] Writing 403983 bytes to __results__.html\n"}
+]

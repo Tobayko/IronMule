@@ -1,0 +1,8 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"arm": "kernel+p16", "prompt_tokens": 256, "new_tokens": 128, "ttft_ms": [26017.01, 25382.01, 25746.26], "ttft_ms_median": 25746.26, "decode_tps": [5.683, 5.696, 5.798], "decode_tps_median": 5.696, "routed": {"kernel": 79248, "k32": 0, "p16": 624, "mma": 0, "mma2": 0, "fallback": 20480}, "peak_memory_bytes": 12695375048, "device": "Device(gpu, 0)", "graph_env": "400", "performance_claim": false, "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3.6-35B-A3B-4bit/snapshots/38740b847e4cb78f352aba30aa41c76e08e6eb46", "pipeline": {"rank": 1, "size": 2, "layers": [0, 20], "weights_bytes_this_rank": 10040460424, "cuda_visible_devices": "1", "gpus_after_load": "0, 9935 MiB\n1, 9935 MiB"}, "mode": "e2e"}
+{"arm": "kernel+p16", "prompt_tokens": 256, "new_tokens": 128, "ttft_ms": [26000.82, 25372.54, 25731.68], "ttft_ms_median": 25731.68, "decode_tps": [5.679, 5.693, 5.795], "decode_tps_median": 5.693, "routed": {"kernel": 79248, "k32": 0, "p16": 624, "mma": 0, "mma2": 0, "fallback": 20480}, "peak_memory_bytes": 12736941464, "device": "Device(gpu, 0)", "graph_env": "400", "performance_claim": false, "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3.6-35B-A3B-4bit/snapshots/38740b847e4cb78f352aba30aa41c76e08e6eb46", "pipeline": {"rank": 0, "size": 2, "layers": [20, 40], "weights_bytes_this_rank": 10040460424, "cuda_visible_devices": "0", "gpus_after_load": "0, 9935 MiB\n1, 9935 MiB"}, "mode": "e2e"}

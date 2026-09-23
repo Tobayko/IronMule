@@ -1,0 +1,43 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 926, in <module>
+    main()
+  File "/tmp/perf1.py", line 902, in main
+    report = measure(model, tokenizer, arm)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 478, in measure
+    generate(model, ids)  # warmup: JIT, graph capture, allocator
+    ^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 467, in generate
+    mx.async_eval(nxt)
+RuntimeError: cudaGraphInstantiate(&handle_, graph, nullptr, nullptr, 0) failed: out of memory
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Socket 36 was closed by the peer
+[ring] Too many send/recv errors. Failing pending tasks...
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 926, in <module>
+    main()
+  File "/tmp/perf1.py", line 902, in main
+    report = measure(model, tokenizer, arm)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 478, in measure
+    generate(model, ids)  # warmup: JIT, graph capture, allocator
+    ^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 467, in generate
+    mx.async_eval(nxt)
+RuntimeError: [ring] connection to a peer was lost
+[33m[WARN] Node with rank 1 exited with code 1 [0m
+[33m[WARN] Node with rank 0 exited with code -15 [0m

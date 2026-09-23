@@ -35,6 +35,31 @@ JSON_CLAIMS = [
      "experiments/fused_greedy_compile_v4/results.json", "1.000510009822041"),
 ]
 
+_R11 = "experiments/kaggle_compat/results/perf1-run11-7b29bb97"
+_R12 = "experiments/kaggle_compat/results/perf1-run12-c4c35978"
+_R13 = "experiments/kaggle_compat/results/perf1-run13-93ae1f80"
+JSON_CLAIMS += [
+    ("24B stock decode", "instead of 2.140", "README.md", f"{_R11}/e2e-mistral-24b-stock.json", '"decode_tps_median": 2.14'),
+    ("24B kernel decode", "decodes at 11.431", "README.md", f"{_R11}/e2e-mistral-24b-kernel.json", '"decode_tps_median": 11.431'),
+    ("24B mma width 8", "gives 15.168 against 8.802", "README.md",
+     f"{_R11}/server-mistral-24b-kernel+mma.json", '"aggregate_tps": 15.168'),
+    ("24B row width 8", "gives 15.168 against 8.802", "README.md",
+     f"{_R11}/server-mistral-24b-kernel.json", '"aggregate_tps": 8.802'),
+    ("32B stock decode", "1.566 tokens per second stock", "README.md",
+     f"{_R12}/e2e-qwen3-32b-stock.json", '"decode_tps_median": 1.566'),
+    ("32B kernel decode", "8.54 with the native kernels", "README.md",
+     f"{_R12}/e2e-qwen3-32b-kernel+p16.json", '"decode_tps_median": 8.54'),
+    ("32B per-card memory", "9551 MiB per", "README.md", f"{_R12}/e2e-qwen3-32b-kernel+p16.json", "9551 MiB"),
+    ("32B mma width 8", "reach 20.403 tokens", "README.md",
+     f"{_R12}/server-qwen3-32b-kernel+mma+p16.json", '"aggregate_tps": 20.403'),
+    ("24B p16 TTFT", "after 1.68 s instead of 77.6 s", "README.md",
+     f"{_R13}/e2e-mistral-24b-kernel+p16.json", '"ttft_ms_median": 1684.18'),
+    ("24B kernel TTFT", "after 1.68 s instead of 77.6 s", "README.md",
+     f"{_R13}/e2e-mistral-24b-kernel.json", '"ttft_ms_median": 77605.63'),
+    ("24B mma+p16 width 8", "reach 31.05 tokens", "README.md",
+     f"{_R13}/server-mistral-24b-kernel+mma+p16.json", '"aggregate_tps": 31.05'),
+]
+
 #: Decisions must match the wording the status table reports.
 DECISION_CLAIMS = [
     ("experiments/persistent_process/results.json", "engineering_gain_confirmed_exact_scope"),

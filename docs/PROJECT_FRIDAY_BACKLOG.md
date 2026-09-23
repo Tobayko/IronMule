@@ -139,7 +139,11 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Offen:
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Beantwortet 2026-09-23:
+PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
+to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt mit Sync je
+Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
+`perf1-run13-93ae1f80`. Offen:
 
 - **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
   rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
@@ -148,7 +152,9 @@ TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
   gebatchte Antworten nicht gleich den einzelnen (run 6/8: 1–2 von 8), im float32-Plan
   schon (8/8). Nötig ist eine eigene opt-in Ausführungsvariante mit eigenem Vertrag
   (Abbruch, Streaming, Isolation), nicht eine stille Änderung. Kill: der Vertrag lässt
-  sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren.
+  sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
+  mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
+  Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
 - **PERF1-L `k32` im float32-Plan.** Derselbe Kernel mit fp32-Eingängen verdoppelte den
   Decode des bereits qualifizierten float32-Plans (+107 %) bei gleichen Tokens und NLL auf
   fünf Stellen (run 2). Offen, ob er bitgleich zu MLX' eigenem fp32-`qmv` ist; nur dann
@@ -156,6 +162,24 @@ TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
   T4. Kill: nicht bitgleich — dann eigener Planname mit eigenem Gate.
 - **PERF1-M 14B-Decode-Gate.** Für Qwen 3 14B lief nur das Prefill-Gate; der
   Decode-Pfad-Referenzlauf kostet ~40 min Quote. Kill: keiner, nur Aufwand.
+- **PERF1-T Qwen 3.5 im Produkt auf CUDA ohne CUDA-Graphen.** Run 13: diese Familie ist mit
+  CUDA-Graphen auf CUDA nicht deterministisch, auch auf einer Karte ohne IronMule (9B); ohne
+  Graphen schon (27B), bei fast gleicher Rate. PORT2 schob Qwen 3.5 9Bs nicht-deterministische
+  Gruppen-Arme auf den Gruppenpfad und verweigert seitdem den Durchsatzmodus für rekurrente
+  Caches — gemessen mit Graphen an. Test: `cross.py` für Qwen 3.5 9B mit
+  `MLX_USE_CUDA_GRAPHS=0`, interaktiv und Durchsatz, zwei Prozesse je Arm. Kill: auch ohne
+  Graphen nicht deterministisch — dann bleibt die Verweigerung; sonst Graphen für diese
+  Familie auf CUDA abschalten und die Verweigerung neu prüfen.
+- **PERF1-R Mikro-Batches in der Pipeline.** Bei Breite 1 rechnet immer nur eine Karte; die
+  Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
+  abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
+  1,2x bei Breite 8 gegen dieselbe Pipeline ohne Mikro-Batches im selben Lauf.
+- **PERF1-S Nativer Kernel für MoE-Experten.** Qwen3.6 35B-A3B gewann mit `kernel+p16` nur
+  11 % (run 12), weil die Experten über `gather_qmm` laufen, den kein Kernel routet; sie
+  bleiben emuliertes bf16. Mechanismus: derselbe Zeilen-Kernel mit einem Index-Eingang, der
+  je Warp die Zeilen des gewählten Experten liest, ohne Gewichte umzukopieren. Nutzt auch
+  Gemma 4 26B-A4B. Test: Probe gegen einen float32-Dequant-Referenzwert je Form, dann
+  35B-A3B über zwei Karten gegen `kernel+p16` im selben Lauf. Kill: Decode unter 1,5x.
 - **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der

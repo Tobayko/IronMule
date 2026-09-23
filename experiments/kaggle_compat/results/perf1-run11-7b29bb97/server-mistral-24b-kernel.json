@@ -1,0 +1,53 @@
+{
+ "arm": "kernel",
+ "requests": 8,
+ "new_tokens": 128,
+ "widths": {
+  "1": {
+   "wall_s": 166.624,
+   "aggregate_tps": 6.146,
+   "ttft_ms": [
+    19594.9,
+    35927.6,
+    75936.5,
+    92303.7,
+    110638.2,
+    127557.1,
+    141472.8,
+    155336.9
+   ],
+   "ttft_ms_median": 101471.0,
+   "identical_to_width1": 8
+  },
+  "8": {
+   "wall_s": 116.337,
+   "aggregate_tps": 8.802,
+   "ttft_ms": [
+    37020.0,
+    37020.0,
+    37020.0,
+    37020.0,
+    37020.0,
+    37020.0,
+    37020.0,
+    37020.0
+   ],
+   "ttft_ms_median": 37020.0,
+   "identical_to_width1": 5
+  }
+ },
+ "arith": "free",
+ "routed": {
+  "kernel": 362490,
+  "k32": 0,
+  "p16": 0,
+  "mma": 0,
+  "mma2": 0,
+  "fallback": 2810
+ },
+ "peak_memory_bytes": 13998826936,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Mistral-Small-3.2-24B-Instruct-2506-4bit/snapshots/2a1d5eabfc504747bdc24178394821a1efc0edde",
+ "pipeline": {},
+ "mode": "server"
+}

@@ -1,0 +1,26 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 912, in <module>
+    main()
+  File "/tmp/perf1.py", line 883, in main
+    model, tokenizer, pipe = pipelined(path)
+                             ^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 859, in pipelined
+    mx.eval(model.parameters())
+RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 912, in <module>
+    main()
+  File "/tmp/perf1.py", line 883, in main
+    model, tokenizer, pipe = pipelined(path)
+                             ^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 859, in pipelined
+    mx.eval(model.parameters())
+RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory
+[33m[WARN] Node with rank 0 exited with code 1 [0m
+[33m[WARN] Node with rank 1 exited with code 1 [0m

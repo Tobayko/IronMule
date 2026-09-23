@@ -1,0 +1,37 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 912, in <module>
+    main()
+  File "/tmp/perf1.py", line 883, in main
+    model, tokenizer, pipe = pipelined(path)
+                             ^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 859, in pipelined
+    mx.eval(model.parameters())
+RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Socket 57 was closed by the peer
+[ring] Too many send/recv errors. Failing pending tasks...
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 912, in <module>
+    main()
+  File "/tmp/perf1.py", line 883, in main
+    model, tokenizer, pipe = pipelined(path)
+                             ^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 860, in pipelined
+    mx.eval(mx.distributed.all_sum(mx.array(1.0), group=group, stream=mx.cpu))
+RuntimeError: [ring] connection to a peer was lost
+[33m[WARN] Node with rank 1 exited with code 1 [0m
+[33m[WARN] Node with rank 0 exited with code 1 [0m

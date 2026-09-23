@@ -8,6 +8,7 @@ Usage: python perf1.py kernel OUT.json
        python perf1.py spec MODEL_PATH ARM DRAFT_PATH DRAFTS OUT.json  (DRAFTS: e.g. "2,3,4")
        python perf1.py server MODEL_PATH ARM WIDTHS OUT.json            (WIDTHS: e.g. "1,4,8")
        python perf1.py ironmule MODEL_ID REVISION ARM KNOBS_JSON interactive|throughput OUT.json
+       mlx.launch --hosts 127.0.0.1 -n 2 --backend ring -- PYTHON perf1.py e2e|server ...  (layer pipeline)
 
 ARM is "+"-joined parts: "stock" (bf16 checkpoint as loaded), "fp32" (IronMule's float32
 plan, `set_dtype`), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
@@ -32,12 +33,18 @@ import json
 import math
 import os
 import statistics as st
+import subprocess
 import sys
 import time
 
+if "MLX_RANK" in os.environ:
+    # One card per rank, chosen before MLX initialises CUDA. Run 11 selected the card with
+    # `mx.Device(gpu, rank)`, and every model over 16 GB ran out of memory loading its half.
+    os.environ.setdefault("CUDA_VISIBLE_DEVICES", os.environ["MLX_RANK"])
+
 import mlx.core as mx
 
-PROMPT_TOKENS = 512
+PROMPT_TOKENS = int(os.environ.get("PERF1_PROMPT_TOKENS", "512"))
 NEW_TOKENS = 128
 REPS = 3
 GS = 64
@@ -141,6 +148,12 @@ VARIANTS = {
             "@SCALE@": "ss[sg]", "@BIAS@": "bs[sg]", "@STORE@": "a"},
 }
 MAX_M = 8
+P16_ROWS = int(os.environ.get("PERF1_P16_ROWS", "32768"))
+# Run 12: 8B and 32B `p16` peaked about 3 GB over their weights, because every float16 copy of a
+# prefill lives until its command buffer finishes. Syncing each one bounds that to a single copy.
+P16_SYNC = os.environ.get("PERF1_P16_SYNC") == "1"
+if os.environ.get("PERF1_CACHE_LIMIT"):
+    mx.set_cache_limit(int(os.environ["PERF1_CACHE_LIMIT"]))
 _kernels = {}
 
 
@@ -413,9 +426,17 @@ def _patched(x, w, scales, biases=None, transpose=True, group_size=None, bits=No
                 return qmv(x, w, scales, biases)
         if x.size > (MMA_MAX if routes & {"mma", "mma2"} else MAX_M) * k and "p16" in routes:
             routed["p16"] += 1
-            wd = mx.dequantize(w, scales.astype(mx.float16), biases.astype(mx.float16),
-                               group_size=GS, bits=4)
-            return mx.matmul(x.astype(mx.float16), wd.T).astype(x.dtype)
+            # At most P16_ROWS weight rows in float16 at once: Mistral 3.2 24B's whole 131072-row
+            # head did not fit beside 13.3 GB of weights (run 11). Smaller matrices are unchanged.
+            x16 = x.astype(mx.float16)
+            parts = []
+            for i in range(0, w.shape[0], P16_ROWS):
+                parts.append(mx.matmul(x16, mx.dequantize(
+                    w[i:i + P16_ROWS], scales[i:i + P16_ROWS].astype(mx.float16),
+                    biases[i:i + P16_ROWS].astype(mx.float16), group_size=GS, bits=4).T))
+                if P16_SYNC:
+                    mx.eval(parts[-1])
+            return (parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=-1)).astype(x.dtype)
     routed["fallback"] += 1
     return _original(x, w, scales, biases, transpose=transpose, group_size=group_size, bits=bits,
                      mode=mode, **kw)
@@ -440,13 +461,18 @@ def prompt_ids(tokenizer):
     return ids[:PROMPT_TOKENS]
 
 
+nonfinite = []  # per generation: did the prefill's last logits hold NaN or inf (PORT2, Qwen 3.5)
+
+
 def generate(model, ids):
     from mlx_lm.models.cache import make_prompt_cache
 
     cache = make_prompt_cache(model)
     began = time.perf_counter()
-    y = mx.argmax(model(mx.array(ids)[None, :], cache=cache)[:, -1, :], axis=-1)
-    mx.eval(y)
+    logits = model(mx.array(ids)[None, :], cache=cache)[:, -1, :]
+    y, finite = mx.argmax(logits, axis=-1), mx.isfinite(logits).all()
+    mx.eval(y, finite)
+    nonfinite.append(not finite.item())
     first = time.perf_counter()
     tokens = []
     for _ in range(NEW_TOKENS - 1):
@@ -463,17 +489,20 @@ def measure(model, tokenizer, arm):
     apply_arm(model, arm)
     ids = prompt_ids(tokenizer)
     generate(model, ids)  # warmup: JIT, graph capture, allocator
-    ttft, tps, tokens = [], [], None
+    ttft, tps, runs = [], [], []
     for _ in range(REPS):
         out, t, r = generate(model, ids)
-        if tokens is not None and out != tokens:
-            raise RuntimeError("tokens differ between repetitions of one arm")
-        tokens = out
+        runs.append(out)
         ttft.append(round(t, 2))
         tps.append(round(r, 3))
+    # Recorded, not raised: run 12 lost Qwen3.8 27B's evidence to the old RuntimeError here.
+    same = all(out == runs[0] for out in runs)
     return {"arm": arm, "prompt_tokens": len(ids), "new_tokens": NEW_TOKENS, "ttft_ms": ttft,
             "ttft_ms_median": st.median(ttft), "decode_tps": tps, "decode_tps_median": st.median(tps),
-            "tokens": tokens, "routed": dict(routed), "peak_memory_bytes": int(mx.get_peak_memory()),
+            "tokens": runs[0], "repetitions_identical": same, **({} if same else {"repetition_tokens": runs}),
+            "nonfinite_prefills": sum(nonfinite), "p16_sync": P16_SYNC, "p16_rows": P16_ROWS,
+            "cuda_graphs": os.environ.get("MLX_USE_CUDA_GRAPHS", "on"),
+            "routed": dict(routed), "peak_memory_bytes": int(mx.get_peak_memory()),
             "device": str(mx.default_device()), "graph_env": os.environ.get("MLX_MAX_OPS_PER_BUFFER"),
             "performance_claim": False}
 
@@ -812,6 +841,58 @@ def mma_probe(out):
         json.dump(report, stream, indent=1)
 
 
+def pipelined(path):
+    """Layer pipeline across the ranks of `mlx.launch`, one card each (PERF1-O). The last rank
+    runs the first layers and rank 0 the last, mlx-lm's `PipelineMixin` convention; each rank
+    keeps only its own layers, so the others are never read from disk (tensor parallelism
+    reads every layer; `sharded_load` ran out of memory on Qwen3.8 27B in PORT2, possibly for
+    the card-selection reason run 11 found). The model's own forward is untouched; the first
+    and last local layer are wrapped with the hand-over, which also works for hybrid stacks
+    whose forward indexes its layers (Qwen 3.5's `fa_idx`) as long as the cut keeps that
+    period. Per token: one send/recv and one all_gather, against two all-reduces per layer."""
+    from pathlib import Path
+
+    from mlx_lm.utils import load_model, load_tokenizer
+
+    group = mx.distributed.init(strict=True)
+    rank, size = group.rank(), group.size()
+    model, config = load_model(Path(path), lazy=True)
+    inner = getattr(model, "model", None) or model.language_model.model
+    per, extra = divmod(len(inner.layers), size)
+    period = getattr(inner, "fa_idx", 0) + 1
+    if extra or per % period:
+        raise ValueError(f"{len(inner.layers)} layers do not split evenly over {size} ranks")
+    start = (size - 1 - rank) * per
+    inner.layers = inner.layers[start:start + per]
+
+    def wrap(layer, before=None, after=None):
+        base = type(layer)
+
+        def call(self, x, *args, **kwargs):
+            h = base.__call__(self, before(x) if before else x, *args, **kwargs)
+            return after(h, kwargs.get("cache", args[-1] if args else None)) if after else h
+        layer.__class__ = type(base.__name__, (base,), {"__call__": call})
+
+    def hand_over(h, cache):
+        if rank:
+            h = mx.distributed.send(h, rank - 1, group=group)
+            if cache is not None:  # a prefill that only evaluates the cache must still send
+                cache.keys = mx.depends(cache.keys, h)
+        return mx.distributed.all_gather(h, group=group)[: h.shape[0]]
+
+    if rank < size - 1:
+        wrap(inner.layers[0], before=lambda x: mx.distributed.recv_like(x, rank + 1, group=group))
+    wrap(inner.layers[-1], after=hand_over)
+    mx.eval(model.parameters())
+    mx.eval(mx.distributed.all_sum(mx.array(1.0), group=group, stream=mx.cpu))
+    tokenizer = load_tokenizer(Path(path), eos_token_ids=config.get("eos_token_id"))
+    smi = subprocess.run("nvidia-smi --query-gpu=index,memory.used --format=csv,noheader", shell=True,
+                         capture_output=True, text=True).stdout.strip()  # which card holds what
+    return model, tokenizer, {"rank": rank, "size": size, "layers": [start, start + per],
+                              "weights_bytes_this_rank": int(mx.get_active_memory()),
+                              "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpus_after_load": smi}
+
+
 def main():
     mode = sys.argv[1]
     if mode == "kernel":
@@ -827,7 +908,11 @@ def main():
         from mlx_lm import load
 
         path, arm = sys.argv[2:4]
-        model, tokenizer = load(path)
+        pipe = {}
+        if "MLX_RANK" in os.environ:
+            model, tokenizer, pipe = pipelined(path)
+        else:
+            model, tokenizer = load(path)
         if mode == "e2e":
             out = sys.argv[4]
             report = measure(model, tokenizer, arm)
@@ -844,6 +929,9 @@ def main():
         else:
             raise SystemExit(__doc__)
         report["model_path"] = path
+        report.update(pipeline=pipe)
+        if pipe.get("rank"):
+            out = out.replace(".json", f"-rank{pipe['rank']}.json")
     report["mode"] = mode
     with open(out, "w") as stream:
         json.dump(report, stream, indent=1)

@@ -1,0 +1,26 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 926, in <module>
+    main()
+  File "/tmp/perf1.py", line 902, in main
+    report = measure(model, tokenizer, arm)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 483, in measure
+    raise RuntimeError("tokens differ between repetitions of one arm")
+RuntimeError: tokens differ between repetitions of one arm
+Traceback (most recent call last):
+  File "/tmp/perf1.py", line 926, in <module>
+    main()
+  File "/tmp/perf1.py", line 902, in main
+    report = measure(model, tokenizer, arm)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/perf1.py", line 483, in measure
+    raise RuntimeError("tokens differ between repetitions of one arm")
+RuntimeError: tokens differ between repetitions of one arm
+[33m[WARN] Node with rank 0 exited with code 1 [0m
+[33m[WARN] Node with rank 1 exited with code 1 [0m
