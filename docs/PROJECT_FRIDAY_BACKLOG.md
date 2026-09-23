@@ -131,6 +131,36 @@ Notebook nach Archivierung löschen. Offen:
   kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
   langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
 
+## PERF1 — Rest (2026-09-23)
+
+Beantwortet und im Produkt: `--compute-dtype native` (nativer 4-bit-Kernel für den Decode,
+fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates stehen in
+`research/LEDGER.md`, alle PERF1-Einträge. Verworfen, je eine Zeile:
+TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
+(`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
+0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Offen:
+
+- **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
+  rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
+  Server-Durchsatz bei Breite 8 (8B 94,7 tok/s) und 0,54 s TTFT-Median. Konflikt: der
+  Produkt-Batchpfad (`generate_many`) ist bewusst grouped batch-1 und exakt; in bf16 sind
+  gebatchte Antworten nicht gleich den einzelnen (run 6/8: 1–2 von 8), im float32-Plan
+  schon (8/8). Nötig ist eine eigene opt-in Ausführungsvariante mit eigenem Vertrag
+  (Abbruch, Streaming, Isolation), nicht eine stille Änderung. Kill: der Vertrag lässt
+  sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren.
+- **PERF1-L `k32` im float32-Plan.** Derselbe Kernel mit fp32-Eingängen verdoppelte den
+  Decode des bereits qualifizierten float32-Plans (+107 %) bei gleichen Tokens und NLL auf
+  fünf Stellen (run 2). Offen, ob er bitgleich zu MLX' eigenem fp32-`qmv` ist; nur dann
+  darf er den Plan ohne neues Gate beschleunigen. Test: Ausgabevergleich je Modul auf der
+  T4. Kill: nicht bitgleich — dann eigener Planname mit eigenem Gate.
+- **PERF1-M 14B-Decode-Gate.** Für Qwen 3 14B lief nur das Prefill-Gate; der
+  Decode-Pfad-Referenzlauf kostet ~40 min Quote. Kill: keiner, nur Aufwand.
+- **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
+  auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
+  allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
+  Matmuls — dann Fusion unter `native` verweigern.
+
 ## DATA3 — Rest (2026-09-15)
 
 Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:

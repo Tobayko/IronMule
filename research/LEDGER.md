@@ -5032,3 +5032,212 @@ combination — Gemma 3 with float16 — because it is the only one measured to 
 rather than merely fail to prove itself. `tests/test_numeric_plans.py` re-derives every
 number, bootstraps included. Raw data: `experiments/kaggle_compat/results/port2-run8-*`,
 `port2-run9b-*`, and `port2-run9-*-stale-patch` for the attempt that ran without the fixes.
+
+## PERF1 — A native 4-bit kernel and tensor-core prefill on the free T4 (2026-09-23)
+
+PORT1/PORT2 made IronMule run on Turing and found the reason it is slow there: MLX's CUDA
+`qmv`/`qmm` accumulate in the activation type, and bfloat16 is emulated below compute
+capability 8. Qwen 3 8B decoded at ~6.5 tok/s where the T4's 320 GB/s would allow ~70. PERF1
+moves the two hot matmul paths onto instructions the card has. Kaggle 2 x Tesla T4, mlx
+`0.32.2`, mlx-lm `0.31.3`, IronMule commit `b339c817`, `MLX_MAX_OPS_PER_BUFFER=400` in every
+arm, 4-bit `mlx-community` Qwen 3 8B (`545dc425`) and 14B (`a4d9b2df`). Harness
+`experiments/kaggle_compat/perf1.py`; each arm a fresh process, one warm generation, then
+three measured generations of a fixed 512-token prompt and 128 greedy tokens; TTFT and
+decode rate separately. Screening: one process per arm, no interleaving, no interval.
+Raw data and the exact submitted notebooks: `experiments/kaggle_compat/results/perf1-run1-69dbc7af/`,
+`perf1-run2-baddcb2b/`.
+
+**The kernel.** `mx.fast.cuda_kernel`, one warp per R output rows (R = 2, or 4 from N >= 8192).
+Activations, scales and biases are read as raw 16-bit patterns and widened by a shift — a
+bfloat16 is the top half of a float32 — accumulated in float32 and rounded once. MLX's
+own packing (4-bit, low nibble first, group 64), checked against `mx.dequantize` before
+submission; microbenchmark error against a float32 dequantised reference <= 0.0058 relative
+on every Qwen 3 8B decode shape. It is routed by replacing `mx.quantized_matmul` for
+single-row affine 4-bit calls; everything else is untouched.
+
+| Qwen 3, one T4 | decode tok/s | TTFT, 512 tokens | tokens vs stock (128) |
+| :-- | --: | --: | :-- |
+| 8B stock (run 1 / run 2) | 6.69 / 6.34 | 26.4 s / 27.2 s | — |
+| 8B float32 plan | 11.03 / 10.27 | 3.18 s / 3.38 s | diverge at 20 |
+| 8B kernel | 36.86 / 32.25 | unchanged | 128 identical |
+| 8B kernel + p16 (run 2) | **32.47** | **0.76 s** | diverge at 20 |
+| 8B float32 plan + k32 (run 2) | 21.22 | 3.42 s | identical to float32 plan |
+| 14B stock (run 1 / run 2) | 3.66 / 3.45 | 47.7 s / 49.7 s | — |
+| 14B kernel | 19.49 / 17.67 | unchanged | 128 identical |
+| 14B kernel + p16 (run 2) | **17.00** | **1.27 s** | 128 identical |
+
+Decode +412% (8B) and +393% (14B), TTFT -97% for both, within run 2. The two runs landed on
+cells about 5% apart (stock 6.69 against 6.34), so cross-run differences of that size mean
+nothing.
+
+**Prefill (`p16`).** Multi-row 4-bit matmuls are dequantised to float16 and handed to one
+cuBLAS GEMM, then cast back. At 512 rows the Qwen 3 8B shapes cost 540 ms per step-equivalent
+against 25.4 s for the emulated bfloat16 `qmm` (probe), and the whole prefill drops 36-fold.
+
+**`k32`.** The same kernel reading float32 activations and scales carries the float32 plan,
+which PORT2 already qualified for Qwen 3 8B. It reproduces that plan to the bit on this
+evidence: tokens 128/128, decode-path NLL equal to five digits on every chunk. It doubles the
+plan's decode rate (+107%) but stays below the bfloat16 kernel, because the float32 kernel
+itself costs more (112 against 64 ms step-equivalent).
+
+**Quality, diagnostic only.** WikiText-2 raw test, 4 x 256 tokens, mean next-token NLL
+through the path each part changes. Decode path, teacher-forced: stock 2.67964, kernel
+2.67967, float32 2.67374, float32 + k32 2.67374. Prefill path: stock 2.67579, p16 2.67562,
+float32 2.67374, float32 + p16 2.67376. No value non-finite. Every difference is at most
+0.0002 nats; float32 beats bfloat16 by 0.006 as it did in PORT2. Four chunks cannot qualify a
+plan; the PORT2 gate (16 x 512, bootstrap) is still owed for `kernel` and `p16`.
+
+**Tensor parallelism is dead on this cell.** Two ranks through `mlx.launch --backend ring`,
+one card each: 8B stock 2.27 tok/s against 6.69 on one card (0.34x), 14B 1.74 against 3.66,
+TTFT worse too; the kernel does not rescue it (8B 2.46). The ring backend all-reduces over
+TCP with host copies, twice per layer per token, and NCCL fails in MLX (PORT2 run 5). Killed
+by PERF1-A's own criterion (< 1.2x); it reopens only with a working NCCL path.
+
+**What this is not.** No product path yet: the routes live in the harness, not behind an
+IronMule knob or its admission check, and none of this is exact against stock bfloat16
+except where the tokens happen to agree. Validity: Kaggle T4 (sm_75) only; Ampere and later
+have native bfloat16 and this reasoning does not transfer. Quota: runs 1-2 used 1.65 h.
+
+## PERF1, continued — two ideas that did not pay, and a loader bug they exposed (2026-09-23)
+
+Run 3 (`perf1-run3-1d84848f`, same cell type and pins) tested three new things against an
+in-run control and repeated nothing else. Raw data: `experiments/kaggle_compat/results/perf1-run3-1d84848f/`.
+
+**The kernel generalised to M <= 8 rows** (for a speculative verify step) keeps M = 1 at
+40.2 tok/s decode and 0.62 s TTFT on Qwen 3 8B with `kernel+p16` — above run 2's 32.5, but
+without an in-run comparison against run 2's kernel the gap cannot be attributed; cells have
+already differed by 5% on the stock arm.
+
+**The cheaper nibble conversion did not pay.** Replacing the integer-to-float conversion (a
+quarter-rate instruction on Turing) with the exact `0x4B000000 | q` minus 2^23 trick gives
+bit-identical results, 3% on the probe's step estimate and 37.0 against 40.2 tok/s end to end.
+The conversion is not what bounds the kernel. Rejected.
+
+**Speculative decoding with a real draft (B13) is rejected on this card too.** Qwen 3 0.6B
+drafting for 8B and 14B, greedy, three natural chat prompts, k = 2, 3, 4. Acceptance at k = 3
+0.607 (8B) and 0.589 (14B), under B13's 0.65; and every speculative arm was slower than plain
+decode of the same arm in the same process — 8B `kernel+p16` 20.3 against 32.2 tok/s at k = 3,
+float32 plan 13.6 against 23.1, 14B 13.2 against 17.8. The verify step is the reason: the probe
+puts M = 4 at 2.3x an M = 1 step, so three drafted tokens at 0.6 acceptance never close.
+The M > 1 kernel is also not bit-identical to M = 1 rows (some shapes, some widths), most
+likely the compiler contracting multiply-adds differently per width; explicit `__fmaf_rn`
+would pin it, which matters only if speculation is ever reopened.
+
+**A product defect, found because a stage failed.** The IronMule-runtime stage never measured:
+`load_engine` raised `ModelIdentityError: model symlink escapes its allowed root`.
+huggingface_hub 1.32.0 (PORT2 ran 1.31.0) links snapshots into one hub-wide
+`blobs/<xx>/<sha>` store instead of `models--*/blobs`, and the identity check allowed only the
+latter. Every fresh install with a current huggingface_hub would fail to load any model.
+`ironmule/model_identity.py` now allows the repository directory and the hub-wide blob store,
+nothing else; a link into a sibling repository still fails, and content stays bound by hash.
+`tests/engine/test_model_identity.py` covers both layouts and the sibling case.
+
+## PERF1, continued — the quality gate passes, and which knob breaks identity (2026-09-23)
+
+Run 4 (`perf1-run4-1b743eba`) put the kernel inside IronMule's own runtime on `ironmule
+benchmark`'s workload (6 strict requests x 48 tokens, one warm and two measured passes, fresh
+process per arm). Qwen 3 8B stock bf16 52.15 s; `kernel+p16` 10.41 s, **0.200 of stock**, 5/6
+requests token-identical to stock; float32 plan + `k32` + `p16` 15.32 s (0.294). A chain probe
+put one decode step's matmuls alone at 26.0 ms of GPU time against ~25 ms per token end to
+end: after the kernel, decode is still almost entirely matmul, at roughly 55% of the card's
+bandwidth. PORT2's tuned knobs on top: float32 plan 0.936 of the same plan without knobs with
+6/6 identical tokens; bf16 kernel 0.959 interactive but only 4/6 identical, and throughput mode
+slower (1.043); 14B 0.992. Raw data: `experiments/kaggle_compat/results/perf1-run4-1b743eba/`.
+
+Run 5 (`perf1-run5-a9559a15`) ran the gate in PORT2's format: WikiText-2 raw test, 16 x 512
+tokens, per-chunk mean next-token NLL, perplexity ratio against stock bf16 on the same path,
+10000-sample chunk bootstrap (seed 0 in this analysis).
+
+| part, path | Qwen 3 | ratio [95% interval] | verdict |
+| :-- | :-- | :-- | :-- |
+| kernel, decode (teacher-forced) | 8B | 0.997356 [0.995711; 0.999128] | pass, and better than bf16 |
+| `p16`, prefill | 8B | 0.998839 [0.997246; 1.000505] | pass |
+| `p16`, prefill | 14B | 1.000510 [0.998917; 1.002035] | pass |
+
+No non-finite value; largest per-chunk difference 0.0089 nats. The 14B decode path was not
+gated: its stock reference alone would have cost ~40 min of quota. Knob isolation on the bf16
+kernel, tokens against run 4's knob-free arm (deterministic across processes):
+`compiled_fixed_cache` alone 6/6 identical at 0.85 of the knob-free wall (cross-run, so a
+direction rather than a number); `fuse_projections` alone 4/6. The kernel then contracted
+multiply-adds as the compiler chose per instantiation, and fused projections change N; the
+product kernel pins every rounding (`__fmaf_rn`, `__fadd_rn`) for exactly this reason.
+Raw data: `experiments/kaggle_compat/results/perf1-run5-a9559a15/`.
+
+## PERF1, continued — the server case, and why the row kernel does not batch (2026-09-23)
+
+Run 6 (`perf1-run6-cedca5ec`) served 8 different chat requests (greedy, 128 tokens each, no
+stop tokens) through mlx-lm's continuous-batching `BatchGenerator` at widths 1 to 8, Qwen 3 8B.
+Raw data: `experiments/kaggle_compat/results/perf1-run6-cedca5ec/`.
+
+| Qwen 3 8B | width 1 | width 2 | width 4 | width 8 | identical to width 1 at 2 / 4 / 8 |
+| :-- | --: | --: | --: | --: | :-- |
+| `kernel+p16`, free arithmetic | 25.57 | 30.59 | 32.68 | 36.36 tok/s | 4 / 2 / 1 of 8 |
+| `kernel+p16`, pinned | 24.22 | 31.38 | 32.69 | 36.33 | 2 / 0 / 0 |
+| float32 + `k32` + `p16`, pinned | 17.71 | 23.02 | 23.58 | 22.81 | 8 / 8 / 8 |
+
+Stock did not finish its three widths within the stage's 1200 s (its width 1 alone is 8 x 128
+tokens at ~6 tok/s). Width 8 raises aggregate throughput only 1.42x over width 1, because the
+row kernel's arithmetic grows with every activation row; the real gain of batching here is
+latency — median time to first token 0.84 s at width 8 against 25 s at width 1, where requests
+queue. `BatchGenerator` at width 1 is itself ~35% slower than the plain decode loop (25.6
+against ~37-40 tok/s). Identity: in the float32 plan every request's tokens are the same at
+every width; in bfloat16 they are not, with pinned arithmetic or without, so the divergence is
+outside the matmuls — attention and elementwise bfloat16 on different shapes. Pinning is
+therefore not a reason to prefer one arithmetic in bfloat16; the float32 plan is the one that
+serves batch-invariant answers.
+
+## PERF1, continued — the plan in the product, and tensor cores for a server's batch (2026-09-23)
+
+**The product path (run 7, `perf1-run7-080bfab7`).** `ironmule/cuda_native.py` carries the
+kernel as the opt-in plan `compute_dtype="native"`: CUDA below compute capability 8 only,
+installed per model by swapping the classes of its eligible quantised modules after projection
+fusion, refused unless a probe on the model's own first weight agrees with a float32
+reference, arithmetic pinned. Through `cross.py` (fresh interleaved processes, 2 repetitions,
+`ironmule benchmark`'s workload):
+
+| against stock bf16 | Qwen 3 8B | Qwen 3 14B |
+| :-- | --: | --: |
+| `native` | **0.2013**, 6/6 requests identical to stock | **0.2078**, 3/6 |
+| `native` + `compiled_fixed_cache` | 0.2050 | 0.2101 |
+| `native` + PORT2's tuned knobs, throughput | 0.2177 | 0.2214, 4/6 identical to `native` |
+
+The knobs add nothing on top of the plan, and the tuned set breaks identity under it (projection
+fusion changes N, and the pinned kernel was not enough to keep 14B's tokens). Run 5's 0.85 for
+`compiled_fixed_cache` was a cross-run cell difference. `ironmule benchmark --compute-dtype native`
+ran (28.8 tok/s outer, identical answers in both modes) and `doctor` passed; the serve smoke did
+not start, because `ironmule models add` listed no available snapshot — the same huggingface_hub
+1.32 blob layout, this time in `ironmule_inventory.py` and `friday_evidence/identity.py`, both
+fixed with tests. `ironmule/numeric_plans.py` now carries `native` for `qwen3` with this wall
+ratio and the worst of run 5's three gates; `ironmule plans` recommends it ahead of `float16`.
+
+**Tensor cores for 2..16 rows (run 8, `perf1-run8-aa90d4d2`).** Run 6 showed the row kernel does
+not batch. `mma` gives each warp 8 weight rows; each lane dequantises its two weights of a k-step
+to float16 in registers and one `mma.sync.m16n8k8` (float16 in, float32 accumulate) multiplies
+them with up to 16 activation rows. Fragment indexing was checked lane by lane in a NumPy
+emulation of the PTX layout before submission; on the card the error is <= 0.0033 relative on
+every Qwen 3 8B shape at M = 1, 8 and 16. One decode step's matmuls: M = 1 48.4 ms, 4 54.2, 8
+66.4, 16 98.6 — against the row kernel's 25.9, 46.5 and 194.1 at M = 1, 4, 8. Serving 8 different
+requests (run 6's protocol):
+
+| aggregate tok/s | width 1 | width 8 | median TTFT at 8 |
+| :-- | --: | --: | --: |
+| 8B row kernel (in-run control) | 24.80 | 36.11 | 0.85 s |
+| 8B `mma` from 2 rows | 27.54 | **94.66** | 0.54 s |
+| 14B `mma` from 2 rows | 16.45 | **52.42** | 0.96 s |
+
+Width 8 is 2.62x the in-run control. At M = 1 `mma` loses to the row kernel, so the two are
+complementary: the row kernel for a single stream, tensor cores for a batch.
+
+**A v2 that lost (run 9, `perf1-run9-260cd63c`).** Prefetching the next group, two independent
+mma chains and split-K (float32 partials summed afterwards) was meant to close the latency gap at
+M = 1. In-run it was slower everywhere: step at M = 8 109.1 against `mma`'s 86.9 ms, width-8
+serving 46.4 against 58.3 tok/s, single-stream decode 10.5 against the row kernel's 25.4. The
+extra reduction op and float32 partial traffic cost more than the latency they hid. Rejected.
+That run's cell was about half as fast as run 8's on every control (row kernel 51.5 against 25.9
+ms per step), which is why every comparison here is in-run.
+
+**The server smoke (run 10, `perf1-run10-2141a435`).** With the inventory and product-identity
+fixes: `ironmule models add` registered Qwen 3 8B without `--revision`; `ironmule serve
+--compute-dtype native` reported `"execution": "exact@native"` in health, answered JSON and SSE,
+and four concurrent requests in 8.06 s (sequential reference worker); clean exit. `ironmule plans`
+prints the `native` row. PERF1 used about 5.6 h of Kaggle's free GPU quota in total, 0 EUR.
