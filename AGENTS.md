@@ -64,6 +64,12 @@ tests, existing static checks, bug reproduction and appropriate local benchmarks
 not need repeated confirmation. Follow actual study gates and tool permissions;
 normal engineering autonomy does not authorize bypassing either.
 
+Minimal-change modes (for example the ponytail plugin at `ultra`) shorten the solution,
+never the evidence path. Their YAGNI never covers the [SSOT](docs/SSOT.md) chain: read
+the backlog and ledger before work, record results where they belong, and after adding
+evidence rebuild and verify the corpus (`python tools/ssot.py build`, then `verify
+--check-sources`).
+
 ## Runtime correctness
 
 - Preserve the caller's execution plan. Strict and reusable-session plans can produce
