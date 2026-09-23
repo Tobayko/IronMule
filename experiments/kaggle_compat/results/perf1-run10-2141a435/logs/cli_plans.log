@@ -1,0 +1,27 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+IronMule numeric plans
+  measured on NVIDIA below compute capability 8; quality bound 1.005
+  architecture     plan        vs stock             perplexity ratio  verdict
+  gemma3_text      float32         +91%    1.017846 [0.9909; 1.0516]  unqualified
+  gemma3_text      float16        +221%    2.043792 [1.8735; 2.2442]  refused
+  llama            float32         -34%    1.000126 [1.0000; 1.0003]  slower
+  qwen3            float32         +87%    0.997817 [0.9962; 0.9996]  recommended
+  qwen3            float16        +223%    0.997689 [0.9961; 0.9995]  recommended
+  gpt_oss          float32        +255%    1.003673 [0.9400; 1.0647]  unqualified
+  gpt_oss          float16        +402%    1.008752 [0.9486; 1.0666]  unqualified
+  ministral3       float32         +82%    0.998019 [0.9961; 0.9999]  recommended
+  qwen3            native         +397%    1.000510 [0.9989; 1.0020]  recommended
+  gemma4_text      float32        +143%                gate unusable  unqualified
+  gemma4_text      float16        +294%                gate unusable  unqualified
+
+  no plan is recommended for gemma3_text: float16 is refused (2.0438 perplexity ratio); float32 is faster (+91%) but its quality interval [0.9909; 1.0516] is too wide to qualify
+  no plan is recommended for gemma4_text: float32 is faster (+143%) but gate ran; its bfloat16 reference scores perplexity 22212, so unusable; float16 is faster (+294%) but gate ran; its bfloat16 reference scores perplexity 22212, so unusable
+  no plan is recommended for gpt_oss: float32 is faster (+255%) but its quality interval [0.9400; 1.0647] is too wide to qualify; float16 is faster (+402%) but its quality interval [0.9486; 1.0666] is too wide to qualify
+  no plan is recommended for llama: float32 measured slower (1.5182 of stock)
+  --compute-dtype float32 ran ministral3 at 0.5487 of stock (+82%) with a perplexity ratio of 0.998019 [0.996057; 0.999910], inside the 1.005 bound
+  --compute-dtype native ran qwen3 at 0.2013 of stock (+397%) with a perplexity ratio of 1.000510 [0.998894; 1.002001], inside the 1.005 bound
+
+  A plan is never chosen for you. `recommended` means measured faster with the
+  whole quality interval inside the bound; `unqualified` means the speed is real
+  and the quality is not established; `refused` means IronMule will not load it.

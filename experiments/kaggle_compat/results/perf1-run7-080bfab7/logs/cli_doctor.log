@@ -1,0 +1,11 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+IronMule doctor
+[OK] Linux: Linux x86_64 (x86_64)
+[OK] Python: 3.12.13 (requires >= 3.10)
+[OK] MLX: 0.32.2; importable (isolated probe)
+[OK] MLX-LM: 0.31.3; importable (isolated probe)
+[OK] NumPy: 2.5.3; importable (isolated probe)
+[OK] MLX CUDA device: CUDA GPU operation verified; compute capability 7.5 emulates bf16, so a numeric plan can pay — but which one is per model: gemma3_text=none, gemma4_text=none, gpt_oss=none, llama=none, ministral3=float32, qwen3=float16 (see `ironmule plans` for the numbers behind each)
+
+All runtime prerequisites are available.

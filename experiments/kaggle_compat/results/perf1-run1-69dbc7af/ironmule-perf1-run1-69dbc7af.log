@@ -1,0 +1,49 @@
+[{"stream_name":"stdout","time":1.172114147,"data":"== env: exit=0 0.2s\n"}
+,{"stream_name":"stdout","time":3.846062174,"data":"== clone: exit=0 2.7s\n"}
+,{"stream_name":"stdout","time":13.587172752,"data":"== venv: exit=0 9.7s\n"}
+,{"stream_name":"stdout","time":42.641449385,"data":"== install: exit=0 29.1s\n"}
+,{"stream_name":"stdout","time":42.741773196,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":91.466862829,"data":"== kernel_probe: exit=0 48.7s\n"}
+,{"stream_name":"stdout","time":120.893858891,"data":"== download_qwen3-8b: exit=0 29.4s\n"}
+,{"stream_name":"stdout","time":375.461630493,"data":"== e2e_qwen3-8b_stock: exit=0 254.6s\n"}
+,{"stream_name":"stdout","time":748.422343889,"data":"== tp_qwen3-8b_stock: exit=0 373.0s\n"}
+,{"stream_name":"stdout","time":842.60986859,"data":"== e2e_qwen3-8b_fp32: exit=0 94.2s\n"}
+,{"stream_name":"stdout","time":1083.202330044,"data":"== tp_qwen3-8b_fp32: exit=0 240.6s\n"}
+,{"stream_name":"stdout","time":1218.144950387,"data":"== e2e_qwen3-8b_kernel: exit=0 134.9s\n"}
+,{"stream_name":"stdout","time":1597.859776209,"data":"== tp_qwen3-8b_kernel: exit=0 379.7s\n"}
+,{"stream_name":"stdout","time":1640.425057978,"data":"== download_qwen3-14b: exit=0 42.6s\n"}
+,{"stream_name":"stdout","time":1979.882852225,"data":"== e2e_qwen3-14b_stock: exit=0 339.5s\n"}
+,{"stream_name":"stdout","time":2529.705560867,"data":"== tp_qwen3-14b_stock: exit=0 549.8s\n"}
+,{"stream_name":"stdout","time":2644.152238931,"data":"== e2e_qwen3-14b_fp32: exit=0 114.4s\n"}
+,{"stream_name":"stdout","time":2950.994383526,"data":"== tp_qwen3-14b_fp32: exit=0 306.8s\n"}
+,{"stream_name":"stdout","time":3188.225726517,"data":"== e2e_qwen3-14b_kernel: exit=0 237.2s\n"}
+,{"stream_name":"stdout","time":3710.417713169,"data":"== tp_qwen3-14b_kernel: exit=0 522.2s\n"}
+,{"stream_name":"stdout","time":3710.418386473,"data":"{\n"}
+,{"stream_name":"stdout","time":3710.418413403,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418419469,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418425176,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":3710.41843101,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418436886,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418442627,"data":" \"kernel_probe\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418447852,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418453454,"data":" \"e2e_qwen3-8b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418458604,"data":" \"tp_qwen3-8b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418464431,"data":" \"e2e_qwen3-8b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418469693,"data":" \"tp_qwen3-8b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418474917,"data":" \"e2e_qwen3-8b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418479923,"data":" \"tp_qwen3-8b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418494927,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418501042,"data":" \"e2e_qwen3-14b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418506163,"data":" \"tp_qwen3-14b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":3710.41851158,"data":" \"e2e_qwen3-14b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418516861,"data":" \"tp_qwen3-14b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418522328,"data":" \"e2e_qwen3-14b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":3710.418528066,"data":" \"tp_qwen3-14b_kernel\": 0\n"}
+,{"stream_name":"stdout","time":3710.418532818,"data":"}\n"}
+,{"stream_name":"stderr","time":3713.053941048,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":3713.054019469,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":3713.42663141,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":3713.426670859,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":3714.488212867,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":3715.993846274,"data":"[NbConvertApp] Writing 325752 bytes to __results__.html\n"}
+]

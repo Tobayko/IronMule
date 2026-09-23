@@ -1,0 +1,88 @@
+{
+ "schema": "ironmule.perf1-kaggle.v5",
+ "commit": "b339c817299de173f8a330089afb69973c519353",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.8,
+   "tail": " M ironmule/model_identity.py\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 9.0,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 75.8 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.46s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 22.9,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 42 packages in 1.46s\n   Building ironmule @ file:///tmp/IronMule\nDownloading tokenizers (3.2MiB)\nDownloading numpy (15.9MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading hf-xet (4.3MiB)\nDownloading pygments (1.2MiB)\nDownloading pyarrow (47.8MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading transformers (11.7MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 42 packages in 21.14s\nInstalled 42 packages in 104ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.1\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.1\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.2\npyarrow==25.0.1\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 35.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "ironmule_qwen3-8b_kernel+p16-fuse_projections-interactive": {
+   "exit": 0,
+   "seconds": 87.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"knobs\": {\"fuse_projections\": true}, \"runtime_mode\": \"interactive\", \"walls_ms\": [9445.056503, 9500.544054], \"routed\": {\"kernel\": 122670, \"k32\": 0, \"p16\": 2610, \"fallback\": 0}, \"peak_memory_bytes\": 8394430648, \"performance_claim\": false, \"mode\": \"ironmule\"}\n"
+  },
+  "ironmule_qwen3-8b_kernel+p16-compiled_fixed_cache-interactive": {
+   "exit": 0,
+   "seconds": 89.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"knobs\": {\"compiled_fixed_cache\": true}, \"runtime_mode\": \"interactive\", \"walls_ms\": [8804.707607, 8893.017839], \"routed\": {\"kernel\": 253, \"k32\": 0, \"p16\": 4554, \"fallback\": 0}, \"peak_memory_bytes\": 8134392104, \"performance_claim\": false, \"mode\": \"ironmule\"}\n"
+  },
+  "gate_qwen3-8b_stock_decode": {
+   "exit": 0,
+   "seconds": 1226.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.1995680425316095\n1 2.842578750103712\n2 2.7319151405245066\n3 3.173254732042551\n4 1.9739378839731216\n5 2.737259788438678\n6 2.271673697978258\n7 2.8961110152304173\n8 2.8725700564682484\n9 2.1455696783959866\n10 3.2163296043872833\n11 2.7265596762299538\n12 2.4812634997069836\n13 2.9223845060914755\n14 2.889050140976906\n15 1.7106091678142548\n{\"arm\": \"stock\", \"path_mode\": \"decode\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.1995680425316095, 2.842578750103712, 2.7319151405245066, 3.173254732042551, 1.9739378839731216, 2.737259788438678, 2.271673697978258, 2.8961110152304173, 2.8725700564682484, 2.1455696783959866, 3.2163296043872833, 2.7265596762299538, 2.4812634997069836, 2.9223845060914755, 2.889050140976906, 1.7106091678142548], \"mean_nll\": 2.6119147113058716, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 1220.2, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"nll\"}\n"
+  },
+  "gate_qwen3-8b_kernel_decode": {
+   "exit": 0,
+   "seconds": 248.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.1959613244980574\n1 2.84031230956316\n2 2.7278548944741488\n3 3.1788401901721954\n4 1.9730674382299185\n5 2.731075506657362\n6 2.269401917234063\n7 2.888252040371299\n8 2.8727294616401196\n9 2.1417139805853367\n10 3.2159335017204285\n11 2.7246659472584724\n12 2.483685903251171\n13 2.918596602976322\n14 2.884488098323345\n15 1.7016951031982899\n{\"arm\": \"kernel\", \"path_mode\": \"decode\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.1959613244980574, 2.84031230956316, 2.7278548944741488, 3.1788401901721954, 1.9730674382299185, 2.731075506657362, 2.269401917234063, 2.888252040371299, 2.8727294616401196, 2.1417139805853367, 3.2159335017204285, 2.7246659472584724, 2.483685903251171, 2.918596602976322, 2.884488098323345, 1.7016951031982899], \"mean_nll\": 2.6092671387596056, \"nonfinite\": 0, \"routed\": {\"kernel\": 2072576, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 241.9, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"nll\"}\n"
+  },
+  "gate_qwen3-8b_stock_prefill": {
+   "exit": 0,
+   "seconds": 476.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.1972409076988697\n1 2.8411133028566837\n2 2.728052943944931\n3 3.1799177527427673\n4 1.9790984094142914\n5 2.7366229481995106\n6 2.2667093239724636\n7 2.896692495793104\n8 2.8774903379380703\n9 2.139880985021591\n10 3.2157283052802086\n11 2.7243676986545324\n12 2.4784004110842943\n13 2.92255924269557\n14 2.894467193633318\n15 1.7114374488592148\n{\"arm\": \"stock\", \"path_mode\": \"prefill\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.1972409076988697, 2.8411133028566837, 2.728052943944931, 3.1799177527427673, 1.9790984094142914, 2.7366229481995106, 2.2667093239724636, 2.896692495793104, 2.8774903379380703, 2.139880985021591, 3.2157283052802086, 2.7243676986545324, 2.4784004110842943, 2.92255924269557, 2.894467193633318, 1.7114374488592148], \"mean_nll\": 2.611861231736839, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 469.9, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"nll\"}\n"
+  },
+  "gate_qwen3-8b_p16_prefill": {
+   "exit": 0,
+   "seconds": 16.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.1963108144700527\n1 2.8429733254015446\n2 2.7235396448522806\n3 3.174224577844143\n4 1.9750785678625107\n5 2.7378324791789055\n6 2.271933726966381\n7 2.8898709286004305\n8 2.874729085713625\n9 2.1391507163643837\n10 3.2195885367691517\n11 2.7229740992188454\n12 2.4783869199454784\n13 2.9248636551201344\n14 2.8900712616741657\n15 1.7096675969660282\n{\"arm\": \"p16\", \"path_mode\": \"prefill\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.1963108144700527, 2.8429733254015446, 2.7235396448522806, 3.174224577844143, 1.9750785678625107, 2.7378324791789055, 2.271933726966381, 2.8898709286004305, 2.874729085713625, 2.1391507163643837, 3.2195885367691517, 2.7229740992188454, 2.4783869199454784, 2.9248636551201344, 2.8900712616741657, 1.7096675969660282], \"mean_nll\": 2.610699746059254, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 4048, \"fallback\": 0}, \"seconds\": 9.9, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"nll\"}\n"
+  },
+  "download_qwen3-14b": {
+   "exit": 0,
+   "seconds": 496.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\n"
+  },
+  "gate_qwen3-14b_stock_prefill": {
+   "exit": 0,
+   "seconds": 768.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.0239652171730995\n1 2.8139794133603573\n2 2.6525037586688995\n3 3.141148615628481\n4 1.9195428043603897\n5 2.401229254901409\n6 2.027540048584342\n7 2.7849242817610502\n8 2.671486258506775\n9 1.99704946950078\n10 3.2015615440905094\n11 2.610343247652054\n12 2.3473532255738974\n13 2.714311318472028\n14 2.8104491755366325\n15 1.4846244491636753\n{\"arm\": \"stock\", \"path_mode\": \"prefill\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.0239652171730995, 2.8139794133603573, 2.6525037586688995, 3.141148615628481, 1.9195428043603897, 2.401229254901409, 2.027540048584342, 2.7849242817610502, 2.671486258506775, 1.99704946950078, 3.2015615440905094, 2.610343247652054, 2.3473532255738974, 2.714311318472028, 2.8104491755366325, 1.4846244491636753], \"mean_nll\": 2.4751257551833987, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 758.5, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\", \"mode\": \"nll\"}\n"
+  },
+  "gate_qwen3-14b_p16_prefill": {
+   "exit": 0,
+   "seconds": 26.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.023060444742441\n1 2.819303350523114\n2 2.651695977896452\n3 3.14380993694067\n4 1.9177151750773191\n5 2.4051159024238586\n6 2.0277072321623564\n7 2.7869754396378994\n8 2.667144015431404\n9 1.9945864249020815\n10 3.200682705268264\n11 2.6136141046881676\n12 2.341066900640726\n13 2.717201504856348\n14 2.8153617214411497\n15 1.4851281344890594\n{\"arm\": \"p16\", \"path_mode\": \"prefill\", \"chunks\": 16, \"chunk_tokens\": 512, \"chunk_nll\": [2.023060444742441, 2.819303350523114, 2.651695977896452, 3.14380993694067, 1.9177151750773191, 2.4051159024238586, 2.0277072321623564, 2.7869754396378994, 2.667144015431404, 1.9945864249020815, 3.200682705268264, 2.6136141046881676, 2.341066900640726, 2.717201504856348, 2.8153617214411497, 1.4851281344890594], \"mean_nll\": 2.475635560695082, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 4496, \"fallback\": 0}, \"seconds\": 16.5, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\", \"mode\": \"nll\"}\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

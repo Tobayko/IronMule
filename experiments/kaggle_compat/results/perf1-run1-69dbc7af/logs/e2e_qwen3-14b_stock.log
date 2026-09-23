@@ -1,0 +1,3 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"arm": "stock", "prompt_tokens": 512, "new_tokens": 128, "ttft_ms": [47604.95, 47725.14, 47686.45], "ttft_ms_median": 47686.45, "decode_tps": [3.655, 3.661, 3.659], "decode_tps_median": 3.659, "routed": {"kernel": 0, "fallback": 0}, "peak_memory_bytes": 9359130856, "device": "Device(gpu, 0)", "graph_env": "400", "performance_claim": false, "mode": "e2e", "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4"}

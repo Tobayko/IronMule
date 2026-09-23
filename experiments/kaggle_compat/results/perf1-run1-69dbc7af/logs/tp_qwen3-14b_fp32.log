@@ -1,0 +1,8 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"arm": "fp32", "prompt_tokens": 512, "new_tokens": 128, "ttft_ms": [8008.35, 8144.59, 8090.33], "ttft_ms_median": 8090.33, "decode_tps": [1.997, 2.002, 2.026], "decode_tps_median": 2.002, "routed": {"kernel": 0, "fallback": 0}, "peak_memory_bytes": 5568552976, "device": "Device(gpu, 0)", "graph_env": "400", "performance_claim": false, "rank": 0, "size": 2, "mode": "tp", "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4"}
+{"arm": "fp32", "prompt_tokens": 512, "new_tokens": 128, "ttft_ms": [8005.36, 8142.46, 8091.87], "ttft_ms_median": 8091.87, "decode_tps": [1.997, 2.002, 2.026], "decode_tps_median": 2.002, "routed": {"kernel": 0, "fallback": 0}, "peak_memory_bytes": 5568552976, "device": "Device(gpu, 1)", "graph_env": "400", "performance_claim": false, "rank": 1, "size": 2, "mode": "tp", "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4"}

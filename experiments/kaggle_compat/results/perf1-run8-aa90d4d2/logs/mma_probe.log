@@ -1,0 +1,14 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+q_o {'mma_m1_rel_err': 0.0029925412964075804, 'mma_m8_rel_err': 0.0027126867789775133, 'mma_m16_rel_err': 0.0029445074032992125}
+k_v {'mma_m1_rel_err': 0.0021148561500012875, 'mma_m8_rel_err': 0.0021921773441135883, 'mma_m16_rel_err': 0.00270266504958272}
+gate_up {'mma_m1_rel_err': 0.003032192587852478, 'mma_m8_rel_err': 0.002864774549379945, 'mma_m16_rel_err': 0.002735244343057275}
+down {'mma_m1_rel_err': 0.0031704490538686514, 'mma_m8_rel_err': 0.0031800814904272556, 'mma_m16_rel_err': 0.0032517299987375736}
+lm_head {'mma_m1_rel_err': 0.0026175559032708406, 'mma_m8_rel_err': 0.0023432988673448563, 'mma_m16_rel_err': 0.0022901571355760098}
+mma 1 48.391
+mma 4 54.193
+mma 8 66.416
+mma 16 98.586
+kernel 1 25.902
+kernel 4 46.49
+kernel 8 194.106

@@ -1,0 +1,56 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+stock 0 95012.923113 0
+ironmule_native 0 19723.565955 0
+ironmule_native_compiled 0 19963.244744 0
+ironmule_native_tuned 0 21102.242815 0
+ironmule_native 1 19812.842699 0
+ironmule_native_compiled 1 20004.774937 0
+ironmule_native_tuned 1 21020.862878 0
+stock 1 95264.02727 0
+{
+ "stock": {
+  "ratio_vs_reference_per_rep": [
+   1.0,
+   1.0
+  ],
+  "median_ratio": 1.0,
+  "max_ratio": 1.0,
+  "identical_requests": 6,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_native": {
+  "ratio_vs_reference_per_rep": [
+   0.20758824493319217,
+   0.20797821871256691
+  ],
+  "median_ratio": 0.20778323182287955,
+  "max_ratio": 0.20797821871256691,
+  "identical_requests": 3,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_native_compiled": {
+  "ratio_vs_reference_per_rep": [
+   0.2101108363991441,
+   0.20999295862542006
+  ],
+  "median_ratio": 0.2100518975122821,
+  "max_ratio": 0.2101108363991441,
+  "identical_requests": 3,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_native_tuned": {
+  "ratio_vs_reference_per_rep": [
+   0.22209865904139012,
+   0.22065897779465143
+  ],
+  "median_ratio": 0.22137881841802076,
+  "max_ratio": 0.22209865904139012,
+  "identical_requests": 4,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ }
+}

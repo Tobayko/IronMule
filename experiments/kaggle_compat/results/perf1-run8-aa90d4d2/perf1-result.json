@@ -1,0 +1,64 @@
+{
+ "schema": "ironmule.perf1-kaggle.v8",
+ "commit": "b339c817299de173f8a330089afb69973c519353",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.5,
+   "tail": " M ironmule/model_identity.py\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.9,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 68.8 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.47s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 22.8,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 41 packages in 1.58s\n   Building ironmule @ file:///tmp/IronMule\nDownloading numpy (15.9MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading transformers (11.7MiB)\nDownloading hf-xet (4.3MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading pygments (1.2MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 41 packages in 20.90s\nInstalled 41 packages in 119ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.1\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.2\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.1\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.2\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "mma_probe": {
+   "exit": 0,
+   "seconds": 77.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nq_o {'mma_m1_rel_err': 0.0029925412964075804, 'mma_m8_rel_err': 0.0027126867789775133, 'mma_m16_rel_err': 0.0029445074032992125}\nk_v {'mma_m1_rel_err': 0.0021148561500012875, 'mma_m8_rel_err': 0.0021921773441135883, 'mma_m16_rel_err': 0.00270266504958272}\ngate_up {'mma_m1_rel_err': 0.003032192587852478, 'mma_m8_rel_err': 0.002864774549379945, 'mma_m16_rel_err': 0.002735244343057275}\ndown {'mma_m1_rel_err': 0.0031704490538686514, 'mma_m8_rel_err': 0.0031800814904272556, 'mma_m16_rel_err': 0.0032517299987375736}\nlm_head {'mma_m1_rel_err': 0.0026175559032708406, 'mma_m8_rel_err': 0.0023432988673448563, 'mma_m16_rel_err': 0.0022901571355760098}\nmma 1 48.391\nmma 4 54.193\nmma 8 66.416\nmma 16 98.586\nkernel 1 25.902\nkernel 4 46.49\nkernel 8 194.106\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 27.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "server_qwen3-8b_kernel+mma+p16_free": {
+   "exit": 0,
+   "seconds": 143.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n1 {'wall_s': 37.189, 'aggregate_tps': 27.535, 'ttft_ms': [12011.4, 15187.1, 18335.5, 21489.9, 24660.2, 27845.9, 31029.8, 34224.3], 'ttft_ms_median': 23075.1, 'identical_to_width1': 8}\n4 {'wall_s': 30.931, 'aggregate_tps': 33.106, 'ttft_ms': [14350.0, 14350.1, 14350.1, 14350.1, 22732.6, 22732.6, 22732.6, 22732.6], 'ttft_ms_median': 18541.3, 'identical_to_width1': 2}\n8 {'wall_s': 10.818, 'aggregate_tps': 94.655, 'ttft_ms': [536.1, 536.1, 536.1, 536.1, 536.1, 536.1, 536.2, 536.2], 'ttft_ms_median': 536.1, 'identical_to_width1': 2}\n16 {'wall_s': 10.998, 'aggregate_tps': 93.106, 'ttft_ms': [533.8, 533.8, 533.8, 533.8, 533.8, 533.8, 533.8, 533.8], 'ttft_ms_median': 533.8, 'identical_to_width1': 2}\n{\"arm\": \"kernel+mma+p16\", \"requests\": 8, \"new_tokens\": 128, \"widths\": {\"1\": {\"wall_s\": 37.189, \"aggregate_tps\": 27.535, \"ttft_ms\": [12011.4, 15187.1, 18335.5, 21489.9, 24660.2, 27845.9, 31029.8, 34224.3], \"ttft_ms_median\": 23075.1, \"identical_to_width1\": 8}, \"4\": {\"wall_s\": 30.931, \"aggregate_tps\": 33.106, \"ttft_ms\": [14350.0, 14350.1, 14350.1, 14350.1, 22732.6, 22732.6, 22732.6, 22732.6], \"ttft_ms_median\": 18541.3, \"identical_to_width1\": 2}, \"8\": {\"wall_s\": 10.818, \"aggregate_tps\": 94.655, \"ttft_ms\": [536.1, 536.1, 536.1, 536.1, 536.1, 536.1, 536.2, 536.2], \"ttft_ms_median\": 536.1, \"identical_to_width1\": 2}, \"16\": {\"wall_s\": 10.998, \"aggregate_tps\": 93.106, \"ttft_ms\": [533.8, 533.8, 533.8, 533.8, 533.8, 533.8, 533.8, 533.8], \"ttft_ms_median\": 533.8, \"identical_to_width1\": 2}}, \"arith\": \"free\", \"routed\": {\"kernel\": 261096, \"k32\": 0, \"p16\": 3289, \"mma\": 163185, \"fallback\": 0}, \"peak_memory_bytes\": 7383362680, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"server\"}\n"
+  },
+  "server_qwen3-8b_kernel+p16_free": {
+   "exit": 0,
+   "seconds": 113.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n1 {'wall_s': 41.29, 'aggregate_tps': 24.8, 'ttft_ms': [14098.3, 17495.7, 20849.4, 24217.2, 27605.2, 31027.7, 34505.5, 38000.2], 'ttft_ms_median': 25911.2, 'identical_to_width1': 8}\n8 {'wall_s': 28.36, 'aggregate_tps': 36.108, 'ttft_ms': [847.3, 847.3, 847.3, 847.3, 847.3, 847.3, 847.3, 847.3], 'ttft_ms_median': 847.3, 'identical_to_width1': 1}\n{\"arm\": \"kernel+p16\", \"requests\": 8, \"new_tokens\": 128, \"widths\": {\"1\": {\"wall_s\": 41.29, \"aggregate_tps\": 24.8, \"ttft_ms\": [14098.3, 17495.7, 20849.4, 24217.2, 27605.2, 31027.7, 34505.5, 38000.2], \"ttft_ms_median\": 25911.2, \"identical_to_width1\": 8}, \"8\": {\"wall_s\": 28.36, \"aggregate_tps\": 36.108, \"ttft_ms\": [847.3, 847.3, 847.3, 847.3, 847.3, 847.3, 847.3, 847.3], \"ttft_ms_median\": 847.3, \"identical_to_width1\": 1}}, \"arith\": \"free\", \"routed\": {\"kernel\": 326370, \"k32\": 0, \"p16\": 2530, \"mma\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 7383362680, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"mode\": \"server\"}\n"
+  },
+  "download_qwen3-14b": {
+   "exit": 0,
+   "seconds": 40.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\n"
+  },
+  "server_qwen3-14b_kernel+mma+p16_free": {
+   "exit": 0,
+   "seconds": 144.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n1 {'wall_s': 62.244, 'aggregate_tps': 16.451, 'ttft_ms': [10770.2, 16770.0, 22935.8, 29266.8, 35750.8, 42421.3, 49228.6, 56053.5], 'ttft_ms_median': 32508.8, 'identical_to_width1': 8}\n8 {'wall_s': 19.533, 'aggregate_tps': 52.425, 'ttft_ms': [961.1, 961.1, 961.1, 961.1, 961.1, 961.1, 961.1, 961.1], 'ttft_ms_median': 961.1, 'identical_to_width1': 3}\n16 {'wall_s': 19.369, 'aggregate_tps': 52.867, 'ttft_ms': [928.2, 928.2, 928.2, 928.2, 928.2, 928.2, 928.2, 928.3], 'ttft_ms_median': 928.2, 'identical_to_width1': 3}\n{\"arm\": \"kernel+mma+p16\", \"requests\": 8, \"new_tokens\": 128, \"widths\": {\"1\": {\"wall_s\": 62.244, \"aggregate_tps\": 16.451, \"ttft_ms\": [10770.2, 16770.0, 22935.8, 29266.8, 35750.8, 42421.3, 49228.6, 56053.5], \"ttft_ms_median\": 32508.8, \"identical_to_width1\": 8}, \"8\": {\"wall_s\": 19.533, \"aggregate_tps\": 52.425, \"ttft_ms\": [961.1, 961.1, 961.1, 961.1, 961.1, 961.1, 961.1, 961.1], \"ttft_ms_median\": 961.1, \"identical_to_width1\": 3}, \"16\": {\"wall_s\": 19.369, \"aggregate_tps\": 52.867, \"ttft_ms\": [928.2, 928.2, 928.2, 928.2, 928.2, 928.2, 928.2, 928.3], \"ttft_ms_median\": 928.2, \"identical_to_width1\": 3}}, \"arith\": \"free\", \"routed\": {\"kernel\": 289992, \"k32\": 0, \"p16\": 3091, \"mma\": 108747, \"fallback\": 0}, \"peak_memory_bytes\": 11139365088, \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\", \"mode\": \"server\"}\n"
+  }
+ },
+ "performance_claim": false,
+ "mma_ok": true,
+ "finished": true
+}

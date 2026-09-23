@@ -1,0 +1,8 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors
+0 2.403264917433262
+1 2.2332373075187206
+2 3.4139497578144073
+3 2.652708500623703
+{"arm": "stock", "path_mode": "prefill", "chunks": 4, "chunk_tokens": 256, "chunk_nll": [2.403264917433262, 2.2332373075187206, 3.4139497578144073, 2.652708500623703], "mean_nll": 2.675790120847523, "nonfinite": 0, "routed": {"kernel": 0, "k32": 0, "p16": 0, "fallback": 0}, "seconds": 62.5, "performance_claim": false, "mode": "nll", "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192"}

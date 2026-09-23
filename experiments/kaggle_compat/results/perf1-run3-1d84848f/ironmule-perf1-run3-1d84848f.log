@@ -1,0 +1,45 @@
+[{"stream_name":"stdout","time":1.687804226,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":4.9082610639999995,"data":"== clone: exit=0 3.2s\n"}
+,{"stream_name":"stdout","time":16.691241438,"data":"== venv: exit=0 11.8s\n"}
+,{"stream_name":"stdout","time":40.6481883,"data":"== install: exit=0 24.0s\n"}
+,{"stream_name":"stdout","time":40.75680703,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":282.036969759,"data":"== kernel_probe: exit=0 241.3s\n"}
+,{"stream_name":"stdout","time":294.886580438,"data":"== download_qwen3-0.6b: exit=0 12.8s\n"}
+,{"stream_name":"stdout","time":334.974922867,"data":"== download_qwen3-8b: exit=0 40.1s\n"}
+,{"stream_name":"stdout","time":387.249657475,"data":"== e2e_qwen3-8b_kernel+p16_cvt: exit=0 52.3s\n"}
+,{"stream_name":"stdout","time":421.142479747,"data":"== e2e_qwen3-8b_kernel+p16_magic: exit=0 33.9s\n"}
+,{"stream_name":"stdout","time":633.382660561,"data":"== spec_qwen3-8b_kernel+p16: exit=0 212.2s\n"}
+,{"stream_name":"stdout","time":900.188679598,"data":"== spec_qwen3-8b_fp32+k32+p16: exit=0 266.8s\n"}
+,{"stream_name":"stdout","time":903.041541279,"data":"== ironmule_qwen3-8b_stock-baseline-interactive: exit=1 2.9s\n"}
+,{"stream_name":"stdout","time":905.806760185,"data":"== ironmule_qwen3-8b_stock-tuned-throughput: exit=1 2.8s\n"}
+,{"stream_name":"stdout","time":908.54259737,"data":"== ironmule_qwen3-8b_kernel+p16-baseline-interactive: exit=1 2.7s\n"}
+,{"stream_name":"stdout","time":911.345811174,"data":"== ironmule_qwen3-8b_kernel+p16-tuned-throughput: exit=1 2.8s\n"}
+,{"stream_name":"stdout","time":972.951389886,"data":"== download_qwen3-14b: exit=0 61.6s\n"}
+,{"stream_name":"stdout","time":1252.619391438,"data":"== spec_qwen3-14b_kernel+p16: exit=0 279.7s\n"}
+,{"stream_name":"stdout","time":1252.619992367,"data":"{\n"}
+,{"stream_name":"stdout","time":1252.620011298,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620016912,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620021942,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1252.62002669,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620032074,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1252.62003712,"data":" \"kernel_probe\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620042238,"data":" \"download_qwen3-0.6b\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620047233,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620052202,"data":" \"e2e_qwen3-8b_kernel+p16_cvt\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620057274,"data":" \"e2e_qwen3-8b_kernel+p16_magic\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620062121,"data":" \"spec_qwen3-8b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":1252.62006681,"data":" \"spec_qwen3-8b_fp32+k32+p16\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620071597,"data":" \"ironmule_qwen3-8b_stock-baseline-interactive\": 1,\n"}
+,{"stream_name":"stdout","time":1252.62007662,"data":" \"ironmule_qwen3-8b_stock-tuned-throughput\": 1,\n"}
+,{"stream_name":"stdout","time":1252.620081472,"data":" \"ironmule_qwen3-8b_kernel+p16-baseline-interactive\": 1,\n"}
+,{"stream_name":"stdout","time":1252.620086488,"data":" \"ironmule_qwen3-8b_kernel+p16-tuned-throughput\": 1,\n"}
+,{"stream_name":"stdout","time":1252.620091627,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":1252.620097444,"data":" \"spec_qwen3-14b_kernel+p16\": 0\n"}
+,{"stream_name":"stdout","time":1252.620102485,"data":"}\n"}
+,{"stream_name":"stderr","time":1255.925247702,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1255.925348622,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1256.529830423,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1256.52986658,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1258.186903318,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1260.236523947,"data":"[NbConvertApp] Writing 358790 bytes to __results__.html\n"}
+]

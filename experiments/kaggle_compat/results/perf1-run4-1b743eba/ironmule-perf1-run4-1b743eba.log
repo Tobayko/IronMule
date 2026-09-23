@@ -1,0 +1,41 @@
+[{"stream_name":"stdout","time":1.061975157,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":4.388980147,"data":"== clone: exit=0 3.3s\n"}
+,{"stream_name":"stdout","time":12.988513544,"data":"== venv: exit=0 8.6s\n"}
+,{"stream_name":"stdout","time":35.063427241,"data":"== install: exit=0 22.1s\n"}
+,{"stream_name":"stdout","time":35.157344913,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":49.671744528,"data":"== chain_probe: exit=0 14.5s\n"}
+,{"stream_name":"stdout","time":79.133962902,"data":"== download_qwen3-8b: exit=0 29.5s\n"}
+,{"stream_name":"stdout","time":301.790723999,"data":"== ironmule_qwen3-8b_stock-baseline-interactive: exit=0 222.7s\n"}
+,{"stream_name":"stdout","time":374.042722416,"data":"== ironmule_qwen3-8b_kernel+p16-baseline-interactive: exit=0 72.3s\n"}
+,{"stream_name":"stdout","time":465.343422418,"data":"== ironmule_qwen3-8b_kernel+p16-tuned-interactive: exit=0 91.3s\n"}
+,{"stream_name":"stdout","time":538.172629708,"data":"== ironmule_qwen3-8b_kernel+p16-tuned-throughput: exit=0 72.8s\n"}
+,{"stream_name":"stdout","time":632.817682447,"data":"== ironmule_qwen3-8b_fp32+k32+p16-baseline-interactive: exit=0 94.6s\n"}
+,{"stream_name":"stdout","time":727.501667012,"data":"== ironmule_qwen3-8b_fp32+k32+p16-tuned-throughput: exit=0 94.7s\n"}
+,{"stream_name":"stdout","time":776.085793599,"data":"== download_qwen3-14b: exit=0 48.6s\n"}
+,{"stream_name":"stdout","time":900.797997375,"data":"== ironmule_qwen3-14b_kernel+p16-baseline-interactive: exit=0 124.7s\n"}
+,{"stream_name":"stdout","time":1026.512396348,"data":"== ironmule_qwen3-14b_kernel+p16-tuned-throughput: exit=0 125.7s\n"}
+,{"stream_name":"stdout","time":1026.512933593,"data":"{\n"}
+,{"stream_name":"stdout","time":1026.5129577,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512963942,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512968859,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1026.51297389,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512979332,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512984362,"data":" \"chain_probe\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512989382,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":1026.512994193,"data":" \"ironmule_qwen3-8b_stock-baseline-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":1026.51299976,"data":" \"ironmule_qwen3-8b_kernel+p16-baseline-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513004743,"data":" \"ironmule_qwen3-8b_kernel+p16-tuned-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513009846,"data":" \"ironmule_qwen3-8b_kernel+p16-tuned-throughput\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513014973,"data":" \"ironmule_qwen3-8b_fp32+k32+p16-baseline-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":1026.51302029,"data":" \"ironmule_qwen3-8b_fp32+k32+p16-tuned-throughput\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513030164,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513035901,"data":" \"ironmule_qwen3-14b_kernel+p16-baseline-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":1026.513041557,"data":" \"ironmule_qwen3-14b_kernel+p16-tuned-throughput\": 0\n"}
+,{"stream_name":"stdout","time":1026.513046869,"data":"}\n"}
+,{"stream_name":"stderr","time":1028.859200683,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1028.859287213,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1029.172459256,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1029.172521659,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1030.104466537,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1031.4873704,"data":"[NbConvertApp] Writing 358087 bytes to __results__.html\n"}
+]

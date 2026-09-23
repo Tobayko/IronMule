@@ -1,0 +1,41 @@
+[{"stream_name":"stdout","time":1.230737106,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":4.049739646,"data":"== clone: exit=0 2.8s\n"}
+,{"stream_name":"stdout","time":13.075223844,"data":"== venv: exit=0 9.0s\n"}
+,{"stream_name":"stdout","time":35.986094101,"data":"== install: exit=0 22.9s\n"}
+,{"stream_name":"stdout","time":36.078946322,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":38.116164393,"data":"== download_wikitext: exit=0 2.0s\n"}
+,{"stream_name":"stdout","time":73.603396623,"data":"== download_qwen3-8b: exit=0 35.5s\n"}
+,{"stream_name":"stdout","time":160.762235411,"data":"== ironmule_qwen3-8b_kernel+p16-fuse_projections-interactive: exit=0 87.2s\n"}
+,{"stream_name":"stdout","time":249.947245651,"data":"== ironmule_qwen3-8b_kernel+p16-compiled_fixed_cache-interactive: exit=0 89.2s\n"}
+,{"stream_name":"stdout","time":1476.749252655,"data":"== gate_qwen3-8b_stock_decode: exit=0 1226.8s\n"}
+,{"stream_name":"stdout","time":1724.845227031,"data":"== gate_qwen3-8b_kernel_decode: exit=0 248.1s\n"}
+,{"stream_name":"stdout","time":2200.938634457,"data":"== gate_qwen3-8b_stock_prefill: exit=0 476.1s\n"}
+,{"stream_name":"stdout","time":2217.001903306,"data":"== gate_qwen3-8b_p16_prefill: exit=0 16.1s\n"}
+,{"stream_name":"stdout","time":2713.487855595,"data":"== download_qwen3-14b: exit=0 496.5s\n"}
+,{"stream_name":"stdout","time":3481.867220351,"data":"== gate_qwen3-14b_stock_prefill: exit=0 768.4s\n"}
+,{"stream_name":"stdout","time":3508.307588586,"data":"== gate_qwen3-14b_p16_prefill: exit=0 26.4s\n"}
+,{"stream_name":"stdout","time":3508.308148624,"data":"{\n"}
+,{"stream_name":"stdout","time":3508.308164264,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308170069,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308174781,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308179689,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308184234,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308189019,"data":" \"download_wikitext\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308194374,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308199232,"data":" \"ironmule_qwen3-8b_kernel+p16-fuse_projections-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308204445,"data":" \"ironmule_qwen3-8b_kernel+p16-compiled_fixed_cache-interactive\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308209027,"data":" \"gate_qwen3-8b_stock_decode\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308213434,"data":" \"gate_qwen3-8b_kernel_decode\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308217727,"data":" \"gate_qwen3-8b_stock_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308221953,"data":" \"gate_qwen3-8b_p16_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308226253,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308230758,"data":" \"gate_qwen3-14b_stock_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":3508.308239887,"data":" \"gate_qwen3-14b_p16_prefill\": 0\n"}
+,{"stream_name":"stdout","time":3508.308243788,"data":"}\n"}
+,{"stream_name":"stderr","time":3510.61624243,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":3510.616322927,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":3510.967810552,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":3510.967840546,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":3512.01771214,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":3513.385451929,"data":"[NbConvertApp] Writing 359539 bytes to __results__.html\n"}
+]

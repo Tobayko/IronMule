@@ -1,0 +1,67 @@
+[{"stream_name":"stdout","time":0.937445312,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.107646226,"data":"== clone: exit=0 2.2s\n"}
+,{"stream_name":"stdout","time":11.226839778,"data":"== venv: exit=0 8.1s\n"}
+,{"stream_name":"stdout","time":30.875819693,"data":"== install: exit=0 19.6s\n"}
+,{"stream_name":"stdout","time":30.975970155,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":138.392819592,"data":"== kernel_probe: exit=0 107.4s\n"}
+,{"stream_name":"stdout","time":140.017591388,"data":"== download_wikitext: exit=0 1.6s\n"}
+,{"stream_name":"stdout","time":165.510397345,"data":"== download_qwen3-8b: exit=0 25.5s\n"}
+,{"stream_name":"stdout","time":378.365446457,"data":"== e2e_qwen3-8b_stock: exit=0 212.9s\n"}
+,{"stream_name":"stdout","time":476.925970993,"data":"== e2e_qwen3-8b_fp32: exit=0 98.6s\n"}
+,{"stream_name":"stdout","time":616.930313565,"data":"== e2e_qwen3-8b_kernel: exit=0 140.0s\n"}
+,{"stream_name":"stdout","time":650.764860288,"data":"== e2e_qwen3-8b_kernel+p16: exit=0 33.8s\n"}
+,{"stream_name":"stdout","time":703.289295893,"data":"== e2e_qwen3-8b_fp32+k32: exit=0 52.5s\n"}
+,{"stream_name":"stdout","time":744.052054485,"data":"== e2e_qwen3-8b_fp32+k32+p16: exit=0 40.8s\n"}
+,{"stream_name":"stdout","time":917.477298345,"data":"== nll_qwen3-8b_stock_decode: exit=0 173.4s\n"}
+,{"stream_name":"stdout","time":965.605354007,"data":"== nll_qwen3-8b_kernel_decode: exit=0 48.1s\n"}
+,{"stream_name":"stdout","time":1071.231366999,"data":"== nll_qwen3-8b_fp32_decode: exit=0 105.6s\n"}
+,{"stream_name":"stdout","time":1137.44608288,"data":"== nll_qwen3-8b_fp32+k32_decode: exit=0 66.2s\n"}
+,{"stream_name":"stdout","time":1206.651223657,"data":"== nll_qwen3-8b_stock_prefill: exit=0 69.2s\n"}
+,{"stream_name":"stdout","time":1215.531401581,"data":"== nll_qwen3-8b_p16_prefill: exit=0 8.9s\n"}
+,{"stream_name":"stdout","time":1228.672430972,"data":"== nll_qwen3-8b_fp32_prefill: exit=0 13.1s\n"}
+,{"stream_name":"stdout","time":1237.642357538,"data":"== nll_qwen3-8b_fp32+p16_prefill: exit=0 9.0s\n"}
+,{"stream_name":"stdout","time":1281.845362102,"data":"== download_qwen3-14b: exit=0 44.2s\n"}
+,{"stream_name":"stdout","time":1637.216393248,"data":"== e2e_qwen3-14b_stock: exit=0 355.4s\n"}
+,{"stream_name":"stdout","time":1759.670459315,"data":"== e2e_qwen3-14b_fp32: exit=0 122.5s\n"}
+,{"stream_name":"stdout","time":2005.152336045,"data":"== e2e_qwen3-14b_kernel: exit=0 245.5s\n"}
+,{"stream_name":"stdout","time":2057.952671401,"data":"== e2e_qwen3-14b_kernel+p16: exit=0 52.8s\n"}
+,{"stream_name":"stdout","time":2142.922270938,"data":"== e2e_qwen3-14b_fp32+k32: exit=0 85.0s\n"}
+,{"stream_name":"stdout","time":2209.016584199,"data":"== e2e_qwen3-14b_fp32+k32+p16: exit=0 66.1s\n"}
+,{"stream_name":"stdout","time":2209.017274895,"data":"{\n"}
+,{"stream_name":"stdout","time":2209.017290733,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":2209.01729656,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017302028,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":2209.01730707,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017311991,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017316381,"data":" \"kernel_probe\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017320968,"data":" \"download_wikitext\": 0,\n"}
+,{"stream_name":"stdout","time":2209.01732549,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017329845,"data":" \"e2e_qwen3-8b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017334316,"data":" \"e2e_qwen3-8b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017338658,"data":" \"e2e_qwen3-8b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017352276,"data":" \"e2e_qwen3-8b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017355998,"data":" \"e2e_qwen3-8b_fp32+k32\": 0,\n"}
+,{"stream_name":"stdout","time":2209.01735979,"data":" \"e2e_qwen3-8b_fp32+k32+p16\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017363324,"data":" \"nll_qwen3-8b_stock_decode\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017368186,"data":" \"nll_qwen3-8b_kernel_decode\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017375477,"data":" \"nll_qwen3-8b_fp32_decode\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017399837,"data":" \"nll_qwen3-8b_fp32+k32_decode\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017404379,"data":" \"nll_qwen3-8b_stock_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017408153,"data":" \"nll_qwen3-8b_p16_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":2209.01741223,"data":" \"nll_qwen3-8b_fp32_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017416145,"data":" \"nll_qwen3-8b_fp32+p16_prefill\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017420416,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017424359,"data":" \"e2e_qwen3-14b_stock\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017428269,"data":" \"e2e_qwen3-14b_fp32\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017431667,"data":" \"e2e_qwen3-14b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017435047,"data":" \"e2e_qwen3-14b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017439022,"data":" \"e2e_qwen3-14b_fp32+k32\": 0,\n"}
+,{"stream_name":"stdout","time":2209.017444601,"data":" \"e2e_qwen3-14b_fp32+k32+p16\": 0\n"}
+,{"stream_name":"stdout","time":2209.017448174,"data":"}\n"}
+,{"stream_name":"stderr","time":2211.396476281,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":2211.396578131,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":2211.726631018,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":2211.726674738,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":2212.712290119,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":2214.105171195,"data":"[NbConvertApp] Writing 340823 bytes to __results__.html\n"}
+]

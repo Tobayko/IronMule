@@ -1,0 +1,122 @@
+{
+ "arm": "kernel+p16",
+ "drafts": [
+  2,
+  3,
+  4
+ ],
+ "prompts": [
+  {
+   "prompt_tokens": 24,
+   "plain": {
+    "ttft_ms": 230.6,
+    "decode_tps": 35.834
+   },
+   "spec": {
+    "2": {
+     "ttft_ms": 338.8,
+     "decode_tps": 23.235,
+     "accepted_from_draft": 62,
+     "identical_to_plain": false,
+     "first_diff": 41
+    },
+    "3": {
+     "ttft_ms": 370.89,
+     "decode_tps": 20.349,
+     "accepted_from_draft": 73,
+     "identical_to_plain": true,
+     "first_diff": null
+    },
+    "4": {
+     "ttft_ms": 395.42,
+     "decode_tps": 17.336,
+     "accepted_from_draft": 73,
+     "identical_to_plain": false,
+     "first_diff": 57
+    }
+   }
+  },
+  {
+   "prompt_tokens": 27,
+   "plain": {
+    "ttft_ms": 247.46,
+    "decode_tps": 32.212
+   },
+   "spec": {
+    "2": {
+     "ttft_ms": 361.93,
+     "decode_tps": 28.792,
+     "accepted_from_draft": 78,
+     "identical_to_plain": true,
+     "first_diff": null
+    },
+    "3": {
+     "ttft_ms": 380.65,
+     "decode_tps": 25.925,
+     "accepted_from_draft": 86,
+     "identical_to_plain": false,
+     "first_diff": 114
+    },
+    "4": {
+     "ttft_ms": 404.92,
+     "decode_tps": 26.15,
+     "accepted_from_draft": 94,
+     "identical_to_plain": true,
+     "first_diff": null
+    }
+   }
+  },
+  {
+   "prompt_tokens": 21,
+   "plain": {
+    "ttft_ms": 246.45,
+    "decode_tps": 31.794
+   },
+   "spec": {
+    "2": {
+     "ttft_ms": 376.48,
+     "decode_tps": 25.447,
+     "accepted_from_draft": 71,
+     "identical_to_plain": true,
+     "first_diff": null
+    },
+    "3": {
+     "ttft_ms": 374.33,
+     "decode_tps": 20.045,
+     "accepted_from_draft": 74,
+     "identical_to_plain": false,
+     "first_diff": 65
+    },
+    "4": {
+     "ttft_ms": 395.42,
+     "decode_tps": 18.306,
+     "accepted_from_draft": 77,
+     "identical_to_plain": false,
+     "first_diff": 65
+    }
+   }
+  }
+ ],
+ "summary": {
+  "plain_tps_median": 32.212,
+  "spec2_tps_median": 25.447,
+  "spec2_acceptance": 0.5495,
+  "spec2_identical": 2,
+  "spec3_tps_median": 20.349,
+  "spec3_acceptance": 0.6068,
+  "spec3_identical": 1,
+  "spec4_tps_median": 18.306,
+  "spec4_acceptance": 0.6354,
+  "spec4_identical": 1
+ },
+ "routed": {
+  "kernel": 657623,
+  "k32": 0,
+  "p16": 6412,
+  "fallback": 0
+ },
+ "peak_memory_bytes": 8376934392,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192",
+ "mode": "spec"
+}

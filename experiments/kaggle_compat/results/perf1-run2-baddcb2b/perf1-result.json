@@ -1,0 +1,200 @@
+{
+ "schema": "ironmule.perf1-kaggle.v2",
+ "commit": "b339c817299de173f8a330089afb69973c519353",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.2,
+   "tail": "b339c817299de173f8a330089afb69973c519353\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.1,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 83.0 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.42s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 19.6,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 42 packages in 1.02s\n   Building ironmule @ file:///tmp/IronMule\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading tokenizers (3.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading pygments (1.2MiB)\nDownloading pyarrow (47.8MiB)\nDownloading transformers (11.7MiB)\nDownloading numpy (15.9MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\n Downloaded pygments\n Downloaded sentencepiece\n      Built ironmule @ file:///tmp/IronMule\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 42 packages in 18.31s\nInstalled 42 packages in 108ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.1\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.1\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.2\npyarrow==25.0.1\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "kernel_probe": {
+   "exit": 0,
+   "seconds": 107.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nq_o {'N': 4096, 'K': 4096, 'kernel_bf16_rel_err': 0.0034221874084323645, 'kernel_bf16_ms': 0.2018795899999759, 'kernel_f32_rel_err': 1.5712041090409912e-07, 'kernel_f32_ms': 0.381732339999985, 'qmm_bf16_ms': 0.7897344400001316, 'qmm_fp32_ms': 0.5492732000001865, 'p16_rel_err': 0.002900027437135577, 'p16_512_ms': 1.4843111999994107, 'qmm_bf16_512_ms': 58.071965600004205}\nk_v {'N': 1024, 'K': 4096, 'kernel_bf16_rel_err': 0.0019520125351846218, 'kernel_bf16_ms': 0.16527937999995856, 'kernel_f32_rel_err': 1.3581212954250077e-07, 'kernel_f32_ms': 0.21343486999995775, 'qmm_bf16_ms': 0.33653657000002113, 'qmm_fp32_ms': 0.21284592000000657, 'p16_rel_err': 0.0027863909490406513, 'p16_512_ms': 0.7148540000002868, 'qmm_bf16_512_ms': 16.708607999999003}\ngate_up {'N': 12288, 'K': 4096, 'kernel_bf16_rel_err': 0.003156619844958186, 'kernel_bf16_ms': 0.32655428999987635, 'kernel_f32_rel_err': 1.4861674912935996e-07, 'kernel_f32_ms': 0.5169676699998149, 'qmm_bf16_ms': 1.837929079999867, 'qmm_fp32_ms': 0.6502603000001272, 'p16_rel_err': 0.0026606277097016573, 'p16_512_ms': 3.0470059500004254, 'qmm_bf16_512_ms': 160.62217479999958}\ndown {'N': 4096, 'K': 12288, 'kernel_bf16_rel_err': 0.0017264335183426738, 'kernel_bf16_ms': 0.3343052699997884, 'kernel_f32_rel_err': 1.5806935493856145e-07, 'kernel_f32_ms': 0.8130354300001841, 'qmm_bf16_ms': 1.5139078299998232, 'qmm_fp32_ms': 0.8723875000001158, 'p16_rel_err': 0.0034522353671491146, 'p16_512_ms': 3.3799560000005613, 'qmm_bf16_512_ms': 176.84122379999963}\nlm_head {'N': 151936, 'K': 4096, 'kernel_bf16_rel_err': 0.00253500510007143, 'kernel_bf16_ms': 1.7220218700003898, 'kernel_f32_rel_err': 1.5487567850414052e-07, 'kernel_f32_ms': 3.047942299999704, 'qmm_bf16_ms': 11.26097150000021, 'qmm_fp32_ms': 6.330583839999804, 'p16_rel_err': 0.0023713610135018826, 'p16_512_ms': 40.58530499999904, 'qmm_bf16_512_ms': 2079.6420752000017}\n{\"step_kernel_bf16_ms\": 63.704, \"step_kernel_f32_ms\": 112.391, \"step_qmm_bf16_ms\": 279.184, \"step_qmm_fp32_ms\": 139.428, \"step_p16_512_ms\": 539.988, \"step_qmm_bf16_512_ms\": 25394.924}\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 1.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 25.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "e2e_qwen3-8b_stock": {
+   "exit": 0,
+   "seconds": 212.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"stock\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [27998.81, 27200.16, 27212.66], \"ttft_ms_median\": 27212.66, \"decode_tps\": [6.458, 6.11, 6.344], \"decode_tps_median\": 6.344, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 5688723792, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "e2e_qwen3-8b_fp32": {
+   "exit": 0,
+   "seconds": 98.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [3375.83, 3427.83, 3272.72], \"ttft_ms_median\": 3375.83, \"decode_tps\": [9.947, 10.272, 10.846], \"decode_tps_median\": 10.272, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 7320982312, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "e2e_qwen3-8b_kernel": {
+   "exit": 0,
+   "seconds": 140.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [27780.59, 27178.84, 27162.33], \"ttft_ms_median\": 27178.84, \"decode_tps\": [31.212, 34.741, 32.254], \"decode_tps_median\": 32.254, \"routed\": {\"kernel\": 128524, \"k32\": 0, \"p16\": 0, \"fallback\": 1012}, \"peak_memory_bytes\": 5688723792, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "e2e_qwen3-8b_kernel+p16": {
+   "exit": 0,
+   "seconds": 33.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [723.85, 756.11, 765.48], \"ttft_ms_median\": 756.11, \"decode_tps\": [33.671, 32.466, 31.224], \"decode_tps_median\": 32.466, \"routed\": {\"kernel\": 128524, \"k32\": 0, \"p16\": 1012, \"fallback\": 0}, \"peak_memory_bytes\": 7635738984, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "e2e_qwen3-8b_fp32+k32": {
+   "exit": 0,
+   "seconds": 52.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32+k32\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [3418.62, 3444.88, 3347.65], \"ttft_ms_median\": 3418.62, \"decode_tps\": [20.848, 21.222, 22.185], \"decode_tps_median\": 21.222, \"routed\": {\"kernel\": 0, \"k32\": 128524, \"p16\": 0, \"fallback\": 1012}, \"peak_memory_bytes\": 7320982312, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "e2e_qwen3-8b_fp32+k32+p16": {
+   "exit": 0,
+   "seconds": 40.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32+k32+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [711.67, 746.39, 772.36], \"ttft_ms_median\": 746.39, \"decode_tps\": [23.142, 22.566, 21.927], \"decode_tps_median\": 22.566, \"routed\": {\"kernel\": 0, \"k32\": 128524, \"p16\": 1012, \"fallback\": 0}, \"peak_memory_bytes\": 8964835696, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_stock_decode": {
+   "exit": 0,
+   "seconds": 173.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.4080941677093506\n1 2.2385123670101166\n2 3.4130105823278427\n3 2.6589542031288147\n{\"arm\": \"stock\", \"path_mode\": \"decode\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.4080941677093506, 2.2385123670101166, 3.4130105823278427, 2.6589542031288147], \"mean_nll\": 2.679642830044031, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 166.7, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_kernel_decode": {
+   "exit": 0,
+   "seconds": 48.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.406170941889286\n1 2.2371828630566597\n2 3.4221153408288956\n3 2.653224714100361\n{\"arm\": \"kernel\", \"path_mode\": \"decode\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.406170941889286, 2.2371828630566597, 3.4221153408288956, 2.653224714100361], \"mean_nll\": 2.6796734649688005, \"nonfinite\": 0, \"routed\": {\"kernel\": 259072, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 41.4, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_fp32_decode": {
+   "exit": 0,
+   "seconds": 105.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.403538454324007\n1 2.2307506911456585\n2 3.4125376231968403\n3 2.6481176055967808\n{\"arm\": \"fp32\", \"path_mode\": \"decode\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.403538454324007, 2.2307506911456585, 3.4125376231968403, 2.6481176055967808], \"mean_nll\": 2.6737360935658216, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 98.8, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_fp32+k32_decode": {
+   "exit": 0,
+   "seconds": 66.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.403538417071104\n1 2.2307506687939167\n2 3.41253824532032\n3 2.6481170915067196\n{\"arm\": \"fp32+k32\", \"path_mode\": \"decode\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.403538417071104, 2.2307506687939167, 3.41253824532032, 2.6481170915067196], \"mean_nll\": 2.673736105673015, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 259072, \"p16\": 0, \"fallback\": 0}, \"seconds\": 59.4, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_stock_prefill": {
+   "exit": 0,
+   "seconds": 69.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.403264917433262\n1 2.2332373075187206\n2 3.4139497578144073\n3 2.652708500623703\n{\"arm\": \"stock\", \"path_mode\": \"prefill\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.403264917433262, 2.2332373075187206, 3.4139497578144073, 2.652708500623703], \"mean_nll\": 2.675790120847523, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 62.5, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_p16_prefill": {
+   "exit": 0,
+   "seconds": 8.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.4017782360315323\n1 2.229111049324274\n2 3.4231496304273605\n3 2.64842139929533\n{\"arm\": \"p16\", \"path_mode\": \"prefill\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.4017782360315323, 2.229111049324274, 3.4231496304273605, 2.64842139929533], \"mean_nll\": 2.6756150787696242, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 1012, \"fallback\": 0}, \"seconds\": 2.1, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_fp32_prefill": {
+   "exit": 0,
+   "seconds": 13.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.40353861451149\n1 2.230751108378172\n2 3.4125373028218746\n3 2.6481187753379345\n{\"arm\": \"fp32\", \"path_mode\": \"prefill\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.40353861451149, 2.230751108378172, 3.4125373028218746, 2.6481187753379345], \"mean_nll\": 2.6737364502623677, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"seconds\": 6.4, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "nll_qwen3-8b_fp32+p16_prefill": {
+   "exit": 0,
+   "seconds": 9.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\n0 2.403661869466305\n1 2.231091670691967\n2 3.4123730957508087\n3 2.6479259952902794\n{\"arm\": \"fp32+p16\", \"path_mode\": \"prefill\", \"chunks\": 4, \"chunk_tokens\": 256, \"chunk_nll\": [2.403661869466305, 2.231091670691967, 3.4123730957508087, 2.6479259952902794], \"mean_nll\": 2.67376315779984, \"nonfinite\": 0, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 1012, \"fallback\": 0}, \"seconds\": 2.2, \"performance_claim\": false, \"mode\": \"nll\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\"}\n"
+  },
+  "download_qwen3-14b": {
+   "exit": 0,
+   "seconds": 44.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\n"
+  },
+  "e2e_qwen3-14b_stock": {
+   "exit": 0,
+   "seconds": 355.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"stock\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [49627.98, 49705.39, 49682.9], \"ttft_ms_median\": 49682.9, \"decode_tps\": [3.453, 3.448, 3.44], \"decode_tps_median\": 3.448, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 9359130856, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  },
+  "e2e_qwen3-14b_fp32": {
+   "exit": 0,
+   "seconds": 122.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [6375.85, 6065.44, 6107.06], \"ttft_ms_median\": 6107.06, \"decode_tps\": [5.757, 5.913, 5.759], \"decode_tps_median\": 5.759, \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"fallback\": 0}, \"peak_memory_bytes\": 11399531720, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  },
+  "e2e_qwen3-14b_kernel": {
+   "exit": 0,
+   "seconds": 245.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [49845.07, 48867.3, 49399.02], \"ttft_ms_median\": 49399.02, \"decode_tps\": [17.673, 17.355, 17.843], \"decode_tps_median\": 17.673, \"routed\": {\"kernel\": 142748, \"k32\": 0, \"p16\": 0, \"fallback\": 1124}, \"peak_memory_bytes\": 9359130856, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  },
+  "e2e_qwen3-14b_kernel+p16": {
+   "exit": 0,
+   "seconds": 52.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [1218.15, 1269.1, 1328.23], \"ttft_ms_median\": 1269.1, \"decode_tps\": [17.903, 17.002, 16.07], \"decode_tps_median\": 17.002, \"routed\": {\"kernel\": 142748, \"k32\": 0, \"p16\": 1124, \"fallback\": 0}, \"peak_memory_bytes\": 12043661384, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  },
+  "e2e_qwen3-14b_fp32+k32": {
+   "exit": 0,
+   "seconds": 85.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32+k32\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [6379.8, 6192.93, 6028.75], \"ttft_ms_median\": 6192.93, \"decode_tps\": [11.813, 12.656, 12.874], \"decode_tps_median\": 12.656, \"routed\": {\"kernel\": 0, \"k32\": 142748, \"p16\": 0, \"fallback\": 1124}, \"peak_memory_bytes\": 11399531720, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  },
+  "e2e_qwen3-14b_fp32+k32+p16": {
+   "exit": 0,
+   "seconds": 66.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"fp32+k32+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [1331.53, 1417.86, 1479.88], \"ttft_ms_median\": 1417.86, \"decode_tps\": [12.289, 11.563, 11.815], \"decode_tps_median\": 11.815, \"routed\": {\"kernel\": 0, \"k32\": 142748, \"p16\": 1124, \"fallback\": 0}, \"peak_memory_bytes\": 13807027272, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"mode\": \"e2e\", \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4\"}\n"
+  }
+ },
+ "performance_claim": false,
+ "parts_ok": {
+  "kernel": true,
+  "k32": true,
+  "p16": true
+ },
+ "e2e_arms": [
+  "stock",
+  "fp32",
+  "kernel",
+  "kernel+p16",
+  "fp32+k32",
+  "fp32+k32+p16"
+ ],
+ "nll_arms": [
+  [
+   "stock",
+   "decode"
+  ],
+  [
+   "kernel",
+   "decode"
+  ],
+  [
+   "fp32",
+   "decode"
+  ],
+  [
+   "fp32+k32",
+   "decode"
+  ],
+  [
+   "stock",
+   "prefill"
+  ],
+  [
+   "p16",
+   "prefill"
+  ],
+  [
+   "fp32",
+   "prefill"
+  ],
+  [
+   "fp32+p16",
+   "prefill"
+  ]
+ ],
+ "finished": true
+}

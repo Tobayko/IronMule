@@ -1,0 +1,3 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"arm": "kernel+p16", "knobs": {"compiled_fixed_cache": true, "fused_argmax": true, "head_skip_prefill": true, "readback_every": 2, "capacity_slack": 128, "fuse_projections": true}, "runtime_mode": "throughput", "walls_ms": [10500.162412, 11211.289282], "routed": {"kernel": 163, "k32": 0, "p16": 2592, "fallback": 0}, "peak_memory_bytes": 7270160568, "performance_claim": false, "mode": "ironmule"}

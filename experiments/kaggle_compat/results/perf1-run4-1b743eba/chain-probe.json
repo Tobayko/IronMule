@@ -1,0 +1,31 @@
+{
+ "schema": "ironmule.perf1-chain.v1",
+ "device": "Device(gpu, 0)",
+ "performance_claim": false,
+ "kernel_step_ms": [
+  26.175,
+  26.223,
+  25.981,
+  26.087,
+  25.954,
+  26.137,
+  26.068,
+  26.009,
+  23.446,
+  21.764
+ ],
+ "kernel_step_ms_median": 26.038,
+ "qmm_bf16_step_ms": [
+  132.233,
+  132.684,
+  132.308,
+  132.961,
+  132.796,
+  133.268,
+  132.586,
+  133.358,
+  132.599,
+  133.804
+ ],
+ "qmm_bf16_step_ms_median": 132.74
+}

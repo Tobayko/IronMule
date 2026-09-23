@@ -1,0 +1,12 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+model mlx-community/Qwen3-8B-4bit
+plan strict   requests 6   warmup 2   repeats 6
+
+mode            outer ms p50 physical tok/s  visible tok/s    exec ms p50   outer spread
+interactive          10013.4           28.8           28.8         8686.9[9636.5; 10484.9]
+throughput           10300.1           28.0           28.0         8943.7[9292.2; 10937.2]
+
+throughput gain -1.39%   outer-wall ratio 1.0139 95% CI [0.9651; 1.0476]
+identical answers in both modes: True
+wrote /kaggle/working/benchmark-8b-native.json

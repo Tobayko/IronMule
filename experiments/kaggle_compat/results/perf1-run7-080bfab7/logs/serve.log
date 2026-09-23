@@ -1,0 +1,3 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+ironmule: model is not registered: mlx-community/Qwen3-8B-4bit

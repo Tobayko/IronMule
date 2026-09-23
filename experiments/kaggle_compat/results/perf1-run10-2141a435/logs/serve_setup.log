@@ -1,0 +1,28 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "models_loaded": false,
+  "next": "ironmule models add <cached-model-id>",
+  "settings": {
+    "exact": true,
+    "max_pending": 8,
+    "mode": "desktop",
+    "optimization_paused": false,
+    "request_timeout_s": 120,
+    "schema": 1
+  },
+  "state_dir": "/tmp/ironmule-product"
+}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "hardware_qualified": false,
+  "models_loaded": false,
+  "registered": {
+    "model_id": "mlx-community/Qwen3-8B-4bit",
+    "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+    "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192",
+    "weight_bytes": 4607835174
+  },
+  "warnings": []
+}

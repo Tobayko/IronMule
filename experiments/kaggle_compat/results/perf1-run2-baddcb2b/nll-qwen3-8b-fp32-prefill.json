@@ -1,0 +1,24 @@
+{
+ "arm": "fp32",
+ "path_mode": "prefill",
+ "chunks": 4,
+ "chunk_tokens": 256,
+ "chunk_nll": [
+  2.40353861451149,
+  2.230751108378172,
+  3.4125373028218746,
+  2.6481187753379345
+ ],
+ "mean_nll": 2.6737364502623677,
+ "nonfinite": 0,
+ "routed": {
+  "kernel": 0,
+  "k32": 0,
+  "p16": 0,
+  "fallback": 0
+ },
+ "seconds": 6.4,
+ "performance_claim": false,
+ "mode": "nll",
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192"
+}

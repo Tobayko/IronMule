@@ -1,0 +1,36 @@
+{
+ "arm": "kernel+mma+p16",
+ "requests": 8,
+ "new_tokens": 128,
+ "widths": {
+  "8": {
+   "wall_s": 17.576,
+   "aggregate_tps": 58.261,
+   "ttft_ms": [
+    899.7,
+    899.7,
+    899.7,
+    899.7,
+    899.7,
+    899.7,
+    899.7,
+    899.7
+   ],
+   "ttft_ms_median": 899.7,
+   "identical_to_width1": 8
+  }
+ },
+ "arith": "free",
+ "routed": {
+  "kernel": 0,
+  "k32": 0,
+  "p16": 506,
+  "mma": 65274,
+  "mma2": 0,
+  "fallback": 0
+ },
+ "peak_memory_bytes": 7383362680,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192",
+ "mode": "server"
+}
