@@ -737,7 +737,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
-    parser.add_argument("--compute-dtype", choices=("float32",), default=None)
+    parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None)
     args = parser.parse_args(argv)
     startup_started = time.monotonic()
     prefix_session = engine_bridge = automatic_runtime = None
@@ -757,11 +757,15 @@ def main(argv: list[str] | None = None) -> int:
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
         model, tokenizer, stream_generate, device = _load(spec)
-        if args.compute_dtype == "float32":
+        if args.compute_dtype is not None:
             if args.execution_variant != "reference":
                 raise ValueError("compute_dtype is available on the reference worker only")
             import mlx.core as mx
-            model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
+            if args.compute_dtype == "float32":
+                model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
+            else:
+                from ironmule.cuda_native import install
+                install(model, mx.device_info() if mx.cuda.is_available() else None)
         if identity is not None:
             assert_model_unchanged(spec, identity)
         if args.execution_variant == "prefix_reuse":

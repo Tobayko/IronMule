@@ -120,9 +120,9 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--compute-dtype", choices=("float32",), default=None,
+    parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere); "
-                             "about 2x faster there, changes output")
+                             "changes output; which one pays is per model, see `ironmule plans`")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")

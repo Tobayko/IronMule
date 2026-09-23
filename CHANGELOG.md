@@ -4,6 +4,15 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **`--compute-dtype native`: IronMule's own CUDA kernels for GPUs that emulate bfloat16.**
+  On NVIDIA below compute capability 8 (Turing, Volta) the bf16 checkpoint stays and its
+  4-bit matmuls run on a native kernel (decode) and one float16 tensor-core GEMM (prefill).
+  Qwen 3 8B on a free Kaggle T4: `ironmule benchmark`'s workload at `0.2013` of stock wall
+  time (`+397%`), decode `6.3 -> 32-40 tok/s`, time to first token for 512 tokens
+  `27.2 s -> 0.76 s`; quality gate passed on every path it changes (worst `1.000510
+  [0.998894; 1.002001]`, bound 1.005). Opt-in, refused on any other device, probe-gated at
+  load, and `ironmule plans` now recommends it for Qwen 3 there. Evidence: `research/LEDGER.md`,
+  PERF1.
 - **Models load again with huggingface_hub 1.32.** It links snapshots into one hub-wide
   `blobs/` store; the model-identity check, the model inventory behind `ironmule models add`
   and the product's runtime identity allowed only `models--*/blobs`, so every model was
