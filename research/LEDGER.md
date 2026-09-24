@@ -5410,3 +5410,41 @@ and `ironmule models list` warns that the 4B snapshot's weight index names two s
 mlx-lm selects `model.safetensors`. Validity: Linux, CUDA sm_75; nothing here speaks for Apple
 Silicon or Metal. The research suite is not collected off the target Mac and was not run.
 Runs 1-2 used about 25 min of free GPU quota, 0 EUR.
+
+## TEST2 — the largest CUDA ratios, re-measured with more processes (2026-09-24)
+
+Question: do the README's largest ratios that PERF1-Z (run 18) does not cover hold with more
+than the two processes they were published from? Rules fixed before the run in
+`docs/PROJECT_FRIDAY_BACKLOG.md` (TEST2): each arm with its published configuration through
+`cross.py child`, fresh processes, arm order rotated per repetition, a new median more than 5%
+from the published ratio replaces it. Kaggle 2 x Tesla T4 (one used), driver 580.159.04, mlx
+0.32.2, mlx-lm 0.31.3, commit `af848ba`, the pinned revisions of the published runs. Raw
+processes, the verdict file and the submitted notebook: `experiments/kaggle_compat/results/test2-run1-3f938041/`.
+
+| ratio against stock | published | TEST2 median [range] | reps | verdict | tokens equal to stock |
+| :-- | --: | --: | --: | :-- | :-- |
+| Qwen 3 8B `native` | 0.2013 (PERF1 run 7) | **0.1940** [0.1856; 0.1981], 5.15x | 4 | reproduced (-3.6%) | 6/6 |
+| Qwen 3 8B `float32` | 0.5346 (PORT2 run 6) | **0.5338** [0.5222; 0.5474], 1.87x | 4 | reproduced (-0.1%) | 5/6 |
+| Qwen 3 8B `float16` | 0.3100 (PORT2 run 6) | **0.3154** [0.3089; 0.3258], 3.17x | 4 | reproduced (+1.7%) | 5/6 |
+| Qwen 3 14B `native` | 0.2078 (PERF1 run 7) | **0.2054** [0.1996; 0.2085], 4.87x | 3 | reproduced (-1.2%) | 3/6 |
+| Qwen 3 14B `float32` | 0.5157 (PORT2 run 4) | **0.5169** [0.5150; 0.5183], 1.93x | 3 | reproduced (+0.2%) | 2/6 |
+| gpt-oss 20B `float32` / `float16` | 0.2818 / 0.1991 | not measured | 0 | open | — |
+
+Stock was deterministic across processes for all three models (one output digest each) and
+varied by 3.7% (8B, 4 processes) and 0.8% (14B, 3 processes) in wall time; every published
+ratio lies inside or next to its new range. The README's 4.97x, 4.81x, 1.87x, 3.23x and 1.94x
+stand. With three or four processes of one measured pass each this is still a small sample;
+the ranges are the full spread, not confidence intervals.
+
+**Where the tokens part is the model's, not the plan's.** On 14B `native` and `float32` leave
+stock in the same requests at the same positions (tokens 4, 35 and 8); on 8B `float32` and
+`float16` both leave it in one request at token 32 while `native` does not. Stock itself is
+deterministic, so the plans cause the change, but at positions two different arithmetics find
+alike, which fits close top-two logits in the model at those steps; the logit margins were not
+measured. The 14B `native` decode path still has no quality gate of its own (PERF1 run 5 gated
+decode on 8B, prefill on 8B and 14B).
+
+**gpt-oss was not measured, by the harness's fault.** Its block needs about 11 min per
+repetition; the notebook entered it with less than 10 min left and only checked the time
+between repetitions, so both plan arms hit the stage deadline after stock (127 s per workload)
+had run. Run time 63 min against the approved 60, 0 EUR.
