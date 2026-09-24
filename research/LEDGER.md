@@ -5450,3 +5450,26 @@ differences, as a different plan's do. Against stock this is about 0.20 by way o
 run for `native` on Gemma 3, so `numeric_plans.py` gains no row and `doctor` recommends
 nothing new; the 16 x 512 gate against stock bf16 is owed (backlog PERF1-Y). Run 17 used about
 0.25 h of free GPU quota, 0 EUR.
+
+## Gemma's perplexity gates ran without BOS (2026-09-24)
+
+Found while preparing PERF1-Y's gate; Mac (Metal, mlx 0.32.0) diagnostic, no T4 run.
+`quality.py` (PORT2's gate) and `perf1.py nll` slice every chunk from one encode of the whole
+text, so only the first chunk can start with the model's BOS token, and Gemma 4's tokenizer
+adds none at all. Gemma reads a sequence without BOS badly:
+
+| WikiText-2 raw test, 16 x 512, bf16, Mac | chunks as the gates cut them | BOS on every chunk | gate's own number (T4) |
+| :-- | --: | --: | --: |
+| Gemma 3 4B perplexity | 103.3 | **26.9** | 100.5 |
+| Gemma 4 E2B perplexity | 21 532 | **353** | 22 212 |
+
+The Mac reproduces both T4 references to within a few per cent, so the absurd Gemma 4
+reference that made its gates "unusable" (numeric_plans.py, former PORT2-I) is mostly a harness
+artefact, not a model or CUDA defect; 353 is still high and not explained. Every Gemma
+perplexity verdict so far was measured in this no-BOS regime, where a change of rounding alone
+moves a Gemma 3 12B chunk by up to 0.34 nats (float32 matmuls included): Gemma 3's `float32`
+pass and 4B's `float16` failure (102.5 -> 209.6) included. They stay as recorded — sealed
+results are not repaired — and a gate with BOS is a new run (backlog PORT2-K). Qwen's tokenizers
+have no BOS and are unaffected; Llama 3.1's adds one to the first chunk only, as with Gemma 3.
+`perf1.py nll` now starts every chunk with BOS and records `bos` in its output; `quality.py` is
+unchanged until a run needs it.

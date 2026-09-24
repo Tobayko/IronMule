@@ -180,8 +180,8 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
-  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 scheidet aus, solange PORT2-I
-  seine bf16-Referenz nicht erklärt). Kill: obere Intervallgrenze > 1,005 — dann Experten
+  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 erst nach PORT2-K, dem
+  Gate mit BOS je Chunk). Kill: obere Intervallgrenze > 1,005 — dann Experten
   unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
 - **PERF1-V 8-bit-Router im Zeilen-Kernel.** Qwens `mlp.gate`/`shared_expert_gate` und Gemmas
   `router.proj` sind 8-bit und laufen weiter emuliert (run 14: 20480 bzw. 16184 Aufrufe im
@@ -212,6 +212,18 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
   Matmuls — dann Fusion unter `native` verweigern.
+
+## PORT2 — Rest (2026-09-24)
+
+- **PORT2-K Gemma-Gates mit BOS in jedem Chunk wiederholen.** `quality.py` und `perf1.py nll`
+  schnitten die Chunks aus einem Encode; nur der erste konnte mit BOS beginnen, Gemma 4s
+  Tokenizer setzt gar keins. Mac: Gemma 3 4B Perplexität 103,3 ohne, 26,9 mit BOS; Gemma 4
+  E2B 21 532 gegen 353 (Ledger „Gemma's perplexity gates ran without BOS“). Alle Gemma-Urteile
+  (float32 bestanden, 4B-float16 durchgefallen, Gemma 4 „unbrauchbar“) stammen aus diesem
+  Regime. Test: dieselben Gates mit BOS je Chunk auf der T4, neuer Lauf, alte Urteile bleiben
+  stehen. Kill: kein Urteil ändert sich — dann nur Fußnote; ändert sich eines, bekommt
+  `numeric_plans.py` die neue Zeile mit neuem Beleg. Offen daneben: warum Gemma 4 E2B auch mit
+  BOS bei 353 liegt.
 
 ## DATA3 — Rest (2026-09-15)
 

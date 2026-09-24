@@ -605,10 +605,16 @@ def nll(model, tokenizer, arm, path_mode, text_path):
     with open(text_path) as stream:
         ids = tokenizer.encode(stream.read())
     stride = (len(ids) - NLL_TOKENS - 1) // NLL_CHUNKS
+    # Every chunk starts with the model's BOS where it has one. Sliced from one encode, only the
+    # first did: Gemma 3 4B then scored perplexity 103 on a Mac, 26.9 with BOS on every chunk, and
+    # Gemma 4 E2B (whose tokenizer adds none) 21532 against 353 (2026-09-24).
+    bos = getattr(tokenizer, "bos_token_id", None)
     chunks, nonfinite = [], 0
     started = time.time()
     for i in range(NLL_CHUNKS):
         seq = ids[i * stride:i * stride + NLL_TOKENS + 1]
+        if bos is not None and seq[0] != bos:
+            seq = [bos] + seq[:-1]
         if path_mode == "prefill":
             logits = model(mx.array(seq[:-1])[None, :])[0].astype(mx.float32)
             lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
@@ -627,7 +633,7 @@ def nll(model, tokenizer, arm, path_mode, text_path):
         nonfinite += sum(not math.isfinite(v) for v in values)
         chunks.append(sum(values) / len(values))
         print(i, chunks[-1], flush=True)
-    return {"arm": arm, "path_mode": path_mode, "chunks": NLL_CHUNKS, "chunk_tokens": NLL_TOKENS,
+    return {"arm": arm, "path_mode": path_mode, "chunks": NLL_CHUNKS, "chunk_tokens": NLL_TOKENS, "bos": bos,
             "chunk_nll": chunks, "mean_nll": sum(chunks) / len(chunks), "nonfinite": nonfinite,
             "routed": dict(routed), "seconds": round(time.time() - started, 1),
             "performance_claim": False}
