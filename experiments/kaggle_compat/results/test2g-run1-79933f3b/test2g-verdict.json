@@ -1,0 +1,68 @@
+{
+ "gptoss-20b": {
+  "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+  "revision": "f356f2747216d7e98fee755df25987459fc19089",
+  "reps": 3,
+  "stock_walls_s": [
+   131.75,
+   132.11,
+   132.27
+  ],
+  "stock_spread": 0.003915541846627013,
+  "stock_deterministic": true,
+  "arms": {
+   "ironmule_fp32": {
+    "ratios": [
+     0.273,
+     0.2755,
+     0.2817
+    ],
+    "median": 0.2754844828597305,
+    "min": 0.27301679756777775,
+    "max": 0.2816951535403449,
+    "speedup": 3.629968518078653,
+    "identical_requests": 2,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     33,
+     null,
+     28,
+     5,
+     18,
+     null
+    ],
+    "published": 0.2818,
+    "source": "PORT2 run 6",
+    "deviation": -0.022411345423241746,
+    "verdict": "reproduced"
+   },
+   "ironmule_fp16": {
+    "ratios": [
+     0.1894,
+     0.1975,
+     0.2029
+    ],
+    "median": 0.1975052508514892,
+    "min": 0.18942039067909816,
+    "max": 0.20289159357389497,
+    "speedup": 5.06315652717473,
+    "identical_requests": 3,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     33,
+     null,
+     null,
+     5,
+     18,
+     null
+    ],
+    "published": 0.1991,
+    "source": "PORT2 run 6",
+    "deviation": -0.0080097897966388,
+    "verdict": "reproduced"
+   }
+  }
+ }
+}

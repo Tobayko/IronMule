@@ -1,0 +1,33 @@
+[{"stream_name":"stdout","time":1.082636733,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.431913497,"data":"== clone: exit=0 2.3s\n"}
+,{"stream_name":"stdout","time":12.160552761,"data":"== venv: exit=0 8.7s\n"}
+,{"stream_name":"stdout","time":36.468892966,"data":"== install: exit=0 24.3s\n"}
+,{"stream_name":"stdout","time":36.571739247,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":116.68485564,"data":"== download_gptoss-20b: exit=0 80.1s\n"}
+,{"stream_name":"stdout","time":589.138454081,"data":"gptoss-20b stock 0 131750.426686 0\n"}
+,{"stream_name":"stdout","time":803.268751988,"data":"gptoss-20b ironmule_fp32 0 35970.079572 0\n"}
+,{"stream_name":"stdout","time":998.61721521,"data":"gptoss-20b ironmule_fp16 0 24956.217295 0\n"}
+,{"stream_name":"stdout","time":1144.618273431,"data":"gptoss-20b ironmule_fp32 1 36393.457292 0\n"}
+,{"stream_name":"stdout","time":1273.510203029,"data":"gptoss-20b ironmule_fp16 1 26091.846761 0\n"}
+,{"stream_name":"stdout","time":1624.351262192,"data":"gptoss-20b stock 1 132107.104234 0\n"}
+,{"stream_name":"stdout","time":1768.212988144,"data":"gptoss-20b ironmule_fp16 2 26835.720585 0\n"}
+,{"stream_name":"stdout","time":2127.348942918,"data":"gptoss-20b stock 2 132266.300995 0\n"}
+,{"stream_name":"stdout","time":2293.223795071,"data":"gptoss-20b ironmule_fp32 2 37258.775967 0\n"}
+,{"stream_name":"stdout","time":2293.226943052,"data":"{\n"}
+,{"stream_name":"stdout","time":2293.227001128,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227008398,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227014438,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227020528,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227026524,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227032555,"data":" \"download_gptoss-20b\": 0,\n"}
+,{"stream_name":"stdout","time":2293.2270386,"data":" \"cross_gptoss-20b_rep0\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227044033,"data":" \"cross_gptoss-20b_rep1\": 0,\n"}
+,{"stream_name":"stdout","time":2293.227049392,"data":" \"cross_gptoss-20b_rep2\": 0\n"}
+,{"stream_name":"stdout","time":2293.227055618,"data":"}\n"}
+,{"stream_name":"stderr","time":2296.076634401,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":2296.076750108,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":2296.421183892,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":2296.421224634,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":2297.384543382,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":2299.105752688,"data":"[NbConvertApp] Writing 314898 bytes to __results__.html\n"}
+]
