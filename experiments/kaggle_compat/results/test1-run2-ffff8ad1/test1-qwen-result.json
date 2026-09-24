@@ -1,0 +1,73 @@
+{
+ "schema": "ironmule.test1-qwen-kaggle.v1",
+ "commit": "2151eb27f628ec2863ed44a732b52c7d3f1a6c8e",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, driver_version, memory.total [MiB]\n0, Tesla T4, 580.159.04, 15360 MiB\n1, Tesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.4,
+   "tail": "2151eb27f628ec2863ed44a732b52c7d3f1a6c8e\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.7,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 81.7 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.61s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 21.3,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 48 packages in 1.44s\n   Building ironmule @ file:///tmp/IronMule\nDownloading transformers (11.7MiB)\nDownloading tokenizers (3.2MiB)\nDownloading pygments (1.2MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading numpy (15.9MiB)\nDownloading hf-xet (4.3MiB)\nDownloading scipy (33.7MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 48 packages in 19.54s\nInstalled 48 packages in 104ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==4.0.3\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.2\n + psutil==7.2.2\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==4.0.3\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.2\npsutil==7.2.2\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_qwen35_9b": {
+   "exit": 0,
+   "seconds": 41.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.5-9B-MLX-4bit/snapshots/938d8919941c6e7efd3c7150eff7fe9d12afa631\n"
+  },
+  "pytest_qwen_graphs1_a": {
+   "exit": 1,
+   "seconds": 126.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n============================= test session starts ==============================\nplatform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /tmp/im/bin/python\nrootdir: /tmp/IronMule\nconfigfile: pytest.ini\nplugins: anyio-4.15.1, xdist-3.8.0\ncollecting ... collected 1 item\n\ntests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes FAILED [100%]\n\n=================================== FAILURES ===================================\n_________ test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes _________\n\nqwen_runtime = (<ironmule.service.Runtime object at 0x78e8cd1eff50>, <module 'ironmule' from '/tmp/IronMule/ironmule/__init__.py'>)\n\n    def test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes(qwen_runtime):\n        rt, ironmule = qwen_runtime\n        prompt_ids = [rt.encode(prompt) for prompt in PROMPTS]\n        references = [_reference_tokens(rt, ids) for ids in prompt_ids]\n        for ids in prompt_ids:\n            _check_recurrent_shapes(rt, ironmule, ids)\n    \n        rt.mode = ironmule.InteractiveMode()\n        requests = [\n            ironmule.Request(\n                prompt_ids=ids,\n                max_tokens=IRONMULE_MAX_TOKENS,\n                plan=ironmule.StrictOneShotPlan(),\n                rid=f\"qwen{i}\",\n            )\n            for i, ids in enumerate(prompt_ids)\n        ]\n        interactive = rt.serve(requests)\n        for result, expected in zip(interactive, references):\n>           assert result.tokens == expected\nE           AssertionError: assert [90700, 8340,..., 16, 13, ...] == [271, 760, 19...198, 760, ...]\nE             \nE             At index 0 diff: 90700 != 271\nE             \nE             Full diff:\nE               [\nE             +     90700,\nE             +     8340,...\nE             \nE             ...Full output truncated (20 lines hidden), use '-vv' to show\n\ntests/engine/test_qwen_hybrid_integration.py:139: AssertionError\n-------- generated xml file: /kaggle/working/pytest_qwen_graphs1_a.xml ---------\n=========================== short test summary info ============================\nFAILED tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes\n======================== 1 failed in 124.83s (0:02:04) =========================\n"
+  },
+  "pytest_qwen_graphs0_a": {
+   "exit": 0,
+   "seconds": 66.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n============================= test session starts ==============================\nplatform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /tmp/im/bin/python\nrootdir: /tmp/IronMule\nconfigfile: pytest.ini\nplugins: anyio-4.15.1, xdist-3.8.0\ncollecting ... collected 1 item\n\ntests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes PASSED [100%]\n\n-------- generated xml file: /kaggle/working/pytest_qwen_graphs0_a.xml ---------\n========================= 1 passed in 65.32s (0:01:05) =========================\n"
+  },
+  "pytest_qwen_graphs1_b": {
+   "exit": 1,
+   "seconds": 58.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n============================= test session starts ==============================\nplatform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /tmp/im/bin/python\nrootdir: /tmp/IronMule\nconfigfile: pytest.ini\nplugins: anyio-4.15.1, xdist-3.8.0\ncollecting ... collected 1 item\n\ntests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes FAILED [100%]\n\n=================================== FAILURES ===================================\n_________ test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes _________\n\nqwen_runtime = (<ironmule.service.Runtime object at 0x7e3f587fb9b0>, <module 'ironmule' from '/tmp/IronMule/ironmule/__init__.py'>)\n\n    def test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes(qwen_runtime):\n        rt, ironmule = qwen_runtime\n        prompt_ids = [rt.encode(prompt) for prompt in PROMPTS]\n        references = [_reference_tokens(rt, ids) for ids in prompt_ids]\n        for ids in prompt_ids:\n            _check_recurrent_shapes(rt, ironmule, ids)\n    \n        rt.mode = ironmule.InteractiveMode()\n        requests = [\n            ironmule.Request(\n                prompt_ids=ids,\n                max_tokens=IRONMULE_MAX_TOKENS,\n                plan=ironmule.StrictOneShotPlan(),\n                rid=f\"qwen{i}\",\n            )\n            for i, ids in enumerate(prompt_ids)\n        ]\n        interactive = rt.serve(requests)\n        for result, expected in zip(interactive, references):\n>           assert result.tokens == expected\nE           AssertionError: assert [90700, 8340,..., 16, 13, ...] == [271, 760, 19...198, 760, ...]\nE             \nE             At index 0 diff: 90700 != 271\nE             \nE             Full diff:\nE               [\nE             +     90700,\nE             +     8340,...\nE             \nE             ...Full output truncated (20 lines hidden), use '-vv' to show\n\ntests/engine/test_qwen_hybrid_integration.py:139: AssertionError\n-------- generated xml file: /kaggle/working/pytest_qwen_graphs1_b.xml ---------\n=========================== short test summary info ============================\nFAILED tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes\n============================== 1 failed in 57.65s ==============================\n"
+  },
+  "pytest_qwen_graphs0_b": {
+   "exit": 0,
+   "seconds": 66.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n============================= test session starts ==============================\nplatform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /tmp/im/bin/python\nrootdir: /tmp/IronMule\nconfigfile: pytest.ini\nplugins: anyio-4.15.1, xdist-3.8.0\ncollecting ... collected 1 item\n\ntests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes PASSED [100%]\n\n-------- generated xml file: /kaggle/working/pytest_qwen_graphs0_b.xml ---------\n========================= 1 passed in 66.03s (0:01:06) =========================\n"
+  }
+ },
+ "pytest_qwen_graphs1_a": {
+  "exit": 1,
+  "line": "1 failed in 124.83s (0:02:04)"
+ },
+ "pytest_qwen_graphs0_a": {
+  "exit": 0,
+  "line": "1 passed in 65.32s (0:01:05)"
+ },
+ "pytest_qwen_graphs1_b": {
+  "exit": 1,
+  "line": "1 failed in 57.65s"
+ },
+ "pytest_qwen_graphs0_b": {
+  "exit": 0,
+  "line": "1 passed in 66.03s (0:01:06)"
+ },
+ "finished": true
+}
