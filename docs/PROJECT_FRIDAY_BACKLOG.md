@@ -145,7 +145,8 @@ to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt
 Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
 `perf1-run13-93ae1f80`. Beantwortet 2026-09-24: PERF1-S, Experten im Zeilen-Kernel (Ledger
 „MoE experts get the row kernel“, `perf1-run14-0f10c1f8`: Decode 1,97x auf Qwen3.6 35B-A3B,
-7,86x auf Gemma 4 26B-A4B; im Produkt unter `native`). Offen:
+7,86x auf Gemma 4 26B-A4B; im Produkt unter `native`) und das Nutzerziel „Gemma 3 12B
+mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen:
 
 - **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
   rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
@@ -201,6 +202,12 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   eine andere Rechenweise im Prefill ändert den qualifizierten Plan (neues Gate). Kill: keine
   Variante ist bitgleich zum heutigen Prefill und passt — dann `native` auf solchen Karten nur
   mit `head_skip_prefill`.
+- **PERF1-Y Qualitätsgate für Gemma 3 12B unter `native`.** Tempo beantwortet (run 17,
+  `perf1-run17-9371e9d6`: 0,401 des float32-Plans, mit `compiled_fixed_cache` 0,370; Ledger
+  „Gemma 3 12B under `native`“). Ohne Gate keine Empfehlung. Test: `perf1.py nll` 16 x 512,
+  `kernel+p16` gegen Stock-bf16, Decode- und Prefill-Pfad, BOS in jedem Chunk (ohne BOS
+  schwankt Gemma 3 um bis zu 0,34 Nats). Kill: obere Grenze > 1,005 — dann `native` für
+  `mlx_lm.models.gemma3_text` verweigern (Tabellenzeile), float32 bleibt der Plan.
 - **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
