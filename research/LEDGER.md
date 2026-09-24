@@ -5341,3 +5341,82 @@ loop per token (its fused kernel is Metal-only), and the resulting graph is not 
 deterministically. PORT2 attributed Qwen 3.5 9B's non-deterministic grouped arms to the grouped
 path, with graphs on; that attribution is now in doubt (PERF1-T). 27B runs at 8239 MiB per card.
 Run 13 used about 0.8 h of free GPU quota, 0 EUR.
+
+## PERF1, continued — MoE experts get the row kernel (2026-09-24)
+
+Run 12 decoded Qwen3.6 35B-A3B only 11% faster with `kernel+p16` than stock, because its
+experts go through `gather_qmm`, which no kernel routed, and stay emulated bfloat16 (PERF1-S).
+Run 14 (`perf1-run14-0f10c1f8`) routes them: `perf1.py`'s "gather" part sends calls of up to 64
+(token, expert) rows through the row kernel with one more input, the expert index; warp `w` of
+`P x W` serves pair `w / W` and reads that expert's rows, scales and biases in place, and gate/up
+read the token's one activation row for all eight experts. Nothing is copied. From the
+accumulator on it is the `qmv` kernel with `M = 1`. "g16" runs larger calls (prefill) as the same
+`gather_qmm` in float16. Kaggle 2 x Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`, IronMule `69f99373`,
+perf1 `e2e` protocol with 256 prompt tokens, free float32 rounding (as runs 11-13), rules fixed
+in the notebook before it ran. Screening, one process (pair) per arm. Raw data and the submitted
+notebook: `experiments/kaggle_compat/results/perf1-run14-0f10c1f8/`.
+
+**The probe passed at every shape.** Against a per-pair float32 dequantised reference, relative
+error 0.0020-0.0028 for one token (8 pairs) and 0.0016-0.0032 for 64 sorted pairs, at Qwen3.6
+35B-A3B's (256 experts, 512 x 2048 and 2048 x 512) and Gemma 4 26B-A4B's (128 experts, 704 x 2816
+and 2816 x 704) shapes; pair 0 was bit-equal to `qmv` on the same expert every time. `g16` at
+2048 pairs: 0.0032-0.0035 against MLX's own float32 `gather_qmm`.
+
+| per call, one T4 | gather, 8 pairs | stock bf16, 8 pairs | 64 pairs gather / stock | 2048 pairs `g16` / stock |
+| :-- | --: | --: | --: | --: |
+| Qwen3.6 gate/up | 0.178 ms | 2.456 ms | 0.449 / 6.791 ms | 24.6 / 181.6 ms |
+| Qwen3.6 down | 0.198 ms | 1.950 ms | 0.571 / 6.263 ms | 24.2 / 186.2 ms |
+| Gemma 4 gate/up | 0.216 ms | 3.155 ms | 0.671 / 11.831 ms | 46.5 / 348.0 ms |
+| Gemma 4 down | 0.280 ms | 2.883 ms | 0.858 / 11.633 ms | 46.4 / 362.7 ms |
+
+At 8 pairs the kernel moves 24-41 GB/s of weights, at 64 pairs 66-106 GB/s, of the T4's ~320:
+fast against emulation, far from the card.
+
+| run 14, in-run controls | decode tok/s | TTFT (median) | tokens vs control (128) |
+| :-- | --: | --: | :-- |
+| Qwen3.6 35B-A3B, two cards, `kernel+p16` (control) | 5.724 | 25.54 s | — |
+| Qwen3.6 35B-A3B `kernel+p16+gather` | **11.275 (1.97x)** | 25.59 s | 128 identical |
+| Qwen3.6 35B-A3B `kernel+p16+gather+g16` | 11.214 | **4.88 s** | part at 1 |
+| Gemma 4 26B-A4B, one card, `kernel` (control) | 5.144 | 37.71 s | — |
+| Gemma 4 26B-A4B `kernel+gather` | **40.438 (7.86x)** | 37.77 s | part at 1 |
+| Gemma 4 26B-A4B `kernel+gather+g16` | 39.958 | **9.50 s** | part at 0 |
+
+PERF1-S's kill criterion was decode under 1.5x its control; both models clear it. `gather` leaves
+prefill alone and `g16` leaves decode alone, and the table shows exactly that split. Every arm's
+three repetitions gave identical tokens and no prefill produced non-finite logits. Peak memory
+12.6-13.1 GB per card for Qwen, 14.90 GB (control) and 14.98 GB (`g16`) for Gemma on 15.36.
+All six answers are coherent: Qwen's `g16` arm summarises the same argument in slightly different
+words, and the Gemma arms continue the harness's repeated raw prompt in the same way (the
+`gather` arm with one merged word, "ofcomputing"). A speed and no quality claim: no perplexity
+gate has run for either model under these parts, and Gemma 4's bfloat16 reference is unusable
+(PORT2-I). Why Gemma gains 7.9x and Qwen 2.0x is not measured; Qwen runs pipelined, whose
+hand-over cost the 8B about 22 ms per token in runs 11-12, and 30 of its 40 layers are gated
+delta, which mlx-lm runs as a Python loop on CUDA. Both still send their 8-bit routers through
+emulated bfloat16 (`routed.fallback`: 20480 and 16184 calls). Run 14 used about 0.6 h of free
+GPU quota, 0 EUR.
+
+**In the product (runs 15-16).** `ironmule/cuda_native.py` now swaps mlx-lm's
+`QuantizedSwitchLinear` too: the `native` plan sends up to 64 expert rows through the same
+kernel (pinned rounding, as the plan's dense kernel) and larger calls through float16
+`gather_qmm`, and its install probe runs on the model's first expert weight as well as its first
+dense one. Both runs carry that file as one patch against `b6886a0`, byte for byte the same.
+Run 15 (`perf1-run15-22fe0a42`): the product kernel on the T4 against float32, 12/12 cells at
+most 3.8e-3 (install probe, 64 sorted rows, 2048-row prefill, both models' expert shapes), and
+`tests/engine/test_cuda_native.py` passed there (6). Its `cross.py` stage then lost the native
+arm: Gemma 4 26B-A4B died in its first prefill with `cudaMallocAsync ... out of memory` at
+`mx.eval(logits)`. Suspected, not proven: the plan's dense prefill dequantises each weight whole
+to float16, 1.48 GB for Gemma's tied 262144-row head beside 14.2 GB of weights, and PERF1-P's
+per-slice sync exists in `perf1.py` only (backlog PERF1-X). Run 16 (`perf1-run16-2552229e`) ran
+the same stage with `head_skip_prefill`, which projects the last position alone, in both arms:
+
+| run 16, product path, one card | wall, 6 requests x 48 tokens | ratio | requests identical | peak |
+| :-- | --: | --: | --: | --: |
+| Gemma 4 26B-A4B, IronMule bfloat16, `head_skip_prefill` | 93.90 s | 1 | — | 14.55 GB |
+| Gemma 4 26B-A4B, `native`, `head_skip_prefill` | **11.43 s** | **0.1217** | 1/6 | 14.90 GB |
+
+The product is 8.2x faster end to end on this model, prefill included, one repetition. The six
+native answers are coherent and track the reference's reasoning with small wording differences;
+five part from it. That the native arm now runs is consistent with the head as run 15's cause,
+not proof of it. No quality claim, and no `numeric_plans.py` row: one repetition, and Gemma 4's
+bfloat16 reference is unusable for a gate (PORT2-I). Runs 15-16 used about 0.4 h of free GPU
+quota, 0 EUR; the week stands at 9.57 h.
