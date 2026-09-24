@@ -5420,3 +5420,33 @@ five part from it. That the native arm now runs is consistent with the head as r
 not proof of it. No quality claim, and no `numeric_plans.py` row: one repetition, and Gemma 4's
 bfloat16 reference is unusable for a gate (PORT2-I). Runs 15-16 used about 0.4 h of free GPU
 quota, 0 EUR; the week stands at 9.57 h.
+
+## PERF1, continued — Gemma 3 12B under `native` (2026-09-24)
+
+User goal: at least +15% on Gemma 3 12B on NVIDIA over the best plan it had, the float32 plan
+(PORT1: 0.4905 of stock on the T4). `native` had never run on Gemma 3, whose float16 plan
+failed its gate at 4B, so its float16 prefill was the risk. A Mac diagnostic first (Metal, not
+T4 evidence): with native's prefill arithmetic on every multi-row 4-bit matmul, Gemma 3 12B's
+inputs peaked at 7264 and outputs at 2806, far inside float16, and WikiText-2 NLL over 8 x 512
+tokens (BOS on every chunk) was 2.66999 against 2.66993 for bf16, each chunk within 0.0037 nats
+of a float32-matmul reference where bf16 was within 0.0084. Without BOS on each chunk Gemma 3's
+NLL swings by up to 0.34 nats under any change of rounding, float32 included, which is worth
+knowing before anyone reads a gate built that way.
+
+Run 17 (`perf1-run17-9371e9d6`, Kaggle T4, product path at `b6886a0` plus the MoE patch of runs
+15-16, `cross.py`, 6 requests x 48 tokens, 2 interleaved repetitions, float32 plan as reference):
+
+| Gemma 3 12B, product path | wall per rep | ratio to float32 | requests identical | peak |
+| :-- | --: | --: | --: | --: |
+| float32 plan (reference) | 42.60 / 43.06 s | 1 | — | 9.21 GB |
+| `native` | 17.32 / 17.04 s | **0.4011 (2.49x)** | 2/6 | 11.87 GB |
+| `native` + `compiled_fixed_cache` | 15.76 / 15.89 s | **0.3695 (2.71x)** | 2/6 | 11.87 GB |
+
+The goal (median ratio at most 0.870) is met 2.5-fold. `compiled_fixed_cache` returns the same
+tokens as `native` without it (same output hash) and takes another 8%. All arms deterministic
+across processes; the native answers are coherent and part from float32's with small wording
+differences, as a different plan's do. Against stock this is about 0.20 by way of PORT1's
+0.4905 — a cross-run product, so a direction, not a measurement. Screening: no quality gate has
+run for `native` on Gemma 3, so `numeric_plans.py` gains no row and `doctor` recommends
+nothing new; the 16 x 512 gate against stock bf16 is owed (backlog PERF1-Y). Run 17 used about
+0.25 h of free GPU quota, 0 EUR.
