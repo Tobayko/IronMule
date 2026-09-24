@@ -4,6 +4,12 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **A burst of clients no longer waits on handshake retransmission.** `ironmule serve`
+  listened with the stdlib backlog of 5 while admitting 64 handlers, so a burst overflowed
+  the kernel's accept queue and the dropped handshakes returned only after SYN-ACK
+  retransmission (1 s, 3 s, 7 s, ...). The backlog now matches the handler bound. This was
+  the cause of the 429-saturation test failures earlier attributed to load. Evidence:
+  `research/LEDGER.md`, TEST1.
 - **Install with one line, chat with one command.** `install.sh` installs uv if needed and
   IronMule as an isolated tool (the CUDA build on Linux with an NVIDIA GPU); `ironmule
   start` sets up local settings, asks before downloading a model (Gemma 3 4B by default),

@@ -267,6 +267,17 @@ def test_incomplete_tls_client_does_not_block_authenticated_health(tmp_path):
         thread.join(timeout=2)
 
 
+def test_listen_backlog_covers_the_handler_bound():
+    try:
+        server = create_server(SaturationService(), port=0)
+    except PermissionError as exc:
+        pytest.skip(f"loopback bind denied by test environment: {exc}")
+    try:
+        assert server.request_queue_size >= 64
+    finally:
+        server.server_close()
+
+
 def test_handler_saturation_returns_429_then_recovers():
     service = SaturationService()
     try:
@@ -282,8 +293,9 @@ def test_handler_saturation_returns_429_then_recovers():
             connection = socket.create_connection(("127.0.0.1", server.server_port), timeout=3)
             connection.sendall(request_bytes)
             held.append(connection)
-        # A readiness wait, not a latency claim: under parallel test load on a 4-core host
-        # (Kaggle, PORT1) 64 handler threads took longer than 5 s to start.
+        # A readiness wait, not a latency claim. With the stdlib backlog of 5 this burst
+        # overflowed the accept queue and waited on SYN-ACK retransmission; under load
+        # that passed 30 s. The backlog now covers the handler bound.
         assert service.all_active.wait(timeout=30), "64 handler slots did not become active"
 
         connection, response, payload = raw_request(
