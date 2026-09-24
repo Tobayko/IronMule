@@ -174,21 +174,9 @@ def _find_values(value: Any, names: set[str], *, limit: int = 1000) -> list[Any]
     return found
 
 
-def _all_true(value: Any, names: set[str]) -> bool:
-    values = _find_values(value, names)
-    return bool(values) and all(item is True for item in values)
-
-
 def _has_repeat_level(payload: Any) -> bool:
     values = _find_values(payload, {"samples", "measured", "children", "repeat_samples", "checkpoint", "checkpoints"})
     return any(isinstance(item, (list, tuple, Mapping)) and bool(item) for item in values)
-
-
-def _has_identity(payload: Any) -> bool:
-    # Identity is accepted only if the source explicitly reports every gate
-    # it claims to measure.  Absence is never treated as success.
-    values = _find_values(payload, {"token_identity", "identity_gate", "canonical_correctness_gate", "stop_reason_identity", "token_count_identity", "state_identity", "deterministic"})
-    return bool(values) and all(item is True for item in values if isinstance(item, bool)) and any(item is True for item in values)
 
 
 def _identity_gate(source: str, payload: Any | None) -> bool:
@@ -206,24 +194,6 @@ def _identity_gate(source: str, payload: Any | None) -> bool:
     }
     values = {name: _find_values(payload, {name}) for name in required}
     return all(values[name] and all(item is True for item in values[name]) for name in required)
-
-
-def _has_resources(payload: Any) -> bool:
-    keys = {"mlx_active_memory_bytes", "mlx_peak_memory_bytes", "rss_peak_bytes", "swap_delta_bytes", "swap_before_bytes", "swap_after_bytes", "active", "peak", "rss_bytes", "swap"}
-    values = [item for item in _find_values(payload, keys) if not isinstance(item, (Mapping, list))]
-    # A resource-history container alone is not a resource gate.  We require
-    # concrete, non-null numeric observations and at least one memory/swap
-    # value; absence remains unknown rather than a successful zero.
-    numeric = [item for item in values if isinstance(item, (int, float)) and not isinstance(item, bool)]
-    if numeric:
-        return True
-    # B36 records the evaluator-owned resource result in pair hard-gates while
-    # process-start checkpoints legitimately contain null memory fields.
-    gates = _find_values(payload, {"hard_gates"})
-    for gate in gates:
-        if isinstance(gate, Mapping) and all(gate.get(name) is True for name in ("peak_memory", "swap", "no_crash")):
-            return True
-    return False
 
 
 def _resource_gate(source: str, payload: Any | None) -> bool:
