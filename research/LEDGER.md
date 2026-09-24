@@ -5448,3 +5448,23 @@ decode on 8B, prefill on 8B and 14B).
 repetition; the notebook entered it with less than 10 min left and only checked the time
 between repetitions, so both plan arms hit the stage deadline after stock (127 s per workload)
 had run. Run time 63 min against the approved 60, 0 EUR.
+
+## TEST2, continued — gpt-oss 20B's plans reproduced (2026-09-24)
+
+TEST2-G, TEST2's rules unchanged (`docs/PROJECT_FRIDAY_BACKLOG.md` as TEST2 fixed them), gpt-oss
+alone at commit `b43e192`, pinned revision `f356f274`, the arms as PORT2 run 6 published them
+(`head_skip_prefill`, throughput mode). This time a repetition, the first included, started only
+with its estimated duration left, and all three ran. Kaggle Tesla T4, driver 580.159.04, mlx
+0.32.2, mlx-lm 0.31.3. Raw data: `experiments/kaggle_compat/results/test2g-run1-79933f3b/`.
+
+| ratio against stock | published | TEST2-G median [range] | reps | verdict | tokens equal to stock |
+| :-- | --: | --: | --: | :-- | :-- |
+| gpt-oss 20B `float32` | 0.2818 (PORT2 run 6) | **0.2755** [0.2730; 0.2817], 3.63x | 3 | reproduced (-2.2%) | 2/6 |
+| gpt-oss 20B `float16` | 0.1991 (PORT2 run 6) | **0.1975** [0.1894; 0.2029], 5.06x | 3 | reproduced (-0.8%) | 3/6 |
+
+Stock was deterministic across the three processes and varied by 0.4% (131.8-132.3 s per
+workload). The README's 3.55x and 5.02x stand. As on Qwen 3 14B, the two plans leave stock in
+the same requests at the same positions (tokens 33, 5 and 18; `float32` also at 28), which fits
+close top-two logits in the model at those steps; the margins were not measured. The speed is
+reproduced; the quality is not: neither plan has passed its gate on this model (PORT2 run 7,
+`[0.940; 1.065]` and `[0.949; 1.067]`), so both stay unqualified. Run time 38 min, 0 EUR.
