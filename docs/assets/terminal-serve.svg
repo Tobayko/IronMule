@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430">
+  <defs>
+    <linearGradient id="term-bg-srv" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f1422" />
+      <stop offset="100%" stop-color="#080b12" />
+    </linearGradient>
+    <linearGradient id="header-bg-srv" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a2238" />
+      <stop offset="100%" stop-color="#121827" />
+    </linearGradient>
+    <filter id="term-shadow-srv" x="-3%" y="-3%" width="106%" height="112%" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" />
+      <feOffset dx="0" dy="10" />
+      <feComponentTransfer><feFuncA type="linear" slope="0.5" /></feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g filter="url(#term-shadow-srv)">
+    <!-- Window Frame -->
+    <rect x="15" y="12" width="850" height="400" rx="14" fill="url(#term-bg-srv)" stroke="#222e47" stroke-width="1.5" />
+    
+    <!-- Title Bar -->
+    <path d="M 15 26 A 14 14 0 0 1 29 12 L 851 12 A 14 14 0 0 1 865 26 L 865 48 L 15 48 Z" fill="url(#header-bg-srv)" />
+    <line x1="15" y1="48" x2="865" y2="48" stroke="#1d273d" stroke-width="1" />
+
+    <!-- macOS Traffic Light Buttons -->
+    <circle cx="38" cy="30" r="6" fill="#ff5f56" stroke="#e0443e" stroke-width="0.5" />
+    <circle cx="58" cy="30" r="6" fill="#ffbd2e" stroke="#dea123" stroke-width="0.5" />
+    <circle cx="78" cy="30" r="6" fill="#27c93f" stroke="#1aab29" stroke-width="0.5" />
+
+    <!-- Title Bar Header -->
+    <text x="440" y="34" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="12" font-weight="500" text-anchor="middle">
+      ironmule serve — OpenAI-Compatible Local Inference Server (Port 8000)
+    </text>
+
+    <!-- Terminal Output -->
+    <g font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace" font-size="12.5" line-height="1.5">
+      <text x="40" y="78">
+        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
+        <tspan fill="#64748b">:</tspan>
+        <tspan fill="#818cf8">~/IronMule</tspan>
+        <tspan fill="#ff9100">$</tspan>
+        <tspan fill="#f1f5f9" font-weight="600"> ironmule serve --model mlx-community/gemma-3-4b-it-4bit --port 8000</tspan>
+      </text>
+
+      <text x="40" y="106">
+        <tspan fill="#64748b">[13:30:12]</tspan>
+        <tspan fill="#38bdf8" font-weight="bold"> INFO </tspan>
+        <tspan fill="#cbd5e1">Engine initialized: Apple Silicon M1 Max (Unified Memory 32 GB, 32 GPU cores)</tspan>
+      </text>
+
+      <text x="40" y="130">
+        <tspan fill="#64748b">[13:30:13]</tspan>
+        <tspan fill="#38bdf8" font-weight="bold"> INFO </tspan>
+        <tspan fill="#cbd5e1">Model verified: </tspan>
+        <tspan fill="#ffaa33" font-weight="600">mlx-community/gemma-3-4b-it-4bit</tspan>
+        <tspan fill="#64748b"> (sha: 937249...)</tspan>
+      </text>
+
+      <text x="40" y="154">
+        <tspan fill="#64748b">[13:30:13]</tspan>
+        <tspan fill="#38bdf8" font-weight="bold"> INFO </tspan>
+        <tspan fill="#cbd5e1">Prefix cache: exact hash matching active | fallback: reference-first</tspan>
+      </text>
+
+      <text x="40" y="178">
+        <tspan fill="#64748b">[13:30:14]</tspan>
+        <tspan fill="#10b981" font-weight="bold"> READY </tspan>
+        <tspan fill="#f8fafc" font-weight="bold">OpenAI-compatible HTTP/SSE server listening on </tspan>
+        <tspan fill="#38bdf8" font-weight="bold">http://127.0.0.1:8000</tspan>
+      </text>
+
+      <line x1="40" y1="194" x2="840" y2="194" stroke="#1f293d" stroke-width="1" stroke-dasharray="4 4" />
+
+      <!-- Request 1 -->
+      <text x="40" y="218">
+        <tspan fill="#64748b">[13:30:45]</tspan>
+        <tspan fill="#818cf8" font-weight="bold"> POST </tspan>
+        <tspan fill="#f1f5f9">/v1/chat/completions </tspan>
+        <tspan fill="#10b981">200 OK</tspan>
+      </text>
+
+      <text x="58" y="240">
+        <tspan fill="#64748b">↳ tokens: </tspan><tspan fill="#f8fafc" font-weight="bold">184</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#ff9100">service TTFT: </tspan><tspan fill="#f8fafc" font-weight="bold">38.4 ms</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#38bdf8">engine TTFT: </tspan><tspan fill="#f8fafc" font-weight="bold">24.1 ms</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#10b981">decode: </tspan><tspan fill="#10b981" font-weight="bold">82.6 tok/s</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#c084fc">cache: </tspan><tspan fill="#c084fc" font-weight="bold">HIT (100% prefix)</tspan>
+      </text>
+
+      <!-- Request 2 -->
+      <text x="40" y="274">
+        <tspan fill="#64748b">[13:31:02]</tspan>
+        <tspan fill="#818cf8" font-weight="bold"> POST </tspan>
+        <tspan fill="#f1f5f9">/v1/chat/completions </tspan>
+        <tspan fill="#10b981">200 OK</tspan>
+      </text>
+
+      <text x="58" y="296">
+        <tspan fill="#64748b">↳ tokens: </tspan><tspan fill="#f8fafc" font-weight="bold">312</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#ff9100">service TTFT: </tspan><tspan fill="#f8fafc" font-weight="bold">42.1 ms</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#38bdf8">engine TTFT: </tspan><tspan fill="#f8fafc" font-weight="bold">26.8 ms</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#10b981">decode: </tspan><tspan fill="#10b981" font-weight="bold">80.4 tok/s</tspan>
+        <tspan fill="#64748b"> │ </tspan>
+        <tspan fill="#c084fc">cache: </tspan><tspan fill="#c084fc" font-weight="bold">HIT (shared session)</tspan>
+      </text>
+
+      <!-- Real-time Telemetry Monitor Box -->
+      <rect x="40" y="322" width="800" height="38" rx="8" fill="#101a2e" stroke="#2563eb" stroke-width="1" />
+      <text x="58" y="346" fill="#93c5fd" font-weight="500">
+        <tspan fill="#60a5fa" font-weight="bold">Telemetry: </tspan>
+        Zero drift detected · Queue wait: 0.0 ms · Memory: 3.41 GB / 32 GB wired · Fail-closed: Armed
+      </text>
+
+      <text x="40" y="386">
+        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
+        <tspan fill="#64748b">:</tspan>
+        <tspan fill="#818cf8">~/IronMule</tspan>
+        <tspan fill="#ff9100">$</tspan>
+      </text>
+      <rect x="234" y="374" width="8" height="14" fill="#ffaa33" opacity="0.85" />
+    </g>
+  </g>
+</svg>

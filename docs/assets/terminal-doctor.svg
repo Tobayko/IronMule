@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 430" width="880" height="430">
+  <defs>
+    <linearGradient id="term-bg-doc" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0f1422" />
+      <stop offset="100%" stop-color="#080b12" />
+    </linearGradient>
+    <linearGradient id="header-bg-doc" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a2238" />
+      <stop offset="100%" stop-color="#121827" />
+    </linearGradient>
+    <filter id="term-shadow-doc" x="-3%" y="-3%" width="106%" height="112%" filterUnits="userSpaceOnUse">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="14" />
+      <feOffset dx="0" dy="10" />
+      <feComponentTransfer><feFuncA type="linear" slope="0.5" /></feComponentTransfer>
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g filter="url(#term-shadow-doc)">
+    <!-- Window Frame -->
+    <rect x="15" y="12" width="850" height="400" rx="14" fill="url(#term-bg-doc)" stroke="#222e47" stroke-width="1.5" />
+    
+    <!-- Title Bar -->
+    <path d="M 15 26 A 14 14 0 0 1 29 12 L 851 12 A 14 14 0 0 1 865 26 L 865 48 L 15 48 Z" fill="url(#header-bg-doc)" />
+    <line x1="15" y1="48" x2="865" y2="48" stroke="#1d273d" stroke-width="1" />
+
+    <!-- macOS Traffic Light Buttons -->
+    <circle cx="38" cy="30" r="6" fill="#ff5f56" stroke="#e0443e" stroke-width="0.5" />
+    <circle cx="58" cy="30" r="6" fill="#ffbd2e" stroke="#dea123" stroke-width="0.5" />
+    <circle cx="78" cy="30" r="6" fill="#27c93f" stroke="#1aab29" stroke-width="0.5" />
+
+    <!-- Title Bar Header -->
+    <text x="440" y="34" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="12" font-weight="500" text-anchor="middle">
+      ironmule doctor — Hardware &amp; MLX Prerequisite Probe
+    </text>
+
+    <!-- Terminal Output -->
+    <g font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace" font-size="13" line-height="1.5">
+      <text x="40" y="80">
+        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
+        <tspan fill="#64748b">:</tspan>
+        <tspan fill="#818cf8">~/IronMule</tspan>
+        <tspan fill="#ff9100">$</tspan>
+        <tspan fill="#f1f5f9" font-weight="600"> ironmule doctor</tspan>
+      </text>
+
+      <text x="40" y="112" fill="#ffaa33" font-weight="bold">⚡ IronMule Hardware Diagnostics</text>
+
+      <text x="40" y="142">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> Apple Silicon architecture: </tspan>
+        <tspan fill="#f8fafc" font-weight="600">arm64 (Apple M1 Max · 10-core CPU)</tspan>
+      </text>
+
+      <text x="40" y="170">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> macOS Kernel: </tspan>
+        <tspan fill="#f8fafc" font-weight="600">Darwin 25.6.0 (Unified Memory 32 GB)</tspan>
+      </text>
+
+      <text x="40" y="198">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> Python Runtime: </tspan>
+        <tspan fill="#f8fafc" font-weight="600">3.12.13 (isolated virtual environment)</tspan>
+      </text>
+
+      <text x="40" y="226">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> MLX Framework: </tspan>
+        <tspan fill="#f8fafc" font-weight="600">0.32.0 (compiled for macOS arm64)</tspan>
+      </text>
+
+      <text x="40" y="254">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> MLX-LM Model Engine: </tspan>
+        <tspan fill="#f8fafc" font-weight="600">0.31.3 (Safetensors &amp; Quantized 4-bit)</tspan>
+      </text>
+
+      <text x="40" y="282">
+        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
+        <tspan fill="#94a3b8"> MLX Metal Device: </tspan>
+        <tspan fill="#38bdf8" font-weight="600">32-core Metal GPU verified (222.2 GB/s GEMV bandwidth)</tspan>
+      </text>
+
+      <!-- Success status card inside terminal -->
+      <rect x="40" y="312" width="800" height="40" rx="8" fill="#082b20" stroke="#059669" stroke-width="1" />
+      <text x="58" y="337" fill="#34d399" font-weight="bold">
+        ✓ All runtime prerequisites available. Hardware profile compatible &amp; evidence-ready.
+      </text>
+
+      <text x="40" y="386">
+        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
+        <tspan fill="#64748b">:</tspan>
+        <tspan fill="#818cf8">~/IronMule</tspan>
+        <tspan fill="#ff9100">$</tspan>
+      </text>
+      <rect x="234" y="374" width="8" height="14" fill="#ffaa33" opacity="0.85" />
+    </g>
+  </g>
+</svg>
