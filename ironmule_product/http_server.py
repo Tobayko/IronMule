@@ -149,6 +149,10 @@ class _ProductHTTPServer(ThreadingHTTPServer):
 
     daemon_threads = True
     allow_reuse_address = True
+    # socketserver listens with a backlog of 5. A burst of connections up to the
+    # handler bound overflowed the kernel's accept queue, and each dropped
+    # handshake came back only on SYN-ACK retransmission (1 s, 3 s, 7 s, ...).
+    request_queue_size = _MAX_WORKERS
 
     def __init__(self, address: tuple[str, int], service: Any, api_key: str | None, *, tls_enabled: bool = False, tls_context: ssl.SSLContext | None = None):
         # TCPServer invokes server_close() if bind fails, so initialize state

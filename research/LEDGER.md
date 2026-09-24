@@ -5341,3 +5341,28 @@ loop per token (its fused kernel is Metal-only), and the resulting graph is not 
 deterministically. PORT2 attributed Qwen 3.5 9B's non-deterministic grouped arms to the grouped
 path, with graphs on; that attribution is now in doubt (PERF1-T). 27B runs at 8239 MiB per card.
 Run 13 used about 0.8 h of free GPU quota, 0 EUR.
+
+## TEST1 — the 429-saturation failure was the listen backlog, not load (2026-09-24)
+
+Question: DATA3 and PORT1 recorded `test_handler_saturation_returns_429_then_recovers` as a
+load flake on Kaggle's 4-core host, and its readiness wait was raised from 5 s to 30 s (`8a7f2df`). Why
+does 64 handler threads starting take seconds at all? Linux cloud container (x86_64, 4 CPUs,
+Python 3.11.15), not Kaggle and not Apple Silicon; no model and no GPU are involved.
+
+**Mechanism.** `ironmule serve` admits 64 handlers but listened with socketserver's default
+backlog of 5. The test opens 64 connections in one burst; the accept queue overflows, and
+with `tcp_abort_on_overflow=0` each dropped handshake returns only on SYN-ACK retransmission
+(1 s, 3 s, 7 s, 15 s, 31 s cumulative). A few overflows cost 1-3 s; under load five
+retransmissions pass the 30 s wait.
+
+| probe, 8 busy processes on 4 CPUs | outcome | pytest s | ListenOverflows |
+| :-- | :-- | --: | --: |
+| backlog 5 | 5 of 5 failed | 38.39-39.46 | 8-9 per run |
+| backlog 64 | 5 of 5 passed | 1.00-1.07 | 0 |
+
+Idle, backlog 5 still overflowed in every run (1-3 per run, test call 1.60-3.65 s); backlog 64
+passed in 0.61-0.63 s with none. The full engine suite (`-m "not integration"`) failed on this
+test once in two runs at backlog 5 (the failing run shared the host with a model download);
+with backlog 64 it passed twice, 1258 passed, 29 skipped. Fix: `request_queue_size` equals the
+handler bound; a regression test fails at 5. Raw data and the probe:
+`experiments/http_backlog/`. Open: confirmation on Kaggle, where the failure was first seen.
