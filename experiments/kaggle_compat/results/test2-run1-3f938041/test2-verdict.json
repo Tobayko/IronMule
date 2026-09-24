@@ -1,0 +1,198 @@
+{
+ "gptoss-20b": {
+  "model_id": "mlx-community/gpt-oss-20b-MXFP4-Q4",
+  "revision": "f356f2747216d7e98fee755df25987459fc19089",
+  "reps": 1,
+  "stock_walls_s": [
+   126.98
+  ],
+  "stock_spread": null,
+  "stock_deterministic": true,
+  "arms": {
+   "ironmule_fp32": {
+    "ratios": [],
+    "median": null,
+    "min": null,
+    "max": null,
+    "speedup": null,
+    "identical_requests": null,
+    "deterministic": true,
+    "failed": 1,
+    "first_divergence": null
+   },
+   "ironmule_fp16": {
+    "ratios": [],
+    "median": null,
+    "min": null,
+    "max": null,
+    "speedup": null,
+    "identical_requests": null,
+    "deterministic": true,
+    "failed": 1,
+    "first_divergence": null
+   }
+  }
+ },
+ "qwen3-14b": {
+  "model_id": "mlx-community/Qwen3-14B-4bit",
+  "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+  "reps": 3,
+  "stock_walls_s": [
+   95.7,
+   95.22,
+   94.93
+  ],
+  "stock_spread": 0.008072510892587648,
+  "stock_deterministic": true,
+  "arms": {
+   "ironmule_native": {
+    "ratios": [
+     0.2054,
+     0.2085,
+     0.1996
+    ],
+    "median": 0.20535367709043084,
+    "min": 0.19960321124290312,
+    "max": 0.20845361228176498,
+    "speedup": 4.869647401344723,
+    "identical_requests": 3,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     null,
+     4,
+     35,
+     8,
+     null,
+     null
+    ],
+    "published": 0.2078,
+    "source": "PERF1 run 7",
+    "deviation": -0.01177248753401916,
+    "verdict": "reproduced"
+   },
+   "ironmule_fused_fp32": {
+    "ratios": [
+     0.5183,
+     0.515,
+     0.5169
+    ],
+    "median": 0.5168768393346422,
+    "min": 0.5149736287612903,
+    "max": 0.5183398655136544,
+    "speedup": 1.9346968637388853,
+    "identical_requests": 2,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     null,
+     4,
+     35,
+     8,
+     null,
+     4
+    ],
+    "published": 0.5157,
+    "source": "PORT2 run 4",
+    "deviation": 0.002282023142606615,
+    "verdict": "reproduced"
+   }
+  }
+ },
+ "qwen3-8b": {
+  "model_id": "mlx-community/Qwen3-8B-4bit",
+  "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+  "reps": 4,
+  "stock_walls_s": [
+   52.96,
+   51.82,
+   51.93,
+   51.07
+  ],
+  "stock_spread": 0.03702841863692474,
+  "stock_deterministic": true,
+  "arms": {
+   "ironmule_native": {
+    "ratios": [
+     0.1856,
+     0.1978,
+     0.1903,
+     0.1981
+    ],
+    "median": 0.19404495493754037,
+    "min": 0.1855773024993496,
+    "max": 0.1981203481748524,
+    "speedup": 5.153444985580183,
+    "identical_requests": 6,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     null
+    ],
+    "published": 0.2013,
+    "source": "PERF1 run 7",
+    "deviation": -0.0360409590782893,
+    "verdict": "reproduced"
+   },
+   "ironmule_fp32": {
+    "ratios": [
+     0.5222,
+     0.5323,
+     0.5474,
+     0.5354
+    ],
+    "median": 0.5338064743590238,
+    "min": 0.5222364113412667,
+    "max": 0.5474427955594475,
+    "speedup": 1.8733380879292727,
+    "identical_requests": 5,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     32
+    ],
+    "published": 0.5346,
+    "source": "PORT2 run 6",
+    "deviation": -0.0014843352805389287,
+    "verdict": "reproduced"
+   },
+   "ironmule_fp16": {
+    "ratios": [
+     0.3089,
+     0.3166,
+     0.3142,
+     0.3258
+    ],
+    "median": 0.3153828582714191,
+    "min": 0.3089038119979509,
+    "max": 0.32576227529893137,
+    "speedup": 3.1707493726225224,
+    "identical_requests": 5,
+    "deterministic": true,
+    "failed": 0,
+    "first_divergence": [
+     null,
+     null,
+     null,
+     null,
+     null,
+     32
+    ],
+    "published": 0.31,
+    "source": "PORT2 run 6",
+    "deviation": 0.017364058940061655,
+    "verdict": "reproduced"
+   }
+  }
+ }
+}

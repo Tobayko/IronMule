@@ -188,20 +188,13 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
   Matmuls — dann Fusion unter `native` verweigern.
 
-## TEST2 — Re-measure the largest README ratios PERF1-Z does not cover (2026-09-24)
+## TEST2 — Rest (2026-09-24)
 
-- **TEST2 Are the biggest CUDA numbers reproducible with more than two processes?** Qwen 3
-  8B/14B `native` (0.2013 / 0.2078, PERF1 run 7), `float32` Qwen 3 8B (0.5346, PORT2 run 6)
-  and 14B (0.5157, run 4), `float16` Qwen 3 8B (0.3100, run 6) and gpt-oss 20B `float32` /
-  `float16` (0.2818 / 0.1991, run 6) each rest on one or two runs of 2 processes x 1 measured
-  pass. Test (user-approved ~60 min of Kaggle quota beyond the weekly rule): `cross.py` with
-  each arm's published configuration, one invocation per repetition with the arm order
-  rotated, 4 repetitions for 8B, 3 for 14B, gpt-oss as many as the cap leaves; stock's
-  output digest across processes is the model's own determinism control, and its spread
-  across repetitions the noise of this regime. Kill: a new median more than 5% from the
-  published ratio replaces it; stock not deterministic across processes makes that model's
-  token agreement uninterpretable; a numeric plan that disagrees with stock is reported with
-  its first diverging position, not judged by it (its quality gate is what judges it).
+- **TEST2-G gpt-oss 20B `float32` / `float16` with more than two processes.** TEST2 reproduced
+  the Qwen 3 8B/14B `native`, `float32` and `float16` ratios (ledger, TEST2); gpt-oss's arms
+  hit the notebook's deadline. Test: the same rules, gpt-oss alone, 3 repetitions (~35 min),
+  entering a repetition only with its full duration left. Kill: a new median more than 5% from
+  0.2818 / 0.1991 replaces it.
 
 ## DATA3 — Rest (2026-09-15)
 
