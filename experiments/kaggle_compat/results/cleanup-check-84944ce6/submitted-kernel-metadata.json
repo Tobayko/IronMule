@@ -1,0 +1,16 @@
+{
+ "id": "tobayko/ironmule-cleanup-check-84944ce6",
+ "title": "ironmule-cleanup-check-84944ce6",
+ "code_file": "ironmule-cleanup-check-84944ce6.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": false,
+ "enable_tpu": false,
+ "enable_internet": true,
+ "keywords": [],
+ "dataset_sources": [],
+ "kernel_sources": [],
+ "competition_sources": [],
+ "model_sources": []
+}

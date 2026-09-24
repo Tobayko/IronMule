@@ -1,0 +1,25 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "archive_entries": 0,
+  "build_seconds": 5.762,
+  "database": "/tmp/ssot.sqlite3",
+  "duplicate_occurrences": 6549,
+  "failed_sources": 0,
+  "git_history_objects": 564,
+  "metrics": 139856,
+  "objects": 564,
+  "occurrences": 9832,
+  "runs": 3283,
+  "sources": 1098
+}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "objects": 564,
+  "occurrences": 9832,
+  "original_bytes": 16949639,
+  "original_sources_checked": 1098,
+  "runs": 3283,
+  "state": "verified"
+}
