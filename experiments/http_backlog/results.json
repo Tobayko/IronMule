@@ -1,0 +1,63 @@
+{
+  "schema": "ironmule.test1-http-backlog.v1",
+  "experiment": "TEST1",
+  "date": "2026-09-24",
+  "question": "Why does test_handler_saturation_returns_429_then_recovers fail under load?",
+  "scope": "Linux cloud container, not Kaggle, not Apple Silicon. No model, no GPU involved. Confirmation on Kaggle is open.",
+  "environment": {
+    "os": "Linux 6.18 x86_64",
+    "cpus": 4,
+    "python": "3.11.15",
+    "mlx": "0.32.2 (CPU build)",
+    "mlx_lm": "0.31.3",
+    "numpy": "2.4.6",
+    "pytest": "9.1.1",
+    "pytest_xdist": "3.8.0",
+    "tcp_abort_on_overflow": 0,
+    "somaxconn": 4096,
+    "base_commit": "b6886a0"
+  },
+  "method": "experiments/http_backlog/probe.sh: one pytest process per run, serial (-n 0); ListenOverflows delta from /proc/net/netstat around each run; load = 8 busy-loop python processes on 4 CPUs.",
+  "probe": {
+    "backlog_5_load_8": {
+      "request_queue_size": 5,
+      "burners": 8,
+      "outcome": ["failed", "failed", "failed", "failed", "failed"],
+      "pytest_seconds": [39.46, 38.39, 38.46, 38.43, 38.47],
+      "listen_overflows": [9, 8, 8, 8, 8]
+    },
+    "backlog_5_idle": {
+      "request_queue_size": 5,
+      "burners": 0,
+      "note": "a single-threaded real-model pytest process was running concurrently",
+      "outcome": ["passed", "passed", "passed"],
+      "call_seconds": [2.62, 1.60, 3.65],
+      "listen_overflows": [2, 1, 3]
+    },
+    "backlog_64_load_8": {
+      "request_queue_size": 64,
+      "burners": 8,
+      "outcome": ["passed", "passed", "passed", "passed", "passed"],
+      "pytest_seconds": [1.07, 1.06, 1.01, 1.00, 1.07],
+      "listen_overflows": [0, 0, 0, 0, 0]
+    },
+    "backlog_64_idle": {
+      "request_queue_size": 64,
+      "burners": 0,
+      "outcome": ["passed", "passed", "passed", "passed", "passed"],
+      "pytest_seconds": [0.62, 0.62, 0.61, 0.63, 0.62],
+      "listen_overflows": [0, 0, 0, 0, 0]
+    }
+  },
+  "engine_suite_not_integration": [
+    {"run": 1, "request_queue_size": 5, "concurrent": "model download and SSOT build", "passed": 1256, "failed": 1, "skipped": 29, "subtests_passed": 11, "seconds": 62.08, "failed_tests": ["tests/engine/test_product_http.py::test_handler_saturation_returns_429_then_recovers"]},
+    {"run": 2, "request_queue_size": 5, "concurrent": "none", "passed": 1257, "failed": 0, "skipped": 29, "subtests_passed": 11, "seconds": 28.91},
+    {"run": 3, "request_queue_size": 64, "concurrent": "real-model pytest process", "passed": 1258, "failed": 0, "skipped": 29, "subtests_passed": 11, "seconds": 28.78},
+    {"run": 4, "request_queue_size": 64, "concurrent": "real-model pytest process", "passed": 1258, "failed": 0, "skipped": 29, "subtests_passed": 11, "seconds": 28.70}
+  ],
+  "not_run": [
+    "real-model integration tests: started on the MLX CPU backend, stopped by the user after 7 of 16 passed; not evidence",
+    "research suite: 158 modules are not collected off the target device (tests/conftest.py)",
+    "Kaggle: no credentials or connector in this session"
+  ]
+}
