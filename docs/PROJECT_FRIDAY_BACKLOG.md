@@ -188,14 +188,6 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
   Matmuls — dann Fusion unter `native` verweigern.
 
-## TEST2 — Rest (2026-09-24)
-
-- **TEST2-G gpt-oss 20B `float32` / `float16` with more than two processes.** TEST2 reproduced
-  the Qwen 3 8B/14B `native`, `float32` and `float16` ratios (ledger, TEST2); gpt-oss's arms
-  hit the notebook's deadline. Test: the same rules, gpt-oss alone, 3 repetitions (~35 min),
-  entering a repetition only with its full duration left. Kill: a new median more than 5% from
-  0.2818 / 0.1991 replaces it.
-
 ## DATA3 — Rest (2026-09-15)
 
 Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
