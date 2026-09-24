@@ -1,0 +1,3 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"qwen36_gate_up_probe": 0.0027905202005058527, "qwen36_gate_up_64": 0.003115524537861347, "qwen36_gate_up_2048": 0.0032292085234075785, "qwen36_down_probe": 0.0038426693063229322, "qwen36_down_64": 0.0030846637673676014, "qwen36_down_2048": 0.0029215910471975803, "gemma4_gate_up_probe": 0.0036240732297301292, "gemma4_gate_up_64": 0.0031764169689267874, "gemma4_gate_up_2048": 0.0030029427725821733, "gemma4_down_probe": 0.003136000130325556, "gemma4_down_64": 0.002646607579663396, "gemma4_down_2048": 0.0029713937547057867}

@@ -143,7 +143,9 @@ TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
 to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt mit Sync je
 Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
-`perf1-run13-93ae1f80`. Offen:
+`perf1-run13-93ae1f80`. Beantwortet 2026-09-24: PERF1-S, Experten im Zeilen-Kernel (Ledger
+„MoE experts get the row kernel“, `perf1-run14-0f10c1f8`: Decode 1,97x auf Qwen3.6 35B-A3B,
+7,86x auf Gemma 4 26B-A4B; im Produkt unter `native`). Offen:
 
 - **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
   rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
@@ -174,12 +176,31 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
   abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
   1,2x bei Breite 8 gegen dieselbe Pipeline ohne Mikro-Batches im selben Lauf.
-- **PERF1-S Nativer Kernel für MoE-Experten.** Qwen3.6 35B-A3B gewann mit `kernel+p16` nur
-  11 % (run 12), weil die Experten über `gather_qmm` laufen, den kein Kernel routet; sie
-  bleiben emuliertes bf16. Mechanismus: derselbe Zeilen-Kernel mit einem Index-Eingang, der
-  je Warp die Zeilen des gewählten Experten liest, ohne Gewichte umzukopieren. Nutzt auch
-  Gemma 4 26B-A4B. Test: Probe gegen einen float32-Dequant-Referenzwert je Form, dann
-  35B-A3B über zwei Karten gegen `kernel+p16` im selben Lauf. Kill: Decode unter 1,5x.
+- **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
+  auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
+  kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
+  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 scheidet aus, solange PORT2-I
+  seine bf16-Referenz nicht erklärt). Kill: obere Intervallgrenze > 1,005 — dann Experten
+  unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
+- **PERF1-V 8-bit-Router im Zeilen-Kernel.** Qwens `mlp.gate`/`shared_expert_gate` und Gemmas
+  `router.proj` sind 8-bit und laufen weiter emuliert (run 14: 20480 bzw. 16184 Aufrufe im
+  Fallback). Mechanismus: derselbe Kernel mit 8-bit-Entpackung (vier Werte je uint32).
+  Kill: unter 5 % Decode gegen `gather` im selben Lauf.
+- **PERF1-W Auslastung des Experten-Kernels.** Bei 8 Paaren erreicht er 24–41 GB/s von
+  ~320 (run 14); gate und up sind zwei Starts über dieselbe Zeile, und bei K = 512 (Qwens
+  down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K
+  zwei Zeilen je Warp (Halbwarp-Reduktion, bitgleich). Kill: unter 10 % Decode gegen
+  `gather` im selben Lauf.
+- **PERF1-X `native`-Prefill im Produkt auf vollen Karten.** `cuda_native.matmul`
+  dequantisiert beim Prefill jedes Gewicht ganz nach float16; PERF1-P (Scheiben mit Sync)
+  steckt nur in `perf1.py`. Run 15 (`perf1-run15-22fe0a42`): Gemma 4 26B-A4B unter `native`
+  starb im ersten Prefill an `cudaMallocAsync ... out of memory` (Verdacht: 1,48 GB für den
+  262144-Zeilen-Kopf neben 14,2 GB Gewichten); mit `head_skip_prefill` lief derselbe Arm
+  (run 16, `perf1-run16-2552229e`, 8,2x schneller als IronMule-bf16). Mechanismus: Scheiben wie `perf1.py`, oder den
+  Kopf nur für die letzte Position rechnen. Konflikt: der Sync bricht unter `mx.compile`, und
+  eine andere Rechenweise im Prefill ändert den qualifizierten Plan (neues Gate). Kill: keine
+  Variante ist bitgleich zum heutigen Prefill und passt — dann `native` auf solchen Karten nur
+  mit `head_skip_prefill`.
 - **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
