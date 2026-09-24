@@ -1,0 +1,9 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+............ssss                                                         [100%]
+=========================== short test summary info ============================
+SKIPPED [1] tests/engine/test_q3d_stability_gate.py:287: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)
+SKIPPED [1] tests/engine/test_q3f_child_guard.py:197: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)
+SKIPPED [1] tests/engine/test_q3f_child_guard.py:294: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)
+SKIPPED [1] tests/engine/test_qwen_hybrid_integration.py:118: IRONMULE_QWEN_MODEL is not set; Qwen integration is local-only
+12 passed, 4 skipped, 1287 deselected in 365.05s (0:06:05)

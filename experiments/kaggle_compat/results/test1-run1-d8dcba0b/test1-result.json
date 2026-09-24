@@ -1,0 +1,259 @@
+{
+ "schema": "ironmule.test1-kaggle.v1",
+ "commit": "f9e1d3062ba8d0bb6cf6c667e7f029157d5c80cc",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, driver_version, memory.total [MiB]\n0, Tesla T4, 580.159.04, 15360 MiB\n1, Tesla T4, 580.159.04, 15360 MiB\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\noverlay         7.9T  6.9T  1.1T  88% /\n6.12.90+\n0\n4096\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 3.6,
+   "tail": "f9e1d3062ba8d0bb6cf6c667e7f029157d5c80cc\nb6886a0823f2da14a1a02ea8a3176660786a3de8\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 10.6,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 82.1 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.43s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 24.8,
+   "tail": "ding ironmule @ file:///tmp/IronMule\nDownloading hf-xet (4.3MiB)\nDownloading tokenizers (3.2MiB)\nDownloading numpy (15.9MiB)\nDownloading kiwisolver (1.4MiB)\nDownloading fonttools (5.1MiB)\nDownloading transformers (11.7MiB)\nDownloading pillow (6.6MiB)\nDownloading pygments (1.2MiB)\nDownloading scipy (33.7MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading matplotlib (9.6MiB)\nDownloading ruff (9.8MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded kiwisolver\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded fonttools\n Downloaded pillow\n Downloaded matplotlib\n Downloaded ruff\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 58 packages in 22.80s\nInstalled 58 packages in 195ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + contourpy==1.4.0\n + cycler==0.12.1\n + execnet==2.1.2\n + filelock==4.0.3\n + fonttools==4.66.0\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + kiwisolver==1.5.1\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + matplotlib==3.11.1\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pillow==12.3.0\n + pluggy==1.6.0\n + protobuf==7.36.2\n + psutil==7.2.2\n + pygments==2.21.0\n + pyparsing==3.3.3\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + python-dateutil==2.9.0.post0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + ruff==0.16.6\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + six==1.17.0\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\ncontourpy==1.4.0\ncycler==0.12.1\nexecnet==2.1.2\nfilelock==4.0.3\nfonttools==4.66.0\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nkiwisolver==1.5.1\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmatplotlib==3.11.1\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npillow==12.3.0\npluggy==1.6.0\nprotobuf==7.36.2\npsutil==7.2.2\npygments==2.21.0\npyparsing==3.3.3\npytest==9.1.1\npytest-xdist==3.8.0\npython-dateutil==2.9.0.post0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nruff==0.16.6\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\nsix==1.17.0\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "mlx_gpu_smoke": {
+   "exit": 0,
+   "seconds": 1.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nmlx 0.32.2 device Device(gpu, 0) cuda True\nqmm max_abs_diff 1.9073486328125e-05\n"
+  },
+  "download_4b": {
+   "exit": 0,
+   "seconds": 84.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "pytest_unit_1": {
+   "exit": 0,
+   "seconds": 87.8,
+   "tail": "................... [ 22%]\n........................................................................ [ 27%]\n........................................................................ [ 33%]\n........................................................................ [ 39%]\n........................................................................ [ 44%]\n........................................................................ [ 50%]\n........................................................................ [ 55%]\n........................................................................ [ 61%]\n........................................................................ [ 67%]\n........................................................................ [ 72%]\n...............................................ss.s...............s..... [ 78%]\n........................................................................ [ 83%]\n.....................................................s.................. [ 89%]\n.......................uuuuuuu...uuuu................................... [ 94%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n=============================== warnings summary ===============================\ntests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running\n  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=193) is multi-threaded, use of fork() may lead to deadlocks in the child.\n    self.pid = os.fork()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nSKIPPED [22] tests/engine/test_docs_links.py:68: sealed provenance input; its links record the tree it was written against\nSKIPPED [1] tests/engine/test_router.py:461: this machine does not report vm.swapusage\nSKIPPED [1] tests/engine/test_product_memory.py:36: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:69: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:101: native RSS probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_identity.py:224: cached Gemma 3 1B snapshot is unavailable\nSKIPPED [1] tests/engine/test_process_memory.py:28: Darwin proc_pid_rusage only\n1259 passed, 28 skipped, 1 warning, 11 subtests passed in 86.79s (0:01:26)\n"
+  },
+  "pytest_unit_2": {
+   "exit": 0,
+   "seconds": 56.9,
+   "tail": "............................. [ 22%]\n........................................................................ [ 27%]\n........................................................................ [ 33%]\n........................................................................ [ 39%]\n........................................................................ [ 44%]\n........................................................................ [ 50%]\n........................................................................ [ 55%]\n........................................................................ [ 61%]\n........................................................................ [ 67%]\n.........s.............................................................. [ 72%]\n...................................................ss.s................. [ 78%]\n........................................................................ [ 83%]\n.....................................................s.................. [ 89%]\n.......................uuuuuuu...uuuu................................... [ 94%]\n........................................................................ [ 99%]\n..                                                                       [100%]\n=============================== warnings summary ===============================\ntests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running\n  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=775) is multi-threaded, use of fork() may lead to deadlocks in the child.\n    self.pid = os.fork()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nSKIPPED [22] tests/engine/test_docs_links.py:68: sealed provenance input; its links record the tree it was written against\nSKIPPED [1] tests/engine/test_router.py:461: this machine does not report vm.swapusage\nSKIPPED [1] tests/engine/test_product_identity.py:224: cached Gemma 3 1B snapshot is unavailable\nSKIPPED [1] tests/engine/test_product_memory.py:36: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:69: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:101: native RSS probe is macOS-specific\nSKIPPED [1] tests/engine/test_process_memory.py:28: Darwin proc_pid_rusage only\n1259 passed, 28 skipped, 1 warning, 11 subtests passed in 56.56s\n"
+  },
+  "pytest_integration": {
+   "exit": 0,
+   "seconds": 366.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n............ssss                                                         [100%]\n=========================== short test summary info ============================\nSKIPPED [1] tests/engine/test_q3d_stability_gate.py:287: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)\nSKIPPED [1] tests/engine/test_q3f_child_guard.py:197: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)\nSKIPPED [1] tests/engine/test_q3f_child_guard.py:294: macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)\nSKIPPED [1] tests/engine/test_qwen_hybrid_integration.py:118: IRONMULE_QWEN_MODEL is not set; Qwen integration is local-only\n12 passed, 4 skipped, 1287 deselected in 365.05s (0:06:05)\n"
+  },
+  "collect_all": {
+   "exit": 0,
+   "seconds": 15.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\ntests/engine/test_ssot.py: 25\ntests/engine/test_stacks.py: 22\n\n"
+  },
+  "backlog_before": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/IronMule-before/ironmule_product/http_server.py 5\n"
+  },
+  "backlog_after": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n/tmp/IronMule/ironmule_product/http_server.py 64\n"
+  },
+  "cli_smoke": {
+   "exit": 0,
+   "seconds": 6.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nIronMule 0.1.0\nAdaptive MLX inference runtime for local LLMs on Apple Silicon\nMeasured, not assumed.\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nLocal model snapshots (metadata only; no model has been loaded)\nmlx-community/gemma-3-4b-it-4bit  93724907d4ed1745d2fe50baadf3b0b01a65abf2  available  3400569562 bytes\n  warning: weight index shard set differs from mlx_lm direct model*.safetensors selection (index=['model-00001-of-00002.safetensors', 'model-00002-of-00002.safetensors'], selected=['model.safetensors'])\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nIronMule doctor\n[OK] Linux: Linux x86_64 (x86_64)\n[OK] Python: 3.12.13 (requires >= 3.10)\n[OK] MLX: 0.32.2; importable (isolated probe)\n[OK] MLX-LM: 0.31.3; importable (isolated probe)\n[OK] NumPy: 2.5.3; importable (isolated probe)\n[OK] MLX CUDA device: CUDA GPU operation verified; compute capability 7.5 emulates bf16, so a numeric plan can pay \u2014 but which one is per model: gemma3_text=none, gemma4_text=none, gpt_oss=none, llama=none, ministral3=float32, qwen3=native (see `ironmule plans` for the numbers behind each)\n\nAll runtime prerequisites are available.\ndoctor_exit=0\n"
+  },
+  "ruff": {
+   "exit": 0,
+   "seconds": 0.0,
+   "tail": "All checks passed!\n"
+  },
+  "figures": {
+   "exit": 0,
+   "seconds": 8.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n14 figures match their evidence\n"
+  },
+  "ssot": {
+   "exit": 0,
+   "seconds": 6.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"archive_entries\": 0,\n  \"build_seconds\": 4.353,\n  \"database\": \"/tmp/ssot.sqlite3\",\n  \"duplicate_occurrences\": 6545,\n  \"failed_sources\": 0,\n  \"git_history_objects\": 560,\n  \"metrics\": 139733,\n  \"objects\": 560,\n  \"occurrences\": 9824,\n  \"runs\": 3279,\n  \"sources\": 1090\n}\nError in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"objects\": 560,\n  \"occurrences\": 9824,\n  \"original_bytes\": 16913278,\n  \"original_sources_checked\": 1090,\n  \"runs\": 3279,\n  \"state\": \"verified\"\n}\n"
+  },
+  "download_qwen35_9b": {
+   "exit": 0,
+   "seconds": 38.4,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3.5-9B-MLX-4bit/snapshots/938d8919941c6e7efd3c7150eff7fe9d12afa631\n"
+  },
+  "pytest_qwen": {
+   "exit": 1,
+   "seconds": 89.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nF                                                                        [100%]\n=================================== FAILURES ===================================\n_________ test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes _________\n\nqwen_runtime = (<ironmule.service.Runtime object at 0x7f09ff929100>, <module 'ironmule' from '/tmp/IronMule/ironmule/__init__.py'>)\n\n    def test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes(qwen_runtime):\n        rt, ironmule = qwen_runtime\n        prompt_ids = [rt.encode(prompt) for prompt in PROMPTS]\n        references = [_reference_tokens(rt, ids) for ids in prompt_ids]\n        for ids in prompt_ids:\n            _check_recurrent_shapes(rt, ironmule, ids)\n    \n        rt.mode = ironmule.InteractiveMode()\n        requests = [\n            ironmule.Request(\n                prompt_ids=ids,\n                max_tokens=IRONMULE_MAX_TOKENS,\n                plan=ironmule.StrictOneShotPlan(),\n                rid=f\"qwen{i}\",\n            )\n            for i, ids in enumerate(prompt_ids)\n        ]\n        interactive = rt.serve(requests)\n        for result, expected in zip(interactive, references):\n>           assert result.tokens == expected\nE           assert [90700, 8340,..., 16, 13, ...] == [271, 760, 19...198, 760, ...]\nE             \nE             At index 0 diff: 90700 != 271\nE             Right contains one more item: 2614\nE             Use -v to get more diff\n\ntests/engine/test_qwen_hybrid_integration.py:137: AssertionError\n=========================== short test summary info ============================\nFAILED tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes\n1 failed in 88.08s (0:01:28)\n"
+  },
+  "pytest_qwen_graphs0": {
+   "exit": 1,
+   "seconds": 59.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nF                                                                        [100%]\n=================================== FAILURES ===================================\n_________ test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes _________\n\nqwen_runtime = (<ironmule.service.Runtime object at 0x7c6907a91f70>, <module 'ironmule' from '/tmp/IronMule/ironmule/__init__.py'>)\n\n    def test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes(qwen_runtime):\n        rt, ironmule = qwen_runtime\n        prompt_ids = [rt.encode(prompt) for prompt in PROMPTS]\n        references = [_reference_tokens(rt, ids) for ids in prompt_ids]\n        for ids in prompt_ids:\n            _check_recurrent_shapes(rt, ironmule, ids)\n    \n        rt.mode = ironmule.InteractiveMode()\n        requests = [\n            ironmule.Request(\n                prompt_ids=ids,\n                max_tokens=IRONMULE_MAX_TOKENS,\n                plan=ironmule.StrictOneShotPlan(),\n                rid=f\"qwen{i}\",\n            )\n            for i, ids in enumerate(prompt_ids)\n        ]\n        interactive = rt.serve(requests)\n        for result, expected in zip(interactive, references):\n>           assert result.tokens == expected\nE           assert [90700, 8340,..., 16, 13, ...] == [90700, 8340,..., 16, 13, ...]\nE             \nE             Right contains one more item: 2014\nE             Use -v to get more diff\n\ntests/engine/test_qwen_hybrid_integration.py:137: AssertionError\n=========================== short test summary info ============================\nFAILED tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes\n1 failed in 58.85s\n"
+  }
+ },
+ "pytest_unit_1": {
+  "line": "1259 passed, 28 skipped, 1 warning, 11 subtests passed in 86.79s (0:01:26)",
+  "failed": [],
+  "exit": 0
+ },
+ "pytest_unit_2": {
+  "line": "1259 passed, 28 skipped, 1 warning, 11 subtests passed in 56.56s",
+  "failed": [],
+  "exit": 0
+ },
+ "pytest_integration": {
+  "line": "12 passed, 4 skipped, 1287 deselected in 365.05s (0:06:05)",
+  "failed": [],
+  "exit": 0
+ },
+ "rerun_nodes": [],
+ "backlog_probe": {
+  "backlog5_load8": {
+   "burners": 8,
+   "runs": [
+    {
+     "wall_s": 39.63,
+     "overflows": 8,
+     "result": "1 failed in 38.67s"
+    },
+    {
+     "wall_s": 39.4,
+     "overflows": 8,
+     "result": "1 failed in 38.52s"
+    },
+    {
+     "wall_s": 39.43,
+     "overflows": 8,
+     "result": "1 failed in 38.53s"
+    },
+    {
+     "wall_s": 39.57,
+     "overflows": 8,
+     "result": "1 failed in 38.59s"
+    },
+    {
+     "wall_s": 40.4,
+     "overflows": 9,
+     "result": "1 failed in 39.50s"
+    }
+   ]
+  },
+  "backlog64_load8": {
+   "burners": 8,
+   "runs": [
+    {
+     "wall_s": 1.87,
+     "overflows": 0,
+     "result": "1 passed in 0.90s"
+    },
+    {
+     "wall_s": 1.78,
+     "overflows": 0,
+     "result": "1 passed in 0.88s"
+    },
+    {
+     "wall_s": 1.8,
+     "overflows": 0,
+     "result": "1 passed in 0.91s"
+    },
+    {
+     "wall_s": 1.31,
+     "overflows": 0,
+     "result": "1 passed in 0.44s"
+    },
+    {
+     "wall_s": 1.84,
+     "overflows": 0,
+     "result": "1 passed in 0.89s"
+    }
+   ]
+  },
+  "backlog5_idle": {
+   "burners": 0,
+   "runs": [
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.96,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.94,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.63s"
+    }
+   ]
+  },
+  "backlog64_idle": {
+   "burners": 0,
+   "runs": [
+    {
+     "wall_s": 0.94,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.94,
+     "overflows": 0,
+     "result": "1 passed in 0.63s"
+    },
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    },
+    {
+     "wall_s": 0.95,
+     "overflows": 0,
+     "result": "1 passed in 0.64s"
+    }
+   ]
+  }
+ },
+ "pytest_qwen": {
+  "line": "1 failed in 88.08s (0:01:28)",
+  "failed": [
+   "tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes"
+  ],
+  "exit": 1
+ },
+ "pytest_qwen_graphs0": {
+  "line": "1 failed in 58.85s",
+  "failed": [
+   "tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes"
+  ],
+  "exit": 1
+ },
+ "finished": true
+}
