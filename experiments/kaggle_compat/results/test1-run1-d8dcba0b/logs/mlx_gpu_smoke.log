@@ -1,0 +1,4 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+mlx 0.32.2 device Device(gpu, 0) cuda True
+qmm max_abs_diff 1.9073486328125e-05

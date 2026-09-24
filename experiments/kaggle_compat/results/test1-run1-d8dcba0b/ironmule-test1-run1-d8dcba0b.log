@@ -1,0 +1,53 @@
+[{"stream_name":"stdout","time":1.61452952,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":5.173282375,"data":"== clone: exit=0 3.6s\n"}
+,{"stream_name":"stdout","time":15.769516744,"data":"== venv: exit=0 10.6s\n"}
+,{"stream_name":"stdout","time":40.526526207,"data":"== install: exit=0 24.8s\n"}
+,{"stream_name":"stdout","time":40.614746697,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":42.104982725,"data":"== mlx_gpu_smoke: exit=0 1.5s\n"}
+,{"stream_name":"stdout","time":126.142088587,"data":"== download_4b: exit=0 84.0s\n"}
+,{"stream_name":"stdout","time":213.901985519,"data":"== pytest_unit_1: exit=0 87.8s\n"}
+,{"stream_name":"stdout","time":270.829116476,"data":"== pytest_unit_2: exit=0 56.9s\n"}
+,{"stream_name":"stdout","time":637.20722953,"data":"== pytest_integration: exit=0 366.4s\n"}
+,{"stream_name":"stdout","time":653.088070901,"data":"== collect_all: exit=0 15.9s\n"}
+,{"stream_name":"stdout","time":653.192622879,"data":"== backlog_before: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":653.288111459,"data":"== backlog_after: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":851.728770696,"data":"== probe backlog5_load8: [{'wall_s': 39.63, 'overflows': 8, 'result': '1 failed in 38.67s'}, {'wall_s': 39.4, 'overflows': 8, 'result': '1 failed in 38.52s'}, {'wall_s': 39.43, 'overflows': 8, 'result': '1 failed in 38.53s'}, {'wall_s': 39.57, 'overflows': 8, 'result': '1 failed in 38.59s'}, {'wall_s': 40.4, 'overflows': 9, 'result': '1 failed in 39.50s'}]\n"}
+,{"stream_name":"stdout","time":860.33724841,"data":"== probe backlog64_load8: [{'wall_s': 1.87, 'overflows': 0, 'result': '1 passed in 0.90s'}, {'wall_s': 1.78, 'overflows': 0, 'result': '1 passed in 0.88s'}, {'wall_s': 1.8, 'overflows': 0, 'result': '1 passed in 0.91s'}, {'wall_s': 1.31, 'overflows': 0, 'result': '1 passed in 0.44s'}, {'wall_s': 1.84, 'overflows': 0, 'result': '1 passed in 0.89s'}]\n"}
+,{"stream_name":"stdout","time":865.09760222,"data":"== probe backlog5_idle: [{'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.96, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.94, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.63s'}]\n"}
+,{"stream_name":"stdout","time":869.836924675,"data":"== probe backlog64_idle: [{'wall_s': 0.94, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.94, 'overflows': 0, 'result': '1 passed in 0.63s'}, {'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.64s'}, {'wall_s': 0.95, 'overflows': 0, 'result': '1 passed in 0.64s'}]\n"}
+,{"stream_name":"stdout","time":875.972205241,"data":"== cli_smoke: exit=0 6.1s\n"}
+,{"stream_name":"stdout","time":875.995677762,"data":"== ruff: exit=0 0.0s\n"}
+,{"stream_name":"stdout","time":884.232825893,"data":"== figures: exit=0 8.2s\n"}
+,{"stream_name":"stdout","time":891.132379543,"data":"== ssot: exit=0 6.9s\n"}
+,{"stream_name":"stdout","time":929.524152306,"data":"== download_qwen35_9b: exit=0 38.4s\n"}
+,{"stream_name":"stdout","time":1018.585330425,"data":"== pytest_qwen: exit=1 89.1s\n"}
+,{"stream_name":"stdout","time":1078.429422929,"data":"== pytest_qwen_graphs0: exit=1 59.8s\n"}
+,{"stream_name":"stdout","time":1078.430708838,"data":"{\n"}
+,{"stream_name":"stdout","time":1078.430726176,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430731325,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430737597,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430743791,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430748609,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430769077,"data":" \"mlx_gpu_smoke\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430773128,"data":" \"download_4b\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430776612,"data":" \"pytest_unit_1\": 0,\n"}
+,{"stream_name":"stdout","time":1078.43078004,"data":" \"pytest_unit_2\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430783781,"data":" \"pytest_integration\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430787212,"data":" \"collect_all\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430790622,"data":" \"backlog_before\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430795663,"data":" \"backlog_after\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430804632,"data":" \"cli_smoke\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430807015,"data":" \"ruff\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430809635,"data":" \"figures\": 0,\n"}
+,{"stream_name":"stdout","time":1078.43081197,"data":" \"ssot\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430814266,"data":" \"download_qwen35_9b\": 0,\n"}
+,{"stream_name":"stdout","time":1078.430816487,"data":" \"pytest_qwen\": 1,\n"}
+,{"stream_name":"stdout","time":1078.430818805,"data":" \"pytest_qwen_graphs0\": 1\n"}
+,{"stream_name":"stdout","time":1078.430821146,"data":"}\n"}
+,{"stream_name":"stderr","time":1081.183587923,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1081.183643722,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1081.709600669,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1081.709620799,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1083.04335596,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1084.730137601,"data":"[NbConvertApp] Writing 316522 bytes to __results__.html\n"}
+]
