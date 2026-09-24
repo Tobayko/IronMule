@@ -25,9 +25,11 @@ os.environ.setdefault("HF_HUB_OFFLINE", "1")
 os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
 
 IRONMULE_MAX_TOKENS = 8
-# The reference loop yields one prefill choice plus eight decode choices, matching
-# IronMule's one-prefill-plus-eight semantics.
-REFERENCE_OUTPUTS = IRONMULE_MAX_TOKENS + 1
+# max_tokens is the total physical output cap and the prefill-produced token counts
+# toward it (docs/RUNTIME.md), so the reference loop yields one prefill choice plus
+# seven decode choices. The earlier one-prefill-plus-eight count failed on every
+# recorded run (TEST1, Kaggle T4).
+REFERENCE_OUTPUTS = IRONMULE_MAX_TOKENS
 PROMPTS = [
     "Name one advantage of a unified memory architecture.",
     "What does greedy decoding choose at each step?",
