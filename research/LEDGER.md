@@ -5431,7 +5431,8 @@ inputs peaked at 7264 and outputs at 2806, far inside float16, and WikiText-2 NL
 tokens (BOS on every chunk) was 2.66999 against 2.66993 for bf16, each chunk within 0.0037 nats
 of a float32-matmul reference where bf16 was within 0.0084. Without BOS on each chunk Gemma 3's
 NLL swings by up to 0.34 nats under any change of rounding, float32 included, which is worth
-knowing before anyone reads a gate built that way.
+knowing before anyone reads a gate built that way. Scripts and console output:
+`experiments/kaggle_compat/results/mac-gemma-diagnostics-2026-09-24/`.
 
 Run 17 (`perf1-run17-9371e9d6`, Kaggle T4, product path at `b6886a0` plus the MoE patch of runs
 15-16, `cross.py`, 6 requests x 48 tokens, 2 interleaved repetitions, float32 plan as reference):
@@ -5472,4 +5473,5 @@ pass and 4B's `float16` failure (102.5 -> 209.6) included. They stay as recorded
 results are not repaired — and a gate with BOS is a new run (backlog PORT2-K). Qwen's tokenizers
 have no BOS and are unaffected; Llama 3.1's adds one to the first chunk only, as with Gemma 3.
 `perf1.py nll` now starts every chunk with BOS and records `bos` in its output; `quality.py` is
-unchanged until a run needs it.
+unchanged until a run needs it. Scripts and console output:
+`experiments/kaggle_compat/results/mac-gemma-diagnostics-2026-09-24/`.
