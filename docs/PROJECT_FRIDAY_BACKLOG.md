@@ -170,6 +170,9 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   `MLX_USE_CUDA_GRAPHS=0`, interaktiv und Durchsatz, zwei Prozesse je Arm. Kill: auch ohne
   Graphen nicht deterministisch — dann bleibt die Verweigerung; sonst Graphen für diese
   Familie auf CUDA abschalten und die Verweigerung neu prüfen.
+  TEST1 (2026-09-24, ledger): the Qwen hybrid gate (2 prompts, 8 tokens, grouped mode set
+  after load) matched the reference in two processes with graphs off; with graphs on the
+  unmodified reference, not IronMule, changed its first token in all three. Not this test.
 - **PERF1-R Mikro-Batches in der Pipeline.** Bei Breite 1 rechnet immer nur eine Karte; die
   Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
   abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter

@@ -1,0 +1,13 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+============================= test session starts ==============================
+platform linux -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /tmp/im/bin/python
+rootdir: /tmp/IronMule
+configfile: pytest.ini
+plugins: anyio-4.15.1, xdist-3.8.0
+collecting ... collected 1 item
+
+tests/engine/test_qwen_hybrid_integration.py::test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes PASSED [100%]
+
+-------- generated xml file: /kaggle/working/pytest_qwen_graphs0_a.xml ---------
+========================= 1 passed in 65.32s (0:01:05) =========================
