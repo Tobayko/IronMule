@@ -33,6 +33,7 @@ needs only the affected text and applicable documentation conventions.
 | Validation selection | [pytest.ini](pytest.ini), [tests/conftest.py](tests/conftest.py), affected tests and CI |
 | Releases | [docs/RELEASING.md](docs/RELEASING.md), including its full pre-publication gates |
 | Figures or aggregate evidence views | [tools/make_figures.py](tools/make_figures.py) for [docs/assets/](docs/assets/); [docs/SSOT.md](docs/SSOT.md) for the derived evidence index |
+| Clean-up, or whether a file is code or evidence | [docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md) |
 
 [tools/](tools/) contains measurement, analysis and verification harnesses. Inspect
 the selected tool and its contract before running it; unrelated work does not need
