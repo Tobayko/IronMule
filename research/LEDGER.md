@@ -5366,3 +5366,47 @@ test once in two runs at backlog 5 (the failing run shared the host with a model
 with backlog 64 it passed twice, 1258 passed, 29 skipped. Fix: `request_queue_size` equals the
 handler bound; a regression test fails at 5. Raw data and the probe:
 `experiments/http_backlog/`. Open: confirmation on Kaggle, where the failure was first seen.
+
+## TEST1, continued — the engine suite on a Kaggle T4, and the Qwen gate's count (2026-09-24)
+
+Every test the repository can run off the target Mac, on Kaggle: 2 x Tesla T4 (driver
+580.159.04), 4 CPUs, Python 3.12.13 (uv-managed), mlx 0.32.2, mlx-lm 0.31.3, pytest 9.1.1,
+pinned Gemma 3 4B and Qwen 3.5 9B revisions. Run 1 (`test1-run1-d8dcba0b`) at `f9e1d30`, run 2
+(`test1-run2-ffff8ad1`) at `2151eb2`. Raw data, junit files and the submitted notebooks:
+`experiments/kaggle_compat/results/test1-run*/`.
+
+| run 1 | result |
+| :-- | :-- |
+| engine suite, `-m "not integration"`, twice | 1259 passed, 28 skipped, 0 failed (86.8 s, 56.6 s) |
+| real-model integration, serial | 12 passed, 4 skipped (three macOS-only, the opt-in Qwen gate), 0 failed, 365 s |
+| ruff F, `make_figures.py --check`, CLI smoke, `doctor` | pass; 14 figures match; all prerequisites available |
+| SSOT `build` and `verify --check-sources` from the Kaggle clone | verified, 1090 sources, 3279 records |
+
+Every Kaggle pytest stage recorded before (DATA3, PORT1) ended with failures; this is the first
+without one. The invocation differs (those ran everything in one `-n 4` pass with `addopts`
+cleared), so the counts are not compared one for one.
+
+**The backlog on the host that showed the failure.** Each tree imported its own server
+(backlog 5 and 64). Under 8 busy processes backlog 5 failed 5 of 5 (38.5-39.5 s, 8-9
+overflows per run) and backlog 64 passed 5 of 5 (0.44-0.91 s, none). Idle, neither overflowed
+and both passed in 0.63-0.64 s, unlike the Linux container where backlog 5 overflowed idle too.
+
+**The Qwen gate expected a token the contract does not produce.** With CUDA graphs off,
+IronMule's eight tokens equalled the reference's first eight; the reference had nine because
+the gate counted one prefill plus eight decode tokens, while `docs/RUNTIME.md` and
+`test_max_tokens_one_stops_after_prefill_token` make `max_tokens` the total including the
+prefill token. No recorded run of the gate had passed. With the count corrected (`2151eb2`),
+graphs off passed in two processes: strict interactive, recurrent shapes and grouped
+`ThroughputMode` (set after load, so the load-time refusal is bypassed) all equal the
+reference. Graphs on failed in all three processes, the same way each time: the unmodified
+mlx-lm reference chose token 271 first where IronMule, and both paths with graphs off, chose
+90700. Under CUDA graphs the reference departs, not IronMule; why the direct model call and
+IronMule's prefill diverge there is not established. Two prompts, eight tokens: this is not
+PERF1-T's test and does not close it.
+
+Observed, not investigated: Kaggle's `sitecustomize` still prints a missing `wrapt` in every
+child interpreter despite `PYTHONNOUSERSITE=1` and a uv-managed Python (no test failed on it),
+and `ironmule models list` warns that the 4B snapshot's weight index names two shards while
+mlx-lm selects `model.safetensors`. Validity: Linux, CUDA sm_75; nothing here speaks for Apple
+Silicon or Metal. The research suite is not collected off the target Mac and was not run.
+Runs 1-2 used about 25 min of free GPU quota, 0 EUR.
