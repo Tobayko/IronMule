@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "af848ba33e6973caa3f880150b2bbd98b90c7299"
 STOCK = {"name": "stock", "env": {"MLX_MAX_OPS_PER_BUFFER": "20", "MLX_MAX_MB_PER_BUFFER": "100"},
          "knobs": {}, "mode": "interactive"}
 TUNED = {"compiled_fixed_cache": True, "fused_argmax": True, "head_skip_prefill": True, "readback_every": 2,

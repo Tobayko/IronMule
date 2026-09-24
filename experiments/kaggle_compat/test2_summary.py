@@ -81,6 +81,9 @@ def main(results, out=None):
               f"(spread {spread:.2%})" if spread is not None else f"{key}: reps {model['reps']}",
               f"stock deterministic: {model['stock_deterministic']}")
         for name, arm in model["arms"].items():
+            if arm["median"] is None:
+                print(f"  {name:22s} no completed process ({arm['failed']} failed) -> no verdict")
+                continue
             print(f"  {name:22s} median {arm['median']:.4f} ({arm['speedup']:.2f}x) range "
                   f"[{arm['min']:.4f}; {arm['max']:.4f}] published {arm.get('published')} "
                   f"({arm.get('deviation', 0):+.1%}) -> {arm.get('verdict')}; identical "

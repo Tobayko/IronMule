@@ -1,0 +1,62 @@
+[{"stream_name":"stdout","time":0.850136399,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":2.528407455,"data":"== clone: exit=0 1.7s\n"}
+,{"stream_name":"stdout","time":10.116294736,"data":"== venv: exit=0 7.6s\n"}
+,{"stream_name":"stdout","time":29.096952477,"data":"== install: exit=0 19.0s\n"}
+,{"stream_name":"stdout","time":29.18506478,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":63.317292287,"data":"== download_qwen3-8b: exit=0 34.1s\n"}
+,{"stream_name":"stdout","time":229.785776138,"data":"qwen3-8b stock 0 52964.135396 0\n"}
+,{"stream_name":"stdout","time":289.158008502,"data":"qwen3-8b ironmule_native 0 9828.941376 0\n"}
+,{"stream_name":"stdout","time":417.542699579,"data":"qwen3-8b ironmule_fp32 0 27659.799999 0\n"}
+,{"stream_name":"stdout","time":516.092365031,"data":"qwen3-8b ironmule_fp16 0 16360.823323 0\n"}
+,{"stream_name":"stdout","time":575.638315612,"data":"qwen3-8b ironmule_native 1 10249.400586 0\n"}
+,{"stream_name":"stdout","time":661.980803049,"data":"qwen3-8b ironmule_fp32 1 27583.365549 0\n"}
+,{"stream_name":"stdout","time":723.96476148,"data":"qwen3-8b ironmule_fp16 1 16405.509866 0\n"}
+,{"stream_name":"stdout","time":858.848568566,"data":"qwen3-8b stock 1 51823.522855 0\n"}
+,{"stream_name":"stdout","time":944.999552799,"data":"qwen3-8b ironmule_fp32 2 28426.206162 0\n"}
+,{"stream_name":"stdout","time":1007.024233927,"data":"qwen3-8b ironmule_fp16 2 16315.013034 0\n"}
+,{"stream_name":"stdout","time":1141.891838592,"data":"qwen3-8b stock 2 51925.43658 0\n"}
+,{"stream_name":"stdout","time":1200.498263402,"data":"qwen3-8b ironmule_native 2 9882.181423 0\n"}
+,{"stream_name":"stdout","time":1264.291644732,"data":"qwen3-8b ironmule_fp16 3 16637.651337 0\n"}
+,{"stream_name":"stdout","time":1398.944774639,"data":"qwen3-8b stock 3 51072.983579 0\n"}
+,{"stream_name":"stdout","time":1457.916329179,"data":"qwen3-8b ironmule_native 3 10118.597289 0\n"}
+,{"stream_name":"stdout","time":1544.320700027,"data":"qwen3-8b ironmule_fp32 3 27342.291859 0\n"}
+,{"stream_name":"stdout","time":1585.957512319,"data":"== download_qwen3-14b: exit=0 41.6s\n"}
+,{"stream_name":"stdout","time":1830.603698475,"data":"qwen3-14b stock 0 95695.277983 0\n"}
+,{"stream_name":"stdout","time":1930.081695082,"data":"qwen3-14b ironmule_native 0 19651.377214 0\n"}
+,{"stream_name":"stdout","time":2084.000236958,"data":"qwen3-14b ironmule_fused_fp32 0 49602.67752 0\n"}
+,{"stream_name":"stdout","time":2184.138959412,"data":"qwen3-14b ironmule_native 1 19848.453669 0\n"}
+,{"stream_name":"stdout","time":2337.603262724,"data":"qwen3-14b ironmule_fused_fp32 1 49034.555455 0\n"}
+,{"stream_name":"stdout","time":2581.414816425,"data":"qwen3-14b stock 1 95217.604779 0\n"}
+,{"stream_name":"stdout","time":2734.084896865,"data":"qwen3-14b ironmule_fused_fp32 2 49066.582303 0\n"}
+,{"stream_name":"stdout","time":2977.812547268,"data":"qwen3-14b stock 2 94928.962896 0\n"}
+,{"stream_name":"stdout","time":3075.541867632,"data":"qwen3-14b ironmule_native 2 18948.125834 0\n"}
+,{"stream_name":"stdout","time":3127.789144785,"data":"== download_gptoss-20b: exit=0 52.2s\n"}
+,{"stream_name":"stdout","time":3600.733524715,"data":"gptoss-20b stock 0 126984.44837 0\n"}
+,{"stream_name":"stdout","time":3721.522460504,"data":"gptoss-20b ironmule_fp32 0 None timeout\n"}
+,{"stream_name":"stdout","time":3781.928004836,"data":"gptoss-20b ironmule_fp16 0 None timeout\n"}
+,{"stream_name":"stdout","time":3781.929836504,"data":"{\n"}
+,{"stream_name":"stdout","time":3781.92985147,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929857958,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929863025,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929889748,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929897933,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929900376,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":3781.92990259,"data":" \"cross_qwen3-8b_rep0\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929904803,"data":" \"cross_qwen3-8b_rep1\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929907059,"data":" \"cross_qwen3-8b_rep2\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929909391,"data":" \"cross_qwen3-8b_rep3\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929911579,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929913796,"data":" \"cross_qwen3-14b_rep0\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929916161,"data":" \"cross_qwen3-14b_rep1\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929918319,"data":" \"cross_qwen3-14b_rep2\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929920488,"data":" \"download_gptoss-20b\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929922653,"data":" \"cross_gptoss-20b_rep0\": 0,\n"}
+,{"stream_name":"stdout","time":3781.929924959,"data":" \"cross_gptoss-20b_rep1\": \"skipped_deadline\"\n"}
+,{"stream_name":"stdout","time":3781.92992734,"data":"}\n"}
+,{"stream_name":"stderr","time":3784.020340095,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":3784.020401575,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":3784.262548114,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":3784.262569001,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":3785.374567838,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":3786.539145498,"data":"[NbConvertApp] Writing 319008 bytes to __results__.html\n"}
+]
