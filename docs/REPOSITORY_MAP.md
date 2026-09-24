@@ -49,3 +49,5 @@ keeps the reviewed template. Shared scripts that later runs reuse stay.
   benchmark report and could move to its own repository.
 - The Kaggle templates `port1_run5` to `port1_run8` and `port2_run1` to `port2_run9` have no
   archived submitted copy and stay.
+- Checked on Kaggle (CPU notebook, `results/cleanup-check-84944ce6/`): engine suite 1260
+  passed, 28 skipped, 0 failed; ruff, figures, CLI smoke and SSOT `verify --check-sources` pass.
