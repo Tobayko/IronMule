@@ -267,10 +267,6 @@ def legal_knob_neighbors(current: Any, panel: ActionPanel) -> tuple[CandidateSpe
     return tuple(result)
 
 
-def _rows_for_action(rows: Iterable[Any], action_id: str) -> tuple[Any, ...]:
-    return tuple(row for row in rows if _id(getattr(row, "action_id", row.get("action_id", "") if isinstance(row, Mapping) else "")) == action_id)
-
-
 def _safe_row(row: Any) -> bool:
     failed = getattr(row, "failed", row.get("failed", False) if isinstance(row, Mapping) else False)
     censored = getattr(row, "censored", row.get("censored", False) if isinstance(row, Mapping) else False)
