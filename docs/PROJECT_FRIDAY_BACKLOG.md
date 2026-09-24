@@ -111,17 +111,16 @@ Das Nutzerziel "auf CUDA mindestens so gut wie auf Apple, möglichst besser" ist
 und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen Apple
 0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
 Budgetregel bleibt: bis 10 h je Kaggle-Woche, 0 EUR, ein Lauf, kein Auto-Retry,
-Notebook nach Archivierung löschen. Offen:
+Notebook nach Archivierung löschen. `PORT1-D` (`MLX_MAX_OPS_PER_BUFFER` auf Apple) ist
+gestrichen: `B68` hat diese Achse am 2026-09-10 mit 48 frischen Prozessen auf 4B und 12B
+geschlossen (`DEFAULT_WINS`, `research/LEDGER.md` B68); der Mac-Smoke mit n=1 war
+schwächere Evidenz als diese Messung. Offen:
 
 - **PORT1-E Nutzerentscheidung: fp32 automatisch auf Turing/Volta?** Mechanismus:
   bei CUDA mit Compute Capability < 8 und bf16-Checkpoint `compute_dtype="float32"`
   als Default statt nur als `doctor`-Empfehlung. Dagegen steht die Projektregel
   "keine automatische Plan-Auswahl", denn die Tokens weichen von Stock-bf16 ab (4B
   2/6, 12B 4/6 identisch). Kill: Nutzer lehnt ab — dann bleibt es opt-in.
-- **PORT1-D Apple-Hebel `MLX_MAX_OPS_PER_BUFFER`.** Dieselbe Variable dimensioniert
-  Metal-Command-Buffer; Mac-Smoke n=1: 0,96–0,97 im Arm D. Nicht übernommen, weil der
-  Darwin-Pfad unverändert bleiben muss. Test: `graphs.py` auf dem Mac, 5 Wdh.,
-  eigene Vorregistrierung. Kill: Intervall schließt 1 ein oder Tokenbruch.
 - **PORT1-F einmaliger Absturz der 4B-bf16-`tune`-Bestätigung (Lauf `632b904f`).**
   `ab`-Kind Exit 1 ohne stderr, damals mit `MLX_MAX_MB_PER_BUFFER=4000`; mit dem
   ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
@@ -208,6 +207,13 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   `kernel+p16` gegen Stock-bf16, Decode- und Prefill-Pfad, BOS in jedem Chunk (ohne BOS
   schwankt Gemma 3 um bis zu 0,34 Nats). Kill: obere Grenze > 1,005 — dann `native` für
   `mlx_lm.models.gemma3_text` verweigern (Tabellenzeile), float32 bleibt der Plan.
+- **PERF1-Z Jede CUDA-Zahl der Website neu belegen (Nutzer 2026-09-24, bis ca. 1,5 h Quote
+  über die 10-h-Wochenregel hinaus freigegeben).** Die CUDA-Ansicht zeigt 1,03/1,05/1,82x
+  (PORT1), Qwen 3 8B 6,3 -> 32,5 tok/s und TTFT 0,76 s (run 2), 2,49x (run 17) und „bis zu
+  5,52x“, verkettet aus zwei Läufen mit ungleichen float32-Armen. Test: run 18, jede Zahl mit
+  ihrem Originalprotokoll, Stock (IronMule aus) im selben Lauf, `native` + compiled_fixed_cache
+  direkt gegen Stock. Kill: Median weicht mehr als 5 % ab — dann ersetzt die neue Messung die
+  alte Zahl; exakte Arme nicht 6/6 tokengleich — dann fällt die Exakt-Aussage.
 - **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
@@ -341,22 +347,13 @@ neuer Kernel oder RL-Policy ohne gemessenen Engpass bzw. valide Datenbasis.
 
 Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
 beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`; getrennte Server-/Worker-
-Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`):
-1. **Beantwortet 2026-09-09.** Das Metal-System-Trace-Protokoll steht und liefert
-   originale Gerätezeit: `xctrace`, Compute-Kanal, GPU-Intervalle über die eigenen
-   Command-Buffer-IDs zugeordnet (`tools/b24_decode_workload.py`,
-   `tools/b24_trace_report.py`, Experiment `B24_metal_trace_series_20260909_attempt1`).
-   Ungruppierter Batch-1-Decodeschritt, je drei Läufe: Geräteanteil 68,4 % bei 1B,
-   75,3 % bei 4B, 83,3 % bei 12B; Hostzeit 2,72 / 3,27 / 5,50 ms bei Schritten von
-   8,48 / 13,23 / 32,86 ms. Die abgeleitete Roofline
-   (`B24R_roofline_20260909_attempt1`) setzt den unvermeidbaren Gewichtsdurchlauf auf
-   59,7 % eines 4B- und 67,5 % eines 12B-Schritts. Offen bleibt allein die
-   Dispatchzahl; sie braucht einen Lauf mit aktivierter Shader-Timeline. Der
-   abgebrochene 6,7-GB-`.gputrace` bleibt Replay-Zeit und wird nicht verwendet.
-2. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
-   Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
-   bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
-   nur mit unabhängigem Nachweis behaupten; ein negativer Befund bleibt gültig.
+Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`; Metal-System-
+Trace-Protokoll und Roofline beantwortet 2026-09-09: `research/LEDGER.md` B24):
+
+Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten Daten prüfen;
+fehlende Voraussetzungen aus dem Backlog abarbeiten statt bloß einen weiteren Plan
+abzuliefern. Produktiven Lern- oder Kernelgewinn nur mit unabhängigem Nachweis
+behaupten; ein negativer Befund bleibt gültig.
 
 Gate: tatsächliche native Ausführung, vollständige Fehler-/Versuchshistorie,
 gebundene Modelle/Code/Umgebung, echte Ausgabeidentität und klare Grenzen jeder
@@ -486,7 +483,7 @@ oder Telemetrie-/Modellarbeit allein durch Öffnen der Ansicht.
 Die kritischen Defekte sind behoben (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03).
 Offen bleiben vier eng umrissene Punkte:
 
-1. **`friday_serve/speculation.py` entfernen (S4).** Nur noch von
+1. **`research/friday_serve/speculation.py` entfernen (S4).** Nur noch von
    `experiments/speculation_bandit/replay.py` und `tests/test_speculation.py`
    referenziert, im Serving-Pfad tot (`knobs_for()` kann `speculate_k` nicht
    emittieren). Kill-Kriterium S4 verlangt Entfernung statt Kalibrierung.
@@ -920,7 +917,7 @@ nützt nichts, solange die Antwort ihn nicht zitiert.
 **Warum das zählt.** Die Kosten steigen trotzdem: Decode `2,398` / `3,273` /
 `4,054` Sekunden bei `k = 1, 2, 3` gegen rund `1,9` der Baseline. Das ist die
 tragende Ursache von H1.0s Verlust und der Grund, warum der Befund
-**workloadbedingt** ist. `friday_serve/speculation.py` schätzt genau diese
+**workloadbedingt** ist. `research/friday_serve/speculation.py` schätzt genau diese
 Trefferwahrscheinlichkeit vorab über die Unigrammrate des Prompts — und liegt
 für diesen Prompt zu hoch, weil die Unigrammrate hoch und die Trigrammrate null
 ist.
@@ -933,7 +930,7 @@ Trigrammrate die Annahme vorher und die Unigrammrate nicht, ist der Schätzer in
 
 **Kill:** trifft der Lookup auch auf einer wiederholungsreichen Workload dieses
 Produkts nicht an, ist Prompt-Lookup für dieses Produkt die falsche Technik und
-`friday_serve/speculation.py` wird entfernt statt kalibriert.
+`research/friday_serve/speculation.py` wird entfernt statt kalibriert.
 
 ## H1.3d — Darf für die Drosselungsmessung Dauerlast gefahren werden? (neu 2026-09-02)
 
