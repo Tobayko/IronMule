@@ -5468,3 +5468,39 @@ the same requests at the same positions (tokens 33, 5 and 18; `float32` also at 
 close top-two logits in the model at those steps; the margins were not measured. The speed is
 reproduced; the quality is not: neither plan has passed its gate on this model (PORT2 run 7,
 `[0.940; 1.065]` and `[0.949; 1.067]`), so both stay unqualified. Run time 38 min, 0 EUR.
+
+## OSS1 — gpt-oss 20B's gate measures its bf16 router, not the plans (2026-09-25)
+
+Question: why can neither numeric plan pass gpt-oss 20B's quality gate (PORT2 run 7: `float32`
+1.004 [0.940; 1.065], `float16` 1.009 [0.949; 1.067]) when both leave bf16 by the same amount
+per chunk? Rules fixed before the run in `docs/PROJECT_FRIDAY_BACKLOG.md` (OSS1).
+`moe_routing.py` recorded, per layer and position, the router's top-4 of 32 experts and its
+margin between the 4th and 5th logit, in one process each for bf16, `float32`, bf16 again
+(A/A) and `float16`, on chunks 1, 8, 9 and 11 of the gate's slicing (24 layers x 512
+positions = 12 288 cells per chunk). Kaggle Tesla T4, mlx 0.32.2, mlx-lm 0.31.3, commit
+`43d7514`, pinned model and dataset revisions. Raw data: `experiments/kaggle_compat/results/oss1-run1-e03d8bda/`.
+
+| pair | cells whose expert set differs | median bf16 margin, flipped / all |
+| :-- | --: | :-- |
+| bf16 / bf16 (A/A) | 0 of 49 152 | — |
+| bf16 / `float32` | 16.9-20.7% per chunk | 0.023-0.031 / 0.082-0.094 |
+| bf16 / `float16` | 16.7-20.5% per chunk | 0.023-0.031 / 0.082-0.094 |
+| `float16` / `float32` | 0.9-3.3% per chunk | 0.002-0.010 |
+
+The bf16 reference is deterministic: the A/A pair agrees in every cell and in every chunk's
+NLL, and the NLL differences reproduce run 7's to four decimals (chunk 8 +0.1779, 9 -0.2153,
+11 -0.2759, 1 0.0000). The flip rate climbs as bf16's margin shrinks: 4.0% above 0.1, 21.1%
+at 0.03-0.1, 42.7% at 0.01-0.03, 54.8% below 0.01 and 59.0% at exact ties, which are 1.54% of
+bf16's cells and 0.004% of float32's. Emulated bf16 cannot order router logits that close,
+so about a fifth of all expert choices differ from any higher-precision computation of the
+same checkpoint, while the two plans agree with each other on 97-99% of them. The flips do
+not map onto the NLL chunk by chunk (chunk 1: 16.9% of cells, dNLL 0.0000; chunks 8, 9, 11:
+18-21%, |dNLL| 0.18-0.28), and four chunks cannot establish that link.
+
+**Verdict, as the entry fixed it.** Routing is the mechanism: a gate against the checkpoint's
+own bf16 compares against a reference whose expert choices are a fifth rounding noise, and on
+this card it cannot qualify a plan for gpt-oss; about 2 400 chunks would be needed. Which
+reference replaces it for mixture-of-experts models is the user's decision (OSS1-R). Also
+recorded: gpt-oss's tokenizer has a BOS token (199998) and the gate's slicing never gives
+it, the same defect PORT2-K names for Gemma; both sides of the gate share the input, so it
+does not explain the spread. Run time 33 min, 0 EUR.
