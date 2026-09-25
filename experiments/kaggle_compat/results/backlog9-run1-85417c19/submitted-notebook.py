@@ -15,7 +15,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "ce95a043065df0c2354526dc9af38ad397d657ae"
 QWEN35 = ("mlx-community/Qwen3.5-9B-MLX-4bit", "938d8919941c6e7efd3c7150eff7fe9d12afa631")
 WORK = "/kaggle/working"
 REPO = "/tmp/IronMule"

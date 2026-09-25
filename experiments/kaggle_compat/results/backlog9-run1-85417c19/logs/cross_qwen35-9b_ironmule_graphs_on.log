@@ -1,0 +1,19 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+ironmule_graphs_on 0 54649.782362 0
+ironmule_graphs_on 1 54818.459347 0
+ironmule_graphs_on 2 54838.853061 0
+{
+ "ironmule_graphs_on": {
+  "ratio_vs_reference_per_rep": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "median_ratio": 1.0,
+  "max_ratio": 1.0,
+  "identical_requests": 6,
+  "deterministic_across_processes": false,
+  "failed_processes": 0
+ }
+}
