@@ -111,13 +111,13 @@ Das Nutzerziel "auf CUDA mindestens so gut wie auf Apple, möglichst besser" ist
 und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen Apple
 0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
 Budget rule (user, 2026-09-25): Kaggle's weekly GPU quota of 30 h; the earlier 10 h rule
-no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebook once archived. Offen:
+no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebook once archived.
+Closed 2026-09-25: PORT1-E (float32 by default on Turing and Volta), because AGENTS.md forbids
+substituting a plan for speed, the plan changes tokens, and `native` now serves Qwen 3 better;
+`doctor` keeps recommending. The Kaggle-host note on three failing product tests: TEST1 ran
+the engine suite green twice there, and the timing failure was the HTTP backlog (ledger, TEST1).
+Offen:
 
-- **PORT1-E Nutzerentscheidung: fp32 automatisch auf Turing/Volta?** Mechanismus:
-  bei CUDA mit Compute Capability < 8 und bf16-Checkpoint `compute_dtype="float32"`
-  als Default statt nur als `doctor`-Empfehlung. Dagegen steht die Projektregel
-  "keine automatische Plan-Auswahl", denn die Tokens weichen von Stock-bf16 ab (4B
-  2/6, 12B 4/6 identisch). Kill: Nutzer lehnt ab — dann bleibt es opt-in.
 - **PORT1-D Apple-Hebel `MLX_MAX_OPS_PER_BUFFER`.** Dieselbe Variable dimensioniert
   Metal-Command-Buffer; Mac-Smoke n=1: 0,96–0,97 im Arm D. Nicht übernommen, weil der
   Darwin-Pfad unverändert bleiben muss. Test: `graphs.py` auf dem Mac, 5 Wdh.,
@@ -127,9 +127,6 @@ no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebo
   ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
   Test: `ironmule tune --model 4B` nativ einmal auf der T4 (~20 min). Kill:
   reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
-- Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (zwei sehen Debians
-  kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
-  langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
 
 ## PERF1 — Rest (2026-09-23)
 
