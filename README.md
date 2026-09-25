@@ -98,7 +98,7 @@ at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
 | Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
 | Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
 | Qwen 3 14B | 8.31 GB | **1.03× · +3%** | **1.94× · +94%** | gate passed, speed not measured |
-| gpt-oss 20B | 11.18 GB | **1.03× · +3%** | **3.55× · +255%** | 5.02× · +402%, gate not yet qualified |
+| gpt-oss 20B | 11.18 GB | **1.03× · +3%** | 3.55× · +255%, gate not qualifiable here | 5.02× · +402%, gate not qualifiable here |
 | Mistral Small 3.2 24B | 13.26 GB | **1.01× · +1%** | **1.82× · +82%** | not measured |
 
 Gemma 4 gives the largest exact gain of any family here, and it gets it with projection
@@ -107,6 +107,14 @@ it. Its numeric plans say `gate unusable` rather than a number because the gate 
 result cannot be used: the bfloat16 reference it measures against scores a perplexity of
 22 212 on the text where Gemma 3 4B scores 100.5, through the same harness. Chat decoding is
 fine and token-identical to stock, so the speed is real and the quality is unestablished.
+
+gpt-oss 20B's plans cannot be qualified on this card at all. Its router picks four of 32
+experts per token, and the emulated bfloat16 reference cannot order router scores that close:
+about a fifth of its expert choices differ from any higher-precision computation of the same
+checkpoint, while `float32` and `float16` agree with each other on 97–99% of them. A gate
+against that reference measures its rounding, not the plan. IronMule keeps its rule — a plan is
+qualified against the checkpoint's own bfloat16 or not at all — so both plans stay opt-in and
+unrecommended for gpt-oss until a GPU with native bfloat16 provides the reference.
 
 Every exact arm returned the same tokens as its stock reference on all six requests. The
 exact gain past Gemma 3 is small — one to seven per cent, not the 82 per cent Gemma 3 1B

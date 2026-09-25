@@ -198,13 +198,12 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
 
 ## OSS1 — Rest (2026-09-25)
 
-- **OSS1-R User decision: which reference qualifies a plan on a mixture-of-experts model?**
-  OSS1 (ledger) showed that emulated bf16 changes about a fifth of gpt-oss 20B's expert
-  choices against float32 and float16, which agree with each other on 97-99%, so a gate
-  against the checkpoint's own bf16 cannot qualify either plan on a T4. Options: keep the
-  rule and leave gpt-oss unqualified; gate against a float32 computation of the checkpoint
-  (for `float16`, about 100 chunks at float16's own spread of 0.025 nats); or gate against
-  bf16 on a device where bf16 is native. Kill: none; this is a rule, not a measurement.
+Decided 2026-09-25 (OSS1-R; the user left the open decisions to the agent): the rule stays. A
+plan is qualified against the checkpoint's own bf16 computation or not at all; a float32
+reference would lower the bar exactly where the evidence is unclear. On pre-Ampere cards gpt-oss
+20B's plans therefore stay opt-in and unrecommended (`numeric_plans.py` already calls them
+unqualified, not refused), and the README says so. Qualifying them needs a device with native
+bf16 as the reference; none is available on the free Kaggle cells. No entry is open here.
 
 ## PORT2 — Rest (2026-09-24)
 
