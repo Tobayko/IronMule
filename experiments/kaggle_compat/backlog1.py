@@ -11,6 +11,10 @@
 #     3 repetitions, arm order rotated. Kill: not deterministic across processes without
 #     graphs, then the throughput refusal stays.
 #   * PORT1-F: `ironmule tune` on Gemma 3 4B in bf16, once. Kill: the crash reproduces.
+#   * PERF1-N and PERF1-L, first because they take minutes: `native_fusion_probe.py` (fused
+#     against separate projections under `native`, kernel and float16-GEMM paths) and
+#     `k32_probe.py` (the k32 kernel against MLX's float32 matvec, free and pinned
+#     arithmetic). Kill for PERF1-L: not bit-identical, then a plan of its own with its own gate.
 import json
 import os
 import signal
@@ -91,6 +95,13 @@ sh("download_wikitext", f"{PY} -c \"from huggingface_hub import hf_hub_download 
                         f"p = d('{WIKITEXT[0]}', '{WIKITEXT[2]}', repo_type='dataset', revision='{WIKITEXT[1]}'); "
                         "open('/tmp/wikitext.txt', 'w').write(''.join(pq.read_table(p).column('text').to_pylist())); print(p)\"")
 PERF1 = f"{REPO}/experiments/kaggle_compat/perf1.py"
+
+# PERF1-N and PERF1-L: synthetic weights, no model.
+sh("probe_perf1n", f"{PY} {REPO}/experiments/kaggle_compat/native_fusion_probe.py {WORK}/probe-perf1n.json",
+   timeout=600, cwd=REPO)
+for arith in ("free", "pinned"):
+    sh(f"probe_perf1l_{arith}", f"PERF1_ARITH={arith} {PY} {REPO}/experiments/kaggle_compat/k32_probe.py "
+                               f"{WORK}/probe-perf1l-{arith}.json", timeout=600, cwd=REPO)
 
 # PERF1-M: the stock reference first (about 40 min), then the kernel (about 8 min).
 path = download("qwen3-14b", QWEN14)
