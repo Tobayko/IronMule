@@ -32,7 +32,6 @@ when it is ready:
 | `--tls-cert`, `--tls-key` | none | serve over TLS |
 | `--state-dir` | `IRONMULE_HOME` or `~/.ironmule/product` | product state directory |
 | `--compute-dtype` | none | opt-in numeric plan for GPUs that emulate bf16 (`float32`, `native`); changes output, see `ironmule plans` |
-| `--batch-width` | off | opt-in: compute up to this many waiting `stream: false` requests as one tensor batch (2 to 8); changes output, see below |
 
 ## Routes
 
@@ -53,7 +52,7 @@ and ignored. Decoding is greedy, so the same prompt gives the same tokens.
 Requests are **queued, not rejected while busy**. The queue depth is the mode's:
 `8` in `desktop`, `64` in `server`. Generation itself is serialised through one
 permit, so four simultaneous requests complete in arrival order rather than
-interleaving through one engine. `--batch-width` is the one exception, below.
+interleaving through one engine.
 
 Two things do return `HTTP 429`:
 
@@ -62,40 +61,6 @@ Two things do return `HTTP 429`:
 - a full request queue.
 
 A load balancer in front of this should treat `429` as backpressure, not as failure.
-
-## Batched serving (opt-in)
-
-`--batch-width N` (2 to 8) lets one engine pass serve several requests. When the engine
-becomes free, the requests with `stream: false` that are already waiting, up to N, are
-computed together as one tensor batch: each weight is read once for all of them. Nothing
-waits to form a batch; a lone request, and every `stream: true` request, runs exactly as
-without the option.
-
-The contract differs from the default path in one respect, and it is why the option is off
-by default and never chosen automatically:
-
-- **A batched answer can differ from the same prompt served alone.** It is still greedy, but
-  computed with the batch's arithmetic, which rounds differently from a single request's;
-  it can also differ between two batches that hold different neighbours. Decoding stays
-  deterministic for a fixed batch, not across different traffic. `/health` reports it:
-  `"backend": "tensor_batch"` and `"execution": "batched"` (`"batched@native"` with a numeric
-  plan).
-
-Everything else holds as on the default path:
-
-- request validation, the context limit, `max_tokens`, the model's end-of-sequence and
-  end-of-turn tokens, and stop strings, which are applied to each answer on its own;
-- the queue, `429` and the deadline: a batch runs under the earliest deadline of its
-  requests;
-- isolation: every request keeps its own cache rows and receives only its own tokens; the
-  requests share arithmetic, never text;
-- delivery: a batched `stream: false` answer is returned when its batch finishes, as one
-  completion, like any other;
-- cancellation: a cancelled request leaves its batch at the next step, and the others finish
-  without it.
-
-The measured gain, the agreement with single requests and the quality gate of the batched
-arithmetic are in `research/LEDGER.md`, PERF1-K.
 
 ## What it does not do
 

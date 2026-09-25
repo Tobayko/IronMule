@@ -44,8 +44,8 @@ GitHub keeps them under `refs/pull/9/head`.
 ## Clean-up status (2026-09-24)
 
 - Removed: four private helpers nothing called (`ironmule/q4_corpus.py`,
-  `ironmule/q4_optimizer.py`) and thirty-three Kaggle templates whose runs are archived (`perf1_run1` to `perf1_run18`, `test1`,
-  `test1_qwen`, `test2`, `test2g`, `oss1`, `backlog1` to `backlog9`, `shot1`).
+  `ironmule/q4_optimizer.py`) and thirty-four Kaggle templates whose runs are archived (`perf1_run1` to `perf1_run18`, `test1`,
+  `test1_qwen`, `test2`, `test2g`, `oss1`, `backlog1` to `backlog9`, `shot1`, `perf1k`).
 - Merged 2026-09-25: `research/port2-model-families` (PERF1 runs 14-18, the MoE row kernel, BOS
   on every `perf1.py nll` chunk), with run 18's output archived from its Kaggle download.
 - Byte-identical files in the tree are per-run logs (the same download or environment
