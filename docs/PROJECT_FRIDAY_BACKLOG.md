@@ -139,6 +139,8 @@ Offen:
   confirmation; BACKLOG5 checks it.
   BACKLOG5: that release is not enough. MLX then holds 56 bytes, the card still 9553 MiB, and
   the child runs out of memory again. BACKLOG6 measures the memory pool before the next fix.
+  BACKLOG6: CUDA's pool keeps the freed memory reserved until a context synchronize (3520 MiB,
+  then 0). tune now synchronizes the active contexts after the release; BACKLOG7 checks it.
 
 ## PERF1 — Rest (2026-09-23)
 
@@ -148,7 +150,7 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-25: PERF1-L, `k32`
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
 in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
 Answered 2026-09-25: PERF1-M, Qwen 3 14B's decode gate for `native`, 1.000526 [0.999000; 1.002018]
 (`backlog2-run1-17b2ca39`, ledger BACKLOG2). PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
@@ -174,14 +176,6 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   that loads Qwen 3.5 through `load_engine` reports graphs off and gives one digest across
   three processes. Kill: the flag cannot be set before MLX's first GPU operation without
   reading the model config first; then document `MLX_USE_CUDA_GRAPHS=0` for this family.
-- **PERF1-R Mikro-Batches in der Pipeline.** Bei Breite 1 rechnet immer nur eine Karte; die
-  Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
-  abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
-  1,2x bei Breite 8 gegen dieselbe Pipeline ohne Mikro-Batches im selben Lauf.
-  Pre-gate (2026-09-25, before any implementation): two micro-batches of four keep at best
-  each card busy with one width-4 stream, so their aggregate is bounded by 2 x the pipeline's
-  width-4 aggregate. BACKLOG6 measures widths 4 and 8 on Qwen 3 32B `kernel+mma+p16`; a bound
-  below 1.2 closes the entry unbuilt.
 - **PERF1-S Nativer Kernel für MoE-Experten.** Qwen3.6 35B-A3B gewann mit `kernel+p16` nur
   11 % (run 12), weil die Experten über `gather_qmm` laufen, den kein Kernel routet; sie
   bleiben emuliertes bf16. Mechanismus: derselbe Zeilen-Kernel mit einem Index-Eingang, der
@@ -201,16 +195,9 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
 
 ## DATA3 — Rest (2026-09-15)
 
-Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
+Beantwortet in `research/LEDGER.md` DATA3/PORT1. Closed 2026-09-25: DATA3-B, the store is
+created 0700 so `setup` accepts a shared `IRONMULE_HOME` (ledger BACKLOG6). Offen:
 
-- **DATA3-B `IRONMULE_HOME` doppelt belegt.** Runtime-Store (`hw.py`/`tune.py`,
-  `mkdir` 0755) und Produktwurzel (`state.py`, verlangt 0700) nutzen dasselbe
-  Verzeichnis; nach `benchmark` scheitert `setup`, plattformunabhängig. Test:
-  Produktwurzel unter `IRONMULE_HOME/product` wie im Default. Kill: bestehende
-  Nutzerzustände würden unauffindbar — dann Migration oder nur klare Fehlermeldung.
-  2026-09-25 (`f315a50`): mechanism changed to keep `IRONMULE_HOME` the documented product
-  root, which the proposed move would have lost (the kill); the store is created 0700 instead.
-  BACKLOG6 runs the suite with the new test.
 - DATA2 (Transformers-Referenz) bleibt blockiert, bis die Gemma-Lizenz auf Kaggle
   akzeptiert ist. Anmerkung 2026-09-16: PORT2 hat gezeigt, dass eine lizenzfreie
   Stock-Referenz genügt — `families.py` dekodiert greedy an IronMule vorbei, und auf der

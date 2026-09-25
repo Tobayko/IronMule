@@ -591,6 +591,72 @@ def test_confirmation_starts_after_the_screening_engine_is_released(monkeypatch)
     assert events == ["close", "release", ("confirm", [True])]
 
 
+class _FakeCuda:
+    """The CUDA driver calls `_synchronize_cuda_contexts` makes; card 1 has an active context."""
+
+    def __init__(self, sync_error=0):
+        self.calls, self.sync_error = [], sync_error
+
+    def cuInit(self, _flags):
+        self.calls.append("init")
+        return 0
+
+    def cuDeviceGetCount(self, count):
+        count._obj.value = 2
+        return 0
+
+    def cuDeviceGet(self, device, ordinal):
+        device._obj.value = ordinal
+        return 0
+
+    def cuDevicePrimaryCtxGetState(self, device, _flags, active):
+        active._obj.value = int(device.value == 1)
+        return 0
+
+    def cuDevicePrimaryCtxRetain(self, _context, device):
+        self.calls.append(("retain", device.value))
+        return 0
+
+    def cuCtxPushCurrent_v2(self, _context):
+        self.calls.append("push")
+        return 0
+
+    def cuCtxSynchronize(self):
+        self.calls.append("sync")
+        return self.sync_error
+
+    def cuCtxPopCurrent_v2(self, _context):
+        self.calls.append("pop")
+        return 0
+
+    def cuDevicePrimaryCtxRelease_v2(self, device):
+        self.calls.append(("release", device.value))
+        return 0
+
+
+def test_cuda_context_synchronize_touches_only_active_contexts_and_restores_them():
+    """BACKLOG6: the pool returned its memory only at a context synchronize."""
+    cuda = _FakeCuda()
+    tune._synchronize_cuda_contexts(cuda)
+    assert cuda.calls == ["init", ("retain", 1), "push", "sync", "pop", ("release", 1)]
+
+    failing = _FakeCuda(sync_error=700)
+    with pytest.raises(RuntimeError, match="cuCtxSynchronize failed with CUDA error 700"):
+        tune._synchronize_cuda_contexts(failing)
+    assert failing.calls[-2:] == ["pop", ("release", 1)]
+
+
+@pytest.mark.parametrize("cuda_available", [True, False])
+def test_release_synchronizes_cuda_contexts_only_on_cuda(monkeypatch, cuda_available):
+    import mlx.core as mx
+
+    synchronized = []
+    monkeypatch.setattr(mx.cuda, "is_available", lambda: cuda_available)
+    monkeypatch.setattr(tune, "_synchronize_cuda_contexts", lambda: synchronized.append(True))
+    tune._release_device_memory()
+    assert synchronized == ([True] if cuda_available else [])
+
+
 def test_only_typed_or_explicitly_unsupported_candidate_errors_are_skippable():
     from ironmule.fast import FusionUnsupported
 

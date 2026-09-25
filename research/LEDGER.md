@@ -5629,3 +5629,48 @@ decode 1946); `head_skip_prefill` 0.852 kept; `prefill_into_fixed` 0.856, `readb
 `compiled_fixed_cache` 1.004, `fused_argmax` 1.002, `speculate_k=4` 1.348; `wired_fraction`
 unsupported on CUDA. Raw data: `experiments/kaggle_compat/results/backlog5-run1-a7b644f7/`. Run
 time 23 min, 0 EUR.
+
+## BACKLOG6 — CUDA's memory pool holds the freed memory; PERF1-R's bound is 1.18 (2026-09-25)
+
+`backlog6-run1-819c3ced`, commit `d411798`, Kaggle with two Tesla T4, mlx `0.32.2`, mlx-lm
+`0.31.3`. Raw data: `experiments/kaggle_compat/results/backlog6-run1-819c3ced/`. Run time 41 min,
+0 EUR.
+
+**Engine suite with DATA3-B's fix:** 1265 passed, 28 skipped, 0 failed. DATA3-B is closed: the
+runtime store creates its directories 0700 (`f315a50`), so `setup` accepts an `IRONMULE_HOME`
+that `tune`, `benchmark` or the hardware probe created first, and `IRONMULE_HOME` stays the
+documented product root.
+
+**PORT1-F, what holds the parent's memory.** `pool_probe.py` loaded Gemma 3 4B as tune does,
+generated, closed the engine and released MLX's cache, reading the device's default memory pool
+through the CUDA driver after each step:
+
+| step | nvidia-smi card 0 | pool reserved | pool used | MLX active / cached |
+| :-- | --: | --: | --: | :-- |
+| after generating | 3895 MiB | 3520 MiB | 3508 MiB | 2.56 GB / 1.12 GB |
+| after `_release_device_memory()` | 3895 MiB | 3520 MiB | 0 | 48 B / 0 |
+| after `cuCtxSynchronize` | 375 MiB | 0 | 0 | 48 B / 0 |
+| after `cuMemPoolTrimTo(0)` | 375 MiB | 0 | 0 | 48 B / 0 |
+
+The pool's release threshold is 0, and still the freed memory stayed reserved until a context
+synchronize: MLX frees on a stream of its own, and `mx.synchronize()` synchronizes only MLX's
+stream. After the context synchronize a child process loaded the model (exit 0). Trimming adds
+nothing. The fix: tune synchronizes every active CUDA primary context through the driver after
+the release; BACKLOG7 runs the full tune with it.
+
+**PERF1-R closed unbuilt.** Two micro-batches of four can at best keep each card busy with one
+width-4 stream, so their aggregate is bounded by twice the pipeline's width-4 aggregate. Qwen 3
+32B pipelined over both cards, `kernel+mma+p16`, both widths warmed, four launches in alternating
+order (aggregate tok/s, rank 0; rank 1 within 0.1%):
+
+| launch | order | width 4 | width 8 | bound |
+| :-- | :-- | --: | --: | --: |
+| 0 | 4,8 | 12.620 | 21.412 | 1.179 |
+| 1 | 8,4 | 12.563 | 21.469 | 1.170 |
+| 2 | 4,8 | 12.611 | 21.396 | 1.179 |
+| 3 | 8,4 | 12.501 | 21.409 | 1.168 |
+
+Median 12.587 and 21.411 tok/s, bound 1.176, below the entry's 1.2 in every launch. Width 4
+serves the eight requests in two waves (81.1 s), width 8 in one (47.8 s): a wave of eight costs
+1.18x a wave of four for twice the tokens, so halving the batch saves too little for
+alternation to pay. Width 8 gives 3 of 8 answers equal to width 4's, as bf16 batching did before.

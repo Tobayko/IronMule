@@ -22,7 +22,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "d4117989cb4e1d280d691c409e90f2b98d5e9811"
 GEMMA4B = ("mlx-community/gemma-3-4b-it-4bit", "93724907d4ed1745d2fe50baadf3b0b01a65abf2")
 QWEN32B = ("mlx-community/Qwen3-32B-4bit", "bcaaf7f538adf166c1080a2befdb4f6019f66639")
 WORK = "/kaggle/working"

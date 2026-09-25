@@ -1,0 +1,64 @@
+{
+ "arm": "kernel+mma+p16",
+ "requests": 8,
+ "new_tokens": 128,
+ "widths": {
+  "8": {
+   "wall_s": 47.665,
+   "aggregate_tps": 21.483,
+   "ttft_ms": [
+    1983.6,
+    1983.6,
+    1983.6,
+    1983.6,
+    1983.6,
+    1983.6,
+    1983.6,
+    1983.6
+   ],
+   "ttft_ms_median": 1983.6,
+   "identical_to_width1": 8
+  },
+  "4": {
+   "wall_s": 81.516,
+   "aggregate_tps": 12.562,
+   "ttft_ms": [
+    1635.1,
+    1635.1,
+    1635.1,
+    1635.1,
+    42519.0,
+    42519.0,
+    42519.0,
+    42519.0
+   ],
+   "ttft_ms_median": 22077.0,
+   "identical_to_width1": 3
+  }
+ },
+ "arith": "free",
+ "routed": {
+  "kernel": 0,
+  "k32": 0,
+  "p16": 1350,
+  "mma": 174150,
+  "mma2": 0,
+  "fallback": 0
+ },
+ "warmup_widths": "4,8",
+ "peak_memory_bytes": 13382350696,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-32B-4bit/snapshots/bcaaf7f538adf166c1080a2befdb4f6019f66639",
+ "pipeline": {
+  "rank": 1,
+  "size": 2,
+  "layers": [
+   0,
+   32
+  ],
+  "weights_bytes_this_rank": 9652830216,
+  "cuda_visible_devices": "1",
+  "gpus_after_load": "0, 9551 MiB\n1, 9551 MiB"
+ },
+ "mode": "server"
+}
