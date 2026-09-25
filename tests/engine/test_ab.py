@@ -1,7 +1,6 @@
 import inspect
 import json
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 
@@ -174,6 +173,20 @@ def test_run_rejects_nonzero_or_missing_child_marker(monkeypatch, returncode, st
         ab.run(_arms(), processes=1)
     assert "secret" not in str(error.value)
 
+
+
+def test_run_names_only_the_exception_class_of_a_failed_child(monkeypatch):
+    import importlib
+
+    tune = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    stderr = 'Traceback (most recent call last):\n  File "child", line 1\nRuntimeError: secret prompt\n'
+    monkeypatch.setattr(ab.subprocess, "Popen",
+                        lambda *_args, **_kwargs: _FakeProcess(returncode=1, stdout="", stderr=stderr))
+    with pytest.raises(ab.ABRunError, match=r"exited with status 1 \(RuntimeError\)") as error:
+        ab.run(_arms(), processes=1)
+    assert "secret" not in str(error.value)
+    assert error.value.partial_evidence == {"exception_type": "RuntimeError"}
 
 def test_run_communication_error_reaps_child_before_raising(monkeypatch):
     import importlib
