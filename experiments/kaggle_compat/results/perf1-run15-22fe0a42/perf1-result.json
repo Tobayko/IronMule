@@ -1,0 +1,56 @@
+{
+ "schema": "ironmule.perf1-kaggle.v15",
+ "commit": "b6886a0823f2da14a1a02ea8a3176660786a3de8",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 3.3,
+   "tail": " M ironmule/cuda_native.py\n M ironmule/q3f_child_guard.py\n M tests/engine/test_cuda_native.py\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 8.6,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 50.9 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.50s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 45.6,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 44 packages in 2.74s\n   Building ironmule @ file:///tmp/IronMule\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading numpy (15.9MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading transformers (11.7MiB)\nDownloading pygments (1.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading mlx-cuda-12 (83.0MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 44 packages in 42.43s\nInstalled 44 packages in 218ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.3\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.2\n + pygments==2.21.0\n + pytest==9.1.1\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.3\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.2\npygments==2.21.0\npytest==9.1.1\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "device_check": {
+   "exit": 0,
+   "seconds": 62.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"qwen36_gate_up_probe\": 0.0027905202005058527, \"qwen36_gate_up_64\": 0.003115524537861347, \"qwen36_gate_up_2048\": 0.0032292085234075785, \"qwen36_down_probe\": 0.0038426693063229322, \"qwen36_down_64\": 0.0030846637673676014, \"qwen36_down_2048\": 0.0029215910471975803, \"gemma4_gate_up_probe\": 0.0036240732297301292, \"gemma4_gate_up_64\": 0.0031764169689267874, \"gemma4_gate_up_2048\": 0.0030029427725821733, \"gemma4_down_probe\": 0.003136000130325556, \"gemma4_down_64\": 0.002646607579663396, \"gemma4_down_2048\": 0.0029713937547057867}\n"
+  },
+  "test_cuda_native": {
+   "exit": 0,
+   "seconds": 35.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n......                                                                   [100%]\n6 passed in 34.37s\n"
+  },
+  "download_gemma4-26b-a4b": {
+   "exit": 0,
+   "seconds": 87.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-4-26b-a4b-it-4bit/snapshots/0d77464eeb233a2da68ebf9d7dc4edaac7db956d\n"
+  },
+  "cross_gemma4-26b-a4b": {
+   "exit": 0,
+   "seconds": 455.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 90367.320056 0\nironmule_native 0 None 1\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_native\": {\n  \"ratio_vs_reference_per_rep\": [],\n  \"median_ratio\": null,\n  \"max_ratio\": null,\n  \"identical_requests\": null,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 1\n }\n}\n"
+  }
+ },
+ "performance_claim": false,
+ "gate": {
+  "device_check": true
+ },
+ "finished": true
+}

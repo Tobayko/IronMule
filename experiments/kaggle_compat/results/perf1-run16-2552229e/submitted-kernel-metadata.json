@@ -1,0 +1,20 @@
+{
+ "id": "tobayko/ironmule-perf1-run16-2552229e",
+ "title": "ironmule-perf1-run16-2552229e",
+ "code_file": "ironmule-perf1-run16-2552229e.py",
+ "language": "python",
+ "kernel_type": "script",
+ "is_private": true,
+ "enable_gpu": true,
+ "enable_tpu": false,
+ "enable_internet": true,
+ "keywords": [
+  "gpu"
+ ],
+ "dataset_sources": [],
+ "kernel_sources": [],
+ "competition_sources": [],
+ "model_sources": [],
+ "docker_image": "gcr.io/kaggle-private-byod/python@sha256:37c64f7dd9c54116ecd1bcc88817c5469b88387388fade02bfa8bf3fc647d461",
+ "machine_shape": "NvidiaTeslaT4"
+}

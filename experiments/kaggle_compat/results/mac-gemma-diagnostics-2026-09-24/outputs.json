@@ -1,0 +1,42 @@
+{
+ "schema": "ironmule.mac-gemma-diagnostics.v1",
+ "date": "2026-09-24",
+ "device": "Apple M1 Max, Metal, mlx 0.32.0, mlx-lm 0.31.3",
+ "text": "Salesforce/wikitext wikitext-2-raw-v1 test parquet, concatenated",
+ "performance_claim": false,
+ "note": "Console output transcribed as printed; rounded where the run printed rounded values. Diagnostic only, not T4 evidence.",
+ "gemma3_12b_p16_prefill": {
+  "model": "mlx-community/gemma-3-12b-it-4bit",
+  "script": "gemma3_p16_prefill.py",
+  "runs": [
+   {"version": "first: no BOS after chunk 0, stock and p16 arms only, 4 chunks, full precision as printed",
+    "stock_nll": [2.2944116592407227, 5.418111801147461, 6.423307418823242, 5.444512367248535],
+    "p16_nll": [2.290576457977295, 5.589765548706055, 6.5899152755737305, 5.071608543395996],
+    "ratio": 0.990426762801912, "calls": 1348, "x_max": 7264.0, "y_max": 2806.0, "nonfinite": 0},
+   {"version": "second: no BOS after chunk 0, adds the p32 arm, 4 chunks, printed to 4 decimals",
+    "stock_nll": [2.2944, 5.4181, 6.4233, 5.4445],
+    "p16_nll": [2.2906, 5.5898, 6.5899, 5.0716],
+    "p32_nll": [2.291, 5.2479, 6.5095, 5.2858],
+    "p16_vs_p32_abs": [0.0004, 0.3418, 0.0804, 0.2142],
+    "stock_vs_p32_abs": [0.0034, 0.1702, 0.0862, 0.1587]},
+   {"version": "third, the stored script: BOS on every chunk, 8 chunks, printed to 4 decimals",
+    "stock_nll": [2.2944, 2.8023, 2.6156, 2.7177, 2.4425, 2.9044, 2.7539, 2.8286],
+    "p16_nll": [2.2906, 2.8036, 2.6193, 2.7235, 2.4383, 2.9055, 2.7559, 2.8232],
+    "p32_nll": [2.291, 2.8059, 2.6187, 2.7261, 2.4406, 2.9074, 2.7521, 2.8266],
+    "p16_vs_p32_abs": [0.0004, 0.0023, 0.0006, 0.0026, 0.0023, 0.0019, 0.0037, 0.0034],
+    "stock_vs_p32_abs": [0.0034, 0.0035, 0.0031, 0.0084, 0.0018, 0.003, 0.0017, 0.0021],
+    "x_max": 7264.0, "y_max": 2806.0, "nonfinite": 0}
+  ]
+ },
+ "gemma_bos_perplexity": {
+  "script": "gemma_bos_perplexity.py",
+  "runs": [
+   {"model": "mlx-community/gemma-3-4b-it-4bit", "first_id_is_bos": true,
+    "no_bos_after_chunk0": {"perplexity": 103.32424211109432, "first_six_chunk_nll": [2.76, 4.51, 4.13, 4.77, 3.91, 4.98]},
+    "bos_every_chunk": {"perplexity": 26.931394859876068, "first_six_chunk_nll": [2.76, 3.35, 3.23, 3.36, 2.92, 3.3]}},
+   {"model": "mlx-community/gemma-4-e2b-it-4bit", "first_id_is_bos": false, "bos_token_id": 2,
+    "no_bos_after_chunk0": {"perplexity": 21531.656872997977, "first_six_chunk_nll": [8.12, 9.95, 9.57, 8.61, 10.82, 10.16]},
+    "bos_every_chunk": {"perplexity": 353.10117170531856, "first_six_chunk_nll": [4.7, 5.94, 5.53, 6.27, 5.81, 5.9]}}
+  ]
+ }
+}

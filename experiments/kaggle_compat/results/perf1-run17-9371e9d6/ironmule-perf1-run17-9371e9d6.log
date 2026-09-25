@@ -1,0 +1,23 @@
+[{"stream_name":"stdout","time":1.043282856,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.665414835,"data":"== clone: exit=0 2.6s\n"}
+,{"stream_name":"stdout","time":12.352401091,"data":"== venv: exit=0 8.7s\n"}
+,{"stream_name":"stdout","time":52.937487122,"data":"== install: exit=0 40.6s\n"}
+,{"stream_name":"stdout","time":53.040817086,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":157.538074307,"data":"== download_gemma3-12b: exit=0 104.5s\n"}
+,{"stream_name":"stdout","time":935.107655595,"data":"== cross_gemma3-12b: exit=0 777.6s\n"}
+,{"stream_name":"stdout","time":935.10838767,"data":"{\n"}
+,{"stream_name":"stdout","time":935.108414289,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":935.108423725,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":935.10843144,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":935.108438609,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":935.108445947,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":935.108456492,"data":" \"download_gemma3-12b\": 0,\n"}
+,{"stream_name":"stdout","time":935.108460969,"data":" \"cross_gemma3-12b\": 0\n"}
+,{"stream_name":"stdout","time":935.108465325,"data":"}\n"}
+,{"stream_name":"stderr","time":937.448807451,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":937.448886317,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":937.77827926,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":937.778311,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":938.738303122,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":940.087443771,"data":"[NbConvertApp] Writing 330901 bytes to __results__.html\n"}
+]

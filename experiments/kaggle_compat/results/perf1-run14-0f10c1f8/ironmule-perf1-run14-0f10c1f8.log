@@ -1,0 +1,37 @@
+[{"stream_name":"stdout","time":1.021487758,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.348337044,"data":"== clone: exit=0 2.3s\n"}
+,{"stream_name":"stdout","time":11.727221852,"data":"== venv: exit=0 8.4s\n"}
+,{"stream_name":"stdout","time":31.833984367,"data":"== install: exit=0 20.1s\n"}
+,{"stream_name":"stdout","time":31.93303726,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":148.209794363,"data":"== probe_gather: exit=0 116.3s\n"}
+,{"stream_name":"stdout","time":238.768158526,"data":"== download_qwen36-35b-a3b: exit=0 90.6s\n"}
+,{"stream_name":"stdout","time":778.923819534,"data":"== e2e_qwen36-35b-a3b_kernel+p16: exit=0 540.2s\n"}
+,{"stream_name":"stdout","time":1113.396073571,"data":"== e2e_qwen36-35b-a3b_kernel+p16+gather: exit=0 334.5s\n"}
+,{"stream_name":"stdout","time":1340.171567836,"data":"== e2e_qwen36-35b-a3b_kernel+p16+gather+g16: exit=0 226.8s\n"}
+,{"stream_name":"stdout","time":1411.602584696,"data":"== download_gemma4-26b-a4b: exit=0 71.4s\n"}
+,{"stream_name":"stdout","time":1826.406588688,"data":"== e2e_gemma4-26b-a4b_kernel: exit=0 414.8s\n"}
+,{"stream_name":"stdout","time":1943.743152913,"data":"== e2e_gemma4-26b-a4b_kernel+gather+g16: exit=0 117.3s\n"}
+,{"stream_name":"stdout","time":2146.430721088,"data":"== e2e_gemma4-26b-a4b_kernel+gather: exit=0 202.7s\n"}
+,{"stream_name":"stdout","time":2146.433184182,"data":"{\n"}
+,{"stream_name":"stdout","time":2146.433209631,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433213575,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433216655,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433219648,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433222668,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433225648,"data":" \"probe_gather\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433228752,"data":" \"download_qwen36-35b-a3b\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433231872,"data":" \"e2e_qwen36-35b-a3b_kernel+p16\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433234839,"data":" \"e2e_qwen36-35b-a3b_kernel+p16+gather\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433237802,"data":" \"e2e_qwen36-35b-a3b_kernel+p16+gather+g16\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433240851,"data":" \"download_gemma4-26b-a4b\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433243815,"data":" \"e2e_gemma4-26b-a4b_kernel\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433246906,"data":" \"e2e_gemma4-26b-a4b_kernel+gather+g16\": 0,\n"}
+,{"stream_name":"stdout","time":2146.433263331,"data":" \"e2e_gemma4-26b-a4b_kernel+gather\": 0\n"}
+,{"stream_name":"stdout","time":2146.433269089,"data":"}\n"}
+,{"stream_name":"stderr","time":2149.139660005,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":2149.140617463,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":2149.470168852,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":2149.470191576,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":2151.182774365,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":2152.554439915,"data":"[NbConvertApp] Writing 429850 bytes to __results__.html\n"}
+]

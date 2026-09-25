@@ -1,0 +1,125 @@
+# PERF1 run 15: the MoE expert kernel through the product, not the harness. Private notebook,
+# internet on. Free quota: one run, <= 25 min (the week stands at about 9.2 h; it stays under 10).
+#
+# Run 14 (`perf1-run14-0f10c1f8`) measured the gather kernel through `perf1.py`'s global patch
+# with free float32 rounding: Qwen3.6 35B-A3B decode 1.97x its `kernel+p16` control over two
+# cards, Gemma 4 26B-A4B 7.86x its `kernel` control on one. `ironmule/cuda_native.py` now swaps
+# mlx-lm's `QuantizedSwitchLinear` too (the `native` plan, pinned rounding, probe-gated on the
+# model's own first expert weight), carried as a patch against the pinned commit. That source
+# has not run on CUDA. Rules fixed here:
+#   * device check first: `_probe` on random expert weights at both models' shapes and
+#     `gather_matmul` at 64 sorted rows and at a 2048-row prefill, each against float32, at most
+#     1e-2, else the model stage is skipped; the model-free test file runs as well;
+#   * `cross.py` on Gemma 4 26B-A4B (one card), stock against `ironmule_native`, one repetition,
+#     one measured pass: the product answers and its wall ratio. Screening, no quality claim.
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+COMMIT = "b6886a0823f2da14a1a02ea8a3176660786a3de8"  # origin/main
+CROSS_SOURCE = '"""PORT1: stock against IronMule in separate processes, the like-for-like CUDA comparison.\n\nUsage: python cross.py MODEL_ID REVISION CONFIGS_JSON OUT.json [REPS] [MEASURE]\n\n`abcd.py` runs every arm in one process, so an environment setting such as IronMule\'s CUDA\ngraph default reaches its baseline arm too. Here each configuration runs in fresh\nprocesses interleaved by repetition: "stock" pins MLX\'s own graph limits, baseline knobs\nand interactive mode; IronMule configurations use whatever IronMule applies by itself.\nThe first configuration is the reference. A configuration with `"dtype": "float32"` changes\nnumerics, so it reports token agreement instead of claiming identity.\nCONFIGS_JSON: [{"name", "env": {...}, "knobs": {...}, "mode": "interactive"|"throughput",\n"dtype": null|"float32"}, ...]\n"""\nimport hashlib\nimport json\nimport os\nimport statistics as st\nimport subprocess\nimport sys\nimport time\n\n\ndef child(model_id, revision, config_json, measure):\n    import mlx.core as mx\n\n    import ironmule\n    from ironmule import benchmark as bench\n    from ironmule.tune import load_engine\n\n    config = json.loads(config_json)\n    # The product path: IronMule\'s own opt-in numeric plan, not a post-load cast.\n    engine, tokenizer = load_engine(model_id, ironmule.Knobs(**config["knobs"]), revision=revision,\n                                    compute_dtype=config.get("dtype"))\n    mode = ironmule.ThroughputMode if config["mode"] == "throughput" else ironmule.InteractiveMode\n    with ironmule.Runtime(engine, tokenizer, model_id=model_id) as rt:\n        walls, outputs = [], None\n        for index in range(1 + measure):\n            requests = bench._build_requests(rt, ironmule, ironmule.StrictOneShotPlan(), "strict", 6, 48)\n            results, snapshot = bench._run(rt, ironmule, mode(), requests)\n            outputs = [[int(t) for t in r.tokens] for r in results]\n            if index:\n                walls.append(snapshot["outer_wall_ms"])\n    print(json.dumps({"walls_ms": walls, "median_ms": st.median(walls), "tokens": outputs,\n                      "outputs_sha256": hashlib.sha256(json.dumps(outputs).encode()).hexdigest(),\n                      "peak_memory_bytes": int(mx.get_peak_memory()),\n                      "graph_env": {k: os.environ.get(k) for k in ("MLX_MAX_OPS_PER_BUFFER", "MLX_MAX_MB_PER_BUFFER")}}))\n\n\ndef main(model_id, revision, configs_json, out, reps, measure):\n    configs = json.loads(configs_json)\n    runs = {c["name"]: [] for c in configs}\n    started = time.time()\n    for rep in range(reps):\n        order = configs[rep % len(configs):] + configs[:rep % len(configs)]\n        for config in order:\n            env = {k: v for k, v in os.environ.items() if not k.startswith("MLX_MAX_")}\n            env.update(config.get("env", {}))\n            proc = subprocess.run([sys.executable, __file__, "child", model_id, revision, json.dumps(config),\n                                   str(measure)], env=env, capture_output=True, text=True, timeout=1800)\n            row = {"rep": rep, "exit": proc.returncode, "stderr_tail": proc.stderr[-1500:]}\n            if proc.returncode == 0:\n                row.update(json.loads(proc.stdout.strip().splitlines()[-1]))\n            runs[config["name"]].append(row)\n            print(config["name"], rep, row.get("median_ms"), row["exit"], flush=True)\n    base = configs[0]["name"]\n    reference = next((r["tokens"] for r in runs[base] if r.get("tokens")), None)\n    summary = {}\n    for config in configs:\n        name = config["name"]\n        pairs = [r["median_ms"] / b["median_ms"] for r, b in zip(runs[name], runs[base])\n                 if r.get("median_ms") and b.get("median_ms")]\n        tokens = next((r["tokens"] for r in runs[name] if r.get("tokens")), None)\n        summary[name] = {\n            "ratio_vs_reference_per_rep": pairs,\n            "median_ratio": st.median(pairs) if pairs else None,\n            "max_ratio": max(pairs) if pairs else None,\n            "identical_requests": (sum(a == b for a, b in zip(tokens, reference))\n                                   if tokens and reference else None),\n            "deterministic_across_processes": len({r.get("outputs_sha256") for r in runs[name]}) == 1,\n            "failed_processes": sum(r["exit"] != 0 for r in runs[name]),\n        }\n    report = {"schema": "ironmule.port1-cross.v1", "model_id": model_id, "revision": revision,\n              "configs": configs, "reps": reps, "measure": measure, "runs": runs, "summary": summary,\n              "seconds": time.time() - started, "performance_claim": False}\n    with open(out, "w") as stream:\n        json.dump(report, stream, indent=1)\n    print(json.dumps(summary, indent=1))\n\n\nif __name__ == "__main__":\n    if sys.argv[1] == "child":\n        child(sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]))\n    else:\n        main(*sys.argv[1:5], int(sys.argv[5]) if len(sys.argv) > 5 else 3,\n             int(sys.argv[6]) if len(sys.argv) > 6 else 3)\n'  # experiments/kaggle_compat/cross.py
+PATCH_SOURCE = 'diff --git a/ironmule/cuda_native.py b/ironmule/cuda_native.py\nindex 7488ae5..eb5416d 100644\n--- a/ironmule/cuda_native.py\n+++ b/ironmule/cuda_native.py\n@@ -9,7 +9,10 @@ only how the 4-bit affine matmuls are computed:\n * up to `MAX_ROWS` activation rows (decode, and the small batches of a server) go through one\n   kernel that reads activations, scales and biases as raw 16-bit patterns — a bfloat16 is the\n   top half of a float32, so widening is a shift — accumulates in float32, and rounds once;\n-* more rows (prefill) dequantise the weight to float16 and run one cuBLAS GEMM.\n+* more rows (prefill) dequantise the weight to float16 and run one cuBLAS GEMM;\n+* MoE experts (mlx-lm\'s `QuantizedSwitchLinear`, i.e. `gather_qmm`) take the same row kernel\n+  with an index input for up to `GATHER_MAX` (token, expert) rows, each warp reading its\n+  expert\'s rows in place, and run larger calls as the same `gather_qmm` in float16.\n \n It changes output, so it is opt-in like every numeric plan (`compute_dtype="native"`); its\n measurements and quality gate are in `research/LEDGER.md`, PERF1. The arithmetic is pinned\n@@ -22,15 +25,18 @@ own first eligible weight agrees with a float32 reference.\n \n from __future__ import annotations\n \n+import math\n from typing import Any\n \n import mlx.core as mx\n import mlx.nn as nn\n+from mlx_lm.models.switch_layers import QuantizedSwitchLinear\n \n GROUP_SIZE = 64\n BITS = 4\n MAX_ROWS = 8\n PROBE_TOLERANCE = 1e-2\n+GATHER_MAX = 64  # (token, expert) rows: a server\'s eight requests times top-8\n \n HEADER = r"""\n __device__ __forceinline__ float lo_bf(unsigned int u) { return __uint_as_float(u << 16); }\n@@ -120,7 +126,24 @@ SOURCE = r"""\n     }\n """)\n \n+# PERF1-S: warp w of P * W serves (token, expert) pair w / W, rows (w % W) * R.. of expert\n+# idx[pair]; XS pairs share one activation row (gate/up broadcast a token over its experts).\n+# From `acc` on it is the kernel above with M = 1, so each pair\'s dot is the qmv dot.\n+GATHER_SOURCE = r"""\n+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();\n+  const unsigned int pair = (gid >> 5) / W;\n+  const unsigned int row0 = ((gid >> 5) % W) * R;\n+  const unsigned int lane = threadIdx.x & 31;\n+  if (pair >= P || row0 >= N) return;\n+  const unsigned int ex = idx[pair];\n+  const uint4* w4 = reinterpret_cast<const uint4*>(w) + (size_t)ex * N * (K / 32);\n+  const uint4* xv = reinterpret_cast<const uint4*>(x) + (size_t)(pair / XS) * (K / 8);\n+  const unsigned short* ss = reinterpret_cast<const unsigned short*>(scales) + (size_t)ex * N * (K / GS);\n+  const unsigned short* bs = reinterpret_cast<const unsigned short*>(biases) + (size_t)ex * N * (K / GS);\n+""" + SOURCE[SOURCE.index("  float acc[R * M];"):].replace("out[(i % M) * N + row]", "out[(size_t)pair * N + row]")\n+\n _kernel: Any = None\n+_gather_kernel: Any = None\n \n \n def _rows_per_warp(n: int) -> int:\n@@ -155,6 +178,45 @@ def matmul(x: mx.array, w: mx.array, scales: mx.array, biases: mx.array) -> mx.a\n     return mx.matmul(x.astype(mx.float16), dense.T).astype(x.dtype)\n \n \n+def _gather_qmv(x: mx.array, w: mx.array, scales: mx.array, biases: mx.array, idx: mx.array,\n+                xs: int) -> mx.array:\n+    global _gather_kernel\n+    if _gather_kernel is None:\n+        _gather_kernel = mx.fast.cuda_kernel(\n+            name="ironmule_native_gather4", input_names=["x", "w", "scales", "biases", "idx"],\n+            output_names=["out"], source=GATHER_SOURCE, header=HEADER)\n+    n, k, p = w.shape[1], w.shape[2] * 8, idx.size\n+    rows = _rows_per_warp(n)\n+    warps = -(-n // rows)\n+    return _gather_kernel(\n+        inputs=[x, w, scales, biases, idx],\n+        template=[("N", n), ("K", k), ("GS", GROUP_SIZE), ("R", rows), ("M", 1), ("P", p), ("W", warps), ("XS", xs)],\n+        grid=(-(-(p * warps * 32) // 256) * 256, 1, 1), threadgroup=(256, 1, 1), output_shapes=[(p, n)],\n+        output_dtypes=[mx.uint16])[0].view(mx.bfloat16)\n+\n+\n+def gather_matmul(x: mx.array, w: mx.array, scales: mx.array, biases: mx.array, indices: mx.array,\n+                  sorted_indices: bool = False) -> mx.array:\n+    """`gather_qmm(x, w, scales, biases, rhs_indices=indices)` for the weights `matmul` takes."""\n+    if x.dtype != mx.bfloat16:\n+        return mx.gather_qmm(x, w, scales, biases, rhs_indices=indices, transpose=True,\n+                             group_size=GROUP_SIZE, bits=BITS, sorted_indices=sorted_indices)\n+    batch = tuple(mx.broadcast_shapes(x.shape[:-2], indices.shape))\n+    if x.shape[-2] == 1 and math.prod(batch) <= GATHER_MAX:\n+        if x.shape[:-2] == batch:  # down: one activation row per pair\n+            xs = 1\n+        elif x.shape[:-2] == batch[:-1] + (1,):  # gate/up: a token\'s row for all its experts\n+            xs = batch[-1]\n+        else:\n+            x, xs = mx.broadcast_to(x, batch + x.shape[-2:]), 1\n+        idx = mx.broadcast_to(indices, batch).flatten().astype(mx.uint32)\n+        out = _gather_qmv(mx.contiguous(x.reshape(-1, x.shape[-1])), w, scales, biases, idx, xs)\n+        return out.reshape(*batch, 1, w.shape[1])\n+    return mx.gather_qmm(x.astype(mx.float16), w, scales.astype(mx.float16), biases.astype(mx.float16),\n+                         rhs_indices=indices, transpose=True, group_size=GROUP_SIZE, bits=BITS,\n+                         sorted_indices=sorted_indices).astype(x.dtype)\n+\n+\n class NativeQuantizedLinear(nn.QuantizedLinear):\n     def __call__(self, x):\n         y = matmul(x, self["weight"], self["scales"], self["biases"])\n@@ -166,22 +228,34 @@ class NativeQuantizedEmbedding(nn.QuantizedEmbedding):\n         return matmul(x, self["weight"], self["scales"], self["biases"])\n \n \n+class NativeQuantizedSwitchLinear(QuantizedSwitchLinear):\n+    def __call__(self, x, indices, sorted_indices=False):\n+        y = gather_matmul(x, self["weight"], self["scales"], self["biases"], indices, sorted_indices)\n+        return y + mx.expand_dims(self["bias"][indices], -2) if "bias" in self else y\n+\n+\n def _eligible(module: nn.Module) -> bool:\n-    if not isinstance(module, (nn.QuantizedLinear, nn.QuantizedEmbedding)):\n+    if not isinstance(module, (nn.QuantizedLinear, nn.QuantizedEmbedding, QuantizedSwitchLinear)):\n         return False\n     if (getattr(module, "mode", "affine") != "affine" or module.bits != BITS\n             or module.group_size != GROUP_SIZE or module.get("biases") is None):\n         return False\n-    return module["scales"].dtype == mx.bfloat16 and (module["weight"].shape[1] * 8) % 32 == 0\n+    return module["scales"].dtype == mx.bfloat16 and (module["weight"].shape[-1] * 8) % 32 == 0\n \n \n def _probe(module: nn.Module) -> float:\n     """Relative error of the kernel on the module\'s own weight against a float32 reference."""\n     w, scales, biases = module["weight"], module["scales"], module["biases"]\n-    x = mx.random.normal((1, w.shape[1] * 8), key=mx.random.key(0)).astype(mx.bfloat16)\n-    reference = x.astype(mx.float32) @ mx.dequantize(\n-        w, scales.astype(mx.float32), biases.astype(mx.float32), group_size=GROUP_SIZE, bits=BITS).T\n-    error = mx.max(mx.abs(_qmv(x, w, scales, biases).astype(mx.float32) - reference))\n+    x = mx.random.normal((1, w.shape[-1] * 8), key=mx.random.key(0)).astype(mx.bfloat16)\n+    if isinstance(module, QuantizedSwitchLinear):  # one token against its first eight experts\n+        experts = mx.arange(min(8, w.shape[0]), dtype=mx.uint32)\n+        y = gather_matmul(x.reshape(1, 1, -1), w, scales, biases, experts).reshape(experts.size, -1)\n+        w, scales, biases = w[experts], scales[experts], biases[experts]\n+    else:\n+        y = _qmv(x, w, scales, biases)\n+    reference = (mx.dequantize(w, scales.astype(mx.float32), biases.astype(mx.float32),\n+                               group_size=GROUP_SIZE, bits=BITS) @ x.astype(mx.float32).T).squeeze(-1)\n+    error = mx.max(mx.abs(y.astype(mx.float32) - reference))\n     return float(error / mx.maximum(mx.max(mx.abs(reference)), 1e-6))\n \n \n@@ -194,10 +268,12 @@ def install(model: nn.Module, device_info: dict[str, Any] | None) -> dict[str, A\n     modules = [m for _, m in model.named_modules() if _eligible(m)]\n     if not modules:\n         raise ValueError("the native plan found no 4-bit group-64 affine bfloat16 weights")\n-    error = _probe(modules[0])\n+    switches = [m for m in modules if isinstance(m, QuantizedSwitchLinear)]\n+    error = max(_probe(m) for m in [modules[0]] + switches[:1])  # each kernel on its own weight\n     if not error <= PROBE_TOLERANCE:\n         raise ValueError(f"the native kernel disagrees with the float32 reference ({error:.3g})")\n     for module in modules:\n         module.__class__ = (NativeQuantizedEmbedding if isinstance(module, nn.QuantizedEmbedding)\n+                            else NativeQuantizedSwitchLinear if isinstance(module, QuantizedSwitchLinear)\n                             else NativeQuantizedLinear)\n     return {"modules": len(modules), "probe_rel_error": error}\ndiff --git a/ironmule/q3f_child_guard.py b/ironmule/q3f_child_guard.py\nindex 1f9a9e3..48807f6 100644\n--- a/ironmule/q3f_child_guard.py\n+++ b/ironmule/q3f_child_guard.py\n@@ -91,8 +91,9 @@ REVIEWED_SOURCE_MODULES = frozenset({\n     # ironmule.runtime, with no operation from OPERATION_SET and no dynamic call path.\n     "ironmule.numeric_plans",\n     # Reached from load_engine when a caller asks for the `native` plan. Reviewed: mlx,\n-    # mlx.nn, typing and ironmule.numeric_plans only; a kernel source string and module\n-    # class swaps, no operation from OPERATION_SET and no dynamic call path.\n+    # mlx.nn, mlx_lm\'s switch layers, math, typing and ironmule.numeric_plans only; kernel\n+    # source strings and module class swaps, no operation from OPERATION_SET and no dynamic\n+    # call path.\n     "ironmule.cuda_native",\n })\n #: The bare names a relative import inside the package can use. Derived from the allowlist\ndiff --git a/tests/engine/test_cuda_native.py b/tests/engine/test_cuda_native.py\nindex a9c8ad2..c57d85e 100644\n--- a/tests/engine/test_cuda_native.py\n+++ b/tests/engine/test_cuda_native.py\n@@ -63,3 +63,48 @@ def test_prefill_path_and_float32_fallback_match_the_reference():\n     assert float(mx.max(mx.abs(prefill - reference)) / mx.max(mx.abs(reference))) < 1e-2\n     fallback = cuda_native.matmul(x, w, scales.astype(mx.float32), biases.astype(mx.float32))\n     assert float(mx.max(mx.abs(fallback - reference)) / mx.max(mx.abs(reference))) < 1e-3\n+\n+\n+def _reference_gather_qmv(x, w, scales, biases, idx, xs):\n+    rows = x[mx.arange(idx.size) // xs].astype(mx.float32)\n+    dense = mx.dequantize(w[idx], scales[idx].astype(mx.float32), biases[idx].astype(mx.float32),\n+                          group_size=64, bits=4)\n+    return (dense @ rows[:, :, None]).squeeze(-1).astype(mx.bfloat16)\n+\n+\n+def _switch_glu():\n+    from mlx_lm.models.switch_layers import SwitchGLU\n+\n+    glu = SwitchGLU(128, 64, 16)\n+    for name in ("gate_proj", "up_proj", "down_proj"):\n+        setattr(glu, name, getattr(glu, name).to_quantized(64, 4))\n+    glu.set_dtype(mx.bfloat16)\n+    return glu\n+\n+\n+def test_experts_route_by_rows_and_match_stock(monkeypatch):\n+    # PERF1-S: the CUDA kernel is replaced by its float32 reference; what is checked here is\n+    # which (token, expert) rows reach it, with which shared activation row, and the shapes\n+    # mlx-lm\'s SwitchGLU gets back, for one request, eight, and a prefill.\n+    calls = []\n+    monkeypatch.setattr(cuda_native, "_gather_qmv",\n+                        lambda *a: calls.append((a[4].size, a[5])) or _reference_gather_qmv(*a))\n+    monkeypatch.setattr(cuda_native, "_probe", lambda module: 0.0)\n+    glu = _switch_glu()\n+    stock = _switch_glu()\n+    stock.update(glu.parameters())\n+    assert cuda_native.install(glu, TURING)["modules"] == 3\n+    assert type(glu.down_proj) is cuda_native.NativeQuantizedSwitchLinear\n+    for batch, length, routed in ((1, 1, [(8, 8), (8, 8), (8, 1)]), (8, 1, [(64, 1)] * 3),\n+                                  (1, 40, [])):\n+        calls.clear()\n+        x = mx.random.normal((batch, length, 128), key=mx.random.key(2)).astype(mx.bfloat16)\n+        scores = mx.random.normal((batch, length, 16), key=mx.random.key(3))\n+        indices = mx.argpartition(scores, kth=-8, axis=-1)[..., -8:]\n+        want = stock(x, indices).astype(mx.float32)\n+        got = glu(x, indices).astype(mx.float32)\n+        assert got.shape == want.shape == (batch, length, 8, 128)\n+        assert float(mx.max(mx.abs(got - want)) / mx.max(mx.abs(want))) < 2e-2\n+        # Eight requests are 64 rows, which SwitchGLU sorts by expert first; a prefill\'s 320\n+        # rows go to float16 gather_qmm instead.\n+        assert calls == routed\n'  # the working tree's `ironmule/cuda_native.py` with expert routing, and its test
+MODEL = ("mlx-community/gemma-4-26b-a4b-it-4bit", "0d77464eeb233a2da68ebf9d7dc4edaac7db956d")
+STOCK = {"name": "stock", "env": {"MLX_MAX_OPS_PER_BUFFER": "20", "MLX_MAX_MB_PER_BUFFER": "100"},
+         "knobs": {}, "mode": "interactive"}
+CONFIGS = [STOCK, {"name": "ironmule_native", "env": {}, "knobs": {}, "mode": "interactive", "dtype": "native"}]
+WORK = "/kaggle/working"
+REPO = "/tmp/IronMule"
+VENV = "/tmp/im"
+PY = f"{VENV}/bin/python"
+SYS = sys.executable
+DEADLINE = time.time() + 25 * 60
+os.makedirs(f"{WORK}/logs", exist_ok=True)
+with open("/tmp/cross.py", "w") as stream:
+    stream.write(CROSS_SOURCE)
+with open("/tmp/ironmule.patch", "w") as stream:
+    stream.write(PATCH_SOURCE)
+report = {"schema": "ironmule.perf1-kaggle.v15", "commit": COMMIT, "stages": {}, "performance_claim": False}
+env = dict(os.environ, PATH=f"{VENV}/bin:" + os.environ["PATH"], PYTHONPATH="", PYTHONNOUSERSITE="1",
+           HF_HUB_DISABLE_PROGRESS_BARS="1", PYTHONUNBUFFERED="1", IRONMULE_HOME="/tmp/ironmule-home",
+           IRONMULE_API_KEY="perf1-local-only")
+
+
+def save():
+    with open(f"{WORK}/perf1-result.json", "w") as stream:
+        json.dump(report, stream, indent=1, default=str)
+
+
+def sh(name, cmd, timeout=900, cwd="/tmp"):
+    left = DEADLINE - time.time()
+    if left < 30:
+        report["stages"][name] = {"exit": "skipped_deadline"}
+        save()
+        return None, ""
+    started = time.time()
+    proc = subprocess.Popen(cmd, shell=True, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True, start_new_session=True)
+    try:
+        out, _ = proc.communicate(timeout=min(timeout, left))
+        code = proc.returncode
+    except subprocess.TimeoutExpired:
+        os.killpg(proc.pid, signal.SIGKILL)
+        out, _ = proc.communicate()
+        code = "timeout"
+    with open(f"{WORK}/logs/{name}.log", "w") as stream:
+        stream.write(out)
+    report["stages"][name] = {"exit": code, "seconds": round(time.time() - started, 1), "tail": out[-2500:]}
+    save()
+    print(f"== {name}: exit={code} {report['stages'][name]['seconds']}s", flush=True)
+    return code, out
+
+
+CHECK = r"""
+import json, sys
+import mlx.core as mx
+from mlx_lm.models.switch_layers import QuantizedSwitchLinear
+from ironmule import cuda_native as cn
+out = {}
+for name, (e, n, k) in {"qwen36_gate_up": (256, 512, 2048), "qwen36_down": (256, 2048, 512),
+                        "gemma4_gate_up": (128, 704, 2816), "gemma4_down": (128, 2816, 704)}.items():
+    layer = QuantizedSwitchLinear(k, n, e, bias=False)
+    layer.set_dtype(mx.bfloat16)
+    out[f"{name}_probe"] = cn._probe(layer)
+    w, s, b = layer["weight"], layer["scales"], layer["biases"]
+    for rows in (64, 2048):
+        x = mx.random.normal((rows, 1, k)).astype(mx.bfloat16)
+        idx = mx.sort(mx.random.randint(0, e, (rows,))).astype(mx.uint32)
+        y = cn.gather_matmul(x, w, s, b, idx, sorted_indices=True).astype(mx.float32)
+        ref = mx.gather_qmm(x.astype(mx.float32), w, s.astype(mx.float32), b.astype(mx.float32), rhs_indices=idx,
+                            transpose=True, group_size=64, bits=4, sorted_indices=True)
+        out[f"{name}_{rows}"] = float(mx.max(mx.abs(y - ref)) / mx.max(mx.abs(ref)))
+print(json.dumps(out))
+json.dump(out, open(sys.argv[1], "w"), indent=1)
+"""
+with open("/tmp/check.py", "w") as stream:
+    stream.write(CHECK)
+
+sh("env", "nvidia-smi --query-gpu=index,name,memory.total,clocks.max.sm --format=csv; nproc; free -g")
+sh("clone", f"git clone -q https://github.com/Tobayko/IronMule {REPO} && git -C {REPO} checkout -q {COMMIT} "
+            f"&& git -C {REPO} apply /tmp/ironmule.patch && git -C {REPO} status --short")
+sh("venv", f"{SYS} -m pip install -q uv && {SYS} -m uv python install 3.12 "
+           f"&& {SYS} -m uv venv --python-preference only-managed --python 3.12 {VENV}")
+sh("install", f"{SYS} -m uv pip install --python {PY} -e '{REPO}[cuda]' 'mlx-lm==0.31.3' pytest", timeout=1200)
+sh("freeze", f"{SYS} -m uv pip freeze --python {PY}")
+sh("device_check", f"{PY} /tmp/check.py {WORK}/device-check.json", timeout=600)
+sh("test_cuda_native", f"{PY} -m pytest -q -p no:cacheprovider -o addopts='' tests/engine/test_cuda_native.py", cwd=REPO)
+try:
+    with open(f"{WORK}/device-check.json") as stream:
+        errors = json.load(stream)
+except (OSError, ValueError):
+    errors = {}
+report["gate"] = {"device_check": len(errors) == 12 and all(v <= 1e-2 for v in errors.values())}
+save()
+if report["gate"]["device_check"]:
+    model_id, revision = MODEL
+    sh("download_gemma4-26b-a4b", f"{PY} -c \"from huggingface_hub import snapshot_download as s; "
+                                  f"print(s('{model_id}', revision='{revision}'))\"", timeout=1200)
+    sh("cross_gemma4-26b-a4b", f"{PY} /tmp/cross.py {model_id} {revision} '{json.dumps(CONFIGS)}' "
+                               f"{WORK}/cross-native-gemma4-26b-a4b.json 1 1", timeout=1500)
+
+report["finished"] = True
+save()
+print(json.dumps({k: v.get("exit") for k, v in report["stages"].items()}, indent=1))
