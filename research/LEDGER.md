@@ -5570,3 +5570,16 @@ stderr is needed; BACKLOG3 records it with the tune's own prompt.
 1 failed: the new `test_load_engine_refuses_fusion_with_the_native_plan_before_loading`
 imported `ironmule.tune` with `from ironmule import tune`, which yields the function of that
 name. Fixed to `importlib.import_module`, as the other tune tests do.
+
+## BACKLOG3 — the fixes pass on Kaggle; the confirmation alone does not crash (2026-09-25)
+
+`backlog3-run1-ca86510b`, commit `544148b`, Kaggle Tesla T4. The engine suite on the two fixes
+and the corrected test: 1262 passed, 28 skipped, 0 failed. PORT1-F: `confirm_child_probe.py`
+ran tune's paired confirmation for Gemma 3 4B (`head_skip_prefill` against baseline, 6
+processes) alone, and after 25 min it had neither failed nor finished; the stage deadline
+stopped it. Both full tunes lost confirmation child 0 after screening in the same parent
+process, at 1205-1209 s of the stage. So the crash needs what screening leaves behind; one
+candidate is the parent's loaded model and MLX cache on the GPU while a child loads its own,
+which is not yet measured. BACKLOG4 runs the full tune with the child's stderr and the GPU's
+memory recorded. Raw data: `experiments/kaggle_compat/results/backlog3-run1-ca86510b/`.
+Run time 29 min, 0 EUR.
