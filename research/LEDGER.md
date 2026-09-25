@@ -5504,3 +5504,44 @@ reference replaces it for mixture-of-experts models is the user's decision (OSS1
 recorded: gpt-oss's tokenizer has a BOS token (199998) and the gate's slicing never gives
 it, the same defect PORT2-K names for Gemma; both sides of the gate share the input, so it
 does not explain the spread. Run time 33 min, 0 EUR.
+
+## BACKLOG1 — five open CUDA entries in one Kaggle session (2026-09-25)
+
+One Kaggle session (`backlog1-run1-41035f02`, commit `073d027`, Tesla T4, mlx 0.32.2, mlx-lm
+0.31.3), each entry measured with the test and kill criterion its backlog entry fixes. Raw
+data, per-case probe results and the submitted notebook:
+`experiments/kaggle_compat/results/backlog1-run1-41035f02/`. Run time 58 min, 0 EUR.
+
+**PERF1-N — projection fusion under `native`: the prefill GEMM, not the kernel.**
+`native_fusion_probe.py` ran IronMule's `cuda_native.matmul` on fused against separate
+projections at Qwen 3 14B's shapes. The row kernel (1-8 rows) was bit-identical in 8 of 8
+cases; the float16 GEMM (9-512 rows) in 6 of 8, the fused q/k/v differing at 16 and 64 rows
+(0.1% and 2.6% of values, at most 0.031). cuBLAS rounds a fused shape differently from its
+parts, which is where tuned knobs on `native` lost token identity in PERF1 run 7, and fusion
+bought no speed there. Fixed: `load_engine` refuses `fuse_projections` with `native` (`bf92d39`).
+
+**PERF1-L — `k32` is not bit-identical to MLX's float32 matvec.** `k32_probe.py`, 36 cases at
+Mistral Small 3.2 24B's and Qwen 3 8B's decode shapes, 1-8 rows: 0 bit-identical with free and
+with pinned arithmetic, largest relative difference 0.23 at near-zero outputs. By the entry's
+kill criterion it cannot speed up the qualified float32 plan without a gate of its own;
+rejected. `native` already serves the architectures where it is qualified.
+
+**PERF1-T — Qwen 3.5 is deterministic without CUDA graphs, grouped included.** Qwen 3.5 9B,
+`MLX_USE_CUDA_GRAPHS=0` in every process, `cross.py child`, 3 processes per arm, rotated: stock,
+IronMule interactive and IronMule throughput (grouped, set after load past the load-time
+refusal) each produced one output digest, and both IronMule arms 6/6 requests equal to stock.
+Wall ratios 1.0005 and 1.0014: no speed either way. The throughput refusal for recurrent caches
+was measured with graphs on (PORT2 run 4), where stock itself is not deterministic. What
+remains is a product change: MLX reads the graph flag once at its first GPU operation, before
+the model family is known (PERF1-T2).
+
+**PORT1-F — the bf16 tune crash reproduces.** `ironmule tune` on Gemma 3 4B screened as before
+(winner `head_skip_prefill`, 0.8550) and died in the paired confirmation: `child 0 exited with
+status 1`, nothing more, because `ab.run` keeps a child's stderr out of every error. By the
+entry's kill criterion the diagnostic comes first: errors now carry the child's exception class,
+never its message (`309728e`). The cause is open.
+
+**PERF1-M — not measured as fixed; a harness error.** The notebook did not set
+`PERF1_NLL_CHUNKS=16` and `PERF1_NLL_TOKENS=512`, which PERF1 run 5 set, so `perf1.py` ran its
+defaults, 4 chunks x 256 tokens. The result, 0.99872 [0.99633; 1.00124] over four chunks, is
+recorded and is not the gate; the entry stays open for a separately identified run.

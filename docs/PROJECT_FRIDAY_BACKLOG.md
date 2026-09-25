@@ -127,6 +127,8 @@ Offen:
   ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
   Test: `ironmule tune --model 4B` nativ einmal auf der T4 (~20 min). Kill:
   reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
+  Reproduced 2026-09-25 (BACKLOG1): confirmation child 0 exit 1. The diagnostic is in
+  (`309728e`: the child's exception class); next, rerun the tune and fix the cause.
 
 ## PERF1 — Rest (2026-09-23)
 
@@ -136,7 +138,8 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Beantwortet 2026-09-23:
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-25: PERF1-L, `k32`
+in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
 PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
 to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt mit Sync je
 Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
@@ -152,24 +155,18 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
   mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
   Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
-- **PERF1-L `k32` im float32-Plan.** Derselbe Kernel mit fp32-Eingängen verdoppelte den
-  Decode des bereits qualifizierten float32-Plans (+107 %) bei gleichen Tokens und NLL auf
-  fünf Stellen (run 2). Offen, ob er bitgleich zu MLX' eigenem fp32-`qmv` ist; nur dann
-  darf er den Plan ohne neues Gate beschleunigen. Test: Ausgabevergleich je Modul auf der
-  T4. Kill: nicht bitgleich — dann eigener Planname mit eigenem Gate.
 - **PERF1-M 14B-Decode-Gate.** Für Qwen 3 14B lief nur das Prefill-Gate; der
   Decode-Pfad-Referenzlauf kostet ~40 min Quote. Kill: keiner, nur Aufwand.
-- **PERF1-T Qwen 3.5 im Produkt auf CUDA ohne CUDA-Graphen.** Run 13: diese Familie ist mit
-  CUDA-Graphen auf CUDA nicht deterministisch, auch auf einer Karte ohne IronMule (9B); ohne
-  Graphen schon (27B), bei fast gleicher Rate. PORT2 schob Qwen 3.5 9Bs nicht-deterministische
-  Gruppen-Arme auf den Gruppenpfad und verweigert seitdem den Durchsatzmodus für rekurrente
-  Caches — gemessen mit Graphen an. Test: `cross.py` für Qwen 3.5 9B mit
-  `MLX_USE_CUDA_GRAPHS=0`, interaktiv und Durchsatz, zwei Prozesse je Arm. Kill: auch ohne
-  Graphen nicht deterministisch — dann bleibt die Verweigerung; sonst Graphen für diese
-  Familie auf CUDA abschalten und die Verweigerung neu prüfen.
-  TEST1 (2026-09-24, ledger): the Qwen hybrid gate (2 prompts, 8 tokens, grouped mode set
-  after load) matched the reference in two processes with graphs off; with graphs on the
-  unmodified reference, not IronMule, changed its first token in all three. Not this test.
+  BACKLOG1 (2026-09-25) ran it with `perf1.py`'s defaults (4 x 256) instead of run 5's
+  16 x 512 by a harness error; not the gate (ledger, BACKLOG1). Needs its own run.
+- **PERF1-T2 Qwen 3.5 on CUDA without CUDA graphs, in the product.** BACKLOG1 (ledger): without
+  graphs Qwen 3.5 9B is deterministic across processes and IronMule's interactive and grouped
+  arms equal stock 6/6, at the same speed. Mechanism: set `MLX_USE_CUDA_GRAPHS=0` for this
+  family on CUDA and lift the throughput refusal for recurrent caches there. Open design: MLX
+  reads the flag once, at its first GPU operation, before the family is known. Test: a process
+  that loads Qwen 3.5 through `load_engine` reports graphs off and gives one digest across
+  three processes. Kill: the flag cannot be set before MLX's first GPU operation without
+  reading the model config first; then document `MLX_USE_CUDA_GRAPHS=0` for this family.
 - **PERF1-R Mikro-Batches in der Pipeline.** Bei Breite 1 rechnet immer nur eine Karte; die
   Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
   abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
@@ -180,10 +177,6 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   je Warp die Zeilen des gewählten Experten liest, ohne Gewichte umzukopieren. Nutzt auch
   Gemma 4 26B-A4B. Test: Probe gegen einen float32-Dequant-Referenzwert je Form, dann
   35B-A3B über zwei Karten gegen `kernel+p16` im selben Lauf. Kill: Decode unter 1,5x.
-- **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
-  auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
-  allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
-  Matmuls — dann Fusion unter `native` verweigern.
 
 ## OSS1 — Rest (2026-09-25)
 
