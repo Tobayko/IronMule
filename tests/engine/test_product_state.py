@@ -107,6 +107,21 @@ def test_existing_public_root_is_rejected_without_changing_permissions(tmp_path)
     assert not (root / ".lock").exists()
 
 
+def test_setup_accepts_a_root_the_runtime_store_created_first(tmp_path, monkeypatch):
+    """DATA3-B: `IRONMULE_HOME` is the tuning store and the product root at once."""
+    from ironmule import hw
+
+    root = tmp_path / "ironmule-home"
+    monkeypatch.setattr(hw, "STORE", root)
+    monkeypatch.setattr(hw, "static_facts", lambda: {"gpu_available": False})
+    monkeypatch.setattr(hw, "fingerprint", lambda _facts=None: "fp")
+    hw.probe()
+    assert stat.S_IMODE(root.stat().st_mode) == 0o700
+
+    ProductStore(root).setup()
+    assert (root / "hw-fp.json").is_file()
+
+
 def test_setup_validates_existing_registry_before_writing_settings(tmp_path):
     root = tmp_path / "state"
     root.mkdir(mode=0o700)

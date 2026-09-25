@@ -129,7 +129,7 @@ class PairedThroughputMode:
     loaded engine, and refuses loudly outside the qualified model, hardware, library and
     projection set: a caller who asked for this must not silently get something else.
     Measured on a pair of requests only; a lone request runs the ordinary single path and
-    never waits for a partner. See `docs/BACKLOG.md` entries `B45` and `B46`.
+    never waits for a partner. See `research/LEDGER.md` entries `B45` and `B46`.
     """
 
     name = "paired_throughput"
@@ -603,7 +603,7 @@ class Runtime:
             except (OSError, json.JSONDecodeError):
                 stored = None
         if stored is None:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             path.write_text(json.dumps(current, indent=1, sort_keys=True, default=str))
             return {"verdict": "recorded_first_fingerprint", "current": current}
         ok, why = usable(stored, current)

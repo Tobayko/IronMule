@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from ironmule_product.model_policy import ModelPolicyError, validate_model_config
+from ironmule_product.model_policy import ModelPolicyError, config_model_type, validate_model_config
 
 
 def _snapshot(tmp_path: Path, config: str = "{}") -> tuple[Path, str]:
@@ -25,6 +25,19 @@ def _snapshot(tmp_path: Path, config: str = "{}") -> tuple[Path, str]:
 def test_safe_config_is_pinned_to_none(tmp_path: Path) -> None:
     snapshot, revision = _snapshot(tmp_path, '{"model_type":"gemma3","model_file":null}')
     assert validate_model_config(str(snapshot), revision) == {"model_file": None}
+
+
+@pytest.mark.parametrize(("config", "expected"), [
+    ('{"model_type":"qwen3_5"}', "qwen3_5"), ("{}", None), ('{"model_type":7}', None)])
+def test_config_model_type_is_read_under_the_same_checks(tmp_path: Path, config: str, expected) -> None:
+    snapshot, revision = _snapshot(tmp_path, config)
+    assert config_model_type(str(snapshot), revision) == expected
+
+
+def test_config_model_type_refuses_what_validation_refuses(tmp_path: Path) -> None:
+    snapshot, revision = _snapshot(tmp_path, '{"model_type":"qwen3_5","model_file":"custom.py"}')
+    with pytest.raises(ModelPolicyError):
+        config_model_type(str(snapshot), revision)
 
 
 @pytest.mark.parametrize("value", [False, "", "custom.py", 0, [], {}])

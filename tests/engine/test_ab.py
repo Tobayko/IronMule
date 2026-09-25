@@ -1,7 +1,6 @@
 import inspect
 import json
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 
@@ -173,6 +172,32 @@ def test_run_rejects_nonzero_or_missing_child_marker(monkeypatch, returncode, st
     with pytest.raises(RuntimeError, match=needle) as error:
         ab.run(_arms(), processes=1)
     assert "secret" not in str(error.value)
+
+
+
+def test_run_names_only_the_exception_class_of_a_failed_child(monkeypatch):
+    import importlib
+
+    tune = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    stderr = 'Traceback (most recent call last):\n  File "child", line 1\nRuntimeError: secret prompt\n'
+    monkeypatch.setattr(ab.subprocess, "Popen",
+                        lambda *_args, **_kwargs: _FakeProcess(returncode=1, stdout="", stderr=stderr))
+    with pytest.raises(ab.ABRunError, match=r"exited with status 1 \(RuntimeError\)") as error:
+        ab.run(_arms(), processes=1)
+    assert "secret" not in str(error.value)
+    assert error.value.partial_evidence == {"exception_type": "RuntimeError"}
+
+
+def test_exception_class_is_read_from_the_traceback_not_its_notes():
+    """BACKLOG4: the guard's note followed the exception, so the last line named nothing."""
+    noise = "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'x'\n"
+    stderr = (noise + 'Traceback (most recent call last):\n  File "<string>", line 7, in <module>\n'
+              "    load()\n    ^^^^^^\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n"
+              '@GUARD_FAILURE{"events": []}\n')
+    assert ab._child_exception_type(stderr) == "RuntimeError"
+    assert ab._child_exception_type(noise) is None
+    assert ab._child_exception_type("") is None
 
 
 def test_run_communication_error_reaps_child_before_raising(monkeypatch):
