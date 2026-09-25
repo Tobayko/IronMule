@@ -1,0 +1,506 @@
+{
+ "model_id": "mlx-community/gemma-3-4b-it-4bit",
+ "started": 1790336772.7125795,
+ "exit": "ABRunError: child 0 exited with status 1",
+ "seconds": 1226.9015910625458,
+ "child_stderr": [
+  {
+   "at": 1790337999.494947,
+   "stderr": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nTraceback (most recent call last):\n  File \"<string>\", line 7, in <module>\n  File \"/tmp/IronMule/ironmule/ab.py\", line 136, in _child\n    return _child_execution(spec)\n           ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/ab.py\", line 168, in _child_execution\n    engine, tok = load_engine(spec.get(\"model\", DEFAULT_MODEL), knobs,\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 366, in load_engine\n    model, tokenizer = load(source)\n                       ^^^^^^^^^^^^\n  File \"/tmp/im/lib/python3.12/site-packages/mlx_lm/utils.py\", line 491, in load\n    model, config = load_model(model_path, lazy, model_config=model_config)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/im/lib/python3.12/site-packages/mlx_lm/utils.py\", line 418, in load_model\n    mx.eval(model.parameters())\nRuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory\n@GUARD_FAILURE{\"events\": [], \"installed\": true, \"version\": \"ironmule.q3f_child_guard.v1\"}\n"
+  }
+ ],
+ "gpu_memory": [
+  {
+   "at": 1790336772.7484026,
+   "memory_used_mib": "0, 105\n1, 105"
+  },
+  {
+   "at": 1790336782.7858965,
+   "memory_used_mib": "0, 8553\n1, 105"
+  },
+  {
+   "at": 1790336792.8228526,
+   "memory_used_mib": "0, 8553\n1, 105"
+  },
+  {
+   "at": 1790336802.860759,
+   "memory_used_mib": "0, 8553\n1, 105"
+  },
+  {
+   "at": 1790336812.8982782,
+   "memory_used_mib": "0, 8683\n1, 105"
+  },
+  {
+   "at": 1790336822.93688,
+   "memory_used_mib": "0, 8683\n1, 105"
+  },
+  {
+   "at": 1790336832.9755993,
+   "memory_used_mib": "0, 8683\n1, 105"
+  },
+  {
+   "at": 1790336843.0154371,
+   "memory_used_mib": "0, 8683\n1, 105"
+  },
+  {
+   "at": 1790336853.0522692,
+   "memory_used_mib": "0, 8699\n1, 105"
+  },
+  {
+   "at": 1790336863.0911357,
+   "memory_used_mib": "0, 8701\n1, 105"
+  },
+  {
+   "at": 1790336873.1230526,
+   "memory_used_mib": "0, 8713\n1, 105"
+  },
+  {
+   "at": 1790336883.1607015,
+   "memory_used_mib": "0, 8731\n1, 105"
+  },
+  {
+   "at": 1790336893.1930826,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336903.2260897,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336913.2591782,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336923.2920063,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336933.3250332,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336943.3581917,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336953.3908782,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336963.4237192,
+   "memory_used_mib": "0, 8823\n1, 105"
+  },
+  {
+   "at": 1790336973.4627194,
+   "memory_used_mib": "0, 8825\n1, 105"
+  },
+  {
+   "at": 1790336983.5004096,
+   "memory_used_mib": "0, 8827\n1, 105"
+  },
+  {
+   "at": 1790336993.5389118,
+   "memory_used_mib": "0, 8827\n1, 105"
+  },
+  {
+   "at": 1790337003.5714989,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337013.6037974,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337023.637159,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337033.6704788,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337043.703523,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337053.7364624,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337063.7694585,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337073.8031263,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337083.8360431,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337093.8691955,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337103.9015982,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337113.9340045,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337123.966826,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337133.9997773,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337144.0321615,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337154.0651207,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337164.0982258,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337174.1312284,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337184.1639743,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337194.196825,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337204.230313,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337214.2626681,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337224.29517,
+   "memory_used_mib": "0, 8909\n1, 105"
+  },
+  {
+   "at": 1790337234.3288522,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337244.3611817,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337254.3933964,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337264.4259903,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337274.4595304,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337284.4950328,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337294.5270712,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337304.5596707,
+   "memory_used_mib": "0, 8973\n1, 105"
+  },
+  {
+   "at": 1790337314.5918932,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337324.6242254,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337334.657915,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337344.691801,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337354.7263987,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337364.759743,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337374.7924116,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337384.825612,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337394.8578093,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337404.8902671,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337414.9225597,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337424.95523,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337434.9873033,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337445.0201051,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337455.0529566,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337465.0855048,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337475.118218,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337485.1508174,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337495.182967,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337505.2158182,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337515.2483,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337525.2812161,
+   "memory_used_mib": "0, 8975\n1, 105"
+  },
+  {
+   "at": 1790337535.3145475,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337545.3468878,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337555.3798108,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337565.4120924,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337575.444921,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337585.478134,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337595.5113862,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337605.5442932,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337615.5774949,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337625.6097517,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337635.6424315,
+   "memory_used_mib": "0, 9117\n1, 105"
+  },
+  {
+   "at": 1790337645.6815972,
+   "memory_used_mib": "0, 9245\n1, 105"
+  },
+  {
+   "at": 1790337655.713809,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337665.746694,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337675.780704,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337685.813549,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337695.8471289,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337705.8803673,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337715.9174073,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337726.6223938,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337736.8975756,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337746.9365332,
+   "memory_used_mib": "0, 9271\n1, 105"
+  },
+  {
+   "at": 1790337756.9726183,
+   "memory_used_mib": "0, 9355\n1, 105"
+  },
+  {
+   "at": 1790337767.0061336,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337777.039437,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337787.0721338,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337797.1049747,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337807.137505,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337817.169864,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337827.206929,
+   "memory_used_mib": "0, 9479\n1, 105"
+  },
+  {
+   "at": 1790337837.2577596,
+   "memory_used_mib": "0, 9489\n1, 105"
+  },
+  {
+   "at": 1790337847.2970083,
+   "memory_used_mib": "0, 9581\n1, 207"
+  },
+  {
+   "at": 1790337857.3379433,
+   "memory_used_mib": "0, 12045\n1, 207"
+  },
+  {
+   "at": 1790337867.3769817,
+   "memory_used_mib": "0, 12045\n1, 207"
+  },
+  {
+   "at": 1790337877.4133677,
+   "memory_used_mib": "0, 13035\n1, 207"
+  },
+  {
+   "at": 1790337887.4510427,
+   "memory_used_mib": "0, 13243\n1, 207"
+  },
+  {
+   "at": 1790337897.4879284,
+   "memory_used_mib": "0, 13243\n1, 207"
+  },
+  {
+   "at": 1790337907.5249147,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337917.561028,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337927.5979397,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337937.6349425,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337947.6722274,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337957.7086349,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337967.7453687,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337977.7828398,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337987.819802,
+   "memory_used_mib": "0, 13307\n1, 207"
+  },
+  {
+   "at": 1790337997.8582006,
+   "memory_used_mib": "0, 13307\n1, 207"
+  }
+ ]
+}

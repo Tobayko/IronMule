@@ -1,0 +1,9 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"step": "start", "at": 1790340198.1713037, "nvidia_smi_used_mib": "0, 105\n1, 105", "device_free_bytes": 15526068224, "mlx_active_bytes": 0, "mlx_cache_bytes": 0, "pool_release_threshold": 0, "pool_reserved_bytes": 0, "pool_used_bytes": 0}
+{"step": "after_generate", "at": 1790340321.785311, "nvidia_smi_used_mib": "0, 3895\n1, 105", "device_free_bytes": 11551965184, "mlx_active_bytes": 2561222704, "mlx_cache_bytes": 1117592480, "pool_release_threshold": 0, "pool_reserved_bytes": 3690987520, "pool_used_bytes": 3678799616}
+{"step": "after_release", "at": 1790340321.855656, "nvidia_smi_used_mib": "0, 3895\n1, 105", "device_free_bytes": 11551965184, "mlx_active_bytes": 48, "mlx_cache_bytes": 0, "pool_release_threshold": 0, "pool_reserved_bytes": 3690987520, "pool_used_bytes": 0}
+{"step": "after_context_synchronize", "at": 1790340321.9770236, "nvidia_smi_used_mib": "0, 375\n1, 105", "device_free_bytes": 15242952704, "mlx_active_bytes": 48, "mlx_cache_bytes": 0, "pool_release_threshold": 0, "pool_reserved_bytes": 0, "pool_used_bytes": 0}
+{"step": "after_trim", "at": 1790340322.007628, "nvidia_smi_used_mib": "0, 375\n1, 105", "device_free_bytes": 15242952704, "mlx_active_bytes": 48, "mlx_cache_bytes": 0, "pool_release_threshold": 0, "pool_reserved_bytes": 0, "pool_used_bytes": 0}
+{"step": "after_child", "at": 1790340350.9579527, "nvidia_smi_used_mib": "0, 375\n1, 105", "device_free_bytes": 15242952704, "mlx_active_bytes": 48, "mlx_cache_bytes": 0, "pool_release_threshold": 0, "pool_reserved_bytes": 0, "pool_used_bytes": 0}
+{"child_exit": 0}

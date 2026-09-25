@@ -1,0 +1,7 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+1 float16 4.975 24 layers
+8 float16 5.1264 24 layers
+9 float16 4.807 24 layers
+11 float16 4.0174 24 layers
+{"dtype": "float16", "chunks": 4, "seconds": 218.5}

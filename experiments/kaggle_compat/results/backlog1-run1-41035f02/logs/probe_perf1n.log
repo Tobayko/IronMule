@@ -1,0 +1,18 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{'projection': 'qkv', 'rows': 1, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'qkv', 'rows': 2, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'qkv', 'rows': 4, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'qkv', 'rows': 8, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'qkv', 'rows': 9, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'qkv', 'rows': 16, 'path': 'float16_gemm', 'bit_equal': False, 'max_abs_diff': 0.015625, 'differing_share': 0.0010114398319274187}
+{'projection': 'qkv', 'rows': 64, 'path': 'float16_gemm', 'bit_equal': False, 'max_abs_diff': 0.03125, 'differing_share': 0.0260729119181633}
+{'projection': 'qkv', 'rows': 512, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 1, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 2, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 4, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 8, 'path': 'kernel', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 9, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 16, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 64, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}
+{'projection': 'gate_up', 'rows': 512, 'path': 'float16_gemm', 'bit_equal': True, 'max_abs_diff': 0.0, 'differing_share': 0.0}

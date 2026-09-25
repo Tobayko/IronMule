@@ -34,11 +34,20 @@ placeholders filled, and archived byte for byte in its run's `results/` director
 run is archived, the archived copy is the record and the template is removed; git history
 keeps the reviewed template. Shared scripts that later runs reuse stay.
 
+## Rebased history
+
+Pull request 9 was rebase-merged, so its 16 commits reached `main` with new hashes and
+identical trees (`f9e1d30` is `7af3733` on `main`, `9394838` is `c4cb89a`). The ledger and the
+archived notebooks of TEST1, TEST2, TEST2-G and the clean-up check name the original hashes;
+GitHub keeps them under `refs/pull/9/head`.
+
 ## Clean-up status (2026-09-24)
 
 - Removed: four private helpers nothing called (`ironmule/q4_corpus.py`,
-  `ironmule/q4_optimizer.py`) and seventeen Kaggle templates whose runs are archived
-  (`perf1_run1` to `perf1_run13`, `test1`, `test1_qwen`, `test2`, `test2g`).
+  `ironmule/q4_optimizer.py`) and thirty-two Kaggle templates whose runs are archived (`perf1_run1` to `perf1_run18`, `test1`,
+  `test1_qwen`, `test2`, `test2g`, `oss1`, `backlog1` to `backlog9`).
+- Merged 2026-09-25: `research/port2-model-families` (PERF1 runs 14-18, the MoE row kernel, BOS
+  on every `perf1.py nll` chunk), with run 18's output archived from its Kaggle download.
 - Byte-identical files in the tree are per-run logs (the same download or environment
   output in several runs). They are evidence of each run and stay.
 - 55 scripts in `tools/` are named nowhere else in the repository (the B15, B24 and B42 to

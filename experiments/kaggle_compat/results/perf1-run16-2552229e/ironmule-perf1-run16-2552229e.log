@@ -1,0 +1,23 @@
+[{"stream_name":"stdout","time":0.891891321,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.713010399,"data":"== clone: exit=0 2.8s\n"}
+,{"stream_name":"stdout","time":11.725552984,"data":"== venv: exit=0 8.0s\n"}
+,{"stream_name":"stdout","time":30.981214304,"data":"== install: exit=0 19.3s\n"}
+,{"stream_name":"stdout","time":31.068607221,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":113.575030475,"data":"== download_gemma4-26b-a4b: exit=0 82.5s\n"}
+,{"stream_name":"stdout","time":673.541187142,"data":"== cross_gemma4-26b-a4b: exit=0 560.0s\n"}
+,{"stream_name":"stdout","time":673.541799607,"data":"{\n"}
+,{"stream_name":"stdout","time":673.541818218,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":673.541825254,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":673.541831142,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":673.541836302,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":673.541841266,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":673.54184836,"data":" \"download_gemma4-26b-a4b\": 0,\n"}
+,{"stream_name":"stdout","time":673.541856423,"data":" \"cross_gemma4-26b-a4b\": 0\n"}
+,{"stream_name":"stdout","time":673.541860083,"data":"}\n"}
+,{"stream_name":"stderr","time":675.582880157,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":675.582937075,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":675.832867621,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":675.832893771,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":676.553398992,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":677.724095496,"data":"[NbConvertApp] Writing 330280 bytes to __results__.html\n"}
+]

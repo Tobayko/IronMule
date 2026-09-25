@@ -1,0 +1,96 @@
+{
+ "probes": {
+  "PERF1-N": {
+   "kernel": {
+    "cases": 8,
+    "bit_equal": 8,
+    "max_abs_diff": 0.0
+   },
+   "float16_gemm": {
+    "cases": 8,
+    "bit_equal": 6,
+    "max_abs_diff": 0.03125
+   }
+  },
+  "PERF1-L": {
+   "free": {
+    "cases": 36,
+    "bit_equal": 0,
+    "max_rel_diff": 0.22727273404598236
+   },
+   "pinned": {
+    "cases": 36,
+    "bit_equal": 0,
+    "max_rel_diff": 0.22727273404598236
+   }
+  }
+ },
+ "PERF1-M": {
+  "chunks": 4,
+  "ratio": 0.9987178661856102,
+  "interval": [
+   0.9963254192196528,
+   1.0012409837167682
+  ],
+  "nonfinite": 0,
+  "routed": {
+   "kernel": 287744,
+   "k32": 0,
+   "p16": 0,
+   "mma": 0,
+   "mma2": 0,
+   "fallback": 0
+  },
+  "verdict": "passes",
+  "seconds": [
+   307.3,
+   65.3
+  ]
+ },
+ "PERF1-T": {
+  "reps": 3,
+  "arms": {
+   "stock": {
+    "processes": 3,
+    "failed": 0,
+    "deterministic": true,
+    "identical_to_stock": 6,
+    "ratios": [
+     1.0,
+     1.0,
+     1.0
+    ],
+    "median_ratio": 1.0
+   },
+   "ironmule_interactive": {
+    "processes": 3,
+    "failed": 0,
+    "deterministic": true,
+    "identical_to_stock": 6,
+    "ratios": [
+     1.0005,
+     1.0019,
+     0.9985
+    ],
+    "median_ratio": 1.0004533601610812
+   },
+   "ironmule_throughput": {
+    "processes": 3,
+    "failed": 0,
+    "deterministic": true,
+    "identical_to_stock": 6,
+    "ratios": [
+     1.0019,
+     0.9947,
+     1.0014
+    ],
+    "median_ratio": 1.0013518400518162
+   }
+  }
+ },
+ "PORT1-F": {
+  "exit": 1,
+  "seconds": 1208.6,
+  "tail": "kens=args.max_tokens, repeats=args.repeats, force=args.force,\n  File \"/tmp/IronMule/ironmule/tune.py\", line 829, in tune\n    raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 448, in confirm\n    return ab.run({\"baseline\": baseline, \"candidate\": candidate},\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/ab.py\", line 584, in run\n    raise ABRunError(\nironmule.ab.ABRunError: child 0 exited with status 1\n"
+ }
+}

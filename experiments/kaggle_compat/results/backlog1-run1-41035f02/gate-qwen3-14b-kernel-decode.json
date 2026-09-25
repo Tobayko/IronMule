@@ -1,0 +1,27 @@
+{
+ "arm": "kernel",
+ "path_mode": "decode",
+ "chunks": 4,
+ "chunk_tokens": 256,
+ "chunk_nll": [
+  2.234788481146097,
+  2.1157184056937695,
+  3.28332556784153,
+  2.446706909686327
+ ],
+ "mean_nll": 2.520134841091931,
+ "nonfinite": 0,
+ "routed": {
+  "kernel": 287744,
+  "k32": 0,
+  "p16": 0,
+  "mma": 0,
+  "mma2": 0,
+  "fallback": 0
+ },
+ "seconds": 65.3,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+ "pipeline": {},
+ "mode": "nll"
+}

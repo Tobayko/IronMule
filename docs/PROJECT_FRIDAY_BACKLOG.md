@@ -110,26 +110,19 @@ Nutzer selbst im Browser akzeptieren.
 Das Nutzerziel "auf CUDA mindestens so gut wie auf Apple, möglichst besser" ist erreicht
 und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen Apple
 0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
-Budgetregel bleibt: bis 10 h je Kaggle-Woche, 0 EUR, ein Lauf, kein Auto-Retry,
-Notebook nach Archivierung löschen. Offen:
-
-- **PORT1-E Nutzerentscheidung: fp32 automatisch auf Turing/Volta?** Mechanismus:
-  bei CUDA mit Compute Capability < 8 und bf16-Checkpoint `compute_dtype="float32"`
-  als Default statt nur als `doctor`-Empfehlung. Dagegen steht die Projektregel
-  "keine automatische Plan-Auswahl", denn die Tokens weichen von Stock-bf16 ab (4B
-  2/6, 12B 4/6 identisch). Kill: Nutzer lehnt ab — dann bleibt es opt-in.
-- **PORT1-D Apple-Hebel `MLX_MAX_OPS_PER_BUFFER`.** Dieselbe Variable dimensioniert
-  Metal-Command-Buffer; Mac-Smoke n=1: 0,96–0,97 im Arm D. Nicht übernommen, weil der
-  Darwin-Pfad unverändert bleiben muss. Test: `graphs.py` auf dem Mac, 5 Wdh.,
-  eigene Vorregistrierung. Kill: Intervall schließt 1 ein oder Tokenbruch.
-- **PORT1-F einmaliger Absturz der 4B-bf16-`tune`-Bestätigung (Lauf `632b904f`).**
-  `ab`-Kind Exit 1 ohne stderr, damals mit `MLX_MAX_MB_PER_BUFFER=4000`; mit dem
-  ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
-  Test: `ironmule tune --model 4B` nativ einmal auf der T4 (~20 min). Kill:
-  reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
-- Kaggle-Host: drei Produkttests scheitern dort reproduzierbar (zwei sehen Debians
-  kaputten `sitecustomize` im Kind-stderr, ein 0,5-s-Abbruchtest zusätzlich die
-  langsamere Kind-Startzeit); auf dem Mac grün. Ursache des Zeittests nicht bewiesen.
+Budget rule (user, 2026-09-25): Kaggle's weekly GPU quota of 30 h; the earlier 10 h rule
+no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebook once archived.
+Closed 2026-09-25: PORT1-F, the tune's confirmation child ran out of memory beside the parent's
+freed but still reserved CUDA pool; tune now synchronizes the contexts after the release, and
+the full Gemma 3 4B tune completes (ledger BACKLOG4 to BACKLOG7; the parent still holds 1095
+MiB, 71 MiB over BACKLOG7's bound, cause not measured).
+Closed 2026-09-25: PORT1-E (float32 by default on Turing and Volta), because AGENTS.md forbids
+substituting a plan for speed, the plan changes tokens, and `native` now serves Qwen 3 better;
+`doctor` keeps recommending. The Kaggle-host note on three failing product tests: TEST1 ran
+the engine suite green twice there, and the timing failure was the HTTP backlog (ledger, TEST1).
+Struck 2026-09-24 (port2 branch): PORT1-D, `MLX_MAX_OPS_PER_BUFFER` on Apple; `B68`
+closed that axis on 2026-09-10 with 48 fresh processes on 4B and 12B (`DEFAULT_WINS`, ledger
+B68), stronger evidence than the n=1 Mac smoke. No PORT1 entry is open.
 
 ## PERF1 — Rest (2026-09-23)
 
@@ -139,11 +132,22 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Beantwortet 2026-09-23:
-PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
+`model_type` (`f44cf72`; BACKLOG9: one digest across three processes, three with the caller's
+graphs on, about 3% slower). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
+1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
+recommends `native` for Gemma 3. Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
+ledger PERF1-Z): all seven Gemma ratios reproduced, the 5.52x projection measured as 5.55x, Qwen 3
+8B's decode ratio replaced (5.83x for 5.12x). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
+in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
+Answered 2026-09-25: PERF1-M, Qwen 3 14B's decode gate for `native`, 1.000526 [0.999000; 1.002018]
+(`backlog2-run1-17b2ca39`, ledger BACKLOG2). PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
 to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt mit Sync je
 Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
-`perf1-run13-93ae1f80`. Offen:
+`perf1-run13-93ae1f80`. Beantwortet 2026-09-24: PERF1-S, Experten im Zeilen-Kernel (Ledger
+„MoE experts get the row kernel“, `perf1-run14-0f10c1f8`: Decode 1,97x auf Qwen3.6 35B-A3B,
+7,86x auf Gemma 4 26B-A4B; im Produkt unter `native`) und das Nutzerziel „Gemma 3 12B
+mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen:
 
 - **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
   rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
@@ -155,48 +159,66 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
   mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
   Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
-- **PERF1-L `k32` im float32-Plan.** Derselbe Kernel mit fp32-Eingängen verdoppelte den
-  Decode des bereits qualifizierten float32-Plans (+107 %) bei gleichen Tokens und NLL auf
-  fünf Stellen (run 2). Offen, ob er bitgleich zu MLX' eigenem fp32-`qmv` ist; nur dann
-  darf er den Plan ohne neues Gate beschleunigen. Test: Ausgabevergleich je Modul auf der
-  T4. Kill: nicht bitgleich — dann eigener Planname mit eigenem Gate.
-- **PERF1-M 14B-Decode-Gate.** Für Qwen 3 14B lief nur das Prefill-Gate; der
-  Decode-Pfad-Referenzlauf kostet ~40 min Quote. Kill: keiner, nur Aufwand.
-- **PERF1-T Qwen 3.5 im Produkt auf CUDA ohne CUDA-Graphen.** Run 13: diese Familie ist mit
-  CUDA-Graphen auf CUDA nicht deterministisch, auch auf einer Karte ohne IronMule (9B); ohne
-  Graphen schon (27B), bei fast gleicher Rate. PORT2 schob Qwen 3.5 9Bs nicht-deterministische
-  Gruppen-Arme auf den Gruppenpfad und verweigert seitdem den Durchsatzmodus für rekurrente
-  Caches — gemessen mit Graphen an. Test: `cross.py` für Qwen 3.5 9B mit
-  `MLX_USE_CUDA_GRAPHS=0`, interaktiv und Durchsatz, zwei Prozesse je Arm. Kill: auch ohne
-  Graphen nicht deterministisch — dann bleibt die Verweigerung; sonst Graphen für diese
-  Familie auf CUDA abschalten und die Verweigerung neu prüfen.
-  TEST1 (2026-09-24, ledger): the Qwen hybrid gate (2 prompts, 8 tokens, grouped mode set
-  after load) matched the reference in two processes with graphs off; with graphs on the
-  unmodified reference, not IronMule, changed its first token in all three. Not this test.
-- **PERF1-R Mikro-Batches in der Pipeline.** Bei Breite 1 rechnet immer nur eine Karte; die
-  Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
-  abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
-  1,2x bei Breite 8 gegen dieselbe Pipeline ohne Mikro-Batches im selben Lauf.
-- **PERF1-S Nativer Kernel für MoE-Experten.** Qwen3.6 35B-A3B gewann mit `kernel+p16` nur
-  11 % (run 12), weil die Experten über `gather_qmm` laufen, den kein Kernel routet; sie
-  bleiben emuliertes bf16. Mechanismus: derselbe Zeilen-Kernel mit einem Index-Eingang, der
-  je Warp die Zeilen des gewählten Experten liest, ohne Gewichte umzukopieren. Nutzt auch
-  Gemma 4 26B-A4B. Test: Probe gegen einen float32-Dequant-Referenzwert je Form, dann
-  35B-A3B über zwei Karten gegen `kernel+p16` im selben Lauf. Kill: Decode unter 1,5x.
-- **PERF1-N Warum bricht Projektionsfusion unter `native` die Identität?** Tuned knobs
-  auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
-  allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
-  Matmuls — dann Fusion unter `native` verweigern.
+  Decided 2026-09-25 (agent): worth building, not as a quick change. It needs a written
+  contract first (an opt-in mode whose answers may differ from interactive mode, like a numeric
+  plan, with streaming, cancellation and isolation stated) and a quality gate for batched
+  arithmetic; no existing exact path changes, so the kill does not apply.
+- **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
+  auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
+  kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
+  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 erst nach PORT2-K, dem
+  Gate mit BOS je Chunk). Kill: obere Intervallgrenze > 1,005 — dann Experten
+  unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
+  Deferred 2026-09-25 (agent decision): OSS1 found emulated bf16 flipping a fifth of gpt-oss's
+  expert choices, so a gate against bf16 on a T4 is likely inconclusive for MoE; first measure
+  Qwen3.6's routing flips bf16 against float32 (`moe_routing.py`, adapted to its router), and
+  gate only if they are rare.
+- **PERF1-V 8-bit-Router im Zeilen-Kernel.** Qwens `mlp.gate`/`shared_expert_gate` und Gemmas
+  `router.proj` sind 8-bit und laufen weiter emuliert (run 14: 20480 bzw. 16184 Aufrufe im
+  Fallback). Mechanismus: derselbe Kernel mit 8-bit-Entpackung (vier Werte je uint32).
+  Kill: unter 5 % Decode gegen `gather` im selben Lauf.
+- **PERF1-W Auslastung des Experten-Kernels.** Bei 8 Paaren erreicht er 24–41 GB/s von
+  ~320 (run 14); gate und up sind zwei Starts über dieselbe Zeile, und bei K = 512 (Qwens
+  down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K
+  zwei Zeilen je Warp (Halbwarp-Reduktion, bitgleich). Kill: unter 10 % Decode gegen
+  `gather` im selben Lauf.
+- **PERF1-X `native`-Prefill im Produkt auf vollen Karten.** `cuda_native.matmul`
+  dequantisiert beim Prefill jedes Gewicht ganz nach float16; PERF1-P (Scheiben mit Sync)
+  steckt nur in `perf1.py`. Run 15 (`perf1-run15-22fe0a42`): Gemma 4 26B-A4B unter `native`
+  starb im ersten Prefill an `cudaMallocAsync ... out of memory` (Verdacht: 1,48 GB für den
+  262144-Zeilen-Kopf neben 14,2 GB Gewichten); mit `head_skip_prefill` lief derselbe Arm
+  (run 16, `perf1-run16-2552229e`, 8,2x schneller als IronMule-bf16). Mechanismus: Scheiben wie `perf1.py`, oder den
+  Kopf nur für die letzte Position rechnen. Konflikt: der Sync bricht unter `mx.compile`, und
+  eine andere Rechenweise im Prefill ändert den qualifizierten Plan (neues Gate). Kill: keine
+  Variante ist bitgleich zum heutigen Prefill und passt — dann `native` auf solchen Karten nur
+  mit `head_skip_prefill`.
+
+## OSS1 — Rest (2026-09-25)
+
+Decided 2026-09-25 (OSS1-R; the user left the open decisions to the agent): the rule stays. A
+plan is qualified against the checkpoint's own bf16 computation or not at all; a float32
+reference would lower the bar exactly where the evidence is unclear. On pre-Ampere cards gpt-oss
+20B's plans therefore stay opt-in and unrecommended (`numeric_plans.py` already calls them
+unqualified, not refused), and the README says so. Qualifying them needs a device with native
+bf16 as the reference; none is available on the free Kaggle cells. No entry is open here.
+
+## PORT2 — Rest (2026-09-24)
+
+- **PORT2-K Gemma-Gates mit BOS in jedem Chunk wiederholen.** `quality.py` und `perf1.py nll`
+  schnitten die Chunks aus einem Encode; nur der erste konnte mit BOS beginnen, Gemma 4s
+  Tokenizer setzt gar keins. Mac: Gemma 3 4B Perplexität 103,3 ohne, 26,9 mit BOS; Gemma 4
+  E2B 21 532 gegen 353 (Ledger „Gemma's perplexity gates ran without BOS“). Alle Gemma-Urteile
+  (float32 bestanden, 4B-float16 durchgefallen, Gemma 4 „unbrauchbar“) stammen aus diesem
+  Regime. Test: dieselben Gates mit BOS je Chunk auf der T4, neuer Lauf, alte Urteile bleiben
+  stehen. Kill: kein Urteil ändert sich — dann nur Fußnote; ändert sich eines, bekommt
+  `numeric_plans.py` die neue Zeile mit neuem Beleg. Offen daneben: warum Gemma 4 E2B auch mit
+  BOS bei 353 liegt.
 
 ## DATA3 — Rest (2026-09-15)
 
-Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
+Beantwortet in `research/LEDGER.md` DATA3/PORT1. Closed 2026-09-25: DATA3-B, the store is
+created 0700 so `setup` accepts a shared `IRONMULE_HOME` (ledger BACKLOG6). Offen:
 
-- **DATA3-B `IRONMULE_HOME` doppelt belegt.** Runtime-Store (`hw.py`/`tune.py`,
-  `mkdir` 0755) und Produktwurzel (`state.py`, verlangt 0700) nutzen dasselbe
-  Verzeichnis; nach `benchmark` scheitert `setup`, plattformunabhängig. Test:
-  Produktwurzel unter `IRONMULE_HOME/product` wie im Default. Kill: bestehende
-  Nutzerzustände würden unauffindbar — dann Migration oder nur klare Fehlermeldung.
 - DATA2 (Transformers-Referenz) bleibt blockiert, bis die Gemma-Lizenz auf Kaggle
   akzeptiert ist. Anmerkung 2026-09-16: PORT2 hat gezeigt, dass eine lizenzfreie
   Stock-Referenz genügt — `families.py` dekodiert greedy an IronMule vorbei, und auf der
@@ -304,22 +326,13 @@ neuer Kernel oder RL-Policy ohne gemessenen Engpass bzw. valide Datenbasis.
 
 Rest bis zu nachvollziehbaren Ergebnissen (Integrationsmatrix und Cancel-Fix
 beantwortet: `docs/PROD10_RESULTS_2026-09-07.md`; getrennte Server-/Worker-
-Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`):
-1. **Beantwortet 2026-09-09.** Das Metal-System-Trace-Protokoll steht und liefert
-   originale Gerätezeit: `xctrace`, Compute-Kanal, GPU-Intervalle über die eigenen
-   Command-Buffer-IDs zugeordnet (`tools/b24_decode_workload.py`,
-   `tools/b24_trace_report.py`, Experiment `B24_metal_trace_series_20260909_attempt1`).
-   Ungruppierter Batch-1-Decodeschritt, je drei Läufe: Geräteanteil 68,4 % bei 1B,
-   75,3 % bei 4B, 83,3 % bei 12B; Hostzeit 2,72 / 3,27 / 5,50 ms bei Schritten von
-   8,48 / 13,23 / 32,86 ms. Die abgeleitete Roofline
-   (`B24R_roofline_20260909_attempt1`) setzt den unvermeidbaren Gewichtsdurchlauf auf
-   59,7 % eines 4B- und 67,5 % eines 12B-Schritts. Offen bleibt allein die
-   Dispatchzahl; sie braucht einen Lauf mit aktivierter Shader-Timeline. Der
-   abgebrochene 6,7-GB-`.gputrace` bleibt Replay-Zeit und wird nicht verwendet.
-2. Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten
-   Daten prüfen; fehlende Voraussetzungen aus dem Backlog abarbeiten statt
-   bloß einen weiteren Plan abzuliefern. Produktiven Lern- oder Kernelgewinn
-   nur mit unabhängigem Nachweis behaupten; ein negativer Befund bleibt gültig.
+Speichermessung beantwortet: `docs/PROD12_RESULTS_2026-09-08.md`; Metal-System-
+Trace-Protokoll und Roofline beantwortet 2026-09-09: `research/LEDGER.md` B24):
+
+Auf dieser Basis autonome Optimierung/RL weiter umsetzen und mit echten Daten prüfen;
+fehlende Voraussetzungen aus dem Backlog abarbeiten statt bloß einen weiteren Plan
+abzuliefern. Produktiven Lern- oder Kernelgewinn nur mit unabhängigem Nachweis
+behaupten; ein negativer Befund bleibt gültig.
 
 Gate: tatsächliche native Ausführung, vollständige Fehler-/Versuchshistorie,
 gebundene Modelle/Code/Umgebung, echte Ausgabeidentität und klare Grenzen jeder
@@ -449,7 +462,7 @@ oder Telemetrie-/Modellarbeit allein durch Öffnen der Ansicht.
 Die kritischen Defekte sind behoben (`docs/ARBEITSJOURNAL.md`, Eintrag 2026-09-03).
 Offen bleiben vier eng umrissene Punkte:
 
-1. **`friday_serve/speculation.py` entfernen (S4).** Nur noch von
+1. **`research/friday_serve/speculation.py` entfernen (S4).** Nur noch von
    `experiments/speculation_bandit/replay.py` und `tests/test_speculation.py`
    referenziert, im Serving-Pfad tot (`knobs_for()` kann `speculate_k` nicht
    emittieren). Kill-Kriterium S4 verlangt Entfernung statt Kalibrierung.
@@ -883,7 +896,7 @@ nützt nichts, solange die Antwort ihn nicht zitiert.
 **Warum das zählt.** Die Kosten steigen trotzdem: Decode `2,398` / `3,273` /
 `4,054` Sekunden bei `k = 1, 2, 3` gegen rund `1,9` der Baseline. Das ist die
 tragende Ursache von H1.0s Verlust und der Grund, warum der Befund
-**workloadbedingt** ist. `friday_serve/speculation.py` schätzt genau diese
+**workloadbedingt** ist. `research/friday_serve/speculation.py` schätzt genau diese
 Trefferwahrscheinlichkeit vorab über die Unigrammrate des Prompts — und liegt
 für diesen Prompt zu hoch, weil die Unigrammrate hoch und die Trigrammrate null
 ist.
@@ -896,7 +909,7 @@ Trigrammrate die Annahme vorher und die Unigrammrate nicht, ist der Schätzer in
 
 **Kill:** trifft der Lookup auch auf einer wiederholungsreichen Workload dieses
 Produkts nicht an, ist Prompt-Lookup für dieses Produkt die falsche Technik und
-`friday_serve/speculation.py` wird entfernt statt kalibriert.
+`research/friday_serve/speculation.py` wird entfernt statt kalibriert.
 
 ## H1.3d — Darf für die Drosselungsmessung Dauerlast gefahren werden? (neu 2026-09-02)
 

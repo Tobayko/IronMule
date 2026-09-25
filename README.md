@@ -98,7 +98,7 @@ at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
 | Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
 | Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
 | Qwen 3 14B | 8.31 GB | **1.03× · +3%** | **1.94× · +94%** | gate passed, speed not measured |
-| gpt-oss 20B | 11.18 GB | **1.03× · +3%** | **3.55× · +255%** | 5.02× · +402%, gate not yet qualified |
+| gpt-oss 20B | 11.18 GB | **1.03× · +3%** | 3.55× · +255%, gate not qualifiable here | 5.02× · +402%, gate not qualifiable here |
 | Mistral Small 3.2 24B | 13.26 GB | **1.01× · +1%** | **1.82× · +82%** | not measured |
 
 Gemma 4 gives the largest exact gain of any family here, and it gets it with projection
@@ -107,6 +107,14 @@ it. Its numeric plans say `gate unusable` rather than a number because the gate 
 result cannot be used: the bfloat16 reference it measures against scores a perplexity of
 22 212 on the text where Gemma 3 4B scores 100.5, through the same harness. Chat decoding is
 fine and token-identical to stock, so the speed is real and the quality is unestablished.
+
+gpt-oss 20B's plans cannot be qualified on this card at all. Its router picks four of 32
+experts per token, and the emulated bfloat16 reference cannot order router scores that close:
+about a fifth of its expert choices differ from any higher-precision computation of the same
+checkpoint, while `float32` and `float16` agree with each other on 97–99% of them. A gate
+against that reference measures its rounding, not the plan. IronMule keeps its rule — a plan is
+qualified against the checkpoint's own bfloat16 or not at all — so both plans stay opt-in and
+unrecommended for gpt-oss until a GPU with native bfloat16 provides the reference.
 
 Every exact arm returned the same tokens as its stock reference on all six requests. The
 exact gain past Gemma 3 is small — one to seven per cent, not the 82 per cent Gemma 3 1B
@@ -127,6 +135,9 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `native`, decode path | Qwen 3 8B | 0.997356 `[0.995672; 0.999090]` | passes |
 | `native`, prefill path | Qwen 3 8B | 0.998839 `[0.997220; 1.000515]` | passes |
 | `native`, prefill path | Qwen 3 14B | 1.000510 `[0.998894; 1.002001]` | passes |
+| `native`, decode path | Qwen 3 14B | 1.000526 `[0.999000; 1.002018]` | passes |
+| `native`, decode path | Gemma 3 12B | 1.000578 `[0.997951; 1.003197]` | passes |
+| `native`, prefill path | Gemma 3 12B | 1.000643 `[0.998250; 1.003185]` | passes |
 
 Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
 Gemma 3. So neither plan is ever enabled for you, and neither is recommended for a model
@@ -154,7 +165,7 @@ The first column is IronMule's own product path against stock, fresh interleaved
 in the tables above; on Qwen 3 8B all six requests returned the same tokens as stock. It is for
 NVIDIA GPUs below compute capability 8 (Turing, Volta), refused anywhere else, checked against a
 float32 reference on the model's own weights before it is installed, and `ironmule plans`
-recommends it for Qwen 3 there. Like every numeric plan it changes the arithmetic, so it has to
+recommends it for Qwen 3 and Gemma 3 there (Gemma 3 12B: 5.00× · +400% against stock, PERF1 run 18). Like every numeric plan it changes the arithmetic, so it has to
 pass the quality gate on every path it touches:
 
 <picture>
@@ -367,7 +378,8 @@ The main techniques:
 - **Prefix reuse** — a shared document prefix is computed once and reused bit-exactly.
 - **Fixed compiled cache** — fewer, larger GPU kernels per token.
 - **Hardware awareness** — per-device settings, for example larger CUDA graphs on older
-  NVIDIA GPUs.
+  NVIDIA GPUs, and none at all for Qwen 3.5 there, which only then answers the same way in
+  every process.
 
 Anything that could change the output (a different numeric precision, sampling, true
 tensor batching) is never chosen automatically.

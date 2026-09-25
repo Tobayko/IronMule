@@ -112,6 +112,29 @@ def test_load_engine_offline_local_path_is_direct_and_preserves_environment(monk
     assert (os.environ["HF_HUB_OFFLINE"], os.environ["TRANSFORMERS_OFFLINE"]) == before
 
 
+def test_load_engine_sizes_cuda_graphs_for_the_snapshot_before_loading(monkeypatch, tmp_path):
+    """PERF1-T2: the graph flag is read at MLX's first kernel, so the family goes in first."""
+    from ironmule import hw
+
+    seen = _fake_load_engine(monkeypatch)
+    local_model = tmp_path / "model"
+    local_model.mkdir()
+    (local_model / "config.json").write_text('{"model_type": "qwen3_5"}')
+    order = []
+    monkeypatch.setattr(hw, "apply_cuda_graph_defaults", lambda model_type=None: order.append(model_type))
+    loaded = sys.modules["mlx_lm"].load
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(
+        load=lambda source: order.append("load") or loaded(source)))
+
+    tune.load_engine(str(local_model), BASELINE, offline=True)
+    assert order == ["qwen3_5", "load"]
+    assert seen["source"] == str(local_model)
+    (local_model / "config.json").write_text("not json")
+    order.clear()
+    tune.load_engine(str(local_model), BASELINE, offline=True)
+    assert order == [None, "load"]
+
+
 def test_load_engine_offline_hub_id_resolves_cached_snapshot(monkeypatch):
     seen = _fake_load_engine(monkeypatch)
 
@@ -536,6 +559,125 @@ def test_unsupported_candidate_is_typed_and_search_continues(monkeypatch):
     assert unsupported["verdict"] == "unsupported"
     assert continued["disposition"] in {"accepted", "rejected"}
     assert profile["model_identity"] == identity.to_dict()
+
+
+def test_confirmation_starts_after_the_screening_engine_is_released(monkeypatch):
+    """PORT1-F: a confirmation child ran out of GPU memory next to the parent's cache."""
+    import gc
+    import weakref
+
+    events, engines = [], []
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+            engines.append(weakref.ref(self))
+
+        def close(self):
+            events.append("close")
+
+        @staticmethod
+        def needs_reload(old, new):
+            return old.fuse_projections != new.fuse_projections
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    identity = _identity(tune.DEFAULT_MODEL)
+    resolved = types.SimpleNamespace(path=Path("/cached/model"), identity=identity)
+    monkeypatch.setattr(tune, "resolve_local_model", lambda *_args, **_kwargs: resolved)
+    monkeypatch.setattr(
+        tune, "load_engine",
+        lambda _model, knobs, **_kwargs: (FakeEngine(knobs), object()),
+    )
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(
+        tune, "conditions",
+        lambda *_args, **_kwargs: {"prompt_tokens": 2, "max_tokens": 2},
+    )
+    monkeypatch.setattr(tune, "save_profile", lambda _profile: None)
+    monkeypatch.setattr(tune, "SEARCH", [("readback_every", [2])])
+    monkeypatch.setattr(tune, "measure", lambda engine, *_args, **_kwargs: {
+        "total_ns": 5 if engine.knobs.readback_every == 2 else 10, "prefill_ns": 1,
+        "decode_ns": 1, "logical_tokens": [7], "deterministic": True, "capacity": 2})
+    monkeypatch.setattr(tune, "_release_device_memory", lambda: events.append("release"))
+
+    def fake_confirm(*_args, **_kwargs):
+        gc.collect()
+        events.append(("confirm", [ref() is None for ref in engines]))
+        return {}
+
+    monkeypatch.setattr(tune, "confirm", fake_confirm)
+    tune.tune(repeats=1)
+    assert events == ["close", "release", ("confirm", [True])]
+
+
+class _FakeCuda:
+    """The CUDA driver calls `_synchronize_cuda_contexts` makes; card 1 has an active context."""
+
+    def __init__(self, sync_error=0):
+        self.calls, self.sync_error = [], sync_error
+
+    def cuInit(self, _flags):
+        self.calls.append("init")
+        return 0
+
+    def cuDeviceGetCount(self, count):
+        count._obj.value = 2
+        return 0
+
+    def cuDeviceGet(self, device, ordinal):
+        device._obj.value = ordinal
+        return 0
+
+    def cuDevicePrimaryCtxGetState(self, device, _flags, active):
+        active._obj.value = int(device.value == 1)
+        return 0
+
+    def cuDevicePrimaryCtxRetain(self, _context, device):
+        self.calls.append(("retain", device.value))
+        return 0
+
+    def cuCtxPushCurrent_v2(self, _context):
+        self.calls.append("push")
+        return 0
+
+    def cuCtxSynchronize(self):
+        self.calls.append("sync")
+        return self.sync_error
+
+    def cuCtxPopCurrent_v2(self, _context):
+        self.calls.append("pop")
+        return 0
+
+    def cuDevicePrimaryCtxRelease_v2(self, device):
+        self.calls.append(("release", device.value))
+        return 0
+
+
+def test_cuda_context_synchronize_touches_only_active_contexts_and_restores_them():
+    """BACKLOG6: the pool returned its memory only at a context synchronize."""
+    cuda = _FakeCuda()
+    tune._synchronize_cuda_contexts(cuda)
+    assert cuda.calls == ["init", ("retain", 1), "push", "sync", "pop", ("release", 1)]
+
+    failing = _FakeCuda(sync_error=700)
+    with pytest.raises(RuntimeError, match="cuCtxSynchronize failed with CUDA error 700"):
+        tune._synchronize_cuda_contexts(failing)
+    assert failing.calls[-2:] == ["pop", ("release", 1)]
+
+
+@pytest.mark.parametrize("cuda_available", [True, False])
+def test_release_synchronizes_cuda_contexts_only_on_cuda(monkeypatch, cuda_available):
+    import mlx.core as mx
+
+    synchronized = []
+    monkeypatch.setattr(mx.cuda, "is_available", lambda: cuda_available)
+    monkeypatch.setattr(tune, "_synchronize_cuda_contexts", lambda: synchronized.append(True))
+    tune._release_device_memory()
+    assert synchronized == ([True] if cuda_available else [])
 
 
 def test_only_typed_or_explicitly_unsupported_candidate_errors_are_skippable():
@@ -1383,6 +1525,18 @@ def test_cuda_graph_defaults_only_touch_pre_ampere_linux_and_respect_the_caller(
     monkeypatch.setenv("MLX_MAX_OPS_PER_BUFFER", "20")
     assert hw.apply_cuda_graph_defaults() == {}
     assert os.environ["MLX_MAX_OPS_PER_BUFFER"] == "20", "an explicit caller value wins"
+    # PERF1-T2: Qwen 3.5 needs CUDA graphs off to give one output digest across processes.
+    # setenv first, so monkeypatch removes the flag again whatever the function writes.
+    monkeypatch.setenv("MLX_USE_CUDA_GRAPHS", "placeholder")
+    monkeypatch.delenv("MLX_USE_CUDA_GRAPHS")
+    assert hw.apply_cuda_graph_defaults("qwen3") == {}
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {"MLX_USE_CUDA_GRAPHS": "0"}
+    assert os.environ["MLX_USE_CUDA_GRAPHS"] == "0"
+    monkeypatch.setenv("MLX_USE_CUDA_GRAPHS", "1")
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {}, "an explicit caller value wins"
+    monkeypatch.delenv("MLX_USE_CUDA_GRAPHS")
+    fake_mlx(8)
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {}, "measured on Turing only"
 
 
 def test_compute_dtype_is_opt_in_validated_and_stored_apart():

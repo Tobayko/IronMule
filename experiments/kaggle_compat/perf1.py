@@ -3,6 +3,7 @@
 Usage: python perf1.py kernel OUT.json
        python perf1.py chain OUT.json
        python perf1.py mma OUT.json
+       python perf1.py gather OUT.json
        python perf1.py e2e MODEL_PATH ARM OUT.json
        python perf1.py nll MODEL_PATH ARM PATH_MODE TEXT OUT.json    (PATH_MODE: prefill|decode)
        python perf1.py spec MODEL_PATH ARM DRAFT_PATH DRAFTS OUT.json  (DRAFTS: e.g. "2,3,4")
@@ -14,7 +15,11 @@ ARM is "+"-joined parts: "stock" (bf16 checkpoint as loaded), "fp32" (IronMule's
 plan, `set_dtype`), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
 "k32" (the same kernel reading float32 activations and scales, for the float32 plan),
 "p16" (multi-row 4-bit matmuls, i.e. prefill: dequantise to float16, one tensor-core GEMM,
-cast back). E.g. "kernel+p16", "fp32+k32+p16".
+cast back), "gather" (MoE experts, `gather_qmm` with up to GATHER_MAX (token, expert) rows:
+the same row kernel with an index input that points each warp at its expert's rows, no weight
+copied), "g16" (more rows, i.e. MoE prefill: the same `gather_qmm` in float16, casting
+activations, scales and biases per call). E.g. "kernel+p16", "fp32+k32+p16",
+"kernel+p16+gather+g16".
 
 Why: run 1 (`69dbc7af`) decoded Qwen 3 8B at 6.7 tok/s stock and 36.9 with the kernel; the
 T4's bandwidth allows ~70. MLX's CUDA `qmv` accumulates in the activation type and bfloat16
@@ -400,9 +405,57 @@ def qmv(x, w, scales, biases, rows=None):
     return out.reshape(*x.shape[:-1], n)
 
 
+# PERF1-S: MoE experts. Run 12 decoded Qwen3.6 35B-A3B only 11% faster with `kernel+p16`,
+# because its experts go through `gather_qmm`, still emulated bfloat16. The row kernel above,
+# unchanged from the pointer setup on: warp w of P * W serves (token, expert) pair p = w / W,
+# rows (w % W) * R.., of expert idx[p], whose weights, scales and biases it reads in place.
+# XS pairs share one activation row: gate/up broadcast a token over its top-k experts, so
+# nothing is copied for them either. M is 1; each pair's dot is the qmv dot, bit for bit.
+GATHER_PROLOGUE = r"""
+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
+  const unsigned int pair = (gid >> 5) / W;
+  const unsigned int row0 = ((gid >> 5) % W) * R;
+  const unsigned int lane = threadIdx.x & 31;
+  if (pair >= P || row0 >= N) return;
+  const unsigned int ex = idx[pair];
+  const uint4* w4 = reinterpret_cast<const uint4*>(w) + (size_t)ex * N * (K / 32);
+  @PTRS@
+  xv += (size_t)(pair / XS) * (K / 8);
+  ss += (size_t)ex * N * (K / GS);
+  bs += (size_t)ex * N * (K / GS);
+"""
+GATHER_MAX = int(os.environ.get("PERF1_GATHER_MAX", "64"))  # width 8 x top-8
+
+
+def _gather_source():
+    source = _source("bf16")
+    body = source[source.index("  float acc[R * M];"):]
+    return (GATHER_PROLOGUE.replace("@PTRS@", VARIANTS["bf16"]["@PTRS@"])
+            + body.replace("out[(i % M) * N + row]", "out[(size_t)pair * N + row]"))
+
+
+def gather_qmv(x, w, scales, biases, idx, xs):
+    """x (P / xs, K) bf16; w (E, N, K/8); idx (P,) uint32 -> (P, N): row p against expert idx[p]."""
+    if "gather" not in _kernels:
+        _kernels["gather"] = mx.fast.cuda_kernel(
+            name=f"perf1_gather4_{os.environ.get('PERF1_QF', 'cvt')}_{os.environ.get('PERF1_ARITH', 'free')}",
+            input_names=["x", "w", "scales", "biases", "idx"], output_names=["out"],
+            source=_gather_source(), header=HEADER)
+    n, k, p = w.shape[1], w.shape[2] * 8, idx.size
+    rows = rows_for(n)
+    warps = -(-n // rows)
+    threads = -(-(p * warps * 32) // 256) * 256
+    return _kernels["gather"](
+        inputs=[x, w, scales, biases, idx],
+        template=[("N", n), ("K", k), ("GS", GS), ("R", rows), ("M", 1), ("P", p), ("W", warps), ("XS", xs)],
+        grid=(threads, 1, 1), threadgroup=(256, 1, 1), output_shapes=[(p, n)],
+        output_dtypes=[mx.uint16])[0].view(mx.bfloat16)
+
+
 _original = mx.quantized_matmul
 routes = set()
-routed = {"kernel": 0, "k32": 0, "p16": 0, "mma": 0, "mma2": 0, "fallback": 0}
+routed = {"kernel": 0, "k32": 0, "p16": 0, "mma": 0, "mma2": 0, "fallback": 0,
+          "gather": 0, "g16": 0, "gather_fallback": 0}
 
 
 def _patched(x, w, scales, biases=None, transpose=True, group_size=None, bits=None, mode="affine", **kw):
@@ -442,15 +495,50 @@ def _patched(x, w, scales, biases=None, transpose=True, group_size=None, bits=No
                      mode=mode, **kw)
 
 
+_original_gather = mx.gather_qmm
+
+
+def _gather_patched(x, w, scales, biases=None, lhs_indices=None, rhs_indices=None, transpose=True,
+                    group_size=None, bits=None, mode="affine", sorted_indices=False, **kw):
+    k = x.shape[-1]
+    if (biases is not None and lhs_indices is None and rhs_indices is not None and transpose
+            and (group_size or 64) == GS and (bits or 4) == 4 and mode == "affine" and not kw
+            and x.dtype == mx.bfloat16 and scales.dtype == mx.bfloat16 and w.ndim == 3
+            and w.shape[2] * 8 == k and k % 32 == 0):
+        batch = tuple(mx.broadcast_shapes(x.shape[:-2], rhs_indices.shape))
+        if "gather" in routes and x.shape[-2] == 1 and math.prod(batch) <= GATHER_MAX:
+            routed["gather"] += 1
+            if x.shape[:-2] == batch:  # down: one activation row per pair
+                xs = 1
+            elif x.shape[:-2] == batch[:-1] + (1,):  # gate/up: a token's row for all its experts
+                xs = batch[-1]
+            else:
+                x, xs = mx.broadcast_to(x, batch + x.shape[-2:]), 1
+            idx = mx.broadcast_to(rhs_indices, batch).flatten().astype(mx.uint32)
+            out = gather_qmv(mx.contiguous(x.reshape(-1, k)), w, scales, biases, idx, xs)
+            return out.reshape(*batch, 1, w.shape[1])
+        if "g16" in routes:
+            routed["g16"] += 1
+            return _original_gather(x.astype(mx.float16), w, scales.astype(mx.float16),
+                                    biases.astype(mx.float16), rhs_indices=rhs_indices, transpose=True,
+                                    group_size=GS, bits=4, sorted_indices=sorted_indices).astype(x.dtype)
+    routed["gather_fallback"] += 1
+    return _original_gather(x, w, scales, biases, lhs_indices=lhs_indices, rhs_indices=rhs_indices,
+                            transpose=transpose, group_size=group_size, bits=bits, mode=mode,
+                            sorted_indices=sorted_indices, **kw)
+
+
 def apply_arm(model, arm):
     parts = set(arm.split("+"))
-    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2"}:
+    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16"}:
         raise ValueError(arm)
     if "fp32" in parts:
         model.set_dtype(mx.float32)
-    routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2"})
+    routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2", "gather", "g16"})
     if routes:
         mx.quantized_matmul = _patched  # nn.QuantizedLinear looks it up per call
+    if routes & {"gather", "g16"}:
+        mx.gather_qmm = _gather_patched  # so does mlx-lm's QuantizedSwitchLinear
 
 
 def prompt_ids(tokenizer):
@@ -517,10 +605,16 @@ def nll(model, tokenizer, arm, path_mode, text_path):
     with open(text_path) as stream:
         ids = tokenizer.encode(stream.read())
     stride = (len(ids) - NLL_TOKENS - 1) // NLL_CHUNKS
+    # Every chunk starts with the model's BOS where it has one. Sliced from one encode, only the
+    # first did: Gemma 3 4B then scored perplexity 103 on a Mac, 26.9 with BOS on every chunk, and
+    # Gemma 4 E2B (whose tokenizer adds none) 21532 against 353 (2026-09-24).
+    bos = getattr(tokenizer, "bos_token_id", None)
     chunks, nonfinite = [], 0
     started = time.time()
     for i in range(NLL_CHUNKS):
         seq = ids[i * stride:i * stride + NLL_TOKENS + 1]
+        if bos is not None and seq[0] != bos:
+            seq = [bos] + seq[:-1]
         if path_mode == "prefill":
             logits = model(mx.array(seq[:-1])[None, :])[0].astype(mx.float32)
             lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
@@ -539,7 +633,7 @@ def nll(model, tokenizer, arm, path_mode, text_path):
         nonfinite += sum(not math.isfinite(v) for v in values)
         chunks.append(sum(values) / len(values))
         print(i, chunks[-1], flush=True)
-    return {"arm": arm, "path_mode": path_mode, "chunks": NLL_CHUNKS, "chunk_tokens": NLL_TOKENS,
+    return {"arm": arm, "path_mode": path_mode, "chunks": NLL_CHUNKS, "chunk_tokens": NLL_TOKENS, "bos": bos,
             "chunk_nll": chunks, "mean_nll": sum(chunks) / len(chunks), "nonfinite": nonfinite,
             "routed": dict(routed), "seconds": round(time.time() - started, 1),
             "performance_claim": False}
@@ -740,7 +834,12 @@ def server(model, tokenizer, arm, widths):
         gen.close()
         return [tokens[u] for u in uids], [first[u] * 1000 for u in uids], wall
 
-    serve(max(widths))  # warmup: JIT for every row count this run will see
+    # Warmup: JIT for every row count this run will see. The widest batch covers the row
+    # counts of a run that measures it first; PERF1_SERVER_WARMUP lists widths to warm when
+    # a narrower one is measured too (BACKLOG6).
+    warm = os.environ.get("PERF1_SERVER_WARMUP")
+    for width in [int(w) for w in warm.split(",")] if warm else [max(widths)]:
+        serve(width)
     reference, rows = None, {}
     for width in widths:
         outs, ttft, wall = serve(width)
@@ -752,6 +851,7 @@ def server(model, tokenizer, arm, widths):
         print(width, rows[str(width)], flush=True)
     return {"arm": arm, "requests": len(prompts), "new_tokens": NEW_TOKENS, "widths": rows,
             "arith": os.environ.get("PERF1_ARITH", "free"), "routed": dict(routed),
+            "warmup_widths": warm or str(max(widths)),
             "peak_memory_bytes": int(mx.get_peak_memory()), "performance_claim": False}
 
 
@@ -841,6 +941,85 @@ def mma_probe(out):
         json.dump(report, stream, indent=1)
 
 
+# PERF1-S shapes (E, N, K, kind, layers): Qwen3.6 35B-A3B (256 experts, top-8, 40 layers) and
+# Gemma 4 26B-A4B (128 experts, top-8, 30 layers). "gate_up" broadcasts one token over its eight
+# experts, as mlx-lm's SwitchGLU calls it; "down" has one activation row per pair.
+GATHER_SHAPES = {"qwen36_gate_up": (256, 512, 2048, "gate_up", 40), "qwen36_down": (256, 2048, 512, "down", 40),
+                 "gemma4_gate_up": (128, 704, 2816, "gate_up", 30), "gemma4_down": (128, 2816, 704, "down", 30)}
+
+
+def gather_probe(out):
+    """The gather kernel through the routed `gather_qmm` at each shape: decode (one token, eight
+    experts) and a server step (64 sorted pairs) against a per-pair float32 dequantised reference,
+    bit-equality with `qmv` on the same expert, time against stock bfloat16 `gather_qmm`; and the
+    prefill route (2048 sorted pairs) in float16 against MLX's own float32 `gather_qmm`."""
+    report = {"schema": "ironmule.perf1-gather.v1", "device": str(mx.default_device()), "shapes": {},
+              "arith": os.environ.get("PERF1_ARITH", "free"), "performance_claim": False}
+    mx.random.seed(0)
+    for name, (e, n, k, kind, layers) in GATHER_SHAPES.items():
+        w, sc, bi = mx.quantize((mx.random.normal((e, n, k)) * 0.02).astype(mx.bfloat16), group_size=GS, bits=4)
+        sc32, bi32 = sc.astype(mx.float32), bi.astype(mx.float32)
+        mx.eval(w, sc, bi, sc32, bi32)
+        top8 = mx.random.permutation(e)[:8].astype(mx.uint32)
+        cases = {"decode": (mx.random.normal((1, 1, 1, 1, k) if kind == "gate_up" else (1, 1, 8, 1, k)),
+                            top8.reshape(1, 1, 8)),
+                 "width8": (mx.random.normal((64, 1, k)), mx.sort(mx.random.randint(0, e, (64,))).astype(mx.uint32))}
+        row = {"E": e, "N": n, "K": k}
+        for case, (x, idx) in cases.items():
+            x = x.astype(mx.bfloat16)
+            flat = mx.broadcast_to(idx, mx.broadcast_shapes(x.shape[:-2], idx.shape)).flatten()
+            rows = mx.broadcast_to(x, tuple(mx.broadcast_shapes(x.shape[:-2], idx.shape)) + x.shape[-2:])
+            rows = rows.reshape(-1, k).astype(mx.float32)
+            wd = mx.dequantize(w[flat], sc32[flat], bi32[flat], group_size=GS, bits=4)
+            ref = (wd @ rows[:, :, None]).squeeze(-1)
+            routes.clear()
+            routes.add("gather")
+            try:
+                y = _gather_patched(x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4)
+                y = y.reshape(-1, n).astype(mx.float32)
+                row[f"{case}_rel_err"] = float(mx.max(mx.abs(y - ref)) / mx.max(mx.abs(ref)))
+                e0 = int(flat[0].item())
+                one = qmv(rows[:1].astype(mx.bfloat16), w[e0], sc[e0], bi[e0]).astype(mx.float32)
+                row[f"{case}_pair0_equal_to_qmv"] = bool(mx.array_equal(one[0], y[0]))
+                row[f"{case}_gather_ms"] = bench(lambda: _gather_patched(
+                    x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4))
+                row[f"{case}_gbps"] = round(flat.size * n * (k // 2 + k // GS * 4) / row[f"{case}_gather_ms"] / 1e6, 1)
+            except Exception as exc:  # noqa: BLE001 — a kernel that does not compile is the result
+                row[f"{case}_error"] = f"{type(exc).__name__}: {exc}"
+            row[f"{case}_stock_ms"] = bench(lambda: _original_gather(
+                x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4))
+        x = mx.random.normal((2048, 1, k)).astype(mx.bfloat16)
+        idx = mx.sort(mx.random.randint(0, e, (2048,))).astype(mx.uint32)
+        ref = _original_gather(x.astype(mx.float32), w, sc32, bi32, rhs_indices=idx, transpose=True,
+                               group_size=GS, bits=4, sorted_indices=True)
+        routes.clear()
+        routes.add("g16")
+        try:
+            y = _gather_patched(x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4,
+                                sorted_indices=True).astype(mx.float32)
+            row["prefill_g16_rel_err"] = float(mx.max(mx.abs(y - ref)) / mx.max(mx.abs(ref)))
+            row["prefill_g16_ms"] = bench(lambda: _gather_patched(
+                x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4, sorted_indices=True), 10)
+        except Exception as exc:  # noqa: BLE001
+            row["prefill_g16_error"] = f"{type(exc).__name__}: {exc}"
+        row["prefill_stock_ms"] = bench(lambda: _original_gather(
+            x, w, sc, bi, rhs_indices=idx, transpose=True, group_size=GS, bits=4, sorted_indices=True), 3)
+        row["layers"], row["calls_per_layer"] = layers, 2 if kind == "gate_up" else 1
+        report["shapes"][name] = row
+        print(name, row, flush=True)
+    # Expert matmuls of one decode step per model, summed from the shapes: gather against stock.
+    for model in ("qwen36", "gemma4"):
+        rows = [r for key, r in report["shapes"].items() if key.startswith(model)]
+        for label in ("gather", "stock"):
+            key = f"decode_{label}_ms"
+            if all(key in r for r in rows):
+                report[f"{model}_step_experts_{label}_ms"] = round(
+                    sum(r[key] * r["calls_per_layer"] * r["layers"] for r in rows), 3)
+    with open(out, "w") as stream:
+        json.dump(report, stream, indent=1)
+    print(json.dumps({k: v for k, v in report.items() if k != "shapes"}), flush=True)
+
+
 def pipelined(path):
     """Layer pipeline across the ranks of `mlx.launch`, one card each (PERF1-O). The last rank
     runs the first layers and rank 0 the last, mlx-lm's `PipelineMixin` convention; each rank
@@ -901,6 +1080,8 @@ def main():
         return chain_probe(sys.argv[2])
     if mode == "mma":
         return mma_probe(sys.argv[2])
+    if mode == "gather":
+        return gather_probe(sys.argv[2])
     if mode == "ironmule":
         model_id, revision, arm, knobs, runtime_mode, out = sys.argv[2:8]
         report = ironmule_arm(model_id, revision, arm, json.loads(knobs), runtime_mode)

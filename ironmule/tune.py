@@ -327,6 +327,15 @@ def _check_compute_dtype(compute_dtype: str | None) -> str | None:
     return compute_dtype
 
 
+def _config_model_type(path: Path) -> str | None:
+    """A local snapshot's `model_type`, or None when config.json is missing or unreadable."""
+    try:
+        value = json.loads((Path(path) / "config.json").read_text()).get("model_type")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
 def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
                 revision: str | None = None,
                 resolved_source: ResolvedModelSource | None = None,
@@ -341,8 +350,13 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     from mlx_lm import load
 
     from .hw import apply_cuda_graph_defaults
-    apply_cuda_graph_defaults()
     _check_compute_dtype(compute_dtype)
+    if compute_dtype == "native" and knobs.fuse_projections:
+        # PERF1-N (ledger, BACKLOG1): the native decode kernel returns a fused projection's
+        # rows bit for bit, but its float16 prefill GEMM rounds some fused shapes differently
+        # from their parts, and fusion bought nothing on top of the plan (PERF1 run 7).
+        raise ValueError("fuse_projections is unsupported with compute_dtype='native': "
+                         "the plan's prefill GEMM rounds fused projections differently")
     if resolved_source is not None and offline is not True:
         raise ValueError("resolved_source is valid only for offline loading")
     if revision is not None and offline is not True:
@@ -357,6 +371,8 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         if revision is not None and resolved.identity.revision != revision:
             raise ModelIdentityError("resolved source belongs to a different revision")
         source = str(resolved.path)
+    # MLX reads its CUDA graph variables at the first kernel it launches, so before `load`.
+    apply_cuda_graph_defaults(_config_model_type(resolved.path) if resolved is not None else None)
     model, tokenizer = load(source)
     if resolved is not None:
         verify_resolved_model(model_id, resolved)
@@ -409,6 +425,63 @@ def _close_engine(engine: Any | None) -> None:
         close = getattr(engine, "close", None)
         if close is not None:
             close()
+
+
+def _synchronize_cuda_contexts(cuda: Any = None) -> None:
+    """Synchronize every active CUDA primary context, which returns freed pool memory.
+
+    MLX frees its buffers with `cudaFreeAsync` on a stream of its own into the device's
+    default memory pool, and `mx.synchronize()` synchronizes only MLX's stream, so the pool
+    kept the memory reserved. A context synchronize releases it (BACKLOG6: 3520 MiB reserved
+    after the release, 0 after `cuCtxSynchronize`). MLX exposes no such call, hence the driver.
+    """
+    import ctypes
+
+    if cuda is None:
+        cuda = ctypes.CDLL("libcuda.so.1")
+
+    def check(code: int, name: str) -> None:
+        if code:
+            raise RuntimeError(f"{name} failed with CUDA error {code}")
+
+    check(cuda.cuInit(0), "cuInit")
+    count = ctypes.c_int()
+    check(cuda.cuDeviceGetCount(ctypes.byref(count)), "cuDeviceGetCount")
+    for ordinal in range(count.value):
+        device, flags, active = ctypes.c_int(), ctypes.c_uint(), ctypes.c_int()
+        check(cuda.cuDeviceGet(ctypes.byref(device), ordinal), "cuDeviceGet")
+        check(cuda.cuDevicePrimaryCtxGetState(device, ctypes.byref(flags), ctypes.byref(active)),
+              "cuDevicePrimaryCtxGetState")
+        if not active.value:
+            continue  # never create a context on a card MLX did not use
+        context = ctypes.c_void_p()
+        check(cuda.cuDevicePrimaryCtxRetain(ctypes.byref(context), device), "cuDevicePrimaryCtxRetain")
+        try:
+            check(cuda.cuCtxPushCurrent_v2(context), "cuCtxPushCurrent")
+            try:
+                check(cuda.cuCtxSynchronize(), "cuCtxSynchronize")
+            finally:
+                check(cuda.cuCtxPopCurrent_v2(ctypes.byref(ctypes.c_void_p())), "cuCtxPopCurrent")
+        finally:
+            check(cuda.cuDevicePrimaryCtxRelease_v2(device), "cuDevicePrimaryCtxRelease")
+
+
+def _release_device_memory() -> None:
+    """Hand a closed engine's memory back to the device before a child loads the model.
+
+    Dropping the engine leaves its buffers in MLX's cache, and on CUDA the freed buffers
+    stay reserved in the memory pool until a context synchronize. A confirmation child loads
+    a second copy; on a 15 GB T4 it ran out of memory next to the parent's (PORT1-F).
+    """
+    import gc
+
+    import mlx.core as mx
+
+    gc.collect()
+    mx.clear_cache()
+    mx.synchronize()
+    if mx.cuda.is_available():
+        _synchronize_cuda_contexts()
 
 
 def prompt_ids(tokenizer, prompt: str) -> list[int]:
@@ -826,6 +899,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             # Keep the screening winner bound to the evidence before a rejected
             # confirmation resets the profile to BASELINE.
             confirmation_candidate_knobs = best.as_dict()
+            _release_device_memory()
             raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,
                                        compute_dtype=compute_dtype)
             accepted, rejection_reason = _confirmation_decision(
@@ -929,7 +1003,7 @@ def save_profile(profile: dict[str, Any]) -> None:
         raise ModelIdentityError("profile conditions do not match exact model identity")
     profiles = _all_profiles()
     profiles[_profile_key(profile["fingerprint"], identity, profile.get("compute_dtype"))] = profile
-    STORE.mkdir(parents=True, exist_ok=True)
+    STORE.mkdir(parents=True, exist_ok=True, mode=0o700)
     PROFILES.write_text(json.dumps(profiles, indent=2, sort_keys=True))
 
 

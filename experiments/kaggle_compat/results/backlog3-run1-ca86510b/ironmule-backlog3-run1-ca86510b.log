@@ -1,0 +1,25 @@
+[{"stream_name":"stdout","time":1.7542932900000001,"data":"== env: exit=0 0.2s\n"}
+,{"stream_name":"stdout","time":4.488260557,"data":"== clone: exit=0 2.7s\n"}
+,{"stream_name":"stdout","time":15.910419626,"data":"== venv: exit=0 11.4s\n"}
+,{"stream_name":"stdout","time":41.604814354,"data":"== install: exit=0 25.7s\n"}
+,{"stream_name":"stdout","time":41.708734983,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":140.107539339,"data":"== pytest_engine: exit=0 98.4s\n"}
+,{"stream_name":"stdout","time":221.506830389,"data":"== download_gemma3-4b: exit=0 81.4s\n"}
+,{"stream_name":"stdout","time":1721.607774283,"data":"== confirm_probe_gemma3-4b: exit=timeout 1500.1s\n"}
+,{"stream_name":"stdout","time":1721.608536451,"data":"{\n"}
+,{"stream_name":"stdout","time":1721.608556871,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608563208,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608569097,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608574529,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608579261,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608583988,"data":" \"pytest_engine\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608594486,"data":" \"download_gemma3-4b\": 0,\n"}
+,{"stream_name":"stdout","time":1721.608598008,"data":" \"confirm_probe_gemma3-4b\": \"timeout\"\n"}
+,{"stream_name":"stdout","time":1721.608601365,"data":"}\n"}
+,{"stream_name":"stderr","time":1724.437110195,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1724.437176748,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1724.962736023,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1724.962767121,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1726.41194375,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1728.227852546,"data":"[NbConvertApp] Writing 293295 bytes to __results__.html\n"}
+]

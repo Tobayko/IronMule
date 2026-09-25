@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import statistics
 import subprocess
 import sys
@@ -22,6 +23,9 @@ from .runtime import Knobs
 
 CHILD_ENV = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "PYTHONNOUSERSITE": "1"}
 MAX_CHILD_OUTPUT = 512 * 1024
+#: A Python traceback ends with a line that names the exception class before any message.
+_EXCEPTION_CLASS = re.compile(r"[A-Za-z_][\w.]*(?:Error|Exception|Interrupt|Exit)")
+
 CHILD_BOOTSTRAP = (
     "import importlib.util,json,os,sys;"
     "guard_path=os.path.realpath(sys.argv[2]);"
@@ -62,6 +66,24 @@ class ABRunError(RuntimeError):
         self.partial_children = list(partial_children or [])
         self.child_index = child_index
         self.partial_evidence = partial_evidence
+
+
+def _child_exception_type(stderr: str) -> str | None:
+    """The exception class a failed child raised, never its message.
+
+    A child's stderr can carry prompt text, so it stays out of every error; a class name
+    such as `RuntimeError` cannot, and it is what tells a crash from an out-of-memory kill.
+    Read from the last traceback: its first unindented line is the exception. Notes follow
+    that line (the child guard adds one, `@GUARD_FAILURE`), and a class-like line outside a
+    traceback, such as a failed sitecustomize's, is not the child's exception.
+    """
+    lines = stderr.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("Traceback (most recent call last):")]
+    for line in lines[starts[-1] + 1:] if starts else ():
+        if line and not line[0].isspace():
+            name = line.split(":", 1)[0]
+            return name if _EXCEPTION_CLASS.fullmatch(name) else None
+    return None
 
 
 def _terminate_child(process: subprocess.Popen[str]) -> None:
@@ -581,8 +603,12 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                         guard_failure, parse_constant=_reject_json_constant)}
                 except (TypeError, ValueError, json.JSONDecodeError):
                     evidence = {"guard_failure": {"malformed": True}}
+            exception_type = _child_exception_type(stderr)
+            if exception_type is not None:
+                evidence = {**(evidence or {}), "exception_type": exception_type}
             raise ABRunError(
-                f"child {index} exited with status {proc.returncode}",
+                f"child {index} exited with status {proc.returncode}"
+                + (f" ({exception_type})" if exception_type else ""),
                 partial_children=children, child_index=index,
                 partial_evidence=evidence,
             )

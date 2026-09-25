@@ -1,0 +1,27 @@
+[{"stream_name":"stdout","time":0.769136105,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":4.11665416,"data":"== clone: exit=0 3.3s\n"}
+,{"stream_name":"stdout","time":12.681118267,"data":"== venv: exit=0 8.6s\n"}
+,{"stream_name":"stdout","time":58.269773852,"data":"== install: exit=0 45.6s\n"}
+,{"stream_name":"stdout","time":58.359547318,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":121.020742047,"data":"== device_check: exit=0 62.7s\n"}
+,{"stream_name":"stdout","time":156.654381574,"data":"== test_cuda_native: exit=0 35.6s\n"}
+,{"stream_name":"stdout","time":243.622295841,"data":"== download_gemma4-26b-a4b: exit=0 87.0s\n"}
+,{"stream_name":"stdout","time":698.807958216,"data":"== cross_gemma4-26b-a4b: exit=0 455.2s\n"}
+,{"stream_name":"stdout","time":698.808384079,"data":"{\n"}
+,{"stream_name":"stdout","time":698.808397797,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":698.808402006,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":698.808405706,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":698.80840923,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":698.808412732,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":698.808429702,"data":" \"device_check\": 0,\n"}
+,{"stream_name":"stdout","time":698.808435946,"data":" \"test_cuda_native\": 0,\n"}
+,{"stream_name":"stdout","time":698.808441394,"data":" \"download_gemma4-26b-a4b\": 0,\n"}
+,{"stream_name":"stdout","time":698.808447529,"data":" \"cross_gemma4-26b-a4b\": 0\n"}
+,{"stream_name":"stdout","time":698.808453304,"data":"}\n"}
+,{"stream_name":"stderr","time":700.807788424,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":700.807852398,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":701.031706028,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":701.031732741,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":701.721365689,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":702.851804883,"data":"[NbConvertApp] Writing 335912 bytes to __results__.html\n"}
+]

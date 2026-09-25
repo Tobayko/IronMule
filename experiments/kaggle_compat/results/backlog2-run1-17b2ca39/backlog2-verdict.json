@@ -1,0 +1,35 @@
+{
+ "probes": {
+  "missing": "/tmp/claude-0/-home-user-IronMule/a6bb70ef-1b15-5b4f-8bc3-883b61bf6eab/scratchpad/kaggle/out-backlog2/probe-perf1n.json"
+ },
+ "PERF1-M": {
+  "chunks": 16,
+  "ratio": 1.0005260152936564,
+  "interval": [
+   0.9990595974571892,
+   1.00203616844045
+  ],
+  "nonfinite": 0,
+  "routed": {
+   "kernel": 2301952,
+   "k32": 0,
+   "p16": 0,
+   "mma": 0,
+   "mma2": 0,
+   "fallback": 0
+  },
+  "verdict": "passes",
+  "seconds": [
+   2370.9,
+   464.0
+  ]
+ },
+ "PERF1-T": {
+  "missing": "/tmp/claude-0/-home-user-IronMule/a6bb70ef-1b15-5b4f-8bc3-883b61bf6eab/scratchpad/kaggle/out-backlog2/cross-qwen35-9b-graphs0.json"
+ },
+ "PORT1-F": {
+  "exit": 1,
+  "seconds": 1205.2,
+  "tail": "kens=args.max_tokens, repeats=args.repeats, force=args.force,\n  File \"/tmp/IronMule/ironmule/tune.py\", line 835, in tune\n    raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/tune.py\", line 454, in confirm\n    return ab.run({\"baseline\": baseline, \"candidate\": candidate},\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/IronMule/ironmule/ab.py\", line 603, in run\n    raise ABRunError(\nironmule.ab.ABRunError: child 0 exited with status 1\n"
+ }
+}

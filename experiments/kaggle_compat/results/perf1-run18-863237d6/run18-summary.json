@@ -1,0 +1,145 @@
+{
+ "cross": [
+  {
+   "model": "12b",
+   "arm": "ironmule_exact",
+   "reference": "stock",
+   "source": "PORT1",
+   "ratios": [
+    0.9722,
+    0.9702
+   ],
+   "identical_to_stock": 6,
+   "deterministic": true,
+   "median": 0.9711991895368435,
+   "published": 0.9736,
+   "deviation": -0.002465910500366264,
+   "verdict": "reproduced",
+   "exact_holds": true
+  },
+  {
+   "model": "12b",
+   "arm": "ironmule_fp32",
+   "reference": "stock",
+   "source": "PORT1",
+   "ratios": [
+    0.4991,
+    0.4938
+   ],
+   "identical_to_stock": 4,
+   "deterministic": true,
+   "median": 0.4964715055296977,
+   "published": 0.4905,
+   "deviation": 0.012174323200199177,
+   "verdict": "reproduced"
+  },
+  {
+   "model": "12b",
+   "arm": "ironmule_native",
+   "reference": "ironmule_fp32_plain",
+   "source": "PERF1 run 17",
+   "ratios": [
+    0.3947,
+    0.3941
+   ],
+   "identical_to_stock": 1,
+   "deterministic": true,
+   "median": 0.3943897745581741,
+   "published": 0.4011,
+   "deviation": -0.01672955732192949,
+   "verdict": "reproduced"
+  },
+  {
+   "model": "12b",
+   "arm": "ironmule_native_compiled",
+   "reference": "ironmule_fp32_plain",
+   "source": "PERF1 run 17",
+   "ratios": [
+    0.3535,
+    0.3568
+   ],
+   "identical_to_stock": 1,
+   "deterministic": true,
+   "median": 0.35516988571716435,
+   "published": 0.3695,
+   "deviation": -0.03878244731484615,
+   "verdict": "reproduced"
+  },
+  {
+   "model": "12b",
+   "arm": "ironmule_native_compiled",
+   "reference": "stock",
+   "source": "projection, PORT1 x run 17",
+   "ratios": [
+    0.1806,
+    0.1795
+   ],
+   "identical_to_stock": 1,
+   "deterministic": true,
+   "median": 0.18003578952328092,
+   "published": 0.18123975,
+   "deviation": -0.006642916229574802,
+   "verdict": "reproduced"
+  },
+  {
+   "model": "1b",
+   "arm": "ironmule",
+   "reference": "stock",
+   "source": "PORT1",
+   "ratios": [
+    0.5366,
+    0.5712,
+    0.597
+   ],
+   "identical_to_stock": 6,
+   "deterministic": true,
+   "median": 0.571155140117576,
+   "published": 0.5502,
+   "deviation": 0.03808640515735351,
+   "verdict": "reproduced",
+   "exact_holds": true
+  },
+  {
+   "model": "4b",
+   "arm": "ironmule_exact",
+   "reference": "stock",
+   "source": "PORT1",
+   "ratios": [
+    0.9645,
+    0.9415,
+    0.9502
+   ],
+   "identical_to_stock": 6,
+   "deterministic": true,
+   "median": 0.9501746684743297,
+   "published": 0.9511,
+   "deviation": -0.0009729066614133641,
+   "verdict": "reproduced",
+   "exact_holds": true
+  }
+ ],
+ "qwen3_8b": {
+  "stock": {
+   "decode_tps_median": 6.713,
+   "ttft_ms_median": 26421.69,
+   "first_token_differing_from_stock": null
+  },
+  "kernel+p16": {
+   "decode_tps_median": 39.104,
+   "ttft_ms_median": 640.62,
+   "first_token_differing_from_stock": 20
+  },
+  "kernel+p16-pinned": {
+   "decode_tps_median": 36.15,
+   "ttft_ms_median": 677.78,
+   "first_token_differing_from_stock": 20
+  },
+  "decode_ratio": {
+   "source": "PERF1 run 2, kernel+p16 over stock",
+   "median": 5.825115447638909,
+   "published": 5.121451104100946,
+   "deviation": 0.13739550163322112,
+   "verdict": "replaced"
+  }
+ }
+}

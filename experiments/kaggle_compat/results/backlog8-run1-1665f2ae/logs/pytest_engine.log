@@ -1,0 +1,43 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+bringing up nodes...
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+bringing up nodes...
+
+..............................................s......................... [  5%]
+............................................s.ss....s...s....s.......s.s [ 11%]
+.....s....s.......s......................s....sssss...s...s..ss..s...... [ 16%]
+........................................................................ [ 22%]
+........................................................................ [ 27%]
+........................................................................ [ 33%]
+........................................................................ [ 38%]
+........................................................................ [ 44%]
+........................................................................ [ 49%]
+........................................................................ [ 55%]
+........................................................................ [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 72%]
+...........................s............................ss.s............ [ 77%]
+........................................................................ [ 83%]
+.............................................................s.......... [ 88%]
+............................................uuuuuuu...uuuu.............. [ 93%]
+........................................................................ [ 99%]
+............                                                             [100%]
+=============================== warnings summary ===============================
+tests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running
+  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=153) is multi-threaded, use of fork() may lead to deadlocks in the child.
+    self.pid = os.fork()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [22] tests/engine/test_docs_links.py:68: sealed provenance input; its links record the tree it was written against
+SKIPPED [1] tests/engine/test_router.py:461: this machine does not report vm.swapusage
+SKIPPED [1] tests/engine/test_product_identity.py:224: cached Gemma 3 1B snapshot is unavailable
+SKIPPED [1] tests/engine/test_product_memory.py:36: native RSS/swap probe is macOS-specific
+SKIPPED [1] tests/engine/test_product_memory.py:69: native RSS/swap probe is macOS-specific
+SKIPPED [1] tests/engine/test_product_memory.py:101: native RSS probe is macOS-specific
+SKIPPED [1] tests/engine/test_process_memory.py:28: Darwin proc_pid_rusage only
+1269 passed, 28 skipped, 1 warning, 11 subtests passed in 163.14s (0:02:43)

@@ -1,0 +1,83 @@
+{
+ "schema": "ironmule.perf1-kaggle.v18",
+ "commit": "b6886a0823f2da14a1a02ea8a3176660786a3de8",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.2,
+   "tail": "index, name, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 15360 MiB, 1590 MHz\n1, Tesla T4, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          28           0           2          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.8,
+   "tail": " M ironmule/cuda_native.py\n M ironmule/q3f_child_guard.py\n M tests/engine/test_cuda_native.py\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 9.0,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 75.8 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.6MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.66s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 23.0,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 41 packages in 1.51s\n   Building ironmule @ file:///tmp/IronMule\nDownloading pygments (1.2MiB)\nDownloading tokenizers (3.2MiB)\nDownloading hf-xet (4.3MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading numpy (15.9MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading transformers (11.7MiB)\nDownloading sentencepiece (1.3MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\n Downloaded pygments\n      Built ironmule @ file:///tmp/IronMule\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 41 packages in 21.17s\nInstalled 41 packages in 108ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + filelock==4.0.3\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.32.0\n + idna==3.20\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + protobuf==7.36.2\n + pygments==2.21.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nfilelock==4.0.3\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.32.0\nidna==3.20\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\nprotobuf==7.36.2\npygments==2.21.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_12b": {
+   "exit": 0,
+   "seconds": 66.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-12b-it-4bit/snapshots/86cc6a8dedbc456dd0e4af01a9d09f396f77e558\n"
+  },
+  "cross_12b": {
+   "exit": 0,
+   "seconds": 2012.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 82665.435415 0\nironmule_exact 0 80370.317097 0\nironmule_fp32 0 41260.323328 0\nironmule_fp32_plain 0 42231.735182 0\nironmule_native 0 16668.070027 0\nironmule_native_compiled 0 14929.347475 0\nironmule_exact 1 80631.984399 0\nironmule_fp32 1 41042.190479 0\nironmule_fp32_plain 1 41802.150538 0\nironmule_native 1 16474.16039 0\nironmule_native_compiled 1 14916.24512 0\nstock 1 83111.849104 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.972236058438718,\n   0.9701623206349689\n  ],\n  \"median_ratio\": 0.9711991895368435,\n  \"max_ratio\": 0.972236058438718,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.49912424849471165,\n   0.49381876256468377\n  ],\n  \"median_ratio\": 0.4964715055296977,\n  \"max_ratio\": 0.49912424849471165,\n  \"identical_requests\": 4,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_fp32_plain\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5108753733647772,\n   0.5029625858244581\n  ],\n  \"median_ratio\": 0.5069189795946176,\n  \"max_ratio\": 0.5108753733647772,\n  \"identical_requests\": 4,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_native\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.2016328825139837,\n   0.198216747282153\n  ],\n  \"median_ratio\": 0.19992481489806835,\n  \"max_ratio\": 0.2016328825139837,\n  \"identical_requests\": 1,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_native_compiled\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.18059963514437627,\n   0.17947194390218557\n  ],\n  \"median_ratio\": 0.18003578952328092,\n  \"max_ratio\": 0.18059963514437627,\n  \"identical_requests\": 1,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 66.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "e2e_qwen3-8b_stock": {
+   "exit": 0,
+   "seconds": 247.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"stock\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [26206.49, 26421.69, 26440.6], \"ttft_ms_median\": 26421.69, \"decode_tps\": [6.75, 6.699, 6.713], \"decode_tps_median\": 6.713, \"repetitions_identical\": true, \"nonfinite_prefills\": 0, \"p16_sync\": false, \"p16_rows\": 32768, \"cuda_graphs\": \"on\", \"routed\": {\"kernel\": 0, \"k32\": 0, \"p16\": 0, \"mma\": 0, \"mma2\": 0, \"fallback\": 0, \"gather\": 0, \"g16\": 0, \"gather_fallback\": 0}, \"peak_memory_bytes\": 5689051480, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "e2e_qwen3-8b_kernel+p16": {
+   "exit": 0,
+   "seconds": 32.7,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [627.58, 640.62, 646.41], \"ttft_ms_median\": 640.62, \"decode_tps\": [39.841, 39.104, 38.417], \"decode_tps_median\": 39.104, \"repetitions_identical\": true, \"nonfinite_prefills\": 0, \"p16_sync\": false, \"p16_rows\": 32768, \"cuda_graphs\": \"on\", \"routed\": {\"kernel\": 128524, \"k32\": 0, \"p16\": 1012, \"mma\": 0, \"mma2\": 0, \"fallback\": 0, \"gather\": 0, \"g16\": 0, \"gather_fallback\": 0}, \"peak_memory_bytes\": 7613325944, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "e2e_qwen3-8b_kernel+p16-pinned": {
+   "exit": 0,
+   "seconds": 33.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\"arm\": \"kernel+p16\", \"prompt_tokens\": 512, \"new_tokens\": 128, \"ttft_ms\": [669.0, 677.78, 696.66], \"ttft_ms_median\": 677.78, \"decode_tps\": [36.978, 36.15, 35.404], \"decode_tps_median\": 36.15, \"repetitions_identical\": true, \"nonfinite_prefills\": 0, \"p16_sync\": false, \"p16_rows\": 32768, \"cuda_graphs\": \"on\", \"routed\": {\"kernel\": 128524, \"k32\": 0, \"p16\": 1012, \"mma\": 0, \"mma2\": 0, \"fallback\": 0, \"gather\": 0, \"g16\": 0, \"gather_fallback\": 0}, \"peak_memory_bytes\": 7613325944, \"device\": \"Device(gpu, 0)\", \"graph_env\": \"400\", \"performance_claim\": false, \"model_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\", \"pipeline\": {}, \"mode\": \"e2e\"}\n"
+  },
+  "download_1b": {
+   "exit": 0,
+   "seconds": 42.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6\n"
+  },
+  "cross_1b": {
+   "exit": 0,
+   "seconds": 260.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 5436.981908 0\nironmule 0 2917.229318 0\nironmule 1 3010.290452 0\nstock 1 5270.530265 0\nstock 2 5071.225034 0\nironmule 2 3027.562776 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.5365530670071894,\n   0.571155140117576,\n   0.5970081697620836\n  ],\n  \"median_ratio\": 0.571155140117576,\n  \"max_ratio\": 0.5970081697620836,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  },
+  "download_4b": {
+   "exit": 0,
+   "seconds": 71.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "cross_4b": {
+   "exit": 0,
+   "seconds": 646.3,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nstock 0 26492.182242000003 0\nironmule_exact 0 25551.7683455 0\nironmule_exact 1 25824.3228825 0\nstock 1 27429.669629 0\nstock 2 27482.402697 0\nironmule_exact 2 26113.082871500003 0\n{\n \"stock\": {\n  \"ratio_vs_reference_per_rep\": [\n   1.0,\n   1.0,\n   1.0\n  ],\n  \"median_ratio\": 1.0,\n  \"max_ratio\": 1.0,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n },\n \"ironmule_exact\": {\n  \"ratio_vs_reference_per_rep\": [\n   0.9645022109575747,\n   0.9414740764940622,\n   0.9501746684743297\n  ],\n  \"median_ratio\": 0.9501746684743297,\n  \"max_ratio\": 0.9645022109575747,\n  \"identical_requests\": 6,\n  \"deterministic_across_processes\": true,\n  \"failed_processes\": 0\n }\n}\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

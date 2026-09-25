@@ -91,8 +91,9 @@ REVIEWED_SOURCE_MODULES = frozenset({
     # ironmule.runtime, with no operation from OPERATION_SET and no dynamic call path.
     "ironmule.numeric_plans",
     # Reached from load_engine when a caller asks for the `native` plan. Reviewed: mlx,
-    # mlx.nn, typing and ironmule.numeric_plans only; a kernel source string and module
-    # class swaps, no operation from OPERATION_SET and no dynamic call path.
+    # mlx.nn, mlx_lm's switch layers, math, typing and ironmule.numeric_plans only; kernel
+    # source strings and module class swaps, no operation from OPERATION_SET and no dynamic
+    # call path.
     "ironmule.cuda_native",
 })
 #: The bare names a relative import inside the package can use. Derived from the allowlist

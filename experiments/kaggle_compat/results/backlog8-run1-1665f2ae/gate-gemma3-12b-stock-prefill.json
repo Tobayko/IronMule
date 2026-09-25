@@ -1,0 +1,43 @@
+{
+ "arm": "stock",
+ "path_mode": "prefill",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "bos": 2,
+ "chunk_nll": [
+  2.288348712027073,
+  2.983055930584669,
+  2.5973488111048937,
+  3.009802706539631,
+  2.0177340880036354,
+  2.7403883673250675,
+  2.0780932176858187,
+  2.761735551059246,
+  2.9223950915038586,
+  2.6262680143117905,
+  3.3295004814863205,
+  2.787227101624012,
+  2.501796457916498,
+  2.877568446099758,
+  2.740943308919668,
+  1.7127574570477009
+ ],
+ "mean_nll": 2.6234352339524776,
+ "nonfinite": 0,
+ "routed": {
+  "kernel": 0,
+  "k32": 0,
+  "p16": 0,
+  "mma": 0,
+  "mma2": 0,
+  "fallback": 0,
+  "gather": 0,
+  "g16": 0,
+  "gather_fallback": 0
+ },
+ "seconds": 707.8,
+ "performance_claim": false,
+ "model_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-12b-it-4bit/snapshots/86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+ "pipeline": {},
+ "mode": "nll"
+}

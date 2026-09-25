@@ -1,0 +1,82 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+stock 0 82665.435415 0
+ironmule_exact 0 80370.317097 0
+ironmule_fp32 0 41260.323328 0
+ironmule_fp32_plain 0 42231.735182 0
+ironmule_native 0 16668.070027 0
+ironmule_native_compiled 0 14929.347475 0
+ironmule_exact 1 80631.984399 0
+ironmule_fp32 1 41042.190479 0
+ironmule_fp32_plain 1 41802.150538 0
+ironmule_native 1 16474.16039 0
+ironmule_native_compiled 1 14916.24512 0
+stock 1 83111.849104 0
+{
+ "stock": {
+  "ratio_vs_reference_per_rep": [
+   1.0,
+   1.0
+  ],
+  "median_ratio": 1.0,
+  "max_ratio": 1.0,
+  "identical_requests": 6,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_exact": {
+  "ratio_vs_reference_per_rep": [
+   0.972236058438718,
+   0.9701623206349689
+  ],
+  "median_ratio": 0.9711991895368435,
+  "max_ratio": 0.972236058438718,
+  "identical_requests": 6,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_fp32": {
+  "ratio_vs_reference_per_rep": [
+   0.49912424849471165,
+   0.49381876256468377
+  ],
+  "median_ratio": 0.4964715055296977,
+  "max_ratio": 0.49912424849471165,
+  "identical_requests": 4,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_fp32_plain": {
+  "ratio_vs_reference_per_rep": [
+   0.5108753733647772,
+   0.5029625858244581
+  ],
+  "median_ratio": 0.5069189795946176,
+  "max_ratio": 0.5108753733647772,
+  "identical_requests": 4,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_native": {
+  "ratio_vs_reference_per_rep": [
+   0.2016328825139837,
+   0.198216747282153
+  ],
+  "median_ratio": 0.19992481489806835,
+  "max_ratio": 0.2016328825139837,
+  "identical_requests": 1,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ },
+ "ironmule_native_compiled": {
+  "ratio_vs_reference_per_rep": [
+   0.18059963514437627,
+   0.17947194390218557
+  ],
+  "median_ratio": 0.18003578952328092,
+  "max_ratio": 0.18059963514437627,
+  "identical_requests": 1,
+  "deterministic_across_processes": true,
+  "failed_processes": 0
+ }
+}
