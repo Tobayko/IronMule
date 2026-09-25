@@ -1,0 +1,48 @@
+[{"stream_name":"stdout","time":0.945994915,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":2.898980763,"data":"== clone: exit=0 2.0s\n"}
+,{"stream_name":"stdout","time":11.318943053,"data":"== venv: exit=0 8.4s\n"}
+,{"stream_name":"stdout","time":34.019609017,"data":"== install: exit=0 22.7s\n"}
+,{"stream_name":"stdout","time":34.1149573,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":39.393999442,"data":"== download_wikitext: exit=0 5.3s\n"}
+,{"stream_name":"stdout","time":82.592774979,"data":"== probe_perf1n: exit=0 43.2s\n"}
+,{"stream_name":"stdout","time":174.410434235,"data":"== probe_perf1l_free: exit=0 91.8s\n"}
+,{"stream_name":"stdout","time":246.54126921,"data":"== probe_perf1l_pinned: exit=0 72.1s\n"}
+,{"stream_name":"stdout","time":295.178398911,"data":"== download_qwen3-14b: exit=0 48.6s\n"}
+,{"stream_name":"stdout","time":613.343711895,"data":"== gate_qwen3-14b_stock_decode: exit=0 318.2s\n"}
+,{"stream_name":"stdout","time":689.062325103,"data":"== gate_qwen3-14b_kernel_decode: exit=0 75.7s\n"}
+,{"stream_name":"stdout","time":724.418378357,"data":"== download_qwen35-9b: exit=0 35.4s\n"}
+,{"stream_name":"stdout","time":969.012442212,"data":"qwen35 stock 0 58995.757228 0\n"}
+,{"stream_name":"stdout","time":1128.990501124,"data":"qwen35 ironmule_interactive 0 59022.503554 0\n"}
+,{"stream_name":"stdout","time":1289.234764806,"data":"qwen35 ironmule_throughput 0 59110.75467 0\n"}
+,{"stream_name":"stdout","time":1449.989408227,"data":"qwen35 ironmule_interactive 1 59366.881438 0\n"}
+,{"stream_name":"stdout","time":1609.814748967,"data":"qwen35 ironmule_throughput 1 58940.157067 0\n"}
+,{"stream_name":"stdout","time":1769.84946869,"data":"qwen35 stock 1 59256.896791 0\n"}
+,{"stream_name":"stdout","time":1930.606259655,"data":"qwen35 ironmule_throughput 2 59140.294883 0\n"}
+,{"stream_name":"stdout","time":2090.92433954,"data":"qwen35 stock 2 59060.454595 0\n"}
+,{"stream_name":"stdout","time":2250.352741711,"data":"qwen35 ironmule_interactive 2 58974.024258 0\n"}
+,{"stream_name":"stdout","time":2273.876672784,"data":"== download_gemma3-4b: exit=0 23.5s\n"}
+,{"stream_name":"stdout","time":3482.493591885,"data":"== tune_gemma3-4b: exit=1 1208.6s\n"}
+,{"stream_name":"stdout","time":3482.494099453,"data":"{\n"}
+,{"stream_name":"stdout","time":3482.494119351,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494124996,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":3482.49412998,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494134962,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":3482.49413928,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494143755,"data":" \"download_wikitext\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494148623,"data":" \"probe_perf1n\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494153381,"data":" \"probe_perf1l_free\": 0,\n"}
+,{"stream_name":"stdout","time":3482.49415802,"data":" \"probe_perf1l_pinned\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494162643,"data":" \"download_qwen3-14b\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494167237,"data":" \"gate_qwen3-14b_stock_decode\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494171478,"data":" \"gate_qwen3-14b_kernel_decode\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494176251,"data":" \"download_qwen35-9b\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494180773,"data":" \"download_gemma3-4b\": 0,\n"}
+,{"stream_name":"stdout","time":3482.494184968,"data":" \"tune_gemma3-4b\": 1\n"}
+,{"stream_name":"stdout","time":3482.494189546,"data":"}\n"}
+,{"stream_name":"stderr","time":3484.938466887,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":3484.939996433,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":3485.257214779,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":3485.257245435,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":3486.939647632,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":3488.267539503,"data":"[NbConvertApp] Writing 312761 bytes to __results__.html\n"}
+]

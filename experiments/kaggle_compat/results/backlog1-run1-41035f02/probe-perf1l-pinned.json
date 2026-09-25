@@ -1,0 +1,332 @@
+{
+ "schema": "ironmule.perf1l-probe.v1",
+ "arith": "pinned",
+ "device": "Device(gpu, 0)",
+ "results": [
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 4096,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.00023872045858297497
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 4096,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.00028612304595299065
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 4096,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.0010843046475201845
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 4096,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 1.1920928955078125e-05,
+   "max_rel_diff": 0.10662823915481567
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 1024,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.0011261261533945799
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 1024,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.00011487210576888174
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 1024,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 5.960464477539062e-07,
+   "max_rel_diff": 0.00016187965229619294
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 1024,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 7.62939453125e-06,
+   "max_rel_diff": 0.0069878362119197845
+  },
+  {
+   "model": "mistral-24b",
+   "k": 4096,
+   "n": 5120,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 5.066394805908203e-07,
+   "max_rel_diff": 0.00038338659214787185
+  },
+  {
+   "model": "mistral-24b",
+   "k": 4096,
+   "n": 5120,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.00027204304933547974
+  },
+  {
+   "model": "mistral-24b",
+   "k": 4096,
+   "n": 5120,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.0014484357088804245
+  },
+  {
+   "model": "mistral-24b",
+   "k": 4096,
+   "n": 5120,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 8.58306884765625e-06,
+   "max_rel_diff": 0.0026784518267959356
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 32768,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.0023752970155328512
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 32768,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.03333333507180214
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 32768,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.012482662685215473
+  },
+  {
+   "model": "mistral-24b",
+   "k": 5120,
+   "n": 32768,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 1.2874603271484375e-05,
+   "max_rel_diff": 0.06575963646173477
+  },
+  {
+   "model": "mistral-24b",
+   "k": 32768,
+   "n": 5120,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 2.86102294921875e-06,
+   "max_rel_diff": 0.000339486519806087
+  },
+  {
+   "model": "mistral-24b",
+   "k": 32768,
+   "n": 5120,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 2.384185791015625e-06,
+   "max_rel_diff": 0.0002136295661330223
+  },
+  {
+   "model": "mistral-24b",
+   "k": 32768,
+   "n": 5120,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 2.384185791015625e-06,
+   "max_rel_diff": 0.000698812014888972
+  },
+  {
+   "model": "mistral-24b",
+   "k": 32768,
+   "n": 5120,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 9.632110595703125e-05,
+   "max_rel_diff": 0.01429242454469204
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 4096,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 5.960464477539062e-07,
+   "max_rel_diff": 0.00013646288425661623
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 4096,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.0007923930534161627
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 4096,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 7.152557373046875e-07,
+   "max_rel_diff": 0.006289307959377766
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 4096,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 9.059906005859375e-06,
+   "max_rel_diff": 0.01610676571726799
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 1024,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 4.917383193969727e-07,
+   "max_rel_diff": 2.8059148462489247e-05
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 1024,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.0006465517217293382
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 1024,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 4.76837158203125e-07,
+   "max_rel_diff": 0.00033944330061785877
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 1024,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 6.9141387939453125e-06,
+   "max_rel_diff": 0.00148844497743994
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 12288,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 5.364418029785156e-07,
+   "max_rel_diff": 0.0004201974952593446
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 12288,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.0035938904620707035
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 12288,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 9.5367431640625e-07,
+   "max_rel_diff": 0.22727273404598236
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 4096,
+   "n": 12288,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 1.0013580322265625e-05,
+   "max_rel_diff": 0.01621621660888195
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 12288,
+   "n": 4096,
+   "rows": 1,
+   "bit_equal": false,
+   "max_abs_diff": 1.1920928955078125e-06,
+   "max_rel_diff": 0.0006721935933455825
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 12288,
+   "n": 4096,
+   "rows": 2,
+   "bit_equal": false,
+   "max_abs_diff": 1.1920928955078125e-06,
+   "max_rel_diff": 0.0005862953257746994
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 12288,
+   "n": 4096,
+   "rows": 4,
+   "bit_equal": false,
+   "max_abs_diff": 1.430511474609375e-06,
+   "max_rel_diff": 0.0039021852426230907
+  },
+  {
+   "model": "qwen3-8b",
+   "k": 12288,
+   "n": 4096,
+   "rows": 8,
+   "bit_equal": false,
+   "max_abs_diff": 2.9087066650390625e-05,
+   "max_rel_diff": 0.01206942182034254
+  }
+ ],
+ "performance_claim": false
+}
