@@ -29,9 +29,7 @@ MAX_STDERR_BYTES = 256 * 1024
 DEFAULT_TIMEOUT = 120.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
-WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic",
-                             "tensor_batch"))
-MAX_TENSOR_BATCH = 8
+WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
                                    "baseline_throughput", "core_throughput"))
 CONTEXT_LIMIT = 8192
@@ -62,19 +60,13 @@ class MLXWorkerClient:
                  trace_prompt_identity: bool = False,
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
-                 compute_dtype: str | None = None, batch_width: int | None = None) -> None:
+                 compute_dtype: str | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if compute_dtype not in (None, "float32", "native"):
             raise ValueError("compute_dtype must be None, float32 or native")
-        if compute_dtype is not None and execution_variant not in ("reference", "tensor_batch"):
-            raise ValueError("compute_dtype is available on the reference and tensor_batch workers only")
-        # PERF1-K: opt-in tensor batching (docs/HTTP.md "Batched serving"); changes output.
-        if (execution_variant == "tensor_batch") != (batch_width is not None) or (
-                batch_width is not None and (type(batch_width) is not int
-                                             or not 2 <= batch_width <= MAX_TENSOR_BATCH)):
-            raise ValueError("tensor_batch needs a batch_width from 2 to 8, and only it takes one")
-        self.batch_width = batch_width
+        if compute_dtype is not None and execution_variant != "reference":
+            raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.
         self.compute_dtype = compute_dtype
         if startup_timeout is not None and (
@@ -135,8 +127,6 @@ class MLXWorkerClient:
     @property
     def batch_capacity(self) -> int:
         """Configured request capacity, not proof of a qualified GPU group width."""
-        if self.execution_variant == "tensor_batch":
-            return self.batch_width
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
@@ -378,8 +368,6 @@ class MLXWorkerClient:
                     arguments += ["--execution-variant", self.execution_variant]
                 if self.compute_dtype is not None:
                     arguments += ["--compute-dtype", self.compute_dtype]
-                if self.batch_width is not None:
-                    arguments += ["--batch-width", str(self.batch_width)]
                 if self.execution_variant == "prefix_reuse":
                     arguments += ["--prefix-cache-max-entries", str(self.prefix_cache_max_entries),
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
@@ -461,7 +449,6 @@ class MLXWorkerClient:
                 or event.get("stop_handling") != "parent"
                 or event.get("context_limit", CONTEXT_LIMIT) != CONTEXT_LIMIT
                 or event.get("execution_variant", "reference") != self.execution_variant
-                or event.get("batch_width") != self.batch_width
             ):
                 self._mark_unusable()
                 raise BackendUnavailable("backend readiness event is invalid")
@@ -741,7 +728,6 @@ class MLXWorkerClient:
         allowed = ({"current_engine"} if self.execution_variant == "current_engine" else
                    {"automatic"} if self.execution_variant == "automatic" else
                    {"reference", "prefix_reuse"} if self.execution_variant == "prefix_reuse" else
-                   {"tensor_batch"} if self.execution_variant == "tensor_batch" else
                    {"reference", "bounded_prefetch"})
         if variant not in allowed:
             raise InvalidRequest("variant is not enabled for this worker")

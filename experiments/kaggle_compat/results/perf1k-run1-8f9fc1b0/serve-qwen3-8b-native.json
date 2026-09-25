@@ -1,0 +1,1498 @@
+{
+ "schema": "ironmule.perf1k-serve.v1",
+ "model_id": "mlx-community/Qwen3-8B-4bit",
+ "plan": "native",
+ "prompts": 8,
+ "max_tokens": 128,
+ "starts": [
+  {
+   "config": "ref",
+   "command": [
+    "serve",
+    "--model",
+    "mlx-community/Qwen3-8B-4bit",
+    "--compute-dtype",
+    "native"
+   ],
+   "rounds": [
+    {
+     "wall_s": 31.735,
+     "completion_tokens": 1024,
+     "aggregate_tps": 32.267,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354603.7780285
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354599.7504108
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354615.447076
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354611.6019146
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354619.2514179
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354591.5731575
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354607.703848
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354595.677866
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 16,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    },
+    {
+     "wall_s": 30.007,
+     "completion_tokens": 1024,
+     "aggregate_tps": 34.125,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354623.0636654
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354649.2619724
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354626.8332062
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354634.295861
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354645.4993148
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354638.023347
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354630.563411
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354641.762073
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 24,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    },
+    {
+     "wall_s": 30.71,
+     "completion_tokens": 1024,
+     "aggregate_tps": 33.344,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354679.975642
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354660.6509335
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354653.0542746
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354664.4872448
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354656.845037
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354668.340032
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354676.0923426
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354672.198823
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 32,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    }
+   ],
+   "ready_health": {
+    "service": "ironmule",
+    "ready": true,
+    "mode": "desktop",
+    "execution": "exact@native",
+    "backend": "mlx_lm_reference",
+    "loaded_model": "mlx-community/Qwen3-8B-4bit",
+    "queued_requests": 0,
+    "active_requests": 0,
+    "completed_requests": 0,
+    "failed_requests": 0,
+    "cancelled_requests": 0,
+    "optimization": {
+     "schema": 1,
+     "paused": false,
+     "optimization_paused": false,
+     "configuration_only": false,
+     "engine_started": false,
+     "stage": "idle",
+     "run_id": null,
+     "model_id": null,
+     "model_loaded": false,
+     "activation_allowed": false,
+     "updated_unix_ns": null,
+     "last_verdict": null
+    }
+   },
+   "warmup": {
+    "wall_s": 39.223,
+    "completion_tokens": 1024,
+    "aggregate_tps": 26.107,
+    "answers": [
+     {
+      "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354583.507333
+     },
+     {
+      "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354564.3692367
+     },
+     {
+      "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354575.6740735
+     },
+     {
+      "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354579.54903
+     },
+     {
+      "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354568.0826843
+     },
+     {
+      "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354571.8559551
+     },
+     {
+      "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354587.5131586
+     },
+     {
+      "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354560.710849
+     }
+    ],
+    "health": {
+     "service": "ironmule",
+     "ready": true,
+     "mode": "desktop",
+     "execution": "exact@native",
+     "backend": "mlx_lm_reference",
+     "loaded_model": "mlx-community/Qwen3-8B-4bit",
+     "queued_requests": 0,
+     "active_requests": 0,
+     "completed_requests": 8,
+     "failed_requests": 0,
+     "cancelled_requests": 0,
+     "optimization": {
+      "schema": 1,
+      "paused": false,
+      "optimization_paused": false,
+      "configuration_only": false,
+      "engine_started": false,
+      "stage": "idle",
+      "run_id": null,
+      "model_id": null,
+      "model_loaded": false,
+      "activation_allowed": false,
+      "updated_unix_ns": null,
+      "last_verdict": null
+     }
+    }
+   }
+  },
+  {
+   "config": "b8",
+   "command": [
+    "serve",
+    "--model",
+    "mlx-community/Qwen3-8B-4bit",
+    "--compute-dtype",
+    "native",
+    "--batch-width",
+    "8"
+   ],
+   "rounds": [
+    {
+     "wall_s": 31.904,
+     "completion_tokens": 1024,
+     "aggregate_tps": 32.096,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354770.5869098
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354778.6229894
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy were exempt. That inequality probably fueled resentment.\n\nThen there's the social structure. The three estates\u2014clergy, nobility, and commoners. The Third Estate, which was the majority, had no real political power. The Enlightenment ideas also played a role. Thinkers like",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354770.5873718
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354778.6233337
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's important to get it fixed before winter. It's important to be polite",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354778.620346
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354770.58662
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354770.5870328
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category. \n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. I should check the initial purchase price versus the long-term savings. Also, government incentives might affect the cost. For maintenance, electric cars have fewer moving parts, so maybe less maintenance needed. Petrol cars have engines, transmission, oil changes, etc. Environmental impact is about emissions and energy sources. Electric cars are cleaner, but if the electricity",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354778.623455
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 16,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 4,
+      "batch_count": 4
+     }
+    },
+    {
+     "wall_s": 42.679,
+     "completion_tokens": 1024,
+     "aggregate_tps": 23.993,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354790.7710752
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3043208
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3039808
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3031588
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's a concern for winter. It's important to be polite and not accus",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3039088
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3045318
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3042157
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354821.3053234
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 24,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 7,
+      "batch_count": 5
+     }
+    },
+    {
+     "wall_s": 17.738,
+     "completion_tokens": 1024,
+     "aggregate_tps": 57.73,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0450172
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0445588
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0444446
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0421512
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354825.245544
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0440087
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0437038
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354839.0459464
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 32,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 7,
+      "batch_count": 6
+     }
+    }
+   ],
+   "ready_health": {
+    "service": "ironmule",
+    "ready": true,
+    "mode": "desktop",
+    "execution": "batched@native",
+    "backend": "tensor_batch",
+    "loaded_model": "mlx-community/Qwen3-8B-4bit",
+    "queued_requests": 0,
+    "active_requests": 0,
+    "completed_requests": 0,
+    "failed_requests": 0,
+    "cancelled_requests": 0,
+    "optimization": {
+     "schema": 1,
+     "paused": false,
+     "optimization_paused": false,
+     "configuration_only": false,
+     "engine_started": false,
+     "stage": "idle",
+     "run_id": null,
+     "model_id": null,
+     "model_loaded": false,
+     "activation_allowed": false,
+     "updated_unix_ns": null,
+     "last_verdict": null
+    }
+   },
+   "warmup": {
+    "wall_s": 57.965,
+    "completion_tokens": 1024,
+    "aggregate_tps": 17.666,
+    "answers": [
+     {
+      "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354746.7167726
+     },
+     {
+      "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354727.5891817
+     },
+     {
+      "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354746.716328
+     },
+     {
+      "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354746.715865
+     },
+     {
+      "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's a concern for winter. It's important to be polite and not accus",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354746.716631
+     },
+     {
+      "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354727.589307
+     },
+     {
+      "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354746.7164648
+     },
+     {
+      "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category. \n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. I should check the initial purchase price versus the long-term savings. Also, government incentives might affect the cost. For maintenance, electric cars have fewer moving parts, so maybe less maintenance needed. Petrol cars have engines, transmission, oil changes, etc. Environmental impact is about emissions and energy sources. Electric cars are cleaner, but if the electricity",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354727.5895398
+     }
+    ],
+    "health": {
+     "service": "ironmule",
+     "ready": true,
+     "mode": "desktop",
+     "execution": "batched@native",
+     "backend": "tensor_batch",
+     "loaded_model": "mlx-community/Qwen3-8B-4bit",
+     "queued_requests": 0,
+     "active_requests": 0,
+     "completed_requests": 8,
+     "failed_requests": 0,
+     "cancelled_requests": 0,
+     "optimization": {
+      "schema": 1,
+      "paused": false,
+      "optimization_paused": false,
+      "configuration_only": false,
+      "engine_started": false,
+      "stage": "idle",
+      "run_id": null,
+      "model_id": null,
+      "model_loaded": false,
+      "activation_allowed": false,
+      "updated_unix_ns": null,
+      "last_verdict": null
+     },
+     "last_batch_size": 5,
+     "batch_count": 2
+    }
+   }
+  },
+  {
+   "config": "ref",
+   "command": [
+    "serve",
+    "--model",
+    "mlx-community/Qwen3-8B-4bit",
+    "--compute-dtype",
+    "native"
+   ],
+   "rounds": [
+    {
+     "wall_s": 31.693,
+     "completion_tokens": 1024,
+     "aggregate_tps": 32.31,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354898.0884836
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354921.630443
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354917.8198884
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354910.1015759
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354902.1590016
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354906.1740677
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354894.009874
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354913.9775662
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 16,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    },
+    {
+     "wall_s": 29.905,
+     "completion_tokens": 1024,
+     "aggregate_tps": 34.241,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354951.5390344
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354936.6022165
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354947.7889178
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354944.0422895
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354932.9548545
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354925.4398952
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354940.3180044
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354929.205874
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 24,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    },
+    {
+     "wall_s": 30.675,
+     "completion_tokens": 1024,
+     "aggregate_tps": 33.383,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354970.5976272
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354955.3369493
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354974.4511259
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354982.2167747
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354966.7593095
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354978.3277986
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354959.1269164
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790354962.9398708
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "exact@native",
+      "backend": "mlx_lm_reference",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 32,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      }
+     }
+    }
+   ],
+   "ready_health": {
+    "service": "ironmule",
+    "ready": true,
+    "mode": "desktop",
+    "execution": "exact@native",
+    "backend": "mlx_lm_reference",
+    "loaded_model": "mlx-community/Qwen3-8B-4bit",
+    "queued_requests": 0,
+    "active_requests": 0,
+    "completed_requests": 0,
+    "failed_requests": 0,
+    "cancelled_requests": 0,
+    "optimization": {
+     "schema": 1,
+     "paused": false,
+     "optimization_paused": false,
+     "configuration_only": false,
+     "engine_started": false,
+     "stage": "idle",
+     "run_id": null,
+     "model_id": null,
+     "model_loaded": false,
+     "activation_allowed": false,
+     "updated_unix_ns": null,
+     "last_verdict": null
+    }
+   },
+   "warmup": {
+    "wall_s": 42.113,
+    "completion_tokens": 1024,
+    "aggregate_tps": 24.316,
+    "answers": [
+     {
+      "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? I think the process has something to do with the refrigerant absorbing heat and then releasing it outside. But I need to break it down step by step.\n\nFirst, the refrigerator has a compartment where the food is stored, and the goal is to keep it cold. The refrigerant is probably in a cycle. I remember something about the refrigerant going through different states\u2014like liquid and gas. Maybe it starts as a liquid, gets",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354870.4384558
+     },
+     {
+      "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354889.9340305
+     },
+     {
+      "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution. The government was inefficient, leading to heavy taxation on the Third Estate while the nobility and clergy were exempt. That caused widespread resentment.\n\nThen there's the social structure. The Estates-General was a key point. The Third Estate, which represented the majority of the population, was underrepresented. Their demands for representation led to the formation of the National Assembly, which was a",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354863.074168
+     },
+     {
+      "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and doesn",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354881.964478
+     },
+     {
+      "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. The user needs to mention the heating system is broken and that it's a concern for winter. It's important to highlight the potential risks",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354885.9170616
+     },
+     {
+      "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that. So, tip one could be immersing yourself through media. That makes sense because exposure helps with vocabulary and pronunciation.\n\nNext, consistency is key. Adults have busy",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354878.0658934
+     },
+     {
+      "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor. I can compare it to when you jump in a pool and the water disappears, but that's not exactly accurate. Wait, maybe use an example they can see, like when you boil water and it",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354866.7278976
+     },
+     {
+      "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790354874.2195115
+     }
+    ],
+    "health": {
+     "service": "ironmule",
+     "ready": true,
+     "mode": "desktop",
+     "execution": "exact@native",
+     "backend": "mlx_lm_reference",
+     "loaded_model": "mlx-community/Qwen3-8B-4bit",
+     "queued_requests": 0,
+     "active_requests": 0,
+     "completed_requests": 8,
+     "failed_requests": 0,
+     "cancelled_requests": 0,
+     "optimization": {
+      "schema": 1,
+      "paused": false,
+      "optimization_paused": false,
+      "configuration_only": false,
+      "engine_started": false,
+      "stage": "idle",
+      "run_id": null,
+      "model_id": null,
+      "model_loaded": false,
+      "activation_allowed": false,
+      "updated_unix_ns": null,
+      "last_verdict": null
+     }
+    }
+   }
+  },
+  {
+   "config": "b8",
+   "command": [
+    "serve",
+    "--model",
+    "mlx-community/Qwen3-8B-4bit",
+    "--compute-dtype",
+    "native",
+    "--batch-width",
+    "8"
+   ],
+   "rounds": [
+    {
+     "wall_s": 45.967,
+     "completion_tokens": 1024,
+     "aggregate_tps": 22.277,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.154489
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.1553242
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355047.3490689
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.1557066
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's a concern for winter. It's important to be polite and not accus",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.1550612
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.1546726
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355074.1538675
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355047.3493671
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 16,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 6,
+      "batch_count": 3
+     }
+    },
+    {
+     "wall_s": 15.244,
+     "completion_tokens": 1024,
+     "aggregate_tps": 67.174,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.4029312
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.400414
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.401779
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355079.0438385
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's a concern for winter. It's important to be polite and not accus",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.4028168
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355079.0441675
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.4026353
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355089.4015315
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 24,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 6,
+      "batch_count": 5
+     }
+    },
+    {
+     "wall_s": 42.079,
+     "completion_tokens": 1024,
+     "aggregate_tps": 24.335,
+     "answers": [
+      {
+       "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355131.484104
+      },
+      {
+       "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number using an iterative approach. And I have to include a docstring. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. Wait, but sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify whether the function",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355131.4834774
+      },
+      {
+       "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy were exempt. That inequality probably fueled resentment.\n\nThen there's the social structure. The three estates\u2014clergy, nobility, and commoners. The Third Estate, which was the majority, had no real political power. The Enlightenment ideas also played a role. Thinkers like",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355109.2331643
+      },
+      {
+       "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355109.2328978
+      },
+      {
+       "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's important to get it fixed before winter. It's important to be polite",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355109.230681
+      },
+      {
+       "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355131.4850445
+      },
+      {
+       "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355131.4828393
+      },
+      {
+       "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+       "completion_tokens": 128,
+       "finish_reason": "length",
+       "ended": 1790355131.4851587
+      }
+     ],
+     "health": {
+      "service": "ironmule",
+      "ready": true,
+      "mode": "desktop",
+      "execution": "batched@native",
+      "backend": "tensor_batch",
+      "loaded_model": "mlx-community/Qwen3-8B-4bit",
+      "queued_requests": 0,
+      "active_requests": 0,
+      "completed_requests": 32,
+      "failed_requests": 0,
+      "cancelled_requests": 0,
+      "optimization": {
+       "schema": 1,
+       "paused": false,
+       "optimization_paused": false,
+       "configuration_only": false,
+       "engine_started": false,
+       "stage": "idle",
+       "run_id": null,
+       "model_id": null,
+       "model_loaded": false,
+       "activation_allowed": false,
+       "updated_unix_ns": null,
+       "last_verdict": null
+      },
+      "last_batch_size": 5,
+      "batch_count": 7
+     }
+    }
+   ],
+   "ready_health": {
+    "service": "ironmule",
+    "ready": true,
+    "mode": "desktop",
+    "execution": "batched@native",
+    "backend": "tensor_batch",
+    "loaded_model": "mlx-community/Qwen3-8B-4bit",
+    "queued_requests": 0,
+    "active_requests": 0,
+    "completed_requests": 0,
+    "failed_requests": 0,
+    "cancelled_requests": 0,
+    "optimization": {
+     "schema": 1,
+     "paused": false,
+     "optimization_paused": false,
+     "configuration_only": false,
+     "engine_started": false,
+     "stage": "idle",
+     "run_id": null,
+     "model_id": null,
+     "model_loaded": false,
+     "activation_allowed": false,
+     "updated_unix_ns": null,
+     "last_verdict": null
+    }
+   },
+   "warmup": {
+    "wall_s": 37.193,
+    "completion_tokens": 1024,
+    "aggregate_tps": 27.532,
+    "answers": [
+     {
+      "text": "<think>\nOkay, so I need to explain how a refrigerator moves heat out of its interior. Let me think. I remember that refrigerators use some kind of cooling system, maybe involving a refrigerant? Wait, how does that work again?\n\nFirst, I think the refrigerator has a cycle that involves compressing and expanding a refrigerant. The refrigerant absorbs heat from the inside, then releases it outside. But I need to break this down step by step. Let me recall the basic components: compressor, condenser coils, evaporator coils, and the refrigerant.\n\nSo, the process starts with the refrigerant being in a low",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1859574
+     },
+     {
+      "text": "<think>\nOkay, I need to write a Python function that returns the n-th Fibonacci number iteratively. Let me think about how to approach this.\n\nFirst, I remember that the Fibonacci sequence is defined as F(0) = 0, F(1) = 1, and F(n) = F(n-1) + F(n-2) for n >= 2. But wait, sometimes people start the sequence with F(1) as 0 or 1. Wait, the problem says the n-th Fibonacci number. I need to clarify the indexing here. Let me check the standard definition. Oh right,",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355002.5650516
+     },
+     {
+      "text": "<think>\nOkay, the user wants a summary of the causes of the French Revolution in one paragraph. Let me start by recalling the main factors. First, there's the economic crisis. France had a lot of debt from the Seven Years' War and the American Revolution, leading to heavy taxation. The peasants and workers were struggling, while the nobility and clergy weren't paying taxes. Then there's the social structure\u2014three estates, with the first two (nobles and clergy) having privileges, while the third estate bore the burden. The Enlightenment ideas also played a role, promoting concepts like liberty, equality, and popular sovereignty, which",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1831384
+     },
+     {
+      "text": "<think>\nOkay, so I need to explain the difference between TCP and UDP and give two examples where each is better. Let me start by recalling what I know about these protocols.\n\nTCP is Transmission Control Protocol, right? It's a connection-oriented protocol. That means it establishes a connection before sending data, ensures reliable delivery, and handles error checking. It's like a postal service where they make sure the package arrives, maybe even re-sends if it's lost. UDP is User Datagram Protocol, which is connectionless. It doesn't establish a connection first, so it's faster but less reliable. It just sends the data and hopes",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1847162
+     },
+     {
+      "text": "<think>\nOkay, the user wants to draft a polite email to their landlord about a broken heating system before winter. Let me start by thinking about the key elements that should be included.\n\nFirst, the subject line needs to be clear and direct. Maybe something like \"Request for Heating System Repair Before Winter\" to immediately convey the urgency.\n\nNext, the greeting should be formal but friendly. \"Dear [Landlord's Name]\" is standard. Then, the opening paragraph should state the purpose of the email. They need to mention the heating system is broken and that it's a concern for winter. It's important to be polite and not accus",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1858351
+     },
+     {
+      "text": "<think>\nOkay, the user wants five practical tips for learning a new language as an adult, with explanations. Let me start by recalling what I know about language learning for adults. \n\nFirst, immersion is often recommended. But how exactly does that work? Maybe using the language in real-life situations. Like, if you're in a country where the language is spoken, you're forced to use it. But for someone who can't move, maybe they can simulate that by watching shows, listening to music, or using the language in daily tasks. That makes sense. So the first tip could be immersing yourself in the language through",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1860757
+     },
+     {
+      "text": "<think>\nOkay, I need to explain the water cycle to a ten-year-old. Let me think about how to make this simple and engaging. First, I should break down the main parts of the water cycle: evaporation, condensation, precipitation, and collection. But how do I make those terms relatable?\n\nMaybe start with something they know, like a puddle or a lake. Evaporation is when water turns into vapor, so I can compare it to when you jump in a pool and the water disappears. Wait, but maybe using a more familiar example, like when you leave a glass of water out and it dries",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1856713
+     },
+     {
+      "text": "<think>\nOkay, so I need to compare electric cars and petrol cars on cost, maintenance, and environmental impact. Let me start by breaking down each category.\n\nFirst, cost. I know that electric cars have higher upfront costs because of the batteries, but maybe they save money on fuel. Petrol cars might be cheaper to buy but more expensive to run. I should check the initial purchase price, fuel costs, and maintenance expenses. Also, maybe government incentives for electric cars?\n\nNext, maintenance. Electric cars have fewer moving parts, so maybe less maintenance needed. No oil changes, fewer parts to wear out. Petrol cars have engines",
+      "completion_tokens": 128,
+      "finish_reason": "length",
+      "ended": 1790355028.1850116
+     }
+    ],
+    "health": {
+     "service": "ironmule",
+     "ready": true,
+     "mode": "desktop",
+     "execution": "batched@native",
+     "backend": "tensor_batch",
+     "loaded_model": "mlx-community/Qwen3-8B-4bit",
+     "queued_requests": 0,
+     "active_requests": 0,
+     "completed_requests": 8,
+     "failed_requests": 0,
+     "cancelled_requests": 0,
+     "optimization": {
+      "schema": 1,
+      "paused": false,
+      "optimization_paused": false,
+      "configuration_only": false,
+      "engine_started": false,
+      "stage": "idle",
+      "run_id": null,
+      "model_id": null,
+      "model_loaded": false,
+      "activation_allowed": false,
+      "updated_unix_ns": null,
+      "last_verdict": null
+     },
+     "last_batch_size": 7,
+     "batch_count": 1
+    }
+   }
+  }
+ ],
+ "performance_claim": false
+}

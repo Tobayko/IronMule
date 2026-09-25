@@ -1,5 +1,7 @@
 """PERF1-K: aggregate throughput of `ironmule serve` with and without `--batch-width`, and its answers.
 
+The flag was removed again after PERF1-K1 (ledger PERF1-K); this is the harness that measured it.
+
 Usage: python batch_serve.py MODEL_ID OUT.json PLAN CONFIG [CONFIG ...]
        PLAN: bf16 | float32 | native;  CONFIG: ref | b8   (e.g. ref b8 ref b8)
 

@@ -18,7 +18,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "82c9f03e48f320be26527928de64efa858343df1"
 QWEN8B = ("mlx-community/Qwen3-8B-4bit", "545dc4251c05440727734bcd94334791f6ab0192")
 WIKITEXT = ("Salesforce/wikitext", "b08601e04326c79dfdd32d625aee71d232d685c3",
             "wikitext-2-raw-v1/test-00000-of-00001.parquet")

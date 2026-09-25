@@ -1,0 +1,33 @@
+[{"stream_name":"stdout","time":1.323470326,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.761245993,"data":"== clone: exit=0 2.4s\n"}
+,{"stream_name":"stdout","time":12.917917869,"data":"== venv: exit=0 9.2s\n"}
+,{"stream_name":"stdout","time":46.636765998,"data":"== install: exit=0 33.7s\n"}
+,{"stream_name":"stdout","time":46.72728995,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":48.898437529,"data":"== download_wikitext: exit=0 2.2s\n"}
+,{"stream_name":"stdout","time":209.759107153,"data":"== pytest_engine: exit=0 160.9s\n"}
+,{"stream_name":"stdout","time":251.548348559,"data":"== download_qwen3-8b: exit=0 41.8s\n"}
+,{"stream_name":"stdout","time":788.513398552,"data":"== gate_qwen3-8b_native: exit=0 537.0s\n"}
+,{"stream_name":"stdout","time":788.625202722,"data":"== setup: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":788.730222525,"data":"== models_add: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":1380.795286029,"data":"== serve_qwen3-8b_native: exit=0 592.1s\n"}
+,{"stream_name":"stdout","time":1380.795822758,"data":"{\n"}
+,{"stream_name":"stdout","time":1380.795841124,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795846306,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795850862,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795855556,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795865697,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795869234,"data":" \"download_wikitext\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795872421,"data":" \"pytest_engine\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795875552,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795878707,"data":" \"gate_qwen3-8b_native\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795881794,"data":" \"setup\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795884685,"data":" \"models_add\": 0,\n"}
+,{"stream_name":"stdout","time":1380.795887659,"data":" \"serve_qwen3-8b_native\": 0\n"}
+,{"stream_name":"stdout","time":1380.79589075,"data":"}\n"}
+,{"stream_name":"stderr","time":1383.110200545,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1383.110265143,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1383.471733567,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1383.471760206,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1384.498275364,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1385.813788591,"data":"[NbConvertApp] Writing 298151 bytes to __results__.html\n"}
+]
