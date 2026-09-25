@@ -63,3 +63,19 @@ def test_prefill_path_and_float32_fallback_match_the_reference():
     assert float(mx.max(mx.abs(prefill - reference)) / mx.max(mx.abs(reference))) < 1e-2
     fallback = cuda_native.matmul(x, w, scales.astype(mx.float32), biases.astype(mx.float32))
     assert float(mx.max(mx.abs(fallback - reference)) / mx.max(mx.abs(reference))) < 1e-3
+
+
+def test_load_engine_refuses_fusion_with_the_native_plan_before_loading(monkeypatch):
+    import sys
+    import types
+
+    from ironmule import tune
+    from ironmule.runtime import Knobs
+
+    loaded = []
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(load=lambda source: loaded.append(source)))
+    with pytest.raises(ValueError, match="fuse_projections is unsupported"):
+        tune.load_engine("org/model", Knobs(fuse_projections=True), compute_dtype="native")
+    assert loaded == []
+    assert tune._is_unsupported_candidate(ValueError(
+        "fuse_projections is unsupported with compute_dtype='native'"))

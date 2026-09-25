@@ -343,6 +343,12 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     from .hw import apply_cuda_graph_defaults
     apply_cuda_graph_defaults()
     _check_compute_dtype(compute_dtype)
+    if compute_dtype == "native" and knobs.fuse_projections:
+        # PERF1-N (ledger, BACKLOG1): the native decode kernel returns a fused projection's
+        # rows bit for bit, but its float16 prefill GEMM rounds some fused shapes differently
+        # from their parts, and fusion bought nothing on top of the plan (PERF1 run 7).
+        raise ValueError("fuse_projections is unsupported with compute_dtype='native': "
+                         "the plan's prefill GEMM rounds fused projections differently")
     if resolved_source is not None and offline is not True:
         raise ValueError("resolved_source is valid only for offline loading")
     if revision is not None and offline is not True:
