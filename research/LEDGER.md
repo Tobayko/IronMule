@@ -5583,3 +5583,28 @@ candidate is the parent's loaded model and MLX cache on the GPU while a child lo
 which is not yet measured. BACKLOG4 runs the full tune with the child's stderr and the GPU's
 memory recorded. Raw data: `experiments/kaggle_compat/results/backlog3-run1-ca86510b/`.
 Run time 29 min, 0 EUR.
+
+## BACKLOG4 — PORT1-F is the confirmation child running out of GPU memory (2026-09-25)
+
+`backlog4-run1-fb4dacba`, commit `bed4814`, Kaggle with two Tesla T4 (15360 MiB each).
+`tune_child_probe.py` ran the full `ironmule tune` on Gemma 3 4B in bf16 in-process, as
+BACKLOG1 and BACKLOG2 did, and it failed the same way: `ABRunError: child 0 exited with
+status 1` at 1227 s. The child's stderr ends in `RuntimeError: cudaMallocAsync(&data, size,
+stream) failed: out of memory`, raised in mlx-lm's `load_model` while it evaluated the
+parameters. nvidia-smi on the first card: 8553 MiB used 10 s after the tune started, 9489 MiB
+at the end of screening, then 13307 MiB while the child loaded its copy, when it failed. The
+second card stayed at 105-207 MiB. `tune()` closes its screening engine before the
+confirmation, but closing frees nothing: MLX keeps the buffers in its cache, and MLX 0.32.2's
+CUDA allocator returns them to the device only through `clear_cache()` and the pool's release
+at a synchronization. This explains BACKLOG3 as well: the confirmation alone had no parent
+model beside it.
+
+Correction to BACKLOG2: "no exception class, so not a Python traceback" was wrong. The child
+guard writes its `@GUARD_FAILURE` note after the exception line, and `_child_exception_type`
+(`309728e`) read only the last line, so it found no class. The child had raised a
+`RuntimeError`. The helper now reads the first unindented line after the last traceback header.
+
+The fix: `tune()` calls `gc.collect()`, `mx.clear_cache()` and `mx.synchronize()` after closing
+the screening engine and before the confirmation. BACKLOG5 runs the engine suite and the full
+tune with it. Raw data: `experiments/kaggle_compat/results/backlog4-run1-fb4dacba/`. Run time
+23 min, 0 EUR.

@@ -11,7 +11,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "bed4814cd49e99b1b3db919635265b43bd02e400"
 GEMMA4B = ("mlx-community/gemma-3-4b-it-4bit", "93724907d4ed1745d2fe50baadf3b0b01a65abf2")
 WORK = "/kaggle/working"
 REPO = "/tmp/IronMule"
