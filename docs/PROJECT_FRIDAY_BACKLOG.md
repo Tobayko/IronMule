@@ -132,7 +132,9 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
+1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
+recommends `native` for Gemma 3. Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
 ledger PERF1-Z): all seven Gemma ratios reproduced, the 5.52x projection measured as 5.55x, Qwen 3
 8B's decode ratio replaced (5.83x for 5.12x). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
 in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
@@ -202,13 +204,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   eine andere Rechenweise im Prefill ändert den qualifizierten Plan (neues Gate). Kill: keine
   Variante ist bitgleich zum heutigen Prefill und passt — dann `native` auf solchen Karten nur
   mit `head_skip_prefill`.
-- **PERF1-Y Qualitätsgate für Gemma 3 12B unter `native`.** Tempo beantwortet (run 17,
-  `perf1-run17-9371e9d6`: 0,401 des float32-Plans, mit `compiled_fixed_cache` 0,370; Ledger
-  „Gemma 3 12B under `native`“). Ohne Gate keine Empfehlung. Test: `perf1.py nll` 16 x 512,
-  `kernel+p16` gegen Stock-bf16, Decode- und Prefill-Pfad, BOS in jedem Chunk (ohne BOS
-  schwankt Gemma 3 um bis zu 0,34 Nats). Kill: obere Grenze > 1,005 — dann `native` für
-  `mlx_lm.models.gemma3_text` verweigern (Tabellenzeile), float32 bleibt der Plan.
-  2026-09-25: BACKLOG8 runs it as written (both paths, pinned kernel, seed 20260915).
 
 ## OSS1 — Rest (2026-09-25)
 

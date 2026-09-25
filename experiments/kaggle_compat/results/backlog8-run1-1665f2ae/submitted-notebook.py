@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "81daff9223af1e4eee133fed3f9e45351aea5d57"
 GEMMA12B = ("mlx-community/gemma-3-12b-it-4bit", "86cc6a8dedbc456dd0e4af01a9d09f396f77e558")
 WIKITEXT = ("Salesforce/wikitext", "b08601e04326c79dfdd32d625aee71d232d685c3",
             "wikitext-2-raw-v1/test-00000-of-00001.parquet")

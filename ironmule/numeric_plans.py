@@ -212,6 +212,21 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         quality_evidence=(f"{_R}/backlog2-run1-17b2ca39/gate-qwen3-14b-kernel-decode.json",
                           "worst-of-four-gates"),
     ),
+    # Gemma 3 under `native` (PERF1-Y): the same two paths gated against stock bf16, with BOS on
+    # every chunk (without it Gemma 3 moves by up to 0.34 nats per chunk from rounding alone),
+    # BACKLOG8 on 12B; the row carries the decode path, the higher upper bound. Speed is the
+    # product path against stock in PERF1 run 18 (`cross.py`, `compute_dtype="native"`).
+    PlanMeasurement(
+        architecture="mlx_lm.models.gemma3_text", plan="native", device=CUDA_PRE_AMPERE,
+        wall_ratio=0.19992481489806835,
+        wall_evidence=f"{_R}/perf1-run18-863237d6/cross-gemma3-12b.json",
+        wall_arm="ironmule_native",
+        models=("mlx-community/gemma-3-12b-it-4bit",),
+        quality_ratio=1.0005780846983543,
+        quality_interval=(0.9979509901997468, 1.0031967314836343),
+        quality_evidence=(f"{_R}/backlog8-run1-1665f2ae/gate-gemma3-12b-kernel-decode.json",
+                          "worst-of-two-gates"),
+    ),
     # Gemma 4 deliberately carries no quality interval, and the reason has to be read
     # before anyone "completes" these rows. The gate ran and produced
     # 0.974548 [0.945572; 1.003527] for float32 — an upper bound inside the bound, which

@@ -76,6 +76,11 @@ CHUNK_GATES = {
          "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json"),
         ("backlog2-run1-17b2ca39/gate-qwen3-14b-kernel-decode.json",
          "backlog2-run1-17b2ca39/gate-qwen3-14b-stock-decode.json")),
+    ("mlx_lm.models.gemma3_text", "native"): (
+        ("backlog8-run1-1665f2ae/gate-gemma3-12b-kernel-decode.json",
+         "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-decode.json"),
+        ("backlog8-run1-1665f2ae/gate-gemma3-12b-p16-prefill.json",
+         "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-prefill.json")),
 }
 
 
@@ -179,6 +184,8 @@ def test_only_a_faster_and_qualified_plan_is_ever_recommended():
     # Qwen 3 earns a recommendation, and the fastest of its three plans: `native` (0.20 of
     # stock, PERF1) ahead of `float16` (0.31, PORT2).
     assert recommend("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)[0] == "native"
+    # Gemma 3 too, since PERF1-Y's gate passed on both paths (BACKLOG8); float32 stays unqualified.
+    assert recommend("mlx_lm.models.gemma3_text", CUDA_PRE_AMPERE)[0] == "native"
     # The largest checkpoint that runs on one card earns a recommendation too.
     assert recommend("mlx_lm.models.ministral3", CUDA_PRE_AMPERE)[0] == "float32"
     assert recommend("mlx_lm.models.llama", CUDA_PRE_AMPERE)[0] is None

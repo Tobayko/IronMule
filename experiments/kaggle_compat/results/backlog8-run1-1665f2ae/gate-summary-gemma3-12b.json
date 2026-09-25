@@ -1,0 +1,44 @@
+{
+ "decode": {
+  "arm": "kernel",
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "stock_perplexity": 13.767937076292078,
+  "candidate_perplexity": 13.775896110043789,
+  "ratio": 1.0005780846983543,
+  "interval": [
+   0.9979475877360244,
+   1.0032240755402935
+  ],
+  "nonfinite": 0,
+  "verdict": "passes",
+  "seconds": [
+   2119.0,
+   425.0
+  ]
+ },
+ "prefill": {
+  "arm": "p16",
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "stock_perplexity": 13.782990148468864,
+  "candidate_perplexity": 13.791852195362912,
+  "ratio": 1.0006429698344543,
+  "interval": [
+   0.9982216824528087,
+   1.0031981787150108
+  ],
+  "nonfinite": 0,
+  "verdict": "passes",
+  "seconds": [
+   707.8,
+   16.6
+  ]
+ }
+}
