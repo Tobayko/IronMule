@@ -127,6 +127,7 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `native`, decode path | Qwen 3 8B | 0.997356 `[0.995672; 0.999090]` | passes |
 | `native`, prefill path | Qwen 3 8B | 0.998839 `[0.997220; 1.000515]` | passes |
 | `native`, prefill path | Qwen 3 14B | 1.000510 `[0.998894; 1.002001]` | passes |
+| `native`, decode path | Qwen 3 14B | 1.000526 `[0.999000; 1.002018]` | passes |
 
 Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
 Gemma 3. So neither plan is ever enabled for you, and neither is recommended for a model

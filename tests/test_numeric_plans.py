@@ -73,7 +73,9 @@ CHUNK_GATES = {
         ("perf1-run5-a9559a15/gate-qwen3-8b-p16-prefill.json",
          "perf1-run5-a9559a15/gate-qwen3-8b-stock-prefill.json"),
         ("perf1-run5-a9559a15/gate-qwen3-14b-p16-prefill.json",
-         "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json")),
+         "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json"),
+        ("backlog2-run1-17b2ca39/gate-qwen3-14b-kernel-decode.json",
+         "backlog2-run1-17b2ca39/gate-qwen3-14b-stock-decode.json")),
 }
 
 

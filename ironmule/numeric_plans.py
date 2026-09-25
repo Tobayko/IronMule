@@ -195,21 +195,22 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
     ),
     # `native` is not a dtype: the bf16 checkpoint stays, and IronMule's own CUDA kernels do the
     # 4-bit matmuls (`ironmule/cuda_native.py`, PERF1). Speed is the product path itself
-    # (`compute_dtype="native"` through `cross.py`, run 7). The plan changes two paths, so three
-    # gates ran (run 5: decode on 8B, prefill on 8B and 14B, against stock bf16 on the same
-    # path); the row carries the one with the highest upper bound. Run 5 measured the kernel
-    # with free rather than pinned float32 rounding — the same sums in a possibly different
-    # order, below the final bf16 rounding the output goes through.
+    # (`compute_dtype="native"` through `cross.py`, run 7). The plan changes two paths, so four
+    # gates ran, against stock bf16 on the same path: run 5 decode on 8B and prefill on 8B and
+    # 14B, BACKLOG2 decode on 14B; the row carries the one with the highest upper bound. Run 5
+    # measured the kernel with free rather than pinned float32 rounding — the same sums in a
+    # possibly different order, below the final bf16 rounding the output goes through; BACKLOG2
+    # measured it pinned, as the product runs it.
     PlanMeasurement(
         architecture="mlx_lm.models.qwen3", plan="native", device=CUDA_PRE_AMPERE,
         wall_ratio=0.201317682316364,
         wall_evidence=f"{_R}/perf1-run7-080bfab7/cross-native-qwen3-8b.json",
         wall_arm="ironmule_native",
         models=("mlx-community/Qwen3-8B-4bit", "mlx-community/Qwen3-14B-4bit"),
-        quality_ratio=1.0005099354845992,
-        quality_interval=(0.9988941626028627, 1.0020008019345557),
-        quality_evidence=(f"{_R}/perf1-run5-a9559a15/gate-qwen3-14b-p16-prefill.json",
-                          "worst-of-three-gates"),
+        quality_ratio=1.0005260152936564,
+        quality_interval=(0.9990003312687394, 1.0020184600683042),
+        quality_evidence=(f"{_R}/backlog2-run1-17b2ca39/gate-qwen3-14b-kernel-decode.json",
+                          "worst-of-four-gates"),
     ),
     # Gemma 4 deliberately carries no quality interval, and the reason has to be read
     # before anyone "completes" these rows. The gate ran and produced

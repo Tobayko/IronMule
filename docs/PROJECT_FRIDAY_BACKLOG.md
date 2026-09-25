@@ -129,6 +129,8 @@ Offen:
   reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
   Reproduced 2026-09-25 (BACKLOG1): confirmation child 0 exit 1. The diagnostic is in
   (`309728e`: the child's exception class); next, rerun the tune and fix the cause.
+  BACKLOG2: reproduced again with no exception class, so not a Python traceback; BACKLOG3
+  records the failing child's stderr.
 
 ## PERF1 — Rest (2026-09-23)
 
@@ -140,7 +142,8 @@ TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
 `native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-25: PERF1-L, `k32`
 in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
-PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
+Answered 2026-09-25: PERF1-M, Qwen 3 14B's decode gate for `native`, 1.000526 [0.999000; 1.002018]
+(`backlog2-run1-17b2ca39`, ledger BACKLOG2). PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
 to 32B“, `perf1-run11-7b29bb97`, `perf1-run12-c4c35978`); PERF1-P (`p16` passt mit Sync je
 Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
 `perf1-run13-93ae1f80`. Offen:
@@ -155,10 +158,6 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
   mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
   Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
-- **PERF1-M 14B-Decode-Gate.** Für Qwen 3 14B lief nur das Prefill-Gate; der
-  Decode-Pfad-Referenzlauf kostet ~40 min Quote. Kill: keiner, nur Aufwand.
-  BACKLOG1 (2026-09-25) ran it with `perf1.py`'s defaults (4 x 256) instead of run 5's
-  16 x 512 by a harness error; not the gate (ledger, BACKLOG1). Needs its own run.
 - **PERF1-T2 Qwen 3.5 on CUDA without CUDA graphs, in the product.** BACKLOG1 (ledger): without
   graphs Qwen 3.5 9B is deterministic across processes and IronMule's interactive and grouped
   arms equal stock 6/6, at the same speed. Mechanism: set `MLX_USE_CUDA_GRAPHS=0` for this

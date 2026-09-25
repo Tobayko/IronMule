@@ -1,0 +1,20 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors
+0 2.022611690685153
+1 2.8149984031915665
+2 2.6534151267260313
+3 3.1380708925426006
+4 1.9186154548078775
+5 2.403649775311351
+6 2.02777680195868
+7 2.7862380500882864
+8 2.675039753317833
+9 1.9934545196592808
+10 3.200447641313076
+11 2.60648943670094
+12 2.3444434013217688
+13 2.7115413919091225
+14 2.8071845062077045
+15 1.4883676208555698
+{"arm": "stock", "path_mode": "decode", "chunks": 16, "chunk_tokens": 512, "chunk_nll": [2.022611690685153, 2.8149984031915665, 2.6534151267260313, 3.1380708925426006, 1.9186154548078775, 2.403649775311351, 2.02777680195868, 2.7862380500882864, 2.675039753317833, 1.9934545196592808, 3.200447641313076, 2.60648943670094, 2.3444434013217688, 2.7115413919091225, 2.8071845062077045, 1.4883676208555698], "mean_nll": 2.4745215291623026, "nonfinite": 0, "routed": {"kernel": 0, "k32": 0, "p16": 0, "mma": 0, "mma2": 0, "fallback": 0}, "seconds": 2370.9, "performance_claim": false, "model_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-14B-4bit/snapshots/a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4", "pipeline": {}, "mode": "nll"}
