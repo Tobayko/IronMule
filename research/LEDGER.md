@@ -5545,3 +5545,28 @@ never its message (`309728e`). The cause is open.
 `PERF1_NLL_CHUNKS=16` and `PERF1_NLL_TOKENS=512`, which PERF1 run 5 set, so `perf1.py` ran its
 defaults, 4 chunks x 256 tokens. The result, 0.99872 [0.99633; 1.00124] over four chunks, is
 recorded and is not the gate; the entry stays open for a separately identified run.
+
+## BACKLOG2 — Qwen 3 14B's native decode gate passes; the tune crash is not a Python error (2026-09-25)
+
+`backlog2-run1-17b2ca39`, commit `8af7ffd`, Kaggle Tesla T4, mlx 0.32.2, mlx-lm 0.31.3. Raw data
+and the submitted notebook: `experiments/kaggle_compat/results/backlog2-run1-17b2ca39/`. Run time
+71 min, 0 EUR.
+
+**PERF1-M — passes.** Run 5's protocol, this time set explicitly: WikiText-2 raw test, 16
+strided chunks x 512 tokens teacher-forced through the cache, stock bf16 against the `kernel`
+with pinned arithmetic, as the product's `native` plan runs it. Perplexity ratio 1.000526
+[0.999000; 1.002018] (10 000-sample chunk bootstrap, `tests/test_numeric_plans.py`'s seed), no
+non-finite value, all 2 301 952 decode matmuls through the kernel. Every path `native` changes
+on Qwen 3 now has its gate on both sizes; this one has the highest upper bound, so
+`numeric_plans.py` carries it for the plan. The README's 4.81x for Qwen 3 14B (reproduced in
+TEST2 at 4.87x) is gated on decode as well as prefill.
+
+**PORT1-F — reproduced again, and not by a Python exception.** The tune died in the same
+place, confirmation child 0, exit 1; with `309728e`'s diagnostic the error still names no
+exception class, so the child's last stderr line is not a Python traceback. The child's
+stderr is needed; BACKLOG3 records it with the tune's own prompt.
+
+**One failure in the engine suite, introduced by this work.** 1261 passed, 28 skipped,
+1 failed: the new `test_load_engine_refuses_fusion_with_the_native_plan_before_loading`
+imported `ironmule.tune` with `from ironmule import tune`, which yields the function of that
+name. Fixed to `importlib.import_module`, as the other tune tests do.
