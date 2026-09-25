@@ -1,0 +1,68 @@
+{
+ "schema": "ironmule.perf1k-kaggle.v1",
+ "commit": "82c9f03e48f320be26527928de64efa858343df1",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "index, name, driver_version, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 580.159.04, 15360 MiB, 1590 MHz\n1, Tesla T4, 580.159.04, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          26           0           4          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.4,
+   "tail": "82c9f03e48f320be26527928de64efa858343df1\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 9.2,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 77.3 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.7MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.75s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 33.7,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 49 packages in 1.57s\n   Building ironmule @ file:///tmp/IronMule\nDownloading numpy (15.9MiB)\nDownloading tokenizers (3.2MiB)\nDownloading transformers (11.7MiB)\nDownloading scipy (33.7MiB)\nDownloading pygments (1.2MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading pyarrow (47.8MiB)\nDownloading hf-xet (4.3MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading sentencepiece (1.3MiB)\n Downloaded pygments\n      Built ironmule @ file:///tmp/IronMule\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cudnn-cu12\n Downloaded nvidia-cublas-cu12\nPrepared 49 packages in 31.85s\nInstalled 49 packages in 105ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==4.0.3\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.33.0\n + idna==3.20\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.2\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==4.0.3\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.33.0\nidna==3.20\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.2\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.2,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "pytest_engine": {
+   "exit": 0,
+   "seconds": 160.9,
+   "tail": ".................. [ 21%]\n........................................................................ [ 27%]\n........................................................................ [ 32%]\n........................................................................ [ 38%]\n........................................................................ [ 43%]\n........................................................................ [ 49%]\n........................................................................ [ 54%]\n........................................................................ [ 60%]\n........................................................................ [ 65%]\n........................................................................ [ 71%]\n......................................................ss.s.............. [ 76%]\n................................s....................................... [ 82%]\n........................................................................ [ 87%]\n........s.....................................................uuuuuuu... [ 92%]\nuuuu.................................................................... [ 97%]\n...............................                                          [100%]\n=============================== warnings summary ===============================\ntests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running\n  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=159) is multi-threaded, use of fork() may lead to deadlocks in the child.\n    self.pid = os.fork()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nSKIPPED [22] tests/engine/test_docs_links.py:68: sealed provenance input; its links record the tree it was written against\nSKIPPED [1] tests/engine/test_router.py:461: this machine does not report vm.swapusage\nSKIPPED [1] tests/engine/test_product_memory.py:36: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:69: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:101: native RSS probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_identity.py:224: cached Gemma 3 1B snapshot is unavailable\nSKIPPED [1] tests/engine/test_process_memory.py:28: Darwin proc_pid_rusage only\n1288 passed, 28 skipped, 1 warning, 11 subtests passed in 158.36s (0:02:38)\n"
+  },
+  "download_qwen3-8b": {
+   "exit": 0,
+   "seconds": 41.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\n"
+  },
+  "gate_qwen3-8b_native": {
+   "exit": 0,
+   "seconds": 537.0,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n[transformers] Token indices sequence length is longer than the specified maximum sequence length for this model (298938 > 131072). Running this sequence through the model will result in indexing errors\nprefill single 2.6107 14.6\nprefill batch8 2.60859 7.6\ndecode single 2.6098 240.0\ndecode batch8 2.6098 240.2\n{\"prefill\": {\"ratio\": 0.9978890460792877, \"interval\": [0.9960818436067627, 0.9996760166156619], \"verdict\": \"passes\"}, \"decode\": {\"ratio\": 1.0, \"interval\": [1.0, 1.0], \"verdict\": \"passes\"}}\n"
+  },
+  "setup": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"models_loaded\": false,\n  \"next\": \"ironmule models add <cached-model-id>\",\n  \"settings\": {\n    \"exact\": true,\n    \"max_pending\": 8,\n    \"mode\": \"desktop\",\n    \"optimization_paused\": false,\n    \"request_timeout_s\": 120,\n    \"schema\": 1\n  },\n  \"state_dir\": \"/tmp/ironmule-home\"\n}\n"
+  },
+  "models_add": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n  \"hardware_qualified\": false,\n  \"models_loaded\": false,\n  \"registered\": {\n    \"model_id\": \"mlx-community/Qwen3-8B-4bit\",\n    \"revision\": \"545dc4251c05440727734bcd94334791f6ab0192\",\n    \"snapshot_path\": \"/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192\",\n    \"weight_bytes\": 4607835174\n  },\n  \"warnings\": []\n}\n"
+  },
+  "serve_qwen3-8b_native": {
+   "exit": 0,
+   "seconds": 592.1,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nref [32.267, 34.125, 33.344] None\nb8 [32.096, 23.993, 57.73] 7\nref [32.31, 34.241, 33.383] None\nb8 [22.277, 67.174, 24.335] 5\n"
+  }
+ },
+ "performance_claim": false,
+ "finished": true
+}

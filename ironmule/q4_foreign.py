@@ -547,7 +547,7 @@ def _read_json_file(path: str | os.PathLike[str], *, max_bytes: int, label: str)
         raise ForeignVerificationError(f"{label} path must be absolute")
     try:
         before = raw.lstat()
-        resolved = raw.resolve(strict=True)
+        raw.resolve(strict=True)  # raises when the path does not resolve
     except OSError as exc:
         raise ForeignVerificationError(f"{label} is missing") from exc
     if raw.is_symlink() or not stat.S_ISREG(before.st_mode):

@@ -1,0 +1,23 @@
+[{"stream_name":"stdout","time":0.761814102,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.322364255,"data":"== clone: exit=0 2.6s\n"}
+,{"stream_name":"stdout","time":11.234130595,"data":"== venv: exit=0 7.9s\n"}
+,{"stream_name":"stdout","time":34.812221849,"data":"== install: exit=0 23.6s\n"}
+,{"stream_name":"stdout","time":34.904684996,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":923.713805877,"data":"== download_qwen35-9b: exit=0 888.8s\n"}
+,{"stream_name":"stdout","time":1061.034038709,"data":"== pytest_qwen: exit=0 137.3s\n"}
+,{"stream_name":"stdout","time":1061.034073923,"data":"{\n"}
+,{"stream_name":"stdout","time":1061.034080767,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034085962,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034090859,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034095697,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034100552,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034105514,"data":" \"download_qwen35-9b\": 0,\n"}
+,{"stream_name":"stdout","time":1061.034110418,"data":" \"pytest_qwen\": 0\n"}
+,{"stream_name":"stdout","time":1061.034115477,"data":"}\n"}
+,{"stream_name":"stderr","time":1063.097927119,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1063.097990608,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1063.332818492,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1063.332847344,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1064.06446684,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1065.202590756,"data":"[NbConvertApp] Writing 292989 bytes to __results__.html\n"}
+]

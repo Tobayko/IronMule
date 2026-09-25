@@ -1,0 +1,13 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "hardware_qualified": false,
+  "models_loaded": false,
+  "registered": {
+    "model_id": "mlx-community/Qwen3-8B-4bit",
+    "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+    "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--Qwen3-8B-4bit/snapshots/545dc4251c05440727734bcd94334791f6ab0192",
+    "weight_bytes": 4607835174
+  },
+  "warnings": []
+}

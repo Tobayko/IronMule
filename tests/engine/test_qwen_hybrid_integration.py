@@ -3,6 +3,11 @@
 This file never resolves a Hugging Face repository id.  Set IRONMULE_QWEN_MODEL
 to an existing local snapshot and run with ``-m integration`` to opt in.  An
 explicit but invalid path, config, or load is a test failure rather than a skip.
+
+On CUDA, run this file in a pytest process of its own. MLX reads its CUDA graph flag at
+the first kernel it launches, and IronMule switches graphs off for Qwen 3.5 only when this
+load comes first (PERF1-T2); after another test's kernels the graphs stay on, and Qwen 3.5
+then answers differently across processes (TESTS1, ledger).
 """
 
 from __future__ import annotations

@@ -20,38 +20,22 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 try:  # The package may be loaded under the test harness without __init__.py.
     from .q4_contracts import (
-        KNOB_ACTIONS,
-        LEGAL_KNOB_ACTIONS,
         ALL_DECLARED_KNOB_ACTIONS,
         KNOB_CANDIDATES,
         KNOB_CANDIDATE_BY_ID,
         SCHEDULE_ACTIONS,
-        KNOB_ACTION_BY_ID,
-        SCHEDULE_ACTION_BY_ID,
-        KNOB_DELTA_IDS,
-        Q4State,
         RewardRecord,
         ScheduleAction,
-        Stage,
-        PlanKind,
         canonical_sha256,
     )
 except ImportError:  # pragma: no cover - direct source loading convenience
     from q4_contracts import (  # type: ignore[no-redef]
-        KNOB_ACTIONS,
-        LEGAL_KNOB_ACTIONS,
         ALL_DECLARED_KNOB_ACTIONS,
         KNOB_CANDIDATES,
         KNOB_CANDIDATE_BY_ID,
         SCHEDULE_ACTIONS,
-        KNOB_ACTION_BY_ID,
-        SCHEDULE_ACTION_BY_ID,
-        KNOB_DELTA_IDS,
-        Q4State,
         RewardRecord,
         ScheduleAction,
-        Stage,
-        PlanKind,
         canonical_sha256,
     )
 

@@ -8,7 +8,7 @@ of each area, so a clean-up can tell code from evidence.
 | :-- | :-- | :-- | :-- |
 | `ironmule/`, `ironmule_product/`, `friday_evidence/`, `ironmule_cli.py`, `ironmule_inventory.py` | The shipped package (`pyproject.toml`) | Live code | `tests/engine/`, CI |
 | `tests/engine/` | The package's own suite; runs anywhere | Live | CI, Kaggle (TEST1) |
-| `tests/test_*.py` | The research suite, bound to the target Mac (`tests/conftest.py`) | Live, target device only | The Mac; not collected elsewhere |
+| `tests/test_*.py` | The research suite, bound to the target Mac (`tests/conftest.py`); `test_numeric_plans.py` and `test_documented_claims.py` read only committed files and run everywhere | Live, target device only (those two: everywhere) | The Mac; those two also CI and Kaggle |
 | `research/friday_*` | Research packages; their manifests hash paths relative to `research/` | Frozen where a study sealed them | The research suite |
 | `research/LEDGER.md` | Experimental conclusions | New entries appended; recorded results not rewritten | `tests/engine/test_docs_links.py` |
 | `research/raw/`, `research/product_history_*`, `experiments/*/` data | Raw evidence and result records | Byte-identical once recorded | SSOT `verify --check-sources`, `tests/test_sealed_evidence.py` |
@@ -44,8 +44,8 @@ GitHub keeps them under `refs/pull/9/head`.
 ## Clean-up status (2026-09-24)
 
 - Removed: four private helpers nothing called (`ironmule/q4_corpus.py`,
-  `ironmule/q4_optimizer.py`) and thirty-three Kaggle templates whose runs are archived (`perf1_run1` to `perf1_run18`, `test1`,
-  `test1_qwen`, `test2`, `test2g`, `oss1`, `backlog1` to `backlog9`, `shot1`).
+  `ironmule/q4_optimizer.py`) and thirty-five Kaggle templates whose runs are archived (`perf1_run1` to `perf1_run18`, `test1`,
+  `test1_qwen`, `test2`, `test2g`, `oss1`, `backlog1` to `backlog9`, `shot1`, `perf1k`, `tests1`).
 - Merged 2026-09-25: `research/port2-model-families` (PERF1 runs 14-18, the MoE row kernel, BOS
   on every `perf1.py nll` chunk), with run 18's output archived from its Kaggle download.
 - Byte-identical files in the tree are per-run logs (the same download or environment

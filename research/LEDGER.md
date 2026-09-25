@@ -6570,3 +6570,70 @@ BACKLOG1's graphs-off arms measured no difference against a graphs-off stock. Th
 one after the other, not interleaved, so this is a screening number. PERF1-T2 is shipped: the
 product worker and `load_engine` switch graphs off for this family on pre-Ampere CUDA unless
 the caller chose. The throughput refusal for recurrent caches stays.
+
+## PERF1-K — batched serving as built loses to one request at a time; removed again (2026-09-25)
+
+PERF1-K1 (`perf1k-run1-8f9fc1b0`, commit `82c9f03`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm
+`0.31.3`, Qwen 3 8B 4-bit at its pinned revision under `native`). The variant under test:
+`ironmule serve --batch-width 8` started the worker variant `tensor_batch`, and the service's
+existing batch transport handed it the `stream: false` requests already waiting, computed by
+mlx-lm's `BatchGenerator` as one tensor batch. Rules fixed in the backlog entry before the run.
+Raw data, harnesses' output and the submitted notebook:
+`experiments/kaggle_compat/results/perf1k-run1-8f9fc1b0/`. Run time 23 min, 0 EUR.
+
+**Engine suite:** 1288 passed, 28 skipped, 0 failed, with the variant's 14 tests.
+
+**Gate (`batch_gate.py`), passes.** 16 x 512 WikiText-2, teacher-forced, eight equal-length
+chunks per batch against one at a time, one process: prefill 0.997889 [0.996082; 0.999676],
+decode 1.000000 [1.000000; 1.000000], no non-finite value. Batched decode under `native` gave
+every chunk's NLL bit for bit as decoded alone; batched prefill rounds differently.
+
+**Throughput (`batch_serve.py`), fails the kill.** Eight concurrent `stream: false` requests
+(perf1's server prompts, 128 tokens each, all 1024 tokens generated in every round), the real
+server, starts in the order ref, b8, ref, b8, one warm-up and three measured rounds each:
+
+| aggregate tok/s | round 1 | round 2 | round 3 |
+| :-- | --: | --: | --: |
+| reference, start 1 | 32.27 | 34.13 | 33.34 |
+| width 8, start 1 | 32.10 | 23.99 | 57.73 |
+| reference, start 2 | 32.31 | 34.24 | 33.38 |
+| width 8, start 2 | 22.28 | 67.17 | 24.34 |
+
+Median 28.22 against 33.36 tok/s, 0.846, below the entry's 1.2. The spread is the mechanism: the
+service groups only what is already waiting, so a burst of eight became one or two batches
+(the health counters show one to two per round, the last of 4 to 7 requests), and a request that
+arrived a moment late waited for the whole first batch. The two rounds served as one batch ran
+at 57.7 and 67.2 tok/s, about twice the reference; the split rounds were slower than serving one
+at a time. Answers: the reference gave the same eight texts in all six rounds; width 8 matched
+them in 1 or 2 of 8, as the contract allowed; since batched decode is bit-identical in the gate,
+the differences come from the batched, padded prefill.
+
+**Verdict, as the entry fixed it:** rejected, and the variant is removed again (the code of
+`82c9f03`; the contract leaves `docs/HTTP.md`). Kept: the evidence, `batch_gate.py` and
+`batch_serve.py`. A different mechanism is a new entry (PERF1-K2): admit arriving requests into
+the running batch instead of batching only what waits, and prefill each request alone, which
+together with the bit-identical batched decode could keep the answers equal to single requests.
+
+## TESTS1 — the reworked tests on a T4; the Qwen 3.5 gate needs a process of its own (2026-09-25)
+
+The user asked to rework four points of the test setup. Run 1 (`tests1-run1-c97fe1e7`, commit
+`5518f97`) and run 2 (`tests1-run2-f965c685`, commit `afc6889`), Kaggle Tesla T4, mlx `0.32.2`,
+mlx-lm `0.31.3`. Raw data and the submitted notebooks: `experiments/kaggle_compat/results/tests1-*/`.
+Run time 12 and 18 min (run 2 waited 15 min for the Qwen 3.5 download), 0 EUR.
+
+| check | result |
+| :-- | :-- |
+| engine suite, not integration (unused imports removed, MLX graph variables restored after every test) | 1274 passed, 28 skipped, 0 failed |
+| `tests/test_numeric_plans.py`, `tests/test_documented_claims.py`, now collected off the target Mac | 90 passed, 2 skipped (the sealed head-skip database) |
+| CI's extended `ruff check --select F` (adds `ironmule/`, `tests/engine/`, the two claims modules) | clean |
+| real-model integration, one process (run 1) | 12 passed, 3 skipped (macOS-only), 1 failed: the Qwen 3.5 gate |
+| the Qwen 3.5 gate alone, its own process, no graph variable set (run 2) | 1 passed |
+
+The claims modules had only ever run on the target Mac; they now also confirm today's README and
+plan-table changes (the Gemma 3 `native` row, its 5.00x cell) from the committed runs. The Qwen
+gate failed in run 1 because the Gemma tests before it had already launched kernels in the same
+process, so MLX had read `MLX_USE_CUDA_GRAPHS` with graphs on before IronMule could set it for
+Qwen 3.5 (PERF1-T2's stated limit); alone, with no variable set by the harness, it passed, which
+also shows PERF1-T2 taking effect on the library path. The gate's module now says to run it in a
+process of its own on CUDA. The integration tests had last run in TEST1 (2026-09-24), not never
+as first said while reviewing the tests.

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 import json
-import os
 import stat
 import tempfile
 import unittest
@@ -81,7 +80,6 @@ class CorpusTests(unittest.TestCase):
             report = corpus.report()
             self.assertEqual(6, report["unique_artifact_count"])
             self.assertGreaterEqual(len(report["duplicate_groups"]), 1)
-            by_source = {(item.source_name, item.logical_name): item for item in corpus.artifacts}
             b36 = next(item for item in corpus.artifacts if item.source_name == "B36" and item.quality == "RAW_SAMPLES")
             self.assertTrue(b36.eligible_for_performance)
             b35 = next(item for item in corpus.artifacts if item.source_name == "B35")
