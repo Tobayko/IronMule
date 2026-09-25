@@ -6613,3 +6613,27 @@ the differences come from the batched, padded prefill.
 `batch_serve.py`. A different mechanism is a new entry (PERF1-K2): admit arriving requests into
 the running batch instead of batching only what waits, and prefill each request alone, which
 together with the bit-identical batched decode could keep the answers equal to single requests.
+
+## TESTS1 — the reworked tests on a T4; the Qwen 3.5 gate needs a process of its own (2026-09-25)
+
+The user asked to rework four points of the test setup. Run 1 (`tests1-run1-c97fe1e7`, commit
+`5518f97`) and run 2 (`tests1-run2-f965c685`, commit `afc6889`), Kaggle Tesla T4, mlx `0.32.2`,
+mlx-lm `0.31.3`. Raw data and the submitted notebooks: `experiments/kaggle_compat/results/tests1-*/`.
+Run time 12 and 18 min (run 2 waited 15 min for the Qwen 3.5 download), 0 EUR.
+
+| check | result |
+| :-- | :-- |
+| engine suite, not integration (unused imports removed, MLX graph variables restored after every test) | 1274 passed, 28 skipped, 0 failed |
+| `tests/test_numeric_plans.py`, `tests/test_documented_claims.py`, now collected off the target Mac | 90 passed, 2 skipped (the sealed head-skip database) |
+| CI's extended `ruff check --select F` (adds `ironmule/`, `tests/engine/`, the two claims modules) | clean |
+| real-model integration, one process (run 1) | 12 passed, 3 skipped (macOS-only), 1 failed: the Qwen 3.5 gate |
+| the Qwen 3.5 gate alone, its own process, no graph variable set (run 2) | 1 passed |
+
+The claims modules had only ever run on the target Mac; they now also confirm today's README and
+plan-table changes (the Gemma 3 `native` row, its 5.00x cell) from the committed runs. The Qwen
+gate failed in run 1 because the Gemma tests before it had already launched kernels in the same
+process, so MLX had read `MLX_USE_CUDA_GRAPHS` with graphs on before IronMule could set it for
+Qwen 3.5 (PERF1-T2's stated limit); alone, with no variable set by the harness, it passed, which
+also shows PERF1-T2 taking effect on the library path. The gate's module now says to run it in a
+process of its own on CUDA. The integration tests had last run in TEST1 (2026-09-24), not never
+as first said while reviewing the tests.
