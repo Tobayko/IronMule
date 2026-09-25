@@ -1,6 +1,6 @@
 import ast
 import json
-from dataclasses import FrozenInstanceError, replace
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 import pytest

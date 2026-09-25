@@ -32,7 +32,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 from .local_learner import CANDIDATE_QUALIFIED, LocalLearner, UNKNOWN
 from .monitoring import DriftMonitor, REQUALIFICATION_REQUIRED

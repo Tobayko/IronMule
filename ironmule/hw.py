@@ -362,7 +362,8 @@ def _gemv_gbps(out_features: int, target_bytes: int, repeats: int) -> float:
             for q in weights]))
 
     elapsed = _time(chained, repeats)
-    del weights, x
+    weights.clear()  # drop the buffers before clearing the cache; `chained` is not called again
+    x = None
     mx.clear_cache()
     return chain * per / elapsed / 1e9
 

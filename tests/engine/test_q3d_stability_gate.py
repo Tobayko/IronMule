@@ -556,8 +556,6 @@ def test_q3c_communicate_exception_routes_through_cleanup_v2(monkeypatch, tmp_pa
 def test_nested_q3c_worker_inventory_is_terminated_by_verified_group(monkeypatch):
     root_row = {"pid": 1, "ppid": 0, "pgid": 1, "uid": 0, "stat": "S",
                 "start": "00:00:01", "args": "/sbin/launchd"}
-    nested_row = {"pid": 50, "ppid": 1, "pgid": 50, "sid": 50, "uid": 501, "stat": "S",
-                  "start": "00:00:02", "args": "python q3c_performance_replication.py --phase-worker"}
     first = q3b._parse_cleanup_ps_snapshot(
         "1 0 1 0 S 00:00:01 /sbin/launchd\n"
         "50 1 50 501 S 00:00:02 python q3c_performance_replication.py --phase-worker\n")

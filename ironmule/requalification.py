@@ -28,7 +28,6 @@ candidate.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import random
@@ -43,7 +42,7 @@ from pathlib import Path
 from statistics import median
 from typing import Any, Mapping
 
-from .local_learner import (CANDIDATE_QUALIFIED, IntakeContext, LocalLearner, REFERENCE_ONLY,
+from .local_learner import (IntakeContext, LocalLearner, REFERENCE_ONLY,
                             VALID, evidence_from)
 from .monitoring import (REQUALIFICATION_REQUIRED, default_action_code_digest,
                          requalification_path)
@@ -583,7 +582,7 @@ def requalify(model_id: str | None = None, *, state_path: Path | None = None,
     import mlx.core as mx
     import mlx_lm
 
-    from .hw import fingerprint, static_facts
+    from .hw import fingerprint
     from .local_learner import default_state_path
     from .tune import DEFAULT_MODEL, gpu_busy, resolve_local_model
 

@@ -198,7 +198,6 @@ class ContractTests(unittest.TestCase):
             for index, context_id in enumerate(ids):
                 model_map[context_id] = ("1B", "4B", "12B")[index % 3]
         manifest = SimpleNamespace(split_contexts=tuple(split_contexts.items()), model_size_by_context=tuple(model_map.items()), stratum_by_context=tuple((context.context_id, context.workload_stratum) for context in contexts))
-        safe_outcome = SimpleNamespace(complete_safe=True)
         outcomes = {}
         trajectories = []
         transitions = []

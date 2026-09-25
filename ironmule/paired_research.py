@@ -181,7 +181,6 @@ def paired_forward(model, token_arrays: list[mx.array], caches_per_request: list
     from mlx_lm.models.base import create_attention_mask  # noqa: PLC0415
     from mlx_lm.models.gemma3_text import clip_residual  # noqa: PLC0415
 
-    text = _text(model)
     inner = _trunk(model)
     hs = []
     for token in token_arrays:

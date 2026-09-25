@@ -15,8 +15,11 @@ shared-helper import has to name that file rather than the engine's.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
+
+import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 #: The research tree is its own source root. Its packages keep flat names because
@@ -53,6 +56,11 @@ if str(RESEARCH) not in sys.path:
 # The split is clean rather than approximate: 105 test modules import a
 # `friday_*` package and none of them is one of the engine's 34.
 #
+# Two research modules are the exception, because they check public claims against
+# committed files only: the numeric-plan table and the documented numbers (README,
+# ledger, constants) against the runs they cite. They are collected everywhere; the two
+# tests in them that need `.friday-data/` skip themselves when it is absent.
+#
 # On this Mac every precondition holds and nothing is dropped.
 
 def _missing(name: str) -> bool:
@@ -74,6 +82,9 @@ IS_TARGET_DEVICE = (ROOT / ".venv" / "bin" / "python").is_file() and (
 #: so it runs anywhere -- that is what CI checks.
 ENGINE_TESTS = Path(__file__).resolve().parent / "engine"
 
+#: Research modules that read only committed files and guard public claims.
+PORTABLE_RESEARCH_TESTS = frozenset({"test_numeric_plans.py", "test_documented_claims.py"})
+
 _REQUIRES_MLX = _missing("mlx")
 
 
@@ -90,6 +101,8 @@ def collect_ignore_glob_hook(path: Path) -> bool:
 
     if ENGINE_TESTS == path or ENGINE_TESTS in path.parents:
         return False  # the engine's suite is self-contained; it runs anywhere
+    if path.parent == ENGINE_TESTS.parent and path.name in PORTABLE_RESEARCH_TESTS:
+        return _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx"))
     if not IS_TARGET_DEVICE:
         return True  # everything else is the research tree
     # On a target device the research tree can still be missing a piece.
@@ -105,3 +118,23 @@ def pytest_ignore_collect(collection_path, config):  # noqa: ARG001 - pytest hoo
     if path.suffix != ".py" or not path.name.startswith("test_"):
         return None
     return True if collect_ignore_glob_hook(path.resolve()) else None
+
+
+# -- process-wide variables ------------------------------------------------------
+#
+# `ironmule.hw.apply_cuda_graph_defaults` writes these before MLX's first kernel, and MLX
+# reads them once per process. A test that loads through `load_engine` on a CUDA card, or
+# exercises the function itself, used to leave `MLX_MAX_OPS_PER_BUFFER=400` behind for every
+# later test on the same worker. Restore them after each test, whatever it did.
+_PROCESS_WIDE_VARIABLES = ("MLX_MAX_OPS_PER_BUFFER", "MLX_MAX_MB_PER_BUFFER", "MLX_USE_CUDA_GRAPHS")
+
+
+@pytest.fixture(autouse=True)
+def _restore_process_wide_variables():
+    before = {name: os.environ.get(name) for name in _PROCESS_WIDE_VARIABLES}
+    yield
+    for name, value in before.items():
+        if value is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = value

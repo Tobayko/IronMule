@@ -21,7 +21,6 @@ mode is a default that suits everything, which is why both are explicit.
 from __future__ import annotations
 
 import json
-import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -355,7 +354,6 @@ class MLXBackend:
 
     def kv_hash(self, state, offset: int) -> str:
         import hashlib
-        import numpy as np
         from .runtime import _state_layer_kind
         digest = hashlib.sha256()
         kinds = [_state_layer_kind(layer) for layer in state["layers"]]
