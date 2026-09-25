@@ -21,7 +21,7 @@ incompatible here only where the source makes them so, and the record says where
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Sequence
 
 STACK_MODEL_VERSION = "ironmule.stack_model.v1"
 

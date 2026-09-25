@@ -23,7 +23,6 @@ from .q4_contracts import (
     HistoricalRole,
     SplitManifest,
     _default_action_pools,
-    canonical_sha256,
 )
 
 

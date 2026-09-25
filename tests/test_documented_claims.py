@@ -353,8 +353,6 @@ def test_chosen_constants_are_labelled_as_chosen():
     measured - which is how a project like this loses its footing.
     """
 
-    import sys as _sys
-
     sources = {
         "DEFAULT_MIN_SAMPLES": ROOT / "research/friday_optimizer/replay.py",
         "TIE_MARGIN": ROOT / "experiments/identity_forensics/gap_analysis.py",

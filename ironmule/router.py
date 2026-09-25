@@ -90,16 +90,16 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from dataclasses import asdict, dataclass, replace, field
+from dataclasses import asdict, dataclass, replace
 from typing import Mapping, Any, Sequence
 
 from .activation import ActivationContext, LearnedDispatchActivation, OFF
 from .local_learner import IntakeContext, LocalLearner, default_state_path
 from .monitoring import DriftMonitor, Observation, default_action_code_digest
 from .plans import ExecutionPlan, StrictOneShotPlan, plan_kind
-from .service import (AutomaticMode, InteractiveMode, PairedThroughputMode, Request,
-                      Result, Runtime, ThroughputMode, paired_status)
-from .silicon_profile import (RuntimeContext, match_silicon_parameter,
+from .service import (AutomaticMode, InteractiveMode, Request,
+                      Result, Runtime, paired_status)
+from .silicon_profile import (match_silicon_parameter,
                               workload_class_for)
 from .telemetry import Telemetry
 

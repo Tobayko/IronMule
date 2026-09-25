@@ -10,7 +10,6 @@ from ironmule.model_identity import (
     canonical_json,
     canonical_sha256,
 )
-from ironmule.runtime import BASELINE
 from ironmule.service import Runtime
 
 
