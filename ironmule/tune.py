@@ -417,11 +417,50 @@ def _close_engine(engine: Any | None) -> None:
             close()
 
 
+def _synchronize_cuda_contexts(cuda: Any = None) -> None:
+    """Synchronize every active CUDA primary context, which returns freed pool memory.
+
+    MLX frees its buffers with `cudaFreeAsync` on a stream of its own into the device's
+    default memory pool, and `mx.synchronize()` synchronizes only MLX's stream, so the pool
+    kept the memory reserved. A context synchronize releases it (BACKLOG6: 3520 MiB reserved
+    after the release, 0 after `cuCtxSynchronize`). MLX exposes no such call, hence the driver.
+    """
+    import ctypes
+
+    if cuda is None:
+        cuda = ctypes.CDLL("libcuda.so.1")
+
+    def check(code: int, name: str) -> None:
+        if code:
+            raise RuntimeError(f"{name} failed with CUDA error {code}")
+
+    check(cuda.cuInit(0), "cuInit")
+    count = ctypes.c_int()
+    check(cuda.cuDeviceGetCount(ctypes.byref(count)), "cuDeviceGetCount")
+    for ordinal in range(count.value):
+        device, flags, active = ctypes.c_int(), ctypes.c_uint(), ctypes.c_int()
+        check(cuda.cuDeviceGet(ctypes.byref(device), ordinal), "cuDeviceGet")
+        check(cuda.cuDevicePrimaryCtxGetState(device, ctypes.byref(flags), ctypes.byref(active)),
+              "cuDevicePrimaryCtxGetState")
+        if not active.value:
+            continue  # never create a context on a card MLX did not use
+        context = ctypes.c_void_p()
+        check(cuda.cuDevicePrimaryCtxRetain(ctypes.byref(context), device), "cuDevicePrimaryCtxRetain")
+        try:
+            check(cuda.cuCtxPushCurrent_v2(context), "cuCtxPushCurrent")
+            try:
+                check(cuda.cuCtxSynchronize(), "cuCtxSynchronize")
+            finally:
+                check(cuda.cuCtxPopCurrent_v2(ctypes.byref(ctypes.c_void_p())), "cuCtxPopCurrent")
+        finally:
+            check(cuda.cuDevicePrimaryCtxRelease_v2(device), "cuDevicePrimaryCtxRelease")
+
+
 def _release_device_memory() -> None:
     """Hand a closed engine's memory back to the device before a child loads the model.
 
     Dropping the engine leaves its buffers in MLX's cache, and on CUDA the freed buffers
-    stay reserved in the memory pool until a synchronization. A confirmation child loads
+    stay reserved in the memory pool until a context synchronize. A confirmation child loads
     a second copy; on a 15 GB T4 it ran out of memory next to the parent's (PORT1-F).
     """
     import gc
@@ -431,6 +470,8 @@ def _release_device_memory() -> None:
     gc.collect()
     mx.clear_cache()
     mx.synchronize()
+    if mx.cuda.is_available():
+        _synchronize_cuda_contexts()
 
 
 def prompt_ids(tokenizer, prompt: str) -> list[int]:
