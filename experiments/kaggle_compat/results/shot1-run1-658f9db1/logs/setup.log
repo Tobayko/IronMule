@@ -1,0 +1,15 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "models_loaded": false,
+  "next": "ironmule models add <cached-model-id>",
+  "settings": {
+    "exact": true,
+    "max_pending": 8,
+    "mode": "desktop",
+    "optimization_paused": false,
+    "request_timeout_s": 120,
+    "schema": 1
+  },
+  "state_dir": "/tmp/ironmule-home"
+}

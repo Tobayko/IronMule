@@ -1,0 +1,38 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"service": "ironmule", "host": "127.0.0.1", "port": 8080, "ready": true}
+----------------------------------------
+Exception occurred during processing of request from ('127.0.0.1', 44274)
+Traceback (most recent call last):
+  File "/tmp/IronMule/ironmule_product/http_server.py", line 465, in do_POST
+    self._serve_sse(request, stream)
+  File "/tmp/IronMule/ironmule_product/http_server.py", line 525, in _serve_sse
+    event = next(iterator)
+            ^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule_product/service.py", line 166, in _events
+    raise RequestCancelled("request cancelled")
+ironmule_product.errors.RequestCancelled: request cancelled
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/socketserver.py", line 697, in process_request_thread
+    self.finish_request(request, client_address)
+  File "/usr/lib/python3.12/socketserver.py", line 362, in finish_request
+    self.RequestHandlerClass(request, client_address, self)
+  File "/usr/lib/python3.12/socketserver.py", line 766, in __init__
+    self.handle()
+  File "/usr/lib/python3.12/http/server.py", line 442, in handle
+    self.handle_one_request()
+  File "/usr/lib/python3.12/http/server.py", line 428, in handle_one_request
+    method()
+  File "/tmp/IronMule/ironmule_product/http_server.py", line 473, in do_POST
+    self._send_error(error, close=getattr(error, "code", None) in {"invalid_request", "unauthorized"})
+  File "/tmp/IronMule/ironmule_product/http_server.py", line 323, in _send_error
+    self._send_json(int(getattr(error, "status", 500)), _error_payload(error))
+  File "/tmp/IronMule/ironmule_product/http_server.py", line 305, in _send_json
+    self.wfile.write(encoded)
+  File "/usr/lib/python3.12/socketserver.py", line 845, in write
+    self._sock.sendall(b)
+BrokenPipeError: [Errno 32] Broken pipe
+----------------------------------------
