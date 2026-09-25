@@ -43,7 +43,7 @@ def child(model_id, revision, config_json, measure):
     print(json.dumps({"walls_ms": walls, "median_ms": st.median(walls), "tokens": outputs,
                       "outputs_sha256": hashlib.sha256(json.dumps(outputs).encode()).hexdigest(),
                       "peak_memory_bytes": int(mx.get_peak_memory()),
-                      "graph_env": {k: os.environ.get(k) for k in ("MLX_MAX_OPS_PER_BUFFER", "MLX_MAX_MB_PER_BUFFER")}}))
+                      "graph_env": {k: os.environ.get(k) for k in ("MLX_MAX_OPS_PER_BUFFER", "MLX_MAX_MB_PER_BUFFER", "MLX_USE_CUDA_GRAPHS")}}))
 
 
 def main(model_id, revision, configs_json, out, reps, measure):

@@ -229,18 +229,27 @@ def static_facts() -> dict[str, Any]:
 # at MLX's 100: with 4000 a 4B tune child and a 12B float32 load ran out of memory on the
 # 16 GB T4 (`port1-run5-632b904f`), while decode's gain comes from fewer, larger op graphs.
 CUDA_GRAPH_DEFAULTS = {"MLX_MAX_OPS_PER_BUFFER": "400"}
+# Families whose output depends on CUDA graphs on a T4: Qwen 3.5's stock decode gave different
+# tokens across processes with graphs and one digest without, at the same speed (ledger PERF1
+# run 13 and BACKLOG1, PERF1-T). Keyed by config.json's `model_type`.
+CUDA_GRAPHS_OFF_MODEL_TYPES = frozenset({"qwen3_5"})
 
 
-def apply_cuda_graph_defaults() -> dict[str, str]:
+def apply_cuda_graph_defaults(model_type: str | None = None) -> dict[str, str]:
     """Size CUDA graph commits for pre-Ampere GPUs unless the caller already chose.
 
     Linux only: the same variables size Metal command buffers, and the Apple path stays
     unchanged. Only compute capability below 8 (Volta/Turing) is touched, which is where
     MLX uses its generic default and where the evidence was measured; A100/H100-class
-    devices keep MLX's own per-device values. MLX reads the variables once, at the first
-    GPU operation, so callers run this before loading a model. Returns what it set.
+    devices keep MLX's own per-device values. A `model_type` in `CUDA_GRAPHS_OFF_MODEL_TYPES`
+    also switches CUDA graphs off. MLX reads the variables once, at the first GPU operation,
+    so callers run this before loading a model; after that it changes nothing MLX reads.
+    Returns what it set.
     """
-    if platform.system() != "Linux" or all(name in os.environ for name in CUDA_GRAPH_DEFAULTS):
+    wanted = dict(CUDA_GRAPH_DEFAULTS)
+    if model_type in CUDA_GRAPHS_OFF_MODEL_TYPES:
+        wanted["MLX_USE_CUDA_GRAPHS"] = "0"
+    if platform.system() != "Linux" or all(name in os.environ for name in wanted):
         return {}
     try:
         import mlx.core as mx  # noqa: PLC0415
@@ -249,7 +258,7 @@ def apply_cuda_graph_defaults() -> dict[str, str]:
             return {}
     except Exception:  # noqa: BLE001 - no CUDA device, nothing to size
         return {}
-    applied = {name: value for name, value in CUDA_GRAPH_DEFAULTS.items() if name not in os.environ}
+    applied = {name: value for name, value in wanted.items() if name not in os.environ}
     os.environ.update(applied)
     return applied
 

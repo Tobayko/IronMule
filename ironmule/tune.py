@@ -327,6 +327,15 @@ def _check_compute_dtype(compute_dtype: str | None) -> str | None:
     return compute_dtype
 
 
+def _config_model_type(path: Path) -> str | None:
+    """A local snapshot's `model_type`, or None when config.json is missing or unreadable."""
+    try:
+        value = json.loads((Path(path) / "config.json").read_text()).get("model_type")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, str) else None
+
+
 def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
                 revision: str | None = None,
                 resolved_source: ResolvedModelSource | None = None,
@@ -341,7 +350,6 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
     from mlx_lm import load
 
     from .hw import apply_cuda_graph_defaults
-    apply_cuda_graph_defaults()
     _check_compute_dtype(compute_dtype)
     if compute_dtype == "native" and knobs.fuse_projections:
         # PERF1-N (ledger, BACKLOG1): the native decode kernel returns a fused projection's
@@ -363,6 +371,8 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         if revision is not None and resolved.identity.revision != revision:
             raise ModelIdentityError("resolved source belongs to a different revision")
         source = str(resolved.path)
+    # MLX reads its CUDA graph variables at the first kernel it launches, so before `load`.
+    apply_cuda_graph_defaults(_config_model_type(resolved.path) if resolved is not None else None)
     model, tokenizer = load(source)
     if resolved is not None:
         verify_resolved_model(model_id, resolved)
