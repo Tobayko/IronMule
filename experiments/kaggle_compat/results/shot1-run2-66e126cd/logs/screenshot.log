@@ -1,0 +1,16 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "light": {
+  "question": "Explain in two short sentences why a local language model keeps your data private.",
+  "model_label": "mlx-community/gemma-3-1b-it-4bit",
+  "answer": "Local language models often keep data private to maintain control and prevent unauthorized access to sensitive information. This is often due to regulatory compliance (like GDPR), competitive advantages, or simply a desire to safeguard proprietary knowledge.",
+  "seconds": 47.2
+ },
+ "dark": {
+  "question": "Write a four-line poem about a GPU that works at night.",
+  "model_label": "mlx-community/gemma-3-1b-it-4bit",
+  "answer": "The city sleeps, a muted gray,\nBut shadows dance where pixels play.\nA GPU wakes, a silent plea,\nTo render worlds for you and me.",
+  "seconds": 1.8
+ }
+}
