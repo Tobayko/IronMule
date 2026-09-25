@@ -1,0 +1,31 @@
+[{"stream_name":"stdout","time":1.066463883,"data":"== env: exit=0 0.2s\n"}
+,{"stream_name":"stdout","time":3.456460634,"data":"== clone: exit=0 2.4s\n"}
+,{"stream_name":"stdout","time":12.161703363,"data":"== venv: exit=0 8.7s\n"}
+,{"stream_name":"stdout","time":40.437156929,"data":"== install: exit=0 28.3s\n"}
+,{"stream_name":"stdout","time":40.530754983,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":208.669931243,"data":"== pytest_engine: exit=0 168.1s\n"}
+,{"stream_name":"stdout","time":216.744162781,"data":"== pytest_claims: exit=0 8.1s\n"}
+,{"stream_name":"stdout","time":216.797103208,"data":"== ruff: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":239.979504334,"data":"== download_gemma3-4b: exit=0 23.2s\n"}
+,{"stream_name":"stdout","time":273.273835919,"data":"== download_qwen35-9b: exit=0 33.3s\n"}
+,{"stream_name":"stdout","time":708.800941331,"data":"== pytest_integration: exit=1 435.5s\n"}
+,{"stream_name":"stdout","time":708.801271018,"data":"{\n"}
+,{"stream_name":"stdout","time":708.801285832,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":708.801291197,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":708.801296005,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":708.801300624,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":708.801307013,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":708.801315201,"data":" \"pytest_engine\": 0,\n"}
+,{"stream_name":"stdout","time":708.801318606,"data":" \"pytest_claims\": 0,\n"}
+,{"stream_name":"stdout","time":708.801321718,"data":" \"ruff\": 0,\n"}
+,{"stream_name":"stdout","time":708.801325915,"data":" \"download_gemma3-4b\": 0,\n"}
+,{"stream_name":"stdout","time":708.801344379,"data":" \"download_qwen35-9b\": 0,\n"}
+,{"stream_name":"stdout","time":708.801349732,"data":" \"pytest_integration\": 1\n"}
+,{"stream_name":"stdout","time":708.801354879,"data":"}\n"}
+,{"stream_name":"stderr","time":711.141722442,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":711.141757134,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":711.479291987,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":711.479325127,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":712.442017929,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":713.789571481,"data":"[NbConvertApp] Writing 295742 bytes to __results__.html\n"}
+]
