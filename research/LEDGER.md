@@ -6489,3 +6489,36 @@ for 23 tokens of tune's prompt (prefill 10003, decode 1786); `head_skip_prefill`
 seven repetitions each: `head_skip_prefill` against baseline 0.8535 [0.8524; 0.8546], pairs
 0.8524-0.8550, tokens identical and deterministic, accepted. The stored profile: 14.65% faster
 end to end on this prompt, a prefill-dominated workload (85% of the baseline's time is prefill).
+
+## PERF1-Z — every CUDA number re-measured; the 5.52x projection holds as 5.55x (2026-09-25)
+
+PERF1 run 18 (`perf1-run18-863237d6`, submitted on the port2 branch on 2026-09-24 at `b6886a0`
+plus run 15's patch, Kaggle Tesla T4) finished every stage; its output is archived and judged
+here with the rules its notebook fixed: a published ratio is reproduced when the new median lies
+within 5% of it, otherwise the new measurement replaces it; exact arms must return stock's tokens
+in 6 of 6 requests; absolute tok/s are reported, not judged. Verdicts: `run18_summary.py`,
+`experiments/kaggle_compat/results/perf1-run18-863237d6/run18-summary.json`.
+
+| `cross.py`, wall ratio | reference | run 18 per rep | median | published | verdict | tokens = stock |
+| :-- | :-- | :-- | --: | --: | :-- | :-- |
+| Gemma 3 12B exact | stock | 0.9722, 0.9702 | 0.9712 | 0.9736 (PORT1) | reproduced, -0.2% | 6/6 |
+| Gemma 3 12B `float32` | stock | 0.4991, 0.4938 | 0.4965 | 0.4905 (PORT1) | reproduced, +1.2% | 4/6 |
+| Gemma 3 12B `native` | `float32`, no knobs | 0.3947, 0.3941 | 0.3944 | 0.4011 (run 17) | reproduced, -1.7% | 1/6 |
+| Gemma 3 12B `native` + `compiled_fixed_cache` | `float32`, no knobs | 0.3535, 0.3568 | 0.3552 | 0.3695 (run 17) | reproduced, -3.9% | 1/6 |
+| Gemma 3 12B `native` + `compiled_fixed_cache` | stock | 0.1806, 0.1795 | **0.1800 (5.55x)** | 0.1812 (projected 5.52x) | reproduced, -0.7% | 1/6 |
+| Gemma 3 1B exact | stock | 0.5366, 0.5712, 0.5970 | 0.5712 | 0.5502 (PORT1) | reproduced, +3.8% | 6/6 |
+| Gemma 3 4B exact | stock | 0.9645, 0.9415, 0.9502 | 0.9502 | 0.9511 (PORT1) | reproduced, -0.1% | 6/6 |
+
+The website's "up to 5.52x", chained from two runs with unequal float32 arms, is now one
+measurement against stock in the same run: 5.55x, with two repetitions, speed only, and 1 of 6
+requests equal to stock's tokens (a numeric plan; `native` with and without
+`compiled_fixed_cache` share one output digest). Gemma 3 has no `native` quality gate (PERF1-Y).
+Every exact claim holds at 6/6.
+
+Qwen 3 8B, `perf1.py e2e` (512-token prompt, 1 warm and 3 measured generations of 128 tokens):
+stock 6.71 tok/s and TTFT 26.4 s; `kernel+p16` 39.10 tok/s and 0.64 s; with the product's
+pinned rounding 36.15 tok/s and 0.68 s; both kernel arms leave stock's tokens at token 20, as in
+run 2. The decode ratio, 5.83x against run 2's 5.12x (32.47 / 6.34), deviates by +13.7% and is
+replaced by the new measurement. The README's "6.3 -> 32.5 tok/s" and "27.2 s -> 0.76 s" are
+run 2's absolute numbers, which the rule does not judge; its product-path ratio 4.97x stands on
+TEST2. Run 18 used about 1.1 h of free GPU quota, 0 EUR.

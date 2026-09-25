@@ -132,7 +132,9 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
+ledger PERF1-Z): all seven Gemma ratios reproduced, the 5.52x projection measured as 5.55x, Qwen 3
+8B's decode ratio replaced (5.83x for 5.12x). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
 in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
 Answered 2026-09-25: PERF1-M, Qwen 3 14B's decode gate for `native`, 1.000526 [0.999000; 1.002018]
 (`backlog2-run1-17b2ca39`, ledger BACKLOG2). PERF1-O, die Zwei-Karten-Pipeline (Qwen 3 32B läuft, Ledger „two cards lift the ceiling
@@ -192,13 +194,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   `kernel+p16` gegen Stock-bf16, Decode- und Prefill-Pfad, BOS in jedem Chunk (ohne BOS
   schwankt Gemma 3 um bis zu 0,34 Nats). Kill: obere Grenze > 1,005 — dann `native` für
   `mlx_lm.models.gemma3_text` verweigern (Tabellenzeile), float32 bleibt der Plan.
-- **PERF1-Z Jede CUDA-Zahl der Website neu belegen (Nutzer 2026-09-24, bis ca. 1,5 h Quote
-  über die 10-h-Wochenregel hinaus freigegeben).** Die CUDA-Ansicht zeigt 1,03/1,05/1,82x
-  (PORT1), Qwen 3 8B 6,3 -> 32,5 tok/s und TTFT 0,76 s (run 2), 2,49x (run 17) und „bis zu
-  5,52x“, verkettet aus zwei Läufen mit ungleichen float32-Armen. Test: run 18, jede Zahl mit
-  ihrem Originalprotokoll, Stock (IronMule aus) im selben Lauf, `native` + compiled_fixed_cache
-  direkt gegen Stock. Kill: Median weicht mehr als 5 % ab — dann ersetzt die neue Messung die
-  alte Zahl; exakte Arme nicht 6/6 tokengleich — dann fällt die Exakt-Aussage.
 
 ## OSS1 — Rest (2026-09-25)
 
