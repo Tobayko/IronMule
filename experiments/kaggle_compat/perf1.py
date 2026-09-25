@@ -740,7 +740,12 @@ def server(model, tokenizer, arm, widths):
         gen.close()
         return [tokens[u] for u in uids], [first[u] * 1000 for u in uids], wall
 
-    serve(max(widths))  # warmup: JIT for every row count this run will see
+    # Warmup: JIT for every row count this run will see. The widest batch covers the row
+    # counts of a run that measures it first; PERF1_SERVER_WARMUP lists widths to warm when
+    # a narrower one is measured too (BACKLOG6).
+    warm = os.environ.get("PERF1_SERVER_WARMUP")
+    for width in [int(w) for w in warm.split(",")] if warm else [max(widths)]:
+        serve(width)
     reference, rows = None, {}
     for width in widths:
         outs, ttft, wall = serve(width)
@@ -752,6 +757,7 @@ def server(model, tokenizer, arm, widths):
         print(width, rows[str(width)], flush=True)
     return {"arm": arm, "requests": len(prompts), "new_tokens": NEW_TOKENS, "widths": rows,
             "arith": os.environ.get("PERF1_ARITH", "free"), "routed": dict(routed),
+            "warmup_widths": warm or str(max(widths)),
             "peak_memory_bytes": int(mx.get_peak_memory()), "performance_claim": False}
 
 
