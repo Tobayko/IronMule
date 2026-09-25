@@ -163,6 +163,17 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   contract first (an opt-in mode whose answers may differ from interactive mode, like a numeric
   plan, with streaming, cancellation and isolation stated) and a quality gate for batched
   arithmetic; no existing exact path changes, so the kill does not apply.
+  2026-09-25 (user: continue with PERF1-K): contract written, `docs/HTTP.md` "Batched serving".
+  Mechanism: `serve --batch-width N` (2-8) starts the worker variant `tensor_batch`; the
+  service's existing batch transport hands it the `stream: false` requests already waiting, and
+  mlx-lm's `BatchGenerator` computes them as one tensor batch; single and streaming requests take
+  the reference path. Test, fixed before the run (PERF1-K1, Kaggle T4, Qwen 3 8B, `native`):
+  8 concurrent `stream: false` requests (perf1's server prompts), `max_tokens` 128, through the
+  real server, reference and width 8 each started twice (ABAB), one warm-up and three measured
+  rounds per start; aggregate completion tok/s per round, answers compared per prompt. Gate:
+  `batch_gate.py`, 16 x 512 WikiText-2, teacher-forced, 8 chunks per batch against one at a
+  time, decode and prefill path, same plan. Kill: median throughput ratio below 1.2, or a gate's
+  upper bound above 1.005 - then the variant is removed again.
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und

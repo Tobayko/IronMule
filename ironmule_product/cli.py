@@ -126,9 +126,14 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere); "
                              "changes output; which one pays is per model, see `ironmule plans`")
+    parser.add_argument("--batch-width", type=int, default=None,
+                        help="opt-in: compute up to this many waiting stream:false requests as one tensor "
+                             "batch (2 to 8); changes output, see docs/HTTP.md")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
+    if args.batch_width is not None and not 2 <= args.batch_width <= 8:
+        parser.error("--batch-width must be from 2 to 8")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -154,7 +159,9 @@ def serve(argv: list[str]) -> int:
                 lease_entered = True
             except CalibrationFailure as exc:
                 raise InvalidRequest("model resources are in use by another IronMule operation") from exc
-            backend = MLXWorkerClient(spec, compute_dtype=args.compute_dtype)
+            backend = MLXWorkerClient(
+                spec, compute_dtype=args.compute_dtype, batch_width=args.batch_width,
+                execution_variant="tensor_batch" if args.batch_width is not None else "reference")
             backend.start()
         service = ProductService(store, backend=backend, spec=spec)
         server = create_server(service, host=args.host, port=args.port,

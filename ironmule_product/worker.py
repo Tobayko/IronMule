@@ -30,7 +30,8 @@ from ironmule_product.model_policy import ModelPolicyError, config_model_type, v
 PROTOCOL_VERSION = 1
 MAX_LINE = 1024 * 1024
 CONTEXT_LIMIT = 8192
-WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
+WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic",
+                             "tensor_batch"))
 # Markers chat templates close a turn with (Gemma, Llama 3, ChatML/Qwen, Phi).
 # ponytail: a known list; derive the marker from the chat template if a family is ever missed.
 END_OF_TURN = ("<end_of_turn>", "<|eot_id|>", "<|im_end|>", "<|end|>")
@@ -549,6 +550,106 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 cancellations.pop(request_id, None)
 
 
+MAX_TENSOR_BATCH = 8
+
+
+def _run_tensor_batch(command: dict[str, Any], model_id: str, model: Any, tokenizer: Any,
+                      cancellations: dict[str, threading.Event], pending_cancellations: set[str],
+                      lock: threading.Lock, width: int) -> None:
+    """PERF1-K: compute one group of buffered requests as a single tensor batch.
+
+    Opt-in (`serve --batch-width`, docs/HTTP.md "Batched serving"). mlx-lm's BatchGenerator
+    runs every row through one pass per step, so an answer is greedy under the batch's
+    arithmetic and may differ from the same request served alone. A cancelled request
+    leaves the batch at the next step. Frames follow the reference path's semantics: the
+    end-of-sequence token is the last counted token and is left out of the text.
+    """
+    batch_id, requests = command.get("batch_id"), command.get("requests")
+    if (not isinstance(batch_id, str) or not 1 <= len(batch_id) <= 256
+            or command.get("variant") != "tensor_batch" or not isinstance(requests, list)
+            or not 2 <= len(requests) <= width):
+        _safe_batch_error("invalid_request", batch_id if isinstance(batch_id, str) else None)
+        return
+    registered: list[str] = []
+    generator = None
+    try:
+        rendered = [_render_engine_request(request, model_id, tokenizer) for request in requests]
+        request_ids = [row[0] for row in rendered]
+        if len(set(request_ids)) != len(request_ids):
+            raise ValueError("duplicate request id")
+        with lock:
+            for request_id in request_ids:
+                event = threading.Event()
+                if request_id in pending_cancellations:
+                    event.set()
+                    pending_cancellations.discard(request_id)
+                cancellations[request_id] = event
+                registered.append(request_id)
+        from mlx_lm.generate import BatchGenerator
+
+        stop_tokens = [[token] for token in sorted({int(token) for token in tokenizer.eos_token_ids})]
+        with redirect_stdout(sys.stderr):
+            generator = BatchGenerator(model, max_tokens=max(row[2] for row in rendered), stop_tokens=stop_tokens,
+                                       completion_batch_size=len(rendered), prefill_batch_size=len(rendered))
+            uids = generator.insert([row[1] for row in rendered], [row[2] for row in rendered])
+        request_by_uid = dict(zip(uids, request_ids))
+        tokens: dict[str, list[int]] = {request_id: [] for request_id in request_ids}
+        finish: dict[str, str] = {}
+        while len(finish) < len(request_ids):
+            with lock:
+                cancelled = [uid for uid, request_id in request_by_uid.items()
+                             if request_id not in finish and cancellations[request_id].is_set()]
+            if cancelled:
+                generator.remove(cancelled)
+                finish.update((request_by_uid[uid], "cancelled") for uid in cancelled)
+                continue
+            with redirect_stdout(sys.stderr):
+                responses = generator.next_generated()
+            if not responses:
+                raise RuntimeError("tensor batch ended before every request finished")
+            for response in responses:
+                request_id = request_by_uid.get(response.uid)
+                if request_id is None or request_id in finish:
+                    raise RuntimeError("tensor batch returned an unknown row")
+                tokens[request_id].append(int(response.token))
+                if response.finish_reason is not None:
+                    finish[request_id] = response.finish_reason
+        for request_id, prompt_ids, limit in rendered:
+            generated, reason = tokens[request_id], finish[request_id]
+            engine = {"delivery": "buffered_completion", "batch_rows": len(rendered),
+                      "computed_tokens": len(generated)}
+            terminal: dict[str, Any] = {"type": "done", "batch_id": batch_id, "request_id": request_id,
+                                        "finish_reason": reason, "prompt_tokens": len(prompt_ids),
+                                        "completion_tokens": len(generated), "variant": "tensor_batch",
+                                        "metrics": {}, "engine": engine}
+            if reason != "cancelled":
+                if reason not in {"stop", "length"} or not 1 <= len(generated) <= limit:
+                    raise RuntimeError("invalid tensor batch result")
+                text = tokenizer.decode(generated[:-1] if reason == "stop" else generated)
+                for index, token in enumerate(generated):
+                    _emit({"type": "token", "batch_id": batch_id, "request_id": request_id,
+                           "text": text if index + 1 == len(generated) else "", "token_id": token,
+                           "prompt_tokens": len(prompt_ids), "completion_tokens": index + 1})
+            if command.get("trace_prompt_identity") is True:
+                terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
+                    separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+            _emit(terminal)
+        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": request_ids})
+    except ValueError:
+        _safe_batch_error("invalid_request", batch_id)
+    except Exception:
+        _safe_batch_error("generation_error", batch_id)
+    finally:
+        if generator is not None:
+            try:
+                generator.close()
+            except Exception:
+                pass
+        with lock:
+            for request_id in registered:
+                cancellations.pop(request_id, None)
+
+
 def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tokenizer: Any,
                          stream_generate: Any, automatic_runtime: Any,
                          cancellations: dict[str, threading.Event], pending_cancellations: set[str],
@@ -757,6 +858,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
     parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None)
+    parser.add_argument("--batch-width", type=int, default=None)
     args = parser.parse_args(argv)
     startup_started = time.monotonic()
     prefix_session = engine_bridge = automatic_runtime = None
@@ -771,14 +873,17 @@ def main(argv: list[str] | None = None) -> int:
             raise ValueError("invalid selection evidence")
         if any(not 1 <= value <= 2**63 - 1 for value in (args.prefix_cache_max_entries, args.prefix_cache_max_bytes)):
             raise ValueError("invalid cache capacity")
+        if (args.execution_variant == "tensor_batch") != (args.batch_width is not None) or (
+                args.batch_width is not None and not 2 <= args.batch_width <= MAX_TENSOR_BATCH):
+            raise ValueError("tensor_batch needs a batch width from 2 to 8, and only it takes one")
         identity = None
         if args.execution_variant in ("prefix_reuse", "current_engine", "automatic"):
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
         model, tokenizer, stream_generate, device = _load(spec)
         if args.compute_dtype is not None:
-            if args.execution_variant != "reference":
-                raise ValueError("compute_dtype is available on the reference worker only")
+            if args.execution_variant not in ("reference", "tensor_batch"):
+                raise ValueError("compute_dtype is available on the reference and tensor_batch workers only")
             import mlx.core as mx
             if args.compute_dtype == "float32":
                 model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
@@ -822,6 +927,7 @@ def main(argv: list[str] | None = None) -> int:
         "model_id": spec.get("model_id"), "revision": spec.get("revision"),
         "device": "gpu", "stop_handling": "parent", "context_limit": CONTEXT_LIMIT,
         "execution_variant": args.execution_variant,
+        **({"batch_width": args.batch_width} if args.batch_width is not None else {}),
         **({"automatic_batch_qualified": _automatic_batch_qualified(selection_evidence, identity)}
            if automatic_runtime is not None else {}),
         **({"engine": engine_bridge.metadata()} if engine_bridge is not None else {}),
@@ -840,6 +946,7 @@ def main(argv: list[str] | None = None) -> int:
     allowed_variants = ({"automatic"} if automatic_runtime is not None else
                         {"current_engine"} if engine_bridge is not None else
                         {"reference", "prefix_reuse"} if prefix_session is not None else
+                        {"tensor_batch"} if args.execution_variant == "tensor_batch" else
                         {"reference", "bounded_prefetch"})
     try:
         while True:
@@ -856,7 +963,10 @@ def main(argv: list[str] | None = None) -> int:
                            "prefix_cache": asdict(prefix_session.clear())})
                 continue
             if command.get("type") == "generate_batch":
-                if automatic_runtime is not None:
+                if args.execution_variant == "tensor_batch":
+                    _run_tensor_batch(command, str(spec.get("model_id")), model, tokenizer, cancellations,
+                                      pending_cancellations, cancellation_lock, args.batch_width)
+                elif automatic_runtime is not None:
                     _run_automatic_batch(command, str(spec.get("model_id")), model, tokenizer,
                                          stream_generate, automatic_runtime, cancellations,
                                          pending_cancellations, cancellation_lock)

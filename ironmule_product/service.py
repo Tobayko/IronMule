@@ -53,6 +53,13 @@ class StopFilter:
         return "" if self.stopped else visible
 
 
+def _execution_label(backend: Any) -> str:
+    """`exact`, or `batched` for the opt-in tensor batch (PERF1-K), with the numeric plan."""
+    kind = "batched" if getattr(backend, "execution_variant", None) == "tensor_batch" else "exact"
+    dtype = getattr(backend, "compute_dtype", None)
+    return kind if dtype is None else f"{kind}@{dtype}"
+
+
 @dataclass
 class _Session:
     request: GenerationRequest
@@ -104,8 +111,7 @@ class ProductService:
         with self._lock:
             result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self.backend is not None and self.backend.ready),
                     "mode": self.settings["mode"],
-                    "execution": ("exact" if getattr(self.backend, "compute_dtype", None) is None
-                                  else f"exact@{self.backend.compute_dtype}"),
+                    "execution": _execution_label(self.backend),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
                                 else getattr(self.backend, "execution_variant", "reference")),
                     "loaded_model": self.spec.model_id if self.spec else None,
