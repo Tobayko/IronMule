@@ -1,7 +1,12 @@
-# BACKLOG6: DATA3-B's fix on the engine suite, and PERF1-R's upper bound before anything is
-# built. Private notebook, internet on, two T4. Quota: the user asked on 2026-09-25 to work
-# through the backlog (budget: the 30 h Kaggle week). Rules:
+# BACKLOG6: DATA3-B's fix on the engine suite, what holds PORT1-F's parent memory, and PERF1-R's
+# upper bound before anything is built. Private notebook, internet on, two T4. Quota: the user
+# asked on 2026-09-25 to work through the backlog (budget: the 30 h Kaggle week). Rules:
 #   * The engine suite as pytest.ini configures it, not integration, on this commit.
+#   * PORT1-F: BACKLOG5's release left MLX at 56 active and 0 cached bytes while nvidia-smi still
+#     counted 9553 MiB, and the child ran out of memory again. `pool_probe.py` loads Gemma 3 4B
+#     as tune does and records the default memory pool's reserved and used bytes after the
+#     release, after a context synchronize and after trimming the pool, then loads the model in
+#     a child. A diagnostic: it decides between trimming the pool and screening in a child.
 #   * PERF1-R (micro-batches in the layer pipeline): two micro-batches of four can at best keep
 #     both cards busy with one width-4 stream each, so their aggregate is bounded by twice the
 #     pipeline's own width-4 aggregate. Qwen 3 32B pipelined over both cards, `kernel+mma+p16`
@@ -18,13 +23,14 @@ import sys
 import time
 
 COMMIT = __COMMIT__
+GEMMA4B = ("mlx-community/gemma-3-4b-it-4bit", "93724907d4ed1745d2fe50baadf3b0b01a65abf2")
 QWEN32B = ("mlx-community/Qwen3-32B-4bit", "bcaaf7f538adf166c1080a2befdb4f6019f66639")
 WORK = "/kaggle/working"
 REPO = "/tmp/IronMule"
 VENV = "/tmp/im"
 PY = f"{VENV}/bin/python"
 SYS = sys.executable
-DEADLINE = time.time() + 75 * 60
+DEADLINE = time.time() + 90 * 60
 os.makedirs(f"{WORK}/logs", exist_ok=True)
 report = {"schema": "ironmule.backlog6-kaggle.v1", "commit": COMMIT, "stages": {}, "performance_claim": False}
 env = dict(os.environ, PATH=f"{VENV}/bin:" + os.environ["PATH"], PYTHONPATH="", PYTHONNOUSERSITE="1",
@@ -78,6 +84,11 @@ def download(key, model):
                                       f"print(s('{model[0]}', revision='{model[1]}'))\"", timeout=1200)
     return out.strip().splitlines()[-1] if code == 0 else None
 
+
+# PORT1-F: what still holds the parent's memory.
+if download("gemma3-4b", GEMMA4B):
+    sh("pool_probe_gemma3-4b", f"{PY} {REPO}/experiments/kaggle_compat/pool_probe.py {GEMMA4B[0]} "
+                               f"{WORK}/pool-probe-gemma3-4b.json", timeout=1200, cwd=REPO)
 
 # PERF1-R: the bound, in four launches of alternating width order.
 path = download("qwen3-32b", QWEN32B)
