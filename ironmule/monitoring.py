@@ -42,7 +42,7 @@ import statistics
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 
 SCHEMA = "ironmule.monitoring.v1"
 

@@ -31,6 +31,7 @@ when it is ready:
 | `--api-key-env` | `IRONMULE_API_KEY` | environment variable holding the bearer token |
 | `--tls-cert`, `--tls-key` | none | serve over TLS |
 | `--state-dir` | `IRONMULE_HOME` or `~/.ironmule/product` | product state directory |
+| `--compute-dtype` | none | opt-in numeric plan for GPUs that emulate bf16 (`float32`, `native`); changes output, see `ironmule plans` |
 
 ## Routes
 

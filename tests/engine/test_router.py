@@ -10,7 +10,7 @@ import pytest
 
 from ironmule.plans import ReusableSessionPlan, StrictOneShotPlan
 from ironmule.router import (ROUTER_VERSION, ROUTES, SCHEDULING_RULE, AppleRuntime,
-                             ExecutionRouter, RouteDecision)
+                             ExecutionRouter)
 from ironmule.service import AutomaticMode, InteractiveMode, Request
 from ironmule.telemetry import RequestMetrics, Telemetry
 

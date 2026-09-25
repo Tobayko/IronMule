@@ -217,7 +217,7 @@ def test_process_inventory_rejects_ancestry_cycle_and_invalid_ppid():
     assert q3b.competing_model_process(_exact_inventories(cycle, comm)) == \
         "process inventory ancestry malformed"
     assert q3b._parse_process_args_inventory(
-        f"-1 0 10 0.0 python\n"
+        "-1 0 10 0.0 python\n"
     ) == "process inventory malformed"
     assert q3b._parse_process_args_inventory(
         f"{current} -1 10 0.0 python\n"

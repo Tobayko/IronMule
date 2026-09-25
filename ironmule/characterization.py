@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 SCHEMA = "ironmule.hardware_characterization_vector.v1"
 

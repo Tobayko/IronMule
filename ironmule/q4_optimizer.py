@@ -16,17 +16,12 @@ from typing import Any, Iterable, Mapping, Protocol, Sequence
 try:
     from .q4_contracts import (
         KNOB_ACTIONS,
-        KNOB_ACTION_BY_ID,
         ALL_DECLARED_KNOB_ACTIONS,
-        LEGAL_KNOB_ACTIONS,
         KNOB_CANDIDATES,
         KnobAction,
-        KnobCandidateSpec,
         INTERACTION_KNOB_ANCHORS,
         SCHEDULE_ACTIONS,
         ScheduleAction,
-        PlanKind,
-        HybridAction,
         Outcome,
         Q4State,
         Dataset,
@@ -34,31 +29,21 @@ try:
         canonical_sha256,
     )
     from .q4_methods import (
-        ActionScore,
         EBHCORL,
         Method,
         ReplayTransition,
-        deterministic_policy_order,
-        grouped_support,
-        q_lcb,
-        failure_ucb,
-        behaviour_score,
         rank_catalogue,
         normalize_method,
         DataInsufficientError,
         join_contract_rows,
-        MIN_SUPPORT,
     )
 except ImportError:  # pragma: no cover - direct source loading convenience
     from q4_contracts import (  # type: ignore[no-redef]
-        KNOB_ACTIONS, KNOB_ACTION_BY_ID, ALL_DECLARED_KNOB_ACTIONS, LEGAL_KNOB_ACTIONS,
-        KNOB_CANDIDATES, KnobAction, KnobCandidateSpec, INTERACTION_KNOB_ANCHORS,
-        SCHEDULE_ACTIONS, ScheduleAction, PlanKind, HybridAction, Outcome, Q4State, Dataset, canonical_json, canonical_sha256,
+        KNOB_ACTIONS, ALL_DECLARED_KNOB_ACTIONS, KNOB_CANDIDATES, KnobAction, INTERACTION_KNOB_ANCHORS,
+        SCHEDULE_ACTIONS, ScheduleAction, Outcome, Q4State, Dataset, canonical_json, canonical_sha256,
     )
     from q4_methods import (  # type: ignore[no-redef]
-        ActionScore, EBHCORL, Method, ReplayTransition,
-        deterministic_policy_order, grouped_support, q_lcb, failure_ucb,
-        behaviour_score, MIN_SUPPORT,
+        EBHCORL, Method, ReplayTransition,
         rank_catalogue,
         normalize_method, DataInsufficientError, join_contract_rows,
     )

@@ -136,7 +136,8 @@ TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 `model_type` (`f44cf72`; BACKLOG9: one digest across three processes, three with the caller's
 graphs on, about 3% slower). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
 1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
-recommends `native` for Gemma 3. Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
+recommends `native` for Gemma 3. Rejected 2026-09-25: PERF1-K, batched serving over the existing batch transport (0.846x of one request at a
+time, `perf1k-run1-8f9fc1b0`, ledger PERF1-K; removed again, PERF1-K2 opened). Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
 ledger PERF1-Z): all seven Gemma ratios reproduced, the 5.52x projection measured as 5.55x, Qwen 3
 8B's decode ratio replaced (5.83x for 5.12x). Rejected 2026-09-25: PERF1-R, micro-batches in the layer pipeline, unbuilt (bound 2 x width 4 / width 8 = 1.176 < 1.2 on Qwen 3 32B `kernel+mma+p16`, `backlog6-run1-819c3ced`). Rejected 2026-09-25: PERF1-L, `k32`
 in the float32 plan (not bit-identical to MLX's float32 matvec, 0 of 36, `backlog1-run1-41035f02`). Beantwortet 2026-09-23:
@@ -149,20 +150,15 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
 7,86x auf Gemma 4 26B-A4B; im Produkt unter `native`) und das Nutzerziel „Gemma 3 12B
 mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen:
 
-- **PERF1-K Echtes Batching im Produktserver.** Mechanismus: der `mma`-Kernel (run 8)
-  rechnet 2–16 Anfragen pro Gewichtsdurchlauf; Continuous Batching lieferte 2,62x
-  Server-Durchsatz bei Breite 8 (8B 94,7 tok/s) und 0,54 s TTFT-Median. Konflikt: der
-  Produkt-Batchpfad (`generate_many`) ist bewusst grouped batch-1 und exakt; in bf16 sind
-  gebatchte Antworten nicht gleich den einzelnen (run 6/8: 1–2 von 8), im float32-Plan
-  schon (8/8). Nötig ist eine eigene opt-in Ausführungsvariante mit eigenem Vertrag
-  (Abbruch, Streaming, Isolation), nicht eine stille Änderung. Kill: der Vertrag lässt
-  sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
-  mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
-  Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
-  Decided 2026-09-25 (agent): worth building, not as a quick change. It needs a written
-  contract first (an opt-in mode whose answers may differ from interactive mode, like a numeric
-  plan, with streaming, cancellation and isolation stated) and a quality gate for batched
-  arithmetic; no existing exact path changes, so the kill does not apply.
+- **PERF1-K2 Continuous admission, single prefill, batched decode (opt-in server).** PERF1-K1
+  (ledger PERF1-K) served a burst of eight as one or two closed batches and lost (0.85x), while
+  its one-batch rounds ran at about 2x; its gate found batched decode under `native` bit-identical
+  to single decode, and batched prefill not. Mechanism: one running batch in the worker that
+  admits each arriving request between decode steps, prefills it alone (B = 1, the reference's
+  prefill) and decodes it with the others. Test: PERF1-K1's protocol (Qwen 3 8B, `native`, eight
+  concurrent requests, ABAB, three rounds), answers compared with the reference per prompt.
+  Kill: median below 1.2x; answers not equal to the reference in 8 of 8 then keeps it opt-in with
+  the PERF1-K contract (differs from single requests) rather than exact.
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und

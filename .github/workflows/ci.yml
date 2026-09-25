@@ -38,7 +38,7 @@ jobs:
       - name: Static product and measurement checks
         run: |
           .ci-venv/bin/python -m pip install "ruff==0.16.6"
-          .ci-venv/bin/ruff check ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py --select F
+          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tests/engine tests/conftest.py tests/test_numeric_plans.py tests/test_documented_claims.py --select F
       # A runner is not the target device. The research tree under tests/ binds
       # to this project's own machine by design -- gitignored evidence databases
       # under .friday-data/, a validated local model cache, and its own .venv
@@ -49,6 +49,10 @@ jobs:
       # only place it can say anything true.
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
+      # The two research modules that check public claims read only committed files, so
+      # they run here too (tests/conftest.py); the tests needing .friday-data/ skip.
+      - name: Claims against their committed evidence
+        run: .ci-venv/bin/python -m pytest tests/test_numeric_plans.py tests/test_documented_claims.py -n 0 -rs
 
   # A figure that no longer matches its evidence is a false claim on the front page.
   # This regenerates every SVG from the committed artifacts and fails on any difference.
