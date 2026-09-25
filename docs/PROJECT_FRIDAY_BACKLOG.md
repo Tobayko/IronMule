@@ -176,6 +176,10 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   Übergabe kostet 8B ~22 ms pro Token (0,52x). Für den Server könnten zwei Mikro-Batches à 4
   abwechselnd durch die Hälften laufen, sodass beide Karten gleichzeitig rechnen. Kill: unter
   1,2x bei Breite 8 gegen dieselbe Pipeline ohne Mikro-Batches im selben Lauf.
+  Pre-gate (2026-09-25, before any implementation): two micro-batches of four keep at best
+  each card busy with one width-4 stream, so their aggregate is bounded by 2 x the pipeline's
+  width-4 aggregate. BACKLOG6 measures widths 4 and 8 on Qwen 3 32B `kernel+mma+p16`; a bound
+  below 1.2 closes the entry unbuilt.
 - **PERF1-S Nativer Kernel für MoE-Experten.** Qwen3.6 35B-A3B gewann mit `kernel+p16` nur
   11 % (run 12), weil die Experten über `gather_qmm` laufen, den kein Kernel routet; sie
   bleiben emuliertes bf16. Mechanismus: derselbe Zeilen-Kernel mit einem Index-Eingang, der
