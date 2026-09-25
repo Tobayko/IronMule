@@ -1,0 +1,13 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+  "hardware_qualified": false,
+  "models_loaded": false,
+  "registered": {
+    "model_id": "mlx-community/gemma-3-1b-it-4bit",
+    "revision": "2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "snapshot_path": "/root/.cache/huggingface/hub/models--mlx-community--gemma-3-1b-it-4bit/snapshots/2d44e83dc9e80843d22fb941d3d699a0b1351aa6",
+    "weight_bytes": 732577304
+  },
+  "warnings": []
+}

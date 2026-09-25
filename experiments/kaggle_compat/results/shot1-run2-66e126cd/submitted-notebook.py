@@ -1,7 +1,6 @@
 # SHOT1: screenshots of IronMule's chat page, served by `ironmule serve` from `main` with a real
-# model on a Kaggle T4 (run 2 polls from Python: the page's CSP refused run 1's eval). The user
-# asked on 2026-09-25 to see the application. Private notebook, internet on; a demonstration, no
-# measurement and no performance claim. Rules:
+# model on a Kaggle T4 (run 2 polls from Python: the page's CSP refused run 1's eval). The user asked on 2026-09-25 to see the application. Private notebook,
+# internet on; a demonstration, no measurement and no performance claim. Rules:
 #   * `ironmule setup`, `models add` at the pinned Gemma 3 1B revision, `serve` on 127.0.0.1:8080;
 #     wait for /ready.
 #   * Headless Chromium (Playwright) opens `/`, sends one fixed question through the page's own
@@ -14,7 +13,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "70a83db3061431494b9b92e61a58d2dfd6fa84af"
 GEMMA1B = ("mlx-community/gemma-3-1b-it-4bit", "2d44e83dc9e80843d22fb941d3d699a0b1351aa6")
 WORK = "/kaggle/working"
 REPO = "/tmp/IronMule"
