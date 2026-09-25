@@ -24,7 +24,7 @@ if __package__ in (None, ""):
     if _PACKAGE_ROOT not in sys.path:
         sys.path.insert(0, _PACKAGE_ROOT)
 
-from ironmule_product.model_policy import ModelPolicyError, validate_model_config
+from ironmule_product.model_policy import ModelPolicyError, config_model_type, validate_model_config
 
 
 PROTOCOL_VERSION = 1
@@ -153,13 +153,14 @@ def _load(spec: dict[str, Any]):
     if actual_weights != expected_weights:
         raise RuntimeError("local model weight registration changed")
     model_config = validate_model_config(str(path), spec.get("revision"))
+    model_type = config_model_type(str(path), spec.get("revision"))
     # Opening the MLX device is intentionally the first native operation and
     # happens before importing mlx_lm.  A headless host may terminate here;
     # the parent converts that into BackendUnavailable.
     import mlx.core as mx
 
     from ironmule.hw import apply_cuda_graph_defaults
-    apply_cuda_graph_defaults()  # before the first GPU operation reads them
+    apply_cuda_graph_defaults(model_type)  # before the first GPU operation reads them
 
     # A compiled-in GPU backend is not proof that the current process may
     # open the device. Force that check before mlx_lm creates native streams.

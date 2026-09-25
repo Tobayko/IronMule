@@ -163,6 +163,12 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   that loads Qwen 3.5 through `load_engine` reports graphs off and gives one digest across
   three processes. Kill: the flag cannot be set before MLX's first GPU operation without
   reading the model config first; then document `MLX_USE_CUDA_GRAPHS=0` for this family.
+  2026-09-25: built. The product worker already reads config.json before MLX's first GPU
+  operation, and MLX reads the flag at its first kernel, so the kill does not apply: the worker
+  and `load_engine` pass `model_type` to `apply_cuda_graph_defaults`, which sets
+  `MLX_USE_CUDA_GRAPHS=0` for `qwen3_5` on pre-Ampere CUDA unless the caller set it. The
+  throughput refusal for recurrent caches stays: a library caller may already have run a
+  kernel, and then the flag cannot take effect. BACKLOG9 runs the entry's test.
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und

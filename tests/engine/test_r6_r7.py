@@ -112,6 +112,29 @@ def test_load_engine_offline_local_path_is_direct_and_preserves_environment(monk
     assert (os.environ["HF_HUB_OFFLINE"], os.environ["TRANSFORMERS_OFFLINE"]) == before
 
 
+def test_load_engine_sizes_cuda_graphs_for_the_snapshot_before_loading(monkeypatch, tmp_path):
+    """PERF1-T2: the graph flag is read at MLX's first kernel, so the family goes in first."""
+    from ironmule import hw
+
+    seen = _fake_load_engine(monkeypatch)
+    local_model = tmp_path / "model"
+    local_model.mkdir()
+    (local_model / "config.json").write_text('{"model_type": "qwen3_5"}')
+    order = []
+    monkeypatch.setattr(hw, "apply_cuda_graph_defaults", lambda model_type=None: order.append(model_type))
+    loaded = sys.modules["mlx_lm"].load
+    monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(
+        load=lambda source: order.append("load") or loaded(source)))
+
+    tune.load_engine(str(local_model), BASELINE, offline=True)
+    assert order == ["qwen3_5", "load"]
+    assert seen["source"] == str(local_model)
+    (local_model / "config.json").write_text("not json")
+    order.clear()
+    tune.load_engine(str(local_model), BASELINE, offline=True)
+    assert order == [None, "load"]
+
+
 def test_load_engine_offline_hub_id_resolves_cached_snapshot(monkeypatch):
     seen = _fake_load_engine(monkeypatch)
 
@@ -1502,6 +1525,18 @@ def test_cuda_graph_defaults_only_touch_pre_ampere_linux_and_respect_the_caller(
     monkeypatch.setenv("MLX_MAX_OPS_PER_BUFFER", "20")
     assert hw.apply_cuda_graph_defaults() == {}
     assert os.environ["MLX_MAX_OPS_PER_BUFFER"] == "20", "an explicit caller value wins"
+    # PERF1-T2: Qwen 3.5 needs CUDA graphs off to give one output digest across processes.
+    # setenv first, so monkeypatch removes the flag again whatever the function writes.
+    monkeypatch.setenv("MLX_USE_CUDA_GRAPHS", "placeholder")
+    monkeypatch.delenv("MLX_USE_CUDA_GRAPHS")
+    assert hw.apply_cuda_graph_defaults("qwen3") == {}
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {"MLX_USE_CUDA_GRAPHS": "0"}
+    assert os.environ["MLX_USE_CUDA_GRAPHS"] == "0"
+    monkeypatch.setenv("MLX_USE_CUDA_GRAPHS", "1")
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {}, "an explicit caller value wins"
+    monkeypatch.delenv("MLX_USE_CUDA_GRAPHS")
+    fake_mlx(8)
+    assert hw.apply_cuda_graph_defaults("qwen3_5") == {}, "measured on Turing only"
 
 
 def test_compute_dtype_is_opt_in_validated_and_stored_apart():

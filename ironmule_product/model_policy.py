@@ -97,8 +97,7 @@ def _read_config(path: Path, root: Path) -> dict[str, Any]:
     return value
 
 
-def validate_model_config(snapshot_path: str, revision: Any) -> dict[str, Any]:
-    """Validate ``config.json`` before any MLX import or model loading."""
+def _checked_config(snapshot_path: str, revision: Any) -> dict[str, Any]:
     if not isinstance(snapshot_path, str) or not snapshot_path:
         raise ModelPolicyError("snapshot path is invalid")
     if not isinstance(revision, str) or not revision:
@@ -116,7 +115,23 @@ def validate_model_config(snapshot_path: str, revision: Any) -> dict[str, Any]:
     # mlx_lm.utils.load_model executes this path whenever it is not None.
     if "model_file" in config and config["model_file"] is not None:
         raise ModelPolicyError("custom model Python is not supported")
+    return config
+
+
+def validate_model_config(snapshot_path: str, revision: Any) -> dict[str, Any]:
+    """Validate ``config.json`` before any MLX import or model loading."""
+    _checked_config(snapshot_path, revision)
     return {"model_file": None}
 
 
-__all__ = ["MAX_CONFIG_DEPTH", "ModelPolicyError", "validate_model_config"]
+def config_model_type(snapshot_path: str, revision: Any) -> str | None:
+    """``config.json``'s ``model_type``, under the same checks, before any MLX import.
+
+    The worker needs it before MLX's first GPU operation, which reads the CUDA graph flag
+    once; a missing or non-string value is None.
+    """
+    value = _checked_config(snapshot_path, revision).get("model_type")
+    return value if isinstance(value, str) else None
+
+
+__all__ = ["MAX_CONFIG_DEPTH", "ModelPolicyError", "config_model_type", "validate_model_config"]
