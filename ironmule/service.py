@@ -603,7 +603,7 @@ class Runtime:
             except (OSError, json.JSONDecodeError):
                 stored = None
         if stored is None:
-            path.parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             path.write_text(json.dumps(current, indent=1, sort_keys=True, default=str))
             return {"verdict": "recorded_first_fingerprint", "current": current}
         ok, why = usable(stored, current)
