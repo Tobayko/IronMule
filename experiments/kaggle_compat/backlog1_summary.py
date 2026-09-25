@@ -3,7 +3,7 @@
 The gate bootstrap uses quality.py's seed; on PERF1 run 5's 8B decode files it gives the published
 ratio 0.997356 exactly and an interval that differs from the published one in the fifth decimal.
 
-Usage: python backlog1_summary.py RESULTS_DIR [OUT.json]
+Usage: python backlog1_summary.py RESULTS_DIR [OUT.json]    (BACKLOG1 or BACKLOG2)
 """
 import json
 import math
@@ -53,7 +53,7 @@ def determinism(results):
 
 
 def tune(results):
-    report = json.loads((results / "backlog1-result.json").read_text())
+    report = json.loads(next(results.glob("backlog*-result.json")).read_text())
     stage = report["stages"].get("tune_gemma3-4b")
     return None if stage is None else {"exit": stage["exit"], "seconds": stage.get("seconds"),
                                        "tail": stage.get("tail", "")[-600:]}
