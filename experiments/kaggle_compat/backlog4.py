@@ -1,10 +1,9 @@
-# BACKLOG3: the engine suite on the corrected test, and PORT1-F's failing confirmation child with
-# its stderr visible. Private notebook, internet on. Quota: the user asked on 2026-09-25 to work
-# through the backlog (budget: the 30 h Kaggle week); stages are capped at 40 min. Rules:
-#   * The engine suite as pytest.ini configures it, not integration, on this commit.
-#   * PORT1-F: `confirm_child_probe.py` reruns tune's paired confirmation for Gemma 3 4B with
-#     the screening winner `head_skip_prefill` and records each failed child's stderr. The
-#     diagnostic only; a fix is a separate change.
+# BACKLOG4: PORT1-F's full tune with the failing confirmation child's stderr and the GPU's
+# memory recorded. Private notebook, internet on. Quota: the user asked on 2026-09-25 to work
+# through the backlog (budget: the 30 h Kaggle week); stages are capped at 50 min. Rules:
+#   * `tune_child_probe.py` runs `ironmule tune` on Gemma 3 4B in bf16 in-process, as
+#     BACKLOG1 and BACKLOG2 ran it, keeps each failed child's stderr and samples nvidia-smi's
+#     used memory every 10 s. The diagnostic only; a fix is a separate change.
 import json
 import os
 import signal
@@ -19,15 +18,15 @@ REPO = "/tmp/IronMule"
 VENV = "/tmp/im"
 PY = f"{VENV}/bin/python"
 SYS = sys.executable
-DEADLINE = time.time() + 40 * 60
+DEADLINE = time.time() + 50 * 60
 os.makedirs(f"{WORK}/logs", exist_ok=True)
-report = {"schema": "ironmule.backlog3-kaggle.v1", "commit": COMMIT, "stages": {}, "performance_claim": False}
+report = {"schema": "ironmule.backlog4-kaggle.v1", "commit": COMMIT, "stages": {}, "performance_claim": False}
 env = dict(os.environ, PATH=f"{VENV}/bin:" + os.environ["PATH"], PYTHONPATH="", PYTHONNOUSERSITE="1",
            HF_HUB_DISABLE_PROGRESS_BARS="1", PYTHONUNBUFFERED="1", IRONMULE_HOME="/tmp/ironmule-home")
 
 
 def save():
-    with open(f"{WORK}/backlog3-result.json", "w") as stream:
+    with open(f"{WORK}/backlog4-result.json", "w") as stream:
         json.dump(report, stream, indent=1, default=str)
 
 
@@ -60,7 +59,7 @@ sh("clone", f"git clone -q https://github.com/Tobayko/IronMule {REPO} && git -C 
             f"&& git -C {REPO} rev-parse HEAD && git -C {REPO} status --short")
 sh("venv", f"{SYS} -m pip install -q uv && {SYS} -m uv python install 3.12 "
            f"&& {SYS} -m uv venv --python-preference only-managed --python 3.12 {VENV}")
-sh("install", f"{SYS} -m uv pip install --python {PY} -e '{REPO}[cuda]' 'mlx-lm==0.31.3' pyarrow 'pytest>=8' 'pytest-xdist>=3' psutil scipy", timeout=1200)
+sh("install", f"{SYS} -m uv pip install --python {PY} -e '{REPO}[cuda]' 'mlx-lm==0.31.3'", timeout=1200)
 sh("freeze", f"{SYS} -m uv pip freeze --python {PY}")
 
 
@@ -70,13 +69,10 @@ def download(key, model):
     return out.strip().splitlines()[-1] if code == 0 else None
 
 
-sh("pytest_engine", f"{PY} -m pytest tests/engine -m 'not integration' -rfEs -p no:cacheprovider "
-                    f"--junitxml={WORK}/pytest_engine.xml", timeout=1800, cwd=REPO)
-
-# PORT1-F: the confirmation alone, with the failed children's stderr kept.
+# PORT1-F: the full tune, as BACKLOG1 and BACKLOG2 ran it, with the diagnostics.
 if download("gemma3-4b", GEMMA4B):
-    sh("confirm_probe_gemma3-4b", f"{PY} {REPO}/experiments/kaggle_compat/confirm_child_probe.py {GEMMA4B[0]} "
-                                  f"{WORK}/confirm-probe-gemma3-4b.json", timeout=1500, cwd=REPO)
+    sh("tune_probe_gemma3-4b", f"{PY} {REPO}/experiments/kaggle_compat/tune_child_probe.py {GEMMA4B[0]} "
+                               f"{WORK}/tune-probe-gemma3-4b.json", timeout=2400, cwd=REPO)
 report["finished"] = True
 save()
 print(json.dumps({k: v.get("exit") for k, v in report["stages"].items()}, indent=1))
