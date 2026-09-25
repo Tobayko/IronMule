@@ -25,7 +25,9 @@ def _store() -> Path:
     """Where tuned profiles and fingerprints live.
 
     Override with `IRONMULE_HOME` to keep the store on a different volume, or to
-    give two checkouts separate tuning results on one machine.
+    give two checkouts separate tuning results on one machine. `IRONMULE_HOME` is also
+    the product's state root, which must be private, so the store is created 0700 (DATA3-B:
+    a 0755 store made `setup` refuse the directory after `tune` or `benchmark`).
     """
     explicit = os.environ.get("IRONMULE_HOME")
     if explicit:
@@ -407,7 +409,7 @@ def probe(force: bool = False) -> dict[str, Any]:
     record: dict[str, Any] = {"fingerprint": ident, "static": facts, "measured": {}}
     if facts.get("gpu_available"):
         record["measured"] = measure()
-    STORE.mkdir(parents=True, exist_ok=True)
+    STORE.mkdir(parents=True, exist_ok=True, mode=0o700)
     path.write_text(json.dumps(record, indent=2, sort_keys=True))
     return record
 

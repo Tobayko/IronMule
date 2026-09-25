@@ -952,7 +952,7 @@ def save_profile(profile: dict[str, Any]) -> None:
         raise ModelIdentityError("profile conditions do not match exact model identity")
     profiles = _all_profiles()
     profiles[_profile_key(profile["fingerprint"], identity, profile.get("compute_dtype"))] = profile
-    STORE.mkdir(parents=True, exist_ok=True)
+    STORE.mkdir(parents=True, exist_ok=True, mode=0o700)
     PROFILES.write_text(json.dumps(profiles, indent=2, sort_keys=True))
 
 

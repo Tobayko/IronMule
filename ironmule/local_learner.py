@@ -525,7 +525,7 @@ class LocalLearner:
     def save(self, path: Path) -> Path:
         """Atomic, so a killed process leaves the previous state rather than half of one."""
         path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         payload = json.dumps(self.as_dict(), indent=2, sort_keys=True, allow_nan=False)
         handle, temporary = tempfile.mkstemp(dir=str(path.parent), suffix=".partial")
         try:
