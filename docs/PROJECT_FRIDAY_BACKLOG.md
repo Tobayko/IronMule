@@ -110,8 +110,8 @@ Nutzer selbst im Browser akzeptieren.
 Das Nutzerziel "auf CUDA mindestens so gut wie auf Apple, möglichst besser" ist erreicht
 und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen Apple
 0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
-Budgetregel bleibt: bis 10 h je Kaggle-Woche, 0 EUR, ein Lauf, kein Auto-Retry,
-Notebook nach Archivierung löschen. Offen:
+Budget rule (user, 2026-09-25): Kaggle's weekly GPU quota of 30 h; the earlier 10 h rule
+no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebook once archived. Offen:
 
 - **PORT1-E Nutzerentscheidung: fp32 automatisch auf Turing/Volta?** Mechanismus:
   bei CUDA mit Compute Capability < 8 und bf16-Checkpoint `compute_dtype="float32"`
@@ -187,6 +187,23 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   auf `native` 14B 4/6 (run 7), trotz gepinnter Arithmetik. Test: `fuse_projections`
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
   Matmuls — dann Fusion unter `native` verweigern.
+
+## OSS1 — gpt-oss 20B's quality gate (2026-09-25)
+
+- **OSS1 Is gpt-oss's gate spread its bf16 reference's expert routing?** PORT2 run 7's
+  gates put `float32` at 1.004 [0.940; 1.065] and `float16` at 1.009 [0.949; 1.067]. Per chunk
+  both plans leave bf16 by the same amount in the same direction (sd 0.13 nats; float16
+  against float32 only 0.025; Qwen 3 8B's float16 against bf16 0.004), so the unstable side
+  looks like bf16, and about 2 400 chunks would be needed to qualify either plan. Mechanism
+  under test: rounding in bf16 flips the router's top-4 of 32 experts where two logits nearly
+  tie. Test: `moe_routing.py`, one process each for bf16, float32, bf16 again (A/A) and
+  float16, chunks 1, 8, 9, 11 of the gate's slicing (the smallest and the three largest
+  |dNLL| in run 7). Outcomes: bf16 A/A not identical, then the reference itself is
+  non-deterministic and a gate needs repeated references; flips between bf16 and the plans
+  far above float32 against float16, concentrated at small margins and tracking |dNLL|, then
+  the routing is the mechanism and a mixture-of-experts gate against the checkpoint's own
+  bf16 cannot qualify a plan on this card; which reference replaces it is the user's
+  decision. Otherwise the mechanism is not routing and stays open.
 
 ## DATA3 — Rest (2026-09-15)
 
