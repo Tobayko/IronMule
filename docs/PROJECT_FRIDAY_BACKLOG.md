@@ -194,6 +194,7 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   `kernel+p16` gegen Stock-bf16, Decode- und Prefill-Pfad, BOS in jedem Chunk (ohne BOS
   schwankt Gemma 3 um bis zu 0,34 Nats). Kill: obere Grenze > 1,005 — dann `native` für
   `mlx_lm.models.gemma3_text` verweigern (Tabellenzeile), float32 bleibt der Plan.
+  2026-09-25: BACKLOG8 runs it as written (both paths, pinned kernel, seed 20260915).
 
 ## OSS1 — Rest (2026-09-25)
 
