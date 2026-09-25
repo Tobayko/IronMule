@@ -185,22 +185,15 @@ Scheibe, Mistral 24B TTFT 1,68 s) und PERF1-Q (CUDA-Graphen, upstream), beide
   allein unter `native`, Ausgaben je Modul gegen ungefust. Kill: Ursache außerhalb der
   Matmuls — dann Fusion unter `native` verweigern.
 
-## OSS1 — gpt-oss 20B's quality gate (2026-09-25)
+## OSS1 — Rest (2026-09-25)
 
-- **OSS1 Is gpt-oss's gate spread its bf16 reference's expert routing?** PORT2 run 7's
-  gates put `float32` at 1.004 [0.940; 1.065] and `float16` at 1.009 [0.949; 1.067]. Per chunk
-  both plans leave bf16 by the same amount in the same direction (sd 0.13 nats; float16
-  against float32 only 0.025; Qwen 3 8B's float16 against bf16 0.004), so the unstable side
-  looks like bf16, and about 2 400 chunks would be needed to qualify either plan. Mechanism
-  under test: rounding in bf16 flips the router's top-4 of 32 experts where two logits nearly
-  tie. Test: `moe_routing.py`, one process each for bf16, float32, bf16 again (A/A) and
-  float16, chunks 1, 8, 9, 11 of the gate's slicing (the smallest and the three largest
-  |dNLL| in run 7). Outcomes: bf16 A/A not identical, then the reference itself is
-  non-deterministic and a gate needs repeated references; flips between bf16 and the plans
-  far above float32 against float16, concentrated at small margins and tracking |dNLL|, then
-  the routing is the mechanism and a mixture-of-experts gate against the checkpoint's own
-  bf16 cannot qualify a plan on this card; which reference replaces it is the user's
-  decision. Otherwise the mechanism is not routing and stays open.
+- **OSS1-R User decision: which reference qualifies a plan on a mixture-of-experts model?**
+  OSS1 (ledger) showed that emulated bf16 changes about a fifth of gpt-oss 20B's expert
+  choices against float32 and float16, which agree with each other on 97-99%, so a gate
+  against the checkpoint's own bf16 cannot qualify either plan on a T4. Options: keep the
+  rule and leave gpt-oss unqualified; gate against a float32 computation of the checkpoint
+  (for `float16`, about 100 chunks at float16's own spread of 0.025 nats); or gate against
+  bf16 on a device where bf16 is native. Kill: none; this is a rule, not a measurement.
 
 ## DATA3 — Rest (2026-09-15)
 

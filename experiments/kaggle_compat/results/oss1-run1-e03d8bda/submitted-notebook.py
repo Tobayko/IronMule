@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 
-COMMIT = __COMMIT__
+COMMIT = "eeae3f1beb3bc2d2af5960c655a219df67e90045"
 MODEL = ("mlx-community/gpt-oss-20b-MXFP4-Q4", "f356f2747216d7e98fee755df25987459fc19089")
 WIKITEXT = ("Salesforce/wikitext", "b08601e04326c79dfdd32d625aee71d232d685c3",
             "wikitext-2-raw-v1/test-00000-of-00001.parquet")
