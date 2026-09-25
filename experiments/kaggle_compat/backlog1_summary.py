@@ -1,4 +1,4 @@
-"""BACKLOG1: the verdicts of PERF1-M, PERF1-T and PORT1-F, with the rules fixed in the harness.
+"""BACKLOG1: the verdicts of PERF1-M, PERF1-T, PORT1-F, PERF1-N and PERF1-L, with the harness's rules.
 
 The gate bootstrap uses quality.py's seed; on PERF1 run 5's 8B decode files it gives the published
 ratio 0.997356 exactly and an interval that differs from the published one in the fifth decimal.
@@ -59,10 +59,26 @@ def tune(results):
                                        "tail": stage.get("tail", "")[-600:]}
 
 
+def probes(results):
+    fusion = json.loads((results / "probe-perf1n.json").read_text())["results"]
+    by_path = {}
+    for row in fusion:
+        entry = by_path.setdefault(row["path"], {"cases": 0, "bit_equal": 0, "max_abs_diff": 0.0})
+        entry["cases"] += 1
+        entry["bit_equal"] += row["bit_equal"]
+        entry["max_abs_diff"] = max(entry["max_abs_diff"], row["max_abs_diff"])
+    k32 = {}
+    for arith in ("free", "pinned"):
+        rows = json.loads((results / f"probe-perf1l-{arith}.json").read_text())["results"]
+        k32[arith] = {"cases": len(rows), "bit_equal": sum(r["bit_equal"] for r in rows),
+                      "max_rel_diff": max(r["max_rel_diff"] for r in rows)}
+    return {"PERF1-N": by_path, "PERF1-L": k32}
+
+
 def main(results, out=None):
     results = Path(results)
     verdicts = {}
-    for name, fn in (("PERF1-M", gate), ("PERF1-T", determinism), ("PORT1-F", tune)):
+    for name, fn in (("probes", probes), ("PERF1-M", gate), ("PERF1-T", determinism), ("PORT1-F", tune)):
         try:
             verdicts[name] = fn(results)
         except FileNotFoundError as missing:
