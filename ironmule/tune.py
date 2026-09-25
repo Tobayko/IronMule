@@ -417,6 +417,22 @@ def _close_engine(engine: Any | None) -> None:
             close()
 
 
+def _release_device_memory() -> None:
+    """Hand a closed engine's memory back to the device before a child loads the model.
+
+    Dropping the engine leaves its buffers in MLX's cache, and on CUDA the freed buffers
+    stay reserved in the memory pool until a synchronization. A confirmation child loads
+    a second copy; on a 15 GB T4 it ran out of memory next to the parent's (PORT1-F).
+    """
+    import gc
+
+    import mlx.core as mx
+
+    gc.collect()
+    mx.clear_cache()
+    mx.synchronize()
+
+
 def prompt_ids(tokenizer, prompt: str) -> list[int]:
     rendered = tokenizer.apply_chat_template(
         [{"role": "user", "content": prompt}], tokenize=False, add_generation_prompt=True
@@ -832,6 +848,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             # Keep the screening winner bound to the evidence before a rejected
             # confirmation resets the profile to BASELINE.
             confirmation_candidate_knobs = best.as_dict()
+            _release_device_memory()
             raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,
                                        compute_dtype=compute_dtype)
             accepted, rejection_reason = _confirmation_decision(

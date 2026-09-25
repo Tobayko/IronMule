@@ -538,6 +538,59 @@ def test_unsupported_candidate_is_typed_and_search_continues(monkeypatch):
     assert profile["model_identity"] == identity.to_dict()
 
 
+def test_confirmation_starts_after_the_screening_engine_is_released(monkeypatch):
+    """PORT1-F: a confirmation child ran out of GPU memory next to the parent's cache."""
+    import gc
+    import weakref
+
+    events, engines = [], []
+
+    class FakeEngine:
+        def __init__(self, knobs):
+            self.knobs = knobs
+            self._compiled = None
+            engines.append(weakref.ref(self))
+
+        def close(self):
+            events.append("close")
+
+        @staticmethod
+        def needs_reload(old, new):
+            return old.fuse_projections != new.fuse_projections
+
+    monkeypatch.setattr(tune, "Engine", FakeEngine)
+    monkeypatch.setattr(tune, "gpu_busy", lambda: None)
+    monkeypatch.setattr(tune, "probe", lambda: {"fingerprint": "test"})
+    identity = _identity(tune.DEFAULT_MODEL)
+    resolved = types.SimpleNamespace(path=Path("/cached/model"), identity=identity)
+    monkeypatch.setattr(tune, "resolve_local_model", lambda *_args, **_kwargs: resolved)
+    monkeypatch.setattr(
+        tune, "load_engine",
+        lambda _model, knobs, **_kwargs: (FakeEngine(knobs), object()),
+    )
+    monkeypatch.setattr(tune, "prompt_ids", lambda _tokenizer, _prompt: [1, 2])
+    monkeypatch.setattr(tune, "_eos_ids", lambda _tokenizer: (99,))
+    monkeypatch.setattr(
+        tune, "conditions",
+        lambda *_args, **_kwargs: {"prompt_tokens": 2, "max_tokens": 2},
+    )
+    monkeypatch.setattr(tune, "save_profile", lambda _profile: None)
+    monkeypatch.setattr(tune, "SEARCH", [("readback_every", [2])])
+    monkeypatch.setattr(tune, "measure", lambda engine, *_args, **_kwargs: {
+        "total_ns": 5 if engine.knobs.readback_every == 2 else 10, "prefill_ns": 1,
+        "decode_ns": 1, "logical_tokens": [7], "deterministic": True, "capacity": 2})
+    monkeypatch.setattr(tune, "_release_device_memory", lambda: events.append("release"))
+
+    def fake_confirm(*_args, **_kwargs):
+        gc.collect()
+        events.append(("confirm", [ref() is None for ref in engines]))
+        return {}
+
+    monkeypatch.setattr(tune, "confirm", fake_confirm)
+    tune.tune(repeats=1)
+    assert events == ["close", "release", ("confirm", [True])]
+
+
 def test_only_typed_or_explicitly_unsupported_candidate_errors_are_skippable():
     from ironmule.fast import FusionUnsupported
 

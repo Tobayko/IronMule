@@ -73,11 +73,17 @@ def _child_exception_type(stderr: str) -> str | None:
 
     A child's stderr can carry prompt text, so it stays out of every error; a class name
     such as `RuntimeError` cannot, and it is what tells a crash from an out-of-memory kill.
-    Only the last line is read, where Python writes the exception.
+    Read from the last traceback: its first unindented line is the exception. Notes follow
+    that line (the child guard adds one, `@GUARD_FAILURE`), and a class-like line outside a
+    traceback, such as a failed sitecustomize's, is not the child's exception.
     """
-    lines = stderr.strip().splitlines()
-    name = lines[-1].strip().split(":", 1)[0] if lines else ""
-    return name if _EXCEPTION_CLASS.fullmatch(name) else None
+    lines = stderr.splitlines()
+    starts = [i for i, line in enumerate(lines) if line.startswith("Traceback (most recent call last):")]
+    for line in lines[starts[-1] + 1:] if starts else ():
+        if line and not line[0].isspace():
+            name = line.split(":", 1)[0]
+            return name if _EXCEPTION_CLASS.fullmatch(name) else None
+    return None
 
 
 def _terminate_child(process: subprocess.Popen[str]) -> None:

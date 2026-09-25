@@ -133,6 +133,10 @@ Offen:
   records the failing child's stderr.
   BACKLOG3: the confirmation alone ran 25 min without failing, so the crash needs the
   screening before it; BACKLOG4 records the full tune's failing child and GPU memory.
+  BACKLOG4: cause found. The child runs out of GPU memory loading the model next to the
+  parent's MLX cache (9489 MiB after screening on a 15360 MiB T4); BACKLOG2's "not a Python
+  traceback" was a misread (ledger BACKLOG4). Fix: tune releases the cache before the
+  confirmation; BACKLOG5 checks it.
 
 ## PERF1 — Rest (2026-09-23)
 
