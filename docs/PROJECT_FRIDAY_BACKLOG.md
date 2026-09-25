@@ -131,6 +131,8 @@ Offen:
   (`309728e`: the child's exception class); next, rerun the tune and fix the cause.
   BACKLOG2: reproduced again with no exception class, so not a Python traceback; BACKLOG3
   records the failing child's stderr.
+  BACKLOG3: the confirmation alone ran 25 min without failing, so the crash needs the
+  screening before it; BACKLOG4 records the full tune's failing child and GPU memory.
 
 ## PERF1 — Rest (2026-09-23)
 
