@@ -6549,3 +6549,24 @@ gains a `gemma3_text` / `native` row (the decode path, the higher upper bound, a
 recomputes it) with run 18's product-path speed, 0.1999 of stock (5.00x), and `ironmule plans`
 now recommends `native` for Gemma 3 on pre-Ampere cards. The gate ran on 12B only; the row, like
 every row, holds per architecture. Timing: the stock decode path took 2119 s, the kernel 425 s.
+
+## BACKLOG9 — Qwen 3.5 gives one answer per prompt once IronMule switches its CUDA graphs off (2026-09-25)
+
+`backlog9-run1-85417c19`, commit `ce95a04`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw
+data and the submitted notebook: `experiments/kaggle_compat/results/backlog9-run1-85417c19/`.
+Run time 21 min, 0 EUR.
+
+**Engine suite:** 1274 passed, 28 skipped, 0 failed, with PERF1-T2's new tests.
+
+**PERF1-T2, as the entry fixed its test.** Qwen 3.5 9B (`qwen3_5`) through `cross.py`, whose
+children load with `load_engine`, IronMule interactive without knobs, three fresh processes, the
+notebook setting no graph variable: every process reported `MLX_USE_CUDA_GRAPHS=0`, set by
+IronMule from the snapshot's `model_type`, and all three gave one output digest (`1b914903`).
+Beside it, as a diagnostic, the same arm with `MLX_USE_CUDA_GRAPHS=1` set by the caller:
+IronMule left it on, and the three processes gave three different digests, as PERF1 run 13 and
+BACKLOG1 found for graphs on. Wall per process 56.8 / 56.2 / 56.3 s without graphs against 54.7 /
+54.8 / 54.8 s with them, a median ratio of 1.026: determinism costs about 3% here, where
+BACKLOG1's graphs-off arms measured no difference against a graphs-off stock. The two arms ran
+one after the other, not interleaved, so this is a screening number. PERF1-T2 is shipped: the
+product worker and `load_engine` switch graphs off for this family on pre-Ampere CUDA unless
+the caller chose. The throughput refusal for recurrent caches stays.

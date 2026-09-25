@@ -378,7 +378,8 @@ The main techniques:
 - **Prefix reuse** — a shared document prefix is computed once and reused bit-exactly.
 - **Fixed compiled cache** — fewer, larger GPU kernels per token.
 - **Hardware awareness** — per-device settings, for example larger CUDA graphs on older
-  NVIDIA GPUs.
+  NVIDIA GPUs, and none at all for Qwen 3.5 there, which only then answers the same way in
+  every process.
 
 Anything that could change the output (a different numeric precision, sampling, true
 tensor batching) is never chosen automatically.

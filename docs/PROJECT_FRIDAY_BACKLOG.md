@@ -132,7 +132,9 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
+`model_type` (`f44cf72`; BACKLOG9: one digest across three processes, three with the caller's
+graphs on, about 3% slower). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
 1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
 recommends `native` for Gemma 3. Answered 2026-09-25: PERF1-Z, every CUDA number re-measured by run 18 (`perf1-run18-863237d6`,
 ledger PERF1-Z): all seven Gemma ratios reproduced, the 5.52x projection measured as 5.55x, Qwen 3
@@ -161,20 +163,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   contract first (an opt-in mode whose answers may differ from interactive mode, like a numeric
   plan, with streaming, cancellation and isolation stated) and a quality gate for batched
   arithmetic; no existing exact path changes, so the kill does not apply.
-- **PERF1-T2 Qwen 3.5 on CUDA without CUDA graphs, in the product.** BACKLOG1 (ledger): without
-  graphs Qwen 3.5 9B is deterministic across processes and IronMule's interactive and grouped
-  arms equal stock 6/6, at the same speed. Mechanism: set `MLX_USE_CUDA_GRAPHS=0` for this
-  family on CUDA and lift the throughput refusal for recurrent caches there. Open design: MLX
-  reads the flag once, at its first GPU operation, before the family is known. Test: a process
-  that loads Qwen 3.5 through `load_engine` reports graphs off and gives one digest across
-  three processes. Kill: the flag cannot be set before MLX's first GPU operation without
-  reading the model config first; then document `MLX_USE_CUDA_GRAPHS=0` for this family.
-  2026-09-25: built. The product worker already reads config.json before MLX's first GPU
-  operation, and MLX reads the flag at its first kernel, so the kill does not apply: the worker
-  and `load_engine` pass `model_type` to `apply_cuda_graph_defaults`, which sets
-  `MLX_USE_CUDA_GRAPHS=0` for `qwen3_5` on pre-Ampere CUDA unless the caller set it. The
-  throughput refusal for recurrent caches stays: a library caller may already have run a
-  kernel, and then the flag cannot take effect. BACKLOG9 runs the entry's test.
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
