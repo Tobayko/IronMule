@@ -137,6 +137,8 @@ Offen:
   parent's MLX cache (9489 MiB after screening on a 15360 MiB T4); BACKLOG2's "not a Python
   traceback" was a misread (ledger BACKLOG4). Fix: tune releases the cache before the
   confirmation; BACKLOG5 checks it.
+  BACKLOG5: that release is not enough. MLX then holds 56 bytes, the card still 9553 MiB, and
+  the child runs out of memory again. BACKLOG6 measures the memory pool before the next fix.
 
 ## PERF1 — Rest (2026-09-23)
 
@@ -206,6 +208,9 @@ Beantwortet in `research/LEDGER.md` DATA3/PORT1. Offen:
   Verzeichnis; nach `benchmark` scheitert `setup`, plattformunabhängig. Test:
   Produktwurzel unter `IRONMULE_HOME/product` wie im Default. Kill: bestehende
   Nutzerzustände würden unauffindbar — dann Migration oder nur klare Fehlermeldung.
+  2026-09-25 (`f315a50`): mechanism changed to keep `IRONMULE_HOME` the documented product
+  root, which the proposed move would have lost (the kill); the store is created 0700 instead.
+  BACKLOG6 runs the suite with the new test.
 - DATA2 (Transformers-Referenz) bleibt blockiert, bis die Gemma-Lizenz auf Kaggle
   akzeptiert ist. Anmerkung 2026-09-16: PORT2 hat gezeigt, dass eine lizenzfreie
   Stock-Referenz genügt — `families.py` dekodiert greedy an IronMule vorbei, und auf der

@@ -5608,3 +5608,24 @@ The fix: `tune()` calls `gc.collect()`, `mx.clear_cache()` and `mx.synchronize()
 the screening engine and before the confirmation. BACKLOG5 runs the engine suite and the full
 tune with it. Raw data: `experiments/kaggle_compat/results/backlog4-run1-fb4dacba/`. Run time
 23 min, 0 EUR.
+
+## BACKLOG5 — releasing MLX's cache does not free the parent's GPU memory (2026-09-25)
+
+`backlog5-run1-a7b644f7`, commit `9e6921a`, Kaggle with two Tesla T4. Engine suite, not
+integration: 1264 passed, 28 skipped, 0 failed, with the two new tests (the release before the
+confirmation, the exception class read from the traceback). PORT1-F: the full Gemma 3 4B tune
+with `_release_device_memory()` failed as before, `ABRunError: child 0 exited with status 1
+(RuntimeError)` at 1228 s, the child again out of memory in `load_model`. The corrected helper
+named the class this time. When the confirmation started, MLX in the parent reported 56 active
+and 0 cached bytes, and nvidia-smi still counted 9553 MiB on its card: the memory is held
+outside MLX's buffers. BACKLOG5's rule killed this fix ("a child out of memory again"); the
+release stays in the code for now and is not a fix. BACKLOG6 measures the default memory pool's
+reserved bytes after the release, a context synchronize and a trim before choosing between
+trimming the pool and screening in a child.
+
+The screening itself (one process, diagnostic): baseline 12357 ms for 23 tokens (prefill 10450,
+decode 1946); `head_skip_prefill` 0.852 kept; `prefill_into_fixed` 0.856, `readback_every` 2/4/8
+0.852/0.866/0.866, `capacity_slack` 0.852 and `fuse_projections` 0.854 no further gain;
+`compiled_fixed_cache` 1.004, `fused_argmax` 1.002, `speculate_k=4` 1.348; `wired_fraction`
+unsupported on CUDA. Raw data: `experiments/kaggle_compat/results/backlog5-run1-a7b644f7/`. Run
+time 23 min, 0 EUR.

@@ -1,0 +1,37 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+baseline 12356.68 ms  (prefill 10450.29, decode 1946.19) 23 tokens, capacity 384
+  compiled_fixed_cache=  True  ratio 1.0036  rejected: no gain
+  fused_argmax=  True  ratio 1.0017  rejected: no gain
+  head_skip_prefill=  True  ratio 0.8520  kept
+  prefill_into_fixed=  True  ratio 0.8557  rejected: no gain
+  readback_every=     2  ratio 0.8517  rejected: no gain
+  readback_every=     4  ratio 0.8660  rejected: no gain
+  readback_every=     8  ratio 0.8657  rejected: no gain
+  speculate_k=     4  ratio 1.3483  rejected: no gain
+  capacity_slack=   128  ratio 0.8524  rejected: no gain
+  wired_fraction=   0.6  unsupported (wired_fraction is unsupported without Metal: MLX's CUDA backend has no wired limit)
+  fuse_projections=  True  ratio 0.8535  rejected: no gain
+confirming the screening winner with a paired A/B ...
+{"exit": "ABRunError: child 0 exited with status 1 (RuntimeError)", "seconds": 1229, "failed_children": 1}
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "<string>", line 7, in <module>
+  File "/tmp/IronMule/ironmule/ab.py", line 142, in _child
+    return _child_execution(spec)
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/ab.py", line 174, in _child_execution
+    engine, tok = load_engine(spec.get("model", DEFAULT_MODEL), knobs,
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/tune.py", line 366, in load_engine
+    model, tokenizer = load(source)
+                       ^^^^^^^^^^^^
+  File "/tmp/im/lib/python3.12/site-packages/mlx_lm/utils.py", line 491, in load
+    model, config = load_model(model_path, lazy, model_config=model_config)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/im/lib/python3.12/site-packages/mlx_lm/utils.py", line 418, in load_model
+    mx.eval(model.parameters())
+RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory
+@GUARD_FAILURE{"events": [], "installed": true, "version": "ironmule.q3f_child_guard.v1"}
+
