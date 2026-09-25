@@ -5674,3 +5674,28 @@ Median 12.587 and 21.411 tok/s, bound 1.176, below the entry's 1.2 in every laun
 serves the eight requests in two waves (81.1 s), width 8 in one (47.8 s): a wave of eight costs
 1.18x a wave of four for twice the tokens, so halving the batch saves too little for
 alternation to pay. Width 8 gives 3 of 8 answers equal to width 4's, as bf16 batching did before.
+
+## BACKLOG7 — the tune completes on a T4; Gemma 3 4B gains 14.65% confirmed (2026-09-25)
+
+`backlog7-run1-1d74b99c`, commit `c52da8d`, Kaggle with two Tesla T4, mlx `0.32.2`, mlx-lm
+`0.31.3`. Engine suite, not integration: 1268 passed, 28 skipped, 0 failed, with the three new
+tests of the context synchronize. Raw data: `experiments/kaggle_compat/results/backlog7-run1-1d74b99c/`.
+Run time 45 min, 0 EUR.
+
+**PORT1-F fixed, one criterion missed.** The full `ironmule tune` on Gemma 3 4B in bf16 ran in
+2569 s and finished with all six confirmation children; none failed. When the confirmation
+started, the parent's card showed 1095 MiB (BACKLOG5: 9553 MiB) and MLX held 56 bytes. BACKLOG7's
+rule asked for both a finished tune and less than 1 GiB in the parent then; 1095 MiB misses that
+bound by 71 MiB. The bound came from BACKLOG6's probe, whose parent had only loaded and generated
+(375 MiB, the context); the tune's parent has also run the hardware probe and every screening
+arm, and what holds the remaining 720 MiB is not measured (not MLX's buffers and, after the
+synchronize, not the pool's freed memory). The kill, a child out of memory, did not occur.
+
+**The product's own tune on CUDA, first complete run.** Screening, one process: baseline 11784 ms
+for 23 tokens of tune's prompt (prefill 10003, decode 1786); `head_skip_prefill` 0.847 kept;
+`prefill_into_fixed` 0.854, `readback_every` 2/4/8 0.849/0.862/0.862, `capacity_slack` 0.847,
+`fuse_projections` 0.856 no further gain; `compiled_fixed_cache` 0.998, `fused_argmax` 0.997,
+`speculate_k=4` 1.323; `wired_fraction` unsupported. The paired confirmation, six processes,
+seven repetitions each: `head_skip_prefill` against baseline 0.8535 [0.8524; 0.8546], pairs
+0.8524-0.8550, tokens identical and deterministic, accepted. The stored profile: 14.65% faster
+end to end on this prompt, a prefill-dominated workload (85% of the baseline's time is prefill).

@@ -112,6 +112,10 @@ und in `research/LEDGER.md` PORT1 (beide Einträge) belegt: 1B exakt 0,550 gegen
 0,623; 4B 0,525 und 12B 0,490 mit `compute_dtype="float32"` gegen 0,787 / 0,8195.
 Budget rule (user, 2026-09-25): Kaggle's weekly GPU quota of 30 h; the earlier 10 h rule
 no longer applies. 0 EUR, one run at a time, no automatic retry, delete a notebook once archived.
+Closed 2026-09-25: PORT1-F, the tune's confirmation child ran out of memory beside the parent's
+freed but still reserved CUDA pool; tune now synchronizes the contexts after the release, and
+the full Gemma 3 4B tune completes (ledger BACKLOG4 to BACKLOG7; the parent still holds 1095
+MiB, 71 MiB over BACKLOG7's bound, cause not measured).
 Closed 2026-09-25: PORT1-E (float32 by default on Turing and Volta), because AGENTS.md forbids
 substituting a plan for speed, the plan changes tokens, and `native` now serves Qwen 3 better;
 `doctor` keeps recommending. The Kaggle-host note on three failing product tests: TEST1 ran
@@ -122,25 +126,6 @@ Offen:
   Metal-Command-Buffer; Mac-Smoke n=1: 0,96–0,97 im Arm D. Nicht übernommen, weil der
   Darwin-Pfad unverändert bleiben muss. Test: `graphs.py` auf dem Mac, 5 Wdh.,
   eigene Vorregistrierung. Kill: Intervall schließt 1 ein oder Tokenbruch.
-- **PORT1-F einmaliger Absturz der 4B-bf16-`tune`-Bestätigung (Lauf `632b904f`).**
-  `ab`-Kind Exit 1 ohne stderr, damals mit `MLX_MAX_MB_PER_BUFFER=4000`; mit dem
-  ops-only-Default nicht reproduziert (Probe exit 0), fp32-`tune` 4B lief durch.
-  Test: `ironmule tune --model 4B` nativ einmal auf der T4 (~20 min). Kill:
-  reproduziert — dann `ab.run` stderr-Diagnose ergänzen und Ursache beheben.
-  Reproduced 2026-09-25 (BACKLOG1): confirmation child 0 exit 1. The diagnostic is in
-  (`309728e`: the child's exception class); next, rerun the tune and fix the cause.
-  BACKLOG2: reproduced again with no exception class, so not a Python traceback; BACKLOG3
-  records the failing child's stderr.
-  BACKLOG3: the confirmation alone ran 25 min without failing, so the crash needs the
-  screening before it; BACKLOG4 records the full tune's failing child and GPU memory.
-  BACKLOG4: cause found. The child runs out of GPU memory loading the model next to the
-  parent's MLX cache (9489 MiB after screening on a 15360 MiB T4); BACKLOG2's "not a Python
-  traceback" was a misread (ledger BACKLOG4). Fix: tune releases the cache before the
-  confirmation; BACKLOG5 checks it.
-  BACKLOG5: that release is not enough. MLX then holds 56 bytes, the card still 9553 MiB, and
-  the child runs out of memory again. BACKLOG6 measures the memory pool before the next fix.
-  BACKLOG6: CUDA's pool keeps the freed memory reserved until a context synchronize (3520 MiB,
-  then 0). tune now synchronizes the active contexts after the release; BACKLOG7 checks it.
 
 ## PERF1 — Rest (2026-09-23)
 
