@@ -155,6 +155,10 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   sich nicht ohne Änderung eines bestehenden exakten Pfads formulieren. Der Gewinn wächst
   mit dem Modell (2026-09-23): Breite 8 mit `mma` 1,72x auf Mistral 3.2 24B, 2,46x auf
   Qwen 3 32B über zwei Karten, je gegen die In-Run-Kontrolle (Ledger).
+  Decided 2026-09-25 (agent): worth building, not as a quick change. It needs a written
+  contract first (an opt-in mode whose answers may differ from interactive mode, like a numeric
+  plan, with streaming, cancellation and isolation stated) and a quality gate for batched
+  arithmetic; no existing exact path changes, so the kill does not apply.
 - **PERF1-T2 Qwen 3.5 on CUDA without CUDA graphs, in the product.** BACKLOG1 (ledger): without
   graphs Qwen 3.5 9B is deterministic across processes and IronMule's interactive and grouped
   arms equal stock 6/6, at the same speed. Mechanism: set `MLX_USE_CUDA_GRAPHS=0` for this
@@ -175,6 +179,10 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 erst nach PORT2-K, dem
   Gate mit BOS je Chunk). Kill: obere Intervallgrenze > 1,005 — dann Experten
   unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
+  Deferred 2026-09-25 (agent decision): OSS1 found emulated bf16 flipping a fifth of gpt-oss's
+  expert choices, so a gate against bf16 on a T4 is likely inconclusive for MoE; first measure
+  Qwen3.6's routing flips bf16 against float32 (`moe_routing.py`, adapted to its router), and
+  gate only if they are rare.
 - **PERF1-V 8-bit-Router im Zeilen-Kernel.** Qwens `mlp.gate`/`shared_expert_gate` und Gemmas
   `router.proj` sind 8-bit und laufen weiter emuliert (run 14: 20480 bzw. 16184 Aufrufe im
   Fallback). Mechanismus: derselbe Kernel mit 8-bit-Entpackung (vier Werte je uint32).
