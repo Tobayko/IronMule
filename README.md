@@ -136,6 +136,8 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `native`, prefill path | Qwen 3 8B | 0.998839 `[0.997220; 1.000515]` | passes |
 | `native`, prefill path | Qwen 3 14B | 1.000510 `[0.998894; 1.002001]` | passes |
 | `native`, decode path | Qwen 3 14B | 1.000526 `[0.999000; 1.002018]` | passes |
+| `native`, decode path | Gemma 3 12B | 1.000578 `[0.997951; 1.003197]` | passes |
+| `native`, prefill path | Gemma 3 12B | 1.000643 `[0.998250; 1.003185]` | passes |
 
 Same card, same code, opposite verdicts: float16's exponent range carries Qwen 3 and not
 Gemma 3. So neither plan is ever enabled for you, and neither is recommended for a model
@@ -163,7 +165,7 @@ The first column is IronMule's own product path against stock, fresh interleaved
 in the tables above; on Qwen 3 8B all six requests returned the same tokens as stock. It is for
 NVIDIA GPUs below compute capability 8 (Turing, Volta), refused anywhere else, checked against a
 float32 reference on the model's own weights before it is installed, and `ironmule plans`
-recommends it for Qwen 3 there. Like every numeric plan it changes the arithmetic, so it has to
+recommends it for Qwen 3 and Gemma 3 there (Gemma 3 12B: 5.00× · +400% against stock, PERF1 run 18). Like every numeric plan it changes the arithmetic, so it has to
 pass the quality gate on every path it touches:
 
 <picture>

@@ -173,6 +173,9 @@ README_SPEEDUPS += [
     ("Qwen 3 14B on the T4, native", "4.81× · +381%",
      "experiments/kaggle_compat/results/perf1-run7-080bfab7/cross-native-qwen3-14b.json",
      ("summary", "ironmule_native", "median_ratio")),
+    ("Gemma 3 12B on the T4, native", "5.00× · +400%",
+     "experiments/kaggle_compat/results/perf1-run18-863237d6/cross-gemma3-12b.json",
+     ("summary", "ironmule_native", "median_ratio")),
 ]
 
 #: The one documented cell where a plan is *slower* than stock. It cannot share the

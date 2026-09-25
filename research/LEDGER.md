@@ -6522,3 +6522,30 @@ run 2. The decode ratio, 5.83x against run 2's 5.12x (32.47 / 6.34), deviates by
 replaced by the new measurement. The README's "6.3 -> 32.5 tok/s" and "27.2 s -> 0.76 s" are
 run 2's absolute numbers, which the rule does not judge; its product-path ratio 4.97x stands on
 TEST2. Run 18 used about 1.1 h of free GPU quota, 0 EUR.
+
+## BACKLOG8 — Gemma 3 12B passes `native`'s gate on both paths; the merged tree is green (2026-09-25)
+
+`backlog8-run1-1665f2ae`, commit `81daff9` (this branch with `research/port2-model-families`
+merged), Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw data, the submitted notebook and
+the verdicts (`gate_summary.py`): `experiments/kaggle_compat/results/backlog8-run1-1665f2ae/`.
+Run time 61 min, 0 EUR.
+
+**Engine suite on the merged tree:** 1269 passed, 28 skipped, 0 failed, the port2 branch's MoE
+routing test and this branch's tests together.
+
+**PERF1-Y, as its entry fixed it.** `perf1.py nll`, 16 chunks x 512 tokens of WikiText-2 raw
+test, BOS (id 2) on every chunk, Gemma 3 12B at the pinned revision, stock bf16 against the plan
+on each path it changes; a path passes at an upper bound of the 10 000-sample paired chunk
+bootstrap <= 1.005 with no non-finite value.
+
+| path | stock perplexity | plan perplexity | ratio [95%], seed 20260915 (fixed for the run) | same, seed 20260916 (the table's) | verdict |
+| :-- | --: | --: | :-- | :-- | :-- |
+| decode, `kernel` pinned | 13.768 | 13.776 | 1.000578 [0.997948; 1.003224] | [0.997951; 1.003197] | passes |
+| prefill, `p16` | 13.783 | 13.792 | 1.000643 [0.998222; 1.003198] | [0.998250; 1.003185] | passes |
+
+With BOS on every chunk Gemma 3 12B scores perplexity 13.8, not the ~100 of the no-BOS gates,
+so the reference means something, and the plan's per-chunk spread is small. `numeric_plans.py`
+gains a `gemma3_text` / `native` row (the decode path, the higher upper bound, as the table test
+recomputes it) with run 18's product-path speed, 0.1999 of stock (5.00x), and `ironmule plans`
+now recommends `native` for Gemma 3 on pre-Ampere cards. The gate ran on 12B only; the row, like
+every row, holds per architecture. Timing: the stock decode path took 2119 s, the kernel 425 s.
