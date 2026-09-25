@@ -66,11 +66,13 @@ def test_prefill_path_and_float32_fallback_match_the_reference():
 
 
 def test_load_engine_refuses_fusion_with_the_native_plan_before_loading(monkeypatch):
+    import importlib
     import sys
     import types
 
-    from ironmule import tune
     from ironmule.runtime import Knobs
+
+    tune = importlib.import_module("ironmule.tune")  # `ironmule.tune` is also a function
 
     loaded = []
     monkeypatch.setitem(sys.modules, "mlx_lm", types.SimpleNamespace(load=lambda source: loaded.append(source)))
