@@ -34,6 +34,13 @@ placeholders filled, and archived byte for byte in its run's `results/` director
 run is archived, the archived copy is the record and the template is removed; git history
 keeps the reviewed template. Shared scripts that later runs reuse stay.
 
+## Rebased history
+
+Pull request 9 was rebase-merged, so its 16 commits reached `main` with new hashes and
+identical trees (`f9e1d30` is `7af3733` on `main`, `9394838` is `c4cb89a`). The ledger and the
+archived notebooks of TEST1, TEST2, TEST2-G and the clean-up check name the original hashes;
+GitHub keeps them under `refs/pull/9/head`.
+
 ## Clean-up status (2026-09-24)
 
 - Removed: four private helpers nothing called (`ironmule/q4_corpus.py`,
