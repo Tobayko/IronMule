@@ -1,5 +1,5 @@
 # SHOT1: screenshots of IronMule's chat page, served by `ironmule serve` from `main` with a real
-# model on a Kaggle T4. The user asked on 2026-09-25 to see the application. Private notebook,
+# model on a Kaggle T4 (run 2 polls from Python: the page's CSP refused run 1's eval). The user asked on 2026-09-25 to see the application. Private notebook,
 # internet on; a demonstration, no measurement and no performance claim. Rules:
 #   * `ironmule setup`, `models add` at the pinned Gemma 3 1B revision, `serve` on 127.0.0.1:8080;
 #     wait for /ready.
@@ -84,13 +84,19 @@ with sync_playwright() as p:
         page = browser.new_page(viewport={"width": 1100, "height": 720}, color_scheme=scheme,
                                 device_scale_factor=2)
         page.goto("http://127.0.0.1:8080/")
-        page.wait_for_function("document.getElementById('model').textContent !== 'connecting'", timeout=60000)
+        # The page's CSP forbids eval, so Playwright's wait_for_function cannot run in it
+        # (run 1); poll from here instead and leave the page exactly as a user gets it.
+        deadline = time.time() + 60
+        while page.inner_text("#model") == "connecting" and time.time() < deadline:
+            time.sleep(0.5)
         started = time.time()
         page.fill("#input", question)
         page.press("#input", "Enter")
         page.wait_for_selector(".msg.assistant", timeout=60000)
-        page.wait_for_function("!document.getElementById('send').disabled && "
-                               "document.querySelector('.msg.assistant').textContent.length > 0", timeout=300000)
+        deadline = time.time() + 300
+        while time.time() < deadline and not (page.is_enabled("#send")
+                                               and page.inner_text(".msg.assistant").strip()):
+            time.sleep(0.5)
         page.screenshot(path=f"/kaggle/working/ironmule-chat-{scheme}.png")
         result[scheme] = {"question": question, "model_label": page.inner_text("#model"),
                           "answer": page.inner_text(".msg.assistant"), "seconds": round(time.time() - started, 1)}
