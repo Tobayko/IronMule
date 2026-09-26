@@ -26,6 +26,7 @@ own first eligible weight agrees with a float32 reference.
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import mlx.core as mx
@@ -243,9 +244,17 @@ def _eligible(module: nn.Module) -> bool:
     return module["scales"].dtype == mx.bfloat16 and (module["weight"].shape[-1] * 8) % 32 == 0
 
 
+#: The kernel picks its rows per warp from N (four from 8192 on). A slice this tall keeps
+#: that choice and the full K while its float32 reference stays small: a 262144-row head
+#: dequantised whole would need about 2.9 GB for the probe alone (NEXT1-E).
+PROBE_ROWS = 8192
+
+
 def _probe(module: nn.Module) -> float:
     """Relative error of the kernel on the module's own weight against a float32 reference."""
     w, scales, biases = module["weight"], module["scales"], module["biases"]
+    if not isinstance(module, QuantizedSwitchLinear) and w.shape[0] > PROBE_ROWS:
+        w, scales, biases = w[:PROBE_ROWS], scales[:PROBE_ROWS], biases[:PROBE_ROWS]
     x = mx.random.normal((1, w.shape[-1] * 8), key=mx.random.key(0)).astype(mx.bfloat16)
     if isinstance(module, QuantizedSwitchLinear):  # one token against its first eight experts
         experts = mx.arange(min(8, w.shape[0]), dtype=mx.uint32)
@@ -303,12 +312,19 @@ def install(model: nn.Module, device_info: dict[str, Any] | None) -> dict[str, A
     modules = [m for _, m in model.named_modules() if _eligible(m)]
     if not modules:
         raise ValueError("the native plan found no 4-bit group-64 affine bfloat16 weights")
-    switches = [m for m in modules if isinstance(m, QuantizedSwitchLinear)]
-    error = max(_probe(m) for m in [modules[0]] + switches[:1])  # each kernel on its own weight
+    # NEXT1-E: every routed shape class once, not only the first module and one switch: a
+    # kernel right on one N/K pair has not been shown right on another.
+    shapes: dict[tuple, nn.Module] = {}
+    for module in modules:
+        shapes.setdefault((type(module).__name__, tuple(module["weight"].shape)), module)
+    started = time.perf_counter()
+    error = max(_probe(m) for m in shapes.values())
+    probe_seconds = time.perf_counter() - started
     if not error <= PROBE_TOLERANCE:
         raise ValueError(f"the native kernel disagrees with the float32 reference ({error:.3g})")
     for module in modules:
         module.__class__ = (NativeQuantizedEmbedding if isinstance(module, nn.QuantizedEmbedding)
                             else NativeQuantizedSwitchLinear if isinstance(module, QuantizedSwitchLinear)
                             else NativeQuantizedLinear)
-    return {"modules": len(modules), "probe_rel_error": error}
+    return {"modules": len(modules), "probed_shapes": len(shapes), "probe_rel_error": error,
+            "probe_seconds": round(probe_seconds, 3)}
