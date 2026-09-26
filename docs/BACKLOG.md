@@ -325,25 +325,23 @@ failure yields `OPE_UNSUPPORTED`. Do not retry or pool Q3c/Q3d/Q3e/Q3f, promote 
 B27 summaries or exploratory true batching, combine E14b's `+18.02%` and `+20.05%`,
 or invent foreign-Mac measurements.
 
-### `R14` — Process-inventory/group-gone order interaction in integration/release quality
+### `R15` — The competing-process gate matches directory names
 
-**Mechanism.** The combined integration order can change macOS process-inventory,
-group-gone and cleanup timing observations even when the Q3d/Q3f cleanup logic is
-correct in isolation. The initial full-pytest failure was a separate test-harness
-`sys.modules["ironmule"]` pollution issue; the private `tests/q4_offline_loader.py`
-namespace fix resolved that without product changes.
+**Mechanism.** `competing_model_process` (research/q3b_residual_swap_canary.py) blocks when a
+blocker token (`ironmule`, `mlx`, `gemma`, `qwen`, `llama`, ...) is a substring of any
+same-user command line. On 2026-09-26 a web dev server under a directory named "Ironmule
+Website Design" tripped it (ledger R14), so every Q3-gated run and q3f's real cleanup test are
+blocked on that machine by a process that loads no model. Matching the executable name and
+the script/module argument instead of the whole command line would keep real model processes
+and drop directory-name matches.
 
-**Test.** Run the full integration collection without Qwen or 27B, and run the exact
-macOS cleanup tests in isolation: `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
-and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
-Record process inventory, group-gone ordering, timing and cleanup evidence for both
-combined and isolated runs.
+**Test.** The detector's unit tests plus a case per blocker token: a model process by
+executable, by `python -m`, by script path, and a non-model process under a directory that
+contains the token. Both directions must hold.
 
-**Kill.** Keep this integration/release/collection-quality issue open until two
-consecutive full integration runs are green, or a deterministic order/timing proof
-identifies and fixes the interaction. Neither isolated passes nor a Q4-only `55/55`
-pass closes this entry; no Qwen/27B result is inferred. The user-authorized merge may
-proceed with R14 explicitly open; this entry is not a Q4 performance or model result.
+**Kill.** Any sealed Q3 artefact hashes this module or its token semantics, or a real model
+process could slip through the narrower match. Then the gate stays as it is and the
+precondition skip in q3f is the answer.
 
 ### `Q3a` — Path interaction: final Q2 incumbent versus `fused_argmax`
 
