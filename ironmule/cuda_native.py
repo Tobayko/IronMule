@@ -259,6 +259,40 @@ def _probe(module: nn.Module) -> float:
     return float(error / mx.maximum(mx.max(mx.abs(reference)), 1e-6))
 
 
+#: PERF1-X: the prefill turns each 4-bit weight it multiplies into one float16 copy for a GEMM.
+#: Beside nearly full weights the head's copy does not fit: Gemma 4 26B-A4B's 262144-row head,
+#: 1.48 GB beside 14.2 GB on a T4, ended the first prefill in `cudaMallocAsync ... out of
+#: memory` (PERF1 run 15), while the same arm with `head_skip_prefill`, which computes the head
+#: for the last position only through the decode kernel, ran (run 16). The fraction leaves room
+#: for the CUDA context, the cache and the activations beside weights and copy.
+PREFILL_HEADROOM = 0.9
+
+
+def head_skip_needed(model: nn.Module, device_info: dict[str, Any] | None) -> str | None:
+    """Why this card needs `head_skip_prefill` under the plan, or None when the head fits.
+
+    None as well when the device reports no memory size: then nothing is decided for the
+    caller and the load proceeds as before.
+    """
+    info = device_info or {}
+    total = next((info[key] for key in ("memory_size", "total_memory_bytes", "memory_bytes")
+                  if isinstance(info.get(key), int) and info[key] > 0), None)
+    heads = [m for name, m in model.named_modules()
+             if name.rsplit(".", 1)[-1] in ("lm_head", "embed_tokens")
+             and isinstance(m, (nn.QuantizedLinear, nn.QuantizedEmbedding)) and m.bits == BITS]
+    if total is None or not heads:
+        return None
+    from mlx.utils import tree_flatten
+
+    weights = sum(value.nbytes for _, value in tree_flatten(model.parameters()))
+    copy = max(m["weight"].shape[0] * m["weight"].shape[1] * 8 * 2 for m in heads)
+    if weights + copy <= PREFILL_HEADROOM * total:
+        return None
+    return (f"the head's float16 prefill copy ({copy / 1e9:.2f} GB) does not fit beside "
+            f"{weights / 1e9:.2f} GB of weights in {PREFILL_HEADROOM:.0%} of this card's "
+            f"{total / 1e9:.2f} GB, so the head is computed for the last position only")
+
+
 def install(model: nn.Module, device_info: dict[str, Any] | None) -> dict[str, Any]:
     """Swap every eligible quantised module of `model` to the native kernels, or refuse."""
     from .numeric_plans import CUDA_PRE_AMPERE, device_class
