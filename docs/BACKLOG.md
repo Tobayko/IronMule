@@ -114,9 +114,16 @@ that a cache-less machine gets an actionable message and a non-zero exit, never 
 traceback, and that `--help`/`doctor` still start when the MLX import itself is broken.
 
 **Kill.** Remote clean package/CLI job green (done), first-run behaviour covered by
-tests (done), and synthetic regressions covering `R1`–`R7` (open — only `R6`/`R7` have
-a dedicated suite). Apple-Silicon model CI remains open until runner availability and
-cost are explicitly approved.
+tests (done), and synthetic regressions covering `R1`–`R7` (done, checked 2026-09-26:
+`R1` in `tests/engine/test_ironmule_runtime.py` — prefill EOS counted, `max_tokens=1`,
+the grouped all-EOS round and `Runtime.serve`'s result; `R4` in `tests/engine/test_ironmule.py`
+`test_mlx_backend_step_honours_fused_argmax_contract`; `R5` in
+`test_telemetry_does_not_present_zero_as_a_correctness_check` and the benchmark's
+structured mismatch exit in `tests/engine/test_benchmark.py`; `R6`/`R7` in
+`tests/engine/test_r6_r7.py`; `R2` and `R3` are open entries of their own). What remains
+is Apple-Silicon model CI. GitHub's hosted `macos-14` runner does run Metal (CI's doctor
+step prints `MLX Metal device: Metal GPU operation verified`), so the integration suite can
+run there against a cached, pinned snapshot; open until that job exists and is green.
 
 ### `S1` — Persistent local service with an explicit overload contract
 
@@ -202,51 +209,6 @@ unverifiable final artifacts. Publishing a tag/release requires separate user ap
 
 These are not release blockers. They came out of running the project the way someone
 who just cloned it would, and out of the review that followed.
-
-### `P1` — Ask before querying the operating system
-
-**Mechanism.** Four places shell out to the OS without asking: `hw.py:39` `sysctl`,
-`hw.py:51` `system_profiler`, `bench.py:33-40` `pmset`/`sw_vers`, and `tune.py:185`
-`ps -Ao pid=,rss=,comm=,args=`. None of it leaves the machine, and `ps` sees only this
-user's own processes — but a stranger who cloned this cannot see that and has to take
-it on faith. A one-time stored opt-in plus a `--no-probe` path makes the promise
-checkable instead of asserted. The project owner has asked for this; it is wanted, but
-deliberately not a release blocker.
-
-**Test.** With no stored opt-in, no code path runs any of the four calls;
-`doctor`/`tune`/`benchmark` ask once and record the answer. A test that patches
-`subprocess.run` fails as soon as a call happens without consent.
-
-**Kill.** The gate breaks existing fingerprints or profiles, or leaves `doctor` unable
-to diagnose a fresh machine — the command that exists to answer "why does this not
-work" must not be the one that needs setup first. Then the promise is kept another
-way, by documenting the four calls instead of gating them.
-
-### `Q2` — Run the self-tuning loop once, for real
-
-**Mechanism.** `tune()` is the core of the self-optimisation the README describes, and
-it has never run end to end anywhere in this project: `~/.ironmule` does not exist on
-this machine, and `test_r6_r7.py` stubs the engine, `probe` and `gpu_busy`, so what is
-covered is the control flow, not the run. Unknown: whether the coordinate descent
-completes, whether it finds anything above baseline, and whether token identity holds
-across every candidate it tries.
-
-**Test.** A preregistered run on the M1 Max with `gemma-3-4b-it-4bit` cached and on
-mains power. Record every candidate with its knobs, time and token match; the profile
-written; the gain; total runtime. Then a second start that loads the profile instead
-of tuning again.
-
-**Kill.** The run aborts, finds no candidate above baseline, or any candidate changes
-tokens. Then self-tuning is not the feature the README advertises and that claim comes
-out before the next release.
-
-**Do not mistake a winner for a bug.** `readback_every` is the likeliest candidate to
-be kept, and that is correct behaviour. The predecessor project's cycle 17 measured it
-at ratio `0.9581`, faster in every pair, and rejected it only against that experiment's
-own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.995`
-(`tune.py:80`), so the same number qualifies here. Two knobs genuinely cannot win and
-would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
-of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
 
 ### `Q3` — Adaptive optimizer method selection and replay
 
@@ -351,26 +313,6 @@ failure yields `OPE_UNSUPPORTED`. Do not retry or pool Q3c/Q3d/Q3e/Q3f, promote 
 B27 summaries or exploratory true batching, combine E14b's `+18.02%` and `+20.05%`,
 or invent foreign-Mac measurements.
 
-### `R14` — Process-inventory/group-gone order interaction in integration/release quality
-
-**Mechanism.** The combined integration order can change macOS process-inventory,
-group-gone and cleanup timing observations even when the Q3d/Q3f cleanup logic is
-correct in isolation. The initial full-pytest failure was a separate test-harness
-`sys.modules["ironmule"]` pollution issue; the private `tests/q4_offline_loader.py`
-namespace fix resolved that without product changes.
-
-**Test.** Run the full integration collection without Qwen or 27B, and run the exact
-macOS cleanup tests in isolation: `tests/test_q3d_stability_gate.py::test_real_macos_process_identity_and_cleanup_reap`
-and `tests/test_q3f_child_guard.py::test_q3f_real_cleanup_keeps_external_process_alive`.
-Record process inventory, group-gone ordering, timing and cleanup evidence for both
-combined and isolated runs.
-
-**Kill.** Keep this integration/release/collection-quality issue open until two
-consecutive full integration runs are green, or a deterministic order/timing proof
-identifies and fixes the interaction. Neither isolated passes nor a Q4-only `55/55`
-pass closes this entry; no Qwen/27B result is inferred. The user-authorized merge may
-proceed with R14 explicitly open; this entry is not a Q4 performance or model result.
-
 ### `Q3a` — Path interaction: final Q2 incumbent versus `fused_argmax`
 
 **Mechanism.** Q2 evaluated `fused_argmax` early and then retained
@@ -399,10 +341,15 @@ when `ci_high < 0.995`, `LOSS` only when `ci_low > 1.005`,
 `PRACTICALLY_NEUTRAL` only for a complete CI inside `[0.995, 1.005]`, otherwise
 `INCONCLUSIVE`. Do not claim a direct statistical comparison with early Q2.
 
-**P2 safety debt (runtime lifecycle).** `ab.run` must retain partial child records
-and terminate the entire child process group on timeout; kill/cleanup failure is a
-hard `FAILED` result, never a short successful run. Kill when a timeout leaves an
-orphan process or the raw record cannot identify the completed children.
+**P2 safety debt (runtime lifecycle) — answered 2026-09-26 (agent decision).** `ab.run`
+passes every completed child record as `ABRunError.partial_children` on timeout, start
+failure, malformed output and non-zero exit, and a failed cleanup raises (`child ... and
+cleanup failed`) rather than returning a short run (`tests/engine/test_ab.py`). A whole
+process group needs no signal: the child runs under the q3f guard, which refuses and
+records every process operation (`subprocess.Popen`, `os.system`, `os.fork`, `os.forkpty`,
+...) before the package imports
+(`test_q3f_guard_blocks_and_records_every_process_operation_in_isolated_child`), so a
+timed-out child has no descendants to orphan. Reopen if the guard's operation set shrinks.
 
 **P2 safety debt (evaluator-owned identity).** The runtime must expose per-repeat
 physical/logical tokens, counts, stop reasons, capacities, RSS and resource gates
@@ -415,40 +362,6 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `R10` — An aborted run must not look like a finished one
-
-**Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
-it with a `print` to stdout. The result file records nothing: a truncated run carries
-`runs: 1` and is otherwise shaped exactly like a complete four-block one. A reader who
-has the JSON but not the console log cannot tell a cut-short experiment from a
-deliberately short one, and the analysis that follows rests silently on a quarter of the
-intended samples. Found by living through it: the 12B leg of a scaling run aborted, and
-only the terminal output said so.
-
-**Test.** A run that hits the guard writes a machine-readable record into its own result
-file — the reason, the block index reached, and the value that tripped it. An analysis
-helper refuses to summarise a file carrying such a record unless the caller acknowledges
-it. A synthetic run with the guard set below the first block's peak produces that record
-rather than a plain short file.
-
-**Kill.** Result files are bound to preregistration hashes, so a schema change
-invalidates the comparison the file was written for. This closes only if the record can
-be added without breaking existing readers — an additive optional key — or with an
-explicit decision to version the schema. If neither is acceptable, the fallback is that
-the guard raises instead of breaking, so an aborted run produces no result file at all
-rather than a plausible one.
-
-**Related, and it bites before the guard's reporting bug does.** The threshold is a
-hard-coded `12 * 1024**3`. Gemma 3 12B's true per-block peak is `17.51 GB`, measured on
-block 1, which has nothing accumulated to inflate it. So 12B trips the guard honestly,
-with or without the peak reset, and a 27B 4-bit model at roughly `15 GiB` of weights
-cannot be measured either. On a 32 GB machine that holds both comfortably, this harness
-runs only the smallest of the three cached models to completion — which is also part of
-why the scaling evidence in this repository rests on 4B. Raising the number is a
-decision about swap safety and needs its own entry with a kill criterion, most usefully
-with the threshold as a parameter and direct swap monitoring as the criterion rather
-than another constant in the source.
-
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
@@ -457,6 +370,11 @@ than another constant in the source.
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
   no adaptive benefit over C; LOCAL-2 preparation missed its 5% benefit gate.
   Full results: `ironmole_mcp/docs/RESULTS.md`. Agent-level comparisons remain open.
+
+- **R15, narrowing the competing-process gate's substring match.** Opened and closed
+  2026-09-26 on inspection, no experiment: its own kill holds, because the Q3c and Q3d
+  records bind `research/q3b_residual_swap_canary.py` in `runtime_code_sha256`. The gate
+  stays fail-closed; q3f's real cleanup test skips with the reason (ledger R14).
 
 ### Rejected is not forbidden (project rule, 2026-09-10)
 

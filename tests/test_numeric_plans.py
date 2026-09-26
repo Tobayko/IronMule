@@ -47,6 +47,15 @@ BOOTSTRAP_SEED = 20260916
 BOOTSTRAP_DRAWS = 10000
 #: (architecture, plan) -> (bf16 rows file, other rows file, other key)
 PAIRED = {
+    ("mlx_lm.models.gemma3_text", "float32"): (
+        "port2k-run1-fe76f8df/quality-gemma3-4b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma3-4b-float32.json", "nll_float32"),
+    ("mlx_lm.models.gemma4_text", "float32"): (
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-float32.json", "nll_float32"),
+    ("mlx_lm.models.gemma4_text", "float16"): (
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json", "nll_float16"),
     ("mlx_lm.models.gemma3_text", "float16"): (
         "port2-run6-59ce8efc/quality16-gemma3-4b-bf16.json",
         "port2-run6-59ce8efc/quality16-gemma3-4b-float16.json", "nll_float16"),
@@ -138,10 +147,10 @@ def test_every_quality_interval_is_the_one_its_run_supports(row):
 def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
     """The distinction the whole table turns on, asserted rather than assumed.
 
-    Gemma 3 in float32 measured 1.017846 with an interval that contains 1 — inconclusive on
-    16 chunks of a text whose perplexity is 100, and the plan PORT1 shipped by a different
-    route. Gemma 3 in float16 measured an interval starting at 1.87. Only the second is a
-    refusal; treating the first as one would withdraw a plan the README documents at +91%.
+    Gemma 3 in float32 once measured 1.017846 with an interval that contains 1 (no BOS,
+    port2 run 2) and passes with BOS (PORT2-K). Gemma 3 in float16 measured an interval
+    starting at 1.87 in the no-BOS regime and is still refused until a BOS gate replaces it.
+    A wide interval must never refuse; a measured ruin must.
     """
     gemma = "mlx_lm.models.gemma3_text"
     check(gemma, "float32", CUDA_PRE_AMPERE)
@@ -153,23 +162,25 @@ def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
     check(gemma, None, CUDA_PRE_AMPERE)
 
 
-def test_gemma_4_keeps_no_quality_interval_and_says_why():
-    """The one row where a gate exists and is deliberately not used.
+def test_gemma_gates_count_only_with_bos_on_every_chunk():
+    """PORT2-K: a Gemma gate is evidence only when every chunk starts with BOS.
 
-    Gemma 4's float32 gate measured 0.974548 [0.945572; 1.003527] — an upper bound inside
-    the 1.005 bound, which would read as `recommended`. Its bfloat16 reference scores a
-    perplexity of 22 212 on the same text where Gemma 3 4B scores 100.5, so the ratio
-    compares two numbers that mean nothing. This asserts the absence is deliberate, because
-    the obvious "fix" is to paste the interval in and call the plan qualified.
+    Without it Gemma 3 4B's reference scored perplexity ~100 and Gemma 4 E2B's 22 212, and
+    the plans' verdicts came from that regime. Every Gemma row that carries an interval must
+    cite a run whose files record BOS on both sides, so a no-BOS gate cannot come back in.
     """
+    for architecture in ("mlx_lm.models.gemma3_text", "mlx_lm.models.gemma4_text"):
+        for plan in ("float32", "float16"):
+            key = (architecture, plan)
+            if key not in PAIRED or "port2k" not in PAIRED[key][0]:
+                continue
+            for name in PAIRED[key][:2]:
+                assert json.loads((RESULTS / name).read_text())["bos"] == 2, name
     rows = measurements_for("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
-    assert rows, "Gemma 4 has measured speed and must stay in the table"
-    for row in rows:
-        assert row.quality_interval is None, f"{row.plan}: an unusable gate is not a gate"
-        assert row.quality_note and "22212" in row.quality_note, f"{row.plan}: say why"
-        assert row.verdict() == "unqualified", row.plan
-    _, reason = recommend("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
-    assert "22212" in reason, "the reason a plan is unqualified must reach the caller"
+    assert {row.plan: row.verdict() for row in rows} == {"float32": "recommended",
+                                                        "float16": "recommended"}
+    plan, _ = recommend("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
+    assert plan == "float16", "the fastest qualified plan is the recommendation"
 
 
 def test_only_a_faster_and_qualified_plan_is_ever_recommended():

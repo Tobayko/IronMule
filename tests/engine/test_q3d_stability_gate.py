@@ -284,6 +284,7 @@ def test_cleanup_unknown_first_snapshot_still_attempts_safe_known_orphan_kill(mo
     assert evidence["unresolved_errors"]
 
 
+@pytest.mark.process_table
 @pytest.mark.integration
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
 def test_real_macos_process_identity_and_cleanup_reap():
