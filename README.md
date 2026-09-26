@@ -293,19 +293,24 @@ ironmule doctor
 ```
 
 ```text
-IronMule doctor
-[OK] Apple Silicon architecture: arm64 (Apple M1 Max)
-[OK] macOS: Darwin
-[OK] Python: 3.12.13 (requires >= 3.10)
-[OK] MLX: 0.32.0; importable (isolated probe)
-[OK] MLX-LM: 0.31.3; importable (isolated probe)
-[OK] NumPy: 2.5.2; importable (isolated probe)
-[OK] MLX Metal device: Metal GPU operation verified
+ IronMule doctor  checking this machine
 
-All runtime prerequisites are available.
+   ✓  Apple Silicon architecture   arm64 (Apple M1 Max)
+   ✓  macOS                        Darwin
+   ✓  Python                       3.12.13 (requires >= 3.10)
+   ✓  MLX                          0.32.0; importable (isolated probe)
+   ✓  MLX-LM                       0.31.3; importable (isolated probe)
+   ✓  NumPy                        2.5.2; importable (isolated probe)
+   ✓  MLX Metal device             Metal GPU operation verified
+
+ ● Ready  all runtime prerequisites are available
+   next  ironmule start to chat, ironmule benchmark to measure this machine
 ```
 
-On Linux the same command checks for an MLX CUDA device instead.
+On Linux the same command checks for an MLX CUDA device instead. At a terminal the checks
+are coloured; piped, in CI or with `NO_COLOR=1` they print as plain `[OK]`/`[FAIL]` lines,
+and `--json` gives the machine-readable report. `ironmule` on its own shows this machine
+and every command, grouped by what you want to do.
 
 ### 3. Get a model and start the server
 

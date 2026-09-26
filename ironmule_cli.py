@@ -13,7 +13,9 @@ import argparse
 import importlib
 import importlib.metadata as metadata
 import json
+import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -21,6 +23,41 @@ from typing import Any, Iterable
 
 
 MIN_PYTHON = (3, 10)
+
+# Colour and box glyphs only for a person at a UTF-8 terminal. Pipes, CI logs and
+# tests keep the plain text, and NO_COLOR (https://no-color.org) turns it off.
+_STYLES = {"bold": "1", "dim": "2", "red": "31", "green": "32", "yellow": "33",
+           "cyan": "36", "amber": "38;5;214"}
+_ANSI = re.compile(r"\033\[[0-9;]*m")
+
+
+def fancy(stream: Any = None) -> bool:
+    stream = stream or sys.stdout
+    return (getattr(stream, "isatty", lambda: False)()
+            and "NO_COLOR" not in os.environ and os.environ.get("TERM") != "dumb"
+            and (getattr(stream, "encoding", None) or "").lower().replace("-", "") == "utf8")
+
+
+def paint(text: str, *styles: str, stream: Any = None) -> str:
+    if not fancy(stream):
+        return text
+    return f"\033[{';'.join(_STYLES[s] for s in styles)}m{text}\033[0m"
+
+
+def mark(ok: bool) -> str:
+    if not fancy():
+        return "[OK]" if ok else "[FAIL]"
+    return paint("✓", "green", "bold") if ok else paint("✗", "red", "bold")
+
+
+def box(lines: list[str], width: int = 72) -> str:
+    """A rounded panel; the width is measured without colour codes."""
+    rows = [paint("╭" + "─" * (width - 2) + "╮", "amber")]
+    for line in lines:
+        pad = " " * max(0, width - 4 - len(_ANSI.sub("", line)))
+        rows.append(f"{paint('│', 'amber')} {line}{pad} {paint('│', 'amber')}")
+    rows.append(paint("╰" + "─" * (width - 2) + "╯", "amber"))
+    return "\n".join(rows)
 
 
 def _version(distribution: str, module: Any = None) -> str:
@@ -173,14 +210,31 @@ def doctor(argv: Iterable[str] = ()) -> int:
             "performance_claim": False,
         }, indent=2, sort_keys=True))
         return 0 if all(ok for _, ok, _ in checks) else 1
+    failed = [name for name, ok, _ in checks if not ok]
+    hint = ("install IronMule with `pip install ironmule`, then rerun `ironmule doctor`"
+            if any(name in failed for name in ("MLX", "MLX-LM")) else "")
+    if fancy():
+        width = max(len(name) for name, _, _ in checks) + 3
+        print(f"\n {paint('IronMule doctor', 'bold', 'amber')}  {paint('checking this machine', 'dim')}\n")
+        for name, ok, detail in checks:
+            print(f"   {mark(ok)}  {name:<{width}}{paint(detail, 'dim' if ok else 'red')}")
+        if failed:
+            print(f"\n {paint('●', 'red')} {paint('Not ready', 'bold', 'red')}  missing: {', '.join(failed)}")
+            if hint:
+                print(f"   {paint('fix', 'yellow')}   {hint}")
+            print()
+            return 1
+        print(f"\n {paint('●', 'green')} {paint('Ready', 'bold', 'green')}  all runtime prerequisites are available")
+        print(f"   {paint('next', 'dim')}  {paint('ironmule start', 'cyan')} to chat, "
+              f"{paint('ironmule benchmark', 'cyan')} to measure this machine\n")
+        return 0
     print("IronMule doctor")
     for name, ok, detail in checks:
-        print(f"[{'OK' if ok else 'FAIL'}] {name}: {detail}")
-    failed = [name for name, ok, _ in checks if not ok]
+        print(f"{mark(ok)} {name}: {detail}")
     if failed:
         print("\nMissing or unavailable prerequisites: " + ", ".join(failed))
-        if any(name in failed for name in ("MLX", "MLX-LM")):
-            print("Hint: on Apple Silicon, install IronMule with `pip install ironmule`, then rerun `ironmule doctor`.")
+        if hint:
+            print(f"Hint: on Apple Silicon, {hint}.")
         return 1
     print("\nAll runtime prerequisites are available.")
     return 0
@@ -191,14 +245,91 @@ def info(argv: Iterable[str] = ()) -> int:
         prog="ironmule info", description="Show IronMule package information."
     )
     parser.parse_args(list(argv))
-    try:
-        version = metadata.version("ironmule")
-    except metadata.PackageNotFoundError:
-        version = "source checkout"
-    print(f"IronMule {version}")
+    if fancy():
+        print(_banner())
+        return 0
+    print(f"IronMule {_ironmule_version()}")
     print("Adaptive MLX inference runtime for local LLMs on Apple Silicon")
     print("Measured, not assumed.")
     return 0
+
+
+def _ironmule_version() -> str:
+    try:
+        return metadata.version("ironmule")
+    except metadata.PackageNotFoundError:
+        return "source checkout"
+
+
+def _banner() -> str:
+    """Who and where, at a glance: package metadata and `platform` only, no probes."""
+    system, machine = platform.system(), platform.machine()
+    if system == "Darwin":
+        device = f"Apple Silicon · {machine} · macOS {platform.mac_ver()[0]}" if machine == "arm64" \
+            else f"{machine} · macOS {platform.mac_ver()[0]} (IronMule needs Apple Silicon)"
+    else:
+        device = f"{system} · {machine}"
+    try:
+        memory = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / 1024**3
+        device += f" · {memory:.0f} GB memory"
+    except (AttributeError, OSError, ValueError):
+        pass
+    runtime = " · ".join([f"Python {platform.python_version()}"] + [
+        f"{label} {_version(dist) if _version(dist) != 'unknown' else 'missing'}"
+        for label, dist in (("MLX", "mlx"), ("MLX-LM", "mlx-lm"))])
+    label = lambda text: paint(f"{text:<9}", "dim")  # noqa: E731
+    return box([
+        f"{paint('◆ IronMule', 'bold', 'amber')} {paint(_ironmule_version(), 'dim')}",
+        "Fast local LLMs: the same tokens as the reference, or no speed-up.",
+        "",
+        f"{label('device')}{device}",
+        f"{label('runtime')}{runtime}",
+        f"{label('private')}offline; no model is downloaded unless you ask",
+    ])
+
+
+_COMMAND_GROUPS = (
+    ("Get started", (
+        ("start", "Get a model, serve it and open the chat in your browser"),
+        ("doctor", "Check Apple Silicon and MLX prerequisites"),
+    )),
+    ("Serve", (
+        ("serve", "Serve a registered local model through HTTP/SSE"),
+        ("setup", "Initialize desktop/server product settings"),
+    )),
+    ("Measure and tune", (
+        ("benchmark", "Run the existing reproducible local benchmark"),
+        ("tune", "Tune or inspect the existing local profile (--show)"),
+        ("optimize", "Run bounded automatic calibration and inspect its history"),
+        ("revalidate", "Canary-check the stored profile"),
+        ("requalify", "Re-measure a locally learned action after monitoring took it away"),
+    )),
+    ("Inspect", (
+        ("status", "Show local hardware/profile status"),
+        ("models", "List cached models; `models list` also works without MLX"),
+        ("plans", "Show which opt-in numeric plan is measured for which model"),
+        ("info", "Show package information"),
+    )),
+    ("Evidence", (
+        ("data", "Collect portable optimizer evidence with free-only quotas"),
+    )),
+)
+
+
+def _help() -> None:
+    names = "|".join(name for _, group in _COMMAND_GROUPS for name, _ in group)
+    usage = f"usage: ironmule {{{names}}} [options]"
+    if fancy():
+        print(_banner())
+    else:
+        print(usage + "\n\ncommands:")
+    for title, group in _COMMAND_GROUPS:
+        print(f"\n{paint(title, 'bold', 'amber')}" if fancy() else f"{title}:")
+        for name, description in group:
+            print(f"  {paint(f'{name:<12}', 'cyan')} {description}")
+    if fancy():
+        print(paint("\nusage: ironmule <command> [options]   ·   ironmule <command> --help\n"
+                    "New here? ironmule doctor, then ironmule start.\n", "dim"))
 
 
 def _is_runtime_dependency_error(exc: ImportError) -> bool:
@@ -554,22 +685,7 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(argv: list[str] | None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ironmule {start|setup|serve|optimize|data|doctor|plans|benchmark|models|tune|revalidate|requalify|status|info} [options]")
-        print("\ncommands:")
-        print("  start        Get a model, serve it and open the chat in your browser")
-        print("  setup        Initialize desktop/server product settings")
-        print("  serve        Serve a registered local model through HTTP/SSE")
-        print("  optimize     Run bounded automatic calibration and inspect its history")
-        print("  data         Collect portable optimizer evidence with free-only quotas")
-        print("  doctor       Check Apple Silicon and MLX prerequisites")
-        print("  plans        Show which opt-in numeric plan is measured for which model")
-        print("  benchmark   Run the existing reproducible local benchmark")
-        print("  models      List cached models; `models list` also works without MLX")
-        print("  tune        Tune or inspect the existing local profile (--show)")
-        print("  revalidate  Canary-check the stored profile")
-        print("  requalify   Re-measure a locally learned action after monitoring took it away")
-        print("  status       Show local hardware/profile status")
-        print("  info        Show package information")
+        _help()
         return 0
     command, rest = args[0], args[1:]
     if command == "data":

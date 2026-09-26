@@ -406,3 +406,29 @@ def test_ambiguous_revision_does_not_advise_a_flag_the_cli_lacks():
     message = str(caught.value)
     assert "Runtime.load" in message
     assert "--revision" not in message.split("Runtime.load")[0]
+
+
+def test_terminal_gets_colour_and_pipes_keep_plain_text(monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_doctor_checks", lambda: [
+        ("MLX", True, "0.32.0"), ("MLX Metal device", False, "no GPU")])
+    assert cli.main(["doctor"]) == 1
+    plain = capsys.readouterr().out
+    assert "[OK] MLX: 0.32.0" in plain and "[FAIL] MLX Metal device" in plain
+    assert "\033[" not in plain
+    monkeypatch.setattr(cli, "fancy", lambda stream=None: True)
+    assert cli.main(["doctor"]) == 1
+    card = capsys.readouterr().out
+    assert "\033[" in card and "✓" in card and "✗" in card and "Not ready" in card
+    assert cli.main(["--help"]) == 0
+    welcome = capsys.readouterr().out
+    assert "IronMule" in welcome and "Measure and tune" in welcome and "╭" in welcome
+
+
+def test_colour_needs_a_utf8_terminal_and_respects_no_color(monkeypatch):
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("TERM", "xterm-256color")
+    assert cli.fancy(SimpleNamespace(isatty=lambda: True, encoding="utf-8"))
+    assert not cli.fancy(SimpleNamespace(isatty=lambda: False, encoding="utf-8"))
+    assert not cli.fancy(SimpleNamespace(isatty=lambda: True, encoding="ascii"))
+    monkeypatch.setenv("NO_COLOR", "1")
+    assert not cli.fancy(SimpleNamespace(isatty=lambda: True, encoding="utf-8"))
