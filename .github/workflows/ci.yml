@@ -83,8 +83,11 @@ jobs:
           s('mlx-community/gemma-3-4b-it-4bit', revision='93724907d4ed1745d2fe50baadf3b0b01a65abf2')"
       - name: Doctor
         run: .ci-venv/bin/python -m ironmule_cli doctor
+      # The two `process_table` tests read every process this user owns and refuse any new one
+      # they cannot attribute; the runner's own agent starts processes throughout, so they
+      # failed here in two of four runs (2026-09-26). They need a quiet machine, not a runner.
       - name: Real-model integration suite
-        run: .ci-venv/bin/python -m pytest tests/engine -m integration -n 0 -rs
+        run: .ci-venv/bin/python -m pytest tests/engine -m "integration and not process_table" -n 0 -rs
 
   # A figure that no longer matches its evidence is a false claim on the front page.
   # This regenerates every SVG from the committed artifacts and fails on any difference.
