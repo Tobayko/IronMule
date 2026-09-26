@@ -14,7 +14,7 @@ All notable public changes to IronMule are documented here. Measurements and res
   perplexity gates had run without BOS on any chunk after the first, and Gemma 4's
   tokenizer adds none, so its reference scored 22 212 and the gate was unusable. With BOS on
   every chunk (PORT2-K) `float32` and `float16` both sit inside the bound on Gemma 4 E2B,
-  and `ironmule plans` now recommends `float16` for Gemma 4 there (`+294%`, speed from
+  and `ironmule plans` now recommends `float16` for Gemma 4 E2B there (`+294%`, speed from
   PORT2 run 9b); Gemma 3's `float32` gate passes too. Gemma 4's reference perplexity (355.7)
   is still unexplained. Evidence: `research/LEDGER.md`, PORT2-K.
 - **The hardware fingerprint no longer shells out to `sysctl`.** It reads the same values

@@ -108,8 +108,8 @@ at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
 | Model (4-bit) | Weights | Exact, same tokens | `--compute-dtype float32` | `--compute-dtype float16` |
 | :-- | --: | --: | --: | --: |
 | Gemma 4 E2B | 3.55 GB | **1.11× · +11%** | **2.43× · +143%** | **3.94× · +294%** |
-| Gemma 4 E4B | 5.15 GB | **1.08× · +8%** | 2.23× · +123%, gate on E2B | 3.69× · +269%, gate on E2B |
-| Gemma 4 E4B qat | 6.80 GB | **1.09× · +9%** | 1.73× · +73%, gate on E2B | 3.18× · +218%, gate on E2B |
+| Gemma 4 E4B | 5.15 GB | **1.08× · +8%** | 2.23× · +123%, no gate | 3.69× · +269%, no gate |
+| Gemma 4 E4B qat | 6.80 GB | **1.09× · +9%** | 1.73× · +73%, no gate | 3.18× · +218%, no gate |
 | Gemma 3 4B | 2.50 GB | **1.07× · +7%** | **1.91× · +91%** | 3.21× · +221%, **fails its quality gate** |
 | Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
 | Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
@@ -125,8 +125,9 @@ on every chunk (PORT2-K, 2026-09-26) the reference scores 355.7 — still far ab
 27.0, and not the 4-bit quantisation: the 8-bit and bfloat16 checkpoints score 295.9 and 307.6 —
 and both plans sit inside the bound on E2B, a little better than
 bfloat16 itself. Chat decoding returned stock's tokens in 5 of 6 requests for either plan, so
-`ironmule plans` now recommends `float16` for Gemma 4 on these cards. The E4B checkpoints share
-the architecture; their gate is E2B's.
+`ironmule plans` now recommends `float16` for Gemma 4 E2B on these cards. The E4B
+checkpoints share the architecture but no gate ran on them, so they get no
+recommendation of their own (a recommendation covers only the checkpoints it measured).
 
 gpt-oss 20B's plans cannot be qualified on this card at all. Its router picks four of 32
 experts per token, and the emulated bfloat16 reference cannot order router scores that close:
@@ -188,7 +189,7 @@ The first column is IronMule's own product path against stock, fresh interleaved
 in the tables above; on Qwen 3 8B all six requests returned the same tokens as stock. It is for
 NVIDIA GPUs below compute capability 8 (Turing, Volta), refused anywhere else, checked against a
 float32 reference on the model's own weights before it is installed, and `ironmule plans`
-recommends it for Qwen 3 and Gemma 3 there (Gemma 3 12B: 5.00× · +400% against stock, PERF1 run 18). Like every numeric plan it changes the arithmetic, so it has to
+recommends it there for the checkpoints it measured, Qwen 3 8B and 14B and Gemma 3 12B (Gemma 3 12B: 5.00× · +400% against stock, PERF1 run 18). Like every numeric plan it changes the arithmetic, so it has to
 pass the quality gate on every path it touches:
 
 <picture>

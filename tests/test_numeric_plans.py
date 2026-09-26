@@ -203,6 +203,27 @@ def test_only_a_faster_and_qualified_plan_is_ever_recommended():
     assert "no numeric plan has been measured" in recommend("nobody.measured.this", CUDA_PRE_AMPERE)[1]
 
 
+def test_a_recommendation_reaches_only_the_checkpoints_it_measured():
+    """NEXT1-C: an architecture row does not qualify a checkpoint nobody measured.
+
+    Gemma 4 E4B shares E2B's architecture and was timed, but no gate ran on it; Qwen 3 14B
+    passed the float16 gate but was never timed under it. Neither may inherit a
+    recommendation from a sibling, and a caller without a model hears which checkpoints
+    the recommendation is for.
+    """
+    gemma4 = "mlx_lm.models.gemma4_text"
+    assert recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e2b-it-4bit")[0] == "float16"
+    plan, reason = recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e4b-it-4bit")
+    assert plan is None and "was not measured" in reason
+    assert "gemma-4-e2b-it-4bit" in recommend(gemma4, CUDA_PRE_AMPERE)[1]
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-14B-4bit")[0] == "native"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-32B-4bit")[0] is None
+    for row in MEASUREMENTS:
+        if row.verdict() == "recommended":
+            assert row.models, f"{row.label} {row.plan}: a recommendation needs measured checkpoints"
+
+
 def test_device_class_names_only_what_changes_the_answer():
     assert device_class({"compute_capability_major": 7}) == CUDA_PRE_AMPERE
     assert device_class({"compute_capability_major": 8}) is None, "Ampere has native bf16"

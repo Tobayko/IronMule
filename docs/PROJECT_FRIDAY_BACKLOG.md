@@ -309,6 +309,13 @@ numeric plans with their own quality gates.
 
 ### NEXT1-C — Bind CUDA plan recommendations to complete model evidence
 
+**Implemented 2026-09-26, CI-verified only.** `PlanMeasurement.models` now names only the
+checkpoints whose speed and gate the row's evidence covers (Qwen 3 `float16`: 8B, since 14B
+was gated but not timed; Gemma 4 `float32`/`float16`: E2B); `recommend(..., model_id=)`
+returns nothing for any other checkpoint, `ironmule plans --model` uses it, and without a
+model `doctor` and `plans` name the checkpoints a recommendation is for. Still open from
+the gate below: revision, quantisation and backend binding, and per-path cells.
+
 **Mechanism.** `PlanMeasurement.models` names checkpoints, but
 `numeric_plans.measurements_for()` and `recommend()` filter only architecture
 and device class, so a recommendation reaches every model of the architecture:
