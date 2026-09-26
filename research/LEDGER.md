@@ -6637,3 +6637,24 @@ Qwen 3.5 (PERF1-T2's stated limit); alone, with no variable set by the harness, 
 also shows PERF1-T2 taking effect on the library path. The gate's module now says to run it in a
 process of its own on CUDA. The integration tests had last run in TEST1 (2026-09-24), not never
 as first said while reviewing the tests.
+
+## Q2 — the self-tuning loop ran end to end on a real model (2026-08-29, recorded 2026-09-26)
+
+Recorded here on 2026-09-26 from the preregistration's own results section; the run was
+answered on 2026-08-29 but its result lived only in `research/raw/Q2_preregistration.md`,
+`research/raw/Q2_run.log`, `docs/HANDOVER.md` and the changelog. Nothing was re-measured.
+
+Apple M1 Max, `mlx-community/gemma-3-4b-it-4bit`, commit `a65563f`, MLX 0.32.0, AC power,
+hardware fingerprint `dc652d66f24ac207`. `ironmule tune` ran its coordinate descent over
+`tune.SEARCH` against the untuned baseline (`936.89 ms`, 23 tokens) and kept three knobs:
+`compiled_fixed_cache=True` (0.9679), `head_skip_prefill=True` (0.8606) and
+`readback_every=2` (0.8543). The paired confirmation over 6 fresh processes x 7 repeats
+measured `0.8568`, tokens identical, accepted; a second start loaded the stored profile
+instead of tuning again. All five preregistered kill criteria passed. As predicted,
+`prefill_into_fixed` (0.8699) and `speculate_k=4` (1.3829, 38% slower) did not win.
+
+The run exposed one defect, fixed in `0de69b6`: the stored gain came from the
+single-process screening (`14.57%`) rather than the paired confirmation (`14.32%`, 95%
+interval `[5.98%; 14.51%]`), which `status()` now reports. Status: MEASURED, one run, one
+machine; it establishes that self-tuning works end to end, not the size of its gain
+elsewhere.

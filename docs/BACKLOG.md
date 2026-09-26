@@ -222,32 +222,6 @@ to diagnose a fresh machine — the command that exists to answer "why does this
 work" must not be the one that needs setup first. Then the promise is kept another
 way, by documenting the four calls instead of gating them.
 
-### `Q2` — Run the self-tuning loop once, for real
-
-**Mechanism.** `tune()` is the core of the self-optimisation the README describes, and
-it has never run end to end anywhere in this project: `~/.ironmule` does not exist on
-this machine, and `test_r6_r7.py` stubs the engine, `probe` and `gpu_busy`, so what is
-covered is the control flow, not the run. Unknown: whether the coordinate descent
-completes, whether it finds anything above baseline, and whether token identity holds
-across every candidate it tries.
-
-**Test.** A preregistered run on the M1 Max with `gemma-3-4b-it-4bit` cached and on
-mains power. Record every candidate with its knobs, time and token match; the profile
-written; the gain; total runtime. Then a second start that loads the profile instead
-of tuning again.
-
-**Kill.** The run aborts, finds no candidate above baseline, or any candidate changes
-tokens. Then self-tuning is not the feature the README advertises and that claim comes
-out before the next release.
-
-**Do not mistake a winner for a bug.** `readback_every` is the likeliest candidate to
-be kept, and that is correct behaviour. The predecessor project's cycle 17 measured it
-at ratio `0.9581`, faster in every pair, and rejected it only against that experiment's
-own preregistered 5% bar. `tune` keeps anything below `KEEP_IF_RATIO_BELOW = 0.995`
-(`tune.py:80`), so the same number qualifies here. Two knobs genuinely cannot win and
-would indicate a broken harness: `prefill_into_fixed` (E1 bounds the prize at 1.47 ms
-of 537 ms, ratio `0.9973`) and `speculate_k` (ratio above `1.0` on MLX 0.32).
-
 ### `Q3` — Adaptive optimizer method selection and replay
 
 **Mechanism.** Reuse `tune.Knobs`/`SEARCH` and the evidence-bound execution
