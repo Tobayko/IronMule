@@ -329,6 +329,14 @@ cannot qualify a new model revision.
 
 ### NEXT1-D — Enforce the hybrid-cache guard at the actual dispatch
 
+**Implemented 2026-09-26, CI-verified only.** Modes declare `groups`; the refusal checks
+that attribute (unknown modes count as grouping), runs again in `Runtime.serve` before
+`build_sessions` prefills, fails closed on unknown cache types, and the router falls back
+to `InteractiveMode` for such a model. Unit tests cover every grouping mode, a swapped mode
+at dispatch and the router; the Qwen integration test now expects the refusal after its
+sequential gate. Still open from the gate below: a real hybrid model's token and state
+comparison, which runs with that integration test when `IRONMULE_QWEN_MODEL` is set.
+
 **Mechanism.** `ironmule.service.Runtime.__init__` checks recurrent caches
 once. `Runtime.mode` is then writable (`docs/RUNTIME.md` documents switching),
 `router.py` changes it per dispatch, and `AutomaticMode` can choose
