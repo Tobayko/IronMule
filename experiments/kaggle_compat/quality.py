@@ -44,11 +44,18 @@ else:
     fp32, _ = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION,
                           compute_dtype="float32")
 ids = tokenizer.encode(open(TEXT, encoding="utf-8").read())
+# Every chunk starts with the model's BOS where it has one (PORT2-K). Sliced from one encode,
+# only the first chunk could: Gemma 3 4B then scored perplexity 103 instead of 26.9 on a Mac,
+# and Gemma 4 E2B, whose tokenizer adds none, 21 532 instead of 353 (ledger, 2026-09-24).
+# Runs before PORT2-K measured without it and keep their numbers.
+bos = getattr(tokenizer, "bos_token_id", None)
 rows = []
 for index in range(CHUNKS):
     chunk = ids[index * CHUNK_TOKENS: (index + 1) * CHUNK_TOKENS + 1]
     if len(chunk) < CHUNK_TOKENS + 1:
         break
+    if bos is not None and chunk[0] != bos:
+        chunk = [bos] + chunk[:-1]
     inputs, targets = mx.array([chunk[:-1]]), mx.array(chunk[1:])
     positions = mx.arange(CHUNK_TOKENS)
     if ONLY == "bf16":
@@ -83,7 +90,7 @@ for index in range(CHUNKS):
 if ONLY:
     key = f"nll_{ONLY}"
     report = {"schema": "ironmule.port1-quality.v1", "model_id": MODEL_ID, "revision": REVISION,
-              "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "rows": rows, "only": ONLY,
+              "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "bos": bos, "rows": rows, "only": ONLY,
               f"ppl_{ONLY}": math.exp(st.mean(r[key] for r in rows)),
               "device": str(mx.default_device()), "seconds": time.time() - started}
     with open(OUT, "w") as stream:
@@ -100,7 +107,7 @@ def ppl_ratio(sample):
 
 boot = sorted(ppl_ratio([rng.choice(rows) for _ in rows]) for _ in range(10000))
 report = {"schema": "ironmule.port1-quality.v1", "model_id": MODEL_ID, "revision": REVISION,
-          "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "rows": rows,
+          "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "bos": bos, "rows": rows,
           "ppl_bf16": math.exp(st.mean(r["nll_bf16"] for r in rows)),
           "ppl_fp32": math.exp(st.mean(r["nll_fp32"] for r in rows)),
           "ppl_ratio_fp32_over_bf16": ppl_ratio(rows),
