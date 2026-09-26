@@ -165,31 +165,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   multiplexed client (several requests in flight on one pipe, frames routed by `request_id`,
   cancellation and the unusable-worker path per request). That is days of work in the product
   path and only testable on Kaggle, so it starts with that client and its own tests, not blind.
-- **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
-  auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
-  kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
-  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 erst nach PORT2-K, dem
-  Gate mit BOS je Chunk). Kill: obere Intervallgrenze > 1,005 — dann Experten
-  unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
-  Deferred 2026-09-25 (agent decision): OSS1 found emulated bf16 flipping a fifth of gpt-oss's
-  expert choices, so a gate against bf16 on a T4 is likely inconclusive for MoE; first measure
-  Qwen3.6's routing flips bf16 against float32 (`moe_routing.py`, adapted to its router), and
-  gate only if they are rare.
-  **Step 1, fixed before its run (2026-09-26, agent decision).** `perf1.py routing` records the
-  sorted top-8 of 256 experts the model's own `argpartition` returned, per layer and position, and
-  the float32 gap between the 8th and 9th softmax probability; `oss1_summary.py` joins the rank
-  files and compares. Workload: WikiText-2 raw test at the pinned revision, `nll`'s slicing with
-  4 chunks of 512 tokens, prefill path, Qwen3.6 35B-A3B pinned, two T4s pipelined,
-  `MLX_USE_CUDA_GRAPHS=0` (PERF1-T2), `PERF1_ARITH=pinned`. One fresh two-rank process per arm, in
-  this order: `stock` (A), `fp32`, `stock` (B), `kernel+p16+gather+g16`. A stage counts only with
-  every rank's record (`ranks.all_ranks`). Validity: A and B agree in every cell and every chunk's
-  NLL, else the run is inconclusive and gives no verdict. Rule: bf16/`fp32` expert sets differ in at
-  most 2% of cells in every chunk (an order of magnitude below gpt-oss's 17-21%, inside OSS1's
-  0.9-3.3% between two higher precisions) -> routing is not the obstacle and step 2, the NLL gate
-  above, runs. More than 2% in any chunk -> a bf16 gate cannot qualify Qwen3.6's experts on a T4,
-  as for gpt-oss (OSS1); PERF1-U closes under OSS1-R: `native` experts stay unqualified on
-  pre-Ampere cards, not refused, and no gate runs. Recorded, not judged: the `native` arm's flips
-  against both, per-chunk NLL, margins.
 - **PERF1-W Auslastung des Experten-Kernels.** Deferred 2026-09-26 (agent decision): run 14's per-call probe times include a sync per call, so the utilisation they suggest (24–41 GB/s) is not the decode step's; measure the expert kernels inside a decode step (profiler or CUDA graph timing) before changing them blind. Bei 8 Paaren erreicht er 24–41 GB/s von
   ~320 (run 14); gate und up sind zwei Starts über dieselbe Zeile, und bei K = 512 (Qwens
   down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K

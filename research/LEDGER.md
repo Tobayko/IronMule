@@ -6868,6 +6868,39 @@ recurrent caches stays disabled until a graph-free qualification admits it (the 
 NEXT1-E's admission cost is a one-time load cost, not serving time; its boundary and non-finite
 inputs stay open, as do NEXT1-I's per-rank hashes and child cleanup. No speed or quality claim.
 
+## PERF1-U — Qwen3.6's experts under `native` cannot be qualified against bf16 on a T4 (2026-09-26)
+
+Step 1 of PERF1-U, rules fixed before the run in the backlog entry (`f8a3687`): how often does
+Qwen3.6 35B-A3B's router pick a different top-8 of 256 experts under emulated bf16 than under
+float32? `perf1.py routing` recorded, per layer and position, the sorted experts the model's own
+`argpartition` returned, on 4 WikiText-2 chunks of 512 tokens through the prefill path; two Kaggle
+T4s pipelined (layers 0-19 and 20-39), `MLX_USE_CUDA_GRAPHS=0`, `PERF1_ARITH=pinned`, mlx 0.32.2,
+mlx-lm 0.31.3, main `306b469` with the harness at `f8a3687`, model and dataset pinned. One fresh
+two-rank process per arm; every stage left both ranks' records (`ranks.all_ranks`). Raw data
+(gzipped), logs and notebook: `experiments/kaggle_compat/results/perf1u-run1-b0cce87b/`. 0 EUR,
+about 30 min.
+
+| pair | cells whose expert set differs, per chunk (40 layers x 512 positions = 20 480) |
+| :-- | :-- |
+| `stock` A / `stock` B (A/A) | 0 in every chunk; every chunk's NLL identical |
+| `stock` / `fp32` | 23.7%, 25.2%, 23.8%, 24.0% |
+| `stock` / `kernel+p16+gather+g16` (native's arm) | 21.3%, 23.3%, 21.5%, 22.2% |
+| `fp32` / native's arm | 23.5%, 23.2%, 22.5%, 23.7% |
+
+The run is valid (the A/A pair agrees everywhere). The rule's bound was 2% of cells in every
+chunk; bf16 against float32 differs in about a quarter, an order of magnitude past it and past
+gpt-oss's 17-21% (OSS1), where a top-8 of 256 has more places to differ than a top-4 of 32. In
+float32's own record the flipped cells sit at a median gap of 0.0002 between the 8th and 9th
+softmax probability, against 0.0005-0.0006 for all cells. Native's arm is no closer to float32 than stock is. Per-chunk NLL
+moves by at most 0.01 nats between any two arms; four chunks establish no quality link.
+
+**Verdict, as the rule fixed it.** A gate against the checkpoint's own bf16 cannot qualify
+Qwen3.6's experts under `native` on a T4: its reference's expert choices are a quarter rounding
+noise. PERF1-U closes under OSS1-R: `native` on this architecture stays opt-in and unqualified on
+pre-Ampere cards, not refused, and step 2 (the NLL gate) does not run. `numeric_plans.py` has no
+row for it, so no recommendation existed to withdraw. Qualifying it needs a device with native
+bf16 as the reference.
+
 ## DEMO2-5 — show videos of IronMule on a Kaggle T4, and what recording them found (2026-09-28)
 
 The user asked for short Kaggle runs recorded as show videos, first one question, then several at

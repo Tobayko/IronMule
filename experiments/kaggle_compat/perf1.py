@@ -1244,7 +1244,7 @@ def main():
     with open(out + ".partial", "w") as stream:
         json.dump(report, stream, indent=1)
     os.replace(out + ".partial", out)
-    print(json.dumps({k: v for k, v in report.items() if k not in ("tokens", "prompts")}), flush=True)
+    print(json.dumps({k: v for k, v in report.items() if k not in ("tokens", "prompts", "rows")}), flush=True)
 
 
 if __name__ == "__main__":
