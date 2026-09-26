@@ -132,7 +132,7 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-26: PERF1-V, 8-bit router matvecs through the row kernel (Gemma 4 26B-A4B 0.9655x, Qwen3.6 35B-A3B 1.0081x of `gather`, kill 1.05x; `perf1v-run1-cfa81967`, ledger PERF1-V). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Answered 2026-09-26: PERF1-X, `native` on a card its weights nearly fill loads with the head's prefill copy skipped, switched on only where it would not fit (`perf1x-run2-a01222de`, ledger PERF1-X). Rejected 2026-09-26: PERF1-V, 8-bit router matvecs through the row kernel (Gemma 4 26B-A4B 0.9655x, Qwen3.6 35B-A3B 1.0081x of `gather`, kill 1.05x; `perf1v-run1-cfa81967`, ledger PERF1-V). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
 `model_type` (`f44cf72`; BACKLOG9: one digest across three processes, three with the caller's
 graphs on, about 3% slower). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
 1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
@@ -180,16 +180,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K
   zwei Zeilen je Warp (Halbwarp-Reduktion, bitgleich). Kill: unter 10 % Decode gegen
   `gather` im selben Lauf.
-- **PERF1-X `native`-Prefill im Produkt auf vollen Karten.** `cuda_native.matmul`
-  dequantisiert beim Prefill jedes Gewicht ganz nach float16; PERF1-P (Scheiben mit Sync)
-  steckt nur in `perf1.py`. Run 15 (`perf1-run15-22fe0a42`): Gemma 4 26B-A4B unter `native`
-  starb im ersten Prefill an `cudaMallocAsync ... out of memory` (Verdacht: 1,48 GB für den
-  262144-Zeilen-Kopf neben 14,2 GB Gewichten); mit `head_skip_prefill` lief derselbe Arm
-  (run 16, `perf1-run16-2552229e`, 8,2x schneller als IronMule-bf16). Mechanismus: Scheiben wie `perf1.py`, oder den
-  Kopf nur für die letzte Position rechnen. Konflikt: der Sync bricht unter `mx.compile`, und
-  eine andere Rechenweise im Prefill ändert den qualifizierten Plan (neues Gate). Kill: keine
-  Variante ist bitgleich zum heutigen Prefill und passt — dann `native` auf solchen Karten nur
-  mit `head_skip_prefill`.
 
 ## OSS1 — Rest (2026-09-25)
 
@@ -229,7 +219,7 @@ None of the items below changes historical verdicts or activates a plan.
 wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
 No longer prerequisites: PORT2-K (both runs, ledger PORT2-K), PERF1-T/T2, PERF1-M and
 PERF1-Y (ledger BACKLOG1-BACKLOG9), and PERF1-N (diagnosed; projection fusion is refused
-under `native`). PERF1-X (prefill memory, a fix under verification), PERF1-K2 (deferred)
+under `native`). PERF1-X (answered: the head skip on full cards), PERF1-K2 (deferred)
 and PERF1-R (rejected) stay separate performance/resource questions. On Apple,
 B57/B58/B73 and PROD11/PROD14 already cover qualified kernels, real arrival patterns, a
 second machine, and prefix reuse. Do not repeat B68's buffer-limit sweep, B49's four-way
