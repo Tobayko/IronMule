@@ -362,40 +362,6 @@ before the cap is checked. Replace this with a tempfile/selector-backed bounded 
 that preserves progress markers and terminates the worker group on overflow. Kill when
 an overflow can block the producer, lose a completed-child marker, or leave an orphan.
 
-### `R10` — An aborted run must not look like a finished one
-
-**Mechanism.** `e14b_arms.py:243` breaks the block loop on the memory guard and reports
-it with a `print` to stdout. The result file records nothing: a truncated run carries
-`runs: 1` and is otherwise shaped exactly like a complete four-block one. A reader who
-has the JSON but not the console log cannot tell a cut-short experiment from a
-deliberately short one, and the analysis that follows rests silently on a quarter of the
-intended samples. Found by living through it: the 12B leg of a scaling run aborted, and
-only the terminal output said so.
-
-**Test.** A run that hits the guard writes a machine-readable record into its own result
-file — the reason, the block index reached, and the value that tripped it. An analysis
-helper refuses to summarise a file carrying such a record unless the caller acknowledges
-it. A synthetic run with the guard set below the first block's peak produces that record
-rather than a plain short file.
-
-**Kill.** Result files are bound to preregistration hashes, so a schema change
-invalidates the comparison the file was written for. This closes only if the record can
-be added without breaking existing readers — an additive optional key — or with an
-explicit decision to version the schema. If neither is acceptable, the fallback is that
-the guard raises instead of breaking, so an aborted run produces no result file at all
-rather than a plausible one.
-
-**Related, and it bites before the guard's reporting bug does.** The threshold is a
-hard-coded `12 * 1024**3`. Gemma 3 12B's true per-block peak is `17.51 GB`, measured on
-block 1, which has nothing accumulated to inflate it. So 12B trips the guard honestly,
-with or without the peak reset, and a 27B 4-bit model at roughly `15 GiB` of weights
-cannot be measured either. On a 32 GB machine that holds both comfortably, this harness
-runs only the smallest of the three cached models to completion — which is also part of
-why the scaling evidence in this repository rests on 4B. Raising the number is a
-decision about swap safety and needs its own entry with a kill criterion, most usefully
-with the threshold as a parameter and direct swap monitoring as the criterion rather
-than another constant in the source.
-
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.

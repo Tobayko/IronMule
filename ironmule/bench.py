@@ -127,6 +127,18 @@ class MemoryGate:
         return reason
 
 
+def refuse_aborted(payload: dict[str, Any], *, accept_abort: bool = False) -> None:
+    """R10: a result file whose memory gate stopped the run is not a short run.
+
+    Raise unless the caller says it knows. Files written before the gate record existed
+    carry no `memory_gate` key and pass unchanged.
+    """
+    aborted = (payload.get("memory_gate") or {}).get("aborted")
+    if aborted and not accept_abort:
+        raise ValueError(f"run aborted at block {aborted.get('block')}: {aborted.get('reason')}; "
+                         "summarise it only by accepting the abort explicitly")
+
+
 def environment() -> dict[str, Any]:
     """Everything that can move a timing without any code changing."""
     batt = _run(["pmset", "-g", "batt"])

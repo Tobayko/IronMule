@@ -6710,3 +6710,15 @@ On the M1 Max all five fingerprint keys (`machdep.cpu.brand_string`, `hw.logical
 (`tests/engine/test_hw_sysctl.py`), so no fingerprint changes. The remaining commands
 (`system_profiler`, `ps`, `doctor`'s `sysctl`, the benchmark harness's gates) are listed in
 `docs/RUNTIME.md`, "What IronMule asks the operating system". No measurement is involved.
+
+## R10 — an aborted run no longer looks like a finished one (2026-09-26)
+
+Closed on its own kill ("an additive optional key"). `b700377` already replaced the hard-coded
+12 GiB guard with `bench.MemoryGate` (swap growth over the run's baseline, plus a backstop at
+0.6 of installed memory, R11) and wrote `gate.record` into E14b's result file as the optional
+key `memory_gate`, with the block index, the reason and every block's swap and peak. What was
+missing is now added: `bench.refuse_aborted(payload, accept_abort=False)` raises on a file whose
+gate recorded an abort, `research/e14b_analyse.py` calls it (`--accept-abort` to summarise such a
+file anyway), and files written before the key existed pass unchanged. `tests/engine/test_bench_gate.py`
+covers both stop reasons, the recorded block and the refusal on synthetic runs. No measurement is
+involved; no result file changed.
