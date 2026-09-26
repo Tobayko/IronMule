@@ -38,12 +38,34 @@ def _store() -> Path:
 STORE = _store()
 
 
+#: The one string-valued key `static_facts` reads; every other key is an integer.
+_STRING_SYSCTLS = frozenset({"machdep.cpu.brand_string"})
+
+
 def _sysctl(name: str) -> str | None:
-    try:
-        out = subprocess.run(["sysctl", "-n", name], capture_output=True, text=True, timeout=5)
-    except (OSError, subprocess.SubprocessError):
+    """One value as `sysctl -n NAME` prints it, read through `sysctlbyname` (P1).
+
+    Reading the kernel directly starts no process, so the fingerprint no longer shells out
+    to `sysctl(8)` at all; the values, and with them every stored fingerprint, are the same.
+    """
+    if platform.system() != "Darwin":
         return None
-    value = out.stdout.strip()
+    try:
+        key, size = name.encode(), ctypes.c_size_t(0)
+        if _libc().sysctlbyname(key, None, ctypes.byref(size), None, ctypes.c_size_t(0)) != 0 or not size.value:
+            return None
+        buffer = ctypes.create_string_buffer(size.value)
+        if _libc().sysctlbyname(key, buffer, ctypes.byref(size), None, ctypes.c_size_t(0)) != 0:
+            return None
+    except (OSError, AttributeError, ValueError, TypeError):
+        return None
+    raw = buffer.raw[:size.value]
+    if name in _STRING_SYSCTLS:
+        value = raw.rstrip(b"\0").decode("utf-8", "replace").strip()
+    elif size.value in (4, 8):
+        value = str(int.from_bytes(raw, "little", signed=True))
+    else:
+        return None
     return value or None
 
 
