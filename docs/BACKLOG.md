@@ -203,25 +203,6 @@ unverifiable final artifacts. Publishing a tag/release requires separate user ap
 These are not release blockers. They came out of running the project the way someone
 who just cloned it would, and out of the review that followed.
 
-### `P1` — Ask before querying the operating system
-
-**Mechanism.** Four places shell out to the OS without asking: `hw.py:39` `sysctl`,
-`hw.py:51` `system_profiler`, `bench.py:33-40` `pmset`/`sw_vers`, and `tune.py:185`
-`ps -Ao pid=,rss=,comm=,args=`. None of it leaves the machine, and `ps` sees only this
-user's own processes — but a stranger who cloned this cannot see that and has to take
-it on faith. A one-time stored opt-in plus a `--no-probe` path makes the promise
-checkable instead of asserted. The project owner has asked for this; it is wanted, but
-deliberately not a release blocker.
-
-**Test.** With no stored opt-in, no code path runs any of the four calls;
-`doctor`/`tune`/`benchmark` ask once and record the answer. A test that patches
-`subprocess.run` fails as soon as a call happens without consent.
-
-**Kill.** The gate breaks existing fingerprints or profiles, or leaves `doctor` unable
-to diagnose a fresh machine — the command that exists to answer "why does this not
-work" must not be the one that needs setup first. Then the promise is kept another
-way, by documenting the four calls instead of gating them.
-
 ### `Q3` — Adaptive optimizer method selection and replay
 
 **Mechanism.** Reuse `tune.Knobs`/`SEARCH` and the evidence-bound execution

@@ -6696,3 +6696,16 @@ suite `1281 passed, 24 skipped`; the whole non-integration suite `1374 passed, 2
 R14's kill ("a deterministic order/timing proof identifies and fixes the interaction") is met.
 q3f's real cleanup remains unverified on this machine while that dev server runs; the
 substring match itself is backlog `R15`.
+
+## P1 — the fingerprint stops shelling out to `sysctl` (2026-09-26)
+
+Agent decision under P1's own kill: a stored opt-in before any OS query would have made every
+existing fingerprint and profile depend on a consent state, and `doctor` needs to diagnose a
+fresh machine before any setup. So the promise is kept the other way the entry names, plus one
+real reduction: `ironmule.hw._sysctl` now reads through `sysctlbyname` and starts no process.
+On the M1 Max all five fingerprint keys (`machdep.cpu.brand_string`, `hw.logicalcpu`,
+`hw.perflevel0.logicalcpu`, `hw.perflevel1.logicalcpu`, `hw.memsize`) return exactly what
+`sysctl -n` prints, and a missing key returns `None` as before
+(`tests/engine/test_hw_sysctl.py`), so no fingerprint changes. The remaining commands
+(`system_profiler`, `ps`, `doctor`'s `sysctl`, the benchmark harness's gates) are listed in
+`docs/RUNTIME.md`, "What IronMule asks the operating system". No measurement is involved.
