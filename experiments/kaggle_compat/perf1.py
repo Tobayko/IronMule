@@ -1178,8 +1178,11 @@ def main():
         if pipe.get("rank"):
             out = out.replace(".json", f"-rank{pipe['rank']}.json")
     report["mode"] = mode
-    with open(out, "w") as stream:
+    # NEXT1-I: written whole or not at all, so a rank that dies mid-write leaves no file
+    # that looks like a result.
+    with open(out + ".partial", "w") as stream:
         json.dump(report, stream, indent=1)
+    os.replace(out + ".partial", out)
     print(json.dumps({k: v for k, v in report.items() if k not in ("tokens", "prompts")}), flush=True)
 
 
