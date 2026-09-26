@@ -49,6 +49,9 @@ class PlanMeasurement:
     wall_ratio: float
     wall_evidence: str
     wall_arm: str
+    #: The checkpoints whose speed and quality gate this row's evidence covers, and so the
+    #: only ones a recommendation reaches (NEXT1-C). Another checkpoint of the same
+    #: architecture is unmeasured, however alike it looks.
     models: tuple[str, ...]
     quality_ratio: float | None = None
     quality_interval: tuple[float, float] | None = None
@@ -160,7 +163,8 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_ratio=0.3099993176898163,
         wall_evidence=f"{_R}/port2-run6-59ce8efc/cross-fp16-qwen3-8b.json",
         wall_arm="ironmule_fp16",
-        models=("mlx-community/Qwen3-8B-4bit", "mlx-community/Qwen3-14B-4bit"),
+        # Qwen 3 14B's float16 gate passed too, but its speed was never measured (NEXT1-C).
+        models=("mlx-community/Qwen3-8B-4bit",),
         quality_ratio=0.9976891942506944,
         quality_interval=(0.996051171482173, 0.9994539470776317),
         quality_evidence=(f"{_R}/port2-run6-59ce8efc/quality16-qwen3-8b-float16.json",
@@ -246,8 +250,9 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_ratio=0.41069269598397673,
         wall_evidence=f"{_R}/port2-run9b-e8751c84/cross-gemma4-e2b.json",
         wall_arm="ironmule_fp32",
-        models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
-                "mlx-community/gemma-4-E4B-it-qat-4bit"),
+        # E4B and E4B-qat share the architecture and were timed in run 9b, but no gate ran
+        # on them (NEXT1-C).
+        models=("mlx-community/gemma-4-e2b-it-4bit",),
         quality_ratio=0.9945141303712351,
         quality_interval=(0.9909858843257502, 0.9981733277241316),
         quality_evidence=(f"{_R}/port2k-run1-fe76f8df/quality-gemma4-e2b-float32.json",
@@ -258,8 +263,9 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_ratio=0.253552451835916,
         wall_evidence=f"{_R}/port2-run9b-e8751c84/cross-gemma4-e2b.json",
         wall_arm="ironmule_fp16",
-        models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
-                "mlx-community/gemma-4-E4B-it-qat-4bit"),
+        # E4B and E4B-qat share the architecture and were timed in run 9b, but no gate ran
+        # on them (NEXT1-C).
+        models=("mlx-community/gemma-4-e2b-it-4bit",),
         quality_ratio=0.994901170238831,
         quality_interval=(0.9911759517865298, 0.9986872654269566),
         quality_evidence=(f"{_R}/port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json",
@@ -307,13 +313,22 @@ def measurements_for(architecture: str, device: str | None) -> tuple[PlanMeasure
                  if row.architecture == architecture and row.device == device)
 
 
-def recommend(architecture: str, device: str | None) -> tuple[str | None, str]:
+def _short(models: tuple[str, ...]) -> str:
+    return ", ".join(model.rsplit("/", 1)[-1] for model in models)
+
+
+def recommend(architecture: str, device: str | None,
+              model_id: str | None = None) -> tuple[str | None, str]:
     """The fastest plan that is both faster and inside the quality bound, and why.
 
     Returns `(plan, reason)`; `plan` is None when nothing is recommended, and the reason
     says which of the three cases applies, because "no recommendation" for an unmeasured
     architecture and "no recommendation" for one that was measured and lost are different
     facts and a caller deserves to know which one they have.
+
+    A recommendation covers the checkpoints its row measured and no others (NEXT1-C): with
+    `model_id`, a checkpoint outside every recommended row gets none; without it, the
+    reason names the checkpoints the recommendation is for.
     """
     rows = measurements_for(architecture, device)
     if not rows:
@@ -321,10 +336,18 @@ def recommend(architecture: str, device: str | None) -> tuple[str | None, str]:
                       "the checkpoint's own dtype is the only qualified path here")
     recommended = sorted((row for row in rows if row.verdict() == "recommended"),
                          key=lambda row: row.wall_ratio)
+    if recommended and model_id is not None:
+        measured = [row for row in recommended if model_id in row.models]
+        if not measured:
+            return None, (f"no plan is recommended for {model_id}: {recommended[0].plan} is "
+                          f"recommended for {_short(recommended[0].models)} only, and this "
+                          "checkpoint was not measured")
+        recommended = measured
     if recommended:
         best = recommended[0]
         return best.plan, (
-            f"--compute-dtype {best.plan} ran {best.label} at {best.wall_ratio:.4f} of stock "
+            f"--compute-dtype {best.plan} ran {_short(best.models)} ({best.label}) at "
+            f"{best.wall_ratio:.4f} of stock "
             f"(+{best.speedup_percent:.0f}%) with a perplexity ratio of {best.quality_ratio:.6f} "
             f"[{best.quality_interval[0]:.6f}; {best.quality_interval[1]:.6f}], inside the "
             f"{QUALITY_BOUND} bound")
