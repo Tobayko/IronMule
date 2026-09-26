@@ -119,6 +119,10 @@ throughput gain <outer-wall ratio>   95% CI [<low>; <high>]
 identical answers in both modes: True
 ```
 
+That is the plain form, printed when the output is piped or `NO_COLOR` is set. At a
+terminal the same numbers print as a coloured card: the gain is green only when the whole
+interval lies below 1.0, yellow when it straddles 1.0.
+
 Physical token rates include the prefill-produced first token and EOS when emitted;
 visible token rates exclude EOS. A token, stop-reason, or count mismatch is emitted
 to stderr as a structured difference (including the first differing position and

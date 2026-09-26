@@ -176,6 +176,15 @@ README_SPEEDUPS += [
     ("Gemma 3 12B on the T4, native", "5.00× · +400%",
      "experiments/kaggle_compat/results/perf1-run18-863237d6/cross-gemma3-12b.json",
      ("summary", "ironmule_native", "median_ratio")),
+    ("1B on the T4, run 18", "1.75× · +75%",
+     "experiments/kaggle_compat/results/perf1-run18-863237d6/cross-gemma3-1b.json",
+     ("summary", "ironmule", "median_ratio")),
+    ("12B on the T4, float32, run 18", "2.01× · +101%",
+     "experiments/kaggle_compat/results/perf1-run18-863237d6/cross-gemma3-12b.json",
+     ("summary", "ironmule_fp32", "median_ratio")),
+    ("12B on the T4, native + fixed cache, run 18", "5.55× · +455%",
+     "experiments/kaggle_compat/results/perf1-run18-863237d6/cross-gemma3-12b.json",
+     ("summary", "ironmule_native_compiled", "median_ratio")),
 ]
 
 #: The one documented cell where a plan is *slower* than stock. It cannot share the

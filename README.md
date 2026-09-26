@@ -82,6 +82,22 @@ about twice as fast on the T4, with a perplexity that matches float32 on Apple S
 within 0.0001 nats per text chunk. Because it changes the output relative to bf16, IronMule
 never turns it on by itself; `ironmule doctor` recommends it where it pays.
 
+### Re-measured: every Gemma 3 number in one run
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-run18-rerun-dark.svg">
+  <img src="docs/assets/t4-run18-rerun.svg" alt="Speed-up against stock MLX for every Gemma 3 arm on a Tesla T4, all measured in PERF1 run 18" width="100%">
+</picture>
+
+On 2026-09-25 one Kaggle T4 session (PERF1 run 18) measured every Gemma 3 arm again, each
+against a stock arm in the same repetition, so no number is chained across runs. Every
+published ratio came back within 5% — 1B at **1.75× · +75%**, 12B float32 at
+**2.01× · +101%** — and every exact arm returned stock's tokens in 6 of 6 requests. The same
+run measures the `native` plan with `compiled_fixed_cache` directly against stock on
+Gemma 3 12B: **5.55× · +455%**, where 5.52× had been projected from two runs. These are
+speed numbers; each plan's quality gate is further down. Raw data:
+`experiments/kaggle_compat/results/perf1-run18-863237d6/`.
+
 ### Six more model families, same card
 
 The table above is one family. These are the others, measured the same way on the same free
@@ -293,19 +309,24 @@ ironmule doctor
 ```
 
 ```text
-IronMule doctor
-[OK] Apple Silicon architecture: arm64 (Apple M1 Max)
-[OK] macOS: Darwin
-[OK] Python: 3.12.13 (requires >= 3.10)
-[OK] MLX: 0.32.0; importable (isolated probe)
-[OK] MLX-LM: 0.31.3; importable (isolated probe)
-[OK] NumPy: 2.5.2; importable (isolated probe)
-[OK] MLX Metal device: Metal GPU operation verified
+ IronMule doctor  checking this machine
 
-All runtime prerequisites are available.
+   ✓  Apple Silicon architecture   arm64 (Apple M1 Max)
+   ✓  macOS                        Darwin
+   ✓  Python                       3.12.13 (requires >= 3.10)
+   ✓  MLX                          0.32.0; importable (isolated probe)
+   ✓  MLX-LM                       0.31.3; importable (isolated probe)
+   ✓  NumPy                        2.5.2; importable (isolated probe)
+   ✓  MLX Metal device             Metal GPU operation verified
+
+ ● Ready  all runtime prerequisites are available
+   next  ironmule start to chat, ironmule benchmark to measure this machine
 ```
 
-On Linux the same command checks for an MLX CUDA device instead.
+On Linux the same command checks for an MLX CUDA device instead. At a terminal the checks
+are coloured; piped, in CI or with `NO_COLOR=1` they print as plain `[OK]`/`[FAIL]` lines,
+and `--json` gives the machine-readable report. `ironmule` on its own shows this machine
+and every command, grouped by what you want to do.
 
 ### 3. Get a model and start the server
 
