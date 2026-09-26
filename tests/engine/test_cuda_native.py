@@ -149,6 +149,16 @@ def test_head_skip_is_needed_only_when_the_heads_copy_does_not_fit():
     assert reason and "last position only" in reason
 
 
+def test_the_cuda_backend_key_is_read():
+    """PERF1-X run 1: MLX on CUDA says `total_memory`; reading only Metal's key decided nothing."""
+    model = _Head()
+    from mlx.utils import tree_flatten
+
+    weights = sum(v.nbytes for _, v in tree_flatten(model.parameters()))
+    tight = int((weights + 1024 * 256 * 2) / cuda_native.PREFILL_HEADROOM) - 1024
+    assert cuda_native.head_skip_needed(model, {"total_memory": tight, "free_memory": tight})
+
+
 def test_no_memory_size_decides_nothing():
     assert cuda_native.head_skip_needed(_Head(), {"device_name": "Tesla T4"}) is None
     assert cuda_native.head_skip_needed(_Head(), None) is None
