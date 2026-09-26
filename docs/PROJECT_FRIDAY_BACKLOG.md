@@ -480,18 +480,8 @@ Offen bleiben vier eng umrissene Punkte:
    Batcher-Admission komplett wie `Server.generate` läuft (post-hoc
    Marker-Verifikation je Session, `guard`-Kontext). *Gate:* der Batcher-Pfad
    nutzt dieselbe `guard`/`_check_marker`-Kette wie der Single-Flight-Pfad.
-5. **D4 ist nicht im Code verdrahtet.** `knobs_for()` emittiert nur `verified`-Knöpfe.
-   `bundled_readback` (`readback_every=8`) ist auf beiden echten Kalibrierungen
-   `failed` (Ratio rund `0,996`, KI-Oberkante über `1,0`). D4 vom 2026-09-02 hat
-   entschieden, den Knopf **trotzdem** im Auslieferungspfad zu behalten — der Code
-   wendet ihn derzeit nicht an. Entweder `knopfs_for` mit einer D4-Ausnahme für
-   `bundled_readback` ausstatten oder D4 revidieren. Betrifft auch die F1-Baseline
-   (sie hatte `readback_every=8`).
-6. **D4b — schwächere Serving-Latte über `bundled_readback` hinaus?**
-   `SERVING_ONLY_KNOBS` deckt jetzt `bundled_readback` (D4) plus `fixed_compiled`
-   (Zyklus-16-Evidenz). `fuse_projections` ist am 2026-09-03 raus (korrektheits-
-   gesperrt). Ob die `< 1,0`-Latte allgemein für künftige Serving-Knöpfe gilt,
-   bleibt offene Nutzerentscheidung.
+5. *Aufgelöst 2026-09-26, ohne D4 zu ändern:* `bundled_readback` scheitert in beiden echten Kalibrierungen an D4s eigener Latte, `knobs_for()` wendet ihn daher zu Recht nicht an (`docs/PROJECT_STATUS.md`, Zeile D4b).
+6. *Entschieden 2026-09-26 (D4b):* keine allgemeine schwächere Latte; nur benannte Ausnahmen in `SERVING_ONLY_KNOBS`.
 
 ## P1 — Prefill-Hebelklasse; die Decode-Klasse ist erschöpft
 
@@ -850,27 +840,6 @@ verlangt ein `wins` ein Intervall vollständig unter `0,8823`, also mehr als run
 (`3`–`6 %`), wäre auf dem 1B in diesem Regime **nicht** unterscheidbar. Ein
 `tie` heißt dort also „kein Vorteil oberhalb von rund `12 %` nachweisbar", nicht
 „bringt nichts". Das gehört in jede künftige 1B-Berichterstattung.
-
-## D4b — Gilt die schwächere Serving-Latte allgemein? (neu 2026-09-02)
-
-**Status:** offen, Entscheidung des Nutzers. Blockiert nichts.
-
-**Abgrenzung.** D4 ist entschieden, aber eng: „bundled_readback bleibt drin, D4
-so entscheiden" ist eine Entscheidung über **einen** Knopf. Ob die dabei
-angewandte Latte — Bootstrap-Intervall vollständig unter `1,0` plus exakte
-Tokenidentität, also schwächer als eine Studienpromotion — **allgemein** für
-künftige Serving-Knöpfe gilt, ist damit nicht entschieden. Die allgemeine
-Fassung senkt die Hürde für alles Kommende; das ist ein zweiter, größerer
-Beschluss.
-
-**Was daran hängt.** `friday_calibrate.KnobVerdict` setzt die schwächere Latte
-bereits im Code; solange D4b offen ist, ist sie durch genau einen Knopf gedeckt
-und nicht durch eine Regel.
-
-**Kill:** wird die allgemeine Latte abgelehnt, muss jeder künftige Serving-Knopf
-dieselbe Schwelle tragen wie eine Promotion, und `friday_calibrate.KnobVerdict`
-wird darauf gehoben — `bundled_readback` bleibt als benannte Einzelentscheidung
-bestehen und wird nicht rückwirkend entfernt.
 
 ## S4 — Prompt-Lookup trifft auf der Auslieferungsworkload nie (neu 2026-09-02)
 
