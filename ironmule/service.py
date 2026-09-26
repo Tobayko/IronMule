@@ -557,8 +557,9 @@ class Runtime:
             if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session"):
                 raise ValueError(f"unknown execution plan: {request.plan!r}")
 
-        # NEXT1-D: before any prefill, against the mode that will actually run.
-        _refuse_grouping_on_a_hybrid_cache(self.engine, self.mode)
+        # NEXT1-D: before any prefill, against the mode that will actually run. A Runtime
+        # built without an engine (a test double) has no model to group.
+        _refuse_grouping_on_a_hybrid_cache(getattr(self, "engine", None), self.mode)
         self.telemetry = Telemetry(mode=self.mode.name)
         capacity = self.backend.capacity_for([len(r.prompt_ids) for r in requests],
                                              max(r.max_tokens for r in requests))
