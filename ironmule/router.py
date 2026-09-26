@@ -471,7 +471,8 @@ class AppleRuntime:
                                  fingerprint=self.router.fingerprint,
                                  mlx=self.router.mlx, mlx_lm=self.router.mlx_lm)
             try:
-                _refuse_grouping_on_a_hybrid_cache(self.runtime.engine, mode)
+                _refuse_grouping_on_a_hybrid_cache(
+                    getattr(getattr(self, "runtime", None), "engine", None), mode)
             except ValueError:
                 # NEXT1-D: a model with recurrent cache layers must not be grouped; its
                 # sequential reference returns the same tokens, and the cohort's telemetry
