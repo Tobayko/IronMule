@@ -114,9 +114,16 @@ that a cache-less machine gets an actionable message and a non-zero exit, never 
 traceback, and that `--help`/`doctor` still start when the MLX import itself is broken.
 
 **Kill.** Remote clean package/CLI job green (done), first-run behaviour covered by
-tests (done), and synthetic regressions covering `R1`–`R7` (open — only `R6`/`R7` have
-a dedicated suite). Apple-Silicon model CI remains open until runner availability and
-cost are explicitly approved.
+tests (done), and synthetic regressions covering `R1`–`R7` (done, checked 2026-09-26:
+`R1` in `tests/engine/test_ironmule_runtime.py` — prefill EOS counted, `max_tokens=1`,
+the grouped all-EOS round and `Runtime.serve`'s result; `R4` in `tests/engine/test_ironmule.py`
+`test_mlx_backend_step_honours_fused_argmax_contract`; `R5` in
+`test_telemetry_does_not_present_zero_as_a_correctness_check` and the benchmark's
+structured mismatch exit in `tests/engine/test_benchmark.py`; `R6`/`R7` in
+`tests/engine/test_r6_r7.py`; `R2` and `R3` are open entries of their own). What remains
+is Apple-Silicon model CI, and it is blocked by hardware, not approval: GitHub's hosted
+macOS runners are virtual machines without Metal, so a model test there cannot run.
+Reopen when a self-hosted Apple-Silicon runner exists.
 
 ### `S1` — Persistent local service with an explicit overload contract
 
