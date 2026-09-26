@@ -623,14 +623,65 @@ def run_protocol(rt: Any, ironmule: Any, *, requests: int, max_tokens: int,
     }
 
 
+def _print_card(result: dict[str, Any], model_id: str) -> None:
+    """The same numbers as `_print_report`, laid out for a person at a terminal."""
+    from ironmule_cli import mark, paint
+
+    protocol, comparison = result["protocol"], result["comparison"]
+    print(f"\n {paint('IronMule benchmark', 'bold', 'amber')}  {model_id}")
+    print(paint(f"   plan {result['plan']} · {result['requests']} requests x "
+                f"{result['max_tokens']} tokens · {protocol['warmup']} warm-ups · "
+                f"{protocol['repeats']} measured repeats per mode", "dim") + "\n")
+    row = "   {:<13}{:>14}{:>11}{:>15}{:>14}   {:<19}"
+    print(paint(row.format("mode", "wall p50", "tok/s", "visible tok/s", "exec p50", "wall range").rstrip(), "dim"))
+    for arm in ARM_NAMES:
+        summary = result["arms"][arm]["summary"]
+        wall = summary["outer_wall_ms"]
+        print(row.format(
+            arm, f"{wall['median']:.1f} ms",
+            f"{summary['physical_tokens_per_second']['median']:.1f}",
+            f"{summary['visible_tokens_per_second']['median']:.1f}",
+            f"{summary['executor_wall_ms']['median']:.1f} ms",
+            f"{wall['min']:.1f} - {wall['max']:.1f}",
+        ).rstrip())
+    ratio = comparison["primary_wall_ratio_throughput_over_interactive"]
+    # Green only when the whole interval says faster; a straddling interval is not a gain.
+    colour = "green" if ratio["ci_high"] < 1.0 else "red" if ratio["ci_low"] > 1.0 else "yellow"
+    gain = f"{comparison['throughput_gain'] * 100:+.2f}%"
+    print(f"\n   {paint('▲' if colour == 'green' else '●', colour)} throughput mode "
+          f"{paint(gain, 'bold', colour)}   "
+          + paint(f"wall ratio {ratio['median_ratio']:.4f}, 95% CI "
+                  f"[{ratio['ci_low']:.4f}; {ratio['ci_high']:.4f}]", "dim"))
+    same = comparison["token_identity"]
+    print(f"   {mark(same)} " + ("identical answers in both modes" if same
+                                 else paint("answers differ; the structured diff is on stderr", "red")))
+    print()
+
+
 def _print_report(result: dict[str, Any], model_id: str) -> None:
+    from ironmule_cli import fancy
+
+    if fancy():
+        _print_card(result, model_id)
+    else:
+        _print_plain(result, model_id)
+    comparison = result["comparison"]
+    if comparison["token_differences"]:
+        print(
+            "structured token differences: "
+            + json.dumps(comparison["token_differences"], sort_keys=True),
+            file=sys.stderr,
+        )
+
+
+def _print_plain(result: dict[str, Any], model_id: str) -> None:
     print(f"model {model_id}")
     protocol = result["protocol"]
     print(
         f"plan {result['plan']}   requests {result['requests']}   "
         f"warmup {protocol['warmup']}   repeats {protocol['repeats']}\n"
     )
-    row = "{:<14}{:>14}{:>15}{:>15}{:>15}{:>15}"
+    row = "{:<14}{:>14}{:>15}{:>15}{:>15}  {:<18}"
     print(row.format("mode", "outer ms p50", "physical tok/s", "visible tok/s", "exec ms p50", "outer spread"))
     for arm in ARM_NAMES:
         summary = result["arms"][arm]["summary"]
@@ -650,12 +701,6 @@ def _print_report(result: dict[str, Any], model_id: str) -> None:
         f"95% CI [{wall_ratio['ci_low']:.4f}; {wall_ratio['ci_high']:.4f}]"
     )
     print(f"identical answers in both modes: {comparison['token_identity']}")
-    if comparison["token_differences"]:
-        print(
-            "structured token differences: "
-            + json.dumps(comparison["token_differences"], sort_keys=True),
-            file=sys.stderr,
-        )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -675,6 +720,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.requests < 1 or args.max_tokens < 1:
         parser.error("--requests and --max-tokens must be positive")
 
+    from ironmule_cli import fancy, paint
+
+    if fancy():
+        print(paint(f"\n loading the model, then {args.warmup} warm-ups and {args.repeats} "
+                    "measured repeats of each mode ...", "dim"), flush=True)
     rt = ironmule.Runtime.load(model_id=args.model, compute_dtype=args.compute_dtype)
     result = run_protocol(
         rt, ironmule, requests=args.requests, max_tokens=args.max_tokens,

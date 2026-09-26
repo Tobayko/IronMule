@@ -486,8 +486,74 @@ def t4_native_quality() -> dict:
     }
 
 
+#: PERF1 run 18 (PERF1-Z): every Gemma 3 arm and its stock reference in one session.
+RUN18 = PERF1 / "perf1-run18-863237d6"
+RUN18_ARMS = (
+    ("Gemma 3 1B", "1b", "ironmule", "exact"),
+    ("Gemma 3 4B", "4b", "ironmule_exact", "exact"),
+    ("Gemma 3 12B", "12b", "ironmule_exact", "exact"),
+    ("Gemma 3 12B, float32 plan", "12b", "ironmule_fp32", "plan"),
+    ("Gemma 3 12B, native plan", "12b", "ironmule_native", "plan"),
+    ("Gemma 3 12B, native + fixed cache", "12b", "ironmule_native_compiled", "plan"),
+)
+
+
+# -- figure 8: the newest re-measurement, every arm against stock in one run ---
+def t4_run18_rerun() -> dict:
+    """PERF1 run 18 re-measured every published Gemma 3 CUDA ratio in one session.
+
+    Each bar is one arm against the stock arm of the same run and repetition, so no
+    ratio here is chained across runs. Dots are the repetitions. Exact arms returned
+    stock's tokens; the numeric plans change the arithmetic and carry their own gate.
+    """
+
+    rows = []
+    for label, model, arm, kind in RUN18_ARMS:
+        summary = load(RUN18 / f"cross-gemma3-{model}.json")["summary"][arm]
+        rows.append((label, 1 / summary["median_ratio"],
+                     [1 / r for r in summary["ratio_vs_reference_per_rep"]],
+                     summary["identical_requests"], kind))
+
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 4.2))
+    colours = {"exact": style.SECONDARY, "plan": style.CANDIDATE}
+    names = {"exact": "exact: the same tokens as stock",
+             "plan": "opt-in numeric plan: changes the arithmetic, gated on its own"}
+    labelled = set()
+    for index, (label, speedup, reps, identical, kind) in enumerate(rows):
+        y = len(rows) - 1 - index
+        ax.barh(y, speedup, height=0.62, color=colours[kind],
+                label=None if kind in labelled else names[kind])
+        labelled.add(kind)
+        ax.scatter(reps, [y] * len(reps), s=14, color=style.TEXT, zorder=4)
+        ax.annotate(f"{speedup:.2f}× · +{(speedup - 1) * 100:.0f}% · {identical}/6 same tokens",
+                    (max(reps + [speedup]), y), textcoords="offset points", xytext=(7, 0),
+                    va="center", fontsize=9, color=style.TEXT)
+    ax.axvline(1.0, color=style.RULE, linewidth=1.2, linestyle="--", zorder=3)
+    ax.set_yticks(range(len(rows)))
+    ax.set_yticklabels([label for label, *_ in reversed(rows)])
+    ax.set_xlim(0, max(speedup for _, speedup, *_ in rows) * 1.55)
+    ax.set_xlabel("times faster than stock MLX in the same run, NVIDIA Tesla T4, higher is faster")
+    ax.set_title("Every Gemma 3 number on a T4, re-measured against stock in one run")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.17), ncol=2, fontsize=9)
+
+    written = emit(fig, "t4-run18-rerun")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": sorted({(RUN18 / f"cross-gemma3-{model}.json").as_posix()
+                           for _, model, _, _ in RUN18_ARMS}),
+        "device": T4,
+        "models": [f"mlx-community/gemma-3-{size}-it-4bit" for size in ("1b", "4b", "12b")],
+        "samples": "PERF1 run 18: interleaved fresh processes, 6 requests x 48 tokens, "
+                   "2 repetitions for 12B and 3 for 1B and 4B, stock in every repetition",
+        "intervals": "none; median of the per-repetition wall ratios, inverted to a speed-up; "
+                     "dots are the repetitions",
+    }
+
+
 FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup,
-           t4_native_kernels, t4_server_batching, t4_native_quality)
+           t4_native_kernels, t4_server_batching, t4_native_quality, t4_run18_rerun)
 
 
 def render(destination: Path) -> list[dict]:

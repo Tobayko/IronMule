@@ -404,3 +404,26 @@ def test_phase_roofline_derived_overflow_or_underflow_fails_closed(updates, need
     assert result["roofline"]["status"] == "invalid"
     assert any(needle in message for message in result["roofline"]["invalid"])
     json.dumps(result, allow_nan=False)
+
+
+def test_report_keeps_columns_apart_and_colours_only_a_terminal(monkeypatch, capsys):
+    import re
+
+    import ironmule_cli
+
+    monkeypatch.setattr(benchmark.time, "perf_counter_ns", _clock())
+    result = benchmark.run_protocol(
+        FakeRuntime(), FakeIronMule, requests=1, max_tokens=3, warmup=2, repeats=2,
+    )
+    for arm in benchmark.ARM_NAMES:  # wide values once glued the last two columns together
+        result["arms"][arm]["summary"]["outer_wall_ms"].update(min=3129.6, max=3133.4)
+        result["arms"][arm]["summary"]["executor_wall_ms"]["median"] = 2855.9
+    benchmark._print_report(result, "fake-model")
+    plain = capsys.readouterr().out
+    assert "\033[" not in plain and re.search(r"\d\[", plain) is None
+    assert "identical answers in both modes: True" in plain
+    monkeypatch.setattr(ironmule_cli, "fancy", lambda stream=None: True)
+    benchmark._print_report(result, "fake-model")
+    card = capsys.readouterr().out
+    assert "\033[" in card and "throughput mode" in card and "identical answers" in card
+    assert "3129.6 - 3133.4" in card
