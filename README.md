@@ -110,7 +110,7 @@ at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
 | Gemma 4 E2B | 3.55 GB | **1.11× · +11%** | **2.43× · +143%** | **3.94× · +294%** |
 | Gemma 4 E4B | 5.15 GB | **1.08× · +8%** | 2.23× · +123%, gate on E2B | 3.69× · +269%, gate on E2B |
 | Gemma 4 E4B qat | 6.80 GB | **1.09× · +9%** | 1.73× · +73%, gate on E2B | 3.18× · +218%, gate on E2B |
-| Gemma 3 4B | 2.50 GB | **1.07× · +7%** | **1.91× · +91%** | 3.21× · +221%, **failed its gate without BOS** |
+| Gemma 3 4B | 2.50 GB | **1.07× · +7%** | **1.91× · +91%** | 3.21× · +221%, **fails its quality gate** |
 | Llama 3.1 8B | 4.52 GB | **1.03× · +3%** | **0.66× · −34%** | not measured |
 | Qwen 3 8B | 4.61 GB | **1.04× · +4%** | **1.87× · +87%** | **3.23× · +223%** |
 | Qwen 3 14B | 8.31 GB | **1.03× · +3%** | **1.94× · +94%** | gate passed, speed not measured |
@@ -122,7 +122,8 @@ fusion switched off — its block body is not one IronMule has transcribed, so f
 it. Its first quality gate could not be used: Gemma's tokenizer adds no BOS, so the gate's
 chunks had none, and the bfloat16 reference scored a perplexity of 22 212. Run again with BOS
 on every chunk (PORT2-K, 2026-09-26) the reference scores 355.7 — still far above Gemma 3 4B's
-27.0, and not explained — and both plans sit inside the bound on E2B, a little better than
+27.0, and not the 4-bit quantisation: the 8-bit and bfloat16 checkpoints score 295.9 and 307.6 —
+and both plans sit inside the bound on E2B, a little better than
 bfloat16 itself. Chat decoding returned stock's tokens in 5 of 6 requests for either plan, so
 `ironmule plans` now recommends `float16` for Gemma 4 on these cards. The E4B checkpoints share
 the architecture; their gate is E2B's.
@@ -153,7 +154,7 @@ reaches — and the numeric plan is where an older NVIDIA card is won.
 | `float32` | Gemma 3 4B, BOS on every chunk | 0.998686 `[0.995891; 1.001671]` | passes |
 | `float32` | Gemma 4 E2B, BOS on every chunk | 0.994514 `[0.990986; 0.998173]` | passes |
 | `float16` | Gemma 4 E2B, BOS on every chunk | 0.994901 `[0.991176; 0.998687]` | passes |
-| `float16` | Gemma 3 4B, no BOS | 2.043792 `[1.873506; 2.244196]` | **fails** — perplexity 102.5 → 209.6; not yet repeated with BOS |
+| `float16` | Gemma 3 4B, BOS on every chunk | 2.044178 `[1.960923; 2.138012]` | **fails** — perplexity 27.0 → 55.2 (without BOS 102.5 → 209.6) |
 | `native`, decode path | Qwen 3 8B | 0.997356 `[0.995672; 0.999090]` | passes |
 | `native`, prefill path | Qwen 3 8B | 0.998839 `[0.997220; 1.000515]` | passes |
 | `native`, prefill path | Qwen 3 14B | 1.000510 `[0.998894; 1.002001]` | passes |

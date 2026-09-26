@@ -57,8 +57,8 @@ PAIRED = {
         "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
         "port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json", "nll_float16"),
     ("mlx_lm.models.gemma3_text", "float16"): (
-        "port2-run6-59ce8efc/quality16-gemma3-4b-bf16.json",
-        "port2-run6-59ce8efc/quality16-gemma3-4b-float16.json", "nll_float16"),
+        "port2k-run2-39af179b/quality-gemma3-4b-bf16.json",
+        "port2k-run2-39af179b/quality-gemma3-4b-float16.json", "nll_float16"),
     ("mlx_lm.models.qwen3", "float16"): (
         "port2-run6-59ce8efc/quality16-qwen3-8b-bf16.json",
         "port2-run6-59ce8efc/quality16-qwen3-8b-float16.json", "nll_float16"),
@@ -149,12 +149,12 @@ def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
 
     Gemma 3 in float32 once measured 1.017846 with an interval that contains 1 (no BOS,
     port2 run 2) and passes with BOS (PORT2-K). Gemma 3 in float16 measured an interval
-    starting at 1.87 in the no-BOS regime and is still refused until a BOS gate replaces it.
+    starting at 1.87 without BOS and at 1.96 with it (PORT2-K run 2), so it stays refused.
     A wide interval must never refuse; a measured ruin must.
     """
     gemma = "mlx_lm.models.gemma3_text"
     check(gemma, "float32", CUDA_PRE_AMPERE)
-    with pytest.raises(PlanRefused, match="2.043792"):
+    with pytest.raises(PlanRefused, match="2.044178"):
         check(gemma, "float16", CUDA_PRE_AMPERE)
     # Unmeasured architectures and other device classes are not this guard's business.
     check("mlx_lm.models.gemma4_text", "float16", CUDA_PRE_AMPERE)

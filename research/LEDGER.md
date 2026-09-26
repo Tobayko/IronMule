@@ -6791,3 +6791,30 @@ measurable. TTFT was unchanged (Gemma 37.8 s, Qwen 26.7-27.2 s in every arm). As
 recorded rather than gated, every candidate generation left the control's tokens, since the
 router's arithmetic changed. The `r8` route stays in `perf1.py` as a harness option; nothing
 enters the product.
+
+## PORT2-K, run 2 — Gemma 3's float16 ruin holds with BOS; Gemma 4's perplexity is not quantisation (2026-09-26)
+
+`port2k-run2-39af179b`, commit `2175a34`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw data,
+logs and the submitted notebook: `experiments/kaggle_compat/results/port2k-run2-39af179b/`. About
+15 min of stages after setup, 0 EUR. Rules fixed in the notebook before the run.
+
+**Engine suite on this commit:** 1282 passed, 29 skipped, 0 failed.
+
+**Loader check.** `load_engine` refuses Gemma 3 `float16`, so this run loaded through mlx-lm with
+the same `set_dtype` (`QUALITY_LOADER=mlx_lm`, `9e26abe`). Its bf16 per-chunk NLL equals run 1's,
+measured through `load_engine`, on all 16 chunks (largest difference 0.0), so the two loaders
+compute the same thing and the float16 verdict counts.
+
+**Gemma 3 4B `float16`, BOS on every chunk:** perplexity 26.99 -> 55.18, ratio 2.044178
+[1.960923; 2.138012] against bf16 (seed 20260916). Without BOS (port2 run 6) it was 2.043792
+[1.873506; 2.244196]: BOS changes nothing for this plan, whose float16 range cannot carry
+Gemma 3's activations. By the entry's kill the refusal stays, now with this run as its evidence
+(`numeric_plans.py`).
+
+**Gemma 4 E2B's reference, diagnosis.** The same 16 BOS chunks through other checkpoints of the
+same model, bf16 compute through mlx-lm: 4-bit (run 1) 355.7, 8-bit (`03dcf209`) 295.9, bf16
+weights (`fb0b166b`) 307.6. Quantisation costs the 4-bit checkpoint about 16% in perplexity; it
+does not explain a reference ten times Gemma 3 4B's. What remains is either mlx-lm 0.31.3's
+`gemma4_text` or the model itself on raw WikiText; telling them apart needs a second
+implementation as reference (transformers, which needs the Gemma licence on Kaggle, DATA2). The
+Gemma 4 plan verdicts of run 1 are unaffected: they compare two computations of one model.

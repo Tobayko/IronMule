@@ -202,13 +202,10 @@ bf16 as the reference; none is available on the free Kaggle cells. No entry is o
 
 ## PORT2 — Rest (2026-09-24)
 
-- **PORT2-K Rest: Gemma 3 4B `float16` mit BOS und die Gemma-4-Referenz.** Run 1
-  (`port2k-run1-fe76f8df`, Ledger PORT2-K) hat Gemma 3 `float32` und beide Gemma-4-Pläne mit BOS
-  qualifiziert. Offen: (1) Gemma 3 4B `float16` — `load_engine` verweigert den Plan aufgrund des
-  No-BOS-Gates, also muss der Lauf am Loader vorbei messen (`mlx_lm.load` + `set_dtype(float16)`,
-  genau das, was `load_engine` für den Plan tut). Kill: obere Grenze > 1,005 — die Verweigerung
-  bleibt mit neuem Beleg; sonst wird die Zeile zu `recommended`. (2) Warum Gemma 4 E2B auch mit
-  BOS Perplexität 355,7 hat. Kill: keiner, eine Diagnose.
+Answered 2026-09-26: PORT2-K, both runs (ledger PORT2-K and PORT2-K run 2). Gemma 4's plans and
+Gemma 3's `float32` qualify with BOS; Gemma 3's `float16` stays refused with a BOS gate; Gemma 4 E2B's
+reference perplexity (~300 in every precision) is not quantisation, and settling it needs the
+transformers reference DATA2 describes. No PORT2 entry is open.
 
 ## DATA3 — Rest (2026-09-15)
 

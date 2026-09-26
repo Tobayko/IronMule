@@ -10,8 +10,8 @@ not enough guidance, because the answer is neither per device nor per plan but p
   own bfloat16 is 0.997689 with the whole interval below 1. Faster and no worse.
 * Llama 3.1 in `float32` runs at 1.52 — half again slower — while passing its quality gate
   comfortably. Correct, and a waste.
-* Gemma 3 in `float16` runs at 0.31 and takes perplexity from 102.54 to 209.57. Fast and
-  ruined.
+* Gemma 3 in `float16` runs at 0.31 and doubles perplexity (26.99 -> 55.18 with BOS on
+  every chunk, 102.54 -> 209.57 without). Fast and ruined.
 
 `ironmule doctor` used to advise `float32` on any NVIDIA GPU below compute capability 8,
 which is right for Gemma 3 and Qwen 3, wrong for Llama 3.1, and silent about `float16`
@@ -127,9 +127,12 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_ratio=0.3112612606949747,
         wall_evidence=f"{_R}/port2-run6-59ce8efc/cross-fp16-gemma3-4b.json",
         wall_arm="ironmule_fp16", models=("mlx-community/gemma-3-4b-it-4bit",),
-        quality_ratio=2.0437919258411332,
-        quality_interval=(1.8735056823875418, 2.2441964383761954),
-        quality_evidence=(f"{_R}/port2-run6-59ce8efc/quality16-gemma3-4b-float16.json",
+        # PORT2-K run 2, BOS on every chunk, measured past `load_engine` (which refuses this
+        # plan) with the same `set_dtype`; perplexity 26.99 -> 55.18. Without BOS (port2 run 6)
+        # it read 2.043792 [1.873506; 2.244196], 102.54 -> 209.57: BOS changes nothing here.
+        quality_ratio=2.044177642744812,
+        quality_interval=(1.9609229856175048, 2.1380115003611624),
+        quality_evidence=(f"{_R}/port2k-run2-39af179b/quality-gemma3-4b-float16.json",
                           "paired-with-bf16"),
     ),
     PlanMeasurement(
