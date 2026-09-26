@@ -6818,3 +6818,31 @@ does not explain a reference ten times Gemma 3 4B's. What remains is either mlx-
 `gemma4_text` or the model itself on raw WikiText; telling them apart needs a second
 implementation as reference (transformers, which needs the Gemma licence on Kaggle, DATA2). The
 Gemma 4 plan verdicts of run 1 are unaffected: they compare two computations of one model.
+
+## PERF1-X — `native` loads on a card its weights nearly fill, by skipping the head's prefill copy (2026-09-26)
+
+Two Kaggle Tesla T4 runs, mlx `0.32.2`, mlx-lm `0.31.3`, `experiments/kaggle_compat/perf1x_check.py`
+through the product engine (`load_engine(..., compute_dtype="native")`, untuned knobs), then
+`ironmule benchmark`'s workload once. Raw data, logs and notebooks:
+`experiments/kaggle_compat/results/perf1x-run1-931331a9/` and `perf1x-run2-a01222de/`. 0 EUR.
+
+Under `native` the engine's prefill turns each 4-bit weight into one float16 copy. On a T4 the
+head of Gemma 4 26B-A4B (262144 rows, 1.48 GB as float16) does not fit beside its 14.20 GB of
+weights, which ended the first prefill in `cudaMallocAsync ... out of memory` (PERF1 run 15).
+`f70805a` lets `load_engine` switch `head_skip_prefill` on under `native` only when weights plus
+that copy exceed 90% of the card's memory; the head for the last position is then the decode
+kernel's arithmetic, which the plan's gate covers, and the reason is recorded in
+`native_admission["head_skip_prefill_forced"]`.
+
+| run | commit | Gemma 4 26B-A4B | Qwen 3 8B | engine suite |
+| :-- | :-- | :-- | :-- | :-- |
+| 1 (`perf1x-run1-931331a9`) | `f70805a` | out of memory, as run 15: the check read no memory size | served, no head skip | 1284 passed, 0 failed |
+| 2 (`perf1x-run2-a01222de`) | `55c86e6` | served with the head skip forced, peak 14.90 GB, 6 x 48 tokens in 79.3 s | served, no head skip, peak 8.13 GB, 17.8 s | 1285 passed, 0 failed |
+
+Run 1 found the first version reading Metal's and two other key names while MLX's CUDA backend
+reports `total_memory` (16 106 127 360 on this card); `55c86e6` reads it first, with a test. The
+recorded reason in run 2: "the head's float16 prefill copy (1.48 GB) does not fit beside 14.20 GB
+of weights in 90% of this card's 16.11 GB". PERF1-X's own kill named exactly this outcome ("native on
+such cards only with head_skip_prefill"); what is new is that the engine applies it by itself on
+the cards that need it and on no other. No speed or quality claim: the walls are single passes
+that include the first prefill. Both runs waited 2.5-3.5 h in Kaggle's queue.
