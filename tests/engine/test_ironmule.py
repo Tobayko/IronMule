@@ -397,3 +397,51 @@ def test_throughput_mode_is_refused_on_a_hybrid_cache():
     _refuse_grouping_on_a_hybrid_cache(hybrid, InteractiveMode())    # sequential: allowed
     with pytest.raises(ValueError, match="recurrent cache layers"):
         _refuse_grouping_on_a_hybrid_cache(hybrid, ThroughputMode())
+
+
+def test_every_grouping_mode_is_refused_on_a_hybrid_cache_and_again_at_dispatch():
+    """NEXT1-D: the refusal follows what a mode runs, and it is checked at every dispatch.
+
+    `AutomaticMode` always hands a group to the throughput or the paired executor, the
+    paired mode groups too, and a router or caller can replace `Runtime.mode` after the
+    Runtime was built. Checking `name == "throughput"` once, at construction, let all three
+    group a recurrent cache.
+    """
+    from mlx_lm.models.cache import ArraysCache, KVCache
+
+    from ironmule.plans import StrictOneShotPlan
+    from ironmule.router import AppleRuntime
+    from ironmule.service import (AutomaticMode, InteractiveMode, PairedThroughputMode, Request,
+                                  Runtime, ThroughputMode, _refuse_grouping_on_a_hybrid_cache)
+
+    class Stub:
+        def __init__(self, cache):
+            self.model = SimpleNamespace(make_cache=lambda: cache, layers=[None] * len(cache))
+
+    hybrid = Stub([ArraysCache(size=2), KVCache()])
+    for mode in (ThroughputMode(), PairedThroughputMode(), AutomaticMode(), object()):
+        with pytest.raises(ValueError, match="recurrent cache layers"):
+            _refuse_grouping_on_a_hybrid_cache(hybrid, mode)
+    _refuse_grouping_on_a_hybrid_cache(hybrid, InteractiveMode())
+
+    unknown = Stub([KVCache(), object()])                  # an unknown cache type fails closed
+    with pytest.raises(TypeError):
+        _refuse_grouping_on_a_hybrid_cache(unknown, ThroughputMode())
+    _refuse_grouping_on_a_hybrid_cache(unknown, InteractiveMode())
+
+    # A mode swapped in after construction is caught before any prefill: without the check
+    # this stand-in Runtime would fail on its missing backend, not on the cache.
+    swapped = SimpleNamespace(engine=hybrid, mode=ThroughputMode())
+    with pytest.raises(ValueError, match="recurrent cache layers"):
+        Runtime.serve(swapped, [Request(prompt_ids=[1, 2], max_tokens=1,
+                                        plan=StrictOneShotPlan(), rid="r")])
+
+    # The router takes the sequential reference for such a model instead of failing it.
+    router = SimpleNamespace(profile=None, identity_sha256=None, fingerprint=None,
+                             mlx="", mlx_lm="")
+    owner = SimpleNamespace(router=router, runtime=SimpleNamespace(engine=hybrid))
+    assert isinstance(AppleRuntime._mode_for(owner, SimpleNamespace(route="throughput")),
+                      InteractiveMode)
+    plain = SimpleNamespace(router=router, runtime=SimpleNamespace(engine=Stub([KVCache()])))
+    assert isinstance(AppleRuntime._mode_for(plain, SimpleNamespace(route="throughput")),
+                      AutomaticMode)

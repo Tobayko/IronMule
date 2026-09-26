@@ -88,6 +88,14 @@ Width 4 is the maximum because E15 found the whole gain available there and E14b
 found width 8 regressing. The executor **never waits to fill a group**; realised
 width drops below four whenever fewer requests are ready, and that is intended.
 
+**Grouping is refused on a model with recurrent cache layers** (Qwen 3.5's gated-delta
+`ArraysCache`, PORT2): every mode that groups — `ThroughputMode`, `PairedThroughputMode`
+and `AutomaticMode`, whose delegates both group — raises before any prefill, and not
+only when the Runtime is built: `serve()` checks the mode it is about to run, so a mode
+swapped in later is refused too (NEXT1-D). A mode is treated as grouping unless it
+declares `groups = False`, and an unknown cache type is refused rather than grouped.
+The learned-dispatch router takes the sequential reference for such a model instead.
+
 ### The measured trade
 
 The following E16 table is historical research evidence from forty independent OS
