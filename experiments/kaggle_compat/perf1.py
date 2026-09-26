@@ -405,6 +405,63 @@ def qmv(x, w, scales, biases, rows=None):
     return out.reshape(*x.shape[:-1], n)
 
 
+# PERF1-V: 8-bit weights through the same row kernel. Qwen's `mlp.gate` and
+# `shared_expert_gate` and Gemma 4's `router.proj` are 8-bit and stayed emulated bfloat16 (run 14:
+# 20480 and 16184 fallback calls). A uint4 then holds 16 bytes = 16 values of one group of 64
+# (MLX packing: low byte first), so the chunk loop, the value arrays and the activation loads
+# halve and a value is a byte; everything from the scale on is the 4-bit kernel's.
+def _source8():
+    source = _source("bf16")
+    for old, new in (("K / 32", "K / 16"), ("(c * 32) / GS", "(c * 16) / GS"),
+                     ("float xf[32];", "float xf[16];"), ("float qf[32];", "float qf[16];"),
+                     ("for (int i = 0; i < 32; ++i)", "for (int i = 0; i < 16; ++i)"),
+                     ("for (int j = 0; j < 4; ++j) {\n      const uint4 xa = xv[mo * (K / 8) + c * 4 + j];",
+                      "for (int j = 0; j < 2; ++j) {\n      const uint4 xa = xv[mo * (K / 8) + c * 2 + j];")):
+        assert old in source, old
+        source = source.replace(old, new)
+    unpack = "for (int e = 0; e < 8; ++e) qf[j * 8 + e] = " + QF[os.environ.get("PERF1_QF", "cvt")] + ";"
+    assert unpack in source, unpack
+    return source.replace(unpack, "for (int e = 0; e < 4; ++e) qf[j * 4 + e] = (float)((qw[j] >> (8 * e)) & 0xFFu);")
+
+
+def qmv8(x, w, scales, biases):
+    """x (..., K) bf16 with M <= 8 rows; w (N, K/4) uint32 holding 8-bit values; scales/biases (N, K/64)."""
+    if "r8" not in _kernels:
+        _kernels["r8"] = mx.fast.cuda_kernel(
+            name=f"perf1_qmv8_{os.environ.get('PERF1_ARITH', 'free')}", input_names=["x", "w", "scales", "biases"],
+            output_names=["out"], source=_source8(), header=HEADER)
+    n, k = w.shape[0], w.shape[1] * 4
+    m = x.size // k
+    rows = rows_for(n)
+    threads = -(-(-(-n // rows) * 32) // 256) * 256
+    out = _kernels["r8"](
+        inputs=[mx.contiguous(x.reshape(m, k)), w, scales, biases],
+        template=[("N", n), ("K", k), ("GS", GS), ("R", rows), ("M", m)], grid=(threads, 1, 1),
+        threadgroup=(256, 1, 1), output_shapes=[(m, n)], output_dtypes=[mx.uint16])[0]
+    return out.view(mx.bfloat16).reshape(*x.shape[:-1], n)
+
+
+def r8_probe(out):
+    """The 8-bit kernel against a float32 reference on router-like shapes, M = 1..8."""
+    rows = []
+    for k, n in ((2816, 128), (2048, 256), (2048, 1), (4096, 64)):
+        weight = (mx.random.normal((n, k), key=mx.random.key(k + n)) * 0.02).astype(mx.bfloat16)
+        wq, sc, bi = mx.quantize(weight, group_size=GS, bits=8)
+        for m in (1, 2, 8):
+            x = mx.random.normal((m, k), key=mx.random.key(m)).astype(mx.bfloat16)
+            ref = x.astype(mx.float32) @ mx.dequantize(wq, sc.astype(mx.float32), bi.astype(mx.float32),
+                                                       group_size=GS, bits=8).T
+            got = qmv8(x, wq, sc, bi).astype(mx.float32)
+            err = (mx.max(mx.abs(got - ref)) / (mx.max(mx.abs(ref)) + 1e-6)).item()
+            rows.append({"k": k, "n": n, "m": m, "rel_err": err})
+            print(rows[-1], flush=True)
+    report = {"mode": "r8probe", "rows": rows, "ok": all(r["rel_err"] <= 1e-2 for r in rows),
+              "device": str(mx.default_device()), "performance_claim": False}
+    with open(out, "w") as stream:
+        json.dump(report, stream, indent=1)
+    print(json.dumps({"ok": report["ok"]}), flush=True)
+
+
 # PERF1-S: MoE experts. Run 12 decoded Qwen3.6 35B-A3B only 11% faster with `kernel+p16`,
 # because its experts go through `gather_qmm`, still emulated bfloat16. The row kernel above,
 # unchanged from the pointer setup on: warp w of P * W serves (token, expert) pair p = w / W,
@@ -455,7 +512,7 @@ def gather_qmv(x, w, scales, biases, idx, xs):
 _original = mx.quantized_matmul
 routes = set()
 routed = {"kernel": 0, "k32": 0, "p16": 0, "mma": 0, "mma2": 0, "fallback": 0,
-          "gather": 0, "g16": 0, "gather_fallback": 0}
+          "gather": 0, "g16": 0, "gather_fallback": 0, "r8": 0}
 
 
 def _patched(x, w, scales, biases=None, transpose=True, group_size=None, bits=None, mode="affine", **kw):
@@ -490,6 +547,11 @@ def _patched(x, w, scales, biases=None, transpose=True, group_size=None, bits=No
                 if P16_SYNC:
                     mx.eval(parts[-1])
             return (parts[0] if len(parts) == 1 else mx.concatenate(parts, axis=-1)).astype(x.dtype)
+    if ("r8" in routes and bits == 8 and biases is not None and transpose and (group_size or 64) == GS
+            and mode == "affine" and not kw and k % 16 == 0 and w.ndim == 2 and w.shape[1] * 4 == k
+            and x.dtype == scales.dtype == mx.bfloat16 and x.size <= MAX_M * k):
+        routed["r8"] += 1
+        return qmv8(x, w, scales, biases)
     routed["fallback"] += 1
     return _original(x, w, scales, biases, transpose=transpose, group_size=group_size, bits=bits,
                      mode=mode, **kw)
@@ -530,11 +592,11 @@ def _gather_patched(x, w, scales, biases=None, lhs_indices=None, rhs_indices=Non
 
 def apply_arm(model, arm):
     parts = set(arm.split("+"))
-    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16"}:
+    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"}:
         raise ValueError(arm)
     if "fp32" in parts:
         model.set_dtype(mx.float32)
-    routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2", "gather", "g16"})
+    routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"})
     if routes:
         mx.quantized_matmul = _patched  # nn.QuantizedLinear looks it up per call
     if routes & {"gather", "g16"}:
@@ -1082,6 +1144,8 @@ def main():
         return mma_probe(sys.argv[2])
     if mode == "gather":
         return gather_probe(sys.argv[2])
+    if mode == "r8probe":
+        return r8_probe(sys.argv[2])
     if mode == "ironmule":
         model_id, revision, arm, knobs, runtime_mode, out = sys.argv[2:8]
         report = ironmule_arm(model_id, revision, arm, json.loads(knobs), runtime_mode)

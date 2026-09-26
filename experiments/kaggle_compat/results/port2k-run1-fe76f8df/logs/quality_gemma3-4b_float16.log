@@ -1,0 +1,11 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+Traceback (most recent call last):
+  File "/tmp/IronMule/experiments/kaggle_compat/quality.py", line 36, in <module>
+    single, tokenizer = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION,
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/IronMule/ironmule/tune.py", line 393, in load_engine
+    check(architecture, compute_dtype, device_class(info))
+  File "/tmp/IronMule/ironmule/numeric_plans.py", line 354, in check
+    raise PlanRefused(
+ironmule.numeric_plans.PlanRefused: compute_dtype='float16' is refused for gemma3_text on this device: measured perplexity ratio 2.043792 [1.873506; 2.244196] against the checkpoint's own dtype, far outside the 1.005 bound (evidence: experiments/kaggle_compat/results/port2-run6-59ce8efc/quality16-gemma3-4b-float16.json). The speed is real (+221%) and the output is not.

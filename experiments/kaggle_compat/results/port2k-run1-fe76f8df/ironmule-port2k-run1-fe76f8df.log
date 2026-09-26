@@ -1,0 +1,41 @@
+[{"stream_name":"stdout","time":1.68535087,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":4.728690857,"data":"== clone: exit=0 3.0s\n"}
+,{"stream_name":"stdout","time":15.71838498,"data":"== venv: exit=0 11.0s\n"}
+,{"stream_name":"stdout","time":40.724552457,"data":"== install: exit=0 25.0s\n"}
+,{"stream_name":"stdout","time":40.816111037,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":43.065222526,"data":"== download_wikitext: exit=0 2.2s\n"}
+,{"stream_name":"stdout","time":196.991784387,"data":"== pytest_engine: exit=0 153.9s\n"}
+,{"stream_name":"stdout","time":227.945443134,"data":"== download_gemma3-4b: exit=0 31.0s\n"}
+,{"stream_name":"stdout","time":529.793142982,"data":"== quality_gemma3-4b_bf16: exit=0 301.8s\n"}
+,{"stream_name":"stdout","time":615.695564384,"data":"== quality_gemma3-4b_float32: exit=0 85.9s\n"}
+,{"stream_name":"stdout","time":641.106696275,"data":"== quality_gemma3-4b_float16: exit=1 25.4s\n"}
+,{"stream_name":"stdout","time":713.155094158,"data":"== download_gemma4-e2b: exit=0 72.0s\n"}
+,{"stream_name":"stdout","time":889.784462135,"data":"== quality_gemma4-e2b_bf16: exit=0 176.6s\n"}
+,{"stream_name":"stdout","time":944.484017306,"data":"== quality_gemma4-e2b_float32: exit=0 54.7s\n"}
+,{"stream_name":"stdout","time":1037.534487904,"data":"== quality_gemma4-e2b_float16: exit=0 93.0s\n"}
+,{"stream_name":"stdout","time":1038.728759014,"data":"== summary: exit=0 1.2s\n"}
+,{"stream_name":"stdout","time":1038.729332987,"data":"{\n"}
+,{"stream_name":"stdout","time":1038.729347947,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729353014,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729358185,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729363476,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729367797,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729373037,"data":" \"download_wikitext\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729377542,"data":" \"pytest_engine\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729381788,"data":" \"download_gemma3-4b\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729386212,"data":" \"quality_gemma3-4b_bf16\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729390569,"data":" \"quality_gemma3-4b_float32\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729394845,"data":" \"quality_gemma3-4b_float16\": 1,\n"}
+,{"stream_name":"stdout","time":1038.729400955,"data":" \"download_gemma4-e2b\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729408215,"data":" \"quality_gemma4-e2b_bf16\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729411412,"data":" \"quality_gemma4-e2b_float32\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729414387,"data":" \"quality_gemma4-e2b_float16\": 0,\n"}
+,{"stream_name":"stdout","time":1038.729417308,"data":" \"summary\": 0\n"}
+,{"stream_name":"stdout","time":1038.729420338,"data":"}\n"}
+,{"stream_name":"stderr","time":1041.479035222,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":1041.479091175,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":1042.011938573,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":1042.011964902,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":1043.437254266,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":1045.134278097,"data":"[NbConvertApp] Writing 297235 bytes to __results__.html\n"}
+]

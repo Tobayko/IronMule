@@ -1,0 +1,31 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+0 {'nll_float16': 4.693587303161621}
+1 {'nll_float16': 5.943198204040527}
+2 {'nll_float16': 5.517610549926758}
+3 {'nll_float16': 6.269510269165039}
+4 {'nll_float16': 5.81704044342041}
+5 {'nll_float16': 5.911432266235352}
+6 {'nll_float16': 6.027274131774902}
+7 {'nll_float16': 6.135323524475098}
+8 {'nll_float16': 6.4178266525268555}
+9 {'nll_float16': 5.96392822265625}
+10 {'nll_float16': 6.104195594787598}
+11 {'nll_float16': 6.262501239776611}
+12 {'nll_float16': 5.972099304199219}
+13 {'nll_float16': 5.482466697692871}
+14 {'nll_float16': 5.825064659118652}
+15 {'nll_float16': 5.56242561340332}
+{
+ "schema": "ironmule.port1-quality.v1",
+ "model_id": "mlx-community/gemma-4-e2b-it-4bit",
+ "revision": "238767527555cb75a05732a84dff5d6ba0dd6809",
+ "text": "/tmp/wikitext.txt",
+ "chunks": 16,
+ "chunk_tokens": 512,
+ "bos": 2,
+ "only": "float16",
+ "ppl_float16": 353.9277485893938,
+ "device": "Device(gpu, 0)",
+ "seconds": 91.67133951187134
+}

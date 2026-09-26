@@ -6637,3 +6637,118 @@ Qwen 3.5 (PERF1-T2's stated limit); alone, with no variable set by the harness, 
 also shows PERF1-T2 taking effect on the library path. The gate's module now says to run it in a
 process of its own on CUDA. The integration tests had last run in TEST1 (2026-09-24), not never
 as first said while reviewing the tests.
+
+## Q2 — the self-tuning loop ran end to end on a real model (2026-08-29, recorded 2026-09-26)
+
+Recorded here on 2026-09-26 from the preregistration's own results section; the run was
+answered on 2026-08-29 but its result lived only in `research/raw/Q2_preregistration.md`,
+`research/raw/Q2_run.log`, `docs/HANDOVER.md` and the changelog. Nothing was re-measured.
+
+Apple M1 Max, `mlx-community/gemma-3-4b-it-4bit`, commit `a65563f`, MLX 0.32.0, AC power,
+hardware fingerprint `dc652d66f24ac207`. `ironmule tune` ran its coordinate descent over
+`tune.SEARCH` against the untuned baseline (`936.89 ms`, 23 tokens) and kept three knobs:
+`compiled_fixed_cache=True` (0.9679), `head_skip_prefill=True` (0.8606) and
+`readback_every=2` (0.8543). The paired confirmation over 6 fresh processes x 7 repeats
+measured `0.8568`, tokens identical, accepted; a second start loaded the stored profile
+instead of tuning again. All five preregistered kill criteria passed. As predicted,
+`prefill_into_fixed` (0.8699) and `speculate_k=4` (1.3829, 38% slower) did not win.
+
+The run exposed one defect, fixed in `0de69b6`: the stored gain came from the
+single-process screening (`14.57%`) rather than the paired confirmation (`14.32%`, 95%
+interval `[5.98%; 14.51%]`), which `status()` now reports. Status: MEASURED, one run, one
+machine; it establishes that self-tuning works end to end, not the size of its gain
+elsewhere.
+
+## R14 — the q3d/q3f integration failures were two tests reading one process table (2026-09-26)
+
+Apple M1 Max, macOS 26.6.2, Python 3.12.13, MLX 0.32.0, this repository at `2cde303` plus the
+fix below; `pytest -m integration` as `pytest.ini` configures it (xdist, `--dist loadfile`), Qwen
+integration off (`IRONMULE_QWEN_MODEL` unset). No model timing is involved.
+
+Before the fix, two consecutive full integration runs each failed the same two tests
+(`2 failed, 13 passed, 1 skipped`), and in isolation `q3d`'s passed while `q3f`'s failed. Two
+separate causes, both reproduced on demand:
+
+| run | `test_real_macos_process_identity_and_cleanup_reap` (q3d) | `test_q3f_real_cleanup_keeps_external_process_alive` |
+| :-- | :-- | :-- |
+| full integration, parallel | fails | fails |
+| full integration, `-n 0` | passes | fails |
+| q3d + runtime integration + portable CLI files, parallel | passes | — |
+| q3d + q3f files, parallel | fails | fails |
+
+**q3d: another worker's processes.** The cleanup evidence reads every process this user owns
+and refuses when a new one appears that it cannot attribute. The q3f file starts processes
+(`sleep`, a sleeping Python worker, a libc fork); when it runs on another worker during q3d's
+observation window, q3d's verdict is correctly `group_gone = false`. Fix: a `process_table`
+marker; a test carrying it holds a file lock (`flock`) exclusively, every other test holds it
+shared, so nothing the same run starts appears while it looks (`tests/conftest.py`).
+
+**q3f: the machine, not the order.** Its global inventory (`competing_model_process`) matches
+blocker tokens as substrings of every process's command line. On this machine a web dev
+server under a directory whose name contains "Ironmule" matched `ironmule`, so the inventory
+reported competing model activity. That is the fail-closed gate working as written, not a
+cleanup defect; the test now checks the inventory first and skips with the reason when the
+machine already trips it.
+
+After the fix: q3d + q3f in parallel `2 passed, 1 skipped`; two consecutive full integration
+runs `14 passed, 2 skipped` each (Qwen unset; q3f's precondition, reason printed); the engine
+suite `1281 passed, 24 skipped`; the whole non-integration suite `1374 passed, 26 skipped`.
+R14's kill ("a deterministic order/timing proof identifies and fixes the interaction") is met.
+q3f's real cleanup remains unverified on this machine while that dev server runs; narrowing
+the substring match (R15) was closed the same day on its own kill, since the Q3c and Q3d
+records bind the module in `runtime_code_sha256` (backlog Tier 0).
+
+## P1 — the fingerprint stops shelling out to `sysctl` (2026-09-26)
+
+Agent decision under P1's own kill: a stored opt-in before any OS query would have made every
+existing fingerprint and profile depend on a consent state, and `doctor` needs to diagnose a
+fresh machine before any setup. So the promise is kept the other way the entry names, plus one
+real reduction: `ironmule.hw._sysctl` now reads through `sysctlbyname` and starts no process.
+On the M1 Max all five fingerprint keys (`machdep.cpu.brand_string`, `hw.logicalcpu`,
+`hw.perflevel0.logicalcpu`, `hw.perflevel1.logicalcpu`, `hw.memsize`) return exactly what
+`sysctl -n` prints, and a missing key returns `None` as before
+(`tests/engine/test_hw_sysctl.py`), so no fingerprint changes. The remaining commands
+(`system_profiler`, `ps`, `doctor`'s `sysctl`, the benchmark harness's gates) are listed in
+`docs/RUNTIME.md`, "What IronMule asks the operating system". No measurement is involved.
+
+## R10 — an aborted run no longer looks like a finished one (2026-09-26)
+
+Closed on its own kill ("an additive optional key"). `b700377` already replaced the hard-coded
+12 GiB guard with `bench.MemoryGate` (swap growth over the run's baseline, plus a backstop at
+0.6 of installed memory, R11) and wrote `gate.record` into E14b's result file as the optional
+key `memory_gate`, with the block index, the reason and every block's swap and peak. What was
+missing is now added: `bench.refuse_aborted(payload, accept_abort=False)` raises on a file whose
+gate recorded an abort, `research/e14b_analyse.py` calls it (`--accept-abort` to summarise such a
+file anyway), and files written before the key existed pass unchanged. `tests/engine/test_bench_gate.py`
+covers both stop reasons, the recorded block and the refusal on synthetic runs. No measurement is
+involved; no result file changed.
+
+## PORT2-K — with BOS on every chunk, Gemma 4's plans qualify and Gemma 3's float32 gate passes (2026-09-26)
+
+`port2k-run1-fe76f8df`, commit `3b830de`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw data,
+logs and the submitted notebook: `experiments/kaggle_compat/results/port2k-run1-fe76f8df/`.
+Run time about 17 min of stages after setup, 0 EUR. Rules fixed in the notebook before the run:
+`quality.py` with BOS prepended to every chunk (`3b830de`), 16 chunks x 512 tokens of WikiText-2
+raw test, one precision per process, the same pinned revisions as the no-BOS gates, judged by
+`port2k_summary.py` with the plan table's seed (20260916) and 10 000 draws.
+
+**Engine suite on this commit:** 1277 passed, 28 skipped, 0 failed.
+
+| gate | bf16 perplexity | plan perplexity | ratio [95%] | no-BOS verdict | with BOS |
+| :-- | --: | --: | :-- | :-- | :-- |
+| Gemma 3 4B `float32` | 26.99 | 26.96 | 0.998686 [0.995891; 1.001671] | 1.017846 [0.990878; 1.051591], inconclusive | passes |
+| Gemma 4 E2B `float32` | 355.74 | 353.79 | 0.994514 [0.990986; 0.998173] | reference 22 212, unusable | passes |
+| Gemma 4 E2B `float16` | 355.74 | 353.93 | 0.994901 [0.991176; 0.998687] | reference 22 212, unusable | passes |
+| Gemma 3 4B `float16` | — | — | not measured | 2.043792 [1.873506; 2.244196], refused | — |
+
+Every file records BOS id 2 on both sides; no NLL was non-finite. Gemma 3 4B's `float16` stage
+ended at load: `load_engine` refused the plan on the strength of the no-BOS gate
+(`PlanRefused`), so the refusal cannot be re-examined through the product's own loader; the next
+run measures it past the loader. By the entry's kill ("a changed verdict gets a new row"):
+`numeric_plans.py` now carries this run for Gemma 3 `float32` (recommended; `native` stays the
+Gemma 3 recommendation, being faster) and for both Gemma 4 plans, so `ironmule plans` recommends
+`float16` for Gemma 4 on pre-Ampere cards (0.2536 of stock, +294%, run 9b). Agent decision: the
+Gemma 4 reference perplexity of 355.7 is still unexplained and far above Gemma 3 4B's 27.0, but the
+gate compares two computations of one model on the same tokens, both plans sit wholly inside the
+bound, and chat decoding matched stock in 5 of 6 requests for either plan (run 9b), so the rows are
+qualified and the open question stays in the backlog. The old no-BOS results stay as recorded.

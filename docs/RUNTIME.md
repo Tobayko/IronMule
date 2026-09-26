@@ -235,6 +235,24 @@ exact local identity. See [`D2_IMPLEMENTATION.md`](D2_IMPLEMENTATION.md).
 `Runtime.revalidate()` compares the current identity against the last recorded one
 and returns `valid`, `valid_with_workload_drift`, or `revalidation_required`.
 
+### What IronMule asks the operating system
+
+Nothing here leaves the machine. The fingerprint reads the chip name, CPU counts and
+memory size through `sysctlbyname`, which starts no process (P1, 2026-09-26; the values
+are byte-identical to `sysctl -n`, `tests/engine/test_hw_sysctl.py`). Three places still
+start a command, each read-only and local:
+
+| Where | Command | Why |
+| :-- | :-- | :-- |
+| `ironmule/hw.py` `_gpu_cores` | `system_profiler -json SPDisplaysDataType` | Apple GPU core count, cached; no kernel interface exposes it |
+| `ironmule/tune.py` `gpu_busy` | `ps -Ao pid=,rss=,comm=,args=` | refuse to measure while another model process runs; `ps` lists only this user's view |
+| `ironmule_cli.py` `doctor` | `sysctl -n machdep.cpu.brand_string` | the chip name in the report; `doctor` cannot import the runtime it diagnoses |
+
+The research benchmark harness `ironmule/bench.py` also calls `pmset`, `sw_vers` and
+`sysctl vm.swapusage` for its preregistered environment gates and is left as those
+studies ran it. A consent prompt was considered and not built: every stored fingerprint
+and profile depends on the sysctl values, and `doctor` has to work before any setup.
+
 ## Evidence contracts (D1, no routing)
 
 `ironmule.evidence` is a standard-library-only, immutable contract layer for

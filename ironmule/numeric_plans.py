@@ -114,10 +114,13 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_ratio=0.5224738508013052,
         wall_evidence=f"{_R}/port2-run6-59ce8efc/cross-fp16-gemma3-4b.json",
         wall_arm="ironmule_fp32", models=("mlx-community/gemma-3-4b-it-4bit",),
-        quality_ratio=1.0178461034960435,
-        quality_interval=(0.990878377714877, 1.05159097747294),
-        quality_evidence=(f"{_R}/port2-run2-74fe1a6d/quality-gemma3-4b.json",
-                          "ppl_ratio_fp32_over_bf16"),
+        # PORT2-K, BOS on every chunk. Without it (port2 run 2) this gate read 1.017846
+        # [0.990878; 1.051591] on a text Gemma 3 4B scored at perplexity 100; with BOS the
+        # reference is 26.99 and the interval sits inside the bound.
+        quality_ratio=0.9986857475049179,
+        quality_interval=(0.9958912286525633, 1.0016711145735622),
+        quality_evidence=(f"{_R}/port2k-run1-fe76f8df/quality-gemma3-4b-float32.json",
+                          "paired-with-bf16"),
     ),
     PlanMeasurement(
         architecture="mlx_lm.models.gemma3_text", plan="float16", device=CUDA_PRE_AMPERE,
@@ -227,15 +230,14 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         quality_evidence=(f"{_R}/backlog8-run1-1665f2ae/gate-gemma3-12b-kernel-decode.json",
                           "worst-of-two-gates"),
     ),
-    # Gemma 4 deliberately carries no quality interval, and the reason has to be read
-    # before anyone "completes" these rows. The gate ran and produced
-    # 0.974548 [0.945572; 1.003527] for float32 — an upper bound inside the bound, which
-    # would make it `recommended`. It is not usable: the bfloat16 reference it is measured
-    # against has a perplexity of 22 212 on WikiText-2, where Gemma 3 4B scores 100.5 and
-    # Qwen 3 8B 14.9 on the same text through the same harness. A ratio between two numbers
-    # that mean nothing is not evidence of anything, so the speed stands on its own and the
-    # verdict stays `unqualified` until the reference itself is explained. `PORT2-I` in the
-    # backlog carries that; chat decoding is fine and token-identical to stock.
+    # Gemma 4: PORT2-K repeated the gate with BOS on every chunk (its tokenizer adds none, so
+    # port2 run 9b's chunks had no BOS at all and the bfloat16 reference scored perplexity
+    # 22 212, which is why these rows carried no interval). With BOS the reference is 355.7,
+    # still far above Gemma 3 4B's 27.0 and not explained, but both plans now sit wholly inside
+    # the bound, slightly better than bfloat16 itself, and chat decoding returned stock's tokens
+    # in 5 of 6 requests for either plan (run 9b). Agent decision of 2026-09-26: the gate
+    # compares two computations of the same model on the same tokens, so the rows are
+    # qualified; the unexplained reference stays open in the backlog. Gate on E2B only.
     PlanMeasurement(
         architecture="mlx_lm.models.gemma4_text", plan="float32", device=CUDA_PRE_AMPERE,
         wall_ratio=0.41069269598397673,
@@ -243,7 +245,10 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_arm="ironmule_fp32",
         models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
                 "mlx-community/gemma-4-E4B-it-qat-4bit"),
-        quality_note="gate ran; its bfloat16 reference scores perplexity 22212, so unusable",
+        quality_ratio=0.9945141303712351,
+        quality_interval=(0.9909858843257502, 0.9981733277241316),
+        quality_evidence=(f"{_R}/port2k-run1-fe76f8df/quality-gemma4-e2b-float32.json",
+                          "paired-with-bf16"),
     ),
     PlanMeasurement(
         architecture="mlx_lm.models.gemma4_text", plan="float16", device=CUDA_PRE_AMPERE,
@@ -252,7 +257,10 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         wall_arm="ironmule_fp16",
         models=("mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-4-e4b-it-4bit",
                 "mlx-community/gemma-4-E4B-it-qat-4bit"),
-        quality_note="gate ran; its bfloat16 reference scores perplexity 22212, so unusable",
+        quality_ratio=0.994901170238831,
+        quality_interval=(0.9911759517865298, 0.9986872654269566),
+        quality_evidence=(f"{_R}/port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json",
+                          "paired-with-bf16"),
     ),
 )
 

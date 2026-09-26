@@ -291,9 +291,17 @@ def test_q3f_attribution_rejects_foreign_uid_and_malformed_comm():
     assert not unrelated and reasons
 
 
+@pytest.mark.process_table
 @pytest.mark.integration
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS kqueue/ps process identity (DATA3: fails on Kaggle Linux)")
 def test_q3f_real_cleanup_keeps_external_process_alive():
+    # The global inventory is fail-closed by design: any foreign process whose command line
+    # names a blocker token blocks it, a web dev server under a directory called "IronMule
+    # ..." included (R14, 2026-09-26). That is the gate working, not a cleanup defect, so a
+    # machine where it is already tripped cannot run this test; say so instead of failing.
+    blocked = q3b.competing_model_process()
+    if blocked is not None:
+        pytest.skip(f"global process inventory is not clean on this machine: {blocked}")
     worker = None
     unrelated = None
     try:
