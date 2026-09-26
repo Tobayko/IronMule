@@ -126,3 +126,29 @@ def test_experts_route_by_rows_and_match_stock(monkeypatch):
         # Eight requests are 64 rows, which SwitchGLU sorts by expert first; a prefill's 320
         # rows go to float16 gather_qmm instead.
         assert calls == routed
+
+
+class _Head(nn.Module):
+    """A 4-bit head of 1024 x 256 beside nothing else: its float16 copy is 512 KiB."""
+
+    def __init__(self):
+        super().__init__()
+        self.lm_head = nn.QuantizedLinear(256, 1024, bias=False, group_size=64, bits=4)
+
+
+def test_head_skip_is_needed_only_when_the_heads_copy_does_not_fit():
+    model = _Head()
+    from mlx.utils import tree_flatten
+
+    weights = sum(v.nbytes for _, v in tree_flatten(model.parameters()))
+    copy = 1024 * 256 * 2
+    roomy = {"memory_size": int((weights + copy) / cuda_native.PREFILL_HEADROOM) + 1024}
+    tight = {"memory_size": int((weights + copy) / cuda_native.PREFILL_HEADROOM) - 1024}
+    assert cuda_native.head_skip_needed(model, roomy) is None
+    reason = cuda_native.head_skip_needed(model, tight)
+    assert reason and "last position only" in reason
+
+
+def test_no_memory_size_decides_nothing():
+    assert cuda_native.head_skip_needed(_Head(), {"device_name": "Tesla T4"}) is None
+    assert cuda_native.head_skip_needed(_Head(), None) is None
