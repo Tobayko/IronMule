@@ -468,10 +468,7 @@ Offen bleiben vier eng umrissene Punkte:
    emittieren). Kill-Kriterium S4 verlangt Entfernung statt Kalibrierung.
    *Gate:* Suite grün nach Löschung von `speculation.py`, `model_speculation.py`,
    `tools/bench_draft_speculation.py` und den zugehörigen Tests/Experimenten.
-2. **`h01.sqlite3` ohne Kettentest.** Steht in der `known`-Allowlist von
-   `tests/test_sealed_evidence.py`, hat aber keinen `RECORD_CHAINS`-Eintrag und
-   keinen dedizierten `verified_records()`-Test — vorbestehend, nicht vom
-   Gemini-Branch. *Gate:* eigener Test analog `test_the_device_profile_chain_still_verifies`.
+2. *Erledigt 2026-09-26:* `h01.sqlite3` hat seinen Test (`test_the_h01_bundles_still_verify`, 10 verifizierte Bundles auf dem Zielgerät).
 3. **Radix-Cache-Speicherbudget zählt Trie-Tokens, nicht KV-Bytes.**
    `RadixCache._check_eviction` hat einen `ponytail:`-Kommentar mit dem Ceiling.
    *Kill:* nur angehen, wenn Eviction unter realem Speicherdruck nachweislich

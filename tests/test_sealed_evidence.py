@@ -131,6 +131,20 @@ def test_the_device_profile_chain_still_verifies():
     assert records, "the device-profile chain is empty"
 
 
+def test_the_h01_bundles_still_verify():
+    """h01.sqlite3 sat in the allowlist below with nothing verifying it (C1, 2026-09-03)."""
+    path = DATA / "h01.sqlite3"
+    if not path.is_file():
+        pytest.skip("h01.sqlite3 is not present in this checkout")
+    from friday_h01.storage import Storage
+
+    with Storage.open(path, read_only=True) as storage:
+        storage.verify_schema()
+        with storage.read_transaction():
+            rows = storage.verified_rows()
+    assert rows, "the H0.1 database holds no bundle"
+
+
 #: Rebuildable indexes over the sealed databases; they hold no evidence of their own.
 DERIVED = {"ssot.sqlite3"}
 
