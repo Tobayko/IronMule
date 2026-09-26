@@ -1,0 +1,3 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{"schema": "ironmule.perf1x-check.v1", "model_id": "mlx-community/Qwen3-8B-4bit", "revision": "545dc4251c05440727734bcd94334791f6ab0192", "device_info": {"total_memory": 16106127360, "free_memory": 15526068224, "compute_capability_minor": 5, "compute_capability_major": 7, "pci_bus_id": "0000:00:04.0", "uuid": "GPU-651af875-fbcc-f14c-8e64-3f269122b71b", "architecture": "sm_75", "device_name": "Tesla T4"}, "performance_claim": false, "native_admission": {"modules": 254, "probe_rel_error": 0.0031786055769771338, "head_skip_prefill_forced": null}, "head_skip_prefill": false, "outer_wall_ms": 17858.877715, "ok": true, "peak_memory_bytes": 8134392072, "seconds": 50.0}

@@ -1,0 +1,26 @@
+{
+ "schema": "ironmule.perf1x-check.v1",
+ "model_id": "mlx-community/gemma-4-26b-a4b-it-4bit",
+ "revision": "0d77464eeb233a2da68ebf9d7dc4edaac7db956d",
+ "device_info": {
+  "total_memory": 16106127360,
+  "free_memory": 15526068224,
+  "compute_capability_minor": 5,
+  "compute_capability_major": 7,
+  "pci_bus_id": "0000:00:04.0",
+  "uuid": "GPU-651af875-fbcc-f14c-8e64-3f269122b71b",
+  "architecture": "sm_75",
+  "device_name": "Tesla T4"
+ },
+ "performance_claim": false,
+ "native_admission": {
+  "modules": 296,
+  "probe_rel_error": 0.0029197908006608486,
+  "head_skip_prefill_forced": null
+ },
+ "head_skip_prefill": false,
+ "ok": false,
+ "error": "RuntimeError: cudaMallocAsync(&data, size, stream) failed: out of memory",
+ "peak_memory_bytes": 14875322720,
+ "seconds": 151.8
+}

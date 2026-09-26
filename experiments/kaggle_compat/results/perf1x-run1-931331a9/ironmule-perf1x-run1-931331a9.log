@@ -1,0 +1,29 @@
+[{"stream_name":"stdout","time":1.178467574,"data":"== env: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":3.708685284,"data":"== clone: exit=0 2.5s\n"}
+,{"stream_name":"stdout","time":12.606442222,"data":"== venv: exit=0 8.9s\n"}
+,{"stream_name":"stdout","time":40.982102982,"data":"== install: exit=0 28.4s\n"}
+,{"stream_name":"stdout","time":41.077022831,"data":"== freeze: exit=0 0.1s\n"}
+,{"stream_name":"stdout","time":204.097987866,"data":"== pytest_engine: exit=0 163.0s\n"}
+,{"stream_name":"stdout","time":282.945682122,"data":"== download_gemma4-26b-a4b: exit=0 78.8s\n"}
+,{"stream_name":"stdout","time":436.241302511,"data":"== check_gemma4-26b-a4b: exit=0 153.3s\n"}
+,{"stream_name":"stdout","time":467.353209021,"data":"== download_qwen3-8b: exit=0 31.1s\n"}
+,{"stream_name":"stdout","time":518.293207026,"data":"== check_qwen3-8b: exit=0 50.9s\n"}
+,{"stream_name":"stdout","time":518.293792979,"data":"{\n"}
+,{"stream_name":"stdout","time":518.293816904,"data":" \"env\": 0,\n"}
+,{"stream_name":"stdout","time":518.293822823,"data":" \"clone\": 0,\n"}
+,{"stream_name":"stdout","time":518.293829514,"data":" \"venv\": 0,\n"}
+,{"stream_name":"stdout","time":518.293834795,"data":" \"install\": 0,\n"}
+,{"stream_name":"stdout","time":518.293840105,"data":" \"freeze\": 0,\n"}
+,{"stream_name":"stdout","time":518.293844993,"data":" \"pytest_engine\": 0,\n"}
+,{"stream_name":"stdout","time":518.293857773,"data":" \"download_gemma4-26b-a4b\": 0,\n"}
+,{"stream_name":"stdout","time":518.293863432,"data":" \"check_gemma4-26b-a4b\": 0,\n"}
+,{"stream_name":"stdout","time":518.293868791,"data":" \"download_qwen3-8b\": 0,\n"}
+,{"stream_name":"stdout","time":518.293874165,"data":" \"check_qwen3-8b\": 0\n"}
+,{"stream_name":"stdout","time":518.29387882,"data":"}\n"}
+,{"stream_name":"stderr","time":520.859414254,"data":"/usr/local/lib/python3.12/dist-packages/mistune.py:435: SyntaxWarning: invalid escape sequence '\\|'\n"}
+,{"stream_name":"stderr","time":520.859502403,"data":"  cells[i][c] = re.sub('\\\\\\\\\\|', '|', cell)\n"}
+,{"stream_name":"stderr","time":521.221433867,"data":"/usr/local/lib/python3.12/dist-packages/nbconvert/filters/filter_links.py:36: SyntaxWarning: invalid escape sequence '\\_'\n"}
+,{"stream_name":"stderr","time":521.221462861,"data":"  text = re.sub(r'_', '\\_', text) # Escape underscores in display text\n"}
+,{"stream_name":"stderr","time":522.308338343,"data":"[NbConvertApp] Converting notebook __script__.ipynb to html\n"}
+,{"stream_name":"stderr","time":523.684348615,"data":"[NbConvertApp] Writing 294014 bytes to __results__.html\n"}
+]

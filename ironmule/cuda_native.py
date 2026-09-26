@@ -275,7 +275,8 @@ def head_skip_needed(model: nn.Module, device_info: dict[str, Any] | None) -> st
     caller and the load proceeds as before.
     """
     info = device_info or {}
-    total = next((info[key] for key in ("memory_size", "total_memory_bytes", "memory_bytes")
+    # MLX's CUDA backend reports `total_memory` (PERF1-X run 1 on a T4); Metal `memory_size`.
+    total = next((info[key] for key in ("total_memory", "memory_size", "total_memory_bytes", "memory_bytes")
                   if isinstance(info.get(key), int) and info[key] > 0), None)
     heads = [m for name, m in model.named_modules()
              if name.rsplit(".", 1)[-1] in ("lm_head", "embed_tokens")
