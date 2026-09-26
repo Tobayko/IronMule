@@ -237,6 +237,11 @@ sharing, or rejected speculation arms without the backlog's reopening evidence.
 
 ### NEXT1-Q — Score Qwen only after it produces final answers
 
+**Prepared 2026-09-26:** `Runtime.encode(text, **template_options)` passes options such as
+`enable_thinking=False` to the chat template only when a caller asks, so a harness can run
+thinking and direct as two arms; no default and no product path changed. The scored run
+needs NEXT1-A's gold answers first.
+
 **Mechanism.** `Runtime.encode()` calls `apply_chat_template` without an explicit
 `enable_thinking` setting. In the recorded
 `perf1-run7-080bfab7/cross-native-qwen3-14b.json`, all six outputs in both

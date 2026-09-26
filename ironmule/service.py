@@ -524,9 +524,16 @@ class Runtime:
                              mlx=mx.__version__, mlx_lm=mlx_lm.__version__)
 
     # -- helpers --------------------------------------------------------------
-    def encode(self, text: str) -> list[int]:
+    def encode(self, text: str, **template_options: Any) -> list[int]:
+        """The prompt as the model's chat template renders it.
+
+        `template_options` go to the template unchanged, e.g. Qwen 3's
+        `enable_thinking=False` for its direct mode (NEXT1-Q). None are passed by default,
+        so the prompt contract stays the template's own; choosing a mode is the caller's.
+        """
         rendered = self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": text}], tokenize=False, add_generation_prompt=True)
+            [{"role": "user", "content": text}], tokenize=False, add_generation_prompt=True,
+            **template_options)
         return list(self.tokenizer.encode(rendered, add_special_tokens=False))
 
     def session_plan(self, shared_prefix: str, name: str = "session") -> ReusableSessionPlan:
