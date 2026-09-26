@@ -4,6 +4,26 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **A clearer terminal.** `ironmule` on its own shows this machine (device, memory, Python,
+  MLX, MLX-LM) and every command grouped by what you want to do; `ironmule doctor` prints a
+  coloured checklist with a ready verdict and the next command; `ironmule benchmark` ends
+  with a card whose gain is green only when the whole interval says faster. Pipes, CI and
+  `NO_COLOR=1` keep the plain text, and the plain benchmark table no longer glues its last
+  two columns together. Measurements and `--json` are unchanged.
+- **Gemma 4's numeric plans are qualified on GPUs that emulate bfloat16.** The Gemma
+  perplexity gates had run without BOS on any chunk after the first, and Gemma 4's
+  tokenizer adds none, so its reference scored 22 212 and the gate was unusable. With BOS on
+  every chunk (PORT2-K) `float32` and `float16` both sit inside the bound on Gemma 4 E2B,
+  and `ironmule plans` now recommends `float16` for Gemma 4 there (`+294%`, speed from
+  PORT2 run 9b); Gemma 3's `float32` gate passes too. Gemma 4's reference perplexity (355.7)
+  is still unexplained. Evidence: `research/LEDGER.md`, PORT2-K.
+- **The hardware fingerprint no longer shells out to `sysctl`.** It reads the same values
+  through `sysctlbyname`, byte-identical, so stored fingerprints and profiles stay valid.
+  The commands IronMule still runs are listed in `docs/RUNTIME.md`.
+- **Real-model CI on Apple Silicon.** A CI job runs the integration suite against the
+  pinned Gemma 3 4B snapshot on GitHub's `macos-14` runner, which has Metal; it checks
+  compatibility, not speed.
+
 - **A burst of clients no longer waits on handshake retransmission.** `ironmule serve`
   listened with the stdlib backlog of 5 while admitting 64 handlers, so a burst overflowed
   the kernel's accept queue and the dropped handshakes returned only after SYN-ACK
