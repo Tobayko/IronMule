@@ -206,15 +206,13 @@ bf16 as the reference; none is available on the free Kaggle cells. No entry is o
 
 ## PORT2 — Rest (2026-09-24)
 
-- **PORT2-K Gemma-Gates mit BOS in jedem Chunk wiederholen.** `quality.py` und `perf1.py nll`
-  schnitten die Chunks aus einem Encode; nur der erste konnte mit BOS beginnen, Gemma 4s
-  Tokenizer setzt gar keins. Mac: Gemma 3 4B Perplexität 103,3 ohne, 26,9 mit BOS; Gemma 4
-  E2B 21 532 gegen 353 (Ledger „Gemma's perplexity gates ran without BOS“). Alle Gemma-Urteile
-  (float32 bestanden, 4B-float16 durchgefallen, Gemma 4 „unbrauchbar“) stammen aus diesem
-  Regime. Test: dieselben Gates mit BOS je Chunk auf der T4, neuer Lauf, alte Urteile bleiben
-  stehen. Kill: kein Urteil ändert sich — dann nur Fußnote; ändert sich eines, bekommt
-  `numeric_plans.py` die neue Zeile mit neuem Beleg. Offen daneben: warum Gemma 4 E2B auch mit
-  BOS bei 353 liegt.
+- **PORT2-K Rest: Gemma 3 4B `float16` mit BOS und die Gemma-4-Referenz.** Run 1
+  (`port2k-run1-fe76f8df`, Ledger PORT2-K) hat Gemma 3 `float32` und beide Gemma-4-Pläne mit BOS
+  qualifiziert. Offen: (1) Gemma 3 4B `float16` — `load_engine` verweigert den Plan aufgrund des
+  No-BOS-Gates, also muss der Lauf am Loader vorbei messen (`mlx_lm.load` + `set_dtype(float16)`,
+  genau das, was `load_engine` für den Plan tut). Kill: obere Grenze > 1,005 — die Verweigerung
+  bleibt mit neuem Beleg; sonst wird die Zeile zu `recommended`. (2) Warum Gemma 4 E2B auch mit
+  BOS Perplexität 355,7 hat. Kill: keiner, eine Diagnose.
 
 ## DATA3 — Rest (2026-09-15)
 
