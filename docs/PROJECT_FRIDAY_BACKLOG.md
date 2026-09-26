@@ -207,6 +207,266 @@ Gemma 3's `float32` qualify with BOS; Gemma 3's `float16` stays refused with a B
 reference perplexity (~300 in every precision) is not quantisation, and settling it needs the
 transformers reference DATA2 describes. No PORT2 entry is open.
 
+## NEXT1 — Better answer quality, stability, and speed (2026-09-26)
+
+**Status:** Hypotheses from source review and existing records. No local or Kaggle
+runs were started for this entry. Written against `research/port2-model-families` and
+ported to the current tree on 2026-09-26; the owner's review of that day set the order
+and the scope notes in D, C and Q. The reported `3/6`, `2/6`, and `4/6` values in
+`cross.py` count **requests with token sequences identical to a reference arm**,
+not factually correct answers. Grouped Qwen 3.5 9B reached `3/6` and varied
+between processes (PORT2); with CUDA graphs off (PERF1-T2, ledger BACKLOG9) Qwen 3.5 gave
+one digest across processes and later `6/6`, which weakens the old cause but qualifies
+no grouping on recurrent caches. Qwen 3 14B `native` reached `3/6` against stock bf16 (PERF1 run
+7), and Gemma 3 12B `native` reached `2/6` against the separate float32 plan
+(run 17). Different arithmetic can change tokens without establishing worse
+answers. The six fixed prompts are not a broad quality holdout. Moreover,
+all six stock and `native` Qwen 3 14B outputs in both run-7 repetitions start
+with `<think>` and none reaches `</think>` within 48 tokens (NEXT1-Q).
+None of the items below changes historical verdicts or activates a plan.
+
+**Order (2026-09-26):** NEXT1-D, then NEXT1-C, then NEXT1-Q; NEXT1-E before any
+wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
+No longer prerequisites: PORT2-K (both runs, ledger PORT2-K), PERF1-T/T2, PERF1-M and
+PERF1-Y (ledger BACKLOG1-BACKLOG9), and PERF1-N (diagnosed; projection fusion is refused
+under `native`). PERF1-X (prefill memory, a fix under verification), PERF1-K2 (deferred)
+and PERF1-R (rejected) stay separate performance/resource questions. On Apple,
+B57/B58/B73 and PROD11/PROD14 already cover qualified kernels, real arrival patterns, a
+second machine, and prefix reuse. Do not repeat B68's buffer-limit sweep, B49's four-way
+sharing, or rejected speculation arms without the backlog's reopening evidence.
+
+### NEXT1-Q — Score Qwen only after it produces final answers
+
+**Mechanism.** `Runtime.encode()` calls `apply_chat_template` without an explicit
+`enable_thinking` setting. In the recorded
+`perf1-run7-080bfab7/cross-native-qwen3-14b.json`, all six outputs in both
+stock and `native` arms and both process repetitions start with token 151667
+(`<think>`), and none contains 151668 (`</think>`) by the 48-token limit. The
+[Qwen tokenizer configuration](https://huggingface.co/Qwen/Qwen3-14B/blob/main/tokenizer_config.json)
+defines these IDs and an `enable_thinking=False` template branch. That run
+measures time and token agreement on incomplete reasoning traces, not scores
+of final answers. Its numbers remain valid for its original prompt contract.
+
+**Gate.** Preregister a separate Qwen serving/quality workload: one arm with
+`enable_thinking=False`, another with a bounded output budget sufficient to
+reach `</think>` and a final answer. Bind prompt hash, mode, token budget,
+stop reason, and visible final answer per request. Apply the same mode to
+stock and every candidate. Score only complete answers against NEXT1-A's
+gold answers; report TTFT, total wall, memory, and truncated thinking traces
+separately. Do not relabel the historical six-question, 48-token runs. Thinking and
+direct are two modes, each scored on complete answers; neither becomes the product's
+default from this entry, because the template flag changes the prompt contract. Visible
+thinking text in the product chat is plausible from the code, not yet observed on the model.
+
+**Kill/pivot.** A mode that cannot return complete answers within the fixed
+resource budget is unsuitable for an answer-quality benchmark; its timing
+remains a partial-generation result. No reproducible quality benefit, or an
+unacceptable latency/memory cost, establishes no preferred mode.
+
+### NEXT1-A — Measure answer quality separately from token identity
+
+**Mechanism.** `cross.py` has six token lists but no gold answers. A numeric
+plan can change the stock text and solve more, the same number, or fewer
+actual tasks. E13's SQuAD bound covers extractive questions on a potentially
+contaminated set (`docs/LIMITS.md`), not German questions, reasoning, or code.
+A frozen independent holdout with verified answers and deterministic scoring
+separates task success, token identity, NLL, and speed. The chat-template/BOS
+contract belongs to the dataset identity, not a post-result correction.
+
+**Gate.** On eligible pre-Ampere CUDA model cells, pair stock, float32,
+and `native` on the same tasks; on Apple, compare only plans available there.
+Bind model
+revision and prompt/tokenizer hashes; set the quality bound, minimum effect,
+and item-clustered interval before execution. Include factual questions,
+German tasks, and code with executable grading. Remove ambiguous gold
+answers before sealing. Preserve the historical E13 and PORT2 records.
+
+**Kill/pivot.** No reproducible score advantage means no quality-gain claim.
+A reproducible loss prevents recommendation of that plan. Without reliable
+gold answers, leave quality unresolved rather than turning `6/6` or
+perplexity into a factual hit rate.
+
+### NEXT1-B — Record every repetition and the first divergence
+
+**Mechanism.** The child in `experiments/kaggle_compat/cross.py` retains token
+lists only from its last pass, and `identical_requests` compares the first
+successful process row from each arm. If stock varies across processes, one
+`3/6` count cannot explain the difference. A per-pass record can identify
+the first differing token, stop reason, top-two logit gap, prefill/decode
+phase, and, when warranted, the first differing module or cache state. Run
+a stock/stock control before attributing a candidate defect; keep private
+prompt content out of public artifacts.
+
+**Gate.** Fresh, order-balanced process pairs and an independent prompt
+holdout; compare each measured pass with its matched reference and retain
+its digest. Isolate graphs on/off and fusion before calling a rounding
+change a cache or kernel defect. Do not overwrite historical `cross.py` data.
+
+**Kill/pivot.** If stock itself is unstable, withhold a token-identity
+qualification and stabilize the reference first. If no repeatable first
+cause emerges, do not build a prompt-specific `6/6` patch; keep separate
+numeric plans with their own quality gates.
+
+### NEXT1-C — Bind CUDA plan recommendations to complete model evidence
+
+**Mechanism.** `PlanMeasurement.models` names checkpoints, but
+`numeric_plans.measurements_for()` and `recommend()` filter only architecture
+and device class, so a recommendation reaches every model of the architecture:
+Gemma 4 E4B and E4B-qat are recommended `float16` on E2B's gate (PORT2-K), and a
+Qwen 3 32B or 0.6B would inherit the `qwen3` rows unmeasured. `doctor` and
+`ironmule plans` can thus present a positive architecture-level recommendation beyond
+the measured model, revision, and execution-path scope. The plan is still opt-in; this
+is an evidence/wording gap, not an observed output failure.
+
+**Gate.** Audit each table cell against exact model revision, quantization,
+backend/framework, and all affected decode, prefill, and expert paths.
+Recommend only with every applicable gate; display unknown or partially
+measured cells as `unqualified`.
+
+**Kill/pivot.** If exact identity is unavailable at a display site, abstain
+there from a positive model-wide recommendation. An architecture row alone
+cannot qualify a new model revision.
+
+### NEXT1-D — Enforce the hybrid-cache guard at the actual dispatch
+
+**Mechanism.** `ironmule.service.Runtime.__init__` checks recurrent caches
+once. `Runtime.mode` is then writable (`docs/RUNTIME.md` documents switching),
+`router.py` changes it per dispatch, and `AutomaticMode` can choose
+`ThroughputMode`. `Runtime.serve()` creates the executor without a second
+cache check. The model-gated Qwen integration test even switches from
+interactive to throughput and expects grouped equality. These routes can
+bypass the PORT2 refusal. The guard has to see the executor actually chosen for a
+dispatch: `AutomaticMode` can pick grouped execution without being named `throughput`,
+so a check of the mode's name alone is bypassable.
+
+**Gate.** Guard the actual executor choice before prefill or model work.
+Cover mode mutation, router, and automatic fallback with hybrid-cache token
+**and state** comparisons against sequential execution. Align the integration
+test with the current contract. Fail closed on unknown cache types.
+
+**Kill/pivot.** If another guard demonstrably covers every route, avoid a
+second one. Otherwise keep hybrid grouping disabled until a new graph-free
+qualification explicitly admits it.
+
+### NEXT1-E — Admit the CUDA `native` kernel per routed shape
+
+**Mechanism.** `cuda_native.install()` replaces every eligible 4-bit module,
+but `_probe()` checks only the first module and at most one MoE switch on a
+single generated input. This does not prove other N/K shapes, heads, expert
+choices, or multirow prefill. As in Metal backlog entry B57, a signature
+including bits, group size, shape, dtype, layout, and backend could tighten
+the admission boundary. A module probe is not a whole-model quality gate.
+
+**Gate.** Inventory all routed shape classes once; check each against a
+dequantized reference, including boundary inputs and nonfinite values.
+Keep full decode/prefill NLL, token, cache, and resource gates on the target
+GPU. Report installation cost separately from warm serving time.
+
+**Kill/pivot.** Without reliable signature binding or with excessive
+admission cost, route only known shapes and leave other modules on the
+reference path. A passing kernel microtest does not qualify a model plan.
+
+### NEXT1-F — Keep stock arithmetic only at proven sensitive CUDA modules
+
+**Mechanism.** `native` currently replaces every eligible 4-bit matmul. If
+NEXT1-B isolates a small repeatable set of head, attention, MLP,
+or expert projections behind an identity/quality loss, a **new explicit
+mixed plan** could retain stock arithmetic there and use the fast kernel
+elsewhere. This neither mutates the current `native` plan silently nor
+repeats B16's weight-precision proposal.
+
+**Gate.** Ablate a bounded, named set of module families, then use an
+independent holdout with NEXT1-A's score, BOS-correct NLL, token/cache
+contract, and paired complete stock/`native`/candidate wall times. A changed
+reduction order is a new plan even when six tokens happen to agree.
+
+**Kill/pivot.** If no small repeatable fallback set meets the predefined
+quality bound, or its net speed advantage over stock vanishes, do not
+activate a mixed plan; `native` remains a separate opt-in choice.
+
+### NEXT1-G — Reuse a bounded set of compiled Apple decode shapes
+
+**Mechanism.** `ironmule/runtime.py:Engine._body` retains only one
+`(capacity, width)` specialization; capacity is rounded to multiples of 64.
+An A/B/A sequence of request lengths recreates A's closure and calls
+`mx.compile` again. A small LRU of compiled bodies could avoid compile and
+warm-start cost under mixed traffic. The [MLX compile documentation](https://ml-explore.github.io/mlx/build/html/usage/compile.html)
+describes recompilation on shape changes; no IronMule gain has been measured.
+C1 discusses KV capacity buckets, not this single-slot compiled-body cache.
+
+**Gate.** First count compilations and cold/warm complete service wall time
+on a preregistered A/B/A length distribution. Compare a bounded LRU with
+the unchanged single-slot control, checking exact tokens/KV hashes, peak
+MLX memory, RSS/swap, and eviction. Bodies may not be shared across models
+or plans.
+
+**Kill/pivot.** No robust complete-service gain or unacceptable graph memory
+retains the single-slot path. Do not substitute `shapeless=True` without
+separate correctness qualification.
+
+### NEXT1-H — Profile a CUDA kernel for Qwen hybrid recurrence
+
+**Mechanism.** PERF1 run 14 describes 30 Gated-Delta layers among Qwen3.6
+35B-A3B's 40 layers running through a Python path on CUDA. In the pinned
+[mlx-lm 0.31.3 implementation](https://github.com/ml-explore/mlx-lm/blob/v0.31.3/mlx_lm/models/gated_delta.py),
+the accelerated recurrence is Metal-specific; MLX exposes a
+[CUDA kernel API](https://ml-explore.github.io/mlx/build/html/python/_autosummary/mlx.core.fast.cuda_kernel.html).
+A CUDA kernel with explicit recurrent state might remove Python/graph
+overhead. PERF1-T2 settled graph determinism; a phase profile comes first.
+This does not duplicate PERF1-V (rejected) or PERF1-W's MoE projections or PERF1-R's two-card
+microbatches.
+
+**Gate.** Only if profiling shows an addressable recurrence share, compare
+module outputs with the graph-off stock path across masks, chunk boundaries,
+state transitions, and long sequences. Then use fresh paired complete
+requests with token, NLL, memory, and stability gates. Run generated kernel
+code only in the controlled worker.
+
+**Kill/pivot.** No relevant profile share, no qualified/deterministic state
+sequence, or no end-to-end gain above preregistered noise means no new CUDA
+recurrence path.
+
+### NEXT1-I — Require complete rank artifacts for two-card results
+
+**Mechanism.** `experiments/kaggle_compat/perf1_run13.py:run` treats existence
+of a rank-0 file as stage success because `mlx.launch` returned exit 0 despite
+a failed rank in run 11. `perf1.py` writes rank 1 separately, while the
+notebook sets `finished=True` regardless of stage status. A missing rank or
+stale partial file could therefore look like a complete pipeline result.
+This is a prospective Kaggle-evidence reliability concern; it does not
+invalidate an older record that was independently inspected.
+
+**Gate.** Give each stage a unique attempt ID and atomically finalize result
+files. Verify both ranks' schema, model revision, code/input hashes, arm,
+exit, and SHA-256 before marking the stage complete. Timeout, OOM, and a
+missing rank mean `incomplete`; prove cleanup of owned children. Never
+terminate unrelated GPU processes. Keep DATA1's quota and single-attempt
+rules.
+
+**Kill/pivot.** If another layer already verifies both ranks, use it rather
+than creating a second protocol. Without reliable GPU PID attribution, at
+least fail closed on exit and artifact completeness; one file proves no
+performance result.
+
+### NEXT1-J — Check resource-object growth in long hybrid runs
+
+**Mechanism.** The existing Q1 measurement plan counts bytes, swap, and throughput.
+External [mlx-lm ArraysCache reports](https://github.com/ml-explore/mlx-lm/issues/1845)
+describe hybrid/batch paths where unevaluated cache metadata can increase
+live Metal buffer-object count although byte telemetry alone does not
+explain an approaching object-limit failure. This is **not** an IronMule
+finding and matters only if its path uses the same cache operations. It
+extends Q1/PROD4 without retrying P1's rejected short-Gemma chunking as a
+speed optimization.
+
+**Gate.** Establish source-path applicability and a public,
+fingerprint-bound object telemetry API first. Only then measure long-run
+object slope, answer identity, cache state, and byte/swap use together.
+Different prefill chunking would be a new plan with its own quality gate.
+
+**Kill/pivot.** No affected cache path or flat object count means no new
+policy. Missing trustworthy telemetry remains `unavailable`, never zero.
+
 ## DATA3 — Rest (2026-09-15)
 
 Beantwortet in `research/LEDGER.md` DATA3/PORT1. Closed 2026-09-25: DATA3-B, the store is
