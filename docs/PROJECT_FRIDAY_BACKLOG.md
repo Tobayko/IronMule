@@ -370,6 +370,12 @@ qualification explicitly admits it.
 
 ### NEXT1-E — Admit the CUDA `native` kernel per routed shape
 
+**Implemented 2026-09-26, CI-verified only:** `install()` probes every (module type, weight
+shape) class once instead of the first module and one switch, records `probed_shapes` and
+`probe_seconds`, and probes a head taller than 8192 rows on its first 8192 (same K, same rows
+per warp) so its float32 reference is not gigabytes. Still open from the gate: boundary and
+non-finite inputs, and the on-GPU run that measures the admission cost.
+
 **Mechanism.** `cuda_native.install()` replaces every eligible 4-bit module,
 but `_probe()` checks only the first module and at most one MoE switch on a
 single generated input. This does not prove other N/K shapes, heads, expert
