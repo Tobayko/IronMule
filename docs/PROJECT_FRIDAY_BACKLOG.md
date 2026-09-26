@@ -159,6 +159,12 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   concurrent requests, ABAB, three rounds), answers compared with the reference per prompt.
   Kill: median below 1.2x; answers not equal to the reference in 8 of 8 then keeps it opt-in with
   the PERF1-K contract (differs from single requests) rather than exact.
+  Deferred 2026-09-26 (agent decision): continuous admission needs the worker to receive a
+  request while a batch runs, and `MLXWorkerClient` (ironmule_product/backend.py) holds one lock
+  over a whole generation, so the pipe carries one request at a time. Prerequisite: a
+  multiplexed client (several requests in flight on one pipe, frames routed by `request_id`,
+  cancellation and the unusable-worker path per request). That is days of work in the product
+  path and only testable on Kaggle, so it starts with that client and its own tests, not blind.
 - **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
   auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
   kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
