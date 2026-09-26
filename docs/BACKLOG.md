@@ -125,21 +125,6 @@ is Apple-Silicon model CI. GitHub's hosted `macos-14` runner does run Metal (CI'
 step prints `MLX Metal device: Metal GPU operation verified`), so the integration suite can
 run there against a cached, pinned snapshot; open until that job exists and is green.
 
-### `S1` — Persistent local service with an explicit overload contract
-
-**Mechanism.** A warm process with a real admission queue can expose completions and
-chat completions without making callers embed the Python runtime. Streaming,
-cancellation, queue limits, timeouts, backpressure, health/readiness and separate
-interactive/throughput lanes are one service contract, not independent decorations.
-
-**Test.** Loopback-only MVP with OpenAI-compatible request/stream shapes; bounded queue
-property tests; cancellation/disconnect and overload tests; no request prefills before
-admission; 1 h stability gate before any production claim.
-
-**Kill.** Unbounded memory/queue growth, incorrect cancellation, token divergence from
-the library path, or p95 latency outside a preregistered service budget. Architecture
-approval is required before implementation.
-
 ### `C1` — Safe cache, chat and sampling expansion
 
 **Mechanism.** Capacity buckets and an LRU prefix-cache budget can reduce mixed-prompt
