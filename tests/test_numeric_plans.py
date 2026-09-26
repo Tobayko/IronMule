@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASUREMENTS, QUALITY_BOUND,
-                                    PlanRefused, architecture_of, check, device_class,
-                                    measurements_for, recommend)
+from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASUREMENTS,
+                                    QUALITY_BOUND, PlanRefused, architecture_of, check,
+                                    device_class, measurements_for, recommend)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -246,3 +246,35 @@ def test_architecture_comes_from_the_module_mlx_lm_actually_runs():
     nn.quantize(model, group_size=32, bits=4)
     assert architecture_of(model) == "mlx_lm.models.qwen3"
     assert architecture_of(object()) is None
+
+
+def _evidence_identity(path: Path) -> tuple[str, str]:
+    """(model id, revision) as a run file recorded it: named, or in its snapshot path."""
+    record = json.loads(path.read_text())
+    if record.get("model_id") and record.get("revision"):
+        return record["model_id"], record["revision"]
+    repo, _, revision = record["model_path"].split("/models--", 1)[1].partition("/snapshots/")
+    return repo.replace("--", "/", 1), revision.strip("/")
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_is_bound_to_the_revisions_its_evidence_recorded(row):
+    """NEXT1-C: a row covers its checkpoints at the revision measured, read from the runs."""
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for name in PAIRED.get(key, ())[:2]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    recorded = {_evidence_identity(path) for path in files}
+    for model_id, revision in recorded:
+        assert model_id in row.models, f"{row.label} {row.plan}: evidence for {model_id} it does not name"
+        assert revision == MEASURED_REVISIONS[model_id], f"{model_id}: evidence at {revision}"
+    assert set(row.models) <= {model_id for model_id, _ in recorded}
+
+
+def test_a_recommendation_reaches_only_the_revision_it_measured():
+    qwen3, model = "mlx_lm.models.qwen3", "mlx-community/Qwen3-8B-4bit"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, model, MEASURED_REVISIONS[model])[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, model, "0" * 40)
+    assert plan is None and "another revision is another model" in reason
+    assert "Qwen3-8B-4bit@545dc42" in recommend(qwen3, CUDA_PRE_AMPERE)[1]

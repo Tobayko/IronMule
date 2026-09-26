@@ -324,8 +324,12 @@ numeric plans with their own quality gates.
 checkpoints whose speed and gate the row's evidence covers (Qwen 3 `float16`: 8B, since 14B
 was gated but not timed; Gemma 4 `float32`/`float16`: E2B); `recommend(..., model_id=)`
 returns nothing for any other checkpoint, `ironmule plans --model` uses it, and without a
-model `doctor` and `plans` name the checkpoints a recommendation is for. Still open from
-the gate below: revision, quantisation and backend binding, and per-path cells.
+model `doctor` and `plans` name the checkpoints a recommendation is for. Since the same day
+each recommendation is bound to the revision measured (`MEASURED_REVISIONS`, checked against
+every evidence file's recorded revision; the revision pins the weights and so the
+quantisation): `ironmule plans --model ID --revision R` recommends nothing for another
+revision, and every reason names checkpoint@revision. Still open from the gate below: backend
+binding (MLX/mlx-lm version) and per-path cells.
 
 **Mechanism.** `PlanMeasurement.models` names checkpoints, but
 `numeric_plans.measurements_for()` and `recommend()` filter only architecture
