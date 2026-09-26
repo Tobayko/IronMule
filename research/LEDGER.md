@@ -6658,3 +6658,41 @@ single-process screening (`14.57%`) rather than the paired confirmation (`14.32%
 interval `[5.98%; 14.51%]`), which `status()` now reports. Status: MEASURED, one run, one
 machine; it establishes that self-tuning works end to end, not the size of its gain
 elsewhere.
+
+## R14 — the q3d/q3f integration failures were two tests reading one process table (2026-09-26)
+
+Apple M1 Max, macOS 26.6.2, Python 3.12.13, MLX 0.32.0, this repository at `2cde303` plus the
+fix below; `pytest -m integration` as `pytest.ini` configures it (xdist, `--dist loadfile`), Qwen
+integration off (`IRONMULE_QWEN_MODEL` unset). No model timing is involved.
+
+Before the fix, two consecutive full integration runs each failed the same two tests
+(`2 failed, 13 passed, 1 skipped`), and in isolation `q3d`'s passed while `q3f`'s failed. Two
+separate causes, both reproduced on demand:
+
+| run | `test_real_macos_process_identity_and_cleanup_reap` (q3d) | `test_q3f_real_cleanup_keeps_external_process_alive` |
+| :-- | :-- | :-- |
+| full integration, parallel | fails | fails |
+| full integration, `-n 0` | passes | fails |
+| q3d + runtime integration + portable CLI files, parallel | passes | — |
+| q3d + q3f files, parallel | fails | fails |
+
+**q3d: another worker's processes.** The cleanup evidence reads every process this user owns
+and refuses when a new one appears that it cannot attribute. The q3f file starts processes
+(`sleep`, a sleeping Python worker, a libc fork); when it runs on another worker during q3d's
+observation window, q3d's verdict is correctly `group_gone = false`. Fix: a `process_table`
+marker; a test carrying it holds a file lock (`flock`) exclusively, every other test holds it
+shared, so nothing the same run starts appears while it looks (`tests/conftest.py`).
+
+**q3f: the machine, not the order.** Its global inventory (`competing_model_process`) matches
+blocker tokens as substrings of every process's command line. On this machine a web dev
+server under a directory whose name contains "Ironmule" matched `ironmule`, so the inventory
+reported competing model activity. That is the fail-closed gate working as written, not a
+cleanup defect; the test now checks the inventory first and skips with the reason when the
+machine already trips it.
+
+After the fix: q3d + q3f in parallel `2 passed, 1 skipped`; two consecutive full integration
+runs `14 passed, 2 skipped` each (Qwen unset; q3f's precondition, reason printed); the engine
+suite `1281 passed, 24 skipped`; the whole non-integration suite `1374 passed, 26 skipped`.
+R14's kill ("a deterministic order/timing proof identifies and fixes the interaction") is met.
+q3f's real cleanup remains unverified on this machine while that dev server runs; the
+substring match itself is backlog `R15`.

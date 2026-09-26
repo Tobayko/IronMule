@@ -138,3 +138,25 @@ def _restore_process_wide_variables():
             os.environ.pop(name, None)
         else:
             os.environ[name] = value
+
+
+# -- the same-UID process table ---------------------------------------------------
+#
+# The Q3 cleanup checks read every process this user owns and refuse when one appeared
+# that they cannot attribute. Under xdist, another worker's test that starts a process
+# is exactly such a process: `test_real_macos_process_identity_and_cleanup_reap` failed
+# whenever the q3f file ran beside it and passed alone or sequentially (R14, 2026-09-26).
+# A test marked `process_table` therefore holds this lock exclusively and every other
+# test holds it shared, so nothing this run starts appears while one of them looks.
+@pytest.fixture(autouse=True)
+def _process_table_lock(request, tmp_path_factory):
+    if os.name != "posix":
+        yield
+        return
+    import fcntl
+
+    # The parent of the base temp dir is shared by every xdist worker of one run.
+    with open(tmp_path_factory.getbasetemp().parent / "process-table.lock", "a") as handle:
+        exclusive = request.node.get_closest_marker("process_table") is not None
+        fcntl.flock(handle, fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH)
+        yield
