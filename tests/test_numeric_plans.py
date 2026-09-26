@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASUREMENTS,
-                                    QUALITY_BOUND, PlanRefused, architecture_of, check,
-                                    device_class, measurements_for, recommend)
+from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASURED_WITH,
+                                    MEASUREMENTS, QUALITY_BOUND, PlanRefused, architecture_of,
+                                    check, device_class, measurements_for, recommend)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -270,6 +270,26 @@ def test_every_row_is_bound_to_the_revisions_its_evidence_recorded(row):
         assert model_id in row.models, f"{row.label} {row.plan}: evidence for {model_id} it does not name"
         assert revision == MEASURED_REVISIONS[model_id], f"{model_id}: evidence at {revision}"
     assert set(row.models) <= {model_id for model_id, _ in recorded}
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_ran_on_the_framework_it_claims(row):
+    """NEXT1-C: every evidence run's `pip freeze` names MEASURED_WITH's versions."""
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    for run in {path.parent for path in files}:
+        frozen = dict(line.split("==", 1) for line in (run / "logs" / "freeze.log").read_text().split()
+                      if "==" in line)
+        assert {name: frozen.get(name) for name in MEASURED_WITH} == MEASURED_WITH, run.name
+
+
+def test_a_recommendation_holds_only_for_the_framework_it_measured():
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, framework=dict(MEASURED_WITH))[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, framework={**MEASURED_WITH, "mlx": "0.33.0"})
+    assert plan is None and "this environment runs mlx 0.33.0" in reason
 
 
 def test_a_recommendation_reaches_only_the_revision_it_measured():

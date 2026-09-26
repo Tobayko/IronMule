@@ -108,6 +108,11 @@ class PlanMeasurement:
 
 _R = "experiments/kaggle_compat/results"
 
+#: The framework every row was measured with, read from each evidence run's `pip freeze`
+#: (`tests/test_numeric_plans.py` checks them). Another version is another computation: a
+#: recommendation holds for these and, with `framework=`, for nothing else (NEXT1-C).
+MEASURED_WITH = {"mlx": "0.32.2", "mlx-lm": "0.31.3"}
+
 #: The exact revision each measured checkpoint was pinned to, which fixes its weights and
 #: quantisation. A recommendation covers that revision only (NEXT1-C): a republished
 #: checkpoint under the same id is a new, unmeasured model. `tests/test_numeric_plans.py`
@@ -331,12 +336,27 @@ def measurements_for(architecture: str, device: str | None) -> tuple[PlanMeasure
                  if row.architecture == architecture and row.device == device)
 
 
+def _versions(framework: dict[str, str]) -> str:
+    return ", ".join(f"{name} {version}" for name, version in sorted(framework.items()))
+
+
 def _short(models: tuple[str, ...]) -> str:
     return ", ".join(f"{model.rsplit('/', 1)[-1]}@{MEASURED_REVISIONS[model][:7]}" for model in models)
 
 
-def recommend(architecture: str, device: str | None,
-              model_id: str | None = None, revision: str | None = None) -> tuple[str | None, str]:
+def installed_framework() -> dict[str, str] | None:
+    """The installed versions of what `MEASURED_WITH` names, or None when one is missing."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return {name: version(name) for name in MEASURED_WITH}
+    except PackageNotFoundError:
+        return None
+
+
+def recommend(architecture: str, device: str | None, model_id: str | None = None,
+              revision: str | None = None,
+              framework: dict[str, str] | None = None) -> tuple[str | None, str]:
     """The fastest plan that is both faster and inside the quality bound, and why.
 
     Returns `(plan, reason)`; `plan` is None when nothing is recommended, and the reason
@@ -347,7 +367,8 @@ def recommend(architecture: str, device: str | None,
     A recommendation covers the checkpoints its row measured, at the revision measured, and
     no others (NEXT1-C): with `model_id`, a checkpoint outside every recommended row gets
     none, and with `revision` too, so does any other revision of it; without them, the
-    reason names the checkpoints and revisions the recommendation is for.
+    reason names the checkpoints and revisions the recommendation is for. With `framework`
+    (e.g. `installed_framework()`), versions other than `MEASURED_WITH` get none either.
     """
     rows = measurements_for(architecture, device)
     if not rows:
@@ -355,6 +376,9 @@ def recommend(architecture: str, device: str | None,
                       "the checkpoint's own dtype is the only qualified path here")
     recommended = sorted((row for row in rows if row.verdict() == "recommended"),
                          key=lambda row: row.wall_ratio)
+    if recommended and framework is not None and framework != MEASURED_WITH:
+        return None, (f"no plan is recommended for {rows[0].label} here: it was measured with "
+                      f"{_versions(MEASURED_WITH)} and this environment runs {_versions(framework)}")
     if recommended and model_id is not None:
         measured = [row for row in recommended if model_id in row.models]
         if not measured:
@@ -418,5 +442,5 @@ def check(architecture: str, plan: str | None, device: str | None) -> None:
             )
 
 
-__all__ = ["CUDA_PRE_AMPERE", "MEASURED_REVISIONS", "MEASUREMENTS", "PlanMeasurement", "PlanRefused", "QUALITY_BOUND",
-           "check", "device_class", "measurements_for", "recommend"]
+__all__ = ["CUDA_PRE_AMPERE", "MEASURED_REVISIONS", "MEASURED_WITH", "MEASUREMENTS", "PlanMeasurement", "PlanRefused", "QUALITY_BOUND",
+           "check", "device_class", "installed_framework", "measurements_for", "recommend"]

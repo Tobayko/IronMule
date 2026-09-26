@@ -136,13 +136,13 @@ def _numeric_plan_summary() -> str:
     """One line per architecture that has a measurement, from the plan table itself."""
     try:
         from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASUREMENTS,
-                                            recommend)
+                                            installed_framework, recommend)
     except ImportError:  # doctor must still run when the package cannot be imported
         return "run `ironmule plans` for the measured table"
     lines = []
     for architecture in sorted({row.architecture for row in MEASUREMENTS}):
         rows = [row for row in MEASUREMENTS if row.architecture == architecture]
-        plan, _ = recommend(architecture, CUDA_PRE_AMPERE)
+        plan, _ = recommend(architecture, CUDA_PRE_AMPERE, framework=installed_framework())
         # NEXT1-C: name the checkpoints and revisions a recommendation covers, never the family.
         scope = next((row.models for row in rows if row.plan == plan), ())
         where = (f" on {', '.join(m.rsplit('/', 1)[-1] + '@' + MEASURED_REVISIONS[m][:7] for m in scope)}"
@@ -643,12 +643,14 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
     args = parser.parse_args(list(argv))
     if args.revision and not args.model:
         parser.error("--revision needs --model")
-    from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASUREMENTS,
-                                        QUALITY_BOUND, recommend)
+    from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASURED_WITH,
+                                        MEASUREMENTS, QUALITY_BOUND, installed_framework,
+                                        recommend)
 
     if args.json:
         print(json.dumps({
             "schema": "ironmule.numeric_plans.v1", "quality_bound": QUALITY_BOUND,
+            "measured_with": MEASURED_WITH,
             "rows": [{"architecture": row.architecture, "plan": row.plan, "device": row.device,
                       "wall_ratio": row.wall_ratio, "speedup_percent": row.speedup_percent,
                       "quality_ratio": row.quality_ratio,
@@ -659,7 +661,8 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
         }, indent=1))
         return 0
     print("IronMule numeric plans")
-    print(f"  measured on NVIDIA below compute capability 8; quality bound {QUALITY_BOUND}")
+    print(f"  measured on NVIDIA below compute capability 8 with "
+          f"{', '.join(f'{k} {v}' for k, v in MEASURED_WITH.items())}; quality bound {QUALITY_BOUND}")
     print(f"  {'architecture':16} {'plan':9} {'vs stock':>10} {'perplexity ratio':>28}  verdict")
     for row in MEASUREMENTS:
         if row.quality_known:
@@ -672,7 +675,7 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
     print()
     for architecture in sorted({row.architecture for row in MEASUREMENTS}):
         _, reason = recommend(architecture, CUDA_PRE_AMPERE, model_id=args.model,
-                              revision=args.revision)
+                              revision=args.revision, framework=installed_framework())
         print(f"  {reason}")
     print("\n  A plan is never chosen for you. `recommended` means measured faster with the")
     print("  whole quality interval inside the bound; `unqualified` means the speed is real")

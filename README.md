@@ -139,7 +139,8 @@ and both plans sit inside the bound on E2B, a little better than
 bfloat16 itself. Chat decoding returned stock's tokens in 5 of 6 requests for either plan, so
 `ironmule plans` now recommends `float16` for Gemma 4 E2B on these cards. The E4B
 checkpoints share the architecture but no gate ran on them, so they get no
-recommendation of their own (a recommendation covers only the checkpoints it measured).
+recommendation of their own (a recommendation covers only the checkpoints it measured, at the
+revision and with the MLX and mlx-lm versions measured).
 
 gpt-oss 20B's plans cannot be qualified on this card at all. Its router picks four of 32
 experts per token, and the emulated bfloat16 reference cannot order router scores that close:

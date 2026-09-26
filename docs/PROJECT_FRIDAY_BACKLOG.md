@@ -328,8 +328,10 @@ model `doctor` and `plans` name the checkpoints a recommendation is for. Since t
 each recommendation is bound to the revision measured (`MEASURED_REVISIONS`, checked against
 every evidence file's recorded revision; the revision pins the weights and so the
 quantisation): `ironmule plans --model ID --revision R` recommends nothing for another
-revision, and every reason names checkpoint@revision. Still open from the gate below: backend
-binding (MLX/mlx-lm version) and per-path cells.
+revision, and every reason names checkpoint@revision. So is the framework: `MEASURED_WITH`
+(mlx 0.32.2, mlx-lm 0.31.3, checked against every evidence run's `pip freeze`), and `plans`
+and `doctor` recommend nothing in an environment with other versions. Still open from the
+gate below: per-path cells.
 
 **Mechanism.** `PlanMeasurement.models` names checkpoints, but
 `numeric_plans.measurements_for()` and `recommend()` filter only architecture
