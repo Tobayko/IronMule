@@ -13,7 +13,7 @@ Usage: python perf1.py kernel OUT.json
        mlx.launch --hosts 127.0.0.1 -n 2 --backend ring -- PYTHON perf1.py e2e|server|routing ...  (layer pipeline)
 
 ARM is "+"-joined parts: "stock" (bf16 checkpoint as loaded), "fp32" (IronMule's float32
-plan, `set_dtype`), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
+plan, `set_dtype`), "fp16" (its float16 plan, the same way), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
 "k32" (the same kernel reading float32 activations and scales, for the float32 plan),
 "p16" (multi-row 4-bit matmuls, i.e. prefill: dequantise to float16, one tensor-core GEMM,
 cast back), "gather" (MoE experts, `gather_qmm` with up to GATHER_MAX (token, expert) rows:
@@ -594,10 +594,12 @@ def _gather_patched(x, w, scales, biases=None, lhs_indices=None, rhs_indices=Non
 
 def apply_arm(model, arm):
     parts = set(arm.split("+"))
-    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"}:
+    if not parts <= {"stock", "fp32", "fp16", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"}:
         raise ValueError(arm)
     if "fp32" in parts:
         model.set_dtype(mx.float32)
+    if "fp16" in parts:
+        model.set_dtype(mx.float16)
     routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"})
     if routes:
         mx.quantized_matmul = _patched  # nn.QuantizedLinear looks it up per call

@@ -333,6 +333,24 @@ revision, and every reason names checkpoint@revision. So is the framework: `MEAS
 and `doctor` recommend nothing in an environment with other versions. Still open from the
 gate below: per-path cells.
 
+**Per-path cells: the decode gate, fixed before its run (2026-09-26, agent decision).** The
+`float32`/`float16` rows were gated by `quality.py`, one forward per 512-token chunk, i.e. the
+prefill path only; decode runs other kernels (`qmv`, M = 1) and is ungated. `native`'s rows
+already carry both paths. Question: does each dtype plan that is some checkpoint's top
+recommendation pass on the decode path too? Rows: Gemma 4 E2B `float16` and `float32`, Gemma 3
+4B `float32`, Mistral Small 3.2 24B `float32` (Qwen 3's dtype rows are not its top
+recommendation, `native` is, and wait). Workload: `perf1.py nll MODEL ARM decode` (teacher-
+forced through the cache, BOS on every chunk), WikiText-2 raw test at the pinned revision,
+16 chunks x 512 tokens (Mistral 8, as its prefill gate), arms `stock` then the plan's `fp32`/
+`fp16` (`set_dtype`, as `load_engine` applies it), fresh process each, one Kaggle run on two
+T4s in parallel (Mistral on one, both Gemmas on the other) capped at 58 minutes. Statistic:
+the plan/stock perplexity ratio with the bootstrap `tests/test_numeric_plans.py` uses for
+`native` (seed 20260916, 10 000 draws, 2.5/97.5%). Rule per row: upper bound < 1.005 ->
+decode joins the row's gated paths and the row carries the worse of its two gates; lower
+bound > 1.005 -> refused; otherwise unqualified, and it loses its recommendation. A stage
+that does not finish leaves that row's decode path ungated, which is then displayed as such.
+Until the run answers, verdicts stay as they are (no measurement yet says otherwise).
+
 **Mechanism.** `PlanMeasurement.models` names checkpoints, but
 `numeric_plans.measurements_for()` and `recommend()` filter only architecture
 and device class, so a recommendation reaches every model of the architecture:
