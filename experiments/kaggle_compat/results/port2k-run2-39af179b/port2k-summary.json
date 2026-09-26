@@ -1,0 +1,18 @@
+{
+ "gemma3-4b/float16": {
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "bf16_perplexity": 26.99230167984059,
+  "plan_perplexity": 55.177059620153365,
+  "ratio": 2.044177642744812,
+  "interval": [
+   1.9609229856175048,
+   2.1380115003611624
+  ],
+  "nonfinite": 0,
+  "verdict": "refused: lower bound above the bound"
+ }
+}
