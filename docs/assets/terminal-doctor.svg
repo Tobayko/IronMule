@@ -33,71 +33,21 @@
     <circle cx="78" cy="30" r="6" fill="#27c93f" stroke="#1aab29" stroke-width="0.5" />
 
     <!-- Title Bar Header -->
-    <text x="440" y="34" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="12" font-weight="500" text-anchor="middle">
-      ironmule doctor — Hardware &amp; MLX Prerequisite Probe
-    </text>
+    <text x="440" y="34" fill="#94a3b8" font-family="-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif" font-size="12" font-weight="500" text-anchor="middle">ironmule doctor</text>
 
-    <!-- Terminal Output -->
-    <g font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace" font-size="13" line-height="1.5">
-      <text x="40" y="80">
-        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
-        <tspan fill="#64748b">:</tspan>
-        <tspan fill="#818cf8">~/IronMule</tspan>
-        <tspan fill="#ff9100">$</tspan>
-        <tspan fill="#f1f5f9" font-weight="600"> ironmule doctor</tspan>
-      </text>
-
-      <text x="40" y="112" fill="#ffaa33" font-weight="bold">⚡ IronMule Hardware Diagnostics</text>
-
-      <text x="40" y="142">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> Apple Silicon architecture: </tspan>
-        <tspan fill="#f8fafc" font-weight="600">arm64 (Apple M1 Max · 10-core CPU)</tspan>
-      </text>
-
-      <text x="40" y="170">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> macOS Kernel: </tspan>
-        <tspan fill="#f8fafc" font-weight="600">Darwin 25.6.0 (Unified Memory 32 GB)</tspan>
-      </text>
-
-      <text x="40" y="198">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> Python Runtime: </tspan>
-        <tspan fill="#f8fafc" font-weight="600">3.12.13 (isolated virtual environment)</tspan>
-      </text>
-
-      <text x="40" y="226">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> MLX Framework: </tspan>
-        <tspan fill="#f8fafc" font-weight="600">0.32.0 (compiled for macOS arm64)</tspan>
-      </text>
-
-      <text x="40" y="254">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> MLX-LM Model Engine: </tspan>
-        <tspan fill="#f8fafc" font-weight="600">0.31.3 (Safetensors &amp; Quantized 4-bit)</tspan>
-      </text>
-
-      <text x="40" y="282">
-        <tspan fill="#10b981" font-weight="bold">[OK]</tspan>
-        <tspan fill="#94a3b8"> MLX Metal Device: </tspan>
-        <tspan fill="#38bdf8" font-weight="600">32-core Metal GPU verified (222.2 GB/s GEMV bandwidth)</tspan>
-      </text>
-
-      <!-- Success status card inside terminal -->
-      <rect x="40" y="312" width="800" height="40" rx="8" fill="#082b20" stroke="#059669" stroke-width="1" />
-      <text x="58" y="337" fill="#34d399" font-weight="bold">
-        ✓ All runtime prerequisites available. Hardware profile compatible &amp; evidence-ready.
-      </text>
-
-      <text x="40" y="386">
-        <tspan fill="#38bdf8" font-weight="bold">user@macbook-pro</tspan>
-        <tspan fill="#64748b">:</tspan>
-        <tspan fill="#818cf8">~/IronMule</tspan>
-        <tspan fill="#ff9100">$</tspan>
-      </text>
-      <rect x="234" y="374" width="8" height="14" fill="#ffaa33" opacity="0.85" />
+    <!-- Terminal output: ironmule doctor at a UTF-8 terminal, Apple M1 Max, 2026-09-26 -->
+    <g font-family="'SF Mono', 'JetBrains Mono', 'Fira Code', Menlo, Monaco, Consolas, monospace" font-size="13">
+      <text x="40" y="80" xml:space="preserve"><tspan fill="#ff9100" font-weight="bold">$</tspan><tspan fill="#f1f5f9" font-weight="bold"> ironmule doctor</tspan></text>
+      <text x="40" y="114" xml:space="preserve"><tspan fill="#ffaa33" font-weight="bold"> IronMule doctor</tspan><tspan fill="#94a3b8">  checking this machine</tspan></text>
+      <text x="40" y="146" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  Apple Silicon architecture   </tspan><tspan fill="#94a3b8">arm64 (Apple M1 Max)</tspan></text>
+      <text x="40" y="170" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  macOS                        </tspan><tspan fill="#94a3b8">Darwin</tspan></text>
+      <text x="40" y="194" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  Python                       </tspan><tspan fill="#94a3b8">3.12.13 (requires &gt;= 3.10)</tspan></text>
+      <text x="40" y="218" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  MLX                          </tspan><tspan fill="#94a3b8">0.32.0; importable (isolated probe)</tspan></text>
+      <text x="40" y="242" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  MLX-LM                       </tspan><tspan fill="#94a3b8">0.31.3; importable (isolated probe)</tspan></text>
+      <text x="40" y="266" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  NumPy                        </tspan><tspan fill="#94a3b8">2.5.2; importable (isolated probe)</tspan></text>
+      <text x="40" y="290" xml:space="preserve"><tspan fill="#10b981" font-weight="bold">   ✓</tspan><tspan fill="#f1f5f9">  MLX Metal device             </tspan><tspan fill="#94a3b8">Metal GPU operation verified</tspan></text>
+      <text x="40" y="324" xml:space="preserve"><tspan fill="#10b981"> ●</tspan><tspan fill="#10b981" font-weight="bold"> Ready</tspan><tspan fill="#f1f5f9">  all runtime prerequisites are available</tspan></text>
+      <text x="40" y="348" xml:space="preserve"><tspan fill="#94a3b8">   next</tspan><tspan fill="#f1f5f9">  </tspan><tspan fill="#38bdf8">ironmule start</tspan><tspan fill="#f1f5f9"> to chat, </tspan><tspan fill="#38bdf8">ironmule benchmark</tspan><tspan fill="#f1f5f9"> to measure this machine</tspan></text>
     </g>
   </g>
 </svg>
