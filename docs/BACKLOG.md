@@ -371,10 +371,15 @@ when `ci_high < 0.995`, `LOSS` only when `ci_low > 1.005`,
 `PRACTICALLY_NEUTRAL` only for a complete CI inside `[0.995, 1.005]`, otherwise
 `INCONCLUSIVE`. Do not claim a direct statistical comparison with early Q2.
 
-**P2 safety debt (runtime lifecycle).** `ab.run` must retain partial child records
-and terminate the entire child process group on timeout; kill/cleanup failure is a
-hard `FAILED` result, never a short successful run. Kill when a timeout leaves an
-orphan process or the raw record cannot identify the completed children.
+**P2 safety debt (runtime lifecycle) — answered 2026-09-26 (agent decision).** `ab.run`
+passes every completed child record as `ABRunError.partial_children` on timeout, start
+failure, malformed output and non-zero exit, and a failed cleanup raises (`child ... and
+cleanup failed`) rather than returning a short run (`tests/engine/test_ab.py`). A whole
+process group needs no signal: the child runs under the q3f guard, which refuses and
+records every process operation (`subprocess.Popen`, `os.system`, `os.fork`, `os.forkpty`,
+...) before the package imports
+(`test_q3f_guard_blocks_and_records_every_process_operation_in_isolated_child`), so a
+timed-out child has no descendants to orphan. Reopen if the guard's operation set shrinks.
 
 **P2 safety debt (evaluator-owned identity).** The runtime must expose per-repeat
 physical/logical tokens, counts, stop reasons, capacities, RSS and resource gates
