@@ -5,15 +5,18 @@ file alone proves nothing. `perf1.py` writes rank 0 to OUT.json and rank r to
 OUT-rankR.json, each atomically; this checks that all of them exist, parse, name the same
 arm, mode, model, code and input hashes and attempt, and carry ranks 0..size-1 of one
 pipeline. A notebook that sets PERF1_ATTEMPT per stage passes it as `attempt`, so a file
-left by an earlier attempt of the same stage does not count.
+left by an earlier attempt of the same stage does not count. After a stage, `gpu_idle()` shows
+that no rank outlived it.
 
-    from ranks import all_ranks
+    from ranks import all_ranks, gpu_idle
     ok, why = all_ranks("/kaggle/working/e2e-qwen36-35b-a3b-kernel+p16.json", attempt="s3-a1")
+    idle, who = gpu_idle()
 
 Run as a script for its self-check.
 """
 import json
 import os
+import subprocess
 import tempfile
 
 
@@ -42,7 +45,27 @@ def all_ranks(path: str, size: int = 2, attempt: str | None = None) -> tuple[boo
     return True, "complete"
 
 
+def gpu_idle(smi_output: str | None = None) -> tuple[bool, str]:
+    """(True, "idle") when no compute process holds a GPU, else (False, the pids).
+
+    Run after a stage, from the notebook that owns the GPUs: a rank that outlived its stage
+    shows up here, and a later stage would otherwise share its card. It only reports; it never
+    terminates anything, since a process it did not start is not its to end.
+    """
+    if smi_output is None:
+        try:
+            smi_output = subprocess.run(
+                ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
+                capture_output=True, text=True, timeout=30, check=True).stdout
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"nvidia-smi: {type(exc).__name__}"
+    pids = [line.strip() for line in smi_output.splitlines() if line.strip()]
+    return (not pids), ("idle" if not pids else "still on a GPU: " + ", ".join(pids))
+
+
 def _self_check() -> None:
+    assert gpu_idle("") == (True, "idle")
+    assert gpu_idle("4242\n 77 \n") == (False, "still on a GPU: 4242, 77")
     with tempfile.TemporaryDirectory() as directory:
         out = os.path.join(directory, "e2e.json")
         base = {"arm": "kernel", "mode": "e2e", "model_path": "/m", "code_sha256": "c", "attempt": "a1"}

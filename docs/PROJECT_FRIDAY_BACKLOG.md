@@ -464,7 +464,9 @@ it and runs its self-check first (passes on the Kaggle image, NEXT1 run 1). Sinc
 day every rank also records `code_sha256` (its `perf1.py`), `input_sha256` (the text for
 `nll` and `routing`) and `attempt` (`PERF1_ATTEMPT`); `all_ranks` refuses ranks that differ
 in any of them, a record without a code hash, and, given `attempt=`, a stale file from an
-earlier attempt. Not yet covered: owned child cleanup.
+earlier attempt. `ranks.gpu_idle()` reports any compute process still on a GPU after a stage
+(from `nvidia-smi`; it ends nothing). Not yet covered: a notebook that uses both on a real
+two-card run.
 
 **Mechanism.** `experiments/kaggle_compat/perf1_run13.py:run` treats existence
 of a rank-0 file as stage success because `mlx.launch` returned exit 0 despite
