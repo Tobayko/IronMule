@@ -398,6 +398,15 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         # call — a plan name coming from a CLI flag must not become a module attribute path.
         if compute_dtype != "native":
             model.set_dtype(mx.float32 if compute_dtype == "float32" else mx.float16)
+    head_skip_reason = None
+    if compute_dtype == "native" and not knobs.head_skip_prefill:
+        from .cuda_native import head_skip_needed
+        # PERF1-X: on a card the weights nearly fill, the head's float16 prefill copy is the
+        # allocation that fails; the head for the last position alone is the decode kernel's
+        # arithmetic, which the plan's gate covers. Recorded in `native_admission`.
+        head_skip_reason = head_skip_needed(model, info)
+        if head_skip_reason is not None:
+            knobs = replace(knobs, head_skip_prefill=True)
     engine = Engine(model, tokenizer, knobs)
     engine.compute_dtype = compute_dtype
     engine.native_admission = None
@@ -405,6 +414,7 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         from .cuda_native import install
         # After the Engine, because projection fusion builds fresh quantised modules.
         engine.native_admission = install(engine.model, info)
+        engine.native_admission["head_skip_prefill_forced"] = head_skip_reason
     engine.model_identity = resolved.identity if resolved is not None else None
     # Admission runs here because it needs the identity, and only here: nothing in the
     # per-token path may hash a model or re-check a version.

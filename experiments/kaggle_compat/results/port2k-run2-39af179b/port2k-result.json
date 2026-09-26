@@ -1,0 +1,88 @@
+{
+ "schema": "ironmule.port2k-kaggle.v1",
+ "commit": "2175a345e3bcea5ca768c3e96a6dedb83734270b",
+ "stages": {
+  "env": {
+   "exit": 0,
+   "seconds": 0.2,
+   "tail": "index, name, driver_version, memory.total [MiB], clocks.max.sm [MHz]\n0, Tesla T4, 580.159.04, 15360 MiB, 1590 MHz\n1, Tesla T4, 580.159.04, 15360 MiB, 1590 MHz\n4\n               total        used        free      shared  buff/cache   available\nMem:              31           0          26           0           4          30\nSwap:              0           0           0\n"
+  },
+  "clone": {
+   "exit": 0,
+   "seconds": 2.4,
+   "tail": "2175a345e3bcea5ca768c3e96a6dedb83734270b\n"
+  },
+  "venv": {
+   "exit": 0,
+   "seconds": 9.1,
+   "tail": "   \u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501 20.5/20.5 MB 75.0 MB/s eta 0:00:00\nDownloading cpython-3.12.14-linux-x86_64-gnu (download) (32.7MiB)\n Downloaded cpython-3.12.14-linux-x86_64-gnu (download)\nInstalled Python 3.12.14 in 1.81s\n + cpython-3.12.14-linux-x86_64-gnu (python3.12)\nwarning: `/root/.local/bin` is not on your PATH. To use installed Python executables, run `export PATH=\"/root/.local/bin:$PATH\"` or `uv python update-shell`.\nwarning: The `--system` flag has no effect, `uv venv` always ignores virtual environments when finding a Python interpreter; did you mean `--no-managed-python`?\nUsing CPython 3.12.13 interpreter at: /usr/bin/python3\nCreating virtual environment at: im\nActivate with: source im/bin/activate\n"
+  },
+  "install": {
+   "exit": 0,
+   "seconds": 34.6,
+   "tail": "Using Python 3.12.13 environment at: im\nResolved 49 packages in 4.11s\n   Building ironmule @ file:///tmp/IronMule\nDownloading pygments (1.2MiB)\nDownloading numpy (15.9MiB)\nDownloading transformers (11.7MiB)\nDownloading hf-xet (4.3MiB)\nDownloading pyarrow (47.8MiB)\nDownloading nvidia-nccl-cu12 (335.2MiB)\nDownloading scipy (33.7MiB)\nDownloading tokenizers (3.2MiB)\nDownloading nvidia-cufft-cu12 (191.6MiB)\nDownloading nvidia-cuda-nvrtc-cu12 (85.4MiB)\nDownloading mlx-cuda-12 (83.0MiB)\nDownloading nvidia-nvjitlink-cu12 (37.9MiB)\nDownloading nvidia-cublas-cu12 (554.3MiB)\nDownloading nvidia-cudnn-cu12 (734.8MiB)\nDownloading sentencepiece (1.3MiB)\n      Built ironmule @ file:///tmp/IronMule\n Downloaded pygments\n Downloaded sentencepiece\n Downloaded tokenizers\n Downloaded hf-xet\n Downloaded transformers\n Downloaded numpy\n Downloaded scipy\n Downloaded nvidia-nvjitlink-cu12\n Downloaded pyarrow\n Downloaded mlx-cuda-12\n Downloaded nvidia-cuda-nvrtc-cu12\n Downloaded nvidia-cufft-cu12\n Downloaded nvidia-nccl-cu12\n Downloaded nvidia-cublas-cu12\n Downloaded nvidia-cudnn-cu12\nPrepared 49 packages in 30.11s\nInstalled 49 packages in 118ms\n + annotated-doc==0.0.5\n + anyio==4.15.1\n + certifi==2026.7.22\n + click==8.5.0\n + execnet==2.1.2\n + filelock==4.0.3\n + fsspec==2026.9.0\n + h11==0.16.0\n + hf-xet==1.6.0\n + httpcore==1.0.9\n + httpx==0.28.1\n + huggingface-hub==1.33.0\n + idna==3.20\n + iniconfig==2.3.0\n + ironmule==0.1.0 (from file:///tmp/IronMule)\n + jinja2==3.1.6\n + markdown-it-py==4.2.0\n + markupsafe==3.0.3\n + mdurl==0.1.2\n + mlx==0.32.2\n + mlx-cuda-12==0.32.2\n + mlx-lm==0.31.3\n + numpy==2.5.3\n + nvidia-cublas-cu12==12.9.2.10\n + nvidia-cuda-nvrtc-cu12==12.9.86\n + nvidia-cudnn-cu12==9.26.0.51\n + nvidia-cufft-cu12==11.4.1.4\n + nvidia-nccl-cu12==2.32.3\n + nvidia-nvjitlink-cu12==12.9.86\n + packaging==26.3\n + pluggy==1.6.0\n + protobuf==7.36.2\n + psutil==7.2.2\n + pyarrow==25.0.1\n + pygments==2.21.0\n + pytest==9.1.1\n + pytest-xdist==3.8.0\n + pyyaml==6.0.3\n + regex==2026.9.10\n + rich==15.0.0\n + safetensors==0.8.0\n + scipy==1.18.1\n + sentencepiece==0.2.2\n + shellingham==1.5.4\n + tokenizers==0.23.2\n + tqdm==4.70.1\n + transformers==5.17.0\n + typer==0.27.2\n + typing-extensions==4.16.0\n"
+  },
+  "freeze": {
+   "exit": 0,
+   "seconds": 0.1,
+   "tail": "Using Python 3.12.13 environment at: im\nannotated-doc==0.0.5\nanyio==4.15.1\ncertifi==2026.7.22\nclick==8.5.0\nexecnet==2.1.2\nfilelock==4.0.3\nfsspec==2026.9.0\nh11==0.16.0\nhf-xet==1.6.0\nhttpcore==1.0.9\nhttpx==0.28.1\nhuggingface-hub==1.33.0\nidna==3.20\niniconfig==2.3.0\n-e file:///tmp/IronMule\njinja2==3.1.6\nmarkdown-it-py==4.2.0\nmarkupsafe==3.0.3\nmdurl==0.1.2\nmlx==0.32.2\nmlx-cuda-12==0.32.2\nmlx-lm==0.31.3\nnumpy==2.5.3\nnvidia-cublas-cu12==12.9.2.10\nnvidia-cuda-nvrtc-cu12==12.9.86\nnvidia-cudnn-cu12==9.26.0.51\nnvidia-cufft-cu12==11.4.1.4\nnvidia-nccl-cu12==2.32.3\nnvidia-nvjitlink-cu12==12.9.86\npackaging==26.3\npluggy==1.6.0\nprotobuf==7.36.2\npsutil==7.2.2\npyarrow==25.0.1\npygments==2.21.0\npytest==9.1.1\npytest-xdist==3.8.0\npyyaml==6.0.3\nregex==2026.9.10\nrich==15.0.0\nsafetensors==0.8.0\nscipy==1.18.1\nsentencepiece==0.2.2\nshellingham==1.5.4\ntokenizers==0.23.2\ntqdm==4.70.1\ntransformers==5.17.0\ntyper==0.27.2\ntyping-extensions==4.16.0\n"
+  },
+  "download_wikitext": {
+   "exit": 0,
+   "seconds": 2.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/datasets--Salesforce--wikitext/snapshots/b08601e04326c79dfdd32d625aee71d232d685c3/wikitext-2-raw-v1/test-00000-of-00001.parquet\n"
+  },
+  "pytest_engine": {
+   "exit": 0,
+   "seconds": 171.6,
+   "tail": ".................... [ 27%]\n........................................................................ [ 32%]\n........................................................................ [ 38%]\n........................................................................ [ 43%]\n........................................................................ [ 49%]\n........................................................................ [ 54%]\n........................................................................ [ 60%]\n........................................................................ [ 65%]\n........................................................................ [ 71%]\n.............................................................ss.s....... [ 76%]\n.....................s.................................................. [ 82%]\n.....................................................................s.. [ 87%]\n....................................................uuuuuuu...uuuu...... [ 92%]\n........................................................................ [ 98%]\n....................s.....                                               [100%]\n=============================== warnings summary ===============================\ntests/engine/test_product_calibration.py::test_real_process_lease_defers_second_job_and_status_reports_running\n  /usr/lib/python3.12/multiprocessing/popen_fork.py:66: DeprecationWarning: This process (pid=160) is multi-threaded, use of fork() may lead to deadlocks in the child.\n    self.pid = os.fork()\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n=========================== short test summary info ============================\nSKIPPED [22] tests/engine/test_docs_links.py:68: sealed provenance input; its links record the tree it was written against\nSKIPPED [1] tests/engine/test_router.py:461: this machine does not report vm.swapusage\nSKIPPED [1] tests/engine/test_product_memory.py:36: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:69: native RSS/swap probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_memory.py:101: native RSS probe is macOS-specific\nSKIPPED [1] tests/engine/test_product_identity.py:224: cached Gemma 3 1B snapshot is unavailable\nSKIPPED [1] tests/engine/test_process_memory.py:28: Darwin proc_pid_rusage only\nSKIPPED [1] tests/engine/test_hw_sysctl.py:16: sysctlbyname is the macOS path\n1282 passed, 29 skipped, 1 warning, 11 subtests passed in 170.52s (0:02:50)\n"
+  },
+  "download_gemma3-4b": {
+   "exit": 0,
+   "seconds": 23.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-3-4b-it-4bit/snapshots/93724907d4ed1745d2fe50baadf3b0b01a65abf2\n"
+  },
+  "quality_gemma3-4b_bf16": {
+   "exit": 0,
+   "seconds": 294.8,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 2.758978843688965}\n1 {'nll_bf16': 3.349318027496338}\n2 {'nll_bf16': 3.233717203140259}\n3 {'nll_bf16': 3.366334915161133}\n4 {'nll_bf16': 2.919405698776245}\n5 {'nll_bf16': 3.304229736328125}\n6 {'nll_bf16': 3.3937082290649414}\n7 {'nll_bf16': 3.481440305709839}\n8 {'nll_bf16': 3.825983762741089}\n9 {'nll_bf16': 3.48469877243042}\n10 {'nll_bf16': 3.0417847633361816}\n11 {'nll_bf16': 3.5101828575134277}\n12 {'nll_bf16': 3.6284403800964355}\n13 {'nll_bf16': 3.1238484382629395}\n14 {'nll_bf16': 3.220167636871338}\n15 {'nll_bf16': 3.08658766746521}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"bos\": 2,\n \"only\": \"bf16\",\n \"loader\": \"mlx_lm\",\n \"ppl_bf16\": 26.99230167984059,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 293.2015800476074\n}\n"
+  },
+  "quality_gemma3-4b_float16": {
+   "exit": 0,
+   "seconds": 77.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_float16': 3.3847415447235107}\n1 {'nll_float16': 3.9755406379699707}\n2 {'nll_float16': 4.055878162384033}\n3 {'nll_float16': 3.9523348808288574}\n4 {'nll_float16': 3.5144834518432617}\n5 {'nll_float16': 3.982959270477295}\n6 {'nll_float16': 4.0730204582214355}\n7 {'nll_float16': 4.23237419128418}\n8 {'nll_float16': 4.700697422027588}\n9 {'nll_float16': 4.205359935760498}\n10 {'nll_float16': 3.74100923538208}\n11 {'nll_float16': 4.3708086013793945}\n12 {'nll_float16': 4.4521379470825195}\n13 {'nll_float16': 3.808931827545166}\n14 {'nll_float16': 3.9057390689849854}\n15 {'nll_float16': 3.812739849090576}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-3-4b-it-4bit\",\n \"revision\": \"93724907d4ed1745d2fe50baadf3b0b01a65abf2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"bos\": 2,\n \"only\": \"float16\",\n \"loader\": \"mlx_lm\",\n \"ppl_float16\": 55.177059620153365,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 76.44941568374634\n}\n"
+  },
+  "summary": {
+   "exit": 0,
+   "seconds": 0.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n{\n \"gemma3-4b/float16\": {\n  \"chunks\": 16,\n  \"bos\": [\n   2,\n   2\n  ],\n  \"bf16_perplexity\": 26.99230167984059,\n  \"plan_perplexity\": 55.177059620153365,\n  \"ratio\": 2.044177642744812,\n  \"interval\": [\n   1.9609229856175048,\n   2.1380115003611624\n  ],\n  \"nonfinite\": 0,\n  \"verdict\": \"refused: lower bound above the bound\"\n }\n}\n"
+  },
+  "download_gemma4-e2b-8bit": {
+   "exit": 0,
+   "seconds": 34.6,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-4-e2b-it-8bit/snapshots/03dcf209f3f549b4075e7191e77cf69b3d48e1b2\n"
+  },
+  "quality_gemma4-e2b-8bit_bf16": {
+   "exit": 0,
+   "seconds": 185.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 4.421740531921387}\n1 {'nll_bf16': 5.686306953430176}\n2 {'nll_bf16': 5.40487003326416}\n3 {'nll_bf16': 6.020986557006836}\n4 {'nll_bf16': 5.595589637756348}\n5 {'nll_bf16': 5.784990310668945}\n6 {'nll_bf16': 5.683033466339111}\n7 {'nll_bf16': 6.1845550537109375}\n8 {'nll_bf16': 6.29222297668457}\n9 {'nll_bf16': 5.783814430236816}\n10 {'nll_bf16': 5.777008056640625}\n11 {'nll_bf16': 6.058323383331299}\n12 {'nll_bf16': 5.805366039276123}\n13 {'nll_bf16': 5.460149765014648}\n14 {'nll_bf16': 5.678455829620361}\n15 {'nll_bf16': 5.4007720947265625}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-4-e2b-it-8bit\",\n \"revision\": \"03dcf209f3f549b4075e7191e77cf69b3d48e1b2\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"bos\": 2,\n \"only\": \"bf16\",\n \"loader\": \"mlx_lm\",\n \"ppl_bf16\": 295.86005932369835,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 183.83866047859192\n}\n"
+  },
+  "download_gemma4-e2b-bf16w": {
+   "exit": 0,
+   "seconds": 53.5,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\nWarning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.\n/root/.cache/huggingface/hub/models--mlx-community--gemma-4-e2b-it-bf16/snapshots/fb0b166bbb9a0eb4b37915bfc515a197c9122f39\n"
+  },
+  "quality_gemma4-e2b-bf16w_bf16": {
+   "exit": 0,
+   "seconds": 30.9,
+   "tail": "Error in sitecustomize; set PYTHONVERBOSE for traceback:\nModuleNotFoundError: No module named 'wrapt'\n0 {'nll_bf16': 4.466106414794922}\n1 {'nll_bf16': 5.738735198974609}\n2 {'nll_bf16': 5.4222917556762695}\n3 {'nll_bf16': 6.051445007324219}\n4 {'nll_bf16': 5.651291847229004}\n5 {'nll_bf16': 5.847425937652588}\n6 {'nll_bf16': 5.736911296844482}\n7 {'nll_bf16': 6.235306262969971}\n8 {'nll_bf16': 6.287051200866699}\n9 {'nll_bf16': 5.814387321472168}\n10 {'nll_bf16': 5.813994407653809}\n11 {'nll_bf16': 6.108423233032227}\n12 {'nll_bf16': 5.817036151885986}\n13 {'nll_bf16': 5.499545097351074}\n14 {'nll_bf16': 5.717951774597168}\n15 {'nll_bf16': 5.451852321624756}\n{\n \"schema\": \"ironmule.port1-quality.v1\",\n \"model_id\": \"mlx-community/gemma-4-e2b-it-bf16\",\n \"revision\": \"fb0b166bbb9a0eb4b37915bfc515a197c9122f39\",\n \"text\": \"/tmp/wikitext.txt\",\n \"chunks\": 16,\n \"chunk_tokens\": 512,\n \"bos\": 2,\n \"only\": \"bf16\",\n \"loader\": \"mlx_lm\",\n \"ppl_bf16\": 307.5798418608885,\n \"device\": \"Device(gpu, 0)\",\n \"seconds\": 29.163843393325806\n}\n"
+  }
+ },
+ "performance_claim": false,
+ "loader_check": {
+  "chunks": 16,
+  "max_abs_diff": 0.0,
+  "passes": true
+ },
+ "finished": true
+}

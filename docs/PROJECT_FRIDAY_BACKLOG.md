@@ -132,7 +132,7 @@ fp16-Tensorkern-GEMM für den Prefill, nur CUDA < 8.0). Ergebnisse und Gates ste
 TP=2 über das Ring-Backend (`perf1-run1-69dbc7af`, 0,34x), Magic-Float-Nibble
 (`perf1-run3-1d84848f`), B13 Entwurfsmodell auf der T4 (`perf1-run3-1d84848f`, Akzeptanz
 0,61 < 0,65), Tensorkern-Kernel v2 mit Split-K (`perf1-run9-260cd63c`), getunte Knobs auf
-`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
+`native` (`perf1-run7-080bfab7`, langsamer, Identität gebrochen). Rejected 2026-09-26: PERF1-V, 8-bit router matvecs through the row kernel (Gemma 4 26B-A4B 0.9655x, Qwen3.6 35B-A3B 1.0081x of `gather`, kill 1.05x; `perf1v-run1-cfa81967`, ledger PERF1-V). Shipped 2026-09-25: PERF1-T2, CUDA graphs off for Qwen 3.5 on pre-Ampere cards from the snapshot's
 `model_type` (`f44cf72`; BACKLOG9: one digest across three processes, three with the caller's
 graphs on, about 3% slower). Answered 2026-09-25: PERF1-Y, Gemma 3 12B's `native` gate passes on both paths with BOS on every chunk (decode
 1.000578 [0.997951; 1.003197], prefill 1.000643; `backlog8-run1-1665f2ae`, ledger BACKLOG8); `plans` now
@@ -175,11 +175,7 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   expert choices, so a gate against bf16 on a T4 is likely inconclusive for MoE; first measure
   Qwen3.6's routing flips bf16 against float32 (`moe_routing.py`, adapted to its router), and
   gate only if they are rare.
-- **PERF1-V 8-bit-Router im Zeilen-Kernel.** Qwens `mlp.gate`/`shared_expert_gate` und Gemmas
-  `router.proj` sind 8-bit und laufen weiter emuliert (run 14: 20480 bzw. 16184 Aufrufe im
-  Fallback). Mechanismus: derselbe Kernel mit 8-bit-Entpackung (vier Werte je uint32).
-  Kill: unter 5 % Decode gegen `gather` im selben Lauf.
-- **PERF1-W Auslastung des Experten-Kernels.** Bei 8 Paaren erreicht er 24–41 GB/s von
+- **PERF1-W Auslastung des Experten-Kernels.** Deferred 2026-09-26 (agent decision): run 14's per-call probe times include a sync per call, so the utilisation they suggest (24–41 GB/s) is not the decode step's; measure the expert kernels inside a decode step (profiler or CUDA graph timing) before changing them blind. Bei 8 Paaren erreicht er 24–41 GB/s von
   ~320 (run 14); gate und up sind zwei Starts über dieselbe Zeile, und bei K = 512 (Qwens
   down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K
   zwei Zeilen je Warp (Halbwarp-Reduktion, bitgleich). Kill: unter 10 % Decode gegen
@@ -206,13 +202,10 @@ bf16 as the reference; none is available on the free Kaggle cells. No entry is o
 
 ## PORT2 — Rest (2026-09-24)
 
-- **PORT2-K Rest: Gemma 3 4B `float16` mit BOS und die Gemma-4-Referenz.** Run 1
-  (`port2k-run1-fe76f8df`, Ledger PORT2-K) hat Gemma 3 `float32` und beide Gemma-4-Pläne mit BOS
-  qualifiziert. Offen: (1) Gemma 3 4B `float16` — `load_engine` verweigert den Plan aufgrund des
-  No-BOS-Gates, also muss der Lauf am Loader vorbei messen (`mlx_lm.load` + `set_dtype(float16)`,
-  genau das, was `load_engine` für den Plan tut). Kill: obere Grenze > 1,005 — die Verweigerung
-  bleibt mit neuem Beleg; sonst wird die Zeile zu `recommended`. (2) Warum Gemma 4 E2B auch mit
-  BOS Perplexität 355,7 hat. Kill: keiner, eine Diagnose.
+Answered 2026-09-26: PORT2-K, both runs (ledger PORT2-K and PORT2-K run 2). Gemma 4's plans and
+Gemma 3's `float32` qualify with BOS; Gemma 3's `float16` stays refused with a BOS gate; Gemma 4 E2B's
+reference perplexity (~300 in every precision) is not quantisation, and settling it needs the
+transformers reference DATA2 describes. No PORT2 entry is open.
 
 ## DATA3 — Rest (2026-09-15)
 
