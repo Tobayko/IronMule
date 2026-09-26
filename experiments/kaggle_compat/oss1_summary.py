@@ -2,6 +2,9 @@
 
 Usage: python oss1_summary.py RESULTS_DIR [OUT.json]
 
+Also reads `perf1.py routing` (PERF1-U): a two-card run leaves one file per rank, each with
+its own layers, and they are joined in layer order.
+
 For every pair of recorded runs and every chunk: the share of (layer, position) cells whose
 sorted top-k experts differ, and the NLL difference. For flipped cells against the first
 bf16 run, where the first run's router margin lay: the margin is the gap between the k-th
@@ -17,7 +20,18 @@ from pathlib import Path
 def load(results):
     runs = {}
     for path in sorted(Path(results).glob("routing-*.json")):
-        runs[path.stem.removeprefix("routing-")] = json.loads(path.read_text())
+        name = path.stem.removeprefix("routing-")
+        if "-rank" in name:
+            continue
+        run = json.loads(path.read_text())
+        parts = [run] + [json.loads(p.read_text()) for p in Path(results).glob(f"routing-{name}-rank*.json")]
+        if len(parts) > 1:
+            parts.sort(key=lambda part: part["pipeline"]["layers"][0])
+            for i, row in enumerate(run["rows"]):
+                experts = [layer for part in parts for layer in part["rows"][i]["experts"]]
+                margins = [layer for part in parts for layer in part["rows"][i]["margins"]]
+                row["experts"], row["margins"] = experts, margins
+        runs[name] = run
     return runs
 
 
