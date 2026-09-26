@@ -345,11 +345,14 @@ a missing or extra field fails. Still open: RSS is not recorded at all, and
 `mlx_peak_bytes` is the child's own report, i.e. self-asserted. Kill when a new
 execution path can pass validation with absent or self-asserted resource evidence.
 
-**P2 safety debt (streaming worker output).** The current worker uses bounded
-`Popen` pipes and a 512 KiB cap, but `communicate()` still buffers the complete stream
-before the cap is checked. Replace this with a tempfile/selector-backed bounded reader
-that preserves progress markers and terminates the worker group on overflow. Kill when
-an overflow can block the producer, lose a completed-child marker, or leave an orphan.
+**P2 safety debt (streaming worker output) — answered 2026-09-26 (agent decision).**
+`ab._bounded_communicate` replaces `communicate()`: a selector drains both pipes as they
+fill and stops once either passes 512 KiB, so at most the cap plus one 64 KiB read is held,
+and `ab.run` then terminates and reaps the child (`output limit exceeded`). A real child
+writing without end is stopped by the cap, not the timeout, and reaped; a real child that
+puts 400 KiB on stderr before its `@@` marker keeps the marker (`tests/engine/test_ab.py`).
+No process group is needed for the reason (a) gives. Reopen if the child may spawn
+processes again.
 
 ---
 

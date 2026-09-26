@@ -12,9 +12,11 @@ import json
 import math
 import os
 import re
+import selectors
 import statistics
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from typing import Any, Mapping
 
@@ -477,6 +479,40 @@ def validate_result(result: Any, *, processes: int, repeats: int, warmup: int,
     return True, None
 
 
+def _bounded_communicate(process: subprocess.Popen[bytes],
+                         timeout: float | None) -> tuple[str, str, bool]:
+    """Drain both pipes as they fill and stop once either passes MAX_CHILD_OUTPUT.
+
+    `communicate()` buffered the whole stream before the cap was checked; this keeps at most
+    MAX_CHILD_OUTPUT plus one read per stream, and never lets the child block on a full pipe
+    while the other one is read. Returns (stdout, stderr, overflow); on overflow the child may
+    still be running and the caller terminates it. Raises `subprocess.TimeoutExpired`.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    buffers = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+    overflow = False
+    with selectors.DefaultSelector() as selector:
+        for fd in buffers:
+            selector.register(fd, selectors.EVENT_READ)
+        while selector.get_map() and not overflow:
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            for key, _ in selector.select(left):
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    selector.unregister(key.fd)
+                buffers[key.fd] += chunk
+                overflow = overflow or len(buffers[key.fd]) > MAX_CHILD_OUTPUT
+    stdout, stderr = (bytes(buffers[stream.fileno()]).decode("utf-8", "replace")
+                      for stream in (process.stdout, process.stderr))
+    if not overflow:
+        process.stdout.close()
+        process.stderr.close()
+        process.wait(timeout=None if deadline is None else max(0.0, deadline - time.monotonic()))
+    return stdout, stderr, overflow
+
+
 def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: int = 2,
         max_tokens: int = 32, model: str | None = None, prompt: str | None = None,
         *, child_timeout_seconds: float | None = None, compute_dtype: str | None = None,
@@ -528,7 +564,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                  CHILD_BOOTSTRAP, json.dumps(spec),
                  str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "q3f_child_guard.py")),
                  os.path.abspath(__file__)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 env={**os.environ, **CHILD_ENV},
             )
@@ -550,7 +586,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                     child_index=index,
                 ) from exc
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            stdout, stderr, overflow = _bounded_communicate(proc, timeout)
         except subprocess.TimeoutExpired:
             try:
                 _terminate_child(proc)
@@ -575,12 +611,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 f"child {index} communication failed",
                 partial_children=children, child_index=index,
             ) from exc
-        if not isinstance(stdout, str) or not isinstance(stderr, str):
-            raise ABRunError(
-                f"child {index} produced malformed output",
-                partial_children=children, child_index=index,
-            )
-        if len(stdout) > MAX_CHILD_OUTPUT or len(stderr) > MAX_CHILD_OUTPUT:
+        if overflow:
             try:
                 _terminate_child(proc)
             except RuntimeError as cleanup_error:
