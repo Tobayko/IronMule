@@ -6722,3 +6722,33 @@ gate recorded an abort, `research/e14b_analyse.py` calls it (`--accept-abort` to
 file anyway), and files written before the key existed pass unchanged. `tests/engine/test_bench_gate.py`
 covers both stop reasons, the recorded block and the refusal on synthetic runs. No measurement is
 involved; no result file changed.
+
+## PORT2-K — with BOS on every chunk, Gemma 4's plans qualify and Gemma 3's float32 gate passes (2026-09-26)
+
+`port2k-run1-fe76f8df`, commit `3b830de`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw data,
+logs and the submitted notebook: `experiments/kaggle_compat/results/port2k-run1-fe76f8df/`.
+Run time about 17 min of stages after setup, 0 EUR. Rules fixed in the notebook before the run:
+`quality.py` with BOS prepended to every chunk (`3b830de`), 16 chunks x 512 tokens of WikiText-2
+raw test, one precision per process, the same pinned revisions as the no-BOS gates, judged by
+`port2k_summary.py` with the plan table's seed (20260916) and 10 000 draws.
+
+**Engine suite on this commit:** 1277 passed, 28 skipped, 0 failed.
+
+| gate | bf16 perplexity | plan perplexity | ratio [95%] | no-BOS verdict | with BOS |
+| :-- | --: | --: | :-- | :-- | :-- |
+| Gemma 3 4B `float32` | 26.99 | 26.96 | 0.998686 [0.995891; 1.001671] | 1.017846 [0.990878; 1.051591], inconclusive | passes |
+| Gemma 4 E2B `float32` | 355.74 | 353.79 | 0.994514 [0.990986; 0.998173] | reference 22 212, unusable | passes |
+| Gemma 4 E2B `float16` | 355.74 | 353.93 | 0.994901 [0.991176; 0.998687] | reference 22 212, unusable | passes |
+| Gemma 3 4B `float16` | — | — | not measured | 2.043792 [1.873506; 2.244196], refused | — |
+
+Every file records BOS id 2 on both sides; no NLL was non-finite. Gemma 3 4B's `float16` stage
+ended at load: `load_engine` refused the plan on the strength of the no-BOS gate
+(`PlanRefused`), so the refusal cannot be re-examined through the product's own loader; the next
+run measures it past the loader. By the entry's kill ("a changed verdict gets a new row"):
+`numeric_plans.py` now carries this run for Gemma 3 `float32` (recommended; `native` stays the
+Gemma 3 recommendation, being faster) and for both Gemma 4 plans, so `ironmule plans` recommends
+`float16` for Gemma 4 on pre-Ampere cards (0.2536 of stock, +294%, run 9b). Agent decision: the
+Gemma 4 reference perplexity of 355.7 is still unexplained and far above Gemma 3 4B's 27.0, but the
+gate compares two computations of one model on the same tokens, both plans sit wholly inside the
+bound, and chat decoding matched stock in 5 of 6 requests for either plan (run 9b), so the rows are
+qualified and the open question stays in the backlog. The old no-BOS results stay as recorded.

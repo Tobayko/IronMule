@@ -1,0 +1,52 @@
+Error in sitecustomize; set PYTHONVERBOSE for traceback:
+ModuleNotFoundError: No module named 'wrapt'
+{
+ "gemma3-4b/float32": {
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "bf16_perplexity": 26.99230167984059,
+  "plan_perplexity": 26.95682698000985,
+  "ratio": 0.9986857475049179,
+  "interval": [
+   0.9958912286525633,
+   1.0016711145735622
+  ],
+  "nonfinite": 0,
+  "verdict": "passes"
+ },
+ "gemma4-e2b/float32": {
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "bf16_perplexity": 355.74161452079875,
+  "plan_perplexity": 353.7900624020113,
+  "ratio": 0.9945141303712351,
+  "interval": [
+   0.9909858843257502,
+   0.9981733277241316
+  ],
+  "nonfinite": 0,
+  "verdict": "passes"
+ },
+ "gemma4-e2b/float16": {
+  "chunks": 16,
+  "bos": [
+   2,
+   2
+  ],
+  "bf16_perplexity": 355.74161452079875,
+  "plan_perplexity": 353.9277485893938,
+  "ratio": 0.994901170238831,
+  "interval": [
+   0.9911759517865298,
+   0.9986872654269566
+  ],
+  "nonfinite": 0,
+  "verdict": "passes"
+ }
+}
