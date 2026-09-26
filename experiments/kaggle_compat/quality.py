@@ -32,7 +32,22 @@ started = time.time()
 # In single-precision mode `bf16` means the checkpoint's own dtype and anything else names
 # an opt-in compute plan (`float32`, `float16`), so two processes form one comparable pair.
 ONLY = os.environ.get("QUALITY_ONLY")
-if ONLY and ONLY != "bf16":
+if ONLY and os.environ.get("QUALITY_LOADER") == "mlx_lm":
+    # PORT2-K: `load_engine` refuses a plan that a no-BOS gate measured as ruinous, so that
+    # verdict cannot be re-examined through it. This loads the same weights with mlx-lm and
+    # applies the plan exactly as `load_engine` does (`set_dtype` on the floating parameters),
+    # without the refusal. Pair it with a bf16 run through the same loader.
+    from types import SimpleNamespace
+
+    from huggingface_hub import snapshot_download
+    from mlx_lm import load
+
+    model, tokenizer = load(snapshot_download(MODEL_ID, revision=REVISION, local_files_only=True))
+    if ONLY != "bf16":
+        model.set_dtype(mx.float32 if ONLY == "float32" else mx.float16)
+    single = SimpleNamespace(model=model)
+    bf16, fp32 = (single, None) if ONLY == "bf16" else (None, single)
+elif ONLY and ONLY != "bf16":
     single, tokenizer = load_engine(MODEL_ID, ironmule.BASELINE, revision=REVISION,
                                     compute_dtype=ONLY)
     bf16, fp32 = None, single
@@ -91,6 +106,7 @@ if ONLY:
     key = f"nll_{ONLY}"
     report = {"schema": "ironmule.port1-quality.v1", "model_id": MODEL_ID, "revision": REVISION,
               "text": TEXT, "chunks": len(rows), "chunk_tokens": CHUNK_TOKENS, "bos": bos, "rows": rows, "only": ONLY,
+              "loader": os.environ.get("QUALITY_LOADER", "load_engine"),
               f"ppl_{ONLY}": math.exp(st.mean(r[key] for r in rows)),
               "device": str(mx.default_device()), "seconds": time.time() - started}
     with open(OUT, "w") as stream:
