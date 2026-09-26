@@ -445,3 +445,23 @@ def test_every_grouping_mode_is_refused_on_a_hybrid_cache_and_again_at_dispatch(
     plain = SimpleNamespace(router=router, runtime=SimpleNamespace(engine=Stub([KVCache()])))
     assert isinstance(AppleRuntime._mode_for(plain, SimpleNamespace(route="throughput")),
                       AutomaticMode)
+
+
+def test_encode_passes_template_options_only_when_asked():
+    """NEXT1-Q: Qwen 3's direct mode needs `enable_thinking=False`; nothing is sent unasked."""
+    from ironmule.service import Runtime
+
+    seen = []
+
+    class Tokenizer:
+        def apply_chat_template(self, messages, tokenize, add_generation_prompt, **options):
+            seen.append(options)
+            return "rendered"
+
+        def encode(self, text, add_special_tokens):
+            return [1, 2, 3]
+
+    owner = SimpleNamespace(tokenizer=Tokenizer())
+    assert Runtime.encode(owner, "hi") == [1, 2, 3]
+    assert Runtime.encode(owner, "hi", enable_thinking=False) == [1, 2, 3]
+    assert seen == [{}, {"enable_thinking": False}]
