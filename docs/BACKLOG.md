@@ -642,6 +642,28 @@ means anyway.
 
 ## Tier 1 — cheap, grounded, worth doing first
 
+### `CHAT1` — Is IronMule's engine faster than mlx-lm's own generation in the chat? (2026-09-27)
+
+**Observation, not a measurement.** Recording the chat page on an M1 Max with Gemma 3 4B (one
+warm process each, one prompt, "Explain in about 300 words how a refrigerator moves heat out of
+its interior"): `ironmule serve --engine stock` (mlx-lm `stream_generate`) answered 493 tokens in
+5.97 s, 82.6 tok/s, first text after 0.43 s; `--engine ironmule` (the engine with this machine's
+tuned profile, `compatible_tuned_profile`) 445 tokens in 6.00 s, 74.1 tok/s, all text at the end.
+A scripted pair on a 256-token cap gave 75.5 against 70.5 tok/s. The two answers differ from
+token 44: mlx-lm prefills the last prompt token alone, `StrictOneShotPlan` with the rest; each
+server matches its own greedy computation exactly.
+
+**Mechanism.** The README's Apple numbers compare IronMule's tuned engine with IronMule's own
+baseline engine, not with mlx-lm's `stream_generate`, which the product serves by default and
+which overlaps the next step with the readback (async eval). The engine's wins (compiled fixed
+cache, head skip, readback every 2) may not cover that gap on long chat answers.
+
+**Test.** Preregistered, fresh interleaved processes, the product HTTP path both ways, several
+prompts and answer lengths, completion tokens per second from send to last token.
+**Kill:** engine below 1.0x `stream_generate` -> `--engine ironmule` is not offered as a speed-up
+and the README says what its "stock" is; above 1.05x -> the chat may default to it only after a
+separate decision on the differing answers.
+
 ### `B57` — Qualify a kernel per shape, through the profile
 
 **Mechanism.** `k3840_matvec` is admitted at load, against one `K`, by
