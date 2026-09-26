@@ -72,6 +72,9 @@ class Result:
 
 class InteractiveMode:
     name = "interactive"
+    #: Sequential: one request's state never meets another's. A mode that does not say
+    #: `groups = False` is treated as grouping by the hybrid-cache refusal below.
+    groups = False
 
     def executor(self, backend, telemetry):
         return SequentialExecutor(backend, telemetry)
@@ -91,7 +94,11 @@ def _refuse_grouping_on_a_hybrid_cache(engine: Any, mode: Any) -> None:
     Refusing costs a hybrid model its throughput mode and nothing else. Letting it through
     costs correctness, silently and irreproducibly, which the knob contract forbids.
     """
-    if getattr(mode, "name", None) != "throughput":
+    # NEXT1-D: decided by what the mode runs, not by its name. `AutomaticMode` always hands
+    # a group to the throughput or the paired executor, and the paired mode groups too, so
+    # a check of `name == "throughput"` let both through. `Runtime.serve` repeats this before
+    # every prefill, because a router or a caller can swap `Runtime.mode` after construction.
+    if getattr(mode, "groups", True) is False:
         return
     from .runtime import _cache_kinds, _new_cache
 
@@ -99,12 +106,15 @@ def _refuse_grouping_on_a_hybrid_cache(engine: Any, mode: Any) -> None:
     if model is None:
         return
     try:
-        kinds = _cache_kinds(_new_cache(model))
-    except Exception:  # noqa: BLE001 - an unreadable cache is not this guard's business
+        cache = _new_cache(model)
+    except Exception:  # noqa: BLE001 - no cache can be built, so nothing can be grouped either
         return
+    # An unknown cache type raises here (fail closed): grouping it is not qualified either.
+    kinds = _cache_kinds(cache)
     if "arrays" in kinds:
         raise ValueError(
-            "throughput mode is unsupported on a model with recurrent cache layers "
+            f"{getattr(mode, 'name', 'this')} mode groups requests and is unsupported on a "
+            "model with recurrent cache layers "
             f"({kinds.count('arrays')} of {len(kinds)} layers): grouped execution has been "
             "measured to change tokens and to do so non-deterministically. Use interactive "
             "mode, or see PORT2 in the backlog."
@@ -113,6 +123,7 @@ def _refuse_grouping_on_a_hybrid_cache(engine: Any, mode: Any) -> None:
 
 class ThroughputMode:
     name = "throughput"
+    groups = True
 
     def __init__(self, max_width: int = MAX_GROUP_WIDTH):
         self.max_width = max_width
@@ -132,6 +143,7 @@ class PairedThroughputMode:
     """
 
     name = "paired_throughput"
+    groups = True
 
     def __init__(self, *, share: bool = True, share_aligned: bool = False):
         # `share_aligned` extends sharing to o_proj and down_proj. Off by default: it is
@@ -211,6 +223,8 @@ class AutomaticMode:
     """
 
     name = "automatic"
+    #: Both of its delegates, the throughput and the paired executor, group requests.
+    groups = True
 
     def __init__(self, profile: dict | None = None, *, opt_in: bool = False,
                  identity_sha256: str | None = None, fingerprint: str | None = None,
@@ -510,9 +524,16 @@ class Runtime:
                              mlx=mx.__version__, mlx_lm=mlx_lm.__version__)
 
     # -- helpers --------------------------------------------------------------
-    def encode(self, text: str) -> list[int]:
+    def encode(self, text: str, **template_options: Any) -> list[int]:
+        """The prompt as the model's chat template renders it.
+
+        `template_options` go to the template unchanged, e.g. Qwen 3's
+        `enable_thinking=False` for its direct mode (NEXT1-Q). None are passed by default,
+        so the prompt contract stays the template's own; choosing a mode is the caller's.
+        """
         rendered = self.tokenizer.apply_chat_template(
-            [{"role": "user", "content": text}], tokenize=False, add_generation_prompt=True)
+            [{"role": "user", "content": text}], tokenize=False, add_generation_prompt=True,
+            **template_options)
         return list(self.tokenizer.encode(rendered, add_special_tokens=False))
 
     def session_plan(self, shared_prefix: str, name: str = "session") -> ReusableSessionPlan:
@@ -536,6 +557,9 @@ class Runtime:
             if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session"):
                 raise ValueError(f"unknown execution plan: {request.plan!r}")
 
+        # NEXT1-D: before any prefill, against the mode that will actually run. A Runtime
+        # built without an engine (a test double) has no model to group.
+        _refuse_grouping_on_a_hybrid_cache(getattr(self, "engine", None), self.mode)
         self.telemetry = Telemetry(mode=self.mode.name)
         capacity = self.backend.capacity_for([len(r.prompt_ids) for r in requests],
                                              max(r.max_tokens for r in requests))

@@ -98,6 +98,7 @@ from .local_learner import IntakeContext, LocalLearner, default_state_path
 from .monitoring import DriftMonitor, Observation, default_action_code_digest
 from .plans import ExecutionPlan, StrictOneShotPlan, plan_kind
 from .service import (AutomaticMode, InteractiveMode, Request,
+                      _refuse_grouping_on_a_hybrid_cache,
                       Result, Runtime, paired_status)
 from .silicon_profile import (match_silicon_parameter,
                               workload_class_for)
@@ -465,10 +466,19 @@ class AppleRuntime:
             # `AutomaticMode` is the shipped throughput path plus the profile's own
             # paired admission; it refuses back to throughput on its own if the model
             # declines. Re-deriving that split here would be a second mechanism.
-            return AutomaticMode(self.router.profile, opt_in=True,
+            mode = AutomaticMode(self.router.profile, opt_in=True,
                                  identity_sha256=self.router.identity_sha256,
                                  fingerprint=self.router.fingerprint,
                                  mlx=self.router.mlx, mlx_lm=self.router.mlx_lm)
+            try:
+                _refuse_grouping_on_a_hybrid_cache(
+                    getattr(getattr(self, "runtime", None), "engine", None), mode)
+            except ValueError:
+                # NEXT1-D: a model with recurrent cache layers must not be grouped; its
+                # sequential reference returns the same tokens, and the cohort's telemetry
+                # records `interactive`, so the route taken stays visible.
+                return InteractiveMode()
+            return mode
         return InteractiveMode()
 
     def _serve_cohort(self, decision: RouteDecision, requests: list[Request],

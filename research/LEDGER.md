@@ -6766,3 +6766,83 @@ M1 Max, Gemma 3 12B, 3 600 s, 798 HTTP requests matching the stock reference in 
 counts and finish reason, one deliberate cancel, no error, the same worker process throughout.
 Closed as answered; sampling and multi-message features stay with backlog C1, batched serving with
 PERF1-K2. Nothing was re-measured.
+
+## PERF1-V — the 8-bit router through the row kernel buys nothing; rejected (2026-09-26)
+
+`perf1v-run1-cfa81967`, commit `3888dce`, Kaggle Tesla T4 (x2 for Qwen), mlx `0.32.2`, mlx-lm
+`0.31.3`, every arm with `PERF1_ARITH=pinned`. Raw data, logs and the submitted notebook:
+`experiments/kaggle_compat/results/perf1v-run1-cfa81967/`. Rules fixed in the notebook before the
+run: probe first, then fresh processes in the order control, candidate, control, candidate; kill
+when the candidate's median decode over its six measured generations is under 1.05x the control's.
+The run waited about two hours in Kaggle's queue and then took 44 min, 0 EUR.
+
+**Probe:** the 8-bit kernel against a float32 reference on four router shapes, M = 1, 2, 8: worst
+relative error 0.0028, inside the 1e-2 tolerance.
+
+| model (256 prompt tokens, 128 new) | control | control decode tok/s, median [min; max] | with `r8` | ratio | verdict |
+| :-- | :-- | :-- | :-- | --: | :-- |
+| Gemma 4 26B-A4B, one card | `kernel+gather` | 35.87 [34.33; 36.91] | 34.64 [33.47; 36.07] | 0.9655 | rejected |
+| Qwen3.6 35B-A3B, two cards | `kernel+p16+gather` | 9.49 [9.11; 9.69] | 9.57 [9.24; 9.96] | 1.0081 | rejected |
+
+The route took the calls it was meant to (Gemma: 15 240 of the 16 184 former fallback calls;
+Qwen: 20 320 of 20 480), so the router matvecs were never the cost that mattered: at N = 128 or
+256 output rows they are launch-sized, and replacing emulated bfloat16 there moves nothing
+measurable. TTFT was unchanged (Gemma 37.8 s, Qwen 26.7-27.2 s in every arm). As the notebook
+recorded rather than gated, every candidate generation left the control's tokens, since the
+router's arithmetic changed. The `r8` route stays in `perf1.py` as a harness option; nothing
+enters the product.
+
+## PORT2-K, run 2 — Gemma 3's float16 ruin holds with BOS; Gemma 4's perplexity is not quantisation (2026-09-26)
+
+`port2k-run2-39af179b`, commit `2175a34`, Kaggle Tesla T4, mlx `0.32.2`, mlx-lm `0.31.3`. Raw data,
+logs and the submitted notebook: `experiments/kaggle_compat/results/port2k-run2-39af179b/`. About
+15 min of stages after setup, 0 EUR. Rules fixed in the notebook before the run.
+
+**Engine suite on this commit:** 1282 passed, 29 skipped, 0 failed.
+
+**Loader check.** `load_engine` refuses Gemma 3 `float16`, so this run loaded through mlx-lm with
+the same `set_dtype` (`QUALITY_LOADER=mlx_lm`, `9e26abe`). Its bf16 per-chunk NLL equals run 1's,
+measured through `load_engine`, on all 16 chunks (largest difference 0.0), so the two loaders
+compute the same thing and the float16 verdict counts.
+
+**Gemma 3 4B `float16`, BOS on every chunk:** perplexity 26.99 -> 55.18, ratio 2.044178
+[1.960923; 2.138012] against bf16 (seed 20260916). Without BOS (port2 run 6) it was 2.043792
+[1.873506; 2.244196]: BOS changes nothing for this plan, whose float16 range cannot carry
+Gemma 3's activations. By the entry's kill the refusal stays, now with this run as its evidence
+(`numeric_plans.py`).
+
+**Gemma 4 E2B's reference, diagnosis.** The same 16 BOS chunks through other checkpoints of the
+same model, bf16 compute through mlx-lm: 4-bit (run 1) 355.7, 8-bit (`03dcf209`) 295.9, bf16
+weights (`fb0b166b`) 307.6. Quantisation costs the 4-bit checkpoint about 16% in perplexity; it
+does not explain a reference ten times Gemma 3 4B's. What remains is either mlx-lm 0.31.3's
+`gemma4_text` or the model itself on raw WikiText; telling them apart needs a second
+implementation as reference (transformers, which needs the Gemma licence on Kaggle, DATA2). The
+Gemma 4 plan verdicts of run 1 are unaffected: they compare two computations of one model.
+
+## PERF1-X — `native` loads on a card its weights nearly fill, by skipping the head's prefill copy (2026-09-26)
+
+Two Kaggle Tesla T4 runs, mlx `0.32.2`, mlx-lm `0.31.3`, `experiments/kaggle_compat/perf1x_check.py`
+through the product engine (`load_engine(..., compute_dtype="native")`, untuned knobs), then
+`ironmule benchmark`'s workload once. Raw data, logs and notebooks:
+`experiments/kaggle_compat/results/perf1x-run1-931331a9/` and `perf1x-run2-a01222de/`. 0 EUR.
+
+Under `native` the engine's prefill turns each 4-bit weight into one float16 copy. On a T4 the
+head of Gemma 4 26B-A4B (262144 rows, 1.48 GB as float16) does not fit beside its 14.20 GB of
+weights, which ended the first prefill in `cudaMallocAsync ... out of memory` (PERF1 run 15).
+`f70805a` lets `load_engine` switch `head_skip_prefill` on under `native` only when weights plus
+that copy exceed 90% of the card's memory; the head for the last position is then the decode
+kernel's arithmetic, which the plan's gate covers, and the reason is recorded in
+`native_admission["head_skip_prefill_forced"]`.
+
+| run | commit | Gemma 4 26B-A4B | Qwen 3 8B | engine suite |
+| :-- | :-- | :-- | :-- | :-- |
+| 1 (`perf1x-run1-931331a9`) | `f70805a` | out of memory, as run 15: the check read no memory size | served, no head skip | 1284 passed, 0 failed |
+| 2 (`perf1x-run2-a01222de`) | `55c86e6` | served with the head skip forced, peak 14.90 GB, 6 x 48 tokens in 79.3 s | served, no head skip, peak 8.13 GB, 17.8 s | 1285 passed, 0 failed |
+
+Run 1 found the first version reading Metal's and two other key names while MLX's CUDA backend
+reports `total_memory` (16 106 127 360 on this card); `55c86e6` reads it first, with a test. The
+recorded reason in run 2: "the head's float16 prefill copy (1.48 GB) does not fit beside 14.20 GB
+of weights in 90% of this card's 16.11 GB". PERF1-X's own kill named exactly this outcome ("native on
+such cards only with head_skip_prefill"); what is new is that the engine applies it by itself on
+the cards that need it and on no other. No speed or quality claim: the walls are single passes
+that include the first prefill. Both runs waited 2.5-3.5 h in Kaggle's queue.

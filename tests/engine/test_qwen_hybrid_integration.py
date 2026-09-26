@@ -144,10 +144,9 @@ def test_qwen_strict_matches_unmodified_greedy_and_hybrid_shapes(qwen_runtime):
         assert result.tokens == expected
         assert result.stop_reason == _stop_reason(expected, rt.backend.eos_ids)
 
-    # Only compare grouped execution after the unmodified reference gate passes.
-    rt.mode = ironmule.ThroughputMode()
-    grouped = rt.serve(requests)
-    for result, expected in zip(grouped, references):
-        assert result.tokens == expected
-        assert result.stop_reason == _stop_reason(expected, rt.backend.eos_ids)
     assert rt.telemetry.snapshot()["correctness_errors"] == 0
+    # Grouping a recurrent cache is refused (PORT2), and since NEXT1-D at dispatch too:
+    # switching the mode after construction must not reach grouped execution.
+    rt.mode = ironmule.ThroughputMode()
+    with pytest.raises(ValueError, match="recurrent cache layers"):
+        rt.serve(requests)

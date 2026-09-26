@@ -57,8 +57,8 @@ PAIRED = {
         "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
         "port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json", "nll_float16"),
     ("mlx_lm.models.gemma3_text", "float16"): (
-        "port2-run6-59ce8efc/quality16-gemma3-4b-bf16.json",
-        "port2-run6-59ce8efc/quality16-gemma3-4b-float16.json", "nll_float16"),
+        "port2k-run2-39af179b/quality-gemma3-4b-bf16.json",
+        "port2k-run2-39af179b/quality-gemma3-4b-float16.json", "nll_float16"),
     ("mlx_lm.models.qwen3", "float16"): (
         "port2-run6-59ce8efc/quality16-qwen3-8b-bf16.json",
         "port2-run6-59ce8efc/quality16-qwen3-8b-float16.json", "nll_float16"),
@@ -149,12 +149,12 @@ def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
 
     Gemma 3 in float32 once measured 1.017846 with an interval that contains 1 (no BOS,
     port2 run 2) and passes with BOS (PORT2-K). Gemma 3 in float16 measured an interval
-    starting at 1.87 in the no-BOS regime and is still refused until a BOS gate replaces it.
+    starting at 1.87 without BOS and at 1.96 with it (PORT2-K run 2), so it stays refused.
     A wide interval must never refuse; a measured ruin must.
     """
     gemma = "mlx_lm.models.gemma3_text"
     check(gemma, "float32", CUDA_PRE_AMPERE)
-    with pytest.raises(PlanRefused, match="2.043792"):
+    with pytest.raises(PlanRefused, match="2.044178"):
         check(gemma, "float16", CUDA_PRE_AMPERE)
     # Unmeasured architectures and other device classes are not this guard's business.
     check("mlx_lm.models.gemma4_text", "float16", CUDA_PRE_AMPERE)
@@ -201,6 +201,27 @@ def test_only_a_faster_and_qualified_plan_is_ever_recommended():
     assert recommend("mlx_lm.models.ministral3", CUDA_PRE_AMPERE)[0] == "float32"
     assert recommend("mlx_lm.models.llama", CUDA_PRE_AMPERE)[0] is None
     assert "no numeric plan has been measured" in recommend("nobody.measured.this", CUDA_PRE_AMPERE)[1]
+
+
+def test_a_recommendation_reaches_only_the_checkpoints_it_measured():
+    """NEXT1-C: an architecture row does not qualify a checkpoint nobody measured.
+
+    Gemma 4 E4B shares E2B's architecture and was timed, but no gate ran on it; Qwen 3 14B
+    passed the float16 gate but was never timed under it. Neither may inherit a
+    recommendation from a sibling, and a caller without a model hears which checkpoints
+    the recommendation is for.
+    """
+    gemma4 = "mlx_lm.models.gemma4_text"
+    assert recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e2b-it-4bit")[0] == "float16"
+    plan, reason = recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e4b-it-4bit")
+    assert plan is None and "was not measured" in reason
+    assert "gemma-4-e2b-it-4bit" in recommend(gemma4, CUDA_PRE_AMPERE)[1]
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-14B-4bit")[0] == "native"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-32B-4bit")[0] is None
+    for row in MEASUREMENTS:
+        if row.verdict() == "recommended":
+            assert row.models, f"{row.label} {row.plan}: a recommendation needs measured checkpoints"
 
 
 def test_device_class_names_only_what_changes_the_answer():

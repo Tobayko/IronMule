@@ -45,7 +45,9 @@ def test_install_swaps_only_this_models_modules(monkeypatch):
     tokens = mx.array([[1, 2, 3]])
     before = model.embed(tokens)
     record = cuda_native.install(model, TURING)
-    assert record == {"modules": 2, "probe_rel_error": 0.0}
+    assert {k: record[k] for k in ("modules", "probed_shapes", "probe_rel_error")} == {
+        "modules": 2, "probed_shapes": 2, "probe_rel_error": 0.0}
+    assert record["probe_seconds"] >= 0
     assert type(model.proj) is cuda_native.NativeQuantizedLinear
     assert type(model.embed) is cuda_native.NativeQuantizedEmbedding
     assert type(other.proj) is nn.QuantizedLinear
@@ -126,3 +128,57 @@ def test_experts_route_by_rows_and_match_stock(monkeypatch):
         # Eight requests are 64 rows, which SwitchGLU sorts by expert first; a prefill's 320
         # rows go to float16 gather_qmm instead.
         assert calls == routed
+
+
+class _Head(nn.Module):
+    """A 4-bit head of 1024 x 256 beside nothing else: its float16 copy is 512 KiB."""
+
+    def __init__(self):
+        super().__init__()
+        self.lm_head = nn.QuantizedLinear(256, 1024, bias=False, group_size=64, bits=4)
+
+
+def test_head_skip_is_needed_only_when_the_heads_copy_does_not_fit():
+    model = _Head()
+    from mlx.utils import tree_flatten
+
+    weights = sum(v.nbytes for _, v in tree_flatten(model.parameters()))
+    copy = 1024 * 256 * 2
+    roomy = {"memory_size": int((weights + copy) / cuda_native.PREFILL_HEADROOM) + 1024}
+    tight = {"memory_size": int((weights + copy) / cuda_native.PREFILL_HEADROOM) - 1024}
+    assert cuda_native.head_skip_needed(model, roomy) is None
+    reason = cuda_native.head_skip_needed(model, tight)
+    assert reason and "last position only" in reason
+
+
+def test_the_cuda_backend_key_is_read():
+    """PERF1-X run 1: MLX on CUDA says `total_memory`; reading only Metal's key decided nothing."""
+    model = _Head()
+    from mlx.utils import tree_flatten
+
+    weights = sum(v.nbytes for _, v in tree_flatten(model.parameters()))
+    tight = int((weights + 1024 * 256 * 2) / cuda_native.PREFILL_HEADROOM) - 1024
+    assert cuda_native.head_skip_needed(model, {"total_memory": tight, "free_memory": tight})
+
+
+def test_no_memory_size_decides_nothing():
+    assert cuda_native.head_skip_needed(_Head(), {"device_name": "Tesla T4"}) is None
+    assert cuda_native.head_skip_needed(_Head(), None) is None
+
+
+def test_every_shape_class_is_probed_once(monkeypatch):
+    """NEXT1-E: one probe per (module type, weight shape), not the first module alone."""
+    probed = []
+    monkeypatch.setattr(cuda_native, "_probe", lambda module: probed.append(module) or 0.0)
+
+    class Twin(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.a = nn.Linear(128, 64, bias=False)
+            self.b = nn.Linear(128, 64, bias=False)    # same shape as a: probed once
+            self.c = nn.Linear(128, 96, bias=False)    # a second shape: probed too
+            nn.quantize(self, group_size=64, bits=4)
+            self.set_dtype(mx.bfloat16)
+
+    record = cuda_native.install(Twin(), TURING)
+    assert record["modules"] == 3 and record["probed_shapes"] == 2 and len(probed) == 2

@@ -26,6 +26,7 @@ own first eligible weight agrees with a float32 reference.
 from __future__ import annotations
 
 import math
+import time
 from typing import Any
 
 import mlx.core as mx
@@ -243,9 +244,17 @@ def _eligible(module: nn.Module) -> bool:
     return module["scales"].dtype == mx.bfloat16 and (module["weight"].shape[-1] * 8) % 32 == 0
 
 
+#: The kernel picks its rows per warp from N (four from 8192 on). A slice this tall keeps
+#: that choice and the full K while its float32 reference stays small: a 262144-row head
+#: dequantised whole would need about 2.9 GB for the probe alone (NEXT1-E).
+PROBE_ROWS = 8192
+
+
 def _probe(module: nn.Module) -> float:
     """Relative error of the kernel on the module's own weight against a float32 reference."""
     w, scales, biases = module["weight"], module["scales"], module["biases"]
+    if not isinstance(module, QuantizedSwitchLinear) and w.shape[0] > PROBE_ROWS:
+        w, scales, biases = w[:PROBE_ROWS], scales[:PROBE_ROWS], biases[:PROBE_ROWS]
     x = mx.random.normal((1, w.shape[-1] * 8), key=mx.random.key(0)).astype(mx.bfloat16)
     if isinstance(module, QuantizedSwitchLinear):  # one token against its first eight experts
         experts = mx.arange(min(8, w.shape[0]), dtype=mx.uint32)
@@ -259,6 +268,41 @@ def _probe(module: nn.Module) -> float:
     return float(error / mx.maximum(mx.max(mx.abs(reference)), 1e-6))
 
 
+#: PERF1-X: the prefill turns each 4-bit weight it multiplies into one float16 copy for a GEMM.
+#: Beside nearly full weights the head's copy does not fit: Gemma 4 26B-A4B's 262144-row head,
+#: 1.48 GB beside 14.2 GB on a T4, ended the first prefill in `cudaMallocAsync ... out of
+#: memory` (PERF1 run 15), while the same arm with `head_skip_prefill`, which computes the head
+#: for the last position only through the decode kernel, ran (run 16). The fraction leaves room
+#: for the CUDA context, the cache and the activations beside weights and copy.
+PREFILL_HEADROOM = 0.9
+
+
+def head_skip_needed(model: nn.Module, device_info: dict[str, Any] | None) -> str | None:
+    """Why this card needs `head_skip_prefill` under the plan, or None when the head fits.
+
+    None as well when the device reports no memory size: then nothing is decided for the
+    caller and the load proceeds as before.
+    """
+    info = device_info or {}
+    # MLX's CUDA backend reports `total_memory` (PERF1-X run 1 on a T4); Metal `memory_size`.
+    total = next((info[key] for key in ("total_memory", "memory_size", "total_memory_bytes", "memory_bytes")
+                  if isinstance(info.get(key), int) and info[key] > 0), None)
+    heads = [m for name, m in model.named_modules()
+             if name.rsplit(".", 1)[-1] in ("lm_head", "embed_tokens")
+             and isinstance(m, (nn.QuantizedLinear, nn.QuantizedEmbedding)) and m.bits == BITS]
+    if total is None or not heads:
+        return None
+    from mlx.utils import tree_flatten
+
+    weights = sum(value.nbytes for _, value in tree_flatten(model.parameters()))
+    copy = max(m["weight"].shape[0] * m["weight"].shape[1] * 8 * 2 for m in heads)
+    if weights + copy <= PREFILL_HEADROOM * total:
+        return None
+    return (f"the head's float16 prefill copy ({copy / 1e9:.2f} GB) does not fit beside "
+            f"{weights / 1e9:.2f} GB of weights in {PREFILL_HEADROOM:.0%} of this card's "
+            f"{total / 1e9:.2f} GB, so the head is computed for the last position only")
+
+
 def install(model: nn.Module, device_info: dict[str, Any] | None) -> dict[str, Any]:
     """Swap every eligible quantised module of `model` to the native kernels, or refuse."""
     from .numeric_plans import CUDA_PRE_AMPERE, device_class
@@ -268,12 +312,19 @@ def install(model: nn.Module, device_info: dict[str, Any] | None) -> dict[str, A
     modules = [m for _, m in model.named_modules() if _eligible(m)]
     if not modules:
         raise ValueError("the native plan found no 4-bit group-64 affine bfloat16 weights")
-    switches = [m for m in modules if isinstance(m, QuantizedSwitchLinear)]
-    error = max(_probe(m) for m in [modules[0]] + switches[:1])  # each kernel on its own weight
+    # NEXT1-E: every routed shape class once, not only the first module and one switch: a
+    # kernel right on one N/K pair has not been shown right on another.
+    shapes: dict[tuple, nn.Module] = {}
+    for module in modules:
+        shapes.setdefault((type(module).__name__, tuple(module["weight"].shape)), module)
+    started = time.perf_counter()
+    error = max(_probe(m) for m in shapes.values())
+    probe_seconds = time.perf_counter() - started
     if not error <= PROBE_TOLERANCE:
         raise ValueError(f"the native kernel disagrees with the float32 reference ({error:.3g})")
     for module in modules:
         module.__class__ = (NativeQuantizedEmbedding if isinstance(module, nn.QuantizedEmbedding)
                             else NativeQuantizedSwitchLinear if isinstance(module, QuantizedSwitchLinear)
                             else NativeQuantizedLinear)
-    return {"modules": len(modules), "probe_rel_error": error}
+    return {"modules": len(modules), "probed_shapes": len(shapes), "probe_rel_error": error,
+            "probe_seconds": round(probe_seconds, 3)}

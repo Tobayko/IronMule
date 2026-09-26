@@ -142,7 +142,10 @@ def _numeric_plan_summary() -> str:
     for architecture in sorted({row.architecture for row in MEASUREMENTS}):
         rows = [row for row in MEASUREMENTS if row.architecture == architecture]
         plan, _ = recommend(architecture, CUDA_PRE_AMPERE)
-        lines.append(f"{rows[0].label}={plan or 'none'}")
+        # NEXT1-C: name the checkpoints a recommendation covers, never the whole family.
+        scope = next((row.models for row in rows if row.plan == plan), ())
+        where = f" on {', '.join(m.rsplit('/', 1)[-1] for m in scope)}" if plan else ""
+        lines.append(f"{rows[0].label}={plan or 'none'}{where}")
     return ", ".join(lines) + " (see `ironmule plans` for the numbers behind each)"
 
 
@@ -631,6 +634,8 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
         prog="ironmule plans",
         description="Opt-in numeric plans, and the measurement behind each.")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--model", default=None,
+                        help="a checkpoint id: recommend only if that checkpoint was measured")
     args = parser.parse_args(list(argv))
     from ironmule.numeric_plans import CUDA_PRE_AMPERE, MEASUREMENTS, QUALITY_BOUND, recommend
 
@@ -658,7 +663,7 @@ def _run_plans(argv: Iterable[str] = ()) -> int:
         print(f"  {row.label:16} {row.plan:9} {change:>10} {quality:>28}  {row.verdict()}")
     print()
     for architecture in sorted({row.architecture for row in MEASUREMENTS}):
-        _, reason = recommend(architecture, CUDA_PRE_AMPERE)
+        _, reason = recommend(architecture, CUDA_PRE_AMPERE, model_id=args.model)
         print(f"  {reason}")
     print("\n  A plan is never chosen for you. `recommended` means measured faster with the")
     print("  whole quality interval inside the bound; `unqualified` means the speed is real")
