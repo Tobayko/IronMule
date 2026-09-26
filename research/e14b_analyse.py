@@ -51,6 +51,9 @@ def gain(runs, better, worse, batch):
 
 def main() -> int:
     payload = json.loads((RAW / "E14b_results_main.json").read_text())
+    from ironmule.bench import refuse_aborted  # noqa: PLC0415 - R10, only the analysis needs it
+
+    refuse_aborted(payload, accept_abort="--accept-abort" in sys.argv[1:])
     runs = payload["runs"]
     batches = [b for b in BATCHES if per_process(runs, "A", b)]
     result = {"experiment": "E14b", "processes": len(runs), "batches": batches,
