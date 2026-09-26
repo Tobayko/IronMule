@@ -199,9 +199,10 @@ transformers reference DATA2 describes. No PORT2 entry is open.
 
 ## NEXT1 — Better answer quality, stability, and speed (2026-09-26)
 
-**Status:** Hypotheses from source review and existing records. No local or Kaggle
-runs were started for this entry. Written against `research/port2-model-families` and
-ported to the current tree on 2026-09-26; the owner's review of that day set the order
+**Status:** Hypotheses from source review and existing records. NEXT1 run 1 (Kaggle
+T4, ledger NEXT1 run 1) answered D and measured E's admission cost; the rest is
+unmeasured. Written against `research/port2-model-families` and ported to the current
+tree on 2026-09-26; the owner's review of that day set the order
 and the scope notes in D, C and Q. The reported `3/6`, `2/6`, and `4/6` values in
 `cross.py` count **requests with token sequences identical to a reference arm**,
 not factually correct answers. Grouped Qwen 3.5 9B reached `3/6` and varied
@@ -215,8 +216,8 @@ all six stock and `native` Qwen 3 14B outputs in both run-7 repetitions start
 with `<think>` and none reaches `</think>` within 48 tokens (NEXT1-Q).
 None of the items below changes historical verdicts or activates a plan.
 
-**Order (2026-09-26):** NEXT1-D, then NEXT1-C, then NEXT1-Q; NEXT1-E before any
-wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
+**Order (2026-09-26):** NEXT1-D (answered, ledger NEXT1 run 1), then NEXT1-C, then
+NEXT1-Q; NEXT1-E before any wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
 No longer prerequisites: PORT2-K (both runs, ledger PORT2-K), PERF1-T/T2, PERF1-M and
 PERF1-Y (ledger BACKLOG1-BACKLOG9), and PERF1-N (diagnosed; projection fusion is refused
 under `native`). PERF1-X (answered: the head skip on full cards), PERF1-K2 (deferred)
@@ -329,42 +330,14 @@ measured cells as `unqualified`.
 there from a positive model-wide recommendation. An architecture row alone
 cannot qualify a new model revision.
 
-### NEXT1-D — Enforce the hybrid-cache guard at the actual dispatch
-
-**Implemented 2026-09-26, CI-verified only.** Modes declare `groups`; the refusal checks
-that attribute (unknown modes count as grouping), runs again in `Runtime.serve` before
-`build_sessions` prefills, fails closed on unknown cache types, and the router falls back
-to `InteractiveMode` for such a model. Unit tests cover every grouping mode, a swapped mode
-at dispatch and the router; the Qwen integration test now expects the refusal after its
-sequential gate. Still open from the gate below: a real hybrid model's token and state
-comparison, which runs with that integration test when `IRONMULE_QWEN_MODEL` is set.
-
-**Mechanism.** `ironmule.service.Runtime.__init__` checks recurrent caches
-once. `Runtime.mode` is then writable (`docs/RUNTIME.md` documents switching),
-`router.py` changes it per dispatch, and `AutomaticMode` can choose
-`ThroughputMode`. `Runtime.serve()` creates the executor without a second
-cache check. The model-gated Qwen integration test even switches from
-interactive to throughput and expects grouped equality. These routes can
-bypass the PORT2 refusal. The guard has to see the executor actually chosen for a
-dispatch: `AutomaticMode` can pick grouped execution without being named `throughput`,
-so a check of the mode's name alone is bypassable.
-
-**Gate.** Guard the actual executor choice before prefill or model work.
-Cover mode mutation, router, and automatic fallback with hybrid-cache token
-**and state** comparisons against sequential execution. Align the integration
-test with the current contract. Fail closed on unknown cache types.
-
-**Kill/pivot.** If another guard demonstrably covers every route, avoid a
-second one. Otherwise keep hybrid grouping disabled until a new graph-free
-qualification explicitly admits it.
-
 ### NEXT1-E — Admit the CUDA `native` kernel per routed shape
 
-**Implemented 2026-09-26, CI-verified only:** `install()` probes every (module type, weight
+**Implemented 2026-09-26:** `install()` probes every (module type, weight
 shape) class once instead of the first module and one switch, records `probed_shapes` and
 `probe_seconds`, and probes a head taller than 8192 rows on its first 8192 (same K, same rows
-per warp) so its float32 reference is not gigabytes. Still open from the gate: boundary and
-non-finite inputs, and the on-GPU run that measures the admission cost.
+per warp) so its float32 reference is not gigabytes. Admission cost on a T4 (NEXT1 run 1):
+6 classes in 8.0 s for Qwen 3 8B, 7 in 9.9 s for Gemma 3 12B, once per load; Qwen 3 8B's
+tokens equal PERF1-X run 2's. Still open from the gate: boundary and non-finite inputs.
 
 **Mechanism.** `cuda_native.install()` replaces every eligible 4-bit module,
 but `_probe()` checks only the first module and at most one MoE switch on a
@@ -448,7 +421,7 @@ recurrence path.
 (`.partial`, then `os.replace`), and `experiments/kaggle_compat/ranks.py`'s `all_ranks()`
 accepts a two-card stage only when every rank's file exists, parses, agrees on arm, mode
 and model, and carries ranks 0..size-1. The next two-card notebook judges its stages with
-it and runs its self-check first. Not yet covered: code/input hashes per rank and owned
+it and runs its self-check first (passes on the Kaggle image, NEXT1 run 1). Not yet covered: code/input hashes per rank and owned
 child cleanup.
 
 **Mechanism.** `experiments/kaggle_compat/perf1_run13.py:run` treats existence

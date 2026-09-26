@@ -6847,6 +6847,27 @@ such cards only with head_skip_prefill"); what is new is that the engine applies
 the cards that need it and on no other. No speed or quality claim: the walls are single passes
 that include the first prefill. Both runs waited 2.5-3.5 h in Kaggle's queue.
 
+## NEXT1 run 1 — the hybrid-cache refusal holds at dispatch on a real Qwen 3.5, `native` admission costs 8-10 s per load (2026-09-26)
+
+One Kaggle Tesla T4 run at `306b469` (main after PR #17), mlx `0.32.2`, mlx-lm `0.31.3`. Raw data,
+logs and notebook: `experiments/kaggle_compat/results/next1-run1-95c71276/`. 0 EUR, 10 min.
+
+| check | backlog | result |
+| :-- | :-- | :-- |
+| engine suite, `-m "not integration"` | all | 1288 passed, 0 failed, 29 skipped (macOS-only probes, sealed doc links, no cached Gemma 3 1B) |
+| Qwen 3.5 9B hybrid integration test, own process | NEXT1-D | passed: interactive strict tokens equal the unmodified greedy loop, recurrent state shapes stay fixed, and switching the Runtime to throughput afterwards is refused before any prefill |
+| `native` through the product engine, Qwen 3 8B | NEXT1-E | served; 6 shape classes probed in 8.0 s, largest relative error 0.0036; tokens equal PERF1-X run 2's (6/6) |
+| `native` through the product engine, Gemma 3 12B | NEXT1-E | served; 7 shape classes probed in 9.9 s, largest relative error 0.0028 |
+| `experiments/kaggle_compat/ranks.py` self-check | NEXT1-I | passed |
+
+NEXT1-D is answered and leaves the backlog: every mode declares whether it groups, the refusal
+runs again in `Runtime.serve` before prefill, unknown cache types and unknown modes count as
+grouping, and the router serves such a model with `InteractiveMode`. The unit tests cover every
+grouping mode and the router; this run adds the real hybrid model for the mode swap. Grouping on
+recurrent caches stays disabled until a graph-free qualification admits it (the entry's kill).
+NEXT1-E's admission cost is a one-time load cost, not serving time; its boundary and non-finite
+inputs stay open, as do NEXT1-I's per-rank hashes and child cleanup. No speed or quality claim.
+
 ## DEMO2-5 — show videos of IronMule on a Kaggle T4, and what recording them found (2026-09-28)
 
 The user asked for short Kaggle runs recorded as show videos, first one question, then several at
