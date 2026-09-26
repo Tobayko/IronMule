@@ -121,9 +121,9 @@ the grouped all-EOS round and `Runtime.serve`'s result; `R4` in `tests/engine/te
 `test_telemetry_does_not_present_zero_as_a_correctness_check` and the benchmark's
 structured mismatch exit in `tests/engine/test_benchmark.py`; `R6`/`R7` in
 `tests/engine/test_r6_r7.py`; `R2` and `R3` are open entries of their own). What remains
-is Apple-Silicon model CI, and it is blocked by hardware, not approval: GitHub's hosted
-macOS runners are virtual machines without Metal, so a model test there cannot run.
-Reopen when a self-hosted Apple-Silicon runner exists.
+is Apple-Silicon model CI. GitHub's hosted `macos-14` runner does run Metal (CI's doctor
+step prints `MLX Metal device: Metal GPU operation verified`), so the integration suite can
+run there against a cached, pinned snapshot; open until that job exists and is green.
 
 ### `S1` — Persistent local service with an explicit overload contract
 
