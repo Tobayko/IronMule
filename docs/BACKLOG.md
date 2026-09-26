@@ -351,10 +351,14 @@ records every process operation (`subprocess.Popen`, `os.system`, `os.fork`, `os
 (`test_q3f_guard_blocks_and_records_every_process_operation_in_isolated_child`), so a
 timed-out child has no descendants to orphan. Reopen if the guard's operation set shrinks.
 
-**P2 safety debt (evaluator-owned identity).** The runtime must expose per-repeat
-physical/logical tokens, counts, stop reasons, capacities, RSS and resource gates
-without letting the optimizer infer missing values. Kill when a new execution path
-can pass validation with absent or self-asserted identity/resource evidence.
+**P2 safety debt (evaluator-owned identity) — mostly answered, checked 2026-09-26.**
+`ab._validate_child_record` requires the exact field set per child and per arm and
+cross-checks it: per-repeat logical and physical tokens, their counts
+(`{"logical": len, "physical": len}`), stop reasons in `{eos, length}`, positive
+capacities, `decode_steps == len(physical[0]) - 1` and a recomputed determinism flag;
+a missing or extra field fails. Still open: RSS is not recorded at all, and
+`mlx_peak_bytes` is the child's own report, i.e. self-asserted. Kill when a new
+execution path can pass validation with absent or self-asserted resource evidence.
 
 **P2 safety debt (streaming worker output).** The current worker uses bounded
 `Popen` pipes and a 512 KiB cap, but `communicate()` still buffers the complete stream
