@@ -440,8 +440,11 @@ recurrence path.
 (`.partial`, then `os.replace`), and `experiments/kaggle_compat/ranks.py`'s `all_ranks()`
 accepts a two-card stage only when every rank's file exists, parses, agrees on arm, mode
 and model, and carries ranks 0..size-1. The next two-card notebook judges its stages with
-it and runs its self-check first (passes on the Kaggle image, NEXT1 run 1). Not yet covered: code/input hashes per rank and owned
-child cleanup.
+it and runs its self-check first (passes on the Kaggle image, NEXT1 run 1). Since the same
+day every rank also records `code_sha256` (its `perf1.py`), `input_sha256` (the text for
+`nll` and `routing`) and `attempt` (`PERF1_ATTEMPT`); `all_ranks` refuses ranks that differ
+in any of them, a record without a code hash, and, given `attempt=`, a stale file from an
+earlier attempt. Not yet covered: owned child cleanup.
 
 **Mechanism.** `experiments/kaggle_compat/perf1_run13.py:run` treats existence
 of a rank-0 file as stage success because `mlx.launch` returned exit 0 despite

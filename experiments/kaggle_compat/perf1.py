@@ -35,6 +35,7 @@ Timing: every arm runs a full warmup generation first, then REPS measured genera
 fixed ~512-token prompt; TTFT is prefill plus the first token, decode rate is the remaining
 tokens over their wall time, mlx-lm's own async-eval pattern. No performance claim.
 """
+import hashlib
 import json
 import math
 import os
@@ -1178,6 +1179,11 @@ def pipelined(path):
                               "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpus_after_load": smi}
 
 
+def _sha256(path):
+    with open(path, "rb") as stream:
+        return hashlib.sha256(stream.read()).hexdigest()
+
+
 def main():
     mode = sys.argv[1]
     if mode == "kernel":
@@ -1222,9 +1228,15 @@ def main():
             raise SystemExit(__doc__)
         report["model_path"] = path
         report.update(pipeline=pipe)
+        if mode in ("nll", "routing"):
+            report["input_sha256"] = _sha256(text_path)
         if pipe.get("rank"):
             out = out.replace(".json", f"-rank{pipe['rank']}.json")
     report["mode"] = mode
+    # NEXT1-I: what each rank ran and for which attempt, so `ranks.all_ranks` can refuse ranks
+    # that ran different code or input, or a stale file from an earlier attempt.
+    report["code_sha256"] = _sha256(__file__)
+    report["attempt"] = os.environ.get("PERF1_ATTEMPT")
     # NEXT1-I: written whole or not at all, so a rank that dies mid-write leaves no file
     # that looks like a result.
     with open(out + ".partial", "w") as stream:
