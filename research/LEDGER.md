@@ -6752,3 +6752,17 @@ Gemma 4 reference perplexity of 355.7 is still unexplained and far above Gemma 3
 gate compares two computations of one model on the same tokens, both plans sit wholly inside the
 bound, and chat decoding matched stock in 5 of 6 requests for either plan (run 9b), so the rows are
 qualified and the open question stays in the backlog. The old no-BOS results stay as recorded.
+
+## S1 — the persistent local service exists and held for an hour (recorded 2026-09-26)
+
+Backlog S1 (2026-08-27) asked for a warm process with an admission queue, OpenAI-compatible
+completions and chat completions, streaming, cancellation, bounded queues with backpressure,
+health/readiness and a 1 h stability gate before any production claim. All of it shipped under
+PROD1/PROD10 and is documented in `docs/HTTP.md`: loopback by default, `/v1/chat/completions` as
+JSON or SSE, a bounded queue (8 desktop, 64 server) with `HTTP 429` for a full queue or more than 64
+sockets, `/health` and `/ready`, disconnect and cancellation tests (`tests/engine/test_product_*`).
+The preregistered one-hour gate passed as PROD10-S (`docs/PROD10S_RESULTS_2026-09-08.md`): Apple
+M1 Max, Gemma 3 12B, 3 600 s, 798 HTTP requests matching the stock reference in text hash, token
+counts and finish reason, one deliberate cancel, no error, the same worker process throughout.
+Closed as answered; sampling and multi-message features stay with backlog C1, batched serving with
+PERF1-K2. Nothing was re-measured.

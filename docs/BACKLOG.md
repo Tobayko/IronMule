@@ -125,21 +125,6 @@ is Apple-Silicon model CI. GitHub's hosted `macos-14` runner does run Metal (CI'
 step prints `MLX Metal device: Metal GPU operation verified`), so the integration suite can
 run there against a cached, pinned snapshot; open until that job exists and is green.
 
-### `S1` — Persistent local service with an explicit overload contract
-
-**Mechanism.** A warm process with a real admission queue can expose completions and
-chat completions without making callers embed the Python runtime. Streaming,
-cancellation, queue limits, timeouts, backpressure, health/readiness and separate
-interactive/throughput lanes are one service contract, not independent decorations.
-
-**Test.** Loopback-only MVP with OpenAI-compatible request/stream shapes; bounded queue
-property tests; cancellation/disconnect and overload tests; no request prefills before
-admission; 1 h stability gate before any production claim.
-
-**Kill.** Unbounded memory/queue growth, incorrect cancellation, token divergence from
-the library path, or p95 latency outside a preregistered service budget. Architecture
-approval is required before implementation.
-
 ### `C1` — Safe cache, chat and sampling expansion
 
 **Mechanism.** Capacity buckets and an LRU prefix-cache budget can reduce mixed-prompt
@@ -351,10 +336,14 @@ records every process operation (`subprocess.Popen`, `os.system`, `os.fork`, `os
 (`test_q3f_guard_blocks_and_records_every_process_operation_in_isolated_child`), so a
 timed-out child has no descendants to orphan. Reopen if the guard's operation set shrinks.
 
-**P2 safety debt (evaluator-owned identity).** The runtime must expose per-repeat
-physical/logical tokens, counts, stop reasons, capacities, RSS and resource gates
-without letting the optimizer infer missing values. Kill when a new execution path
-can pass validation with absent or self-asserted identity/resource evidence.
+**P2 safety debt (evaluator-owned identity) — mostly answered, checked 2026-09-26.**
+`ab._validate_child_record` requires the exact field set per child and per arm and
+cross-checks it: per-repeat logical and physical tokens, their counts
+(`{"logical": len, "physical": len}`), stop reasons in `{eos, length}`, positive
+capacities, `decode_steps == len(physical[0]) - 1` and a recomputed determinism flag;
+a missing or extra field fails. Still open: RSS is not recorded at all, and
+`mlx_peak_bytes` is the child's own report, i.e. self-asserted. Kill when a new
+execution path can pass validation with absent or self-asserted resource evidence.
 
 **P2 safety debt (streaming worker output).** The current worker uses bounded
 `Popen` pipes and a 512 KiB cap, but `communicate()` still buffers the complete stream
