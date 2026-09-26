@@ -6766,3 +6766,28 @@ M1 Max, Gemma 3 12B, 3 600 s, 798 HTTP requests matching the stock reference in 
 counts and finish reason, one deliberate cancel, no error, the same worker process throughout.
 Closed as answered; sampling and multi-message features stay with backlog C1, batched serving with
 PERF1-K2. Nothing was re-measured.
+
+## PERF1-V — the 8-bit router through the row kernel buys nothing; rejected (2026-09-26)
+
+`perf1v-run1-cfa81967`, commit `3888dce`, Kaggle Tesla T4 (x2 for Qwen), mlx `0.32.2`, mlx-lm
+`0.31.3`, every arm with `PERF1_ARITH=pinned`. Raw data, logs and the submitted notebook:
+`experiments/kaggle_compat/results/perf1v-run1-cfa81967/`. Rules fixed in the notebook before the
+run: probe first, then fresh processes in the order control, candidate, control, candidate; kill
+when the candidate's median decode over its six measured generations is under 1.05x the control's.
+The run waited about two hours in Kaggle's queue and then took 44 min, 0 EUR.
+
+**Probe:** the 8-bit kernel against a float32 reference on four router shapes, M = 1, 2, 8: worst
+relative error 0.0028, inside the 1e-2 tolerance.
+
+| model (256 prompt tokens, 128 new) | control | control decode tok/s, median [min; max] | with `r8` | ratio | verdict |
+| :-- | :-- | :-- | :-- | --: | :-- |
+| Gemma 4 26B-A4B, one card | `kernel+gather` | 35.87 [34.33; 36.91] | 34.64 [33.47; 36.07] | 0.9655 | rejected |
+| Qwen3.6 35B-A3B, two cards | `kernel+p16+gather` | 9.49 [9.11; 9.69] | 9.57 [9.24; 9.96] | 1.0081 | rejected |
+
+The route took the calls it was meant to (Gemma: 15 240 of the 16 184 former fallback calls;
+Qwen: 20 320 of 20 480), so the router matvecs were never the cost that mattered: at N = 128 or
+256 output rows they are launch-sized, and replacing emulated bfloat16 there moves nothing
+measurable. TTFT was unchanged (Gemma 37.8 s, Qwen 26.7-27.2 s in every arm). As the notebook
+recorded rather than gated, every candidate generation left the control's tokens, since the
+router's arithmetic changed. The `r8` route stays in `perf1.py` as a harness option; nothing
+enters the product.
