@@ -313,24 +313,6 @@ failure yields `OPE_UNSUPPORTED`. Do not retry or pool Q3c/Q3d/Q3e/Q3f, promote 
 B27 summaries or exploratory true batching, combine E14b's `+18.02%` and `+20.05%`,
 or invent foreign-Mac measurements.
 
-### `R15` — The competing-process gate matches directory names
-
-**Mechanism.** `competing_model_process` (research/q3b_residual_swap_canary.py) blocks when a
-blocker token (`ironmule`, `mlx`, `gemma`, `qwen`, `llama`, ...) is a substring of any
-same-user command line. On 2026-09-26 a web dev server under a directory named "Ironmule
-Website Design" tripped it (ledger R14), so every Q3-gated run and q3f's real cleanup test are
-blocked on that machine by a process that loads no model. Matching the executable name and
-the script/module argument instead of the whole command line would keep real model processes
-and drop directory-name matches.
-
-**Test.** The detector's unit tests plus a case per blocker token: a model process by
-executable, by `python -m`, by script path, and a non-model process under a directory that
-contains the token. Both directions must hold.
-
-**Kill.** Any sealed Q3 artefact hashes this module or its token semantics, or a real model
-process could slip through the narrower match. Then the gate stays as it is and the
-precondition skip in q3f is the answer.
-
 ### `Q3a` — Path interaction: final Q2 incumbent versus `fused_argmax`
 
 **Mechanism.** Q2 evaluated `fused_argmax` early and then retained
@@ -422,6 +404,11 @@ than another constant in the source.
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
   no adaptive benefit over C; LOCAL-2 preparation missed its 5% benefit gate.
   Full results: `ironmole_mcp/docs/RESULTS.md`. Agent-level comparisons remain open.
+
+- **R15, narrowing the competing-process gate's substring match.** Opened and closed
+  2026-09-26 on inspection, no experiment: its own kill holds, because the Q3c and Q3d
+  records bind `research/q3b_residual_swap_canary.py` in `runtime_code_sha256`. The gate
+  stays fail-closed; q3f's real cleanup test skips with the reason (ledger R14).
 
 ### Rejected is not forbidden (project rule, 2026-09-10)
 

@@ -6694,8 +6694,9 @@ After the fix: q3d + q3f in parallel `2 passed, 1 skipped`; two consecutive full
 runs `14 passed, 2 skipped` each (Qwen unset; q3f's precondition, reason printed); the engine
 suite `1281 passed, 24 skipped`; the whole non-integration suite `1374 passed, 26 skipped`.
 R14's kill ("a deterministic order/timing proof identifies and fixes the interaction") is met.
-q3f's real cleanup remains unverified on this machine while that dev server runs; the
-substring match itself is backlog `R15`.
+q3f's real cleanup remains unverified on this machine while that dev server runs; narrowing
+the substring match (R15) was closed the same day on its own kill, since the Q3c and Q3d
+records bind the module in `runtime_code_sha256` (backlog Tier 0).
 
 ## P1 — the fingerprint stops shelling out to `sysctl` (2026-09-26)
 
