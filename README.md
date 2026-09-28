@@ -55,6 +55,17 @@ reference path. If it cannot prove that, IronMule simply uses the reference.
 - **Honest:** every number here comes from a committed measurement, including the ones
   that failed.
 
+### See it run
+
+<a href="docs/assets/ironmule-live-race.mp4"><img src="docs/assets/ironmule-live-race.gif" alt="Six questions answered side by side on an Apple M1 Max with Gemma 3 1B: optimisations off in 2.11 s, IronMule on in 1.28 s, every token identical" width="100%"></a>
+
+Gemma 3 1B on an Apple M1 Max, six questions submitted at the same moment. Left is
+IronMule's unoptimised reference path, one request after another; right is its tuned
+settings with the six requests grouped. Every token is identical on both sides; the
+clip replays that run's recorded token times. Both sides are IronMule's engine, so this
+is not a comparison with mlx-lm's own `generate`.
+[Full-resolution video (MP4)](docs/assets/ironmule-live-race.mp4).
+
 ## How much faster?
 
 <picture>
