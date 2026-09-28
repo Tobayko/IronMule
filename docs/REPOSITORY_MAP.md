@@ -11,13 +11,13 @@ of each area, so a clean-up can tell code from evidence.
 | `tests/test_*.py` | The research suite, bound to the target Mac (`tests/conftest.py`); `test_numeric_plans.py` and `test_documented_claims.py` read only committed files and run everywhere | Live, target device only (those two: everywhere) | The Mac; those two also CI and Kaggle |
 | `research/friday_*` | Research packages; their manifests hash paths relative to `research/` | Frozen where a study sealed them | The research suite |
 | `research/LEDGER.md` | Experimental conclusions | New entries appended; recorded results not rewritten | `tests/engine/test_docs_links.py` |
-| `research/raw/`, `research/product_history_*`, `experiments/*/` data | Raw evidence and result records | Byte-identical once recorded | SSOT `verify --check-sources`, `tests/test_sealed_evidence.py` |
+| `research/raw/`, `research/product_history_*`, `experiments/*/` data | Raw evidence and result records; private (gitignored) except `*.md`, `*.sha256`, preregistrations and prompts | Byte-identical once recorded | SSOT `verify --check-sources`, `tests/test_sealed_evidence.py` |
 | `experiments/kaggle_compat/*.py` | Kaggle harnesses and their shared scripts (`cross.py`, `perf1.py`, `quality.py`) | Live; a run's harness is archived with it | Kaggle runs |
-| `experiments/kaggle_compat/results/<run>/` | One directory per Kaggle run: result JSON, logs, `submitted-notebook.py` and `submitted-kernel-metadata.json` as they ran | Byte-identical once recorded | SSOT |
+| `experiments/kaggle_compat/results/<run>/` | One directory per Kaggle run: result JSON, logs, `submitted-notebook.py` and `submitted-kernel-metadata.json` as they ran; private (gitignored) | Byte-identical once recorded | SSOT |
 | `tools/` | Measurement, analysis and verification harnesses | Live; many are the harness behind one ledger entry | Their ledger entries |
 | `docs/` | Contracts (`RUNTIME.md`, `HTTP.md`, `LIMITS.md`), backlogs, preregistrations, specifications and historical reports | Preregistrations and dated reports are frozen | `tests/engine/test_docs_links.py` |
-| `docs/assets/` | Figures rendered from committed evidence | Generated | `tools/make_figures.py --check`, CI |
-| `examples/`, `profiles/`, `scripts/` | Usage examples, measured tuning profiles, environment setup | Live | Manual |
+| `docs/assets/` | Figures rendered from private evidence, plus the README video | Generated | `tools/make_figures.py --check` on the measuring machine |
+| `examples/`, `profiles/`, `scripts/` | Usage examples, measured tuning profiles (private, gitignored), environment setup | Live | Manual |
 | `ironmole_mcp/` | An independent TypeScript MCP runtime; only its benchmark report reuses `friday_evidence.statistics` | Separate project | Its own `npm test` |
 
 ## Code identity

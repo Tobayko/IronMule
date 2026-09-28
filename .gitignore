@@ -12,12 +12,26 @@ experiments/*.jsonl
 experiments/*.sqlite*
 experiments/raw/
 
-# Private benchmark raw JSON and retained partials; publish only redacted summaries
-research/raw/*.json
-# and the same evidence when a study seals it per session, one directory deeper
-research/raw/**/*.json
-research/raw/.*.partial
-!research/raw/*_public_summary_*.json
+# Measured data stays on the machine that measured it; it was purged from the published
+# history on 2026-09-28. Preregistrations and reports (*.md), their hashes, prompts and
+# harness code stay public.
+research/raw/**
+!research/raw/**/
+!research/raw/**/*.md
+!research/raw/**/*.sha256
+research/product_history_*/
+research/product_native_history_*/
+experiments/kaggle_compat/results/
+experiments/**/*.json
+experiments/**/*.jsonl
+experiments/**/*.log
+experiments/**/*.csv
+experiments/**/*.tsv
+experiments/**/*.xml
+!experiments/**/PREREGISTRATION*.json
+!experiments/**/WORKLOAD_CONTRACT*.json
+!experiments/**/MODEL_IDENTITY*.json
+profiles/*.json
 
 # OS/editor files
 .DS_Store

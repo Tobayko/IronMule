@@ -4,6 +4,14 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Raw measurement data is private.** Result JSON, logs and tuning profiles under
+  `research/raw/`, `experiments/` and `profiles/` are gitignored and were removed from the
+  published history. Preregistrations, reports, the ledger and every harness stay public.
+  Claim checks whose run file is absent skip instead of failing, and the figure check runs
+  on the measuring machine instead of in CI.
+- **The README opens with a 24-second clip** of six questions answered side by side on an
+  M1 Max, IronMule's reference path against its tuned, grouped settings.
+
 - **A clearer terminal.** `ironmule` on its own shows this machine (device, memory, Python,
   MLX, MLX-LM) and every command grouped by what you want to do; `ironmule doctor` prints a
   coloured checklist with a ready verdict and the next command; `ironmule benchmark` ends

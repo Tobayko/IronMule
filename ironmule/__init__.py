@@ -26,8 +26,8 @@ The caller chooses the execution plan and the service mode. Nothing in the runti
 switches either on its own, because both change observable behaviour: plans differ
 in output, modes differ in the latency/throughput trade.
 
-Every claim in the docstrings here is backed by a measurement in `research/LEDGER.md`
-with raw data under `research/raw/`.
+Every claim in the docstrings here is backed by a measurement in `research/LEDGER.md`;
+its raw data is kept private under `research/raw/` on the machine that measured it.
 """
 
 from __future__ import annotations

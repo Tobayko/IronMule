@@ -52,8 +52,9 @@ reference path. If it cannot prove that, IronMule simply uses the reference.
   downloaded unless you ask for it.
 - **Drop-in:** an OpenAI-compatible HTTP server (`/v1/chat/completions`, streaming) and a
   three-line Python API.
-- **Honest:** every number here comes from a committed measurement, including the ones
-  that failed.
+- **Honest:** every number here comes from a recorded measurement, including the ones
+  that failed. The raw measurement files stay private on the machine that measured them;
+  preregistrations, the ledger and the harnesses are public.
 
 ### See it run
 
@@ -282,8 +283,9 @@ measures the machine's own noise (1.0028, so anything inside ±0.6% is not a res
 
 </details>
 
-Every figure on this page is rendered from committed measurement data by
-`tools/make_figures.py`, and CI fails if a figure stops matching the data behind it.
+Every figure on this page is rendered from measurement data by `tools/make_figures.py`.
+The data is private, so `tools/make_figures.py --check`, which fails when a figure stops
+matching it, runs on the machine that measured it rather than in CI.
 
 > [!IMPORTANT]
 > These numbers were measured on one Apple M1 Max (32 GB) and one Kaggle Tesla T4. They
@@ -468,7 +470,8 @@ pytest tests/engine -m "not integration"
 ```
 
 This repository also contains **Project Friday**, the research behind the numbers: every
-study with its preregistration, raw data and the experiments that failed. Start at
+study with its preregistration, its results and the experiments that failed; the raw
+measurement files stay private. Start at
 [docs/README_PROJECT_FRIDAY.md](docs/README_PROJECT_FRIDAY.md).
 
 ## License

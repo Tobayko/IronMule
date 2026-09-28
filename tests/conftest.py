@@ -120,6 +120,32 @@ def pytest_ignore_collect(collection_path, config):  # noqa: ARG001 - pytest hoo
     return True if collect_ignore_glob_hook(path.resolve()) else None
 
 
+# -- measured data that stays on the machine that measured it ----------------------
+#
+# Raw measurements are gitignored and were purged from the published history on
+# 2026-09-28. A claim check that reads one of those files skips where it is absent,
+# and only for a path `.gitignore` keeps private: a typo in a path still fails. On the
+# measuring machine every file is present and every check runs.
+def _private(path: str) -> bool:
+    import subprocess
+
+    try:
+        return subprocess.run(["git", "check-ignore", "-q", "--no-index", path],
+                              cwd=ROOT, capture_output=True).returncode == 0
+    except OSError:
+        return False
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_call(item):  # noqa: ARG001 - pytest hook
+    try:
+        return (yield)
+    except FileNotFoundError as error:
+        if error.filename and _private(os.fsdecode(error.filename)):
+            pytest.skip(f"private measured data: {os.path.relpath(error.filename, ROOT)}")
+        raise
+
+
 # -- process-wide variables ------------------------------------------------------
 #
 # `ironmule.hw.apply_cuda_graph_defaults` writes these before MLX's first kernel, and MLX

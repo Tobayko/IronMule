@@ -14,7 +14,12 @@ sys.path.insert(0, str(ROOT / "tools"))
 import product_reference_regression as regression  # noqa: E402
 from product_load_screen import LoadScreenFailure  # noqa: E402
 
+#: The frozen reference is measured data and stays on the machine that measured it.
+needs_reference = pytest.mark.skipif(not regression.REFERENCE.exists(),
+                                     reason="frozen reference is private measured data")
 
+
+@needs_reference
 def test_frozen_reference_has_four_complete_exact_4b_samples():
     samples, digest = regression._reference_samples()  # noqa: SLF001
     assert len(samples) == regression.REPEATS + 1
@@ -22,6 +27,7 @@ def test_frozen_reference_has_four_complete_exact_4b_samples():
     assert all(len(item) == 64 for item in samples)
 
 
+@needs_reference
 def test_frozen_12b_reference_is_exact_and_rejects_other_revision():
     model = "mlx-community/gemma-3-12b-it-4bit"
     samples, digest = regression._reference_samples(model, regression.FROZEN_MODELS[model])
@@ -31,6 +37,7 @@ def test_frozen_12b_reference_is_exact_and_rejects_other_revision():
         regression._reference_samples(model, "other-revision")
 
 
+@needs_reference
 def test_reference_rejects_changed_source_or_nonterminal_model(tmp_path: Path, monkeypatch):
     value = json.loads(regression.REFERENCE.read_text(encoding="utf-8"))
     value["source_sha256_after"] = "0" * 64
@@ -41,6 +48,7 @@ def test_reference_rejects_changed_source_or_nonterminal_model(tmp_path: Path, m
         regression._reference_samples()  # noqa: SLF001
 
 
+@needs_reference
 def test_reference_rejects_nonterminal_exact_model_row(tmp_path: Path, monkeypatch):
     value = json.loads(regression.REFERENCE.read_text(encoding="utf-8"))
     row = next(item for item in value["models"] if item["model_id"] == regression.EXPECTED_MODEL)

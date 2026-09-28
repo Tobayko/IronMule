@@ -1,7 +1,8 @@
 """Every relative Markdown link must resolve to a file that ships in the repository.
 
-Raw benchmark JSON stays local by `.gitignore` policy, so a link to one is dead for
-everybody who clones. Name those files as inline code instead of linking them.
+Measured data stays local by `.gitignore` policy, so a link to it is dead for everybody
+who clones. New text names those files as inline code; links that records already make
+into that private data are accepted, because the file exists where it was measured.
 """
 
 import hashlib
@@ -40,6 +41,16 @@ def _sealed_documents() -> dict[Path, str]:
             continue
         for relative, digest in SEALED_INPUT.findall(text):
             sealed[REPO_ROOT / relative] = digest
+    # A seal whose record is now private measured data survives as a `<digest>  <name>`
+    # sidecar next to the document, the format research/raw already uses.
+    out = subprocess.run(["git", "ls-files", "*.sha256"],
+                         cwd=REPO_ROOT, capture_output=True, text=True, check=True)
+    for line in out.stdout.splitlines():
+        sidecar = REPO_ROOT / line
+        for entry in sidecar.read_text(encoding="utf-8").splitlines():
+            digest, _, name = entry.partition("  ")
+            if name.endswith(".md"):
+                sealed[sidecar.parent / name] = digest
     return sealed
 
 
@@ -49,6 +60,12 @@ SEALED = _sealed_documents()
 def _is_sealed(md: Path) -> bool:
     digest = SEALED.get(md)
     return digest is not None and hashlib.sha256(md.read_bytes()).hexdigest() == digest
+
+
+def _private(path: Path) -> bool:
+    """True when `.gitignore` keeps this path on the machine that measured it."""
+    return subprocess.run(["git", "check-ignore", "-q", "--no-index", str(path)],
+                          cwd=REPO_ROOT).returncode == 0
 
 
 def _tracked_markdown() -> list[Path]:
@@ -74,6 +91,7 @@ def test_relative_links_resolve(md: Path) -> None:
             path = target.split("#", 1)[0]
             if not path:
                 continue
-            if not (md.parent / path).resolve().exists():
+            resolved = (md.parent / path).resolve()
+            if not resolved.exists() and not _private(resolved):
                 broken.append(f"{md.relative_to(REPO_ROOT)}:{lineno} -> {target}")
     assert not broken, "dead relative links:\n" + "\n".join(broken)

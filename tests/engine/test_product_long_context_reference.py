@@ -14,6 +14,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 import product_long_context_reference as screen  # noqa: E402
 
+#: The frozen calibration export is measured data and stays on the machine that measured it.
+needs_calibration = pytest.mark.skipif(not screen.CALIBRATION.exists(),
+                                       reason="frozen calibration export is private measured data")
+
 
 def _metadata() -> dict:
     return {
@@ -62,12 +66,14 @@ def test_stock_metadata_rejects_non_hex_digest_and_non_gpu_device():
             screen._validate_stock_metadata(invalid)  # noqa: SLF001
 
 
+@needs_calibration
 def test_frozen_calibration_export_passes_gate_and_binds_hashes():
     proof = screen._calibration_gate()  # noqa: SLF001
     assert proof["run_id"] == screen.CALIBRATION_RUN_ID
     assert len(proof["artifact_sha256"]) == 64
 
 
+@needs_calibration
 def test_calibration_gate_recomputes_canonical_report_hash(tmp_path: Path):
     value = json.loads(screen.CALIBRATION.read_text(encoding="utf-8"))
     tampered = copy.deepcopy(value)
