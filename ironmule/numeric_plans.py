@@ -170,6 +170,9 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         quality_evidence=(f"{_R}/port2-run6-59ce8efc/quality16-qwen3-8b-float16.json",
                           "paired-with-bf16"),
     ),
+    # gpt-oss: GATE-OSS repeated both gates with BOS on every chunk (2026-09-28, ledger DEMO2-5):
+    # float16 1.017850 [0.976206; 1.058600], float32 1.022654 [0.980827; 1.063303]. Still
+    # inconclusive, and both point estimates lie above QUALITY_BOUND, so neither row can pass.
     PlanMeasurement(
         architecture="mlx_lm.models.gpt_oss", plan="float32", device=CUDA_PRE_AMPERE,
         wall_ratio=0.2818421251530665,

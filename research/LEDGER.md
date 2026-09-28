@@ -6846,3 +6846,87 @@ of weights in 90% of this card's 16.11 GB". PERF1-X's own kill named exactly thi
 such cards only with head_skip_prefill"); what is new is that the engine applies it by itself on
 the cards that need it and on no other. No speed or quality claim: the walls are single passes
 that include the first prefill. Both runs waited 2.5-3.5 h in Kaggle's queue.
+
+## DEMO2-5 — show videos of IronMule on a Kaggle T4, and what recording them found (2026-09-28)
+
+The user asked for short Kaggle runs recorded as show videos, first one question, then several at
+once "as in the Apple race". These are demos, not measurements: one cell per model, the arms one
+after the other in their own processes, no paired interleaving, no preregistered speed gate. The
+ledger's paired runs (PORT1, PORT2, PERF1) stay the evidence; nothing here moves a plan row.
+Notebooks: `experiments/kaggle_compat/demo2.py` … `demo5.py`, renderer `demo_video.py`; raw data
+(every token with its time and text) stays private under `experiments/kaggle_compat/results/demo*`.
+
+**DEMO2/3, the product server.** `ironmule serve` twice on one T4, stock (IronMule off) then
+`--compute-dtype native`, three streamed answers to one question after a warm-up with that
+question. Gemma 3 12B: 17.08 -> 3.25 s, 55 tokens, identical text (`demo2-run2-fad7268c`). Qwen 3
+14B in `/no_think`: 17.19 -> 3.33 s, and four questions sent at once 56.83 -> 11.63 s, identical
+(`demo3-run1-91607bbc`). On this plan `serve` answers one request at a time on both sides.
+Run 1 of DEMO2 lost stock's warm-up to the product's default `request_timeout_s = 120`: a new
+prompt length makes stock compile kernels first (82 s to the first text for 12B), so the request
+expired with HTTP 503 (`demo2-race-53b0b0a9`).
+
+**DEMO4, the Apple race per model.** Both arms through the Runtime, as `cross.py` defines them:
+off = baseline knobs, interactive mode, MLX's own graph limits; on = the model's plan with the
+knobs its plan row was measured with, throughput mode. One question (64 tokens, median of 3) and
+the Apple race's six questions submitted together (48 tokens, median of 2 rounds). Grouping is
+batch-1 per request, so it makes every answer advance together rather than finish sooner.
+
+| model | on-arm plan | one question, median of 3 | six grouped, median round | same text | run |
+| :-- | :-- | --: | --: | --: | :-- |
+| Qwen 3 14B 4-bit | `native` (qualified) | 15.36 → 2.54 s, 6.05x | 87.1 → 15.4 s, 5.66x | 6/7 | `demo4-qwen3-14b-6337e5a7` |
+| Gemma 3 12B 4-bit | `native` (qualified) | 16.56 → 3.21 s, 5.17x | 86.7 → 17.0 s, 5.11x | 5/7 | `demo4-gemma3-12b-1bf51d62` |
+| Qwen 3 8B 4-bit | `native` (qualified) | 9.49 → 1.91 s, 4.96x | 46.1 → 7.7 s, 5.96x | 3/7 | `demo4-qwen3-8b-b27d301e` |
+| gpt-oss 20B MXFP4 | `float16` (unqualified) | 24.54 → 5.38 s, 4.56x | 158.2 → 34.6 s, 4.57x | 0/7 | `demo4-gptoss-20b-f16-877c46ed` |
+| Qwen3.8 27B 4-bit | `native` (unqualified) | 36.13 → 8.41 s, 4.29x | — | 1/1 | `demo5-qwen38-27b-c6ea7f2a` |
+| Gemma 4 E4B 4-bit | `native` (unqualified) | 5.90 → 1.61 s, 3.68x | 34.3 → 6.9 s, 4.97x | 5/7 | `demo4-gemma4-e4b-native-685d5e24` |
+| gpt-oss 20B MXFP4 | `float32` (unqualified) | 21.63 → 6.17 s, 3.51x | 125.3 → 33.6 s, 3.73x | 2/7 | `demo4-gptoss-20b-817e40e7` |
+| Gemma 4 E4B 4-bit | `float16` (unqualified) | 5.74 → 1.75 s, 3.29x | 32.7 → 8.3 s, 3.94x | 4/7 | `demo4-gemma4-e4b-f16-6b7a0e52` |
+| Gemma 4 E2B 4-bit | `float16` (qualified) | 3.43 → 1.14 s, 3.00x | 18.9 → 5.0 s, 3.80x | 3/7 | `demo4-gemma4-e2b-f16-847abecf` |
+| Gemma 4 E4B QAT 4-bit | `float16` (unqualified) | 5.58 → 2.15 s, 2.60x | 28.6 → 9.3 s, 3.07x | 6/7 | `demo4-gemma4-e4b-qat-f16-c61b0eb1` |
+| Gemma 3 4B 4-bit | `float32` (qualified) | 5.26 → 2.57 s, 2.04x | 27.4 → 12.8 s, 2.15x | 3/7 | `demo4-gemma3-4b-d867cd0d` |
+| Mistral Small 3.2 24B 4-bit | `float32` (qualified) | 26.53 → 14.34 s, 1.85x | 137.8 → 73.4 s, 1.88x | 7/7 | `demo4-mistral-24b-b5b7d170` |
+| Gemma 3 1B 4-bit | `exact` (exact) | 1.27 → 0.90 s, 1.42x | 5.9 → 3.4 s, 1.72x | 7/7 | `demo4-gemma3-1b-58509cec` |
+| gpt-oss 20B MXFP4 | `native` (unqualified) | 22.56 → 19.70 s, 1.15x | 144.2 → 124.6 s, 1.16x | 1/7 | `demo4-gptoss-20b-native-49a0761d` |
+| Llama 3.1 8B 4-bit | `exact` (exact) | 3.43 → 3.69 s, 0.93x | 15.3 → 15.0 s, 1.02x | 7/7 | `demo4-llama31-8b-88636392` |
+
+"same text" counts the answers whose visible text (cut at the model's own end of turn) is equal
+on both sides, the single question plus the six. `exact` plans keep the arithmetic and matched
+everywhere; numeric plans change wording in part of the answers, which their quality gates allow.
+
+What recording found:
+
+* **The Runtime's service TTFT counts from each request's own prefill**, and a request set is
+  prefilled one prompt after another before decoding starts. Replayed naively, every answer of a
+  set starts at once. Shifting each request by the prefills before it lands the last token on the
+  set's measured wall: 46120 against 46122 ms (Qwen 3 8B, off), 7744 against 7743 ms (on). The
+  renderer asserts this within 2 % for every run. Anything that plots per-request TTFT from a
+  grouped or interactive set needs the same shift.
+* **Gemma 4 thinks unless its template gets `enable_thinking=False`.** Without it every token of
+  the first runs went into `<|channel>thought` (`*-thinking` folders); an empty thought channel
+  after the generation prompt did not stop it either. With the option it answers directly.
+* **`native` refuses checkpoints whose 4-bit scales are float16**: Qwen 2.5 7B, Mistral 7B v0.3
+  and Phi-4 (`the native plan found no 4-bit group-64 affine bfloat16 weights`). Fail-closed, as
+  designed; older `mlx-community` conversions carry float16 scales.
+* **`native` does not pay on gpt-oss 20B** (22.56 -> 19.70 s): its MXFP4 experts are not the
+  4-bit affine layout the kernels route. `float16` is its fast plan.
+* **Llama 3.1 8B gains nothing on a T4** under `exact` (3.43 -> 3.69 s), as PORT2 found.
+* PyPI answered 503 or timed out during two installs; those runs are kept as `*-pypi503` and
+  `*-install-failed` and were run again.
+
+**DEMO5, Qwen3.8 27B over two T4s.** It does not fit one card, so PERF1-O's layer pipeline
+(`perf1.py pipelined`, graphs off, `PERF1_P16_SYNC=1`) with a recorder that times every token of
+one chat answer: stock 36.13 -> `kernel+p16` 8.41 s (4.30x), first token 6.58 -> 1.26 s, 60
+tokens, identical text (`demo5-qwen38-27b-c6ea7f2a`). The research harness, not the product,
+which cannot split a model over two cards.
+
+**GATE-OSS, gpt-oss 20B with BOS on every chunk.** PORT2 run 7's gates ran before the BOS fix and
+were inconclusive. Repeated with PORT2-K's rules (quality.py at main `58cbb1d`, 16 x 512 tokens,
+one precision per process, seed 20260916): bf16 perplexity 179.6; `float16` 1.017850
+[0.976206; 1.058600], `float32` 1.022654 [0.980827; 1.063303], no non-finite value
+(`gate-oss-run1-de90a455`). Both still inconclusive, and both point estimates lie above the
+1.005 bound, so no number of chunks can make them pass; more chunks could only refuse them. The
+rows stay unqualified.
+
+**GATE-Q38, Qwen3.8 27B under `native`**, prefill and decode paths over two cards, 32 x 256
+tokens (this family's bf16 path went non-finite at 512 on CUDA): submitted as
+`gate-q38-run1-a8f88fc2`; the verdict is pending and belongs in its own entry.

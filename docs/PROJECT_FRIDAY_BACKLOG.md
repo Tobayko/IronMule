@@ -1661,3 +1661,28 @@ absichtlich verschlechterte Metrik wird von der Regressionsgrenze erkannt.
 **Kill:** Bleibt der Index für die UI zu grob (155 601 verschiedene Metrikpfade,
 davon die meisten nur einmal belegt), wird zuerst eine Namenskonvention für
 vergleichbare Metriken gebraucht; ohne die trägt keine Zeitreihe.
+
+## GATE-Q38 — Qwen3.8 27B unter `native` qualifizieren (neu 2026-09-28)
+
+**Mechanismus.** DEMO5 zeigte Qwen3.8 27B über zwei T4 mit den `native`-Kernels 4,3x schneller
+bei gleichem Text, aber kein Gate hat das Modell je geprüft. `gate_q38.py` (Kaggle
+`gate-q38-run1-a8f88fc2`, eingereicht 2026-09-28) misst Prefill (`p16`) und Decode (`kernel`,
+pinned) gegen Stock-bf16 über die Zwei-Karten-Pipeline, 32 x 256 Tokens, Graphen aus.
+
+**Gate:** je Pfad Obergrenze des Bootstraps <= 1,005 und nichts nicht-endlich (`gate_summary.py`).
+
+**Kill:** ein Pfad über der Grenze sperrt `native` für `mlx_lm.models.qwen3_5` per Tabellenzeile;
+beide darunter ergeben eine Zeile für diesen Checkpoint. Der Lauf lief beim Schreiben noch; sein
+Ergebnis mit `kaggle kernels output` holen und im Ledger nachtragen.
+
+## SERVE1 — Stocks erster Prompt sprengt das 120-s-Request-Limit auf einer T4 (neu 2026-09-28)
+
+**Mechanismus.** Auf CUDA kompiliert Stock-MLX für jede neue Promptlänge zuerst Kernels: Gemma
+3 12B brauchte 82 s bis zum ersten Text (DEMO2). Mit dem Standard `request_timeout_s = 120`
+verfällt so die erste Anfrage eines Nutzers mit HTTP 503, obwohl der Server gesund ist.
+
+**Test.** `ironmule serve` ohne Plan auf einer T4, Gemma 3 12B, drei neue Promptlängen: Anteil
+der Anfragen, die am Limit scheitern, gegen ein Aufwärmen beim Start über die üblichen Längen.
+
+**Kill:** Scheitert keine Anfrage unter 120 s, sobald der Server einmal aufgewärmt ist, bleibt
+das Limit und die Doku nennt das Aufwärmen; sonst ein Aufwärmen in `serve` selbst.
