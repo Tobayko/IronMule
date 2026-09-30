@@ -6986,3 +6986,58 @@ rows stay unqualified.
 **GATE-Q38, Qwen3.8 27B under `native`**, prefill and decode paths over two cards, 32 x 256
 tokens (this family's bf16 path went non-finite at 512 on CUDA): submitted as
 `gate-q38-run1-a8f88fc2`; the verdict is pending and belongs in its own entry.
+
+## NEXT1-C run 1 — the dtype plans pass on the decode path too (run 2026-09-26, recorded 2026-09-30)
+
+The decode gate NEXT1-C fixed before its run (backlog; `de396b5` before the history rewrite,
+`599d75e` after): `perf1.py nll MODEL ARM decode`, teacher-forced through the cache with BOS on
+every chunk, WikiText-2 raw test at the pinned revision, 16 chunks x 512 tokens (Mistral 8),
+stock and then the plan's dtype in a fresh process each, on a Kaggle cell with two T4s (Mistral on
+one, both Gemmas on the other). Tree: main after PR #17 (`306b469`, rewritten `ec911d0`) with the
+harness at `de396b5` embedded; mlx 0.32.2, mlx-lm 0.31.3 (`pip freeze`). All seven stages exited
+0 within 55 minutes, no value was non-finite. Statistic: plan/stock perplexity ratio, paired
+chunk bootstrap, seed 20260916, 10 000 draws. Raw data stays private
+(`next1c-run1-1497adb8`). 0 EUR.
+
+| row | stock ppl | plan ppl | decode gate [95% CI] | prefill gate, carried by the row | verdict |
+| :-- | --: | --: | :-- | :-- | :-- |
+| Gemma 4 E2B `float16` | 280.80 | 278.34 | 0.991225 [0.986584; 0.995594] | 0.994901 [0.991176; 0.998687] | passes |
+| Gemma 4 E2B `float32` | 280.80 | 278.53 | 0.991915 [0.987294; 0.996308] | 0.994514 [0.990986; 0.998173] | passes |
+| Gemma 3 4B `float32` | 22.934 | 22.906 | 0.998782 [0.996222; 1.001628] | 0.998686 [0.995891; 1.001671] | passes |
+| Mistral Small 3.2 24B `float32` | 7.5137 | 7.4991 | 0.998050 [0.996332; 0.999277] | 0.998019 [0.996057; 0.999910] | passes |
+
+![Perplexity ratio on the prefill and decode paths for every gated plan, all inside the 1.005 bound](../docs/assets/t4-plan-gates.svg)
+
+**Verdict, as the rule fixed it.** Every upper bound is below 1.005, so the decode path joins
+each row's gated paths. In each row the prefill gate has the higher upper bound, so the row keeps
+carrying it: no number, verdict or recommendation in `numeric_plans.py` changes.
+`tests/test_numeric_plans.py` now re-derives the decode gates as well and fails if a row stops
+carrying the worse of its two. With per-path cells answered, NEXT1-C leaves the backlog. Gemma 4
+E2B's decode reference scores perplexity 280.8 against the prefill gate's 355.7, still far above
+Gemma 3 4B's; that stays open as the Gemma 4 rows say. Stage times are single passes, no speed
+claim.
+
+## GATE-Q38 — Qwen3.8 27B passes `native`'s gate on both paths over two T4s (run 2026-09-28, recorded 2026-09-30)
+
+The rule fixed at submission (backlog GATE-Q38): per path the bootstrap's upper bound at most
+1.005 and nothing non-finite, judged by `gate_summary.py` (seed 20260915, 10 000 draws).
+`gate_q38.py` on a Kaggle cell with two T4s, main `58cbb1d`, mlx 0.32.2, mlx-lm 0.31.3,
+`mlx-community/Qwen3.8-27B-4bit` at `10c35caa`, PERF1-O's layer pipeline (layers 0-31 on one card,
+32-63 on the other, 8.28 GB of weights each), CUDA graphs off, WikiText-2 32 chunks x 256 tokens,
+stock bf16 against `p16` on prefill and pinned `kernel` on decode, one fresh two-rank process per
+arm; both ranks recorded identical per-chunk NLL in every stage. The tokenizer defines no BOS, so the
+chunks carry none. Raw data stays private (`gate-q38-run1-a8f88fc2`). 0 EUR, about 2.3 h of
+stages.
+
+| path | stock ppl | `native` ppl | ratio [95% CI] | kernel calls, rank with layers 32-63 | verdict |
+| :-- | --: | --: | :-- | --: | :-- |
+| prefill (`p16`) | 10.5381 | 10.5256 | 0.998813 [0.997932; 0.999707] | 7 968 | passes |
+| decode (`kernel`, pinned) | 10.5305 | 10.5225 | 0.999233 [0.998088; 1.000371] | 2 039 808 | passes |
+
+**Verdict.** The gate passes on both paths. The rule's consequence, a plan row for this
+checkpoint, is not written: a `PlanMeasurement` also needs a wall ratio from the product path
+(`cross.py`, `compute_dtype="native"`), and the product loads a model on one card, which 16.6 GB
+of 4-bit weights do not fit on a 16 GB T4. The stages' times (stock 1842 s and 4390 s against
+177 s and 1115 s) are single passes of a research harness, not that ratio, and DEMO5's 4.30x is
+a demo. So `native` stays unrecommended for this checkpoint and nothing is refused; backlog
+Q38-ROW names what a row needs. The figure above carries this gate next to NEXT1-C's.

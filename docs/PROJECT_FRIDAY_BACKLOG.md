@@ -206,8 +206,8 @@ all six stock and `native` Qwen 3 14B outputs in both run-7 repetitions start
 with `<think>` and none reaches `</think>` within 48 tokens (NEXT1-Q).
 None of the items below changes historical verdicts or activates a plan.
 
-**Order (2026-09-26):** NEXT1-D (answered, ledger NEXT1 run 1), then NEXT1-C, then
-NEXT1-Q; NEXT1-E before any wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
+**Order (2026-09-26):** NEXT1-D and NEXT1-C (answered, ledger NEXT1 run 1 and NEXT1-C run 1),
+then NEXT1-Q; NEXT1-E before any wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
 No longer prerequisites: PORT2-K (both runs, ledger PORT2-K), PERF1-T/T2, PERF1-M and
 PERF1-Y (ledger BACKLOG1-BACKLOG9), and PERF1-N (diagnosed; projection fusion is refused
 under `native`). PERF1-X (answered: the head skip on full cards), PERF1-K2 (deferred)
@@ -292,57 +292,6 @@ change a cache or kernel defect. Do not overwrite historical `cross.py` data.
 qualification and stabilize the reference first. If no repeatable first
 cause emerges, do not build a prompt-specific `6/6` patch; keep separate
 numeric plans with their own quality gates.
-
-### NEXT1-C — Bind CUDA plan recommendations to complete model evidence
-
-**Implemented 2026-09-26, CI-verified only.** `PlanMeasurement.models` now names only the
-checkpoints whose speed and gate the row's evidence covers (Qwen 3 `float16`: 8B, since 14B
-was gated but not timed; Gemma 4 `float32`/`float16`: E2B); `recommend(..., model_id=)`
-returns nothing for any other checkpoint, `ironmule plans --model` uses it, and without a
-model `doctor` and `plans` name the checkpoints a recommendation is for. Since the same day
-each recommendation is bound to the revision measured (`MEASURED_REVISIONS`, checked against
-every evidence file's recorded revision; the revision pins the weights and so the
-quantisation): `ironmule plans --model ID --revision R` recommends nothing for another
-revision, and every reason names checkpoint@revision. So is the framework: `MEASURED_WITH`
-(mlx 0.32.2, mlx-lm 0.31.3, checked against every evidence run's `pip freeze`), and `plans`
-and `doctor` recommend nothing in an environment with other versions. Still open from the
-gate below: per-path cells.
-
-**Per-path cells: the decode gate, fixed before its run (2026-09-26, agent decision).** The
-`float32`/`float16` rows were gated by `quality.py`, one forward per 512-token chunk, i.e. the
-prefill path only; decode runs other kernels (`qmv`, M = 1) and is ungated. `native`'s rows
-already carry both paths. Question: does each dtype plan that is some checkpoint's top
-recommendation pass on the decode path too? Rows: Gemma 4 E2B `float16` and `float32`, Gemma 3
-4B `float32`, Mistral Small 3.2 24B `float32` (Qwen 3's dtype rows are not its top
-recommendation, `native` is, and wait). Workload: `perf1.py nll MODEL ARM decode` (teacher-
-forced through the cache, BOS on every chunk), WikiText-2 raw test at the pinned revision,
-16 chunks x 512 tokens (Mistral 8, as its prefill gate), arms `stock` then the plan's `fp32`/
-`fp16` (`set_dtype`, as `load_engine` applies it), fresh process each, one Kaggle run on two
-T4s in parallel (Mistral on one, both Gemmas on the other) capped at 58 minutes. Statistic:
-the plan/stock perplexity ratio with the bootstrap `tests/test_numeric_plans.py` uses for
-`native` (seed 20260916, 10 000 draws, 2.5/97.5%). Rule per row: upper bound < 1.005 ->
-decode joins the row's gated paths and the row carries the worse of its two gates; lower
-bound > 1.005 -> refused; otherwise unqualified, and it loses its recommendation. A stage
-that does not finish leaves that row's decode path ungated, which is then displayed as such.
-Until the run answers, verdicts stay as they are (no measurement yet says otherwise).
-
-**Mechanism.** `PlanMeasurement.models` names checkpoints, but
-`numeric_plans.measurements_for()` and `recommend()` filter only architecture
-and device class, so a recommendation reaches every model of the architecture:
-Gemma 4 E4B and E4B-qat are recommended `float16` on E2B's gate (PORT2-K), and a
-Qwen 3 32B or 0.6B would inherit the `qwen3` rows unmeasured. `doctor` and
-`ironmule plans` can thus present a positive architecture-level recommendation beyond
-the measured model, revision, and execution-path scope. The plan is still opt-in; this
-is an evidence/wording gap, not an observed output failure.
-
-**Gate.** Audit each table cell against exact model revision, quantization,
-backend/framework, and all affected decode, prefill, and expert paths.
-Recommend only with every applicable gate; display unknown or partially
-measured cells as `unqualified`.
-
-**Kill/pivot.** If exact identity is unavailable at a display site, abstain
-there from a positive model-wide recommendation. An architecture row alone
-cannot qualify a new model revision.
 
 ### NEXT1-E — Admit the CUDA `native` kernel per routed shape
 
@@ -1654,18 +1603,19 @@ absichtlich verschlechterte Metrik wird von der Regressionsgrenze erkannt.
 davon die meisten nur einmal belegt), wird zuerst eine Namenskonvention für
 vergleichbare Metriken gebraucht; ohne die trägt keine Zeitreihe.
 
-## GATE-Q38 — Qwen3.8 27B unter `native` qualifizieren (neu 2026-09-28)
+## Q38-ROW — A plan row for Qwen3.8 27B needs a product-path speed (new 2026-09-30)
 
-**Mechanismus.** DEMO5 zeigte Qwen3.8 27B über zwei T4 mit den `native`-Kernels 4,3x schneller
-bei gleichem Text, aber kein Gate hat das Modell je geprüft. `gate_q38.py` (Kaggle
-`gate-q38-run1-a8f88fc2`, eingereicht 2026-09-28) misst Prefill (`p16`) und Decode (`kernel`,
-pinned) gegen Stock-bf16 über die Zwei-Karten-Pipeline, 32 x 256 Tokens, Graphen aus.
+**Mechanism.** GATE-Q38 passed on both paths (ledger GATE-Q38), but a `numeric_plans` row also
+needs a wall ratio from the product path (`cross.py`, `compute_dtype="native"`), and the product
+runs a model on one card. Qwen3.8 27B's 16.6 GB of 4-bit weights do not fit a 16 GB T4; DEMO5
+timed it only through the research harness's two-card pipeline.
 
-**Gate:** je Pfad Obergrenze des Bootstraps <= 1,005 und nichts nicht-endlich (`gate_summary.py`).
+**Test.** `cross.py`, stock against `native`, on one pre-Ampere card with room for the weights
+and a cache (Volta V100 32 GB, Turing RTX 8000), or through the product once it can split a model
+over two cards; the six-request workload of PERF1 run 7.
 
-**Kill:** ein Pfad über der Grenze sperrt `native` für `mlx_lm.models.qwen3_5` per Tabellenzeile;
-beide darunter ergeben eine Zeile für diesen Checkpoint. Der Lauf lief beim Schreiben noch; sein
-Ergebnis mit `kaggle kernels output` holen und im Ledger nachtragen.
+**Kill:** no such card within free compute and no two-card product path: the row stays unwritten,
+`native` stays unrecommended for this checkpoint, and the gate stays ledger evidence only.
 
 ## SERVE1 — Stocks erster Prompt sprengt das 120-s-Request-Limit auf einer T4 (neu 2026-09-28)
 

@@ -91,6 +91,22 @@ CHUNK_GATES = {
         ("backlog8-run1-1665f2ae/gate-gemma3-12b-p16-prefill.json",
          "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-prefill.json")),
 }
+#: Dtype plans whose decode path was gated too (NEXT1-C run 1), against stock on the same
+#: path; such a row must carry the worse of its prefill (PAIRED) and decode gates.
+DECODE_GATES = {
+    ("mlx_lm.models.gemma3_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma3-4b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma3-4b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float16"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp16-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.ministral3", "float32"): (
+        "next1c-run1-1497adb8/gate-mistral-24b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-mistral-24b-stock-decode.json"),
+}
 
 
 def _paired_gate(bf16_file: str, other_file: str, other_key: str):
@@ -136,7 +152,10 @@ def test_every_quality_interval_is_the_one_its_run_supports(row):
         ratio, interval = max((_chunk_gate(*pair) for pair in CHUNK_GATES[key]),
                               key=lambda gate: gate[1][1])
     elif key in PAIRED:
-        ratio, interval = _paired_gate(*PAIRED[key])
+        gates = [_paired_gate(*PAIRED[key])]
+        if key in DECODE_GATES:
+            gates.append(_chunk_gate(*DECODE_GATES[key]))
+        ratio, interval = max(gates, key=lambda gate: gate[1][1])
     else:
         payload = json.loads((ROOT / row.quality_evidence[0]).read_text())
         ratio, interval = payload[row.quality_evidence[1]], tuple(payload["ppl_ratio_ci"])

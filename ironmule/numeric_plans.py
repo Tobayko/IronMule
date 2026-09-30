@@ -130,7 +130,10 @@ MEASURED_REVISIONS = {
 
 #: Measured on a Kaggle 2 x Tesla T4 cell (compute capability 7.5), MLX 0.32.2 and
 #: mlx-lm 0.31.3, 4-bit mlx-community checkpoints at pinned revisions. `research/LEDGER.md`
-#: entry PORT2 carries the protocol; these are its cells.
+#: entry PORT2 carries the protocol; these are its cells. The `float32`/`float16` gates ran on
+#: the prefill path; NEXT1-C run 1 gated the decode path of Gemma 3 4B `float32`, Gemma 4 E2B
+#: `float32`/`float16` and Mistral Small 3.2 24B `float32` as well, and each passed with a
+#: lower upper bound, so those rows carry their prefill gate, the worse of the two.
 MEASUREMENTS: tuple[PlanMeasurement, ...] = (
     PlanMeasurement(
         architecture="mlx_lm.models.gemma3_text", plan="float32", device=CUDA_PRE_AMPERE,
