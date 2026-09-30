@@ -35,4 +35,4 @@ Each reviewed row will record these fields:
 
 No community submissions have been reviewed yet.
 
-The repository's own measured results remain in [`research/LEDGER.md`](../research/LEDGER.md) and are not mixed into this community table. Every result must retain its validity domain; an Apple Silicon result on one model is not a claim about all Apple Silicon, local LLM, MLX inference, KV cache, TTFT, or batching workloads.
+The repository's own measured results remain in [`research/LEDGER.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) and are not mixed into this community table. Every result must retain its validity domain; an Apple Silicon result on one model is not a claim about all Apple Silicon, local LLM, MLX inference, KV cache, TTFT, or batching workloads.

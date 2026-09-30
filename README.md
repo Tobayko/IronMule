@@ -301,7 +301,7 @@ matching it, runs on the machine that measured it rather than in CI.
 > [!IMPORTANT]
 > These numbers were measured on one Apple M1 Max (32 GB) and one Kaggle Tesla T4. They
 > are not a promise for every machine or model. Run `ironmule benchmark` on yours. Details:
-> [research/LEDGER.md](research/LEDGER.md) (entries `PORT1`, `B39d`, `E16`) and
+> [research/LEDGER.md](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) (entries `PORT1`, `B39d`, `E16`) and
 > [docs/LIMITS.md](docs/LIMITS.md).
 
 ## Quick start
@@ -480,10 +480,10 @@ pip install -e ".[dev]"
 pytest tests/engine -m "not integration"
 ```
 
-This repository also contains **Project Friday**, the research behind the numbers: every
-study with its preregistration, its results and the experiments that failed; the raw
-measurement files stay private. Start at
-[docs/README_PROJECT_FRIDAY.md](docs/README_PROJECT_FRIDAY.md).
+The research behind these numbers -- every study with its preregistration, its results
+and the experiments that failed; the raw measurement files stay private -- lives in a
+separate repository:
+[IronMule-Research](https://github.com/Tobayko/IronMule-Research).
 
 ## License
 

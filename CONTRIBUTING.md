@@ -5,7 +5,9 @@ Issues and pull requests are welcome.
 For a first contribution, start with the [README](README.md), install the published
 package with `python -m pip install ironmule`, and use the checkout installation below
 when you need the test suite or source tree. Performance and correctness changes need
-the evidence described in the research ledger.
+the evidence described in the research repository's ledger
+([research/LEDGER.md](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md)
+in [IronMule-Research](https://github.com/Tobayko/IronMule-Research)).
 
 ## Start at the backlog
 
@@ -25,9 +27,10 @@ to follow them:
    mechanism and a kill criterion — what result would close it for good. Without a kill
    criterion it is a wish, not a hypothesis.
 2. **Delete what is finished.** An answered entry leaves its tier in the same pull
-   request that answers it. The result moves to `research/LEDGER.md` if it shipped, or
-   to Tier 0 as one line with its number and experiment ID if it was rejected. A backlog
-   that keeps its corpses stops describing what is left to do.
+   request that answers it. The result moves to the research repository's
+   `research/LEDGER.md` if it shipped, or to Tier 0 as one line with its number and
+   experiment ID if it was rejected. A backlog that keeps its corpses stops describing
+   what is left to do.
 3. **Put back what you learn.** A new idea, a new dead end, a number that surprised you
    — the same day, even half-formed, even if it is probably wrong.
 
@@ -36,9 +39,9 @@ to follow them:
 **A performance claim needs a measurement.**
 
 If a change is meant to be faster, say how you measured it and against what
-baseline. `research/LEDGER.md` shows the format that is used throughout this
-project: a question, competing explanations, criteria fixed before the run, the
-result, and what it does not show.
+baseline. The research repository's `research/LEDGER.md` shows the format that is used
+throughout this project: a question, competing explanations, criteria fixed before the
+run, the result, and what it does not show.
 
 Four of the sixteen experiments in that ledger exist because a promising idea turned
 out not to work. Negative results are kept, not deleted — they are the reason the
@@ -53,9 +56,11 @@ pytest tests/engine -q -m integration         # needs a local model snapshot
 python -m ironmule.benchmark --requests 6 --max-tokens 48
 ```
 
-`tests/engine/` is the engine package's own suite and runs on any Mac. The rest of
-`tests/` is the research suite: it binds to the machine that holds this project's
-measured evidence and removes itself from collection anywhere else.
+`tests/engine/` is the engine package's own suite and runs on any Mac. A handful of
+files directly under `tests/` -- the learned-dispatch lifecycle, the portable-collection
+suite, `friday_evidence`'s own contract tests, and the two claims-vs-evidence checks --
+test the same shipped packages and run the same way; `tests/conftest.py` only excludes a
+file that imports `mlx` when `mlx` itself is not installed.
 
 Before opening an environment or installation issue, run `ironmule doctor` and include
 its output. To share a result from another Mac, use the [benchmark issue template](.github/ISSUE_TEMPLATE/benchmark_submission.md)

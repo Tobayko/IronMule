@@ -893,7 +893,7 @@ three times; check token identity at every width.
 
 **Kill.** Width 4 wins at 27B too. Then the ceiling belongs to the kernel rather than
 the shape, `LIMITS.md` gains a sentence saying it was checked at two scales, and the
-`M=8` story is settled. Full detail in [`SCALING.md`](SCALING.md).
+`M=8` story is settled. Full detail in [`SCALING.md`](https://github.com/Tobayko/IronMule-Research/blob/main/docs/SCALING.md).
 
 ### `B2` — Group the `lm_head`, and only the `lm_head`
 
@@ -999,7 +999,7 @@ advantage at scale and drop several tiers.
 ### `B26` — Qwen3.8 27B, to separate model size from model family
 
 **Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
-confounded and the falling gain in [`SCALING.md`](SCALING.md) has two live explanations.
+confounded and the falling gain in [`SCALING.md`](https://github.com/Tobayko/IronMule-Research/blob/main/docs/SCALING.md) has two live explanations.
 `mlx-community/Qwen3.8-27B-4bit` is the cleanest available discriminator: the same
 parameter count as the Gemma 3 27B already measured, at **4 bit, group size 64** —
 identical quantisation, so the validity box changes in one dimension instead of three.
@@ -1432,7 +1432,7 @@ error to be negotiated with.
 answered — this is a list of open work, and an entry that survives its own answer makes
 the list lie about how much is left. The result does not disappear, it moves:
 
-- **It worked and shipped** -> a full entry in [`research/LEDGER.md`](../research/LEDGER.md),
+- **It worked and shipped** -> a full entry in [`research/LEDGER.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md),
   and a line in [`LIMITS.md`](LIMITS.md) if it changed the validity domain.
 - **It failed, or it was measured and rejected** -> one line in Tier 0 above, with the
   number and the experiment ID. Tier 0 is the only part of this file that grows.

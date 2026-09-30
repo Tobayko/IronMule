@@ -11,9 +11,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The engine package claims >= 3.10 and keeps being tested on 3.11.
-        # The research tree needs 3.12 (requirements-apple-silicon.txt) and
-        # removes itself from collection below that -- see tests/conftest.py.
+        # The engine package claims >= 3.10; tested on the two most recent series it
+        # supports.
         python-version: ["3.11", "3.12"]
     name: macos / py${{ matrix.python-version }}
     steps:
@@ -39,18 +38,16 @@ jobs:
         run: |
           .ci-venv/bin/python -m pip install "ruff==0.16.6"
           .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tests/engine tests/conftest.py tests/test_numeric_plans.py tests/test_documented_claims.py --select F
-      # A runner is not the target device. The research tree under tests/ binds
-      # to this project's own machine by design -- gitignored evidence databases
-      # under .friday-data/, a validated local model cache, and its own .venv
-      # interpreter -- and AGENTS.md is explicit that a test asserting MLX, Metal
-      # or model behaviour must have run on the target device. So CI runs the
-      # engine package's own suite, which depends on nothing outside the
-      # repository. The research suite runs on the target device, which is the
-      # only place it can say anything true.
+      # The engine package's own suite depends on nothing outside the repository, so
+      # it runs anywhere. AGENTS.md keeps hardware/speed claims on the target device;
+      # this runner establishes correctness, not performance.
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
-      # The two research modules that check public claims run here too (tests/conftest.py);
-      # a check whose run file is private measured data, or needs .friday-data/, skips.
+      # These two check public claims (README, docs/PROJECT_STATUS.md) against the
+      # measured evidence they cite. A check whose run file is private measured data
+      # skips (tests/conftest.py); the evidence itself lives in the research repository
+      # and is gitignored here, so most of these checks skip on a runner and run in full
+      # only on the machine that recorded the evidence.
       - name: Claims against their evidence
         run: .ci-venv/bin/python -m pytest tests/test_numeric_plans.py tests/test_documented_claims.py -n 0 -rs
 
