@@ -16,9 +16,9 @@ from pathlib import Path
 
 import pytest
 
-from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASUREMENTS, QUALITY_BOUND,
-                                    PlanRefused, architecture_of, check, device_class,
-                                    measurements_for, recommend)
+from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASURED_WITH,
+                                    MEASUREMENTS, QUALITY_BOUND, PlanRefused, architecture_of,
+                                    check, device_class, measurements_for, recommend)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -91,6 +91,22 @@ CHUNK_GATES = {
         ("backlog8-run1-1665f2ae/gate-gemma3-12b-p16-prefill.json",
          "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-prefill.json")),
 }
+#: Dtype plans whose decode path was gated too (NEXT1-C run 1), against stock on the same
+#: path; such a row must carry the worse of its prefill (PAIRED) and decode gates.
+DECODE_GATES = {
+    ("mlx_lm.models.gemma3_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma3-4b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma3-4b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float16"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp16-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.ministral3", "float32"): (
+        "next1c-run1-1497adb8/gate-mistral-24b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-mistral-24b-stock-decode.json"),
+}
 
 
 def _paired_gate(bf16_file: str, other_file: str, other_key: str):
@@ -136,7 +152,10 @@ def test_every_quality_interval_is_the_one_its_run_supports(row):
         ratio, interval = max((_chunk_gate(*pair) for pair in CHUNK_GATES[key]),
                               key=lambda gate: gate[1][1])
     elif key in PAIRED:
-        ratio, interval = _paired_gate(*PAIRED[key])
+        gates = [_paired_gate(*PAIRED[key])]
+        if key in DECODE_GATES:
+            gates.append(_chunk_gate(*DECODE_GATES[key]))
+        ratio, interval = max(gates, key=lambda gate: gate[1][1])
     else:
         payload = json.loads((ROOT / row.quality_evidence[0]).read_text())
         ratio, interval = payload[row.quality_evidence[1]], tuple(payload["ppl_ratio_ci"])
@@ -246,3 +265,55 @@ def test_architecture_comes_from_the_module_mlx_lm_actually_runs():
     nn.quantize(model, group_size=32, bits=4)
     assert architecture_of(model) == "mlx_lm.models.qwen3"
     assert architecture_of(object()) is None
+
+
+def _evidence_identity(path: Path) -> tuple[str, str]:
+    """(model id, revision) as a run file recorded it: named, or in its snapshot path."""
+    record = json.loads(path.read_text())
+    if record.get("model_id") and record.get("revision"):
+        return record["model_id"], record["revision"]
+    repo, _, revision = record["model_path"].split("/models--", 1)[1].partition("/snapshots/")
+    return repo.replace("--", "/", 1), revision.strip("/")
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_is_bound_to_the_revisions_its_evidence_recorded(row):
+    """NEXT1-C: a row covers its checkpoints at the revision measured, read from the runs."""
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for name in PAIRED.get(key, ())[:2]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    recorded = {_evidence_identity(path) for path in files}
+    for model_id, revision in recorded:
+        assert model_id in row.models, f"{row.label} {row.plan}: evidence for {model_id} it does not name"
+        assert revision == MEASURED_REVISIONS[model_id], f"{model_id}: evidence at {revision}"
+    assert set(row.models) <= {model_id for model_id, _ in recorded}
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_ran_on_the_framework_it_claims(row):
+    """NEXT1-C: every evidence run's `pip freeze` names MEASURED_WITH's versions."""
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    for run in {path.parent for path in files}:
+        frozen = dict(line.split("==", 1) for line in (run / "logs" / "freeze.log").read_text().split()
+                      if "==" in line)
+        assert {name: frozen.get(name) for name in MEASURED_WITH} == MEASURED_WITH, run.name
+
+
+def test_a_recommendation_holds_only_for_the_framework_it_measured():
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, framework=dict(MEASURED_WITH))[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, framework={**MEASURED_WITH, "mlx": "0.33.0"})
+    assert plan is None and "this environment runs mlx 0.33.0" in reason
+
+
+def test_a_recommendation_reaches_only_the_revision_it_measured():
+    qwen3, model = "mlx_lm.models.qwen3", "mlx-community/Qwen3-8B-4bit"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, model, MEASURED_REVISIONS[model])[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, model, "0" * 40)
+    assert plan is None and "another revision is another model" in reason
+    assert "Qwen3-8B-4bit@545dc42" in recommend(qwen3, CUDA_PRE_AMPERE)[1]

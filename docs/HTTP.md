@@ -32,12 +32,13 @@ when it is ready:
 | `--tls-cert`, `--tls-key` | none | serve over TLS |
 | `--state-dir` | `IRONMULE_HOME` or `~/.ironmule/product` | product state directory |
 | `--compute-dtype` | none | opt-in numeric plan for GPUs that emulate bf16 (`float32`, `native`); changes output, see `ironmule plans` |
+| `--engine` | `stock` | `stock`: mlx-lm's own generation, streamed token by token; `ironmule`: IronMule's engine with this machine's tuned profile, each answer delivered whole. Both are greedy but compute the last prompt token differently (mlx-lm prefills it alone, IronMule with the rest), so their answers can differ |
 
 ## Routes
 
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
-| `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below |
+| `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below. It shows which engine answers and, live, completion tokens per second from sending to the last token |
 | `GET` | `/health` | service, mode, backend, loaded model, queue and completion counters |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |

@@ -2,11 +2,15 @@
 
 Usage: python oss1_summary.py RESULTS_DIR [OUT.json]
 
+Also reads `perf1.py routing` (PERF1-U): a two-card run leaves one file per rank, each with
+its own layers, and they are joined in layer order. Records may be gzipped (`.json.gz`).
+
 For every pair of recorded runs and every chunk: the share of (layer, position) cells whose
 sorted top-k experts differ, and the NLL difference. For flipped cells against the first
 bf16 run, where the first run's router margin lay: the margin is the gap between the k-th
 and the (k+1)-th router logit, so a small one means the choice was nearly a tie.
 """
+import gzip
 import json
 import statistics as st
 import sys
@@ -14,10 +18,25 @@ from itertools import combinations
 from pathlib import Path
 
 
+def _read(path):
+    return json.loads(gzip.decompress(path.read_bytes()) if path.suffix == ".gz" else path.read_text())
+
+
 def load(results):
     runs = {}
-    for path in sorted(Path(results).glob("routing-*.json")):
-        runs[path.stem.removeprefix("routing-")] = json.loads(path.read_text())
+    for path in sorted(Path(results).glob("routing-*.json*")):
+        name = path.name.removeprefix("routing-").split(".json")[0]
+        if "-rank" in name:
+            continue
+        run = _read(path)
+        parts = [run] + [_read(p) for p in Path(results).glob(f"routing-{name}-rank*.json*")]
+        if len(parts) > 1:
+            parts.sort(key=lambda part: part["pipeline"]["layers"][0])
+            for i, row in enumerate(run["rows"]):
+                experts = [layer for part in parts for layer in part["rows"][i]["experts"]]
+                margins = [layer for part in parts for layer in part["rows"][i]["margins"]]
+                row["experts"], row["margins"] = experts, margins
+        runs[name] = run
     return runs
 
 

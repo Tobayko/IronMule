@@ -126,9 +126,15 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere); "
                              "changes output; which one pays is per model, see `ironmule plans`")
+    parser.add_argument("--engine", choices=("stock", "ironmule"), default="stock",
+                        help="stock: mlx-lm's own generation, streamed token by token (default); "
+                             "ironmule: IronMule's engine with this machine's tuned profile, greedy, "
+                             "each answer delivered whole once it is complete")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
+    if args.engine == "ironmule" and args.compute_dtype is not None:
+        parser.error("--compute-dtype runs on the stock engine only")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -154,7 +160,9 @@ def serve(argv: list[str]) -> int:
                 lease_entered = True
             except CalibrationFailure as exc:
                 raise InvalidRequest("model resources are in use by another IronMule operation") from exc
-            backend = MLXWorkerClient(spec, compute_dtype=args.compute_dtype)
+            backend = MLXWorkerClient(spec, compute_dtype=args.compute_dtype,
+                                      execution_variant="current_engine" if args.engine == "ironmule"
+                                      else "reference")
             backend.start()
         service = ProductService(store, backend=backend, spec=spec)
         server = create_server(service, host=args.host, port=args.port,

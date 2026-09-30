@@ -139,7 +139,8 @@ and both plans sit inside the bound on E2B, a little better than
 bfloat16 itself. Chat decoding returned stock's tokens in 5 of 6 requests for either plan, so
 `ironmule plans` now recommends `float16` for Gemma 4 E2B on these cards. The E4B
 checkpoints share the architecture but no gate ran on them, so they get no
-recommendation of their own (a recommendation covers only the checkpoints it measured).
+recommendation of their own (a recommendation covers only the checkpoints it measured, at the
+revision and with the MLX and mlx-lm versions measured).
 
 gpt-oss 20B's plans cannot be qualified on this card at all. Its router picks four of 32
 experts per token, and the emulated bfloat16 reference cannot order router scores that close:
@@ -207,6 +208,16 @@ pass the quality gate on every path it touches:
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-native-quality-dark.svg">
   <img src="docs/assets/t4-native-quality.svg" alt="Perplexity ratio with 95 percent bootstrap intervals for the native plan's decode and prefill paths, all inside the 1.005 bound" width="100%">
+</picture>
+
+The float16 and float32 plans recommended for Gemma 4 E2B, Gemma 3 4B and Mistral Small 3.2 24B
+pass on the decode path as well as on prefill (NEXT1-C), and so does `native` on Qwen3.8 27B
+split over two T4s (GATE-Q38). That model still gets no recommendation: the product runs a model
+on one card, and its weights do not fit one T4.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-plan-gates-dark.svg">
+  <img src="docs/assets/t4-plan-gates.svg" alt="Perplexity ratio with 95 percent bootstrap intervals on the prefill and decode paths for five gated plans on a Tesla T4, all inside the 1.005 bound" width="100%">
 </picture>
 
 **Serving several requests at once.** The decode kernel reads the weights once per request. A

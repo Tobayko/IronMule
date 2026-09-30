@@ -6,13 +6,14 @@ Usage: python perf1.py kernel OUT.json
        python perf1.py gather OUT.json
        python perf1.py e2e MODEL_PATH ARM OUT.json
        python perf1.py nll MODEL_PATH ARM PATH_MODE TEXT OUT.json    (PATH_MODE: prefill|decode)
+       python perf1.py routing MODEL_PATH ARM TEXT OUT.json          (MoE expert choice per layer, PERF1-U)
        python perf1.py spec MODEL_PATH ARM DRAFT_PATH DRAFTS OUT.json  (DRAFTS: e.g. "2,3,4")
        python perf1.py server MODEL_PATH ARM WIDTHS OUT.json            (WIDTHS: e.g. "1,4,8")
        python perf1.py ironmule MODEL_ID REVISION ARM KNOBS_JSON interactive|throughput OUT.json
-       mlx.launch --hosts 127.0.0.1 -n 2 --backend ring -- PYTHON perf1.py e2e|server ...  (layer pipeline)
+       mlx.launch --hosts 127.0.0.1 -n 2 --backend ring -- PYTHON perf1.py e2e|server|routing ...  (layer pipeline)
 
 ARM is "+"-joined parts: "stock" (bf16 checkpoint as loaded), "fp32" (IronMule's float32
-plan, `set_dtype`), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
+plan, `set_dtype`), "fp16" (its float16 plan, the same way), "kernel" (single-row bf16 4-bit matmuls through the native kernel),
 "k32" (the same kernel reading float32 activations and scales, for the float32 plan),
 "p16" (multi-row 4-bit matmuls, i.e. prefill: dequantise to float16, one tensor-core GEMM,
 cast back), "gather" (MoE experts, `gather_qmm` with up to GATHER_MAX (token, expert) rows:
@@ -34,6 +35,7 @@ Timing: every arm runs a full warmup generation first, then REPS measured genera
 fixed ~512-token prompt; TTFT is prefill plus the first token, decode rate is the remaining
 tokens over their wall time, mlx-lm's own async-eval pattern. No performance claim.
 """
+import hashlib
 import json
 import math
 import os
@@ -592,10 +594,12 @@ def _gather_patched(x, w, scales, biases=None, lhs_indices=None, rhs_indices=Non
 
 def apply_arm(model, arm):
     parts = set(arm.split("+"))
-    if not parts <= {"stock", "fp32", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"}:
+    if not parts <= {"stock", "fp32", "fp16", "kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"}:
         raise ValueError(arm)
     if "fp32" in parts:
         model.set_dtype(mx.float32)
+    if "fp16" in parts:
+        model.set_dtype(mx.float16)
     routes.update(parts & {"kernel", "k32", "p16", "mma", "mma2", "gather", "g16", "r8"})
     if routes:
         mx.quantized_matmul = _patched  # nn.QuantizedLinear looks it up per call
@@ -657,13 +661,8 @@ def measure(model, tokenizer, arm):
             "performance_claim": False}
 
 
-def nll(model, tokenizer, arm, path_mode, text_path):
-    """Per-chunk mean next-token NLL, through the prefill path (one forward over the chunk) or
-    the decode path (teacher-forced, one token at a time through the cache) — the latter is the
-    only way the single-row kernel is exercised."""
-    from mlx_lm.models.cache import make_prompt_cache
-
-    apply_arm(model, arm)
+def nll_chunks(tokenizer, text_path):
+    """NLL_CHUNKS evenly spaced sequences of NLL_TOKENS + 1 tokens from one encode of the text."""
     with open(text_path) as stream:
         ids = tokenizer.encode(stream.read())
     stride = (len(ids) - NLL_TOKENS - 1) // NLL_CHUNKS
@@ -671,12 +670,60 @@ def nll(model, tokenizer, arm, path_mode, text_path):
     # first did: Gemma 3 4B then scored perplexity 103 on a Mac, 26.9 with BOS on every chunk, and
     # Gemma 4 E2B (whose tokenizer adds none) 21532 against 353 (2026-09-24).
     bos = getattr(tokenizer, "bos_token_id", None)
-    chunks, nonfinite = [], 0
-    started = time.time()
     for i in range(NLL_CHUNKS):
         seq = ids[i * stride:i * stride + NLL_TOKENS + 1]
         if bos is not None and seq[0] != bos:
             seq = [bos] + seq[:-1]
+        yield seq
+
+
+def routing(model, tokenizer, arm, text_path):
+    """PERF1-U step 1: which experts the router picks, per layer and position, on `nll`'s chunks
+    through the prefill path. Records what the model's own `mx.argpartition(gates, kth=-k)` returned
+    (Qwen3-Next's sparse block: top-k of the softmaxed router logits), sorted, and the float32 gap
+    between the k-th and the (k+1)-th of those probabilities. Under `mlx.launch` a rank sees only
+    its own layers; `oss1_summary.py` joins the rank files."""
+    apply_arm(model, arm)
+    recorded, original = [], mx.argpartition
+
+    def recording(a, kth, axis=-1, **kw):
+        out = original(a, kth, axis=axis, **kw)
+        if kth >= 0 or axis != -1:
+            raise ValueError("routing expects a top-k along the last axis")
+        ordered = mx.sort(a.astype(mx.float32), axis=-1)
+        recorded.append((mx.sort(out[..., kth:], axis=-1), ordered[..., kth] - ordered[..., kth - 1]))
+        return out
+
+    mx.argpartition = recording
+    rows, started = [], time.time()
+    for i, seq in enumerate(nll_chunks(tokenizer, text_path)):
+        recorded.clear()
+        logits = model(mx.array(seq[:-1])[None, :])[0].astype(mx.float32)
+        lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
+        value = -mx.mean(mx.take_along_axis(lp, mx.array(seq[1:])[:, None], axis=-1))
+        mx.eval(value, *[array for pair in recorded for array in pair])
+        rows.append({"chunk": i, "nll": value.item(), "experts": [e[0].tolist() for e, _ in recorded],
+                     "margins": [[round(v, 7) for v in m[0].tolist()] for _, m in recorded]})
+        print(i, arm, round(rows[-1]["nll"], 4), len(recorded), "layers", flush=True)
+        del logits, lp
+    mx.argpartition = original
+    return {"schema": "ironmule.oss1-routing.v1", "arm": arm, "dtype": arm, "chunk_tokens": NLL_TOKENS,
+            "rows": rows, "routed": dict(routed), "cuda_graphs": os.environ.get("MLX_USE_CUDA_GRAPHS", "on"),
+            "arith": os.environ.get("PERF1_ARITH", "free"), "peak_memory_bytes": int(mx.get_peak_memory()),
+            "seconds": round(time.time() - started, 1), "performance_claim": False}
+
+
+def nll(model, tokenizer, arm, path_mode, text_path):
+    """Per-chunk mean next-token NLL, through the prefill path (one forward over the chunk) or
+    the decode path (teacher-forced, one token at a time through the cache) — the latter is the
+    only way the single-row kernel is exercised."""
+    from mlx_lm.models.cache import make_prompt_cache
+
+    apply_arm(model, arm)
+    bos = getattr(tokenizer, "bos_token_id", None)
+    chunks, nonfinite = [], 0
+    started = time.time()
+    for i, seq in enumerate(nll_chunks(tokenizer, text_path)):
         if path_mode == "prefill":
             logits = model(mx.array(seq[:-1])[None, :])[0].astype(mx.float32)
             lp = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
@@ -1134,6 +1181,11 @@ def pipelined(path):
                               "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"), "gpus_after_load": smi}
 
 
+def _sha256(path):
+    with open(path, "rb") as stream:
+        return hashlib.sha256(stream.read()).hexdigest()
+
+
 def main():
     mode = sys.argv[1]
     if mode == "kernel":
@@ -1164,6 +1216,9 @@ def main():
         elif mode == "nll":
             path_mode, text_path, out = sys.argv[4:7]
             report = nll(model, tokenizer, arm, path_mode, text_path)
+        elif mode == "routing":
+            text_path, out = sys.argv[4:6]
+            report = routing(model, tokenizer, arm, text_path)
         elif mode == "server":
             widths, out = sys.argv[4:6]
             report = server(model, tokenizer, arm, [int(w) for w in widths.split(",")])
@@ -1175,15 +1230,21 @@ def main():
             raise SystemExit(__doc__)
         report["model_path"] = path
         report.update(pipeline=pipe)
+        if mode in ("nll", "routing"):
+            report["input_sha256"] = _sha256(text_path)
         if pipe.get("rank"):
             out = out.replace(".json", f"-rank{pipe['rank']}.json")
     report["mode"] = mode
+    # NEXT1-I: what each rank ran and for which attempt, so `ranks.all_ranks` can refuse ranks
+    # that ran different code or input, or a stale file from an earlier attempt.
+    report["code_sha256"] = _sha256(__file__)
+    report["attempt"] = os.environ.get("PERF1_ATTEMPT")
     # NEXT1-I: written whole or not at all, so a rank that dies mid-write leaves no file
     # that looks like a result.
     with open(out + ".partial", "w") as stream:
         json.dump(report, stream, indent=1)
     os.replace(out + ".partial", out)
-    print(json.dumps({k: v for k, v in report.items() if k not in ("tokens", "prompts")}), flush=True)
+    print(json.dumps({k: v for k, v in report.items() if k not in ("tokens", "prompts", "rows")}), flush=True)
 
 
 if __name__ == "__main__":

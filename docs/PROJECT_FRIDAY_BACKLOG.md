@@ -165,16 +165,6 @@ mindestens +15 %“ (run 17: `native` 2,49x des float32-Plans, nur Tempo). Offen
   multiplexed client (several requests in flight on one pipe, frames routed by `request_id`,
   cancellation and the unusable-worker path per request). That is days of work in the product
   path and only testable on Kaggle, so it starts with that client and its own tests, not blind.
-- **PERF1-U Qualitätsgate für MoE-Experten unter `native`.** Seit PERF1-S rechnet `native`
-  auch die Experten (Decode-Kernel, Prefill in float16); gemessen ist nur Tempo (run 14),
-  kein NLL. Test: `perf1.py nll` mit `kernel+p16+gather+g16` gegen Stock-bf16, Decode- und
-  Prefill-Pfad, Qwen3.6 35B-A3B über zwei Karten (Gemma 4 erst nach PORT2-K, dem
-  Gate mit BOS je Chunk). Kill: obere Intervallgrenze > 1,005 — dann Experten
-  unter `native` für diese Architektur verweigern (Tabellenzeile in `numeric_plans.py`).
-  Deferred 2026-09-25 (agent decision): OSS1 found emulated bf16 flipping a fifth of gpt-oss's
-  expert choices, so a gate against bf16 on a T4 is likely inconclusive for MoE; first measure
-  Qwen3.6's routing flips bf16 against float32 (`moe_routing.py`, adapted to its router), and
-  gate only if they are rare.
 - **PERF1-W Auslastung des Experten-Kernels.** Deferred 2026-09-26 (agent decision): run 14's per-call probe times include a sync per call, so the utilisation they suggest (24–41 GB/s) is not the decode step's; measure the expert kernels inside a decode step (profiler or CUDA graph timing) before changing them blind. Bei 8 Paaren erreicht er 24–41 GB/s von
   ~320 (run 14); gate und up sind zwei Starts über dieselbe Zeile, und bei K = 512 (Qwens
   down) rechnet die halbe Warp nichts. Mechanismus: gate+up in einem Start, bei kleinem K
@@ -199,9 +189,10 @@ transformers reference DATA2 describes. No PORT2 entry is open.
 
 ## NEXT1 — Better answer quality, stability, and speed (2026-09-26)
 
-**Status:** Hypotheses from source review and existing records. No local or Kaggle
-runs were started for this entry. Written against `research/port2-model-families` and
-ported to the current tree on 2026-09-26; the owner's review of that day set the order
+**Status:** Hypotheses from source review and existing records. NEXT1 run 1 (Kaggle
+T4, ledger NEXT1 run 1) answered D and measured E's admission cost; the rest is
+unmeasured. Written against `research/port2-model-families` and ported to the current
+tree on 2026-09-26; the owner's review of that day set the order
 and the scope notes in D, C and Q. The reported `3/6`, `2/6`, and `4/6` values in
 `cross.py` count **requests with token sequences identical to a reference arm**,
 not factually correct answers. Grouped Qwen 3.5 9B reached `3/6` and varied
@@ -215,8 +206,8 @@ all six stock and `native` Qwen 3 14B outputs in both run-7 repetitions start
 with `<think>` and none reaches `</think>` within 48 tokens (NEXT1-Q).
 None of the items below changes historical verdicts or activates a plan.
 
-**Order (2026-09-26):** NEXT1-D, then NEXT1-C, then NEXT1-Q; NEXT1-E before any
-wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
+**Order (2026-09-26):** NEXT1-D and NEXT1-C (answered, ledger NEXT1 run 1 and NEXT1-C run 1),
+then NEXT1-Q; NEXT1-E before any wider `native` admission; NEXT1-I before the next two-card attempt; A and B after that.
 No longer prerequisites: PORT2-K (both runs, ledger PORT2-K), PERF1-T/T2, PERF1-M and
 PERF1-Y (ledger BACKLOG1-BACKLOG9), and PERF1-N (diagnosed; projection fusion is refused
 under `native`). PERF1-X (answered: the head skip on full cards), PERF1-K2 (deferred)
@@ -302,69 +293,14 @@ qualification and stabilize the reference first. If no repeatable first
 cause emerges, do not build a prompt-specific `6/6` patch; keep separate
 numeric plans with their own quality gates.
 
-### NEXT1-C — Bind CUDA plan recommendations to complete model evidence
-
-**Implemented 2026-09-26, CI-verified only.** `PlanMeasurement.models` now names only the
-checkpoints whose speed and gate the row's evidence covers (Qwen 3 `float16`: 8B, since 14B
-was gated but not timed; Gemma 4 `float32`/`float16`: E2B); `recommend(..., model_id=)`
-returns nothing for any other checkpoint, `ironmule plans --model` uses it, and without a
-model `doctor` and `plans` name the checkpoints a recommendation is for. Still open from
-the gate below: revision, quantisation and backend binding, and per-path cells.
-
-**Mechanism.** `PlanMeasurement.models` names checkpoints, but
-`numeric_plans.measurements_for()` and `recommend()` filter only architecture
-and device class, so a recommendation reaches every model of the architecture:
-Gemma 4 E4B and E4B-qat are recommended `float16` on E2B's gate (PORT2-K), and a
-Qwen 3 32B or 0.6B would inherit the `qwen3` rows unmeasured. `doctor` and
-`ironmule plans` can thus present a positive architecture-level recommendation beyond
-the measured model, revision, and execution-path scope. The plan is still opt-in; this
-is an evidence/wording gap, not an observed output failure.
-
-**Gate.** Audit each table cell against exact model revision, quantization,
-backend/framework, and all affected decode, prefill, and expert paths.
-Recommend only with every applicable gate; display unknown or partially
-measured cells as `unqualified`.
-
-**Kill/pivot.** If exact identity is unavailable at a display site, abstain
-there from a positive model-wide recommendation. An architecture row alone
-cannot qualify a new model revision.
-
-### NEXT1-D — Enforce the hybrid-cache guard at the actual dispatch
-
-**Implemented 2026-09-26, CI-verified only.** Modes declare `groups`; the refusal checks
-that attribute (unknown modes count as grouping), runs again in `Runtime.serve` before
-`build_sessions` prefills, fails closed on unknown cache types, and the router falls back
-to `InteractiveMode` for such a model. Unit tests cover every grouping mode, a swapped mode
-at dispatch and the router; the Qwen integration test now expects the refusal after its
-sequential gate. Still open from the gate below: a real hybrid model's token and state
-comparison, which runs with that integration test when `IRONMULE_QWEN_MODEL` is set.
-
-**Mechanism.** `ironmule.service.Runtime.__init__` checks recurrent caches
-once. `Runtime.mode` is then writable (`docs/RUNTIME.md` documents switching),
-`router.py` changes it per dispatch, and `AutomaticMode` can choose
-`ThroughputMode`. `Runtime.serve()` creates the executor without a second
-cache check. The model-gated Qwen integration test even switches from
-interactive to throughput and expects grouped equality. These routes can
-bypass the PORT2 refusal. The guard has to see the executor actually chosen for a
-dispatch: `AutomaticMode` can pick grouped execution without being named `throughput`,
-so a check of the mode's name alone is bypassable.
-
-**Gate.** Guard the actual executor choice before prefill or model work.
-Cover mode mutation, router, and automatic fallback with hybrid-cache token
-**and state** comparisons against sequential execution. Align the integration
-test with the current contract. Fail closed on unknown cache types.
-
-**Kill/pivot.** If another guard demonstrably covers every route, avoid a
-second one. Otherwise keep hybrid grouping disabled until a new graph-free
-qualification explicitly admits it.
-
 ### NEXT1-E — Admit the CUDA `native` kernel per routed shape
 
-**Implemented 2026-09-26, CI-verified only:** `install()` probes every (module type, weight
+**Implemented 2026-09-26:** `install()` probes every (module type, weight
 shape) class once instead of the first module and one switch, records `probed_shapes` and
 `probe_seconds`, and probes a head taller than 8192 rows on its first 8192 (same K, same rows
-per warp) so its float32 reference is not gigabytes. Still open from the gate: boundary and
-non-finite inputs, and the on-GPU run that measures the admission cost.
+per warp) so its float32 reference is not gigabytes. Admission cost on a T4 (NEXT1 run 1):
+6 classes in 8.0 s for Qwen 3 8B, 7 in 9.9 s for Gemma 3 12B, once per load; Qwen 3 8B's
+tokens equal PERF1-X run 2's. Still open from the gate: boundary and non-finite inputs.
 
 **Mechanism.** `cuda_native.install()` replaces every eligible 4-bit module,
 but `_probe()` checks only the first module and at most one MoE switch on a
@@ -448,8 +384,13 @@ recurrence path.
 (`.partial`, then `os.replace`), and `experiments/kaggle_compat/ranks.py`'s `all_ranks()`
 accepts a two-card stage only when every rank's file exists, parses, agrees on arm, mode
 and model, and carries ranks 0..size-1. The next two-card notebook judges its stages with
-it and runs its self-check first. Not yet covered: code/input hashes per rank and owned
-child cleanup.
+it and runs its self-check first (passes on the Kaggle image, NEXT1 run 1). Since the same
+day every rank also records `code_sha256` (its `perf1.py`), `input_sha256` (the text for
+`nll` and `routing`) and `attempt` (`PERF1_ATTEMPT`); `all_ranks` refuses ranks that differ
+in any of them, a record without a code hash, and, given `attempt=`, a stale file from an
+earlier attempt. `ranks.gpu_idle()` reports any compute process still on a GPU after a stage
+(from `nvidia-smi`; it ends nothing). Not yet covered: a notebook that uses both on a real
+two-card run.
 
 **Mechanism.** `experiments/kaggle_compat/perf1_run13.py:run` treats existence
 of a rank-0 file as stage success because `mlx.launch` returned exit 0 despite
@@ -1662,18 +1603,19 @@ absichtlich verschlechterte Metrik wird von der Regressionsgrenze erkannt.
 davon die meisten nur einmal belegt), wird zuerst eine Namenskonvention für
 vergleichbare Metriken gebraucht; ohne die trägt keine Zeitreihe.
 
-## GATE-Q38 — Qwen3.8 27B unter `native` qualifizieren (neu 2026-09-28)
+## Q38-ROW — A plan row for Qwen3.8 27B needs a product-path speed (new 2026-09-30)
 
-**Mechanismus.** DEMO5 zeigte Qwen3.8 27B über zwei T4 mit den `native`-Kernels 4,3x schneller
-bei gleichem Text, aber kein Gate hat das Modell je geprüft. `gate_q38.py` (Kaggle
-`gate-q38-run1-a8f88fc2`, eingereicht 2026-09-28) misst Prefill (`p16`) und Decode (`kernel`,
-pinned) gegen Stock-bf16 über die Zwei-Karten-Pipeline, 32 x 256 Tokens, Graphen aus.
+**Mechanism.** GATE-Q38 passed on both paths (ledger GATE-Q38), but a `numeric_plans` row also
+needs a wall ratio from the product path (`cross.py`, `compute_dtype="native"`), and the product
+runs a model on one card. Qwen3.8 27B's 16.6 GB of 4-bit weights do not fit a 16 GB T4; DEMO5
+timed it only through the research harness's two-card pipeline.
 
-**Gate:** je Pfad Obergrenze des Bootstraps <= 1,005 und nichts nicht-endlich (`gate_summary.py`).
+**Test.** `cross.py`, stock against `native`, on one pre-Ampere card with room for the weights
+and a cache (Volta V100 32 GB, Turing RTX 8000), or through the product once it can split a model
+over two cards; the six-request workload of PERF1 run 7.
 
-**Kill:** ein Pfad über der Grenze sperrt `native` für `mlx_lm.models.qwen3_5` per Tabellenzeile;
-beide darunter ergeben eine Zeile für diesen Checkpoint. Der Lauf lief beim Schreiben noch; sein
-Ergebnis mit `kaggle kernels output` holen und im Ledger nachtragen.
+**Kill:** no such card within free compute and no two-card product path: the row stays unwritten,
+`native` stays unrecommended for this checkpoint, and the gate stays ledger evidence only.
 
 ## SERVE1 — Stocks erster Prompt sprengt das 120-s-Request-Limit auf einer T4 (neu 2026-09-28)
 
