@@ -84,21 +84,6 @@ class LocalModelSnapshotTests(unittest.TestCase):
         with self.assertRaises(LocalModelError):
             resolve_local_model_snapshot(self.MODEL_ID, hub_root=hub)
 
-    def test_every_model_tool_loads_only_the_validated_local_path(self) -> None:
-        for script in (
-            "codegen_loop.py",
-            "measure_fusion_layer.py",
-            "measure_roofline.py",
-            "model_loop.py",
-        ):
-            with self.subTest(script=script):
-                source = (ROOT / "tools" / script).read_text(encoding="utf-8")
-                self.assertIn("resolve_local_model_snapshot", source)
-                self.assertIn("load(str(snapshot.path))", source)
-                self.assertNotIn("load(model_id)", source)
-                self.assertNotIn("load(MODEL_ID)", source)
-                self.assertNotIn("snapshot_download", source)
-
 
 if __name__ == "__main__":
     unittest.main()

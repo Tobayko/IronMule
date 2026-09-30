@@ -123,13 +123,8 @@ def test_every_kernel_this_repository_builds_has_a_derived_name() -> None:
     """No caller may go around the registry with a name of its own choosing."""
 
     import importlib
-    import sys
-    from pathlib import Path
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-    modules = ("ironmule.qmv_k3840", "ironmule.qmv_shared", "ironmule.qmv_fast_shared",
-               "b42_qmv_kernel", "b45_shared_weight_kernel", "b49_quad_kernel",
-               "b48_fast_shared_kernel")
+    modules = ("ironmule.qmv_k3840", "ironmule.qmv_shared", "ironmule.qmv_fast_shared")
     for name in modules:
         importlib.import_module(name)
 

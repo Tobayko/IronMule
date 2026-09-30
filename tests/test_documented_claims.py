@@ -313,6 +313,7 @@ def test_the_ledger_would_notice_a_changed_number():
 
 
 def test_confirmed_ratios_match_the_studies_they_name():
+    pytest.importorskip("friday_optimizer", reason="research package is not in this checkout")
     from friday_optimizer.integration import CONFIRMED_RATIOS
 
     persistent = json.loads((ROOT / "experiments/persistent_process/results.json").read_text())
@@ -343,6 +344,7 @@ def test_the_measured_point_cost_is_derived_and_rounded_the_safe_way():
     block, so the plan under-promises rather than over-promises.
     """
 
+    pytest.importorskip("friday_optimizer", reason="research package is not in this checkout")
     from friday_optimizer.campaign import BLOCK_SECONDS, MEASURED_POINT_SECONDS
 
     matmul = json.loads((ROOT / "experiments/matmul_compile_ab/results.json").read_text())
@@ -368,6 +370,8 @@ def test_chosen_constants_are_labelled_as_chosen():
         "RATE_TOLERANCE": ROOT / "experiments/w1_regime/regime_analysis.py",
         "PROMPT_TOLERANCE": ROOT / "experiments/w1_regime/measure_long_answer.py",
     }
+    if not all(path.is_file() for path in sources.values()):
+        pytest.skip("research package is not in this checkout")
     missing = []
     for name, path in sources.items():
         text = path.read_text()
@@ -406,6 +410,7 @@ def test_the_registry_readback_candidate_is_not_the_measured_one():
     4.19 % is never cited as evidence for N = 2.
     """
 
+    pytest.importorskip("friday_optimizer", reason="research package is not in this checkout")
     from friday_optimizer.candidates import CandidateRegistry
 
     specification = CandidateRegistry().get("readback_every_2")
