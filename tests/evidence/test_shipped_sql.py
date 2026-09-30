@@ -1,0 +1,153 @@
+"""Every SQL literal in the shipped packages must compile against its own schema.
+
+SQL lives in this repository the way JavaScript does: as a string that no
+tool parses until a code path happens to execute it. A dashboard script with
+one surplus parenthesis silenced a UI for months (2026-09-02); the same shape
+of typo in a rarely-taken query would surface during a gated hardware run,
+which is the most expensive moment available.
+
+sqlite3 is in the standard library, so unlike the JavaScript guard this one
+never skips.
+
+This sweep is scoped to the packages this repository ships: `ironmule`,
+`ironmule_product` and `friday_evidence`. The research packages this test used
+to also sweep (`research/friday_*`) moved to the separate IronMule-Research
+repository and are covered there.
+"""
+
+from __future__ import annotations
+
+import ast
+import re
+import sqlite3
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[2]
+
+_START = re.compile(r"^\s*(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|PRAGMA|WITH|REPLACE)\b", re.I)
+_CLAUSE = re.compile(r"\b(FROM|INTO|TABLE|VALUES|SET|INDEX|TRIGGER|WHERE|VIEW)\b", re.I)
+#: A literal that is concatenated or interpolated into a larger statement.
+_FRAGMENT = re.compile(
+    r"[(=,]\s*$"
+    r"|^\s*PRAGMA\s+\w+\s*=\s*$"
+    r"|\b(FROM|WHERE|INTO|SET|AND|OR|JOIN|EXISTS|BY|VALUES|LIKE|IN)\s*$",
+    re.I,
+)
+_CREATE = re.compile(r"^\s*CREATE\b", re.I)
+
+#: The packages this repository ships. Every other `friday_*` package used to
+#: live under `research/`, which moved to IronMule-Research.
+PACKAGES = ("ironmule", "ironmule_product", "friday_evidence")
+
+#: Queries that deliberately read another package's database, keyed by the
+#: token SQLite names when the local schema lacks it. Each is a documented
+#: cross-package read, not a schema mismatch.
+_CROSS_PACKAGE = {
+    # The SSOT index reads every study database read-only; those schemas are not its own.
+    ("friday_evidence/ssot.py", "records"),
+    ("friday_evidence/ssot.py", "bundles"),
+    ("friday_evidence/ssot.py", "optimization_records"),
+    ("friday_evidence/ssot.py", "status_events"),
+    ("friday_evidence/ssot.py", "scalar_metrics"),
+    ("friday_evidence/ssot.py", "correctness_metrics"),
+    ("friday_evidence/ssot.py", "raw_samples"),
+    # Rebuilds reuse verified objects from the previous corpus, attached as `previous`.
+    ("friday_evidence/ssot.py", "no such table: previous."),
+}
+
+
+def _docstring_ids(tree: ast.AST) -> set[int]:
+    found = set()
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and body:
+            first = body[0]
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) \
+               and isinstance(first.value.value, str):
+                found.add(id(first.value))
+    return found
+
+
+def statements_of(path: Path) -> list[tuple[int, str]]:
+    """Complete SQL statements written as literals in *path*."""
+
+    try:
+        tree = ast.parse(path.read_text())
+    except SyntaxError:
+        return []
+    documentation = _docstring_ids(tree)
+    found: list[tuple[int, str]] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        if id(node) in documentation:
+            continue
+        text = node.value.strip()
+        if not _START.match(text) or len(text) <= 12:
+            continue
+        if not _CLAUSE.search(text) and not re.match(r"^\s*PRAGMA\s+\w+\s*$", text, re.I):
+            continue
+        if _FRAGMENT.search(text):
+            continue
+        found.append((node.lineno, text))
+    return found
+
+
+def _package_sources():
+    for name in PACKAGES:
+        for path in (ROOT / name).glob("*.py"):
+            if "__pycache__" not in path.parts:
+                yield path
+
+
+def packages() -> list[str]:
+    return sorted({
+        path.parent.relative_to(ROOT).as_posix() for path in _package_sources()
+        if statements_of(path)
+    })
+
+
+def test_the_sweep_still_finds_the_statements_it_is_meant_to_guard():
+    total = sum(len(statements_of(path)) for path in _package_sources())
+    assert total >= 94, f"only {total} statements found; the extractor has drifted"
+
+
+@pytest.mark.parametrize("package", packages())
+def test_every_sql_literal_compiles_against_its_package_schema(package):
+    connection = sqlite3.connect(":memory:")
+    try:
+        for migration in sorted((ROOT / package / "migrations").glob("*.sql")):
+            try:
+                connection.executescript(migration.read_text())
+            except sqlite3.Error:
+                pass
+        sources = sorted(
+            path for path in (ROOT / package).glob("*.py") if "__pycache__" not in path.parts
+        )
+        collected = [(path, line, text) for path in sources for line, text in statements_of(path)]
+        for _, _, text in collected:
+            if _CREATE.match(text):
+                try:
+                    connection.executescript(text)
+                except sqlite3.Error:
+                    pass
+        failures = []
+        for path, line, text in collected:
+            try:
+                connection.execute("EXPLAIN " + text, [None] * text.count("?"))
+            except sqlite3.Error as exc:
+                message = str(exc)
+                # A binding count complaint proves the statement already parsed.
+                if "bindings supplied" in message:
+                    continue
+                if _CREATE.match(text) and "already exists" in message:
+                    continue
+                relative = path.relative_to(ROOT).as_posix()
+                if any(relative == name and token in message for name, token in _CROSS_PACKAGE):
+                    continue
+                failures.append(f"{relative}:{line}: {message}\n    {text[:120]}")
+        assert not failures, "\n".join(failures)
+    finally:
+        connection.close()
