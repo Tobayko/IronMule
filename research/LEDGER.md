@@ -6887,6 +6887,8 @@ about 30 min.
 | `stock` / `kernel+p16+gather+g16` (native's arm) | 21.3%, 23.3%, 21.5%, 22.2% |
 | `fp32` / native's arm | 23.5%, 23.2%, 22.5%, 23.7% |
 
+![Share of cells whose top-8 expert set differs between two arms, against the rule's 2% bound](../docs/assets/t4-qwen36-routing.svg)
+
 The run is valid (the A/A pair agrees everywhere). The rule's bound was 2% of cells in every
 chunk; bf16 against float32 differs in about a quarter, an order of magnitude past it and past
 gpt-oss's 17-21% (OSS1), where a top-8 of 256 has more places to differ than a top-4 of 32. In

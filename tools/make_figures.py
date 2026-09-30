@@ -429,15 +429,19 @@ def t4_server_batching() -> dict:
     }
 
 
-def _perplexity_ratio(candidate: Path, reference: Path) -> tuple[float, float, float]:
+def _perplexity_ratio(candidate: Path, reference: Path,
+                      seed: int = 20260916) -> tuple[float, float, float]:
     """Ratio and 95% chunk-bootstrap interval, the method `tests/test_numeric_plans.py` pins."""
 
+    return _bootstrap(list(zip(load(reference)["chunk_nll"], load(candidate)["chunk_nll"])), seed)
+
+
+def _bootstrap(rows: list[tuple[float, float]], seed: int) -> tuple[float, float, float]:
     import math
     import random
     import statistics
 
-    rows = list(zip(load(reference)["chunk_nll"], load(candidate)["chunk_nll"]))
-    rng = random.Random(20260916)
+    rng = random.Random(seed)
 
     def ratio(sample):
         return math.exp(statistics.mean(b for _, b in sample) - statistics.mean(a for a, _ in sample))
@@ -552,8 +556,151 @@ def t4_run18_rerun() -> dict:
     }
 
 
+#: NEXT1-C run 1 gated the dtype plans' decode path; their prefill gates are PORT2's
+#: `quality.py` rows (key = the candidate's NLL field). GATE-Q38 gated Qwen3.8 27B's two
+#: paths over two cards, judged with gate_summary.py's seed as its rule named.
+#: (plan, path, candidate, reference, quality.py key or None for perf1.py chunks, seed)
+PLAN_GATES = (
+    ("Gemma 4 E2B, float16", "prefill", "port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json",
+     "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json", "nll_float16", 20260916),
+    ("Gemma 4 E2B, float16", "decode", "next1c-run1-1497adb8/gate-gemma4-e2b-fp16-decode.json",
+     "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json", None, 20260916),
+    ("Gemma 4 E2B, float32", "prefill", "port2k-run1-fe76f8df/quality-gemma4-e2b-float32.json",
+     "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json", "nll_float32", 20260916),
+    ("Gemma 4 E2B, float32", "decode", "next1c-run1-1497adb8/gate-gemma4-e2b-fp32-decode.json",
+     "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json", None, 20260916),
+    ("Gemma 3 4B, float32", "prefill", "port2k-run1-fe76f8df/quality-gemma3-4b-float32.json",
+     "port2k-run1-fe76f8df/quality-gemma3-4b-bf16.json", "nll_float32", 20260916),
+    ("Gemma 3 4B, float32", "decode", "next1c-run1-1497adb8/gate-gemma3-4b-fp32-decode.json",
+     "next1c-run1-1497adb8/gate-gemma3-4b-stock-decode.json", None, 20260916),
+    ("Mistral Small 3.2 24B, float32", "prefill",
+     "port2-run8-da1a6469/quality-mistral-24b-float32-8.json",
+     "port2-run8-da1a6469/quality-mistral-24b-bf16-8.json", "nll_float32", 20260916),
+    ("Mistral Small 3.2 24B, float32", "decode",
+     "next1c-run1-1497adb8/gate-mistral-24b-fp32-decode.json",
+     "next1c-run1-1497adb8/gate-mistral-24b-stock-decode.json", None, 20260916),
+    ("Qwen3.8 27B, native", "prefill", "gate-q38-run1-a8f88fc2/gate-qwen38-27b-p16-prefill.json",
+     "gate-q38-run1-a8f88fc2/gate-qwen38-27b-stock-prefill.json", None, 20260915),
+    ("Qwen3.8 27B, native", "decode", "gate-q38-run1-a8f88fc2/gate-qwen38-27b-kernel-decode.json",
+     "gate-q38-run1-a8f88fc2/gate-qwen38-27b-stock-decode.json", None, 20260915),
+)
+
+
+def _plan_gate(candidate: str, reference: str, key: str | None, seed: int):
+    if key is None:
+        return _perplexity_ratio(PERF1 / candidate, PERF1 / reference, seed)
+    reference_rows = load(PERF1 / reference)["rows"]
+    candidate_rows = load(PERF1 / candidate)["rows"][:len(reference_rows)]
+    return _bootstrap([(a["nll_bf16"], b[key]) for a, b in zip(reference_rows, candidate_rows)],
+                      seed)
+
+
+# -- figure 9: both paths of every gated plan -------------------------------------
+def t4_plan_gates() -> dict:
+    """Prefill and decode side by side for each plan the NEXT1-C and GATE-Q38 runs reached."""
+
+    plans = list(dict.fromkeys(plan for plan, *_ in PLAN_GATES))
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 4.4))
+    colours = {"prefill": style.SECONDARY, "decode": style.CANDIDATE}
+    offsets = {"prefill": 0.17, "decode": -0.17}
+    labelled = set()
+    for plan, path, candidate, reference, key, seed in PLAN_GATES:
+        value, low, high = _plan_gate(candidate, reference, key, seed)
+        y = len(plans) - 1 - plans.index(plan) + offsets[path]
+        ax.errorbar(value, y, xerr=[[value - low], [high - value]], fmt="o", color=colours[path],
+                    ecolor=colours[path], elinewidth=2, capsize=3, markersize=6, zorder=4,
+                    label=None if path in labelled else f"{path} path")
+        labelled.add(path)
+        ax.annotate(f"{value:.4f} [{low:.4f}; {high:.4f}]", (1.0058, y), va="center",
+                    fontsize=8.5, color=style.TEXT)
+    ax.axvline(1.0, color=style.RULE, linewidth=1.2, linestyle="--", zorder=2)
+    ax.axvline(1.005, color=style.ACCENT, linewidth=1.6, zorder=2)
+    ax.annotate("quality bound 1.005", (1.005, len(plans) - 0.45), textcoords="offset points",
+                xytext=(4, 0), fontsize=8.5, color=style.ACCENT)
+    ax.set_yticks(range(len(plans)))
+    ax.set_yticklabels(list(reversed(plans)))
+    ax.set_xlim(0.984, 1.0185)
+    ax.set_ylim(-0.6, len(plans) - 0.2)
+    ax.set_xlabel("perplexity ratio against stock bf16 on the same path, WikiText-2, lower is better")
+    ax.set_title("Every gated plan on a T4 stays inside the bound on both paths it changes")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), ncol=2, fontsize=9)
+
+    written = emit(fig, "t4-plan-gates")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": sorted({(PERF1 / path).as_posix()
+                           for _, _, candidate, reference, *_ in PLAN_GATES
+                           for path in (candidate, reference)}),
+        "device": T4,
+        "models": ["mlx-community/gemma-4-e2b-it-4bit", "mlx-community/gemma-3-4b-it-4bit",
+                   "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+                   "mlx-community/Qwen3.8-27B-4bit"],
+        "samples": "prefill: quality.py, 16 x 512 tokens (Mistral 8 x 128); decode: perf1.py nll "
+                   "teacher-forced through the cache, 16 x 512 (Mistral 8 x 512); Qwen3.8 27B "
+                   "32 x 256 on both paths over two T4s; BOS on every chunk where the model has one",
+        "intervals": "95% chunk bootstrap, 10000 draws, seed 20260916; Qwen3.8 27B seed 20260915 "
+                     "(gate_summary.py, as GATE-Q38's rule named)",
+    }
+
+
+#: PERF1-U step 1: per layer and position, the sorted top-8 of 256 experts Qwen3.6 35B-A3B's
+#: router picked, four WikiText-2 chunks, one fresh two-card process per arm.
+PERF1U = PERF1 / "perf1u-run1-b0cce87b" / "perf1u-summary.json"
+PERF1U_PAIRS = (
+    ("stock / stock again (A/A)", "stock_a|stock_b", "CONTROL"),
+    ("stock bf16 / float32", "fp32|stock_a", "BASELINE"),
+    ("stock bf16 / native", "native|stock_a", "CANDIDATE"),
+    ("float32 / native", "fp32|native", "SECONDARY"),
+)
+
+
+# -- figure 10: why Qwen3.6's experts cannot be gated against emulated bf16 -------
+def t4_qwen36_routing() -> dict:
+    """How often two arms pick a different expert set, against the 2% the rule allowed."""
+
+    pairs = load(PERF1U)["pairs"]
+    fig, ax = plt.subplots(figsize=(style.WIDTH_IN, 3.1))
+    for index, (label, key, colour) in enumerate(PERF1U_PAIRS):
+        y = len(PERF1U_PAIRS) - 1 - index
+        rates = [chunk["flip_rate"] * 100 for chunk in pairs[key]]
+        cells = sum(chunk["cells"] for chunk in pairs[key])
+        flips = sum(chunk["flips"] for chunk in pairs[key])
+        ax.barh(y, flips / cells * 100, height=0.6, color=getattr(style, colour))
+        ax.scatter(rates, [y] * len(rates), s=14, color=style.TEXT, zorder=4)
+        text = (f"{min(rates):.1f}-{max(rates):.1f}% per chunk" if flips
+                else f"0 of {cells:,} cells".replace(",", " "))
+        ax.annotate(text, (max(rates + [2.0]), y), textcoords="offset points", xytext=(7, 0),
+                    va="center", fontsize=9, color=style.TEXT)
+    ax.axvline(2.0, color=style.ACCENT, linewidth=1.6, zorder=3)
+    ax.annotate("the rule's bound: 2%", (2.0, len(PERF1U_PAIRS) - 0.45),
+                textcoords="offset points", xytext=(4, 0), fontsize=8.5, color=style.ACCENT)
+    ax.set_yticks(range(len(PERF1U_PAIRS)))
+    ax.set_yticklabels([label for label, *_ in reversed(PERF1U_PAIRS)])
+    ax.set_xlim(0, 36)
+    ax.set_ylim(-0.6, len(PERF1U_PAIRS) - 0.2)
+    ax.set_xlabel("cells whose top-8 of 256 experts differ, % of 40 layers x 512 positions")
+    ax.set_title("Qwen3.6 35B-A3B on a T4: bf16 and float32 route a quarter of cells differently")
+    ax.grid(axis="y", visible=False)
+
+    written = emit(fig, "t4-qwen36-routing")
+    plt.close(fig)
+    return {
+        "figure": written,
+        "sources": [PERF1U.as_posix()],
+        "device": T4,
+        "models": ["mlx-community/Qwen3.6-35B-A3B-4bit"],
+        "samples": "PERF1-U step 1: 4 WikiText-2 chunks x 512 tokens through the prefill path, "
+                   "two T4s pipelined, one fresh process per arm; bars pool the four chunks, "
+                   "dots are the chunks",
+        "intervals": "none; exact counts of 20 480 cells per chunk",
+    }
+
+
 FIGURES = (paired_ratios, session_ratios, prefill_phases, cross_platform_speedup,
-           t4_native_kernels, t4_server_batching, t4_native_quality, t4_run18_rerun)
+           t4_native_kernels, t4_server_batching, t4_native_quality, t4_run18_rerun,
+           t4_plan_gates, t4_qwen36_routing)
 
 
 def render(destination: Path) -> list[dict]:

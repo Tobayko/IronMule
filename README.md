@@ -210,6 +210,16 @@ pass the quality gate on every path it touches:
   <img src="docs/assets/t4-native-quality.svg" alt="Perplexity ratio with 95 percent bootstrap intervals for the native plan's decode and prefill paths, all inside the 1.005 bound" width="100%">
 </picture>
 
+The float16 and float32 plans recommended for Gemma 4 E2B, Gemma 3 4B and Mistral Small 3.2 24B
+pass on the decode path as well as on prefill (NEXT1-C), and so does `native` on Qwen3.8 27B
+split over two T4s (GATE-Q38). That model still gets no recommendation: the product runs a model
+on one card, and its weights do not fit one T4.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/t4-plan-gates-dark.svg">
+  <img src="docs/assets/t4-plan-gates.svg" alt="Perplexity ratio with 95 percent bootstrap intervals on the prefill and decode paths for five gated plans on a Tesla T4, all inside the 1.005 bound" width="100%">
+</picture>
+
 **Serving several requests at once.** The decode kernel reads the weights once per request. A
 second kernel, built on the T4's tensor cores, multiplies each weight with up to 16 requests in
 one pass, which is what a server with several open conversations needs:
