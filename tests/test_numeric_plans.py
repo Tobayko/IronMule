@@ -72,7 +72,7 @@ PAIRED = {
         "port2-run8-da1a6469/quality-mistral-24b-bf16-8.json",
         "port2-run8-da1a6469/quality-mistral-24b-float32-8.json", "nll_float32"),
 }
-RESULTS = ROOT / "experiments" / "kaggle_compat" / "results"
+RESULTS = ROOT / "evidence" / "kaggle"
 #: Plans whose gate is several (candidate, reference) pairs of per-chunk NLL lists, one per
 #: path the plan changes; the row must carry the pair with the highest upper bound.
 CHUNK_GATES = {
@@ -294,14 +294,18 @@ def test_every_row_is_bound_to_the_revisions_its_evidence_recorded(row):
 @pytest.mark.parametrize("row", MEASUREMENTS,
                          ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
 def test_every_row_ran_on_the_framework_it_claims(row):
-    """NEXT1-C: every evidence run's `pip freeze` names MEASURED_WITH's versions."""
+    """NEXT1-C: every evidence run's pinned mlx/mlx-lm match MEASURED_WITH's versions.
+
+    The run's `pip freeze` stays private (it pins every package, not just these two);
+    `tools/export_evidence.py` parses it once into `<run>/freeze.json`, and that
+    sidecar is what a fresh clone actually reads.
+    """
     key = (row.architecture, row.plan)
     files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
     files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
     for run in {path.parent for path in files}:
-        frozen = dict(line.split("==", 1) for line in (run / "logs" / "freeze.log").read_text().split()
-                      if "==" in line)
-        assert {name: frozen.get(name) for name in MEASURED_WITH} == MEASURED_WITH, run.name
+        frozen = json.loads((run / "freeze.json").read_text())
+        assert frozen == MEASURED_WITH, run.name
 
 
 def test_a_recommendation_holds_only_for_the_framework_it_measured():

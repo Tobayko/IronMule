@@ -106,7 +106,7 @@ class PlanMeasurement:
         return "unqualified"
 
 
-_R = "experiments/kaggle_compat/results"
+_R = "evidence/kaggle"
 
 #: The framework every row was measured with, read from each evidence run's `pip freeze`
 #: (`tests/test_numeric_plans.py` checks them). Another version is another computation: a

@@ -1,0 +1,22 @@
+{
+  "phases_ms": {
+    "full_head": {
+      "_sum": 639.733043,
+      "argmax": 0.437084,
+      "fixed_state_build": 1.561375,
+      "make_cache": 0.049208,
+      "projection": 103.974542,
+      "trunk_forward": 533.710834
+    },
+    "head_skip": {
+      "_sum": 537.200626,
+      "argmax": 0.370375,
+      "fixed_state_build": 1.474625,
+      "make_cache": 0.046792,
+      "projection": 1.528292,
+      "trunk_forward": 533.780542
+    }
+  },
+  "prompt_tokens": 322,
+  "repeats": 5
+}

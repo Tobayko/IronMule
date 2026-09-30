@@ -1,0 +1,39 @@
+{
+  "model_id": "mlx-community/Llama-3.1-8B-Instruct-4bit",
+  "revision": "90215b22ec18e72f623dde2ea7af4097025160e2",
+  "summary": {
+    "ironmule_fused": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 0.9802353467449468,
+      "median_ratio": 0.9667644148462669,
+      "ratio_vs_reference_per_rep": [
+        0.9802353467449468,
+        0.953293482947587
+      ]
+    },
+    "ironmule_fused_fp32": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 5,
+      "max_ratio": 1.5304135848241094,
+      "median_ratio": 1.5181699264420379,
+      "ratio_vs_reference_per_rep": [
+        1.5304135848241094,
+        1.5059262680599663
+      ]
+    },
+    "stock": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 1.0,
+      "median_ratio": 1.0,
+      "ratio_vs_reference_per_rep": [
+        1.0,
+        1.0
+      ]
+    }
+  }
+}

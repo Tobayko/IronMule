@@ -1,0 +1,50 @@
+{
+  "model_id": "mlx-community/Qwen3-14B-4bit",
+  "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+  "summary": {
+    "ironmule_native": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 3,
+      "max_ratio": 0.20797821871256691,
+      "median_ratio": 0.20778323182287955,
+      "ratio_vs_reference_per_rep": [
+        0.20758824493319217,
+        0.20797821871256691
+      ]
+    },
+    "ironmule_native_compiled": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 3,
+      "max_ratio": 0.2101108363991441,
+      "median_ratio": 0.2100518975122821,
+      "ratio_vs_reference_per_rep": [
+        0.2101108363991441,
+        0.20999295862542006
+      ]
+    },
+    "ironmule_native_tuned": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 4,
+      "max_ratio": 0.22209865904139012,
+      "median_ratio": 0.22137881841802076,
+      "ratio_vs_reference_per_rep": [
+        0.22209865904139012,
+        0.22065897779465143
+      ]
+    },
+    "stock": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 1.0,
+      "median_ratio": 1.0,
+      "ratio_vs_reference_per_rep": [
+        1.0,
+        1.0
+      ]
+    }
+  }
+}

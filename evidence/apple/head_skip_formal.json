@@ -1,0 +1,47 @@
+{
+  "calculated_decision": {
+    "intervals": {
+      "all": {
+        "ci95": [
+          0.8431470041496976,
+          0.8512844842159696
+        ],
+        "ratio": 0.8463845562069244
+      }
+    }
+  },
+  "calibration_from_measured_blocks": {
+    "aggregate_ratio": 1.0028290932390196,
+    "ci95": [
+      0.9949313642401706,
+      1.005963691687921
+    ],
+    "session_ratios": [
+      0.9984979527138921,
+      1.0046921560751745,
+      0.9940065585864084,
+      1.0057693879511374,
+      1.004462628760744,
+      1.0011982143002525
+    ]
+  },
+  "confirmation_from_measured_blocks": {
+    "session_ratios": {
+      "C0": 0.8452568535344324,
+      "C1": 0.8434013089547433,
+      "C2": 0.8465957105988664,
+      "V0": 0.8461734544802355,
+      "V1": 0.8476534505382339,
+      "V2": 0.852478428622713
+    },
+    "token_identity": "12/12 session gates"
+  },
+  "sealed_identity": {
+    "model_id": "mlx-community/gemma-3-4b-it-4bit"
+  },
+  "workload": {
+    "calibration_sessions": 6,
+    "confirmation_sessions": 6,
+    "measurement_pairs_per_session": 4
+  }
+}

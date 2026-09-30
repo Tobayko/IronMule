@@ -1,0 +1,136 @@
+{
+  "pairs": {
+    "fp32|native": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.23544921875,
+        "flips": 4822
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.23193359375,
+        "flips": 4750
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.225341796875,
+        "flips": 4615
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.23701171875,
+        "flips": 4854
+      }
+    ],
+    "fp32|stock_a": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.236865234375,
+        "flips": 4851
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.252001953125,
+        "flips": 5161
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.23759765625,
+        "flips": 4866
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.2400390625,
+        "flips": 4916
+      }
+    ],
+    "fp32|stock_b": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.236865234375,
+        "flips": 4851
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.252001953125,
+        "flips": 5161
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.23759765625,
+        "flips": 4866
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.2400390625,
+        "flips": 4916
+      }
+    ],
+    "native|stock_a": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.213232421875,
+        "flips": 4367
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.233349609375,
+        "flips": 4779
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.214697265625,
+        "flips": 4397
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.22236328125,
+        "flips": 4554
+      }
+    ],
+    "native|stock_b": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.213232421875,
+        "flips": 4367
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.233349609375,
+        "flips": 4779
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.214697265625,
+        "flips": 4397
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.22236328125,
+        "flips": 4554
+      }
+    ],
+    "stock_a|stock_b": [
+      {
+        "cells": 20480,
+        "flip_rate": 0.0,
+        "flips": 0
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.0,
+        "flips": 0
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.0,
+        "flips": 0
+      },
+      {
+        "cells": 20480,
+        "flip_rate": 0.0,
+        "flips": 0
+      }
+    ]
+  }
+}

@@ -107,15 +107,15 @@ published ratio came back within 5% — 1B at **1.75× · +75%**, 12B float32 at
 **2.01× · +101%** — and every exact arm returned stock's tokens in 6 of 6 requests. The same
 run measures the `native` plan with `compiled_fixed_cache` directly against stock on
 Gemma 3 12B: **5.55× · +455%**, where 5.52× had been projected from two runs. These are
-speed numbers; each plan's quality gate is further down. Raw data:
-`experiments/kaggle_compat/results/perf1-run18-863237d6/`.
+speed numbers; each plan's quality gate is further down. Evidence:
+`evidence/kaggle/perf1-run18-863237d6/`.
 
 ### Six more model families, same card
 
 The table above is one family. These are the others, measured the same way on the same free
 Kaggle T4 — stock MLX and IronMule in fresh, interleaved processes, six requests of 48
 greedy tokens, median of two repetitions. Every model is a 4-bit `mlx-community` checkpoint
-at a pinned revision. Raw data: `experiments/kaggle_compat/results/port2-run*/`.
+at a pinned revision. Evidence: `evidence/kaggle/port2-run*/`.
 
 | Model (4-bit) | Weights | Exact, same tokens | `--compute-dtype float32` | `--compute-dtype float16` |
 | :-- | --: | --: | --: | --: |
@@ -238,7 +238,7 @@ copy at a time, its first token arrives after 1.68 s instead of 77.6 s, and eigh
 reach 31.05 tokens per second. This one is measured, not shipped: batched answers in bf16 are not always the
 same as answers served alone, and IronMule's server promises exactly that, so it waits for its
 own opt-in mode (`docs/PROJECT_FRIDAY_BACKLOG.md`, PERF1-K). Everything here: `research/LEDGER.md`,
-PERF1, and `experiments/kaggle_compat/results/perf1-run*/`.
+PERF1, and `evidence/kaggle/perf1-run*/`.
 
 **The ceiling on one card.** A single MLX process uses a single device, so 15360 MiB is the
 budget. The largest checkpoint measured to run is Gemma 4 26B-A4B: 15.34 GB on disk,

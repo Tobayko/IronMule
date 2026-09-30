@@ -1,0 +1,6 @@
+{
+  "decode_tps_median": 2.14,
+  "model_id": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+  "revision": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+  "ttft_ms_median": 79668.06
+}

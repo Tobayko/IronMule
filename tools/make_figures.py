@@ -47,25 +47,25 @@ def emit(fig: Any, name: str) -> str:
     return relative
 
 
-HEAD_SKIP = Path("experiments/head_skip_formal/results.json")
-PREFIX_CACHE = Path("research/raw/E10-prefix-cache-session-ab.json")
-PREFILL_PHASES = Path("research/raw/E1-prefill-breakdown.json")
+HEAD_SKIP = Path("evidence/apple/head_skip_formal.json")
+PREFIX_CACHE = Path("evidence/apple/E10-prefix-cache-session-ab.json")
+PREFILL_PHASES = Path("evidence/apple/E1-prefill-breakdown.json")
 
 #: PORT1, per model: Apple's balanced A/B/C/D square and the T4's fresh-process
 #: cross run. Each file carries its own device's stock reference, so a bar only
 #: ever compares a machine with itself.
 CROSS = (
     ("Gemma 3 1B",
-     Path("experiments/kaggle_compat/results/apple-abcd/abcd-1b.json"),
-     Path("experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-1b.json"),
+     Path("evidence/kaggle/apple-abcd/abcd-1b.json"),
+     Path("evidence/kaggle/port1-run6-c3af42bd/cross-1b.json"),
      "ironmule"),
     ("Gemma 3 4B",
-     Path("experiments/kaggle_compat/results/apple-abcd/abcd-4b.json"),
-     Path("experiments/kaggle_compat/results/port1-run6-c3af42bd/cross-4b.json"),
+     Path("evidence/kaggle/apple-abcd/abcd-4b.json"),
+     Path("evidence/kaggle/port1-run6-c3af42bd/cross-4b.json"),
      "ironmule_exact"),
     ("Gemma 3 12B",
-     Path("experiments/kaggle_compat/results/apple-abcd/abcd-12b.json"),
-     Path("experiments/kaggle_compat/results/port1-run7-1f40ad2b/cross-12b.json"),
+     Path("evidence/kaggle/apple-abcd/abcd-12b.json"),
+     Path("evidence/kaggle/port1-run7-1f40ad2b/cross-12b.json"),
      "ironmule_exact"),
 )
 
@@ -305,7 +305,7 @@ def cross_platform_speedup() -> dict:
     }
 
 
-PERF1 = Path("experiments/kaggle_compat/results")
+PERF1 = Path("evidence/kaggle")
 #: PERF1 run 2: stock and the native plan's kernels in fresh processes on one T4 cell.
 PERF1_E2E = (("Qwen 3 8B", "qwen3-8b"), ("Qwen 3 14B", "qwen3-14b"))
 PERF1_E2E_DIR = PERF1 / "perf1-run2-baddcb2b"
