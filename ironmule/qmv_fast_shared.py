@@ -3,7 +3,7 @@
 `K=4096` and `K=15360` run MLX's `qmv_fast_impl`, which uses 16 values per thread and
 512-value blocks and has no tail path, so this is a separate transcription rather than a
 widened copy of the `K=3840` kernel. Copied unchanged from the study tooling;
-`tests/test_paired_opt_in.py` asserts the two still match.
+`tests/runtime/test_paired_opt_in.py` asserts the two still match.
 """
 
 from __future__ import annotations

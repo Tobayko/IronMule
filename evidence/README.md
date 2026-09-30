@@ -7,7 +7,7 @@ committed, and the ones that used to be are gitignored and were purged from the 
 history on 2026-09-28.
 
 What is here instead is exactly what `tools/make_figures.py`, `ironmule/numeric_plans.py`
-and the two claim tests (`tests/test_numeric_plans.py`, `tests/test_documented_claims.py`)
+and the two claim tests (`tests/claims/test_numeric_plans.py`, `tests/claims/test_documented_claims.py`)
 read: paired ratios, medians, confidence intervals, per-chunk perplexities, identical-request
 and failed-process counts, and the model identity (`model_id`, `revision`) and framework
 versions (`mlx`, `mlx-lm`) each number was measured against. Nothing else survives the

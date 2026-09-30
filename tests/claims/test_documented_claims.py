@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 #: (label, documented text, document, evidence file, raw value in that file)
 JSON_CLAIMS = [

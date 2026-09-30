@@ -18,7 +18,7 @@ which is right for Gemma 3 and Qwen 3, wrong for Llama 3.1, and silent about `fl
 being both the best and the worst option in the set. This module replaces that with the
 measurements, so a recommendation exists only where a measurement does.
 
-Every row cites the committed run it comes from, and `tests/test_numeric_plans.py`
+Every row cites the committed run it comes from, and `tests/claims/test_numeric_plans.py`
 re-derives each number from that file, so a re-measurement moves the table or fails the
 suite. A plan is only ever *recommended* when it is both faster and inside the quality
 bound; a plan measured to break the bound is *refused*, because a numeric plan the caller
@@ -109,13 +109,13 @@ class PlanMeasurement:
 _R = "evidence/kaggle"
 
 #: The framework every row was measured with, read from each evidence run's `pip freeze`
-#: (`tests/test_numeric_plans.py` checks them). Another version is another computation: a
+#: (`tests/claims/test_numeric_plans.py` checks them). Another version is another computation: a
 #: recommendation holds for these and, with `framework=`, for nothing else (NEXT1-C).
 MEASURED_WITH = {"mlx": "0.32.2", "mlx-lm": "0.31.3"}
 
 #: The exact revision each measured checkpoint was pinned to, which fixes its weights and
 #: quantisation. A recommendation covers that revision only (NEXT1-C): a republished
-#: checkpoint under the same id is a new, unmeasured model. `tests/test_numeric_plans.py`
+#: checkpoint under the same id is a new, unmeasured model. `tests/claims/test_numeric_plans.py`
 #: checks every one against the revision its evidence files recorded.
 MEASURED_REVISIONS = {
     "mlx-community/gemma-3-4b-it-4bit": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",

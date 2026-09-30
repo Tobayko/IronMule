@@ -18,7 +18,7 @@ from ironmule.plans import ReusableSessionPlan, StrictOneShotPlan
 from ironmule.router import ExecutionRouter
 from ironmule.service import Request
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PROFILE_PATH = ROOT / "research" / "raw" / "silicon_profile_v1_20260910_corrected.json"
 
 

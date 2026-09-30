@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 from ironmule import paired_research as pr  # noqa: E402
 from ironmule.executor import AsyncGroupedB1Executor  # noqa: E402

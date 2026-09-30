@@ -20,7 +20,7 @@ from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASURE
                                     MEASUREMENTS, QUALITY_BOUND, PlanRefused, architecture_of,
                                     check, device_class, measurements_for, recommend)
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(autouse=True)

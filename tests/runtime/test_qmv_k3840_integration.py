@@ -7,7 +7,7 @@ import mlx.core as mx
 import mlx.nn as nn
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from ironmule import qmv_k3840  # noqa: E402

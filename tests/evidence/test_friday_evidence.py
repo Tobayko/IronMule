@@ -32,7 +32,7 @@ from friday_evidence.registry import REGISTERED_TOOLS
 from friday_evidence.run import run_persisted
 from friday_evidence.storage import EvidenceStorage, StorageError
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def provenance(tool: str = "dispatch") -> dict[str, object]:

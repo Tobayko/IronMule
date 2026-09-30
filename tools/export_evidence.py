@@ -30,7 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 #: Every raw file a tracked reader opens (`tools/make_figures.py`, `ironmule/numeric_plans.py`,
-#: `tests/test_numeric_plans.py`, `tests/test_documented_claims.py`), relative to the raw root.
+#: `tests/claims/test_numeric_plans.py`, `tests/claims/test_documented_claims.py`), relative to the raw root.
 #: Derived by reading those four files; not the same as "every file a run produced".
 KAGGLE_SOURCES = (
     "apple-abcd/abcd-1b.json", "apple-abcd/abcd-4b.json", "apple-abcd/abcd-12b.json",
@@ -108,7 +108,7 @@ KAGGLE_SOURCES = (
     "perf1-run13-93ae1f80/server-mistral-24b-kernel+mma+p16.json",
 )
 
-#: Run directories `tests/test_numeric_plans.py` checks the `pip freeze` of (mlx, mlx-lm
+#: Run directories `tests/claims/test_numeric_plans.py` checks the `pip freeze` of (mlx, mlx-lm
 #: versions), read from `<run>/logs/freeze.log`. Exported as a tiny parsed sidecar
 #: (`freeze.json`) instead of the raw log, which also carries every other package pinned
 #: that run.

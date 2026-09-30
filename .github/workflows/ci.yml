@@ -37,7 +37,7 @@ jobs:
       - name: Static product and measurement checks
         run: |
           .ci-venv/bin/python -m pip install "ruff==0.16.6"
-          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py tests/engine tests/conftest.py tests/test_numeric_plans.py tests/test_documented_claims.py --select F
+          .ci-venv/bin/ruff check ironmule ironmule_product ironmule_inventory.py ironmule_cli.py friday_evidence/events.py friday_evidence/identity.py friday_evidence/statistics.py tools/product_bounded_bench.py tools/product_history_snapshot.py tools/export_evidence.py tests/engine tests/conftest.py tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py --select F
       # The engine package's own suite depends on nothing outside the repository, so
       # it runs anywhere. AGENTS.md keeps hardware/speed claims on the target device;
       # this runner establishes correctness, not performance.
@@ -49,7 +49,7 @@ jobs:
       # export and remain private; those keep their own skip (tests/conftest.py) and run
       # only on the machine that recorded them.
       - name: Claims against their evidence
-        run: .ci-venv/bin/python -m pytest tests/test_numeric_plans.py tests/test_documented_claims.py -n 0 -rs
+        run: .ci-venv/bin/python -m pytest tests/claims/test_numeric_plans.py tests/claims/test_documented_claims.py -n 0 -rs
       - name: Figures match their evidence
         run: |
           .ci-venv/bin/python -m pip install "matplotlib==3.11.1"

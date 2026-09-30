@@ -25,7 +25,7 @@ needs only the affected text and applicable documentation conventions.
 | Product purpose, usage or public claims | [README.md](README.md); for claims, [docs/LIMITS.md](docs/LIMITS.md) and the supporting [ledger](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) entry in the research repository |
 | Runtime, executor, plans, cache or scheduling in [ironmule/](ironmule/) | [docs/RUNTIME.md](docs/RUNTIME.md), affected implementation and [runtime contract tests](tests/engine/test_ironmule_runtime.py) |
 | Service, workers, HTTP, calibration or state in [ironmule_product/](ironmule_product/) | [docs/HTTP.md](docs/HTTP.md), affected modules and matching `test_product_*` / `test_automatic_*` files in [tests/engine/](tests/engine/) |
-| Learned dispatch, qualification or recovery | LIMITS, relevant modules and tests: [learner](tests/test_b78_local_learner.py), [activation](tests/test_b79_activation.py), [monitoring](tests/test_b80_monitoring.py), [requalification](tests/test_b81_requalification.py), [readiness](tests/test_b82_readiness.py) |
+| Learned dispatch, qualification or recovery | LIMITS, relevant modules and tests: [learner](tests/learning/test_local_learner.py), [activation](tests/learning/test_activation.py), [monitoring](tests/learning/test_monitoring.py), [requalification](tests/learning/test_requalification.py), [readiness](tests/learning/test_readiness.py) |
 | Performance, benchmarks or optimisation experiments | [docs/BACKLOG.md](docs/BACKLOG.md), including Tier 0 and its reopening rule |
 | Shared evidence in [friday_evidence/](friday_evidence/) | Affected module, callers and tests; see Friday Evidence below |
 | Packaging, dependencies, CLI or environment | [pyproject.toml](pyproject.toml), CONTRIBUTING and [CI](.github/workflows/ci.yml) |
@@ -132,7 +132,7 @@ logic; do not copy infrastructure out of frozen study packages.
 - **Storage/schema/canonicalisation:** inspect [storage.py](friday_evidence/storage.py),
   [migrations/](friday_evidence/migrations/), [canonical.py](friday_evidence/canonical.py),
   [provenance.py](friday_evidence/provenance.py) and
-  [contract tests](tests/test_friday_evidence.py). Preserve append-only records,
+  [contract tests](tests/evidence/test_friday_evidence.py). Preserve append-only records,
   deterministic hashes, idempotency, conflict rejection, private storage and read-only
   verification. The store verifies the initial migration's digest and rejects unknown
   schemas; it is not an automatic migration framework. Document and validate schema
@@ -148,7 +148,7 @@ logic; do not copy infrastructure out of frozen study packages.
   validation. Do not restore superseded blanket limits or remove gates from other
   qualification protocols by analogy.
 - **Portability:** follow [docs/DATA1_PORTABLE_COLLECTION.md](docs/DATA1_PORTABLE_COLLECTION.md),
-  [portable/](friday_evidence/portable/) and matching `tests/test_portable_*` tests.
+  [portable/](friday_evidence/portable/) and matching `tests/evidence/test_portable_*` tests.
   Preserve backend/identity binding, provenance, holdout separation, quota checks and
   verified cleanup. Imported diagnostics are not automatically training evidence or
   permission to activate a local runtime path.
@@ -160,7 +160,7 @@ dated documents still sit in this repository -- `docs/PHASE1_MATMUL_SPEC.md`,
 `docs/PROJECT_STATUS.md` and `requirements-apple-silicon.txt` -- because
 `friday_evidence/provenance.py`'s frozen `SPEC_FILES`/`SOURCE_DIRS` tuple hashes them for
 its own provenance self-consistency check
-(`tests/test_friday_evidence.py::RootProvenanceContractTest`); do not delete, rename or
+(`tests/evidence/test_friday_evidence.py::RootProvenanceContractTest`); do not delete, rename or
 edit them without checking that test first.
 
 Keep private raw data and local databases under the existing ignore policy. Publish

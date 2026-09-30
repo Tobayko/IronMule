@@ -431,7 +431,7 @@ def t4_server_batching() -> dict:
 
 def _perplexity_ratio(candidate: Path, reference: Path,
                       seed: int = 20260916) -> tuple[float, float, float]:
-    """Ratio and 95% chunk-bootstrap interval, the method `tests/test_numeric_plans.py` pins."""
+    """Ratio and 95% chunk-bootstrap interval, the method `tests/claims/test_numeric_plans.py` pins."""
 
     return _bootstrap(list(zip(load(reference)["chunk_nll"], load(candidate)["chunk_nll"])), seed)
 
