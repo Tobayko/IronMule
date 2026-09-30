@@ -128,6 +128,7 @@ A fresh install serves the reference path; IronMule promotes a faster path only 
 
 - **[Benchmarks](docs/BENCHMARKS.md)** — every model family, native kernels, quality gates.
 - **[HTTP API](docs/HTTP.md)** · **[Runtime](docs/RUNTIME.md)** · **[Limits](docs/LIMITS.md)** (rejected ideas: [docs/BACKLOG.md](docs/BACKLOG.md))
+- **[Documentation index](docs/README.md)** — every other doc, including the pinned qualification specs.
 - **[Evidence](evidence/)** — the redacted measurement behind every number here.
 - **[Research lab](https://github.com/Tobayko/IronMule-Research)** — preregistrations, the ledger, and every experiment, including the ones that failed.
 - **[Contributing](CONTRIBUTING.md)** · [code of conduct](CODE_OF_CONDUCT.md) · [security policy](SECURITY.md)
