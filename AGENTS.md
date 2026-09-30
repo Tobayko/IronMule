@@ -156,12 +156,13 @@ logic; do not copy infrastructure out of frozen study packages.
 Sealed preregistrations, result records and frozen study packages remain byte-identical;
 they live in the research repository now, and that rule travels with them. A handful of
 dated documents still sit in this repository -- `docs/PHASE1_MATMUL_SPEC.md`,
-`docs/H1_VORREGISTRIERUNG_ENTWURF.md`, `docs/H1H2_EVIDENZ_ARCHITEKTUR.md`,
-`docs/PROJECT_STATUS.md` and `requirements-apple-silicon.txt` -- because
-`friday_evidence/provenance.py`'s frozen `SPEC_FILES`/`SOURCE_DIRS` tuple hashes them for
-its own provenance self-consistency check
+`docs/H1_VORREGISTRIERUNG_ENTWURF.md`, `docs/H1H2_EVIDENZ_ARCHITEKTUR.md` and
+`requirements-apple-silicon.txt` -- because `friday_evidence/provenance.py`'s frozen
+`SPEC_FILES`/`SOURCE_DIRS` tuple hashes them for its own provenance self-consistency check
 (`tests/evidence/test_friday_evidence.py::RootProvenanceContractTest`); do not delete, rename or
-edit them without checking that test first.
+edit them without checking that test first. `docs/PROJECT_STATUS.md` is pinned a different
+way, not by `SPEC_FILES`: its headline numbers are checked by substring in
+`tests/claims/test_documented_claims.py`.
 
 Keep private raw data and local databases under the existing ignore policy. Publish
 only deliberately redacted artifacts; never expose prompts, secrets or local paths.
