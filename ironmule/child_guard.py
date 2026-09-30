@@ -64,7 +64,7 @@ _WRAPPED_OPERATIONS = {
 }
 REVIEWED_MODULES = frozenset({
     "tune", "ironmule.tune", "runtime", "ironmule.runtime", "mlx", "mlx.core",
-    "os", "json", "math", "q3f_child_guard", "ironmule.q3f_child_guard",
+    "os", "json", "math", "child_guard", "ironmule.child_guard",
 })
 REVIEWED_ATTRIBUTES = frozenset({
     "close", "eos_token_ids", "eos_token_id", "language_model", "tie_word_embeddings",
@@ -75,7 +75,7 @@ REVIEWED_EXTERNAL_MODULES = frozenset({"huggingface_hub", "huggingface_hub.utils
 REVIEWED_SOURCE_MODULES = frozenset({
     "ironmule.ab", "ironmule.tune", "ironmule.runtime", "ironmule.model_identity",
     "ironmule.fast", "ironmule.hw", "ironmule.bench",
-    "ironmule.q3f_child_guard",
+    "ironmule.child_guard",
     # Reached from Engine.admit_k3840 when the opt-in kernel knob is set. Reviewed:
     # it imports only mlx, mlx_lm and ironmule.hw, and contains no process, session
     # or exec operation from OPERATION_SET.
@@ -440,7 +440,7 @@ def _scan_source_tree(tree: ast.AST) -> None:
 
 def _normalise_local_module(module: str | None, current: str) -> str:
     if module is None or module == "":
-        return "ironmule.q3f_child_guard"
+        return "ironmule.child_guard"
     if module.startswith("ironmule."):
         return module
     if module in _LOCAL_MODULE_NAMES:
@@ -691,7 +691,7 @@ def assert_child_surface(function: Callable[..., Any]) -> None:
                     names = [f"{module}.{alias.name}" for alias in node.names]
                 imported_modules = ([name.split(".")[0] for name in names]
                                     if isinstance(node, ast.Import)
-                                    else [module or "q3f_child_guard"])
+                                    else [module or "child_guard"])
                 if any(module_name not in REVIEWED_MODULES
                        and not any(module_name == allowed or module_name.startswith(allowed + ".")
                                    for allowed in REVIEWED_MODULES)

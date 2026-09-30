@@ -32,10 +32,10 @@ CHILD_BOOTSTRAP = (
     "import importlib.util,json,os,sys;"
     "guard_path=os.path.realpath(sys.argv[2]);"
     "ab_path=os.path.realpath(sys.argv[3]);"
-    "guard_spec=importlib.util.spec_from_file_location('ironmule.q3f_child_guard',guard_path);"
+    "guard_spec=importlib.util.spec_from_file_location('ironmule.child_guard',guard_path);"
     "assert guard_spec is not None and guard_spec.loader is not None;"
     "guard=importlib.util.module_from_spec(guard_spec);"
-    "sys.modules['ironmule.q3f_child_guard']=guard;"
+    "sys.modules['ironmule.child_guard']=guard;"
     "guard_spec.loader.exec_module(guard);"
     "guard.assert_source_surface(ab_path);"
     "guard.install();"
@@ -134,17 +134,17 @@ def _terminate_child(process: subprocess.Popen[str]) -> None:
 
 def _child(spec: dict[str, Any]) -> dict[str, Any]:
     """Run the model child behind Q3f's bounded no-detach guard."""
-    from . import q3f_child_guard
+    from . import child_guard
 
-    owns_guard = not q3f_child_guard.is_installed()
+    owns_guard = not child_guard.is_installed()
     if owns_guard:
-        q3f_child_guard.install()
+        child_guard.install()
     try:
-        q3f_child_guard.assert_child_surface(_child)
+        child_guard.assert_child_surface(_child)
         return _child_execution(spec)
     except BaseException as exc:
         try:
-            marker = q3f_child_guard.failure_marker()
+            marker = child_guard.failure_marker()
             if marker is not None:
                 exc.add_note("@GUARD_FAILURE" + json.dumps(marker, sort_keys=True, allow_nan=False))
         except BaseException:
@@ -152,7 +152,7 @@ def _child(spec: dict[str, Any]) -> dict[str, Any]:
         raise
     finally:
         if owns_guard:
-            q3f_child_guard.uninstall()
+            child_guard.uninstall()
 
 
 def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
@@ -239,8 +239,8 @@ def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
     out["mlx_peak_bytes"] = max(arm["mlx_peak_bytes"] for arm in out["arms"].values())
     # Capture only after all work has completed.  Any guard event or malformed
     # ledger raises and therefore cannot be reported as a successful child.
-    from . import q3f_child_guard
-    out["guard"] = q3f_child_guard.ledger()
+    from . import child_guard
+    out["guard"] = child_guard.ledger()
     return out
 
 
@@ -562,7 +562,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
             proc = subprocess.Popen(
                 [sys.executable, "-c",
                  CHILD_BOOTSTRAP, json.dumps(spec),
-                 str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "q3f_child_guard.py")),
+                 str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "child_guard.py")),
                  os.path.abspath(__file__)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
