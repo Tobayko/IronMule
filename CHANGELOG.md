@@ -4,6 +4,33 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **The research lab moved out of this repository.** Preregistrations, sealed studies, the
+  Kaggle harnesses, the SSOT corpus and the rest of Project Friday now live in
+  [IronMule-Research](https://github.com/Tobayko/IronMule-Research); this repository is the
+  product only. `research/LEDGER.md` and the other research documents referenced throughout
+  this project now point there.
+- **Study-only code left the package.** `ironmule/q4_contracts.py`, `q4_methods.py`,
+  `q4_optimizer.py`, `q4_foreign.py` and `q4_corpus.py`, along with `characterization.py` and
+  `stacks.py`, are gone; nothing shipped imported them beyond their own removed research
+  tooling. `ironmule/q3f_child_guard.py` is real product code (`ironmule/ab.py`'s paired A/B
+  path uses it to block subprocess/fork/exec before a measurement child loads a model), so
+  it was renamed rather than removed: it is now `ironmule.child_guard`.
+- **Every number this project cites now ships as evidence.** `tools/export_evidence.py`
+  reads the private raw measurement files and writes redacted, deterministic JSON summaries
+  under the tracked `evidence/` directory — ratios, medians, confidence intervals, per-chunk
+  perplexities and the exact model/framework versions each run pinned, with no prompts,
+  generated text, token IDs or local paths. `ironmule/numeric_plans.py`, the figure
+  renderer and the claims-vs-evidence tests read `evidence/` instead of the private paths.
+- **Figures are checked on every push.** CI now installs matplotlib and runs
+  `tools/make_figures.py --check` so a figure that stops matching its evidence fails the
+  build instead of only being caught by the machine that measured it.
+- **The README is a first read again.** It is under 150 lines: the header, what IronMule is,
+  the live-race clip, the two headline speed claims stated separately and precisely, one
+  results table, and quick start. Every other model family, the native-kernel and
+  quality-gate detail, and server batching moved to `docs/BENCHMARKS.md`, unshortened.
+- **`pyproject.toml`'s homepage is the website** (`https://ironmule.prometo.app/`), with the
+  research repository linked alongside it.
+
 - **Raw measurement data is private.** Result JSON, logs and tuning profiles under
   `research/raw/`, `experiments/` and `profiles/` are gitignored and were removed from the
   published history. Preregistrations, reports, the ledger and every harness stay public.
