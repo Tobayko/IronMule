@@ -38,25 +38,27 @@ JSON_CLAIMS = [
 _R11 = "evidence/kaggle/perf1-run11-7b29bb97"
 _R12 = "evidence/kaggle/perf1-run12-c4c35978"
 _R13 = "evidence/kaggle/perf1-run13-93ae1f80"
+#: This block's numbers live in docs/BENCHMARKS.md (server batching, two-card split),
+#: which is where they moved when the README was cut down to a first read.
 JSON_CLAIMS += [
-    ("24B stock decode", "instead of 2.140", "README.md", f"{_R11}/e2e-mistral-24b-stock.json", '"decode_tps_median": 2.14'),
-    ("24B kernel decode", "decodes at 11.431", "README.md", f"{_R11}/e2e-mistral-24b-kernel.json", '"decode_tps_median": 11.431'),
-    ("24B mma width 8", "gives 15.168 against 8.802", "README.md",
+    ("24B stock decode", "instead of 2.140", "docs/BENCHMARKS.md", f"{_R11}/e2e-mistral-24b-stock.json", '"decode_tps_median": 2.14'),
+    ("24B kernel decode", "decodes at 11.431", "docs/BENCHMARKS.md", f"{_R11}/e2e-mistral-24b-kernel.json", '"decode_tps_median": 11.431'),
+    ("24B mma width 8", "gives 15.168 against 8.802", "docs/BENCHMARKS.md",
      f"{_R11}/server-mistral-24b-kernel+mma.json", '"aggregate_tps": 15.168'),
-    ("24B row width 8", "gives 15.168 against 8.802", "README.md",
+    ("24B row width 8", "gives 15.168 against 8.802", "docs/BENCHMARKS.md",
      f"{_R11}/server-mistral-24b-kernel.json", '"aggregate_tps": 8.802'),
-    ("32B stock decode", "1.566 tokens per second stock", "README.md",
+    ("32B stock decode", "1.566 tokens per second stock", "docs/BENCHMARKS.md",
      f"{_R12}/e2e-qwen3-32b-stock.json", '"decode_tps_median": 1.566'),
-    ("32B kernel decode", "8.54 with the native kernels", "README.md",
+    ("32B kernel decode", "8.54 with the native kernels", "docs/BENCHMARKS.md",
      f"{_R12}/e2e-qwen3-32b-kernel+p16.json", '"decode_tps_median": 8.54'),
-    ("32B per-card memory", "9551 MiB per", "README.md", f"{_R12}/e2e-qwen3-32b-kernel+p16.json", "9551 MiB"),
-    ("32B mma width 8", "reach 20.403 tokens", "README.md",
+    ("32B per-card memory", "9551 MiB per", "docs/BENCHMARKS.md", f"{_R12}/e2e-qwen3-32b-kernel+p16.json", "9551 MiB"),
+    ("32B mma width 8", "reach 20.403 tokens", "docs/BENCHMARKS.md",
      f"{_R12}/server-qwen3-32b-kernel+mma+p16.json", '"aggregate_tps": 20.403'),
-    ("24B p16 TTFT", "after 1.68 s instead of 77.6 s", "README.md",
+    ("24B p16 TTFT", "after 1.68 s instead of 77.6 s", "docs/BENCHMARKS.md",
      f"{_R13}/e2e-mistral-24b-kernel+p16.json", '"ttft_ms_median": 1684.18'),
-    ("24B kernel TTFT", "after 1.68 s instead of 77.6 s", "README.md",
+    ("24B kernel TTFT", "after 1.68 s instead of 77.6 s", "docs/BENCHMARKS.md",
      f"{_R13}/e2e-mistral-24b-kernel.json", '"ttft_ms_median": 77605.63'),
-    ("24B mma+p16 width 8", "reach 31.05 tokens", "README.md",
+    ("24B mma+p16 width 8", "reach 31.05 tokens", "docs/BENCHMARKS.md",
      f"{_R13}/server-mistral-24b-kernel+mma+p16.json", '"aggregate_tps": 31.05'),
 ]
 
@@ -220,6 +222,19 @@ def document(name: str) -> str:
     return (ROOT / name).read_text()
 
 
+def readme_and_benchmarks() -> str:
+    """The short README plus the full benchmarks page it points readers at.
+
+    The README was cut down to a first read; most of what it used to say about
+    speed now lives in docs/BENCHMARKS.md instead. A claim that used to be
+    pinned against README.md alone is pinned against whichever of the two
+    documents actually carries it now, so a number that moved is still caught
+    if it drifts, and a number that stayed put is unaffected either way.
+    """
+
+    return document("README.md") + document("docs/BENCHMARKS.md")
+
+
 @pytest.mark.parametrize(
     "label,text,doc,evidence,raw",
     JSON_CLAIMS,
@@ -276,7 +291,7 @@ def test_the_readme_speed_table_matches_the_run_behind_each_cell(label, text, ev
 
     speedup = 1 / _measured(evidence, path)
     assert text == f"{speedup:.2f}× · +{(speedup - 1) * 100:.0f}%", label
-    assert text in document("README.md"), f"{label}: {text} is no longer in the README"
+    assert text in readme_and_benchmarks(), f"{label}: {text} is no longer in the README or docs/BENCHMARKS.md"
 
 
 @pytest.mark.parametrize("label,text,evidence,path", README_REGRESSIONS,
@@ -285,7 +300,7 @@ def test_the_readme_prints_its_one_slowdown_exactly(label, text, evidence, path)
     speedup = 1 / _measured(evidence, path)
     assert speedup < 1, f"{label}: no longer a slowdown, move it to README_SPEEDUPS"
     assert text == f"{speedup:.2f}\u00d7 \u00b7 \u2212{(1 - speedup) * 100:.0f}%", label
-    assert text in document("README.md"), f"{label}: {text} is no longer in the README"
+    assert text in readme_and_benchmarks(), f"{label}: {text} is no longer in the README or docs/BENCHMARKS.md"
 
 
 @pytest.mark.parametrize("label,ratio,percent,evidence,path", README_MECHANISMS,
@@ -294,8 +309,8 @@ def test_the_readme_mechanism_table_matches_its_study(label, ratio, percent, evi
     measured = _measured(evidence, path)
     assert ratio == f"{measured:.3f}", label
     assert percent == f"+{(1 / measured - 1) * 100:.0f}%", label
-    readme = document("README.md")
-    assert ratio in readme and percent in readme, f"{label}: no longer in the README"
+    pool = readme_and_benchmarks()
+    assert ratio in pool and percent in pool, f"{label}: no longer in the README or docs/BENCHMARKS.md"
 
 
 def test_the_ledger_would_notice_a_changed_number():
