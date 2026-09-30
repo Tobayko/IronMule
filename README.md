@@ -124,6 +124,35 @@ A fresh install serves the reference path; IronMule promotes a faster path only 
 - **Fixed compiled cache** — fewer, larger GPU kernels per token.
 - **Hardware awareness** — per-device settings that cannot change the output.
 
+## Can I trust the numbers?
+
+Every speed-up above comes from a measurement that is published, not just quoted.
+
+- **Same tokens, or it says so.** Exact mode is checked token by token against the reference. A numeric plan changes the arithmetic, so it must also keep perplexity within 0.5 % of the reference on every path it touches, and `ironmule plans` recommends it only for checkpoints that passed.
+- **Rejected ideas stay visible.** Failed and inconclusive results are recorded in the [research lab](https://github.com/Tobayko/IronMule-Research), so you can see what did not work and why.
+- **Check it yourself.** The numbers live in [`evidence/`](evidence/) (redacted: no prompts or generated text). Each figure is redrawn from them, and tests pin the numbers in this README to them:
+
+```bash
+pip install -e ".[dev,figures]"
+python tools/make_figures.py --check        # every figure matches its evidence
+python -m pytest tests/claims               # every published number matches its evidence
+ironmule benchmark                          # measure your own machine
+```
+
+## What is in this repository
+
+| Folder | What it is |
+| :-- | :-- |
+| `ironmule/` | The runtime: model loading, generation, cache, plans, kernels |
+| `ironmule_product/` | The server, chat page, calibration and worker processes |
+| `friday_evidence/` | Storage and provenance for measurements |
+| `evidence/` | Redacted results behind every published number |
+| `tests/` | `engine/` and `runtime/` (runtime, server), `learning/` (learned dispatch), `evidence/` and `claims/` (measurements, published numbers) |
+| `docs/` | User documentation, index in [docs/README.md](docs/README.md) |
+| `tools/` | Figure and evidence tools |
+
+Raw data, experiment scripts and the full research record live in the separate [IronMule-Research](https://github.com/Tobayko/IronMule-Research) repository. Website: [ironmule.prometo.app](https://ironmule.prometo.app/).
+
 ## Learn more
 
 - **[Benchmarks](docs/BENCHMARKS.md)** — every model family, native kernels, quality gates.
