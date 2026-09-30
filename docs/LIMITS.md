@@ -135,9 +135,9 @@ inconclusive; that narrow statement is superseded by B36 only for the exact
 12B revision, 322/32 workload, M1 Max host, default wired/cache policy and
 full-hash/prefault protocol. B36 qualifies the core profile under those
 conditions but does not activate it or generalize it. These are recorded in
-[`research/LEDGER.md`](../research/LEDGER.md) and
+[`research/LEDGER.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) and
 `research/raw/B35_review.md` and
-[`research/raw/B36_review.md`](../research/raw/B36_review.md).
+[`research/raw/B36_review.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/raw/B36_review.md).
 
 No global 60--70% bandwidth-efficiency constant is validated here. The phase
 diagnostic therefore requires per-run measured inputs and never clamps an

@@ -1,0 +1,6 @@
+{
+  "decode_tps_median": 3.448,
+  "model_id": "mlx-community/Qwen3-14B-4bit",
+  "revision": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+  "ttft_ms_median": 49682.9
+}

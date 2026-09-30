@@ -120,7 +120,7 @@ the grouped all-EOS round and `Runtime.serve`'s result; `R4` in `tests/engine/te
 `test_mlx_backend_step_honours_fused_argmax_contract`; `R5` in
 `test_telemetry_does_not_present_zero_as_a_correctness_check` and the benchmark's
 structured mismatch exit in `tests/engine/test_benchmark.py`; `R6`/`R7` in
-`tests/engine/test_r6_r7.py`; `R2` and `R3` are open entries of their own). What remains
+`tests/engine/test_tune_policy.py`; `R2` and `R3` are open entries of their own). What remains
 is Apple-Silicon model CI. GitHub's hosted `macos-14` runner does run Metal (CI's doctor
 step prints `MLX Metal device: Metal GPU operation verified`), so the integration suite can
 run there against a cached, pinned snapshot; open until that job exists and is green.
@@ -345,11 +345,14 @@ a missing or extra field fails. Still open: RSS is not recorded at all, and
 `mlx_peak_bytes` is the child's own report, i.e. self-asserted. Kill when a new
 execution path can pass validation with absent or self-asserted resource evidence.
 
-**P2 safety debt (streaming worker output).** The current worker uses bounded
-`Popen` pipes and a 512 KiB cap, but `communicate()` still buffers the complete stream
-before the cap is checked. Replace this with a tempfile/selector-backed bounded reader
-that preserves progress markers and terminates the worker group on overflow. Kill when
-an overflow can block the producer, lose a completed-child marker, or leave an orphan.
+**P2 safety debt (streaming worker output) — answered 2026-09-26 (agent decision).**
+`ab._bounded_communicate` replaces `communicate()`: a selector drains both pipes as they
+fill and stops once either passes 512 KiB, so at most the cap plus one 64 KiB read is held,
+and `ab.run` then terminates and reaps the child (`output limit exceeded`). A real child
+writing without end is stopped by the cap, not the timeout, and reaped; a real child that
+puts 400 KiB on stderr before its `@@` marker keeps the marker (`tests/engine/test_ab.py`).
+No process group is needed for the reason (a) gives. Reopen if the child may spawn
+processes again.
 
 ---
 
@@ -639,6 +642,28 @@ means anyway.
 
 ## Tier 1 — cheap, grounded, worth doing first
 
+### `CHAT1` — Is IronMule's engine faster than mlx-lm's own generation in the chat? (2026-09-27)
+
+**Observation, not a measurement.** Recording the chat page on an M1 Max with Gemma 3 4B (one
+warm process each, one prompt, "Explain in about 300 words how a refrigerator moves heat out of
+its interior"): `ironmule serve --engine stock` (mlx-lm `stream_generate`) answered 493 tokens in
+5.97 s, 82.6 tok/s, first text after 0.43 s; `--engine ironmule` (the engine with this machine's
+tuned profile, `compatible_tuned_profile`) 445 tokens in 6.00 s, 74.1 tok/s, all text at the end.
+A scripted pair on a 256-token cap gave 75.5 against 70.5 tok/s. The two answers differ from
+token 44: mlx-lm prefills the last prompt token alone, `StrictOneShotPlan` with the rest; each
+server matches its own greedy computation exactly.
+
+**Mechanism.** The README's Apple numbers compare IronMule's tuned engine with IronMule's own
+baseline engine, not with mlx-lm's `stream_generate`, which the product serves by default and
+which overlaps the next step with the readback (async eval). The engine's wins (compiled fixed
+cache, head skip, readback every 2) may not cover that gap on long chat answers.
+
+**Test.** Preregistered, fresh interleaved processes, the product HTTP path both ways, several
+prompts and answer lengths, completion tokens per second from send to last token.
+**Kill:** engine below 1.0x `stream_generate` -> `--engine ironmule` is not offered as a speed-up
+and the README says what its "stock" is; above 1.05x -> the chat may default to it only after a
+separate decision on the differing answers.
+
 ### `B57` — Qualify a kernel per shape, through the profile
 
 **Mechanism.** `k3840_matvec` is admitted at load, against one `K`, by
@@ -868,7 +893,7 @@ three times; check token identity at every width.
 
 **Kill.** Width 4 wins at 27B too. Then the ceiling belongs to the kernel rather than
 the shape, `LIMITS.md` gains a sentence saying it was checked at two scales, and the
-`M=8` story is settled. Full detail in [`SCALING.md`](SCALING.md).
+`M=8` story is settled. Full detail in [`SCALING.md`](https://github.com/Tobayko/IronMule-Research/blob/main/docs/SCALING.md).
 
 ### `B2` — Group the `lm_head`, and only the `lm_head`
 
@@ -974,7 +999,7 @@ advantage at scale and drop several tiers.
 ### `B26` — Qwen3.8 27B, to separate model size from model family
 
 **Mechanism.** 4B, 12B and 27B are all Gemma 3, so size and family are fully
-confounded and the falling gain in [`SCALING.md`](SCALING.md) has two live explanations.
+confounded and the falling gain in [`SCALING.md`](https://github.com/Tobayko/IronMule-Research/blob/main/docs/SCALING.md) has two live explanations.
 `mlx-community/Qwen3.8-27B-4bit` is the cleanest available discriminator: the same
 parameter count as the Gemma 3 27B already measured, at **4 bit, group size 64** —
 identical quantisation, so the validity box changes in one dimension instead of three.
@@ -1407,7 +1432,7 @@ error to be negotiated with.
 answered — this is a list of open work, and an entry that survives its own answer makes
 the list lie about how much is left. The result does not disappear, it moves:
 
-- **It worked and shipped** -> a full entry in [`research/LEDGER.md`](../research/LEDGER.md),
+- **It worked and shipped** -> a full entry in [`research/LEDGER.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md),
   and a line in [`LIMITS.md`](LIMITS.md) if it changed the validity domain.
 - **It failed, or it was measured and rejected** -> one line in Tier 0 above, with the
   number and the experiment ID. Tier 0 is the only part of this file that grows.

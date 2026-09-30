@@ -34,10 +34,11 @@ data = ["scikit-learn>=1.5,<2"]
 figures = ["matplotlib>=3.8,<4"]
 
 [project.urls]
-Homepage = "https://github.com/Tobayko/IronMule"
+Homepage = "https://ironmule.prometo.app/"
 Documentation = "https://github.com/Tobayko/IronMule/blob/main/docs/RUNTIME.md"
 Issues = "https://github.com/Tobayko/IronMule/issues"
 Repository = "https://github.com/Tobayko/IronMule"
+Research = "https://github.com/Tobayko/IronMule-Research"
 
 [tool.setuptools]
 packages = ["ironmule", "ironmule_product", "friday_evidence", "friday_evidence.migrations", "friday_evidence.portable"]

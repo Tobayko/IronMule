@@ -4,13 +4,7 @@ The repository has no ``tests/__init__.py``, so ``tests`` is a namespace package
 whose ``__path__`` is rebuilt from ``sys.path`` on every import. The repo root
 therefore goes first and stays first, so ``tests`` always resolves to
 ``<repo>/tests`` and ``from ironmule.runtime import ...`` resolves to the engine
-that ships with this checkout. There is no second engine tree to shadow it.
-
-Since the two trees were merged there is a *third* ``test_benchmark.py``. The
-engine package's own now lives in ``tests/engine/`` together with the rest of its
-suite; the research tree's copy was renamed to ``tests/test_friday_benchmark.py``
-(likewise ``test_friday_cli.py`` and ``test_friday_evidence.py``), so a
-shared-helper import has to name that file rather than the engine's.
+that ships with this checkout.
 """
 
 from __future__ import annotations
@@ -22,46 +16,21 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-#: The research tree is its own source root. Its packages keep flat names because
-#: their provenance manifests hash paths relative to it, so renaming them would
-#: change a run identity for no reason other than where the directory sits.
-RESEARCH = ROOT / "research"
 
 if sys.path[:1] != [str(ROOT)]:
     if str(ROOT) in sys.path:
         sys.path.remove(str(ROOT))
     sys.path.insert(0, str(ROOT))
 
-if str(RESEARCH) not in sys.path:
-    sys.path.insert(1, str(RESEARCH))
 
-
-# -- collection away from the target device -----------------------------------
+# -- collection without an optional dependency ---------------------------------
 #
-# The research suite is bound to *this* machine by design, not by accident. Its
-# evidence lives in gitignored SQLite databases under `.friday-data/`, its models
-# in a validated local cache, and several of its tests spawn
-# `<repo>/.venv/bin/python` to drive a measurement script end to end. AGENTS.md
-# is explicit that a test asserting MLX, Metal or model behaviour must have run
-# on the target device --
-# so a CI runner is not a place where that suite can say anything true.
-#
-# The first attempt enumerated what was missing, one precondition at a time, and
-# each fix uncovered the next dependency: MLX, then `.venv`, then the evidence
-# databases, then the model cache. The list was the wrong shape. One question
-# replaces it: **is this the target device?** If it is not,
-# the research tree is not collected at all, and CI checks the engine package --
-# which is exactly what it can check honestly.
-#
-# The split is clean rather than approximate: 105 test modules import a
-# `friday_*` package and none of them is one of the engine's 34.
-#
-# Two research modules are the exception, because they check public claims against
-# committed files only: the numeric-plan table and the documented numbers (README,
-# ledger, constants) against the runs they cite. They are collected everywhere; the two
-# tests in them that need `.friday-data/` skip themselves when it is absent.
-#
-# On this Mac every precondition holds and nothing is dropped.
+# The whole suite ships with the package (ironmule, ironmule_product and
+# friday_evidence), so every test file here depends on nothing outside this
+# repository and runs wherever the package's own dependencies are installed.
+# The one thing that can be missing is mlx itself, on a bare checkout before
+# `pip install -e .`; a test file that needs it is left uncollected instead of
+# failing at import time.
 
 def _missing(name: str) -> bool:
     from importlib.util import find_spec
@@ -72,18 +41,10 @@ def _missing(name: str) -> bool:
         return True
 
 
-#: The target device is the machine that carries the project's own environment
-#: and its measured evidence. Both are gitignored, so no clone is one by default.
-IS_TARGET_DEVICE = (ROOT / ".venv" / "bin" / "python").is_file() and (
-    ROOT / ".friday-data"
-).is_dir()
-
 #: The engine package's own suite. It depends on nothing outside the repository,
-#: so it runs anywhere -- that is what CI checks.
+#: so it is always collected -- an environment missing mlx also lacks a working
+#: `ironmule` install, and that surfaces here rather than as a silent skip.
 ENGINE_TESTS = Path(__file__).resolve().parent / "engine"
-
-#: Research modules that read only committed files and guard public claims.
-PORTABLE_RESEARCH_TESTS = frozenset({"test_numeric_plans.py", "test_documented_claims.py"})
 
 _REQUIRES_MLX = _missing("mlx")
 
@@ -101,14 +62,7 @@ def collect_ignore_glob_hook(path: Path) -> bool:
 
     if ENGINE_TESTS == path or ENGINE_TESTS in path.parents:
         return False  # the engine's suite is self-contained; it runs anywhere
-    if path.parent == ENGINE_TESTS.parent and path.name in PORTABLE_RESEARCH_TESTS:
-        return _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx"))
-    if not IS_TARGET_DEVICE:
-        return True  # everything else is the research tree
-    # On a target device the research tree can still be missing a piece.
-    if _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx")):
-        return True
-    return False
+    return _REQUIRES_MLX and _needs(path, ("import mlx", "from mlx"))
 
 
 def pytest_ignore_collect(collection_path, config):  # noqa: ARG001 - pytest hook

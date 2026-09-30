@@ -1,0 +1,39 @@
+{
+  "model_id": "mlx-community/gemma-3-4b-it-4bit",
+  "revision": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+  "summary": {
+    "ironmule_fused": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 0.9395494058518746,
+      "median_ratio": 0.9338708004507039,
+      "ratio_vs_reference_per_rep": [
+        0.9281921950495331,
+        0.9395494058518746
+      ]
+    },
+    "ironmule_fused_fp32": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 2,
+      "max_ratio": 0.5057586793074101,
+      "median_ratio": 0.5043230176243556,
+      "ratio_vs_reference_per_rep": [
+        0.5028873559413011,
+        0.5057586793074101
+      ]
+    },
+    "stock": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 1.0,
+      "median_ratio": 1.0,
+      "ratio_vs_reference_per_rep": [
+        1.0,
+        1.0
+      ]
+    }
+  }
+}

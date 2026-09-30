@@ -1,0 +1,323 @@
+"""Every cell of the numeric-plan table must still be what its run says.
+
+The table is the only thing standing between a caller and a plan that doubles their
+model's perplexity, so it is pinned the way the README is: each number is re-derived from
+the committed run, in both directions. A re-measurement therefore moves the table or fails
+here; it cannot quietly disagree with the evidence it cites.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import random
+import statistics as st
+from pathlib import Path
+
+import pytest
+
+from ironmule.numeric_plans import (CUDA_PRE_AMPERE, MEASURED_REVISIONS, MEASURED_WITH,
+                                    MEASUREMENTS, QUALITY_BOUND, PlanRefused, architecture_of,
+                                    check, device_class, measurements_for, recommend)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _restore_the_default_device():
+    """Put the default device back after every test in this file.
+
+    The device is process-global and pytest-xdist hands a worker whole files in sequence,
+    so a file that leaves it on the CPU changes what a later file measures. Leaving it out
+    here made `tests/test_qmv_k3840.py` compare a Metal kernel against a CPU library call
+    and fail six ways — which is exactly the B53 failure this project already documented
+    once, reproduced by adding a file without its guard.
+    """
+    import mlx.core as mx
+
+    before = mx.default_device()
+    try:
+        yield
+    finally:
+        mx.set_default_device(before)
+
+#: The paired gates were computed across two processes, because the two precisions do not
+#: fit on one card together. Same seed and draw count as the analysis that produced them.
+BOOTSTRAP_SEED = 20260916
+BOOTSTRAP_DRAWS = 10000
+#: (architecture, plan) -> (bf16 rows file, other rows file, other key)
+PAIRED = {
+    ("mlx_lm.models.gemma3_text", "float32"): (
+        "port2k-run1-fe76f8df/quality-gemma3-4b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma3-4b-float32.json", "nll_float32"),
+    ("mlx_lm.models.gemma4_text", "float32"): (
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-float32.json", "nll_float32"),
+    ("mlx_lm.models.gemma4_text", "float16"): (
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-bf16.json",
+        "port2k-run1-fe76f8df/quality-gemma4-e2b-float16.json", "nll_float16"),
+    ("mlx_lm.models.gemma3_text", "float16"): (
+        "port2k-run2-39af179b/quality-gemma3-4b-bf16.json",
+        "port2k-run2-39af179b/quality-gemma3-4b-float16.json", "nll_float16"),
+    ("mlx_lm.models.qwen3", "float16"): (
+        "port2-run6-59ce8efc/quality16-qwen3-8b-bf16.json",
+        "port2-run6-59ce8efc/quality16-qwen3-8b-float16.json", "nll_float16"),
+    ("mlx_lm.models.gpt_oss", "float16"): (
+        "port2-run7-cddae1f9/quality-gptoss-20b-bf16-16.json",
+        "port2-run7-cddae1f9/quality-gptoss-20b-float16-16.json", "nll_float16"),
+    ("mlx_lm.models.gpt_oss", "float32"): (
+        "port2-run7-cddae1f9/quality-gptoss-20b-bf16-16.json",
+        "port2-run7-cddae1f9/quality-gptoss-20b-float32-24.json", "nll_float32"),
+    ("mlx_lm.models.ministral3", "float32"): (
+        "port2-run8-da1a6469/quality-mistral-24b-bf16-8.json",
+        "port2-run8-da1a6469/quality-mistral-24b-float32-8.json", "nll_float32"),
+}
+RESULTS = ROOT / "evidence" / "kaggle"
+#: Plans whose gate is several (candidate, reference) pairs of per-chunk NLL lists, one per
+#: path the plan changes; the row must carry the pair with the highest upper bound.
+CHUNK_GATES = {
+    ("mlx_lm.models.qwen3", "native"): (
+        ("perf1-run5-a9559a15/gate-qwen3-8b-kernel-decode.json",
+         "perf1-run5-a9559a15/gate-qwen3-8b-stock-decode.json"),
+        ("perf1-run5-a9559a15/gate-qwen3-8b-p16-prefill.json",
+         "perf1-run5-a9559a15/gate-qwen3-8b-stock-prefill.json"),
+        ("perf1-run5-a9559a15/gate-qwen3-14b-p16-prefill.json",
+         "perf1-run5-a9559a15/gate-qwen3-14b-stock-prefill.json"),
+        ("backlog2-run1-17b2ca39/gate-qwen3-14b-kernel-decode.json",
+         "backlog2-run1-17b2ca39/gate-qwen3-14b-stock-decode.json")),
+    ("mlx_lm.models.gemma3_text", "native"): (
+        ("backlog8-run1-1665f2ae/gate-gemma3-12b-kernel-decode.json",
+         "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-decode.json"),
+        ("backlog8-run1-1665f2ae/gate-gemma3-12b-p16-prefill.json",
+         "backlog8-run1-1665f2ae/gate-gemma3-12b-stock-prefill.json")),
+}
+#: Dtype plans whose decode path was gated too (NEXT1-C run 1), against stock on the same
+#: path; such a row must carry the worse of its prefill (PAIRED) and decode gates.
+DECODE_GATES = {
+    ("mlx_lm.models.gemma3_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma3-4b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma3-4b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float32"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.gemma4_text", "float16"): (
+        "next1c-run1-1497adb8/gate-gemma4-e2b-fp16-decode.json",
+        "next1c-run1-1497adb8/gate-gemma4-e2b-stock-decode.json"),
+    ("mlx_lm.models.ministral3", "float32"): (
+        "next1c-run1-1497adb8/gate-mistral-24b-fp32-decode.json",
+        "next1c-run1-1497adb8/gate-mistral-24b-stock-decode.json"),
+}
+
+
+def _paired_gate(bf16_file: str, other_file: str, other_key: str):
+    bf16 = json.loads((RESULTS / bf16_file).read_text())["rows"]
+    other = json.loads((RESULTS / other_file).read_text())["rows"][:len(bf16)]
+    rows = [(a["nll_bf16"], b[other_key]) for a, b in zip(bf16, other)]
+    rng = random.Random(BOOTSTRAP_SEED)
+
+    def ratio(sample):
+        return math.exp(st.mean(b for _, b in sample) - st.mean(a for a, _ in sample))
+
+    draws = sorted(ratio([rng.choice(rows) for _ in rows]) for _ in range(BOOTSTRAP_DRAWS))
+    return ratio(rows), (draws[250], draws[9750])
+
+
+def _chunk_gate(candidate_file: str, reference_file: str):
+    reference = json.loads((RESULTS / reference_file).read_text())["chunk_nll"]
+    candidate = json.loads((RESULTS / candidate_file).read_text())["chunk_nll"]
+    rows = list(zip(reference, candidate))
+    rng = random.Random(BOOTSTRAP_SEED)
+
+    def ratio(sample):
+        return math.exp(st.mean(b for _, b in sample) - st.mean(a for a, _ in sample))
+
+    draws = sorted(ratio([rng.choice(rows) for _ in rows]) for _ in range(BOOTSTRAP_DRAWS))
+    return ratio(rows), (draws[250], draws[9750])
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_wall_ratio_is_the_one_its_run_recorded(row):
+    payload = json.loads((ROOT / row.wall_evidence).read_text())
+    assert payload["summary"][row.wall_arm]["median_ratio"] == row.wall_ratio, row.label
+    assert payload["summary"][row.wall_arm]["failed_processes"] == 0, "a failed arm is not a ratio"
+
+
+@pytest.mark.parametrize("row", [row for row in MEASUREMENTS if row.quality_known],
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS
+                              if row.quality_known])
+def test_every_quality_interval_is_the_one_its_run_supports(row):
+    key = (row.architecture, row.plan)
+    if key in CHUNK_GATES:
+        ratio, interval = max((_chunk_gate(*pair) for pair in CHUNK_GATES[key]),
+                              key=lambda gate: gate[1][1])
+    elif key in PAIRED:
+        gates = [_paired_gate(*PAIRED[key])]
+        if key in DECODE_GATES:
+            gates.append(_chunk_gate(*DECODE_GATES[key]))
+        ratio, interval = max(gates, key=lambda gate: gate[1][1])
+    else:
+        payload = json.loads((ROOT / row.quality_evidence[0]).read_text())
+        ratio, interval = payload[row.quality_evidence[1]], tuple(payload["ppl_ratio_ci"])
+    assert ratio == row.quality_ratio, row.label
+    assert interval == row.quality_interval, row.label
+
+
+def test_a_measured_ruin_is_refused_and_a_wide_interval_is_not():
+    """The distinction the whole table turns on, asserted rather than assumed.
+
+    Gemma 3 in float32 once measured 1.017846 with an interval that contains 1 (no BOS,
+    port2 run 2) and passes with BOS (PORT2-K). Gemma 3 in float16 measured an interval
+    starting at 1.87 without BOS and at 1.96 with it (PORT2-K run 2), so it stays refused.
+    A wide interval must never refuse; a measured ruin must.
+    """
+    gemma = "mlx_lm.models.gemma3_text"
+    check(gemma, "float32", CUDA_PRE_AMPERE)
+    with pytest.raises(PlanRefused, match="2.044178"):
+        check(gemma, "float16", CUDA_PRE_AMPERE)
+    # Unmeasured architectures and other device classes are not this guard's business.
+    check("mlx_lm.models.gemma4_text", "float16", CUDA_PRE_AMPERE)
+    check(gemma, "float16", None)
+    check(gemma, None, CUDA_PRE_AMPERE)
+
+
+def test_gemma_gates_count_only_with_bos_on_every_chunk():
+    """PORT2-K: a Gemma gate is evidence only when every chunk starts with BOS.
+
+    Without it Gemma 3 4B's reference scored perplexity ~100 and Gemma 4 E2B's 22 212, and
+    the plans' verdicts came from that regime. Every Gemma row that carries an interval must
+    cite a run whose files record BOS on both sides, so a no-BOS gate cannot come back in.
+    """
+    for architecture in ("mlx_lm.models.gemma3_text", "mlx_lm.models.gemma4_text"):
+        for plan in ("float32", "float16"):
+            key = (architecture, plan)
+            if key not in PAIRED or "port2k" not in PAIRED[key][0]:
+                continue
+            for name in PAIRED[key][:2]:
+                assert json.loads((RESULTS / name).read_text())["bos"] == 2, name
+    rows = measurements_for("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
+    assert {row.plan: row.verdict() for row in rows} == {"float32": "recommended",
+                                                        "float16": "recommended"}
+    plan, _ = recommend("mlx_lm.models.gemma4_text", CUDA_PRE_AMPERE)
+    assert plan == "float16", "the fastest qualified plan is the recommendation"
+
+
+def test_only_a_faster_and_qualified_plan_is_ever_recommended():
+    for architecture in {row.architecture for row in MEASUREMENTS}:
+        plan, reason = recommend(architecture, CUDA_PRE_AMPERE)
+        assert reason, architecture
+        if plan is None:
+            continue
+        row = next(r for r in measurements_for(architecture, CUDA_PRE_AMPERE) if r.plan == plan)
+        assert row.wall_ratio < 1.0, f"{architecture}: recommended a plan that is slower"
+        assert row.quality_interval[1] < QUALITY_BOUND, f"{architecture}: recommended past the bound"
+    # Qwen 3 earns a recommendation, and the fastest of its three plans: `native` (0.20 of
+    # stock, PERF1) ahead of `float16` (0.31, PORT2).
+    assert recommend("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)[0] == "native"
+    # Gemma 3 too, since PERF1-Y's gate passed on both paths (BACKLOG8); float32 stays unqualified.
+    assert recommend("mlx_lm.models.gemma3_text", CUDA_PRE_AMPERE)[0] == "native"
+    # The largest checkpoint that runs on one card earns a recommendation too.
+    assert recommend("mlx_lm.models.ministral3", CUDA_PRE_AMPERE)[0] == "float32"
+    assert recommend("mlx_lm.models.llama", CUDA_PRE_AMPERE)[0] is None
+    assert "no numeric plan has been measured" in recommend("nobody.measured.this", CUDA_PRE_AMPERE)[1]
+
+
+def test_a_recommendation_reaches_only_the_checkpoints_it_measured():
+    """NEXT1-C: an architecture row does not qualify a checkpoint nobody measured.
+
+    Gemma 4 E4B shares E2B's architecture and was timed, but no gate ran on it; Qwen 3 14B
+    passed the float16 gate but was never timed under it. Neither may inherit a
+    recommendation from a sibling, and a caller without a model hears which checkpoints
+    the recommendation is for.
+    """
+    gemma4 = "mlx_lm.models.gemma4_text"
+    assert recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e2b-it-4bit")[0] == "float16"
+    plan, reason = recommend(gemma4, CUDA_PRE_AMPERE, "mlx-community/gemma-4-e4b-it-4bit")
+    assert plan is None and "was not measured" in reason
+    assert "gemma-4-e2b-it-4bit" in recommend(gemma4, CUDA_PRE_AMPERE)[1]
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-14B-4bit")[0] == "native"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, "mlx-community/Qwen3-32B-4bit")[0] is None
+    for row in MEASUREMENTS:
+        if row.verdict() == "recommended":
+            assert row.models, f"{row.label} {row.plan}: a recommendation needs measured checkpoints"
+
+
+def test_device_class_names_only_what_changes_the_answer():
+    assert device_class({"compute_capability_major": 7}) == CUDA_PRE_AMPERE
+    assert device_class({"compute_capability_major": 8}) is None, "Ampere has native bf16"
+    assert device_class({"compute_capability_major": True}) is None, "a bool is not a capability"
+    assert device_class({}) is None and device_class(None) is None
+
+
+def test_architecture_comes_from_the_module_mlx_lm_actually_runs():
+    """Not from the config, which is what the publisher wrote rather than what runs."""
+    import mlx.core as mx
+    import mlx.nn as nn
+    from mlx_lm.models.qwen3 import ModelArgs, Qwen3Model
+
+    mx.set_default_device(mx.cpu)
+    model = Qwen3Model(ModelArgs(model_type="qwen3", hidden_size=64, num_hidden_layers=2,
+                                 intermediate_size=128, num_attention_heads=4,
+                                 num_key_value_heads=2, head_dim=16, vocab_size=128,
+                                 rms_norm_eps=1e-5, max_position_embeddings=256,
+                                 rope_theta=10000.0, tie_word_embeddings=True))
+    nn.quantize(model, group_size=32, bits=4)
+    assert architecture_of(model) == "mlx_lm.models.qwen3"
+    assert architecture_of(object()) is None
+
+
+def _evidence_identity(path: Path) -> tuple[str, str]:
+    """(model id, revision) as a run file recorded it: named, or in its snapshot path."""
+    record = json.loads(path.read_text())
+    if record.get("model_id") and record.get("revision"):
+        return record["model_id"], record["revision"]
+    repo, _, revision = record["model_path"].split("/models--", 1)[1].partition("/snapshots/")
+    return repo.replace("--", "/", 1), revision.strip("/")
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_is_bound_to_the_revisions_its_evidence_recorded(row):
+    """NEXT1-C: a row covers its checkpoints at the revision measured, read from the runs."""
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for name in PAIRED.get(key, ())[:2]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    recorded = {_evidence_identity(path) for path in files}
+    for model_id, revision in recorded:
+        assert model_id in row.models, f"{row.label} {row.plan}: evidence for {model_id} it does not name"
+        assert revision == MEASURED_REVISIONS[model_id], f"{model_id}: evidence at {revision}"
+    assert set(row.models) <= {model_id for model_id, _ in recorded}
+
+
+@pytest.mark.parametrize("row", MEASUREMENTS,
+                         ids=[f"{row.label}-{row.plan}" for row in MEASUREMENTS])
+def test_every_row_ran_on_the_framework_it_claims(row):
+    """NEXT1-C: every evidence run's pinned mlx/mlx-lm match MEASURED_WITH's versions.
+
+    The run's `pip freeze` stays private (it pins every package, not just these two);
+    `tools/export_evidence.py` parses it once into `<run>/freeze.json`, and that
+    sidecar is what a fresh clone actually reads.
+    """
+    key = (row.architecture, row.plan)
+    files = [ROOT / row.wall_evidence, ROOT / row.quality_evidence[0]]
+    files += [RESULTS / name for pair in CHUNK_GATES.get(key, ()) for name in pair]
+    for run in {path.parent for path in files}:
+        frozen = json.loads((run / "freeze.json").read_text())
+        assert frozen == MEASURED_WITH, run.name
+
+
+def test_a_recommendation_holds_only_for_the_framework_it_measured():
+    qwen3 = "mlx_lm.models.qwen3"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, framework=dict(MEASURED_WITH))[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, framework={**MEASURED_WITH, "mlx": "0.33.0"})
+    assert plan is None and "this environment runs mlx 0.33.0" in reason
+
+
+def test_a_recommendation_reaches_only_the_revision_it_measured():
+    qwen3, model = "mlx_lm.models.qwen3", "mlx-community/Qwen3-8B-4bit"
+    assert recommend(qwen3, CUDA_PRE_AMPERE, model, MEASURED_REVISIONS[model])[0] == "native"
+    plan, reason = recommend(qwen3, CUDA_PRE_AMPERE, model, "0" * 40)
+    assert plan is None and "another revision is another model" in reason
+    assert "Qwen3-8B-4bit@545dc42" in recommend(qwen3, CUDA_PRE_AMPERE)[1]

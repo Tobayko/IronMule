@@ -1,0 +1,12 @@
+{
+  "model_id": "mlx-community/Qwen3-8B-4bit",
+  "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+  "widths": {
+    "1": {
+      "aggregate_tps": 24.8
+    },
+    "8": {
+      "aggregate_tps": 36.108
+    }
+  }
+}

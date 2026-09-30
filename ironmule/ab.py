@@ -12,9 +12,11 @@ import json
 import math
 import os
 import re
+import selectors
 import statistics
 import subprocess
 import sys
+import time
 from dataclasses import replace
 from typing import Any, Mapping
 
@@ -30,10 +32,10 @@ CHILD_BOOTSTRAP = (
     "import importlib.util,json,os,sys;"
     "guard_path=os.path.realpath(sys.argv[2]);"
     "ab_path=os.path.realpath(sys.argv[3]);"
-    "guard_spec=importlib.util.spec_from_file_location('ironmule.q3f_child_guard',guard_path);"
+    "guard_spec=importlib.util.spec_from_file_location('ironmule.child_guard',guard_path);"
     "assert guard_spec is not None and guard_spec.loader is not None;"
     "guard=importlib.util.module_from_spec(guard_spec);"
-    "sys.modules['ironmule.q3f_child_guard']=guard;"
+    "sys.modules['ironmule.child_guard']=guard;"
     "guard_spec.loader.exec_module(guard);"
     "guard.assert_source_surface(ab_path);"
     "guard.install();"
@@ -132,17 +134,17 @@ def _terminate_child(process: subprocess.Popen[str]) -> None:
 
 def _child(spec: dict[str, Any]) -> dict[str, Any]:
     """Run the model child behind Q3f's bounded no-detach guard."""
-    from . import q3f_child_guard
+    from . import child_guard
 
-    owns_guard = not q3f_child_guard.is_installed()
+    owns_guard = not child_guard.is_installed()
     if owns_guard:
-        q3f_child_guard.install()
+        child_guard.install()
     try:
-        q3f_child_guard.assert_child_surface(_child)
+        child_guard.assert_child_surface(_child)
         return _child_execution(spec)
     except BaseException as exc:
         try:
-            marker = q3f_child_guard.failure_marker()
+            marker = child_guard.failure_marker()
             if marker is not None:
                 exc.add_note("@GUARD_FAILURE" + json.dumps(marker, sort_keys=True, allow_nan=False))
         except BaseException:
@@ -150,7 +152,7 @@ def _child(spec: dict[str, Any]) -> dict[str, Any]:
         raise
     finally:
         if owns_guard:
-            q3f_child_guard.uninstall()
+            child_guard.uninstall()
 
 
 def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
@@ -237,8 +239,8 @@ def _child_execution(spec: dict[str, Any]) -> dict[str, Any]:
     out["mlx_peak_bytes"] = max(arm["mlx_peak_bytes"] for arm in out["arms"].values())
     # Capture only after all work has completed.  Any guard event or malformed
     # ledger raises and therefore cannot be reported as a successful child.
-    from . import q3f_child_guard
-    out["guard"] = q3f_child_guard.ledger()
+    from . import child_guard
+    out["guard"] = child_guard.ledger()
     return out
 
 
@@ -477,6 +479,40 @@ def validate_result(result: Any, *, processes: int, repeats: int, warmup: int,
     return True, None
 
 
+def _bounded_communicate(process: subprocess.Popen[bytes],
+                         timeout: float | None) -> tuple[str, str, bool]:
+    """Drain both pipes as they fill and stop once either passes MAX_CHILD_OUTPUT.
+
+    `communicate()` buffered the whole stream before the cap was checked; this keeps at most
+    MAX_CHILD_OUTPUT plus one read per stream, and never lets the child block on a full pipe
+    while the other one is read. Returns (stdout, stderr, overflow); on overflow the child may
+    still be running and the caller terminates it. Raises `subprocess.TimeoutExpired`.
+    """
+    deadline = None if timeout is None else time.monotonic() + timeout
+    buffers = {process.stdout.fileno(): bytearray(), process.stderr.fileno(): bytearray()}
+    overflow = False
+    with selectors.DefaultSelector() as selector:
+        for fd in buffers:
+            selector.register(fd, selectors.EVENT_READ)
+        while selector.get_map() and not overflow:
+            left = None if deadline is None else deadline - time.monotonic()
+            if left is not None and left <= 0:
+                raise subprocess.TimeoutExpired(process.args, timeout)
+            for key, _ in selector.select(left):
+                chunk = os.read(key.fd, 65536)
+                if not chunk:
+                    selector.unregister(key.fd)
+                buffers[key.fd] += chunk
+                overflow = overflow or len(buffers[key.fd]) > MAX_CHILD_OUTPUT
+    stdout, stderr = (bytes(buffers[stream.fileno()]).decode("utf-8", "replace")
+                      for stream in (process.stdout, process.stderr))
+    if not overflow:
+        process.stdout.close()
+        process.stderr.close()
+        process.wait(timeout=None if deadline is None else max(0.0, deadline - time.monotonic()))
+    return stdout, stderr, overflow
+
+
 def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: int = 2,
         max_tokens: int = 32, model: str | None = None, prompt: str | None = None,
         *, child_timeout_seconds: float | None = None, compute_dtype: str | None = None,
@@ -526,9 +562,9 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
             proc = subprocess.Popen(
                 [sys.executable, "-c",
                  CHILD_BOOTSTRAP, json.dumps(spec),
-                 str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "q3f_child_guard.py")),
+                 str(os.path.join(os.path.dirname(os.path.abspath(__file__)), "child_guard.py")),
                  os.path.abspath(__file__)],
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                 cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                 env={**os.environ, **CHILD_ENV},
             )
@@ -550,7 +586,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                     child_index=index,
                 ) from exc
         try:
-            stdout, stderr = proc.communicate(timeout=timeout)
+            stdout, stderr, overflow = _bounded_communicate(proc, timeout)
         except subprocess.TimeoutExpired:
             try:
                 _terminate_child(proc)
@@ -575,12 +611,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 f"child {index} communication failed",
                 partial_children=children, child_index=index,
             ) from exc
-        if not isinstance(stdout, str) or not isinstance(stderr, str):
-            raise ABRunError(
-                f"child {index} produced malformed output",
-                partial_children=children, child_index=index,
-            )
-        if len(stdout) > MAX_CHILD_OUTPUT or len(stderr) > MAX_CHILD_OUTPUT:
+        if overflow:
             try:
                 _terminate_child(proc)
             except RuntimeError as cleanup_error:

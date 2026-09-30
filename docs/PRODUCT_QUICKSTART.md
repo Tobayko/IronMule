@@ -97,7 +97,7 @@ reservation and can observe overshoot. Normal completion requires a clean
 worker exit. These calibration guards do not imply a global serving-memory
 scheduler. The earlier 12B swap failure is retained, but a subsequent installed
 12B load and short exact-reference generation test pass under their recorded
-host conditions ([12B results](PROD4P_12B_RESULTS_2026-09-07.md)). That does not
+host conditions ([12B results](https://github.com/Tobayko/IronMule-Research/blob/main/docs/PROD4P_12B_RESULTS_2026-09-07.md)). That does not
 qualify long contexts or sustained load, or establish a permanent memory fix.
 
 Model snapshots cannot opt into executable custom Python through `model_file`.
@@ -138,8 +138,8 @@ controls; short integration tests are not a sustained-production readiness claim
 
 ## Evidence and experimental paths
 
-See [the product plan](PRODUCT_IMPLEMENTATION_2026-09-05.md) and
-[the real-Gemma screen](PROD1_GEMMA_SMOKE_2026-09-07.md). Model inventory is
+See [the product plan](https://github.com/Tobayko/IronMule-Research/blob/main/docs/PRODUCT_IMPLEMENTATION_2026-09-05.md) and
+[the real-Gemma screen](https://github.com/Tobayko/IronMule-Research/blob/main/docs/PROD1_GEMMA_SMOKE_2026-09-07.md). Model inventory is
 metadata, not a hardware qualification. The private `bounded_prefetch`
 candidate is not selectable over HTTP or automatically promoted. Any measured
 benefit is limited to the exact tested model, environment and workload; another

@@ -1,0 +1,39 @@
+{
+  "model_id": "mlx-community/Qwen3-8B-4bit",
+  "revision": "545dc4251c05440727734bcd94334791f6ab0192",
+  "summary": {
+    "ironmule_fused": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 0.9634754930672874,
+      "median_ratio": 0.9630599551635697,
+      "ratio_vs_reference_per_rep": [
+        0.9634754930672874,
+        0.9626444172598521
+      ]
+    },
+    "ironmule_fused_fp32": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 5,
+      "max_ratio": 0.5393274373168675,
+      "median_ratio": 0.5391966248793532,
+      "ratio_vs_reference_per_rep": [
+        0.5390658124418389,
+        0.5393274373168675
+      ]
+    },
+    "stock": {
+      "deterministic_across_processes": true,
+      "failed_processes": 0,
+      "identical_requests": 6,
+      "max_ratio": 1.0,
+      "median_ratio": 1.0,
+      "ratio_vs_reference_per_rep": [
+        1.0,
+        1.0
+      ]
+    }
+  }
+}

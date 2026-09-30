@@ -1,0 +1,9 @@
+{
+  "decode_tps_median": 1.566,
+  "model_id": "mlx-community/Qwen3-32B-4bit",
+  "pipeline": {
+    "gpus_after_load": "0, 9551 MiB\n1, 9551 MiB"
+  },
+  "revision": "bcaaf7f538adf166c1080a2befdb4f6019f66639",
+  "ttft_ms_median": 110057.71
+}

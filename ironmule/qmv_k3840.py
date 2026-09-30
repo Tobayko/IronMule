@@ -2,7 +2,7 @@
 
 The kernel itself is the qualified candidate, copied unchanged from the study tooling:
 MLX `0.32.0`'s `qmv_impl` for `bits=4`, `group_size=64`, with the reduction length fixed
-at 3840. `tests/test_qmv_k3840_integration.py` asserts it is still character-identical to
+at 3840. `tests/runtime/test_qmv_k3840_integration.py` asserts it is still character-identical to
 the studied source, so integration cannot quietly alter it.
 
 Admission is deliberately narrow. `K == 3840` is not sufficient: the hardware

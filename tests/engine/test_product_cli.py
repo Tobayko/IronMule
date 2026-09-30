@@ -75,3 +75,12 @@ def test_start_downloads_nothing_when_the_user_declines(tmp_path, monkeypatch, c
     monkeypatch.setattr(product_cli, "models", lambda *_args: pytest.fail("must not download or register"))
     assert product_cli.start(["--state-dir", str(tmp_path / "state")]) == 1
     assert "nothing downloaded" in capsys.readouterr().err
+
+
+def test_serve_refuses_a_numeric_plan_on_the_ironmule_engine(tmp_path, capsys):
+    import ironmule_product.cli as product_cli
+
+    with pytest.raises(SystemExit):
+        product_cli.serve(["--model", "m", "--engine", "ironmule", "--compute-dtype", "native",
+                           "--state-dir", str(tmp_path)])
+    assert "--compute-dtype runs on the stock engine only" in capsys.readouterr().err

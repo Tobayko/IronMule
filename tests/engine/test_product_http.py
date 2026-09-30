@@ -578,6 +578,7 @@ def test_chat_page_is_served_without_a_key_while_the_api_still_needs_one():
         assert response.getheader("Content-Type") == "text/html; charset=utf-8"
         assert "connect-src 'self'" in response.getheader("Content-Security-Policy")
         assert "/v1/chat/completions" in page and "textContent" in page and "innerHTML" not in page
+        assert "tok/s" in page and "completion_tokens" in page  # live speed, exact at the end
         status, payload = request(server, "GET", "/v1/models")
         assert status == 401 and payload["error"]["code"] == "unauthorized"
     finally:

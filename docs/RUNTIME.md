@@ -4,7 +4,7 @@
 
 A local inference runtime for MLX on Apple silicon, built from measurements rather
 than from expectations. Every performance statement below points at an experiment in
-[`research/LEDGER.md`](../research/LEDGER.md) with raw data under `research/raw/`.
+[`research/LEDGER.md`](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) with raw data under `research/raw/`.
 
 Version `0.1.0`. Published from a curated subset; see [`README.md`](../README.md).
 
@@ -274,8 +274,8 @@ This module is deliberately not imported by Runtime, plans, modes, executors, tu
 the package root. It has no MLX import, persistence, `run()`/`select()` method,
 automatic routing or activation. D1 represents existing path IDs as data; it does not
 change which path executes. See
-[`B27_PHASE_D_CONTRACT_PROPOSAL.md`](B27_PHASE_D_CONTRACT_PROPOSAL.md) for the approved
-scope and excluded later decisions.
+[`B27_PHASE_D_CONTRACT_PROPOSAL.md`](https://github.com/Tobayko/IronMule-Research/blob/main/docs/B27_PHASE_D_CONTRACT_PROPOSAL.md)
+for the approved scope and excluded later decisions.
 
 ## Running things
 

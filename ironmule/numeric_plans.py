@@ -18,7 +18,7 @@ which is right for Gemma 3 and Qwen 3, wrong for Llama 3.1, and silent about `fl
 being both the best and the worst option in the set. This module replaces that with the
 measurements, so a recommendation exists only where a measurement does.
 
-Every row cites the committed run it comes from, and `tests/test_numeric_plans.py`
+Every row cites the committed run it comes from, and `tests/claims/test_numeric_plans.py`
 re-derives each number from that file, so a re-measurement moves the table or fails the
 suite. A plan is only ever *recommended* when it is both faster and inside the quality
 bound; a plan measured to break the bound is *refused*, because a numeric plan the caller
@@ -106,11 +106,34 @@ class PlanMeasurement:
         return "unqualified"
 
 
-_R = "experiments/kaggle_compat/results"
+_R = "evidence/kaggle"
+
+#: The framework every row was measured with, read from each evidence run's `pip freeze`
+#: (`tests/claims/test_numeric_plans.py` checks them). Another version is another computation: a
+#: recommendation holds for these and, with `framework=`, for nothing else (NEXT1-C).
+MEASURED_WITH = {"mlx": "0.32.2", "mlx-lm": "0.31.3"}
+
+#: The exact revision each measured checkpoint was pinned to, which fixes its weights and
+#: quantisation. A recommendation covers that revision only (NEXT1-C): a republished
+#: checkpoint under the same id is a new, unmeasured model. `tests/claims/test_numeric_plans.py`
+#: checks every one against the revision its evidence files recorded.
+MEASURED_REVISIONS = {
+    "mlx-community/gemma-3-4b-it-4bit": "93724907d4ed1745d2fe50baadf3b0b01a65abf2",
+    "mlx-community/gemma-3-12b-it-4bit": "86cc6a8dedbc456dd0e4af01a9d09f396f77e558",
+    "mlx-community/gemma-4-e2b-it-4bit": "238767527555cb75a05732a84dff5d6ba0dd6809",
+    "mlx-community/Llama-3.1-8B-Instruct-4bit": "90215b22ec18e72f623dde2ea7af4097025160e2",
+    "mlx-community/Qwen3-8B-4bit": "545dc4251c05440727734bcd94334791f6ab0192",
+    "mlx-community/Qwen3-14B-4bit": "a4d9b2df59d2c150bef02fcbe0d91046b7ca33a4",
+    "mlx-community/gpt-oss-20b-MXFP4-Q4": "f356f2747216d7e98fee755df25987459fc19089",
+    "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit": "2a1d5eabfc504747bdc24178394821a1efc0edde",
+}
 
 #: Measured on a Kaggle 2 x Tesla T4 cell (compute capability 7.5), MLX 0.32.2 and
 #: mlx-lm 0.31.3, 4-bit mlx-community checkpoints at pinned revisions. `research/LEDGER.md`
-#: entry PORT2 carries the protocol; these are its cells.
+#: entry PORT2 carries the protocol; these are its cells. The `float32`/`float16` gates ran on
+#: the prefill path; NEXT1-C run 1 gated the decode path of Gemma 3 4B `float32`, Gemma 4 E2B
+#: `float32`/`float16` and Mistral Small 3.2 24B `float32` as well, and each passed with a
+#: lower upper bound, so those rows carry their prefill gate, the worse of the two.
 MEASUREMENTS: tuple[PlanMeasurement, ...] = (
     PlanMeasurement(
         architecture="mlx_lm.models.gemma3_text", plan="float32", device=CUDA_PRE_AMPERE,
@@ -170,6 +193,9 @@ MEASUREMENTS: tuple[PlanMeasurement, ...] = (
         quality_evidence=(f"{_R}/port2-run6-59ce8efc/quality16-qwen3-8b-float16.json",
                           "paired-with-bf16"),
     ),
+    # gpt-oss: GATE-OSS repeated both gates with BOS on every chunk (2026-09-28, ledger DEMO2-5):
+    # float16 1.017850 [0.976206; 1.058600], float32 1.022654 [0.980827; 1.063303]. Still
+    # inconclusive, and both point estimates lie above QUALITY_BOUND, so neither row can pass.
     PlanMeasurement(
         architecture="mlx_lm.models.gpt_oss", plan="float32", device=CUDA_PRE_AMPERE,
         wall_ratio=0.2818421251530665,
@@ -313,12 +339,27 @@ def measurements_for(architecture: str, device: str | None) -> tuple[PlanMeasure
                  if row.architecture == architecture and row.device == device)
 
 
+def _versions(framework: dict[str, str]) -> str:
+    return ", ".join(f"{name} {version}" for name, version in sorted(framework.items()))
+
+
 def _short(models: tuple[str, ...]) -> str:
-    return ", ".join(model.rsplit("/", 1)[-1] for model in models)
+    return ", ".join(f"{model.rsplit('/', 1)[-1]}@{MEASURED_REVISIONS[model][:7]}" for model in models)
 
 
-def recommend(architecture: str, device: str | None,
-              model_id: str | None = None) -> tuple[str | None, str]:
+def installed_framework() -> dict[str, str] | None:
+    """The installed versions of what `MEASURED_WITH` names, or None when one is missing."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return {name: version(name) for name in MEASURED_WITH}
+    except PackageNotFoundError:
+        return None
+
+
+def recommend(architecture: str, device: str | None, model_id: str | None = None,
+              revision: str | None = None,
+              framework: dict[str, str] | None = None) -> tuple[str | None, str]:
     """The fastest plan that is both faster and inside the quality bound, and why.
 
     Returns `(plan, reason)`; `plan` is None when nothing is recommended, and the reason
@@ -326,9 +367,11 @@ def recommend(architecture: str, device: str | None,
     architecture and "no recommendation" for one that was measured and lost are different
     facts and a caller deserves to know which one they have.
 
-    A recommendation covers the checkpoints its row measured and no others (NEXT1-C): with
-    `model_id`, a checkpoint outside every recommended row gets none; without it, the
-    reason names the checkpoints the recommendation is for.
+    A recommendation covers the checkpoints its row measured, at the revision measured, and
+    no others (NEXT1-C): with `model_id`, a checkpoint outside every recommended row gets
+    none, and with `revision` too, so does any other revision of it; without them, the
+    reason names the checkpoints and revisions the recommendation is for. With `framework`
+    (e.g. `installed_framework()`), versions other than `MEASURED_WITH` get none either.
     """
     rows = measurements_for(architecture, device)
     if not rows:
@@ -336,12 +379,19 @@ def recommend(architecture: str, device: str | None,
                       "the checkpoint's own dtype is the only qualified path here")
     recommended = sorted((row for row in rows if row.verdict() == "recommended"),
                          key=lambda row: row.wall_ratio)
+    if recommended and framework is not None and framework != MEASURED_WITH:
+        return None, (f"no plan is recommended for {rows[0].label} here: it was measured with "
+                      f"{_versions(MEASURED_WITH)} and this environment runs {_versions(framework)}")
     if recommended and model_id is not None:
         measured = [row for row in recommended if model_id in row.models]
         if not measured:
             return None, (f"no plan is recommended for {model_id}: {recommended[0].plan} is "
                           f"recommended for {_short(recommended[0].models)} only, and this "
                           "checkpoint was not measured")
+        if revision is not None and revision != MEASURED_REVISIONS[model_id]:
+            return None, (f"no plan is recommended for {model_id} at revision {revision[:12]}: "
+                          f"it was measured at {MEASURED_REVISIONS[model_id][:12]} only, and "
+                          "another revision is another model")
         recommended = measured
     if recommended:
         best = recommended[0]
@@ -395,5 +445,5 @@ def check(architecture: str, plan: str | None, device: str | None) -> None:
             )
 
 
-__all__ = ["CUDA_PRE_AMPERE", "MEASUREMENTS", "PlanMeasurement", "PlanRefused", "QUALITY_BOUND",
-           "check", "device_class", "measurements_for", "recommend"]
+__all__ = ["CUDA_PRE_AMPERE", "MEASURED_REVISIONS", "MEASURED_WITH", "MEASUREMENTS", "PlanMeasurement", "PlanRefused", "QUALITY_BOUND",
+           "check", "device_class", "installed_framework", "measurements_for", "recommend"]
