@@ -1,0 +1,116 @@
+{
+ "classes": {
+  "cuda:Tesla T4:sm_75": {
+   "knobs": {
+    "capacity_slack=128": {
+     "kept": 3,
+     "tried": 23,
+     "unsupported": 0
+    },
+    "compiled_fixed_cache=True": {
+     "kept": 11,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "fuse_projections=True": {
+     "kept": 0,
+     "tried": 21,
+     "unsupported": 2
+    },
+    "fused_argmax=True": {
+     "kept": 5,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "head_skip_prefill=True": {
+     "kept": 21,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "prefill_into_fixed=True": {
+     "kept": 2,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "readback_every=2": {
+     "kept": 8,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "readback_every=4": {
+     "kept": 4,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "readback_every=8": {
+     "kept": 4,
+     "tried": 24,
+     "unsupported": 0
+    },
+    "wired_fraction=0.6": {
+     "kept": 0,
+     "tried": 0,
+     "unsupported": 23
+    }
+   },
+   "tunes": 20
+  },
+  "metal:Apple M1 Max:applegpu_g13s": {
+   "knobs": {
+    "capacity_slack=128": {
+     "kept": 0,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "compiled_fixed_cache=True": {
+     "kept": 3,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "fuse_projections=True": {
+     "kept": 0,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "fused_argmax=True": {
+     "kept": 1,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "head_skip_prefill=True": {
+     "kept": 3,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "prefill_into_fixed=True": {
+     "kept": 0,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "readback_every=2": {
+     "kept": 3,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "readback_every=4": {
+     "kept": 3,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "readback_every=8": {
+     "kept": 2,
+     "tried": 3,
+     "unsupported": 0
+    },
+    "wired_fraction=0.6": {
+     "kept": 0,
+     "tried": 3,
+     "unsupported": 0
+    }
+   },
+   "tunes": 3
+  }
+ },
+ "schema": "ironmule.tune_knowledge.v1",
+ "source": "aggregate screening outcomes of AUTO1-AUTO9 (research/LEDGER.md), 2026-10-04; speculate_k counts dropped when SPEC1 changed the speculation mechanism"
+}

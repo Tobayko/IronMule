@@ -41,6 +41,11 @@ jobs:
       # The engine package's own suite depends on nothing outside the repository, so
       # it runs anywhere. AGENTS.md keeps hardware/speed claims on the target device;
       # this runner establishes correctness, not performance.
+      - name: Rust learning core (planner and online controller)
+        run: |
+          cargo test --offline --release --manifest-path native/experiment_planner/Cargo.toml
+          cargo build --offline --release --manifest-path native/experiment_planner/Cargo.toml
+          cargo test --offline --release --manifest-path native/online_controller/Cargo.toml
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
       # These two check public claims (README, docs/PROJECT_STATUS.md) against the redacted

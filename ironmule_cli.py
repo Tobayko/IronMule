@@ -96,15 +96,18 @@ def _probe_gpu(backend: str) -> tuple[bool, str]:
     both device creation and the tiny correctness check in the child so a
     driver/import failure cannot terminate the diagnostic CLI.
     """
+    device = "cpu" if backend == "CPU" else "gpu"  # CPU4: Linux without an NVIDIA GPU
     probe = (
         "import mlx.core as mx\n"
-        f"if not mx.{backend.lower()}.is_available(): raise RuntimeError('{backend} backend unavailable')\n"
-        "mx.device_info()\n"
-        "mx.set_default_device(mx.gpu)\n"
+        + ("" if device == "cpu" else
+           f"if not mx.{backend.lower()}.is_available(): raise RuntimeError('{backend} backend unavailable')\n"
+           "mx.device_info()\n")
+        + f"mx.set_default_device(mx.{device})\n"
         "a=mx.array([1,2,3], dtype=mx.int32)\n"
-        "b=mx.add(a,a,stream=mx.gpu); mx.eval(b)\n"
+        f"b=mx.add(a,a,stream=mx.{device}); mx.eval(b)\n"
         "if b.tolist()!=[2,4,6]: raise RuntimeError('GPU correctness check failed')\n"
-        "i=mx.device_info(); print('available', i.get('compute_capability_major', ''), i.get('compute_capability_minor', ''))\n"
+        + ("print('available')\n" if device == "cpu" else
+           "i=mx.device_info(); print('available', i.get('compute_capability_major', ''), i.get('compute_capability_minor', ''))\n")
     )
     try:
         result = subprocess.run(
@@ -121,6 +124,8 @@ def _probe_gpu(backend: str) -> tuple[bool, str]:
     available = bool(words) and words[0] == "available"
     if not available:
         return False, f"{backend} unavailable"
+    if device == "cpu":
+        return True, "CPU operation verified; no GPU, so answers come much more slowly"
     detail = f"{backend} GPU operation verified"
     if backend == "CUDA" and len(words) == 3 and words[1].isdigit() and int(words[1]) < 8:
         # This used to advise `--compute-dtype float32` on every such card. PORT2 measured
@@ -181,8 +186,10 @@ def _doctor_checks() -> list[tuple[str, bool, str]]:
             ("macOS", True, system),
         ]
     else:
-        # MLX's CUDA backend ships Linux wheels: `pip install "mlx[cuda12]"`.
-        backend = "CUDA"
+        # MLX's CUDA backend ships Linux wheels: `pip install "mlx[cuda12]"`; without an
+        # NVIDIA driver, `mlx[cpu]` (CPU4).
+        import shutil
+        backend = "CUDA" if shutil.which("nvidia-smi") else "CPU"
         checks = [("Linux", system == "Linux", f"{system} {machine} ({_cpu_name()})")]
     checks += [
         ("Python", sys.version_info[:2] >= MIN_PYTHON,
@@ -296,7 +303,8 @@ def _banner() -> str:
 _COMMAND_GROUPS = (
     ("Get started", (
         ("start", "Get a model, serve it and open the chat in your browser"),
-        ("doctor", "Check Apple Silicon and MLX prerequisites"),
+        ("autopilot", "Measure, tune and keep optimising this machine and model, then answer"),
+        ("doctor", "Check MLX and the device it computes on (Metal, CUDA or CPU)"),
     )),
     ("Serve", (
         ("serve", "Serve a registered local model through HTTP/SSE"),
@@ -305,6 +313,7 @@ _COMMAND_GROUPS = (
     ("Measure and tune", (
         ("benchmark", "Run the existing reproducible local benchmark"),
         ("tune", "Tune or inspect the existing local profile (--show)"),
+        ("learn", "Bounded hardware session: learned test planner, confirmation, replay"),
         ("optimize", "Run bounded automatic calibration and inspect its history"),
         ("revalidate", "Canary-check the stored profile"),
         ("requalify", "Re-measure a locally learned action after monitoring took it away"),
@@ -711,6 +720,12 @@ def _dispatch(argv: list[str] | None) -> int:
     if command in ("start", "setup", "serve", "optimize"):
         from ironmule_product.cli import dispatch
         return dispatch(command, rest)
+    if command == "autopilot":
+        from ironmule.autopilot import main as autopilot_main
+        return autopilot_main(rest)
+    if command == "learn":
+        from ironmule.dream import main as learn_main
+        return learn_main(rest)
     if command == "doctor":
         return doctor(rest)
     if command == "plans":

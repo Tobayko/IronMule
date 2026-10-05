@@ -123,9 +123,9 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None,
-                        help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere); "
-                             "changes output; which one pays is per model, see `ironmule plans`")
+    parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None,
+                        help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere), or "
+                             "dequantize on a machine without a GPU; changes output; see `ironmule plans`")
     parser.add_argument("--engine", choices=("stock", "ironmule"), default="stock",
                         help="stock: mlx-lm's own generation, streamed token by token (default); "
                              "ironmule: IronMule's engine with this machine's tuned profile, greedy, "
@@ -187,6 +187,15 @@ def serve(argv: list[str]) -> int:
 
 
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"  # 3.4 GB, not gated; every IronMule study measured it
+CPU_MODEL = "mlx-community/Qwen3-0.6B-4bit"  # the model CPU3 measured; 4B answers far too slowly on a CPU
+CPU_REQUEST_TIMEOUT_S = 900
+
+
+def _cpu_only() -> bool:
+    """No Apple Silicon and no NVIDIA driver: MLX can only use the CPU (CPU4). install.sh asks the same."""
+    import platform
+    import shutil
+    return not ((sys.platform == "darwin" and platform.machine() == "arm64") or shutil.which("nvidia-smi"))
 
 
 def _open_when_ready(url: str) -> None:
@@ -212,13 +221,16 @@ def start(argv: list[str]) -> int:
     parser.add_argument("--no-browser", action="store_true", help="only print the chat address")
     args = parser.parse_args(argv)
     store = ProductStore(args.state_dir)
+    cpu_only = _cpu_only()
     try:
         store.settings()
     except StateError:
         store.setup("desktop")
+        if cpu_only:  # a CPU answer takes minutes; the 120 s default would cut every one off
+            store.set_request_timeout(CPU_REQUEST_TIMEOUT_S)
     state = ["--state-dir", str(store.root)]
     registered = [spec.model_id for spec in store.models()]
-    model = args.model or (registered[0] if registered else DEFAULT_MODEL)
+    model = args.model or (registered[0] if registered else CPU_MODEL if cpu_only else DEFAULT_MODEL)
     if model not in registered:
         add = [model, *state]
         if not any(row["model_id"] == model and row["status"] == "available" for row in inventory_rows()):
@@ -233,11 +245,20 @@ def start(argv: list[str]) -> int:
             add.append("--download")
         with contextlib.redirect_stdout(io.StringIO()):  # the registry's JSON is noise here
             models("add", add)
+    plan = []
+    if cpu_only:
+        try:
+            answer = input("No GPU found, so this runs on the CPU. Expand the 4-bit weights to float32 "
+                           "(about 6x faster here; answers can differ slightly)? [Y/n] ")
+        except EOFError:
+            answer = "n"
+        if answer.strip().lower() in ("", "y", "yes"):
+            plan = ["--compute-dtype", "dequantize"]
     url = f"http://127.0.0.1:{args.port}/"
     print(f"Loading {model}. The chat opens at {url} once it is ready; Ctrl+C stops IronMule.", flush=True)
     if not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
-    return serve(["--model", model, "--port", str(args.port), *state])
+    return serve(["--model", model, "--port", str(args.port), *plan, *state])
 
 
 def optimize(argv: list[str]) -> int:

@@ -16,6 +16,7 @@ import math
 import os
 import statistics
 import subprocess
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -318,7 +319,9 @@ def gpu_busy() -> str | None:
 # `native` keeps the bf16 checkpoint and computes its 4-bit matmuls with IronMule's own CUDA
 # kernels instead of emulated bf16 (`ironmule/cuda_native.py`, PERF1); CUDA below compute
 # capability 8 only, refused everywhere else.
-COMPUTE_DTYPES = ("float32", "float16", "native")
+# `dequantize` expands 4-bit weights to dense float32 at load: on MLX's CPU backend the quantised
+# matmul runs on one core and is orders of magnitude slower (CPU1, CPU2).
+COMPUTE_DTYPES = ("float32", "float16", "native", "dequantize")
 
 
 def _check_compute_dtype(compute_dtype: str | None) -> str | None:
@@ -396,7 +399,10 @@ def load_engine(model_id: str, knobs: Knobs, *, offline: bool | None = True,
         # Spelled out rather than `getattr(mx, compute_dtype)`: the Q3f child guard scans
         # this surface statically and refuses a dynamic attribute lookup, which is the right
         # call — a plan name coming from a CLI flag must not become a module attribute path.
-        if compute_dtype != "native":
+        if compute_dtype == "dequantize":
+            from .numeric_plans import dequantize_model
+            dequantize_model(model)
+        elif compute_dtype != "native":
             model.set_dtype(mx.float32 if compute_dtype == "float32" else mx.float16)
     head_skip_reason = None
     if compute_dtype == "native" and not knobs.head_skip_prefill:
@@ -811,14 +817,38 @@ def revalidate(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT,
             "stored_gain": profile.get("gain")}
 
 
-def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens: int = 32,
-         repeats: int = 5, force: bool = False, confirm_winner: bool = True,
-         compute_dtype: str | None = None) -> dict[str, Any]:
-    busy = gpu_busy()
-    if busy and not force:
-        raise RuntimeError(f"another model process is running, refusing to measure ({busy})")
+# A 16-token prompt plus 4 new tokens; GPUs measured here take well under 1.5 s, MLX's CPU 4-bit
+# kernels tens of seconds, where one full baseline run takes over ten minutes (CPU1, TUNE1).
+TUNE_PROBE_BUDGET_S = 10.0
 
-    hardware = probe()
+
+def probe_too_slow(engine: Engine, ids: list[int], eos: tuple[int, ...]) -> float | None:
+    """Seconds a warm 20-token probe took when tuning would take hours here (TUNE1), else None.
+
+    The first call can include one-off kernel compilation: on a T4, cold first calls of Qwen3
+    0.6B, Gemma 3 1B and Gemma 3 270M crossed the budget and tuned nothing (RSI1). Only a slow
+    first call is repeated, so a fast machine pays nothing extra.
+    """
+    for _ in range(2):
+        started = time.perf_counter()
+        engine.generate(ids[:16], 4, eos)
+        if (elapsed := time.perf_counter() - started) <= TUNE_PROBE_BUDGET_S:
+            return None
+    return elapsed
+EXPLORERS = ("coordinate", "planner", "random")
+DEFAULT_EXPLORE_BUDGET_S = 300.0
+
+
+def _screen(model_id: str, prompt: str, max_tokens: int, repeats: int, compute_dtype: str | None,
+            known: dict[str, Any], explorer: str = "coordinate", budget_s: float | None = None) -> dict[str, Any]:
+    """Coordinate-descent screening on one loaded engine; JSON-serialisable result.
+
+    ``planner`` or ``random`` hand the search to `dream.explore` (RSI1) within ``budget_s``.
+    """
+    if explorer != "coordinate":
+        from .dream import explore
+        return explore(model_id, prompt, max_tokens, repeats, compute_dtype, known,
+                       budget_s or DEFAULT_EXPLORE_BUDGET_S, explorer=explorer)
     resolved = resolve_local_model(model_id)
     engine = None
     try:
@@ -826,6 +856,8 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                                         compute_dtype=_check_compute_dtype(compute_dtype))
         ids = prompt_ids(tokenizer, prompt)
         eos = _eos_ids(tokenizer)
+        if (elapsed := probe_too_slow(engine, ids, eos)) is not None:
+            raise RuntimeError(f"tuning would take hours here: 20 tokens took {elapsed:.0f} s warm (TUNE1)")
 
         base = measure(engine, ids, max_tokens, eos, repeats=repeats)
         if not base["deterministic"]:
@@ -840,6 +872,11 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             for value in values:
                 candidate = replace(best, **{name: value})
                 if candidate == best:
+                    continue
+                if f"{name}={value}" in known["skip"]:
+                    trials.append({"knob": name, "value": value, "disposition": "skipped",
+                                   "verdict": "skipped: never kept on this device class"})
+                    print(f"  {name}={value!r:>6}  skipped (never kept on {known['class']})")
                     continue
                 reload_needed = Engine.needs_reload(best, candidate)
                 try:
@@ -899,90 +936,144 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
                     engine.knobs = best
                     engine._compiled = None
 
-        _close_engine(engine)
-        engine = None
-        confirmation = None
-        confirmation_record = None
-        confirmation_candidate_knobs = None
-        if confirm_winner and best != BASELINE:
-            print("confirming the screening winner with a paired A/B ...")
-            # Keep the screening winner bound to the evidence before a rejected
-            # confirmation resets the profile to BASELINE.
-            confirmation_candidate_knobs = best.as_dict()
-            _release_device_memory()
-            raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,
-                                       compute_dtype=compute_dtype)
-            accepted, rejection_reason = _confirmation_decision(
-                raw_confirmation, expected_baseline=BASELINE, expected_candidate=best
-            )
-            confirmation = (dict(raw_confirmation)
-                            if isinstance(raw_confirmation, Mapping) else {})
-            confirmation_evidence = (dict(raw_confirmation)
-                                     if isinstance(raw_confirmation, Mapping) else {})
-            evidence_sha256 = _confirmation_evidence_sha256(confirmation_evidence)
-            confirmation["accepted"] = accepted
-            confirmation["rejection_reason"] = rejection_reason
-            ratio = (confirmation.get("ratios", {}).get("candidate/baseline", {})
-                     .get("total_ns", {}))
-            confirmation_record = {
-                "ratio": confirmation.get("ratios", {}).get("candidate/baseline", {}),
-                "token_identity": confirmation.get("token_identity"),
-                "token_count_identity": confirmation.get("token_count_identity"),
-                "stop_reason_identity": confirmation.get("stop_reason_identity"),
-                "deterministic": confirmation.get("deterministic"),
-                "accepted": accepted,
-                "rejection_reason": rejection_reason,
-                "evidence_sha256": evidence_sha256,
-            }
-            if rejection_reason == "invalid_confirmation":
-                print("  confirmation invalid -> rejected")
-            else:
-                print(f"  confirmed ratio {ratio['median_ratio']:.4f} "
-                      f"CI [{ratio['ci_low']:.4f}; {ratio['ci_high']:.4f}] "
-                      f"tokens identical {confirmation['token_identity']} -> {'accepted' if accepted else 'rejected'}")
-            if not accepted:
-                best, best_result = BASELINE, base
-
-        # The screening found the candidate from one process per arm; the confirmation
-        # measured it across six paired processes. Report what was measured, not what was
-        # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
-        if confirmation is not None and confirmation["accepted"]:
-            gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]
-        elif confirmation is not None:
-            gain = 0.0
-        else:
-            gain = 1.0 - best_result["total_ns"] / base["total_ns"]
-        profile = {
-            "conditions": conditions(
-                model_id, len(ids), max_tokens, model_identity=resolved.identity
-            ),
-            "confirmation": confirmation_record,
-            "confirmation_evidence": confirmation_evidence if confirmation is not None else None,
-            "confirmation_candidate_knobs": confirmation_candidate_knobs,
-            "fingerprint": hardware["fingerprint"],
-            "model_id": resolved.identity.model_id,
-            "model_identity": resolved.identity.to_dict(),
-            "knobs": best.as_dict(),
-            "baseline_ns": base["total_ns"],
-            "tuned_ns": best_result["total_ns"],
-            "baseline_decode_ns": base["decode_ns"],
-            "tuned_decode_ns": best_result["decode_ns"],
-            "baseline_prefill_ns": base["prefill_ns"],
-            "tuned_prefill_ns": best_result["prefill_ns"],
-            "gain": gain,
-            "token_count": len(reference),
-            "tokens": reference,
-            "trials": trials,
-            "hardware": hardware,
-            "tuned_at": time.time(),
-        }
-        if compute_dtype is not None:
-            profile["compute_dtype"] = compute_dtype
-        save_profile(profile)
-        print(f"tuned: {gain*100:.2f}% faster end to end, tokens identical, stored in {PROFILES}")
-        return profile
+        return {"prompt_tokens": len(ids), "base": base, "best": best.as_dict(),
+                "best_result": best_result, "trials": trials}
     finally:
         _close_engine(engine)
+        _release_device_memory()
+
+
+def _screen_in_child(*arguments) -> dict[str, Any]:
+    """`_screen` in its own process, so this one holds no device memory when the paired
+    confirmation children load: a closed compiled engine can keep its weights (MEM1), and
+    Mistral 7B's confirmation children ran out of memory on a T4 (NUM1c)."""
+    code = ("import json, sys; from ironmule.tune import _screen\n"
+            "try:\n    print('@@SCREEN ' + json.dumps(_screen(*json.loads(sys.argv[1]))), flush=True)\n"
+            "except RuntimeError as exc:\n    print(exc, file=sys.stderr, flush=True)\n"
+            "    sys.exit(3 if 'TUNE1' in str(exc) else 1)")
+    results = []
+    with subprocess.Popen([sys.executable, "-c", code, json.dumps(arguments)], stdout=subprocess.PIPE,
+                          text=True, env={**os.environ, "PYTHONUNBUFFERED": "1"}) as proc:
+        for line in proc.stdout:  # progress stays visible while the child screens
+            if line.startswith("@@SCREEN "):
+                results.append(line[len("@@SCREEN "):])
+            else:
+                print(line, end="", flush=True)
+    if proc.returncode == 3:  # keep the reason, so the autopilot remembers instead of retrying
+        raise RuntimeError("the screening child found tuning too slow here (TUNE1)")
+    if proc.returncode or not results:
+        raise RuntimeError(f"the screening child exited with status {proc.returncode}")
+    return json.loads(results[-1])
+
+
+def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens: int = 32,
+         repeats: int = 5, force: bool = False, confirm_winner: bool = True,
+         compute_dtype: str | None = None, screen_in_child: bool = False,
+         explorer: str = "coordinate", budget_s: float | None = None) -> dict[str, Any]:
+    if explorer not in EXPLORERS:
+        raise ValueError(f"explorer must be one of {EXPLORERS}")
+    busy = gpu_busy()
+    if busy and not force:
+        raise RuntimeError(f"another model process is running, refusing to measure ({busy})")
+
+    hardware = probe()
+    from . import knowledge
+    known = knowledge.plan(hardware)
+    resolved = resolve_local_model(model_id)
+    from . import dream
+    if explorer == "planner" and not dream.available(known["class"]):
+        # Not built here, or replay found the fixed order better on this machine (RSI1).
+        print("planner unavailable or beaten by the fixed order here; coordinate descent")
+        explorer = "coordinate"
+    arguments = (model_id, prompt, max_tokens, repeats, compute_dtype, known, explorer, budget_s)
+    screened = _screen_in_child(*arguments) if screen_in_child else _screen(*arguments)
+    base, best_result, trials = screened["base"], screened["best_result"], screened["trials"]
+    reference, best = base["logical_tokens"], Knobs(**screened["best"])
+    knowledge.record_tune(known["class"], trials)
+    if explorer != "coordinate":
+        dream.dream(known["class"])  # replay every stored tree; may retune or disable the planner
+    confirmation = None
+    confirmation_record = None
+    confirmation_candidate_knobs = None
+    if confirm_winner and best != BASELINE:
+        print("confirming the screening winner with a paired A/B ...")
+        # Keep the screening winner bound to the evidence before a rejected
+        # confirmation resets the profile to BASELINE.
+        confirmation_candidate_knobs = best.as_dict()
+        raw_confirmation = confirm(model_id, BASELINE, best, prompt, max_tokens,
+                                   compute_dtype=compute_dtype)
+        accepted, rejection_reason = _confirmation_decision(
+            raw_confirmation, expected_baseline=BASELINE, expected_candidate=best
+        )
+        confirmation = (dict(raw_confirmation)
+                        if isinstance(raw_confirmation, Mapping) else {})
+        confirmation_evidence = (dict(raw_confirmation)
+                                 if isinstance(raw_confirmation, Mapping) else {})
+        evidence_sha256 = _confirmation_evidence_sha256(confirmation_evidence)
+        confirmation["accepted"] = accepted
+        confirmation["rejection_reason"] = rejection_reason
+        ratio = (confirmation.get("ratios", {}).get("candidate/baseline", {})
+                 .get("total_ns", {}))
+        confirmation_record = {
+            "ratio": confirmation.get("ratios", {}).get("candidate/baseline", {}),
+            "token_identity": confirmation.get("token_identity"),
+            "token_count_identity": confirmation.get("token_count_identity"),
+            "stop_reason_identity": confirmation.get("stop_reason_identity"),
+            "deterministic": confirmation.get("deterministic"),
+            "accepted": accepted,
+            "rejection_reason": rejection_reason,
+            "evidence_sha256": evidence_sha256,
+        }
+        if rejection_reason == "invalid_confirmation":
+            print("  confirmation invalid -> rejected")
+        else:
+            print(f"  confirmed ratio {ratio['median_ratio']:.4f} "
+                  f"CI [{ratio['ci_low']:.4f}; {ratio['ci_high']:.4f}] "
+                  f"tokens identical {confirmation['token_identity']} -> {'accepted' if accepted else 'rejected'}")
+        if not accepted:
+            best, best_result = BASELINE, base
+
+    # The screening found the candidate from one process per arm; the confirmation
+    # measured it across six paired processes. Report what was measured, not what was
+    # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
+    if confirmation is not None and confirmation["accepted"]:
+        gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]
+    elif confirmation is not None:
+        gain = 0.0
+    else:
+        gain = 1.0 - best_result["total_ns"] / base["total_ns"]
+    profile = {
+        "conditions": conditions(
+            model_id, screened["prompt_tokens"], max_tokens, model_identity=resolved.identity
+        ),
+        "confirmation": confirmation_record,
+        "confirmation_evidence": confirmation_evidence if confirmation is not None else None,
+        "confirmation_candidate_knobs": confirmation_candidate_knobs,
+        "fingerprint": hardware["fingerprint"],
+        "model_id": resolved.identity.model_id,
+        "model_identity": resolved.identity.to_dict(),
+        "knobs": best.as_dict(),
+        "baseline_ns": base["total_ns"],
+        "tuned_ns": best_result["total_ns"],
+        "baseline_decode_ns": base["decode_ns"],
+        "tuned_decode_ns": best_result["decode_ns"],
+        "baseline_prefill_ns": base["prefill_ns"],
+        "tuned_prefill_ns": best_result["prefill_ns"],
+        "gain": gain,
+        "token_count": len(reference),
+        "tokens": reference,
+        "trials": trials,
+        "knowledge": known,
+        "explorer": explorer,
+        "tree": screened.get("tree"),
+        "hardware": hardware,
+        "tuned_at": time.time(),
+    }
+    if compute_dtype is not None:
+        profile["compute_dtype"] = compute_dtype
+    save_profile(profile)
+    print(f"tuned: {gain*100:.2f}% faster end to end, tokens identical, stored in {PROFILES}")
+    return profile
 
 
 def _all_profiles() -> dict[str, Any]:
@@ -1126,6 +1217,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-confirm", action="store_true", help="skip the paired A/B confirmation")
     parser.add_argument("--compute-dtype", choices=COMPUTE_DTYPES, default=None,
                         help="opt-in numeric plan; changes output, tuned and stored separately")
+    parser.add_argument("--explorer", choices=EXPLORERS, default="coordinate",
+                        help="who picks the hardware tests: the fixed order, the learned planner (RSI1) "
+                             "or random order; the paired confirmation is the same for all")
+    parser.add_argument("--budget-minutes", type=float, default=None,
+                        help="test budget for planner and random (default 5)")
     args = parser.parse_args(argv)
 
     if args.self_check:
@@ -1140,7 +1236,8 @@ def main(argv: list[str] | None = None) -> int:
                                     compute_dtype=args.compute_dtype), indent=2, default=str))
         return 0
     tune(args.model, max_tokens=args.max_tokens, repeats=args.repeats, force=args.force,
-         confirm_winner=not args.no_confirm, compute_dtype=args.compute_dtype)
+         confirm_winner=not args.no_confirm, compute_dtype=args.compute_dtype, screen_in_child=True,
+         explorer=args.explorer, budget_s=None if args.budget_minutes is None else args.budget_minutes * 60)
     return 0
 
 

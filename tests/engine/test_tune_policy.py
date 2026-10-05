@@ -522,6 +522,9 @@ def test_unsupported_candidate_is_typed_and_search_continues(monkeypatch):
             self.knobs = knobs
             self._compiled = None
 
+        def generate(self, *_args):  # tune's speed probe (TUNE1)
+            return None
+
         @staticmethod
         def needs_reload(old, new):
             return old.fuse_projections != new.fuse_projections
@@ -576,6 +579,9 @@ def test_confirmation_starts_after_the_screening_engine_is_released(monkeypatch)
 
         def close(self):
             events.append("close")
+
+        def generate(self, *_args):  # the TUNE1 probe; instant here
+            return None
 
         @staticmethod
         def needs_reload(old, new):
@@ -887,6 +893,9 @@ def test_tune_closes_each_reloaded_engine_and_on_final_exit(monkeypatch):
             self._compiled = None
             self.closed = False
 
+        def generate(self, *_args):  # tune's speed probe (TUNE1)
+            return None
+
         @staticmethod
         def needs_reload(old, new):
             return (old.fuse_projections != new.fuse_projections
@@ -939,6 +948,9 @@ def test_tune_closes_engine_when_measurement_raises(monkeypatch):
             self.knobs = knobs
             self._compiled = None
 
+        def generate(self, *_args):  # tune's speed probe (TUNE1)
+            return None
+
         @staticmethod
         def needs_reload(_old, _new):
             return False
@@ -982,6 +994,9 @@ def test_rejected_confirmation_stores_baseline_without_gain(monkeypatch):
         def __init__(self, knobs):
             self.knobs = knobs
             self._compiled = None
+
+        def generate(self, *_args):  # tune's speed probe (TUNE1)
+            return None
 
         @staticmethod
         def needs_reload(_old, _new):
@@ -1037,6 +1052,9 @@ def test_accepted_confirmation_stores_candidate_gain(monkeypatch):
         def __init__(self, knobs):
             self.knobs = knobs
             self._compiled = None
+
+        def generate(self, *_args):  # tune's speed probe (TUNE1)
+            return None
 
         @staticmethod
         def needs_reload(_old, _new):

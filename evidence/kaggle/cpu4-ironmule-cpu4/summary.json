@@ -1,0 +1,120 @@
+{
+ "answered": true,
+ "arms": {
+  "dequantize": {
+   "backend": "mlx_lm_reference",
+   "chats": [
+    {
+     "finish_reason": "length",
+     "usage": {
+      "completion_tokens": 48,
+      "prompt_tokens": 19,
+      "total_tokens": 67
+     },
+     "wall_s": 64.1
+    },
+    {
+     "finish_reason": "length",
+     "usage": {
+      "completion_tokens": 48,
+      "prompt_tokens": 17,
+      "total_tokens": 65
+     },
+     "wall_s": 55.1
+    }
+   ],
+   "exit": 0,
+   "ready_s": 10.0
+  },
+  "stock": {
+   "backend": "mlx_lm_reference",
+   "chats": [
+    {
+     "finish_reason": "length",
+     "usage": {
+      "completion_tokens": 48,
+      "prompt_tokens": 19,
+      "total_tokens": 67
+     },
+     "wall_s": 455.5
+    },
+    {
+     "finish_reason": "length",
+     "usage": {
+      "completion_tokens": 48,
+      "prompt_tokens": 17,
+      "total_tokens": 65
+     },
+     "wall_s": 446.1
+    }
+   ],
+   "exit": 0,
+   "ready_s": 4.0
+  }
+ },
+ "backend": "MLX CPU",
+ "device": "Kaggle CPU session, 4 x Intel Xeon @ 2.20GHz",
+ "doctor": [
+  "[OK] Linux: Linux x86_64 (x86_64)",
+  "[OK] Python: 3.12.13 (requires >= 3.10)",
+  "[OK] MLX: 0.32.3; importable (isolated probe)",
+  "[OK] MLX-LM: 0.31.3; importable (isolated probe)",
+  "[OK] NumPy: 2.5.3; importable (isolated probe)",
+  "[OK] MLX CPU device: CPU operation verified; no GPU, so answers come much more slowly"
+ ],
+ "elapsed_s": 1113.01,
+ "experiment": "CPU4-kaggle-cpu",
+ "install": {
+  "exit": 0,
+  "path": "install.sh from the snapshot (IRONMULE_SOURCE), uv tool, ironmule[cpu]",
+  "resolved": "mlx 0.32.3, mlx-lm 0.31.3, numpy 2.5.3, Python 3.12.13"
+ },
+ "model": "mlx-community/Qwen3-0.6B-4bit",
+ "notes": "48-token answers; Qwen3 spends them inside <think>. One run, one CPU cell; wall times are not a paired comparison.",
+ "privacy": "No account data, local paths or private identifiers.",
+ "stages": {
+  "cpu": {
+   "elapsed_s": 0.03,
+   "exit": 0
+  },
+  "cpu4": {
+   "elapsed_s": 1045.0,
+   "exit": 0
+  },
+  "freeze": {
+   "elapsed_s": 0.92,
+   "exit": 0
+  },
+  "install": {
+   "elapsed_s": 35.96,
+   "exit": 0
+  },
+  "native-build": {
+   "elapsed_s": 1.77,
+   "exit": 0
+  },
+  "rust-install": {
+   "elapsed_s": 14.52,
+   "exit": 0
+  },
+  "rust-installer": {
+   "elapsed_s": 0.32,
+   "exit": 0
+  },
+  "source-install": {
+   "elapsed_s": 5.69,
+   "exit": 0
+  },
+  "tests": {
+   "elapsed_s": 6.04,
+   "exit": 0
+  },
+  "tests-pip": {
+   "elapsed_s": 2.62,
+   "exit": 0
+  }
+ },
+ "stock_over_dequantize_wall": 7.56,
+ "tests": "tests/engine/test_product_cli.py + test_product_worker.py, not integration: 42 passed",
+ "verdict": "shipped: install.sh, doctor and ironmule start answer through HTTP on a CPU-only machine, with and without dequantize"
+}

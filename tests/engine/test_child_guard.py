@@ -42,6 +42,29 @@ def test_q3f_static_scan_starts_at_actual_child_surface():
     visited = guard.assert_source_surface(ROOT / "ironmule" / "ab.py")
     assert ("ironmule.model_identity", "resolve_model_source") in visited
     assert ("ironmule.model_identity", "scan_local_cache") in visited
+    assert ("ironmule.runtime", "_project") in visited
+
+
+def test_q3f_scan_accepts_reviewed_model_configuration_projection():
+    guard = _load("test_q3f_guard_model_configuration", "ironmule/child_guard.py")
+    tree = ast.parse((ROOT / "ironmule/runtime.py").read_text())
+    projection = next(node for node in tree.body
+                      if isinstance(node, ast.FunctionDef) and node.name == "_project")
+    guard._scan_source_tree(projection)
+
+
+@pytest.mark.parametrize("expression", [
+    "getattr(text, name, None)",
+    "getattr(text, 'ar' + 'gs', None)",
+    "getattr(text, '__dict__', None)",
+    "getattr(text, 'Popen', None)",
+    "getattr(getattr(text, 'args', None), 'system', None)",
+    "getattr(getattr(text, 'args', None), name, None)",
+])
+def test_q3f_model_configuration_access_keeps_dynamic_and_unreviewed_paths_blocked(expression):
+    guard = _load("test_q3f_guard_unreviewed_model_attributes", "ironmule/child_guard.py")
+    with pytest.raises(guard.GuardInstallationError, match="dynamic attribute path"):
+        guard._scan_source_tree(ast.parse(expression))
 
 
 @pytest.mark.parametrize("injection", [

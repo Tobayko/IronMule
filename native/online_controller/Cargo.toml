@@ -1,0 +1,16 @@
+[package]
+name = "ironmule-online-controller"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+
+[lib]
+name = "ironmule_online_controller"
+crate-type = ["rlib", "cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = "none"

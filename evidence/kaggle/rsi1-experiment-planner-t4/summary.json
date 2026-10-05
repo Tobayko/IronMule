@@ -1,0 +1,1275 @@
+{
+ "device": [
+  "Tesla T4, 15360 MiB, 580.178.04"
+ ],
+ "elapsed_s": 9996.72,
+ "experiment": "RSI1-kaggle-t4",
+ "failure": null,
+ "held_out_mean_utility": {
+  "coordinate": -11.49,
+  "planner": 6.74,
+  "random": -6.68
+ },
+ "held_out_mean_utility_all_completed": {
+  "coordinate": -17.03,
+  "planner": -10.21,
+  "random": -7.67
+ },
+ "held_out_online": [
+  {
+   "arm": "coordinate",
+   "ci": [
+    0.9785383691776597,
+    1.0031266246690171
+   ],
+   "confirmed": false,
+   "confirmed_median_ratio": 0.9880296117187831,
+   "explorer": "coordinate",
+   "gain_points": 0.0,
+   "knobs": {},
+   "model": "mlx-community/Phi-3.5-mini-instruct-4bit",
+   "rejection": "ci_not_below_one",
+   "screened_ratio": 1.0,
+   "tests": 11,
+   "token_identity": true,
+   "tune_wall_s": 543.07,
+   "utility": -9.05
+  },
+  {
+   "arm": "coordinate",
+   "ci": [
+    0.8534072853057437,
+    0.8553414790307989
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.8546865160462818,
+   "explorer": "coordinate",
+   "gain_points": 14.53,
+   "knobs": {
+    "head_skip_prefill": true
+   },
+   "model": "mlx-community/gemma-3-4b-it-4bit",
+   "rejection": null,
+   "screened_ratio": 0.8532,
+   "tests": 11,
+   "token_identity": true,
+   "tune_wall_s": 2372.28,
+   "utility": -25.01
+  },
+  {
+   "arm": "planner",
+   "ci": [
+    0.958352465862444,
+    0.9861237308761839
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.9710180467933418,
+   "explorer": "planner",
+   "gain_points": 2.9,
+   "knobs": {
+    "compiled_fixed_cache": true,
+    "fused_argmax": true,
+    "head_skip_prefill": true,
+    "readback_every": 2
+   },
+   "model": "mlx-community/Phi-3.5-mini-instruct-4bit",
+   "rejection": null,
+   "screened_ratio": 0.9642,
+   "tests": 5,
+   "token_identity": true,
+   "tune_wall_s": 458.57,
+   "utility": -4.74
+  },
+  {
+   "arm": "planner",
+   "ci": [
+    0.5483442345736549,
+    0.5600848306600248
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.5530167539274414,
+   "explorer": "planner",
+   "gain_points": 44.7,
+   "knobs": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 2
+   },
+   "model": "mlx-community/gemma-3-270m-it-4bit",
+   "rejection": null,
+   "screened_ratio": 0.5771,
+   "tests": 6,
+   "token_identity": true,
+   "tune_wall_s": 243.88,
+   "utility": 40.64
+  },
+  {
+   "arm": "planner",
+   "ci": [
+    0.8541718981795535,
+    0.8591780215971301
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.8561009143703526,
+   "explorer": "planner",
+   "gain_points": 14.39,
+   "knobs": {
+    "fused_argmax": true,
+    "head_skip_prefill": true
+   },
+   "model": "mlx-community/gemma-3-4b-it-4bit",
+   "rejection": null,
+   "screened_ratio": 0.853,
+   "tests": 3,
+   "token_identity": true,
+   "tune_wall_s": 1804.88,
+   "utility": -15.69
+  },
+  {
+   "arm": "random",
+   "ci": [
+    0.973508855368003,
+    0.9885823201308102
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.9785875345197965,
+   "explorer": "random",
+   "gain_points": 2.14,
+   "knobs": {
+    "compiled_fixed_cache": true
+   },
+   "model": "mlx-community/Phi-3.5-mini-instruct-4bit",
+   "rejection": null,
+   "screened_ratio": 0.9887,
+   "tests": 21,
+   "token_identity": true,
+   "tune_wall_s": 679.25,
+   "utility": -9.18
+  },
+  {
+   "arm": "random",
+   "ci": [
+    null,
+    null
+   ],
+   "confirmed": null,
+   "confirmed_median_ratio": null,
+   "explorer": "random",
+   "gain_points": 0.0,
+   "knobs": {},
+   "model": "mlx-community/gemma-3-4b-it-4bit",
+   "rejection": null,
+   "screened_ratio": 1.0,
+   "tests": 3,
+   "token_identity": null,
+   "tune_wall_s": 369.62,
+   "utility": -6.16
+  },
+  {
+   "arm": "coordinate",
+   "failed": true,
+   "gain_points": 0.0,
+   "model": "gemma-3-270m-it-4bit",
+   "tune_wall_s": 24.48,
+   "utility": -0.41
+  },
+  {
+   "arm": "random",
+   "failed": true,
+   "gain_points": 0.0,
+   "model": "gemma-3-270m-it-4bit",
+   "tune_wall_s": 281.39,
+   "utility": -4.69
+  }
+ ],
+ "inner_exits": {
+  "coordinate-Phi-3.5-mini-instruct-4bit": 0,
+  "coordinate-gemma-3-270m-it-4bit": 1,
+  "coordinate-gemma-3-4b-it-4bit": 0,
+  "learn-Llama-3.2-1B-Instruct-4bit": 0,
+  "learn-Llama-3.2-3B-Instruct-4bit": 0,
+  "learn-Qwen3-0.6B-4bit": 1,
+  "learn-Qwen3-4B-4bit": 0,
+  "learn-gemma-3-1b-it-4bit": 1,
+  "learn-granite-3.3-2b-instruct-4bit": 0,
+  "planner-Phi-3.5-mini-instruct-4bit": 0,
+  "planner-gemma-3-270m-it-4bit": 0,
+  "planner-gemma-3-4b-it-4bit": 0,
+  "random-Phi-3.5-mini-instruct-4bit": 0,
+  "random-gemma-3-270m-it-4bit": 1,
+  "random-gemma-3-4b-it-4bit": 0
+ },
+ "learned_state": {
+  "arms": {
+   "capacity_slack=128": {
+    "cost_s": 5.145,
+    "failures": 0,
+    "observations": 3,
+    "posterior_mean": 0.04171,
+    "posterior_sd": 0.00574
+   },
+   "capacity_slack=256": {
+    "cost_s": 2.863,
+    "failures": 0,
+    "observations": 2,
+    "posterior_mean": 0.04136,
+    "posterior_sd": 0.007
+   },
+   "capacity_slack=64": {
+    "cost_s": 4.549,
+    "failures": 0,
+    "observations": 4,
+    "posterior_mean": 0.037,
+    "posterior_sd": 0.00498
+   },
+   "compiled_fixed_cache=True": {
+    "cost_s": 30.2672,
+    "failures": 0,
+    "observations": 5,
+    "posterior_mean": -0.01148,
+    "posterior_sd": 0.00445
+   },
+   "fuse_projections=True": {
+    "cost_s": 6.084,
+    "failures": 1,
+    "observations": 1,
+    "posterior_mean": 0.03702,
+    "posterior_sd": 0.00981
+   },
+   "fused_argmax=True": {
+    "cost_s": 5.4655,
+    "failures": 0,
+    "observations": 6,
+    "posterior_mean": 0.00383,
+    "posterior_sd": 0.00407
+   },
+   "head_skip_prefill=True": {
+    "cost_s": 19.3182,
+    "failures": 0,
+    "observations": 5,
+    "posterior_mean": -0.08216,
+    "posterior_sd": 0.00445
+   },
+   "prefill_into_fixed=True": {
+    "cost_s": 5.0378,
+    "failures": 0,
+    "observations": 5,
+    "posterior_mean": 0.01876,
+    "posterior_sd": 0.00445
+   },
+   "readback_every=16": {
+    "cost_s": 3.064,
+    "failures": 0,
+    "observations": 1,
+    "posterior_mean": 0.11749,
+    "posterior_sd": 0.00981
+   },
+   "readback_every=2": {
+    "cost_s": 17.22883,
+    "failures": 0,
+    "observations": 6,
+    "posterior_mean": 0.00114,
+    "posterior_sd": 0.00407
+   },
+   "readback_every=4": {
+    "cost_s": 7.599,
+    "failures": 0,
+    "observations": 3,
+    "posterior_mean": 0.03122,
+    "posterior_sd": 0.00574
+   },
+   "readback_every=8": {
+    "cost_s": 3.034,
+    "failures": 0,
+    "observations": 1,
+    "posterior_mean": 0.10698,
+    "posterior_sd": 0.00981
+   },
+   "speculate_k=4": {
+    "cost_s": 2.864,
+    "failures": 0,
+    "observations": 1,
+    "posterior_mean": 0.05735,
+    "posterior_sd": 0.00981
+   },
+   "wired_fraction=0.6": {
+    "cost_s": 4.209,
+    "failures": 1,
+    "observations": 0,
+    "posterior_mean": 0.0,
+    "posterior_sd": 0.05
+   }
+  },
+  "device_class": "cuda:Tesla T4:sm_75",
+  "observations": 45
+ },
+ "mean_confirmed_gain_points": {
+  "coordinate": 4.84,
+  "planner": 20.66,
+  "random": 0.71
+ },
+ "pins": [
+  "mlx[cuda12]==0.32.0",
+  "mlx-lm==0.31.3",
+  "numpy==2.5.2",
+  "transformers==5.15.1",
+  "huggingface-hub==1.28.0",
+  "safetensors==0.8.0"
+ ],
+ "privacy": "No account data, local paths, prompts beyond the fixed tune prompt, or private identifiers.",
+ "replay_config": {
+  "config": {
+   "default_cost_s": 20.0,
+   "min_gain_per_s": 0.005,
+   "noise_sd": 0.01,
+   "prior_sd": 0.05
+  },
+  "enabled": true,
+  "replay_seconds": 0.51,
+  "trees": 4
+ },
+ "replay_held_out": {
+  "mean_utility": {
+   "coordinate": 6.917745000133317,
+   "planner": 7.781892495109719,
+   "random": 5.367740915137581
+  },
+  "rows": [
+   {
+    "coordinate": {
+     "best_ratio": 0.9865873584449778,
+     "opened": 2,
+     "seconds": 19.94,
+     "seconds_to_within_1pct": null,
+     "utility": 1.0089808221688865
+    },
+    "model_id": "mlx-community/granite-3.3-2b-instruct-4bit",
+    "planner": {
+     "best_ratio": 0.9343727499935587,
+     "opened": 7,
+     "seconds": 78.55,
+     "seconds_to_within_1pct": 59.23,
+     "utility": 5.2535250006441325
+    },
+    "random": {
+     "best_ratio": 0.9343727499935588,
+     "seconds": 83.613,
+     "utility": 5.169177500644133
+    },
+    "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+   },
+   {
+    "coordinate": {
+     "best_ratio": 0.934986999506271,
+     "opened": 2,
+     "seconds": 147.99,
+     "seconds_to_within_1pct": 74.02,
+     "utility": 4.034783382706238
+    },
+    "model_id": "mlx-community/Qwen3-4B-4bit",
+    "planner": {
+     "best_ratio": 0.934986999506271,
+     "opened": 3,
+     "seconds": 235.81,
+     "seconds_to_within_1pct": 74.02,
+     "utility": 2.571083382706238
+    },
+    "random": {
+     "best_ratio": 0.934986999506271,
+     "seconds": 235.81,
+     "utility": 2.571083382706238
+    },
+    "tree": "cuda_Tesla_T4_sm_75__74029414b10bce1a__1791190121969617003"
+   },
+   {
+    "coordinate": {
+     "best_ratio": 0.8441776442273077,
+     "opened": 11,
+     "seconds": 57.11,
+     "seconds_to_within_1pct": 28.82,
+     "utility": 14.6304022439359
+    },
+    "model_id": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+    "planner": {
+     "best_ratio": 0.8498458261856613,
+     "opened": 7,
+     "seconds": 20.02,
+     "seconds_to_within_1pct": 5.63,
+     "utility": 14.68176738143387
+    },
+    "random": {
+     "best_ratio": 0.9469835665428394,
+     "seconds": 24.754,
+     "utility": 4.889032512382711
+    },
+    "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+   },
+   {
+    "coordinate": {
+     "best_ratio": 0.9188301978161109,
+     "opened": 1,
+     "seconds": 7.21,
+     "seconds_to_within_1pct": null,
+     "utility": 7.996813551722247
+    },
+    "model_id": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+    "planner": {
+     "best_ratio": 0.907136391176787,
+     "opened": 5,
+     "seconds": 39.91,
+     "seconds_to_within_1pct": 39.91,
+     "utility": 8.621194215654633
+    },
+    "random": {
+     "best_ratio": 0.9042802473518275,
+     "seconds": 43.820499999999996,
+     "utility": 8.841670264817242
+    },
+    "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+   }
+  ]
+ },
+ "stage_exits": {
+  "coordinate-Phi-3.5-mini-instruct-4bit": 0,
+  "coordinate-gemma-3-270m-it-4bit": 0,
+  "coordinate-gemma-3-4b-it-4bit": 0,
+  "download-Llama-3.2-1B-Instruct-4bit": 0,
+  "download-Llama-3.2-3B-Instruct-4bit": 0,
+  "download-Phi-3.5-mini-instruct-4bit": 0,
+  "download-Qwen3-0.6B-4bit": 0,
+  "download-Qwen3-4B-4bit": 0,
+  "download-gemma-3-1b-it-4bit": 0,
+  "download-gemma-3-270m-it-4bit": 0,
+  "download-gemma-3-4b-it-4bit": 0,
+  "download-granite-3.3-2b-instruct-4bit": 0,
+  "freeze": 0,
+  "gpu": 0,
+  "install": 0,
+  "learn-Llama-3.2-1B-Instruct-4bit": 0,
+  "learn-Llama-3.2-3B-Instruct-4bit": 0,
+  "learn-Qwen3-0.6B-4bit": 0,
+  "learn-Qwen3-4B-4bit": 0,
+  "learn-gemma-3-1b-it-4bit": 0,
+  "learn-granite-3.3-2b-instruct-4bit": 0,
+  "native-build": 0,
+  "planner-Phi-3.5-mini-instruct-4bit": 0,
+  "planner-build": 0,
+  "planner-gemma-3-270m-it-4bit": 0,
+  "planner-gemma-3-4b-it-4bit": 0,
+  "probe-train": 0,
+  "random-Phi-3.5-mini-instruct-4bit": 0,
+  "random-gemma-3-270m-it-4bit": 0,
+  "random-gemma-3-4b-it-4bit": 0,
+  "report-coordinate": 0,
+  "report-planner": 0,
+  "report-random": 0,
+  "report-train": 0,
+  "rust-install": 0,
+  "rust-installer": 0,
+  "share": 0,
+  "source-install": 0,
+  "tests": 0,
+  "tests-pip": 0
+ },
+ "state_changes": [
+  {
+   "arm": "compiled_fixed_cache=True",
+   "log_effect": -0.01377899781265448,
+   "posterior_mean": [
+    0.0,
+    -0.011878446390219378
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 22.895,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": 0.013407244944112339,
+   "posterior_mean": [
+    0.0,
+    0.011557969779407188
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 3.201,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "head_skip_prefill=True",
+   "log_effect": -0.14892132909468125,
+   "posterior_mean": [
+    0.0,
+    -0.12838045611610452
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.728,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": 0.009963898313554681,
+   "posterior_mean": [
+    0.011557969779407188,
+    0.010819973730401397
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.756,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "prefill_into_fixed=True",
+   "log_effect": 0.013784595227251405,
+   "posterior_mean": [
+    0.0,
+    0.01188327174763052
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.783,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "prefill_into_fixed=True",
+   "log_effect": 0.009299171661735297,
+   "posterior_mean": [
+    0.01188327174763052,
+    0.010686929115271622
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.8,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": 0.009808705489168228,
+   "posterior_mean": [
+    0.0,
+    0.00845578059411054
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.748,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "readback_every=4",
+   "log_effect": -0.00669200068412138,
+   "posterior_mean": [
+    0.0,
+    -0.00576896610700119
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.724,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "prefill_into_fixed=True",
+   "log_effect": 0.016666776701299714,
+   "posterior_mean": [
+    0.010686929115271622,
+    0.012579285946293168
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 2.759,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": 0.006679608524346257,
+   "posterior_mean": [
+    0.010819973730401397,
+    0.00950973157658648
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 2.739,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": 0.018671564750285176,
+   "posterior_mean": [
+    0.00845578059411054,
+    0.013185310296043242
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.784,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "readback_every=8",
+   "log_effect": 0.11125639441545332,
+   "posterior_mean": [
+    0.0,
+    0.09591068484090803
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 3.034,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "readback_every=16",
+   "log_effect": 0.12219396008890719,
+   "posterior_mean": [
+    0.0,
+    0.10533962076629931
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 3.064,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "speculate_k=4",
+   "log_effect": 0.059647039884735326,
+   "posterior_mean": [
+    0.0,
+    0.05141986196959941
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.864,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=64",
+   "log_effect": 0.030024779987128568,
+   "posterior_mean": [
+    0.0,
+    0.025883431023386697
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.809,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=128",
+   "log_effect": 0.03984722316992329,
+   "posterior_mean": [
+    0.0,
+    0.03435105445683042
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.839,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=256",
+   "log_effect": 0.04202968475913194,
+   "posterior_mean": [
+    0.0,
+    0.03623248686132064
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 2.851,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "wired_fraction=0.6",
+   "log_effect": null,
+   "posterior_mean": [
+    0.0,
+    0.0
+   ],
+   "posterior_sd": [
+    0.05,
+    0.05
+   ],
+   "seconds": 4.209,
+   "status": "unsupported",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "fuse_projections=True",
+   "log_effect": 0.03850266366485178,
+   "posterior_mean": [
+    0.0,
+    0.03319195143521705
+   ],
+   "posterior_sd": [
+    0.05,
+    0.018569533817705184
+   ],
+   "seconds": 7.085,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "prefill_into_fixed=True",
+   "log_effect": 0.03296810888608676,
+   "posterior_mean": [
+    0.012579285946293168,
+    0.017480445306820476
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 7.393,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=64",
+   "log_effect": 0.02827883815774149,
+   "posterior_mean": [
+    0.025883431023386697,
+    0.026992415807810213
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.816,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=64",
+   "log_effect": 0.04329715345036741,
+   "posterior_mean": [
+    0.026992415807810213,
+    0.03215214290988527
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 2.856,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "head_skip_prefill=True",
+   "log_effect": -0.09977129974309906,
+   "posterior_mean": [
+    -0.12838045611610452,
+    -0.11513547631378716
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.905,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=128",
+   "log_effect": 0.03196795572890355,
+   "posterior_mean": [
+    0.03435105445683042,
+    0.03324776800871613
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.827,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "capacity_slack=256",
+   "log_effect": 0.04234874699393927,
+   "posterior_mean": [
+    0.03623248686132064,
+    0.03906408877457001
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 2.875,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__8c7b82537ccb094e__1791189027323428512"
+  },
+  {
+   "arm": "head_skip_prefill=True",
+   "log_effect": -0.013503403517196732,
+   "posterior_mean": [
+    -0.11513547631378716,
+    -0.08297342796043577
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 9.729,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "readback_every=4",
+   "log_effect": 0.04025661459637715,
+   "posterior_mean": [
+    -0.00576896610700119,
+    0.01553917310752582
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 10.208,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": -0.018936342564220495,
+   "posterior_mean": [
+    0.00950973157658648,
+    0.002671732985046342
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 9.57,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": -1.6731667736064378e-05,
+   "posterior_mean": [
+    0.013185310296043242,
+    0.009007448915100424
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 9.612,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "compiled_fixed_cache=True",
+   "log_effect": -0.03542335269048146,
+   "posterior_mean": [
+    -0.011878446390219378,
+    -0.022778865973674046
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.013608276348795434
+   ],
+   "seconds": 20.114,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "prefill_into_fixed=True",
+   "log_effect": 0.021818163154518302,
+   "posterior_mean": [
+    0.017480445306820476,
+    0.018321088300560368
+   ],
+   "posterior_sd": [
+    0.009805806756909202,
+    0.008804509063256239
+   ],
+   "seconds": 9.454,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "readback_every=4",
+   "log_effect": 0.06135177613674585,
+   "posterior_mean": [
+    0.01553917310752582,
+    0.030036832293987854
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 9.865,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "capacity_slack=128",
+   "log_effect": 0.05498828236614266,
+   "posterior_mean": [
+    0.03324776800871613,
+    0.040127677615496675
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 9.769,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "capacity_slack=64",
+   "log_effect": 0.04789496986948412,
+   "posterior_mean": [
+    0.03215214290988527,
+    0.035936476313635
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 9.715,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "compiled_fixed_cache=True",
+   "log_effect": -0.010916317499555236,
+   "posterior_mean": [
+    -0.022778865973674046,
+    -0.0190248949375605
+   ],
+   "posterior_sd": [
+    0.013608276348795434,
+    0.01125087900926024
+   ],
+   "seconds": 9.483,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "fuse_projections=True",
+   "log_effect": null,
+   "posterior_mean": [
+    0.03319195143521705,
+    0.03319195143521705
+   ],
+   "posterior_sd": [
+    0.018569533817705184,
+    0.018569533817705184
+   ],
+   "seconds": 5.083,
+   "status": "unsupported",
+   "tree": "cuda_Tesla_T4_sm_75__4393cb757c2193ad__1791189322558431366"
+  },
+  {
+   "arm": "head_skip_prefill=True",
+   "log_effect": -0.08465394212466859,
+   "posterior_mean": [
+    -0.08297342796043577,
+    -0.08337739771145328
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 7.21,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": 0.015501200119478678,
+   "posterior_mean": [
+    0.002671732985046342,
+    0.005158063825052608
+   ],
+   "posterior_sd": [
+    0.009805806756909202,
+    0.008804509063256239
+   ],
+   "seconds": 7.329,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "compiled_fixed_cache=True",
+   "log_effect": -0.0024334316866388857,
+   "posterior_mean": [
+    -0.0190248949375605,
+    -0.015036562425319727
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 11.022,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "fused_argmax=True",
+   "log_effect": -0.0034833667945007446,
+   "posterior_mean": [
+    0.005158063825052608,
+    0.00375523417902122
+   ],
+   "posterior_sd": [
+    0.008804509063256239,
+    0.008058229640253803
+   ],
+   "seconds": 7.198,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": -0.006891723406920701,
+   "posterior_mean": [
+    0.009007448915100424,
+    0.005185532491537653
+   ],
+   "posterior_sd": [
+    0.01125087900926024,
+    0.009805806756909202
+   ],
+   "seconds": 7.151,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": -0.016116133857207237,
+   "posterior_mean": [
+    0.005185532491537653,
+    0.001057302578990194
+   ],
+   "posterior_sd": [
+    0.009805806756909202,
+    0.008804509063256239
+   ],
+   "seconds": 7.106,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__d1b3c939680ee1c8__1791189746069342333"
+  },
+  {
+   "arm": "head_skip_prefill=True",
+   "log_effect": -0.0672226540614833,
+   "posterior_mean": [
+    -0.0858539540791202,
+    -0.08215726756768432
+   ],
+   "posterior_sd": [
+    0.004975185951049945,
+    0.0044543540318737395
+   ],
+   "seconds": 74.019,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__74029414b10bce1a__1791190121969617003"
+  },
+  {
+   "arm": "compiled_fixed_cache=True",
+   "log_effect": 0.004712384997397674,
+   "posterior_mean": [
+    -0.015483192992408433,
+    -0.011476133867446902
+   ],
+   "posterior_sd": [
+    0.004975185951049945,
+    0.0044543540318737395
+   ],
+   "seconds": 87.822,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__74029414b10bce1a__1791190121969617003"
+  },
+  {
+   "arm": "readback_every=2",
+   "log_effect": 0.0014344303867000103,
+   "posterior_mean": [
+    0.001082476449918532,
+    0.001140746969253214
+   ],
+   "posterior_sd": [
+    0.0044543540318737395,
+    0.004068942293855797
+   ],
+   "seconds": 73.972,
+   "status": "ok",
+   "tree": "cuda_Tesla_T4_sm_75__74029414b10bce1a__1791190121969617003"
+  }
+ ],
+ "status": "complete",
+ "total_tune_wall_s": {
+  "coordinate": 2939.8,
+  "planner": 2507.3,
+  "random": 1330.3
+ },
+ "training": [
+  {
+   "ci": [
+    0.8074095537412387,
+    0.8319397543054878
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.822489035644567,
+   "explorer": "planner",
+   "gain_points": 17.75,
+   "knobs": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 4
+   },
+   "model": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+   "rejection": null,
+   "screened_ratio": 0.8442,
+   "tests": 25,
+   "token_identity": true,
+   "tune_wall_s": 290.31
+  },
+  {
+   "ci": [
+    0.962435194884514,
+    0.9827169394859878
+   ],
+   "confirmed": false,
+   "confirmed_median_ratio": 0.9691892434337629,
+   "explorer": "planner",
+   "gain_points": 0.0,
+   "knobs": {},
+   "model": "mlx-community/granite-3.3-2b-instruct-4bit",
+   "rejection": "token_count_identity",
+   "screened_ratio": 1.0,
+   "tests": 11,
+   "token_identity": true,
+   "tune_wall_s": 422.67
+  },
+  {
+   "ci": [
+    0.8940057020985281,
+    0.9144975700702724
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.9035190815416851,
+   "explorer": "planner",
+   "gain_points": 9.65,
+   "knobs": {
+    "compiled_fixed_cache": true,
+    "head_skip_prefill": true,
+    "readback_every": 2
+   },
+   "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+   "rejection": null,
+   "screened_ratio": 0.9019,
+   "tests": 6,
+   "token_identity": true,
+   "tune_wall_s": 373.55
+  },
+  {
+   "ci": [
+    0.9292328905547667,
+    0.931872861008315
+   ],
+   "confirmed": true,
+   "confirmed_median_ratio": 0.9307103459300599,
+   "explorer": "planner",
+   "gain_points": 6.93,
+   "knobs": {
+    "head_skip_prefill": true
+   },
+   "model": "mlx-community/Qwen3-4B-4bit",
+   "rejection": null,
+   "screened_ratio": 0.935,
+   "tests": 3,
+   "token_identity": true,
+   "tune_wall_s": 1777.71
+  }
+ ],
+ "training_trees": [
+  {
+   "best_ratio": 0.8441776442273077,
+   "decision_ms_total": 27.419,
+   "explore_s": 138.67,
+   "failed_tests": 1,
+   "model": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+   "observations_before": 0,
+   "tests": 25
+  },
+  {
+   "best_ratio": 0.9343727499935587,
+   "decision_ms_total": 7.967,
+   "explore_s": 134.08,
+   "failed_tests": 1,
+   "model": "mlx-community/granite-3.3-2b-instruct-4bit",
+   "observations_before": 25,
+   "tests": 11
+  },
+  {
+   "best_ratio": 0.9019434024041335,
+   "decision_ms_total": 3.601,
+   "explore_s": 70.4,
+   "failed_tests": 0,
+   "model": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+   "observations_before": 36,
+   "tests": 6
+  },
+  {
+   "best_ratio": 0.934986999506271,
+   "decision_ms_total": 1.414,
+   "explore_s": 380.3,
+   "failed_tests": 0,
+   "model": "mlx-community/Qwen3-4B-4bit",
+   "observations_before": 42,
+   "tests": 3
+  }
+ ]
+}

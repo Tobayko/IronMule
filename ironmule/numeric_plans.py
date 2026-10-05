@@ -316,8 +316,9 @@ def architecture_of(model: Any) -> str | None:
         # would silently skip the guard.
         try:
             layers = candidate()
-            return type(layers[0].self_attn).__module__
-        except (AttributeError, IndexError, TypeError):
+            # The first block with attention: hybrid models (Qwen 3.5) open with linear ones.
+            return next(type(layer.self_attn).__module__ for layer in layers if hasattr(layer, "self_attn"))
+        except (AttributeError, IndexError, TypeError, StopIteration):
             continue
     return None
 
@@ -445,5 +446,57 @@ def check(architecture: str, plan: str | None, device: str | None) -> None:
             )
 
 
-__all__ = ["CUDA_PRE_AMPERE", "MEASURED_REVISIONS", "MEASURED_WITH", "MEASUREMENTS", "PlanMeasurement", "PlanRefused", "QUALITY_BOUND",
-           "check", "device_class", "installed_framework", "measurements_for", "recommend"]
+def dequantize_model(model: Any) -> int:
+    """Expand every quantised linear and embedding to dense float32 in place (the `dequantize` plan).
+
+    The weights are the checkpoint's own values, scale x q + bias, computed in float32; only the
+    summation order of the matmuls changes. MLX 0.32's CPU quantised matmul runs on one core and
+    took over 8 minutes for a 290-token prompt that the dense path ran in 0.5 s (CPU1, CPU2).
+    MoE expert layers stay quantised. Returns the number of modules expanded.
+    """
+    import mlx.core as mx
+    import mlx.nn as nn
+
+    expanded = 0
+
+    def dense(child):
+        return mx.dequantize(child.weight, child.scales, child.biases, child.group_size,
+                             child.bits).astype(mx.float32)
+
+    def expand(child):
+        nonlocal expanded
+        if isinstance(child, nn.QuantizedLinear):
+            weight = dense(child)
+            linear = nn.Linear(weight.shape[1], weight.shape[0], bias="bias" in child)
+            linear.weight = weight
+            if "bias" in child:
+                linear.bias = child.bias.astype(mx.float32)
+            expanded += 1
+            return linear
+        if isinstance(child, nn.QuantizedEmbedding):
+            weight = dense(child)
+            embedding = nn.Embedding(weight.shape[0], weight.shape[1])
+            embedding.weight = weight
+            expanded += 1
+            return embedding
+        if isinstance(child, nn.Module):
+            visit(child)
+        return child
+
+    def visit(module):
+        replaced = {}
+        for name, child in module.children().items():
+            new = [expand(item) for item in child] if isinstance(child, list) else expand(child)
+            if new is not child and not (isinstance(child, list) and all(a is b for a, b in zip(new, child))):
+                replaced[name] = new
+        if replaced:
+            module.update_modules(replaced)
+
+    visit(model)
+    model.set_dtype(mx.float32)
+    return expanded
+
+
+__all__ = ["CUDA_PRE_AMPERE", "MEASURED_REVISIONS", "MEASURED_WITH", "MEASUREMENTS", "PlanMeasurement", "PlanRefused",
+           "QUALITY_BOUND", "check", "dequantize_model", "device_class", "installed_framework", "measurements_for",
+           "recommend"]

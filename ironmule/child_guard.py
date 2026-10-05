@@ -69,6 +69,8 @@ REVIEWED_MODULES = frozenset({
 REVIEWED_ATTRIBUTES = frozenset({
     "close", "eos_token_ids", "eos_token_id", "language_model", "tie_word_embeddings",
     "__version__", "bias", "layers", "self_attn", "mlp", "name",
+    # _project reads MLX-LM model configuration for the declared embedding tie.
+    "args",
 })
 NATIVE_BOUNDARY_MODULES = frozenset({"mlx", "mlx.core", "mlx_lm"})
 REVIEWED_EXTERNAL_MODULES = frozenset({"huggingface_hub", "huggingface_hub.utils"})

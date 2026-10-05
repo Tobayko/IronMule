@@ -1,0 +1,15 @@
+[package]
+name = "ironmule-experiment-planner"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+
+[lib]
+name = "ironmule_experiment_planner"
+crate-type = ["rlib", "cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1

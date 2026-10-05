@@ -52,7 +52,7 @@ def _bounded_json_line(value: dict[str, Any]) -> bytes:
 
 
 class MLXWorkerClient:
-    """A single persistent, GPU-only stock ``mlx_lm`` worker."""
+    """A single persistent stock ``mlx_lm`` worker (GPU, else MLX's CPU device)."""
 
     def __init__(self, spec: ModelSpec, *, startup_timeout: float | None = DEFAULT_TIMEOUT,
                  execution_variant: str = "reference", prefix_cache_max_entries: int = 4,
@@ -63,8 +63,8 @@ class MLXWorkerClient:
                  compute_dtype: str | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
-        if compute_dtype not in (None, "float32", "native"):
-            raise ValueError("compute_dtype must be None, float32 or native")
+        if compute_dtype not in (None, "float32", "native", "dequantize"):
+            raise ValueError("compute_dtype must be None, float32, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
             raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.

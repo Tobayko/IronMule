@@ -13,6 +13,7 @@ import math
 import random
 import statistics as st
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -265,6 +266,10 @@ def test_architecture_comes_from_the_module_mlx_lm_actually_runs():
     nn.quantize(model, group_size=32, bits=4)
     assert architecture_of(model) == "mlx_lm.models.qwen3"
     assert architecture_of(object()) is None
+    linear, full = SimpleNamespace(linear_attn=object()), SimpleNamespace(self_attn=model.layers[0].self_attn)
+    assert architecture_of(SimpleNamespace(layers=[linear, linear, full])) == "mlx_lm.models.qwen3", (
+        "a hybrid model whose first blocks are linear attention still has an architecture")
+    assert architecture_of(SimpleNamespace(layers=[linear])) is None
 
 
 def _evidence_identity(path: Path) -> tuple[str, str]:

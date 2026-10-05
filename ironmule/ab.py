@@ -623,6 +623,13 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
                 f"child {index} output limit exceeded",
                 partial_children=children, child_index=index,
             )
+        stderr_dir = os.environ.get("IRONMULE_AB_STDERR_DIR")
+        if proc.returncode != 0 and stderr_dir:
+            # Explicit opt-in diagnosis only: a failed child's stderr goes to a local file,
+            # never into an exception message or an evidence record.
+            os.makedirs(stderr_dir, exist_ok=True)
+            with open(os.path.join(stderr_dir, f"child-{index}-{proc.pid}.stderr"), "w") as stream:
+                stream.write(stderr)
         if proc.returncode != 0:
             guard_failure = next((line[len("@GUARD_FAILURE"):].strip()
                                   for line in stdout.splitlines()

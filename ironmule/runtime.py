@@ -158,7 +158,11 @@ def _new_cache(model):
 def _project(model, hidden):
     """The output projection, honouring tied embeddings."""
     text = _text(model)
-    if getattr(text, "tie_word_embeddings", False):
+    # Some MLX-LM models keep this contract in args. An explicit model flag
+    # remains authoritative, including changes made by model.sanitize().
+    tied = getattr(text, "tie_word_embeddings",
+                   getattr(getattr(text, "args", None), "tie_word_embeddings", False))
+    if tied:
         return text.model.embed_tokens.as_linear(hidden)
     return text.lm_head(hidden)
 
@@ -288,6 +292,11 @@ def _fixed_state_from_standard(cache: list, used: int, capacity: int) -> dict[st
                                       start_indices=start, axes=(0, 1, 2, 3)),
         })
     return {"position": {"offset": mx.array(used, dtype=mx.int32)}, "layers": layers}
+
+
+# SPEC1: after this many verifies in a row accept no draft token, plain steps run this long.
+SPEC_MISSES = 1
+SPEC_BACKOFF = 8
 
 
 def _lookup_draft(sequence: list[int], ngram: int, k: int) -> list[int]:
@@ -593,21 +602,51 @@ class Engine:
 
     def _decode_speculative(self, state, token, prompt_ids, max_tokens, eos, capacity):
         """Prompt-lookup speculation. Exactly greedy: a draft token is kept only when
-        it equals what the model itself chose for that position."""
+        it equals what the model itself chose for that position.
+
+        Draft-gated (SPEC1): a step without an n-gram draft is one plain step, not a
+        padded wide verify, and after `SPEC_MISSES` verifies in a row accept nothing,
+        `SPEC_BACKOFF` plain steps run chained without host lookups. Text that repeats
+        keeps the speculation gain; text that does not pays little for trying.
+        """
         if _state_is_hybrid(state):
             raise ValueError("speculative decoding is unsupported for hybrid cache state")
         width = self.knobs.speculate_k + 1
-        body = self._body(capacity, width)
+        wide, narrow = self._body(capacity, width), self._body(capacity, 1)
         first = int(token.reshape((-1,)).item())
         physical = [first]
         sequence = list(prompt_ids) + [first]
         offset = len(prompt_ids) + 1
         current, drafted, accepted_total = first, 0, 0
+        misses, backoff = 0, 0
 
         while len(physical) < max_tokens:
-            draft = _lookup_draft(sequence, self.knobs.speculate_ngram, self.knobs.speculate_k)
+            draft = [] if backoff else _lookup_draft(sequence, self.knobs.speculate_ngram, self.knobs.speculate_k)
+            if not draft:
+                # Plain steps: one when no draft was found, a chained run while backing off.
+                count = min(max(backoff, self.knobs.readback_every), max_tokens - len(physical))
+                backoff = 0
+                pending, ids = [], mx.array([[current]])
+                for _ in range(count):
+                    out = narrow(ids, state)
+                    picks = self._picks(out)
+                    state, ids = out[1], picks[:, -1:]
+                    pending.append(ids)
+                mx.eval(*pending, *_leaves(state))
+                mx.synchronize()
+                accepted = [int(item.reshape((-1,)).item()) for item in pending]
+                if any(value in eos for value in accepted):
+                    accepted = accepted[:next(i for i, v in enumerate(accepted) if v in eos) + 1]
+                physical.extend(accepted)
+                sequence.extend(accepted)
+                offset += len(accepted)
+                current = accepted[-1]
+                state["position"]["offset"] = mx.array(offset - 1, dtype=mx.int32)
+                if current in eos:
+                    break
+                continue
             padded = (draft + [current] * self.knobs.speculate_k)[:self.knobs.speculate_k]
-            out = body(mx.array([[current] + padded]), state)
+            out = wide(mx.array([[current] + padded]), state)
             picks = self._picks(out)
             state = out[1]
             mx.eval(picks, *_leaves(state))
@@ -624,6 +663,9 @@ class Engine:
 
             drafted += len(draft)
             accepted_total += len(accepted) - 1
+            misses = misses + 1 if len(accepted) == 1 else 0
+            if misses >= SPEC_MISSES:
+                misses, backoff = 0, SPEC_BACKOFF
             physical.extend(accepted)
             sequence.extend(accepted)
             offset += len(accepted)
@@ -632,7 +674,7 @@ class Engine:
             state["position"]["offset"] = mx.array(offset - 1, dtype=mx.int32)
             if any(value in eos for value in accepted):
                 break
-        return physical, (accepted_total / drafted if drafted else 0.0)
+        return physical, (accepted_total / drafted if drafted else 0.0), state
 
     def generate(self, prompt_ids: list[int], max_tokens: int, eos_ids: tuple[int, ...]) -> dict[str, Any]:
         """Greedy decode. Returns tokens plus a timing breakdown."""
@@ -650,7 +692,7 @@ class Engine:
         else:
             started = time.perf_counter_ns()
             if self.knobs.speculate_k > 0:
-                physical, acceptance = self._decode_speculative(
+                physical, acceptance, _ = self._decode_speculative(
                     state, token, prompt_ids, max_tokens, eos_ids, capacity)
             else:
                 physical, acceptance = self._decode(state, token, max_tokens, eos_ids, capacity)
