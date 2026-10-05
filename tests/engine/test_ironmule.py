@@ -36,6 +36,49 @@ def test_fingerprint_reacts_to_hardware_and_is_stable():
     assert hw.fingerprint(dict(facts, gpu_cores=999)) != hw.fingerprint(facts)
 
 
+@pytest.mark.parametrize("wrapped", [False, True])
+@pytest.mark.parametrize("flag_source", ["args", "top_level"])
+@pytest.mark.parametrize("tied", [False, True])
+def test_output_projection_follows_model_embedding_contract(wrapped, flag_source, tied):
+    """MLX-LM models may expose tying in args or as a legacy model flag."""
+    hidden, logits = object(), object()
+    calls = []
+    def embedding_projection(value):
+        calls.append(("embedding", value))
+        return logits
+    def head_projection(value):
+        calls.append(("head", value))
+        return logits
+    text = SimpleNamespace(model=SimpleNamespace(embed_tokens=SimpleNamespace(as_linear=embedding_projection)),
+                           args=SimpleNamespace(tie_word_embeddings=tied))
+    if flag_source == "top_level":
+        text.tie_word_embeddings = tied
+        # The explicit model flag is authoritative (e.g. after sanitize()).
+        text.args.tie_word_embeddings = not tied
+    if not tied:
+        text.lm_head = head_projection
+    model = SimpleNamespace(language_model=text) if wrapped else text
+    assert runtime._project(model, hidden) is logits
+    assert calls == [("embedding" if tied else "head", hidden)]
+
+
+def test_output_projection_without_tying_metadata_keeps_explicit_head():
+    hidden, logits = object(), object()
+    calls = []
+    def head(value):
+        calls.append(value)
+        return logits
+    assert runtime._project(SimpleNamespace(lm_head=head), hidden) is logits
+    assert calls == [hidden]
+
+
+def test_output_projection_does_not_infer_tying_from_a_missing_head():
+    text = SimpleNamespace(model=SimpleNamespace(embed_tokens=SimpleNamespace(as_linear=lambda _: None)),
+                           args=SimpleNamespace(tie_word_embeddings=False))
+    with pytest.raises(AttributeError, match="lm_head"):
+        runtime._project(text, object())
+
+
 def test_fusion_is_bit_identical():
     mx.set_default_device(mx.cpu)
     from mlx_lm.models.gemma3_text import Gemma3Model, ModelArgs

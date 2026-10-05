@@ -21,6 +21,27 @@ net gain leaves the reference active. Historical sealed artifacts stay unchanged
 
 ## Read this before optimising anything
 
+### RSI2 — Shorten the paired confirmation where the evidence is already clear (2026-10-05)
+
+**Mechanism.** RSI1b: the planner cut screening to 3-6 tests, but Gemma 3 4B's tune still took 30
+minutes, about 25 of them in the six-process paired confirmation. A sequential confirmation (stop
+early when the interval already excludes 1 by a margin) could keep the same error rate with fewer
+processes. **Test.** Kaggle T4: confirm the RSI1b winners with six processes and with the sequential
+rule; compare decisions and time. **Kill.** Any changed decision, or under 30 % time saved from 1B up.
+
+### CUDA1 — A deep knob combination crashes MLX's CUDA graph (2026-10-05)
+
+**Mechanism.** RSI1, random order, Gemma 3 270M on a T4: one depth-5 configuration aborted the process
+with `cudaGraphAddDependencies ... invalid argument`, so that tune failed. **Test.** Reproduce it
+alone, then with `MLX_USE_CUDA_GRAPHS=0`. **Kill.** Not reproducible twice: record as transient.
+
+### CPU5 — A visible answer sooner on a CPU (2026-10-05)
+
+**Mechanism.** Qwen3 0.6B spends its first tokens in `<think>`; at under 1 token per second a readable
+reply takes minutes. Turn thinking off for `start`'s CPU default, or pick a small non-thinking model.
+**Test.** Kaggle CPU: time to the first visible token, paired against today. **Kill.** No reduction,
+or worse answers on simple checks.
+
 ### MOLE1 — Remaining agent-level MCP comparison (2026-09-12)
 
 **Mechanism.** Provenance-bound same-task plans may amortize model orchestration and

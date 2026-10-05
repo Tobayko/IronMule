@@ -94,13 +94,44 @@ class _Runner:
         _accept_token(session, token, when, self.backend.eos_ids)
 
     def _finish_sequentially(self, sessions: list[Session], capacity: int) -> None:
+        every = getattr(self.backend, "readback", 1) if hasattr(self.backend, "steps") else 1
         for session in sessions:
+            if not session.done and len(session.tokens) == 1 and hasattr(self.backend, "speculate"):
+                drafted = self.backend.speculate(session.prompt_ids, session.tokens[0], session.state,
+                                                 session.max_tokens, capacity)
+                if drafted is not None:
+                    tokens, state = drafted
+                    when = now()
+                    for token in tokens:
+                        self._record_token(session, token, when)
+                        if session.done:
+                            break
+                    session.state = self.backend.rewind(state, len(session.prompt_ids) + len(session.tokens) - 1)
+                    continue
             while not session.done:
+                count = min(every, session.max_tokens - len(session.tokens))
+                chain = self.backend.steps(session.state, session.tokens[-1], capacity, count) if count > 1 else None
+                if chain:
+                    self._finish_chain(session, chain)
+                    continue
                 handle = self.backend.step(session.state, session.tokens[-1], capacity)
                 self.backend.complete([handle])
                 token, state = self.backend.read(handle)
                 session.state = state
                 self._record_token(session, token, now())
+
+    def _finish_chain(self, session: Session, chain: list) -> None:
+        """Accept a chained batch up to EOS or the length limit, then rewind the cache."""
+        self.backend.complete_chain(chain)
+        self._accept_chain(session, chain, now())
+
+    def _accept_chain(self, session: Session, chain: list, when: int) -> None:
+        for handle in chain:
+            token, _ = self.backend.read(handle)
+            self._record_token(session, token, when)
+            if session.done:
+                break
+        session.state = self.backend.rewind(chain[-1][0][1], len(session.prompt_ids) + len(session.tokens) - 1)
 
 
 class SequentialExecutor(_Runner):
@@ -146,6 +177,24 @@ class AsyncGroupedB1Executor(_Runner):
 
         return [self.backend.step(s.state, s.tokens[-1], capacity) for s in group]
 
+    def _chain_group(self, group: list[Session], capacity: int):
+        """Chained readback per session (SERVE1) when every session can chain; else None.
+
+        Only the default one-submission-per-session grouping chains; a subclass that
+        submits a group as one step keeps its own stepping.
+        """
+        every = getattr(self.backend, "readback", 1) if hasattr(self.backend, "steps") else 1
+        if every <= 1 or type(self)._step_group is not AsyncGroupedB1Executor._step_group:
+            return None
+        chains = []
+        for session in group:
+            count = min(every, session.max_tokens - len(session.tokens))
+            chain = self.backend.steps(session.state, session.tokens[-1], capacity, count) if count > 1 else None
+            if not chain:
+                return None
+            chains.append(chain)
+        return chains
+
     def run(self, sessions: list[Session], capacity: int) -> None:
         started = now()
         pending = sorted(sessions, key=lambda s: (s.arrival_ms, s.rid))
@@ -166,13 +215,20 @@ class AsyncGroupedB1Executor(_Runner):
 
             group = active[:self.max_width]
             try:
-                handles = self._step_group(group, capacity)
-                self.backend.complete(handles)
-                stamp = now()
-                for session, handle in zip(group, handles):
-                    token, state = self.backend.read(handle)
-                    session.state = state
-                    self._record_token(session, token, stamp)
+                chains = self._chain_group(group, capacity)
+                if chains:
+                    self.backend.complete_chains(chains)
+                    stamp = now()
+                    for session, chain in zip(group, chains):
+                        self._accept_chain(session, chain, stamp)
+                else:
+                    handles = self._step_group(group, capacity)
+                    self.backend.complete(handles)
+                    stamp = now()
+                    for session, handle in zip(group, handles):
+                        token, state = self.backend.read(handle)
+                        session.state = state
+                        self._record_token(session, token, stamp)
             except Exception as exc:                       # noqa: BLE001 - deliberate
                 self._fall_back(group, capacity, exc)
                 active = [s for s in active if not s.done]

@@ -32,7 +32,7 @@
 
 ## What is IronMule?
 
-**IronMule is an open-source local LLM inference runtime and OpenAI-compatible server for Apple Silicon Macs (Metal) and Linux machines with an NVIDIA GPU (CUDA).** It runs on [MLX](https://github.com/ml-explore/mlx), serving models such as Gemma 3 fully offline, on your own hardware, by reusing work, skipping work that is not needed, and grouping requests — without changing the output by default. It ships as a one-line installer, an OpenAI-compatible HTTP server, and a three-line Python API.
+**IronMule is an open-source local LLM inference runtime and OpenAI-compatible server for Apple Silicon Macs (Metal) and Linux machines with an NVIDIA GPU (CUDA), and — more slowly — Linux machines with only a CPU.** It runs on [MLX](https://github.com/ml-explore/mlx), serving models such as Gemma 3 fully offline, on your own hardware, by reusing work, skipping work that is not needed, and grouping requests — without changing the output by default. It ships as a one-line installer, an OpenAI-compatible HTTP server, and a three-line Python API.
 
 <a href="docs/assets/ironmule-live-race.mp4"><img src="docs/assets/ironmule-live-race.gif" alt="Six questions answered side by side on an Apple M1 Max with Gemma 3 1B: optimisations off in 2.11 s, IronMule on in 1.28 s, every token identical" width="100%"></a>
 
@@ -53,14 +53,14 @@ Measured on one Apple M1 Max and one Kaggle Tesla T4 — run `ironmule benchmark
 
 ## Quick start
 
-Two commands, on an Apple Silicon Mac or a Linux machine with an NVIDIA GPU:
+Two commands, on an Apple Silicon Mac or a Linux machine (with an NVIDIA GPU, or with only a CPU):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/Tobayko/IronMule/main/install.sh | sh
 ironmule start
 ```
 
-Installs IronMule as its own command; `start` asks before downloading a model (Gemma 3 4B) and opens a chat at `http://127.0.0.1:8080`. Another model: `ironmule start --model mlx-community/Qwen3-4B-Instruct-2507-4bit`. From source, step by step (Python 3.10+):
+Installs IronMule as its own command; `start` asks before downloading a model (Gemma 3 4B) and opens a chat at `http://127.0.0.1:8080`. No GPU? Then the installer takes the CPU build and `start` picks the small Qwen3 0.6B and asks whether it may unpack the weights to float32, which made answers about 7.6× faster on a 4-core Kaggle CPU (one run). It works, but expect about a minute for a short answer. Another model: `ironmule start --model mlx-community/Qwen3-4B-Instruct-2507-4bit`. From source, step by step (Python 3.10+):
 
 ```bash
 git clone https://github.com/Tobayko/IronMule.git
@@ -69,6 +69,7 @@ python -m venv .venv && source .venv/bin/activate
 
 pip install -e .            # Apple Silicon Mac
 pip install -e ".[cuda]"    # Linux with an NVIDIA GPU
+pip install -e ".[cpu]"     # Linux without a GPU (slow)
 ```
 
 Check the machine, then get a model and serve it:
@@ -102,6 +103,32 @@ print(result.text)
 ```
 
 `Runtime.load` uses a model already in your Hugging Face cache (`hf download mlx-community/gemma-3-4b-it-4bit`). More: [docs/RUNTIME.md](docs/RUNTIME.md).
+
+## It learns from your machine
+
+`ironmule autopilot` and `ironmule learn` turn IronMule into a small learning system. It does not use a language model to make decisions; it uses statistics that update after every test it runs.
+
+1. **It tests.** It tries engine settings on your hardware and measures each one against the plain reference. A setting only counts if it gives exactly the same tokens.
+2. **It remembers.** Every test is stored: what was changed, how much faster or slower it was, and how long the test took. The memory survives restarts.
+3. **It decides what to test next.** A small Bayesian model written in Rust (`native/experiment_planner`) estimates, for every possible change, how much it will probably help and how long it takes to try. It runs the test with the best expected gain per second, and stops when nothing is worth the time. Every new result updates the estimates a little; nothing is retrained from scratch.
+4. **It dreams.** Between sessions it replays its old tests — like the *Dream-RSI* paper ([arXiv 2609.14858](https://arxiv.org/html/2609.14858v1)) — to tune how it plans. Replay never replaces a real test, and if replay shows that the simple fixed order would have done better, it switches itself off and uses that order instead.
+5. **It double-checks.** The best setting still has to win a paired A/B test against the reference before it is used. While serving, an online controller keeps comparing and falls back to the reference whenever something looks off.
+
+What this gave on a Kaggle Tesla T4, on five models it had never seen: 3–6 tests instead of 11, about 24 % less tuning time, and on average as much confirmed speed-up as the fixed order (20.2 vs 19.8 percentage points; more on four models, less on Gemma 3 1B). One machine, one run per method — treat it as a first result, not a promise.
+
+```bash
+ironmule learn --minutes 12                       # a bounded hardware session over your cached models
+ironmule autopilot --model mlx-community/gemma-3-1b-it-4bit
+```
+
+The learning parts are built from source and need Rust (`cargo`):
+
+```bash
+cargo build --release --manifest-path native/online_controller/Cargo.toml
+cargo build --release --manifest-path native/experiment_planner/Cargo.toml
+```
+
+Without the planner, tuning uses the fixed order; without the controller, `autopilot` stops with a message that says how to build it. Details and limits: [docs/LIMITS.md](docs/LIMITS.md).
 
 ## Choosing a mode
 
@@ -145,6 +172,7 @@ ironmule benchmark                          # measure your own machine
 | :-- | :-- |
 | `ironmule/` | The runtime: model loading, generation, cache, plans, kernels |
 | `ironmule_product/` | The server, chat page, calibration and worker processes |
+| `native/` | Rust: the online controller and the experiment planner (learning core) |
 | `friday_evidence/` | Storage and provenance for measurements |
 | `evidence/` | Redacted results behind every published number |
 | `tests/` | `engine/` and `runtime/` (runtime, server), `learning/` (learned dispatch), `evidence/` and `claims/` (measurements, published numbers) |

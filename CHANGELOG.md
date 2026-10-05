@@ -4,6 +4,22 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **IronMule learns which hardware test to run next.** `ironmule learn` and `ironmule autopilot`
+  use a small Bayesian planner written in Rust (`native/experiment_planner`): every test updates its
+  estimate of what each engine setting gains and costs, and it runs the test with the best expected
+  gain per second. Stored tests are replayed to tune the planner (after *Dream-RSI*, arXiv
+  2609.14858); replay never replaces a test, and the planner turns itself off where the fixed order
+  does better. The paired confirmation against the reference is unchanged. On five unseen models on
+  a T4: 3-6 tests instead of 11, 24 % less tuning time, as much confirmed speed-up on average (RSI1b).
+- **`ironmule autopilot` and the online controller are part of the product.** The autopilot measures
+  the machine, tunes once, then serves through a Rust online controller that keeps comparing serving
+  profiles with A/A/B checks and falls back to the reference.
+- **Machines without a GPU are supported, slowly.** `install.sh` installs the CPU build on Linux
+  without an NVIDIA driver (`pip install "ironmule[cpu]"`), `ironmule doctor` checks the CPU there,
+  and `ironmule start` picks Qwen3 0.6B and asks before unpacking the weights to float32 (CPU4).
+- **Tuning no longer gives up on a cold start.** A slow first probe is repeated warm before tuning
+  is declared too slow for the machine: three small models on a T4 had been refused (RSI1).
+
 - **The research lab moved out of this repository.** Preregistrations, sealed studies, the
   Kaggle harnesses, the SSOT corpus and the rest of Project Friday now live in
   [IronMule-Research](https://github.com/Tobayko/IronMule-Research); this repository is the

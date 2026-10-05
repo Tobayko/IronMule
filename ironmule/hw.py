@@ -1,10 +1,10 @@
 """Hardware self-discovery: static fingerprint plus measured device behaviour.
 
-The fingerprint keys the tuned profile store, so a machine that has never been
-seen before tunes itself once and then reuses the result. The three
-microbenchmarks exist to *predict* good starting knobs on unseen hardware
-(bandwidth -> how memory bound decode is, dispatch -> whether kernel fusion and
-readback batching pay off, wired -> how much of the model can stay resident).
+The existing fingerprint keys the tuned profile store. The microbenchmarks
+describe achieved quantized GEMV rates and amortized submitted scalar-operation
+cost, including host submission and synchronization. They neither measure raw
+DRAM peak bandwidth nor establish device kernel counts. Diagnostic knowledge
+can inform experiments; only comparative execution evidence can qualify a path.
 """
 
 from __future__ import annotations
@@ -13,13 +13,23 @@ import ctypes
 import ctypes.util
 import hashlib
 import json
+import math
 import os
 import platform
+import stat
 import subprocess
+import tempfile
 import time
 from functools import lru_cache
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+
+from friday_evidence import canonical, statistics
+from friday_evidence.canonical import canonical_json_bytes, canonical_sha256
+from friday_evidence.statistics import summarise
+from friday_evidence.portable import supervisor
+from friday_evidence.portable.supervisor import SupervisorError, _lease
 
 def _store() -> Path:
     """Where tuned profiles and fingerprints live.
@@ -340,10 +350,71 @@ def _median(values: list[float]) -> float:
     return 0.5 * (ordered[mid - 1] + ordered[mid])
 
 
-PROBE_VERSION = 2   # bump when measure() changes shape, so cached records refresh
+PROBE_VERSION = 4
+PROBE_SCHEMA = "ironmule.hardware_probe.v4"
+DEFAULT_PROBE_MAX_AGE_S = 7 * 86400
+_MAX_PROBE_BYTES = 128 * 1024
+_MAX_REPEATS = 32
+_MAX_TIMING_S = 86400
+_TIMING_NAMES = ("scalar_chain_s", "gemv_small_s", "gemv_large_s")
+_PROTOCOL = {
+    "schema": "ironmule.hardware_microbenchmarks.v1",
+    "warmups": 2, "repeats": 5, "scalar_submitted_ops": 512,
+    "scalar_dtype": "float32", "gemv_dtype": "bfloat16",
+    "in_features": 2560, "out_features": [1024, 262144],
+    "quantization_bits": 4, "quantization_group_size": 64,
+    "target_bytes": [512 * 2**20, 1024 * 2**20],
+    "chain_min": 2, "chain_max": 48,
+    "clock": "host_submit_eval_synchronize",
+    "random_seed": 20261001, "random_keys": "seed + out_features + index; input index 48",
+}
 
 
-def _time(fn, repeats: int) -> float:
+class HardwareProbeUnavailable(RuntimeError):
+    """A usable diagnostic cache is absent and measurement was disabled."""
+
+    def __init__(self, reasons: list[str]):
+        self.reasons = tuple(reasons)
+        super().__init__("hardware probe unavailable: " + ", ".join(reasons))
+
+
+def _repeats(value: int) -> int:
+    if type(value) is not int or not 1 <= value <= _MAX_REPEATS:
+        raise ValueError(f"repeats must be an integer in [1, {_MAX_REPEATS}]")
+    return value
+
+
+def _positive(value: Any) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        return math.isfinite(value) and value > 0
+    except (OverflowError, ValueError):
+        return False
+
+
+def _gemv_bytes(out_features: int, target_bytes: int) -> int:
+    per = out_features * 2560 * 4 // 8 + out_features * (2560 // 64) * 4
+    chain = max(2, min(48, target_bytes // per))
+    return chain * per
+
+
+def _measured_from_samples(samples: dict[str, list[float]]) -> dict[str, Any]:
+    summaries = {name: summarise(values) for name, values in samples.items()}
+    small = _gemv_bytes(1024, 512 * 2**20) / summaries["gemv_small_s"]["median"] / 1e9
+    large = _gemv_bytes(262144, 1024 * 2**20) / summaries["gemv_large_s"]["median"] / 1e9
+    return {
+        "probe_version": PROBE_VERSION,
+        "dispatch_us": summaries["scalar_chain_s"]["median"] / 512 * 1e6,
+        "gemv_gbps_small": small, "gemv_gbps_large": large,
+        "gemv_size_sensitivity": large / small,
+        "raw_timing_samples": samples, "timing_summary": summaries,
+        "repeats": len(samples["scalar_chain_s"]),
+    }
+
+
+def _time(fn, repeats: int, *, raw_samples: list[float] | None = None) -> float:
+    _repeats(repeats)
     import mlx.core as mx
     for _ in range(2):
         mx.eval(fn())
@@ -353,11 +424,17 @@ def _time(fn, repeats: int) -> float:
         started = time.perf_counter()
         mx.eval(fn())
         mx.synchronize()
-        samples.append(time.perf_counter() - started)
+        elapsed = time.perf_counter() - started
+        if not _positive(elapsed):
+            raise ValueError("hardware timing must be finite and positive")
+        samples.append(elapsed)
+    if raw_samples is not None:
+        raw_samples.extend(samples)
     return _median(samples)
 
 
-def _gemv_gbps(out_features: int, target_bytes: int, repeats: int) -> float:
+def _gemv_gbps(out_features: int, target_bytes: int, repeats: int, *,
+               raw_samples: list[float] | None = None) -> float:
     """Achieved bandwidth of a 4-bit GEMV at one weight-matrix size.
 
     Calls are chained inside a single eval so launch cost is amortised, and enough
@@ -371,11 +448,13 @@ def _gemv_gbps(out_features: int, target_bytes: int, repeats: int) -> float:
     per = out_features * in_features * bits // 8 + out_features * (in_features // group) * 4
     chain = max(2, min(48, target_bytes // per))
     weights = []
-    for _ in range(chain):
-        dense = mx.random.normal((out_features, in_features)).astype(mx.bfloat16)
+    for index in range(chain):
+        key = mx.random.key(_PROTOCOL["random_seed"] + out_features + index)
+        dense = mx.random.normal((out_features, in_features), key=key).astype(mx.bfloat16)
         weights.append(mx.quantize(dense, group_size=group, bits=bits))
         del dense
-    x = mx.random.normal((1, in_features)).astype(mx.bfloat16)
+    x = mx.random.normal((1, in_features), key=mx.random.key(
+        _PROTOCOL["random_seed"] + out_features + 48)).astype(mx.bfloat16)
     mx.eval(x, *[t for q in weights for t in q])
 
     def chained():
@@ -383,14 +462,14 @@ def _gemv_gbps(out_features: int, target_bytes: int, repeats: int) -> float:
             mx.quantized_matmul(x, *q, transpose=True, group_size=group, bits=bits).sum()
             for q in weights]))
 
-    elapsed = _time(chained, repeats)
+    elapsed = _time(chained, repeats, raw_samples=raw_samples)
     weights.clear()  # drop the buffers before clearing the cache; `chained` is not called again
     x = None
     mx.clear_cache()
     return chain * per / elapsed / 1e9
 
 
-def measure(repeats: int = 5) -> dict[str, float]:
+def measure(repeats: int = 5) -> dict[str, Any]:
     """Bounded GPU microbenchmarks that describe how this machine executes decode.
 
     Deliberately *not* a plain streaming-read benchmark: `mx.sum` over a large
@@ -398,12 +477,13 @@ def measure(repeats: int = 5) -> dict[str, float]:
     reduction limits it rather than the memory system. What decode is actually made
     of is 4-bit GEMV, so that is what gets measured.
     """
+    _repeats(repeats)
     import mlx.core as mx
 
     apply_cuda_graph_defaults()  # the first GPU operation of `tune` happens here
-    results: dict[str, float] = {"probe_version": PROBE_VERSION}
+    samples = {name: [] for name in _TIMING_NAMES}
 
-    # Kernel dispatch cost: many dependent, trivially sized kernels.
+    # Amortized cost of dependent scalar submissions, including host and waits.
     tiny = mx.zeros((1,), dtype=mx.float32)
     mx.eval(tiny)
     launches = 512
@@ -414,36 +494,360 @@ def measure(repeats: int = 5) -> dict[str, float]:
             value = value + 1.0
         return value
 
-    results["dispatch_us"] = _time(chain_tiny, repeats) / launches * 1e6
+    _time(chain_tiny, repeats, raw_samples=samples["scalar_chain_s"])
 
     # Achieved GEMV bandwidth at a per-layer matrix size and at an output-head size.
-    results["gemv_gbps_small"] = _gemv_gbps(1024, 512 * 2**20, repeats)
-    results["gemv_gbps_large"] = _gemv_gbps(262144, 1024 * 2**20, repeats)
-    # >1 means small matrices are penalised, so merging projections may pay here.
-    results["gemv_size_sensitivity"] = results["gemv_gbps_large"] / results["gemv_gbps_small"]
+    _gemv_gbps(1024, 512 * 2**20, repeats, raw_samples=samples["gemv_small_s"])
+    _gemv_gbps(262144, 1024 * 2**20, repeats, raw_samples=samples["gemv_large_s"])
 
     mx.clear_cache()
-    return results
+    # These are achieved workload rates, not a raw DRAM bandwidth measurement.
+    # dispatch_us includes host graph submission and completion synchronization;
+    # it does not establish the number of device kernels that actually executed.
+    return _measured_from_samples(samples)
 
 
-def probe(force: bool = False) -> dict[str, Any]:
-    """Full hardware record, cached per fingerprint under IRONMULE_HOME."""
+def stable_device_info(raw_info: Mapping[str, Any]) -> dict[str, Any]:
+    """Project actual MLX device metadata onto stable identity fields only.
+
+    Free memory and allocation/utilization counters are observations, not device
+    identity. Unknown fields are excluded until their stability is established.
+    This shared projection performs no inventory or device operations.
+    """
+    if not isinstance(raw_info, Mapping):
+        raise ValueError("MLX device information must be a mapping")
+    texts = {"device_name", "architecture", "pci_bus_id", "uuid", "chip_name", "name", "model"}
+    positive = {"total_memory", "memory_size", "total_memory_bytes", "memory_bytes",
+                "max_buffer_length", "max_recommended_working_set_size", "recommended_max_memory",
+                "resource_limit"}
+    nonnegative = {"compute_capability_major", "compute_capability_minor"}
+    result = {}
+    for name in sorted(texts | positive | nonnegative):
+        if name not in raw_info:
+            continue
+        value = raw_info[name]
+        if value is not None:
+            if name in texts:
+                if not isinstance(value, str) or not 1 <= len(value) <= 256 or not value.isprintable():
+                    raise ValueError(f"invalid stable MLX device field: {name}")
+            elif type(value) is not int or not (1 if name in positive else 0) <= value <= 2**63 - 1:
+                raise ValueError(f"invalid stable MLX device field: {name}")
+        result[name] = value
+    if (not any(result.get(name) for name in ("device_name", "chip_name", "name", "model"))
+            or not any(result.get(name) for name in ("total_memory", "memory_size", "total_memory_bytes", "memory_bytes"))):
+        raise ValueError("MLX device name or physical memory identity is unavailable")
+    return result
+
+
+def device_identity() -> dict[str, Any]:
+    """Stable identity of the device MLX computes on; the CPU itself where no GPU is available.
+
+    MLX's CPU backend reports no device name or memory, which made the learned runtime refuse to
+    start on a CPU-only machine (CPU1).
+    """
+    import mlx.core as mx
+    try:
+        return stable_device_info(mx.device_info())
+    except ValueError:
+        cuda = getattr(mx, "cuda", None)
+        if mx.metal.is_available() or (cuda is not None and cuda.is_available()):
+            raise
+        facts = static_facts()
+        return stable_device_info({"device_name": f"cpu: {facts.get('chip') or facts['machine']}",
+                                   "memory_size": facts["memory_bytes"]})
+
+
+def _backend_binding(facts: dict[str, Any], *, observation: dict[str, Any] | None = None) -> dict[str, Any]:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        mlx_lm = version("mlx-lm")
+    except PackageNotFoundError:
+        mlx_lm = None
+    result = {
+        "kind": "unavailable", "mlx": _mlx_version(), "mlx_lm": mlx_lm,
+        "device_info": None,
+        "graph_environment": {name: os.environ.get(name) for name in
+                              ("MLX_MAX_OPS_PER_BUFFER", "MLX_MAX_MB_PER_BUFFER")},
+    }
+    if observation is not None:
+        observation.update(observed_unix_ns=time.time_ns(), free_memory_bytes=None,
+                           availability="unavailable", errors=["free_memory_unavailable"])
+    if facts.get("gpu_available") is not True:
+        return result
+    try:
+        import mlx.core as mx
+
+        result["mlx"] = getattr(mx, "__version__", None) or result["mlx"]
+        cuda = getattr(mx, "cuda", None)
+        kind = ("cuda" if cuda is not None and cuda.is_available()
+                else "metal" if mx.metal.is_available() else "unavailable")
+        info = mx.device_info()
+        if kind != "unavailable" and isinstance(info, dict) and info:
+            result["device_info"] = stable_device_info(info)
+            result["kind"] = kind
+            if observation is not None and "free_memory" in info:
+                free = info["free_memory"]
+                if type(free) is int and 0 <= free <= 2**63 - 1:
+                    observation.update(free_memory_bytes=free, availability="available", errors=[])
+                else:
+                    observation["errors"] = ["free_memory_invalid"]
+    except Exception:  # backend metadata unavailable; no performance fact is invented
+        pass
+    return result
+
+
+def _probe_binding(facts: dict[str, Any], *, observation: dict[str, Any] | None = None) -> dict[str, Any]:
+    sources = {
+        "ironmule/hw.py": Path(__file__),
+        "friday_evidence/canonical.py": Path(canonical.__file__),
+        "friday_evidence/statistics.py": Path(statistics.__file__),
+        "friday_evidence/portable/supervisor.py": Path(supervisor.__file__),
+    }
+    hashes = {name: hashlib.sha256(path.read_bytes()).hexdigest()
+              for name, path in sources.items()}
+    return json.loads(canonical_json_bytes({
+        "schema": "ironmule.hardware_probe_binding.v2",
+        "fingerprint": fingerprint(facts), "static": facts,
+        "backend": (_backend_binding(facts) if observation is None
+                    else _backend_binding(facts, observation=observation)), "protocol": _PROTOCOL,
+        "source_files": hashes, "source_sha256": canonical_sha256(hashes),
+    }))
+
+
+def _cache_age(value: float) -> float:
+    if not _positive(value):
+        raise ValueError("max_age_s must be finite and positive")
+    return float(value)
+
+
+def _validate_probe(record: Any, expected: dict[str, Any], *, max_age_s: float,
+                    now_unix_ns: int) -> tuple[bool, list[str]]:
+    keys = {"schema", "fingerprint", "static", "binding", "observed_unix_ns",
+            "finished_unix_ns", "availability", "errors", "measured", "sha256", "device_observations"}
+    if not isinstance(record, dict) or set(record) != keys or record.get("schema") != PROBE_SCHEMA:
+        return False, ["probe_schema_invalid"]
+    reasons = []
+    try:
+        body = {key: value for key, value in record.items() if key != "sha256"}
+        if record["sha256"] != canonical_sha256(body):
+            reasons.append("probe_digest_mismatch")
+        if (canonical_json_bytes(record["binding"]) != canonical_json_bytes(expected)
+                or canonical_json_bytes(record["static"]) != canonical_json_bytes(expected["static"])
+                or record["fingerprint"] != expected["fingerprint"]):
+            reasons.append("probe_binding_mismatch")
+    except (TypeError, ValueError, OverflowError):
+        reasons.append("probe_data_invalid")
+    observed, finished = record["observed_unix_ns"], record["finished_unix_ns"]
+    if (type(observed) is not int or type(finished) is not int
+            or not 0 <= observed <= finished <= now_unix_ns):
+        reasons.append("probe_timestamp_invalid")
+    elif (now_unix_ns - finished) / 1e9 > max_age_s:
+        reasons.append("probe_stale")
+    errors = record["errors"]
+    if not isinstance(errors, list) or any(not isinstance(item, str) or not item for item in errors):
+        reasons.append("probe_errors_invalid")
+    observations = record["device_observations"]
+    observation_keys = {"observed_unix_ns", "free_memory_bytes", "availability", "errors"}
+    if not isinstance(observations, dict) or set(observations) != {"before", "after"}:
+        reasons.append("probe_device_observation_invalid")
+    else:
+        for item in observations.values():
+            if (not isinstance(item, dict) or set(item) != observation_keys
+                    or type(item["observed_unix_ns"]) is not int
+                    or not 0 <= item["observed_unix_ns"] <= now_unix_ns
+                    or not isinstance(item["errors"], list)
+                    or any(not isinstance(error, str) or not error for error in item["errors"])
+                    or not isinstance(item["availability"], str)
+                    or item["availability"] not in {"available", "unavailable"}):
+                reasons.append("probe_device_observation_invalid")
+                continue
+            if item["availability"] == "available":
+                free = item["free_memory_bytes"]
+                if type(free) is not int or not 0 <= free <= 2**63 - 1 or item["errors"]:
+                    reasons.append("probe_device_observation_invalid")
+            elif item["free_memory_bytes"] is not None or not item["errors"]:
+                reasons.append("probe_device_observation_invalid")
+    available = record["availability"]
+    measured = record["measured"]
+    if available == "unavailable":
+        if measured != {} or not errors:
+            reasons.append("probe_unavailable_invalid")
+    elif available == "available":
+        facts = expected["static"]
+        if (errors or facts.get("gpu_available") is not True
+                or not facts.get("chip") or not _positive(facts.get("memory_bytes"))
+                or not expected["backend"]["mlx"] or expected["backend"]["kind"] == "unavailable"):
+            reasons.append("probe_available_invalid")
+        measured_keys = {"probe_version", "dispatch_us", "gemv_gbps_small", "gemv_gbps_large",
+                         "gemv_size_sensitivity", "raw_timing_samples", "timing_summary", "repeats"}
+        if not isinstance(measured, dict) or set(measured) != measured_keys:
+            reasons.append("probe_measurement_shape_invalid")
+        else:
+            raw = measured["raw_timing_samples"]
+            repeats = measured["repeats"]
+            if (type(measured["probe_version"]) is not int or measured["probe_version"] != PROBE_VERSION
+                    or type(repeats) is not int or repeats != _PROTOCOL["repeats"]
+                    or not 1 <= repeats <= _MAX_REPEATS or not isinstance(raw, dict)
+                    or set(raw) != set(_TIMING_NAMES)
+                    or any(not isinstance(raw[name], list) or len(raw[name]) != repeats
+                           or any(not _positive(value) or value > _MAX_TIMING_S for value in raw[name])
+                           for name in _TIMING_NAMES)):
+                reasons.append("probe_timing_samples_invalid")
+            else:
+                derived = _measured_from_samples(raw)
+                if canonical_json_bytes(measured) != canonical_json_bytes(derived):
+                    reasons.append("probe_summary_mismatch")
+                if any(not _positive(measured[name]) for name in
+                       ("dispatch_us", "gemv_gbps_small", "gemv_gbps_large", "gemv_size_sensitivity")):
+                    reasons.append("probe_measurements_invalid")
+    else:
+        reasons.append("probe_availability_invalid")
+    return not reasons, sorted(set(reasons))
+
+
+def validate_probe(record: Any, facts: dict[str, Any] | None = None, *,
+                   max_age_s: float = DEFAULT_PROBE_MAX_AGE_S,
+                   now_unix_ns: int | None = None) -> tuple[bool, list[str]]:
+    """Validate diagnostic evidence against current facts, without GPU workloads.
+
+    Supplying already captured ``facts`` avoids another OS inventory. Backend
+    metadata and source hashes are read only. A valid ``unavailable`` record is
+    still unavailable; validation never authorizes an execution profile.
+    """
+    age = _cache_age(max_age_s)
+    now = time.time_ns() if now_unix_ns is None else now_unix_ns
+    if type(now) is not int or now < 0:
+        return False, ["probe_now_invalid"]
+    try:
+        expected = _probe_binding(static_facts() if facts is None else facts)
+        return _validate_probe(record, expected, max_age_s=age, now_unix_ns=now)
+    except (OSError, TypeError, ValueError, OverflowError):
+        return False, ["probe_binding_unavailable"]
+
+
+def _read_probe(path: Path) -> Any:
+    # A replaced/symlinked or public cache is not trusted input. The old cache
+    # can be refreshed at the same path without following its symlink target.
+    before = path.stat(follow_symlinks=False)
+    if (not stat.S_ISREG(before.st_mode) or before.st_uid != os.geteuid()
+            or before.st_mode & 0o077 or before.st_size > _MAX_PROBE_BYTES):
+        raise ValueError("hardware cache is not a bounded private regular file")
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    with os.fdopen(fd, "rb") as stream:
+        opened = os.fstat(stream.fileno())
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
+                opened.st_dev, opened.st_ino, opened.st_size, opened.st_mtime_ns):
+            raise ValueError("hardware cache changed while opening")
+        data = stream.read(_MAX_PROBE_BYTES + 1)
+        after = os.fstat(stream.fileno())
+    if (len(data) != before.st_size or (opened.st_size, opened.st_mtime_ns) !=
+            (after.st_size, after.st_mtime_ns)):
+        raise ValueError("hardware cache changed while reading")
+    current = path.stat(follow_symlinks=False)
+    if (current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns) != (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+        raise ValueError("hardware cache was replaced while reading")
+    return json.loads(data)
+
+
+def _write_probe(path: Path, record: dict[str, Any]) -> None:
+    content = canonical_json_bytes(record)
+    if len(content) > _MAX_PROBE_BYTES:
+        raise ValueError("hardware record exceeds cache budget")
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd, temporary = tempfile.mkstemp(prefix=".hw-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        if hasattr(os, "O_DIRECTORY"):
+            directory = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def _cached_probe(path: Path, binding: dict[str, Any], age: float) -> tuple[Any, list[str]]:
+    try:
+        cached = _read_probe(path)
+        valid, reasons = _validate_probe(cached, binding, max_age_s=age, now_unix_ns=time.time_ns())
+        return cached if valid else None, reasons
+    except (OSError, ValueError, TypeError, OverflowError):
+        return None, ["probe_cache_unreadable"]
+
+
+def probe(force: bool = False, *, cache_dir: Path | None = None,
+          max_age_s: float = DEFAULT_PROBE_MAX_AGE_S,
+          allow_measure: bool = True) -> dict[str, Any]:
+    """Reuse or refresh the existing fingerprint-keyed diagnostic hardware cache.
+
+    The stable binding is separate from volatile timing samples and timestamps.
+    Calls that refresh execute the established GPU workloads; run them at an
+    owned idle/startup boundary. ``allow_measure=False`` reads only a usable
+    cache and otherwise raises ``HardwareProbeUnavailable`` without replacing
+    it. This record is not performance qualification.
+    """
+    if type(force) is not bool:
+        raise ValueError("force must be a boolean")
+    if type(allow_measure) is not bool:
+        raise ValueError("allow_measure must be a boolean")
+    age = _cache_age(max_age_s)
+    requested = time.time_ns()
     facts = static_facts()
-    ident = fingerprint(facts)
-    path = STORE / f"hw-{ident}.json"
-    if path.is_file() and not force:
-        try:
-            cached = json.loads(path.read_text())
-            if cached.get("measured", {}).get("probe_version") == PROBE_VERSION:
+    if allow_measure and facts.get("gpu_available") is True:
+        apply_cuda_graph_defaults()
+    try:
+        before = {}
+        binding = _probe_binding(facts, observation=before)
+    except (OSError, TypeError, ValueError, OverflowError) as exc:
+        raise HardwareProbeUnavailable(["probe_binding_unavailable"]) from exc
+    path = Path(cache_dir if cache_dir is not None else STORE) / f"hw-{fingerprint(facts)}.json"
+    reasons = ["probe_refresh_requested"]
+    if not force:
+        cached, reasons = _cached_probe(path, binding, age)
+        if cached is not None:
+            return cached
+    if not allow_measure:
+        raise HardwareProbeUnavailable(reasons)
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        with _lease(path.with_name("." + path.stem + ".lock")):
+            # A different caller may have refreshed the cache while this caller
+            # was discovering its binding. Concurrent force requests share that
+            # new measurement, while a later explicit force still refreshes.
+            cached, _ = _cached_probe(path, binding, age)
+            if cached is not None and (not force or cached["observed_unix_ns"] >= requested):
                 return cached
-        except (OSError, json.JSONDecodeError):
-            pass
-    record: dict[str, Any] = {"fingerprint": ident, "static": facts, "measured": {}}
-    if facts.get("gpu_available"):
-        record["measured"] = measure()
-    STORE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    path.write_text(json.dumps(record, indent=2, sort_keys=True))
-    return record
+            observed = time.time_ns()
+            available = (facts.get("gpu_available") is True and bool(facts.get("chip"))
+                         and _positive(facts.get("memory_bytes")) and bool(binding["backend"]["mlx"])
+                         and binding["backend"]["kind"] != "unavailable")
+            record = {"schema": PROBE_SCHEMA, "fingerprint": binding["fingerprint"],
+                      "static": binding["static"], "binding": binding,
+                      "observed_unix_ns": observed, "finished_unix_ns": observed,
+                      "availability": "available" if available else "unavailable",
+                      "errors": [] if available else ["hardware_or_backend_unavailable"],
+                      "device_observations": {"before": before, "after": {}},
+                      "measured": measure() if available else {}}
+            if _probe_binding(facts, observation=record["device_observations"]["after"]) != binding:
+                raise RuntimeError("hardware probe binding changed during measurement")
+            record["finished_unix_ns"] = time.time_ns()
+            record["sha256"] = canonical_sha256(record)
+            valid, reasons = _validate_probe(record, binding, max_age_s=age, now_unix_ns=time.time_ns())
+            if not valid:
+                raise ValueError("invalid hardware measurement: " + ", ".join(reasons))
+            _write_probe(path, record)
+            return record
+    except SupervisorError as exc:
+        reason = "probe_refresh_busy" if str(exc) == "data1_lock_busy" else "probe_lease_unavailable"
+        raise HardwareProbeUnavailable([reason]) from exc
 
 
 def _self_check() -> None:

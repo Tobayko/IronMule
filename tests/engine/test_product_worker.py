@@ -440,7 +440,11 @@ def test_worker_accepts_metal_or_cuda_device_facts() -> None:
     # MLX's CUDA backend (Kaggle T4, DATA3) has no recommended working set.
     cuda = fake(False, True, {"total_memory": 15_000_000_000})
     assert _gpu_available(cuda) and _working_set_bytes(cuda) == 15_000_000_000
-    assert not _gpu_available(fake(False, False, {}))
+    cpu = fake(False, False, {})
+    assert not _gpu_available(cpu)
+    # MLX's CPU backend reports no memory; the worker serves there with installed RAM (CPU4).
+    from ironmule.hw import installed_memory_bytes
+    assert _working_set_bytes(cpu) == installed_memory_bytes() > 0
 
 
 def test_chat_end_of_turn_marker_stops_generation() -> None:

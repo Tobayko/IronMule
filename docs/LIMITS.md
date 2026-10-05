@@ -169,6 +169,32 @@ non-`None` `lengths` or `left_padding` is rejected, as is hybrid speculation;
 these are fail-closed boundaries. Qwen performance is unqualified. The compiled
 tiny gate was exact, but its `30.76 GB` peak is a memory warning, not a speed claim.
 
+## Self-learning, as of RSI1b and CPU4
+
+**What the learning planner showed, and where.** On one Kaggle Tesla T4, on five 4-bit models it
+had never seen (Gemma 3 270M, 1B, 4B, Qwen3 0.6B, Phi-3.5 mini), the planner that picks the next
+hardware test used 3-6 tests instead of 11, needed 3061 s of tuning in total against 4007 s for the
+fixed order, and found on average as much confirmed speed-up (20.22 against 19.82 percentage
+points). The fixed order was better on Gemma 3 1B. Random order "won" Gemma 3 4B on the time-penalised
+score only because it found nothing and so skipped the paired confirmation. One machine class, one
+run per method; it is not measured on Apple Silicon or on a CPU. Summary:
+[RSI1b](../evidence/kaggle/rsi1b-experiment-planner-heldout/summary.json); the earlier, inconclusive
+attempt is [RSI1](../evidence/kaggle/rsi1-experiment-planner-t4/summary.json).
+
+**What replay can and cannot say.** Replay only re-orders tests that were really run; it cannot
+judge a test nobody ran, and it never stands in for a hardware test. If replay finds the fixed order
+better on a machine, the planner switches itself off there.
+
+**The learning parts need Rust.** The planner (`native/experiment_planner`) and the online
+controller (`native/online_controller`) are built from source with `cargo`. The one-line installer
+does not build them: without the planner, tune uses the fixed order; without the controller,
+`ironmule autopilot` stops and says how to build it.
+
+**CPU-only machines are slow.** On a 4-core Kaggle Xeon, `ironmule start` with Qwen3 0.6B answered
+48 tokens in 55-64 s with the weights unpacked to float32 and in 446-456 s without (one run,
+unpaired). Qwen3 spends short answers in its `<think>` block first. Linux x86_64 only. Summary:
+[CPU4](../evidence/kaggle/cpu4-ironmule-cpu4/summary.json).
+
 ## Limits of the runtime itself
 
 **Group width is capped at 4.** Not a tuning knob: width 8 regressed in E14b and E2

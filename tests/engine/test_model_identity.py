@@ -144,3 +144,51 @@ def test_missing_or_invalid_identity_fields_fail_closed(tmp_path, mutation, need
     mutation(root)
     with pytest.raises(ModelIdentityError, match=needle):
         build_model_identity("org/model", root, "revision")
+
+
+def _safetensors(path, tensors):
+    header = json.dumps({"__metadata__": {"format": "pt"}, **{
+        name: {"dtype": dtype, "shape": [1], "data_offsets": [0, 2]} for name, dtype in tensors.items()}}).encode()
+    path.write_bytes(len(header).to_bytes(8, "little") + header + b"\0\0")
+
+
+def dense_dir(root, tensors):
+    root.mkdir(parents=True)
+    _safetensors(root / "model.safetensors", tensors)
+    (root / "tokenizer.json").write_text('{"tokens": ["a"]}')
+    (root / "config.json").write_text(json.dumps({"model_type": "llama", "torch_dtype": "bfloat16"}))
+    return root
+
+
+def test_dense_checkpoint_binds_actual_stored_dtypes_without_inventing_bits(tmp_path):
+    identity = build_model_identity("org/dense", dense_dir(tmp_path / "a", {"w": "BF16", "norm": "F32"}), "r")
+    assert identity.quantisation["format"] == "dense"
+    assert identity.quantisation["tensor_dtypes"] == {"BF16": 1, "F32": 1}
+    assert "bits" not in identity.quantisation
+    assert ModelIdentity.from_dict(identity.to_dict()) == identity
+    other = build_model_identity("org/dense", dense_dir(tmp_path / "b", {"w": "F16", "norm": "F32"}), "r")
+    assert other.quantisation_sha256 != identity.quantisation_sha256
+
+
+@pytest.mark.parametrize("tensors", [{"w": "U32", "scales": "BF16"}, {"w": "I8"}, {"w": None}])
+def test_dense_admission_rejects_packed_or_unknown_tensors(tmp_path, tensors):
+    with pytest.raises(ModelIdentityError, match="quantisation metadata is missing and tensor"):
+        build_model_identity("org/dense", dense_dir(tmp_path / "m", tensors), "r")
+
+
+def test_dense_admission_rejects_unreadable_headers_and_missing_weights(tmp_path):
+    root = dense_dir(tmp_path / "m", {"w": "BF16"})
+    (root / "model.safetensors").write_bytes(b"\xff" * 8 + b"{}")
+    with pytest.raises(ModelIdentityError, match="header is unreadable"):
+        build_model_identity("org/dense", root, "r")
+    (root / "model.safetensors").unlink()
+    (root / "weights.npz").write_bytes(b"x")
+    with pytest.raises(ModelIdentityError, match="no safetensors"):
+        build_model_identity("org/dense", root, "r")
+
+
+def test_declared_quantisation_still_wins_over_stored_dtypes(tmp_path):
+    root = dense_dir(tmp_path / "m", {"w": "U32"})
+    (root / "config.json").write_text(json.dumps({"model_type": "llama",
+                                                  "quantization": {"bits": 4, "group_size": 64}}))
+    assert build_model_identity("org/q", root, "r").quantisation == {"bits": 4, "group_size": 64}

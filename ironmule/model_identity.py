@@ -151,8 +151,57 @@ def _architecture(config: Mapping[str, Any]) -> str:
     raise ModelIdentityError("model architecture is missing or ambiguous")
 
 
-def _quantisation(config: Mapping[str, Any]) -> dict[str, Any]:
+_DENSE_DTYPES = frozenset({"BF16", "F16", "F32"})
+
+
+def _safetensors_header(path: Path) -> dict[str, Any]:
+    with path.open("rb") as handle:
+        prefix = handle.read(8)
+        size = int.from_bytes(prefix, "little") if len(prefix) == 8 else 0
+        if not 2 <= size <= 100_000_000:
+            raise ModelIdentityError("model quantisation metadata is missing and a safetensors header is unreadable")
+        raw = handle.read(size)
+    try:
+        header = json.loads(raw)
+    except (UnicodeError, json.JSONDecodeError) as exc:
+        raise ModelIdentityError("model quantisation metadata is missing and a safetensors header is unreadable") from exc
+    if not isinstance(header, dict) or len(raw) != size:
+        raise ModelIdentityError("model quantisation metadata is missing and a safetensors header is unreadable")
+    return header
+
+
+def _dense_record(root: Path) -> dict[str, Any]:
+    """Bind the stored tensor dtypes of a checkpoint that declares no quantisation.
+
+    No bit width is invented: the record names what the safetensors headers actually
+    store. Integer or unknown tensor types (e.g. packed weights without metadata) fail.
+    """
+    files = sorted(root.rglob("*.safetensors"), key=lambda item: item.relative_to(root).as_posix())
+    if not files:
+        raise ModelIdentityError("model quantisation metadata is missing and no safetensors weights exist")
+    counts: dict[str, int] = {}
+    digest = hashlib.sha256()
+    for path in files:
+        header = _safetensors_header(path)
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0" + canonical_json(header).encode())
+        for name, tensor in header.items():
+            if name == "__metadata__":
+                continue
+            dtype = tensor.get("dtype") if isinstance(tensor, dict) else None
+            if dtype not in _DENSE_DTYPES:
+                raise ModelIdentityError(
+                    f"model quantisation metadata is missing and tensor {name!r} stores {dtype!r}")
+            counts[dtype] = counts.get(dtype, 0) + 1
+    if not counts:
+        raise ModelIdentityError("model quantisation metadata is missing and no weight tensors exist")
+    return {"format": "dense", "tensor_dtypes": dict(sorted(counts.items())),
+            "safetensors_headers_sha256": digest.hexdigest()}
+
+
+def _quantisation(config: Mapping[str, Any], root: Path | None = None) -> dict[str, Any]:
     value = config.get("quantization") or config.get("quantization_config")
+    if value is None and root is not None:
+        return _dense_record(root)
     if not isinstance(value, dict):
         raise ModelIdentityError("model quantisation metadata is missing")
     value = _jsonable(value)
@@ -275,7 +324,7 @@ def build_model_identity(model_id: str, source: Path, revision: str | None = Non
     manifest_sha256 = canonical_sha256(rows)
     tokenizer_rows = _tokenizer_rows(rows)
     config = _config(root)
-    quantisation = _quantisation(config)
+    quantisation = _quantisation(config, root)
     snapshot_revision = _snapshot_revision(root)
     if revision is not None and snapshot_revision is not None and revision != snapshot_revision:
         raise ModelIdentityError("explicit revision does not match snapshot directory")

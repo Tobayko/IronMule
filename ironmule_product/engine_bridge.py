@@ -9,6 +9,7 @@ loaded the model passed to :meth:`CurrentEngineBridge.from_loaded`.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
@@ -68,6 +69,60 @@ _HISTORICAL_CONFIGURATIONS = {
 }
 _CONFIGURATIONS = frozenset(("current_profile", *_HISTORICAL_CONFIGURATIONS))
 MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
+
+
+def serving_profile_contract(reference_knobs: Mapping[str, Any], *,
+                             grouping_supported: bool = True,
+                             speculative: bool = False) -> dict[str, Any]:
+    """Project existing candidates onto the caller's effective serving knobs.
+
+    This pure catalog grants no qualification. Installation, numeric precision,
+    plan and all other knobs remain caller-owned. Historical templates are the
+    single source for the two serving toggles; no template is copied elsewhere.
+    """
+    toggles = ("compiled_fixed_cache", "head_skip_prefill")
+    if (not isinstance(reference_knobs, Mapping)
+            or any(type(reference_knobs.get(key)) is not bool for key in toggles)
+            or type(grouping_supported) is not bool):
+        raise ValueError("serving profiles require canonical knobs and grouping support")
+    definitions: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+
+    def append(name: str, knobs: dict[str, Any], grouped: bool) -> None:
+        key = (tuple(sorted(knobs.items())), grouped)
+        if key in seen or len(definitions) == 4:
+            return
+        seen.add(key)
+        definitions.append({
+            "profile_id": f"{name}.{'grouped4' if grouped else 'sequential'}.v1",
+            "mode": "throughput" if grouped else "interactive",
+            "max_width": 4 if grouped else 1, "knobs": dict(knobs),
+        })
+
+    append("current", dict(reference_knobs), False)
+    if grouping_supported:
+        append("current", dict(reference_knobs), True)
+    if speculative and reference_knobs.get("speculate_k", 0) == 0:
+        # CTRL23: the caller's knobs plus draft-gated speculation, sequential only.
+        append("speculative", dict(reference_knobs, speculate_k=4), False)
+    order = (("baseline_interactive", "core_interactive")
+             if all(reference_knobs[key] for key in toggles)
+             else ("core_interactive", "baseline_interactive"))
+    for name in order:
+        candidate = _HISTORICAL_CONFIGURATIONS[name]
+        projected = dict(reference_knobs)
+        projected.update({key: candidate["knobs"][key] for key in toggles})
+        stem = name.removesuffix("_interactive")
+        append(stem, projected, False)
+        if grouping_supported:
+            append(stem, projected, True)
+    return {
+        "schema": "ironmule.execution_profiles.v3" if speculative else "ironmule.execution_profiles.v2",
+        "profiles": [item["profile_id"] for item in definitions],
+        "definitions": definitions, "plan": "strict_one_shot",
+        "transition": "idle_complete_group", "max_width": 4,
+        "precision_change": False,
+    }
 
 
 def _validate_spec(spec: Any) -> tuple[str, str, Path]:

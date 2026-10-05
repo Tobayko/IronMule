@@ -35,6 +35,17 @@ JSON_CLAIMS = [
      "experiments/fused_greedy_compile_v4/results.json", "1.000510009822041"),
 ]
 
+_RSI1B = "evidence/kaggle/rsi1b-experiment-planner-heldout/summary.json"
+#: The README's learning and CPU sections (RSI1b, CPU4).
+JSON_CLAIMS += [
+    ("RSI1b planner mean gain", "20.2 vs 19.8", "README.md", _RSI1B, '"planner": 20.22'),
+    ("RSI1b fixed order mean gain", "20.2 vs 19.8", "README.md", _RSI1B, '"coordinate": 19.82'),
+    ("RSI1b planner tune time", "about 24 % less tuning time", "README.md", _RSI1B, '"planner": 3060.8'),
+    ("RSI1b fixed order tune time", "about 24 % less tuning time", "README.md", _RSI1B, '"coordinate": 4007.1'),
+    ("CPU4 dequantize speed-up", "about 7.6× faster", "README.md",
+     "evidence/kaggle/cpu4-ironmule-cpu4/summary.json", '"stock_over_dequantize_wall": 7.56'),
+]
+
 _R11 = "evidence/kaggle/perf1-run11-7b29bb97"
 _R12 = "evidence/kaggle/perf1-run12-c4c35978"
 _R13 = "evidence/kaggle/perf1-run13-93ae1f80"

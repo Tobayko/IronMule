@@ -48,7 +48,10 @@ def _emit(value: dict[str, Any]) -> None:
 
 def _working_set_bytes(mx: Any) -> Any:
     # Metal reports Apple's recommended working set; MLX's CUDA backend only the
-    # device's total memory (DATA3, Kaggle T4).
+    # device's total memory (DATA3, Kaggle T4); its CPU backend nothing, so installed RAM (CPU4).
+    if not _gpu_available(mx):
+        from ironmule.hw import installed_memory_bytes
+        return installed_memory_bytes()
     info = mx.device_info()
     return info.get("max_recommended_working_set_size", info.get("total_memory"))
 
@@ -164,14 +167,13 @@ def _load(spec: dict[str, Any]):
 
     # A compiled-in GPU backend is not proof that the current process may
     # open the device. Force that check before mlx_lm creates native streams.
-    if not _gpu_available(mx):
-        raise RuntimeError("a Metal or CUDA GPU device is required")
+    # Without one, MLX's CPU device serves (CPU4); slow, but it answers.
+    device = mx.gpu if _gpu_available(mx) else mx.cpu
     max_working_set = _working_set_bytes(mx)
     if type(max_working_set) is not int or max_working_set <= 0:
         raise RuntimeError("device working-set telemetry is unavailable")
     # This is an Apple recommendation, not a hard hardware capacity. Observe
     # it without refusing a model on this heuristic; the OS retains its limits.
-    device = mx.gpu
     mx.set_default_device(device)
     with redirect_stdout(sys.stderr):
         from mlx_lm import load, stream_generate
@@ -194,6 +196,8 @@ def stop_at_end_of_turn(tokenizer: Any) -> None:
     max_tokens repeating it. Adding the marker changes where generation stops, never a
     token before that point, and every serving path shares this tokenizer.
     """
+    if not hasattr(tokenizer, "get_vocab") or not hasattr(tokenizer, "add_eos_token"):
+        return  # no chat vocabulary to consult; the declared EOS set stays as loaded
     vocab = tokenizer.get_vocab()
     for marker in END_OF_TURN:
         if marker in vocab:
@@ -756,7 +760,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
-    parser.add_argument("--compute-dtype", choices=("float32", "native"), default=None)
+    parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
     args = parser.parse_args(argv)
     startup_started = time.monotonic()
     prefix_session = engine_bridge = automatic_runtime = None
@@ -782,6 +786,9 @@ def main(argv: list[str] | None = None) -> int:
             import mlx.core as mx
             if args.compute_dtype == "float32":
                 model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
+            elif args.compute_dtype == "dequantize":  # CPU3: dense float32 weights; opt-in, changes output
+                from ironmule.numeric_plans import dequantize_model
+                dequantize_model(model)
             else:
                 from ironmule.cuda_native import install
                 install(model, mx.device_info() if mx.cuda.is_available() else None)

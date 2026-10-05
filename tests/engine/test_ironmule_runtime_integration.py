@@ -176,16 +176,20 @@ def test_sequential_fallback_produces_the_same_answer(pair, monkeypatch):
     rt.mode = ironmule.InteractiveMode()
     reference = {r.rid: r.tokens for r in rt.serve(_requests(rt, ironmule, plan, caps))}
 
-    original = rt.backend.complete
     calls = {"n": 0}
 
-    def flaky(handles):
-        calls["n"] += 1
-        if calls["n"] == 2 and len(handles) > 1:
-            raise RuntimeError("injected device failure")
-        return original(handles)
+    def flaky(original):
+        # Grouped steps go through `complete`, or `complete_chains` when the tuned profile
+        # batches readback (SERVE1); a failure in either must fall back.
+        def call(items):
+            calls["n"] += 1
+            if calls["n"] == 2 and len(items) > 1:
+                raise RuntimeError("injected device failure")
+            return original(items)
+        return call
 
-    monkeypatch.setattr(rt.backend, "complete", flaky)
+    monkeypatch.setattr(rt.backend, "complete", flaky(rt.backend.complete))
+    monkeypatch.setattr(rt.backend, "complete_chains", flaky(rt.backend.complete_chains))
     rt.mode = ironmule.ThroughputMode()
     results = rt.serve(_requests(rt, ironmule, plan, caps))
     snap = rt.telemetry.snapshot()

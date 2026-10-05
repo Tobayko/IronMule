@@ -84,3 +84,26 @@ def test_serve_refuses_a_numeric_plan_on_the_ironmule_engine(tmp_path, capsys):
         product_cli.serve(["--model", "m", "--engine", "ironmule", "--compute-dtype", "native",
                            "--state-dir", str(tmp_path)])
     assert "--compute-dtype runs on the stock engine only" in capsys.readouterr().err
+@pytest.mark.parametrize("cpu_only, answer, expected", [
+    (False, None, ["--model", "mlx-community/gemma-3-4b-it-4bit"]),
+    (True, "y", ["--model", "mlx-community/Qwen3-0.6B-4bit", "--compute-dtype", "dequantize"]),
+    (True, "n", ["--model", "mlx-community/Qwen3-0.6B-4bit"]),
+])
+def test_start_without_a_gpu_picks_a_small_model_and_asks_before_dequantize(
+        tmp_path, monkeypatch, cpu_only, answer, expected):
+    import ironmule_product.cli as product_cli
+
+    served, asked = [], []
+    monkeypatch.setattr(product_cli, "_cpu_only", lambda: cpu_only)
+    monkeypatch.setattr(product_cli, "inventory_rows", lambda roots=None: [
+        {"model_id": model, "status": "available"} for model in (product_cli.DEFAULT_MODEL, product_cli.CPU_MODEL)])
+    monkeypatch.setattr(product_cli, "models", lambda *_args: None)
+    monkeypatch.setattr("builtins.input", lambda prompt: asked.append(prompt) or answer)
+    monkeypatch.setattr(product_cli, "serve", lambda argv: served.append(argv) or 0)
+    assert product_cli.start(["--no-browser", "--state-dir", str(tmp_path / "state")]) == 0
+    argv = served[0][:served[0].index("--state-dir")]
+    assert [a for a in argv if a not in ("--port", "8080")] == expected
+    assert len(asked) == (1 if cpu_only else 0)  # a GPU machine's start is unchanged
+    from ironmule_product.state import ProductStore
+    timeout = ProductStore(tmp_path / "state").settings()["request_timeout_s"]
+    assert timeout == (product_cli.CPU_REQUEST_TIMEOUT_S if cpu_only else 120)

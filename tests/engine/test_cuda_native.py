@@ -182,3 +182,10 @@ def test_every_shape_class_is_probed_once(monkeypatch):
 
     record = cuda_native.install(Twin(), TURING)
     assert record["modules"] == 3 and record["probed_shapes"] == 2 and len(probed) == 2
+def test_native_plan_refuses_fused_projections_as_unsupported():
+    import importlib
+    tune = importlib.import_module("ironmule.tune")
+    from ironmule.runtime import Knobs
+    with pytest.raises(ValueError) as raised:
+        tune.load_engine("never-loaded", Knobs(fuse_projections=True), compute_dtype="native")
+    assert tune._is_unsupported_candidate(raised.value), "tune must skip it, not fail (NUM1 attempt 2)"
