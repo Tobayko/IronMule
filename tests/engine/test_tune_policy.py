@@ -580,6 +580,9 @@ def test_confirmation_starts_after_the_screening_engine_is_released(monkeypatch)
         def close(self):
             events.append("close")
 
+        def generate(self, *_args):  # the TUNE1 probe; instant here
+            return None
+
         @staticmethod
         def needs_reload(old, new):
             return old.fuse_projections != new.fuse_projections

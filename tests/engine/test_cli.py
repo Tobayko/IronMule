@@ -42,9 +42,14 @@ def test_doctor_reports_missing_prerequisites_without_runtime_import(monkeypatch
     monkeypatch.setattr(cli.platform, "machine", lambda: "x86_64")
     monkeypatch.setattr(cli.platform, "system", lambda: "Linux")
     monkeypatch.setattr(cli, "_probe_gpu", lambda backend: (False, f"{backend} unavailable"))
+    monkeypatch.setattr("shutil.which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
     assert cli.main(["doctor"]) == 1
     output = capsys.readouterr().out
     assert "MLX CUDA device" in output and "Apple Silicon architecture" not in output
+    # Without an NVIDIA driver, Linux checks MLX's CPU device instead (CPU4).
+    monkeypatch.setattr("shutil.which", lambda name: None)
+    assert cli.main(["doctor"]) == 1
+    assert "MLX CPU device" in capsys.readouterr().out
     assert "MLX" in output and "MLX-LM" in output
     monkeypatch.setattr(cli.platform, "machine", lambda: "arm64")
     monkeypatch.setattr(cli.platform, "system", lambda: "Darwin")

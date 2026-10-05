@@ -798,6 +798,9 @@ class Runtime:
         """Serve one group of requests. `dispatch_ns` says when the caller handed them
         over, for a caller that splits one dispatch across several calls; it changes
         recorded arrival only, never scheduling or output."""
+        # NEXT1-D: against the mode set now, before any dispatch; `_serve_group` checks the
+        # mode that actually runs again, which is where an online profile can switch it.
+        _refuse_grouping_on_a_hybrid_cache(getattr(self, "engine", None), getattr(self, "mode", None))
         controller = getattr(self, "online_controller", None)
         lock = getattr(self, "_online_lock", None)
         if controller is not None and lock is not None:

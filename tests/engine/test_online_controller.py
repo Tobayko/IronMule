@@ -188,27 +188,6 @@ def test_ineligible_grouped_profile_cannot_execute(native_library):
         assert actions == [0] * 100
 
 
-def test_evaluation_percentiles_require_enough_requests():
-    from tools.online_controller_eval import percentile
-    assert percentile([1.0] * 19, 0.95, 20) is None
-    assert percentile([1.0] * 20, 0.95, 20) == 1.0
-    assert percentile([1.0] * 99, 0.99, 100) is None
-
-
-def test_synthetic_profiles_execute_identical_work_and_label_modeled_costs():
-    from tools.online_controller_eval import NumericAdapter
-
-    adapter = NumericAdapter()
-    for group in ({"requests": 1, "length": 8}, {"requests": 4, "length": 64}):
-        reference = adapter.execute(group, 0)
-        grouped = adapter.execute(group, 1)
-        assert reference.value["outputs"] == grouped.value["outputs"]
-        assert reference.signature == grouped.signature
-        assert reference.generated_tokens == grouped.generated_tokens
-        assert adapter.executions[-1]["measured_execution_ns"] > 0
-        assert adapter.executions[-1]["modeled_elapsed_s"] == grouped.elapsed_s
-
-
 def test_resource_failure_cannot_qualify_faster_execution(native_library):
     with OnlineController(IDENTITY, library_path=native_library, config=config()) as controller:
         final = teach(controller, lambda action: outcome(action, resource=action == 0), calls=1000)

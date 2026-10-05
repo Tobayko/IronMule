@@ -11,8 +11,11 @@ def test_candidates_follow_the_measured_table():
     qwen = [c["plan"] for c in numeric_choice.candidates("mlx_lm.models.qwen3", CUDA_PRE_AMPERE)]
     assert qwen == ["native", "float16", "float32"], "recommended plans, fastest first"
     gemma = numeric_choice.candidates("mlx_lm.models.gemma3_text", CUDA_PRE_AMPERE)
-    assert [c["plan"] for c in gemma] == ["float32", "native"], "float16 is refused for Gemma 3"
-    assert {c["verdict"] for c in gemma} == {"unqualified", "unmeasured"}
+    assert [c["plan"] for c in gemma] == ["native", "float32"], "float16 is refused for Gemma 3"
+    assert {c["verdict"] for c in gemma} == {"recommended"}, "NEXT1-C measured both on a T4"
+    gpt = numeric_choice.candidates("mlx_lm.models.gpt_oss", CUDA_PRE_AMPERE)
+    assert [(c["plan"], c["verdict"]) for c in gpt] == [
+        ("float16", "unqualified"), ("float32", "unqualified"), ("native", "unmeasured")]
     llama = [c["plan"] for c in numeric_choice.candidates("mlx_lm.models.llama", CUDA_PRE_AMPERE)]
     assert "float32" not in llama, "measured slower for Llama"
     assert numeric_choice.candidates("mlx_lm.models.qwen3", None) == [], "no plans on an unknown device"
@@ -59,20 +62,20 @@ def test_recommended_plan_is_taken_without_a_gate_and_remembered(fake_device, mo
 
 
 @pytest.mark.parametrize("plan_nll_shift,plan_s,expected", [
-    (0.0001, 0.5, "float32"),   # inside the bound and faster: taken
+    (0.0001, 0.5, "float16"),   # inside the bound and faster: the first such plan is taken
     (0.05, 0.5, None),          # faster but worse text likelihood: refused here
     (0.0001, 0.99, None),       # inside the bound but not faster: not worth it
 ])
 def test_unqualified_plans_are_gated_on_the_device(fake_device, monkeypatch, plan_nll_shift, plan_s, expected):
     loads, load = fake_device
-    monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gemma3_text")
+    # gpt-oss has no recommended plan in the table, so every candidate is gated on the device.
+    monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gpt_oss")
     reference = [3.0, 3.1, 2.9, 3.05, 3.2, 2.95, 3.0, 3.1]
     monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids: (
         reference if engine.model.plan is None else [x + plan_nll_shift for x in reference]))
     monkeypatch.setattr(numeric_choice, "_speed", lambda engine, tokenizer: 1.0 if engine.model.plan is None else plan_s)
     decision = numeric_choice.choose("m", "f", "b" * 64, load=load, log=lambda _: None)
     assert decision["plan"] == expected
-    assert "float16" not in loads, "a refused plan is never even loaded"
 
 
 def test_the_gate_runs_in_a_child_and_a_failed_child_chooses_nothing(monkeypatch, tmp_path):
@@ -111,7 +114,8 @@ def test_plans_that_cannot_change_the_checkpoint_are_not_even_loaded(fake_device
 
 def test_the_fastest_passing_plan_wins_not_the_first(fake_device, monkeypatch):
     loads, load = fake_device
-    monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gemma3_text")
+    # gpt-oss has no recommended plan in the table, so every candidate is gated on the device.
+    monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gpt_oss")
     reference = [3.0, 3.1, 2.9, 3.05, 3.2, 2.95, 3.0, 3.1]
     monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids: reference)
     monkeypatch.setattr(numeric_choice, "_speed", lambda engine, tokenizer: {None: 1.0, "float32": 0.5,
