@@ -516,7 +516,7 @@ def _bounded_communicate(process: subprocess.Popen[bytes],
 def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: int = 2,
         max_tokens: int = 32, model: str | None = None, prompt: str | None = None,
         *, child_timeout_seconds: float | None = None, compute_dtype: str | None = None,
-        before_child=None, on_child=None, on_child_start=None) -> dict[str, Any]:
+        before_child=None, on_child=None, on_child_start=None, stop=None) -> dict[str, Any]:
     """Spawn children, collect raw samples, and expose bounded progress hooks.
 
     ``before_child(index, order)`` runs immediately before each child.  After a
@@ -525,6 +525,8 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
     immediately after the child is spawned so a caller can retain lifecycle
     evidence before any model work.  Timeout errors identify only the child
     index and arm order; command arguments are intentionally excluded.
+    ``stop(children)`` runs after each child; True ends the run early, and the
+    result then records the processes actually run.
     """
     if child_timeout_seconds is not None:
         try:
@@ -672,6 +674,8 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
         if on_child is not None:
             safe_copy = json.loads(json.dumps(child, sort_keys=True, allow_nan=False))
             on_child(index, safe_copy)
+        if stop is not None and index + 1 < processes and stop(children):
+            break
 
     per_arm: dict[str, dict[str, list[float]]] = {
         n: {"total_ns": [], "prefill_ns": [], "decode_ns": []} for n in names}
@@ -697,7 +701,7 @@ def run(arms: dict[str, Knobs], processes: int = 6, repeats: int = 7, warmup: in
 
     result: dict[str, Any] = {
         "arms": {n: k.as_dict() for n, k in arms.items()},
-        "processes": processes, "repeats": repeats, "warmup": warmup,
+        "processes": len(children), "repeats": repeats, "warmup": warmup,
         "raw": children,
         "per_arm": {n: {m: summarise(v) for m, v in metrics.items()} for n, metrics in per_arm.items()},
         "token_identity": identical,

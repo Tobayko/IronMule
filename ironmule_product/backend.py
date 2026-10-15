@@ -19,19 +19,21 @@ import uuid
 from collections.abc import Iterator
 from typing import Any
 
-from .errors import BackendUnavailable, InvalidRequest, RequestTimeout
+from .errors import BackendUnavailable, InvalidRequest, ProductError, RequestTimeout
 from .types import GenerationRequest, ModelSpec
 
 
 PROTOCOL_VERSION = 1
 MAX_PROTOCOL_LINE = 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
+STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
 DEFAULT_TIMEOUT = 120.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
+STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
-                                   "baseline_throughput", "core_throughput"))
+                                   "baseline_throughput", "core_throughput", "rust2"))
 CONTEXT_LIMIT = 8192
 
 
@@ -60,7 +62,7 @@ class MLXWorkerClient:
                  trace_prompt_identity: bool = False,
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
-                 compute_dtype: str | None = None) -> None:
+                 compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if compute_dtype not in (None, "float32", "native", "dequantize"):
@@ -69,6 +71,10 @@ class MLXWorkerClient:
             raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.
         self.compute_dtype = compute_dtype
+        if chat_reuse and execution_variant != "current_engine":
+            raise ValueError("chat reuse is available on the current_engine worker only")
+        self.chat_reuse = bool(chat_reuse)  # SERVE7: opt-in ChatTurnsPlan, changes output vs strict
+        self.thinking = bool(thinking)  # CPU5: False renders the chat template with thinking off
         if startup_timeout is not None and (
             isinstance(startup_timeout, bool)
             or not isinstance(startup_timeout, (int, float))
@@ -119,10 +125,25 @@ class MLXWorkerClient:
         self._lock = threading.RLock()
         self._stream_active = False
         self._usable = True
+        # STAB1: why and how the worker process ended (reason, exit status, stderr tail); None while it runs.
+        self.last_exit: dict[str, Any] | None = None
+        self.last_memory: dict[str, int] | None = None  # MEM2: the worker's MLX counters at its last group end
 
     @property
     def ready(self) -> bool:
         return self._ready_payload is not None and self._process is not None and self._process.poll() is None and self._usable
+
+    @property
+    def device(self) -> str | None:
+        """The device the ready worker reported (OPS1): gpu or cpu; None before readiness."""
+        payload = self._ready_payload
+        return None if payload is None else payload.get("device")
+
+    @property
+    def ready_payload(self) -> dict[str, Any] | None:
+        """A copy of the worker's validated ready event; it holds no request data."""
+        payload = self._ready_payload
+        return None if payload is None else json.loads(json.dumps(payload))
 
     @property
     def batch_capacity(self) -> int:
@@ -130,20 +151,30 @@ class MLXWorkerClient:
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
+        if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
+            return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
                 and self._ready_payload.get("automatic_batch_qualified") is True):
             return 32
         return 1
 
+    @property
+    def streams_batches(self) -> bool:
+        """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
+        return self.execution_variant == "current_engine" and self.engine_configuration == "current_profile"
+
     def can_batch_requests(self, requests: Any) -> bool:
         """Check metadata admission to the opt-in transport without model execution."""
-        if not isinstance(requests, (list, tuple)) or not 2 <= len(requests) <= self.batch_capacity:
+        least = 1 if self.streams_batches else 2  # SERVE8: a lone stream runs as a group others can join
+        if not isinstance(requests, (list, tuple)) or not least <= len(requests) <= self.batch_capacity:
             return False
         ids: set[str] = set()
         commands = []
         try:
             for request in requests:
-                if not isinstance(request, GenerationRequest) or request.model != self.spec.model_id or request.stream:
+                if not isinstance(request, GenerationRequest) or request.model != self.spec.model_id:
+                    return False
+                if request.stream and not self.streams_batches:
                     return False
                 if (not isinstance(request.request_id, str) or not request.request_id
                         or len(request.request_id) > 256 or request.request_id in ids):
@@ -166,10 +197,9 @@ class MLXWorkerClient:
                 chunk = stream.read(8192)
                 if not chunk:
                     return
-                with self._stderr_lock:
-                    remaining = MAX_STDERR_BYTES - len(self._stderr_buffer)
-                    if remaining > 0:
-                        self._stderr_buffer.extend(chunk[:remaining])
+                with self._stderr_lock:  # keep the newest bytes: a final error is what explains an exit
+                    self._stderr_buffer.extend(chunk)
+                    del self._stderr_buffer[:-MAX_STDERR_BYTES]
         except (OSError, ValueError):
             return
 
@@ -368,11 +398,15 @@ class MLXWorkerClient:
                     arguments += ["--execution-variant", self.execution_variant]
                 if self.compute_dtype is not None:
                     arguments += ["--compute-dtype", self.compute_dtype]
+                if not self.thinking:
+                    arguments += ["--no-thinking"]
                 if self.execution_variant == "prefix_reuse":
                     arguments += ["--prefix-cache-max-entries", str(self.prefix_cache_max_entries),
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
                 if self.execution_variant == "current_engine":
                     arguments += ["--engine-configuration", self.engine_configuration]
+                    if self.chat_reuse:
+                        arguments += ["--chat-reuse"]
                 if self.execution_variant == "automatic":
                     arguments += ["--selection-evidence", json.dumps(
                         self.selection_evidence, ensure_ascii=False, separators=(",", ":"), allow_nan=False)]
@@ -443,7 +477,7 @@ class MLXWorkerClient:
             if (
                 event.get("type") != "ready"
                 or event.get("protocol_version") != PROTOCOL_VERSION
-                or event.get("device") != "gpu"
+                or event.get("device") not in ("gpu", "cpu")  # OPS1: the actual device, validated
                 or event.get("model_id") != self.spec.model_id
                 or event.get("revision") != self.spec.revision
                 or event.get("stop_handling") != "parent"
@@ -452,6 +486,11 @@ class MLXWorkerClient:
             ):
                 self._mark_unusable()
                 raise BackendUnavailable("backend readiness event is invalid")
+            digest = event.get("sources_sha256")
+            if digest is not None and (not isinstance(digest, str) or len(digest) != 64
+                                       or any(c not in "0123456789abcdef" for c in digest)):
+                self._mark_unusable()
+                raise BackendUnavailable("backend source identity is invalid")
             if self.execution_variant == "automatic" and type(event.get("automatic_batch_qualified")) is not bool:
                 self._mark_unusable()
                 raise BackendUnavailable("backend automatic readiness is invalid")
@@ -463,33 +502,51 @@ class MLXWorkerClient:
             self._ready_payload = event
             return dict(event)
 
-    def _mark_unusable(self) -> None:
+    def stderr_tail(self) -> str:
+        with self._stderr_lock:
+            return bytes(self._stderr_buffer[-STDERR_TAIL_BYTES:]).decode("utf-8", "replace")
+
+    def note_exit_reason(self, error: BaseException) -> None:
+        """STAB1: name the failure that retired the worker when the retiring call did not."""
+        if self.last_exit is not None and self.last_exit.get("reason") is None:
+            self.last_exit["reason"] = _reason(error)
+
+    def _mark_unusable(self, reason: str | None = None) -> None:
         self._usable = False
         process, self._process = self._process, None
         self._ready_payload = None
         self._stdout_buffer.clear()
         if process is None:
             return
+        if reason is None and (current := sys.exc_info()[1]) is not None:
+            reason = _reason(current)
         try:
-            if process.stdin is not None:
-                process.stdin.close()
-        except OSError:
-            pass
-        if process.poll() is None:
-            process.terminate()
             try:
-                process.wait(timeout=2.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2.0)
-        for stream in (process.stdout, process.stderr):
-            try:
-                if stream is not None:
-                    stream.close()
+                if process.stdin is not None:
+                    process.stdin.close()
             except OSError:
                 pass
+            if process.poll() is None:
+                process.terminate()
+                try:
+                    process.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2.0)
+        finally:
+            if self._stderr_thread is not None:
+                self._stderr_thread.join(timeout=1.0)  # the worker's last words reach the buffer
+            for stream in (process.stdout, process.stderr):
+                try:
+                    if stream is not None:
+                        stream.close()
+                except OSError:
+                    pass
+            self.last_exit = {"reason": reason, "pid": process.pid, "exit_status": process.poll(),
+                              "reaped": process.returncode is not None, "stderr_tail": self.stderr_tail(),
+                              "unix": time.time()}
 
-    def close(self) -> None:
+    def close(self, reason: str = "closed") -> None:
         with self._lock:
             process = self._process
             if process is not None and process.poll() is None:
@@ -504,7 +561,7 @@ class MLXWorkerClient:
                         except subprocess.TimeoutExpired:
                             process.kill()
                             process.wait(timeout=2.0)
-            self._mark_unusable()
+            self._mark_unusable(reason)
 
     @staticmethod
     def _validate_prefix_metadata(value: Any) -> None:
@@ -573,8 +630,13 @@ class MLXWorkerClient:
         *,
         cancels: list[threading.Event | None] | tuple[threading.Event | None, ...] | None = None,
         timeout: float | None = None,
+        on_event=None,
+        joins=None,
     ) -> list[dict[str, Any]]:
-        """Complete one real grouped engine session and return buffered events."""
+        """Complete one real grouped engine session and return buffered events.
+
+        ``on_event(request_id, event)`` also receives each validated token and done event as
+        it arrives, so a streaming caller need not wait for the whole group (SERVE4)."""
         if not self.can_batch_requests(requests):
             raise InvalidRequest("requests are not eligible for grouped execution")
         request_list = list(requests)
@@ -617,6 +679,25 @@ class MLXWorkerClient:
                     if cancel is not None and cancel.is_set() and request.request_id not in cancel_sent:
                         self._send({"type": "cancel", "request_id": request.request_id}, deadline)
                         cancel_sent.add(request.request_id)
+                send_joins()
+
+            def send_joins() -> None:
+                """SERVE8: requests the caller hands over while this batch runs join it."""
+                fresh = list(joins()) if joins is not None and dispatched else []
+                if not fresh:
+                    return
+                for request, cancel in fresh:
+                    if (request.request_id in request_by_id
+                            or not self.can_batch_requests([request_list[0], request])):
+                        raise InvalidRequest("request is not eligible to join this batch")
+                    request_list.append(request)
+                    cancel_list.append(cancel)
+                    request_by_id[request.request_id] = request
+                    events_by_id[request.request_id] = []
+                    token_counts[request.request_id] = 0
+                    prompt_counts[request.request_id] = None
+                self._send({"type": "join_batch", "batch_id": batch_id,
+                            "requests": [request.as_dict() for request, _ in fresh]}, deadline)
 
             # The operation flag is protected by the lock, but inference is
             # not: close() must remain able to acquire the lock and terminate
@@ -644,12 +725,19 @@ class MLXWorkerClient:
                         if (event.get("batch_id") != batch_id or ids != [r.request_id for r in request_list]
                                 or set(terminals) != set(request_by_id) or self._stdout_buffer):
                             raise BackendUnavailable("backend batch completion is invalid")
+                        memory = event.get("memory")
+                        self.last_memory = ({k: v for k, v in memory.items() if type(v) is int and v >= 0}
+                                            if isinstance(memory, dict) else None)
                         rows = [{"request_id": request.request_id,
                                  "events": events_by_id[request.request_id],
                                  "metadata": terminals[request.request_id]}
                                 for request in request_list]
                         self.last_batch_metadata = [dict(row["metadata"]) for row in rows]
                         return rows
+                    if kind == "error":  # the worker's own report names the failure (STAB1: it was misread)
+                        code = event.get("code")
+                        raise BackendUnavailable("grouped engine generation failed"
+                                                 + (f" ({code[:64]})" if isinstance(code, str) else ""))
                     request_id = event.get("request_id")
                     if event.get("batch_id") != batch_id or request_id not in request_by_id or request_id in terminals:
                         raise BackendUnavailable("backend batch response identity is invalid")
@@ -665,6 +753,8 @@ class MLXWorkerClient:
                         prompt_counts[request_id] = prompt
                         token_counts[request_id] += 1
                         events_by_id[request_id].append(event)
+                        if on_event is not None:
+                            on_event(request_id, event)
                     elif kind == "done":
                         finish, prompt, completion = (event.get("finish_reason"), event.get("prompt_tokens"),
                                                        event.get("completion_tokens"))
@@ -681,6 +771,8 @@ class MLXWorkerClient:
                                 or any(char not in "0123456789abcdef" for char in digest)):
                             raise BackendUnavailable("backend batch prompt identity is invalid")
                         events_by_id[request_id].append(event)
+                        if on_event is not None:
+                            on_event(request_id, event)
                         selection = event.get("selection")
                         if self.execution_variant == "automatic" and not self._valid_selection_metadata(selection):
                             raise BackendUnavailable("backend automatic selection metadata is invalid")
@@ -688,11 +780,10 @@ class MLXWorkerClient:
                                                  "prompt_ids_sha256": digest, "engine": engine,
                                                  "selection": selection,
                                                  "delivery": "buffered_completion"}
-                    elif kind == "error":
-                        raise BackendUnavailable("grouped engine generation failed")
                     else:
                         raise BackendUnavailable("backend emitted an unknown batch event")
-            except BaseException:
+            except BaseException as exc:
+                self.note_exit_reason(exc)
                 self.last_generation_metadata = {
                     "batch_id": batch_id,
                     "partial": [{"request_id": request.request_id,
@@ -704,6 +795,7 @@ class MLXWorkerClient:
                                             for request in request_list if request.request_id in terminals]
                 if dispatched:
                     self._mark_unusable()
+                    self.note_exit_reason(exc)
                 raise
             finally:
                 self._lock.acquire()
@@ -887,6 +979,9 @@ class MLXWorkerClient:
                     else:
                         self._mark_unusable()
                         raise BackendUnavailable("backend emitted an unknown event")
+            except BaseException as exc:
+                self.note_exit_reason(exc)
+                raise
             finally:
                 with self._lock:
                     self._stream_active = False
@@ -897,6 +992,11 @@ class MLXWorkerClient:
                     self._mark_unusable()
 
         return events()
+
+
+def _reason(error: BaseException) -> str:
+    """A bounded failure name: product errors carry this module's own messages, others only their type."""
+    return (f"{type(error).__name__}: {error}" if isinstance(error, ProductError) else type(error).__name__)[:200]
 
 
 __all__ = ["MLXWorkerClient", "MAX_PROTOCOL_LINE", "MAX_STDERR_BYTES", "PROTOCOL_VERSION"]

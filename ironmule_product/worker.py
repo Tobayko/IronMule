@@ -8,6 +8,7 @@ from dataclasses import asdict
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import queue
 import resource
@@ -90,6 +91,47 @@ def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
     return values
 
 
+def _memory_counters() -> dict[str, int] | None:
+    """MEM2: MLX's allocator counters at a group boundary: bytes in live arrays (active), freed
+    buffers MLX keeps for reuse (cache) and the most ever active (peak). Memory outside MLX (driver
+    context, library workspaces, instantiated CUDA graphs) is not in them."""
+    try:
+        import mlx.core as mx
+        return {"active": int(mx.get_active_memory()), "cache": int(mx.get_cache_memory()),
+                "peak": int(mx.get_peak_memory())}
+    except Exception:  # noqa: BLE001 - unknown stays unknown
+        return None
+
+
+CUDA_CACHE_LIMIT_ENV = "IRONMULE_CUDA_CACHE_LIMIT_MIB"
+CUDA_CACHE_LIMIT_MIB = 1024  # MEM2: about one group's temporaries on the T4 (MEM2-D: peak - active ~0.86 GiB)
+
+
+def _apply_cuda_cache_limit(mx: Any, environ: Any = os.environ) -> int | None:
+    """MEM2: bound MLX's buffer cache on CUDA; returns the bytes applied, None when unchanged.
+
+    MLX keeps freed buffers for reuse up to 0.95 of device memory by default, without counting the
+    driver context, library state and the CUDA memory pool's own reserve; on a 15 GiB T4 the cache
+    reached 11 GiB of freed buffers in many sizes and the device ran out (MEM2-D). Buffers beyond
+    the bound go back to the CUDA memory pool, which reuses them for any size. Only the cache is
+    bounded: live arrays, outputs and the plan are untouched. Metal keeps MLX's default (not
+    measured there); `IRONMULE_CUDA_CACHE_LIMIT_MIB=0` keeps it on CUDA too."""
+    cuda = getattr(mx, "cuda", None)
+    if cuda is None or not cuda.is_available():
+        return None
+    raw = environ.get(CUDA_CACHE_LIMIT_ENV, str(CUDA_CACHE_LIMIT_MIB))
+    try:
+        mib = int(raw)
+    except ValueError:
+        raise ValueError(f"{CUDA_CACHE_LIMIT_ENV} must be a whole number of MiB") from None
+    if mib < 0:
+        raise ValueError(f"{CUDA_CACHE_LIMIT_ENV} must not be negative")
+    if mib == 0:
+        return None
+    mx.set_cache_limit(mib << 20)
+    return mib << 20
+
+
 def _automatic_batch_qualified(evidence: list[dict[str, Any]], identity: dict[str, Any]) -> bool:
     """Report only current, independently qualified multi-request evidence."""
     from ironmule_product.selection import IntegrationEvidence, SelectionContractError
@@ -118,6 +160,26 @@ def _safe_error(code: str, request_id: str | None = None) -> None:
     _emit(event)
 
 
+def _note_failure(where: str) -> None:
+    """STAB1: the handled exception's type, its frames and whether it reports exhausted memory, on
+    stderr only (the parent keeps the tail when it retires this worker). Never its message: a library
+    message can quote input text."""
+    import traceback
+    error = sys.exc_info()[1]
+    if error is None:
+        return
+    frames = [f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in traceback.extract_tb(error.__traceback__)[-8:]]
+    message = str(error).lower()
+    try:
+        sys.stderr.write(json.dumps({"worker_error": where, "type": type(error).__name__, "frames": frames,
+                                     "out_of_memory": isinstance(error, MemoryError) or "out of memory" in message
+                                     or "outofmemory" in message.replace(" ", ""),
+                                     "illegal_memory_access": "illegal memory access" in message}) + "\n")
+        sys.stderr.flush()
+    except Exception:  # noqa: BLE001 - a diagnostic never changes the protocol
+        pass
+
+
 def _safe_batch_error(code: str, batch_id: str | None = None) -> None:
     event: dict[str, Any] = {"type": "error", "code": code, "message": "grouped engine backend unavailable"}
     if batch_id is not None:
@@ -142,7 +204,7 @@ def _enqueue_terminal(commands: queue.Queue[dict[str, Any] | None], value: dict[
             pass
 
 
-def _load(spec: dict[str, Any]):
+def _load(spec: dict[str, Any], lazy: bool = False):
     path = Path(spec["snapshot_path"])
     if not path.is_absolute() or not path.is_dir():
         raise RuntimeError("local model snapshot is unavailable")
@@ -183,9 +245,38 @@ def _load(spec: dict[str, Any]):
             tokenizer_config={"trust_remote_code": False},
             model_config=model_config,
             revision=spec["revision"],
+            lazy=lazy,  # RUST2-SRV: rust2 holds the weights; MLX keeps only the tokenizer's model unloaded
         )
     stop_at_end_of_turn(tokenizer)
+    reuse_detokenizer(tokenizer)
     return model, tokenizer, stream_generate, device
+
+
+def _sources_digest() -> str:
+    from ironmule_product.code_identity import sources_digest
+    return sources_digest()
+
+
+def reuse_detokenizer(tokenizer: Any) -> None:
+    """Give every request the same streaming detokenizer, reset, instead of a new one.
+
+    mlx-lm builds a new one on each ``tokenizer.detokenizer`` access, walking the whole
+    vocabulary: about 0.45 s of every request's first token for Gemma 3's 262k tokens on a T4
+    (SERVE6b), in ``stream_generate`` as well. ``reset()`` clears all of its state, so the text
+    is the same. ponytail: one instance per worker, which generates one request at a time; a
+    worker that streams several at once needs one per stream.
+    """
+    cached = tokenizer.detokenizer
+
+    class _Reused(type(tokenizer)):
+        @property
+        def detokenizer(self):
+            cached.reset()
+            return cached
+
+    _Reused.__name__ = type(tokenizer).__name__
+    _Reused.reuses_detokenizer = True
+    tokenizer.__class__ = _Reused
 
 
 def stop_at_end_of_turn(tokenizer: Any) -> None:
@@ -239,6 +330,9 @@ def _receiver(
         if command.get("type") == "shutdown":
             _enqueue_terminal(commands, command)
             return
+        if command.get("type") == "join_batch":
+            JOINS.put(command)  # SERVE8: taken by the running batch, not queued behind it
+            continue
         if command.get("type") == "cancel":
             request_id = command.get("request_id")
             if isinstance(request_id, str) and request_id and len(request_id) <= 256:
@@ -256,6 +350,81 @@ def _receiver(
             commands.put_nowait(command)
         except queue.Full:
             _safe_error("overloaded")
+
+
+CHAT_REUSE = False  # SERVE7: set once from --chat-reuse; a worker serves one configuration
+THINKING = True  # CPU5: --no-thinking renders the chat template with thinking off
+
+
+def _render(tokenizer: Any, messages: list[dict[str, Any]]) -> Any:
+    """The chat template with a generation prompt, thinking off when the worker was told so.
+    A template without that switch ignores it."""
+    extra = {} if THINKING else {"enable_thinking": False}
+    return tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True, **extra)
+
+
+def _turn_boundaries(tokenizer: Any, messages: list[dict[str, Any]], prompt_ids: Any) -> list[int]:
+    """SERVE7: where each assistant message begins in the rendered prompt, found by rendering the
+    conversation before it with the chat template; kept only where that is a true token prefix."""
+    cuts = []
+    for index, message in enumerate(messages):
+        if index == 0 or message["role"] != "assistant":
+            continue
+        with redirect_stdout(sys.stderr):
+            ids = list(_render(tokenizer, messages[:index]))
+        if 0 < len(ids) < len(prompt_ids) and list(prompt_ids[:len(ids)]) == ids:
+            cuts.append(len(ids))
+    return cuts
+
+
+def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], max_tokens: int,
+                   prompt_tokens: int, holder: dict[str, Any], consume: Any,
+                   boundaries: list[int] | None = None) -> dict[str, Any] | None:
+    """SERVE6: hand the engine's tokens to ``consume`` as it reads them back, detokenized the way
+    mlx-lm streams, and return the terminal frame ``consume`` produced.
+
+    The engine calls back on this thread (a second thread lost 0.5-0.7 s of the first token to the
+    GIL on Gemma 3 1B, SERVE6b). One token is held back so the last can carry the finish reason.
+    After a cancellation the engine runs to its end and nothing more is sent. The streamed tokens
+    must equal the engine's result.
+    """
+    eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+    detokenizer = tokenizer.detokenizer
+    streamed: list[int] = []
+    state: dict[str, Any] = {"held": None, "terminal": None}
+
+    def on_token(token: int) -> None:
+        streamed.append(token)
+        if state["terminal"] is not None or "error" in state:
+            return
+        try:
+            if state["held"] is not None:
+                state["terminal"] = consume(state["held"])
+                if state["terminal"] is not None:
+                    return
+            text = ""
+            if token not in eos:
+                detokenizer.add_token(token)
+                text = detokenizer.last_segment
+            state["held"] = SimpleNamespace(token=token, text=text, prompt_tokens=prompt_tokens,
+                                            generation_tokens=len(streamed), finish_reason=None)
+        except Exception as exc:  # raised after the engine returns, never inside its executor
+            state["error"] = exc
+
+    result = (engine_bridge.generate(prompt_ids, max_tokens, on_token=on_token) if boundaries is None else
+              engine_bridge.generate(prompt_ids, max_tokens, on_token=on_token, boundaries=boundaries))
+    holder["result"] = result
+    if "error" in state:
+        raise state["error"]
+    if not streamed or streamed != list(result.tokens):
+        raise RuntimeError("streamed tokens differ from the engine result")
+    if state["terminal"] is not None:
+        return state["terminal"]
+    final = state["held"]
+    detokenizer.finalize()
+    final.text += detokenizer.last_segment
+    final.finish_reason = result.finish_reason
+    return consume(final)
 
 
 def _generate(
@@ -278,6 +447,7 @@ def _generate(
     terminal: dict[str, Any] | None = None
     error_emitted = False
     engine_result = None
+    streamed: dict[str, Any] | None = None
     selection_metadata = None
 
     # Request validation and chat-template rendering are user-input failures.
@@ -312,7 +482,7 @@ def _generate(
         # Tokenize the rendered template exactly once; stream_generate receives
         # IDs and therefore does not apply the chat template a second time.
         with redirect_stdout(sys.stderr):
-            prompt_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
+            prompt_ids = _render(tokenizer, messages)
         if not isinstance(prompt_ids, (list, tuple)) or not prompt_ids:
             raise ValueError
         prompt_tokens = len(prompt_ids)
@@ -320,6 +490,48 @@ def _generate(
             raise ValueError
     except Exception:
         _safe_error("invalid_request", request_id)
+        return None
+
+    def consume(response: Any) -> dict[str, Any] | None:
+        """Emit one generated token; the terminal frame once generation must stop."""
+        response_prompt = getattr(response, "prompt_tokens", prompt_tokens)
+        response_completion = getattr(response, "generation_tokens", None)
+        if (type(response_prompt) is not int or response_prompt != prompt_tokens
+                or type(response_completion) is not int or not 1 <= response_completion <= max_tokens):
+            raise ValueError
+        if cancel_event.is_set():
+            return {
+                "type": "done", "request_id": request_id, "finish_reason": "cancelled",
+                "prompt_tokens": prompt_tokens, "completion_tokens": response_completion,
+                "variant": variant,
+            }
+        token = getattr(response, "token", None)
+        text = getattr(response, "text", "")
+        if type(token) is not int or token < 0 or not isinstance(text, str):
+            raise ValueError
+        event: dict[str, Any] = {
+            "type": "token", "request_id": request_id, "text": text, "token_id": token,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": response_completion,
+        }
+        _emit(event)
+        finish = getattr(response, "finish_reason", None)
+        if finish is not None:
+            if finish not in ("stop", "length"):
+                raise ValueError
+            metrics = {}
+            for key in ("prompt_tps", "generation_tps", "peak_memory"):
+                value = getattr(response, key, None)
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
+                    metrics[key] = float(value)
+            return {
+                "type": "done", "request_id": request_id,
+                "finish_reason": finish,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": response_completion,
+                "variant": variant,
+                "metrics": metrics,
+            }
         return None
 
     try:
@@ -335,14 +547,11 @@ def _generate(
                 elif variant == "current_engine":
                     if engine_bridge is None:
                         raise ValueError("current engine is not enabled")
-                    engine_result = engine_bridge.generate(list(prompt_ids), max_tokens)
-                    # Engine.serve is completion-only. Buffer honestly; do not
-                    # invent token streaming, TTFT, or log probabilities.
-                    generated = (SimpleNamespace(
-                        token=token, text=engine_result.text if i + 1 == engine_result.token_count else "",
-                        prompt_tokens=prompt_tokens, generation_tokens=i + 1,
-                        finish_reason=engine_result.finish_reason if i + 1 == engine_result.token_count else None,
-                    ) for i, token in enumerate(engine_result.tokens))
+                    streamed = {}
+                    boundaries = _turn_boundaries(tokenizer, messages, prompt_ids) if CHAT_REUSE else None
+                    terminal = _engine_stream(engine_bridge, tokenizer, list(prompt_ids), max_tokens,
+                                              prompt_tokens, streamed, consume, boundaries)
+                    streamed["plan"] = "chat_turns" if boundaries is not None else None
                 elif variant == "automatic":
                     if automatic_runtime is None:
                         raise ValueError("automatic runtime is not enabled")
@@ -364,51 +573,15 @@ def _generate(
                         ) for i, token in enumerate(engine_result.tokens))
                 else:
                     generated = stream_generate(model, tokenizer, list(prompt_ids), max_tokens=max_tokens)
-                for response in generated:
-                    response_prompt = getattr(response, "prompt_tokens", prompt_tokens)
-                    response_completion = getattr(response, "generation_tokens", None)
-                    if (type(response_prompt) is not int or response_prompt != prompt_tokens
-                            or type(response_completion) is not int or not 1 <= response_completion <= max_tokens):
-                        raise ValueError
-                    if cancel_event.is_set():
-                        terminal = {
-                            "type": "done", "request_id": request_id, "finish_reason": "cancelled",
-                            "prompt_tokens": prompt_tokens, "completion_tokens": response_completion,
-                            "variant": variant,
-                        }
-                        break
-                    token = getattr(response, "token", None)
-                    text = getattr(response, "text", "")
-                    if type(token) is not int or token < 0 or not isinstance(text, str):
-                        raise ValueError
-                    event: dict[str, Any] = {
-                        "type": "token", "request_id": request_id, "text": text, "token_id": token,
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": response_completion,
-                    }
-                    _emit(event)
-                    finish = getattr(response, "finish_reason", None)
-                    if finish is not None:
-                        if finish not in ("stop", "length"):
-                            raise ValueError
-                        metrics = {}
-                        for key in ("prompt_tps", "generation_tps", "peak_memory"):
-                            value = getattr(response, key, None)
-                            if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value)):
-                                metrics[key] = float(value)
-                        terminal = {
-                            "type": "done", "request_id": request_id,
-                            "finish_reason": finish,
-                            "prompt_tokens": prompt_tokens,
-                            "completion_tokens": response_completion,
-                            "variant": variant,
-                            "metrics": metrics,
-                        }
+                for response in generated or ():
+                    terminal = consume(response)
+                    if terminal is not None:
                         break
             if terminal is None:
                 raise ValueError("generation ended without a completion frame")
     except Exception:
         terminal = None
+        _note_failure("generate")
         _safe_error("generation_error", request_id)
         error_emitted = True
     finally:
@@ -419,9 +592,14 @@ def _generate(
                 terminal = None
                 if not error_emitted:
                     _safe_error("generation_error", request_id)
+    delivery = "buffered_completion"
+    if streamed is not None and "result" in streamed:
+        engine_result, delivery = streamed["result"], "streamed"
     if terminal is not None and engine_result is not None:
-        terminal["engine"] = {**engine_result.metadata, "delivery": "buffered_completion",
+        terminal["engine"] = {**engine_result.metadata, "delivery": delivery,
                               "computed_tokens": engine_result.token_count}
+        if streamed is not None and streamed.get("plan"):
+            terminal["engine"]["plan"] = streamed["plan"]
     if terminal is not None and selection_metadata is not None:
         terminal["selection"] = selection_metadata
     if terminal is not None and command.get("trace_prompt_identity") is True:
@@ -430,14 +608,15 @@ def _generate(
     return terminal
 
 
-def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: Any) -> tuple[str, list[int], int]:
+def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: Any,
+                           allow_stream: bool = False) -> tuple[str, list[int], int]:
     """Apply exactly the single-request identity and rendering validation."""
     request_id = command.get("request_id")
     if not isinstance(request_id, str) or not request_id or len(request_id) > 256:
         raise ValueError("invalid request id")
     if command.get("model") != model_id or command.get("temperature", 0.0) != 0.0 or command.get("top_p", 1.0) != 1.0:
         raise ValueError("invalid exact request")
-    if command.get("stream", False) is not False:
+    if command.get("stream", False) is not False and not (allow_stream and command.get("stream") is True):
         raise ValueError("batch streaming is unavailable")
     seed = command.get("seed")
     if seed is not None and (type(seed) is not int or not 0 <= seed < 2**32):
@@ -450,13 +629,118 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
            or not isinstance(message["content"], str) for message in messages):
         raise ValueError("invalid messages")
     with redirect_stdout(sys.stderr):
-        raw_ids = tokenizer.apply_chat_template(messages, add_generation_prompt=True, tokenize=True)
+        raw_ids = _render(tokenizer, messages)
     if not isinstance(raw_ids, (list, tuple)) or not raw_ids:
         raise ValueError("invalid prompt ids")
     ids = list(raw_ids)
     if len(ids) + max_tokens > CONTEXT_LIMIT:
         raise ValueError("context limit")
     return request_id, ids, max_tokens
+
+
+# Engine configurations whose worker accepts grouped requests: the historical throughput
+# candidates (buffered) and the current profile's streaming groups (SERVE4).
+BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile"})
+_DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
+JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
+
+
+class _DetokenizerPool:
+    """Reusable streaming detokenizers (building one walks the whole vocabulary, about 0.45 s for
+    Gemma 3, SERVE6b). A stream takes one and gives it back when its last token is in, so the
+    pool grows with the streams running at once, not with every request a long batch admits."""
+
+    def __init__(self, tokenizer: Any) -> None:
+        plain = (type(tokenizer).__mro__[1] if getattr(type(tokenizer), "reuses_detokenizer", False)
+                 else type(tokenizer))
+        self._build = lambda: plain.detokenizer.fget(tokenizer)
+        self._free: list[Any] = []
+
+    def acquire(self) -> Any:
+        detokenizer = self._free.pop() if self._free else self._build()
+        detokenizer.reset()
+        return detokenizer
+
+    def release(self, detokenizer: Any) -> None:
+        self._free.append(detokenizer)
+
+
+def _detokenizer_pool(tokenizer: Any) -> _DetokenizerPool:
+    pool = _DETOKENIZER_POOLS.get(id(tokenizer))
+    if pool is None:
+        pool = _DETOKENIZER_POOLS[id(tokenizer)] = _DetokenizerPool(tokenizer)
+    return pool
+
+
+class _BatchStream:
+    """One grouped request's tokens as the engine reads them back (SERVE4).
+
+    One token is held back so the last can carry the final text; a cancelled request stops
+    sending while the group runs on. Errors are kept and raised after the engine returns,
+    never inside its executor."""
+
+    def __init__(self, batch_id: str, request_id: str, prompt_tokens: int, limit: int, pool: _DetokenizerPool,
+                 cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any):
+        self.batch_id, self.request_id, self.prompt_tokens, self.limit = batch_id, request_id, prompt_tokens, limit
+        self.pool, self.detokenizer = pool, pool.acquire()
+        self.cancellations, self.lock = cancellations, lock
+        self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+        self.tail = ""
+        self.tokens: list[int] = []
+        self.held: dict[str, Any] | None = None
+        self.sent = 0
+        self.stopped = False
+        self.error: BaseException | None = None
+
+    def on_token(self, token: int) -> None:
+        self.tokens.append(token)
+        if self.stopped or self.error is not None:
+            return
+        try:
+            with self.lock:
+                self.stopped = self.cancellations[self.request_id].is_set()
+            if self.stopped:
+                return
+            if self.held is not None:
+                _emit(self.held)
+                self.sent += 1
+            text = ""
+            if token not in self.eos:
+                self.detokenizer.add_token(token)
+                text = self.detokenizer.last_segment
+            self.held = {"type": "token", "batch_id": self.batch_id, "request_id": self.request_id,
+                         "text": text, "token_id": token, "prompt_tokens": self.prompt_tokens,
+                         "completion_tokens": self.sent + 1}
+            if token in self.eos or len(self.tokens) >= self.limit:
+                self._release()  # its last token: the detokenizer serves the next admitted stream
+        except BaseException as exc:  # noqa: BLE001 - raised by finish()
+            self.error = exc
+
+    def _release(self) -> None:
+        if self.detokenizer is not None:
+            self.detokenizer.finalize()
+            self.tail = self.detokenizer.last_segment
+            self.pool.release(self.detokenizer)
+            self.detokenizer = None
+
+    def finish(self, result: Any) -> int:
+        """Send the held token with the final text; returns how many tokens were sent."""
+        if self.error is not None:
+            raise self.error
+        with self.lock:
+            self.stopped = self.stopped or self.cancellations[self.request_id].is_set()
+        produced = list(result.tokens)
+        # A request cancelled during a fallback re-run ends shorter than what it already streamed
+        # (RSI3-LIVE-P2); its output is never delivered, so a matching prefix is enough for it.
+        if self.tokens != produced and not (self.stopped and result.finish_reason == "cancelled"
+                                             and self.tokens[:len(produced)] == produced):
+            raise RuntimeError("streamed tokens differ from the engine result")
+        self._release()
+        if not self.stopped and self.held is not None:
+            self.held["text"] += self.tail
+            _emit(self.held)
+            self.sent += 1
+        return self.sent
 
 
 def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
@@ -466,15 +750,18 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                       selection: dict[str, Any] | None = None) -> None:
     batch_id = command.get("batch_id")
     requests = command.get("requests")
+    # SERVE4: the current-profile engine streams every grouped request's tokens as they are
+    # read back; the historical throughput configurations keep their buffered completion.
+    live = rendered_override is None and engine_bridge.metadata().get("configuration") == "current_profile"
     if (not isinstance(batch_id, str) or not 1 <= len(batch_id) <= 256
             or command.get("variant") not in {"current_engine", "automatic"} or not isinstance(requests, list)
-            or not 2 <= len(requests) <= 32):
+            or not (1 if live else 2) <= len(requests) <= 32):
         _safe_batch_error("invalid_request", batch_id if isinstance(batch_id, str) else None)
         return
     registered: list[str] = []
     try:
         rendered = (rendered_override if rendered_override is not None else
-                    [_render_engine_request(request, model_id, tokenizer) for request in requests])
+                    [_render_engine_request(request, model_id, tokenizer, allow_stream=live) for request in requests])
         request_ids = [row[0] for row in rendered]
         if len(set(request_ids)) != len(request_ids):
             raise ValueError("duplicate request id")
@@ -487,65 +774,149 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 cancellations[request_id] = event
                 registered.append(request_id)
             pre_cancelled = {request_id for request_id in request_ids if cancellations[request_id].is_set()}
-        active = [row for row in rendered if row[0] not in pre_cancelled]
-        with redirect_stdout(sys.stderr):
-            results = (engine_bridge.generate_many([row[1] for row in active], [row[2] for row in active])
-                       if active else [])
-        if not isinstance(results, list) or len(results) != len(active):
-            raise RuntimeError("invalid grouped result count")
-        result_by_id = {row[0]: result for row, result in zip(active, results)}
-        for request_id, prompt_ids, limit in rendered:
-            if request_id in pre_cancelled:
+        pool = _detokenizer_pool(tokenizer)
+        streams: dict[str, _BatchStream] = {}
+        # SERVE7 in the grouped path: every request, joined ones too, keeps its chat-turn plan.
+        messages_by_id = {row[0]: request.get("messages") for row, request in zip(rendered, requests)} \
+            if rendered_override is None else {}
+
+        def cuts_for(row: tuple[str, list[int], int]) -> list[int] | None:
+            return (_turn_boundaries(tokenizer, messages_by_id[row[0]], row[1])
+                    if live and CHAT_REUSE and messages_by_id.get(row[0]) else None)
+        all_ids = list(request_ids)
+        leftovers: list[tuple[str, list[int], int]] = []
+
+        def drain_joins() -> list[tuple[str, list[int], int]]:
+            """SERVE8: requests the client sent to join this batch, rendered and registered."""
+            rows = []
+            while True:
+                try:
+                    join = JOINS.get_nowait()
+                except queue.Empty:
+                    return rows
+                if join.get("batch_id") != batch_id or not isinstance(join.get("requests"), list):
+                    raise ValueError("join for another batch")
+                for request in join["requests"]:
+                    row = _render_engine_request(request, model_id, tokenizer, allow_stream=True)
+                    messages_by_id[row[0]] = request.get("messages")
+                    if row[0] in all_ids:
+                        raise ValueError("duplicate request id")
+                    with lock:
+                        event = threading.Event()
+                        if row[0] in pending_cancellations:
+                            event.set()
+                            pending_cancellations.discard(row[0])
+                        cancellations[row[0]] = event
+                        registered.append(row[0])
+                    all_ids.append(row[0])
+                    rows.append(row)
+
+        report = rendered
+        while report:
+            with lock:
+                skipped = {row[0] for row in report if cancellations[row[0]].is_set()}
+            active = [row for row in report if row[0] not in skipped]
+            for row in active if live else ():
+                streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations, lock,
+                                               tokenizer)
+            joined: list[tuple[str, list[int], int]] = []
+
+            def admit(capacity: int) -> list[tuple[list[int], int, Any]]:
+                fresh = []
+                for row in drain_joins():
+                    if len(row[1]) + row[2] + 8 > capacity:
+                        leftovers.append(row)  # too long for this run's cache; it runs right after
+                        continue
+                    streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
+                                                   lock, tokenizer)
+                    joined.append(row)
+                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row)))
+                return fresh
+
+            def cancelled_for(request_id: str):
+                def check() -> bool:
+                    with lock:
+                        return cancellations[request_id].is_set()
+                return check
+
+            with redirect_stdout(sys.stderr):
+                turns = [cuts_for(row) for row in active]
+                results = (engine_bridge.generate_many([row[1] for row in active], [row[2] for row in active],
+                                                       on_tokens=[streams[row[0]].on_token for row in active]
+                                                       if live else None,
+                                                       **({"admit": admit,  # RSI3-LIVE-P2: stop on cancel
+                                                           "cancelled": [cancelled_for(row[0]) for row in active]}
+                                                          if live else {}),
+                                                       **({"boundaries": turns}
+                                                          if any(cut is not None for cut in turns) else {}))
+                           if active else [])
+            if not isinstance(results, list) or len(results) != len(active) + len(joined):
+                raise RuntimeError("invalid grouped result count")
+            result_by_id = {row[0]: result for row, result in zip(active + joined, results)}
+            pre_cancelled = skipped
+            for request_id, prompt_ids, limit in report + joined:
+                if request_id in pre_cancelled:
+                    terminal = {"type": "done", "batch_id": batch_id, "request_id": request_id,
+                                "finish_reason": "cancelled", "prompt_tokens": len(prompt_ids),
+                                "completion_tokens": 0, "variant": command["variant"], "metrics": {},
+                                "engine": {**engine_bridge.metadata(), "delivery": "buffered_completion",
+                                           "computed_tokens": 0, "skipped": "cancelled_before_generation"}}
+                    if command.get("trace_prompt_identity") is True:
+                        terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
+                            separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+                    if selection is not None:
+                        terminal["selection"] = selection
+                    _emit(terminal)
+                    continue
+                result = result_by_id[request_id]
+                tokens = result.tokens
+                with lock:
+                    stopped = result.finish_reason == "cancelled" and cancellations[request_id].is_set()
+                if (not isinstance(tokens, (list, tuple)) or type(result.token_count) is not int
+                        or result.token_count != len(tokens)
+                        or not (0 if stopped else 1) <= result.token_count <= limit
+                        or (result.finish_reason not in {"stop", "length"} and not stopped)
+                        or not isinstance(result.text, str) or not isinstance(result.metadata, dict)):
+                    raise RuntimeError("invalid grouped engine result")
+                emitted_tokens = 0
+                if request_id in streams:
+                    emitted_tokens = streams[request_id].finish(result)
+                    tokens = ()  # already sent as the engine read them back
+                for index, token in enumerate(tokens):
+                    if type(token) is not int or token < 0:
+                        raise RuntimeError("invalid grouped token")
+                    with lock:
+                        cancelled = cancellations[request_id].is_set()
+                    if cancelled:
+                        break
+                    _emit({"type": "token", "batch_id": batch_id, "request_id": request_id,
+                           "text": result.text if index + 1 == result.token_count else "", "token_id": token,
+                           "prompt_tokens": len(prompt_ids), "completion_tokens": index + 1})
+                    emitted_tokens += 1
+                with lock:
+                    cancelled = cancellations[request_id].is_set()
                 terminal = {"type": "done", "batch_id": batch_id, "request_id": request_id,
-                            "finish_reason": "cancelled", "prompt_tokens": len(prompt_ids),
-                            "completion_tokens": 0, "variant": command["variant"], "metrics": {},
-                            "engine": {**engine_bridge.metadata(), "delivery": "buffered_completion",
-                                       "computed_tokens": 0, "skipped": "cancelled_before_generation"}}
+                            "finish_reason": "cancelled" if cancelled else result.finish_reason,
+                            "prompt_tokens": len(prompt_ids),
+                            "completion_tokens": emitted_tokens if cancelled else result.token_count,
+                            "variant": command["variant"], "metrics": {},
+                            "engine": {**result.metadata,
+                                       "delivery": "streamed" if request_id in streams else "buffered_completion",
+                                       "computed_tokens": result.token_count}}
                 if command.get("trace_prompt_identity") is True:
                     terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
                         separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
                 if selection is not None:
                     terminal["selection"] = selection
                 _emit(terminal)
-                continue
-            result = result_by_id[request_id]
-            tokens = result.tokens
-            if (not isinstance(tokens, (list, tuple)) or type(result.token_count) is not int
-                    or result.token_count != len(tokens) or not 1 <= result.token_count <= limit
-                    or result.finish_reason not in {"stop", "length"} or not isinstance(result.text, str)
-                    or not isinstance(result.metadata, dict)):
-                raise RuntimeError("invalid grouped engine result")
-            emitted_tokens = 0
-            for index, token in enumerate(tokens):
-                if type(token) is not int or token < 0:
-                    raise RuntimeError("invalid grouped token")
-                with lock:
-                    cancelled = cancellations[request_id].is_set()
-                if cancelled:
-                    break
-                _emit({"type": "token", "batch_id": batch_id, "request_id": request_id,
-                       "text": result.text if index + 1 == result.token_count else "", "token_id": token,
-                       "prompt_tokens": len(prompt_ids), "completion_tokens": index + 1})
-                emitted_tokens += 1
-            with lock:
-                cancelled = cancellations[request_id].is_set()
-            terminal = {"type": "done", "batch_id": batch_id, "request_id": request_id,
-                        "finish_reason": "cancelled" if cancelled else result.finish_reason,
-                        "prompt_tokens": len(prompt_ids),
-                        "completion_tokens": emitted_tokens if cancelled else result.token_count,
-                        "variant": command["variant"], "metrics": {},
-                        "engine": {**result.metadata, "delivery": "buffered_completion",
-                                   "computed_tokens": result.token_count}}
-            if command.get("trace_prompt_identity") is True:
-                terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
-                    separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
-            if selection is not None:
-                terminal["selection"] = selection
-            _emit(terminal)
-        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": request_ids})
+            report = leftovers + (drain_joins() if live else [])
+            leftovers = []
+        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": all_ids, "memory": _memory_counters()})
     except ValueError:
+        _note_failure("batch")
         _safe_batch_error("invalid_request", batch_id)
     except Exception:
+        _note_failure("batch")
         _safe_batch_error("generation_error", batch_id)
     finally:
         with lock:
@@ -661,8 +1032,10 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
             _emit(terminal)
         _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": request_ids})
     except ValueError:
+        _note_failure("batch")
         _safe_batch_error("invalid_request", batch_id)
     except Exception:
+        _note_failure("batch")
         _safe_batch_error("generation_error", batch_id)
     finally:
         with lock:
@@ -754,14 +1127,21 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--spec", required=True)
     parser.add_argument("--execution-variant", choices=sorted(WORKER_VARIANTS), default="reference")
+    parser.add_argument("--no-thinking", action="store_true",
+                        help="render the chat template with thinking off (CPU5)")
+    parser.add_argument("--chat-reuse", action="store_true",
+                        help="current_engine: reuse KV state across chat turns (ChatTurnsPlan, SERVE7)")
     parser.add_argument("--engine-configuration", default="current_profile",
                         choices=("current_profile", "baseline_interactive", "core_interactive",
-                                 "baseline_throughput", "core_throughput"))
+                                 "baseline_throughput", "core_throughput", "rust2"))
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
     parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
     args = parser.parse_args(argv)
+    global CHAT_REUSE, THINKING
+    CHAT_REUSE = bool(args.chat_reuse) and args.execution_variant == "current_engine"
+    THINKING = not args.no_thinking
     startup_started = time.monotonic()
     prefix_session = engine_bridge = automatic_runtime = None
     try:
@@ -779,7 +1159,10 @@ def main(argv: list[str] | None = None) -> int:
         if args.execution_variant in ("prefix_reuse", "current_engine", "automatic"):
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
-        model, tokenizer, stream_generate, device = _load(spec)
+        rust2 = args.execution_variant == "current_engine" and args.engine_configuration == "rust2"
+        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2)
+        import mlx.core as mx
+        cuda_cache_limit = _apply_cuda_cache_limit(mx)
         if args.compute_dtype is not None:
             if args.execution_variant != "reference":
                 raise ValueError("compute_dtype is available on the reference worker only")
@@ -799,6 +1182,10 @@ def main(argv: list[str] | None = None) -> int:
             prefix_session = WorkerPrefixSession(model, tokenizer,
                 binding_sha256=identity["identity_sha256"], scope_nonce=secrets.token_hex(16),
                 max_entries=args.prefix_cache_max_entries, max_bytes=args.prefix_cache_max_bytes)
+        elif rust2:
+            from ironmule_product.rust2_bridge import Rust2Bridge
+            engine_bridge = Rust2Bridge(os.environ.get("IRONMULE_RUST2_BINARY", ""), spec["snapshot_path"],
+                                        tokenizer.eos_token_ids, os.environ.get("IRONMULE_RUST2_DRAFT") or None)
         elif args.execution_variant == "current_engine":
             from ironmule_product.engine_bridge import CurrentEngineBridge
             from ironmule_product.types import ModelSpec
@@ -827,12 +1214,15 @@ def main(argv: list[str] | None = None) -> int:
     _emit({
         "type": "ready", "protocol_version": PROTOCOL_VERSION,
         "model_id": spec.get("model_id"), "revision": spec.get("revision"),
-        "device": "gpu", "stop_handling": "parent", "context_limit": CONTEXT_LIMIT,
+        # OPS1: the device MLX actually computes on (CPU4 serves on the CPU device), not a constant.
+        "device": "gpu" if device == mx.gpu else "cpu", "stop_handling": "parent", "context_limit": CONTEXT_LIMIT,
         "execution_variant": args.execution_variant,
         **({"automatic_batch_qualified": _automatic_batch_qualified(selection_evidence, identity)}
            if automatic_runtime is not None else {}),
         **({"engine": engine_bridge.metadata()} if engine_bridge is not None else {}),
         **telemetry,
+        "sources_sha256": _sources_digest(),  # RSI3-LIVE (f): every loaded source file of this worker
+        "cuda_cache_limit_bytes": cuda_cache_limit,  # MEM2: None = MLX's default
     })
     commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=8)
     cancellations: dict[str, threading.Event] = {}
@@ -868,7 +1258,7 @@ def main(argv: list[str] | None = None) -> int:
                                          stream_generate, automatic_runtime, cancellations,
                                          pending_cancellations, cancellation_lock)
                 elif (engine_bridge is None
-                        or args.engine_configuration not in {"baseline_throughput", "core_throughput"}):
+                        or args.engine_configuration not in BATCH_CONFIGURATIONS):
                     _safe_batch_error("invalid_request", command.get("batch_id") if isinstance(command.get("batch_id"), str) else None)
                 else:
                     _run_engine_batch(command, str(spec.get("model_id")), tokenizer, engine_bridge,

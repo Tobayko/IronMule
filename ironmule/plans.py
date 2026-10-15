@@ -32,6 +32,7 @@ class ExecutionPlan:
 
     def release(self, engine) -> None:
         engine.prefix_cache = None
+        engine.turn_boundaries = None
 
     def describe(self) -> dict:                 # pragma: no cover - overridden
         raise NotImplementedError
@@ -49,6 +50,7 @@ class StrictOneShotPlan(ExecutionPlan):
 
     def apply(self, engine) -> None:
         engine.prefix_cache = None
+        engine.turn_boundaries = None
 
     def describe(self) -> dict:
         return {"kind": self.kind}
@@ -80,11 +82,33 @@ class ReusableSessionPlan(ExecutionPlan):
 
     def apply(self, engine) -> None:
         engine.prefix_cache = self.cache
+        engine.turn_boundaries = None
 
     def describe(self) -> dict:
         return {"kind": self.kind, "name": self.name,
                 "prefix_tokens": len(self.prefix_ids),
                 "hits": self.cache.hits, "misses": self.cache.misses}
+
+
+class ChatTurnsPlan(ExecutionPlan):
+    """Prefill chunked at every chat-turn boundary; states at those boundaries are reused (SERVE7).
+
+    The boundaries come from the request's own messages, so a cache hit and a recomputation
+    run the same chunks and agree bit for bit. Like `ReusableSessionPlan`, it does **not**
+    agree with `StrictOneShotPlan`; choosing it is the caller's decision.
+    """
+
+    kind = "chat_turns"
+
+    def __init__(self, boundaries: Sequence[int]):
+        self.boundaries = tuple(sorted({int(b) for b in boundaries if int(b) > 0}))
+
+    def apply(self, engine) -> None:
+        engine.prefix_cache = None
+        engine.turn_boundaries = self.boundaries
+
+    def describe(self) -> dict:
+        return {"kind": self.kind, "boundaries": len(self.boundaries)}
 
 
 def plan_kind(plan: ExecutionPlan) -> str:

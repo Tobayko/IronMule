@@ -7,6 +7,8 @@ covered here deterministically. The real-model counterpart lives in
 `tests/test_forge_runtime_integration.py` and is skipped unless the model is present.
 """
 
+import json
+
 import pytest
 
 from ironmule.executor import AsyncGroupedB1Executor, SequentialExecutor, build_sessions
@@ -315,3 +317,179 @@ def test_plans_are_never_substituted():
     AsyncGroupedB1Executor(backend, telemetry, max_width=4).run(sessions, capacity)
     assert all(s.plan is plan for s in sessions), "the executor may not rewrite a plan"
     assert telemetry.plan_switch_attempts == 0
+
+
+def _streamed_run(executor_cls, width=None, **kwargs):
+    """Every request streams; returns what each emitted, in order, plus the sessions."""
+    from ironmule.executor import TokenStream
+
+    backend = FakeBackend(SCRIPTS, **kwargs)
+    telemetry, emitted = Telemetry(), {}
+    requests = []
+    for ids in PROMPTS:
+        rid = backend._rid_for(ids)
+        emitted[rid] = []
+        requests.append(Request(prompt_ids=ids, rid=rid, max_tokens=8, plan=StrictOneShotPlan(),
+                                stream=TokenStream(emitted[rid].append)))
+    capacity = backend.capacity_for([len(r.prompt_ids) for r in requests], 8)
+    sessions = build_sessions(requests, backend, telemetry, capacity)
+    (executor_cls(backend, telemetry, max_width=width) if width else executor_cls(backend, telemetry)).run(
+        sessions, capacity)
+    return emitted, sessions, telemetry
+
+
+@pytest.mark.parametrize("executor_cls,width", [(SequentialExecutor, None), (AsyncGroupedB1Executor, 4)])
+def test_streamed_tokens_are_the_served_tokens_in_order(executor_cls, width):
+    emitted, sessions, _ = _streamed_run(executor_cls, width)
+    _, _, reference = run(SequentialExecutor)
+    assert {rid: tuple(tokens) for rid, tokens in emitted.items()} == {
+        rid: tokens for rid, (tokens, _) in outputs(reference).items()}
+    assert outputs(sessions) == outputs(reference)
+
+
+def test_a_fallback_restart_never_emits_a_token_twice():
+    emitted, sessions, telemetry = _streamed_run(AsyncGroupedB1Executor, 4, fail_on_group_call=2)
+    _, _, reference = run(SequentialExecutor)
+    assert telemetry.fallbacks == 1
+    assert {rid: tuple(tokens) for rid, tokens in emitted.items()} == {
+        rid: tokens for rid, (tokens, _) in outputs(reference).items()}
+
+
+def test_a_replay_that_diverges_from_what_was_streamed_raises():
+    from ironmule.executor import TokenStream
+
+    stream = TokenStream(lambda _token: None)
+    stream.accept(0, 5)
+    stream.accept(1, 6)
+    stream.accept(1, 6)  # a replay of the same token only checks
+    with pytest.raises(RuntimeError, match="diverged"):
+        stream.accept(1, 7)
+    with pytest.raises(RuntimeError, match="skipped"):
+        stream.accept(3, 8)
+
+
+def test_a_session_admitted_mid_run_joins_the_rotation_and_matches_sequential():
+    backend, telemetry, sessions, capacity = make(SCRIPTS, PROMPTS[:2])
+    late = build_sessions([Request(prompt_ids=PROMPTS[2], rid=backend._rid_for(PROMPTS[2]), max_tokens=8,
+                                   plan=StrictOneShotPlan())], backend, telemetry, capacity)
+    calls = []
+
+    def admit():
+        calls.append(len(calls))
+        return late if len(calls) == 3 else []  # arrives after two rounds
+
+    AsyncGroupedB1Executor(backend, telemetry, max_width=4).run(sessions, capacity, admit=admit)
+    _, _, reference = run(SequentialExecutor, prompts=PROMPTS[:3])
+    assert outputs(sessions + late) == outputs(reference)
+    assert all(s.done for s in sessions + late) and len(calls) > 3
+
+
+def test_the_opt_in_round_trace_records_each_round_with_its_join(tmp_path, monkeypatch):
+    trace = tmp_path / "rounds.jsonl"
+    monkeypatch.setenv("IRONMULE_TRACE_ROUNDS", str(trace))
+    backend, telemetry, sessions, capacity = make(SCRIPTS, PROMPTS[:2])
+    late = build_sessions([Request(prompt_ids=PROMPTS[2], rid=backend._rid_for(PROMPTS[2]), max_tokens=8,
+                                   plan=StrictOneShotPlan())], backend, telemetry, capacity)
+    calls = []
+
+    def admit():
+        calls.append(len(calls))
+        return late if len(calls) == 3 else []
+
+    AsyncGroupedB1Executor(backend, telemetry, max_width=4).run(sessions, capacity, admit=admit)
+    rows = [json.loads(line) for line in trace.read_text().splitlines()]
+    assert len(rows) == len(telemetry.realised_widths)
+    assert [r["joined"] for r in rows][:3] == [0, 0, 1]
+    assert [r["width"] for r in rows] == telemetry.realised_widths
+
+
+def test_runtime_serves_requests_admitted_during_a_grouped_run_after_the_original_ones():
+    from ironmule.service import ThroughputMode
+
+    class Tokenizer:
+        @staticmethod
+        def decode(tokens):
+            return " ".join(map(str, tokens))
+
+    backend = FakeBackend(SCRIPTS)
+    runtime = Runtime.__new__(Runtime)
+    runtime.backend, runtime.mode, runtime.tokenizer = backend, ThroughputMode(max_width=4), Tokenizer()
+    first = [Request(prompt_ids=ids, rid=backend._rid_for(ids), max_tokens=8, plan=StrictOneShotPlan())
+             for ids in PROMPTS[:2]]
+    waiting = [Request(prompt_ids=ids, rid=backend._rid_for(ids), max_tokens=8, plan=StrictOneShotPlan())
+               for ids in PROMPTS[2:4]]
+    offered = []
+
+    def admit(capacity):
+        offered.append(capacity)
+        return [waiting.pop(0)] if len(offered) in (2, 4) and waiting else []
+
+    results = runtime.serve(first, admit=admit)
+    _, _, reference = run(SequentialExecutor, prompts=PROMPTS[:4])
+    assert [r.rid for r in results] == [backend._rid_for(ids) for ids in PROMPTS[:4]]
+    assert {r.rid: (tuple(r.tokens), r.stop_reason) for r in results} == outputs(reference)
+    assert not waiting and len(set(offered)) == 1
+
+
+def test_an_interactive_runtime_ignores_admission():
+    class Tokenizer:
+        @staticmethod
+        def decode(tokens):
+            return ""
+
+    backend = FakeBackend(SCRIPTS)
+    runtime = Runtime.__new__(Runtime)
+    runtime.backend, runtime.mode, runtime.tokenizer = backend, InteractiveMode(), Tokenizer()
+    request = Request(prompt_ids=PROMPTS[0], rid="p10_1", max_tokens=8, plan=StrictOneShotPlan())
+    assert len(runtime.serve([request], admit=lambda capacity: 1 / 0)) == 1
+
+
+@pytest.mark.parametrize("executor_cls,width", [(SequentialExecutor, None), (AsyncGroupedB1Executor, 4)])
+def test_a_cancelled_stream_stops_early_and_the_others_keep_their_exact_tokens(executor_cls, width):
+    """RSI3-LIVE-P2: a caller-cancelled request ends at its next token boundary; the group's other
+    requests produce exactly the sequential reference; a stream without a predicate is unchanged."""
+    from ironmule.executor import TokenStream
+
+    backend = FakeBackend(SCRIPTS)
+    telemetry, emitted, flags = Telemetry(), {}, {}
+    requests = []
+    for ids in PROMPTS:
+        rid = backend._rid_for(ids)
+        emitted[rid], flags[rid] = [], False
+        requests.append(Request(prompt_ids=ids, rid=rid, max_tokens=8, plan=StrictOneShotPlan(),
+                                stream=TokenStream(emitted[rid].append, lambda rid=rid: flags[rid])))
+    victim = requests[1].rid
+    original = requests[1].stream.emit
+
+    def cancel_after_two(token):
+        original(token)
+        if len(emitted[victim]) == 2:
+            flags[victim] = True
+    requests[1].stream.emit = cancel_after_two
+    capacity = backend.capacity_for([len(r.prompt_ids) for r in requests], 8)
+    sessions = build_sessions(requests, backend, telemetry, capacity)
+    (executor_cls(backend, telemetry, max_width=width) if width else executor_cls(backend, telemetry)).run(
+        sessions, capacity)
+    _, _, reference = run(SequentialExecutor)
+    expected = outputs(reference)
+    by_rid = {s.rid: s for s in sessions}
+    assert by_rid[victim].stop_reason == "cancelled" and len(by_rid[victim].tokens) == 2
+    assert tuple(by_rid[victim].tokens) == expected[victim][0][:2]
+    for rid, session in by_rid.items():
+        if rid != victim:
+            assert (tuple(session.tokens), session.stop_reason) == expected[rid]
+
+
+def test_a_stream_cancelled_before_prefill_computes_nothing():
+    from ironmule.executor import TokenStream
+
+    backend = FakeBackend(SCRIPTS)
+    telemetry = Telemetry()
+    request = Request(prompt_ids=PROMPTS[0], rid=backend._rid_for(PROMPTS[0]), max_tokens=8,
+                      plan=StrictOneShotPlan(), stream=TokenStream(lambda _t: None, lambda: True))
+    calls = []
+    original = backend.prefill
+    backend.prefill = lambda *a, **k: calls.append(1) or original(*a, **k)
+    sessions = build_sessions([request], backend, telemetry, 64)
+    AsyncGroupedB1Executor(backend, telemetry, max_width=4).run(sessions, 64)
+    assert calls == [] and sessions[0].tokens == [] and sessions[0].stop_reason == "cancelled"

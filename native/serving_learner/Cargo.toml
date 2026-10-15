@@ -1,0 +1,20 @@
+[package]
+name = "ironmule-serving-learner"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "RSI3-LIVE: cost model, sequential RL and model rollouts for live serving decisions"
+
+[lib]
+name = "ironmule_serving_learner"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# The independent A/A/B qualification rule (protocols 1 and 2), reused unchanged.
+ironmule-optimizer = { path = "../optimizer" }
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1

@@ -107,3 +107,4 @@ class EngineBridgeProtocolTests(unittest.TestCase):
             [sys.executable, "-I", "-c", command], check=False, capture_output=True, text=True,
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
+

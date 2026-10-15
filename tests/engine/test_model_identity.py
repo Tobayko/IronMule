@@ -192,3 +192,81 @@ def test_declared_quantisation_still_wins_over_stored_dtypes(tmp_path):
     (root / "config.json").write_text(json.dumps({"model_type": "llama",
                                                   "quantization": {"bits": 4, "group_size": 64}}))
     assert build_model_identity("org/q", root, "r").quantisation == {"bits": 4, "group_size": 64}
+
+
+def _cache(snapshot, revision="abc123"):
+    return SimpleNamespace(repos=[SimpleNamespace(repo_id="org/model", revisions=[
+        SimpleNamespace(commit_hash=revision, snapshot_path=snapshot)])])
+
+
+def _hf_snapshot(tmp_path, revision="abc123"):
+    """An HF-cache-shaped entry: snapshot files are links into the repository's blobs."""
+    repo = tmp_path / "models--org--model"
+    snapshot = model_dir(repo / "snapshots" / revision)
+    blobs = repo / "blobs"
+    blobs.mkdir()
+    for path in list(snapshot.iterdir()):
+        blob = blobs / f"blob-{path.name}"
+        blob.write_bytes(path.read_bytes())
+        path.unlink()
+        path.symlink_to(blob)
+    return snapshot
+
+
+def test_a_snapshot_without_weights_is_not_a_loadable_source(tmp_path):
+    # OPT3-D: the cache held config and tokenizer of gemma-3-1b-it-4bit but no weights; the resolver
+    # built an identity from them and the run failed only when mlx_lm found no safetensors.
+    snapshot = _hf_snapshot(tmp_path)
+    (snapshot / "model.safetensors").unlink()
+    with pytest.raises(ModelIdentityError, match="incomplete model snapshot.*no weight files"):
+        resolve_model_source("org/model", revision="abc123", cache=_cache(snapshot))
+    local = model_dir(tmp_path / "local")
+    (local / "model.safetensors").unlink()
+    with pytest.raises(ModelIdentityError, match="incomplete model snapshot"):
+        resolve_model_source(str(local))
+    # identities of files are still computable for evidence; only admission as a loadable source fails
+    assert build_model_identity("org/model", snapshot, "abc123").manifest_file_count == 3
+
+
+def test_missing_shards_and_broken_weight_links_are_incomplete(tmp_path):
+    snapshot = _hf_snapshot(tmp_path)
+    (snapshot / "model.safetensors").unlink()
+    blobs = snapshot.parent.parent / "blobs"
+    (blobs / "shard1").write_text("w1")
+    (snapshot / "model-00001-of-00002.safetensors").symlink_to(blobs / "shard1")
+    (snapshot / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {
+        "a": "model-00001-of-00002.safetensors", "b": "model-00002-of-00002.safetensors"}}))
+    # the loader's glob would find shard 1 alone and load half a model
+    with pytest.raises(ModelIdentityError, match="incomplete model snapshot.*model-00002-of-00002"):
+        resolve_model_source("org/model", revision="abc123", cache=_cache(snapshot))
+    (blobs / "shard2").write_text("w2")
+    (snapshot / "model-00002-of-00002.safetensors").symlink_to(blobs / "shard2")
+    assert resolve_model_source("org/model", revision="abc123", cache=_cache(snapshot)).identity.manifest_file_count == 6
+    (blobs / "shard2").unlink()  # a dangling link: the blob is gone
+    with pytest.raises(ModelIdentityError):
+        resolve_model_source("org/model", revision="abc123", cache=_cache(snapshot))
+
+
+def test_a_complete_snapshot_keeps_its_identity(tmp_path):
+    snapshot = _hf_snapshot(tmp_path)
+    resolved = resolve_model_source("org/model", revision="abc123", cache=_cache(snapshot))
+    assert resolved.identity == build_model_identity("org/model", snapshot, "abc123")
+
+
+def test_loadability_follows_the_loader_not_a_stale_index(tmp_path):
+    # An upstream index naming shards that a consolidated conversion no longer ships is not a
+    # missing shard: the loader reads model.safetensors (the inventory accepts this too).
+    stale = _hf_snapshot(tmp_path / "stale")
+    (stale / "model.safetensors.index.json").write_text(json.dumps({"weight_map": {
+        "layer": "model-00001-of-00005.safetensors"}}))
+    assert resolve_model_source("org/model", revision="abc123", cache=_cache(stale)).identity
+    # a numbered shard set with a gap, without any index
+    gap = model_dir(tmp_path / "gap")
+    (gap / "model.safetensors").unlink()
+    for k in (1, 3):
+        (gap / f"model-{k:05d}-of-00003.safetensors").write_text("w")
+    with pytest.raises(ModelIdentityError, match="missing weight shards.*model-00002-of-00003"):
+        resolve_model_source(str(gap))
+    empty = model_dir(tmp_path / "empty", content="")
+    with pytest.raises(ModelIdentityError, match="model.safetensors is empty"):
+        resolve_model_source(str(empty))

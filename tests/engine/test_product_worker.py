@@ -466,3 +466,414 @@ def test_chat_end_of_turn_marker_stops_generation() -> None:
     plain = Tokenizer({"<eos>": 1, "hello": 7})
     stop_at_end_of_turn(plain)
     assert plain.eos_token_ids == {1}
+
+
+class _StreamTokenizer:
+    """mlx-lm's streaming detokenizer contract, one character per token."""
+
+    eos_token_ids = {0}
+
+    class _Detokenizer:
+        def __init__(self):
+            self.pending = ""
+
+        def reset(self):
+            self.pending = ""
+
+        def add_token(self, token):
+            self.pending += chr(token)
+
+        def finalize(self):
+            pass
+
+        @property
+        def last_segment(self):
+            segment, self.pending = self.pending, ""
+            return segment
+
+    def __init__(self):
+        self.detokenizer = self._Detokenizer()
+
+
+class _StreamBridge:
+    def __init__(self, tokens, result_tokens=None):
+        self.tokens, self.result_tokens = tokens, result_tokens or tokens
+
+    def generate(self, prompt_ids, max_tokens, on_token=None):
+        from types import SimpleNamespace
+
+        for token in self.tokens:
+            on_token(token)
+        return SimpleNamespace(tokens=list(self.result_tokens), finish_reason="stop", token_count=len(self.result_tokens),
+                               text="", metadata={})
+
+
+def _collect(stop_after=None):
+    rows = []
+
+    def consume(response):
+        rows.append(response)
+        if stop_after is not None and len(rows) == stop_after:
+            return {"finish_reason": "cancelled"}
+        return {"finish_reason": response.finish_reason} if response.finish_reason else None
+    return rows, consume
+
+
+def test_engine_stream_hands_each_token_on_with_text_and_finishes_on_the_last():
+    from ironmule_product import worker
+
+    holder, (rows, consume) = {}, _collect()
+    terminal = worker._engine_stream(_StreamBridge([72, 105, 0]), _StreamTokenizer(), [1, 2], 8, 2, holder, consume)
+    assert terminal == {"finish_reason": "stop"}
+    assert [row.token for row in rows] == [72, 105, 0]
+    assert "".join(row.text for row in rows) == "Hi"
+    assert [row.generation_tokens for row in rows] == [1, 2, 3]
+    assert [row.finish_reason for row in rows] == [None, None, "stop"]
+    assert holder["result"].tokens == [72, 105, 0]
+
+
+def test_engine_stream_stops_sending_after_a_cancellation():
+    from ironmule_product import worker
+
+    rows, consume = _collect(stop_after=1)
+    terminal = worker._engine_stream(_StreamBridge([72, 105, 33, 0]), _StreamTokenizer(), [1], 8, 1, {}, consume)
+    assert terminal == {"finish_reason": "cancelled"} and [row.token for row in rows] == [72]
+
+
+def test_engine_stream_refuses_tokens_that_differ_from_the_result():
+    from ironmule_product import worker
+
+    rows, consume = _collect()
+    with pytest.raises(RuntimeError, match="differ"):
+        worker._engine_stream(_StreamBridge([72, 105], [72, 106]), _StreamTokenizer(), [1], 8, 1, {}, consume)
+
+
+def test_the_streaming_detokenizer_is_built_once_and_reset_per_request():
+    from ironmule_product import worker
+
+    built = []
+
+    class Detokenizer:
+        def __init__(self):
+            built.append(self)
+            self.text = ""
+
+        def reset(self):
+            self.text = ""
+
+    class Tokenizer:
+        @property
+        def detokenizer(self):
+            return Detokenizer()
+
+    tokenizer = Tokenizer()
+    worker.reuse_detokenizer(tokenizer)
+    first = tokenizer.detokenizer
+    first.text = "left over"
+    second = tokenizer.detokenizer
+    assert second is first and second.text == "" and len(built) == 1
+    assert isinstance(tokenizer, Tokenizer)
+
+
+def test_a_grouped_stream_sends_tokens_interleaved_as_the_engine_reads_them(monkeypatch):
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    scripts = {0: [72, 105, 0], 1: [79, 107, 0]}
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            assert admit(64) == []  # nothing joined
+            for step in range(3):  # the group interleaves its requests' steps
+                for index, emit in enumerate(on_tokens):
+                    emit(scripts[index][step])
+            return [SimpleNamespace(tokens=scripts[i], text="", finish_reason="stop", token_count=3, metadata={})
+                    for i in range(2)]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": rid, "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for rid in ("a", "b")]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    tokens = [(event["request_id"], event["token_id"]) for event in sent if event["type"] == "token"]
+    assert tokens == [("a", 72), ("b", 79), ("a", 105), ("b", 107), ("a", 0), ("b", 0)]
+    assert "".join(e["text"] for e in sent if e.get("request_id") == "a" and e["type"] == "token") == "Hi"
+    done = [event for event in sent if event["type"] == "done"]
+    assert [d["request_id"] for d in done] == ["a", "b"] and all(d["engine"]["delivery"] == "streamed" for d in done)
+    assert sent[-1]["type"] == "batch_done"
+
+
+def test_no_thinking_reaches_the_chat_template_only_when_set(monkeypatch):
+    from ironmule_product import worker
+
+    seen = []
+
+    class Tokenizer:
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize, **extra):
+            seen.append(extra)
+            return [1]
+
+    worker._render(Tokenizer(), [{"role": "user", "content": "x"}])
+    monkeypatch.setattr(worker, "THINKING", False)
+    worker._render(Tokenizer(), [{"role": "user", "content": "x"}])
+    assert seen == [{}, {"enable_thinking": False}]
+
+
+def _join_world(monkeypatch, capacity):
+    """A grouped batch of two that admits a third request sent while it runs (SERVE8)."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    built = []
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            built.append(_StreamTokenizer._Detokenizer())
+            return built[-1]
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1] * len(messages[0]["content"])
+
+    scripts = {"a": [72, 0], "b": [79, 0], "c": [33, 0]}
+    calls = []
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            calls.append(len(ids))
+            names = ["c"] if len(ids) == 1 else ["a", "b"]
+            emitters = list(on_tokens)
+            worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [
+                {"request_id": "c", "model": "m", "messages": [{"role": "user", "content": "xyz"}],
+                 "max_tokens": 8, "stream": True}]}) if len(calls) == 1 else None
+            joined = admit(capacity)
+            names += ["c"] * len(joined)
+            emitters += [emit for _, _, emit, _ in joined]
+            for step in range(2):
+                for name, emit in zip(names, emitters):
+                    emit(scripts[name][step])
+            return [SimpleNamespace(tokens=scripts[n], text="", finish_reason="stop", token_count=2, metadata={})
+                    for n in names]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": rid, "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for rid in ("a", "b")]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    return sent, calls, built
+
+
+def test_a_request_sent_while_a_batch_runs_joins_it(monkeypatch):
+    sent, calls, built = _join_world(monkeypatch, capacity=64)
+    assert calls == [2]  # one engine run served all three
+    tokens = [(e["request_id"], e["token_id"]) for e in sent if e["type"] == "token"]
+    assert tokens == [("a", 72), ("b", 79), ("c", 33), ("a", 0), ("b", 0), ("c", 0)]
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    memory = sent[-1].pop("memory")  # MEM2: MLX counters at the group boundary
+    assert sent[-1] == {"type": "batch_done", "batch_id": "batch-1", "request_ids": ["a", "b", "c"]}
+    assert set(memory) == {"active", "cache", "peak"} and all(type(v) is int for v in memory.values())
+    assert len(built) == 3
+
+
+def test_a_joined_request_too_long_for_the_run_is_served_right_after_it(monkeypatch):
+    sent, calls, built = _join_world(monkeypatch, capacity=4)  # 3 prompt + 8 tokens + 8 do not fit 4
+    assert calls == [2, 1]
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    assert sent[-1]["request_ids"] == ["a", "b", "c"]
+    assert len(built) == 2  # c reused a detokenizer a or b gave back
+
+
+def test_chat_reuse_reaches_the_engine_in_the_grouped_path(monkeypatch):
+    """A lone chat runs as a group under --engine tuned (SERVE8), so --chat-reuse must work there too."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            ids = []
+            for message in messages:
+                ids += [{"user": 2, "assistant": 3}[message["role"]], len(message["content"])]
+            return ids + ([3] if add_generation_prompt else [])
+
+    seen = {}
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, boundaries=None, cancelled=None):
+            seen["boundaries"] = boundaries
+            on_tokens[0](0)
+            return [SimpleNamespace(tokens=[0], text="", finish_reason="stop", token_count=1, metadata={})]
+
+    monkeypatch.setattr(worker, "_emit", lambda event: None)
+    monkeypatch.setattr(worker, "CHAT_REUSE", True)
+    conversation = [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"},
+                    {"role": "user", "content": "more"}]
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": "a", "model": "m", "messages": conversation, "max_tokens": 8,
+                             "stream": True}]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert seen["boundaries"] == [[3]]
+
+
+@pytest.mark.parametrize("device", ["gpu", "cpu", "tpu", None])
+def test_ready_handshake_reports_the_actual_device_and_refuses_unknown_ones(tmp_path, monkeypatch, device):
+    """OPS1: a CPU worker says cpu and is served; a missing or unknown device is refused."""
+    processes = []
+    real_popen = backend_module.subprocess.Popen
+    spec = _spec(tmp_path)
+    ready = {"type": "ready", "protocol_version": 1, "model_id": spec.model_id, "revision": spec.revision,
+             "stop_handling": "parent", **({"device": device} if device else {})}
+
+    def fake_popen(*args, **kwargs):
+        body = f"import json, sys, time; print(json.dumps({ready!r}), flush=True); time.sleep(5)"
+        process = real_popen([sys.executable, "-S", "-u", "-c", body], stdin=kwargs.get("stdin"),
+                             stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"), env=kwargs.get("env"))
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    client = MLXWorkerClient(spec, startup_timeout=5)
+    try:
+        if device in ("gpu", "cpu"):
+            client.start()
+            assert client.ready and client.device == device
+            assert client.ready_payload["device"] == device
+        else:
+            with pytest.raises(BackendUnavailable):
+                client.start()
+            assert client.device is None
+    finally:
+        client.close()
+        for process in processes:
+            _cleanup_process(process)
+
+
+def test_a_stream_cancelled_during_a_fallback_rerun_may_end_short_of_what_it_streamed():
+    """RSI3-LIVE-P2: a fallback restarts a member; cancelled during the re-run it ends shorter than
+    the tokens it already streamed. Its output is never delivered, so a matching prefix passes;
+    without a cancellation any difference is still an error."""
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Detokenizer:
+        last_segment = ""
+
+        def add_token(self, _token):
+            pass
+
+        def finalize(self):
+            pass
+
+    class Pool:
+        def acquire(self):
+            return Detokenizer()
+
+        def release(self, _detokenizer):
+            pass
+
+    events = {"r": threading.Event()}
+    stream = worker._BatchStream("b", "r", 3, 8, Pool(), events, threading.Lock(), SimpleNamespace(eos_token_ids=()))
+    for token in (5, 6, 7):
+        stream.on_token(token)
+    short = SimpleNamespace(tokens=[5], finish_reason="cancelled")
+    with pytest.raises(RuntimeError, match="differ"):
+        stream.finish(short)
+    events["r"].set()
+    assert stream.finish(short) >= 0
+    with pytest.raises(RuntimeError, match="differ"):
+        stream.finish(SimpleNamespace(tokens=[9], finish_reason="cancelled"))
+
+
+@pytest.mark.parametrize("digest,ok", [("0" * 64, True), ("not-a-digest", False), (5, False)])
+def test_ready_handshake_carries_a_valid_source_identity(tmp_path, monkeypatch, digest, ok):
+    """RSI3-LIVE (f): the worker reports the digest of every source file it loaded."""
+    processes = []
+    real_popen = backend_module.subprocess.Popen
+    spec = _spec(tmp_path)
+    ready = {"type": "ready", "protocol_version": 1, "model_id": spec.model_id, "revision": spec.revision,
+             "stop_handling": "parent", "device": "gpu", "sources_sha256": digest}
+
+    def fake_popen(*args, **kwargs):
+        body = f"import json, sys, time; print(json.dumps({ready!r}), flush=True); time.sleep(5)"
+        process = real_popen([sys.executable, "-S", "-u", "-c", body], stdin=kwargs.get("stdin"),
+                             stdout=kwargs.get("stdout"), stderr=kwargs.get("stderr"), env=kwargs.get("env"))
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    client = MLXWorkerClient(spec, startup_timeout=5)
+    try:
+        if ok:
+            client.start()
+            assert client.ready_payload["sources_sha256"] == digest
+        else:
+            with pytest.raises(BackendUnavailable):
+                client.start()
+    finally:
+        client.close()
+        for process in processes:
+            _cleanup_process(process)
+
+
+class _FakeMx:
+    """MEM2: just the allocator controls the worker touches."""
+
+    def __init__(self, cuda: bool) -> None:
+        self.cuda = type("cuda", (), {"is_available": staticmethod(lambda: cuda)})()
+        self.limits: list[int] = []
+
+    def set_cache_limit(self, value: int) -> int:
+        self.limits.append(value)
+        return 0
+
+
+def test_the_cuda_cache_bound_is_set_on_cuda_only_and_can_be_turned_off():
+    """MEM2-D: on a 15 GiB T4 MLX's default cache (0.95 of the device) held 11 GiB of freed buffers
+    beside about 3 GiB that MLX does not count, and the device ran out."""
+    from ironmule_product.worker import CUDA_CACHE_LIMIT_ENV, _apply_cuda_cache_limit
+
+    cuda, metal = _FakeMx(True), _FakeMx(False)
+    assert _apply_cuda_cache_limit(cuda, {}) == 1024 << 20 and cuda.limits == [1024 << 20]
+    assert _apply_cuda_cache_limit(metal, {}) is None and metal.limits == []  # Metal keeps MLX's default
+    off = _FakeMx(True)
+    assert _apply_cuda_cache_limit(off, {CUDA_CACHE_LIMIT_ENV: "0"}) is None and off.limits == []
+    assert _apply_cuda_cache_limit(_FakeMx(True), {CUDA_CACHE_LIMIT_ENV: "256"}) == 256 << 20
+    for bad in ("-1", "1.5", "lots"):
+        with pytest.raises(ValueError):
+            _apply_cuda_cache_limit(_FakeMx(True), {CUDA_CACHE_LIMIT_ENV: bad})

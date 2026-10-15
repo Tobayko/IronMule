@@ -46,6 +46,9 @@ jobs:
           cargo test --offline --release --manifest-path native/experiment_planner/Cargo.toml
           cargo build --offline --release --manifest-path native/experiment_planner/Cargo.toml
           cargo test --offline --release --manifest-path native/online_controller/Cargo.toml
+          cargo test --offline --release --manifest-path native/serving_learner/Cargo.toml
+          cargo build --offline --release --manifest-path native/serving_learner/Cargo.toml
+          cargo test --offline --release --manifest-path native/optimizer/Cargo.toml
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
       # These two check public claims (README, docs/PROJECT_STATUS.md) against the redacted

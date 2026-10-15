@@ -1,0 +1,5 @@
+{"schema": "imopt.goal.v1",
+ "objective": "minimise IronMule's end-to-end time for the tune workload; tokens must equal the untuned engine's; IronMule's paired confirmation (tune.confirm) is the evaluator, so of the rule only max_trials applies",
+ "rule": {"min_gain": 0.03, "max_regression": 0.10, "pairs": 8, "family_alpha": 0.05, "max_trials": 2},
+ "budget": {"max_tests": 12, "max_seconds": 2400, "reference_runs": 2},
+ "planner": {"prior_sd": 0.15, "noise_sd": 0.05, "min_gain_per_s": 0.0, "default_cost_s": 0}}

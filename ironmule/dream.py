@@ -32,6 +32,7 @@ import ctypes as C
 import hashlib
 import json
 import math
+import os
 import random
 import sys
 import time
@@ -41,6 +42,7 @@ from typing import Any, Callable, Mapping, Sequence
 from .hw import STORE
 
 SCHEMA_TREE = "ironmule.dream_tree.v1"
+CHECKPOINT_ENV = "IRONMULE_SCREEN_CHECKPOINT"  # set by tune for its screening child (CUDA1b)
 SCHEMA_STATE = "ironmule.dream_planner.v1"
 SCHEMA_CONFIG = "ironmule.dream_config.v1"
 # Wider than tune.SEARCH: more readback and slack values; the planner decides what is worth it.
@@ -432,6 +434,7 @@ def explore(model_id: str, prompt: str, max_tokens: int, repeats: int, compute_d
                        resolve_local_model)
 
     started = time.monotonic()
+    checkpoint = os.environ.get(CHECKPOINT_ENV)
     device_class = known.get("class")
     settings = load_config(device_class)
     planner, envelope = load_planner(device_class, settings["config"])
@@ -454,6 +457,28 @@ def explore(model_id: str, prompt: str, max_tokens: int, repeats: int, compute_d
                               "ratio": 1.0, "seconds": 0.0, "order": 0,
                               "result": {k: base[k] for k in ("total_ns", "prefill_ns", "decode_ns")}}}
         current, results, trials, decisions_ns = Knobs(**root), {_key(root): base}, [], []
+        def summary() -> tuple[dict[str, Any], dict[str, Any]]:
+            """What `tune._screen` returns and the stored tree, from the tests completed so far."""
+            winner = best_key(nodes)
+            if nodes[winner]["ratio"] >= KEEP_IF_RATIO_BELOW:
+                winner = _key(root)
+            done = []
+            for trial in trials:  # knowledge counts a knob as kept when the winner carries it
+                trial = dict(trial)
+                if trial["disposition"] == "measured":
+                    kept = winner != _key(root) and nodes[winner]["knobs"][trial["knob"]] == trial["value"]
+                    trial["disposition"] = "accepted" if kept and trial["verdict"] == "ok" else "rejected"
+                done.append(trial)
+            tree = {"schema": SCHEMA_TREE, "device_class": device_class, "model_id": model_id,
+                    "model_identity_sha256": resolved.identity.identity_sha256, "compute_dtype": compute_dtype,
+                    "prompt_tokens": len(ids), "max_tokens": max_tokens, "repeats": repeats, "explorer": explorer,
+                    "planner_config": settings["config"], "planner_enabled": settings.get("enabled", True),
+                    "planner_observations_before": envelope["observations"] - len(trials),
+                    "budget_s": budget_s, "elapsed_s": round(time.monotonic() - started, 2),
+                    "decision_ns": decisions_ns, "nodes": nodes, "created_at": time.time()}
+            return ({"prompt_tokens": len(ids), "base": base, "best": Knobs(**nodes[winner]["knobs"]).as_dict(),
+                     "best_result": results[winner], "trials": done, "tree": name}, tree)
+
         print(f"dream: baseline {base['total_ns']/1e6:.2f} ms; explorer {explorer}, planner state "
               f"{envelope['observations']} observations, budget {budget_s:.0f} s", flush=True)
         while time.monotonic() - started < budget_s:
@@ -467,6 +492,9 @@ def explore(model_id: str, prompt: str, max_tokens: int, repeats: int, compute_d
             candidate = Knobs(**child)
             node = {"knobs": child, "parent": parent_key, "change": [knob, value],
                     "depth": nodes[parent_key]["depth"] + 1, "order": len(nodes)}
+            if checkpoint:  # CUDA1b: a native abort in this test must not lose the completed ones
+                screen, tree = summary()
+                _write(Path(checkpoint), {"pending": node, "at": time.time(), "screen": screen, "tree": tree})
             test_started = time.monotonic()
             try:
                 if engine is None or Engine.needs_reload(current, candidate):
@@ -502,29 +530,39 @@ def explore(model_id: str, prompt: str, max_tokens: int, repeats: int, compute_d
             trials.append({"knob": knob, "value": value, "ratio": node["ratio"], "depth": node["depth"],
                            "disposition": "unsupported" if node["status"] == "unsupported" else "measured",
                            "verdict": node["status"]})
-        winner = best_key(nodes)
-        if nodes[winner]["ratio"] >= KEEP_IF_RATIO_BELOW:
-            winner = _key(root)
-        for trial in trials:  # knowledge counts a knob as kept when the winner carries it
-            if trial["disposition"] == "measured":
-                kept = winner != _key(root) and nodes[winner]["knobs"][trial["knob"]] == trial["value"]
-                trial["disposition"] = "accepted" if kept and trial["verdict"] == "ok" else "rejected"
-        tree = {"schema": SCHEMA_TREE, "device_class": device_class, "model_id": model_id,
-                "model_identity_sha256": resolved.identity.identity_sha256, "compute_dtype": compute_dtype,
-                "prompt_tokens": len(ids), "max_tokens": max_tokens, "repeats": repeats, "explorer": explorer,
-                "planner_config": settings["config"], "planner_enabled": settings.get("enabled", True),
-                "planner_observations_before": envelope["observations"] - len(trials),
-                "budget_s": budget_s, "elapsed_s": round(time.monotonic() - started, 2),
-                "decision_ns": decisions_ns, "nodes": nodes, "created_at": time.time()}
+        screen, tree = summary()
         _write(tree_dir() / f"{name}.json", tree)
+        winner = _key(screen["best"])
         print(f"dream: {len(nodes) - 1} tests, best ratio {nodes[winner]['ratio']:.4f}, "
               f"decisions {sum(decisions_ns) / 1e6:.2f} ms in total; tree {name}", flush=True)
-        return {"prompt_tokens": len(ids), "base": base, "best": Knobs(**nodes[winner]["knobs"]).as_dict(),
-                "best_result": results[winner], "trials": trials, "tree": name}
+        return screen
     finally:
         planner.close()
         _close_engine(engine)
         _release_device_memory()
+
+
+def record_crash(checkpoint: Mapping[str, Any], reason: str) -> dict[str, Any]:
+    """CUDA1b: the screening child died in its pending test. Store the tree with that test marked
+    ``crashed``, charge the planner a failure, and return the screening result of the completed tests."""
+    node, tree, screen = dict(checkpoint["pending"]), dict(checkpoint["tree"]), dict(checkpoint["screen"])
+    node.update(status="crashed", ratio=None, reason=reason,
+                seconds=round(max(0.0, time.time() - float(checkpoint["at"])), 3))
+    tree["nodes"] = {**tree["nodes"], _key(node["knobs"]): node}
+    _write(tree_dir() / f"{screen['tree']}.json", tree)
+    knob, value = node["change"]
+    planner, envelope = load_planner(tree["device_class"], tree["planner_config"])
+    try:
+        planner.fail(f"{knob}={value}", node["seconds"])
+        envelope["observations"] += 1
+        envelope["log"].append({"tree": screen["tree"], "explorer": tree["explorer"], "at": time.time(),
+                                "arm": f"{knob}={value}", "status": "crashed", "seconds": node["seconds"]})
+        save_planner(planner, envelope)
+    finally:
+        planner.close()
+    screen["trials"] = [*screen["trials"], {"knob": knob, "value": value, "ratio": None, "depth": node["depth"],
+                                            "disposition": "crashed", "verdict": "crashed"}]
+    return screen
 
 
 # -- the hardware session ------------------------------------------------------------------

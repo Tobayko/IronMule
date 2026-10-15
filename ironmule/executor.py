@@ -18,6 +18,8 @@ scheduling, fallback and isolation logic is testable without loading one.
 
 from __future__ import annotations
 
+import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any, Protocol, Sequence
@@ -41,6 +43,29 @@ class DecodeBackend(Protocol):
     def read(self, handle: Any) -> tuple[int, Any]: ...
 
 
+class TokenStream:
+    """Hands each output token of one request to `emit` once, in order (SERVE6).
+
+    A replay of the same request (a fallback restart, a comparison arm) must reproduce what was
+    already emitted: a streamed token cannot be taken back, so a different one raises.
+    """
+
+    def __init__(self, emit, cancelled=None):
+        # RSI3-LIVE-P2: `cancelled()`, when given, ends the request at its next token boundary;
+        # a caller that cancels never receives the rest, and the group's other requests go on.
+        self.emit, self.tokens, self.cancelled = emit, [], cancelled
+
+    def accept(self, index: int, token: int) -> None:
+        if index < len(self.tokens):
+            if self.tokens[index] != token:
+                raise RuntimeError("streamed output diverged on replay")
+            return
+        if index != len(self.tokens):
+            raise RuntimeError("streamed output skipped a token")
+        self.tokens.append(token)
+        self.emit(token)
+
+
 @dataclass
 class Session:
     """One in-flight request. State objects are never shared between sessions."""
@@ -56,6 +81,7 @@ class Session:
     done: bool = False
     stop_reason: str = ""
     metrics: RequestMetrics | None = None
+    stream: TokenStream | None = None
 
     def restart(self, backend: DecodeBackend) -> None:
         """Return to the post-prefill state. Used only by the fallback path."""
@@ -69,6 +95,8 @@ def _accept_token(session: Session, token: int, when: int,
                   eos_ids: Sequence[int]) -> None:
     """Accept one physical output token and apply the generation contract."""
     session.tokens.append(token)
+    if session.stream is not None:
+        session.stream.accept(len(session.tokens) - 1, token)
     metrics = session.metrics
     metrics.token_times_ns.append(when)
     if metrics.first_token_ns == 0:
@@ -83,6 +111,21 @@ def _accept_token(session: Session, token: int, when: int,
     if session.done:
         metrics.finished_ns = when
         metrics.stop_reason = session.stop_reason
+
+
+def _stop_if_cancelled(session: Session) -> bool:
+    """End a caller-cancelled request now instead of decoding it to its limit (RSI3-LIVE-P2).
+
+    Only a stream given a `cancelled` predicate can stop; every other request runs exactly as
+    before. Grouped batch-1 keeps each other request's tokens whatever the group width."""
+    stream = session.stream
+    if session.done or stream is None or stream.cancelled is None or not stream.cancelled():
+        return False
+    session.done, session.stop_reason = True, "cancelled"
+    if session.metrics is not None:
+        session.metrics.finished_ns = now()
+        session.metrics.stop_reason = "cancelled"
+    return True
 
 
 class _Runner:
@@ -108,7 +151,7 @@ class _Runner:
                             break
                     session.state = self.backend.rewind(state, len(session.prompt_ids) + len(session.tokens) - 1)
                     continue
-            while not session.done:
+            while not session.done and not _stop_if_cancelled(session):
                 count = min(every, session.max_tokens - len(session.tokens))
                 chain = self.backend.steps(session.state, session.tokens[-1], capacity, count) if count > 1 else None
                 if chain:
@@ -195,16 +238,32 @@ class AsyncGroupedB1Executor(_Runner):
             chains.append(chain)
         return chains
 
-    def run(self, sessions: list[Session], capacity: int) -> None:
+    def run(self, sessions: list[Session], capacity: int, admit=None) -> None:
+        """Serve `sessions`; `admit()` (SERVE8), when given, returns sessions that arrived while
+        this run was going, already prefilled at this capacity, and they join the rotation before
+        the next round. The run ends when nothing is active, waiting or newly admitted."""
         started = now()
         pending = sorted(sessions, key=lambda s: (s.arrival_ms, s.rid))
         active: list[Session] = []
+        trace_path = os.environ.get("IRONMULE_TRACE_ROUNDS")  # SERVE8-T: opt-in per-round timing
 
-        while pending or active:
+        while True:
+            t0 = now()
+            joined = 0
+            memory0 = _memory() if trace_path else None
+            if admit is not None:
+                fresh = [session for session in admit() if not session.done]
+                joined = len(fresh)
+                active.extend(fresh)
+            t1 = now()
+            memory1 = _memory() if trace_path else None
+            if not (pending or active):
+                break
             while pending and (now() - started) / 1e6 >= pending[0].arrival_ms:
                 admitted = pending.pop(0)
                 if not admitted.done:
                     active.append(admitted)
+            active = [s for s in active if not _stop_if_cancelled(s)]
             if not active:
                 if not pending:
                     break
@@ -235,6 +294,14 @@ class AsyncGroupedB1Executor(_Runner):
                 continue
 
             self.telemetry.realised_widths.append(len(group))
+            if trace_path:
+                with open(trace_path, "a") as stream:
+                    stream.write(json.dumps({"t_ms": (t0 - started) / 1e6, "admit_ms": (t1 - t0) / 1e6,
+                                             "joined": joined, "width": len(group), "active": len(active),
+                                             "chained": bool(chains), "step_ms": (now() - t1) / 1e6,
+                                             "capacity": capacity, "memory_before_admit": memory0,
+                                             "memory_after_admit": memory1, "memory_after_step": _memory()})
+                                 + "\n")
             active = active[len(group):] + [s for s in group if not s.done]
 
         self.telemetry.wall_ns = now() - started
@@ -261,6 +328,15 @@ class AsyncGroupedB1Executor(_Runner):
         self._finish_sequentially(group, capacity)
 
 
+def _memory() -> dict[str, int] | None:
+    """SERVE8-T2: MLX allocator counters (active, cache, peak bytes) for the round trace; None without MLX."""
+    try:
+        import mlx.core as mx
+        return {"active": mx.get_active_memory(), "cache": mx.get_cache_memory(), "peak": mx.get_peak_memory()}
+    except Exception:  # noqa: BLE001 - diagnostics only
+        return None
+
+
 def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
                    capacity: int, dispatch_ns: int | None = None) -> list[Session]:
     """Prefill every request under its own plan. Plans are applied, never chosen.
@@ -277,12 +353,23 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
                                  arrival_ns=now() if dispatch_ns is None else dispatch_ns,
                                  prompt_tokens=len(request.prompt_ids))
         metrics.engine_start_ns = now()
+        stream = getattr(request, "stream", None)
+        if stream is not None and stream.cancelled is not None and stream.cancelled():
+            # RSI3-LIVE-P2: cancelled before its prefill; it computes nothing.
+            metrics.finished_ns, metrics.stop_reason = now(), "cancelled"
+            session = Session(rid=request.rid, prompt_ids=list(request.prompt_ids), max_tokens=request.max_tokens,
+                              plan=request.plan, arrival_ms=request.arrival_ms, metrics=metrics, stream=stream,
+                              done=True, stop_reason="cancelled")
+            telemetry.requests.append(metrics)
+            telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))
+            sessions.append(session)
+            continue
         state, first = backend.prefill(request.prompt_ids, request.plan, capacity)
         session = Session(rid=request.rid, prompt_ids=list(request.prompt_ids),
                           max_tokens=request.max_tokens, plan=request.plan,
                           arrival_ms=request.arrival_ms, base_state=state,
                           state=backend.reset_state(state, len(request.prompt_ids)),
-                          metrics=metrics)
+                          metrics=metrics, stream=getattr(request, "stream", None))
         _accept_token(session, first, now(), backend.eos_ids)
         telemetry.requests.append(metrics)
         telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))
