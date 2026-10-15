@@ -1127,7 +1127,8 @@ def test_confirmation_decision_binds_both_full_arm_knob_mappings():
 
 def _confirmation(*, token_identity=True, token_count_identity=True,
                   stop_reason_identity=True, deterministic=True, median=0.8,
-                  ci_low=0.7, ci_high=0.9, pairs=None, extra=False):
+                  ci_low=0.7, ci_high=0.9, pairs=None, extra=False, processes=6,
+                  candidate_total=0.8):
     import importlib
 
     ab = importlib.import_module("ironmule.ab")
@@ -1148,7 +1149,7 @@ def _confirmation(*, token_identity=True, token_count_identity=True,
             logical[-1] = [8]
         total = [1.0 for _ in range(7)]
         if name == "candidate":
-            total = [0.8 for _ in range(7)]
+            total = [candidate_total for _ in range(7)]
         return {
             "total_ns": total, "prefill_ns": [1.0 for _ in range(7)],
             "decode_ns": [1.0 for _ in range(7)],
@@ -1163,7 +1164,7 @@ def _confirmation(*, token_identity=True, token_count_identity=True,
         }
 
     raw = []
-    for index in range(6):
+    for index in range(processes):
         raw.append({
             "pid": index + 1,
             "arms": {"baseline": arm("baseline"), "candidate": arm("candidate")},
@@ -1201,13 +1202,46 @@ def _confirmation(*, token_identity=True, token_count_identity=True,
         "token_count_identity": token_count_identity,
         "stop_reason_identity": stop_reason_identity,
         "deterministic": deterministic,
-        "processes": 6, "repeats": 7, "warmup": 2,
+        "processes": processes, "repeats": 7, "warmup": 2,
         "raw": raw, "arms": {
             "baseline": BASELINE.as_dict(),
             "candidate": Knobs(readback_every=2).as_dict(),
         }, "per_arm": per_arm,
         "reference_tokens": [7], "ratios": {"candidate/baseline": ratios},
     }
+
+
+def test_two_process_confirmation_counts_only_where_the_early_stop_was_due():
+    candidate = Knobs(readback_every=2)
+    clear = _confirmation(processes=2)  # every pair 0.8: the interval clears 1 by more than 0.08
+    assert tune._confirmation_decision(
+        clear, expected_baseline=BASELINE, expected_candidate=candidate) == (True, None)
+    stored = {
+        "ratio": clear["ratios"]["candidate/baseline"], "token_identity": True,
+        "token_count_identity": True, "stop_reason_identity": True, "deterministic": True,
+        "accepted": True, "rejection_reason": None,
+        "evidence_sha256": tune._confirmation_evidence_sha256(clear),
+    }
+    assert tune._stored_confirmation_valid(stored, clear, expected_candidate=candidate)
+    for evidence in (_confirmation(processes=2, candidate_total=0.95),  # inside the margin
+                     _confirmation(processes=3), _confirmation(processes=4)):
+        assert tune._confirmation_decision(
+            evidence, expected_baseline=BASELINE, expected_candidate=candidate
+        ) == (False, "invalid_confirmation")
+
+
+def test_confirm_stops_after_two_only_when_clear(monkeypatch):
+    seen = []
+
+    def fake_run(arms, *, stop, **kwargs):
+        child = lambda c: {"arms": {"baseline": {"total_ns": [1.0]}, "candidate": {"total_ns": [c]}}}
+        seen.append([stop([child(0.8), child(0.81)]), stop([child(0.95), child(0.97)]),
+                     stop([child(0.8)]), stop([child(1.2), child(1.15)])])
+        return kwargs
+
+    monkeypatch.setattr(importlib.import_module("ironmule.ab"), "run", fake_run)
+    assert tune.confirm("m", BASELINE, Knobs(readback_every=2), "p", 8)["processes"] == 6
+    assert seen == [[True, False, False, True]]
 
 
 def test_archived_q2_confirmation_full_ratio_shape_remains_legacy_valid():

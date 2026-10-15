@@ -32,17 +32,21 @@ when it is ready:
 | `--tls-cert`, `--tls-key` | none | serve over TLS |
 | `--state-dir` | `IRONMULE_HOME` or `~/.ironmule/product` | product state directory |
 | `--compute-dtype` | none | opt-in numeric plan for GPUs that emulate bf16 (`float32`, `native`); changes output, see `ironmule plans` |
-| `--engine` | `stock` | `stock`: mlx-lm's own generation, streamed token by token; `ironmule`: IronMule's engine with this machine's tuned profile, each answer delivered whole. Both are greedy but compute the last prompt token differently (mlx-lm prefills it alone, IronMule with the rest), so their answers can differ |
+| `--engine` | `reference` | `reference` (earlier name `stock`): mlx-lm's own generation, streamed token by token; `tuned` (earlier name `ironmule`): IronMule's engine with this machine's tuned profile, streaming up to eight requests as one group; `rust2`: the rust2 binary on CUDA (experimental). All are greedy but compute the last prompt token differently, so answers can differ between engines |
+| `--learning` | `off` | `active` or `paused`: learn group width and gather wait from this server's traffic; see [live learning](LIVE_LEARNING.md) |
+| `--no-dreaming` | off | with `--learning`: the same learner without model rollouts |
 
 ## Routes
 
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
 | `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below. It shows which engine answers and, live, completion tokens per second from sending to the last token |
-| `GET` | `/health` | service, mode, backend, loaded model, queue and completion counters |
+| `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, and a `learning` summary when learning is on |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |
 | `POST` | `/v1/chat/completions` | `stream: false` gives one JSON completion; `stream: true` gives SSE chunks ending with `data: [DONE]` |
+| `GET` | `/v1/ironmule/learning` | live-learning status: serving, mode, candidate, the strategy that serves and why |
+| `POST` | `/v1/ironmule/learning` | `{"action": "pause" \| "resume" \| "rollback" \| "compare"}`; `400` when learning is off |
 
 The request body is read as OpenAI chat completion input: `messages` (required,
 non-empty) and `max_tokens` or `max_completion_tokens`. Sampling fields are accepted
@@ -51,9 +55,11 @@ and ignored. Decoding is greedy, so the same prompt gives the same tokens.
 ## Concurrency
 
 Requests are **queued, not rejected while busy**. The queue depth is the mode's:
-`8` in `desktop`, `64` in `server`. Generation itself is serialised through one
-permit, so four simultaneous requests complete in arrival order rather than
-interleaving through one engine.
+`8` in `desktop`, `64` in `server`. With the reference engine, generation is
+serialised through one permit, so four simultaneous requests complete in arrival
+order rather than interleaving through one engine. `--engine tuned` streams up to
+eight waiting requests as one group (SERVE4); with `--learning`, how wide a group
+may be and how long it waits for company is decided by the live learner.
 
 Two things do return `HTTP 429`:
 
@@ -62,6 +68,49 @@ Two things do return `HTTP 429`:
 - a full request queue.
 
 A load balancer in front of this should treat `429` as backpressure, not as failure.
+Past the accept limit the server sends the `429` and closes at once, so a client still
+sending its request may see a connection reset instead; that request was never accepted.
+
+## When the model worker fails (STAB1)
+
+The model runs in a separate worker process. When it dies, reports a generation error
+(for example CUDA out of memory), stops answering or breaks the protocol:
+
+- every request in its group ends with an explicit error: `503 backend_unavailable`
+  before the first token, or an SSE error frame and `[DONE]` after it. A partly streamed
+  answer is never continued, restarted or repeated;
+- the server replaces the worker, but only after the old process has been reaped, at most
+  three times in ten minutes (0, 5 and 20 s apart), and only with a worker that reports the
+  same model, revision, device, variant, sources and engine profile. Requests arriving
+  meanwhile wait in the queue under their own deadlines;
+- when recovery is refused, `/health` says why, `ready` is false and requests get `503`
+  at once. Restart the server to try again.
+
+Each request's own deadline (`request_timeout_s`, 120 s by default) ends only that
+request. The worker is retired as unresponsive only when it has not finished a group a
+full request timeout after the group's last deadline; with no request timeout there is no
+such bound. In a group, a request's last token and completion arrive when the worker's
+engine run ends, so a short request grouped with a long one can wait for it.
+
+`/health` adds `worker` (`state`: ready, restarting, lost, refused or unavailable; `pid`,
+`restarts`, `refused`, the last `exit` with reason, exit status and whether it was reaped,
+and `scheduler_alive`), `in_flight` (the running group's width, open members, age and time
+since the worker's last event), `groups_started` and `oldest_queued_s`. The state
+directory keeps a bounded `stability-log.jsonl` (4 MiB, older half dropped): admissions,
+rejections, groups, every request's end and error code, how each HTTP response ended,
+worker exits with the last 4 KiB of the worker's stderr, and restarts. It holds ids, times
+and codes, no prompt or answer text; the stderr tail can hold library messages, so keep the
+file private like the rest of the state directory.
+
+## CUDA memory (MEM2)
+
+On CUDA the worker bounds MLX's cache of freed buffers to 1,024 MiB
+(`IRONMULE_CUDA_CACHE_LIMIT_MIB`, in MiB; `0` keeps MLX's default, which lets the cache
+grow to 0.95 of device memory). Without the bound, on a 15 GiB T4 the cache reached
+11 GiB beside about 3 GiB that MLX does not count, and the worker was lost when the
+device filled. The bound changes no output; whether it removes those losses and what it
+costs in speed is not yet measured (its preregistered comparison was stopped before a
+result). Metal is unchanged.
 
 ## What it does not do
 

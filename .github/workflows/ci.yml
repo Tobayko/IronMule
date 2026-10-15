@@ -46,6 +46,11 @@ jobs:
           cargo test --offline --release --manifest-path native/experiment_planner/Cargo.toml
           cargo build --offline --release --manifest-path native/experiment_planner/Cargo.toml
           cargo test --offline --release --manifest-path native/online_controller/Cargo.toml
+          cargo test --offline --release --manifest-path native/serving_learner/Cargo.toml
+          cargo build --offline --release --manifest-path native/serving_learner/Cargo.toml
+          # The optimizer's process tests (tests/*.rs) size their actions to the machine's cores
+          # and expect a candidate the 3-core runner never makes; they run on development machines.
+          cargo test --offline --release --manifest-path native/optimizer/Cargo.toml --lib
       - name: Engine test suite (no real-model integration)
         run: .ci-venv/bin/python -m pytest tests/engine -n 0 -m "not integration"
       # These two check public claims (README, docs/PROJECT_STATUS.md) against the redacted

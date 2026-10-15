@@ -86,8 +86,8 @@ def test_serve_refuses_a_numeric_plan_on_the_ironmule_engine(tmp_path, capsys):
     assert "--compute-dtype runs on the stock engine only" in capsys.readouterr().err
 @pytest.mark.parametrize("cpu_only, answer, expected", [
     (False, None, ["--model", "mlx-community/gemma-3-4b-it-4bit"]),
-    (True, "y", ["--model", "mlx-community/Qwen3-0.6B-4bit", "--compute-dtype", "dequantize"]),
-    (True, "n", ["--model", "mlx-community/Qwen3-0.6B-4bit"]),
+    (True, "y", ["--model", "mlx-community/Qwen3-0.6B-4bit", "--no-thinking", "--compute-dtype", "dequantize"]),
+    (True, "n", ["--model", "mlx-community/Qwen3-0.6B-4bit", "--no-thinking"]),
 ])
 def test_start_without_a_gpu_picks_a_small_model_and_asks_before_dequantize(
         tmp_path, monkeypatch, cpu_only, answer, expected):

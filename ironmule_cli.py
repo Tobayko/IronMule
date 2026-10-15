@@ -314,6 +314,7 @@ _COMMAND_GROUPS = (
         ("benchmark", "Run the existing reproducible local benchmark"),
         ("tune", "Tune or inspect the existing local profile (--show)"),
         ("learn", "Bounded hardware session: learned test planner, confirmation, replay"),
+        ("dream", "Learn the serving policy (group width, joining, gather wait) from logged traffic"),
         ("optimize", "Run bounded automatic calibration and inspect its history"),
         ("revalidate", "Canary-check the stored profile"),
         ("requalify", "Re-measure a locally learned action after monitoring took it away"),
@@ -717,7 +718,7 @@ def _dispatch(argv: list[str] | None) -> int:
     if command == "data":
         from friday_evidence.portable.cli import main as data_main
         return data_main(rest)
-    if command in ("start", "setup", "serve", "optimize"):
+    if command in ("start", "setup", "serve", "optimize", "dream"):
         from ironmule_product.cli import dispatch
         return dispatch(command, rest)
     if command == "autopilot":

@@ -113,6 +113,19 @@ def test_run_callbacks_receive_each_index_and_defensive_json_copy(monkeypatch):
     assert result["stop_reason_identity"] is True
 
 
+def test_run_stop_ends_early_and_records_processes_run(monkeypatch):
+    calls = _run_setup(monkeypatch)
+    sizes = []
+
+    def stop(children):
+        sizes.append(len(children))
+        return len(children) == 2
+
+    result = ab.run(_arms(), processes=6, repeats=7, warmup=2, stop=stop)
+    assert sizes == [1, 2] and len(calls) == 2
+    assert result["processes"] == 2 and len(result["raw"]) == 2
+
+
 def test_run_uses_only_real_popen_compatible_pipe_kwargs(monkeypatch):
     """Keep the A/B launch contract valid for subprocess.Popen itself."""
     import importlib

@@ -84,6 +84,8 @@ KEEP_IF_RATIO_BELOW = 0.995   # a knob has to actually pay for itself
 CONFIRM_PROCESSES = 6         # the screening search is cheap and single process;
 CONFIRM_REPEATS = 7           # the winner still has to survive a paired A/B
 REVALIDATE_PROCESSES = 3      # canaries are cheaper than a full confirmation
+CONFIRM_EARLY_PROCESSES = 2   # RSI2: stop after two balanced processes when the
+CONFIRM_EARLY_MARGIN = 0.08   # interval already clears 1 by more than the noise seen
 HYSTERESIS = 0.02             # a stored winner is only dropped when it clearly lost
 CONFIRMATION_REJECTION_REASONS = frozenset({
     "token_identity", "token_count_identity", "stop_reason_identity",
@@ -530,14 +532,48 @@ def _is_unsupported_candidate(exc: BaseException) -> bool:
     return isinstance(exc, (ValueError, TypeError)) and "unsupported" in str(exc).lower()
 
 
+def _early_clear(total: Mapping[str, Any]) -> bool:
+    """RSI2: the total_ns interval already excludes 1 by the margin."""
+    return (float(total["ci_high"]) < 1.0 - CONFIRM_EARLY_MARGIN
+            or float(total["ci_low"]) > 1.0 + CONFIRM_EARLY_MARGIN)
+
+
+def _confirmation_processes(value: Mapping[str, Any]) -> int | None:
+    """Six, or two when the record itself shows the early stop was due; else None."""
+    processes = value.get("processes")
+    if processes == CONFIRM_PROCESSES:
+        return processes
+    try:
+        total = value["ratios"]["candidate/baseline"]["total_ns"]
+        early = processes == CONFIRM_EARLY_PROCESSES and _early_clear(total)
+    except (KeyError, TypeError, ValueError):
+        return None
+    return processes if early else None
+
+
 def confirm(model_id: str, baseline: Knobs, candidate: Knobs, prompt: str,
             max_tokens: int, compute_dtype: str | None = None) -> dict[str, Any]:
-    """Screening found a candidate; a paired A/B decides whether it is real."""
+    """Screening found a candidate; a paired A/B decides whether it is real.
+
+    Up to six processes; after two it stops where the decision is already clear
+    (RSI2: on 48 stored and 9 fresh T4 confirmations it decided like six)."""
+    from statistics import median
+
+    from friday_evidence.statistics import paired_ratio
+
     from . import ab
+
+    def stop(children: list[dict[str, Any]]) -> bool:
+        if len(children) != CONFIRM_EARLY_PROCESSES:
+            return False
+        return _early_clear(paired_ratio(
+            [median(child["arms"]["candidate"]["total_ns"]) for child in children],
+            [median(child["arms"]["baseline"]["total_ns"]) for child in children]))
+
     return ab.run({"baseline": baseline, "candidate": candidate},
                   processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
                   max_tokens=max_tokens, model=model_id, prompt=prompt,
-                  compute_dtype=compute_dtype)
+                  compute_dtype=compute_dtype, stop=stop)
 
 
 def _confirmation_decision(value: Any, *, expected_baseline: Knobs,
@@ -545,8 +581,10 @@ def _confirmation_decision(value: Any, *, expected_baseline: Knobs,
     """Validate a paired confirmation before it can influence a stored profile."""
     from . import ab
 
+    if not isinstance(value, Mapping) or _confirmation_processes(value) is None:
+        return False, "invalid_confirmation"
     valid, _reason = ab.validate_result(
-        value, processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
+        value, processes=value["processes"], repeats=CONFIRM_REPEATS, warmup=2,
         expected_arms={"baseline": expected_baseline, "candidate": expected_candidate},
     )
     if not valid:
@@ -570,7 +608,7 @@ def _confirmation_decision(value: Any, *, expected_baseline: Knobs,
     repeats = value.get("repeats")
     warmup = value.get("warmup")
     if (isinstance(processes, bool) or not isinstance(processes, int)
-            or processes != CONFIRM_PROCESSES
+            or processes != _confirmation_processes(value)
             or isinstance(repeats, bool) or not isinstance(repeats, int)
             or repeats != CONFIRM_REPEATS
             or isinstance(warmup, bool) or not isinstance(warmup, int)
@@ -666,8 +704,10 @@ def _stored_confirmation_valid(value: Any, evidence: Any = None, *,
     if value["evidence_sha256"] != evidence_hash:
         return False
     from . import ab
+    processes = (_confirmation_processes(evidence)
+                 if isinstance(evidence, Mapping) else None) or CONFIRM_PROCESSES
     evidence_valid, _ = ab.validate_result(
-        evidence, processes=CONFIRM_PROCESSES, repeats=CONFIRM_REPEATS, warmup=2,
+        evidence, processes=processes, repeats=CONFIRM_REPEATS, warmup=2,
         expected_arms={"baseline": BASELINE, "candidate": expected_candidate},
     )
     evidence_decision, evidence_reason = _confirmation_decision(
@@ -690,7 +730,7 @@ def _stored_confirmation_valid(value: Any, evidence: Any = None, *,
                 and value["stop_reason_identity"] is True
                 and value["deterministic"] is True
                 and isinstance(ratio, Mapping)
-                and _ratio_metrics_valid(ratio, CONFIRM_PROCESSES, _finite_number)
+                and _ratio_metrics_valid(ratio, processes, _finite_number)
                 and isinstance(total, Mapping)
                 and total["ci_high"] < 1.0
                 and total["median_ratio"] < 1.0)
@@ -710,7 +750,7 @@ def _stored_confirmation_valid(value: Any, evidence: Any = None, *,
         return False
     if not isinstance(value["token_count_identity"], bool) or not isinstance(value["stop_reason_identity"], bool):
         return False
-    if not _ratio_metrics_valid(ratio, CONFIRM_PROCESSES,
+    if not _ratio_metrics_valid(ratio, processes,
                                 _finite_number):
         return False
     total = ratio["total_ns"]
@@ -951,16 +991,30 @@ def _screen_in_child(*arguments) -> dict[str, Any]:
             "try:\n    print('@@SCREEN ' + json.dumps(_screen(*json.loads(sys.argv[1]))), flush=True)\n"
             "except RuntimeError as exc:\n    print(exc, file=sys.stderr, flush=True)\n"
             "    sys.exit(3 if 'TUNE1' in str(exc) else 1)")
+    import tempfile
+
+    from . import dream
+
     results = []
-    with subprocess.Popen([sys.executable, "-c", code, json.dumps(arguments)], stdout=subprocess.PIPE,
-                          text=True, env={**os.environ, "PYTHONUNBUFFERED": "1"}) as proc:
-        for line in proc.stdout:  # progress stays visible while the child screens
-            if line.startswith("@@SCREEN "):
-                results.append(line[len("@@SCREEN "):])
-            else:
-                print(line, end="", flush=True)
-    if proc.returncode == 3:  # keep the reason, so the autopilot remembers instead of retrying
-        raise RuntimeError("the screening child found tuning too slow here (TUNE1)")
+    with tempfile.TemporaryDirectory() as scratch:
+        checkpoint = Path(scratch) / "screen.json"
+        with subprocess.Popen([sys.executable, "-c", code, json.dumps(arguments)], stdout=subprocess.PIPE,
+                              text=True, env={**os.environ, "PYTHONUNBUFFERED": "1",
+                                              dream.CHECKPOINT_ENV: str(checkpoint)}) as proc:
+            for line in proc.stdout:  # progress stays visible while the child screens
+                if line.startswith("@@SCREEN "):
+                    results.append(line[len("@@SCREEN "):])
+                else:
+                    print(line, end="", flush=True)
+        if proc.returncode == 3:  # keep the reason, so the autopilot remembers instead of retrying
+            raise RuntimeError("the screening child found tuning too slow here (TUNE1)")
+        if proc.returncode < 0 and not results and checkpoint.is_file():
+            # CUDA1b: a native abort or kill inside one planner test (an exception stays loud).
+            reason = f"screening child killed by signal {-proc.returncode}"
+            screen = dream.record_crash(json.loads(checkpoint.read_text()), reason)
+            print(f"  {reason} in its pending test; continuing with the best of the completed tests",
+                  flush=True)
+            return screen
     if proc.returncode or not results:
         raise RuntimeError(f"the screening child exited with status {proc.returncode}")
     return json.loads(results[-1])
@@ -1034,7 +1088,7 @@ def tune(model_id: str = DEFAULT_MODEL, prompt: str = DEFAULT_PROMPT, max_tokens
             best, best_result = BASELINE, base
 
     # The screening found the candidate from one process per arm; the confirmation
-    # measured it across six paired processes. Report what was measured, not what was
+    # measured it across two to six paired processes. Report what was measured, not what was
     # screened, or `ironmule.status()` quotes the weaker of two numbers it already has.
     if confirmation is not None and confirmation["accepted"]:
         gain = 1.0 - confirmation["ratios"]["candidate/baseline"]["total_ns"]["median_ratio"]

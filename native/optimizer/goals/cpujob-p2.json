@@ -1,0 +1,6 @@
+{"schema": "imopt.goal.v1",
+ "objective": "minimise the CPU job's wall time; its output digest must equal the reference's; qualification protocol 2 (OPT4b), chosen explicitly",
+ "protocol": 2,
+ "rule": {"min_gain": 0.03, "max_regression": 0.10, "pairs": 8, "family_alpha": 0.05, "max_trials": 4},
+ "budget": {"max_tests": 8, "max_seconds": 600, "reference_runs": 3},
+ "planner": {"prior_sd": 0.5, "noise_sd": 0.05, "min_gain_per_s": 0.0, "default_cost_s": 0}}

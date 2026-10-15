@@ -19,6 +19,40 @@ correctness plus paired end-to-end validation against the unchanged product and
 stock mlx_lm references. Kill: missing evidence, resource/quality failures or no
 net gain leaves the reference active. Historical sealed artifacts stay unchanged.
 
+## Serving stability follow-ups (2026-10-15)
+
+The serving-stop fix (STAB1) and the CUDA memory diagnosis (MEM2-D) shipped; these stay open.
+
+### MEM2 — CUDA memory of a long-running tuned server grows to the card's limit (2026-10-15)
+
+**Mechanism (diagnosed, ledger MEM2).** MLX 0.32.2's buffer cache of freed buffers grows to 11 GiB on a 15 GiB T4
+(its limit is 0.95 of the device) beside about 3 GiB MLX does not count; the device fills and a prefill or CUDA graph
+fails. Live arrays return to 703 MiB at every group end; the CUDA graph cache is not the grower. **Candidate built**
+(`e94e229`): a 1 GiB cache bound on CUDA. **Test.** Run the preregistered [MEM2-C](https://github.com/Tobayko/IronMule-Research/blob/main/research/MEM2-C_PREREGISTRATION.md)
+as fixed (two notebooks, about 6.5 GPU hours); its first run was stopped by the user before any result. **Kill.** As
+MEM2-C fixes it: not fewer worker losses, candidate memory above 8 GiB, a tokens/s or first-content regression beyond
+the A/A noise, less answered work, or any changed output.
+
+### HOL1 — A queued request times out behind a group that holds the worker until its own deadline (2026-10-15)
+
+**Mechanism.** Groups run until their slowest member ends and joining is off, so requests queued behind a long group
+wait for it; in STAB1 run 2 four short prompts waited 9.04 s behind two requests that could not finish, started
+0.96 s before their own deadline, got no first token and ended with `504` when that deadline expired; their group
+finished 0.07-0.08 s later. Inside a group, the worker also holds each member's last token and
+completion until the engine run ends (it checks the streamed tokens against the result). **Test.** Deadline-aware
+admission with the live learner's existing cost model (shed or reorder a request that cannot meet its deadline), and
+releasing a finished member's completion once its tokens are verified, on the STAB1 deadline scenario and overload
+replay. **Kill.** No fewer timeouts at equal throughput, any output or token-check change, or a learned rule that is
+not qualified like every other arm.
+
+### HTTP1 — Past the accept limit most refused clients see a reset, not the 429 (2026-10-15)
+
+**Mechanism.** The accept loop writes the 429 and closes at once while the client is still sending its request, so
+the client's write fails: in STAB1 run 2's burst of 192, 95 of the 128 refused clients saw `BrokenPipe` or
+`ConnectionReset` (never accepted, so no request was lost, but the backpressure signal is lost). **Test.** Half-close
+and a short bounded drain before closing, or answering only after the request head arrived, on the same burst.
+**Kill.** No fewer resets, more threads than the 64 workers, or a slower accept loop under the burst.
+
 ## Read this before optimising anything
 
 ### RSI2 — Shorten the paired confirmation where the evidence is already clear (2026-10-05)

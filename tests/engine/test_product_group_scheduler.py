@@ -11,6 +11,7 @@ import queue
 import threading
 
 from ironmule_product.service import ProductService, _Session
+from ironmule_product.serving_policy import ServingPolicy
 from ironmule_product.types import GenerationRequest
 
 
@@ -171,3 +172,103 @@ def test_done_queue_time_uses_dispatch_time_not_buffered_delivery_time():
     ]))
 
     assert session.events.get_nowait()["queue_ns"] == 150
+
+
+class _StreamingTransport(_Transport):
+    """SERVE4: a grouped worker that streams; `fail_after_first` breaks the group mid-way."""
+
+    streams_batches = True
+
+    def __init__(self, *, fail_after_first: bool = False) -> None:
+        super().__init__()
+        self.fail_after_first = fail_after_first
+        self.seen_live: list[bool] = []
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        from ironmule_product.errors import BackendUnavailable
+
+        self.batch_calls.append([request.request_id for request in requests])
+        self.joined = [request.request_id for request, _ in joins()] if joins is not None else []
+        requests = list(requests) + [type("R", (), {"request_id": rid})() for rid in self.joined]
+        first = requests[0].request_id
+        on_event(first, {"type": "token", "request_id": first, "text": "x", "token_id": 1,
+                         "prompt_tokens": 1, "completion_tokens": 1})
+        delivered = self.delivered_to(first).wait(timeout=5)  # reaches its caller while the group runs
+        self.seen_live.append(delivered)
+        if self.fail_after_first:
+            raise BackendUnavailable("grouped engine generation failed")
+        for request in requests:
+            if request.request_id != first:
+                on_event(request.request_id, {"type": "token", "request_id": request.request_id, "text": "y",
+                                              "token_id": 2, "prompt_tokens": 1, "completion_tokens": 1})
+        for request in requests:
+            on_event(request.request_id, {"type": "done", "request_id": request.request_id,
+                                          "finish_reason": "length", "prompt_tokens": 1, "completion_tokens": 1})
+        return [{"request_id": request.request_id, "events": [], "metadata": {}} for request in requests]
+
+
+def test_a_request_waiting_while_a_streaming_group_runs_joins_it_and_is_retired_once():
+    backend = _StreamingTransport()
+    service = _service(backend)
+    service.policy = ServingPolicy(join=True)  # SERVE8 is opt-in
+    first, second, waiting = (_Session(_request(value), None) for value in ("a", "b", "c"))
+    service._pending.put(waiting)
+    backend.delivered_to = lambda _rid: _watch(service, first)
+    service._perform_batch([first, second])
+    assert backend.joined == ["c"]
+    assert [waiting.events.get_nowait()["type"], waiting.events.get_nowait()["type"]] == ["token", "done"]
+    assert service._completed == 3 and service._last_batch_size == 3
+    assert service._pending.empty() and service._pending.unfinished_tasks == 0
+
+
+def _watch(service, session):
+    """An event that fires when `session` receives its first frame."""
+    fired = threading.Event()
+    original = service._emit
+
+    def emit(item, event):
+        if item is session:
+            fired.set()
+        return original(item, event)
+    service._emit = emit
+    return fired
+
+
+def test_a_streaming_batch_delivers_each_token_while_the_group_still_runs():
+    backend = _StreamingTransport()
+    service = _service(backend)
+    first, second = _Session(_request("a"), None), _Session(_request("b"), None)
+    backend.delivered_to = lambda _rid: _watch(service, first)
+    service._perform_batch([first, second])
+    assert backend.seen_live == [True]
+    assert [first.events.get_nowait()["type"], first.events.get_nowait()["type"]] == ["token", "done"]
+    assert [second.events.get_nowait()["type"], second.events.get_nowait()["type"]] == ["token", "done"]
+    assert service._completed == 2 and service._failed == 0 and service._batch_count == 1
+
+
+def test_a_streaming_batch_that_fails_mid_way_reports_to_every_session_once():
+    backend = _StreamingTransport(fail_after_first=True)
+    service = _service(backend)
+    first, second = _Session(_request("a"), None), _Session(_request("b"), None)
+    backend.delivered_to = lambda _rid: _watch(service, first)
+    service._perform_batch([first, second])
+    assert backend.seen_live == [True]
+    assert first.events.get_nowait()["type"] == "token"
+    assert not isinstance(first.events.get_nowait(), dict)
+    assert not isinstance(second.events.get_nowait(), dict)
+    assert first.events.empty() and second.events.empty()
+    assert service._failed == 2 and service._completed == 0
+
+
+def test_a_lone_stream_runs_as_a_group_so_the_next_chat_can_join_it():
+    backend = _StreamingTransport()
+    service = _service(backend)
+    service.policy = ServingPolicy(join=True)  # SERVE8 is opt-in
+    alone, later = _Session(_request("a"), None), _Session(_request("b"), None)
+    assert service._streams_alone(alone)
+    assert not _service(_Transport())._streams_alone(alone)  # a buffered backend keeps the single path
+    service._pending.put(later)
+    backend.delivered_to = lambda _rid: _watch(service, alone)
+    service._perform_batch([alone])
+    assert backend.batch_calls == [["a"]] and backend.joined == ["b"]
+    assert service._completed == 2 and service._pending.unfinished_tasks == 0

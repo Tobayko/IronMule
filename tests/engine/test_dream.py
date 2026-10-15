@@ -110,3 +110,61 @@ def test_the_simple_rule_wins_when_the_planner_does_not_beat_it(tmp_path, monkey
         "rows": [], "mean_utility": {"planner": 3.0, "coordinate": 2.0, "random": 0.0}})
     assert dream.dream("test", log=lambda _line: None)["enabled"] is True
     assert dream.available("test") is True
+
+
+def _crashing_child(monkeypatch, tmp_path, exit_code):
+    """tune._screen_in_child with a child that checkpoints one completed test, then dies."""
+    import importlib
+    import subprocess
+    import sys
+    import time
+
+    tune = importlib.import_module("ironmule.tune")
+
+    monkeypatch.setattr(dream, "STORE", tmp_path)
+    root, done = BASELINE.as_dict(), dict(BASELINE.as_dict(), head_skip_prefill=True)
+    pending = dict(done, capacity_slack=64)
+    nodes = {dream._key(root): {"knobs": root, "parent": None, "change": None, "depth": 0, "status": "ok",
+                                "ratio": 1.0, "seconds": 0.0, "order": 0},
+             dream._key(done): {"knobs": done, "parent": dream._key(root), "change": ["head_skip_prefill", True],
+                                "depth": 1, "status": "ok", "ratio": 0.8, "seconds": 5.0, "order": 1}}
+    checkpoint = {
+        "pending": {"knobs": pending, "parent": dream._key(done), "change": ["capacity_slack", 64],
+                    "depth": 2, "order": 2},
+        "at": time.time(),
+        "screen": {"prompt_tokens": 3, "base": {"total_ns": 10}, "best": done, "best_result": {"total_ns": 8},
+                   "trials": [{"knob": "head_skip_prefill", "value": True, "ratio": 0.8, "depth": 1,
+                               "disposition": "accepted", "verdict": "ok"}], "tree": "t"},
+        "tree": {"schema": dream.SCHEMA_TREE, "device_class": "cls", "planner_config": dream.DEFAULT_CONFIG,
+                 "explorer": "planner", "nodes": nodes},
+    }
+    death = "os.abort()" if exit_code is None else f"raise SystemExit({exit_code})"
+    child = (f"import os; open(os.environ[{dream.CHECKPOINT_ENV!r}], 'w').write({json.dumps(checkpoint)!r})\n"
+             + death)
+    real = subprocess.Popen
+    monkeypatch.setattr(tune.subprocess, "Popen",
+                        lambda _args, **kwargs: real([sys.executable, "-c", child], **kwargs))
+    return tune, done, pending
+
+
+def test_a_native_abort_costs_the_pending_test_not_the_tune(tmp_path, monkeypatch):
+    tune, done, pending = _crashing_child(monkeypatch, tmp_path, exit_code=None)
+    screen = tune._screen_in_child("m", "p", 8, 1, None, {"class": "cls", "skip": []})
+    assert screen["best"] == done and screen["best_result"] == {"total_ns": 8}
+    assert [t["disposition"] for t in screen["trials"]] == ["accepted", "crashed"]
+    tree = json.loads((dream.tree_dir() / "t.json").read_text())
+    assert tree["nodes"][dream._key(pending)]["status"] == "crashed"
+    assert tree["nodes"][dream._key(done)]["status"] == "ok"  # nothing completed is lost
+    planner, envelope = dream.load_planner("cls", dream.DEFAULT_CONFIG)
+    try:
+        assert envelope["observations"] == 1 and envelope["log"][-1]["status"] == "crashed"
+        assert planner.status("capacity_slack=64")["failures"] == 1
+    finally:
+        planner.close()
+
+
+def test_a_python_error_in_the_screening_child_stays_loud(tmp_path, monkeypatch):
+    tune, _, _ = _crashing_child(monkeypatch, tmp_path, exit_code=1)
+    with pytest.raises(RuntimeError, match="exited with status 1"):
+        tune._screen_in_child("m", "p", 8, 1, None, {"class": "cls", "skip": []})
+    assert not dream.tree_dir().exists() or not list(dream.tree_dir().iterdir())

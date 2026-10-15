@@ -113,6 +113,7 @@ class Request:
     arrival_ms: float = 0.0
     rid: str = ""
     objective: str | None = None
+    stream: Any = field(default=None, compare=False, repr=False)  # executor.TokenStream (SERVE6)
 
     def __post_init__(self):
         if not self.rid:
@@ -794,7 +795,7 @@ class Runtime:
         return controller
 
     def serve(self, requests: Sequence[Request],
-              dispatch_ns: int | None = None) -> list[Result]:
+              dispatch_ns: int | None = None, admit=None) -> list[Result]:
         """Serve one group of requests. `dispatch_ns` says when the caller handed them
         over, for a caller that splits one dispatch across several calls; it changes
         recorded arrival only, never scheduling or output."""
@@ -808,13 +809,15 @@ class Runtime:
             started = time.perf_counter_ns()
             with lock:
                 return self._serve_dispatch(requests, dispatch_ns, controller, started)
-        return self._serve_dispatch(requests, dispatch_ns, None)
+        if admit is None:  # callers and tests that replace these methods know no admit
+            return self._serve_dispatch(requests, dispatch_ns, None)
+        return self._serve_dispatch(requests, dispatch_ns, None, admit=admit)
 
-    def _serve_dispatch(self, requests, dispatch_ns, controller, online_start_ns=None):
+    def _serve_dispatch(self, requests, dispatch_ns, controller, online_start_ns=None, admit=None):
         if not requests:
             return []
         for request in requests:
-            if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session"):
+            if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session", "chat_turns"):
                 raise ValueError(f"unknown execution plan: {request.plan!r}")
 
         bound = getattr(self, "_online_runtime_identity", None)
@@ -836,7 +839,9 @@ class Runtime:
         )
         if supported:
             return self._serve_online(requests, dispatch_ns, controller, bound, online_start_ns)
-        return self._serve_group(requests, dispatch_ns, self.mode)
+        if admit is None:
+            return self._serve_group(requests, dispatch_ns, self.mode)
+        return self._serve_group(requests, dispatch_ns, self.mode, admit=admit)
 
     def _serve_online(self, requests, dispatch_ns, controller, identity, started):
         from friday_evidence.canonical import canonical_sha256
@@ -968,7 +973,10 @@ class Runtime:
             else:
                 del engine._compiled_capacity
 
-    def _serve_group(self, requests, dispatch_ns, mode, *, capture=None):
+    def _serve_group(self, requests, dispatch_ns, mode, *, capture=None, admit=None):
+        """`admit(capacity)` (SERVE8), when given to a grouped run, hands over requests that
+        arrived meanwhile and fit this capacity; they are prefilled here, join the rotation,
+        and their results follow the original requests' results."""
         import mlx.core as mx
 
         # NEXT1-D: before any prefill, against the mode that will actually run. A Runtime
@@ -981,19 +989,32 @@ class Runtime:
                                   dispatch_ns=dispatch_ns)
 
         executor = mode.executor(self.backend, self.telemetry)
+        admitted: list = []
+
+        def take():
+            fresh = list(admit(capacity))
+            for request in fresh:
+                if plan_kind(request.plan) not in ("strict_one_shot", "reusable_session", "chat_turns"):
+                    raise ValueError(f"unknown execution plan: {request.plan!r}")
+            built = build_sessions(fresh, self.backend, self.telemetry, capacity) if fresh else []
+            admitted.extend(built)
+            return built
         try:
-            executor.run(sessions, capacity)
+            if admit is not None and isinstance(executor, AsyncGroupedB1Executor):
+                executor.run(sessions, capacity, admit=take)
+            else:
+                executor.run(sessions, capacity)
         except Exception as exc:                          # noqa: BLE001 - deliberate
             # Last-resort safety net: a whole-executor failure restarts every
             # unfinished request on the sequential path from its prefill state.
             self.telemetry.fallbacks += 1
             self.telemetry.fallback_reasons.append(f"executor: {type(exc).__name__}: {exc}")
-            for session in sessions:
+            for session in sessions + admitted:
                 if not session.done:
                     session.restart(self.backend)
                     if session.metrics is not None:
                         session.metrics.fell_back = True
-            SequentialExecutor(self.backend, self.telemetry).run(sessions, capacity)
+            SequentialExecutor(self.backend, self.telemetry).run(sessions + admitted, capacity)
 
         self.telemetry.peak_memory_bytes = mx.get_peak_memory()
         if capture is not None:
@@ -1012,7 +1033,7 @@ class Runtime:
                     raise RuntimeError("terminal state hashing returned an invalid digest")
                 capture.append((session.rid, offset, digest))
         results = []
-        for session in sessions:
+        for session in sessions + admitted:
             visible = [t for t in session.tokens if t not in self.backend.eos_ids]
             results.append(Result(rid=session.rid, tokens=list(session.tokens),
                                   text=self.tokenizer.decode(visible),

@@ -429,6 +429,8 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
                 if not isinstance(health, dict):
                     raise ProductError("health response is invalid")
                 self._send_json(HTTPStatus.OK if health.get("ready") is True else HTTPStatus.SERVICE_UNAVAILABLE, health)
+            elif path == "/v1/ironmule/learning":
+                self._send_json(HTTPStatus.OK, self.server.service.learning_status())
             elif path == "/v1/models":
                 models = self.server.service.models()
                 if not isinstance(models, list):
@@ -451,11 +453,15 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
             return
         if not self._authenticate():
             return
+        if self._path() == "/v1/ironmule/learning":
+            self._learning_control()
+            return
         if self._path() != "/v1/chat/completions":
             self._send_error(_HTTPProductError("unknown endpoint", HTTPStatus.NOT_FOUND, "not_found"), close=True)
             return
         request: GenerationRequest | None = None
         stream: Iterable[dict[str, Any]] | None = None
+        end = "done"  # STAB1: how the response ended for the client
         try:
             request = self._request()
             if not self._service_ready():
@@ -468,13 +474,17 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         except ProductError as error:
             # Once SSE headers have gone out, errors must use SSE framing.
             if request is not None and request.stream and self._headers_sent():
+                end = "sse_error:" + str(getattr(error, "code", "product_error"))
                 self._finish_sse_error(error, request)
             else:
+                end = f"http_{int(getattr(error, 'status', 500))}:{getattr(error, 'code', 'product_error')}"
                 self._send_error(error, close=getattr(error, "code", None) in {"invalid_request", "unauthorized"})
         except (BrokenPipeError, ConnectionResetError, socket.timeout, OSError):
+            end = "client_gone"
             if request is not None:
                 self._cancel(request.request_id)
         except Exception:
+            end = "failed"
             error = ProductError("product request failed")
             if request is not None and request.stream and self._headers_sent():
                 self._finish_sse_error(error, request)
@@ -483,6 +493,30 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
         finally:
             if stream is not None:
                 self._close_stream(stream)
+            note = getattr(self.server.service, "note", None)
+            if request is not None and callable(note):
+                note("http", id=request.request_id, end=end, sse=self._headers_sent())
+
+    def _learning_control(self) -> None:
+        """RSI3-LIVE: {"action": "pause" | "resume" | "rollback" | "compare"}; answers with the new status."""
+        try:
+            payload = json.loads(self._read_body().decode("utf-8"), object_pairs_hook=_reject_duplicate_keys,
+                                 parse_constant=_reject_non_finite)
+            if (not isinstance(payload, dict) or "action" not in payload or not set(payload) <= {"action", "arm", "evidence"}
+                    or not isinstance(payload["action"], str)
+                    or not isinstance(payload.get("arm"), (str, type(None)))
+                    or not isinstance(payload.get("evidence"), (dict, type(None)))):
+                raise InvalidRequest("body must be {\"action\": \"pause\" | \"resume\" | \"rollback\" | \"compare\"}")
+            self._send_json(HTTPStatus.OK, self.server.service.learning_control(
+                payload["action"], arm=payload.get("arm"), evidence=payload.get("evidence")))
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            self._send_error(InvalidRequest("request body must be valid UTF-8 JSON"), close=True)
+        except ProductError as error:
+            self._send_error(error, close=getattr(error, "code", None) in {"invalid_request", "unauthorized"})
+        except (BrokenPipeError, ConnectionResetError, socket.timeout):
+            return
+        except Exception:
+            self._send_error(ProductError("product request failed"))
 
     def _headers_sent(self) -> bool:
         # BaseHTTPRequestHandler has no public flag; this is set by our SSE path.

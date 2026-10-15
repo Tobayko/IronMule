@@ -181,7 +181,7 @@ def _result_from_raw(raw: Any, max_tokens: int, metadata: dict[str, Any]) -> Eng
     text = getattr(raw, "text", None)
     reason = getattr(raw, "stop_reason", None)
     metrics = getattr(raw, "metrics", None)
-    if (not isinstance(tokens, list) or not tokens
+    if (not isinstance(tokens, list) or (not tokens and reason != "cancelled")
             or any(type(token) is not int or token < 0 for token in tokens)
             or len(tokens) > max_tokens):
         raise RuntimeError("IronMule returned invalid output token IDs")
@@ -193,6 +193,8 @@ def _result_from_raw(raw: Any, max_tokens: int, metadata: dict[str, Any]) -> Eng
         finish_reason = "stop"
     elif reason == "length":
         finish_reason = "length"
+    elif reason == "cancelled":
+        finish_reason = "cancelled"  # RSI3-LIVE-P2: stopped early because its caller cancelled
     else:
         raise RuntimeError("IronMule returned an unknown stop reason")
     return EngineBridgeResult(
@@ -287,15 +289,21 @@ class CurrentEngineBridge:
                    configuration=configuration,
                    historical_configuration_candidate=historical_candidate)
 
-    def generate(self, prompt_ids: Sequence[int], max_tokens: int) -> EngineBridgeResult:
-        """Serve exact supplied token IDs under ``StrictOneShotPlan`` only."""
+    def generate(self, prompt_ids: Sequence[int], max_tokens: int, on_token=None,
+                 boundaries: Sequence[int] | None = None) -> EngineBridgeResult:
+        """Serve exact supplied token IDs under ``StrictOneShotPlan`` only.
+
+        ``on_token`` receives each physical output token once, in order, as the engine reads
+        it back (SERVE6); the returned result is unchanged."""
         if self._closed:
             raise RuntimeError("CurrentEngineBridge is closed")
         ids = _validate_request(prompt_ids, max_tokens)
-        return self.generate_many([ids], max_tokens)[0]
+        return self.generate_many([ids], max_tokens, on_tokens=[on_token],
+                                  boundaries=None if boundaries is None else [boundaries])[0]
 
     def generate_many(self, prompt_ids: Sequence[Sequence[int]],
-                      max_tokens: int | Sequence[int]) -> list[EngineBridgeResult]:
+                      max_tokens: int | Sequence[int], on_tokens=None,
+                      boundaries=None, admit=None, cancelled=None) -> list[EngineBridgeResult]:
         """Serve admitted strict requests; mode bounds the realised execution width."""
         if self._closed:
             raise RuntimeError("CurrentEngineBridge is closed")
@@ -311,15 +319,50 @@ class CurrentEngineBridge:
             if len(limits) != len(requests_ids):
                 raise ValueError("max_tokens must be one integer or match prompt_ids length")
         validated = [_validate_request(ids, limit) for ids, limit in zip(requests_ids, limits)]
-        from ironmule.plans import StrictOneShotPlan
+        from ironmule.executor import TokenStream
+        from ironmule.plans import ChatTurnsPlan, StrictOneShotPlan
         from ironmule.service import Request
 
-        raw_results = self._runtime.serve([
-            Request(prompt_ids=ids, max_tokens=limit, plan=StrictOneShotPlan())
-            for ids, limit in zip(validated, limits)
-        ])
-        if not isinstance(raw_results, list) or len(raw_results) != len(validated):
+        emitters = list(on_tokens) if on_tokens is not None else [None] * len(validated)
+        if len(emitters) != len(validated):
+            raise ValueError("on_tokens must match prompt_ids length")
+        turns = list(boundaries) if boundaries is not None else [None] * len(validated)
+        if len(turns) != len(validated):
+            raise ValueError("boundaries must match prompt_ids length")
+        stops = list(cancelled) if cancelled is not None else [None] * len(validated)
+        if len(stops) != len(validated) or any(stop is not None and emit is None
+                                               for stop, emit in zip(stops, emitters)):
+            raise ValueError("cancelled must match prompt_ids and needs a streamed request")
+        # SERVE7: a request with chat-turn boundaries runs the opt-in ChatTurnsPlan.
+        requests = [Request(prompt_ids=ids, max_tokens=limit,
+                            plan=StrictOneShotPlan() if cuts is None else ChatTurnsPlan(cuts),
+                            stream=TokenStream(emit, stop) if emit is not None else None)
+                    for ids, limit, emit, cuts, stop in zip(validated, limits, emitters, turns, stops)]
+        from ironmule.service import ThroughputMode
+        mode = self._runtime.mode
+        if self._configuration == "current_profile" and (len(requests) > 1 or admit is not None) and self._may_group():
+            # SERVE4: simultaneous requests interleave their decode steps (grouped batch-1, exact)
+            # instead of each waiting for the whole answer before it.
+            self._runtime.mode = ThroughputMode(max_width=4 if admit is not None else min(4, len(requests)))
+        joined_limits: list[int] = []
+
+        def take(capacity: int) -> list[Any]:
+            """SERVE8: (ids, limit, on_token, chat-turn boundaries or None) rows admitted into this run."""
+            fresh = []
+            for ids, limit, emit, cuts in admit(capacity):
+                fresh.append(Request(prompt_ids=_validate_request(ids, limit), max_tokens=limit,
+                                     plan=StrictOneShotPlan() if cuts is None else ChatTurnsPlan(cuts),
+                                     stream=TokenStream(emit)))
+                joined_limits.append(limit)
+            return fresh
+        try:
+            raw_results = (self._runtime.serve(requests) if admit is None or type(self._runtime.mode) is not ThroughputMode
+                           else self._runtime.serve(requests, admit=take))
+        finally:
+            self._runtime.mode = mode
+        if not isinstance(raw_results, list) or len(raw_results) != len(validated) + len(joined_limits):
             raise RuntimeError("IronMule returned an invalid result count")
+        limits = limits + joined_limits
         telemetry = self._runtime.telemetry
         fallback_count = getattr(telemetry, "fallbacks", None)
         if type(fallback_count) is not int or fallback_count < 0:
@@ -345,6 +388,18 @@ class CurrentEngineBridge:
             })
             results.append(_result_from_raw(raw, limit, metadata))
         return results
+
+    def _may_group(self) -> bool:
+        """Grouping is refused on a recurrent (hybrid) cache, as `Runtime` refuses it; such a
+        model serves simultaneous requests sequentially, which is still exact."""
+        if not hasattr(self, "_groupable"):
+            from ironmule.service import ThroughputMode, _refuse_grouping_on_a_hybrid_cache
+            try:
+                _refuse_grouping_on_a_hybrid_cache(getattr(self._runtime, "engine", None), ThroughputMode())
+                self._groupable = True
+            except ValueError:
+                self._groupable = False
+        return self._groupable
 
     def metadata(self) -> dict[str, Any]:
         """Safe startup metadata; contains no request, prompt, or response data."""

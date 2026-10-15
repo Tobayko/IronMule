@@ -406,16 +406,74 @@ def select_cached_snapshot(cache: Any, model_id: str, revision: str | None = Non
     return path, _revision(selected.commit_hash)
 
 
+_SHARD = re.compile(r"^model-(\d+)-of-(\d+)\.safetensors$")
+
+
+def _weight_problems(root: Path) -> list[str]:
+    """Why the loader could not read every weight of ``root``; empty means loadable.
+
+    mlx_lm reads exactly ``model*.safetensors`` (the model inventory's ``mlx_lm`` selection).
+    Incomplete: no such file, a broken link or an empty file among them, a numbered shard set
+    ``model-k-of-N`` with gaps, or an index whose shards are partly present (the loader would
+    read part of the model). An index naming none of the selected files is an upstream
+    leftover beside a consolidated file, which the inventory also accepts. Metadata only.
+    """
+    problems: list[str] = []
+    selected = sorted(root.glob("model*.safetensors"), key=lambda item: item.name)
+    if not selected:
+        problems.append("snapshot contains no weight files (the loader reads model*.safetensors)")
+    for weight in selected:
+        if not weight.is_file():
+            problems.append(f"weight file {weight.name} is a broken link")
+        elif weight.stat().st_size == 0:
+            problems.append(f"weight file {weight.name} is empty")
+    names = {weight.name for weight in selected if weight.is_file()}
+    totals = {int(m.group(2)) for m in map(_SHARD.match, names) if m}
+    for total in sorted(totals):
+        missing = [f"model-{k:05d}-of-{total:05d}.safetensors" for k in range(1, total + 1)
+                   if f"model-{k:05d}-of-{total:05d}.safetensors" not in names]
+        if missing:
+            problems.append(f"missing weight shards {missing}")
+    for index in sorted(root.glob("*.safetensors.index.json"), key=lambda item: item.name):
+        try:
+            shards = set(json.loads(index.read_text(encoding="utf-8"))["weight_map"].values())
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError, AttributeError):
+            problems.append(f"weight index {index.name} is unreadable")
+            continue
+        if shards & names and not shards <= names:
+            problems.append(f"weight index {index.name} names missing shards {sorted(str(s) for s in shards - names)}")
+    return problems
+
+
+def require_loadable(model_id: str, path: Path) -> None:
+    """Admit only a snapshot whose weights the loader can read.
+
+    An identity can be built from any files (config and tokenizer alone hash fine), so a
+    snapshot without its weights used to resolve and fail only at load (OPT3-D). Kept in
+    this module rather than imported from the inventory: the Q3f child guard bounds what
+    model resolution may import.
+    """
+    problems = _weight_problems(path)
+    if problems:
+        raise ModelIdentityError(
+            f"incomplete model snapshot, not a loadable source: {'; '.join(problems)}\n\n"
+            f"Fetch the complete snapshot explicitly, then re-run:\n"
+            f"    ironmule models add {model_id} --download"
+        )
+
+
 def resolve_model_source(
     model_id: str, *, revision: str | None = None, cache: Any | None = None,
 ) -> ResolvedModelSource:
     local = Path(model_id).expanduser()
     if local.is_dir():
+        require_loadable(model_id, local)
         identity = build_model_identity(model_id, local, revision)
         return ResolvedModelSource(local, identity)
     if cache is None:
         raise ModelIdentityError("Hub model resolution requires a read-only cache index")
     path, selected_revision = select_cached_snapshot(cache, model_id, revision)
+    require_loadable(model_id, path)
     return ResolvedModelSource(
         path, build_model_identity(model_id, path, selected_revision)
     )
@@ -423,6 +481,6 @@ def resolve_model_source(
 
 __all__ = [
     "ModelIdentity", "ModelIdentityError", "ResolvedModelSource", "build_model_identity",
-    "canonical_json", "canonical_sha256", "resolve_model_source",
+    "canonical_json", "canonical_sha256", "require_loadable", "resolve_model_source",
     "scan_local_cache", "select_cached_snapshot",
 ]

@@ -4,6 +4,49 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **On CUDA the worker bounds MLX's cache of freed buffers to 1 GiB (MEM2).** On a 15 GiB T4 that cache grew to
+  11 GiB beside about 3 GiB MLX does not count until the device filled and the worker was lost. The bound changes
+  no output; its effect on worker losses and speed is not yet measured (the preregistered comparison was stopped
+  before a result). `IRONMULE_CUDA_CACHE_LIMIT_MIB=0` restores MLX's default; Metal is unchanged.
+
+- **A lost model worker no longer stops serving (STAB1).** Under sustained overload on a 15 GiB T4 the worker's
+  CUDA memory reached the card's limit and a prefill or CUDA graph failed; the server then answered every request
+  with `503` until restarted. It now replaces the worker: only after the old process is reaped, at most three times in
+  ten minutes, and only with one reporting the same identity (model, revision, device, variant, sources, engine
+  profile). Requests in flight get an explicit error and are never continued or repeated; each request's deadline
+  ends only that request; a worker's own error is named. `/health` reports the worker, the group in flight and its
+  last progress, and the state directory keeps a bounded `stability-log.jsonl`. On the T4 three overload replays ran
+  to the end through two worker losses, each replaced in about 13 s. Not changed: the memory growth itself, and a
+  queued request can still time out behind a long group (ledger STAB1, docs/HTTP.md).
+
+- **RSI3-LIVE-P3: the preregistered comparison found no learned winner.** A contextual bandit joins RL and RL with
+  dreaming as a third arm behind the same decision interface; `freeze`, `evaluate` and `activate` let an external
+  harness compare and deploy arms, and `--no-replay` leaves qualification to it. The identity now binds every source
+  file the server and its worker load, and a missing first-content time stays missing. On one Kaggle T4 with Gemma 3
+  1B, `tools/rsi3_live_p3.py` rejected all four hypotheses in its only valid run (light load); the run at the
+  registered load was invalid by its own calibration check and showed the learned arms a few percent worse. Nothing
+  was activated; the reference serves (ledger RSI3-LIVE-P3).
+
+- **Live learning yields to real requests and forecasts first content (RSI3-LIVE-P2).** A real
+  request cancels a replay qualification window the moment it arrives; cancelled grouped streams
+  stop at their next token boundary in the engine instead of decoding to their limit. Each such
+  request's wait is recorded by window phase, and above 100 ms at the 95th percentile replay is
+  suspended with the reason in the API and chat. First content is forecast as known waiting plus a
+  per-member model and scored before every update; dreaming follows new information, paced over
+  the hour, under the unchanged hourly caps. `tools/rsi3_live_smoke.py` now runs every acceptance phase itself,
+  restart included. No speedup claimed (ledger RSI3-LIVE-P2).
+
+- **The server can learn its own scheduling (opt-in).** `ironmule serve --learning active` (and
+  `ironmule start --learning active`) learns group width and gather wait from its own traffic: a
+  native cost model with uncertainty, a sequential Q-learner and dreaming through that model, with
+  a twin learner without dreaming for comparison. A learned policy serves only after it passes the
+  optimizer's protocol-2 qualification on replayed held-out traffic with identical outputs; it can be
+  paused, resumed and rolled back from `/v1/ironmule/learning` or the chat page, which now shows what
+  serves and why. `compare` replays reference, best fixed, a queue rule, RL and RL with dreaming.
+  The worker now reports the device it actually computes on (OPS1). Default unchanged (`off`); no
+  speedup claimed: on the first Mac smoke the candidate was rejected and no learned arm led
+  (ledger RSI3-LIVE-P1, docs/LIVE_LEARNING.md).
+
 - **IronMule learns which hardware test to run next.** `ironmule learn` and `ironmule autopilot`
   use a small Bayesian planner written in Rust (`native/experiment_planner`): every test updates its
   estimate of what each engine setting gains and costs, and it runs the test with the best expected

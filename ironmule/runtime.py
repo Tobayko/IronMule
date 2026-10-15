@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import time
 import threading
+from collections import OrderedDict
 from dataclasses import asdict, dataclass, replace
 from typing import Any
 
@@ -128,6 +129,49 @@ class PrefixCache:
     def put(self, state, capacity: int) -> None:
         self._snapshot = _copy_state_layers(state["layers"])
         self._capacity = capacity
+
+
+class TurnCache:
+    """KV states at chat-turn boundaries, reused across requests (SERVE7, `ChatTurnsPlan`).
+
+    Stored unpadded and keyed by the exact token prefix, so a later request with a larger
+    capacity can still use one; padding length does not move a token (EXACT2). Reuse is bit
+    exact because the plan ends a prefill chunk at every turn boundary whether or not a state
+    is cached. ponytail: bounded by entry count only; a byte budget when long chats need one.
+    """
+
+    def __init__(self, max_entries: int = 8):
+        self._entries: OrderedDict[tuple[int, ...], list[dict[str, Any]]] = OrderedDict()
+        self.max_entries = max_entries
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, prefix) -> list[dict[str, Any]] | None:
+        key = tuple(prefix)
+        if key not in self._entries:
+            return None
+        self._entries.move_to_end(key)
+        return self._entries[key]
+
+    def put(self, prefix, state) -> None:
+        used = len(prefix)
+        self._entries[tuple(prefix)] = [{"keys": layer["keys"][..., :used, :], "values": layer["values"][..., :used, :]}
+                                        for layer in state["layers"]]
+        self._entries.move_to_end(tuple(prefix))
+        while len(self._entries) > self.max_entries:
+            self._entries.popitem(last=False)
+
+
+def _padded_state(layers: list[dict[str, Any]], used: int, capacity: int) -> dict[str, Any]:
+    """An unpadded stored state at a request's own capacity."""
+    start = mx.array((0, 0, 0, 0), dtype=mx.int32)
+    padded = []
+    for layer in layers:
+        shape = (*layer["keys"].shape[:2], capacity, layer["keys"].shape[3])
+        padded.append({name: mx.slice_update(mx.zeros(shape, dtype=layer[name].dtype), layer[name],
+                                             start_indices=start, axes=(0, 1, 2, 3))
+                       for name in ("keys", "values")})
+    return {"position": {"offset": mx.array(used, dtype=mx.int32)}, "layers": padded}
 
 
 def _text(model):
@@ -333,6 +377,8 @@ class Engine:
         self._compiled = None
         self._compiled_capacity = None
         self.prefix_cache: PrefixCache | None = None
+        self.turn_boundaries: tuple[int, ...] | None = None  # set by ChatTurnsPlan (SERVE7)
+        self.turn_cache = TurnCache()
         self._previous_wired_limit: Any = _NO_WIRED_LIMIT
         self._wired_token: object | None = None
         self._closed = False
@@ -534,7 +580,43 @@ class Engine:
         mx.synchronize()
         return state, token
 
+    def _prefill_turns(self, prompt_ids: list[int], capacity: int, boundaries):
+        """SERVE7: a prefill chunk ends at every chat-turn boundary, a function of the request
+        alone, so a state stored at a boundary by an earlier request is the state this request
+        would build there. The longest stored boundary is reused; every later boundary and the
+        prompt's end (the next turn's boundary) are stored. A recurrent (hybrid) state keeps the
+        same chunks and stores nothing."""
+        cache = self.turn_cache
+        cuts = sorted({int(b) for b in boundaries if 0 < int(b) < len(prompt_ids)})
+        start, state = 0, None
+        for cut in reversed(cuts):
+            stored = cache.get(prompt_ids[:cut])
+            if stored is not None:
+                state, start = _padded_state(stored, cut, capacity), cut
+                cache.hits += 1
+                break
+        if state is None:
+            state = self._empty_state(capacity)
+            cache.misses += 1
+        storable = not _state_is_hybrid(state)
+        for cut in (c for c in cuts if c > start):
+            state, _ = self._feed(state, prompt_ids[start:cut], capacity)
+            if storable:
+                mx.eval(*_leaves(state))
+                cache.put(prompt_ids[:cut], state)
+            start = cut
+        state, hidden = self._feed(state, prompt_ids[start:], capacity)
+        logits = _project(self.model, hidden[:, -1:, :] if self.knobs.head_skip_prefill else hidden)
+        token = mx.argmax(logits[:, -1, :], axis=-1).reshape((1, 1))
+        mx.eval(token, *_leaves(state))
+        mx.synchronize()
+        if storable:
+            cache.put(prompt_ids, state)
+        return state, token
+
     def _prefill(self, prompt_ids: list[int], capacity: int):
+        if self.turn_boundaries is not None:
+            return self._prefill_turns(prompt_ids, capacity, self.turn_boundaries)
         if self.prefix_cache is not None:
             return self._prefill_chunked(prompt_ids, capacity, self.prefix_cache)
         ids = mx.array(prompt_ids)[None, :]

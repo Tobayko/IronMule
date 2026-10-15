@@ -9,8 +9,10 @@ import json
 import os
 from pathlib import Path
 import signal
+import subprocess
 import sys
 import threading
+import time
 from typing import Any
 
 from .errors import InvalidRequest, ModelNotFound, ProductError, StateError
@@ -113,6 +115,79 @@ def status(argv: list[str]) -> int:
     return 0
 
 
+class IdleTuner:
+    """START1: tune this machine for the served model in idle windows, never beside a loaded worker.
+
+    One GPU cannot tune and serve at once (the timings would carry the users' load, and
+    `gpu_busy()` refuses). So the idle task releases the worker, runs `ironmule tune` (planner,
+    bounded, paired confirmation) as its own process group, stops it the moment a request is
+    waiting, and hands the service a fresh worker, which loads whatever profile was confirmed.
+    The tune stores a profile only after its confirmation, so an interruption stores nothing.
+    """
+
+    POLL_S = 0.5
+    MAX_FAILURES = 2
+
+    def __init__(self, service: Any, spec: Any, make_backend: Any, *, popen: Any = subprocess.Popen,
+                 log: Any = print) -> None:
+        self.service, self.spec, self.make_backend, self.popen, self.log = service, spec, make_backend, popen, log
+        self.done = False
+        self.failures = 0
+        tool = [sys.executable, "-c", "import sys, ironmule_cli; sys.exit(ironmule_cli.main(sys.argv[1:]))", "tune",
+                "--model", spec.model_id]
+        self.show = tool + ["--show"]
+        self.tune = tool + ["--explorer", "planner", "--budget-minutes", "5"]
+
+    def _confirmed(self) -> bool:
+        shown = subprocess.run(self.show, capture_output=True, text=True, timeout=120)
+        return shown.returncode == 0 and "no profile for this hardware yet" not in shown.stdout
+
+    def __call__(self, preempted: Any) -> None:
+        if self.done or self.failures >= self.MAX_FAILURES:
+            return
+        if self._confirmed():
+            self.done = True
+            return
+        self.log(json.dumps({"idle_tune": "started", "model": self.spec.model_id}), flush=True)
+        backend = self.service.backend
+        if backend is not None:
+            backend.close()  # frees the GPU; a waiting request is served by the fresh worker below
+        outcome = "interrupted"
+        try:
+            process = self.popen(self.tune, start_new_session=True, stdin=subprocess.DEVNULL,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            while process.poll() is None:
+                if preempted():
+                    _stop_group(process)
+                    break
+                time.sleep(self.POLL_S)
+            else:
+                outcome = "done" if process.returncode == 0 else "failed"
+        finally:
+            fresh = self.make_backend()
+            self.service.backend = fresh
+            fresh.start()  # load before the scheduler takes the waiting requests
+        if outcome == "done":
+            self.done = True
+        elif outcome == "failed":
+            self.failures += 1
+        self.log(json.dumps({"idle_tune": outcome, "model": self.spec.model_id}), flush=True)
+
+
+def _stop_group(process: Any) -> None:
+    """Stop a tune and every child it started (screening and confirmation processes)."""
+    for sig, wait in ((signal.SIGTERM, 10), (signal.SIGKILL, 10)):
+        try:
+            os.killpg(process.pid, sig)
+        except ProcessLookupError:
+            return
+        try:
+            process.wait(timeout=wait)
+            return
+        except subprocess.TimeoutExpired:
+            continue
+
+
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
     choice = parser.add_mutually_exclusive_group(required=True)
@@ -123,18 +198,36 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "stock", "ironmule"), default="reference",
+                        help="stock/ironmule are the earlier names of reference/tuned. "
+                             "experimental: stream from IronMule's engine with this machine's confirmed "
+                             "`ironmule tune` profile (the untuned engine where none exists); not yet faster "
+                             "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
+                             "rust2 (CUDA, Qwen3 dense 4-bit): the rust2 binary named by IRONMULE_RUST2_BINARY, "
+                             "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV)",)
+    parser.add_argument("--no-thinking", action="store_true",
+                        help="answer without a thinking section where the model's chat template has one "
+                             "(start sets it on a machine without a GPU, CPU5)")
+    parser.add_argument("--chat-reuse", action="store_true",
+                        help="reuse each chat's earlier turns instead of recomputing them (--engine tuned only); "
+                             "exact within its own plan, which differs from the strict one (SERVE7)")
     parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere), or "
                              "dequantize on a machine without a GPU; changes output; see `ironmule plans`")
-    parser.add_argument("--engine", choices=("stock", "ironmule"), default="stock",
-                        help="stock: mlx-lm's own generation, streamed token by token (default); "
-                             "ironmule: IronMule's engine with this machine's tuned profile, greedy, "
-                             "each answer delivered whole once it is complete")
+    parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",
+                        help="RSI3-LIVE: learn group width and gather wait from this server's own traffic "
+                             "(cost model, sequential RL, dreaming); only a qualified policy replaces the reference. "
+                             "Pause/resume at runtime via POST /v1/ironmule/learning or the chat page")
+    parser.add_argument("--no-dreaming", action="store_true",
+                        help="with --learning: the same learner without model rollouts (comparison arm)")
+    parser.add_argument("--no-replay", action="store_true",
+                        help="with --learning: no idle replay qualification (an external harness qualifies, P3)")
     args = parser.parse_args(argv)
+    args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
-    if args.engine == "ironmule" and args.compute_dtype is not None:
-        parser.error("--compute-dtype runs on the stock engine only")
+    if args.engine != "reference" and args.compute_dtype is not None:
+        parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -160,11 +253,27 @@ def serve(argv: list[str]) -> int:
                 lease_entered = True
             except CalibrationFailure as exc:
                 raise InvalidRequest("model resources are in use by another IronMule operation") from exc
-            backend = MLXWorkerClient(spec, compute_dtype=args.compute_dtype,
-                                      execution_variant="current_engine" if args.engine == "ironmule"
-                                      else "reference")
+            if args.engine != "reference" and args.compute_dtype is not None:
+                raise InvalidRequest(f"--engine {args.engine} and --compute-dtype cannot be combined yet")
+            if args.chat_reuse and args.engine != "tuned":
+                raise InvalidRequest("--chat-reuse needs --engine tuned")
+            def make_backend():
+                return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
+                                       thinking=not args.no_thinking,
+                                       execution_variant="reference" if args.engine == "reference" else "current_engine",
+                                       **({"engine_configuration": "rust2"} if args.engine == "rust2" else {}))
+            backend = make_backend()
             backend.start()
         service = ProductService(store, backend=backend, spec=spec)
+        if spec is not None:
+            service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
+        if spec is not None and args.learning != "off":
+            service.learning = _live_learning(store, service, spec, args)
+        if spec is not None and args.engine == "tuned" and (service.learning is None or not service.learning.eligible):
+            # Idle tuning unloads the worker; learning keeps the serving model loaded (RSI3-LIVE).
+            service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
+                spec, execution_variant="current_engine", chat_reuse=args.chat_reuse,
+                thinking=not args.no_thinking))
         server = create_server(service, host=args.host, port=args.port,
                                api_key=os.environ.get(args.api_key_env),
                                tls_cert=args.tls_cert, tls_key=args.tls_key)
@@ -184,6 +293,46 @@ def serve(argv: list[str]) -> int:
         if lease_entered:
             lease.__exit__(None, None, None)
     return 0
+
+
+def _runtime_versions() -> dict[str, str | None]:
+    """Experience is bound to the software that produced it, not only to the model."""
+    from importlib import metadata
+
+    out = {}
+    for name in ("ironmule", "mlx", "mlx-lm"):
+        try:
+            out[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            out[name] = None
+    return out
+
+
+def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any) -> Any:
+    """RSI3-LIVE learner bound to this hardware, model, plan and schedule; see live_learning."""
+    from .live_learning import LiveLearning
+    from .readiness import hardware_identity
+
+    backend = service.backend
+    hardware = hardware_identity()
+    payload = backend.ready_payload or {}
+    binding = {"hardware": {"chip_name": hardware["chip_name"], "gpu_devices": hardware["gpu_devices"]},
+               "device": backend.device, "model": {"id": spec.model_id, "revision": spec.revision},
+               "plan": {"execution_variant": backend.execution_variant,
+                        "engine_configuration": backend.engine_configuration, "engine": payload.get("engine"),
+                        "compute_dtype": backend.compute_dtype, "chat_reuse": backend.chat_reuse,
+                        "thinking": backend.thinking},
+               "streams_batches": backend.streams_batches, "runtime": _runtime_versions(),
+               "worker_sources_sha256": payload.get("sources_sha256")}
+    policy = service.policy
+    # The scheduler never runs a group wider than the stored policy allows, so neither may an action.
+    learning = LiveLearning(store.root, binding, capacity=min(backend.batch_capacity, policy.max_width),
+                            reference_width=policy.max_width, reference_gather_ms=policy.gather_ms, join=policy.join,
+                            max_pending=service.settings["max_pending"],
+                            request_timeout_s=service.settings["request_timeout_s"], mode=args.learning,
+                            dreaming=not args.no_dreaming, replay=not args.no_replay)
+    print(json.dumps({"learning": learning.summary(), "reason": learning.reason}), flush=True)
+    return learning
 
 
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"  # 3.4 GB, not gated; every IronMule study measured it
@@ -219,6 +368,11 @@ def start(argv: list[str]) -> int:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--yes", action="store_true", help="download the model without asking")
     parser.add_argument("--no-browser", action="store_true", help="only print the chat address")
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2"), default="reference",
+                        help="see `ironmule serve --help`")
+    parser.add_argument("--chat-reuse", action="store_true", help="see `ironmule serve --help`")
+    parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",
+                        help="see `ironmule serve --help`")
     args = parser.parse_args(argv)
     store = ProductStore(args.state_dir)
     cpu_only = _cpu_only()
@@ -258,7 +412,11 @@ def start(argv: list[str]) -> int:
     print(f"Loading {model}. The chat opens at {url} once it is ready; Ctrl+C stops IronMule.", flush=True)
     if not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
-    return serve(["--model", model, "--port", str(args.port), *plan, *state])
+    engine = (["--engine", args.engine] if args.engine != "reference" else []) + (
+        ["--chat-reuse"] if args.chat_reuse else []) + (
+        ["--no-thinking"] if cpu_only else []) + (  # CPU5: thinking costs minutes on a CPU
+        ["--learning", args.learning] if args.learning != "off" else [])
+    return serve(["--model", model, "--port", str(args.port), *engine, *plan, *state])
 
 
 def optimize(argv: list[str]) -> int:
@@ -318,6 +476,25 @@ def optimize(argv: list[str]) -> int:
     return 0
 
 
+def dream_cmd(argv: list[str]) -> int:
+    """RSI4: learn the serving policy from this state's request log (see serving_policy)."""
+    from .serving_policy import ServingLog, dream, load_policy, save_policy
+
+    parser = _parser("dream", "Learn group width, joining and gather wait from logged traffic (RSI4)")
+    parser.add_argument("--capacity", type=int, default=8, help="the backend's group capacity to dream within")
+    parser.add_argument("--dry-run", action="store_true", help="print the choice without storing it")
+    args = parser.parse_args(argv)
+    store = ProductStore(args.state_dir)
+    records = ServingLog(store.root).read()
+    policy, evidence = dream(records, load_policy(store.root), capacity=args.capacity)
+    if not args.dry_run and evidence.get("reason") is None:
+        save_policy(store.root, policy, evidence)
+    _print({"policy": {"max_width": policy.max_width, "join": policy.join, "gather_ms": policy.gather_ms,
+                       "source": policy.source}, "stored": not args.dry_run and evidence.get("reason") is None,
+            "evidence": evidence})
+    return 0
+
+
 def dispatch(command: str, argv: list[str]) -> int:
     try:
         if command == "start":
@@ -330,6 +507,8 @@ def dispatch(command: str, argv: list[str]) -> int:
             return optimize(argv)
         if command == "status":
             return status(argv)
+        if command == "dream":
+            return dream_cmd(argv)
         if command == "models" and argv:
             return models(argv[0], argv[1:])
         raise InvalidRequest("unknown product command")

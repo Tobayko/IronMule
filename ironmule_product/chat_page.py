@@ -54,6 +54,10 @@ button { font: 600 14px var(--mono); letter-spacing: .08em; text-transform: uppe
          border-radius: 10px; color: #04120d; cursor: pointer;
          background: linear-gradient(135deg, var(--accent), var(--accent2)); }
 button:disabled { opacity: .45; cursor: default; }
+#status { padding: 6px 20px; border-bottom: 1px solid var(--line); color: var(--muted); font: 12px/1.4 var(--mono);
+          display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#status span { overflow-wrap: anywhere; }
+#status button { font-size: 11px; padding: 3px 10px; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -66,6 +70,8 @@ button:disabled { opacity: .45; cursor: default; }
     <div class="readout"><output id="speed">--</output><span id="speedlabel">tok/s</span></div>
   </div>
 </header>
+<div id="status" hidden><span id="learning"></span>
+  <button id="toggle" type="button" hidden></button><button id="rollback" type="button" hidden>Roll back</button></div>
 <main id="log"></main>
 <form id="form">
   <textarea id="input" rows="2" placeholder="Message. Enter sends, Shift+Enter starts a new line." autofocus></textarea>
@@ -227,7 +233,53 @@ input.addEventListener("keydown", (event) => {
   }
 });
 
+// RSI3-LIVE: serving readiness, learning mode, candidate and the strategy that serves, with its reason.
+const statusBar = document.getElementById("status"), learning = document.getElementById("learning");
+const toggle = document.getElementById("toggle"), rollback = document.getElementById("rollback");
+
+function describe(s) {
+  const parts = [(s.serving && s.serving.ready ? "Serving ready" : "Serving not ready") +
+                 (s.serving && s.serving.device ? " (" + s.serving.device + ")" : "")];
+  parts.push("Learning " + s.mode);
+  const c = s.candidate;
+  if (c && c.state === "qualifying") parts.push("Candidate " + c.version + " in qualification " + c.triplets + "/" + c.triplets_needed);
+  else if (c) parts.push("Last candidate " + c.version + ": " + c.state);
+  const st = s.strategy || {};
+  parts.push("Strategy: " + (st.active === "learned" ? "learned " + st.version : "reference") +
+             (st.reason ? " (" + st.reason + ")" : ""));
+  if (s.mode !== "off" && s.mode !== "unavailable" && s.learning)
+    parts.push(s.learning.real_updates + " real updates, " + s.dreaming.synthetic_updates + " dreamed (" +
+               s.dreaming.state + ")");
+  if (s.replay && s.replay.suspended) parts.push("Replay suspended: " + s.replay.suspended);
+  else if (s.replay && s.replay.blocked) parts.push("Replay waits: " + s.replay.blocked);
+  else if (s.reason) parts.push(s.reason);
+  return parts.join(" \u00b7 ");
+}
+
+async function refresh() {
+  try {
+    const response = await fetch("/v1/ironmule/learning", {headers: headers()});  // never prompts on its own
+    if (!response.ok) return;
+    const s = await response.json();
+    statusBar.hidden = false;
+    learning.textContent = describe(s);
+    toggle.hidden = !(s.mode === "active" || s.mode === "paused");
+    toggle.textContent = s.mode === "active" ? "Pause learning" : "Resume learning";
+    toggle.dataset.action = s.mode === "active" ? "pause" : "resume";
+    rollback.hidden = !(s.strategy && s.strategy.active === "learned");
+  } catch (error) { /* the chat keeps working without status */ }
+}
+
+async function control(action) {
+  await api("/v1/ironmule/learning", {method: "POST", body: JSON.stringify({action})});
+  refresh();
+}
+toggle.addEventListener("click", () => control(toggle.dataset.action));
+rollback.addEventListener("click", () => control("rollback"));
+
 connect();
+refresh();
+setInterval(refresh, 5000);
 </script>
 </body>
 </html>

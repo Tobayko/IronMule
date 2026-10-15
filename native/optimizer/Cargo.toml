@@ -1,0 +1,21 @@
+[package]
+name = "ironmule-optimizer"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.80"
+license = "Apache-2.0"
+description = "OPT1: opt-in optimization coordinator (detect, measure, learn, qualify, activate, roll back)"
+
+[lib]
+name = "ironmule_optimizer"
+
+[dependencies]
+ironmule-experiment-planner = { path = "../experiment_planner" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[features]
+# Test-only fault injection that can fail open (a forced acceptance); never in a release build.
+test-faults = []
