@@ -153,7 +153,7 @@ def test_fill_places_on_the_lowest_gpu_with_room_and_otherwise_the_shortest_queu
     assert pool._order() == [1, 0]  # no room anywhere: the shortest queue
 
 
-@pytest.mark.parametrize("plan", ["h1", "h2", "h3"])
+@pytest.mark.parametrize("plan", ["h1", "h2", "h3", "h4"])
 def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tmp_path, monkeypatch, plan):
     real_popen = subprocess.Popen
 
@@ -177,11 +177,14 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
                       rl2.ordered_service())
     saved = []
     try:
+        policy = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0], [1.0, 0.0, 0.0, 0.0])
         report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan=plan,
+                             names=rl2.arms_h4("spill/w8/g0/sjf") if plan == "h4" else None,
+                             policy=policy if plan == "h4" else None,
                              on_row=lambda partial: saved.append(len(partial["rows"])))
     finally:
         pool.close()
-    expected = (rl2.arms_h3(2) if plan == "h3" else
+    expected = (rl2.arms_h3(2) if plan == "h3" else rl2.arms_h4("spill/w8/g0/sjf") if plan == "h4" else
                 ["shortest/w8/g0", "shortest/w1/g0", "fill/w1/g0", "fill/w8/g0"])
     assert report["arms"] == expected
     assert report["calibration"]["ok"] == 32 and report["calibration"]["capacity_rps"] > 0
@@ -190,8 +193,10 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
     assert all(r["outcome"] == "ok" for row in report["rows"] for r in row["requests"])
     result = rl2.analyse(report, resamples=50)
     assert result["valid"] and result["mismatched_requests"] == 0 and result["complete_traces"] == [0, 1]
-    assert set(result["decisions"]) == ({"joint", "placement", "order"} if plan == "h3"
+    assert set(result["decisions"]) == ({"joint", "placement", "order"} if plan in ("h3", "h4")
                                         else {"joint", "placement", "schedule"})
+    assert (result["learned"] is not None) == (plan == "h4")
+    assert (report["policy"] is not None) == (plan == "h4")
     assert not any(prompt in json.dumps(report) for prompt in rl2.PROMPTS) and "Background" not in json.dumps(report)
     assert report["plan"] == plan and (report.get("states") == list(rl2.H2_STATES)) == (plan != "h1")
 
@@ -307,8 +312,11 @@ def test_sjf_starts_the_smallest_output_limit_first_and_fifo_keeps_arrival_order
     service.policy = ServingPolicy(max_width=1, source="test")  # one request at a time: order is visible
     starts = {}
     try:
-        for order in ("sjf", "fifo"):
-            service.order = order
+        always_sjf = rl2.LearnedPolicy([0.0] * rl2.PLACEMENT_FEATURES, [10.0, 0.0, 0.0, 0.0])
+        never_sjf = rl2.LearnedPolicy([0.0] * rl2.PLACEMENT_FEATURES, [-10.0, 0.0, 0.0, 0.0])
+        for order in ("sjf", "fifo", "learned-sjf", "learned-fifo"):
+            service.order = order.split("-")[0]
+            service.learned_policy = always_sjf if order == "learned-sjf" else never_sjf
             ends: list[int] = []
             hold = GenerationRequest("local/test", (("user", "slow:0.05"),), max_tokens=12, stream=True)
             waiting = [GenerationRequest("local/test", (("user", f"q{limit}"),), max_tokens=limit, stream=True)
@@ -331,5 +339,63 @@ def test_sjf_starts_the_smallest_output_limit_first_and_fifo_keeps_arrival_order
             starts[order] = ends
     finally:
         service.close()
-    assert starts["sjf"] == [12, 3, 6, 9]
-    assert starts["fifo"] == [12, 9, 3, 6]
+    assert starts["sjf"] == starts["learned-sjf"] == [12, 3, 6, 9]
+    assert starts["fifo"] == starts["learned-fifo"] == [12, 9, 3, 6]
+
+
+class _LiveShard(_Shard):
+    """A shard whose admitted sessions the learned placement reads."""
+
+    def __init__(self, sessions):
+        super().__init__(len(sessions))
+        self._lock = threading.Lock()
+        self._sessions = {f"s{i}": SimpleNamespace(request=request) for i, request in enumerate(sessions)}
+
+
+def _live(max_tokens, content="q"):
+    return GenerationRequest("local/test", (("user", content),), max_tokens=max_tokens)
+
+
+def test_the_learned_placement_reads_each_cards_admitted_requests():
+    segregating = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0], [0.0] * rl2.ORDER_FEATURES)
+    pool = rl2._placement_pool(DevicePool([_LiveShard([]), _LiveShard([_live(32)])], ["0", "1"]))
+    pool.placement, pool.learned_policy = "learned", segregating
+    pool._local.request = _live(256)
+    assert pool._order()[0] == 1  # long to the last card although it is busier
+    pool._local.request = _live(32)
+    assert pool._order()[0] == 0
+    assert rl2._View.of(_live(8, "x" * (rl2.LONG_PROMPT_CHARS + 1))).long_prompt
+    assert not rl2._View.of(_live(8, "short")).long_prompt
+
+
+def test_run_four_compares_the_learned_policy_with_the_best_fixed_arm():
+    names = ("shortest/w8/g0", "spill/w8/g0/sjf", rl2.LEARNED)
+
+    def cost(level, t, name):
+        return {rl2.LEARNED: 1.0, "spill/w8/g0/sjf": 1.5}.get(name, 2.0)
+
+    result = rl2.analyse(_report(cost, names=names))
+    assert result["learned"]["rival"] == "spill/w8/g0/sjf"
+    assert abs(result["learned"]["gain"] - 1 / 3) < 1e-9
+    assert result["learned"]["verdict"] == "the learned policy beats the best fixed arm"
+    even = rl2.analyse(_report(lambda level, t, name: 1.0 if name != "shortest/w8/g0" else 2.0, names=names))
+    assert even["learned"]["verdict"] == "the learned policy does not beat the best fixed arm"
+
+
+def test_a_run_four_kernel_carries_the_frozen_policy_and_refuses_a_tampered_one(tmp_path):
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    policy = rl2.LearnedPolicy([0.5] * rl2.PLACEMENT_FEATURES, [0.25] * rl2.ORDER_FEATURES).to_json()
+    path = tmp_path / "policy.json"
+    path.write_text(json.dumps(policy))
+    folder = tmp_path / "kernel"
+    assert rl2.main(["--write-kernel", str(folder), "--owner", "someone", "--commit", commit, "--plan", "h4",
+                     "--best-fixed", "spill/w8/g0/sjf", "--policy-json", f"@{path}"]) == 0
+    script = (folder / "run.py").read_text()
+    assert policy["sha256"] in script and "'--best-fixed', 'spill/w8/g0/sjf'" in script
+    assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "someone/ironmule-rl2-headroom-h4"
+    compile(script, "run.py", "exec")
+    policy["order"][0] = 3.0
+    path.write_text(json.dumps(policy))
+    with pytest.raises(ValueError, match="digest"):
+        rl2.main(["--write-kernel", str(tmp_path / "bad"), "--owner", "someone", "--commit", commit, "--plan", "h4",
+                  "--best-fixed", "spill/w8/g0/sjf", "--policy-json", f"@{path}"])

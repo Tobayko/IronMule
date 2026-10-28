@@ -71,6 +71,7 @@ To run it on Kaggle (T4 x2) from a pushed commit:
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -305,13 +306,136 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
     best_cost = sum(WEIGHTS[level] * statistics.fmean(table[level, t, best] for t in complete) for level in levels)
     per_level = {str(level): {name: statistics.fmean(table[level, t, name] for t in complete) for name in names}
                  for level in levels}
+    learned = None
+    if LEARNED in names:  # run 4 (BACKLOG RL4-H): the frozen policy against every fixed arm, paired by trace
+        fixed_arms = [n for n in names if n != LEARNED]
+        rival = min(fixed_arms, key=lambda n: (sum(WEIGHTS[level] * statistics.fmean(table[level, t, n] for t in complete)
+                                                   for level in levels), n))
+        per_trace = [(sum(WEIGHTS[level] * table[level, t, LEARNED] for level in levels),
+                      sum(WEIGHTS[level] * table[level, t, rival] for level in levels)) for t in complete]
+        boot = []
+        for _ in range(resamples):
+            sample = [per_trace[rng.randrange(len(per_trace))] for _ in per_trace]
+            boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+        gain = 1 - sum(x for x, _ in per_trace) / sum(y for _, y in per_trace)
+        low = _quantile(boot, 0.025)
+        learned = {"rival": rival, "gain": gain, "gain_ci95": [low, _quantile(boot, 0.975)],
+                   "verdict": ("the learned policy beats the best fixed arm" if low > noise
+                               else "the learned policy does not beat the best fixed arm")}
     return {**out, "valid": True, "problems": [], "aa_noise": noise, "aa_pairs": len(pairs),
             "reference_cost": reference, "best_fixed": best, "best_fixed_vs_reference": best_cost / reference,
-            "decisions": decisions, "mean_cost_per_level": per_level,
+            "decisions": decisions, "mean_cost_per_level": per_level, "learned": learned,
             "verdict": ("headroom for: " + ", ".join(d for d, v in decisions.items() if v["verdict"].startswith("headroom"))
                         if any(v["verdict"].startswith("headroom") for v in decisions.values())
                         else f"no headroom: the fixed policy {best} ships, no learner" if best_cost / reference < 1 - noise
                         else f"no headroom: the reference stays ({best} is within the A/A noise of it), no learner")}
+
+
+# ---------------------------------------------------------------- run 4's learned policy (BACKLOG RL4)
+
+LONG_PROMPT_CHARS = 1000  # a request whose last message is longer counts as a long prompt
+PLACEMENT_FEATURES = 8
+ORDER_FEATURES = 4
+
+
+def _is_long(request: Any) -> bool:
+    return request.max_tokens >= LONG_TOKENS
+
+
+def placement_features(request: Any, cards: list[Any], card: int) -> list[float]:
+    """For one candidate card: its load and long work, crossed with whether this request is long.
+    `request` has `max_tokens` and `long_prompt`; each card's `outstanding()` lists such requests."""
+    outstanding = cards[card].outstanding()
+    load = len(outstanding) / 8.0
+    longs = sum(_is_long(r) for r in outstanding) / 8.0
+    shorts = load - longs
+    long_request = 1.0 if _is_long(request) else 0.0
+    last = 1.0 if card == len(cards) - 1 else 0.0
+    return [load, long_request * longs, (1 - long_request) * longs, long_request * shorts,
+            (1 - long_request) * shorts, long_request * last, (1 - long_request) * last,
+            float(request.long_prompt) * load]
+
+
+def order_features(waiting: list[Any]) -> list[float]:
+    longs = sum(_is_long(r) for r in waiting)
+    shorts = len(waiting) - longs
+    return [1.0, len(waiting) / 8.0, float(longs > 0 and shorts > 0), longs / max(1, len(waiting))]
+
+
+@dataclass
+class LearnedPolicy:
+    """A softmax over cards per request and a logistic `sjf` choice per group start (trained by
+    `tools/rl4_agent.py`); the harness applies it greedily."""
+    placement: list[float]
+    order: list[float]
+
+    @classmethod
+    def zero(cls) -> "LearnedPolicy":
+        return cls([0.0] * PLACEMENT_FEATURES, [0.0] * ORDER_FEATURES)
+
+    def to_json(self) -> dict[str, Any]:
+        body = {"schema": "ironmule.rl4.policy.v1", "placement": self.placement, "order": self.order,
+                "features": {"placement": PLACEMENT_FEATURES, "order": ORDER_FEATURES}}
+        return {**body, "sha256": hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
+
+    @classmethod
+    def from_json(cls, data: dict[str, Any]) -> "LearnedPolicy":
+        body = {k: v for k, v in data.items() if k != "sha256"}
+        if hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() != data.get("sha256"):
+            raise ValueError("policy digest does not match its weights")
+        if body.get("schema") != "ironmule.rl4.policy.v1":
+            raise ValueError("unknown policy schema")
+        return cls(list(body["placement"]), list(body["order"]))
+
+    def card_probabilities(self, request: Any, cards: list[Any]) -> list[float]:
+        scores = [sum(w * x for w, x in zip(self.placement, placement_features(request, cards, c)))
+                  for c in range(len(cards))]
+        top = max(scores)
+        exps = [math.exp(s - top) for s in scores]
+        return [e / sum(exps) for e in exps]
+
+    def sjf_probability(self, waiting: list[Any]) -> float:
+        z = sum(w * x for w, x in zip(self.order, order_features(waiting)))
+        return 1 / (1 + math.exp(-max(-30.0, min(30.0, z))))
+
+    def best_card(self, request: Any, cards: list[Any]) -> int:
+        p = self.card_probabilities(request, cards)
+        return max(range(len(p)), key=lambda i: (p[i], -i))
+
+    def uses_sjf(self, waiting: list[Any]) -> bool:
+        return self.sjf_probability(waiting) > 0.5
+
+    def greedy(self) -> tuple[Any, Any]:
+        """(place, order) callables in `tools/rl4_agent.py`'s simulator signature."""
+        return (lambda request, cards, now: self.best_card(request, cards),
+                lambda waiting, now: "sjf" if self.uses_sjf(waiting) else "fifo")
+
+
+@dataclass
+class _View:
+    """What the learned policy reads of a live request."""
+    max_tokens: int
+    long_prompt: bool
+
+    @classmethod
+    def of(cls, request: Any) -> "_View":
+        return cls(request.max_tokens, len(request.messages[-1][1]) > LONG_PROMPT_CHARS)
+
+
+class _CardView:
+    def __init__(self, requests: list[_View]):
+        self._requests = requests
+
+    def outstanding(self) -> list[_View]:
+        return self._requests
+
+
+def _card_views(shards: list[Any]) -> list[_CardView]:
+    views = []
+    for shard in shards:
+        with shard._lock:
+            views.append(_CardView([_View.of(session.request) for session in shard._sessions.values()]))
+    return views
 
 
 # ---------------------------------------------------------------- measurement (hardware)
@@ -322,7 +446,7 @@ def _placement_pool(pool: Any) -> Any:
     from ironmule_product.device_pool import DevicePool
 
     class PlacementPool(DevicePool):
-        placement, fill_width = "shortest", 8
+        placement, fill_width, learned_policy = "shortest", 8, None
         _local = threading.local()  # the request being placed, per calling thread
 
         def stream(self, request: Any) -> Any:
@@ -334,6 +458,13 @@ def _placement_pool(pool: Any) -> Any:
             if self.placement == "fill":
                 room = sorted(index for index in order if self.shards[index].outstanding() < self.fill_width)
                 return room + [index for index in order if index not in room]
+            if self.placement == "learned" and len(order) > 1 and self.learned_policy is not None:
+                request = getattr(self._local, "request", None)
+                if request is not None:
+                    choice = self.learned_policy.best_card(_View.of(request), _card_views(self.shards))
+                    if choice in order:
+                        return [choice] + [index for index in order if index != choice]
+                return order
             if self.placement not in ("segregate", "spill") or len(order) < 2:
                 return order
             request = getattr(self._local, "request", None)
@@ -359,7 +490,7 @@ def ordered_service() -> type:
     from ironmule_product.service import ProductService
 
     class OrderedService(ProductService):
-        order = "fifo"
+        order, learned_policy = "fifo", None  # `policy` is the service's own ServingPolicy
 
         def _sort_waiting(self) -> None:  # the caller holds self._lock
             while True:
@@ -368,8 +499,12 @@ def ordered_service() -> type:
                 except queue.Empty:
                     break
             now = time.monotonic_ns()
+            sjf = self.order == "sjf" or (self.order == "learned" and self.learned_policy is not None and
+                                          self.learned_policy.uses_sjf([_View.of(s.request) for s in self._carry]))
 
             def key(session: Any) -> tuple[bool, int, int]:
+                if not sjf:  # run 4's learned order chose arrival order for this group
+                    return (False, 0, session.submitted_ns)
                 aged = now - session.submitted_ns > SJF_AGE_S * 1e9
                 return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
 
@@ -378,7 +513,7 @@ def ordered_service() -> type:
             self._carry.extend(waiting)
 
         def _next_session(self) -> Any:
-            if self.order != "sjf":
+            if self.order not in ("sjf", "learned"):
                 return super()._next_session()
             with self._lock:
                 self._sort_waiting()
@@ -394,7 +529,7 @@ def ordered_service() -> type:
                 return self._carry.popleft()
 
         def _group_for(self, first: Any, width: int | None = None, gather_ms: int | None = None) -> list[Any]:
-            if self.order == "sjf":
+            if self.order in ("sjf", "learned"):
                 with self._lock:
                     self._sort_waiting()
             return super()._group_for(first, width, gather_ms)
@@ -486,19 +621,27 @@ def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, .
 
 def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = None, requests: int = REQUESTS,
             loads: tuple[float, ...] = LOADS, names: list[str] | None = None,
-            max_tokens: tuple[int, ...] | None = None, plan: str = "h1", on_row: Any = None) -> dict[str, Any]:
+            max_tokens: tuple[int, ...] | None = None, plan: str = "h1", policy: Any = None,
+            on_row: Any = None) -> dict[str, Any]:
     """The plan above on a started pool: calibration, then every (trace, level) block in order.
     `names` and `max_tokens` shrink it for a smoke run; a measurement keeps the defaults."""
     pool = _placement_pool(pool)
+    pool.learned_policy = policy
+    for shard in pool.shards:
+        shard.learned_policy = policy
     names = names or {"h2": arms_h2, "h3": arms_h3}.get(plan, arms)(len(pool.shards))
+    if any(rl_part == "learned" for name in names for rl_part in (parse_arm(name)[0], arm_order(name))) \
+            and policy is None:
+        raise ValueError("a learned arm needs a policy")
     warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards), deadline_s)
     report: dict[str, Any] = {"plan": plan, "arms": names, "devices": list(pool.devices), "deadline_s": deadline_s,
+                              "policy": None if policy is None else policy.to_json(),
                               "warmup_ok": sum(r["outcome"] == "ok" for r in warm), "rows": []}
     report["calibration"] = calibrate(pool, model, deadline_s, max_tokens)
     if report["calibration"].get("failed"):
         return report
     capacity = report["calibration"]["capacity_rps"]
-    if plan in ("h2", "h3"):
+    if plan in ("h2", "h3", "h4"):
         report["states"] = list(H2_STATES)
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
     else:
@@ -506,7 +649,7 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
         traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
                    for level, rate in enumerate(report["rates"])]
     block = 0
-    for t in range(traces if traces is not None else H2_TRACES if plan in ("h2", "h3") else TRACES):
+    for t in range(traces if traces is not None else H2_TRACES if plan in ("h2", "h3", "h4") else TRACES):
         for level, make in enumerate(traffic):
             items = make(t)
             for name, run in block_order(names, block):
@@ -552,7 +695,16 @@ def environment() -> dict[str, Any]:
             "versions": versions, "gpus": gpus.strip().splitlines()}
 
 
-def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = None) -> dict[str, Any]:
+def arms_h4(best_fixed: str) -> list[str]:
+    """Run 4 (BACKLOG RL4-H): the reference, run 3's best fixed arm and the learned policy."""
+    return list(dict.fromkeys([REFERENCE, best_fixed, LEARNED]))
+
+
+LEARNED = "learned/w8/g0/learned"
+
+
+def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = None,
+        policy: Any = None, names: list[str] | None = None) -> dict[str, Any]:
     """Register `model`, start one worker per GPU (the tuned engine's grouped path) and measure."""
     from huggingface_hub import snapshot_download
 
@@ -577,7 +729,9 @@ def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = 
         smoke_names = (arms_h3(len(devices))[:2] if plan == "h3" else
                        [n for n in arms(len(devices)) if parse_arm(n)[1:] in ((8, 0), (1, 0))])
         sizes = {"traces": 2, "requests": 3, "max_tokens": (4, 8), "names": smoke_names} if smoke else {}
-        result = measure(pool, model, deadline_s=deadline, plan=plan, on_row=on_row, **sizes)
+        if names is not None:
+            sizes["names"] = names
+        result = measure(pool, model, deadline_s=deadline, plan=plan, policy=policy, on_row=on_row, **sizes)
     finally:
         pool.close()
     return {"model": model, "revision": revision, **result}
@@ -592,15 +746,17 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q",
 '''
 
 
-def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1") -> Path:
-    """A private script kernel that installs IronMule at `commit` and runs this file's `plan`; the
-    report lands in the kernel's output as `rl2_headroom_report.json`."""
+def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", extra: list[str] | None = None) -> Path:
+    """A private script kernel that installs IronMule at `commit` and runs this file's `plan` (with
+    `extra` arguments, such as run 4's frozen policy); the report lands in the kernel's output as
+    `rl2_headroom_report.json`."""
     if not commit or any(c not in "0123456789abcdef" for c in commit) or len(commit) != 40:
         raise ValueError("commit must be a full 40-character lowercase SHA, so the kernel runs exactly it")
     directory.mkdir(parents=True, exist_ok=True)
     body = (Path(__file__).read_text().replace('\nif __name__ == "__main__":\n    sys.exit(main())\n', "")
             .replace("from __future__ import annotations\n", "", 1))
-    entry = f"\nsys.exit(main(['--out', '/kaggle/working/rl2_headroom_report.json', '--plan', {plan!r}]))\n"
+    arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, *(extra or [])]
+    entry = f"\nsys.exit(main({arguments!r}))\n"
     name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}")
     (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
     metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
@@ -615,7 +771,9 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3"), default="h1", help="run 1's, 2's or 3's fixed plan")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4"), default="h1", help="run 1's to 4's fixed plan")
+    parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
+    parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
     parser.add_argument("--analyse", type=Path, metavar="REPORT", help="print the analysis of a finished report")
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
@@ -626,7 +784,14 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.write_kernel is not None:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
-        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan))}))
+        extra = []
+        if args.plan == "h4":
+            if not args.policy_json or not args.best_fixed:
+                parser.error("--plan h4 needs --policy-json and --best-fixed")
+            text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
+            LearnedPolicy.from_json(json.loads(text))  # refuse a policy whose digest does not match
+            extra = ["--best-fixed", args.best_fixed, "--policy-json", json.dumps(json.loads(text), sort_keys=True)]
+        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra))}))
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
@@ -645,7 +810,14 @@ def main(argv: Iterable[str] | None = None) -> int:
     save()
     work = Path(tempfile.mkdtemp(prefix="ironmule-rl2h-"))
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
-    report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save)
+    policy = names = None
+    if args.plan == "h4":
+        if not args.policy_json or not args.best_fixed:
+            parser.error("--plan h4 needs --policy-json and --best-fixed")
+        text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
+        policy = LearnedPolicy.from_json(json.loads(text))
+        names = arms_h4(args.best_fixed)
+    report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save, policy=policy, names=names)
     report["analysis"] = analyse(report["rl2h"])
     report["finished_unix"] = time.time()
     save()

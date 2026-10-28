@@ -169,9 +169,11 @@ varies only that decision). *Noise:* the 95th percentile of the A/A relative dif
 decision gets a learner only if the 2.5 % bootstrap bound of its held-out H (2000 resamples, seed 0) exceeds
 that noise. *Validity:* any answer digest that differs between arms, a non-finite cost, a failed calibration or
 fewer than two complete traces per level makes the run invalid; an invalid run releases nothing. H is an upper
-bound (a real policy sees only the arrival-rate estimate and pays switches), so passing it is necessary, not
-sufficient: a learner must still pass the unchanged protocol-2 qualification. 378 cells, an estimated three to
-four session hours.
+bound for a policy that picks one of these fixed arms from the load level (such a policy sees only the
+arrival-rate estimate and pays switches), so passing it is necessary, not sufficient: a learner must still pass the
+unchanged protocol-2 qualification. *(Corrected 2026-10-28, after run 1:* the text first said "an upper bound"
+without that scope. A policy that reacts to each request, to its length and to the queue at that moment, is not
+bounded by H; see RL3 and RL4.) 378 cells, an estimated three to four session hours.
 
 **RL2-H run 1 (2026-10-28, valid): no headroom for either decision; no learner.** Kaggle "GPU T4 x2" (two Tesla
 T4, 15 GiB, driver 580.178.04, 4 CPUs), MLX 0.32.4, mlx-lm 0.31.3, `mlx-community/Qwen3-1.7B-bf16` (`9cd66928`),
@@ -234,6 +236,39 @@ it. If one fixed arm beats the reference by more than the noise in every state, 
 candidate with its own paired validation, and no learner is built. Only headroom that depends on the state
 releases a learner. That learner would be trained offline on the recorded costs (every arm replayed the same
 traces, so each state has a full-information cost per action), then qualified like every other arm.
+
+### RL4 — A model-based RL agent that places and orders each request (opened 2026-10-28, before data)
+
+**Mechanism.** RL2-H's headroom bounds only policies that choose a fixed arm per load level. A policy that decides
+per request can react to things a fixed arm ignores: that request's output limit and prompt length, and the
+outstanding work on each card at that moment. Under bursts with mixed lengths, it can send a long request to the
+card that will be free soonest, or keep short ones away from a card that a long group holds. This is what the
+REINFORCE agent in arXiv:2607.05272 learned against the shortest queue. Training such a policy on hardware costs
+GPU hours per episode, so it is trained in a discrete-event simulator of the HW1 pool instead (Dyna-style, as the
+live learner already does). The pool model has per-card groups that run until their slowest member ends, no
+joining, grouped prefill one member at a time, and a decode round time that depends on the group's width. It is
+fitted to the per-request times RL2-H2 and RL3-H record on the T4s. The agent is a softmax policy over two
+decisions. The first is the card for each arriving request, from that request's output limit and prompt length
+and the outstanding requests on each card. The second is `fifo` or `sjf` at each group start, from the waiting
+queue's composition. It is trained by REINFORCE with a running-mean baseline, the episode return being minus the
+mean of the live learner's request cost, on traffic drawn from RL2-H2's state generators with seeds disjoint
+from the hardware traces. **Evidence against.** The simulator can be wrong, the per-request decision can do
+no better than RL3's best fixed arm, and every learned arm so far (P3, P4, OPT1) lost on hardware.
+
+**Gates and test.**
+- *Fidelity gate:* the fitted simulator must rank RL3-H's six arms per state as the hardware did (Spearman
+  rho of at least 0.8 per state) and predict each cell's mean cost within 25 %. Otherwise no policy trained in
+  it goes to hardware.
+- *Simulator gate:* on 200 held-out simulated traces per state, the learned policy must beat the best fixed arm
+  by more than RL3-H's A/A noise.
+- *Hardware (RL4-H):* `tools/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs
+  against the reference and RL3-H's best fixed arm on RL3-H's states and traces, with the same cost, order, noise
+  and validity as RL3-H. The policy is frozen and its digest recorded before the run.
+
+**Kill.** The learned arm's held-out advantage over the best fixed arm has a 2.5 % bootstrap bound at or below
+the A/A noise: no learner ships, and the best fixed arm stays as RL3 decides. Failing either gate stops RL4
+before hardware. A learned arm that passes still needs the product integration (opt-in, off by default,
+qualification and rollback as `docs/LIVE_LEARNING.md` describes) and its own paired validation.
 
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
