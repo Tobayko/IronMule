@@ -59,18 +59,23 @@ which is known when a request arrives (`long`: at least 128 tokens):
             starts first, ties and requests waiting longer than 10 s by arrival.
   arms      the six combinations with the reference schedule (width 8, no wait).
 
+X1 (`--plan x1`, BACKLOG X1, fixed 2026-10-28 before its data) is not a headroom run: run 3 was invalid because
+one short request was answered differently across arms, and X1 checks on each card whether the KV capacity, the
+group or the card moves a request's tokens (`exactness_on_device`, decided by `x1_summary`).
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
-    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha> [--plan h2|h3]
+    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha> [--plan h2|h3|x1]
     kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
-    kaggle kernels output <user>/ironmule-rl2-headroom[-h2|-h3] -p results
+    kaggle kernels output <user>/ironmule-rl2-headroom[-h2|-h3|-x1] -p results
     python tools/rl2_headroom.py --analyse results/rl2_headroom_report.json
 """
 
 from __future__ import annotations
 
 import argparse
+import base64
 from dataclasses import dataclass
 import hashlib
 import json
@@ -704,6 +709,155 @@ def arms_h4(best_fixed: str) -> list[str]:
 
 LEARNED = "learned/w8/g0/learned"
 
+# X1 (BACKLOG X1, after run 3 was invalid): request 14 of run 3's `bursts` trace 1, a short prompt,
+# was answered one way under every `shortest` arm and another under every `segregate`/`spill` arm.
+X1_TRACE = (1, 1)
+X1_GROUP = (12, 13, 14, 15)  # the burst it arrived in: three long prompts and itself
+X1_PROBE = 14
+X1_REPEATS = 3
+X1_CAPACITIES = (1024, 1088)  # besides each prompt's own: a power of two, and run 3's long-prompt group at 32 tokens
+X1_CHILD = "IRONMULE_X1_CHILD"
+X1_REVISION = "9cd6692855d3e06772228e9a962b2606359b2d24"  # the revision of MODEL that run 3 served
+
+
+def _x1_ids(tokenizer: Any, item: dict[str, Any]) -> list[int]:
+    """The prompt as `replay` sends it and the worker renders it (chat template, thinking on)."""
+    prompt = (CONTEXT + "\n\n" if item.get("long") else "") + PROMPTS[item["prompt"]]
+    return list(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True,
+                                              tokenize=True))
+
+
+def _token_digest(tokens: list[int]) -> str:
+    return hashlib.sha256(json.dumps(list(tokens)).encode()).hexdigest()  # as `replay` digests token ids
+
+
+def exactness_on_device(model: str, smoke: bool = False) -> dict[str, Any]:
+    """X1 on this process's one device, with the engine a worker without a tuned profile runs (BASELINE
+    knobs): the probe's tokens served alone and in run 3's group through `Runtime.serve` (grouped
+    batch-1, one KV capacity per group), and every short prompt decoded directly at its own capacity
+    and at each of `X1_CAPACITIES`, with the largest logit difference before the first differing token."""
+    from huggingface_hub import snapshot_download
+    import mlx.core as mx
+    from mlx_lm import load
+
+    from ironmule.plans import StrictOneShotPlan
+    from ironmule.runtime import BASELINE, Engine
+    from ironmule.service import Request, Runtime, ThroughputMode
+
+    path = Path(snapshot_download(model, revision=X1_REVISION if model == MODEL else None,
+                                  allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                  "tokenizer*"]))
+    loaded, tokenizer = load(str(path))
+    runtime = Runtime(Engine(loaded, tokenizer, BASELINE), tokenizer, mode=ThroughputMode(max_width=4))
+    backend, repeats, limit = runtime.backend, 1 if smoke else X1_REPEATS, 4 if smoke else 32
+    items = trace_h2(*X1_TRACE, 1.0)  # prompts, lengths and limits do not depend on the capacity
+    group = [{**items[i], "max_tokens": min(items[i]["max_tokens"], limit) if smoke else items[i]["max_tokens"]}
+             for i in X1_GROUP]
+    probe = group[X1_GROUP.index(X1_PROBE)]
+
+    def serve(members: list[dict[str, Any]]) -> list[str]:
+        requests = [Request(prompt_ids=_x1_ids(tokenizer, m), max_tokens=m["max_tokens"]) for m in members]
+        return [_token_digest(result.tokens) for result in runtime.serve(requests)]
+
+    def decode(ids: list[int], capacity: int) -> tuple[list[int], list[Any]]:
+        state, token = backend.prefill(ids, StrictOneShotPlan(), capacity)
+        tokens, logits = [token], []
+        for _ in range(limit - 1):
+            out, pick = backend.step(state, tokens[-1], capacity)
+            mx.eval(out[0], pick)
+            state = out[1]
+            logits.append(out[0][:, -1, :].astype(mx.float32))
+            tokens.append(int(pick.reshape((-1,)).item()))
+        return tokens, logits
+
+    try:
+        alone = [serve([probe])[0] for _ in range(repeats)]
+        grouped = [serve(group)[X1_GROUP.index(X1_PROBE)] for _ in range(repeats)]
+        sweep = []
+        for prompt in range(2 if smoke else len(PROMPTS)):
+            ids = _x1_ids(tokenizer, {"prompt": prompt, "long": False})
+            own = backend.capacity_for([len(ids)], limit)
+            base_tokens, base_logits = decode(ids, own)
+            row: dict[str, Any] = {"prompt": prompt, "own_capacity": own, "digest": _token_digest(base_tokens),
+                                   "at": {}}
+            for capacity in X1_CAPACITIES:
+                tokens, logits = decode(ids, capacity)
+                first = next((i for i, (a, b) in enumerate(zip(base_tokens, tokens)) if a != b), None)
+                same_input = base_logits[: (len(base_logits) if first is None else max(0, first - 1))]
+                row["at"][str(capacity)] = {
+                    "equal": tokens == base_tokens, "first_difference": first,
+                    "max_logit_difference": max((float(mx.max(mx.abs(a - b)).item())
+                                                 for a, b in zip(same_input, logits)), default=0.0),
+                    "digest": _token_digest(tokens)}
+            sweep.append(row)
+    finally:
+        runtime.close()
+    return {"probe": X1_PROBE, "revision": path.name, "alone": alone, "grouped": grouped, "sweep": sweep,
+            "long_capacity": backend.capacity_for([max(len(_x1_ids(tokenizer, m)) for m in group)], limit)}
+
+
+def x1_summary(devices: dict[str, dict[str, Any]], run3_digests: dict[str, str] | None = None) -> dict[str, Any]:
+    """X1's decision (fixed in BACKLOG X1 before its data): does the KV capacity, the group, or the
+    card move a request's tokens on this hardware?"""
+    found = {name: result for name, result in devices.items() if not result.get("failed")}
+    capacity_moves = sorted({(name, row["prompt"], capacity) for name, result in found.items()
+                             for row in result["sweep"] for capacity, cell in row["at"].items() if not cell["equal"]})
+    group_moves = [name for name, result in found.items() if set(result["alone"]) != set(result["grouped"])]
+    unstable = [name for name, result in found.items()
+                if len(set(result["alone"])) > 1 or len(set(result["grouped"])) > 1]
+    digests = {name: [row["digest"] for row in result["sweep"]] for name, result in found.items()}
+    cards_agree = len({json.dumps(d) for d in digests.values()}) <= 1
+    if len(found) < len(devices) or not found:
+        verdict = "incomplete: a device failed"
+    elif unstable:
+        verdict = "nondeterministic: the same request on the same device was answered differently"
+    elif capacity_moves:
+        verdict = "the KV capacity moves tokens on this hardware: a request's capacity must not depend on its group"
+    elif group_moves:
+        verdict = "the group moves tokens beyond its capacity: grouped batch-1 is not exact here"
+    elif not cards_agree:
+        verdict = "the cards answer differently"
+    else:
+        verdict = "not reproduced in-process: the product path differs from Runtime.serve"
+    out = {"verdict": verdict, "capacity_moves": [list(m) for m in capacity_moves], "group_moves": group_moves,
+           "unstable": unstable, "cards_agree": cards_agree}
+    if run3_digests:  # which of run 3's two answers each way of serving reproduces
+        out["run3"] = {name: {"alone": [run3_digests.get(d, "neither") for d in result["alone"]],
+                              "grouped": [run3_digests.get(d, "neither") for d in result["grouped"]]}
+                       for name, result in found.items()}
+    return out
+
+
+# run 3's two answers to request 14 of `bursts` trace 1 (SHA-256 of the token ids, first ten hex digits)
+X1_RUN3 = {"3f93c7c2f9": "shortest arms", "3826c1eacc": "segregate and spill arms, and the same request in `spike`"}
+
+
+def run_x1(model: str, out: Path, smoke: bool = False) -> dict[str, Any]:
+    """One child process per visible CUDA device, each pinned to it as HW1 pins a worker. A Kaggle
+    kernel runs this file as a notebook cell, so the child gets the source the kernel embedded."""
+    from ironmule_product.device_pool import cuda_devices
+
+    child_file = out.with_name("x1_child.py")
+    child_file.write_text(globals().get("_EMBEDDED_SOURCE") or Path(__file__).read_text())
+    children = {}
+    for device in cuda_devices() or [None]:
+        name = device or "default"
+        target = out.with_name(f"x1_device_{name}.json")
+        env = {**os.environ, X1_CHILD: str(target), "IRONMULE_X1_MODEL": model,
+               "IRONMULE_X1_SMOKE": "1" if smoke else ""}
+        if device is not None:
+            env["CUDA_VISIBLE_DEVICES"] = device
+        children[name] = (target, subprocess.Popen([sys.executable, str(child_file)], env=env))
+    results = {}
+    for name, (target, child) in children.items():
+        code = child.wait()
+        results[name] = (json.loads(target.read_text()) if code == 0 and target.exists()
+                         else {"failed": f"exit {code}"})
+    run3 = {digest: label for result in results.values() if not result.get("failed")
+            for digest in result["alone"] + result["grouped"] for key, label in X1_RUN3.items()
+            if digest.startswith(key)}
+    return {"devices": results, "summary": x1_summary(results, run3)}
+
 
 def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = None,
         policy: Any = None, names: list[str] | None = None) -> dict[str, Any]:
@@ -755,8 +909,12 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
     if not commit or any(c not in "0123456789abcdef" for c in commit) or len(commit) != 40:
         raise ValueError("commit must be a full 40-character lowercase SHA, so the kernel runs exactly it")
     directory.mkdir(parents=True, exist_ok=True)
-    body = (Path(__file__).read_text().replace('\nif __name__ == "__main__":\n    sys.exit(main())\n', "")
+    source = Path(__file__).read_text()
+    body = (source.replace('\nif __name__ == "__main__":\n    sys.exit(main())\n', "")
             .replace("from __future__ import annotations\n", "", 1))
+    if plan == "x1":  # `run_x1` starts its per-device children from this file's own source
+        encoded = base64.b64encode(source.encode()).decode()
+        body = f"_EMBEDDED_SOURCE = __import__('base64').b64decode({encoded!r}).decode()\n" + body
     arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, *(extra or [])]
     entry = f"\nsys.exit(main({arguments!r}))\n"
     name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}")
@@ -770,10 +928,16 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    child = os.environ.get(X1_CHILD)
+    if child:  # an X1 child pinned to one device by `run_x1`
+        result = exactness_on_device(os.environ["IRONMULE_X1_MODEL"], smoke=bool(os.environ.get("IRONMULE_X1_SMOKE")))
+        Path(child).write_text(json.dumps(result, sort_keys=True) + "\n")
+        return 0
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4"), default="h1", help="run 1's to 4's fixed plan")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "x1"), default="h1",
+                        help="run 1's to 4's fixed plan, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
@@ -812,6 +976,12 @@ def main(argv: Iterable[str] | None = None) -> int:
     save()
     work = Path(tempfile.mkdtemp(prefix="ironmule-rl2h-"))
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
+    if args.plan == "x1":
+        report["x1"] = run_x1(model, args.out, smoke=args.smoke)
+        report["finished_unix"] = time.time()
+        save()
+        print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
+        return 0
     policy = names = None
     if args.plan == "h4":
         if not args.policy_json or not args.best_fixed:

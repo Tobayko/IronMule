@@ -237,6 +237,53 @@ candidate with its own paired validation, and no learner is built. Only headroom
 releases a learner. That learner would be trained offline on the recorded costs (every arm replayed the same
 traces, so each state has a full-information cost per action), then qualified like every other arm.
 
+**Result, RL3-H run 1 (2026-10-28, `RL3-H-run1-20261028`, kernel `tobayko/ironmule-rl2-headroom-h3` at
+`35844a8ac29303e19682242c9ee6fba1da1e9c5c`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4): invalid,
+no learner is released.** All 105 cells and 1,680 requests completed; none failed, timed out or was refused. But
+request 14 of `bursts` trace 1, a short prompt with a 32-token limit, got one answer under both `shortest` arms
+(three replays, the A/A repeat included) and another under all four `segregate` and `spill` arms. The second answer
+is also what every arm gave the same prompt in `spike` trace 1. The other 88 distinct requests agreed across every
+arm. The validity rule fixed before the data makes the run invalid; X1 below looks for the cause. 1.7 session
+hours. *Post hoc, not a verdict:* with that one digest masked, the timing analysis reads an A/A noise of 7.9 %. The
+best fixed arm is `shortest/w8/g0/sjf`, 1.2 % cheaper than the reference and well inside that noise. The joint
+held-out headroom is -1.6 %, and segregating by length cost 21 % more in `bursts`. RL4's gates are defined on
+RL3-H's data, so RL4 does not go to hardware on this run. A post hoc preview of RL4 on these timings is not its
+gate either. The model refitted to them meets the fidelity criteria: every cell within 21 %, and at least 90 % of
+the resolved pairs ordered right. The trained policy beats the best fixed arm by 4.1 % in the simulator. That is
+below this run's 7.9 % noise, so the simulator gate would fail.
+
+### X1 — A short request's answer depended on its group on the T4s (opened 2026-10-28, before data)
+
+**Finding.** RL3-H above. A group shares one KV capacity, sized to its longest prompt plus its largest output limit
+(`MLXBackend.capacity_for`), and a request that joins a running group must fit it (SERVE8). Under `shortest`,
+request 14 could share its card's group with the three long prompts that arrived with it. It then decoded at a
+capacity of about 1,100 slots instead of 64; under `segregate` it could not. Decode attends over the whole
+fixed-shape cache through a mask, and EXACT2 holds that the padding length does not move a token. On the MLX CPU
+build that holds for this prompt at capacities 64 and 1,088: the logits were bit-identical over 32 steps (Qwen3
+0.6B). It was never checked on CUDA, and LIMITS lists ragged prompt lengths within one group as untested. MLX
+0.32.4's CUDA backend skips its fused decode attention whenever a mask array is passed (`supports_sdpa_vector`),
+and `FixedKVCache` always passes one. Decode therefore runs the unfused path over the whole cache: matmul, softmax,
+matmul. The reductions in that path can be ordered differently for different cache lengths, and that can flip a
+near-tied greedy token.
+
+**Test (`tools/rl2_headroom.py --plan x1`, Kaggle T4 x2, about half a session hour).** The model and revision are
+RL3-H's. Each card gets its own child process, pinned as HW1 pins a worker. The engine is the one a worker without
+a tuned profile runs (BASELINE knobs). (a) Request 14 is served alone and in its RL3-H burst (requests 12-15)
+through `Runtime.serve`, three times each. (b) Each of the 16 short prompts is decoded directly for 32 tokens at
+its own capacity and at 1,024 and 1,088. For each, the test records whether the tokens agree, the first differing
+step, and the largest logit difference before it. **Decision (fixed before data), first match wins:**
+- A device failed: incomplete.
+- The same request was answered differently on the same device: nondeterminism, investigated first.
+- Any capacity changed a token: the capacity moves tokens on CUDA. A request's capacity must stop depending on its
+  group: each session is sized to its own prompt and limit, and the runtime contract tests gain the case. RL3-H is
+  then re-run on that fix.
+- The group changed the probe and no capacity did: grouped batch-1 is not exact here, investigated before any further
+  RL run.
+- The cards disagree: card identity joins the validity rule.
+- Nothing reproduces: the product path (worker, admission, streaming) is reproduced next.
+
+Until X1 is resolved, no RL run on CUDA counts, and LIMITS states the defect.
+
 ### RL4 — A model-based RL agent that places and orders each request (opened 2026-10-28, before data)
 
 **Mechanism.** RL2-H's headroom bounds only policies that choose a fixed arm per load level. A policy that decides

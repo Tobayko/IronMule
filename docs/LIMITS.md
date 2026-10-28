@@ -321,9 +321,13 @@ workload. A latency-sensitive single-request path should stay in `InteractiveMod
 **Fallback discards work.** A failed group restarts its requests from prefill. That
 is correct and wasteful; it is not an optimisation path.
 
-**Ragged prompt lengths within a group are untested.** Every measured group used a
-shared cache offset. Requests of genuinely different prefill lengths in one group
-are outside what was verified.
+**Ragged prompt lengths within a group are untested, and on CUDA one answer moved.** Every
+measured group used a shared cache offset. Requests of genuinely different prefill lengths in
+one group are outside what was verified. On two Kaggle T4s (RL3-H, Qwen3 1.7B bf16), one short
+request got a different answer when placed with requests that carried about 1,000-token prompts
+than when it was not; 88 other requests agreed. A group's KV capacity follows its longest prompt,
+so the suspected cause is that CUDA attention is not exact across cache lengths; backlog X1
+tests it. Until then, a request's tokens on CUDA may depend on what it is grouped with.
 
 **Sustained load is untested.** All measurements used eight requests. Queue effects
 that only appear under continuous arrival are unknown.

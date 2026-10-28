@@ -399,3 +399,41 @@ def test_a_run_four_kernel_carries_the_frozen_policy_and_refuses_a_tampered_one(
     with pytest.raises(ValueError, match="digest"):
         rl2.main(["--write-kernel", str(tmp_path / "bad"), "--owner", "someone", "--commit", commit, "--plan", "h4",
                   "--best-fixed", "spill/w8/g0/sjf", "--policy-json", f"@{path}"])
+
+
+def _x1_device(alone=("a",) * 3, grouped=("a",) * 3, moved=()):
+    sweep = [{"prompt": p, "own_capacity": 64, "digest": f"d{p}",
+              "at": {str(c): {"equal": (p, c) not in moved, "first_difference": 9 if (p, c) in moved else None,
+                              "max_logit_difference": 0.0, "digest": f"d{p}"} for c in rl2.X1_CAPACITIES}}
+             for p in range(3)]
+    return {"probe": rl2.X1_PROBE, "alone": list(alone), "grouped": list(grouped), "sweep": sweep, "long_capacity": 1088}
+
+
+def test_x1_names_the_kv_capacity_when_padding_moves_a_token():
+    verdict = rl2.x1_summary({"0": _x1_device(grouped=("b",) * 3, moved={(1, 1088)}), "1": _x1_device()})
+    assert verdict["verdict"].startswith("the KV capacity moves tokens")
+    assert verdict["capacity_moves"] == [["0", 1, "1088"]] and verdict["group_moves"] == ["0"]
+
+
+def test_x1_separates_the_group_the_card_nondeterminism_and_a_failed_device():
+    assert rl2.x1_summary({"0": _x1_device(grouped=("b",) * 3)})["verdict"].startswith("the group moves tokens")
+    assert rl2.x1_summary({"0": _x1_device(alone=("a", "b", "a"))})["verdict"].startswith("nondeterministic")
+    other = _x1_device()
+    other["sweep"][0]["digest"] = "elsewhere"
+    assert rl2.x1_summary({"0": _x1_device(), "1": other})["verdict"] == "the cards answer differently"
+    assert rl2.x1_summary({"0": _x1_device(), "1": {"failed": "exit 1"}})["verdict"].startswith("incomplete")
+    clean = rl2.x1_summary({"0": _x1_device(), "1": _x1_device()}, {"a": "shortest arms"})
+    assert clean["verdict"].startswith("not reproduced") and clean["run3"]["0"]["alone"] == ["shortest arms"] * 3
+
+
+def test_an_x1_kernel_embeds_its_own_source_for_the_per_device_children(tmp_path):
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    folder = rl2.write_kernel(tmp_path / "kernel", "someone", commit, "x1")
+    assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "someone/ironmule-rl2-headroom-x1"
+    script = (folder / "run.py").read_text()
+    assert "'--plan', 'x1'" in script
+    compile(script, "run.py", "exec")
+    embedded = script.split("\n_EMBEDDED_SOURCE = ", 1)[1].split("\n", 1)[0]
+    assert eval(embedded, {"__import__": __import__}) == Path(rl2.__file__).read_text()
+    other = rl2.write_kernel(tmp_path / "h3", "someone", commit, "h3") / "run.py"
+    assert "\n_EMBEDDED_SOURCE = " not in other.read_text()
