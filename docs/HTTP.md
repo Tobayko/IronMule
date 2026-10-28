@@ -35,6 +35,7 @@ when it is ready:
 | `--engine` | `reference` | `reference` (earlier name `stock`): mlx-lm's own generation, streamed token by token; `tuned` (earlier name `ironmule`): IronMule's engine with this machine's tuned profile, streaming up to eight requests as one group; `rust2`: the rust2 binary on CUDA (experimental). All are greedy but compute the last prompt token differently, so answers can differ between engines |
 | `--learning` | `off` | `active` or `paused`: learn group width and gather wait from this server's traffic; see [live learning](LIVE_LEARNING.md) |
 | `--no-dreaming` | off | with `--learning`: the same learner without model rollouts |
+| `--gpus` | none | `all` or device indices such as `0,1`: one model worker per CUDA GPU, see [Several GPUs](#several-gpus-hw1) |
 
 ## Routes
 
@@ -70,6 +71,21 @@ Two things do return `HTTP 429`:
 A load balancer in front of this should treat `429` as backpressure, not as failure.
 Past the accept limit the server sends the `429` and closes at once, so a client still
 sending its request may see a connection reset instead; that request was never accepted.
+
+## Several GPUs (HW1)
+
+`--gpus all` (or `--gpus 0,1`) starts one model worker per listed CUDA GPU, each pinned
+to its card with `CUDA_VISIBLE_DEVICES` and loading its own copy of the model, so every
+card must hold the whole model. Each worker keeps its own queue (the mode's depth per
+card), scheduler, grouping and recovery; a lost worker is replaced on the same card. A
+new request goes to the card with the fewest admitted, unfinished requests, ties to the
+lower index, and stays there, so its tokens are what that one worker returns.
+`/health` adds the cards under `devices`. Live learning and idle tuning model one worker,
+so they need one card: `--learning` is refused with more than one, and idle tuning is
+skipped. Lifecycle events go to the one stability log tagged with their card; each card
+writes its own `serving-log.cuda-<card>.jsonl`. `--gpus 1` alone pins the ordinary single
+worker to that card. Not measured yet: the throughput gain on Kaggle's two T4s and that
+both cards return the same tokens for the same request (BACKLOG HW1).
 
 ## When the model worker fails (STAB1)
 

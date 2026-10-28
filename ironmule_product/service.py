@@ -195,6 +195,21 @@ class ProductService:
             result["learning"] = self.learning.summary()
         return result
 
+    def accepting(self) -> bool:
+        """HW1: whether `stream` would admit a request now (open, and a worker ready or being replaced)."""
+        with self._lock:
+            return not self._closed.is_set() and self._backend_ready()
+
+    def outstanding(self) -> int:
+        """HW1: admitted requests not yet retired, queued or in flight; what a device pool balances."""
+        with self._lock:
+            return len(self._sessions)
+
+    def holds(self, request_id: str) -> bool:
+        """HW1: whether this request id is admitted here and not yet retired."""
+        with self._lock:
+            return request_id in self._sessions
+
     def note(self, event: str, **fields: Any) -> None:
         """STAB1: one lifecycle event: ids, counts, times and codes, never prompt or answer text. A worker
         exit adds the worker's last stderr (4 KiB), which can hold library output: the log is private

@@ -10,6 +10,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import selectors
 import subprocess
 import sys
@@ -62,9 +63,16 @@ class MLXWorkerClient:
                  trace_prompt_identity: bool = False,
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
-                 compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True) -> None:
+                 compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
+                 cuda_device: str | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
+        # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
+        # it); None leaves the inherited environment alone, as before.
+        if cuda_device is not None and (not isinstance(cuda_device, str)
+                                        or re.fullmatch(r"[A-Za-z0-9-]{1,64}", cuda_device) is None):
+            raise ValueError("cuda_device must be one CUDA device index or UUID")
+        self.cuda_device = cuda_device
         if compute_dtype not in (None, "float32", "native", "dequantize"):
             raise ValueError("compute_dtype must be None, float32, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
@@ -391,6 +399,8 @@ class MLXWorkerClient:
                 "HF_HUB_DISABLE_TELEMETRY": "1",
                 "DO_NOT_TRACK": "1",
             })
+            if self.cuda_device is not None:
+                environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
             try:
                 arguments = [sys.executable, "-I", "-u", str(worker), "--spec",
                              json.dumps(self.spec.as_dict(), separators=(",", ":"))]

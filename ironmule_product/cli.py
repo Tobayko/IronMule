@@ -129,8 +129,10 @@ class IdleTuner:
     MAX_FAILURES = 2
 
     def __init__(self, service: Any, spec: Any, make_backend: Any, *, popen: Any = subprocess.Popen,
-                 log: Any = print) -> None:
+                 log: Any = print, cuda_device: str | None = None) -> None:
         self.service, self.spec, self.make_backend, self.popen, self.log = service, spec, make_backend, popen, log
+        # HW1: a server pinned to one GPU tunes on that GPU, not on whichever CUDA lists first.
+        self.environ = None if cuda_device is None else {**os.environ, "CUDA_VISIBLE_DEVICES": cuda_device}
         self.done = False
         self.failures = 0
         tool = [sys.executable, "-c", "import sys, ironmule_cli; sys.exit(ironmule_cli.main(sys.argv[1:]))", "tune",
@@ -139,7 +141,7 @@ class IdleTuner:
         self.tune = tool + ["--explorer", "planner", "--budget-minutes", "5"]
 
     def _confirmed(self) -> bool:
-        shown = subprocess.run(self.show, capture_output=True, text=True, timeout=120)
+        shown = subprocess.run(self.show, capture_output=True, text=True, timeout=120, env=self.environ)
         return shown.returncode == 0 and "no profile for this hardware yet" not in shown.stdout
 
     def __call__(self, preempted: Any) -> None:
@@ -155,7 +157,7 @@ class IdleTuner:
         outcome = "interrupted"
         try:
             process = self.popen(self.tune, start_new_session=True, stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.environ)
             while process.poll() is None:
                 if preempted():
                     _stop_group(process)
@@ -222,12 +224,18 @@ def serve(argv: list[str]) -> int:
                         help="with --learning: the same learner without model rollouts (comparison arm)")
     parser.add_argument("--no-replay", action="store_true",
                         help="with --learning: no idle replay qualification (an external harness qualifies, P3)")
+    parser.add_argument("--gpus", default=None, metavar="all|0,1",
+                        help="HW1: one model worker per listed CUDA GPU (`all`: every GPU this machine shows), "
+                             "each request on the GPU with the shortest queue. Each worker loads the whole model; "
+                             "live learning and idle tuning run only with one GPU. Default: one worker, as before")
     args = parser.parse_args(argv)
     args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
     if args.engine != "reference" and args.compute_dtype is not None:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
+    if args.gpus is not None and args.no_model:
+        parser.error("--gpus places model workers; --no-model starts none")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -257,23 +265,35 @@ def serve(argv: list[str]) -> int:
                 raise InvalidRequest(f"--engine {args.engine} and --compute-dtype cannot be combined yet")
             if args.chat_reuse and args.engine != "tuned":
                 raise InvalidRequest("--chat-reuse needs --engine tuned")
-            def make_backend():
+            devices = [None]
+            if args.gpus is not None:
+                from .device_pool import cuda_devices, select_devices
+                devices = select_devices(args.gpus, cuda_devices())
+            if len(devices) > 1 and args.learning != "off":
+                raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
+            def make_backend(device=devices[0]):
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
-                                       thinking=not args.no_thinking,
+                                       thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
                                        **({"engine_configuration": "rust2"} if args.engine == "rust2" else {}))
-            backend = make_backend()
-            backend.start()
-        service = ProductService(store, backend=backend, spec=spec)
-        if spec is not None:
-            service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
+            if len(devices) > 1:
+                from .device_pool import start_pool
+                service = start_pool(store, spec, devices, make_backend, ProductService)
+            else:
+                backend = make_backend()
+                backend.start()
+        if service is None:
+            service = ProductService(store, backend=backend, spec=spec)
+            if spec is not None:
+                service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
-        if spec is not None and args.engine == "tuned" and (service.learning is None or not service.learning.eligible):
+        if (spec is not None and args.engine == "tuned" and len(devices) == 1
+                and (service.learning is None or not service.learning.eligible)):
             # Idle tuning unloads the worker; learning keeps the serving model loaded (RSI3-LIVE).
             service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
                 spec, execution_variant="current_engine", chat_reuse=args.chat_reuse,
-                thinking=not args.no_thinking))
+                thinking=not args.no_thinking, cuda_device=devices[0]), cuda_device=devices[0])
         server = create_server(service, host=args.host, port=args.port,
                                api_key=os.environ.get(args.api_key_env),
                                tls_cert=args.tls_cert, tls_key=args.tls_key)

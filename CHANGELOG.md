@@ -4,6 +4,12 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **`ironmule serve --gpus all` serves from every CUDA GPU (HW1).** One model worker per listed card, pinned with
+  `CUDA_VISIBLE_DEVICES`, each with its own unchanged queue, scheduler and recovery (a lost worker returns on its own
+  card); a request goes to the card with the fewest unfinished requests and stays there. `/health` lists the cards.
+  Live learning and idle tuning still need one card. The default is unchanged (one worker). Tested with the
+  protocol-faithful fake worker only; the gain on Kaggle's two T4s is not measured yet (BACKLOG HW1).
+
 - **On CUDA the worker bounds MLX's cache of freed buffers to 1 GiB (MEM2).** On a 15 GiB T4 that cache grew to
   11 GiB beside about 3 GiB MLX does not count until the device filled and the worker was lost. The bound changes
   no output; its effect on worker losses and speed is not yet measured (the preregistered comparison was stopped
