@@ -102,17 +102,20 @@ def _switch_glu():
     return glu
 
 
-def test_experts_route_by_rows_and_match_stock(monkeypatch):
+def test_experts_route_by_rows_and_match_float32(monkeypatch):
     # PERF1-S: the CUDA kernel is replaced by its float32 reference; what is checked here is
     # which (token, expert) rows reach it, with which shared activation row, and the shapes
-    # mlx-lm's SwitchGLU gets back, for one request, eight, and a prefill.
+    # mlx-lm's SwitchGLU gets back, for one request, eight, and a prefill. The values are
+    # compared with the same experts in float32, which is what the plan approximates: stock
+    # bfloat16 is no fixed yardstick, MLX's CPU backend lands 2-4 % from float32 here.
     calls = []
     monkeypatch.setattr(cuda_native, "_gather_qmv",
                         lambda *a: calls.append((a[4].size, a[5])) or _reference_gather_qmv(*a))
     monkeypatch.setattr(cuda_native, "_probe", lambda module: 0.0)
     glu = _switch_glu()
-    stock = _switch_glu()
-    stock.update(glu.parameters())
+    reference = _switch_glu()
+    reference.update(glu.parameters())
+    reference.set_dtype(mx.float32)
     assert cuda_native.install(glu, TURING)["modules"] == 3
     assert type(glu.down_proj) is cuda_native.NativeQuantizedSwitchLinear
     for batch, length, routed in ((1, 1, [(8, 8), (8, 8), (8, 1)]), (8, 1, [(64, 1)] * 3),
@@ -121,7 +124,7 @@ def test_experts_route_by_rows_and_match_stock(monkeypatch):
         x = mx.random.normal((batch, length, 128), key=mx.random.key(2)).astype(mx.bfloat16)
         scores = mx.random.normal((batch, length, 16), key=mx.random.key(3))
         indices = mx.argpartition(scores, kth=-8, axis=-1)[..., -8:]
-        want = stock(x, indices).astype(mx.float32)
+        want = reference(x.astype(mx.float32), indices)
         got = glu(x, indices).astype(mx.float32)
         assert got.shape == want.shape == (batch, length, 8, 128)
         assert float(mx.max(mx.abs(got - want)) / mx.max(mx.abs(want))) < 2e-2
