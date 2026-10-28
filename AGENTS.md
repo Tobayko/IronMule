@@ -35,7 +35,10 @@ needs only the affected text and applicable documentation conventions.
 
 [tools/](tools/) now holds only what the product, the kept tests, CI or the README
 figures need -- measurement/verification harnesses for one specific kept test, plus the
-figure renderer. Inspect the selected tool and its contract before running it.
+figure renderer -- and the Kaggle harness of an open backlog entry written while the
+research repository was out of reach, each with its own focused test
+(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`); such a harness moves there
+once it is reachable. Inspect the selected tool and its contract before running it.
 
 The research workflow that used to route through this file -- the experiment ledger,
 preregistration and sealed-study conventions, the Kaggle harnesses, the SSOT corpus and
@@ -124,6 +127,20 @@ SSOT corpus that indexes it all -- happens in
 no longer contains. A change proposed here still needs that evidence before it ships;
 it is produced and recorded there, not fabricated locally.
 
+When a session cannot reach that repository, the same discipline moves into the backlog
+entry: fix the protocol there before the first run (arms or variants, states, cost,
+release rule, validity, expected session hours), record the result under the entry and in
+Tier 0 or LIMITS, and say that the ledger entry is still owed; never claim it was written.
+Any change to an analysis after its data exists is labelled post hoc in the entry and the
+commit, and cannot change a release rule or verdict fixed before the data.
+
+Kaggle runs spend the owner's weekly GPU quota. Push a private kernel pinned to a pushed
+full commit SHA, state the expected session hours before pushing, and poll its status at
+most every two minutes (the API rate-limits bursts). Once a run's result is recorded, a
+finished kernel may be deleted after its source and output are archived in the owner's
+private dataset `tobayko/ironmule-notebook-archive` and the archive was checked against
+the local copy; never delete a running kernel or one whose result is not recorded.
+
 ## Friday Evidence and historical records
 
 Reuse `friday_evidence` for new shared statistics, storage, provenance and observation
@@ -183,7 +200,10 @@ The second command needs a local model snapshot. Respect pytest's parallelism an
 file grouping; use `-n 0` for sequential diagnosis. `tests/conftest.py` leaves a test
 file uncollected only when it needs `mlx` and `mlx` is not installed; do not disable
 that gate or present skipped/uncollected tests as passes. Scripted contract tests do
-not replace execution on the target hardware for hardware claims.
+not replace execution on the target hardware for hardware claims. On Linux without a
+GPU (cloud sessions), `pip install -e ".[cpu,dev]"` runs the same suites on MLX's CPU
+build, while CI runs them on macOS; a CPU smoke of a hardware tool checks the tool, not a
+hardware claim.
 
 Use existing CI checks for affected packaging, static-check and figure surfaces.
 Releases require the broader RELEASING checklist, including clean installed-package
@@ -196,10 +216,11 @@ conventions; [LICENSE.md](LICENSE.md) owns licensing. Update the relevant source
 when behavior or claims change instead of growing this guide. Use the
 [PR template](.github/pull_request_template.md) for contributions.
 
-**Existing attribution conflict:** CONTRIBUTING prescribes a single provider-specific
-co-author trailer. This guide does not amend that policy or the licence. Flag its
-mismatch with actual tool authorship for maintainer resolution before an affected
-commit; do not invent authorship or silently replace the policy.
+**Repository conventions over tool defaults (maintainer decision, 2026-10-28):** CONTRIBUTING's
+commit and pull-request rules apply even when a tool or its harness asks for something
+else: one `Co-Authored-By` trailer naming the tool that materially authored the change,
+with no model version, session link or generated-with footer. A branch name the harness
+assigns (such as `claude/<name>`) is used as assigned. This does not touch the licence.
 
 ## Safety boundaries
 
