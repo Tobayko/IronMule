@@ -4,6 +4,11 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Autopilot no longer picks the `native` plan for an unquantized checkpoint.** On a CUDA card that emulates
+  bfloat16 its numeric choice took `native` for any Qwen 3 or Gemma 3 checkpoint, but those kernels replace 4-bit
+  weights only, so an unquantized one could then neither be tuned nor loaded. `native` now counts as a no-op where
+  the model has no such weights, and the next plan is considered as before (BACKLOG U1).
+
 - **`ironmule serve --gpus all` serves from every CUDA GPU (HW1).** One model worker per listed card, pinned with
   `CUDA_VISIBLE_DEVICES`, each with its own unchanged queue, scheduler and recovery (a lost worker returns on its own
   card); a request goes to the card with the fewest unfinished requests and stays there. `/health` lists the cards.
