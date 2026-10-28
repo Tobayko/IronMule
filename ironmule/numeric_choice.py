@@ -109,8 +109,21 @@ def _checkpoint_dtype(model) -> str | None:
                  if mx.issubdtype(value.dtype, mx.floating)), None)
 
 
-def _no_op(plan: str, dtype: str | None) -> bool:
-    """A plan that cannot change this checkpoint: its own type, or `native` without bfloat16."""
+def _native_eligible(model) -> bool | None:
+    """Whether `native` has anything to swap here: 4-bit group-64 affine weights with bfloat16
+    scales, by `cuda_native`'s own rule; None when the model cannot be inspected."""
+    try:
+        from .cuda_native import _eligible
+        return any(_eligible(module) for _, module in model.named_modules())
+    except (AttributeError, ImportError):
+        return None
+
+
+def _no_op(plan: str, dtype: str | None, native_eligible: bool | None = None) -> bool:
+    """A plan that cannot change this checkpoint: its own type, or `native` without bfloat16 or
+    without the 4-bit weights it replaces (an unquantized checkpoint, U1: its install refuses)."""
+    if plan == "native" and native_eligible is False:
+        return True
     return dtype is not None and (plan == dtype or (plan == "native" and dtype != "bfloat16"))
 
 
@@ -183,8 +196,9 @@ def choose_out_of_process(model_id: str, fingerprint: str, identity_sha256: str,
     return _stored(key) or {"plan": None, "reason": "the gate stored no decision; stock kept"}
 
 
-def _options(architecture: str | None, dtype: str | None, device: str | None) -> list[dict[str, Any]]:
-    return [o for o in candidates(architecture, device) if not _no_op(o["plan"], dtype)]
+def _options(architecture: str | None, dtype: str | None, device: str | None,
+             native_eligible: bool | None = None) -> list[dict[str, Any]]:
+    return [o for o in candidates(architecture, device) if not _no_op(o["plan"], dtype, native_eligible)]
 
 
 def measure_plan(model_id: str, plan: str | None, device: str | None, load: Callable | None = None) -> dict[str, Any]:
@@ -203,8 +217,9 @@ def measure_plan(model_id: str, plan: str | None, device: str | None, load: Call
     try:
         out: dict[str, Any] = {}
         if plan is None:
-            out.update(architecture=architecture_of(engine.model), dtype=_checkpoint_dtype(engine.model))
-            options = _options(out["architecture"], out["dtype"], device)
+            out.update(architecture=architecture_of(engine.model), dtype=_checkpoint_dtype(engine.model),
+                       native_eligible=_native_eligible(engine.model))
+            options = _options(out["architecture"], out["dtype"], device, out["native_eligible"])
             if all(option["verdict"] == "recommended" for option in options):
                 return out
         out.update(nll=nll_per_chunk(engine, _text_ids(tokenizer)), speed_s=_speed(engine, tokenizer))
@@ -360,7 +375,7 @@ def choose(model_id: str, fingerprint: str, identity_sha256: str, *, log: Callab
         return measure_plan(model_id, plan, device, load) if load else _measure_in_child(model_id, plan, device)
     stock = measure(None)
     architecture, dtype = stock["architecture"], stock["dtype"]
-    options = _options(architecture, dtype, device)
+    options = _options(architecture, dtype, device, stock.get("native_eligible"))
     decision: dict[str, Any] = {"plan": None, "device": device, "architecture": architecture,
                                 "checkpoint_dtype": dtype, "tried": []}
     if not options:

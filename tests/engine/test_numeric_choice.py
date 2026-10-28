@@ -241,3 +241,25 @@ def test_newer_cuda_gpus_are_gated_without_a_table():
     plans = numeric_choice.candidates("mlx_lm.models.gemma3_text", "cuda:NVIDIA L4")
     assert [(c["plan"], c["verdict"]) for c in plans] == [("float16", "unmeasured"), ("float32", "unmeasured")], (
         "float16 is not refused off the measured device class, and native stays below compute capability 8")
+
+
+def test_native_is_not_chosen_for_an_unquantized_checkpoint(fake_device, monkeypatch):
+    # U1: an unquantized bfloat16 checkpoint has no 4-bit weights for the native kernels, whose
+    # install refuses it; taking the table's `native` here would leave autopilot unable to load.
+    import mlx.core as mx
+    import mlx.nn as nn
+    loads, load = fake_device
+
+    def dense_bfloat16(plan):
+        engine, tokenizer = load(plan)
+        model = nn.Linear(64, 64)
+        model.set_dtype(mx.bfloat16)
+        engine.model = model
+        return engine, tokenizer
+
+    monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.qwen3")
+    decision = numeric_choice.choose("m", "f", "h" * 64, load=dense_bfloat16, log=lambda _: None)
+    assert decision["plan"] == "float16" and decision["checkpoint_dtype"] == "bfloat16"
+    assert loads == [None]
+    assert numeric_choice._no_op("native", "bfloat16", native_eligible=True) is False
+    assert numeric_choice._no_op("native", "bfloat16", native_eligible=None) is False, "unknown keeps the table"
