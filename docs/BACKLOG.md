@@ -149,6 +149,28 @@ traces already do. **Test.** After HW1 and MEM2 exist: measure headroom first, t
 single setting on the same recorded traces (as OPT2-CAL did); train and qualify a learner only where that headroom
 exceeds the A/A noise. **Kill.** Headroom inside the A/A noise for every decision: a fixed policy ships, no learner.
 
+**RL2-H, the headroom measurement (protocol fixed 2026-10-28, before data).** `tools/rl2_headroom.py`, one
+Kaggle "GPU T4 x2" kernel, `mlx-community/Qwen3-1.7B-bf16` on the tuned engine, one HW1 worker per card.
+*Decisions measured:* placement (`shortest`, HW1's join-the-shortest-queue, against `fill`, the lowest-index card
+with fewer than `width` requests outstanding, else the shortest) and the live learner's schedule catalogue (width
+1, 2, 4, 8 x gather wait 0, 50, 150 ms, width 1 never waiting): 20 fixed arms, reference `shortest/w8/g0`.
+The MEM2 cache bound waits for MEM2-C's own comparison, and no product setting for detokenizing threads exists
+yet, so neither is in this run. *States:* offered load at 0.2, 0.6 and 0.95 of the reference's capacity (requests
+per second from a burst of 16 per card), equal weights. *Traffic:* per level six fixed-seed traces of 16 Poisson
+arrivals (generic prompts, 64 or 128 tokens), replayed identically under every arm. *Order:* per (trace, level)
+block the reference, the other arms rotated per block and reversed on odd blocks, the reference again (A/A).
+*Cost:* the live learner's reward per request (time in the system from the scheduled arrival + time to first
+content, or 2 x deadline + 1 s for a failed, timed-out or refused request), mean per cell. *Headroom:*
+H = 1 - oracle / fixed, the oracle taking the cheapest arm per level and fixed the cheapest single arm; reported
+in sample and held out (arms chosen on five traces, scored on the sixth), jointly and per decision (the oracle
+varies only that decision). *Noise:* the 95th percentile of the A/A relative differences. *Release rule:* a
+decision gets a learner only if the 2.5 % bootstrap bound of its held-out H (2000 resamples, seed 0) exceeds
+that noise. *Validity:* any answer digest that differs between arms, a non-finite cost, a failed calibration or
+fewer than two complete traces per level makes the run invalid; an invalid run releases nothing. H is an upper
+bound (a real policy sees only the arrival-rate estimate and pays switches), so passing it is necessary, not
+sufficient: a learner must still pass the unchanged protocol-2 qualification. 378 cells, an estimated three to
+four session hours. Not measured yet.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better
