@@ -178,6 +178,7 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
         pool.close()
     assert report["arms"] == ["shortest/w8/g0", "shortest/w1/g0", "fill/w1/g0", "fill/w8/g0"]
     assert report["calibration"]["ok"] == 32 and report["calibration"]["capacity_rps"] > 0
+    assert report["calibration"]["outcomes"] == {"ok": 32}
     assert len(report["rows"]) == 2 * 3 * (4 + 1) == saved[-1]
     assert all(r["outcome"] == "ok" for row in report["rows"] for r in row["requests"])
     result = rl2.analyse(report, resamples=50)

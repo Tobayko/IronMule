@@ -331,7 +331,10 @@ def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, .
     burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, 16 * len(pool.shards), max_tokens)]
     done = replay(pool, model, burst, deadline_s)
     ok = [r for r in done if r["outcome"] == "ok"]
-    out: dict[str, Any] = {"requests": len(done), "ok": len(ok)}
+    outcomes: dict[str, int] = {}
+    for r in done:
+        outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
+    out: dict[str, Any] = {"requests": len(done), "ok": len(ok), "outcomes": outcomes}
     if len(ok) < len(done) / 2 or not ok:
         return {**out, "failed": "fewer than half of the calibration burst completed"}
     return {**out, "makespan_s": max(r["end_s"] for r in ok), "capacity_rps": len(ok) / max(r["end_s"] for r in ok)}
