@@ -11,6 +11,8 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -18,9 +20,8 @@ import pytest
 import ironmule_product.backend as backend_module
 from ironmule_product.backend import MLXWorkerClient
 from ironmule_product.device_pool import DevicePool, start_pool
-from ironmule_product.service import ProductService
 from ironmule_product.state import ProductStore
-from ironmule_product.types import ModelSpec
+from ironmule_product.types import GenerationRequest, ModelSpec
 from tools import rl2_headroom as rl2
 
 FAKE = Path(__file__).with_name("stab1_fake_worker.py")
@@ -152,7 +153,7 @@ def test_fill_places_on_the_lowest_gpu_with_room_and_otherwise_the_shortest_queu
     assert pool._order() == [1, 0]  # no room anywhere: the shortest queue
 
 
-@pytest.mark.parametrize("plan", ["h1", "h2"])
+@pytest.mark.parametrize("plan", ["h1", "h2", "h3"])
 def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tmp_path, monkeypatch, plan):
     real_popen = subprocess.Popen
 
@@ -173,23 +174,26 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
     store.register_model(spec)
     pool = start_pool(store, spec, ["0", "1"],
                       lambda device: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device),
-                      ProductService)
+                      rl2.ordered_service())
     saved = []
     try:
         report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan=plan,
                              on_row=lambda partial: saved.append(len(partial["rows"])))
     finally:
         pool.close()
-    assert report["arms"] == ["shortest/w8/g0", "shortest/w1/g0", "fill/w1/g0", "fill/w8/g0"]
+    expected = (rl2.arms_h3(2) if plan == "h3" else
+                ["shortest/w8/g0", "shortest/w1/g0", "fill/w1/g0", "fill/w8/g0"])
+    assert report["arms"] == expected
     assert report["calibration"]["ok"] == 32 and report["calibration"]["capacity_rps"] > 0
     assert report["calibration"]["outcomes"] == {"ok": 32}
-    assert len(report["rows"]) == 2 * 3 * (4 + 1) == saved[-1]
+    assert len(report["rows"]) == 2 * 3 * (len(expected) + 1) == saved[-1]
     assert all(r["outcome"] == "ok" for row in report["rows"] for r in row["requests"])
     result = rl2.analyse(report, resamples=50)
     assert result["valid"] and result["mismatched_requests"] == 0 and result["complete_traces"] == [0, 1]
-    assert set(result["decisions"]) == {"joint", "placement", "schedule"}
+    assert set(result["decisions"]) == ({"joint", "placement", "order"} if plan == "h3"
+                                        else {"joint", "placement", "schedule"})
     assert not any(prompt in json.dumps(report) for prompt in rl2.PROMPTS) and "Background" not in json.dumps(report)
-    assert report["plan"] == plan and (report.get("states") == list(rl2.H2_STATES)) == (plan == "h2")
+    assert report["plan"] == plan and (report.get("states") == list(rl2.H2_STATES)) == (plan != "h1")
 
 
 def test_run_two_keeps_every_shortest_schedule_and_fill_only_without_a_wait():
@@ -235,3 +239,97 @@ def test_a_kernel_folder_pins_one_commit(tmp_path):
         except ValueError:
             continue
         raise AssertionError(f"accepted {bad!r}")
+
+
+def test_run_three_combines_length_placement_and_order_at_the_reference_schedule():
+    assert rl2.arms_h3(2) == ["shortest/w8/g0", "shortest/w8/g0/sjf", "segregate/w8/g0", "segregate/w8/g0/sjf",
+                              "spill/w8/g0", "spill/w8/g0/sjf"]
+    assert rl2.arms_h3(1) == ["shortest/w8/g0", "shortest/w8/g0/sjf"]
+    assert rl2.arm_order("spill/w8/g0/sjf") == "sjf" and rl2.arm_order("spill/w8/g0") == "fifo"
+    assert rl2.parse_arm("spill/w8/g0/sjf") == ("spill", 8, 0)
+
+
+def test_order_is_judged_as_its_own_decision():
+    names = tuple(rl2.arms_h3(2)[:4])
+
+    def cost(level, t, name):  # only order matters: sjf under the spike, fifo when quiet
+        return 1.0 if (rl2.arm_order(name) == "sjf") == (level == 2) else 2.0
+
+    result = rl2.analyse(_report(cost, names=names))
+    assert set(result["decisions"]) == {"joint", "placement", "order"}
+    assert result["decisions"]["order"]["verdict"].startswith("headroom")
+    assert result["decisions"]["placement"]["verdict"].startswith("no headroom")
+
+
+class _Request(SimpleNamespace):
+    pass
+
+
+def test_segregate_sends_long_requests_to_the_last_gpu_and_spill_leaves_a_crowded_one():
+    pool = rl2._placement_pool(DevicePool([_Shard(0), _Shard(0)], ["0", "1"]))
+    pool.placement = "segregate"
+    pool._local.request = _Request(max_tokens=256)
+    assert pool._order()[0] == 1
+    pool._local.request = _Request(max_tokens=32)
+    assert pool._order()[0] == 0
+    crowded = rl2._placement_pool(DevicePool([_Shard(0), _Shard(rl2.SPILL_GAP)], ["0", "1"]))
+    crowded._local.request = _Request(max_tokens=256)
+    crowded.placement = "segregate"
+    assert crowded._order()[0] == 1  # strict: stays on the long card however crowded
+    crowded.placement = "spill"
+    assert crowded._order()[0] == 0
+    crowded.shards[1].load = rl2.SPILL_GAP - 1
+    assert crowded._order()[0] == 1
+
+
+def test_sjf_starts_the_smallest_output_limit_first_and_fifo_keeps_arrival_order(tmp_path, monkeypatch):
+    from ironmule_product.serving_policy import ServingPolicy
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    service_type = rl2.ordered_service()
+    backend = MLXWorkerClient(spec, execution_variant="current_engine")
+    backend.start()
+    service = service_type(store, backend=backend, spec=spec)
+    service.policy = ServingPolicy(max_width=1, source="test")  # one request at a time: order is visible
+    starts = {}
+    try:
+        for order in ("sjf", "fifo"):
+            service.order = order
+            ends: list[int] = []
+            hold = GenerationRequest("local/test", (("user", "slow:0.05"),), max_tokens=12, stream=True)
+            waiting = [GenerationRequest("local/test", (("user", f"q{limit}"),), max_tokens=limit, stream=True)
+                       for limit in (9, 3, 6)]
+
+            def consume(request):
+                for event in service.stream(request):
+                    if event.get("type") == "done":
+                        ends.append(request.max_tokens)
+
+            threads = [threading.Thread(target=consume, args=(hold,))]
+            threads[0].start()
+            time.sleep(0.2)  # the holding request is running; the rest queue behind it
+            for request in waiting:
+                threads.append(threading.Thread(target=consume, args=(request,)))
+                threads[-1].start()
+                time.sleep(0.02)
+            for thread in threads:
+                thread.join(30)
+            starts[order] = ends
+    finally:
+        service.close()
+    assert starts["sjf"] == [12, 3, 6, 9]
+    assert starts["fifo"] == [12, 9, 3, 6]

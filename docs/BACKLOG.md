@@ -206,6 +206,35 @@ more at every level of run 1. *Traces:* five per state, seeds distinct from run 
 session hours. **Kill:** as RL2's, per decision: the held-out headroom's 2.5 % bootstrap bound at or below the A/A
 noise means no learner for that decision under this traffic either.
 
+### RL3 — Length-aware placement and order on two GPUs (protocol fixed 2026-10-28, before data)
+
+**Mechanism.** With requests of mixed length, a long answer holds a group and its card while short ones wait
+behind it (head-of-line blocking, HOL1). Two decisions can avoid that with what is known when a request arrives:
+its output limit. *Placement by length* sends long requests to one card and short ones to the other; *order by
+length* starts the waiting request with the smallest limit first (shortest-job-first, which minimises mean time in
+the system for a single server). The scheduler today does neither: placement is the shortest queue, and order is
+first in, first out. **Evidence.** Learning-to-rank ordering approximated shortest-job-first and cut chatbot latency
+2.8x in vLLM (Fu et al., NeurIPS 2024, arXiv:2408.15792). In a simulator-only, single-author preprint, REINFORCE
+routing across GPUs beat the shortest-queue heuristic by 48 % by learning to segregate fast and slow requests,
+while on one GPU it gained only 0.1-1.0 % over a tuned static batch size (Sharifullin, arXiv:2607.05272, 2026). The
+second finding is what RL2-H run 1 measured on real T4s. **Evidence against.** That gain needed heterogeneous
+requests and a reward weighting fast requests ten times more. Here the cost weighs every request equally.
+Shortest-job-first can starve long requests, so it ages: past 10 s a request starts by arrival. Placement by length
+can leave one card idle while the other queues, which `spill` guards against.
+
+**Test (RL3-H, `tools/rl2_headroom.py --plan h3`).** The same pool, model, engine, traffic (run 2's `quiet`,
+`bursts` and `spike` traces, the same seeds), cost, order of cells, headroom, noise, release rule and validity
+as RL2-H2. A request is `long` with an output limit of at least 128 tokens. Arms: placement `shortest`
+(reference), `segregate` (long to the last card, short to the first) or `spill` (`segregate` unless the preferred
+card has at least four more requests outstanding than the other), times order `fifo` (reference) or `sjf`. All six
+use the reference schedule (width 8, no wait). Both new decisions live in the tool only (a pool and service
+subclass); the product is unchanged until a result says otherwise. 105 cells, an estimated two session hours.
+**Kill.** Per decision, the held-out headroom's 2.5 % bootstrap bound at or below the A/A noise: no learner for
+it. If one fixed arm beats the reference by more than the noise in every state, that fixed policy is a product
+candidate with its own paired validation, and no learner is built. Only headroom that depends on the state
+releases a learner. That learner would be trained offline on the recorded costs (every arm replayed the same
+traces, so each state has a full-information cost per action), then qualified like every other arm.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better

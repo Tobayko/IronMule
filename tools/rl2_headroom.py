@@ -48,12 +48,23 @@ occur, which run 1's Poisson traffic with uniform lengths never produced:
             `fill` with a wait lost by 27 % or more at every level of run 1.
   traces    five per state, seeds distinct from run 1's.
 
+Run 3 (`--plan h3`, BACKLOG RL3, fixed 2026-10-28 before its data) keeps run 2's traffic, cost,
+order, headroom, noise, verdict and validity and measures two decisions that use the output limit,
+which is known when a request arrives (`long`: at least 128 tokens):
+
+  placement `shortest` (HW1); `segregate`: long requests to the last GPU, short ones to the first;
+            `spill`: `segregate` unless the preferred GPU has at least four more requests outstanding
+            than the other, then the other.
+  order     `fifo` (the service's own); `sjf`: the waiting request with the smallest output limit
+            starts first, ties and requests waiting longer than 10 s by arrival.
+  arms      the six combinations with the reference schedule (width 8, no wait).
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
-    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha> [--plan h2]
+    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha> [--plan h2|h3]
     kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
-    kaggle kernels output <user>/ironmule-rl2-headroom[-h2] -p results
+    kaggle kernels output <user>/ironmule-rl2-headroom[-h2|-h3] -p results
     python tools/rl2_headroom.py --analyse results/rl2_headroom_report.json
 """
 
@@ -86,7 +97,10 @@ TRACES = 6
 REQUESTS = 16
 MAX_TOKENS = (64, 128)
 RESAMPLES = 2000
-DECISIONS = ("joint", "placement", "schedule")
+DECISIONS = ("joint", "placement", "schedule", "order")
+LONG_TOKENS = 128   # run 3: an output limit at least this long is `long`
+SPILL_GAP = 4       # run 3: `spill` leaves the preferred GPU when it has this many more requests outstanding
+SJF_AGE_S = 10.0    # run 3: a request waiting longer than this starts by arrival under `sjf`
 # Generic questions; the report keeps only their index, never the text or the answers.
 PROMPTS = ("Explain how a refrigerator keeps food cold.", "What causes the seasons on Earth?",
            "Describe how a bicycle gear system works.", "Why is the sky blue during the day?",
@@ -110,8 +124,19 @@ def arm_name(placement: str, width: int, gather_ms: int) -> str:
 
 
 def parse_arm(name: str) -> tuple[str, int, int]:
-    placement, width, gather = name.split("/")
+    placement, width, gather = name.split("/")[:3]
     return placement, int(width[1:]), int(gather[1:])
+
+
+def arm_order(name: str) -> str:
+    """Run 3's fourth part: `fifo` (omitted) or `sjf`."""
+    parts = name.split("/")
+    return parts[3] if len(parts) > 3 else "fifo"
+
+
+def _parts(name: str) -> dict[str, Any]:
+    placement, width, gather = parse_arm(name)
+    return {"placement": placement, "schedule": (width, gather), "order": arm_order(name)}
 
 
 def arms(gpus: int) -> list[str]:
@@ -126,6 +151,14 @@ def arms(gpus: int) -> list[str]:
 def arms_h2(gpus: int) -> list[str]:
     """Run 2: every `shortest` schedule, and `fill` only without a gather wait."""
     return [name for name in arms(gpus) if parse_arm(name)[0] == "shortest" or parse_arm(name)[2] == 0]
+
+
+def arms_h3(gpus: int) -> list[str]:
+    """Run 3: placement by output limit and shortest-limit-first order, at the reference schedule."""
+    placements = ("shortest", "segregate", "spill") if gpus > 1 else ("shortest",)
+    return [REFERENCE + ("/sjf" if order == "sjf" else "") if placement == "shortest" else
+            f"{placement}/w8/g0" + ("/sjf" if order == "sjf" else "")
+            for placement in placements for order in ("fifo", "sjf")]
 
 
 def trace(level: int, index: int, rate: float, requests: int = REQUESTS,
@@ -191,13 +224,9 @@ def _choose(table: dict[tuple[int, int, str], float], levels: list[int], traces:
         return statistics.fmean(table[level, t, name] for t in traces)
 
     fixed = min(names, key=lambda n: (sum(WEIGHTS[level] * mean(level, n) for level in levels), n))
-    placement, width, gather = parse_arm(fixed)
-    if decision == "placement":
-        allowed = [n for n in names if parse_arm(n)[1:] == (width, gather)]
-    elif decision == "schedule":
-        allowed = [n for n in names if parse_arm(n)[0] == placement]
-    else:
-        allowed = list(names)
+    held = {part: value for part, value in _parts(fixed).items() if part != decision}
+    allowed = (list(names) if decision == "joint" else
+               [n for n in names if all(_parts(n)[part] == value for part, value in held.items())])
     return {level: min(allowed, key=lambda n: (mean(level, n), n)) for level in levels}, fixed
 
 
@@ -251,7 +280,9 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
     noise = _quantile(relative, 0.95)
     rng = random.Random(seed)
     decisions: dict[str, Any] = {}
-    for decision in DECISIONS if any(parse_arm(n)[0] == "fill" for n in names) else ("joint",):
+    varying = [part for part in DECISIONS[1:] if len({repr(_parts(n)[part]) for n in names}) > 1]
+    # One varying part is the joint decision itself; parts are reported apart only when two or more vary.
+    for decision in ("joint", *varying) if len(varying) > 1 else ("joint",):
         oracle, fixed = _choose(table, levels, complete, names, decision)
         o, f = _score(table, levels, complete, oracle, fixed)
         held = []
@@ -292,15 +323,83 @@ def _placement_pool(pool: Any) -> Any:
 
     class PlacementPool(DevicePool):
         placement, fill_width = "shortest", 8
+        _local = threading.local()  # the request being placed, per calling thread
+
+        def stream(self, request: Any) -> Any:
+            self._local.request = request
+            return super().stream(request)
 
         def _order(self) -> list[int]:
             order = super()._order()
-            if self.placement != "fill":
+            if self.placement == "fill":
+                room = sorted(index for index in order if self.shards[index].outstanding() < self.fill_width)
+                return room + [index for index in order if index not in room]
+            if self.placement not in ("segregate", "spill") or len(order) < 2:
                 return order
-            room = sorted(index for index in order if self.shards[index].outstanding() < self.fill_width)
-            return room + [index for index in order if index not in room]
+            request = getattr(self._local, "request", None)
+            long = request is not None and request.max_tokens >= LONG_TOKENS
+            preferred = len(self.shards) - 1 if long else 0
+            if preferred not in order:
+                return order
+            if self.placement == "spill":
+                other = min((index for index in order if index != preferred),
+                            key=lambda index: (self.shards[index].outstanding(), index))
+                if self.shards[preferred].outstanding() - self.shards[other].outstanding() >= SPILL_GAP:
+                    preferred = other
+            return [preferred] + [index for index in order if index != preferred]
 
     return PlacementPool(pool.shards, pool.devices)
+
+
+def ordered_service() -> type:
+    """`ProductService` whose waiting requests can start shortest output limit first (run 3's `sjf`);
+    with `order = "fifo"` it is the service unchanged. Only this tool uses `sjf`."""
+    import queue
+
+    from ironmule_product.service import ProductService
+
+    class OrderedService(ProductService):
+        order = "fifo"
+
+        def _sort_waiting(self) -> None:  # the caller holds self._lock
+            while True:
+                try:
+                    self._carry.append(self._pending.get_nowait())
+                except queue.Empty:
+                    break
+            now = time.monotonic_ns()
+
+            def key(session: Any) -> tuple[bool, int, int]:
+                aged = now - session.submitted_ns > SJF_AGE_S * 1e9
+                return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
+
+            waiting = sorted(self._carry, key=key)
+            self._carry.clear()
+            self._carry.extend(waiting)
+
+        def _next_session(self) -> Any:
+            if self.order != "sjf":
+                return super()._next_session()
+            with self._lock:
+                self._sort_waiting()
+                if self._carry:
+                    return self._carry.popleft()
+            try:
+                first = self._pending.get(timeout=0.1)
+            except queue.Empty:
+                return None
+            with self._lock:
+                self._carry.append(first)
+                self._sort_waiting()
+                return self._carry.popleft()
+
+        def _group_for(self, first: Any, width: int | None = None, gather_ms: int | None = None) -> list[Any]:
+            if self.order == "sjf":
+                with self._lock:
+                    self._sort_waiting()
+            return super()._group_for(first, width, gather_ms)
+
+    return OrderedService
 
 
 def set_arm(pool: Any, name: str) -> None:
@@ -310,6 +409,7 @@ def set_arm(pool: Any, name: str) -> None:
     pool.placement, pool.fill_width = placement, width
     for shard in pool.shards:
         shard.policy = ServingPolicy(max_width=width, gather_ms=gather, source="rl2-h")
+        shard.order = arm_order(name)
 
 
 def wait_idle(pool: Any, timeout_s: float = 120) -> bool:
@@ -390,7 +490,7 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
     """The plan above on a started pool: calibration, then every (trace, level) block in order.
     `names` and `max_tokens` shrink it for a smoke run; a measurement keeps the defaults."""
     pool = _placement_pool(pool)
-    names = names or (arms_h2 if plan == "h2" else arms)(len(pool.shards))
+    names = names or {"h2": arms_h2, "h3": arms_h3}.get(plan, arms)(len(pool.shards))
     warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards), deadline_s)
     report: dict[str, Any] = {"plan": plan, "arms": names, "devices": list(pool.devices), "deadline_s": deadline_s,
                               "warmup_ok": sum(r["outcome"] == "ok" for r in warm), "rows": []}
@@ -398,7 +498,7 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
     if report["calibration"].get("failed"):
         return report
     capacity = report["calibration"]["capacity_rps"]
-    if plan == "h2":
+    if plan in ("h2", "h3"):
         report["states"] = list(H2_STATES)
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
     else:
@@ -406,7 +506,7 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
         traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
                    for level, rate in enumerate(report["rates"])]
     block = 0
-    for t in range(traces if traces is not None else H2_TRACES if plan == "h2" else TRACES):
+    for t in range(traces if traces is not None else H2_TRACES if plan in ("h2", "h3") else TRACES):
         for level, make in enumerate(traffic):
             items = make(t)
             for name, run in block_order(names, block):
@@ -458,7 +558,6 @@ def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = 
 
     from ironmule_product.backend import MLXWorkerClient
     from ironmule_product.device_pool import cuda_devices, start_pool
-    from ironmule_product.service import ProductService
     from ironmule_product.state import ProductStore
 
     revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
@@ -472,12 +571,12 @@ def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = 
     spec = store.model(model)
     devices = cuda_devices() or [None]
     pool = start_pool(store, spec, devices, lambda device: MLXWorkerClient(
-        spec, execution_variant="current_engine", cuda_device=device), ProductService)
+        spec, execution_variant="current_engine", cuda_device=device), ordered_service())
     try:
         deadline = float(store.settings()["request_timeout_s"] or 120)
-        sizes = ({"traces": 2, "requests": 3, "max_tokens": (4, 8),
-                  "names": [n for n in arms(len(devices)) if parse_arm(n)[1:] in ((8, 0), (1, 0))]}
-                 if smoke else {})
+        smoke_names = (arms_h3(len(devices))[:2] if plan == "h3" else
+                       [n for n in arms(len(devices)) if parse_arm(n)[1:] in ((8, 0), (1, 0))])
+        sizes = {"traces": 2, "requests": 3, "max_tokens": (4, 8), "names": smoke_names} if smoke else {}
         result = measure(pool, model, deadline_s=deadline, plan=plan, on_row=on_row, **sizes)
     finally:
         pool.close()
@@ -516,7 +615,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2"), default="h1", help="run 1's or run 2's fixed plan")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3"), default="h1", help="run 1's, 2's or 3's fixed plan")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
     parser.add_argument("--analyse", type=Path, metavar="REPORT", help="print the analysis of a finished report")
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
