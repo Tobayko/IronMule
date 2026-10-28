@@ -52,6 +52,11 @@ the client's write fails: in STAB1 run 2's burst of 192, 95 of the 128 refused c
 `ConnectionReset` (never accepted, so no request was lost, but the backpressure signal is lost). **Test.** Half-close
 and a short bounded drain before closing, or answering only after the request head arrived, on the same burst.
 **Kill.** No fewer resets, more threads than the 64 workers, or a slower accept loop under the burst.
+**Not reproduced locally (2026-10-28).** On Linux x86_64 loopback (a 4-core cloud container, Python 3.13), 64 held
+handlers and 128 refused clients that each send a POST and read: all 128 got the 429 in every one of 27 bursts,
+across bodies of 200 B to 400 KB and sends delayed 0 to 100 ms after connect (the kernel kept the queued 429
+readable after the reset). So the resets need STAB1's own client pattern or host; reproduce with that client
+before building a drain, or the fix cannot be shown to work.
 
 ## The whole machine, unquantized checkpoints, NVIDIA on Kaggle (2026-10-28)
 
@@ -96,6 +101,41 @@ and grouped rows, which go to cuBLAS. **Test.** Kaggle T4: unquantized Qwen 3 0.
 against the exact knobs, `float16` and `float32`, plus each plan's quality gate; offline, count the weights a
 float16 cast does not keep exactly. **Kill.** Per plan and checkpoint: not faster than stock, or the gate fails
 (Gemma 3's activations already broke float16 on its 4-bit checkpoint, see the quality table in `BENCHMARKS.md`).
+
+**Offline, 2026-10-28 (weights only, no hardware claim).** Every bfloat16 weight of five unquantized checkpoints
+cast to float16 and back, compared with its float32 value: none overflowed, and 0.013-0.024 % changed. A bfloat16
+value has 8 significant bits and float16 holds 11, so only magnitudes below float16's normal range (2^-14) can
+change at all, each by at most 2^-25 (half a subnormal step); 708 to 5,558 per model flushed to zero. The largest
+magnitude was 500 (Gemma 3 1B), far below float16's 65,504.
+
+| Checkpoint (revision) | bfloat16 weights | inexact | flushed to zero | max abs |
+| :-- | --: | --: | --: | --: |
+| `Qwen/Qwen3-0.6B` (`c1899de2`) | 751,632,384 | 120,378 (0.016 %) | 708 | 192 |
+| `mlx-community/gemma-3-1b-it-bf16` (`60444cd9`) | 1,301,875,840 | 261,355 (0.020 %) | 1,524 | 500 |
+| `mlx-community/Llama-3.2-1B-Instruct-bf16` (`863c846a`) | 1,235,814,400 | 290,708 (0.024 %) | 1,689 | 2.92 |
+| `mlx-community/Qwen3-1.7B-bf16` (`9cd66928`) | 1,720,574,976 | 226,844 (0.013 %) | 1,356 | 153 |
+| `mlx-community/Qwen3-4B-bf16` (`3639b521`) | 4,022,468,096 | 936,720 (0.023 %) | 5,558 | 44 |
+
+So for these checkpoints the float16 plan is, to within those subnormal roundings, the same weights with
+different activation arithmetic; whether the activations fit is the gate's question. Autopilot's numeric choice
+used to pick `native` for any Qwen 3 or Gemma 3 checkpoint on such a card, which an unquantized one cannot load;
+it now treats `native` as a no-op there (commit `375df61`). **Open for the maintainer:** that choice still takes a
+plan the table recommends per *architecture* without gating it, so an unquantized Qwen 3 would get `float16` on the
+evidence of 4-bit checkpoints (`test_recommended_plan_is_taken_without_a_gate_and_remembered` pins this), while
+`numeric_plans.recommend` limits a recommendation to the checkpoints measured (NEXT1-C). The two rules disagree;
+this entry's gate result should decide which one applies to unquantized checkpoints.
+
+### U2 — Float16 matmuls with the checkpoint's own activations, for Gemma 3 on a T4
+
+**Mechanism.** The float16 plan casts everything, and Gemma 3's activations leave float16's range (its float16 gate
+doubled perplexity on the 4-bit checkpoint). Keeping activations, norms and the residual stream in the checkpoint's
+bfloat16 and running only the matmuls in float16, on the tensor cores Turing has, is how Unsloth runs Gemma 3 on T4s
+(an engineering report, not a peer-reviewed one: unsloth.ai/blog/gemma3); IronMule's own `native` plan already
+runs its 4-bit prefill GEMM in float16 and passed Gemma 3 12B's gate. By U1, the weights cast exactly. A matmul's own
+output can still overflow float16. **Test.** `tools/kaggle_whole_machine.py` measures it as a fourth U1 arm
+(`mixed16`, defined only in that tool) with the same gate and speed check; offline first, whether it removes the
+float16 plan's non-finite or doubled perplexity on Gemma 3 1B on a CPU. **Kill.** Not faster than stock on the T4,
+or its gate fails; only then is it worth a product plan.
 
 ### RL2 — One controller over the whole machine, where a decision has state-dependent headroom
 
