@@ -125,6 +125,14 @@ light load (rejected, no qualified gain), the run at the registered load was inv
 showed the learned arms 3-4 % worse. No learned policy is activated anywhere. Not measured: other GPUs, larger models,
 memory pressure, real user traffic, the CPU device.
 
+RL2-H (backlog RL2; one Kaggle "GPU T4 x2" session, `mlx-community/Qwen3-1.7B-bf16`, `--engine tuned`, one HW1
+worker per card, Poisson traffic at 0.2-0.95 of measured capacity, 64- or 128-token answers): no learner can gain
+from deciding placement (shortest queue or fill) or group width and gather wait per load level. The per-level best of
+20 fixed arms beat the best single arm by -0.05 % held out against 3.5 % A/A noise, and the default (shortest queue,
+width up to 8, no wait) was within 0.4 % of the best arm at every level, so it stays and no whole-machine learner is
+built for these decisions. Not measured: other models and checkpoints, longer prompts or answers, bursty or real
+traffic, one card, the MEM2 cache bound, detokenizing threads.
+
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a
 prefill allocation or a CUDA graph then fails within about half an hour (four losses in six overload replays). Before

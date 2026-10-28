@@ -29,7 +29,8 @@ Fixed before data (BACKLOG RL2-H, 2026-10-28):
   noise     the 95th percentile (nearest rank) of the A/A pairs' relative differences.
   verdict   a decision has headroom when the 2.5 % bootstrap bound of its held-out H (2000 resamples
             of the held-out traces, seed 0) exceeds the noise; otherwise a fixed policy ships and no
-            learner is trained for that decision.
+            learner is trained for that decision. That fixed policy is the reference unless the best
+            fixed arm is cheaper by more than the noise (wording added after run 1; the rule is unchanged).
   validity  for each request, every arm's answer digest must agree (grouped batch-1 is exact); a
             mismatch, a non-finite cost, a failed calibration or fewer than two complete traces per
             level makes the run invalid, and an invalid run releases no learner.
@@ -236,7 +237,8 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
             "decisions": decisions, "mean_cost_per_level": per_level,
             "verdict": ("headroom for: " + ", ".join(d for d, v in decisions.items() if v["verdict"].startswith("headroom"))
                         if any(v["verdict"].startswith("headroom") for v in decisions.values())
-                        else f"no headroom: the fixed policy {best} ships, no learner")}
+                        else f"no headroom: the fixed policy {best} ships, no learner" if best_cost / reference < 1 - noise
+                        else f"no headroom: the reference stays ({best} is within the A/A noise of it), no learner")}
 
 
 # ---------------------------------------------------------------- measurement (hardware)

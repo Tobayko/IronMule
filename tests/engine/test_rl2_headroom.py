@@ -101,7 +101,8 @@ def test_noise_larger_than_the_headroom_releases_no_learner():
 
     result = rl2.analyse(_report(cost, aa=1.5))
     assert result["valid"] and result["decisions"]["joint"]["headroom_held_out"] > 0
-    assert result["verdict"].startswith("no headroom")
+    assert result["verdict"] == ("no headroom: the reference stays (shortest/w8/g0 is within the A/A noise of it), "
+                                 "no learner")
 
 
 def test_placement_and_schedule_are_judged_apart_with_two_gpus():

@@ -76,7 +76,9 @@ request never spans workers, so per-request tokens and plans are what one worker
 x2, the P3/STAB1 synthetic traffic, one worker against two, paired by trace; the same prompts sent to both workers
 must return the same tokens (same card model, same kernels). **Kill.** Aggregate tokens/s at four or more
 concurrent clients under 1.5x one worker, any token difference between the two workers, or first-content p95 at
-one client worse than one worker beyond the A/A noise.
+one client worse than one worker beyond the A/A noise. *Seen so far (RL2-H run 1, below):* a two-worker pool on
+two T4s served 6,048 requests of Qwen 3 1.7B bfloat16 without a failure, and each request returned the same
+answer digest in all 21 replays, which placed it on either card; throughput against one worker is still unmeasured.
 
 ### HW2 — Split one unquantized model across both T4s (tensor parallel decode)
 
@@ -169,7 +171,24 @@ that noise. *Validity:* any answer digest that differs between arms, a non-finit
 fewer than two complete traces per level makes the run invalid; an invalid run releases nothing. H is an upper
 bound (a real policy sees only the arrival-rate estimate and pays switches), so passing it is necessary, not
 sufficient: a learner must still pass the unchanged protocol-2 qualification. 378 cells, an estimated three to
-four session hours. Not measured yet.
+four session hours.
+
+**RL2-H run 1 (2026-10-28, valid): no headroom for either decision; no learner.** Kaggle "GPU T4 x2" (two Tesla
+T4, 15 GiB, driver 580.178.04, 4 CPUs), MLX 0.32.4, mlx-lm 0.31.3, `mlx-community/Qwen3-1.7B-bf16` (`9cd66928`),
+tuned engine, one worker per card, commit `258ccbe`, kernel `tobayko/ironmule-rl2-headroom` version 1 (4.75 session
+hours). Calibration: 32 of 32 burst requests, capacity 0.96 requests/s, so the levels were 0.19, 0.58 and 0.91
+requests/s. All 378 cells and 6,048 requests completed, none failed, timed out or was refused, and every request's
+answer digest was identical across all 21 replays (arms and A/A runs, served by either card). A/A noise 3.5 %.
+Joint headroom 0.12 % in sample and -0.05 % held out (95 % bootstrap -0.30 % to +0.13 %); placement 0 %; schedule
+the same as joint. The reference `shortest/w8/g0` is within 0.4 % of the cheapest arm at every level (best arm
+over all levels `shortest/w2/g0`, 0.03 % cheaper, far inside the noise), so the reference stays. The decisions do
+matter, just never in a state-dependent way: `fill` placement at width 2 or more cost 1.23-2.83x the reference
+(worst at width 8 under load; at width 1 it fills an idle card first and behaves like the shortest queue), and
+gather waits of 50 ms and 150 ms cost 4-5 % and 14-18 % more. The tool's verdict line first read "the fixed
+policy `shortest/w2/g0` ships"; after this run it was reworded to keep the reference when the best fixed arm is
+inside the noise (the release rule is unchanged). Not measured: other models, quantized checkpoints, longer outputs
+or prompts, bursty or real traffic, one card, the MEM2 cache bound and detokenizing threads. The ledger entry belongs
+in the research repository, which this session cannot reach.
 
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
@@ -541,6 +560,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **RL2 learner for GPU placement and group schedule (2026-10-28).** Experiment `RL2-H-run1-20261028` (kernel
+  `tobayko/ironmule-rl2-headroom` v1, commit `258ccbe`; see RL2-H above): on two T4s with Qwen 3 1.7B bfloat16 at
+  0.2-0.95 of capacity, the oracle over 20 fixed arms beat the best single arm by -0.05 % held out (95 % bootstrap
+  to +0.13 %) against 3.5 % A/A noise, and the reference was within 0.4 % of the best arm at every level. RL2's kill
+  holds for these two decisions on this fingerprint: no learner for them. Re-open with a new model, checkpoint,
+  card, traffic shape or decision (the MEM2 bound and threads were not measured).
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
