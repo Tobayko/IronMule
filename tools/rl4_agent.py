@@ -48,6 +48,7 @@ TRAIN_SEED0 = 10_000             # training traffic seeds; the hardware traces u
 HELD_OUT_SEED0 = 50_000          # the simulator gate's held-out traffic
 FIXED_ARMS = ("shortest/w8/g0", "shortest/w8/g0/sjf", "segregate/w8/g0", "segregate/w8/g0/sjf",
               "spill/w8/g0", "spill/w8/g0/sjf")
+SIMULATOR_ONLY_ARMS = ("leastwork/w8/g0", "leastwork/w8/g0/sjf")  # compared in the model, never on hardware
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,8 @@ def fixed_placer(placement: str, width: int = 8) -> Placer:
     def place(request: _Request, cards: list[_Card], now: float) -> int:
         loads = [len(card.outstanding()) for card in cards]
         shortest = min(range(len(cards)), key=lambda i: (loads[i], i))
+        if placement == "leastwork":  # a simulator-only rule: the fewest output tokens still owed
+            return min(range(len(cards)), key=lambda i: (sum(r.max_tokens for r in cards[i].outstanding()), i))
         if placement == "shortest" or len(cards) < 2:
             return shortest
         if placement == "fill":  # as the harness: the lowest-index card with room, else the shortest
@@ -259,14 +262,17 @@ def evaluate(model: PoolModel, capacity_rps: float, policies: dict[str, tuple[Pl
 def judge(model: PoolModel, capacity_rps: float, policy: Policy, noise: float, traces: int = 200) -> dict[str, Any]:
     """The simulator gate: the learned policy against every fixed arm on held-out traffic."""
     place, order = policy.greedy()
-    arms = {name: arm_policy(name) for name in FIXED_ARMS}
+    arms = {name: arm_policy(name) for name in FIXED_ARMS + SIMULATOR_ONLY_ARMS}
     arms["learned"] = (place, order, 8)
     per_state = evaluate(model, capacity_rps, arms, traces)
     weighted = {name: sum(w * c for w, c in zip(rl2.WEIGHTS, costs)) for name, costs in per_state.items()}
     best_fixed = min(FIXED_ARMS, key=lambda name: (weighted[name], name))
     gain = 1 - weighted["learned"] / weighted[best_fixed]
+    best_rule = min(SIMULATOR_ONLY_ARMS, key=lambda name: (weighted[name], name))
     return {"per_state": per_state, "weighted": weighted, "best_fixed": best_fixed, "gain_vs_best_fixed": gain,
-            "noise": noise, "passes": gain > noise}
+            "noise": noise, "passes": gain > noise,
+            # information only, not the gate: does learning add to the simplest rule it resembles?
+            "best_simulator_only_rule": best_rule, "gain_vs_that_rule": 1 - weighted["learned"] / weighted[best_rule]}
 
 
 # ---------------------------------------------------------------- fitting and the fidelity gate
@@ -274,14 +280,16 @@ def judge(model: PoolModel, capacity_rps: float, policy: Policy, noise: float, t
 def _cells(report: dict[str, Any]) -> dict[tuple[int, str], list[list[dict[str, Any]]]]:
     """Measured first runs per (state, arm): each a list of request records with their trace items."""
     run = report.get("rl2h", report)
-    if run.get("plan") not in ("h2", "h3"):
-        raise ValueError("the pool model is fitted to run 2's traffic (plans h2 and h3)")
+    plan = run.get("plan") or ("h1" if run.get("rates") else None)  # run 1's report predates `plan`
+    if plan not in ("h1", "h2", "h3", "h4"):
+        raise ValueError("the pool model is fitted to rl2_headroom's runs (plans h1 to h4)")
     capacity = run["calibration"]["capacity_rps"]
     out: dict[tuple[int, str], list[list[dict[str, Any]]]] = {}
     for row in run["rows"]:
-        if row["run"] != 0 or rl2.parse_arm(row["arm"])[2]:  # the model has no gather wait
+        if row["run"] != 0 or rl2.parse_arm(row["arm"])[2] or rl2.LEARNED == row["arm"]:  # no gather wait in the model
             continue
-        items = rl2.trace_h2(row["level"], row["trace"], capacity)
+        items = ([{**item, "long": False} for item in rl2.trace(row["level"], row["trace"], run["rates"][row["level"]])]
+                 if plan == "h1" else rl2.trace_h2(row["level"], row["trace"], capacity))
         out.setdefault((row["level"], row["arm"]), []).append(
             [{**item, **request} for item, request in zip(items, row["requests"])])
     return out
@@ -391,20 +399,30 @@ def _spearman(a: list[float], b: list[float]) -> float:
     return 1 - 6 * sum((x - y) ** 2 for x, y in zip(ra, rb)) / (n * (n * n - 1))
 
 
-def fidelity(model: PoolModel, report: dict[str, Any], rho_min: float = 0.8, error_max: float = 0.25) -> dict[str, Any]:
-    """BACKLOG RL4's fidelity gate on one report (RL3-H's): ranks per state and cell errors."""
+def fidelity(model: PoolModel, report: dict[str, Any], concordance_min: float = 0.9,
+             error_max: float = 0.25) -> dict[str, Any]:
+    """BACKLOG RL4's fidelity gate on one report: every cell's mean cost within `error_max`, and in each
+    state the simulator orders at least `concordance_min` of the arm pairs that the hardware separated
+    by more than the report's A/A noise (pairs closer than that have no measured order to agree with)."""
+    analysis = rl2.analyse(report.get("rl2h", report), resamples=20)  # only its A/A noise is used
+    noise = analysis.get("aa_noise", 0.0) if analysis.get("valid") else 0.0
     cells = _cells(report)
     states = sorted({state for state, _ in cells})
-    result: dict[str, Any] = {"states": {}, "passes": True}
+    result: dict[str, Any] = {"noise": noise, "states": {}, "passes": True}
     for state in states:
         arms = sorted(arm for s, arm in cells if s == state)
         measured = [_measured_cost(cells[state, arm]) for arm in arms]
         simulated = [_simulated_cost(model, arm, cells[state, arm]) for arm in arms]
         errors = [abs(s - m) / m for s, m in zip(simulated, measured)]
-        rho = _spearman(simulated, measured)
-        ok = rho >= rho_min and max(errors) <= error_max
+        resolved = [(i, j) for i in range(len(arms)) for j in range(i + 1, len(arms))
+                    if abs(measured[i] - measured[j]) / min(measured[i], measured[j]) > noise]
+        agree = sum((measured[i] < measured[j]) == (simulated[i] < simulated[j]) for i, j in resolved)
+        concordance = agree / len(resolved) if resolved else 1.0
+        ok = concordance >= concordance_min and max(errors) <= error_max
         result["states"][str(state)] = {"arms": arms, "measured": measured, "simulated": simulated,
-                                        "rho": rho, "max_error": max(errors), "passes": ok}
+                                        "resolved_pairs": len(resolved), "concordance": concordance,
+                                        "rho": _spearman(simulated, measured), "max_error": max(errors),
+                                        "passes": ok}
         result["passes"] = result["passes"] and ok
     return result
 

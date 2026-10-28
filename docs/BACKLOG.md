@@ -256,9 +256,13 @@ from the hardware traces. **Evidence against.** The simulator can be wrong, the 
 no better than RL3's best fixed arm, and every learned arm so far (P3, P4, OPT1) lost on hardware.
 
 **Gates and test.**
-- *Fidelity gate:* the fitted simulator must rank RL3-H's six arms per state as the hardware did (Spearman
-  rho of at least 0.8 per state) and predict each cell's mean cost within 25 %. Otherwise no policy trained in
-  it goes to hardware.
+- *Fidelity gate:* the fitted simulator must predict each of RL3-H's cells' mean cost within 25 %. In each
+  state it must also order at least 90 % of the arm pairs that the hardware separated by more than RL3-H's A/A
+  noise. Otherwise no policy trained in it goes to hardware. *(Amended 2026-10-28, before RL3-H's data, after a
+  preview on RL2-H run 1:* the first wording asked for a Spearman rho of 0.8 over all arms per state. That
+  failed on run 1 only because arms within 0.1 % of each other, far inside its 3.5 % noise, have no measured
+  order to agree with. On run 1, after fitting to it, the model was within 3.4 % in every cell and ordered all
+  53 resolvable pairs as the hardware did; that preview is not RL4's gate, which is RL3-H.)
 - *Simulator gate:* on 200 held-out simulated traces per state, the learned policy must beat the best fixed arm
   by more than RL3-H's A/A noise.
 - *Hardware (RL4-H):* `tools/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs

@@ -334,7 +334,7 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
 # ---------------------------------------------------------------- run 4's learned policy (BACKLOG RL4)
 
 LONG_PROMPT_CHARS = 1000  # a request whose last message is longer counts as a long prompt
-PLACEMENT_FEATURES = 8
+PLACEMENT_FEATURES = 10
 ORDER_FEATURES = 4
 
 
@@ -351,9 +351,11 @@ def placement_features(request: Any, cards: list[Any], card: int) -> list[float]
     shorts = load - longs
     long_request = 1.0 if _is_long(request) else 0.0
     last = 1.0 if card == len(cards) - 1 else 0.0
+    idle = 1.0 if not outstanding else 0.0
+    work = sum(r.max_tokens for r in outstanding) / 1024.0  # output tokens still owed on this card
     return [load, long_request * longs, (1 - long_request) * longs, long_request * shorts,
             (1 - long_request) * shorts, long_request * last, (1 - long_request) * last,
-            float(request.long_prompt) * load]
+            float(request.long_prompt) * load, idle, work]
 
 
 def order_features(waiting: list[Any]) -> list[float]:

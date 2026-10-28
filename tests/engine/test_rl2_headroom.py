@@ -177,7 +177,7 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
                       rl2.ordered_service())
     saved = []
     try:
-        policy = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0], [1.0, 0.0, 0.0, 0.0])
+        policy = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])
         report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan=plan,
                              names=rl2.arms_h4("spill/w8/g0/sjf") if plan == "h4" else None,
                              policy=policy if plan == "h4" else None,
@@ -357,7 +357,7 @@ def _live(max_tokens, content="q"):
 
 
 def test_the_learned_placement_reads_each_cards_admitted_requests():
-    segregating = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0], [0.0] * rl2.ORDER_FEATURES)
+    segregating = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0, 0.0, 0.0], [0.0] * rl2.ORDER_FEATURES)
     pool = rl2._placement_pool(DevicePool([_LiveShard([]), _LiveShard([_live(32)])], ["0", "1"]))
     pool.placement, pool.learned_policy = "learned", segregating
     pool._local.request = _live(256)

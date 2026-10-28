@@ -82,9 +82,9 @@ def test_the_fidelity_gate_refuses_a_model_that_misranks_or_mispredicts():
     assert not gate["passes"] and any(state["max_error"] > 0.25 for state in gate["states"].values())
 
 
-def test_only_run_two_traffic_without_gather_waits_is_fitted():
-    with pytest.raises(ValueError, match="run 2"):
-        rl4._cells({"rl2h": {"plan": "h1", "rows": [], "calibration": {"capacity_rps": 1.0}}})
+def test_only_known_plans_without_gather_waits_are_fitted():
+    with pytest.raises(ValueError, match="plans h1 to h4"):
+        rl4._cells({"rl2h": {"plan": "h9", "rows": [], "calibration": {"capacity_rps": 1.0}}})
     report = _report(MODEL, arms=("shortest/w8/g0",), traces=1)
     report["rl2h"]["rows"].append({**report["rl2h"]["rows"][0], "arm": "shortest/w8/g50"})
     assert {arm for _, arm in rl4._cells(report)} == {"shortest/w8/g0"}
@@ -102,7 +102,8 @@ def test_reinforce_learns_a_policy_that_beats_its_untrained_start_in_the_model()
 
 def test_the_simulator_gate_compares_the_learned_policy_with_every_fixed_arm():
     result = rl4.judge(MODEL, 1.0, rl4.Policy.zero(), noise=0.035, traces=10)
-    assert set(result["weighted"]) == set(rl4.FIXED_ARMS) | {"learned"}
+    assert set(result["weighted"]) == set(rl4.FIXED_ARMS) | set(rl4.SIMULATOR_ONLY_ARMS) | {"learned"}
+    assert result["best_simulator_only_rule"] in rl4.SIMULATOR_ONLY_ARMS
     assert result["best_fixed"] in rl4.FIXED_ARMS
     assert result["passes"] == (result["gain_vs_best_fixed"] > 0.035)
 
