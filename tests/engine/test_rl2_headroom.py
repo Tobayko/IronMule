@@ -13,6 +13,8 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+import pytest
+
 import ironmule_product.backend as backend_module
 from ironmule_product.backend import MLXWorkerClient
 from ironmule_product.device_pool import DevicePool, start_pool
@@ -150,7 +152,8 @@ def test_fill_places_on_the_lowest_gpu_with_room_and_otherwise_the_shortest_queu
     assert pool._order() == [1, 0]  # no room anywhere: the shortest queue
 
 
-def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tmp_path, monkeypatch):
+@pytest.mark.parametrize("plan", ["h1", "h2"])
+def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tmp_path, monkeypatch, plan):
     real_popen = subprocess.Popen
 
     def fake_popen(args, *popen_args, **popen_kwargs):
@@ -173,7 +176,7 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
                       ProductService)
     saved = []
     try:
-        report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3),
+        report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan=plan,
                              on_row=lambda partial: saved.append(len(partial["rows"])))
     finally:
         pool.close()
@@ -185,7 +188,33 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
     result = rl2.analyse(report, resamples=50)
     assert result["valid"] and result["mismatched_requests"] == 0 and result["complete_traces"] == [0, 1]
     assert set(result["decisions"]) == {"joint", "placement", "schedule"}
-    assert not any(prompt in json.dumps(report) for prompt in rl2.PROMPTS)
+    assert not any(prompt in json.dumps(report) for prompt in rl2.PROMPTS) and "Background" not in json.dumps(report)
+    assert report["plan"] == plan and (report.get("states") == list(rl2.H2_STATES)) == (plan == "h2")
+
+
+def test_run_two_keeps_every_shortest_schedule_and_fill_only_without_a_wait():
+    two = rl2.arms_h2(2)
+    assert two[0] == rl2.REFERENCE and len(two) == len(set(two)) == 14
+    assert [n for n in two if n.startswith("fill/")] == ["fill/w1/g0", "fill/w2/g0", "fill/w4/g0", "fill/w8/g0"]
+    assert set(rl2.arms(1)) <= set(two) and rl2.arms_h2(1) == rl2.arms(1)
+
+
+def test_run_two_traffic_is_quiet_bursty_or_a_spike_with_mixed_lengths():
+    quiet = rl2.trace_h2(0, 1, 2.0)
+    assert quiet == [{**item, "long": False} for item in rl2.trace(0, 101, 0.4)]
+    for state in (1, 2):
+        traces = [rl2.trace_h2(state, index, 2.0) for index in range(5)]
+        assert traces[0] == rl2.trace_h2(state, 0, 2.0) and traces[0] != traces[1]
+        for items in traces:
+            offsets = [item["offset_s"] for item in items]
+            assert len(items) == rl2.REQUESTS and offsets[0] == 0 and offsets == sorted(offsets)
+            assert {item["max_tokens"] for item in items} <= set(rl2.H2_MAX_TOKENS)
+        flat = [item for items in traces for item in items]
+        assert {item["long"] for item in flat} == {True, False}
+        assert {item["max_tokens"] for item in flat} == set(rl2.H2_MAX_TOKENS)
+    assert all(item["offset_s"] <= 1.0 for index in range(5) for item in rl2.trace_h2(2, index, 2.0))
+    assert max(item["offset_s"] for item in rl2.trace_h2(1, 0, 2.0)) > 1.0  # bursts spread out in time
+    assert len(rl2.CONTEXT.split()) > 600
 
 
 def test_a_kernel_folder_pins_one_commit(tmp_path):
@@ -197,6 +226,9 @@ def test_a_kernel_folder_pins_one_commit(tmp_path):
     script = (folder / "run.py").read_text()
     assert f"@{commit}" in script and "rl2_headroom_report.json" in script
     compile(script, "run.py", "exec")
+    second = rl2.write_kernel(tmp_path / "kernel2", "someone", commit, "h2")
+    assert json.loads((second / "kernel-metadata.json").read_text())["id"] == "someone/ironmule-rl2-headroom-h2"
+    assert "'--plan', 'h2'" in (second / "run.py").read_text()
     for bad in ("main", commit.upper()):
         try:
             rl2.write_kernel(tmp_path / "bad", "someone", bad)

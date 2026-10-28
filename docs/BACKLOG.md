@@ -190,6 +190,22 @@ inside the noise (the release rule is unchanged). Not measured: other models, qu
 or prompts, bursty or real traffic, one card, the MEM2 cache bound and detokenizing threads. The ledger entry belongs
 in the research repository, which this session cannot reach.
 
+**RL2-H2, run 2 with queues and long requests (protocol fixed 2026-10-28, before its data).** Re-opens the Tier 0
+entry "RL2 learner for GPU placement and group schedule" (`RL2-H-run1-20261028`), whose kill reads "Headroom inside
+the A/A noise for every decision: a fixed policy ships, no learner". Condition met: a changed mechanism. Run 1's
+Poisson arrivals with 64-128-token answers kept about 2.4 requests in the system even at its heaviest level, so groups
+rarely formed and no request held a group long; the states where width, wait and placement could matter differently
+(bursts that build a queue, long answers holding a group while short ones wait, as in HOL1, and long prompts that make
+prefill matter) never occurred. Same model, cards, engine, pool, cost, order, headroom, noise, release rule and
+validity as RL2-H (`tools/rl2_headroom.py --plan h2`). *States:* `quiet` (run 1's light level: Poisson at 0.2 of
+capacity, short prompts, 64 or 128 tokens), `bursts` (four bursts of four arrivals inside 0.2 s each, burst starts
+Poisson at 0.6 of capacity / 4) and `spike` (all 16 arrivals inside 1 s); in `bursts` and `spike` half the prompts
+carry a fixed generic context of about 1,000 tokens and the output limit is 32 or 256 tokens; equal weights.
+*Arms:* the ten `shortest` schedules and `fill` without a wait at every width (14); `fill` with a wait lost by 27 % or
+more at every level of run 1. *Traces:* five per state, seeds distinct from run 1's. 225 cells, an estimated four
+session hours. **Kill:** as RL2's, per decision: the held-out headroom's 2.5 % bootstrap bound at or below the A/A
+noise means no learner for that decision under this traffic either.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better

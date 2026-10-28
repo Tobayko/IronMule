@@ -35,12 +35,25 @@ Fixed before data (BACKLOG RL2-H, 2026-10-28):
             mismatch, a non-finite cost, a failed calibration or fewer than two complete traces per
             level makes the run invalid, and an invalid run releases no learner.
 
+Run 2 (`--plan h2`, BACKLOG RL2-H2, fixed 2026-10-28 before its data) keeps arms' meaning, cost,
+order, headroom, noise, verdict and validity, and changes the traffic so queues and long requests
+occur, which run 1's Poisson traffic with uniform lengths never produced:
+
+  states    `quiet`: run 1's light level (Poisson at 0.2 of capacity, short prompts, 64 or 128
+            tokens); `bursts`: four bursts of four arrivals, each burst inside 0.2 s, burst starts
+            Poisson at 0.6 of capacity / 4; `spike`: all 16 arrivals inside 1 s. In `bursts` and
+            `spike` half the prompts carry a fixed generic context of about a thousand tokens and the
+            output limit is 32 or 256 tokens. Equal weights.
+  arms      the ten `shortest` schedules and `fill` without a gather wait at every width (14):
+            `fill` with a wait lost by 27 % or more at every level of run 1.
+  traces    five per state, seeds distinct from run 1's.
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
-    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha>
+    python tools/rl2_headroom.py --write-kernel kernel --owner <user> --commit <sha> [--plan h2]
     kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
-    kaggle kernels output <user>/ironmule-rl2-headroom -p results
+    kaggle kernels output <user>/ironmule-rl2-headroom[-h2] -p results
     python tools/rl2_headroom.py --analyse results/rl2_headroom_report.json
 """
 
@@ -83,6 +96,11 @@ PROMPTS = ("Explain how a refrigerator keeps food cold.", "What causes the seaso
            "Describe the life cycle of a star like the Sun.", "What is photosynthesis?",
            "How does a binary search work?", "Explain the greenhouse effect.",
            "What does a CPU cache do?", "How do airplanes stay in the air?")
+H2_STATES = ("quiet", "bursts", "spike")
+H2_TRACES = 5
+H2_MAX_TOKENS = (32, 256)
+# Run 2's long prompts: generic filler of about a thousand tokens before the question, never user text.
+CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8)
 
 
 # ---------------------------------------------------------------- the plan, fixed before data
@@ -105,6 +123,11 @@ def arms(gpus: int) -> list[str]:
     return [REFERENCE, *names]
 
 
+def arms_h2(gpus: int) -> list[str]:
+    """Run 2: every `shortest` schedule, and `fill` only without a gather wait."""
+    return [name for name in arms(gpus) if parse_arm(name)[0] == "shortest" or parse_arm(name)[2] == 0]
+
+
 def trace(level: int, index: int, rate: float, requests: int = REQUESTS,
           max_tokens: tuple[int, ...] | None = None) -> list[dict[str, Any]]:
     """Poisson arrivals at `rate` per second with prompt and output limit from the same fixed seed."""
@@ -115,6 +138,25 @@ def trace(level: int, index: int, rate: float, requests: int = REQUESTS,
                       "max_tokens": rng.choice(max_tokens or MAX_TOKENS)})
         offset += rng.expovariate(rate)
     return items
+
+
+def trace_h2(state: int, index: int, capacity: float, requests: int = REQUESTS,
+             max_tokens: tuple[int, ...] | None = None) -> list[dict[str, Any]]:
+    """Run 2's traffic for one state (see the module docstring), from a fixed seed."""
+    rng = random.Random(2000 * state + index)
+    if state == 0:
+        return [{**item, "long": False} for item in trace(0, 100 + index, 0.2 * capacity, requests, max_tokens)]
+    offsets: list[float] = []
+    start = 0.0
+    while len(offsets) < requests:
+        if state == 1:
+            offsets += [start + rng.uniform(0, 0.2) for _ in range(min(4, requests - len(offsets)))]
+            start += rng.expovariate(0.6 * capacity / 4)
+        else:
+            offsets.append(rng.uniform(0, 1.0))
+    first = min(offsets)
+    return [{"offset_s": round(offset - first, 6), "prompt": rng.randrange(len(PROMPTS)), "long": rng.random() < 0.5,
+             "max_tokens": rng.choice(max_tokens or H2_MAX_TOKENS)} for offset in sorted(offsets)]
 
 
 def block_order(names: list[str], block: int) -> list[tuple[str, int]]:
@@ -178,7 +220,7 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
     """Headroom per decision, in sample and held out, against the reference's A/A noise; and validity."""
     rows, deadline = report.get("rows", []), float(report.get("deadline_s") or 120)
     names = report.get("arms") or []
-    levels = list(range(len(report.get("rates") or LOADS)))
+    levels = list(range(len(report.get("states") or report.get("rates") or LOADS)))
     problems: list[str] = []
     if report.get("calibration", {}).get("failed"):
         problems.append("calibration failed: " + str(report["calibration"]["failed"]))
@@ -293,8 +335,8 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
         out: dict[str, Any] = {"index": index, "outcome": "failed", "first_s": None, "end_s": None,
                                "digest": None, "tokens": 0}
         ids: list[Any] = []
-        request = GenerationRequest(model, (("user", PROMPTS[item["prompt"]]),), max_tokens=item["max_tokens"],
-                                    stream=True)
+        prompt = (CONTEXT + "\n\n" if item.get("long") else "") + PROMPTS[item["prompt"]]
+        request = GenerationRequest(model, (("user", prompt),), max_tokens=item["max_tokens"], stream=True)
         try:
             for event in pool.stream(request):
                 if event.get("type") == "token":
@@ -342,24 +384,31 @@ def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, .
     return {**out, "makespan_s": max(r["end_s"] for r in ok), "capacity_rps": len(ok) / max(r["end_s"] for r in ok)}
 
 
-def measure(pool: Any, model: str, *, deadline_s: float, traces: int = TRACES, requests: int = REQUESTS,
+def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = None, requests: int = REQUESTS,
             loads: tuple[float, ...] = LOADS, names: list[str] | None = None,
-            max_tokens: tuple[int, ...] | None = None, on_row: Any = None) -> dict[str, Any]:
+            max_tokens: tuple[int, ...] | None = None, plan: str = "h1", on_row: Any = None) -> dict[str, Any]:
     """The plan above on a started pool: calibration, then every (trace, level) block in order.
     `names` and `max_tokens` shrink it for a smoke run; a measurement keeps the defaults."""
     pool = _placement_pool(pool)
-    names = names or arms(len(pool.shards))
+    names = names or (arms_h2 if plan == "h2" else arms)(len(pool.shards))
     warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards), deadline_s)
-    report: dict[str, Any] = {"arms": names, "devices": list(pool.devices), "deadline_s": deadline_s,
+    report: dict[str, Any] = {"plan": plan, "arms": names, "devices": list(pool.devices), "deadline_s": deadline_s,
                               "warmup_ok": sum(r["outcome"] == "ok" for r in warm), "rows": []}
     report["calibration"] = calibrate(pool, model, deadline_s, max_tokens)
     if report["calibration"].get("failed"):
         return report
-    report["rates"] = [load * report["calibration"]["capacity_rps"] for load in loads]
+    capacity = report["calibration"]["capacity_rps"]
+    if plan == "h2":
+        report["states"] = list(H2_STATES)
+        traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
+    else:
+        report["rates"] = [load * capacity for load in loads]
+        traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
+                   for level, rate in enumerate(report["rates"])]
     block = 0
-    for t in range(traces):
-        for level, rate in enumerate(report["rates"]):
-            items = trace(level, t, rate, requests, max_tokens)
+    for t in range(traces if traces is not None else H2_TRACES if plan == "h2" else TRACES):
+        for level, make in enumerate(traffic):
+            items = make(t)
             for name, run in block_order(names, block):
                 if not wait_idle(pool):
                     report["stopped"] = f"the pool did not drain before block {block}"
@@ -403,7 +452,7 @@ def environment() -> dict[str, Any]:
             "versions": versions, "gpus": gpus.strip().splitlines()}
 
 
-def run(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = None) -> dict[str, Any]:
     """Register `model`, start one worker per GPU (the tuned engine's grouped path) and measure."""
     from huggingface_hub import snapshot_download
 
@@ -429,7 +478,7 @@ def run(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str,
         sizes = ({"traces": 2, "requests": 3, "max_tokens": (4, 8),
                   "names": [n for n in arms(len(devices)) if parse_arm(n)[1:] in ((8, 0), (1, 0))]}
                  if smoke else {})
-        result = measure(pool, model, deadline_s=deadline, on_row=on_row, **sizes)
+        result = measure(pool, model, deadline_s=deadline, plan=plan, on_row=on_row, **sizes)
     finally:
         pool.close()
     return {"model": model, "revision": revision, **result}
@@ -444,17 +493,18 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q",
 '''
 
 
-def write_kernel(directory: Path, owner: str, commit: str) -> Path:
-    """A private script kernel that installs IronMule at `commit` and runs this file; the report
-    lands in the kernel's output as `rl2_headroom_report.json`."""
+def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1") -> Path:
+    """A private script kernel that installs IronMule at `commit` and runs this file's `plan`; the
+    report lands in the kernel's output as `rl2_headroom_report.json`."""
     if not commit or any(c not in "0123456789abcdef" for c in commit) or len(commit) != 40:
         raise ValueError("commit must be a full 40-character lowercase SHA, so the kernel runs exactly it")
     directory.mkdir(parents=True, exist_ok=True)
     body = (Path(__file__).read_text().replace('\nif __name__ == "__main__":\n    sys.exit(main())\n', "")
             .replace("from __future__ import annotations\n", "", 1))
-    entry = "\nsys.exit(main(['--out', '/kaggle/working/rl2_headroom_report.json']))\n"
+    entry = f"\nsys.exit(main(['--out', '/kaggle/working/rl2_headroom_report.json', '--plan', {plan!r}]))\n"
+    name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}")
     (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
-    metadata = {"id": f"{owner}/ironmule-rl2-headroom", "title": "ironmule-rl2-headroom", "code_file": "run.py",
+    metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
                 "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
                 "enable_internet": True, "machine_shape": "NvidiaTeslaT4", "dataset_sources": [],
                 "competition_sources": [], "kernel_sources": [], "model_sources": []}
@@ -466,6 +516,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
+    parser.add_argument("--plan", choices=("h1", "h2"), default="h1", help="run 1's or run 2's fixed plan")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
     parser.add_argument("--analyse", type=Path, metavar="REPORT", help="print the analysis of a finished report")
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
@@ -476,7 +527,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.write_kernel is not None:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
-        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit))}))
+        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan))}))
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
@@ -484,8 +535,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 0
     if args.out is None:
         parser.error("--out is required to run")
-    report: dict[str, Any] = {"schema": "ironmule.rl2_headroom.v1", "smoke": args.smoke, "started_unix": time.time(),
-                              "env": environment()}
+    report: dict[str, Any] = {"schema": "ironmule.rl2_headroom.v1", "plan": args.plan, "smoke": args.smoke,
+                              "started_unix": time.time(), "env": environment()}
 
     def save(partial: dict[str, Any] | None = None) -> None:
         if partial is not None:
@@ -495,7 +546,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     save()
     work = Path(tempfile.mkdtemp(prefix="ironmule-rl2h-"))
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
-    report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
+    report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save)
     report["analysis"] = analyse(report["rl2h"])
     report["finished_unix"] = time.time()
     save()
