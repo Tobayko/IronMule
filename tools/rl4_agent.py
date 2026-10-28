@@ -247,6 +247,25 @@ def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: fl
     return policy, curve
 
 
+VALIDATION_SEED0 = 30_000        # picks among training seeds; disjoint from training and held-out traffic
+
+
+def train_best(model: PoolModel, capacity_rps: float, *, seeds: int = 4, episodes: int = 12000,
+               lr: float = 0.05, validation_traces: int = 60) -> tuple[Policy, dict[str, Any]]:
+    """Train one policy per seed and keep the one with the lowest weighted cost on validation traffic."""
+    runs = []
+    for seed in range(seeds):
+        policy, curve = train(model, capacity_rps, episodes=episodes, lr=lr, seed=seed)
+        place, order = policy.greedy()
+        costs = evaluate(model, capacity_rps, {"policy": (place, order, 8)}, validation_traces,
+                         seed0=VALIDATION_SEED0)["policy"]
+        runs.append((sum(w * c for w, c in zip(rl2.WEIGHTS, costs)), seed, policy, curve))
+    best = min(runs, key=lambda run: (run[0], run[1]))
+    return best[2], {"validation_cost_per_seed": [run[0] for run in runs], "chosen_seed": best[1],
+                     "first_tenth_cost": statistics.fmean(best[3][:max(1, len(best[3]) // 10)]),
+                     "last_tenth_cost": statistics.fmean(best[3][-max(1, len(best[3]) // 10):])}
+
+
 def evaluate(model: PoolModel, capacity_rps: float, policies: dict[str, tuple[Placer, Orderer, int]],
              traces: int = 200, seed0: int = HELD_OUT_SEED0) -> dict[str, list[float]]:
     """Mean cost per state for each policy on the same held-out traffic."""
@@ -439,7 +458,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     p_train = sub.add_parser("train")
     p_train.add_argument("--model", type=Path, required=True)
     p_train.add_argument("--out", type=Path, required=True)
-    p_train.add_argument("--episodes", type=int, default=6000)
+    p_train.add_argument("--episodes", type=int, default=12000)
+    p_train.add_argument("--seeds", type=int, default=4)
     p_judge = sub.add_parser("judge")
     p_judge.add_argument("--model", type=Path, required=True)
     p_judge.add_argument("--policy", type=Path, required=True)
@@ -462,11 +482,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps(fidelity(model, json.loads(args.report.read_text())), indent=1))
     elif args.command == "train":
         model, capacity = load_model(args.model)
-        policy, curve = train(model, capacity, episodes=args.episodes)
+        policy, summary = train_best(model, capacity, seeds=args.seeds, episodes=args.episodes)
         args.out.write_text(json.dumps(policy.to_json(), indent=1) + "\n")
-        tenth = max(1, len(curve) // 10)
-        print(json.dumps({"first_tenth_cost": statistics.fmean(curve[:tenth]),
-                          "last_tenth_cost": statistics.fmean(curve[-tenth:]), "policy": policy.to_json()}))
+        print(json.dumps({**summary, "policy": policy.to_json()}))
     elif args.command == "judge":
         model, capacity = load_model(args.model)
         policy = Policy.from_json(json.loads(args.policy.read_text()))

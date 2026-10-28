@@ -115,3 +115,10 @@ def test_a_policy_file_carries_a_digest_of_its_weights():
     data["order"][0] = 9.0
     with pytest.raises(ValueError, match="digest"):
         rl4.Policy.from_json(data)
+
+
+def test_training_keeps_the_seed_that_does_best_on_validation_traffic():
+    policy, summary = rl4.train_best(MODEL, 1.0, seeds=2, episodes=150, validation_traces=8)
+    costs = summary["validation_cost_per_seed"]
+    assert len(costs) == 2 and summary["chosen_seed"] == min(range(2), key=lambda i: (costs[i], i))
+    assert isinstance(policy, rl4.Policy)
