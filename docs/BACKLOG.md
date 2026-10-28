@@ -53,6 +53,73 @@ the client's write fails: in STAB1 run 2's burst of 192, 95 of the 128 refused c
 and a short bounded drain before closing, or answering only after the request head arrived, on the same burst.
 **Kill.** No fewer resets, more threads than the 64 workers, or a slower accept loop under the burst.
 
+## The whole machine, unquantized checkpoints, NVIDIA on Kaggle (2026-10-28)
+
+Opened from the maintainer's direction of 2026-10-28: the target is a Kaggle NVIDIA session (Tesla T4, also
+offered as two T4s), the learner should use and tune the whole machine (every GPU, the host's cores, memory) for
+whatever model runs, and checkpoints are not quantized. Every number published so far is a 4-bit checkpoint on one
+GPU, so none of it reaches this box; each entry below needs its own Kaggle run. Nothing here is measured yet.
+
+### HW1 — Serve from every GPU the machine has
+
+**Mechanism.** The server drives one worker on one device; on a "GPU T4 x2" session half the card memory and
+bandwidth idles. One worker per GPU (pinned with `CUDA_VISIBLE_DEVICES`), each with its own unchanged scheduler,
+grouping, recovery and learning, behind join-the-shortest-queue dispatch, which is optimal for identical
+servers with exponential service (Winston 1977, J. Appl. Prob. 14, 181-189; extended by Weber 1978 to service
+times with non-decreasing hazard rate) and a strong heuristic beyond that. A
+request never spans workers, so per-request tokens and plans are what one worker returns today. **Test.** Kaggle T4
+x2, the P3/STAB1 synthetic traffic, one worker against two, paired by trace; the same prompts sent to both workers
+must return the same tokens (same card model, same kernels). **Kill.** Aggregate tokens/s at four or more
+concurrent clients under 1.5x one worker, any token difference between the two workers, or first-content p95 at
+one client worse than one worker beyond the A/A noise.
+
+### HW2 — Split one unquantized model across both T4s (tensor parallel decode)
+
+**Mechanism.** Decode reads every weight once per token, so it is bandwidth-bound: an unquantized 4B checkpoint
+(about 8 GB of bfloat16) needs about 25 ms per token at the T4's 320 GB/s, an 8B one does not fit a 15 GB card at
+all. Sharding each projection across two cards halves the bytes per card at the cost of two all-reduces per
+layer over PCIe (Kaggle's T4s have no NVLink). MLX 0.32's CUDA build loads NCCL at run time from the
+`nvidia-nccl-cu12` wheel and mlx-lm shards supported architectures for `mx.distributed`. The all-reduce changes the
+summation order, so this is a numeric plan (quality gate), never exact. **Test.** First whether
+`mx.distributed.init(backend="nccl")` works on Kaggle's two T4s with the pip wheels; then Qwen 3 4B and 8B bfloat16,
+stock single card (4B) against two-card decode, plus the perplexity gate. **Kill.** NCCL unavailable from the
+wheels, under 1.2x on the 4B, or the gate fails.
+
+### U1 — Unquantized bfloat16 checkpoints on CUDA without native bfloat16
+
+**Mechanism.** Turing and Volta have no bfloat16 arithmetic. For a dense checkpoint the float16 plan casts the
+weights, and a bfloat16 value (8 significant bits) is exactly representable in float16 (11 significant bits)
+whenever its magnitude lies within float16's range, so the plan changes only activation arithmetic when every
+weight is in range, unlike a 4-bit checkpoint whose scales are what gets cast. Stock MLX may already be close to
+bandwidth on single-row decode (its CUDA `gemv` accumulates bfloat16 in float32), so the gain may sit in prefill
+and grouped rows, which go to cuBLAS. **Test.** Kaggle T4: unquantized Qwen 3 0.6B/1.7B/4B and Gemma 3 1B, stock
+against the exact knobs, `float16` and `float32`, plus each plan's quality gate; offline, count the weights a
+float16 cast does not keep exactly. **Kill.** Per plan and checkpoint: not faster than stock, or the gate fails
+(Gemma 3's activations already broke float16 on its 4-bit checkpoint, see the quality table in `BENCHMARKS.md`).
+
+### RL2 — One controller over the whole machine, where a decision has state-dependent headroom
+
+**Mechanism.** The learner should decide for whatever model runs: which GPU takes a request (HW1), how wide a
+group is and how long it waits, how much freed memory MLX may cache (MEM2), how many host threads detokenize.
+**Evidence against a learner by default.** RSI3-LIVE-P3 (contextual bandit, RL, RL with dreaming) and OPT1
+(sequential RL, Dream-RSI) lost to the best fixed setting: where one setting is best in every state, a learner
+can only match it. In input-driven systems, exogenous traffic also inflates policy-gradient variance unless
+policies are compared on the same input sequence (Mao et al., ICLR 2019, arXiv:1807.02264), which the replay
+traces already do. **Test.** After HW1 and MEM2 exist: measure headroom first, the per-state best against the best
+single setting on the same recorded traces (as OPT2-CAL did); train and qualify a learner only where that headroom
+exceeds the A/A noise. **Kill.** Headroom inside the A/A noise for every decision: a fixed policy ships, no learner.
+
+### L2 — A LoRA-tuned small language model as the planner's prior
+
+**Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better
+first test for an unseen model than the planner's current prior. **Evidence against.** Cycles 14 and 15: Gemma 3 1B
+and 4B as planners failed the output contract every time (Markdown, wrong keys). LLAMBO (Liu et al., ICLR 2024,
+arXiv:2402.03921) found an LLM helps Bayesian optimisation mainly as an in-context warm start while observations
+are sparse, without fine-tuning; and there are tens of tune traces per device, not the hundreds a fine-tune needs.
+**Test.** Leave-one-model-out on the stored RSI1/RSI1b traces: tests until the confirmed best, current prior against
+an LM warm start (in-context first, LoRA only if in-context helps). **Kill.** No fewer tests at equal confirmed
+gain, or any malformed proposal reaching hardware.
+
 ## Read this before optimising anything
 
 ### RSI2 — Shorten the paired confirmation where the evidence is already clear (2026-10-05)
