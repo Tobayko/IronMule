@@ -1129,6 +1129,18 @@ H9 measures all three engines in one run, so every combination meets the same tr
 - **Two notes, fixed now:** the reference switches to `kp` partly because KP measured well on this same data,
   which is conservative against the plan. The two parts are two one-sided decisions at 2.5 % each on one run.
 - **Cost:** about 4.2 session hours, about 10 minutes of it the plan's installs at each dense pool start.
+- **Found while it ran, before any of its data was read (2026-10-29, 22:20):** the harness sets each arm's
+  serving policy without `join`, and `join` defaults to off (SERVE8 killed joining for grouped batch-1). So in
+  H9 the dense plan's freed slots were never offered to a newcomer. H9 measures the plan with version 2 and each
+  member ending at its own last token, not with slot reuse. The service now lets a slot-reusing backend take
+  newcomers whatever `join` says; the dense plan's next comparison measures that.
+- **And a race that joining exposed (fixed before H9's data was read):** a join the client sends while the
+  worker is already ending the run reaches the worker after the run. The worker named only the others in
+  `batch_done`, the client treated that as a broken batch and retired the worker, and the stale join then failed
+  the worker's next batch. It was latent since SERVE8, where `join` is off by default; with slot reuse always on
+  it struck. Now the worker drops a join for an ended batch, the client hands back a joiner that streamed
+  nothing, and the service puts it at the front of the queue for the next group. Tests cover each side; the
+  harness's fake worker now speaks the current protocol (tokens as produced, `done` with the last, joins).
 
 
 ### RL8 — Width and order again, now that a grouped request ends with its own last token (opened 2026-10-29)

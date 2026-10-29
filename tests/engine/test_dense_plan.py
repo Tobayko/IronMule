@@ -412,7 +412,7 @@ def test_a_dense_group_admits_a_waiting_request_when_a_member_finishes_through_t
     worker, bridge, plan, tokenizer, _ = _worker_world(monkeypatch, slots=2)
     backend = _InProcessWorker(worker, bridge, tokenizer, capacity=2)
     service = _service(backend)
-    service.policy = ServingPolicy(join=True)
+    service.policy = ServingPolicy()  # the default (join off, SERVE8): the dense plan takes newcomers anyway
 
     def session(rid, text, limit):
         request = GenerationRequest("m", (("user", text),), max_tokens=limit, stream=True, request_id=rid)

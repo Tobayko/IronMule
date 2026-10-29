@@ -5,7 +5,7 @@ import threading
 import pytest
 
 from ironmule_product.backend import MLXWorkerClient
-from ironmule_product.errors import InvalidRequest
+from ironmule_product.errors import BackendUnavailable, InvalidRequest
 from ironmule_product.types import GenerationRequest, ModelSpec
 
 
@@ -128,3 +128,38 @@ def test_a_request_handed_over_mid_batch_is_sent_as_a_join_and_its_events_accept
     assert [row["request_id"] for row in rows] == ["a", "b", "c"]
     assert [command["type"] for command in sent] == ["generate_batch", "join_batch"]
     assert ("c", "token") in delivered and ("c", "done") in delivered
+
+
+def test_a_join_that_arrives_after_the_run_ended_is_handed_back_not_failed(monkeypatch) -> None:
+    """A join sent while the worker was already ending the run reaches it after the run: the worker drops it and
+    names only the others in batch_done. The joiner, with nothing streamed, comes back marked unserved so its
+    caller can run it next; a missing original member is still a broken batch."""
+    for missing, ok in (("c", True), ("b", False)):
+        client = MLXWorkerClient(_spec(), execution_variant="current_engine", engine_configuration="dense_stacked")
+        monkeypatch.setattr(MLXWorkerClient, "ready", property(lambda self: True))
+        sent = []
+        monkeypatch.setattr(client, "_send", lambda command, deadline, sent=sent: sent.append(command))
+
+        def frames(sent=sent, missing=missing):
+            batch = sent[0]["batch_id"]
+            for rid in ("a", "b"):
+                if rid != missing:
+                    yield {"type": "token", "batch_id": batch, "request_id": rid, "text": "x", "token_id": 1,
+                           "prompt_tokens": 1, "completion_tokens": 1}
+                    yield {"type": "done", "batch_id": batch, "request_id": rid, "finish_reason": "length",
+                           "prompt_tokens": 1, "completion_tokens": 1, "variant": "current_engine", "engine": {}}
+            yield {"type": "batch_done", "batch_id": batch, "request_ids": [r for r in ("a", "b") if r != missing]}
+
+        stream = frames()
+        monkeypatch.setattr(client, "_read_event", lambda deadline, on_tick=None, stream=stream: next(stream))
+        handed = [[], [(_request("c", stream=True), None)]]
+        if ok:
+            rows = client.complete_batch([_request("a", stream=True), _request("b", stream=True)],
+                                         joins=lambda handed=handed: handed.pop() if handed else [])
+            assert [(row["request_id"], row.get("unserved", False)) for row in rows] == [
+                ("a", False), ("b", False), ("c", True)]
+            assert rows[2]["events"] == [] and [c["type"] for c in sent] == ["generate_batch", "join_batch"]
+        else:
+            with pytest.raises(BackendUnavailable, match="completion is invalid"):
+                client.complete_batch([_request("a", stream=True), _request("b", stream=True)],
+                                      joins=lambda handed=handed: handed.pop() if handed else [])

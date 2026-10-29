@@ -996,3 +996,48 @@ def test_a_grouped_member_is_done_with_its_last_token_not_when_the_run_ends(monk
     assert sorted(done) == ["a", "b"] and len([e for e in sent if e["type"] == "done"]) == 2  # once each
     assert done["a"]["completion_tokens"] == 2 and done["b"]["completion_tokens"] == 4
     assert done["a"]["engine"]["delivery"] == "streamed" and sent[-1]["type"] == "batch_done"
+
+
+def test_a_join_left_over_from_an_ended_batch_is_dropped_and_the_next_batch_runs(monkeypatch):
+    """A join that reached the worker after its own batch ended stays queued; the next batch drops it (the client
+    handed that request back) instead of failing as a join for another batch."""
+    import queue
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    monkeypatch.setattr(worker, "JOINS", queue.Queue())
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-0", "requests": [
+        {"request_id": "late", "model": "m", "messages": [{"role": "user", "content": "x"}], "max_tokens": 4,
+         "stream": True}]})
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            assert admit(64) == []  # the stale join is not admitted
+            for token in (72, 0):
+                on_tokens[0](token)
+            return [SimpleNamespace(tokens=[72, 0], text="", finish_reason="stop", token_count=2, metadata={})]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": "a", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True}]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    assert sent[-1] == {**sent[-1], "type": "batch_done", "request_ids": ["a"]}

@@ -810,8 +810,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     join = JOINS.get_nowait()
                 except queue.Empty:
                     return rows
-                if join.get("batch_id") != batch_id or not isinstance(join.get("requests"), list):
-                    raise ValueError("join for another batch")
+                if join.get("batch_id") != batch_id:
+                    continue  # it arrived after its own batch ended; the client hands such a request back
+                if not isinstance(join.get("requests"), list):
+                    raise ValueError("invalid join")
                 for request in join["requests"]:
                     row = _render_engine_request(request, model_id, tokenizer, allow_stream=True)
                     messages_by_id[row[0]] = request.get("messages")

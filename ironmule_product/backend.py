@@ -675,6 +675,7 @@ class MLXWorkerClient:
         if not self.can_batch_requests(requests):
             raise InvalidRequest("requests are not eligible for grouped execution")
         request_list = list(requests)
+        initial = len(request_list)
         if cancels is None:
             cancel_list: list[threading.Event | None] = [None] * len(request_list)
         elif (not isinstance(cancels, (list, tuple)) or len(cancels) != len(request_list)
@@ -757,17 +758,25 @@ class MLXWorkerClient:
                     kind = event.get("type")
                     if kind == "batch_done":
                         ids = event.get("request_ids")
-                        if (event.get("batch_id") != batch_id or ids != [r.request_id for r in request_list]
-                                or set(terminals) != set(request_by_id) or self._stdout_buffer):
+                        # A join sent while the worker was already ending the run arrives after it: the worker
+                        # drops it, so it is missing here with nothing streamed, and goes back to the caller.
+                        unserved = {r.request_id for r in request_list[initial:]
+                                    if isinstance(ids, list) and r.request_id not in ids
+                                    and not events_by_id[r.request_id] and r.request_id not in terminals}
+                        if (event.get("batch_id") != batch_id
+                                or ids != [r.request_id for r in request_list if r.request_id not in unserved]
+                                or set(terminals) | unserved != set(request_by_id) or self._stdout_buffer):
                             raise BackendUnavailable("backend batch completion is invalid")
                         memory = event.get("memory")
                         self.last_memory = ({k: v for k, v in memory.items() if type(v) is int and v >= 0}
                                             if isinstance(memory, dict) else None)
-                        rows = [{"request_id": request.request_id,
+                        rows = [{"request_id": request.request_id, "events": [], "metadata": None, "unserved": True}
+                                if request.request_id in unserved else
+                                {"request_id": request.request_id,
                                  "events": events_by_id[request.request_id],
                                  "metadata": terminals[request.request_id]}
                                 for request in request_list]
-                        self.last_batch_metadata = [dict(row["metadata"]) for row in rows]
+                        self.last_batch_metadata = [dict(row["metadata"]) for row in rows if not row.get("unserved")]
                         return rows
                     if kind == "error":  # the worker's own report names the failure (STAB1: it was misread)
                         code = event.get("code")

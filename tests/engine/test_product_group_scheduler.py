@@ -319,3 +319,45 @@ def test_a_dense_group_lets_a_newcomer_take_a_freed_slot_and_other_engines_count
         service._perform_batch(sessions[:2])
         assert backend.joined_rounds == expected, reuses
         assert service._completed == 2 + sum(map(len, expected))
+
+
+
+def test_a_slot_reusing_backend_takes_newcomers_without_the_join_policy_and_others_do_not():
+    for reuses, expected in ((True, [[], ["c"], ["d"]]), (False, [[], [], []])):
+        backend = _SlotTransport(reuses)
+        backend.ended = set()
+        service = _service(backend)
+        service.policy = ServingPolicy()  # join off, the default since SERVE8
+        sessions = [_Session(_request(value), None) for value in ("a", "b", "c", "d")]
+        for waiting in sessions[2:]:
+            service._pending.put(waiting)
+        service._perform_batch(sessions[:2])
+        assert backend.joined_rounds == expected, reuses
+
+
+class _LateJoinTransport(_SlotTransport):
+    """The worker ended the run before the join reached it: the joiner comes back unserved."""
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+        for rid in members:
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+        late = [request.request_id for request, _ in joins()]  # taken just as the run ended
+        self.late = late
+        return ([{"request_id": rid, "events": [], "metadata": {}} for rid in members]
+                + [{"request_id": rid, "events": [], "metadata": None, "unserved": True} for rid in late])
+
+
+def test_a_joiner_the_worker_never_served_goes_back_to_the_front_of_the_queue():
+    backend = _LateJoinTransport(reuses_slots=True)
+    service = _service(backend)
+    service.policy = ServingPolicy()
+    first, second, waiting, behind = (_Session(_request(value), None) for value in ("a", "b", "c", "d"))
+    service._pending.put(waiting)
+    service._pending.put(behind)
+    service._perform_batch([first, second])
+    assert backend.late == ["c", "d"]
+    assert [item.request.request_id for item in service._carry] == ["c", "d"]  # in order, before anything new
+    assert waiting.events.empty() and not waiting.joined and waiting.outcome is None  # no error, not retired
+    assert service._completed == 2 and service._failed == 0 and service._last_batch_size == 2

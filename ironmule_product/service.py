@@ -1166,12 +1166,14 @@ class ProductService:
         consumers: list[threading.Thread] = []
         joined: list[_Session] = []
         finished: set[str] = set()
+        members = [item.request.request_id for item in live]  # every member over the group's life
+        unheard: dict[str, _Session] = {}  # joiners without a frame yet; their consumer starts with the first
         # KB1: the dense plan frees a member's slot when it ends, so a newcomer may take it; every other
         # engine counts members over the group's life, as measured (SERVE8, RL6, LD1-V).
         reuses = getattr(self.backend, "reuses_slots", False) is True
 
         def consume(item: _Session) -> None:
-            queues[item.request.request_id] = queue.Queue()
+            queues.setdefault(item.request.request_id, queue.Queue())
             consumer = threading.Thread(target=self._deliver, name="ironmule-batch-stream", daemon=True,
                                         args=(item, iter(queues[item.request.request_id].get, None), handled))
             consumers.append(consumer)
@@ -1181,10 +1183,13 @@ class ProductService:
             """SERVE8: requests waiting now join the running group while fewer than its capacity
             stream at once; the backend's metadata gate decides as for a new group."""
             taken = []
-            if not self.policy.join:  # RSI4: a learned policy may queue newcomers instead
+            # RSI4: a learned policy may queue newcomers instead. SERVE8 killed joining for grouped batch-1, where
+            # every joiner slows every step; the dense plan's freed slot costs a newcomer about 3 ms a step (KB1-2)
+            # and filling it is the point, so a slot-reusing backend always takes newcomers.
+            if not self.policy.join and not reuses:
                 return taken
-            while ((len(consumers) - len(finished) if reuses else len(consumers)) < self._batch_capacity()
-                   and len(consumers) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
+            while ((len(members) - len(finished) if reuses else len(members)) < self._batch_capacity()
+                   and len(members) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1197,17 +1202,21 @@ class ProductService:
                         self._carry.appendleft(item)  # keeps its place; the scheduler serves it next
                     break
                 item.dispatched_ns = time.monotonic_ns()
-                item.joined, item.width = True, len(consumers) + 1
+                item.joined, item.width = True, len(members) + 1
                 item.group = live[0].group
                 self.note("join", id=item.request.request_id, group=item.group)
                 with self._lock:
                     self._active.add(item.request.request_id)
-                consume(item)
+                queues[item.request.request_id] = queue.Queue()
+                unheard[item.request.request_id] = item
+                members.append(item.request.request_id)
                 joined.append(item)
                 taken.append((item.request, item.backend_cancel))
             return taken
 
         def deliver(request_id: str, event: dict[str, Any]) -> None:
+            if request_id in unheard:
+                consume(unheard.pop(request_id))
             queues[request_id].put(event)
             if event.get("type") == "done":  # STAB1: a finished member ends now, not when its group does
                 queues[request_id].put(None)
@@ -1223,10 +1232,23 @@ class ProductService:
             )
             if not isinstance(rows, list) or len(rows) != len(live) + len(joined):
                 raise BackendUnavailable("model worker returned an invalid batch")
+            handed_back = {row.get("request_id") for row in rows if isinstance(row, dict) and row.get("unserved")}
+            for item in reversed([item for item in joined if item.request.request_id in handed_back]):
+                if unheard.pop(item.request.request_id, None) is None:
+                    raise BackendUnavailable("model worker handed back a request it served")
+                queues.pop(item.request.request_id)
+                joined.remove(item)
+                item.joined, item.width, item.group, item.dispatched_ns = False, 1, None, None
+                self.note("join_returned", id=item.request.request_id)
+                with self._lock:  # it never ran: back to the front of the queue, served by the next group
+                    self._active.discard(item.request.request_id)
+                    self._carry.appendleft(item)
             with self._lock:
                 self._last_batch_size = len(live) + len(joined)
                 self._batch_count += 1
         finally:
+            for item in list(unheard.values()):  # the run failed before they streamed: they report it too
+                consume(unheard.pop(item.request.request_id))
             for request_id in list(queues):
                 queues[request_id].put(None)
             for consumer in consumers:

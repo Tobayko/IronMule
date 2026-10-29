@@ -711,7 +711,7 @@ def test_h9_runs_three_engines_on_the_same_traffic_and_judges_both_parts_as_fixe
     assert len(report["rows"]) == 3 * 3 * 6  # per block: an A/A pair for each of the three engines
     report.update(preflight={"ok": True}, dense_preflight={"ok": True})
     result = rl2.analyse_h9(report, resamples=50)
-    assert result["kp"]["valid"] and result["dense"]["valid"], result
+    assert result["kp"]["valid"] and result["dense"]["valid"], (result["kp"].get("problems"), result["dense"].get("problems"))
     assert result["dense_reference"] == ("kp:shortest/w2/g0/sjf" if result["kp_ships"] else "tuned:shortest/w2/g0/sjf")
     assert result["dense"]["best_dense"] == "dense:shortest/w8/g0/sjf"
     assert set(result["dense_against_each"]) == {"tuned:shortest/w2/g0/sjf", "kp:shortest/w2/g0/sjf"}
