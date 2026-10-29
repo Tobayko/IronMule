@@ -123,20 +123,46 @@ def test_a_failed_stacked_step_restarts_inside_the_plan_and_changes_no_answer():
     runtime = _runtime(model, plan)
     prompts = [[5, 9, 13], [3, 7, 11, 15, 19], [8, 6, 4, 2]]
     expected = [r.tokens for r in runtime.serve([Request(prompt_ids=ids, max_tokens=7) for ids in prompts])]
-    original = runtime.backend.step_group
+    original = runtime.backend.steps_group  # every stacked step, chained or not, goes through it
     calls = {"n": 0}
 
-    def flaky(states, tokens):
+    def flaky(states, tokens, count):
         calls["n"] += 1
-        if calls["n"] == 3:
+        if calls["n"] == 2 and len(states) > 1:
             raise RuntimeError("injected")
-        return original(states, tokens)
+        return original(states, tokens, count)
 
-    runtime.backend.step_group = flaky
+    runtime.backend.steps_group = flaky
     again = [r.tokens for r in runtime.serve([Request(prompt_ids=ids, max_tokens=7) for ids in prompts])]
     assert again == expected and runtime.telemetry.fallbacks == 1
     assert runtime.backend.free_slots() == plan.slots
 
+
+
+def test_a_whole_executor_failure_replays_in_the_same_slots_and_frees_them_after(monkeypatch):
+    """`Runtime`'s safety net: the executor's `finally` returns every slot, then the sequential path replays the
+    sessions in the slots they still name. That is safe only because the replay prefills nothing, so no other
+    request can take a slot in between; this pins it."""
+    model = _tiny()
+    plan = _plan(model)
+    runtime = _runtime(model, plan)
+    prompts = [[5, 9, 13], [3, 7, 11, 15, 19], [8, 6, 4, 2]]
+    expected = [r.tokens for r in runtime.serve([Request(prompt_ids=ids, max_tokens=7) for ids in prompts])]
+    prefills, original_prefill = [], runtime.backend.prefill
+    sweeps, original_sweep = {"n": 0}, dp.DenseStackedExecutor._sweep
+
+    def failing_sweep(self):
+        sweeps["n"] += 1
+        if sweeps["n"] == 2:  # between rounds, outside the per-group fallback
+            raise RuntimeError("injected")
+        original_sweep(self)
+
+    monkeypatch.setattr(dp.DenseStackedExecutor, "_sweep", failing_sweep)
+    monkeypatch.setattr(runtime.backend, "prefill", lambda *a: prefills.append(a) or original_prefill(*a))
+    again = runtime.serve([Request(prompt_ids=ids, max_tokens=7) for ids in prompts])
+    assert [r.tokens for r in again] == expected and runtime.telemetry.fallbacks == 1
+    assert "executor: RuntimeError: injected" in runtime.telemetry.fallback_reasons
+    assert len(prefills) == len(prompts) and runtime.backend.free_slots() == plan.slots
 
 def test_a_cancelled_request_frees_its_slot_and_the_others_keep_their_answers():
     from ironmule.executor import TokenStream
@@ -196,3 +222,69 @@ def test_the_product_bridge_serves_the_dense_plan_at_width_eight_and_lets_joins_
     assert [r.tokens for r in eight] == alone and eight[0].metadata["max_realised_width"] == 8
     with pytest.raises(ValueError, match="one-shot"):
         bridge.generate_many(prompts[:2], 6, boundaries=[[1], None])
+
+
+def test_the_worker_streams_a_lone_dense_batch_and_lets_a_request_join_it(monkeypatch):
+    """H8 run 1: the client sends the dense engine lone streamed batches (it streams batches), so the worker must
+    run its groups live -- streamed, joinable -- as it does the current profile's, not refuse them."""
+    import queue
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    class Detokenizer:
+        def __init__(self):
+            self.pending = ""
+
+        def reset(self):
+            self.pending = ""
+
+        def add_token(self, token):
+            self.pending += chr(32 + token % 90)
+
+        def finalize(self):
+            pass
+
+        @property
+        def last_segment(self):
+            segment, self.pending = self.pending, ""
+            return segment
+
+    class Tokenizer(_Tokenizer):
+        @property
+        def detokenizer(self):
+            return Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return self.encode(messages[0]["content"])
+
+    model = _tiny()
+    plan = _plan(model)
+    identity = SimpleNamespace(to_dict=lambda: {"identity_sha256": "a" * 64})
+    bridge = CurrentEngineBridge(_runtime(model, plan), identity=identity, knobs=Knobs(), profile_available=False,
+                                 profile_source="dense_numeric_plan", configuration="dense_stacked",
+                                 historical_configuration_candidate=None, dense_plan={"kernel_sha256": dp.KERNEL_SHA256})
+    tokenizer = Tokenizer()
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    monkeypatch.setattr(worker, "JOINS", queue.Queue())
+
+    def request(rid, text):
+        return {"request_id": rid, "model": "m", "messages": [{"role": "user", "content": text}], "max_tokens": 6,
+                "stream": True}
+
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [request("c", "joined later")]})
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [request("a", "a lone stream")]}
+    worker._run_engine_batch(command, "m", tokenizer, bridge, {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    for rid, text in (("a", "a lone stream"), ("c", "joined later")):
+        streamed = [event["token_id"] for event in sent if event["type"] == "token" and event["request_id"] == rid]
+        assert streamed == bridge.generate(tokenizer.encode(text), 6).tokens
+    done = [event for event in sent if event["type"] == "done"]
+    assert sorted(d["request_id"] for d in done) == ["a", "c"]
+    assert all(d["engine"]["delivery"] == "streamed" for d in done)
+    assert sent[-1]["type"] == "batch_done" and bridge.free_slots() == plan.slots

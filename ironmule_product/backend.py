@@ -29,6 +29,7 @@ MAX_PROTOCOL_LINE = 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
 STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
 DEFAULT_TIMEOUT = 120.0
+DENSE_STARTUP_TIMEOUT = 600.0  # KB1: the dense plan compiles and probes every kernel shape before it is ready
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4

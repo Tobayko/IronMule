@@ -14,14 +14,16 @@ of an unquantized Qwen 3 model with IronMule's own kernels:
 
 Prefill stays MLX's own, one request at a time. The plan changes answers against today's engine, so it is
 opt-in like every numeric plan, and it is installed only on a model whose own weights pass a load-time probe:
-one, three and eight stacked rows bit-identical, and the row kernel within tolerance of a float32 reference.
+every stacked width bit-identical to one row, and the row kernel within tolerance of a float32 reference.
 KB1-1 measured it on a Tesla T4 with Qwen 3 1.7B bf16: exact within the plan, eight requests 3.8x faster than
-today's grouping, the numeric plans' quality gate passed on the decode path; one request alone 18 % slower.
+today's grouping, the numeric plans' quality gate passed on the decode path. KB1-2: with the pick kept on the card
+and one host read every 4 steps (`READBACK`), one request alone runs at 0.93x (short prompt) and 0.99x (long) of
+today's tuned decode, and each further row costs about 3 ms.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import hashlib
 import threading
 from typing import Any, Callable, Sequence
@@ -359,8 +361,9 @@ def refuse(model: Any) -> str | None:
 
 def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_ROWS,
             capacity: int = 2048) -> tuple[DensePlan, dict[str, Any]]:
-    """Build the plan for `model`, or refuse. The probe on the model's own weights must find one, three and eight
-    stacked rows bit-identical, and the row kernel within tolerance of a float32 reference."""
+    """Build the plan for `model`, or refuse. The probe on the model's own weights must find every stacked width
+    bit-identical to one row, and the row kernel within tolerance of a float32 reference. Probing every width
+    also compiles every kernel shape the plan serves with, so no request waits for a compile."""
     from .numeric_plans import CUDA_PRE_AMPERE, device_class
 
     if device_class(device_info) != CUDA_PRE_AMPERE:
@@ -375,8 +378,8 @@ def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_
 
 
 def probe(plan: DensePlan) -> dict[str, Any]:
-    """One step at distinct positions in distinct slots, at one, three and eight rows, compared bit for bit; and
-    the q projection against a float32 reference."""
+    """One step at distinct positions in distinct slots, at every width from one row to all of them, compared bit
+    for bit; and the q projection against a float32 reference."""
     import mlx.core as mx
 
     rows = min(MAX_ROWS, plan.slots)
@@ -386,7 +389,7 @@ def probe(plan: DensePlan) -> dict[str, Any]:
     alone = [plan.forward(tokens[i:i + 1], slots[i:i + 1], positions[i:i + 1]) for i in range(rows)]
     mx.eval(*alone)
     identical = True
-    for width in sorted({1, min(3, rows), rows}):
+    for width in range(1, rows + 1):
         stacked = plan.forward(tokens[:width], slots[:width], positions[:width])
         mx.eval(stacked)
         identical = identical and all(bool(mx.array_equal(stacked[i], alone[i][0]).item()) for i in range(width))
@@ -405,22 +408,20 @@ class DenseState:
     offset: int
 
 
-@dataclass
-class _Handle:
-    logits: Any
-    row: int
-    state: DenseState
-    pick: Any = field(default=None)
+READBACK = 4  # steps chained before one host read (KB1-2: 17.3 ms per step at one row, today's tuned 18.6)
 
 
 class DenseBackend:
     """The executor's `DecodeBackend` over a `DensePlan`: prefill writes a request's MLX prefill into a free slot;
     `step` is the plan's one-row forward and `step_group` its stacked forward, so a fallback or a sequential finish
-    stays inside the plan; `reset_state` only moves the position back."""
+    stays inside the plan; `reset_state` and `rewind` only move the position. A handle is `((None, next state),
+    pick)`, the shape the executor's chained readback reads; `steps` chains `readback` steps with every pick fed
+    to the next on the card and one host read at the end (the same forwards, so the same tokens)."""
 
-    def __init__(self, plan: DensePlan, eos_ids: Sequence[int]):
+    def __init__(self, plan: DensePlan, eos_ids: Sequence[int], readback: int = READBACK):
         self.plan = plan
         self.eos_ids = tuple(eos_ids)
+        self.readback = readback
         self._free = list(range(plan.slots))
         self._lock = threading.Lock()
 
@@ -460,24 +461,50 @@ class DenseBackend:
     def reset_state(self, base_state: DenseState, offset: int) -> DenseState:
         return DenseState(base_state.slot, offset)
 
-    def step(self, state: DenseState, token: int, capacity: int) -> _Handle:
+    def step(self, state: DenseState, token: int, capacity: int) -> Any:
         return self.step_group([state], [token])[0]
 
-    def step_group(self, states: Sequence[DenseState], tokens: Sequence[int]) -> list[_Handle]:
+    def step_group(self, states: Sequence[DenseState], tokens: Sequence[int]) -> list[Any]:
+        return [chain[0] for chain in self.steps_group(states, tokens, 1)]
+
+    def steps(self, state: DenseState, token: int, capacity: int, count: int) -> list[Any]:
+        return self.steps_group([state], [token], count)[0]
+
+    def steps_group(self, states: Sequence[DenseState], tokens: Sequence[int], count: int) -> list[list[Any]]:
+        """`count` stacked steps, each fed the previous picks on the card; one chain of handles per state."""
         import mlx.core as mx
 
-        logits = self.plan.forward(mx.array(list(tokens), mx.uint32), mx.array([s.slot for s in states], mx.int32),
-                                   mx.array([s.offset for s in states], mx.int32))
-        picks = mx.argmax(logits, axis=-1)
-        return [_Handle(logits, i, DenseState(s.slot, s.offset + 1), picks[i]) for i, s in enumerate(states)]
+        current = mx.array(list(tokens), mx.uint32)
+        slots = mx.array([s.slot for s in states], mx.int32)
+        chains: list[list[Any]] = [[] for _ in states]
+        for k in range(count):
+            positions = mx.array([s.offset + k for s in states], mx.int32)
+            picks = mx.argmax(self.plan.forward(current, slots, positions), axis=-1)
+            for i, s in enumerate(states):
+                chains[i].append(((None, DenseState(s.slot, s.offset + k + 1)), picks[i]))
+            current = picks.astype(mx.uint32)
+            if k + 1 < count:
+                mx.async_eval(current)
+        return chains
 
-    def complete(self, handles: Sequence[_Handle]) -> None:
+    def complete(self, handles: Sequence[Any]) -> None:
         import mlx.core as mx
 
-        mx.eval(*[h.pick for h in handles])
+        mx.eval(*[pick for _, pick in handles])
 
-    def read(self, handle: _Handle) -> tuple[int, DenseState]:
-        return int(handle.pick.item()), handle.state
+    def complete_chain(self, chain: Sequence[Any]) -> None:
+        self.complete(chain)
+
+    def complete_chains(self, chains: Sequence[Sequence[Any]]) -> None:
+        self.complete([handle for chain in chains for handle in chain])
+
+    def read(self, handle: Any) -> tuple[int, DenseState]:
+        (_, state), pick = handle
+        return int(pick.item()), state
+
+    def rewind(self, state: DenseState, offset: int) -> DenseState:
+        """Back to `offset` after a chain ran past EOS or the limit: FA2 never reads beyond a row's position."""
+        return DenseState(state.slot, offset)
 
     def release(self, state: Any) -> None:
         slot = getattr(state, "slot", None)
@@ -509,6 +536,15 @@ class DenseStackedExecutor(_executor_base()):  # type: ignore[misc]
 
     def _step_group(self, group: list[Any], capacity: int):
         return self.backend.step_group([s.state for s in group], [s.tokens[-1] for s in group])
+
+    def _chain_group(self, group: list[Any], capacity: int):
+        """Chained readback for the whole stacked group (as the tuned engine's SERVE1 chains a session): as many
+        steps as every member still needs, at most `readback`, with one host read."""
+        every = getattr(self.backend, "readback", 1)
+        count = min([every] + [s.max_tokens - len(s.tokens) for s in group])
+        if count < 2:
+            return None
+        return self.backend.steps_group([s.state for s in group], [s.tokens[-1] for s in group], count)
 
     def _sweep(self) -> None:
         for session in [s for s in self._owned if s.done]:

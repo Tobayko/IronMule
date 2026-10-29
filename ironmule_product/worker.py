@@ -641,6 +641,9 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
 # Engine configurations whose worker accepts grouped requests: the historical throughput
 # candidates (buffered) and the current profile's streaming groups (SERVE4).
 BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked"})
+# The ones whose groups stream, take joins and stop on cancel (SERVE4, SERVE8): the client sends them lone
+# streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
+STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked"})
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -750,9 +753,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                       selection: dict[str, Any] | None = None) -> None:
     batch_id = command.get("batch_id")
     requests = command.get("requests")
-    # SERVE4: the current-profile engine streams every grouped request's tokens as they are
-    # read back; the historical throughput configurations keep their buffered completion.
-    live = rendered_override is None and engine_bridge.metadata().get("configuration") == "current_profile"
+    # SERVE4: the current-profile engine and the dense plan stream every grouped request's tokens as
+    # they are read back; the historical throughput configurations keep their buffered completion.
+    live = (rendered_override is None
+            and engine_bridge.metadata().get("configuration") in STREAMED_BATCH_CONFIGURATIONS)
     if (not isinstance(batch_id, str) or not 1 <= len(batch_id) <= 256
             or command.get("variant") not in {"current_engine", "automatic"} or not isinstance(requests, list)
             or not (1 if live else 2) <= len(requests) <= 32):

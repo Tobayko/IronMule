@@ -694,6 +694,8 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
             out["outcome"] = "timeout"
         except ProductError as exc:
             out["error"] = exc.code
+        except Exception as exc:  # noqa: BLE001 - any other failure is still this request's outcome
+            out["error"] = type(exc).__name__
         out["end_s"] = time.monotonic() - scheduled
         if out["outcome"] == "ok":
             out["digest"] = hashlib.sha256(json.dumps(ids).encode()).hexdigest()
@@ -1064,11 +1066,20 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
         for engine in order:
             pool = _placement_pool(start(engine))
             try:
-                warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards),
-                              deadline_s)
+                # Run 2: both engines warm with the same burst of eight mixed-length requests per card, so neither
+                # pays its first compiles (bodies per capacity; the plan's kernels compile in its load probe) in
+                # a timed cell.
+                warm = replay(pool, model, [{"offset_s": 0.0, "prompt": i % len(PROMPTS), "long": i % 2 == 1,
+                                             "max_tokens": 8} for i in range(8 * len(pool.shards))], deadline_s)
                 report["engines"].setdefault(engine, []).append(
-                    {"round": r, "warmup_ok": sum(w["outcome"] == "ok" for w in warm),
-                     "execution": pool.health().get("execution"), "devices": list(pool.devices)})
+                    {"round": r, "warmup_ok": sum(w.get("outcome") == "ok" for w in warm),
+                     "warmup_failed": sum(w.get("outcome") not in COSTED_OUTCOMES for w in warm),
+                     "execution": pool.health().get("execution"), "devices": list(pool.devices),
+                     "engine": _engine_metadata(pool)})
+                if report["engines"][engine][-1]["warmup_failed"]:  # run 1: a pool that fails is not measured
+                    report["stopped"] = f"the {engine} pool failed a warm-up request"
+                    report["stopped_health"] = [shard.health() for shard in getattr(pool, "shards", [pool])]
+                    return report
                 if capacity is None:
                     if engine != "tuned":  # calibrate on the reference engine first, so traffic never depends on the plan
                         pool.close()
@@ -1101,6 +1112,20 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
     return report
 
 
+COSTED_OUTCOMES = ("ok", "timeout", "rejected")  # H8 run 2: anything else is a defect of the path under test
+
+
+def _engine_metadata(pool: Any) -> list[dict[str, Any]]:
+    """What each card's worker reported it runs: knobs, where they came from, the plan (no request data)."""
+    rows = []
+    for shard in getattr(pool, "shards", [pool]):
+        payload = getattr(getattr(shard, "backend", None), "ready_payload", None) or {}
+        engine = payload.get("engine") or {}
+        rows.append({key: engine.get(key) for key in ("configuration", "profile_source", "selected_knobs",
+                                                       "dense_plan")})
+    return rows
+
+
 def analyse_h8(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
     """H8's decisions, as fixed in BACKLOG before data."""
     rows, deadline = report.get("rows", []), float(report.get("deadline_s") or 120)
@@ -1120,6 +1145,17 @@ def analyse_h8(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0
     plain = [row for row in rows if row["engine"] == "dense" and row.get("execution") != "numeric@dense"]
     if plain:
         problems.append(f"{len(plain)} dense cells did not run the dense plan")
+    # Fixed after run 1's data and before run 2's (run 1: every dense request failed with a product error and
+    # the run still read valid): a request that fails, or ends without an outcome, is a defect of the path under
+    # test, not a cost; only timeouts and rejections are costs.
+    failures: dict[str, dict[str, int]] = {}
+    for row in rows:
+        for request in row["requests"]:
+            if request.get("outcome") not in COSTED_OUTCOMES:
+                code = str(request.get("error") or request.get("outcome") or "no outcome")
+                failures.setdefault(row["engine"], {})[code] = failures.setdefault(row["engine"], {}).get(code, 0) + 1
+    if failures:
+        problems.append(f"{sum(sum(c.values()) for c in failures.values())} requests failed: {failures}")
     cells = _cell_costs(rows, deadline)
     complete = [t for t in sorted({row["trace"] for row in rows})
                 if all((level, t, name, 0) in cells for level in levels for name in names)
@@ -1170,7 +1206,7 @@ def analyse_h8(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0
 def run_h8(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
     from huggingface_hub import snapshot_download
 
-    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
     from ironmule_product.device_pool import cuda_devices, start_pool
     from ironmule_product.state import ProductStore
 
@@ -1185,15 +1221,63 @@ def run_h8(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[s
     spec = store.model(model)
     devices = cuda_devices() or [None]
 
-    def start(engine: str) -> Any:
+    def start(engine: str) -> Any:  # one startup limit for both: startup is not in the cost (run 2)
         return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
             spec, execution_variant="current_engine", engine_configuration=ENGINE_CONFIGURATIONS[engine],
-            cuda_device=device), ordered_service())
+            cuda_device=device, startup_timeout=DENSE_STARTUP_TIMEOUT), ordered_service())
 
     deadline = float(store.settings()["request_timeout_s"] or 120)
+    preflight = dense_preflight(str(spec.snapshot_path), devices[0])
+    if not preflight.get("ok"):
+        return {"model": model, "revision": revision, "failed": "dense preflight", "preflight": preflight}
     sizes = {"traces": [H8_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else {}
     result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, **sizes)
-    return {"model": model, "revision": revision, **result}
+    return {"model": model, "revision": revision, "preflight": preflight, **result}
+
+
+_PREFLIGHT = r"""
+import json, sys, time, traceback
+out = {"ok": False}
+try:
+    import mlx.core as mx
+    from mlx_lm import load
+    from ironmule.dense_plan import install
+    from ironmule.runtime import Engine, Knobs
+    from ironmule.service import DenseStackedMode, Request, Runtime
+    model, tokenizer = load(sys.argv[1])
+    started = time.perf_counter()
+    plan, out["record"] = install(model, mx.device_info() if mx.cuda.is_available() else None)
+    out["install_s"] = time.perf_counter() - started
+    runtime = Runtime(Engine(model, tokenizer, Knobs()), tokenizer, mode=DenseStackedMode(plan))
+    prompts = [tokenizer.encode(text) for text in json.loads(sys.argv[2])]
+    alone = [runtime.serve([Request(prompt_ids=ids, max_tokens=16)])[0].tokens for ids in prompts]
+    started = time.perf_counter()
+    together = [r.tokens for r in runtime.serve([Request(prompt_ids=ids, max_tokens=16) for ids in prompts])]
+    out["together_s"] = time.perf_counter() - started
+    out["together_equals_alone"] = together == alone
+    out["free_slots_after"] = runtime.backend.free_slots()
+    out["ok"] = out["together_equals_alone"] and out["free_slots_after"] == plan.slots
+except Exception:
+    out["error"] = traceback.format_exc(limit=12)
+print(json.dumps(out))
+"""
+
+
+def dense_preflight(snapshot: str, device: str | None, timeout_s: float = 900.0) -> dict[str, Any]:
+    """H8 run 2: before any pool starts, the dense plan installs on one GPU in a process of its own and serves
+    three requests together as it serves them alone; on failure the run stops with the error (run 1 spent its
+    session on a path that never served). The traceback stays in the private kernel output."""
+    environment = dict(os.environ, **({"CUDA_VISIBLE_DEVICES": device} if device is not None else {}))
+    try:
+        done = subprocess.run([sys.executable, "-c", _PREFLIGHT, snapshot, json.dumps(list(PROMPTS[:3]))],
+                              capture_output=True, text=True, timeout=timeout_s, env=environment)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"no answer in {timeout_s:.0f} s"}
+    lines = [line for line in done.stdout.splitlines() if line.startswith("{")]
+    try:
+        return json.loads(lines[-1])
+    except (IndexError, ValueError):
+        return {"ok": False, "error": f"exit {done.returncode}", "stderr_tail": done.stderr[-4000:]}
 
 
 REPOSITORY = "https://github.com/Tobayko/IronMule"

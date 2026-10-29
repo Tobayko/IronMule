@@ -564,9 +564,47 @@ def test_h8_runs_both_engines_pools_by_round_and_judges_the_dense_plan_against_t
     result = rl2.analyse_h8(report, resamples=50)
     assert result["valid"], result
     assert result["best_dense"] in rl2.arms_h8()[1:] and set(result["(2) no harm in any state"]["per_state"]) == {"0", "1", "2"}
+    assert all(e["warmup_ok"] == 16 and e["warmup_failed"] == 0 and len(e["engine"]) == 2
+               for rounds in report["engines"].values() for e in rounds)  # eight per card, both engines
+    saved = dict(report["rows"][0]["requests"][0])
+    report["rows"][0]["requests"][0].update(outcome="failed", error="backend_unavailable")  # run 1's defect
+    problems = rl2.analyse_h8(report, resamples=50)["problems"]
+    assert problems == [f"1 requests failed: {{'{report['rows'][0]['engine']}': {{'backend_unavailable': 1}}}}"]
+    report["rows"][0]["requests"][0] = {}  # a client that ended without an outcome counts too
+    assert "no outcome" in rl2.analyse_h8(report, resamples=50)["problems"][0]
+    report["rows"][0]["requests"][0] = saved
     report["rows"][-1]["execution"] = "exact"  # a dense cell that did not run the plan invalidates the run
     for row in report["rows"]:
         if row["engine"] == "dense":
             row["execution"] = "exact"
             break
     assert not rl2.analyse_h8(report, resamples=50)["valid"]
+
+
+def test_h8_stops_when_a_pool_answers_no_warm_up_request(monkeypatch):
+    class Pool:
+        devices = ["0"]
+
+        @property
+        def shards(self):
+            return [self]
+
+        def health(self):
+            return {"execution": "numeric@dense", "ready": False}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(rl2, "_placement_pool", lambda pool: pool)
+    monkeypatch.setattr(rl2, "replay", lambda pool, model, items, deadline_s: [
+        {"index": i, "outcome": "failed", "error": "backend_unavailable"} for i in range(len(items))])
+    report = rl2.measure_h8(lambda engine: Pool(), "m", deadline_s=30, traces=[55], rounds=1, requests=3,
+                            max_tokens=(2, 3))
+    assert report["stopped"] == "the tuned pool failed a warm-up request" and not report["rows"]
+    assert report["stopped_health"] == [{"execution": "numeric@dense", "ready": False}]
+    assert not rl2.analyse_h8(report, resamples=10)["valid"]
+
+
+def test_the_dense_preflight_reports_why_the_plan_did_not_install(tmp_path):
+    result = rl2.dense_preflight(str(tmp_path / "no-snapshot"), None, timeout_s=300)
+    assert result["ok"] is False and result["error"]

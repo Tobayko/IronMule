@@ -107,3 +107,17 @@ def test_start_without_a_gpu_picks_a_small_model_and_asks_before_dequantize(
     from ironmule_product.state import ProductStore
     timeout = ProductStore(tmp_path / "state").settings()["request_timeout_s"]
     assert timeout == (product_cli.CPU_REQUEST_TIMEOUT_S if cpu_only else 120)
+
+
+def test_the_dense_engine_gets_its_configuration_and_time_to_probe_its_kernels():
+    import ironmule_product.cli as product_cli
+    from ironmule_product.backend import DEFAULT_TIMEOUT, DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from ironmule_product.types import ModelSpec
+
+    assert product_cli._engine_options("dense") == {"engine_configuration": "dense_stacked",
+                                                    "startup_timeout": DENSE_STARTUP_TIMEOUT}
+    assert product_cli._engine_options("rust2") == {"engine_configuration": "rust2"}
+    assert product_cli._engine_options("tuned") == product_cli._engine_options("reference") == {}
+    spec = ModelSpec("local/test", "revision", "/models/test", 1)
+    client = MLXWorkerClient(spec, execution_variant="current_engine", **product_cli._engine_options("dense"))
+    assert client.startup_timeout == DENSE_STARTUP_TIMEOUT > DEFAULT_TIMEOUT

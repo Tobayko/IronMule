@@ -190,6 +190,17 @@ def _stop_group(process: Any) -> None:
             continue
 
 
+def _engine_options(engine: str) -> dict[str, Any]:
+    """The worker client's options that `--engine` sets beyond the execution variant."""
+    from .backend import DENSE_STARTUP_TIMEOUT
+
+    if engine == "rust2":
+        return {"engine_configuration": "rust2"}
+    if engine == "dense":  # KB1: its probe compiles every kernel shape before the worker is ready
+        return {"engine_configuration": "dense_stacked", "startup_timeout": DENSE_STARTUP_TIMEOUT}
+    return {}
+
+
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
     choice = parser.add_mutually_exclusive_group(required=True)
@@ -293,8 +304,7 @@ def serve(argv: list[str]) -> int:
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
-                                       **({"engine_configuration": {"rust2": "rust2", "dense": "dense_stacked"}[args.engine]}
-                                          if args.engine in ("rust2", "dense") else {}))
+                                       **_engine_options(args.engine))
             if len(devices) > 1:
                 from .device_pool import start_pool
                 service = start_pool(store, spec, devices, make_backend, ProductService)

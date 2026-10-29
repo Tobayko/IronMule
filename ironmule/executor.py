@@ -154,7 +154,7 @@ class _Runner:
                     when = now()
                     for token in tokens:
                         self._record_token(session, token, when)
-                        if session.done:
+                        if session.done or _stop_if_cancelled(session):
                             break
                     session.state = self.backend.rewind(state, len(session.prompt_ids) + len(session.tokens) - 1)
                     continue
@@ -176,10 +176,11 @@ class _Runner:
         self._accept_chain(session, chain, now())
 
     def _accept_chain(self, session: Session, chain: list, when: int) -> None:
+        # A chain read ahead; a stream cancelled at one of its tokens still ends right there (RSI3-LIVE-P2).
         for handle in chain:
             token, _ = self.backend.read(handle)
             self._record_token(session, token, when)
-            if session.done:
+            if session.done or _stop_if_cancelled(session):
                 break
         session.state = self.backend.rewind(chain[-1][0][1], len(session.prompt_ids) + len(session.tokens) - 1)
 

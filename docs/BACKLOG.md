@@ -864,6 +864,30 @@ Eight prompts as in KB1-1, 32 steps, widths 1 to 8, five alternating rounds, wit
 - **Recorded:** each variant's milliseconds per step and per token at widths 1-8. The cost per further row is
   what RL7's simulator and the re-derivation of RL6's width need.
 
+**Result, KB1-2 run 1 (2026-10-29, kernel `tobayko/ironmule-cuda-probe-kb12` at
+`8bbe93a9eb658ce4aa0210d27c459265e185a06d`): descriptive only, as amended above.** All three variants were exact
+across widths, and (ii) and (iii) bit-identical to (i). In the server-style loop one row took 16.7-17.5 ms and
+eight rows 38.9-40.8 ms.
+
+**Result, KB1-2 run 2 (2026-10-29, `KB1-2-run2-20261029`, kernel `tobayko/ironmule-cuda-probe-kb12` version 2 at
+`aea9a2a65169063275f8c64b132490f6dd5e64be`, 0.17 session hours): (d) is closed; every variant is exact.** Same
+machine, model and revision as KB1-1 (MLX 0.32.4, mlx-lm 0.31.3). Every variant was bit-identical across one,
+three and eight rows, and (ii) and (iii) matched (i) on all 256 compared logit rows, so none needed a gate of its
+own. One row against today's tuned decode on the same prompt (18.61 ms short, 21.10 ms long):
+
+| variant | short, ratio [95 %] | long, ratio [95 %] | ms per step at widths 1 / 2 / 4 / 8 |
+| --- | --- | --- | --- |
+| (i) KB1-1's plan | 0.931 [0.922, 0.937] | 0.988 [0.984, 0.992] | 17.31 / 21.31 / 26.07 / 37.07 |
+| (ii) one row per warp | 0.934 [0.921, 0.950] | 0.987 [0.982, 0.991] | 17.28 / 21.30 / 26.59 / 38.54 |
+| (iii) (ii) compiled | 0.894 [0.887, 0.901] | 0.964 [0.961, 0.967] | 16.63 / 21.03 / 26.00 / 38.64 |
+
+KB1-1's 18 % single-row loss was its synchronised loop: in the server-style loop (pick on the card, host read
+every 4 steps) even (i) beats today's tuned decode at one row. Each further row costs about 3 ms (16.6 to 38.6 ms
+from one row to eight), against 17-19 ms per extra session for grouped batch-1 (HW4). The library's backend now
+runs (i) with that loop (`DenseBackend.steps_group`, 4 steps per host read); compiling it, (iii)'s further 4 %,
+needs a functional pool update first, since `DensePlan.forward` writes its slots in place. It is open as a next
+step and is not shipped. Still owed: the ledger entry.
+
 **H8: the dense plan through the product (fixed 2026-10-29 before its data; `tools/rl2_headroom.py --plan h8`,
 Kaggle T4 x2, about 2 session hours).** `--engine dense` serves the plan on the tuned engine's worker path. Its
 slot-pool executor and bridge are in `ironmule/dense_plan.py`, `ironmule_product/engine_bridge.py` and the worker,
@@ -886,6 +910,41 @@ engine, its first arm runs at the start and end of every block (A/A). The cost i
 - **Verdict:** (1) and (2) together let the dense plan be recommended for this setup as an opt-in numeric plan.
   The recommendation names the gain and the answer change. If (2) fails, it stays opt-in for throughput with its
   cost documented, and the single-row speed (KB1-2) comes first.
+
+**Result, H8 run 1 (2026-10-29, kernel `tobayko/ironmule-rl2-headroom-h8` at
+`aea9a2a65169063275f8c64b132490f6dd5e64be`, 1.46 session hours): invalid; the dense plan never served.** All 1,152
+dense requests failed with `backend_unavailable`, the warm-ups included; all 768 of the tuned engine succeeded. The
+cause was in the product path, not the plan: `MLXWorkerClient` sends the dense engine lone streamed batches (it
+streams batches, like the tuned engine), but the worker treated only the tuned engine's batches as streamed and
+refused the rest as invalid; the client reports a refused batch as `backend_unavailable`. A worker that failed to
+start would report the same code, so run 1 does not show whether the plan installed on the cards; run 2's preflight
+checks that first. The worker now streams both (`STREAMED_BATCH_CONFIGURATIONS`). The test that
+reproduces the refusal runs the worker's batch path on the dense bridge. The harness's fake worker served such
+batches anyway, which is why the H8 harness test missed it. The analysis read the run as valid: it charged failed
+requests as a cost, and the 14 % "loss" it reported is that cost, not a measurement.
+
+*Amended 2026-10-29 after run 1's data and before run 2's; post hoc for run 1. No decision rule changes. The
+second agent reviewed it before run 2.*
+- **Validity:** a request that fails, or ends without an outcome, invalidates the run; only timeouts and rejections
+  are costs. The analysis reports failures per engine and error code.
+- **Stop rules in the harness:** before any pool starts, the plan installs on one card in a process of its own and
+  serves three requests together as it serves them alone, or the run stops with the error and the install time.
+  A pool that fails a warm-up request stops the run with its workers' health.
+- **Equal warm-up and startup:** both engines warm with the same burst of eight mixed-length requests per card,
+  and both get the same 600 s startup limit; startup is not in the cost. The plan's load probe now runs every
+  width from one row to eight, so every kernel shape compiles before the worker is ready, not inside a timed cell.
+- **The comparator, stated:** the default is the tuned engine as a fresh install runs it. Run 2 records each
+  card's knobs and their source. Without a stored profile those are the baseline knobs: no compiled step and a host
+  read every token, not HW4's class-A compile + readback 4 (8.2 % faster decode), which the default does not use.
+  A gain over it is a gain over the product as shipped, not over the best exact engine.
+- **Changed implementation:** run 2 measures the plan as it now serves. Its backend chains 4 steps per host read
+  (KB1-2's loop; the same forwards, so the same tokens). A stream cancelled inside a chain, or inside a
+  speculative draft, still ends at its cancel, in both engines.
+- **Known, symmetric, recorded:** the service lets at most eight requests join a group over its whole life, so
+  slots the plan frees mid-group are not reused; this understates the plan in spikes. A request longer than a slot
+  (prompt plus answer above 2,048 tokens) fails its whole batch under the plan. H8's longest is about 1,300.
+
+Run 2 uses the same arms, traces, rounds, cost, noise and decisions, at about 2 session hours.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
