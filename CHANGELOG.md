@@ -4,6 +4,13 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Opt-in learned dispatch (LD1).** `ironmule serve --gpus all --dispatch-policy ... --dispatch-evidence ...`
+  lets a policy trained by the RL agent choose each request's card, whether a group starts its shortest requests
+  first, and (v2) the group width. Answers do not change. It activates only with evidence for this policy and
+  this model, revision, GPU name and GPU count; otherwise the reference serves, and `/health` says why. It is off
+  by default. The shipped RL4-S policy (two T4s, Qwen3 1.7B bf16) beat the best fixed arm by 9.0 % on spike
+  traffic (95 % 6.9-11.1 %, 1,920 requests identical across arms). Mixed traffic is not validated yet.
+
 - **On CUDA a request's answer no longer depends on what it is grouped with (X1).** A group shared one KV
   capacity, sized to its longest prompt and largest output limit, and on Kaggle's T4s the cache length moves
   decode logits (by up to 0.75 across 16 prompts, flipping a token in two of them within 32 tokens). A short

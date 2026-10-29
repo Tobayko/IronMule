@@ -228,6 +228,12 @@ def serve(argv: list[str]) -> int:
                         help="HW1: one model worker per listed CUDA GPU (`all`: every GPU this machine shows), "
                              "each request on the GPU with the shortest queue. Each worker loads the whole model; "
                              "live learning and idle tuning run only with one GPU. Default: one worker, as before")
+    parser.add_argument("--dispatch-policy", default=None, metavar="POLICY.json",
+                        help="LD1: opt-in learned dispatch (where, in which order and how wide requests run; "
+                             "never what they answer). Needs --dispatch-evidence for this model, revision and "
+                             "GPUs; without matching evidence the reference dispatch serves and /health says why")
+    parser.add_argument("--dispatch-evidence", default=None, metavar="EVIDENCE.json",
+                        help="LD1: the passed hardware comparison that qualifies --dispatch-policy")
     args = parser.parse_args(argv)
     args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
@@ -236,6 +242,10 @@ def serve(argv: list[str]) -> int:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
     if args.gpus is not None and args.no_model:
         parser.error("--gpus places model workers; --no-model starts none")
+    if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
+        parser.error("--dispatch-policy and --dispatch-evidence go together")
+    if args.dispatch_policy is not None and args.learning != "off":
+        parser.error("--dispatch-policy and --learning both decide groups; use one")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -288,6 +298,17 @@ def serve(argv: list[str]) -> int:
                 service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
+        if spec is not None and args.dispatch_policy is not None:
+            from .device_pool import cuda_devices, gpu_name
+            from .learned_dispatch import LearnedDispatch
+            pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
+            binding = {"model_id": spec.model_id, "revision": spec.revision,
+                       "gpu": gpu_name(pinned) if pinned else None, "devices": len(devices)}
+            dispatch = LearnedDispatch.load(args.dispatch_policy, args.dispatch_evidence, binding)
+            if hasattr(service, "attach"):
+                service.attach(dispatch)
+            else:
+                service.dispatch = dispatch
         if (spec is not None and args.engine == "tuned" and len(devices) == 1
                 and (service.learning is None or not service.learning.eligible)):
             # Idle tuning unloads the worker; learning keeps the serving model loaded (RSI3-LIVE).

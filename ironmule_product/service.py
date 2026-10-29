@@ -120,6 +120,7 @@ class ProductService:
     policy: ServingPolicy = ServingPolicy()   # RSI4; __init__ loads the stored one
     serving_log: ServingLog | None = None
     learning: Any = None  # RSI3-LIVE: an attached live_learning.LiveLearning owns each group decision
+    dispatch: Any = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; None keeps FIFO order
     backend: Any = None
     _group_refused = False
     _gather_waited_ns = 0
@@ -193,6 +194,8 @@ class ProductService:
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()
+        if self.dispatch is not None:
+            result["learned_dispatch"] = self.dispatch.status()
         return result
 
     def accepting(self) -> bool:
@@ -209,6 +212,11 @@ class ProductService:
         """HW1: whether this request id is admitted here and not yet retired."""
         with self._lock:
             return request_id in self._sessions
+
+    def admitted_requests(self) -> list[GenerationRequest]:
+        """LD1: the requests admitted here and not yet retired, which a learned placement reads."""
+        with self._lock:
+            return [session.request for session in self._sessions.values()]
 
     def note(self, event: str, **fields: Any) -> None:
         """STAB1: one lifecycle event: ids, counts, times and codes, never prompt or answer text. A worker
@@ -464,6 +472,8 @@ class ProductService:
         return max(0.001, max(deadlines) - time.monotonic() + grace)
 
     def _next_session(self) -> _Session | None:
+        if self.dispatch is not None and self.dispatch.active:
+            return self._next_dispatched()
         with self._lock:
             if self._carry:
                 return self._carry.popleft()
@@ -471,6 +481,44 @@ class ProductService:
             return self._pending.get(timeout=0.1)
         except queue.Empty:
             return None
+
+    def _sort_for_dispatch(self) -> None:
+        """LD1: every waiting request into the carry, then shortest output limit first when the learned
+        policy chooses it for this group, else arrival order. A request waiting longer than
+        `SJF_AGE_S` starts by arrival. The caller holds `self._lock`."""
+        from .learned_dispatch import SJF_AGE_S
+
+        while True:
+            try:
+                self._carry.append(self._pending.get_nowait())
+            except queue.Empty:
+                break
+        now = time.monotonic_ns()
+        sjf = bool(self.dispatch.sjf([session.request for session in self._carry]))
+
+        def key(session: _Session) -> tuple[bool, int, int]:
+            if not sjf:
+                return (False, 0, session.submitted_ns)
+            aged = now - session.submitted_ns > SJF_AGE_S * 1e9
+            return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
+
+        waiting = sorted(self._carry, key=key)
+        self._carry.clear()
+        self._carry.extend(waiting)
+
+    def _next_dispatched(self) -> _Session | None:
+        with self._lock:
+            self._sort_for_dispatch()
+            if self._carry:
+                return self._carry.popleft()
+        try:
+            first = self._pending.get(timeout=0.1)
+        except queue.Empty:
+            return None
+        with self._lock:
+            self._carry.append(first)
+            self._sort_for_dispatch()
+            return self._carry.popleft()
 
     def _batch_capacity(self) -> int:
         capacity = getattr(self.backend, "batch_capacity", 1)
@@ -480,8 +528,14 @@ class ProductService:
     def _group_for(self, first: _Session, width: int | None = None, gather_ms: int | None = None) -> list[_Session]:
         """Take only work already admitted, waiting at most the gather time for company.
 
-        ``width``/``gather_ms`` are a learner's decision (RSI3-LIVE); without one, the policy's."""
+        ``width``/``gather_ms`` are a learner's decision (RSI3-LIVE); without one, the policy's, or a
+        learned dispatch's width (LD1)."""
         self._group_refused, self._gather_waited_ns = False, 0
+        if self.dispatch is not None and self.dispatch.active:
+            with self._lock:
+                self._sort_for_dispatch()
+                if width is None:
+                    width = self.dispatch.width([first.request] + [session.request for session in self._carry])
         capacity = self._batch_capacity() if width is None else min(self._batch_capacity(), width)
         gather_ms = self.policy.gather_ms if gather_ms is None else gather_ms
         if capacity == 1:

@@ -46,6 +46,27 @@ def cuda_devices(environ: Any = os.environ, run: Callable[..., Any] = subprocess
     return [line.strip() for line in listed.stdout.splitlines() if line.strip().isdigit()]
 
 
+def gpu_name(devices: list[str], run: Callable[..., Any] = subprocess.run) -> str | None:
+    """LD1: the name of the listed GPUs as `nvidia-smi` reports it (one name, or names joined by `+`
+    when they differ), which learned-dispatch evidence binds; None when it cannot be read."""
+    try:
+        listed = run(["nvidia-smi", "--query-gpu=index,uuid,name", "--format=csv,noheader"],
+                     capture_output=True, text=True, timeout=20, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if listed.returncode != 0:
+        return None
+    names = {}
+    for line in listed.stdout.splitlines():
+        parts = [part.strip() for part in line.split(",")]
+        if len(parts) == 3:
+            names[parts[0]], names[parts[1]] = parts[2], parts[2]
+    found = [names.get(device) for device in devices]
+    if not found or any(name is None for name in found):
+        return None
+    return "+".join(sorted(set(found)))
+
+
 def select_devices(value: str, available: list[str]) -> list[str]:
     """`all`, or a comma-separated list of devices from `available`, each at most once."""
     if value == "all":
@@ -78,6 +99,7 @@ class DevicePool:
     """The `ProductService` surface the HTTP server uses, over one service per device."""
 
     learning = None
+    dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
 
     def __init__(self, shards: list[Any], devices: list[str]):
         if not shards or len(shards) != len(devices):
@@ -93,10 +115,24 @@ class DevicePool:
                 shard.stability_log = _DeviceLog(shared, device)
                 shard.serving_log = ServingLog(root, name=f"serving-log.cuda-{device}.jsonl")
 
-    def _order(self) -> list[int]:
-        """Accepting devices, least outstanding work first, ties to the lower index."""
+    def attach(self, dispatch: Any) -> None:
+        """LD1: place by the learned policy, and let each device order and size its groups by it."""
+        self.dispatch = dispatch
+        for shard in self.shards:
+            shard.dispatch = dispatch
+
+    def _order(self, request: GenerationRequest | None = None) -> list[int]:
+        """Accepting devices, least outstanding work first, ties to the lower index; an active learned
+        dispatch (LD1) moves its choice for `request` to the front."""
         accepting = [index for index, shard in enumerate(self.shards) if shard.accepting()]
-        return sorted(accepting, key=lambda index: (self.shards[index].outstanding(), index))
+        order = sorted(accepting, key=lambda index: (self.shards[index].outstanding(), index))
+        dispatch = self.dispatch
+        if request is not None and dispatch is not None and dispatch.active and len(order) > 1:
+            card = dispatch.card(request, [shard.admitted_requests() for shard in self.shards])
+            if card in order:
+                order.remove(card)
+                order.insert(0, card)
+        return order
 
     def stream(self, request: GenerationRequest) -> Iterator[dict[str, Any]]:
         # Under one lock, so two arrivals never both see the same device as the shortest. Only
@@ -104,7 +140,7 @@ class DevicePool:
         with self._lock:
             if any(shard.holds(request.request_id) for shard in self.shards):
                 raise InvalidRequest("duplicate request id")
-            order = self._order()
+            order = self._order(request)
             if not order:
                 raise BackendUnavailable("no model worker is ready")
             overloaded: Overloaded | None = None
@@ -133,7 +169,10 @@ class DevicePool:
                               "active_requests": health.get("active_requests"),
                               "completed_requests": health.get("completed_requests")}
                              for device, health in zip(self.devices, healths)]
-        result["dispatch"] = "join_shortest_queue"
+        dispatch = self.dispatch
+        result["dispatch"] = "learned" if dispatch is not None and dispatch.active else "join_shortest_queue"
+        if dispatch is not None:
+            result["learned_dispatch"] = dispatch.status()
         return result
 
     def learning_status(self) -> dict[str, Any]:

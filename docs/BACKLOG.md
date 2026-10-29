@@ -417,6 +417,24 @@ entry's decision. As fixed, this ships nothing. It makes the policy a candidate 
 and that candidate still needs its qualification, rollback and a paired validation on traffic that mixes states.
 Still owed: the ledger entry.
 
+### LD1 — The learned dispatch in the product, opt-in and bound to its evidence (2026-10-29)
+
+**What it is.** RL4-S passed, so its frozen policy may become a candidate for an opt-in learner. LD1 is that
+product path. `ironmule_product/learned_dispatch.py` holds the policy class, and a parity test shows it decides
+exactly as the harness policy the hardware measured, on 500 random states. Through hooks it chooses each request's
+card in the HW1 pool, shortest-job-first per group start in each card's scheduler, and, for a v2 policy, the group
+width. It activates only with evidence that names the policy's digest, a passed comparison, and this server's
+model, revision, GPU name and GPU count; anything else keeps the reference and says why in `/health`. After three
+errors while deciding it is withdrawn until restart. It is off by default, refused together with `--learning`,
+and changes no answer. The RL4-S policy and its evidence ship in `ironmule_product/dispatch/`.
+
+**Still owed before it may be called better on real traffic.**
+- A paired validation through this product path, on traffic that mixes quiet, bursty and spike states. In
+  simulation the policy is neutral in `quiet` and `bursts`, so the test is that it costs nothing there and gains in
+  spikes.
+- An operator rollback without a restart.
+- The ledger entry.
+
 ### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
 
 **Mechanism.** Before X1's fix a group decoded at its longest prompt's capacity. An extra session then cost a full

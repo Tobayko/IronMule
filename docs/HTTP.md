@@ -87,6 +87,24 @@ writes its own `serving-log.cuda-<card>.jsonl`. `--gpus 1` alone pins the ordina
 worker to that card. Not measured yet: the throughput gain on Kaggle's two T4s and that
 both cards return the same tokens for the same request (BACKLOG HW1).
 
+**Learned dispatch (LD1, opt-in).** `--dispatch-policy POLICY.json --dispatch-evidence EVIDENCE.json`
+replaces three scheduling choices with a policy the RL agent learned (`tools/rl4_agent.py`):
+the card a new request goes to, whether a group starts its shortest requests first, and, in a
+v2 policy, the group's width. It never changes what a request answers. Each request still runs
+alone on one worker at its own capacity, and the hardware comparisons checked that every answer
+stayed identical. The policy activates only when the evidence carries its digest, a passed
+comparison, and this server's model, revision, GPU name and number of GPUs. Otherwise the
+reference dispatch serves. `/health` then shows `dispatch` (`learned` or
+`join_shortest_queue`) and a `learned_dispatch` block with the policy digest, the experiment,
+the traffic it was validated on (`domain`), the measured gain, counts of its decisions and
+errors, and the reason when it is off. After three errors while deciding, it is withdrawn
+until restart. It cannot be combined with `--learning`.
+
+The first policy ships in `ironmule_product/dispatch/rl4s-t4x2-qwen3-1.7b/` (RL4-S): two T4s,
+`mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928`. On spike traffic it beat the best fixed
+arm by 9.0 % (95 % 6.9-11.1 %). It is not validated on traffic that mixes quiet, bursty and
+spike states (BACKLOG LD1).
+
 ## When the model worker fails (STAB1)
 
 The model runs in a separate worker process. When it dies, reports a generation error

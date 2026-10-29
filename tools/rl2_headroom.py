@@ -510,8 +510,8 @@ def _placement_pool(pool: Any) -> Any:
             self._local.request = request
             return super().stream(request)
 
-        def _order(self) -> list[int]:
-            order = super()._order()
+        def _order(self, request: Any = None) -> list[int]:
+            order = super()._order()  # without a request: the product's own learned dispatch (LD1) stays out
             if self.placement == "fill":
                 room = sorted(index for index in order if self.shards[index].outstanding() < self.fill_width)
                 return room + [index for index in order if index not in room]
