@@ -403,6 +403,20 @@ nothing by itself.** It makes the policy a candidate for the product's opt-in le
 needs its own qualification and rollback (`docs/LIVE_LEARNING.md`), and needs a paired validation on traffic that
 mixes states.
 
+**Result (2026-10-29, `RL4-S-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-h5` at
+`8e41a53c1efedb3ba4f487f652d941a0e8c20c3e`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 1.2 session
+hours): valid, and the learned policy beats the best fixed arm.** All 120 cells and 1,920 requests completed, and
+every request got the same answer under all three arms. The A/A noise was 2.9 % (second largest of 30 pairs). The
+frozen policy (digest `e3f07b833e90`, verified by the kernel) cost 32.95 per request on average. The reference cost
+36.59 and the rival `shortest/w8/g0/sjf` 36.23. Its gain over the rival is 9.0 %, with a 95 % bootstrap interval
+of 6.9-11.1 %. The 2.5 % bound is far above the noise, so the pass rule fixed before the data is met. The policy
+was cheapest on 29 of the 30 traces. Mean time to first content fell from 10.24 s to 9.80 s and mean total time
+from 25.99 s to 23.15 s, with p95 total time 40.5 s against 41.1 s. The hardware gain is about twice the simulator's
+4.2 %. The tool's generic verdict line names the learned arm as the cheapest "fixed" arm; that line is not this
+entry's decision. As fixed, this ships nothing. It makes the policy a candidate for the product's opt-in learner,
+and that candidate still needs its qualification, rollback and a paired validation on traffic that mixes states.
+Still owed: the ledger entry.
+
 ### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
 
 **Mechanism.** Before X1's fix a group decoded at its longest prompt's capacity. An extra session then cost a full
@@ -844,6 +858,8 @@ processes again.
   In the simulator it beat the best fixed arm by only 2.8 %, against an 18.7 % A/A noise, so the simulator gate
   failed and no learned arm went to hardware. Re-open with a testbed whose noise is several times smaller than a
   few per cent, or a decision whose simulated gain is several times larger.
+  *Re-opened for `spike` by RL4-S (above):* on 30 new spike traces the frozen policy beat the best fixed arm on the
+  T4s by 9.0 % (95 % 6.9-11.1 %) against 2.9 % noise. Mixed traffic is still unvalidated.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:

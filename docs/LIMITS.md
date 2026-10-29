@@ -137,7 +137,10 @@ RL3-H (backlog RL3, run 2; the same session type, model and pool under quiet, bu
 1,000-token prompts and 32- or 256-token answers): placing or ordering requests by output limit gains nothing
 measurable. No decision's held-out headroom cleared the 18.7 % A/A noise, and separating long from short requests
 cost 15-24 % in bursts. A REINFORCE agent trained in a simulator fitted to that run (RL4) gained 2.8 % in
-simulation, too little to test on this hardware, so no learned placement or ordering policy exists in the product.
+simulation, too little to test on this hardware. Tested where that testbed is quiet, in spike traffic only (RL4-S, 30
+new traces, all answers identical across arms), the same frozen policy beat the best fixed arm by 9.0 % (95 %
+6.9-11.1 %, A/A noise 2.9 %). That makes it a candidate for the opt-in learner. It is not in the product, is off
+everywhere, and is unvalidated on traffic that mixes quiet, bursty and spike states.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a
