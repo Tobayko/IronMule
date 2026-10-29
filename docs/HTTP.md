@@ -48,6 +48,8 @@ when it is ready:
 | `POST` | `/v1/chat/completions` | `stream: false` gives one JSON completion; `stream: true` gives SSE chunks ending with `data: [DONE]` |
 | `GET` | `/v1/ironmule/learning` | live-learning status: serving, mode, candidate, the strategy that serves and why |
 | `POST` | `/v1/ironmule/learning` | `{"action": "pause" \| "resume" \| "rollback" \| "compare"}`; `400` when learning is off |
+| `GET` | `/v1/ironmule/dispatch` | the learned dispatch's status (LD1): active or not and why, policy digest, evidence, decisions, errors |
+| `POST` | `/v1/ironmule/dispatch` | `{"action": "off"}` withdraws the learned dispatch without a restart; `400` when none is configured |
 
 The request body is read as OpenAI chat completion input: `messages` (required,
 non-empty) and `max_tokens` or `max_completion_tokens`. Sampling fields are accepted
@@ -97,8 +99,11 @@ comparison, and this server's model, revision, GPU name and number of GPUs. Othe
 reference dispatch serves. `/health` then shows `dispatch` (`learned` or
 `join_shortest_queue`) and a `learned_dispatch` block with the policy digest, the experiment,
 the traffic it was validated on (`domain`), the measured gain, counts of its decisions and
-errors, and the reason when it is off. After three errors while deciding, it is withdrawn
-until restart. It cannot be combined with `--learning`.
+errors, and the reason when it is off. After three errors while deciding, or when the operator
+sends `POST /v1/ironmule/dispatch` with `{"action": "off"}`, it is withdrawn at once and the
+reference serves. The withdrawal is recorded in `dispatch-withdrawals.json` in the state
+directory, so a restart with the same policy and evidence keeps it off. New passed evidence for
+the policy, or deleting that record, qualifies it again. It cannot be combined with `--learning`.
 
 The first policy ships in `ironmule_product/dispatch/rl4s-t4x2-qwen3-1.7b/` (RL4-S): two T4s,
 `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928`. On spike traffic it beat the best fixed

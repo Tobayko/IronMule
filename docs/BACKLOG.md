@@ -425,15 +425,17 @@ exactly as the harness policy the hardware measured, on 500 random states. Throu
 card in the HW1 pool, shortest-job-first per group start in each card's scheduler, and, for a v2 policy, the group
 width. It activates only with evidence that names the policy's digest, a passed comparison, and this server's
 model, revision, GPU name and GPU count; anything else keeps the reference and says why in `/health`. After three
-errors while deciding it is withdrawn until restart. It is off by default, refused together with `--learning`,
-and changes no answer. The RL4-S policy and its evidence ship in `ironmule_product/dispatch/`.
+errors while deciding, or on the operator's `POST /v1/ironmule/dispatch` `{"action": "off"}`, it is withdrawn at
+once; the withdrawal is recorded in the state directory and keeps the same policy under the same evidence off
+across restarts, until new passed evidence or deleting the record qualifies it again. It is off by default,
+refused together with `--learning`, and changes no answer. The RL4-S policy and its evidence ship in
+`ironmule_product/dispatch/`.
 
 **Still owed before it may be called better on real traffic.**
 - A paired validation through this product path, on traffic that mixes quiet, bursty and spike states. In
   simulation the policy is neutral in `quiet` and `bursts`, so the test is that it costs nothing there and gains in
   spikes.
-- An operator rollback without a restart.
-- The ledger entry.
+- The ledger entry. (The operator rollback without a restart is done; see above.)
 
 ### LD1-V — The product's learned dispatch on mixed traffic (opened 2026-10-29, before data)
 

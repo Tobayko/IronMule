@@ -10,6 +10,8 @@ All notable public changes to IronMule are documented here. Measurements and res
   this model, revision, GPU name and GPU count; otherwise the reference serves, and `/health` says why. It is off
   by default. The shipped RL4-S policy (two T4s, Qwen3 1.7B bf16) beat the best fixed arm by 9.0 % on spike
   traffic (95 % 6.9-11.1 %, 1,920 requests identical across arms). Mixed traffic is not validated yet.
+  `POST /v1/ironmule/dispatch` with `{"action": "off"}` withdraws it without a restart, and the withdrawal
+  outlasts a restart until new evidence qualifies the policy again.
 
 - **On CUDA a request's answer no longer depends on what it is grouped with (X1).** A group shared one KV
   capacity, sized to its longest prompt and largest output limit, and on Kaggle's T4s the cache length moves

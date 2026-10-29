@@ -189,6 +189,18 @@ class DevicePool:
                          evidence: dict[str, Any] | None = None) -> dict[str, Any]:
         raise InvalidRequest("learning is off: it models one worker, and this server runs one per GPU (HW1)")
 
+    def dispatch_status(self) -> dict[str, Any]:
+        from .learned_dispatch import status_of
+        return status_of(self.dispatch)
+
+    def dispatch_control(self, action: str) -> dict[str, Any]:
+        """One dispatch object serves every device, so withdrawing it once withdraws it everywhere."""
+        from .learned_dispatch import control
+        try:
+            return control(self.dispatch, action)
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+
     def models(self) -> list[dict[str, Any]]:
         ready = self.health()["ready"]
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",

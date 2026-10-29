@@ -304,7 +304,8 @@ def serve(argv: list[str]) -> int:
             pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
             binding = {"model_id": spec.model_id, "revision": spec.revision,
                        "gpu": gpu_name(pinned) if pinned else None, "devices": len(devices)}
-            dispatch = LearnedDispatch.load(args.dispatch_policy, args.dispatch_evidence, binding)
+            dispatch = LearnedDispatch.load(args.dispatch_policy, args.dispatch_evidence, binding,
+                                            kill_path=store.root / "dispatch-withdrawals.json")
             if hasattr(service, "attach"):
                 service.attach(dispatch)
             else:

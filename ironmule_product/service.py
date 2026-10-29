@@ -286,6 +286,17 @@ class ProductService:
             raise InvalidRequest(str(exc)) from exc
         return self.learning_status()
 
+    def dispatch_status(self) -> dict[str, Any]:
+        from .learned_dispatch import status_of
+        return status_of(self.dispatch)
+
+    def dispatch_control(self, action: str) -> dict[str, Any]:
+        from .learned_dispatch import control
+        try:
+            return control(self.dispatch, action)
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+
     def models(self) -> list[dict[str, Any]]:
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",
                  "revision": spec.revision, "loaded": self.spec == spec and self.health()["ready"]}

@@ -110,7 +110,83 @@ def test_a_policy_that_fails_while_deciding_falls_back_and_is_withdrawn(tmp_path
     broken = SimpleNamespace(max_tokens="not a number", messages=(("user", "hi"),))
     for _ in range(ld.MAX_ERRORS):
         assert dispatch.card(broken, [[], []]) is None
-    assert not dispatch.active and "withdrawn after 3 errors" in dispatch.reason
+    assert not dispatch.active and "withdrawn: 3 errors while deciding" in dispatch.reason
+
+
+def test_the_operator_turns_it_off_and_it_stays_off_across_a_restart_until_requalified(tmp_path):
+    policy = _policy(5)
+    files, kill = _files(tmp_path, policy), tmp_path / "state" / "dispatch-withdrawals.json"
+    dispatch = ld.LearnedDispatch.load(*files, BINDING, kill_path=kill)
+    assert dispatch.active and ld.status_of(None)["reason"] == ld.NOT_CONFIGURED
+    with pytest.raises(ValueError, match="off"):
+        ld.control(dispatch, "on")
+    with pytest.raises(ValueError, match="configured"):
+        ld.control(None, "off")
+    status = ld.control(dispatch, "off")
+    assert not status["active"] and "operator turned it off" in status["reason"]
+    assert dispatch.card(_request(32), [[], []]) is None  # the reference decides from now on
+    restarted = ld.LearnedDispatch.load(*files, BINDING, kill_path=kill)
+    assert not restarted.active and "withdrawn" in restarted.reason and kill.name in restarted.reason
+    (tmp_path / "rerun").mkdir()
+    rerun = policy.to_json()
+    learned = {"rival": "shortest/w8/g0/sjf", "gain": 0.08, "gain_ci95": [0.06, 0.10]}
+    (tmp_path / "rerun" / "evidence.json").write_text(json.dumps(
+        ld.evidence_for(rerun["sha256"], "RL4-S-run2", BINDING, ["spike"], learned, noise=0.029)))
+    requalified = ld.LearnedDispatch.load(files[0], tmp_path / "rerun" / "evidence.json", BINDING, kill_path=kill)
+    assert requalified.active  # new passed evidence for the same policy qualifies it again
+    broken = ld.LearnedDispatch.load(*_files(tmp_path / "rerun", _policy(6)), BINDING, kill_path=kill)
+    assert broken.active  # another policy is not covered by this withdrawal
+    kill.write_text("{not json")
+    assert not ld.LearnedDispatch.load(*files, BINDING, kill_path=kill).active  # unreadable: fail closed
+
+
+def test_an_error_withdrawal_is_recorded_and_survives_a_restart(tmp_path):
+    files, kill = _files(tmp_path, _policy(7)), tmp_path / "dispatch-withdrawals.json"
+    dispatch = ld.LearnedDispatch.load(*files, BINDING, kill_path=kill)
+    broken = SimpleNamespace(max_tokens="not a number", messages=(("user", "hi"),))
+    for _ in range(ld.MAX_ERRORS):
+        dispatch.card(broken, [[], []])
+    record = json.loads(kill.read_text())
+    assert record["schema"] == ld.WITHDRAWALS_SCHEMA and "errors while deciding" in record["withdrawn"][0]["reason"]
+    assert not ld.LearnedDispatch.load(*files, BINDING, kill_path=kill).active
+
+
+def test_the_http_route_reports_and_withdraws_the_learned_dispatch(tmp_path):
+    import http.client
+
+    from ironmule_product.http_server import create_server
+
+    pool = DevicePool([_Shard([]), _Shard([])], ["0", "1"])
+    try:
+        server = create_server(pool, port=0)
+    except PermissionError as exc:
+        pytest.skip(f"loopback bind denied by test environment: {exc}")
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    def call(method, body=None):
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=10)
+        connection.request(method, "/v1/ironmule/dispatch", None if body is None else json.dumps(body).encode(),
+                           {"Content-Type": "application/json"})
+        response = connection.getresponse()
+        result = response.status, json.loads(response.read())
+        connection.close()
+        return result
+
+    try:
+        assert call("GET") == (200, ld.status_of(None))
+        assert call("POST", {"action": "off"})[0] == 400  # nothing to withdraw
+        pool.attach(ld.LearnedDispatch.load(*_files(tmp_path, _policy(8)), BINDING))
+        status, body = call("GET")
+        assert status == 200 and body["active"] is True
+        assert call("POST", {"action": "on"})[0] == 400 and call("POST", {"off": True})[0] == 400
+        status, body = call("POST", {"action": "off"})
+        assert status == 200 and body["active"] is False and "operator" in body["reason"]
+        assert pool.health()["dispatch"] == "join_shortest_queue"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 class _Shard:

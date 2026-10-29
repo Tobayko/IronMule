@@ -431,6 +431,8 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK if health.get("ready") is True else HTTPStatus.SERVICE_UNAVAILABLE, health)
             elif path == "/v1/ironmule/learning":
                 self._send_json(HTTPStatus.OK, self.server.service.learning_status())
+            elif path == "/v1/ironmule/dispatch":
+                self._send_json(HTTPStatus.OK, self.server.service.dispatch_status())
             elif path == "/v1/models":
                 models = self.server.service.models()
                 if not isinstance(models, list):
@@ -455,6 +457,9 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
             return
         if self._path() == "/v1/ironmule/learning":
             self._learning_control()
+            return
+        if self._path() == "/v1/ironmule/dispatch":
+            self._dispatch_control()
             return
         if self._path() != "/v1/chat/completions":
             self._send_error(_HTTPProductError("unknown endpoint", HTTPStatus.NOT_FOUND, "not_found"), close=True)
@@ -496,6 +501,23 @@ class _ProductRequestHandler(BaseHTTPRequestHandler):
             note = getattr(self.server.service, "note", None)
             if request is not None and callable(note):
                 note("http", id=request.request_id, end=end, sse=self._headers_sent())
+
+    def _dispatch_control(self) -> None:
+        """LD1: {"action": "off"} withdraws the learned dispatch; answers with its status."""
+        try:
+            payload = json.loads(self._read_body().decode("utf-8"), object_pairs_hook=_reject_duplicate_keys,
+                                 parse_constant=_reject_non_finite)
+            if not isinstance(payload, dict) or set(payload) != {"action"} or not isinstance(payload["action"], str):
+                raise InvalidRequest("body must be {\"action\": \"off\"}")
+            self._send_json(HTTPStatus.OK, self.server.service.dispatch_control(payload["action"]))
+        except (UnicodeDecodeError, ValueError, RecursionError):
+            self._send_error(InvalidRequest("request body must be valid UTF-8 JSON"), close=True)
+        except ProductError as error:
+            self._send_error(error, close=getattr(error, "code", None) in {"invalid_request", "unauthorized"})
+        except (BrokenPipeError, ConnectionResetError, socket.timeout):
+            return
+        except Exception:
+            self._send_error(ProductError("product request failed"))
 
     def _learning_control(self) -> None:
         """RSI3-LIVE: {"action": "pause" | "resume" | "rollback" | "compare"}; answers with the new status."""
