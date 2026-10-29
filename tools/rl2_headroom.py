@@ -1519,7 +1519,7 @@ def analyse_kp1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
 # ---------------------------------------------------------------- H9, fixed in BACKLOG before data
 
 H9_TRACES = range(75, 87)       # fresh seeds: no earlier run, training or simulation used them
-H9_ROUNDS = 4
+H9_ROUNDS = 3                   # a cyclic Latin square: each engine starts its round's pools once in each position
 
 
 def arms_h9() -> list[str]:
@@ -1550,9 +1550,9 @@ def run_h9(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[s
     if not preflight.get("ok"):
         return {"model": model, "revision": revision, "failed": "kp1 preflight (kill 1)", "preflight": preflight}
     dense = dense_preflight(str(spec.snapshot_path), devices[0])
-    if not dense.get("ok"):
-        return {"model": model, "revision": revision, "failed": "dense preflight", "preflight": preflight,
-                "dense_preflight": dense}
+    engines, names = ("tuned", "kp", "dense"), arms_h9()
+    if not dense.get("ok"):  # the dense part cannot run; the KP part, whose kill 1 passed, still does
+        engines, names = ("tuned", "kp"), arms_h9()[:2]
 
     def start(engine: str) -> Any:  # one startup limit for every engine; startup is not in the cost
         extra = {"engine_knobs": {"knobs": knobs, "source": "KP1-candidate"}} if engine == "kp" else {}
@@ -1563,8 +1563,8 @@ def run_h9(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[s
     deadline = float(store.settings()["request_timeout_s"] or 120)
     sizes = ({"traces": [H9_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else
              {"traces": H9_TRACES, "rounds": H9_ROUNDS})
-    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=arms_h9(),
-                        engines=("tuned", "kp", "dense"), plan="h9", stress=None if smoke else trace_stress, **sizes)
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=names, engines=engines, plan="h9",
+                        stress=None if smoke else trace_stress, **sizes)
     return {"model": model, "revision": revision, "preflight": preflight, "dense_preflight": dense, "knobs": knobs,
             **result}
 
@@ -1581,12 +1581,18 @@ def analyse_h9(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0
     kp_ships = bool(kp_part.get("valid") and kp_part["(1) KP beats the default"]["passes"]
                     and kp_part["(2) no harm in any state"]["passes"])
     reference = kp if kp_ships else tuned
-    problems = [] if (report.get("dense_preflight") or {}).get("ok") else ["the dense preflight did not pass"]
-    dense_part = analyse_h8({**report, "arms": [reference, dense]}, resamples, seed)
-    if problems:
-        dense_part = {**dense_part, "valid": False, "problems": problems + list(dense_part.get("problems", []))}
+    if not (report.get("dense_preflight") or {}).get("ok") or not any(r["engine"] == "dense" for r in report.get("rows", [])):
+        dense_part: dict[str, Any] = {"valid": False, "problems": ["the dense preflight did not pass or no dense cell ran"]}
+        against = {}
+    else:
+        dense_part = analyse_h8({**report, "arms": [reference, dense]}, resamples, seed)
+        against = {}  # descriptive: the plan against both, so the switch of reference can be seen not to decide it
+        for other in (tuned, kp):
+            part = analyse_h8({**report, "arms": [other, dense]}, resamples, seed)
+            if part.get("valid"):
+                against[other] = part["(1) dense beats today's default"]
     return {"schema": "ironmule.rl2_headroom.h9.analysis.v1", "kp_ships": kp_ships, "dense_reference": reference,
-            "kp": kp_part, "dense": dense_part,
+            "kp": kp_part, "dense": dense_part, "dense_against_each": against,
             "dense_recommended": bool(dense_part.get("valid") and dense_part["(1) dense beats today's default"]["passes"]
                                       and dense_part["(2) no harm in any state"]["passes"])}
 

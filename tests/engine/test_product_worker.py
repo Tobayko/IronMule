@@ -946,3 +946,53 @@ def test_a_grouped_stream_sends_each_token_before_the_engine_reads_the_next(monk
     assert "".join(event["text"] for event in tokens) == "Hi" and [e["completion_tokens"] for e in tokens] == [1, 2, 3]
     done = [event for event in sent if event["type"] == "done"]
     assert done[0]["completion_tokens"] == 3 and done[0]["finish_reason"] == "stop"
+
+
+def test_a_grouped_member_is_done_with_its_last_token_not_when_the_run_ends(monkeypatch):
+    """H9: a member's done follows its last token at once, so its caller is answered then and the service sees
+    room in the group; the streamed tokens are still checked against the run's result afterwards."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    scripts = {0: [72, 0], 1: [79, 107, 33, 0]}  # a ends at its second token, b runs on
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def eos_ids(self):
+            return (0,)
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            for step in range(4):
+                for index, emit in enumerate(on_tokens):
+                    if step < len(scripts[index]):
+                        emit(scripts[index][step])
+            return [SimpleNamespace(tokens=scripts[i], text="", finish_reason="stop", token_count=len(scripts[i]),
+                                    metadata={}) for i in range(2)]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": rid, "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for rid in ("a", "b")]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    order = [(event["type"], event.get("request_id")) for event in sent]
+    assert order.index(("done", "a")) < [i for i, e in enumerate(order) if e == ("token", "b")][2]
+    done = {event["request_id"]: event for event in sent if event["type"] == "done"}
+    assert sorted(done) == ["a", "b"] and len([e for e in sent if e["type"] == "done"]) == 2  # once each
+    assert done["a"]["completion_tokens"] == 2 and done["b"]["completion_tokens"] == 4
+    assert done["a"]["engine"]["delivery"] == "streamed" and sent[-1]["type"] == "batch_done"

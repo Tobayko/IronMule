@@ -705,14 +705,15 @@ def test_h9_runs_three_engines_on_the_same_traffic_and_judges_both_parts_as_fixe
             spec, execution_variant="current_engine", engine_configuration=rl2.ENGINE_CONFIGURATIONS[engine],
             cuda_device=device, **extra), rl2.ordered_service())
 
-    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[75, 76], rounds=2, requests=3,
+    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[75, 76, 77], rounds=3, requests=3,
                             max_tokens=(2, 3), names=rl2.arms_h9(), engines=("tuned", "kp", "dense"), plan="h9")
-    assert started == ["tuned", "kp", "dense", "kp", "dense", "tuned"]  # the first engine rotates by round
-    assert len(report["rows"]) == 2 * 3 * 6  # per block: an A/A pair for each of the three engines
+    assert started == ["tuned", "kp", "dense", "kp", "dense", "tuned", "dense", "tuned", "kp"]  # a Latin square
+    assert len(report["rows"]) == 3 * 3 * 6  # per block: an A/A pair for each of the three engines
     report.update(preflight={"ok": True}, dense_preflight={"ok": True})
     result = rl2.analyse_h9(report, resamples=50)
     assert result["kp"]["valid"] and result["dense"]["valid"], result
     assert result["dense_reference"] == ("kp:shortest/w2/g0/sjf" if result["kp_ships"] else "tuned:shortest/w2/g0/sjf")
     assert result["dense"]["best_dense"] == "dense:shortest/w8/g0/sjf"
+    assert set(result["dense_against_each"]) == {"tuned:shortest/w2/g0/sjf", "kp:shortest/w2/g0/sjf"}
     report["dense_preflight"] = {"ok": False}
     assert not rl2.analyse_h9(report, resamples=50)["dense"]["valid"]

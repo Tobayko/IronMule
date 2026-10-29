@@ -7,8 +7,9 @@ All notable public changes to IronMule are documented here. Measurements and res
 - **Streamed tokens leave as soon as they are read.** The worker used to hold each token until the next one
   arrived, so the last could carry the final text. That delayed every request's first token by one decode step,
   and by a whole chain of steps where the engine reads several at once. Each token is now sent as it is read, and
-  only the one that ends the answer waits for the final text. Answers are unchanged; the effect on the first
-  token is measured in BACKLOG H9.
+  only the one that ends the answer waits for the final text. A request served in a group is now complete with
+  its own last token, instead of when the group's longest request ends, so a short request no longer waits for
+  a long neighbour. Answers are unchanged; the effect is measured in BACKLOG H9.
 
 - **Opt-in dense numeric plan (KB1), experimental.** `ironmule serve --engine dense` stacks up to eight
   requests into one decode step with IronMule's own batch-invariant kernels. It runs on unquantized Qwen 3 bf16 on

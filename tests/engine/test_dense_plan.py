@@ -345,3 +345,90 @@ def test_a_joiner_that_finds_every_slot_taken_takes_the_first_one_a_member_frees
         streamed = [event["token_id"] for event in sent if event["type"] == "token" and event["request_id"] == rid]
         assert streamed == bridge.generate(tokenizer.encode(text), limit).tokens, rid
     assert bridge.free_slots() == plan.slots
+
+
+class _InProcessWorker:
+    """The real worker's batch path behind `MLXWorkerClient.complete_batch`'s contract, in this process: the
+    service's group code on one side, `worker._run_engine_batch` with a real dense bridge on the other, the
+    JSON events passed between them unchanged (H9: two fakes, one per side, hid that slot reuse never ran)."""
+
+    streams_batches = True
+    reuses_slots = True
+    ready = True
+
+    def __init__(self, worker, bridge, tokenizer, capacity):
+        self.worker, self.bridge, self.tokenizer, self.batch_capacity = worker, bridge, tokenizer, capacity
+        self.joined_after: list[tuple[str, int]] = []  # (joiner, members already done when it joined)
+        self.order: list[str] = []  # whose token, in the order the worker sent them
+
+    def can_batch_requests(self, requests):
+        return True
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        import queue
+        import threading
+
+        events: queue.Queue = queue.Queue()
+        self.worker._emit = events.put
+        command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+                   "requests": [request.as_dict() for request in requests]}
+        members = [request.request_id for request in requests]
+        run = threading.Thread(target=self.worker._run_engine_batch,
+                               args=(command, "m", self.tokenizer, self.bridge, {}, set(), threading.Lock()))
+        run.start()
+        done: dict[str, dict] = {}
+        rows: dict[str, list] = {rid: [] for rid in members}
+        while True:
+            try:
+                event = events.get(timeout=0.01)
+            except queue.Empty:
+                event = None
+            if event is not None:
+                if event["type"] == "batch_done":
+                    break
+                assert event["type"] != "error", event
+                rows[event["request_id"]].append(event)
+                if event["type"] == "token":
+                    self.order.append(event["request_id"])
+                if event["type"] == "done":
+                    done[event["request_id"]] = event
+                on_event(event["request_id"], event)
+            for request, _ in (joins() if joins is not None else []):
+                self.joined_after.append((request.request_id, len(done)))
+                members.append(request.request_id)
+                rows[request.request_id] = []
+                self.worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [request.as_dict()]})
+        run.join(timeout=30)
+        return [{"request_id": rid, "events": rows[rid], "metadata": done[rid]["engine"]} for rid in members]
+
+
+def test_a_dense_group_admits_a_waiting_request_when_a_member_finishes_through_the_real_service_and_worker(
+        monkeypatch):
+    from ironmule_product.service import _Session
+    from ironmule_product.serving_policy import ServingPolicy
+    from ironmule_product.types import GenerationRequest
+    from tests.engine.test_product_group_scheduler import _service
+
+    worker, bridge, plan, tokenizer, _ = _worker_world(monkeypatch, slots=2)
+    backend = _InProcessWorker(worker, bridge, tokenizer, capacity=2)
+    service = _service(backend)
+    service.policy = ServingPolicy(join=True)
+
+    def session(rid, text, limit):
+        request = GenerationRequest("m", (("user", text),), max_tokens=limit, stream=True, request_id=rid)
+        return _Session(request, None)
+
+    short, long_, waiting = session("a", "short one", 2), session("b", "a longer answer", 12), session("c", "waits", 6)
+    service._pending.put(waiting)
+    service._perform_batch([short, long_])
+    assert backend.joined_after == [("c", 1)]  # admitted once one member had finished, not before
+    last_b = len(backend.order) - 1 - backend.order[::-1].index("b")
+    assert "c" in backend.order and backend.order.index("c") < last_b  # inside the long member's run
+    assert service._completed == 3 and service._failed == 0
+    for item, text, limit in ((short, "short one", 2), (long_, "a longer answer", 12), (waiting, "waits", 6)):
+        frames = []
+        while not item.events.empty():
+            frames.append(item.events.get_nowait())
+        tokens = [f["token_id"] for f in frames if isinstance(f, dict) and f.get("type") == "token"]
+        assert tokens == bridge.generate(tokenizer.encode(text), limit).tokens, item.request.request_id
+    assert bridge.free_slots() == plan.slots

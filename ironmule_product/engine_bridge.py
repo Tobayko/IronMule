@@ -427,10 +427,7 @@ class CurrentEngineBridge:
                 "admitted_requests": len(validated),
                 "max_realised_width": max(widths) if widths else 0,
                 "grouped_rounds": len(widths),
-                # KP1: decode bodies this worker's engine built and evicted so far, and its card
-                "decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
-                                      or {"built": 0, "evicted": 0}),
-                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                **self.counters(),
             })
             results.append(_result_from_raw(raw, limit, metadata))
         return results
@@ -459,6 +456,16 @@ class CurrentEngineBridge:
             "plan": "strict_one_shot",
             **({"dense_plan": dict(self._dense_plan)} if self._dense_plan is not None else {}),
         }
+
+    def counters(self) -> dict[str, Any]:
+        """KP1: decode bodies this worker's engine built and evicted so far, and its card (no request data)."""
+        return {"decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
+                                      or {"built": 0, "evicted": 0}),
+                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES")}
+
+    def eos_ids(self) -> tuple[int, ...]:
+        """The token ids the engine stops on, so a stream ends exactly where the engine does."""
+        return tuple(self._runtime.backend.eos_ids)
 
     def free_slots(self) -> int | None:
         """KB1: free slots in the dense plan's pool, which bound who may join a run; None for other plans."""

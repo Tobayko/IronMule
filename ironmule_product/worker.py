@@ -377,6 +377,12 @@ def _turn_boundaries(tokenizer: Any, messages: list[dict[str, Any]], prompt_ids:
     return cuts
 
 
+def _stop_ids(engine_bridge: Any, tokenizer: Any) -> set[int]:
+    """The ids the engine stops on (`ironmule.tune._eos_ids`, which may add `eos_token_id`), else the tokenizer's."""
+    ids = getattr(engine_bridge, "eos_ids", None)
+    return set(ids()) if callable(ids) else set(getattr(tokenizer, "eos_token_ids", ()) or ())
+
+
 def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], max_tokens: int,
                    prompt_tokens: int, holder: dict[str, Any], consume: Any,
                    boundaries: list[int] | None = None) -> dict[str, Any] | None:
@@ -390,7 +396,7 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
     whole chained readback (KP1 run 1: 56 ms at readback 4). After a cancellation the engine runs
     to its end and nothing more is sent. The streamed tokens must equal the engine's result.
     """
-    eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+    eos = _stop_ids(engine_bridge, tokenizer)
     detokenizer = tokenizer.detokenizer
     streamed: list[int] = []
     state: dict[str, Any] = {"terminal": None}
@@ -680,16 +686,21 @@ class _BatchStream:
     """One grouped request's tokens as the engine reads them back (SERVE4).
 
     Each token is sent as it is read back; the one that ends the answer (EOS or the output limit)
-    carries the final text. Holding every token for the next, as before, delayed the first by a
-    whole chained readback (KP1 run 1). A cancelled request stops sending while the group runs on.
-    Errors are kept and raised after the engine returns, never inside its executor."""
+    carries the final text, and its `done` follows at once, so the member leaves the group's
+    caller then rather than when the whole run ends (H9). Holding every token for the next, as
+    before, delayed the first by a whole chained readback (KP1 run 1). A cancelled request stops
+    sending while the group runs on. Errors are kept and raised after the engine returns, never
+    inside its executor; the streamed tokens are still checked against the run's result there."""
 
     def __init__(self, batch_id: str, request_id: str, prompt_tokens: int, limit: int, pool: _DetokenizerPool,
-                 cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any):
+                 cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any,
+                 eos: set[int] | None = None, terminal: Any = None):
         self.batch_id, self.request_id, self.prompt_tokens, self.limit = batch_id, request_id, prompt_tokens, limit
         self.pool, self.detokenizer = pool, pool.acquire()
         self.cancellations, self.lock = cancellations, lock
-        self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+        self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ()) if eos is None else set(eos)
+        self.terminal = terminal  # (finish reason, completion tokens, computed tokens) -> the member's done
+        self.finished: str | None = None  # the finish reason its done carried, once sent
         self.tail = ""
         self.tokens: list[int] = []
         self.sent = 0
@@ -709,13 +720,18 @@ class _BatchStream:
             if token not in self.eos:
                 self.detokenizer.add_token(token)
                 text = self.detokenizer.last_segment
-            if token in self.eos or len(self.tokens) >= self.limit:
+            last = token in self.eos or len(self.tokens) >= self.limit
+            if last:
                 self._release()  # its last token: the detokenizer serves the next admitted stream
                 text += self.tail
                 self.tail = ""
             _emit({"type": "token", "batch_id": self.batch_id, "request_id": self.request_id, "text": text,
                    "token_id": token, "prompt_tokens": self.prompt_tokens, "completion_tokens": self.sent + 1})
             self.sent += 1
+            if last and self.terminal is not None:
+                finish = "stop" if token in self.eos else "length"
+                _emit(self.terminal(finish, self.sent, len(self.tokens)))
+                self.finished = finish
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
 
@@ -811,6 +827,24 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     all_ids.append(row[0])
                     rows.append(row)
 
+        stop_ids = _stop_ids(engine_bridge, tokenizer)
+
+        def terminal_for(row: tuple[str, list[int], int]) -> Any:
+            """H9: the member's done, sent with its last token instead of after the whole run."""
+            def build(finish: str, completion: int, computed: int) -> dict[str, Any]:
+                frame = {"type": "done", "batch_id": batch_id, "request_id": row[0], "finish_reason": finish,
+                         "prompt_tokens": len(row[1]), "completion_tokens": completion,
+                         "variant": command["variant"], "metrics": {},
+                         "engine": {**engine_bridge.metadata(), **getattr(engine_bridge, "counters", dict)(),
+                                    "delivery": "streamed", "computed_tokens": computed}}
+                if command.get("trace_prompt_identity") is True:
+                    frame["prompt_ids_sha256"] = hashlib.sha256(json.dumps(row[1], sort_keys=True,
+                        separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+                if selection is not None:
+                    frame["selection"] = selection
+                return frame
+            return build
+
         report = rendered
         while report:
             with lock:
@@ -818,7 +852,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             active = [row for row in report if row[0] not in skipped]
             for row in active if live else ():
                 streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations, lock,
-                                               tokenizer)
+                                               tokenizer, eos=stop_ids, terminal=terminal_for(row))
             joined: list[tuple[str, list[int], int]] = []
             waiting: list[tuple[str, list[int], int]] = []  # KB1: joiners waiting for a slot of this run
 
@@ -834,7 +868,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                         waiting.append(row)  # no free slot now; it takes the first one a member frees
                         continue
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
-                                                   lock, tokenizer)
+                                                   lock, tokenizer, eos=stop_ids, terminal=terminal_for(row))
                     joined.append(row)
                     fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row)))
                 return fresh
@@ -889,6 +923,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 if request_id in streams:
                     emitted_tokens = streams[request_id].finish(result)
                     tokens = ()  # already sent as the engine read them back
+                    if streams[request_id].finished is not None:  # its done went out with its last token
+                        if result.finish_reason != streams[request_id].finished:
+                            raise RuntimeError("the engine's answer ended other than its streamed done")
+                        continue
                 for index, token in enumerate(tokens):
                     if type(token) is not int or token < 0:
                         raise RuntimeError("invalid grouped token")

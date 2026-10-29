@@ -1082,6 +1082,11 @@ the knobs do not ship.** Kaggle T4 x2, Qwen3 1.7B bf16 at `9cd6692`, MLX 0.32.4,
 costs the first token one step on today's default, and a whole 4-step chain under KP's readback and the dense
 plan's. Since then:
 - the worker sends each token as it is read back;
+- a grouped member's `done` follows its last token at once. Before, every member's `done` waited for the whole
+  run, so a short request grouped with a long one ended with it. This changes every grouped engine's cost, the
+  default's included. It is also what lets the service see a member finish, which the dense plan's slot reuse
+  needs: before it, slot reuse never ran through the real service (found by the second agent's review; an
+  in-process test now drives the real service and the real worker together);
 - the dense plan prefills with its own head on the last position only (version 2);
 - the dense plan reuses freed slots within a group.
 
@@ -1090,14 +1095,16 @@ validity let `knobs.json` ship". What changed is the implementation: the first-t
 
 H9 measures all three engines in one run, so every combination meets the same traffic.
 
-**Test (`tools/rl2_headroom.py --plan h9`, Kaggle T4 x2, about 4 session hours).**
-- **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally. 12 fresh traces (75-86) in four
-  rounds of three.
+**Test (`tools/rl2_headroom.py --plan h9`, Kaggle T4 x2).**
+- **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally. 12 fresh traces (75-86) in three
+  rounds of four.
 - **Engines:** `tuned` (the default: baseline knobs, RL6's qualified schedule `shortest/w2/g0/sjf`), `kp` (the
   same with compile + readback 4) and `dense` (the plan at `shortest/w8/g0/sjf`).
-- **Order:** each round starts the three engines' pools in turn, the order rotating by one engine per round. Within
-  a block each engine's arm runs at the start and end (A/A for all three).
-- **Before any pool:** KP1's bit-for-bit preflight (kill 1) and H8's dense preflight; either failing stops the run.
+- **Order:** each round starts the three engines' pools in turn, the order rotating by one engine per round. Over
+  the three rounds each engine starts once in each position (a cyclic Latin square), so card heat later in a
+  round falls on all three alike. Within a block each engine's arm runs at the start and end (A/A for all three).
+- **Before any pool:** KP1's bit-for-bit preflight (kill 1), whose failure stops the run, and H8's dense preflight,
+  whose failure drops only the dense arms.
 - **Warm-up and startup:** the same for all engines, as in H8 run 2 and KP1. The recorded stress cell runs for
   every engine.
 - **KP part, KP1's rules unchanged:**
@@ -1112,9 +1119,16 @@ H9 measures all three engines in one run, so every combination meets the same tr
   - validity also needs the plan's answers identical across its runs and every dense cell `numeric@dense`.
   - Pass: the plan is recommended for this setup as an opt-in numeric plan; the recommendation names the gain and
     the answer change.
-- **Validity, both parts:** no request fails or ends without an outcome, and at least two complete traces.
-- **Recorded:** first-token and first-to-second-token times per engine, decode bodies, stress costs, and the
-  plan's answers that match today's.
+- **Validity, per part:** no request fails or ends without an outcome, and at least two complete traces. A
+  dense failure invalidates only the dense part; a failure of `tuned` or `kp` invalidates both.
+- **Recorded:**
+  - first-token and first-to-second-token times per engine;
+  - decode bodies and stress costs;
+  - the plan's answers that match today's;
+  - the plan against both `tuned` and `kp`, so the switch of reference can be seen not to decide the result.
+- **Two notes, fixed now:** the reference switches to `kp` partly because KP measured well on this same data,
+  which is conservative against the plan. The two parts are two one-sided decisions at 2.5 % each on one run.
+- **Cost:** about 4.2 session hours, about 10 minutes of it the plan's installs at each dense pool start.
 
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
