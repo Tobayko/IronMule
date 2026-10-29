@@ -327,8 +327,8 @@ shared cache offset. On two Kaggle T4s (RL3-H, Qwen3 1.7B bf16) one short reques
 differently when grouped with about 1,000-token prompts, because the group's KV capacity then
 followed the long prompts and on CUDA the cache length moves decode logits (X1: up to 0.75, a
 token flipped in 2 of 16 prompts within 32 tokens; the CPU build was bit-exact). Each request now
-decodes at its own capacity, which the runtime contract tests check; that fix is not yet
-re-measured on the T4s. Opt-in reuse that re-pads a stored state to another capacity (`ChatTurnsPlan`'s
+decodes at its own capacity, which the runtime contract tests check; on the T4s the re-run then
+answered all 1,680 requests identically across six arms. Opt-in reuse that re-pads a stored state to another capacity (`ChatTurnsPlan`'s
 turn cache) is not exact on CUDA for the same reason.
 
 **Sustained load is untested.** All measurements used eight requests. Queue effects

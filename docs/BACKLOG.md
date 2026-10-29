@@ -264,6 +264,17 @@ gate either. The model refitted to them meets the fidelity criteria: every cell 
 the resolved pairs ordered right. The trained policy beats the best fixed arm by 4.1 % in the simulator. That is
 below this run's 7.9 % noise, so the simulator gate would fail.
 
+**Result, RL3-H run 2 (2026-10-29, `RL3-H-run2-20261029`, kernel `tobayko/ironmule-rl2-headroom-h3` version 2 at
+`6eaa4b4906d8ee5ab5ef8a15f8b8efdfe71b08d9`, X1's fix; otherwise as run 1): valid, no headroom, the reference
+stays and no learner is built for placement or order.** All 105 cells and 1,680 requests completed, and every
+request got the same answer under all six arms, so X1's fix holds on the T4s. The A/A noise is 18.7 %. That is
+the nearest-rank 95th percentile of 15 pairs, which is their largest. The best fixed arm, `shortest/w8/g0/sjf`,
+is within 0.02 % of the reference. Held out, the joint decision's headroom is -0.7 % (95 % bootstrap -3.0 % to
++1.1 %), placement's is -1.2 % and order's is +0.6 % (+0.2 % to +1.2 %); every bound is below the noise.
+Segregating by length cost 15-24 % more in `bursts` (17.3 for the reference, 19.9-21.5 for the other placements).
+1.7 session hours. *Post hoc:* one A/A pair (`bursts` trace 0, 17.9 against 14.8) sets that noise; the next
+largest is 6.6 %, and every headroom bound is below that too. The rule stays as fixed.
+
 ### X1 — A short request's answer depended on its group on the T4s (opened 2026-10-28, before data)
 
 **Finding.** RL3-H above. A group shares one KV capacity, sized to its longest prompt plus its largest output limit
@@ -308,8 +319,8 @@ mismatch fully. Before their first differing token, all 16 short prompts' logits
 limits. As the rule fixed before the data says, each session now prefills and decodes at the capacity it would
 get alone (`build_sessions`). The group's capacity still bounds it, and a new runtime contract test, with a
 backend whose tokens depend on the capacity, fails without the fix. The engine keeps one decode body per
-capacity (at most eight), and the opt-in paired path pairs only equal capacities. Still owed: RL3-H re-run on
-the fix (the same plan, traces and rule), before RL4 can use its data; the ledger entry.
+capacity (at most eight), and the opt-in paired path pairs only equal capacities. The RL3-H re-run on the fix
+(run 2, in RL3 above) answered all 1,680 requests identically across its six arms. Still owed: the ledger entry.
 
 ### RL4 — A model-based RL agent that places and orders each request (opened 2026-10-28, before data)
 
@@ -725,6 +736,15 @@ processes again.
   to +0.13 %) against 3.5 % A/A noise, and the reference was within 0.4 % of the best arm at every level. RL2's kill
   holds for these two decisions on this fingerprint: no learner for them. Re-open with a new model, checkpoint,
   card, traffic shape or decision (the MEM2 bound and threads were not measured).
+
+- **RL3 length-aware placement and order (2026-10-29).** Experiment `RL3-H-run2-20261029` (kernel
+  `tobayko/ironmule-rl2-headroom-h3` v2, commit `6eaa4b4`; see RL3 above; run 1 was invalid, X1): on two T4s with
+  Qwen 3 1.7B bfloat16 under quiet, bursty and spike traffic with long prompts and 32- or 256-token answers, no
+  decision had held-out headroom above the 18.7 % A/A noise. The joint decision scored -0.7 %, placement -1.2 % and
+  order +0.6 %. Shortest-job-first was within 0.02 % of the reference, and segregating long from short requests
+  cost 15-24 % in bursts. RL3's kill holds: no learner for placement or order by output limit, and the reference
+  stays. Re-open with a new model, card, traffic shape, cost weighting or decision. A noise estimate that one A/A
+  pair does not dominate also counts: here the second-largest pair was 6.6 %.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
