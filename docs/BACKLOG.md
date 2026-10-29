@@ -772,6 +772,24 @@ If KB1-0 passes, the model-level test is a stacked step of eight rows (KB1 plus 
 measured width-8 grouped round, both on the product path. A win there changes the width optimum, and RL6's
 schedule is re-derived from the new per-row cost curve.
 
+**KB1-0 result (2026-10-29, `KB1-0-run1-20261029`, kernel `tobayko/ironmule-cuda-probe-kb1` at
+`4743f947b25ebf0470b706860ec31f67b5750fc6`, Kaggle T4, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 0.03 session
+hours): kill (i) fires, (ii) and (iii) pass.**
+- **(ii) Batch-invariant.** Every row at M = 2, 4 and 8 was bit-identical to the same kernel at one row, on all
+  eight shapes.
+- **(iii) The lever holds.** A step's linear time at eight rows was 1.80x MLX's at one row (95 % 1.76-1.83),
+  against the 5.74 limit. Per token that makes the linear layers about 4.4x cheaper at width 8, against grouped
+  batch-1's 1.39x. At eight rows the kernel beat MLX's own eight-row product 3.7-8x on every shape (output head
+  3.03 against 16.2 ms). At one row it was 7-70 % slower than MLX (k_proj 0.144 against 0.084 ms, head 2.61
+  against 2.44 ms), so it is not a single-request win.
+- **(i) Not bit-identical to MLX at one row.** Rows matched on 35-58 of 64 for the block's layers and 0 of 64 for
+  the head (largest difference 0.0005-0.008 in the block, 0.0625 on the head's logits).
+- **Verdict, as fixed.** The class-A route is closed. KB1 proceeds only inside one plan version together with
+  FA2, so answers change once and pass one quality gate. Next: FA2's kernel, then the model-level test. That test
+  runs eight stacked rows at their own offsets (KB1 and FA2) against the same plan at one row, which must be bit
+  for bit, and against a measured width-8 grouped round on the product path, which must be faster. A quality
+  gate against today's answers decides the plan.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
