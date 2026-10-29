@@ -1154,6 +1154,29 @@ within 1 %. H9 measures only width 2 (default, KP) and width 8 (dense).
 **Kill:** the shipped schedule stays if no arm beats it with a 2.5 % bound above the noise and no harm in any
 state.
 
+**Preview (2026-10-29, before H9's data; descriptive, not the decision).**
+- **Tools.** The pool model gained a release rule (`release`, "group" or "member") and fits runs through the
+  product (`h6`, `h7`, `kp1`, `h9`, by engine), each under the rule the product had then. RL6's run numbered its
+  two states 0 and 1; the model now maps them to `bursts` and `spike`. An unmapped first try fitted garbage, at
+  65-227 % error.
+- **Fit.** On RL6, LD1-V and KP1 (the tuned engine, group release) the fit had a squared log error of 0.002:
+  prefill 0.151 s + 2.2 ms per prompt token, a step 18.5 ms + 16.2 ms per further session (HW4 measured 17-19
+  ms). It passes the fidelity gate on all three runs: every cell within 7.6 %, every resolved pair ordered.
+- **With member release simulated** (200 held-out traces per state), `shortest/w2/g0/sjf` stays the best fixed
+  arm: 15.44 weighted, against 15.57 for w1/sjf, 15.69 for w4/sjf and 16.34 for w8/sjf. Wider groups gain the most
+  (w8 moves from 17 % to 5.8 % behind), but none overtakes w2. A per-state oracle over these arms would gain
+  0.14 %.
+- **The RL agent** (placement, order and width, 6,000 episodes, 3 seeds):
+  - unconstrained, it ends 0.1-1.0 % behind the best fixed arm;
+  - with a harm weight of 5 against each state's best fixed arm (`guard_arms`: w2/fifo, w1/sjf, w4/sjf), it ends
+    0.04-0.37 % ahead and loses at most 0.9 % in any state. The constraint removes the per-state loss that
+    stopped LD1-V's policy.
+  - Its headroom is far below the 3-8 % hardware noise, so by RL4's simulator gate no learner goes to hardware
+    for the tuned engine's schedule.
+- **What is left for RL8:** the refit on H9's member-release data, and the dense plan, whose further row costs
+  about 3 ms against 16 ms. That needs its own step model (stacked rounds of up to eight rows, slots refilled
+  as members end), fitted to H9's dense cells.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine

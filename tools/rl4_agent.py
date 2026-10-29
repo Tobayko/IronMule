@@ -62,6 +62,9 @@ class PoolModel:
     cards: int = 2
     short_prompt_tokens: int = 24
     long_prompt_tokens: int = 1030
+    # RL8: "group" releases every member's completion when the group ends (the product until H9);
+    # "member" releases each at its own last token (since H9).
+    release: str = "group"
 
     def prefill(self, long_prompt: bool) -> float:
         tokens = self.long_prompt_tokens if long_prompt else self.short_prompt_tokens
@@ -82,22 +85,28 @@ class _Request:
 
 
 def group_timeline(model: PoolModel, members: list[_Request], start: float) -> float:
-    """Fill in each member's first-token time; return when the group ends (all completions released)."""
+    """Fill in each member's first-token and end times; return when the group ends. Under `group` release every
+    end is the group's; under `member` release each member ends at its own last token (RL8)."""
     t = start
     remaining = {}
     for member in members:
         t += model.prefill(member.long_prompt)
         member.first = t
         remaining[member.index] = member.max_tokens - 1
+        if remaining[member.index] == 0:
+            member.end = t
     active = [m for m in members if remaining[m.index] > 0]
     while active:
         served = active[:ENGINE_WIDTH]
         t += model.step(len(served))
         for member in served:
             remaining[member.index] -= 1
+            if remaining[member.index] == 0:
+                member.end = t
         active = active[len(served):] + [m for m in served if remaining[m.index] > 0]
-    for member in members:
-        member.end = t
+    if model.release == "group":
+        for member in members:
+            member.end = t
     return t
 
 
@@ -208,11 +217,24 @@ def traffic(state: int, seed: int, capacity_rps: float) -> list[dict[str, Any]]:
     return rl2.trace_h2(state, seed, capacity_rps)
 
 
+def guard_arms(model: PoolModel, capacity_rps: float, arms: Iterable[str], traces: int = 60,
+               seed0: int = 30_000) -> dict[int, str]:
+    """RL8: the best fixed arm of each state in the model, on validation traffic (the arms a policy must not
+    lose to anywhere, since LD1-V's policy lost to one in `bursts`)."""
+    names = list(arms)
+    per_state = evaluate(model, capacity_rps, {name: arm_policy(name) for name in names}, traces, seed0=seed0)
+    return {state: min(names, key=lambda n: (per_state[n][state], n)) for state in range(len(rl2.H2_STATES))}
+
+
 def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: float = 0.05,
-          seed: int = 0, widths: bool = False) -> tuple[Policy, list[float]]:
+          seed: int = 0, widths: bool = False, guards: dict[int, str] | None = None,
+          harm_weight: float = 0.0) -> tuple[Policy, list[float]]:
     """REINFORCE with a running-mean baseline per state; returns the policy and the learning curve.
-    With `widths` (RL6) the policy also learns each group's width."""
+    With `widths` (RL6) the policy also learns each group's width. With `guards` (RL8) each episode's cost
+    also pays `harm_weight` times what it lost to its state's guard arm on the same traffic, so learning is
+    pushed away from losing anywhere rather than only toward the best weighted mean."""
     rng = random.Random(seed)
+    guard_policies = {state: arm_policy(name) for state, name in (guards or {}).items()}
     policy = Policy.zero(widths)
     baseline = [None] * len(rl2.H2_STATES)
     curve = []
@@ -250,6 +272,10 @@ def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: fl
             return rl2.WIDTH_CHOICES[choice]
 
         value = -cost(simulate(model, items, place, order, width=width if widths else None))
+        if state in guard_policies and harm_weight:
+            guard_place, guard_order, guard_width = guard_policies[state]
+            guard = cost(simulate(model, items, guard_place, guard_order, guard_width))
+            value -= harm_weight * max(0.0, -value - guard)
         if baseline[state] is None:
             baseline[state] = value
         advantage = (value - baseline[state]) / max(1e-6, abs(baseline[state]))
@@ -311,28 +337,47 @@ def judge(model: PoolModel, capacity_rps: float, policy: Policy, noise: float, t
     best_fixed = min(fixed, key=lambda name: (weighted[name], name))
     gain = 1 - weighted["learned"] / weighted[best_fixed]
     best_rule = min(SIMULATOR_ONLY_ARMS, key=lambda name: (weighted[name], name))
+    # RL8, information beside the gate: each state against the fixed arm that is best in that state
+    per_state_gain = [1 - per_state["learned"][s] / min(per_state[n][s] for n in fixed)
+                      for s in range(len(rl2.H2_STATES))]
     return {"per_state": per_state, "weighted": weighted, "best_fixed": best_fixed, "gain_vs_best_fixed": gain,
-            "noise": noise, "passes": gain > noise,
+            "noise": noise, "passes": gain > noise, "per_state_gain_vs_best_fixed_there": per_state_gain,
+            "no_state_lost": all(g >= 0 for g in per_state_gain),
             # information only, not the gate: does learning add to the simplest rule it resembles?
             "best_simulator_only_rule": best_rule, "gain_vs_that_rule": 1 - weighted["learned"] / weighted[best_rule]}
 
 
 # ---------------------------------------------------------------- fitting and the fidelity gate
 
-def _cells(report: dict[str, Any]) -> dict[tuple[int, str], list[list[dict[str, Any]]]]:
-    """Measured first runs per (state, arm): each a list of request records with their trace items."""
+PRODUCT_PLANS = ("h6", "h7", "kp1", "h9")  # RL8: runs through the product, arms naming their engine
+MEMBER_RELEASE_PLANS = ("h9",)            # measured after a grouped member's done followed its last token
+FIXED_PLACEMENTS = ("shortest", "segregate", "spill", "fill", "leastwork")
+
+
+def release_of(report: dict[str, Any]) -> str:
+    """The release rule the product had when `report` was measured (RL8)."""
+    return "member" if report.get("rl2h", report).get("plan") in MEMBER_RELEASE_PLANS else "group"
+
+
+def _cells(report: dict[str, Any], engine: str = "tuned") -> dict[tuple[int, str], list[list[dict[str, Any]]]]:
+    """Measured first runs per (state, arm) of `engine`: each a list of request records with their trace items.
+    Arms the model has no rule for (a gather wait, a learned policy) are left out."""
     run = report.get("rl2h", report)
     plan = run.get("plan") or ("h1" if run.get("rates") else None)  # run 1's report predates `plan`
-    if plan not in ("h1", "h2", "h3", "h4"):
-        raise ValueError("the pool model is fitted to rl2_headroom's runs (plans h1 to h4)")
+    if plan not in ("h1", "h2", "h3", "h4", *PRODUCT_PLANS):
+        raise ValueError("the pool model is fitted to rl2_headroom's runs (plans h1 to h4, h6, h7, kp1, h9)")
     capacity = run["calibration"]["capacity_rps"]
     out: dict[tuple[int, str], list[list[dict[str, Any]]]] = {}
     for row in run["rows"]:
-        if row["run"] != 0 or rl2.parse_arm(row["arm"])[2] or rl2.LEARNED == row["arm"]:  # no gather wait in the model
+        placement, _, gather = rl2.parse_arm(row["arm"])
+        if (row["run"] != 0 or gather or rl2.LEARNED == row["arm"] or placement not in FIXED_PLACEMENTS
+                or rl2.arm_engine(row["arm"]) != engine):
             continue
+        # h6 measured `bursts` and `spike` as its levels 0 and 1; every other plan's level is the state itself
+        state = rl2.H6_STATES[row["level"]] if plan == "h6" else row["level"]
         items = ([{**item, "long": False} for item in rl2.trace(row["level"], row["trace"], run["rates"][row["level"]])]
-                 if plan == "h1" else rl2.trace_h2(row["level"], row["trace"], capacity))
-        out.setdefault((row["level"], row["arm"]), []).append(
+                 if plan == "h1" else rl2.trace_h2(state, row["trace"], capacity))
+        out.setdefault((state, row["arm"]), []).append(
             [{**item, **request} for item, request in zip(items, row["requests"])])
     return out
 
@@ -397,13 +442,16 @@ FIT_PARAMETERS = ("prefill_s", "prefill_s_per_token", "step_s", "step_s_per_sess
 
 
 def fit(reports: Iterable[dict[str, Any]], start: PoolModel | None = None, evaluations: int = 400,
-        restarts: int = 2) -> tuple[PoolModel, float]:
+        restarts: int = 2, engine: str = "tuned") -> tuple[PoolModel, float]:
     """Least squared log error between simulated and measured mean first-content and end times per cell,
-    by Nelder-Mead over the four timing parameters in log space, restarted from its own best."""
+    by Nelder-Mead over the four timing parameters in log space, restarted from its own best. Each report is
+    simulated under the release rule the product had when it was measured (RL8), so runs before and after the
+    change share one set of timings."""
     cells = {}
     for report in reports:
-        for key, cell in _cells(report).items():
-            cells[(id(report),) + key] = (key[1], cell, _measured_times(cell))
+        release = release_of(report)
+        for key, cell in _cells(report, engine).items():
+            cells[(id(report),) + key] = (key[1], cell, _measured_times(cell), release)
     base = start or PoolModel()
 
     def model_at(x: list[float]) -> PoolModel:
@@ -412,8 +460,8 @@ def fit(reports: Iterable[dict[str, Any]], start: PoolModel | None = None, evalu
     def loss(x: list[float]) -> float:
         m = model_at(x)
         errors = []
-        for arm, cell, measured in cells.values():
-            simulated = _simulated_times(m, arm, cell)
+        for arm, cell, measured, release in cells.values():
+            simulated = _simulated_times(replace(m, release=release), arm, cell)
             errors += [(math.log(s) - math.log(t)) ** 2 for s, t in zip(simulated, measured)]
         return statistics.fmean(errors)
 
@@ -441,14 +489,28 @@ def _spearman(a: list[float], b: list[float]) -> float:
     return 1 - 6 * sum((x - y) ** 2 for x, y in zip(ra, rb)) / (n * (n * n - 1))
 
 
+def _aa_noise(report: dict[str, Any]) -> float:
+    """RL8: the nearest-rank 95th percentile of every A/A pair's relative difference in a product run."""
+    run = report.get("rl2h", report)
+    deadline = float(run.get("deadline_s") or 120)
+    costs = rl2._cell_costs(run["rows"], deadline)
+    pairs = [(a, costs[(lv, t, arm, 1)]) for (lv, t, arm, r), a in costs.items() if r == 0 and (lv, t, arm, 1) in costs]
+    return rl2._quantile([abs(a - b) / ((a + b) / 2) for a, b in pairs], 0.95) if pairs else 0.0
+
+
 def fidelity(model: PoolModel, report: dict[str, Any], concordance_min: float = 0.9,
-             error_max: float = 0.25) -> dict[str, Any]:
+             error_max: float = 0.25, engine: str = "tuned") -> dict[str, Any]:
     """BACKLOG RL4's fidelity gate on one report: every cell's mean cost within `error_max`, and in each
     state the simulator orders at least `concordance_min` of the arm pairs that the hardware separated
-    by more than the report's A/A noise (pairs closer than that have no measured order to agree with)."""
-    analysis = rl2.analyse(report.get("rl2h", report), resamples=20)  # only its A/A noise is used
-    noise = analysis.get("aa_noise", 0.0) if analysis.get("valid") else 0.0
-    cells = _cells(report)
+    by more than the report's A/A noise (pairs closer than that have no measured order to agree with).
+    The model runs under the release rule the product had for that report (RL8)."""
+    if report.get("rl2h", report).get("plan") in PRODUCT_PLANS:
+        noise = _aa_noise(report)
+    else:
+        analysis = rl2.analyse(report.get("rl2h", report), resamples=20)  # only its A/A noise is used
+        noise = analysis.get("aa_noise", 0.0) if analysis.get("valid") else 0.0
+    model = replace(model, release=release_of(report))
+    cells = _cells(report, engine)
     states = sorted({state for state, _ in cells})
     result: dict[str, Any] = {"noise": noise, "states": {}, "passes": True}
     for state in states:
