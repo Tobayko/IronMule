@@ -854,7 +854,11 @@ Eight prompts as in KB1-1, 32 steps, widths 1 to 8, five alternating rounds, wit
   capacity) and 3 or 8 stacked rows. A variant whose bits differ from (i) must pass the decode-path quality gate
   itself (main and long variants), run in the same session.
 - **(d) The single-row regression** is closed when the fastest eligible variant at one row is faster than
-  today's tuned decode with a 95 % bound below 1. Otherwise it stands at the measured ratio, and the plan cannot
+  today's tuned decode with a 95 % bound below 1, for the short and for the long-context prompt each against the
+  same prompt under today's engine. *Amended 2026-10-29 before run 1's data was read:* run 1 compared the plan's
+  short prompt with today's mean over short and long prompts, which favours the plan, so run 1 does not decide
+  (d) and run 2 measures it as written here. It is an early warning; LD1-V's no-harm rule on the product cost
+  decides. Otherwise it stands at the measured ratio, and the plan cannot
   pass a no-harm check in quiet traffic: a request cannot change plans in mid-life, and choosing the plan by load
   would make answers depend on load.
 - **Recorded:** each variant's milliseconds per step and per token at widths 1-8. The cost per further row is

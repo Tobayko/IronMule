@@ -1553,12 +1553,14 @@ def probe_kb1_2(model: Any, tokenizer: Any, *, steps: int = KB12_STEPS, rounds: 
     prefills = [_prefill(model, ids) for ids in prompts]
     capacity = max(capacity_for(len(ids), steps) for ids in prompts)
 
-    def stack(plan: "DensePlan", rows: int) -> tuple[Any, Any, Any]:
+    def stack(plan: "DensePlan", rows: int, start: int = 0) -> tuple[Any, Any, Any]:
+        """Rows `start`..`start + rows`; one row at index 1 is the long-context case."""
+        members = range(start, start + rows)
         cache = plan.new_cache(rows, capacity)
-        for r in range(rows):
-            cache = plan.load_prefill(cache, r, prefills[r][0])
-        first = mx.concatenate([prefills[r][1] for r in range(rows)]).astype(mx.uint32)
-        return first, mx.array([len(prompts[r]) for r in range(rows)]), cache
+        for r, member in enumerate(members):
+            cache = plan.load_prefill(cache, r, prefills[member][0])
+        first = mx.concatenate([prefills[m][1] for m in members]).astype(mx.uint32)
+        return first, mx.array([len(prompts[m]) for m in members]), cache
 
     def digests(plan: "DensePlan", step: Callable[..., Any], rows: int, feed: list[list[int]]) -> list[list[str]]:
         first, positions, cache = stack(plan, rows)
@@ -1618,11 +1620,12 @@ def probe_kb1_2(model: Any, tokenizer: Any, *, steps: int = KB12_STEPS, rounds: 
             for name in names[shift:] + names[:shift]:
                 plan, step = variants[name]
                 row[name] = {str(rows): plan_decode(step, *stack(plan, rows), steps)[0] for rows in KB12_WIDTHS}
+                row[name]["1long"] = plan_decode(step, *stack(plan, 1, start=1), steps)[0]
             per = []
-            for ids in prompts:
+            for ids in prompts[:2]:  # the short prompt (index 0) and the long one (index 1), as the plan's one-row cases
                 out = tuned.generate(ids, steps + 1, eos)
                 per.append(out["decode_ns"] / 1e9 / max(1, len(out["physical_tokens"]) - 1))
-            row["today_tuned"] = statistics.fmean(per)
+            row["today_tuned"], row["today_tuned_long"] = per
             timing.append(row)
     finally:
         tuned.close()
@@ -1650,8 +1653,10 @@ def analyse_kb1_2(result: dict[str, Any]) -> dict[str, Any]:
     for name, entry in (result.get("variants") or {}).items():
         exact = all(v == int(rows) * entry["steps_per_row"] for rows, v in entry["identical_steps"].items())
         curve = {w: statistics.median(t[name][w] for t in timing) * 1000 for w in widths} if timing else {}
-        ratios = [t[name]["1"] / t["today_tuned"] for t in timing]
+        ratios = [t[name]["1"] / t["today_tuned"] for t in timing]  # the short prompt, one row, against itself
         ci = _bootstrap_mean(ratios, 2000) if ratios else [None, None]
+        long_ratios = [t[name]["1long"] / t["today_tuned_long"] for t in timing if "1long" in t[name]]
+        long_ci = _bootstrap_mean(long_ratios, 2000) if long_ratios else [None, None]
         gate = (result.get("gate") or {}).get(name)
         gate_ok = None
         if gate:
@@ -1663,15 +1668,24 @@ def analyse_kb1_2(result: dict[str, Any]) -> dict[str, Any]:
                                  "ms_per_step_by_width": curve,
                                  "ms_per_token_by_width": {w: curve[w] / int(w) for w in curve},
                                  "one_row_over_today_tuned": statistics.fmean(ratios) if ratios else None,
-                                 "ci95": ci, "gate_passes": gate_ok,
+                                 "ci95": ci, "long_one_row_over_today_tuned":
+                                     statistics.fmean(long_ratios) if long_ratios else None,
+                                 "long_ci95": long_ci, "gate_passes": gate_ok,
                                  "eligible": exact and gate_ok is not False}
     eligible = {n: v for n, v in out["variants"].items() if v["eligible"] and v["ci95"][0] is not None}
     best = min(eligible, key=lambda n: eligible[n]["one_row_over_today_tuned"]) if eligible else None
     out["best"] = best
-    out["today_tuned_ms"] = statistics.median(t["today_tuned"] for t in timing) * 1000 if timing else None
-    out["(d) single-row regression"] = (None if best is None else
-                                        "closed" if eligible[best]["ci95"][1] < 1 else
-                                        f"stands: {eligible[best]['one_row_over_today_tuned']:.3f}x today's tuned")
+    out["today_tuned_ms"] = ({"short": statistics.median(t["today_tuned"] for t in timing) * 1000,
+                              "long": statistics.median(t["today_tuned_long"] for t in timing) * 1000}
+                             if timing else None)
+    if best is None:
+        out["(d) single-row regression"] = None
+    else:
+        v = eligible[best]
+        closed = [k for k, ci in (("short", v["ci95"]), ("long", v["long_ci95"])) if ci[1] is not None and ci[1] < 1]
+        out["(d) single-row regression"] = ("closed" if len(closed) == 2 else
+                                            f"stands: {v['one_row_over_today_tuned']:.3f}x short, "
+                                            f"{(v['long_one_row_over_today_tuned'] or 0):.3f}x long; closed in {closed}")
     return out
 
 
