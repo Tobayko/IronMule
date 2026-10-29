@@ -14,8 +14,11 @@ mx = pytest.importorskip("mlx.core")
 
 
 class _Tokenizer:
-    eos_token_id = 255
-    eos_token_ids = {255}
+    # Outside the tiny model's 256-token vocabulary: no run stops early, so every timed run decodes its steps.
+    # With 255 a random model's first token was sometimes EOS, and a zero time per token has no logarithm
+    # (CI on 843a865).
+    eos_token_id = 999
+    eos_token_ids = {999}
 
     def encode(self, text):
         return [ord(c) % 200 + 1 for c in text]
@@ -30,6 +33,7 @@ class _Tokenizer:
 def _tiny():
     from mlx_lm.models import qwen3
 
+    mx.random.seed(11)  # fixed weights, so a failure reproduces
     args = qwen3.ModelArgs(model_type="qwen3", hidden_size=64, num_hidden_layers=2, intermediate_size=128,
                            num_attention_heads=4, rms_norm_eps=1e-6, vocab_size=256, num_key_value_heads=2,
                            max_position_embeddings=512, rope_theta=10000.0, head_dim=16, tie_word_embeddings=True)
