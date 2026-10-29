@@ -162,3 +162,37 @@ def test_a_request_that_does_not_fit_a_slot_is_refused_before_any_work():
     with pytest.raises(ValueError, match="do not fit"):
         runtime.serve([Request(prompt_ids=[1] * 12, max_tokens=8)])
     assert runtime.backend.free_slots() == 8
+
+
+def test_the_product_bridge_serves_the_dense_plan_at_width_eight_and_lets_joins_take_free_slots():
+    from types import SimpleNamespace
+
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    model = _tiny()
+    plan = _plan(model)
+    runtime = _runtime(model, plan)
+    identity = SimpleNamespace(to_dict=lambda: {"identity_sha256": "a" * 64})
+    bridge = CurrentEngineBridge(runtime, identity=identity, knobs=Knobs(), profile_available=False,
+                                 profile_source="dense_numeric_plan", configuration="dense_stacked",
+                                 historical_configuration_candidate=None, dense_plan={"kernel_sha256": dp.KERNEL_SHA256})
+    prompts = [[5, 9, 13], [3, 7, 11, 15, 19], [8, 6, 4, 2], [40, 41], [99] * 6, [12, 14], [21, 23, 25], [30] * 9]
+    alone = [bridge.generate(ids, 6).tokens for ids in prompts]
+    streamed = []
+    joins = [([50, 51, 52], 6, streamed.append, None)]  # the worker always streams a joiner
+    seen = {"slots": None}
+
+    def admit(capacity):
+        seen["slots"] = bridge.free_slots()
+        rows, joins[:] = list(joins), []
+        return rows
+
+    results = bridge.generate_many(prompts[:7], 6, admit=admit)
+    assert [r.tokens for r in results[:7]] == alone[:7]
+    assert results[7].tokens == streamed == bridge.generate([50, 51, 52], 6).tokens  # the joiner, as alone
+    assert seen["slots"] is not None and bridge.free_slots() == plan.slots
+    assert results[0].metadata["dense_plan"]["kernel_sha256"] == dp.KERNEL_SHA256
+    eight = bridge.generate_many(prompts, 6)
+    assert [r.tokens for r in eight] == alone and eight[0].metadata["max_realised_width"] == 8
+    with pytest.raises(ValueError, match="one-shot"):
+        bridge.generate_many(prompts[:2], 6, boundaries=[[1], None])

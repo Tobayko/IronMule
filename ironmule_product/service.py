@@ -179,7 +179,8 @@ class ProductService:
         with self._lock:
             result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self._backend_ready()),
                     "mode": self.settings["mode"],
-                    "execution": ("exact" if getattr(self.backend, "compute_dtype", None) is None
+                    "execution": ("numeric@dense" if getattr(self.backend, "engine_configuration", None) == "dense_stacked"
+                                  else "exact" if getattr(self.backend, "compute_dtype", None) is None
                                   else f"exact@{self.backend.compute_dtype}"),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
                                 else getattr(self.backend, "execution_variant", "reference")),

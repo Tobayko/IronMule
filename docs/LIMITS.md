@@ -152,9 +152,10 @@ serving policy); everywhere else the default is unchanged and unmeasured. A widt
 -1.9 to 3.4 %) but did not beat it. Run through the product's learned dispatch on mixed traffic, it beat the default
 by 21.2 % but cost 6.9 % more than width 1 in bursts, so it is not qualified (LD1-V).
 
-Decode on one T4 (HW3 and TB1, Qwen3 1.7B bf16, MLX 0.32.4, 6 prompts x 64 tokens): compiling the decode step
-plus reading the host every 4 tokens made decode 8.2 % faster with identical tokens (0.918, 95 % 0.914-0.921);
-that is token equality on a sample, not yet bit identity (HW4). Prompt-lookup speculation changed tokens there,
+Decode on one T4 (HW3, HW4 and TB1, Qwen3 1.7B bf16, MLX 0.32.4, 6 prompts x 64 tokens): compiling the decode
+step plus reading the host every 4 tokens made decode 8.2 % faster (0.918, 95 % 0.914-0.921), and HW4 found its
+logits and state bit-identical to the untuned engine's. Skipping the output head over the prompt
+(`head_skip_prefill`) changes the prefill's logits on this card. Prompt-lookup speculation changed tokens there,
 and so did stacking requests into one forward (true tensor batching), which also made a token only 1.34x cheaper
 at eight rows, because MLX's bf16 product at 2-32 rows is 5-7x slower than at one row. A decode step reaches 70 %
 of the weight-bandwidth floor (252 GB/s measured). Prefill of a 1,026-token prompt takes 1.7 s. A research plan

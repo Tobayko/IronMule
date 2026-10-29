@@ -640,7 +640,7 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
 
 # Engine configurations whose worker accepts grouped requests: the historical throughput
 # candidates (buffered) and the current profile's streaming groups (SERVE4).
-BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile"})
+BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked"})
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -823,9 +823,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
 
             def admit(capacity: int) -> list[tuple[list[int], int, Any]]:
                 fresh = []
+                slots = getattr(engine_bridge, "free_slots", lambda: None)()  # KB1: the dense plan's free slots
                 for row in drain_joins():
-                    if len(row[1]) + row[2] + 8 > capacity:
-                        leftovers.append(row)  # too long for this run's cache; it runs right after
+                    if len(row[1]) + row[2] + 8 > capacity or (slots is not None and len(fresh) >= slots):
+                        leftovers.append(row)  # too long for this run's cache, or no slot; it runs right after
                         continue
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
                                                    lock, tokenizer)
@@ -1133,7 +1134,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="current_engine: reuse KV state across chat turns (ChatTurnsPlan, SERVE7)")
     parser.add_argument("--engine-configuration", default="current_profile",
                         choices=("current_profile", "baseline_interactive", "core_interactive",
-                                 "baseline_throughput", "core_throughput", "rust2"))
+                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")

@@ -34,7 +34,7 @@ _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
-                                   "baseline_throughput", "core_throughput", "rust2"))
+                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
 CONTEXT_LIMIT = 8192
 
 
@@ -159,7 +159,8 @@ class MLXWorkerClient:
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
-        if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
+        if self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
+                                                                                        "dense_stacked"):
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
                 and self._ready_payload.get("automatic_batch_qualified") is True):
@@ -169,7 +170,8 @@ class MLXWorkerClient:
     @property
     def streams_batches(self) -> bool:
         """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
-        return self.execution_variant == "current_engine" and self.engine_configuration == "current_profile"
+        return self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
+                                                                                            "dense_stacked")
 
     def can_batch_requests(self, requests: Any) -> bool:
         """Check metadata admission to the opt-in transport without model execution."""

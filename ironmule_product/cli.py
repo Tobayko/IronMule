@@ -200,13 +200,16 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "stock", "ironmule"), default="reference",
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "stock", "ironmule"), default="reference",
                         help="stock/ironmule are the earlier names of reference/tuned. "
                              "experimental: stream from IronMule's engine with this machine's confirmed "
                              "`ironmule tune` profile (the untuned engine where none exists); not yet faster "
                              "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
                              "rust2 (CUDA, Qwen3 dense 4-bit): the rust2 binary named by IRONMULE_RUST2_BINARY, "
-                             "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV)",)
+                             "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV). "
+                             "dense (CUDA below compute capability 8, Qwen 3 bf16): the opt-in dense numeric plan, up "
+                             "to eight requests in one decode step through IronMule's own kernels; answers differ from "
+                             "the other engines' but never with the group (KB1)",)
     parser.add_argument("--no-thinking", action="store_true",
                         help="answer without a thinking section where the model's chat template has one "
                              "(start sets it on a machine without a GPU, CPU5)")
@@ -290,7 +293,8 @@ def serve(argv: list[str]) -> int:
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
-                                       **({"engine_configuration": "rust2"} if args.engine == "rust2" else {}))
+                                       **({"engine_configuration": {"rust2": "rust2", "dense": "dense_stacked"}[args.engine]}
+                                          if args.engine in ("rust2", "dense") else {}))
             if len(devices) > 1:
                 from .device_pool import start_pool
                 service = start_pool(store, spec, devices, make_backend, ProductService)

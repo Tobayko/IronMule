@@ -883,6 +883,28 @@ ships only inside a plan version with a quality gate, together with KB1 if KB1's
 being slower than MLX's own fused kernel. **Kill:** not faster than the masked attention at 64 and 1,024 tokens,
 or the plan's quality gate fails.
 
+**HW4 result (2026-10-29, `HW4-run1-20261029`, kernel `tobayko/ironmule-cuda-probe-hw4` at
+`6194401961f7dd93560bf430d92e6776749cdecc`, decode winner `compiled_fixed_cache` + `fused_argmax` + `readback_every`
+4 by HW3's rule, Kaggle T4, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 0.8 session hours): valid.** Every part
+ran without an error.
+- **Class A:** 7 knob sets are bit-identical to the baseline in prefill logits and state, every decode step and
+  the final state: `compiled_fixed_cache`, `fused_argmax`, `fuse_projections` and every combination of the three.
+  `readback_every` moves only host reads, so HW3's best combination, compile + readback 4 (0.918), is class A:
+  8.2 % faster decode with today's answers bit for bit.
+- **Not class A:** `head_skip_prefill` changes the prefill's last logits (the head at one row against the head
+  over the whole prompt). Prompt-lookup speculation's k + 1 verify windows differ from the sequential steps.
+- **Separability:** `head_skip_prefill` and the decode winner couple slightly (interaction 0.998, 95 % bound below
+  1, at n = 16, 64 and 256). Fusion and the decode winner are within 0.06 % of separable. Because
+  `head_skip_prefill` is not class A, no exact prefill knob qualifies.
+- **`prefill_into_fixed`** kept its tokens but made prefill 7.8 % slower (1.078). `E1`'s kill holds on CUDA.
+- **Cost per further session** on the grouped path: 17.2-18.9 ms per set against 19.6-21.6 ms for one session.
+  Grouped batch-1 saves little per extra member on this card (RL6's fit had 13.4 ms; this run's prompts were short).
+  No pair of sets changed order across widths 1, 2 and 4, and every width's answers were identical across sets.
+- **Compile cost:** a new compiled body costs 13-22 ms at a new capacity.
+- **Gap report:** a long prompt's prefill took 1,815 ms against a 1,213 ms floor (2.9 TFLOP/s, the best measured
+  linear at 1,024 rows), a 33 % gap. Decode reaches 70 % of its bandwidth floor (HW3). Both remedies are class B:
+  float16 tensor cores for prefill (U2) and the dense plan for decode (KB1-1).
+
 ### RL7 — An RL agent over scheduling and execution knobs together (opened 2026-10-29, before data)
 
 **Mechanism.** The product decides scheduling (card, order, width; RL6) and execution knobs (prefill set, decode
@@ -917,6 +939,14 @@ would depend on traffic, the defect X1 removed.
    trained learner must then beat the per-state table by the same margin, or the table ships instead.
 5. **Hardware:** LD1-V's rules unchanged. The pooled gain's 2.5 % bound exceeds the noise, and each state's bound
    exceeds minus the noise.
+
+**Result (2026-10-29, from HW4): kill 1 passes and kill 2 fires, so no knob learner.** Seven knob sets are class A
+(kill 1 passes). No pair of them changed order across widths 1, 2 and 4, so the knobs separate from scheduling
+(kill 2). As fixed, the knob axis needs no learner: the best class-A profile (compile + readback 4, 0.918) is
+combined with the best schedule, and the pool model is refitted per set. RL7's question still applies where the
+cost curve does change shape: under the dense plan a further row costs about 2.3 ms against 17-19 ms on today's
+grouped path. Re-deriving width and order for it is the dense plan's hardware comparison (KB1, product path), not a
+knob learner.
 
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
@@ -1317,6 +1347,18 @@ processes again.
   the v2 policy that also picks each group's width gained 0.8 % (95 % -1.9 to 3.4 %) over the best fixed arm,
   `shortest/w1/g0/sjf`, against 3.0 % noise. No width learner. The fixed narrow shortest-first schedule it found
   is the candidate default (RL6).
+
+- **A knob learner over the engine's execution knobs on the T4 (RL7, 2026-10-29).** Experiment `HW4-run1-20261029`
+  (see RL7 above): seven knob sets are class A but none changes order with the group width, so knobs and
+  scheduling separate and the best fixed profile plus the best schedule is the policy. Re-open when a knob's cost
+  per further session changes shape against another's.
+
+- **`head_skip_prefill` as an exact knob on CUDA (2026-10-29).** Experiment `HW4-run1-20261029`: the output head at
+  one row gives other bits than the head over the whole prompt, so the prefill's logits change. Re-open with a head
+  kernel that is invariant to the row count.
+
+- **`prefill_into_fixed` on CUDA (2026-10-29).** Experiment `HW4-run1-20261029`: tokens kept, prefill 7.8 % slower.
+  `E1`'s kill ("the phase it would optimise costs 1.47 ms of 537 ms") holds on the T4.
 
 - **Prompt-lookup speculation as an exact knob on CUDA (2026-10-29).** Experiment `HW3-run1-20261029` (see HW3
   above): on a T4 every combination with `speculate_k` 3 changed tokens (first at steps 23-58 of 64), acceptance
