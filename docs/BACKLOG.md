@@ -359,6 +359,18 @@ the A/A noise: no learner ships, and the best fixed arm stays as RL3 decides. Fa
 before hardware. A learned arm that passes still needs the product integration (opt-in, off by default,
 qualification and rollback as `docs/LIVE_LEARNING.md` describes) and its own paired validation.
 
+**Result (2026-10-29, `RL4-SIM-20261029`, on RL3-H run 2's data; local, no GPU): the fidelity gate passes, the
+simulator gate fails, and RL4 stops before hardware.** The model was fitted to RL3-H run 2 only (prefill 0.145 s +
+2.65 ms per prompt token, decode round 19.8 ms + 13.4 ms per extra session; loss 0.0015). RL2-H2's times predate
+X1's fix and were left out. It predicted every one of run 2's 18 cells within 6.1 % and ordered every pair the
+hardware resolved; at 18.7 % noise that was only 6 pairs. REINFORCE ran 12,000 episodes on each of 4 seeds, and
+seed 3 had the lowest validation cost. Over training its episode cost fell from 20.0 to 19.3. On 200 held-out
+traces per state the policy (digest `e3f07b833e90`) cost 18.97 against 19.51 for the best fixed arm
+(`shortest/w8/g0/sjf`), a gain of 2.8 %. Against the best rule outside the arms (`leastwork/w8/g0/sjf`) the gain
+was 2.9 %. Per state: 2.44, 19.82 and 34.64 against 2.42, 19.94 and 36.15. The gate needs more than run 2's
+18.7 % A/A noise, so it fails by a wide margin. It would also fail against the post hoc 6.6 %. The agent learns,
+but what it learns is smaller than this testbed can measure. RL4's kill holds.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better
@@ -745,6 +757,12 @@ processes again.
   cost 15-24 % in bursts. RL3's kill holds: no learner for placement or order by output limit, and the reference
   stays. Re-open with a new model, card, traffic shape, cost weighting or decision. A noise estimate that one A/A
   pair does not dominate also counts: here the second-largest pair was 6.6 %.
+
+- **RL4 model-based RL agent for per-request placement and order (2026-10-29).** Experiment `RL4-SIM-20261029`
+  (see RL4 above): a REINFORCE policy trained in a pool simulator fitted to RL3-H run 2 passed the fidelity gate.
+  In the simulator it beat the best fixed arm by only 2.8 %, against an 18.7 % A/A noise, so the simulator gate
+  failed and no learned arm went to hardware. Re-open with a testbed whose noise is several times smaller than a
+  few per cent, or a decision whose simulated gain is several times larger.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:

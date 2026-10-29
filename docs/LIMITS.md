@@ -133,6 +133,12 @@ width up to 8, no wait) was within 0.4 % of the best arm at every level, so it s
 built for these decisions. Not measured: other models and checkpoints, longer prompts or answers, bursty or real
 traffic, one card, the MEM2 cache bound, detokenizing threads.
 
+RL3-H (backlog RL3, run 2; the same session type, model and pool under quiet, bursty and spike traffic with
+1,000-token prompts and 32- or 256-token answers): placing or ordering requests by output limit gains nothing
+measurable. No decision's held-out headroom cleared the 18.7 % A/A noise, and separating long from short requests
+cost 15-24 % in bursts. A REINFORCE agent trained in a simulator fitted to that run (RL4) gained 2.8 % in
+simulation, too little to test on this hardware, so no learned placement or ordering policy exists in the product.
+
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a
 prefill allocation or a CUDA graph then fails within about half an hour (four losses in six overload replays). Before
