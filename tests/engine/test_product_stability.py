@@ -106,6 +106,9 @@ def _grouped(service: ProductService, requests: list[GenerationRequest], gap_s: 
     for index, request in enumerate(requests, 1):
         threads.append(threading.Thread(target=run, args=(index, request)))
         threads[-1].start()
+        # Queued in order behind the blocker before the next starts: under a loaded test run a late thread
+        # could otherwise miss the group and run alone.
+        _until(lambda index=index: service.health()["queued_requests"] >= index, timeout=5.0)
         time.sleep(gap_s)
     for thread in threads:
         thread.join(timeout=30)
