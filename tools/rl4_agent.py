@@ -65,6 +65,11 @@ class PoolModel:
     # RL8: "group" releases every member's completion when the group ends (the product until H9);
     # "member" releases each at its own last token (since H9).
     release: str = "group"
+    # RL8: sessions one decode round serves (grouped batch-1 rotates four; the dense plan steps up to eight
+    # stacked rows at once), and whether newcomers take a running group's free places between rounds (the dense
+    # plan's slot reuse) instead of waiting for the group to end.
+    engine_width: int = ENGINE_WIDTH
+    joins: bool = False
 
     def prefill(self, long_prompt: bool) -> float:
         tokens = self.long_prompt_tokens if long_prompt else self.short_prompt_tokens
@@ -97,7 +102,7 @@ def group_timeline(model: PoolModel, members: list[_Request], start: float) -> f
             member.end = t
     active = [m for m in members if remaining[m.index] > 0]
     while active:
-        served = active[:ENGINE_WIDTH]
+        served = active[:model.engine_width]
         t += model.step(len(served))
         for member in served:
             remaining[member.index] -= 1
@@ -130,6 +135,8 @@ def simulate(model: PoolModel, items: list[dict[str, Any]], place: Placer, order
     `width`, when given, picks each group's width (at most `capacity`) from the ordered queue (RL6)."""
     requests = [_Request(i, item["offset_s"], item["max_tokens"], bool(item.get("long")))
                 for i, item in enumerate(items)]
+    if model.joins:
+        return _simulate_joining(model, requests, place, order, capacity, width)
     cards = [_Card() for _ in range(model.cards)]
     pending = sorted(requests, key=lambda r: (r.arrive, r.index))
 
@@ -157,6 +164,60 @@ def simulate(model: PoolModel, items: list[dict[str, Any]], place: Placer, order
             now = card.free_at
             card.running = []
             start(card, now)
+    return requests
+
+
+def _sjf_sort(waiting: list[_Request], now: float) -> None:
+    waiting.sort(key=lambda r: (now - r.arrive <= rl2.SJF_AGE_S,
+                                r.max_tokens if now - r.arrive <= rl2.SJF_AGE_S else 0, r.arrive))
+
+
+def _simulate_joining(model: PoolModel, requests: list[_Request], place: Placer, order: Orderer, capacity: int,
+                      width: Callable[[list[_Request], float], int] | None) -> list[_Request]:
+    """RL8: a card that runs one continuous group. At each round boundary it prefills waiting requests into its
+    free places (up to the width), then steps every running member together; each member ends at its own last
+    token, and its place is free for the next boundary (the dense plan with slot reuse)."""
+    cards = [_Card() for _ in range(model.cards)]
+    pending = sorted(requests, key=lambda r: (r.arrive, r.index))
+    remaining: dict[int, int] = {}
+
+    def boundary(card: _Card) -> None:
+        t = card.free_at
+        if card.waiting:
+            if order(card.waiting, t) == "sjf":
+                _sjf_sort(card.waiting, t)
+            limit = capacity if width is None else min(capacity, width(card.waiting, t))
+            room = max(0, limit - len(card.running))
+            admitted, card.waiting = card.waiting[:room], card.waiting[room:]
+            for request in admitted:
+                t += model.prefill(request.long_prompt)
+                request.first = t
+                remaining[request.index] = request.max_tokens - 1
+                if remaining[request.index] == 0:
+                    request.end = t
+                else:
+                    card.running.append(request)
+        if card.running:
+            served = card.running[:model.engine_width]
+            t += model.step(len(served))
+            for request in served:
+                remaining[request.index] -= 1
+                if remaining[request.index] == 0:
+                    request.end = t
+            card.running = card.running[len(served):] + [r for r in served if remaining[r.index] > 0]
+        card.free_at = t
+
+    while pending or any(card.running or card.waiting for card in cards):
+        busy = [card for card in cards if card.running or card.waiting]
+        next_boundary = min((card.free_at for card in busy), default=math.inf)
+        if pending and pending[0].arrive <= next_boundary:
+            request = pending.pop(0)
+            card = cards[place(request, cards, request.arrive)]
+            if not (card.running or card.waiting):
+                card.free_at = max(card.free_at, request.arrive)  # an idle card starts when work arrives
+            card.waiting.append(request)
+        else:
+            boundary(min(busy, key=lambda c: c.free_at))
     return requests
 
 

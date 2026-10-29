@@ -215,3 +215,25 @@ def test_a_harm_weight_pushes_learning_toward_losing_no_state_to_its_best_fixed_
     worst_guarded, verdict = worst_loss(guarded)
     assert set(verdict) >= {"per_state_gain_vs_best_fixed_there", "no_state_lost"}
     assert worst_guarded >= worst_loss(plain)[0] - 0.01  # the guard does not make the worst state worse
+
+
+
+def test_a_joining_card_admits_newcomers_into_freed_places_between_rounds():
+    from dataclasses import replace
+
+    dense = replace(MODEL, release="member", engine_width=8, joins=True, cards=1, step_s_per_session=0.001)
+    alone_then_newcomer = _items((0.0, 40, False), (0.01, 3, False))
+    joined = sorted(rl4.simulate(dense, alone_then_newcomer, rl4.fixed_placer("shortest"), rl4.fixed_orderer("fifo"),
+                                 capacity=2), key=lambda r: r.index)
+    waited = sorted(rl4.simulate(replace(dense, joins=False), alone_then_newcomer, rl4.fixed_placer("shortest"),
+                                 rl4.fixed_orderer("fifo"), capacity=2), key=lambda r: r.index)
+    assert joined[1].first < joined[1].end < joined[0].end  # it took a free place while the long one ran
+    assert waited[1].first > waited[0].end  # without joins it waits for the group to end
+    full = _items((0.0, 2, False), (0.0, 40, False), (0.01, 3, False))  # both places taken until one ends
+    short, long_, newcomer = sorted(rl4.simulate(dense, full, rl4.fixed_placer("shortest"), rl4.fixed_orderer("fifo"),
+                                                 capacity=2), key=lambda r: r.index)
+    assert short.end <= newcomer.first < long_.end
+    spike = _items(*[(0.01 * i, 256 if i % 3 == 0 else 32, i % 2 == 0) for i in range(16)])
+    by_mode = {joins: rl4.cost(rl4.simulate(replace(dense, joins=joins, cards=2), spike, rl4.fixed_placer("shortest"),
+                                            rl4.fixed_orderer("sjf"))) for joins in (False, True)}
+    assert by_mode[True] < by_mode[False]
