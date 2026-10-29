@@ -44,7 +44,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import rl2_headroom as rl2  # noqa: E402  (the harness this agent is judged by)
 
 ENGINE_WIDTH = 4                 # ironmule.executor.MAX_GROUP_WIDTH
-TRAIN_SEED0 = 10_000             # training traffic seeds; the hardware traces use 0-5 (rl2_headroom)
+TRAIN_SEED0 = 10_000             # training traffic seeds; the hardware traces use indices 0-34 (rl2_headroom)
 HELD_OUT_SEED0 = 50_000          # the simulator gate's held-out traffic
 FIXED_ARMS = ("shortest/w8/g0", "shortest/w8/g0/sjf", "segregate/w8/g0", "segregate/w8/g0/sjf",
               "spill/w8/g0", "spill/w8/g0/sjf")

@@ -371,6 +371,38 @@ was 2.9 %. Per state: 2.44, 19.82 and 34.64 against 2.42, 19.94 and 36.15. The g
 18.7 % A/A noise, so it fails by a wide margin. It would also fail against the post hoc 6.6 %. The agent learns,
 but what it learns is smaller than this testbed can measure. RL4's kill holds.
 
+### RL4-S — The frozen RL4 policy on spike traffic, where the testbed is quiet (opened 2026-10-29, before data)
+
+**Re-opens** the Tier 0 entry "RL4 model-based RL agent for per-request placement and order"
+(`RL4-SIM-20261029`). Its kill reads: "In the simulator it beat the best fixed arm by only 2.8 %, against an
+18.7 % A/A noise, so the simulator gate failed". Its re-open clause asks for "a testbed whose noise is several
+times smaller than a few per cent". **New hardware evidence.** The 18.7 % came from one `bursts` pair. In
+`spike`, all 15 A/A pairs of the three T4 runs differed by 0.2-4.5 %, and the five of RL3-H run 2 by at most
+1.4 %. A spike delivers all 16 arrivals within a second, so the queue it builds is nearly the same on every
+replay. The frozen policy (digest `e3f07b833e90`, trained before this entry) has its largest simulated gain
+there. On RL4's 200 held-out spike traces it cost 34.64, against 36.15 for RL3-H run 2's best fixed arm
+`shortest/w8/g0/sjf` and 35.99 for the best simulator-only rule: a gain of 4.2 %, three times run 2's spike noise.
+Nothing is retrained or refitted for this entry.
+
+**Test (`tools/rl2_headroom.py --plan h5`, Kaggle T4 x2, about 1.5 session hours).** RL3-H run 2's pool, model,
+revision, engine, cost, cell order and validity. Traffic: `spike` only, from run 2's generator. It uses 30 traces
+(indices 5-34) whose seeds no earlier run and no training, validation or held-out simulation used. Arms: the
+reference `shortest/w8/g0`, `shortest/w8/g0/sjf`, and `learned` with the frozen policy, whose digest the kernel
+verifies.
+
+**Decision (fixed before data).**
+- **Noise:** the nearest-rank 95th percentile of the 30 A/A pairs, which is their second largest.
+- **Rival:** the cheaper of the two fixed arms over the 30 traces.
+- **Gain:** one minus the learned arm's summed cost over the rival's, paired by trace, with a bootstrap over the
+  traces (2,000 resamples, seed 0).
+- **Pass:** the learned policy beats the rival only if the gain's 2.5 % bound exceeds the noise.
+- **Validity:** every request's answer must be identical in all arms.
+
+**Kill.** A 2.5 % bound at or below the noise: RL4 stays in Tier 0, now for `spike` as well. **A pass ships
+nothing by itself.** It makes the policy a candidate for the product's opt-in learner, which is off by default,
+needs its own qualification and rollback (`docs/LIVE_LEARNING.md`), and needs a paired validation on traffic that
+mixes states.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better

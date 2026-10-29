@@ -63,6 +63,10 @@ X1 (`--plan x1`, BACKLOG X1, fixed 2026-10-28 before its data) is not a headroom
 one short request was answered differently across arms, and X1 checks on each card whether the KV capacity, the
 group or the card moves a request's tokens (`exactness_on_device`, decided by `x1_summary`).
 
+RL4-S (`--plan h5`, BACKLOG RL4-S, fixed 2026-10-29 before its data) keeps run 4's arms (the reference, run 3's
+best fixed arm and the frozen learned policy), cost, order, noise, verdict and validity, and replays only `spike`
+traffic, on 30 traces (indices 5-34) whose seeds no earlier run and no training used.
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
@@ -118,6 +122,8 @@ PROMPTS = ("Explain how a refrigerator keeps food cold.", "What causes the seaso
            "What does a CPU cache do?", "How do airplanes stay in the air?")
 H2_STATES = ("quiet", "bursts", "spike")
 H2_TRACES = 5
+H5_STATE = 2                       # RL4-S: `spike` only, where run 3's A/A pairs stayed within 1.4 %
+H5_TRACES = tuple(range(5, 35))    # 30 traces whose seeds no earlier run and no training used
 H2_MAX_TOKENS = (32, 256)
 # Run 2's long prompts: generic filler of about a thousand tokens before the question, never user text.
 CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8)
@@ -648,7 +654,10 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
     if report["calibration"].get("failed"):
         return report
     capacity = report["calibration"]["capacity_rps"]
-    if plan in ("h2", "h3", "h4"):
+    if plan == "h5":
+        report["states"] = [H2_STATES[H5_STATE]]
+        traffic = [lambda t: trace_h2(H5_STATE, t, capacity, requests, max_tokens)]
+    elif plan in ("h2", "h3", "h4"):
         report["states"] = list(H2_STATES)
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
     else:
@@ -656,7 +665,9 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
         traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
                    for level, rate in enumerate(report["rates"])]
     block = 0
-    for t in range(traces if traces is not None else H2_TRACES if plan in ("h2", "h3", "h4") else TRACES):
+    indices = (range(traces) if traces is not None else H5_TRACES if plan == "h5"
+               else range(H2_TRACES if plan in ("h2", "h3", "h4") else TRACES))
+    for t in indices:
         for level, make in enumerate(traffic):
             items = make(t)
             for name, run in block_order(names, block):
@@ -936,8 +947,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "x1"), default="h1",
-                        help="run 1's to 4's fixed plan, or X1's exactness diagnostic")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "x1"), default="h1",
+                        help="run 1's to 4's fixed plan, RL4-S's spike-only run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
@@ -951,9 +962,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
         extra = []
-        if args.plan == "h4":
+        if args.plan in ("h4", "h5"):
             if not args.policy_json or not args.best_fixed:
-                parser.error("--plan h4 needs --policy-json and --best-fixed")
+                parser.error(f"--plan {args.plan} needs --policy-json and --best-fixed")
             text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
             LearnedPolicy.from_json(json.loads(text))  # refuse a policy whose digest does not match
             extra = ["--best-fixed", args.best_fixed, "--policy-json", json.dumps(json.loads(text), sort_keys=True)]
@@ -983,9 +994,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
     policy = names = None
-    if args.plan == "h4":
+    if args.plan in ("h4", "h5"):
         if not args.policy_json or not args.best_fixed:
-            parser.error("--plan h4 needs --policy-json and --best-fixed")
+            parser.error(f"--plan {args.plan} needs --policy-json and --best-fixed")
         text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
         policy = LearnedPolicy.from_json(json.loads(text))
         names = arms_h4(args.best_fixed)

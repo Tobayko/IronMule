@@ -153,7 +153,7 @@ def test_fill_places_on_the_lowest_gpu_with_room_and_otherwise_the_shortest_queu
     assert pool._order() == [1, 0]  # no room anywhere: the shortest queue
 
 
-@pytest.mark.parametrize("plan", ["h1", "h2", "h3", "h4"])
+@pytest.mark.parametrize("plan", ["h1", "h2", "h3", "h4", "h5"])
 def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tmp_path, monkeypatch, plan):
     real_popen = subprocess.Popen
 
@@ -179,26 +179,26 @@ def test_a_small_run_on_two_fake_workers_measures_every_arm_and_keeps_no_text(tm
     try:
         policy = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0])
         report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan=plan,
-                             names=rl2.arms_h4("spill/w8/g0/sjf") if plan == "h4" else None,
-                             policy=policy if plan == "h4" else None,
+                             names=rl2.arms_h4("spill/w8/g0/sjf") if plan in ("h4", "h5") else None,
+                             policy=policy if plan in ("h4", "h5") else None,
                              on_row=lambda partial: saved.append(len(partial["rows"])))
     finally:
         pool.close()
-    expected = (rl2.arms_h3(2) if plan == "h3" else rl2.arms_h4("spill/w8/g0/sjf") if plan == "h4" else
+    expected = (rl2.arms_h3(2) if plan == "h3" else rl2.arms_h4("spill/w8/g0/sjf") if plan in ("h4", "h5") else
                 ["shortest/w8/g0", "shortest/w1/g0", "fill/w1/g0", "fill/w8/g0"])
     assert report["arms"] == expected
     assert report["calibration"]["ok"] == 32 and report["calibration"]["capacity_rps"] > 0
     assert report["calibration"]["outcomes"] == {"ok": 32}
-    assert len(report["rows"]) == 2 * 3 * (len(expected) + 1) == saved[-1]
+    assert len(report["rows"]) == 2 * (1 if plan == "h5" else 3) * (len(expected) + 1) == saved[-1]
     assert all(r["outcome"] == "ok" for row in report["rows"] for r in row["requests"])
     result = rl2.analyse(report, resamples=50)
     assert result["valid"] and result["mismatched_requests"] == 0 and result["complete_traces"] == [0, 1]
-    assert set(result["decisions"]) == ({"joint", "placement", "order"} if plan in ("h3", "h4")
+    assert set(result["decisions"]) == ({"joint", "placement", "order"} if plan in ("h3", "h4", "h5")
                                         else {"joint", "placement", "schedule"})
-    assert (result["learned"] is not None) == (plan == "h4")
-    assert (report["policy"] is not None) == (plan == "h4")
+    assert (result["learned"] is not None) == (plan in ("h4", "h5"))
+    assert (report["policy"] is not None) == (plan in ("h4", "h5"))
     assert not any(prompt in json.dumps(report) for prompt in rl2.PROMPTS) and "Background" not in json.dumps(report)
-    assert report["plan"] == plan and (report.get("states") == list(rl2.H2_STATES)) == (plan != "h1")
+    assert report["plan"] == plan and report.get("states") == {"h1": None, "h5": ["spike"]}.get(plan, list(rl2.H2_STATES))
 
 
 def test_run_two_keeps_every_shortest_schedule_and_fill_only_without_a_wait():
@@ -437,3 +437,20 @@ def test_an_x1_kernel_embeds_its_own_source_for_the_per_device_children(tmp_path
     assert eval(embedded, {"__import__": __import__}) == Path(rl2.__file__).read_text()
     other = rl2.write_kernel(tmp_path / "h3", "someone", commit, "h3") / "run.py"
     assert "\n_EMBEDDED_SOURCE = " not in other.read_text()
+
+
+def test_rl4_s_replays_only_spike_traffic_on_traces_no_earlier_run_or_training_used(tmp_path):
+    assert rl2.H2_STATES[rl2.H5_STATE] == "spike" and len(rl2.H5_TRACES) == 30
+    earlier = set(range(rl2.H2_TRACES))
+    assert not earlier & set(rl2.H5_TRACES)
+    seeds = {2000 * rl2.H5_STATE + t for t in rl2.H5_TRACES}  # trace_h2's seed rule
+    from tools import rl4_agent as rl4
+    assert max(seeds) < rl4.TRAIN_SEED0  # training, validation and held-out simulator seeds start above
+    commit = "0123456789abcdef0123456789abcdef01234567"
+    policy = tmp_path / "policy.json"
+    policy.write_text(json.dumps(rl2.LearnedPolicy.zero().to_json()))
+    folder = tmp_path / "kernel"
+    assert rl2.main(["--write-kernel", str(folder), "--owner", "someone", "--commit", commit, "--plan", "h5",
+                     "--best-fixed", "shortest/w8/g0/sjf", "--policy-json", f"@{policy}"]) == 0
+    assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "someone/ironmule-rl2-headroom-h5"
+    assert "'--plan', 'h5'" in (folder / "run.py").read_text()
