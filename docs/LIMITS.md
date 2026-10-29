@@ -145,9 +145,11 @@ bursty and spike states, and on every other model, GPU or card count.
 
 RL6 (same setup, `bursts` and `spike` traffic, 2,304 requests identical across arms): starting the shortest output
 limit first with groups of at most two cost 18.0 % less than the default, width 8 in arrival order (95 % 15.0-20.5 %;
-width 1 18.6 %, width 4 11.9 %). The default is unchanged until a product change and a validation that includes
-quiet traffic. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 % -1.9 to 3.4 %) but did not
-beat it.
+width 1 18.6 %, width 4 11.9 %). LD1-V (same setup, `quiet`, `bursts` and `spike` weighted equally, 1,920 requests
+identical across arms) confirmed it with quiet traffic included: 18.4 % (95 % 14.9-22.2 %), width 1 19.5 %. The
+default is unchanged until the product change. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 %
+-1.9 to 3.4 %) but did not beat it. Run through the product's learned dispatch on mixed traffic, it beat the default
+by 21.2 % but cost 6.9 % more than width 1 in bursts, so it is not qualified (LD1-V).
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a

@@ -37,8 +37,8 @@ needs only the affected text and applicable documentation conventions.
 figures need -- measurement/verification harnesses for one specific kept test, plus the
 figure renderer -- and the Kaggle harness of an open backlog entry written while the
 research repository was out of reach, each with its own focused test
-(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`); such a harness moves there
-once it is reachable. Inspect the selected tool and its contract before running it.
+(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`, `tools/rl4_agent.py`, `tools/cuda_probe.py`); such a
+harness moves there once it is reachable. Inspect the selected tool and its contract before running it.
 
 The research workflow that used to route through this file -- the experiment ledger,
 preregistration and sealed-study conventions, the Kaggle harnesses, the SSOT corpus and

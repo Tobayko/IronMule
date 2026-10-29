@@ -465,6 +465,35 @@ equally, with 8 traces each (indices 47-54) whose seeds no earlier run, training
 **Kill.** If (1) or (2) fails, no evidence is written for this policy and LD1 keeps only RL4-S's spike-bound
 evidence. If (3) fails, the default schedule stays.
 
+**Result (2026-10-29, `LD1-V-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-h7` at
+`bfe7ee65703b255beef8e37782af894dd083dd64`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 1.7 session
+hours): valid.** All 120 cells and 1,920 requests completed, and every answer was identical across the four arms.
+Every product cell was decided by an active dispatch with no decision error (384 placements, 283 widths and 11,327
+order decisions in total). The A/A noise was 8.1 % (second largest of 24 pairs), larger than RL6's 3.0 %.
+
+- **(1) passes.** LD1 cost 21.2 % less than the reference (95 % bootstrap 18.3-24.3 %).
+- **(2) fails in `bursts`.** Against the cheapest fixed arm, `shortest/w1/g0/sjf`, LD1 gained -6.9 % in `bursts`
+  (95 % -12.9 to -1.1 %); the lower bound is below minus the noise. `quiet` (-2.4 %, 95 % -6.2 to -0.3 %) and
+  `spike` (+7.0 %, 95 % 1.9-10.8 %) pass.
+- **(3) passes.** `shortest/w2/g0/sjf` cost 18.4 % less than the reference with quiet traffic included (95 %
+  14.9-22.2 %); `shortest/w1/g0/sjf` 19.5 % (16.1-23.4 %).
+
+**Verdict, as fixed.** No evidence is written for RL6's policy, and LD1 keeps only RL4-S's spike-bound evidence
+(Tier 0). RL6's fixed candidate is confirmed for a product default on this setup. Descriptive, not a rule: over all
+three states LD1 gained 2.1 % on `shortest/w1/g0/sjf` (95 % -1.0 to 5.1 %), as in RL6. It wins in spikes and loses
+in bursts. In `quiet` every arm is within 2.6 % of the others, LD1 the most expensive.
+
+Measured costs per state:
+
+| Arm | `quiet` | `bursts` | `spike` |
+| --- | --- | --- | --- |
+| reference `shortest/w8/g0` | 2.300 | 17.42 | 37.40 |
+| LD1 `product/w8/g0` (RL6 policy) | 2.360 | 15.47 | 27.15 |
+| `shortest/w2/g0/sjf` | 2.314 | 15.57 | 28.75 |
+| `shortest/w1/g0/sjf` | 2.305 | 14.47 | 29.18 |
+
+Still owed: the product change for the fixed candidate (BACKLOG RL6) and the ledger entry.
+
 ### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
 
 **Mechanism.** Before X1's fix a group decoded at its longest prompt's capacity. An extra session then cost a full
@@ -542,8 +571,79 @@ Measured costs per state:
 | `shortest/w4/g0/sjf` | 20.40 | 28.12 |
 | learned | 18.53 | 25.94 |
 
-Still owed: the product change for the candidate, the paired validation with quiet traffic (LD1-V), and the
-ledger entry.
+Still owed: the product change for the candidate and the ledger entry. The paired validation with quiet traffic
+is done: LD1-V's (3) passed (18.4 %, 95 % 14.9-22.2 %).
+
+### HW3 — What a decode step costs on the T4, and which optimisations and combinations keep every token (opened 2026-10-29, before data)
+
+**Why.** The owner's list of 2026-10-29 puts measuring the hardware first and asks for combinations of
+optimisations, not single ones. On Metal, `B24` priced host time (17-32 % of a step) and `B10` found fusing the
+small kernels worth under 0.7 % (Tier 0). Neither number exists for CUDA; the T4 is new hardware under the
+re-opening rule, so `B10`'s kill ("fusing all of them away returns under 0.7 %") is re-measured here, not assumed.
+X1 showed that on CUDA a change in the order of the arithmetic can move a token, so every candidate is checked for
+exactness before its speed means anything.
+
+**Test (`tools/cuda_probe.py`, Kaggle T4 x2, first card, about 1.5 session hours).** Qwen3 1.7B bf16 revision
+`9cd6692`, MLX 0.32.4, greedy.
+- **Knob factorial.** The engine's existing knobs `fuse_projections`, `compiled_fixed_cache`, `fused_argmax`,
+  `readback_every` 1 or 4 and `speculate_k` 0 or 3 (prompt lookup), all 32 combinations, through `Engine.generate`
+  on six prompts (three short questions, three behind about 1,000 tokens of context, chat template), 64 tokens
+  each. One untimed pass, then five timed rounds; in each round the baseline runs first and last (an A/A pair) and
+  the other 31 in an order rotated by the round. Fused combinations run on a second copy of the model.
+- **Anatomy.** mlx-lm's own decode loop after a short and a long prompt, synchronous against pipelined (the next
+  step built while the card runs this one), five alternating pairs each. Attention at the model's shapes, masked
+  as `FixedKVCache` masks it against unmasked on keys cut to the context (the fused path X1 found disabled), timed
+  alternately, at 1 and 8 rows and 64, 1,024 and 2,048 tokens. Every linear layer of block 0 and the output
+  projection at one row, for the bandwidth floor.
+
+**Decisions (fixed before data).**
+- **Exact:** a combination's tokens equal the baseline's on every prompt in every pass.
+- **Cost:** decode milliseconds per token; per (prompt, round) the ratio to that round's mean baseline; the
+  geometric mean with a 2,000-resample bootstrap. **Noise:** the largest distance from 1 of the five A/A ratios.
+- **A combination qualifies** for the CUDA tuned profile if it is exact and its ratio's upper 95 % bound is below
+  1 minus the noise. The tuner already searches these knobs; this says which combinations it may use on this card.
+- **Combinations:** the main effect and two-factor interaction of each knob on log decode time, from the full
+  factorial.
+- **(8) compile:** `compiled_fixed_cache` alone qualifies, or compiling the step is closed on this card.
+- **(10) speculation:** recorded as exact or not, with its acceptance. This is the CUDA check of the claim that
+  verifying drafts keeps the target's tokens; on CUDA the verify forward has other shapes than a decode step.
+- **(16) overlap:** worth building if pipelining saved time in all five pairs at either context.
+- **(6) fused attention:** worth building if the cut attention is faster with a 95 % bound above zero at any
+  measured shape; its exactness and its share of a long-prompt step are recorded. It changes the order of the
+  arithmetic, so it is class B either way.
+- **(5)/(7):** the model's weight bytes over the best measured bandwidth is the floor; its share of a step bounds
+  what any kernel or layout work can return. Recorded, no decision.
+- **Validity:** a combination that errors on any prompt is invalid; the others stand. A crash keeps the rows so
+  far.
+
+### TB1 — True tensor batching on CUDA: exact, batch-invariant, and what a row costs (opened 2026-10-29, before data)
+
+**Mechanism.** Grouped batch-1 reads every weight once per request: RL6's fitted model charges 20.0 ms for a step
+alone and 13.4 ms for each further session. Stacking the rows into one forward reads the weights once per round,
+so a further row should cost little, and a token at width 8 several times less. **Against:** `E14b`'s true
+batching diverged by one token at batch 8 on Metal, `B28` failed its correctness gate, and on CUDA even the KV
+length moves logits (X1). Old entries: LIMITS "No true tensor batching. It diverged at batch 8 in E14b", `B12`'s
+kill "Divergence at 16 or beyond". Re-opened for new hardware (T4, MLX 0.32.4 CUDA) and a new question: not only
+whether stacking matches the batch-1 path, but whether the kernels are batch-invariant, so a versioned batched
+plan could be exact by itself.
+
+**Test (in HW3's kernel).**
+- **Kernel level.** Each linear layer of block 0 and the output projection, with its real weight, on M = 1, 2, 3,
+  4, 8, 16, 32 rows of fixed random input: is each row bit-identical to the same row alone, and how long it takes.
+- **Model level.** 16 distinct rows of 64 and of 1,024 tokens, each prefilled alone with mlx-lm's own cache, then
+  decoded 32 steps alone and stacked at B = 2, 4, 8, 16. Per row: tokens equal to its decode alone, the largest
+  logit difference at the first step (same inputs), the time per step. Equal lengths keep masks and padding out,
+  so only the row count differs.
+
+**Decisions (fixed before data).**
+- **Batch-invariant (class A)** if every stacked row's first-step logits are bit-identical to its decode alone at
+  every B and length: a batched path then keeps every answer and is built next.
+- **Token-exact, not invariant** if all tokens agree but some logits do not: class B; a batched path needs
+  batch-invariant kernels or a quality gate, and is not built as an exact path.
+- **Not exact** if any token differs.
+- **The lever:** 8 x the step time alone over the step time at B = 8, per length. Any lever above 1 counts. The
+  per-row cost curve then replaces the 13.4 ms per session in RL4's simulator, which re-derives width and order
+  for a batched path: RL6's narrow groups were best only because each further session cost 13.4 ms.
 
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
@@ -944,6 +1044,12 @@ processes again.
   the v2 policy that also picks each group's width gained 0.8 % (95 % -1.9 to 3.4 %) over the best fixed arm,
   `shortest/w1/g0/sjf`, against 3.0 % noise. No width learner. The fixed narrow shortest-first schedule it found
   is the candidate default (RL6).
+
+- **RL6's width policy as the product's learned dispatch on mixed traffic (2026-10-29).** Experiment
+  `LD1-V-run1-20261029` (see LD1-V above): through the product's own pool and scheduler it beat the reference by
+  21.2 % (95 % 18.3-24.3 %), but in `bursts` it cost 6.9 % more than `shortest/w1/g0/sjf` (95 % bound -12.9 %
+  against 8.1 % noise), so the no-harm rule failed. No evidence for it; LD1 ships only RL4-S's spike-bound policy.
+  Re-open with a policy trained against a per-state harm constraint, or traffic whose bursts it was trained on.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
@@ -2009,6 +2115,19 @@ and `B19` ahead of `B8`, `B9` and `B10` on measured grounds rather than on taste
 it was not preregistered, and it stays labelled that way. An entry graduating from this
 file to the ledger needs a sealed preregistration, a threshold fixed in advance, and
 repeats across separate OS processes, the way `E16` was run.
+
+**Every resolved gain counts (maintainer decision, 2026-10-29).** No entry opened from this date sets a minimum
+effect size, and the effort or run time a gain costs is not a reason to drop it. A gain counts where it shows, in
+one traffic state, one context length or one card, as long as the measurement tells it apart from noise: its
+confidence bound clears the A/A noise or zero, as the entry fixes before data. Small gains need more repeats, not
+a lower bar. Old entries that died only on a fixed minimum (Tier 0's readback 8 at `0.9581` against 5 %, `B29c`
+against `1.10`, `B48` against 5 %) may be re-opened on this rule, with a new measurement and its own noise; their
+recorded data is not re-read to a new verdict.
+
+**Measure optimisations in combination.** Two optimisations that each help can share one resource and return less
+together (host time, the same memory reads), or enable each other. An entry that ships more than one measures the
+combination itself, not the product of the single gains, and a factorial design is preferred where the knobs are
+few (HW3).
 
 **Correctness gates come first and they are gates, not tie-breakers.** `B12`'s ceiling
 is the highest in Tier 2 and it is still ranked behind entries with a third of the
