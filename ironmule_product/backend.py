@@ -182,6 +182,12 @@ class MLXWorkerClient:
         return 1
 
     @property
+    def reuses_slots(self) -> bool:
+        """KB1: whether a member that ends frees room a newcomer may take while its group runs (the dense
+        plan's slot pool); every other engine counts members over the group's life."""
+        return self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked"
+
+    @property
     def streams_batches(self) -> bool:
         """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
         return self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",

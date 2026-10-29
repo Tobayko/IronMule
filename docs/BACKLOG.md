@@ -972,9 +972,13 @@ mlx-lm 0.31.3.
 - **What it means.** On this setup the plan was faster than the shipped default in every state, quiet included.
   The gain is too small for this run to tell apart from the A/A noise, and smaller gains need more repeats, not a
   lower bar. The default it beat runs without the class-A compile + readback 4 (KP1), which would narrow the gap.
-  The comparison worth a run 3 is against the default as it ships after KP1, with more traces. Slot reuse within
-  a group and a per-request refusal for prompts above a slot are the plan's known product gaps (above). Still
-  owed: the ledger entry.
+  The comparison worth a run 3 is against the default as it ships after KP1, with more traces. Still owed: the
+  ledger entry.
+- **Since run 2 (not measured yet):** a dense group now lets a newcomer take a slot a member frees. The service
+  counts the group's running members, not every member over its life, up to 32. A joiner that finds every slot
+  taken waits in the worker for the first one freed, instead of running after the whole group. Both apply only to
+  the plan, and the other engines are unchanged. Run 3 measures the plan with this. A request longer than a slot
+  still fails its batch.
 
 ### KP1 — The class-A knob profile as the tuned engine's default on the measured setup (opened 2026-10-29, before data)
 

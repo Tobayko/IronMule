@@ -19,6 +19,7 @@ from .serving_policy import ServingLog, ServingPolicy, load_policy
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
+MAX_GROUP_MEMBERS = 32  # requests one group may serve over its life, its joiners included (the batch protocol's 32)
 RESTART_BACKOFF_S = (0.0, 5.0, 20.0)  # before the 1st, 2nd and 3rd attempt: device memory may free late
 # What a replacement must report as the first worker did; `engine` holds the tuned profile the learner is bound to.
 _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "sources_sha256", "engine")
@@ -1158,6 +1159,10 @@ class ProductService:
                                                                   for item in live}
         consumers: list[threading.Thread] = []
         joined: list[_Session] = []
+        finished: set[str] = set()
+        # KB1: the dense plan frees a member's slot when it ends, so a newcomer may take it; every other
+        # engine counts members over the group's life, as measured (SERVE8, RL6, LD1-V).
+        reuses = getattr(self.backend, "reuses_slots", False) is True
 
         def consume(item: _Session) -> None:
             queues[item.request.request_id] = queue.Queue()
@@ -1172,7 +1177,8 @@ class ProductService:
             taken = []
             if not self.policy.join:  # RSI4: a learned policy may queue newcomers instead
                 return taken
-            while len(consumers) < self._batch_capacity():  # members over the group's life, as before STAB1
+            while ((len(consumers) - len(finished) if reuses else len(consumers)) < self._batch_capacity()
+                   and len(consumers) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1199,6 +1205,7 @@ class ProductService:
             queues[request_id].put(event)
             if event.get("type") == "done":  # STAB1: a finished member ends now, not when its group does
                 queues[request_id].put(None)
+                finished.add(request_id)
 
         queues.clear()
         for item in live:

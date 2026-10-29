@@ -824,13 +824,18 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations, lock,
                                                tokenizer)
             joined: list[tuple[str, list[int], int]] = []
+            waiting: list[tuple[str, list[int], int]] = []  # KB1: joiners waiting for a slot of this run
 
             def admit(capacity: int) -> list[tuple[list[int], int, Any]]:
                 fresh = []
                 slots = getattr(engine_bridge, "free_slots", lambda: None)()  # KB1: the dense plan's free slots
-                for row in drain_joins():
-                    if len(row[1]) + row[2] + 8 > capacity or (slots is not None and len(fresh) >= slots):
-                        leftovers.append(row)  # too long for this run's cache, or no slot; it runs right after
+                candidates, waiting[:] = waiting + drain_joins(), []
+                for row in candidates:
+                    if len(row[1]) + row[2] + 8 > capacity:
+                        leftovers.append(row)  # too long for this run's cache; it runs right after
+                        continue
+                    if slots is not None and len(fresh) >= slots:
+                        waiting.append(row)  # no free slot now; it takes the first one a member frees
                         continue
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
                                                    lock, tokenizer)
@@ -855,6 +860,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                                                        **({"boundaries": turns}
                                                           if any(cut is not None for cut in turns) else {}))
                            if active else [])
+            leftovers.extend(waiting)  # the run ended before a slot freed for them; they run right after
             if not isinstance(results, list) or len(results) != len(active) + len(joined):
                 raise RuntimeError("invalid grouped result count")
             result_by_id = {row[0]: result for row, result in zip(active + joined, results)}

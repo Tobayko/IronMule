@@ -225,61 +225,70 @@ def test_the_product_bridge_serves_the_dense_plan_at_width_eight_and_lets_joins_
         bridge.generate_many(prompts[:2], 6, boundaries=[[1], None])
 
 
-def test_the_worker_streams_a_lone_dense_batch_and_lets_a_request_join_it(monkeypatch):
-    """H8 run 1: the client sends the dense engine lone streamed batches (it streams batches), so the worker must
-    run its groups live -- streamed, joinable -- as it does the current profile's, not refuse them."""
+class _Detokenizer:
+    def __init__(self):
+        self.pending = ""
+
+    def reset(self):
+        self.pending = ""
+
+    def add_token(self, token):
+        self.pending += chr(32 + token % 90)
+
+    def finalize(self):
+        pass
+
+    @property
+    def last_segment(self):
+        segment, self.pending = self.pending, ""
+        return segment
+
+
+class _ChatTokenizer(_Tokenizer):
+    @property
+    def detokenizer(self):
+        return _Detokenizer()
+
+    def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+        return self.encode(messages[0]["content"])
+
+
+def _worker_world(monkeypatch, slots=8):
+    """A real dense bridge (tiny model, CPU stand-ins) behind the worker's batch path, its events captured."""
     import queue
-    import threading
     from types import SimpleNamespace
 
     from ironmule_product import worker
     from ironmule_product.engine_bridge import CurrentEngineBridge
 
-    class Detokenizer:
-        def __init__(self):
-            self.pending = ""
-
-        def reset(self):
-            self.pending = ""
-
-        def add_token(self, token):
-            self.pending += chr(32 + token % 90)
-
-        def finalize(self):
-            pass
-
-        @property
-        def last_segment(self):
-            segment, self.pending = self.pending, ""
-            return segment
-
-    class Tokenizer(_Tokenizer):
-        @property
-        def detokenizer(self):
-            return Detokenizer()
-
-        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
-            return self.encode(messages[0]["content"])
-
     model = _tiny()
-    plan = _plan(model)
+    plan = _plan(model, slots=slots)
     identity = SimpleNamespace(to_dict=lambda: {"identity_sha256": "a" * 64})
     bridge = CurrentEngineBridge(_runtime(model, plan), identity=identity, knobs=Knobs(), profile_available=False,
                                  profile_source="dense_numeric_plan", configuration="dense_stacked",
                                  historical_configuration_candidate=None, dense_plan={"kernel_sha256": dp.KERNEL_SHA256})
-    tokenizer = Tokenizer()
     sent = []
     monkeypatch.setattr(worker, "_emit", sent.append)
     monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
     monkeypatch.setattr(worker, "JOINS", queue.Queue())
+    return worker, bridge, plan, _ChatTokenizer(), sent
 
-    def request(rid, text):
-        return {"request_id": rid, "model": "m", "messages": [{"role": "user", "content": text}], "max_tokens": 6,
-                "stream": True}
 
-    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [request("c", "joined later")]})
+def _chat(rid, text, max_tokens=6):
+    return {"request_id": rid, "model": "m", "messages": [{"role": "user", "content": text}],
+            "max_tokens": max_tokens, "stream": True}
+
+
+def test_the_worker_streams_a_lone_dense_batch_and_lets_a_request_join_it(monkeypatch):
+    """H8 run 1: the client sends the dense engine lone streamed batches (it streams batches), so the worker must
+    run its groups live -- streamed, joinable -- as it does the current profile's, not refuse them."""
+    import threading
+
+    worker, bridge, plan, tokenizer, sent = _worker_world(monkeypatch)
+
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [_chat("c", "joined later")]})
     command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
-               "requests": [request("a", "a lone stream")]}
+               "requests": [_chat("a", "a lone stream")]}
     worker._run_engine_batch(command, "m", tokenizer, bridge, {}, set(), threading.Lock())
     assert not [event for event in sent if event["type"] == "error"], sent
     for rid, text in (("a", "a lone stream"), ("c", "joined later")):
@@ -289,3 +298,26 @@ def test_the_worker_streams_a_lone_dense_batch_and_lets_a_request_join_it(monkey
     assert sorted(d["request_id"] for d in done) == ["a", "c"]
     assert all(d["engine"]["delivery"] == "streamed" for d in done)
     assert sent[-1]["type"] == "batch_done" and bridge.free_slots() == plan.slots
+
+
+
+def test_a_joiner_that_finds_every_slot_taken_takes_the_first_one_a_member_frees(monkeypatch):
+    """KB1: with both slots of a two-slot plan taken, a joiner waits inside the run and takes the slot the
+    short member frees, instead of waiting for the whole run to end."""
+    import threading
+
+    worker, bridge, plan, tokenizer, sent = _worker_world(monkeypatch, slots=2)
+    runs, original = [], bridge.generate_many
+    monkeypatch.setattr(bridge, "generate_many", lambda *a, **k: runs.append(len(a[0])) or original(*a, **k))
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [_chat("c", "waits for a slot")]})
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [_chat("a", "short one", 2), _chat("b", "a longer answer", 12)]}
+    worker._run_engine_batch(command, "m", tokenizer, bridge, {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    assert runs == [2]  # one run: the joiner did not wait for it to end
+    tokens = [event["request_id"] for event in sent if event["type"] == "token"]  # streamed as read back
+    assert tokens.index("c") > tokens.index("a") and tokens.index("c") < len(tokens) - 1 - tokens[::-1].index("b")
+    for rid, text, limit in (("a", "short one", 2), ("b", "a longer answer", 12), ("c", "waits for a slot", 6)):
+        streamed = [event["token_id"] for event in sent if event["type"] == "token" and event["request_id"] == rid]
+        assert streamed == bridge.generate(tokenizer.encode(text), limit).tokens, rid
+    assert bridge.free_slots() == plan.slots

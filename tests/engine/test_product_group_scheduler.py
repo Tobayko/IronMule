@@ -272,3 +272,50 @@ def test_a_lone_stream_runs_as_a_group_so_the_next_chat_can_join_it():
     service._perform_batch([alone])
     assert backend.batch_calls == [["a"]] and backend.joined == ["b"]
     assert service._completed == 2 and service._pending.unfinished_tasks == 0
+
+
+class _SlotTransport(_Transport):
+    """KB1: a streaming worker whose first member ends before the others, then asks for joiners again."""
+
+    streams_batches = True
+    batch_capacity = 2
+
+    def __init__(self, reuses_slots: bool) -> None:
+        super().__init__()
+        self.reuses_slots = reuses_slots
+        self.joined_rounds: list[list[str]] = []
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+
+        def done(rid):
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+
+        for _ in range(3):  # each round: who may join now, then the oldest member still running ends
+            fresh = [request.request_id for request, _ in joins()]
+            self.joined_rounds.append(fresh)
+            members += fresh
+            running = [rid for rid in members if rid not in self.ended]
+            if running:
+                self.ended.add(running[0])
+                done(running[0])
+        for rid in members:
+            if rid not in self.ended:
+                self.ended.add(rid)
+                done(rid)
+        return [{"request_id": rid, "events": [], "metadata": {}} for rid in members]
+
+
+def test_a_dense_group_lets_a_newcomer_take_a_freed_slot_and_other_engines_count_members_over_its_life():
+    for reuses, expected in ((True, [[], ["c"], ["d"]]), (False, [[], [], []])):
+        backend = _SlotTransport(reuses)
+        backend.ended = set()
+        service = _service(backend)
+        service.policy = ServingPolicy(join=True)
+        sessions = [_Session(_request(value), None) for value in ("a", "b", "c", "d")]
+        for waiting in sessions[2:]:
+            service._pending.put(waiting)
+        service._perform_batch(sessions[:2])
+        assert backend.joined_rounds == expected, reuses
+        assert service._completed == 2 + sum(map(len, expected))
