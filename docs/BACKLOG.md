@@ -864,6 +864,29 @@ Eight prompts as in KB1-1, 32 steps, widths 1 to 8, five alternating rounds, wit
 - **Recorded:** each variant's milliseconds per step and per token at widths 1-8. The cost per further row is
   what RL7's simulator and the re-derivation of RL6's width need.
 
+**H8: the dense plan through the product (fixed 2026-10-29 before its data; `tools/rl2_headroom.py --plan h8`,
+Kaggle T4 x2, about 2 session hours).** `--engine dense` serves the plan on the tuned engine's worker path. Its
+slot-pool executor and bridge are in `ironmule/dense_plan.py`, `ironmule_product/engine_bridge.py` and the worker,
+with contract tests on CPU stand-ins. The arms are:
+- the product's default on this setup, the tuned engine with RL6's qualified schedule `shortest/w2/g0/sjf`;
+- the dense plan at `shortest/w8/g0`;
+- the dense plan at `shortest/w8/g0/sjf`.
+
+All three states are weighted equally, with 8 traces on fresh seeds (indices 55-62). Each of four rounds (2 traces
+each) starts both engines' HW1 pools in turn, the first one alternating by round, so drift falls on both. Within an
+engine, its first arm runs at the start and end of every block (A/A). The cost is LD1-V's.
+- **Noise:** the nearest-rank 95th percentile of all A/A pairs, both engines'.
+- **(1) The dense plan beats today's default** if its best arm's weighted gain over the default, paired by trace
+  with a 2,000-resample bootstrap, has a 2.5 % bound above the noise.
+- **(2) No harm:** in each state, quiet included, that arm's gain over the default has a 2.5 % bound above minus
+  the noise.
+- **Validity:** answers identical across arms and runs within each engine (the dense plan is invariant to its
+  group, the tuned engine to its schedule); every dense cell reports `numeric@dense`; at least two complete
+  traces. Answers are not compared across engines; the plan changes them by design (recorded).
+- **Verdict:** (1) and (2) together let the dense plan be recommended for this setup as an opt-in numeric plan.
+  The recommendation names the gain and the answer change. If (2) fails, it stays opt-in for throughput with its
+  cost documented, and the single-row speed (KB1-2) comes first.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine

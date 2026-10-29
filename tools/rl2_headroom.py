@@ -75,6 +75,11 @@ LD1-V (`--plan h7`, BACKLOG LD1-V, fixed 2026-10-29 before its data) runs the pr
 with a given policy against the product's reference and RL6's narrow shortest-first schedules on all three states
 (8 traces each, indices 47-54); a product cell whose dispatch was not active makes the run invalid.
 
+H8 (`--plan h8`, BACKLOG KB1, fixed 2026-10-29 before its data) compares the product's default on this setup (the
+tuned engine with RL6's qualified schedule) with the dense numeric plan (`--engine dense`) at width 8, in arrival
+order and shortest first, on all three states (8 traces, indices 55-62). Each of four rounds starts both engines'
+HW1 pools in turn, the first one alternating; answers must agree within an engine, not across engines.
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
@@ -147,14 +152,23 @@ def arm_name(placement: str, width: int, gather_ms: int) -> str:
     return f"{placement}/w{width}/g{gather_ms}"
 
 
+def arm_engine(name: str) -> str:
+    """H8: an arm may name its engine (`dense:shortest/w8/g0`); without one it is the tuned engine."""
+    return name.split(":", 1)[0] if ":" in name else "tuned"
+
+
+def _bare(name: str) -> str:
+    return name.split(":", 1)[-1]
+
+
 def parse_arm(name: str) -> tuple[str, int, int]:
-    placement, width, gather = name.split("/")[:3]
+    placement, width, gather = _bare(name).split("/")[:3]
     return placement, int(width[1:]), int(gather[1:])
 
 
 def arm_order(name: str) -> str:
     """Run 3's fourth part: `fifo` (omitted) or `sjf`."""
-    parts = name.split("/")
+    parts = _bare(name).split("/")
     return parts[3] if len(parts) > 3 else "fifo"
 
 
@@ -1017,6 +1031,171 @@ def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = 
     return {"model": model, "revision": revision, **result}
 
 
+# ---------------------------------------------------------------- H8: the dense plan through the product (BACKLOG KB1)
+
+H8_TRACES = range(55, 63)       # fresh seeds: no earlier run, training or simulation used them
+H8_ROUNDS = 4                   # each round runs both engines' pools in turn, the first one alternating
+ENGINE_CONFIGURATIONS = {"tuned": "current_profile", "dense": "dense_stacked"}
+
+
+def arms_h8() -> list[str]:
+    """Today's product default on this setup (RL6's qualified schedule on the tuned engine) and the dense plan at
+    width 8, in arrival order and shortest first. Within an engine the first arm runs twice per block (A/A)."""
+    return ["tuned:shortest/w2/g0/sjf", "dense:shortest/w8/g0", "dense:shortest/w8/g0/sjf"]
+
+
+def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[int] = H8_TRACES,
+               rounds: int = H8_ROUNDS, requests: int = REQUESTS, max_tokens: tuple[int, ...] | None = None,
+               on_row: Any = None) -> dict[str, Any]:
+    """`start(engine)` returns a started pool for that engine. Calibration runs once on the tuned pool; then each
+    round measures its traces on both engines, every (trace, state) block an engine's arms in HW3's block order."""
+    names = arms_h8()
+    traces = list(traces)
+    per_round = -(-len(traces) // rounds)
+    report: dict[str, Any] = {"plan": "h8", "arms": names, "states": list(H2_STATES), "deadline_s": deadline_s,
+                              "rows": [], "engines": {}}
+    capacity = None
+    block = 0
+    for r in range(rounds):
+        chunk = traces[r * per_round:(r + 1) * per_round]
+        if not chunk:
+            break
+        order = ["tuned", "dense"] if r % 2 == 0 else ["dense", "tuned"]
+        for engine in order:
+            pool = _placement_pool(start(engine))
+            try:
+                warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards),
+                              deadline_s)
+                report["engines"].setdefault(engine, []).append(
+                    {"round": r, "warmup_ok": sum(w["outcome"] == "ok" for w in warm),
+                     "execution": pool.health().get("execution"), "devices": list(pool.devices)})
+                if capacity is None:
+                    if engine != "tuned":  # calibrate on the reference engine first, so traffic never depends on the plan
+                        pool.close()
+                        pool = _placement_pool(start("tuned"))
+                    report["calibration"] = calibrate(pool, model, deadline_s, max_tokens)
+                    if report["calibration"].get("failed"):
+                        return report
+                    capacity = report["calibration"]["capacity_rps"]
+                    if engine != "tuned":
+                        pool.close()
+                        pool = _placement_pool(start(engine))
+                engine_names = [n for n in names if arm_engine(n) == engine]
+                for t in chunk:
+                    for level in range(len(H2_STATES)):
+                        items = trace_h2(level, t, capacity, requests, max_tokens)
+                        for name, run in block_order(engine_names, block):
+                            if not wait_idle(pool):
+                                report["stopped"] = f"the {engine} pool did not drain before block {block}"
+                                return report
+                            set_arm(pool, name)
+                            row = {"level": level, "trace": t, "arm": name, "run": run, "block": block, "round": r,
+                                   "engine": engine, "execution": pool.health().get("execution"),
+                                   "started_unix": time.time(), "requests": replay(pool, model, items, deadline_s)}
+                            report["rows"].append(row)
+                            if on_row is not None:
+                                on_row(report)
+                        block += 1
+            finally:
+                pool.close()
+    return report
+
+
+def analyse_h8(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """H8's decisions, as fixed in BACKLOG before data."""
+    rows, deadline = report.get("rows", []), float(report.get("deadline_s") or 120)
+    names = report.get("arms") or arms_h8()
+    levels = list(range(len(report.get("states") or H2_STATES)))
+    problems: list[str] = []
+    if report.get("calibration", {}).get("failed") or "stopped" in report:
+        problems.append("calibration failed or the run stopped")
+    digests: dict[tuple[str, int, int, int], set[str]] = {}
+    for row in rows:
+        for request in row["requests"]:
+            if request.get("outcome") == "ok" and request.get("digest"):
+                digests.setdefault((row["engine"], row["level"], row["trace"], request["index"]), set()).add(request["digest"])
+    mismatched = sorted(key for key, found in digests.items() if len(found) > 1)
+    if mismatched:
+        problems.append(f"{len(mismatched)} requests answered differently across arms of one engine")
+    plain = [row for row in rows if row["engine"] == "dense" and row.get("execution") != "numeric@dense"]
+    if plain:
+        problems.append(f"{len(plain)} dense cells did not run the dense plan")
+    cells = _cell_costs(rows, deadline)
+    complete = [t for t in sorted({row["trace"] for row in rows})
+                if all((level, t, name, 0) in cells for level in levels for name in names)
+                and all((level, t, names[0], 1) in cells and (level, t, names[1], 1) in cells for level in levels)]
+    if len(complete) < 2:
+        problems.append(f"{len(complete)} complete traces; at least two are needed")
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.h8.analysis.v1", "complete_traces": complete,
+                           "mismatched_requests": len(mismatched)}
+    if problems:
+        return {**out, "valid": False, "problems": problems}
+    pairs = [(cells[level, t, name, 0], cells[level, t, name, 1]) for name in names[:2] for level in levels
+             for t in complete]
+    noise = _quantile([abs(a - b) / ((a + b) / 2) for a, b in pairs], 0.95)
+    rng = random.Random(seed)
+
+    def paired(arm: str, against: str, level: int | None = None) -> dict[str, Any]:
+        def cost(name: str, t: int) -> float:
+            return (cells[level, t, name, 0] if level is not None
+                    else sum(WEIGHTS[lv] * cells[lv, t, name, 0] for lv in levels))
+        values = [(cost(arm, t), cost(against, t)) for t in complete]
+        boot = []
+        for _ in range(resamples):
+            sample = [values[rng.randrange(len(values))] for _ in values]
+            boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"gain": 1 - sum(x for x, _ in values) / sum(y for _, y in values),
+                "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    reference = names[0]
+    dense_arms = [n for n in names if arm_engine(n) == "dense"]
+    weighted = {n: sum(WEIGHTS[lv] * statistics.fmean(cells[lv, t, n, 0] for t in complete) for lv in levels)
+                for n in names}
+    best = min(dense_arms, key=lambda n: (weighted[n], n))
+    pooled = paired(best, reference)
+    per_state = {str(level): paired(best, reference, level) for level in levels}
+    agree = sum(len(digests.get(("dense", level, t, i), set()) & digests.get(("tuned", level, t, i), set())) > 0
+                for (engine, level, t, i) in digests if engine == "dense")
+    return {**out, "valid": True, "problems": [], "aa_noise": noise, "aa_pairs": len(pairs), "best_dense": best,
+            "(1) dense beats today's default": {**pooled, "passes": pooled["gain_ci95"][0] > noise},
+            "(2) no harm in any state": {"per_state": per_state,
+                                         "passes": all(v["gain_ci95"][0] > -noise for v in per_state.values())},
+            "each_dense_arm": {n: paired(n, reference) for n in dense_arms},
+            "sjf_within_dense": paired(dense_arms[1], dense_arms[0]) if len(dense_arms) > 1 else None,
+            "mean_cost_per_level": {str(lv): {n: statistics.fmean(cells[lv, t, n, 0] for t in complete) for n in names}
+                                    for lv in levels},
+            "answers_same_as_today": agree, "answers_compared": sum(1 for key in digests if key[0] == "dense")}
+
+
+def run_h8(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    setup = _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "setup": setup, "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = cuda_devices() or [None]
+
+    def start(engine: str) -> Any:
+        return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device), ordered_service())
+
+    deadline = float(store.settings()["request_timeout_s"] or 120)
+    sizes = {"traces": [H8_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else {}
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, **sizes)
+    return {"model": model, "revision": revision, **result}
+
+
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
@@ -1060,7 +1239,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "x1"), default="h1",
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "x1"), default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
@@ -1087,7 +1266,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
-        print(json.dumps(analyse(report.get("rl2h", report)), indent=1, sort_keys=True))
+        inner = report.get("rl2h", report)
+        print(json.dumps((analyse_h8 if inner.get("plan") == "h8" else analyse)(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
@@ -1107,6 +1287,14 @@ def main(argv: Iterable[str] | None = None) -> int:
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
+        return 0
+    if args.plan == "h8":
+        report["rl2h"] = run_h8(model, work, smoke=args.smoke, on_row=save)
+        report["analysis"] = analyse_h8(report["rl2h"])
+        report["finished_unix"] = time.time()
+        save()
+        print(json.dumps({"report": str(args.out), "analysis": {k: v for k, v in report["analysis"].items()
+                                                                 if k != "mean_cost_per_level"}}, default=str), flush=True)
         return 0
     policy = names = None
     if args.plan in ("h4", "h5", "h6", "h7"):

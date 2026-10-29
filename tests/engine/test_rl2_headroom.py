@@ -529,3 +529,44 @@ def test_ld1_v_runs_the_products_own_learned_dispatch_against_its_reference(tmp_
     assert set(result["learned"]["per_state"]) == {"0", "1", "2"} and "vs_reference" in result["learned"]
     product_rows[0]["dispatch"] = {"active": False}
     assert "without an active learned dispatch" in rl2.analyse(report, resamples=10)["problems"][0]
+
+
+def test_h8_runs_both_engines_pools_by_round_and_judges_the_dense_plan_against_todays_default(tmp_path, monkeypatch):
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    started = []
+
+    def start(engine):
+        started.append(engine)
+        return start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=rl2.ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device), rl2.ordered_service())
+
+    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[55, 56], rounds=2, requests=3,
+                            max_tokens=(2, 3))
+    assert started == ["tuned", "dense", "dense", "tuned"]  # the first engine alternates by round
+    assert {row["engine"] for row in report["rows"]} == {"tuned", "dense"}
+    assert all(row["execution"] == "numeric@dense" for row in report["rows"] if row["engine"] == "dense")
+    assert len(report["rows"]) == 2 * 3 * (2 + 3)  # per block: tuned A/A pair; dense w8, w8/sjf, w8 again
+    result = rl2.analyse_h8(report, resamples=50)
+    assert result["valid"], result
+    assert result["best_dense"] in rl2.arms_h8()[1:] and set(result["(2) no harm in any state"]["per_state"]) == {"0", "1", "2"}
+    report["rows"][-1]["execution"] = "exact"  # a dense cell that did not run the plan invalidates the run
+    for row in report["rows"]:
+        if row["engine"] == "dense":
+            row["execution"] = "exact"
+            break
+    assert not rl2.analyse_h8(report, resamples=50)["valid"]
