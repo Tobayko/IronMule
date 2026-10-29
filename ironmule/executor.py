@@ -82,6 +82,7 @@ class Session:
     stop_reason: str = ""
     metrics: RequestMetrics | None = None
     stream: TokenStream | None = None
+    capacity: int = 0  # X1: this request's own KV capacity; 0 leaves it to the run's
 
     def restart(self, backend: DecodeBackend) -> None:
         """Return to the post-prefill state. Used only by the fallback path."""
@@ -89,6 +90,11 @@ class Session:
         self.tokens = self.tokens[:1]
         self.done = False
         self.stop_reason = ""
+
+
+def _capacity(session: Any, capacity: int) -> int:
+    """The KV capacity a session decodes at: its own when it has one (X1), else the run's."""
+    return getattr(session, "capacity", 0) or capacity
 
 
 def _accept_token(session: Session, token: int, when: int,
@@ -139,9 +145,10 @@ class _Runner:
     def _finish_sequentially(self, sessions: list[Session], capacity: int) -> None:
         every = getattr(self.backend, "readback", 1) if hasattr(self.backend, "steps") else 1
         for session in sessions:
+            own = _capacity(session, capacity)
             if not session.done and len(session.tokens) == 1 and hasattr(self.backend, "speculate"):
                 drafted = self.backend.speculate(session.prompt_ids, session.tokens[0], session.state,
-                                                 session.max_tokens, capacity)
+                                                 session.max_tokens, own)
                 if drafted is not None:
                     tokens, state = drafted
                     when = now()
@@ -153,11 +160,11 @@ class _Runner:
                     continue
             while not session.done and not _stop_if_cancelled(session):
                 count = min(every, session.max_tokens - len(session.tokens))
-                chain = self.backend.steps(session.state, session.tokens[-1], capacity, count) if count > 1 else None
+                chain = self.backend.steps(session.state, session.tokens[-1], own, count) if count > 1 else None
                 if chain:
                     self._finish_chain(session, chain)
                     continue
-                handle = self.backend.step(session.state, session.tokens[-1], capacity)
+                handle = self.backend.step(session.state, session.tokens[-1], own)
                 self.backend.complete([handle])
                 token, state = self.backend.read(handle)
                 session.state = state
@@ -218,7 +225,7 @@ class AsyncGroupedB1Executor(_Runner):
     def _step_group(self, group: list[Session], capacity: int):
         """One submission per session. A subclass may submit a group as one step."""
 
-        return [self.backend.step(s.state, s.tokens[-1], capacity) for s in group]
+        return [self.backend.step(s.state, s.tokens[-1], _capacity(s, capacity)) for s in group]
 
     def _chain_group(self, group: list[Session], capacity: int):
         """Chained readback per session (SERVE1) when every session can chain; else None.
@@ -232,7 +239,8 @@ class AsyncGroupedB1Executor(_Runner):
         chains = []
         for session in group:
             count = min(every, session.max_tokens - len(session.tokens))
-            chain = self.backend.steps(session.state, session.tokens[-1], capacity, count) if count > 1 else None
+            chain = (self.backend.steps(session.state, session.tokens[-1], _capacity(session, capacity), count)
+                     if count > 1 else None)
             if not chain:
                 return None
             chains.append(chain)
@@ -240,8 +248,9 @@ class AsyncGroupedB1Executor(_Runner):
 
     def run(self, sessions: list[Session], capacity: int, admit=None) -> None:
         """Serve `sessions`; `admit()` (SERVE8), when given, returns sessions that arrived while
-        this run was going, already prefilled at this capacity, and they join the rotation before
-        the next round. The run ends when nothing is active, waiting or newly admitted."""
+        this run was going, already prefilled (each at its own capacity, which fits this one), and
+        they join the rotation before the next round. The run ends when nothing is active, waiting
+        or newly admitted."""
         started = now()
         pending = sorted(sessions, key=lambda s: (s.arrival_ms, s.rid))
         active: list[Session] = []
@@ -341,6 +350,11 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
                    capacity: int, dispatch_ns: int | None = None) -> list[Session]:
     """Prefill every request under its own plan. Plans are applied, never chosen.
 
+    Each request gets the KV capacity it would get alone, from its own prompt length and output
+    limit, never the group's `capacity` (X1): on CUDA the cache length moves decode logits, so a
+    shared capacity made a request's tokens depend on what it was grouped with. The group's
+    capacity, sized to the longest prompt and largest limit, still bounds every one of them.
+
     `dispatch_ns` is when the caller handed these requests over. It defaults to now,
     which is right when a dispatch is one `serve`. A caller that splits one dispatch
     into several `serve` calls must pass the original timestamp, or every service TTFT
@@ -364,12 +378,13 @@ def build_sessions(requests, backend: DecodeBackend, telemetry: Telemetry,
             telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))
             sessions.append(session)
             continue
-        state, first = backend.prefill(request.prompt_ids, request.plan, capacity)
+        own = backend.capacity_for([len(request.prompt_ids)], request.max_tokens)
+        state, first = backend.prefill(request.prompt_ids, request.plan, own)
         session = Session(rid=request.rid, prompt_ids=list(request.prompt_ids),
                           max_tokens=request.max_tokens, plan=request.plan,
                           arrival_ms=request.arrival_ms, base_state=state,
                           state=backend.reset_state(state, len(request.prompt_ids)),
-                          metrics=metrics, stream=getattr(request, "stream", None))
+                          metrics=metrics, stream=getattr(request, "stream", None), capacity=own)
         _accept_token(session, first, now(), backend.eos_ids)
         telemetry.requests.append(metrics)
         telemetry.plan_kinds.append(getattr(request.plan, "kind", "unknown"))

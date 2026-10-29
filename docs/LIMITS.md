@@ -307,9 +307,10 @@ unpaired). Qwen3 spends short answers in its `<think>` block first. Linux x86_64
 **Group width is capped at 4.** Not a tuning knob: width 8 regressed in E14b and E2
 and E3 independently, at the `M=8` kernel regime. Requesting more raises.
 
-**One capacity per `serve()` call.** The KV cache is fixed-shape, so a batch is
-allocated to the longest prompt in it. A single long request therefore inflates
-memory for the whole batch. Capacity above 8192 is refused rather than allocated.
+**One capacity per request.** The KV cache is fixed-shape. Each request is
+allocated what it would get alone, from its own prompt length and output limit (X1:
+on CUDA the cache length moves decode logits, so a shared group capacity made an
+answer depend on the group). Capacity above 8192 is refused rather than allocated.
 
 **Grouping helps only when groups fill.** With 2–3 token answers the realised width
 fell to 1.83 and the gain fell below threshold in both E15 and E16. A service whose
@@ -321,13 +322,14 @@ workload. A latency-sensitive single-request path should stay in `InteractiveMod
 **Fallback discards work.** A failed group restarts its requests from prefill. That
 is correct and wasteful; it is not an optimisation path.
 
-**Ragged prompt lengths within a group are untested, and on CUDA one answer moved.** Every
-measured group used a shared cache offset. Requests of genuinely different prefill lengths in
-one group are outside what was verified. On two Kaggle T4s (RL3-H, Qwen3 1.7B bf16), one short
-request got a different answer when placed with requests that carried about 1,000-token prompts
-than when it was not; 88 other requests agreed. A group's KV capacity follows its longest prompt,
-so the suspected cause is that CUDA attention is not exact across cache lengths; backlog X1
-tests it. Until then, a request's tokens on CUDA may depend on what it is grouped with.
+**Ragged prompt lengths within a group are untested on hardware.** Every measured group used a
+shared cache offset. On two Kaggle T4s (RL3-H, Qwen3 1.7B bf16) one short request was answered
+differently when grouped with about 1,000-token prompts, because the group's KV capacity then
+followed the long prompts and on CUDA the cache length moves decode logits (X1: up to 0.75, a
+token flipped in 2 of 16 prompts within 32 tokens; the CPU build was bit-exact). Each request now
+decodes at its own capacity, which the runtime contract tests check; that fix is not yet
+re-measured on the T4s. Opt-in reuse that re-pads a stored state to another capacity (`ChatTurnsPlan`'s
+turn cache) is not exact on CUDA for the same reason.
 
 **Sustained load is untested.** All measurements used eight requests. Queue effects
 that only appear under continuous arrival are unknown.

@@ -158,6 +158,50 @@ def test_heterogeneous_lengths_and_caps():
     assert got["p12_2"][1] == "eos", "eos beats the cap when it comes first"
 
 
+class CapacitySensitiveBackend(FakeBackend):
+    """As CUDA measured in X1: a decoded token depends on the KV capacity it is decoded at."""
+
+    def __init__(self, scripts, **kwargs):
+        super().__init__(scripts, **kwargs)
+        self.capacities = []
+
+    def prefill(self, prompt_ids, plan, capacity):
+        self.capacities.append((self._rid_for(prompt_ids), capacity))
+        return super().prefill(prompt_ids, plan, capacity)
+
+    def step(self, state, token, capacity):
+        self.capacities.append((state["rid"], capacity))
+        return {"state": state, "token": token, "capacity": capacity}
+
+    def read(self, handle):
+        token, state = super().read(handle)
+        return (token if token == EOS else token + handle["capacity"]), state
+
+
+def test_a_request_decodes_at_its_own_capacity_whatever_it_is_grouped_with():
+    long_prompt = [7] * 900
+    scripts = {**SCRIPTS, "p900_7": [71, 72, EOS]}
+    alone = {}
+    for ids in PROMPTS:
+        backend, telemetry = CapacitySensitiveBackend(scripts), Telemetry()
+        capacity = backend.capacity_for([len(ids)], 8)
+        sessions = build_sessions([Request(prompt_ids=ids, rid=backend._rid_for(ids), max_tokens=8)],
+                                  backend, telemetry, capacity)
+        SequentialExecutor(backend, telemetry).run(sessions, capacity)
+        alone.update(outputs(sessions))
+    backend = CapacitySensitiveBackend(scripts)
+    telemetry = Telemetry()
+    requests = [Request(prompt_ids=ids, rid=backend._rid_for(ids), max_tokens=8) for ids in [long_prompt, *PROMPTS]]
+    capacity = backend.capacity_for([len(r.prompt_ids) for r in requests], 8)
+    sessions = build_sessions(requests, backend, telemetry, capacity)
+    AsyncGroupedB1Executor(backend, telemetry, max_width=4).run(sessions, capacity)
+    grouped = outputs(sessions)
+    assert {rid: grouped[rid] for rid in alone} == alone, "a long prompt in the group moved no other answer"
+    for rid, used in backend.capacities:
+        prompt = len(long_prompt) if rid == "p900_7" else len(next(p for p in PROMPTS if backend._rid_for(p) == rid))
+        assert used == backend.capacity_for([prompt], 8) <= capacity, rid
+
+
 @pytest.mark.parametrize("executor_cls", [SequentialExecutor, AsyncGroupedB1Executor])
 def test_prefill_token_eos_stops_and_is_counted(executor_cls):
     _, telemetry, sessions = run(

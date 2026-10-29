@@ -208,6 +208,18 @@ more at every level of run 1. *Traces:* five per state, seeds distinct from run 
 session hours. **Kill:** as RL2's, per decision: the held-out headroom's 2.5 % bootstrap bound at or below the A/A
 noise means no learner for that decision under this traffic either.
 
+**Result, RL2-H2 run 1 (2026-10-29, `RL2-H2-run1-20261028`, kernel `tobayko/ironmule-rl2-headroom-h2` at
+`517bacee4068c0dc080d75f4aece2065959ab11b`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4): invalid,
+no learner is released.** All 225 cells and 3,600 requests completed; none failed. Seven requests were answered
+differently across arms. All seven are short prompts 0 or 5 with 32-token limits, the two prompts X1 found to flip
+at a long-prompt group's capacity. Each split the arms into the same two answers, with width-1 arms always on one
+side; the A/A repeat agreed with its reference. That is X1's mechanism, so this run has the same cause as RL3-H's.
+3.5 session hours. *Post hoc, not a verdict:* with those seven digests masked, the timing analysis reads an A/A
+noise of 4.8 %, and the joint held-out headroom is -0.3 %. No grouping was cheapest: `fill/w1/g0` cost 7.6 % less
+than the reference, more than the noise, mostly in `bursts` and `spike`, where a group holds every member until
+its slowest ends. Groups also decoded at the long prompts' capacity then, which X1 has since removed, so a re-run
+on the fix could rank the widths differently.
+
 ### RL3 — Length-aware placement and order on two GPUs (protocol fixed 2026-10-28, before data)
 
 **Mechanism.** With requests of mixed length, a long answer holds a group and its card while short ones wait
@@ -283,6 +295,21 @@ step, and the largest logit difference before it. **Decision (fixed before data)
 - Nothing reproduces: the product path (worker, admission, streaming) is reproduced next.
 
 Until X1 is resolved, no RL run on CUDA counts, and LIMITS states the defect.
+
+**Result (2026-10-29, `X1-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-x1` at
+`cdc44937f96d1a9764be0e6b41ce9b488b995a67`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 0.05
+session hours): the KV capacity moves tokens on CUDA.** Both cards gave identical answers, and each repeat on a
+card gave the same answer. Request 14 alone decoded at capacity 64 and gave exactly the answer RL3-H's `shortest`
+arms recorded. In its burst it decoded at the group's 1,088 and gave exactly the answer of the `segregate` and
+`spill` arms. Decoding that prompt directly at 1,088 gives the same second answer, so the capacity explains the
+mismatch fully. Before their first differing token, all 16 short prompts' logits moved by 0.44-0.75 at capacity
+1,024 or 1,088. Two of them (prompts 0 and 5) flipped a token within 32 (at steps 23 and 28). Under
+`segregate`, request 14 had shared card 0 with the three long prompts of its burst, since all four had 32-token
+limits. As the rule fixed before the data says, each session now prefills and decodes at the capacity it would
+get alone (`build_sessions`). The group's capacity still bounds it, and a new runtime contract test, with a
+backend whose tokens depend on the capacity, fails without the fix. The engine keeps one decode body per
+capacity (at most eight), and the opt-in paired path pairs only equal capacities. Still owed: RL3-H re-run on
+the fix (the same plan, traces and rule), before RL4 can use its data; the ledger entry.
 
 ### RL4 — A model-based RL agent that places and orders each request (opened 2026-10-28, before data)
 

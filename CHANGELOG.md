@@ -4,6 +4,14 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **On CUDA a request's answer no longer depends on what it is grouped with (X1).** A group shared one KV
+  capacity, sized to its longest prompt and largest output limit, and on Kaggle's T4s the cache length moves
+  decode logits (by up to 0.75 across 16 prompts, flipping a token in two of them within 32 tokens). A short
+  request grouped with a long prompt could therefore get a different answer than alone. Each request now prefills
+  and decodes at the capacity it would get alone; the group's capacity still bounds it, so memory does not grow.
+  The engine keeps one decode body per capacity, and the opt-in paired path pairs only requests with equal
+  capacities. One check on the MLX CPU build found the logits bit-identical; Metal is not re-measured (BACKLOG X1).
+
 - **Autopilot no longer picks the `native` plan for an unquantized checkpoint.** On a CUDA card that emulates
   bfloat16 its numeric choice took `native` for any Qwen 3 or Gemma 3 checkpoint, but those kernels replace 4-bit
   weights only, so an unquantized one could then neither be tuned nor loaded. `native` now counts as a no-op where
