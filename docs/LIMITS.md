@@ -157,7 +157,11 @@ plus reading the host every 4 tokens made decode 8.2 % faster with identical tok
 that is token equality on a sample, not yet bit identity (HW4). Prompt-lookup speculation changed tokens there,
 and so did stacking requests into one forward (true tensor batching), which also made a token only 1.34x cheaper
 at eight rows, because MLX's bf16 product at 2-32 rows is 5-7x slower than at one row. A decode step reaches 70 %
-of the weight-bandwidth floor (252 GB/s measured). Prefill of a 1,026-token prompt takes 1.7 s.
+of the weight-bandwidth floor (252 GB/s measured). Prefill of a 1,026-token prompt takes 1.7 s. A research plan
+that stacks up to eight requests into one decode step with IronMule's own kernels (KB1-1) answered every request
+bit for bit the same at 1, 3 or 8 rows, decoded eight requests 3.8x faster than today's grouping, and passed the
+numeric plans' quality gate on the decode path; it changes answers against today's engine (as a numeric plan does),
+slows a request served alone by 18 %, and is not in the product.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a

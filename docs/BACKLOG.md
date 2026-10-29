@@ -817,6 +817,28 @@ keys from the start.
   executor (a slot pool of fixed capacity, one slot per request). Before it is recommended anywhere, an LD1-V-style
   no-harm check on mixed traffic follows. A failed (a) is a bug, fixed before anything else.
 
+**KB1-1 result (2026-10-29, `KB1-1-run1-20261029`, kernel `tobayko/ironmule-cuda-probe-kb1m` at
+`5fde175f6c46fe94f134e265a7f82dcc595eb6db`, Kaggle T4, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 0.2 session
+hours): all three decisions pass.** KB1-0 re-ran in the same session at 1.81x.
+- **(a) Exact within the plan.** Every row's logits at every step were bit-identical between the plan at one row
+  (at the row's own capacity) and stacked at 3 and at 8 rows, and again at twice the capacity.
+- **(b) 3.8x faster than today's grouping.** A stacked step of eight took 38.0 ms. Today's width-8 grouped round
+  took 144.4 ms with the compiled step and 154.6 ms without. The ratio is 0.263 (95 % 0.262-0.264), which is 4.75
+  ms per token at width 8 against 18.1 ms.
+- **(c) The quality gate passes on the decode path.** On the 16 x 512-token chunks the perplexity ratio was
+  0.9992 (95 % 0.9980-1.0005). Scored after a 1,024-token prefix it was 1.0018 (0.9989-1.0048). Both are below
+  1.005.
+- **Recorded.** (d) One request alone is slower under the plan: 22.0 ms per token, 1.18x today's best exact decode
+  (compile + readback 4), so quiet traffic would regress as built. Twice the capacity changed the step time by
+  0.94x, so the KV write does not copy the cache. Over 64 tokens, 6 of 8 prompts gave today's engine's tokens; two
+  diverged at steps 23 and 58.
+- **Verdict, as fixed.** The dense plan is a candidate for an opt-in numeric plan with a stacked executor (a slot
+  pool of fixed capacity, one slot per request). Before it is recommended anywhere, two things are owed: the
+  single-request regression (d) is closed or bounded, and an LD1-V-style no-harm check runs on mixed traffic
+  through the product path. Next, KB1-2: the plan's single-row speed (rows per warp chosen per M, which leaves
+  each row's arithmetic unchanged; readback and pipelining in its decode loop) and its cost per further row at
+  widths 1-8, which RL7 needs and which re-derives RL6's width.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
