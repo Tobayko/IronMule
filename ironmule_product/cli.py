@@ -204,7 +204,7 @@ def _qualified_knob_options(spec: Any, devices: list[str | None]) -> dict[str, A
     if found is None:
         return {}
     knobs, record = found
-    return {"engine_knobs": {"knobs": knobs.as_dict(), "source": f"qualified:{record['experiment']}"[:64]}}
+    return {"engine_knobs": {"knobs": knobs, "source": f"qualified:{record['experiment']}"[:64]}}
 
 
 def _engine_options(engine: str) -> dict[str, Any]:

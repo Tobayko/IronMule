@@ -19,15 +19,18 @@ KNOBS_FILE = "knobs.json"
 # HW4: class A on the T4 (with MLX 0.32.4); readback_every only moves host reads.
 CLASS_A_FIELDS = frozenset({"fuse_projections", "compiled_fixed_cache", "fused_argmax", "readback_every"})
 BINDING_KEYS = frozenset({"model_id", "revision", "gpu", "engine", "mlx", "mlx_lm"})
+# `ironmule.runtime.BASELINE.as_dict()`, kept in step by a test: this module runs in the server's own process,
+# which does not import MLX.
+BASELINE_KNOBS: dict[str, Any] = {
+    "fuse_projections": False, "compiled_fixed_cache": False, "fused_argmax": False, "head_skip_prefill": False,
+    "prefill_into_fixed": False, "readback_every": 1, "speculate_k": 0, "speculate_ngram": 3, "capacity_slack": 0,
+    "wired_fraction": 0.0, "k3840_matvec": False,
+}
 
 
-def kp1_knobs():
+def kp1_knobs() -> dict[str, Any]:
     """KP1's candidate, exactly as RL7's result named it: the compiled step and a host read every 4 tokens."""
-    from dataclasses import replace
-
-    from ironmule.runtime import BASELINE
-
-    return replace(BASELINE, compiled_fixed_cache=True, readback_every=4)
+    return {**BASELINE_KNOBS, "compiled_fixed_cache": True, "readback_every": 4}
 
 
 def framework_versions() -> dict[str, str | None]:
@@ -46,16 +49,18 @@ def framework_versions() -> dict[str, str | None]:
     return versions
 
 
-def class_a_knobs(value: Any):
-    """`value` as `Knobs` when it differs from the baseline only in class-A fields, else None."""
-    from ironmule.runtime import BASELINE
-    from ironmule.tune import _exact_knobs
-
-    knobs = _exact_knobs(value)
-    if knobs is None:
+def class_a_knobs(value: Any) -> dict[str, Any] | None:
+    """`value` as a complete knob mapping when it differs from the baseline only in class-A fields, else None.
+    Plain Python: the server's own process never imports MLX; the worker builds `Knobs` from the result."""
+    if not isinstance(value, Mapping) or set(value) - set(BASELINE_KNOBS):
         return None
-    baseline = BASELINE.as_dict()
-    if any(v != baseline[k] for k, v in knobs.as_dict().items() if k not in CLASS_A_FIELDS):
+    knobs = {**BASELINE_KNOBS, **value}
+    if any(knobs[k] != v or type(knobs[k]) is not type(v) for k, v in BASELINE_KNOBS.items()
+           if k not in CLASS_A_FIELDS):
+        return None
+    if any(type(knobs[k]) is not bool for k in CLASS_A_FIELDS - {"readback_every"}):
+        return None
+    if type(knobs["readback_every"]) is not int or not 1 <= knobs["readback_every"] <= 64:
         return None
     return knobs
 
@@ -70,7 +75,7 @@ def _digest(body: Mapping[str, Any]) -> str:
     return hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
 
 
-def qualified_knobs(binding: Mapping[str, Any], folder: Path | None = None) -> tuple[Any, dict] | None:
+def qualified_knobs(binding: Mapping[str, Any], folder: Path | None = None) -> tuple[dict, dict] | None:
     """A shipped class-A knob set whose binding names exactly this setup and whose record's digest, schema and
     verdict hold; None otherwise, and the engine's own default serves."""
     folder = Path(__file__).with_name("dispatch") if folder is None else Path(folder)
@@ -92,14 +97,15 @@ def qualified_knobs(binding: Mapping[str, Any], folder: Path | None = None) -> t
     return None
 
 
-def knobs_record(experiment: str, binding: Mapping[str, Any], knobs: Any, domain: list[str], rival: str,
+def knobs_record(experiment: str, binding: Mapping[str, Any], knobs: Mapping[str, Any], domain: list[str], rival: str,
                  gain: float, gain_ci95: list[float], floor: float, noise: float, no_harm: bool) -> dict[str, Any]:
     """The record `qualified_knobs` accepts. As KP1 fixed before its data, it passes when the gain's 2.5 % bound
     is above 0 and above `floor`, the A/A control (the answers are identical, so every resolved gain counts),
     and no state was harmed beyond the A/A noise, which `no_harm` reports."""
-    if class_a_knobs(knobs.as_dict()) is None:
+    knobs = class_a_knobs(knobs)
+    if knobs is None:
         raise ValueError("only class-A knobs can be qualified this way")
-    body = {"schema": KNOBS_SCHEMA, "experiment": experiment, "binding": dict(binding), "knobs": knobs.as_dict(),
+    body = {"schema": KNOBS_SCHEMA, "experiment": experiment, "binding": dict(binding), "knobs": knobs,
             "domain": list(domain), "rival": rival, "gain": gain, "gain_ci95": list(gain_ci95), "floor": floor,
             "noise": noise, "no_harm": bool(no_harm),
             "verdict": "pass" if gain_ci95[0] > max(0.0, floor) and no_harm else "fail"}
@@ -139,6 +145,7 @@ def compare_class_a(model: Any, tokenizer: Any, knobs: Any, prompts: Mapping[str
             current = picks[-1] if feed is None else feed[k + 1]
         return logits, picks, state
 
+    knobs = knobs if isinstance(knobs, runtime.Knobs) else runtime.Knobs(**knobs)
     base, candidate = runtime.Engine(model, tokenizer, runtime.BASELINE), runtime.Engine(model, tokenizer, knobs)
     rows, differ = [], []
     try:

@@ -1395,7 +1395,7 @@ def run_kp1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
     store = ProductStore(state)
     spec = store.model(model)
     devices = cuda_devices() or [None]
-    knobs = kp1_knobs().as_dict()
+    knobs = kp1_knobs()
     preflight = kp1_preflight(str(spec.snapshot_path), devices[0], knobs)
     if not preflight.get("ok"):
         return {"model": model, "revision": revision, "failed": "kp1 preflight (kill 1)", "preflight": preflight}
@@ -1418,8 +1418,7 @@ def analyse_kp1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
     """KP1's kills, validity and decisions, as fixed in BACKLOG before data. A cell's cost is the mean of its
     two runs. The A/A control applies the same estimator to an arm's first run against its second; KP's bound
     must clear the larger of those two gains in size, and 0."""
-    from ironmule.runtime import BASELINE
-    from ironmule_product.knob_profile import kp1_knobs
+    from ironmule_product.knob_profile import BASELINE_KNOBS, kp1_knobs
 
     rows, deadline = report.get("rows", []), float(report.get("deadline_s") or 120)
     names = report.get("arms") or arms_kp1()
@@ -1429,7 +1428,7 @@ def analyse_kp1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
         problems.append("calibration failed or the run stopped")
     if not (report.get("preflight") or {}).get("ok"):
         problems.append("the preflight did not pass (kill 1)")
-    expected = {"tuned": BASELINE.as_dict(), "kp": kp1_knobs().as_dict()}
+    expected = {"tuned": BASELINE_KNOBS, "kp": kp1_knobs()}
     for engine, starts in (report.get("engines") or {}).items():
         for record in starts:
             if any(card.get("selected_knobs") != expected.get(engine) for card in record.get("engine") or [{}]):

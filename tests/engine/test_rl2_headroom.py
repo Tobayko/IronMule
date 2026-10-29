@@ -632,7 +632,7 @@ def test_kp1_runs_the_default_and_its_class_a_knobs_by_round_and_judges_them_as_
     snapshot.mkdir()
     spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
     store.register_model(spec)
-    knobs = kp1_knobs().as_dict()
+    knobs = kp1_knobs()
 
     def start(engine):
         extra = {"engine_knobs": {"knobs": knobs, "source": "KP1-candidate"}} if engine == "kp" else {}

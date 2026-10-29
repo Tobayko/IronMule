@@ -248,8 +248,12 @@ class CurrentEngineBridge:
         if class_a_knobs is not None:
             from .knob_profile import class_a_knobs as decode_class_a
 
-            requested = (decode_class_a(class_a_knobs.get("knobs")) if isinstance(class_a_knobs, dict)
-                         and configuration == "current_profile" else None)
+            mapping = (decode_class_a(class_a_knobs.get("knobs")) if isinstance(class_a_knobs, dict)
+                       and configuration == "current_profile" else None)
+            if mapping is not None:
+                from ironmule.runtime import Knobs as RuntimeKnobs  # `Knobs` is bound further down
+
+                requested = RuntimeKnobs(**mapping)
             source = class_a_knobs.get("source") if isinstance(class_a_knobs, dict) else None
             if requested is None or not isinstance(source, str) or not 1 <= len(source) <= 64:
                 raise ValueError("class-A knobs serve the current profile only, and only class-A knobs")

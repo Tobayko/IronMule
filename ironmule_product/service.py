@@ -201,6 +201,12 @@ class ProductService:
         policy = self.policy
         result["schedule"] = {"max_width": policy.max_width, "gather_ms": policy.gather_ms, "order": policy.order,
                               "source": policy.source}
+        engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine")
+        if isinstance(engine, dict) and isinstance(engine.get("selected_knobs"), dict):  # KP1: which knobs serve
+            from .knob_profile import class_a_knobs
+
+            result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
+                               "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
 
     def accepting(self) -> bool:

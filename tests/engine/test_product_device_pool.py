@@ -251,3 +251,23 @@ def test_the_pool_starts_all_devices_or_none(tmp_path, monkeypatch):
 def test_serve_refuses_gpus_without_a_model(tmp_path):
     with pytest.raises(SystemExit):
         cli.serve(["--no-model", "--gpus", "all", "--state-dir", str(tmp_path / "state")])
+
+
+def test_health_names_the_knobs_each_card_serves_with_and_whether_they_are_class_a(tmp_path, monkeypatch):
+    from ironmule_product.knob_profile import kp1_knobs
+
+    store, spec, _ = _fake_workers(tmp_path, monkeypatch)
+    requested = {"knobs": kp1_knobs(), "source": "qualified:KP1-run1"}
+    pool = start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+        spec, execution_variant="current_engine", cuda_device=device, engine_knobs=requested), ProductService)
+    try:
+        assert pool.health()["knobs"] == {"source": "class_a:qualified:KP1-run1", "values": kp1_knobs(),
+                                          "class_a": True}
+    finally:
+        pool.close()
+    plain = start_pool(store, spec, ["0"], lambda device: MLXWorkerClient(
+        spec, execution_variant="current_engine", cuda_device=device), ProductService)
+    try:
+        assert "knobs" not in plain.health()  # the fake reports no knobs unless asked; nothing is invented
+    finally:
+        plain.close()

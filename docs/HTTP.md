@@ -45,7 +45,7 @@ when it is ready:
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
 | `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below. It shows which engine answers and, live, completion tokens per second from sending to the last token |
-| `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, the `schedule` that serves, and a `learning` summary when learning is on |
+| `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, the `schedule` that serves, the tuned engine's `knobs` (values, their `source`, and whether they are `class_a`: only knobs that leave every answer unchanged), and a `learning` summary when learning is on |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |
 | `POST` | `/v1/chat/completions` | `stream: false` gives one JSON completion; `stream: true` gives SSE chunks ending with `data: [DONE]` |

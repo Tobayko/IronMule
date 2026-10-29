@@ -21,15 +21,31 @@ def _baseline():
 
 
 def test_only_knobs_that_leave_every_answer_unchanged_are_class_a():
-    pytest.importorskip("mlx.core")
     candidate = kp.kp1_knobs()
-    assert (candidate.compiled_fixed_cache, candidate.readback_every, candidate.fused_argmax) == (True, 4, False)
-    assert kp.class_a_knobs(candidate.as_dict()) == candidate
-    assert kp.class_a_knobs(replace(candidate, fuse_projections=True, fused_argmax=True).as_dict()) is not None
+    assert (candidate["compiled_fixed_cache"], candidate["readback_every"], candidate["fused_argmax"]) == (True, 4, False)
+    assert kp.class_a_knobs(candidate) == candidate
+    assert kp.class_a_knobs({"fuse_projections": True, "fused_argmax": True}) == {
+        **kp.BASELINE_KNOBS, "fuse_projections": True, "fused_argmax": True}
     for changed in ({"head_skip_prefill": True}, {"speculate_k": 3}, {"prefill_into_fixed": True},
-                    {"capacity_slack": 64}, {"wired_fraction": 0.5}):
-        assert kp.class_a_knobs({**candidate.as_dict(), **changed}) is None, changed
-    assert kp.class_a_knobs({"compiled_fixed_cache": "yes"}) is None and kp.class_a_knobs(None) is None
+                    {"capacity_slack": 64}, {"wired_fraction": 0.5}, {"readback_every": 0},
+                    {"readback_every": 4.0}, {"compiled_fixed_cache": "yes"}, {"unknown": 1}):
+        assert kp.class_a_knobs({**candidate, **changed}) is None, changed
+    assert kp.class_a_knobs(None) is None
+
+
+def test_the_plain_baseline_is_the_engines_and_the_server_process_never_imports_mlx():
+    import subprocess
+    import sys
+
+    pytest.importorskip("mlx.core")
+    assert kp.BASELINE_KNOBS == _baseline().as_dict()
+    code = ("import sys; import ironmule_product.cli, ironmule_product.backend as b, ironmule_product.knob_profile "
+            "as kp; from ironmule_product.types import ModelSpec; "
+            "b.MLXWorkerClient(ModelSpec('local/t', 'r', '/m', 1), execution_variant='current_engine', "
+            "engine_knobs={'knobs': kp.kp1_knobs(), 'source': 's'}); kp.class_a_knobs(kp.kp1_knobs()); "
+            "print('mlx' in sys.modules)")
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert done.stdout.strip() == "False", done.stderr[-2000:]
 
 
 def _ship(folder, binding=BINDING, **overrides):
@@ -62,7 +78,7 @@ def test_a_failed_or_harmful_comparison_qualifies_nothing(tmp_path):
                                  0.05, harm)
         assert record["verdict"] == "fail", (bound, floor, harm)
     with pytest.raises(ValueError, match="class-A"):
-        kp.knobs_record("KP1", BINDING, replace(kp.kp1_knobs(), speculate_k=3), ["quiet"], "tuned", 0.05,
+        kp.knobs_record("KP1", BINDING, {**kp.kp1_knobs(), "speculate_k": 3}, ["quiet"], "tuned", 0.05,
                         [0.04, 0.1], 0.0, 0.05, True)
     (tmp_path / "x").mkdir()
     body = {k: v for k, v in _ship(tmp_path).items() if k != "sha256"}
@@ -85,7 +101,7 @@ def test_the_cli_passes_qualified_knobs_to_the_tuned_workers_only_when_bound(mon
 
     def found(binding, folder=None):
         seen.append(binding)
-        return SimpleNamespace(as_dict=lambda: {"compiled_fixed_cache": True}), {"experiment": "KP1-run1"}
+        return {"compiled_fixed_cache": True}, {"experiment": "KP1-run1"}
 
     monkeypatch.setattr(kp, "shipped_knobs", lambda folder=None: True)
     monkeypatch.setattr(kp, "qualified_knobs", found)
@@ -102,7 +118,7 @@ def test_the_worker_client_carries_only_class_a_knobs_to_the_tuned_engine():
     from ironmule_product.types import ModelSpec
 
     spec = ModelSpec("local/test", "revision", "/models/test", 1)
-    knobs = {"knobs": kp.kp1_knobs().as_dict(), "source": "KP1-candidate"}
+    knobs = {"knobs": kp.kp1_knobs(), "source": "KP1-candidate"}
     client = MLXWorkerClient(spec, execution_variant="current_engine", engine_knobs=knobs)
     assert client.engine_knobs == knobs
     for bad in ({"execution_variant": "reference"}, {"execution_variant": "current_engine",
@@ -142,10 +158,10 @@ def test_the_bridge_serves_class_a_knobs_only_when_no_stored_profile_applies(mon
     stored = {"profile": None}
     monkeypatch.setattr(tune_module, "load_profile", lambda *a, **k: stored["profile"])
     spec = ModelSpec("local/test", "revision", str(tmp_path), 1)
-    requested = {"knobs": kp.kp1_knobs().as_dict(), "source": "KP1-candidate"}
+    requested = {"knobs": kp.kp1_knobs(), "source": "KP1-candidate"}
 
     bridge = CurrentEngineBridge.from_loaded(model, tokenizer, spec, class_a_knobs=requested)
-    assert bridge.metadata()["selected_knobs"] == kp.kp1_knobs().as_dict()
+    assert bridge.metadata()["selected_knobs"] == kp.kp1_knobs()
     assert bridge.metadata()["profile_source"] == "class_a:KP1-candidate"
     assert bridge.generate([1, 2, 3], 4).tokens == CurrentEngineBridge.from_loaded(
         model, tokenizer, spec).generate([1, 2, 3], 4).tokens  # class A: the same answer
@@ -174,7 +190,7 @@ def _tiny_model():
 def test_the_preflight_compares_logits_and_state_bit_for_bit_at_every_capacity_that_fits(monkeypatch):
     model, tokenizer = _tiny_model()
     prompts = {"short": [3, 5, 7], "long": list(range(1, 90))}
-    result = kp.compare_class_a(model, tokenizer, replace(_baseline(), readback_every=4), prompts,
+    result = kp.compare_class_a(model, tokenizer, {**kp.BASELINE_KNOBS, "readback_every": 4}, prompts,
                                 [64, 128, 192, 128], 6)
     assert result["ok"] and result["differ"] == []
     assert kp.compare_class_a(model, tokenizer, kp.kp1_knobs(), prompts, [128], 6)["ok"]  # a CPU smoke, not T4 evidence
@@ -191,5 +207,5 @@ def test_the_preflight_compares_logits_and_state_bit_for_bit_at_every_capacity_t
         return lambda ids, state: (lambda out: (out[0] * (1 + 2 ** -20), out[1]))(body(ids, state))
 
     monkeypatch.setattr(runtime.Engine, "_body", drifting)
-    result = kp.compare_class_a(model, tokenizer, replace(_baseline(), readback_every=4), prompts, [128], 6)
+    result = kp.compare_class_a(model, tokenizer, {**kp.BASELINE_KNOBS, "readback_every": 4}, prompts, [128], 6)
     assert not result["ok"] and result["differ"] == [[128, "short"], [128, "long"]]
