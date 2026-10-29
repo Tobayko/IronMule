@@ -12,7 +12,8 @@ of an unquantized Qwen 3 model with IronMule's own kernels:
   rows move a request's answer;
 * MLX's own RoPE (one position per row), `rms_norm` and `silu`, which act on each row alone.
 
-Prefill stays MLX's own, one request at a time. The plan changes answers against today's engine, so it is
+Prefill runs MLX's own layers, one request at a time; since plan version 2 only its last position goes through
+the head, the plan's own at one row, as in every decode step. The plan changes answers against today's engine, so it is
 opt-in like every numeric plan, and it is installed only on a model whose own weights pass a load-time probe:
 every stacked width bit-identical to one row, and the row kernel within tolerance of a float32 reference.
 KB1-1 measured it on a Tesla T4 with Qwen 3 1.7B bf16: exact within the plan, eight requests 3.8x faster than
@@ -193,6 +194,10 @@ FA2_COMBINE = r"""
 
 #: What the kernels' answers are bound to: a changed source is a changed plan.
 KERNEL_SHA256 = hashlib.sha256((DENSE_SOURCE + FA2_PARTIAL + FA2_COMBINE).encode()).hexdigest()
+#: The plan's arithmetic outside the kernels. 2: the prefill's first token comes from the plan's own head at one
+#: row (the decode steps' head), not MLX's head over every prompt position, which HW4 timed at 17 % of a long
+#: prompt's prefill.
+PLAN_VERSION = 2
 
 _kernels: dict[str, Any] = {}
 _kernel_lock = threading.Lock()
@@ -302,6 +307,14 @@ class DensePlan:
             self.values[i][rows] = v.reshape(-1, self.dim).astype(mx.bfloat16)
         mx.eval(self.keys, self.values)
 
+    def prefill(self, ids: Any, cache: list[Any]) -> Any:
+        """MLX's own prefill of one prompt (1, L) into an mlx-lm `cache`; only its last position goes through
+        the head, the plan's own at one row, as every decode step's does. Float32 logits (1, V)."""
+        import mlx.core as mx
+
+        hidden = self.trunk(ids, cache=cache)  # the final norm included
+        return self.linear(hidden[0, -1:, :], self.head).astype(mx.float32)
+
     def forward(self, tokens: Any, slots: Any, positions: Any) -> Any:
         """Tokens (B,) at positions (B,) of slots (B,); writes their KV and returns float32 logits (B, V)."""
         import mlx.core as mx
@@ -374,7 +387,8 @@ def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_
         raise ValueError("the dense plan's stacked rows differ from one row on this model")
     if not record["row_kernel_rel_error"] <= PROBE_TOLERANCE:
         raise ValueError(f"the row kernel disagrees with the float32 reference ({record['row_kernel_rel_error']:.3g})")
-    return plan, {**record, "kernel_sha256": KERNEL_SHA256, "slots": slots, "capacity": capacity}
+    return plan, {**record, "kernel_sha256": KERNEL_SHA256, "plan_version": PLAN_VERSION, "slots": slots,
+                  "capacity": capacity}
 
 
 def probe(plan: DensePlan) -> dict[str, Any]:
@@ -449,8 +463,7 @@ class DenseBackend:
             slot = self._free.pop(0)
         try:
             cache = make_prompt_cache(self.plan.model)
-            logits = self.plan.model(mx.array(list(prompt_ids))[None], cache=cache)
-            first = mx.argmax(logits[:, -1, :].astype(mx.float32), axis=-1)
+            first = mx.argmax(self.plan.prefill(mx.array(list(prompt_ids))[None], cache), axis=-1)
             self.plan.write_prefill(slot, [c.state for c in cache])
             mx.eval(first)
         except BaseException:

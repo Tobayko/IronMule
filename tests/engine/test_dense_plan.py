@@ -102,6 +102,30 @@ def test_stacked_rows_in_their_own_slots_give_each_row_its_answer_alone_close_to
     assert dp.probe(plan)["stacked_rows_identical"]
 
 
+
+def test_the_prefill_sends_only_the_last_position_through_the_plans_own_head():
+    """Plan version 2: the first token comes from the decode steps' head at one row, not a head over every
+    prompt position (17 % of a long prompt's prefill on the T4, HW4); close to the model's own last logits."""
+    from mlx_lm.models.cache import make_prompt_cache
+
+    model = _tiny()
+    plan = _plan(model)
+    rows = []
+    original = plan.linear
+
+    def counting(x, w, rows_=None):
+        if w is plan.head:
+            rows.append(x.size // x.shape[-1])
+        return original(x, w)
+
+    plan.linear = counting
+    ids = mx.array([[5, 9, 13, 17, 21, 25, 29]])
+    logits = plan.prefill(ids, make_prompt_cache(model))
+    assert rows == [1] and logits.shape == (1, 256) and logits.dtype == mx.float32
+    expected = model(ids, cache=make_prompt_cache(model))[0, -1].astype(mx.float32)
+    assert float(mx.max(mx.abs(logits[0] - expected)).item()) < 0.05 * float(mx.max(mx.abs(expected)).item())
+    assert dp.PLAN_VERSION == 2
+
 def _runtime(model, plan):
     return Runtime(Engine(model, _Tokenizer(), Knobs()), _Tokenizer(), mode=DenseStackedMode(plan))
 

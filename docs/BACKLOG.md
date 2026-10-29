@@ -979,6 +979,12 @@ mlx-lm 0.31.3.
   taken waits in the worker for the first one freed, instead of running after the whole group. Both apply only to
   the plan, and the other engines are unchanged. Run 3 measures the plan with this. A request longer than a slot
   still fails its batch.
+- **Plan version 2 (not measured yet):** the prefill's first token now comes from the plan's own head at one row,
+  the same head every decode step uses, which passed the quality gate. Before, MLX's head ran over every prompt
+  position. HW4 timed skipping that head at 1,814 to 1,504 ms for a 1,026-token prompt (17 %) and 107 to 98 ms
+  for a short one. The tuned engine cannot take this, because it is not class A. The plan changes answers anyway,
+  so it is one more change inside its own version (`PLAN_VERSION`, reported with the kernel digest). Each
+  request's answer still depends on nothing but itself.
 
 ### KP1 — The class-A knob profile as the tuned engine's default on the measured setup (opened 2026-10-29, before data)
 
