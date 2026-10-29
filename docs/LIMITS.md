@@ -143,6 +143,12 @@ new traces, all answers identical across arms), the same frozen policy beat the 
 bound to that measured setup: two T4s, that model and revision. It is unvalidated on traffic that mixes quiet,
 bursty and spike states, and on every other model, GPU or card count.
 
+RL6 (same setup, `bursts` and `spike` traffic, 2,304 requests identical across arms): starting the shortest output
+limit first with groups of at most two cost 18.0 % less than the default, width 8 in arrival order (95 % 15.0-20.5 %;
+width 1 18.6 %, width 4 11.9 %). The default is unchanged until a product change and a validation that includes
+quiet traffic. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 % -1.9 to 3.4 %) but did not
+beat it.
+
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a
 prefill allocation or a CUDA graph then fails within about half an hour (four losses in six overload replays). Before

@@ -485,3 +485,47 @@ def test_a_width_policy_sets_each_groups_width_in_the_scheduler():
     service.learned_policy = rl2.LearnedPolicy.zero()  # a v1 policy: the arm's width
     service._carry.extend(sessions[1:])
     assert len(service._group_for(sessions[0])) == 6
+
+
+def test_ld1_v_runs_the_products_own_learned_dispatch_against_its_reference(tmp_path, monkeypatch):
+    from ironmule_product import learned_dispatch as ld
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    policy = rl2.LearnedPolicy([0.0, 0.0, 0.0, 0.0, 0.0, 5.0, -5.0, 0.0, 0.0, 0.0], [1.0, 0.0, 0.0, 0.0],
+                               [0.0] * (len(rl2.WIDTH_CHOICES) * rl2.ORDER_FEATURES)).to_json()
+    dispatch = ld.LearnedDispatch(ld.Policy.from_json(policy), {"experiment": "test"}, None)
+    pool = start_pool(store, spec, ["0", "1"],
+                      lambda device: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device),
+                      rl2.ordered_service())
+    try:
+        with pytest.raises(ValueError, match="active learned dispatch"):
+            rl2.measure(pool, spec.model_id, deadline_s=30, traces=1, requests=2, max_tokens=(2,), plan="h7",
+                        dispatch=ld.LearnedDispatch(None, None, "off"))
+        report = rl2.measure(pool, spec.model_id, deadline_s=30, traces=2, requests=3, max_tokens=(2, 3), plan="h7",
+                             dispatch=dispatch)
+    finally:
+        pool.close()
+    assert report["arms"] == rl2.arms_h7() and report["states"] == list(rl2.H2_STATES)
+    assert len(report["rows"]) == 2 * 3 * (len(rl2.arms_h7()) + 1)
+    product_rows = [row for row in report["rows"] if row["arm"] == rl2.PRODUCT]
+    assert product_rows and all(row["dispatch"]["active"] for row in product_rows)
+    assert product_rows[-1]["dispatch"]["decisions"]["placement"] > 0
+    result = rl2.analyse(report, resamples=50)
+    assert result["valid"] and result["learned"]["rival"] in rl2.arms_h7()[:1] + rl2.arms_h7()[2:]
+    assert set(result["learned"]["per_state"]) == {"0", "1", "2"} and "vs_reference" in result["learned"]
+    product_rows[0]["dispatch"] = {"active": False}
+    assert "without an active learned dispatch" in rl2.analyse(report, resamples=10)["problems"][0]

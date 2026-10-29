@@ -71,6 +71,10 @@ RL6 (`--plan h6`, BACKLOG RL6, fixed 2026-10-29 before its data) compares the re
 widths 1, 2 and 4 and a frozen policy that also picks each group's width, on `bursts` and `spike` (12 traces each,
 indices 35-46); the analysis adds each fixed arm's paired gain over the reference.
 
+LD1-V (`--plan h7`, BACKLOG LD1-V, fixed 2026-10-29 before its data) runs the product's own learned dispatch (LD1)
+with a given policy against the product's reference and RL6's narrow shortest-first schedules on all three states
+(8 traces each, indices 47-54); a product cell whose dispatch was not active makes the run invalid.
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
@@ -130,6 +134,8 @@ H5_STATE = 2                       # RL4-S: `spike` only, where run 3's A/A pair
 H5_TRACES = tuple(range(5, 35))    # 30 traces whose seeds no earlier run and no training used
 H6_STATES = (1, 2)                 # RL6: `bursts` and `spike`, where width and order matter in the model
 H6_TRACES = tuple(range(35, 47))   # 12 traces per state, seeds unused by every earlier run and training
+H7_TRACES = tuple(range(47, 55))   # LD1-V: 8 traces per state, all three states, seeds unused so far
+PRODUCT = "product/w8/g0"          # LD1-V: the product's own learned dispatch (LD1) deciding every group
 H2_MAX_TOKENS = (32, 256)
 # Run 2's long prompts: generic filler of about a thousand tokens before the question, never user text.
 CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8)
@@ -279,6 +285,9 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
     mismatched = sorted(key for key, found in digests.items() if len(found) > 1)
     if mismatched:
         problems.append(f"{len(mismatched)} requests answered differently across arms (first: {list(mismatched[0])})")
+    idle = [row for row in rows if row["arm"] == PRODUCT and not (row.get("dispatch") or {}).get("active")]
+    if idle:  # LD1-V: a product cell without an active learned dispatch was the reference in disguise
+        problems.append(f"{len(idle)} product cells ran without an active learned dispatch")
     cells = _cell_costs(rows, deadline)
     if any(not math.isfinite(value) for value in cells.values()):
         problems.append("a cell cost is not finite")
@@ -324,11 +333,12 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
     per_level = {str(level): {name: statistics.fmean(table[level, t, name] for t in complete) for name in names}
                  for level in levels}
     learned = None
-    if LEARNED in names:  # run 4 (BACKLOG RL4-H): the frozen policy against every fixed arm, paired by trace
-        fixed_arms = [n for n in names if n != LEARNED]
+    challenger = LEARNED if LEARNED in names else PRODUCT if PRODUCT in names else None  # LD1-V: the product's
+    if challenger is not None:  # run 4 (BACKLOG RL4-H): the frozen policy against every fixed arm, paired by trace
+        fixed_arms = [n for n in names if n != challenger]
         rival = min(fixed_arms, key=lambda n: (sum(WEIGHTS[level] * statistics.fmean(table[level, t, n] for t in complete)
                                                    for level in levels), n))
-        per_trace = [(sum(WEIGHTS[level] * table[level, t, LEARNED] for level in levels),
+        per_trace = [(sum(WEIGHTS[level] * table[level, t, challenger] for level in levels),
                       sum(WEIGHTS[level] * table[level, t, rival] for level in levels)) for t in complete]
         boot = []
         for _ in range(resamples):
@@ -352,6 +362,26 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
                 boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
             learned["fixed_vs_reference"][arm] = {"gain": 1 - sum(x for x, _ in paired) / sum(y for _, y in paired),
                                                   "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+        # LD1-V: the challenger against the reference, paired by trace (after the draws above)
+        if challenger == PRODUCT:
+            paired = [(sum(WEIGHTS[level] * table[level, t, challenger] for level in levels),
+                       sum(WEIGHTS[level] * table[level, t, REFERENCE] for level in levels)) for t in complete]
+            boot = []
+            for _ in range(resamples):
+                sample = [paired[rng.randrange(len(paired))] for _ in paired]
+                boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+            learned["vs_reference"] = {"gain": 1 - sum(x for x, _ in paired) / sum(y for _, y in paired),
+                                       "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+        # LD1-V: the challenger against the rival in each state, for the no-harm check (after the draws above)
+        learned["per_state"] = {}
+        for level in levels:
+            paired = [(table[level, t, challenger], table[level, t, rival]) for t in complete]
+            boot = []
+            for _ in range(resamples):
+                sample = [paired[rng.randrange(len(paired))] for _ in paired]
+                boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+            learned["per_state"][str(level)] = {"gain": 1 - sum(x for x, _ in paired) / sum(y for _, y in paired),
+                                                "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
     return {**out, "valid": True, "problems": [], "aa_noise": noise, "aa_pairs": len(pairs),
             "reference_cost": reference, "best_fixed": best, "best_fixed_vs_reference": best_cost / reference,
             "decisions": decisions, "mean_cost_per_level": per_level, "learned": learned,
@@ -511,6 +541,8 @@ def _placement_pool(pool: Any) -> Any:
             return super().stream(request)
 
         def _order(self, request: Any = None) -> list[int]:
+            if self.placement == "product":  # LD1-V: the product's own learned dispatch places it
+                return super()._order(request)
             order = super()._order()  # without a request: the product's own learned dispatch (LD1) stays out
             if self.placement == "fill":
                 room = sorted(index for index in order if self.shards[index].outstanding() < self.fill_width)
@@ -603,6 +635,7 @@ def set_arm(pool: Any, name: str) -> None:
 
     placement, width, gather = parse_arm(name)
     pool.placement, pool.fill_width = placement, width
+    pool.attach(getattr(pool, "product_dispatch", None) if placement == "product" else None)
     for shard in pool.shards:
         shard.policy = ServingPolicy(max_width=width, gather_ms=gather, source="rl2-h")
         shard.order = arm_order(name)
@@ -683,18 +716,21 @@ def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, .
 def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = None, requests: int = REQUESTS,
             loads: tuple[float, ...] = LOADS, names: list[str] | None = None,
             max_tokens: tuple[int, ...] | None = None, plan: str = "h1", policy: Any = None,
-            on_row: Any = None) -> dict[str, Any]:
+            on_row: Any = None, dispatch: Any = None) -> dict[str, Any]:
     """The plan above on a started pool: calibration, then every (trace, level) block in order.
     `names` and `max_tokens` shrink it for a smoke run; a measurement keeps the defaults."""
     pool = _placement_pool(pool)
     pool.learned_policy = policy
+    pool.product_dispatch = dispatch  # LD1-V: attached only while the product arm runs
     for shard in pool.shards:
         shard.learned_policy = policy
-    names = names or {"h2": arms_h2, "h3": arms_h3}.get(plan, arms)(len(pool.shards))
+    names = names or ({"h7": lambda gpus: arms_h7(), "h2": arms_h2, "h3": arms_h3}.get(plan, arms))(len(pool.shards))
     if any(rl_part == "learned" for name in names for rl_part in (parse_arm(name)[0], arm_order(name))) \
             and policy is None:
         raise ValueError("a learned arm needs a policy")
     warm = replay(pool, model, [{"offset_s": 0.0, "prompt": 0, "max_tokens": 8}] * len(pool.shards), deadline_s)
+    if PRODUCT in names and (dispatch is None or not dispatch.active):
+        raise ValueError("the product arm needs an active learned dispatch: " + str(getattr(dispatch, "reason", None)))
     report: dict[str, Any] = {"plan": plan, "arms": names, "devices": list(pool.devices), "deadline_s": deadline_s,
                               "policy": None if policy is None else policy.to_json(),
                               "warmup_ok": sum(r["outcome"] == "ok" for r in warm), "rows": []}
@@ -708,6 +744,9 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
     elif plan == "h6":
         report["states"] = [H2_STATES[s] for s in H6_STATES]
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in H6_STATES]
+    elif plan == "h7":
+        report["states"] = list(H2_STATES)
+        traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
     elif plan in ("h2", "h3", "h4"):
         report["states"] = list(H2_STATES)
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
@@ -716,8 +755,9 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
         traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
                    for level, rate in enumerate(report["rates"])]
     block = 0
-    indices = (range(traces) if traces is not None else H5_TRACES if plan == "h5" else H6_TRACES if plan == "h6"
-               else range(H2_TRACES if plan in ("h2", "h3", "h4") else TRACES))
+    indices = (range(traces) if traces is not None else
+               {"h5": H5_TRACES, "h6": H6_TRACES, "h7": H7_TRACES}.get(plan)
+               or range(H2_TRACES if plan in ("h2", "h3", "h4") else TRACES))
     for t in indices:
         for level, make in enumerate(traffic):
             items = make(t)
@@ -729,6 +769,8 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
                 started = time.time()
                 row = {"level": level, "trace": t, "arm": name, "run": run, "block": block,
                        "started_unix": started, "requests": replay(pool, model, items, deadline_s)}
+                if name == PRODUCT:  # LD1-V validity: the learned dispatch really decided this cell
+                    row["dispatch"] = pool.health().get("learned_dispatch")
                 report["rows"].append(row)
                 if on_row is not None:
                     on_row(report)
@@ -767,6 +809,11 @@ def environment() -> dict[str, Any]:
 def arms_h4(best_fixed: str) -> list[str]:
     """Run 4 (BACKLOG RL4-H): the reference, run 3's best fixed arm and the learned policy."""
     return list(dict.fromkeys([REFERENCE, best_fixed, LEARNED]))
+
+
+def arms_h7() -> list[str]:
+    """LD1-V: the product's reference, its learned dispatch, and RL6's narrow shortest-first schedules."""
+    return [REFERENCE, PRODUCT, "shortest/w2/g0/sjf", "shortest/w1/g0/sjf"]
 
 
 def arms_h6() -> list[str]:
@@ -954,7 +1001,17 @@ def run(model: str, work: Path, *, smoke: bool, plan: str = "h1", on_row: Any = 
         sizes = {"traces": 2, "requests": 3, "max_tokens": (4, 8), "names": smoke_names} if smoke else {}
         if names is not None:
             sizes["names"] = names
-        result = measure(pool, model, deadline_s=deadline, plan=plan, policy=policy, on_row=on_row, **sizes)
+        dispatch = None
+        if plan == "h7":  # LD1-V: the product's LearnedDispatch with this policy; a measurement needs no evidence
+            from ironmule_product.learned_dispatch import LearnedDispatch, Policy
+
+            dispatch = LearnedDispatch(Policy.from_json(policy.to_json()), {"experiment": "LD1-V measurement"}, None)
+            names = names if names is not None else arms_h7()
+            sizes["names"] = names
+        result = measure(pool, model, deadline_s=deadline, plan=plan, policy=None if plan == "h7" else policy,
+                         on_row=on_row, dispatch=dispatch, **sizes)
+        if dispatch is not None:
+            result.update(dispatch_policy=policy.to_json(), dispatch_status=dispatch.status())
     finally:
         pool.close()
     return {"model": model, "revision": revision, **result}
@@ -1003,8 +1060,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "x1"), default="h1",
-                        help="run 1's to 4's fixed plan, RL4-S's or RL6's run, or X1's exactness diagnostic")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "x1"), default="h1",
+                        help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
@@ -1018,12 +1075,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
         extra = []
-        if args.plan in ("h4", "h5", "h6"):
-            if not args.policy_json or (not args.best_fixed and args.plan != "h6"):
-                parser.error(f"--plan {args.plan} needs --policy-json" + ("" if args.plan == "h6" else " and --best-fixed"))
+        if args.plan in ("h4", "h5", "h6", "h7"):
+            needs_fixed = args.plan in ("h4", "h5")
+            if not args.policy_json or (needs_fixed and not args.best_fixed):
+                parser.error(f"--plan {args.plan} needs --policy-json" + (" and --best-fixed" if needs_fixed else ""))
             text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
             LearnedPolicy.from_json(json.loads(text))  # refuse a policy whose digest does not match
-            extra = (["--best-fixed", args.best_fixed] if args.plan != "h6" else []) + \
+            extra = (["--best-fixed", args.best_fixed] if needs_fixed else []) + \
                 ["--policy-json", json.dumps(json.loads(text), sort_keys=True)]
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra))}))
         return 0
@@ -1051,12 +1109,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
     policy = names = None
-    if args.plan in ("h4", "h5", "h6"):
-        if not args.policy_json or (not args.best_fixed and args.plan != "h6"):
-            parser.error(f"--plan {args.plan} needs --policy-json" + ("" if args.plan == "h6" else " and --best-fixed"))
+    if args.plan in ("h4", "h5", "h6", "h7"):
+        needs_fixed = args.plan in ("h4", "h5")
+        if not args.policy_json or (needs_fixed and not args.best_fixed):
+            parser.error(f"--plan {args.plan} needs --policy-json" + (" and --best-fixed" if needs_fixed else ""))
         text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
         policy = LearnedPolicy.from_json(json.loads(text))
-        names = arms_h6() if args.plan == "h6" else arms_h4(args.best_fixed)
+        names = {"h6": arms_h6, "h7": arms_h7}[args.plan]() if not needs_fixed else arms_h4(args.best_fixed)
     report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save, policy=policy, names=names)
     report["analysis"] = analyse(report["rl2h"])
     report["finished_unix"] = time.time()

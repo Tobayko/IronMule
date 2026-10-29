@@ -435,6 +435,34 @@ and changes no answer. The RL4-S policy and its evidence ship in `ironmule_produ
 - An operator rollback without a restart.
 - The ledger entry.
 
+### LD1-V — The product's learned dispatch on mixed traffic (opened 2026-10-29, before data)
+
+**Question.** Does the product's own learned dispatch (LD1), running RL6's width-learning policy (digest
+`fef74e9d1077`), beat the product's reference when quiet, bursty and spike traffic all count? RL6 measured that
+policy only in `bursts` and `spike`. **Test (`tools/rl2_headroom.py --plan h7`, Kaggle T4 x2, about 2 session
+hours).** Same pool, model, revision, engine, cost, cell order and validity as RL6. All three states are weighted
+equally, with 8 traces each (indices 47-54) whose seeds no earlier run, training or simulation used.
+
+**Arms.**
+- The product's reference `shortest/w8/g0`: join-the-shortest-queue, first in, first out, width 8.
+- `product/w8/g0`: LD1's `LearnedDispatch` with that policy, deciding through the product's own pool and scheduler
+  hooks. This arm is a measurement, so it activates the policy without evidence.
+- RL6's fixed schedules `shortest/w2/g0/sjf` and `shortest/w1/g0/sjf`.
+
+**Decisions (fixed before data).**
+- **Noise:** the nearest-rank 95th percentile of the 24 A/A pairs, which is their second largest.
+- **(1) LD1 beats the reference** if its weighted gain over the reference, paired by trace with a 2,000-resample
+  bootstrap, has a 2.5 % bound above the noise. Then evidence for this policy is written for all three states and
+  shipped, and `--dispatch-policy` may use it.
+- **(2) No harm.** In each state, LD1's gain over the run's cheapest fixed arm has a 2.5 % bound above minus the
+  noise.
+- **(3) The fixed candidate.** `shortest/w2/g0/sjf`'s gain over the reference, quiet traffic included, has a
+  2.5 % bound above the noise. That confirms RL6's candidate for a product default.
+- **Validity:** every answer identical across arms, and every product cell decided by an active dispatch.
+
+**Kill.** If (1) or (2) fails, no evidence is written for this policy and LD1 keeps only RL4-S's spike-bound
+evidence. If (3) fails, the default schedule stays.
+
 ### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
 
 **Mechanism.** Before X1's fix a group decoded at its longest prompt's capacity. An extra session then cost a full
@@ -483,6 +511,37 @@ with the frozen v2 policy, whose digest the kernel verifies.
 **Kill.** For the candidate, a bound at or below the noise: the reference schedule stays for these states and the
 result goes to Tier 0. For the learned arm, the same: no width learner. That is also what its simulator gate
 predicts.
+
+**Result (2026-10-29, `RL6-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-h6` at
+`323a9b82ec056c433c5f393c3dbdd4616ecb1dd0`, Kaggle T4 x2, Qwen3 1.7B bf16 revision `9cd6692`, MLX 0.32.4, 1.6 session
+hours): valid.** All 144 cells and 2,304 requests completed, and every answer was identical across the five arms.
+The A/A noise was 3.0 % (second largest of 24 pairs).
+
+**The candidate passes.** `shortest/w2/g0/sjf` cost 18.0 % less than the reference (95 % bootstrap 15.0-20.5 %).
+That makes it the candidate default schedule for CUDA, pending its product change and a paired validation that
+includes quiet traffic. `shortest/w1/g0/sjf` did slightly better at 18.6 % (15.8-21.5 %), and
+`shortest/w4/g0/sjf` reached 11.9 % (9.4-14.6 %).
+
+**The learned arm does not pass.** Against the cheapest fixed arm, `shortest/w1/g0/sjf`, it gained 0.8 %
+(-1.9 to 3.4 %), as its simulator gate predicted. Against the reference it gained 19.2 %, a descriptive
+comparison that was not the rule. The agent found the narrow, shortest-first schedule; it adds nothing beyond it.
+
+**Fidelity (descriptive).** In `bursts`, every arm was predicted within 4.9 %. In `spike` the model overpriced
+narrow groups, by 24.4 % at width 1, 17.7 % at width 2 and 17.8 % for the learned arm. So it ranked width 2 ahead
+of width 1, while the hardware ranked them the other way round, within 1 %.
+
+Measured costs per state:
+
+| Arm | `bursts` | `spike` |
+| --- | --- | --- |
+| reference | 20.98 | 34.08 |
+| `shortest/w1/g0/sjf` | 18.99 | 25.83 |
+| `shortest/w2/g0/sjf` | 19.11 | 26.07 |
+| `shortest/w4/g0/sjf` | 20.40 | 28.12 |
+| learned | 18.53 | 25.94 |
+
+Still owed: the product change for the candidate, the paired validation with quiet traffic (LD1-V), and the
+ledger entry.
 
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
@@ -878,6 +937,11 @@ processes again.
   few per cent, or a decision whose simulated gain is several times larger.
   *Re-opened for `spike` by RL4-S (above):* on 30 new spike traces the frozen policy beat the best fixed arm on the
   T4s by 9.0 % (95 % 6.9-11.1 %) against 2.9 % noise. Mixed traffic is still unvalidated.
+
+- **RL6 width-learning policy against fixed widths (2026-10-29).** Experiment `RL6-run1-20261029` (see RL6 above):
+  the v2 policy that also picks each group's width gained 0.8 % (95 % -1.9 to 3.4 %) over the best fixed arm,
+  `shortest/w1/g0/sjf`, against 3.0 % noise. No width learner. The fixed narrow shortest-first schedule it found
+  is the candidate default (RL6).
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
