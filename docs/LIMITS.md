@@ -163,9 +163,12 @@ that stacks up to eight requests into one decode step with IronMule's own kernel
 bit for bit the same at 1, 3 or 8 rows, decoded eight requests 3.8x faster than today's grouping, and passed the
 numeric plans' quality gate on the decode path; it changes answers against today's engine (as a numeric plan does).
 With one host read every 4 steps it serves a request alone at 0.93x (short prompt) and 0.99x (long) of today's tuned
-decode, and each further row costs about 3 ms (KB1-2). It is in the product only as the opt-in `--engine dense`;
-its comparison with today's default through the product (H8) has not produced a valid run yet, so no gain through
-the product is claimed.
+decode, and each further row costs about 3 ms (KB1-2). It is in the product only as the opt-in `--engine dense`.
+Through the product on two T4s, with quiet, bursty and spike traffic weighted equally (H8 run 2), it cost 7.9 %
+less than the default (95 % 3.5-12.5 %), and no state was worse: quiet 5.2 % (4.8-5.6 %). The gain does not clear
+that run's 5.05 % A/A noise, which the comparison fixed as its bar, so the plan is not recommended. It needs
+unquantized Qwen 3 bf16 on CUDA below compute capability 8, takes about two minutes to start, and serves prompt
+plus answer up to 2,048 tokens.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a

@@ -4,6 +4,17 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **Opt-in dense numeric plan (KB1), experimental.** `ironmule serve --engine dense` stacks up to eight
+  requests into one decode step with IronMule's own batch-invariant kernels. It runs on unquantized Qwen 3 bf16 on
+  CUDA below compute capability 8 (a Tesla T4) and is refused elsewhere. A load probe must find every stacked
+  width bit-identical to one row. It changes answers against `--engine tuned`, as a numeric plan does, and passed
+  the numeric plans' quality gate on the decode path. On two T4s it cost 7.9 % less than the default on mixed
+  traffic (95 % 3.5-12.5 %), with no state worse. That gain is below the run's own A/A noise, so it is not
+  recommended (BACKLOG H8). Prompt plus answer is limited to 2,048 tokens.
+
+- **A stream cancelled inside a chained readback or a speculative draft ends at its cancel.** Before, it could
+  receive up to three more tokens; answers of the other requests are unchanged.
+
 - **A qualified schedule on the measured setup (RL6, LD1-V).** `ironmule serve --gpus all --engine tuned` on two
   Tesla T4s with `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` now starts groups of at most two, and the
   queued request with the smallest output limit first. With quiet, bursty and spike traffic weighted equally this

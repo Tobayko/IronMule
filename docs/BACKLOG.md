@@ -946,6 +946,36 @@ second agent reviewed it before run 2.*
 
 Run 2 uses the same arms, traces, rounds, cost, noise and decisions, at about 2 session hours.
 
+**Result, H8 run 2 (2026-10-29, `H8-run2-20261029`, kernel `tobayko/ironmule-rl2-headroom-h8` version 2 at
+`ca7353daa0ed6df12303e3cae6cbbfc546fc78d7`, 1.83 session hours): valid. (2) passes, (1) fails as fixed, so the
+dense plan is not recommended and stays opt-in.** Kaggle T4 x2, Qwen3 1.7B bf16 at `9cd6692`, MLX 0.32.4,
+mlx-lm 0.31.3.
+- **Validity:**
+  - the preflight installed the plan in 131 s (it would not have started within the old 120 s limit) and served
+    three requests together as alone;
+  - every warm-up and all 1,920 requests succeeded;
+  - answers were identical across arms and runs within each engine;
+  - both engines ran on both cards in every round, the tuned engine with the baseline knobs (no stored profile).
+- **Noise:** 5.05 % over 48 A/A pairs. Calibration: 0.98 requests per second.
+- **(1) fails as fixed.** The best arm, `dense:shortest/w8/g0/sjf`, gained 7.9 % weighted over the default (95 %
+  3.5-12.5 %). That resolves it from zero, but not from the 5.05 % noise the entry fixed. Arrival order gained 7.2 %
+  (2.2-12.6 %). Shortest first within the plan added 0.7 % (-0.2 to 1.6 %).
+- **(2) passes.** Per state:
+  - `quiet`: +5.2 % (4.8-5.6 %), as KB1-2's single-row speed predicted;
+  - `bursts`: +10.9 % (3.3-19.0 %);
+  - `spike`: +5.6 % (-2.6 to 14.5 %).
+
+  Every bound is above minus the noise.
+- **Recorded:** 163 of 384 compared answers were the same as today's; the plan changes answers by design. Mean
+  cost per state, default against the best dense arm: 2.33 against 2.20, 22.30 against 19.87, 27.62 against
+  26.06.
+- **What it means.** On this setup the plan was faster than the shipped default in every state, quiet included.
+  The gain is too small for this run to tell apart from the A/A noise, and smaller gains need more repeats, not a
+  lower bar. The default it beat runs without the class-A compile + readback 4 (KP1), which would narrow the gap.
+  The comparison worth a run 3 is against the default as it ships after KP1, with more traces. Slot reuse within
+  a group and a per-request refusal for prompts above a slot are the plan's known product gaps (above). Still
+  owed: the ledger entry.
+
 ### KP1 — The class-A knob profile as the tuned engine's default on the measured setup (opened 2026-10-29, before data)
 
 **Mechanism.** HW4 found compile + readback 4 class A on the T4: prefill, every decode step and the final state
