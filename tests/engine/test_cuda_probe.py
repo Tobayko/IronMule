@@ -20,6 +20,9 @@ class _Tokenizer:
     def encode(self, text):
         return [ord(c) % 200 + 1 for c in text]
 
+    def decode(self, ids):
+        return "".join(chr(32 + i % 90) for i in ids)
+
     def apply_chat_template(self, messages, add_generation_prompt=True, tokenize=True):
         return self.encode(messages[-1]["content"])
 
@@ -143,3 +146,64 @@ def test_the_phase_table_counts_a_prefill_win_where_prefill_dominates_and_a_deco
     assert phases["headroom_ci95"][0] > phases["noise"] and phases["verdict"].endswith("RL7 continues")
     flat = probe.analyse_phases(_factorial(lambda bits: 0.9 if bits[1] else 1.0), resamples=200)
     assert flat["verdict"].startswith("one combination for every context")
+
+
+def test_hw4_runs_every_part_and_judges_each_knob_set_bit_for_bit(tmp_path):
+    plain, fused = _tiny()
+    out = tmp_path / "hw4.json"
+    report = probe.probe_hw4("tiny", out, {"compiled_fixed_cache": True, "readback_every": 4}, smoke=True,
+                             loaded=(plain, fused, _Tokenizer()))
+    assert json.loads(out.read_text())["finished_unix"] == report["finished_unix"]
+    for part in ("prefill_floor", "class_a", "separability", "widths", "compile"):
+        assert not (isinstance(report[part], dict) and "error" in report[part]), (part, report[part])
+    assert not [w for w in report["widths"] if "error" in w]
+    analysis = report["analysis"]
+    verdicts = analysis["class_a"]["verdicts"]
+    assert verdicts["baseline"]["class_a"] and verdicts["compiled_fixed_cache"]["class_a"]
+    assert verdicts["speculate_k"]["verify_windows"] is not None  # the k + 1 verify window was compared
+    assert set(report["decode_sets"]) >= {"baseline", "readback_every"}
+    assert analysis["widths"]["identical_answers_across_sets"]
+    assert "RL7 kill 2 (dominance)" in analysis["decisions"]
+    assert set(analysis["compile_seconds"]) == set(report["decode_sets"])
+
+
+def _capture(steps, picks=None, prefill="p", final="f", windows=None):
+    row = {"prefill_logits": prefill, "prefill_state": "s", "steps": steps, "picks": picks or [1, 2, 3],
+           "final_state": final}
+    if windows is not None:
+        row["verify_windows"] = windows
+    return {"rows": [row]}
+
+
+def test_class_a_needs_every_bit_and_a_fused_argmax_inherits_its_twins_verdict():
+    capture = {"sets": {
+        "baseline": _capture(["a", "b", "c"]),
+        "compiled_fixed_cache": _capture(["a", "b", "c"]),
+        "fuse_projections": _capture(["a", "x", "c"]),
+        "head_skip_prefill": _capture(["a", "b", "c"], prefill="q"),
+        "fused_argmax": _capture(["1", "2", "3"]),
+        "fuse_projections+fused_argmax": _capture(["1", "2", "3"]),
+        "speculate_k": _capture(["a", "b", "c"], windows={"0": ["a", "b", "y"]}),
+    }}
+    verdicts = probe.class_a_sets(capture)
+    assert verdicts["compiled_fixed_cache"]["class_a"] and verdicts["fused_argmax"]["class_a"]
+    assert not verdicts["fuse_projections"]["class_a"] and verdicts["fuse_projections"]["first_differing_step"] == 1
+    assert not verdicts["fuse_projections+fused_argmax"]["class_a"]  # same picks, but its twin's logits differ
+    assert not verdicts["head_skip_prefill"]["class_a"] and not verdicts["speculate_k"]["class_a"]
+    sets = probe.decode_sets_from(verdicts)
+    assert sets["compiled_fixed_cache+readback_every"] == {"compiled_fixed_cache": True, "readback_every": 4}
+    assert "fuse_projections" not in sets and "baseline" in sets
+
+
+def test_rl7_continues_only_when_a_knob_set_changes_order_with_the_group_width():
+    def widths(cost):
+        return [{"set": name, "width": w, "round": r, "seconds": cost(name, w) * 64, "tokens": [64] * w,
+                 "digests": ["d"] * w} for name in ("baseline", "compiled_fixed_cache") for w in (1, 2, 4)
+                for r in range(5)]
+
+    parallel = probe.analyse_hw4({"widths": widths(lambda n, w: (0.9 if n != "baseline" else 1.0) * (20 + 13 * w))})
+    assert parallel["decisions"]["RL7 kill 2 (dominance)"].startswith("knob sets and scheduling separate")
+    # cheaper alone, dearer per further session: compiled wins at width 1 and loses at width 4
+    crossing = probe.analyse_hw4({"widths": widths(lambda n, w: 14 + 16 * w if n != "baseline" else 20 + 13 * w)})
+    assert crossing["decisions"]["RL7 kill 2 (dominance)"].endswith("continue")
+    assert crossing["widths"]["sets"]["compiled_fixed_cache"]["seconds_per_extra_session"] == pytest.approx(16)

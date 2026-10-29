@@ -650,6 +650,91 @@ plan could be exact by itself.
   per-row cost curve then replaces the 13.4 ms per session in RL4's simulator, which re-derives width and order
   for a batched path: RL6's narrow groups were best only because each further session cost 13.4 ms.
 
+### HW4 — The prefill side, bit-exact knob sets, and what a further session costs per knob set (opened 2026-10-29, before data)
+
+**Why.** The owner asked on 2026-10-29 for a learner that credits every improvement and learns to combine: "if
+the start is strong but decoding then takes longer, another option may help there". On a ~1,000-token prompt,
+prefill (about 2.8 s by RL4's fit) outweighs 64 decode steps (about 1.3 s), yet HW3 measures decode almost only
+and leaves out both prefill knobs. Switching knobs per request also needs more than token equality on a sample: a
+request's answer may depend on load only if its knob sets are bit-identical (class A). Finally, the width a
+schedule should use depends on each knob set's cost per further session, which nothing has measured (RL6's model
+mispriced narrow groups by 17-24 % in spikes). Designed with a second agent as sparring partner.
+
+**Test (`tools/cuda_probe.py --plan hw4`, Kaggle T4 x2, first card, about 1.2 session hours).** Same model,
+revision, MLX, prompts and output length as HW3.
+- **Class A.** Every combination of `fuse_projections`, `compiled_fixed_cache`, `fused_argmax`, `speculate_k` (0
+  or 3) and `head_skip_prefill` (32 sets; `readback_every` only moves the host's reads), at the product's capacity
+  (`MLXBackend.capacity_for`). Per prompt: the prefill's last logits (read through `_project`) and state, then 63
+  decode steps through the engine's own body fed the baseline's tokens, every step's logits (picks under
+  `fused_argmax`), the final state; with speculation, the k + 1 verify window at positions 0, 16 and 32 against
+  the sequential steps. All compared bit for bit with the baseline.
+- **Separability.** `head_skip_prefill` x `fuse_projections` x HW3's decode winner (2 x 2 x 2) through
+  `Engine.generate`, plus `prefill_into_fixed` alone, in HW3's round design (five rounds, A/A pair).
+  `prefill_into_fixed` is re-measured on new hardware against `E1`'s kill ("the phase it would optimise costs
+  1.47 ms of 537 ms"). **HW3's decode winner** is fixed by this rule before HW4 runs: the decode knobs of HW3's
+  qualifying combination with the lowest ratio, without `fuse_projections` (crossed here); `compiled_fixed_cache`
+  alone if none qualifies.
+- **Widths.** Every class-A decode set, with `readback_every` 1 and 4, on the product's grouped path
+  (`Runtime.serve`, `ThroughputMode`) at widths 1, 2 and 4, short prompts, five rounds.
+- **Compile cost.** Per decode set, the first request at a new capacity minus the same request again, at three
+  capacities.
+- **Prefill floor.** Every linear layer of block 0 and the output projection at 256 and 1,024 rows: achieved
+  TFLOP/s.
+
+**Decisions (fixed before data).**
+- **Class A:** the prefill logits and state, every decode step and the final state are bit-identical to the
+  baseline's on all six prompts, and, with speculation, every verify window equals the sequential steps.
+  `fused_argmax` returns no logits, so it is class A only if its picks and state match and its twin without it is
+  class A; that assumption is recorded.
+- **Separability:** the interaction of each prefill knob with the decode winner on log total cost (2 x prefill +
+  n x decode, n = 16, 64, 256), bootstrapped over (prompt, round) cells. If every 95 % interval contains 1, the
+  best combination is the best prefill set plus the best decode set; otherwise they couple and are optimised
+  together.
+- **A prefill set qualifies** when it is class A and its prefill ratio's upper 95 % bound is below 1 minus the
+  noise (HW3's rule, on prefill).
+- **Cost per further session:** the slope of seconds per decode round over widths 1, 2 and 4, per set; it feeds
+  RL7's simulator.
+- **Gap report:** the measured long-prompt prefill against the floor (weight bytes as parameters x 2 FLOP per
+  token over the best TFLOP/s), with the decode gap from HW3; each gap is tagged with the exactness class of its
+  remedy (float16 tensor cores on the T4, U2, are class B: a quality-gated plan, not an exact knob).
+- **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
+  across sets for each width (they are all class A).
+
+### RL7 — An RL agent over scheduling and execution knobs together (opened 2026-10-29, before data)
+
+**Mechanism.** The product decides scheduling (card, order, width; RL6) and execution knobs (prefill set, decode
+set), and they interact. Speculation and readback act only on the sequential path, so "width 1 with speculation"
+against "width 2 without" is a real trade-off. A knob set that is cheaper alone but dearer per further session
+moves the best width. A long prompt's prefill under shortest-first delays short requests. That joint space
+cannot be enumerated on hardware. **The objective stays the product's request cost** (time in system plus time
+to first content). Every phase's improvement is credited and reported per phase (prefill, decode, queueing).
+Clipping each phase at zero is rejected, because it would reward arms that are slower overall.
+
+**Plan, in `tools/rl4_agent.py`.**
+1. Give the pool model parameters per knob set from HW3 and HW4: prefill ms per prompt length per prefill set,
+   decode ms per round and per further session per decode set, compile seconds per new body. Speculation and
+   readback apply only at width 1.
+2. Enumerate the joint fixed arms in the simulator (class-A knob sets x widths 1, 2, 4, 8 x fifo, sjf) and
+   compute the per-state oracle against the best single joint arm.
+3. Only then add a knob head to the REINFORCE policy (as `--widths` added the width head) and train.
+
+**Knob sets** may be chosen per request or by load only if they are class A (HW4); otherwise a request's answer
+would depend on traffic, the defect X1 removed.
+
+**Kill criteria (fixed before data).**
+1. **Class A:** fewer than two class-A knob sets besides the baseline. The knob axis is empty and RL7 stops;
+   scheduling stays RL6's.
+2. **Dominance:** no pair of class-A sets resolves in opposite directions across short and long prompts or widths
+   1, 2 and 4. The knobs then separate from scheduling: refit the pool model, re-rank the fixed schedules, and
+   build no learner.
+3. **Fidelity:** every simulated cell within 25 % of hardware, and at least 90 % concordance on at least 10 pairs
+   the hardware resolved.
+4. **Simulator headroom:** the held-out per-state joint oracle beats the best single joint arm with a 2.5 % bound
+   above the hardware noise of the target states (3.0 % for bursts and spikes, RL6; 8.1 % mixed, LD1-V). The
+   trained learner must then beat the per-state table by the same margin, or the table ships instead.
+5. **Hardware:** LD1-V's rules unchanged. The pooled gain's 2.5 % bound exceeds the noise, and each state's bound
+   exceeds minus the noise.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better

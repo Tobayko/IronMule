@@ -27,13 +27,22 @@ Fixed before data (BACKLOG HW3 and TB1, 2026-10-29):
   decisions  `analyse`. Every gain counts, wherever it shows and however small, once the measurement resolves
              it (maintainer decision, 2026-10-29): no minimum effect size, only the noise or a confidence bound.
 
-The report keeps digests of token ids, counts, times and logit differences, never prompt or answer text.
-To run it on Kaggle (T4 x2; it uses the first card):
+HW4 (`--plan hw4`, BACKLOG HW4, fixed 2026-10-29 before its data): every combination of the knobs that change the
+arithmetic, plus `head_skip_prefill`, compared bit for bit with the baseline (prefill logits and state, every decode
+step fed the baseline's tokens, the final state, speculation's verify windows); `head_skip_prefill` x
+`fuse_projections` x HW3's decode winner, plus `prefill_into_fixed`; every class-A decode set at widths 1, 2 and 4
+on the grouped path; compile cost per new body; the prefill's compute floor. Its decisions and RL7's first two kill
+rules are in `analyse_hw4`.
+
+The report keeps digests of token ids and arrays, counts, times and logit differences, never prompt or answer
+text. To run it on Kaggle (T4 x2; it uses the first card):
 
     python tools/cuda_probe.py --write-kernel kernel --owner <user> --commit <sha>
     kaggle kernels push -p kernel --accelerator NvidiaTeslaT4
     kaggle kernels output <user>/ironmule-cuda-probe -p results
     python tools/cuda_probe.py --analyse results/cuda_probe_report.json
+    python tools/cuda_probe.py --write-kernel kernel4 --owner <user> --commit <sha> --plan hw4 \
+        --decode-winner '{"compiled_fixed_cache": true}'
 """
 
 from __future__ import annotations
@@ -81,6 +90,12 @@ ATTENTION_ROWS = (1, 8)
 REPEATS = 20
 OVERLAP_PAIRS = 5      # (16): synchronous and pipelined loops alternate this often per context
 REPOSITORY = "https://github.com/Tobayko/IronMule"
+# HW4 (BACKLOG HW4, fixed 2026-10-29 before its data)
+CAPTURE_FACTORS = ("fuse_projections", "compiled_fixed_cache", "fused_argmax", "speculate_k", "head_skip_prefill")
+CAPTURE_LEVELS = {**LEVELS, "head_skip_prefill": (False, True)}
+SPECULATION_AT = (0, 16, 32)       # decode positions whose k+1 verify window is compared with sequential steps
+WIDTHS_HW4 = (1, 2, 4)
+PREFILL_ROWS = (256, 1024)         # prefill matmul rows for the compute floor
 
 
 # ---------------------------------------------------------------- the plan
@@ -421,6 +436,382 @@ def probe_factorial(models: tuple[Any, Any], tokenizer: Any, rounds: int, tokens
     return {"runs": runs, "errors": errors, "prompt_tokens": [len(ids) for ids in prompts]}
 
 
+# ---------------------------------------------------------------- HW4: class A, prefill, widths, compile
+
+def _bits(value: Any) -> str:
+    """A digest of an array's exact bits (bfloat16 read as its 16-bit pattern)."""
+    import mlx.core as mx
+    import numpy as np
+
+    if value.dtype in (mx.bfloat16, mx.float16):
+        value = mx.view(value, mx.uint16)
+    return hashlib.sha256(np.asarray(value).tobytes()).hexdigest()
+
+
+def _state_bits(state: Any) -> str:
+    from ironmule.runtime import _leaves
+
+    return hashlib.sha256("".join(_bits(leaf) for leaf in _leaves(state)).encode()).hexdigest()
+
+
+def capacity_for(prompt_len: int, tokens: int) -> int:
+    """The product's capacity (`ironmule.service.MLXBackend.capacity_for`), which HW4 checks at, not the
+    engine's own `_capacity`: on CUDA the capacity moves tokens (X1)."""
+    return ((prompt_len + tokens + 8 + 63) // 64) * 64
+
+
+def capture_set(engine: Any, ids: list[int], tokens: int, feed: list[int] | None,
+                speculate_k: int = 0) -> dict[str, Any]:
+    """One knob set on one prompt, bit for bit: the prefill's last logits (through `_project`, looked up at
+    call time, so a wrapper sees them) and its state; then `tokens - 1` decode steps through the engine's
+    own body, fed the reference tokens `feed` (its own greedy picks when None) so one flipped token does not
+    end the comparison; the logits (or, with `fused_argmax`, the picks) of every step; the final state; and
+    with speculation, the k + 1 verify window's logits at `SPECULATION_AT` against the sequential steps."""
+    import mlx.core as mx
+    from ironmule import runtime
+
+    capacity = capacity_for(len(ids), tokens)
+    captured: list[Any] = []
+    original = runtime._project
+
+    def capture(model: Any, hidden: Any) -> Any:
+        out = original(model, hidden)
+        captured.append(out)
+        return out
+
+    runtime._project = capture
+    try:
+        state, token = engine._prefill(list(ids), capacity)
+    finally:
+        runtime._project = original
+    last = captured[-1][:, -1, :]
+    mx.eval(last)
+    result: dict[str, Any] = {"capacity": capacity, "prefill_logits": _bits(last),
+                              "prefill_state": _state_bits(state), "first_token": int(token.reshape((-1,)).item())}
+    fused = engine.knobs.fused_argmax
+    body = engine._body(capacity, 1)
+    picks = [result["first_token"]]
+    steps: list[str] = []
+    states: dict[int, Any] = {}
+    current = picks[0] if feed is None else feed[0]
+    for step in range(tokens - 1):
+        if step in SPECULATION_AT:
+            states[step] = state
+        out = body(mx.array([[current]]), state)
+        mx.eval(out[0], *runtime._leaves(out[1]))
+        state = out[1]
+        if fused:
+            pick = int(out[0].reshape((-1,))[-1].item())
+            steps.append(str(pick))
+        else:
+            logits = out[0][:, -1, :]
+            steps.append(_bits(logits))
+            pick = int(mx.argmax(logits.astype(mx.float32), axis=-1).item())
+        picks.append(pick)
+        current = pick if feed is None else feed[step + 1]
+    result.update({"steps": steps, "picks": picks, "final_state": _state_bits(state)})
+    if speculate_k and not fused:
+        window_body = engine._body(capacity, speculate_k + 1)
+        reference = feed if feed is not None else picks
+        windows = {}
+        for at, saved in states.items():
+            window = reference[at:at + speculate_k + 1]
+            if len(window) < speculate_k + 1:
+                continue
+            out = window_body(mx.array([window]), saved)
+            mx.eval(out[0])
+            windows[str(at)] = [_bits(out[0][:, j, :]) for j in range(speculate_k + 1)]
+        result["verify_windows"] = windows
+    return result
+
+
+def capture_sets() -> list[tuple[int, ...]]:
+    """Readback only moves the host's reads, never the arithmetic, so it is left out of the capture; it is
+    class A exactly when its twin without it is."""
+    return list(itertools.product((0, 1), repeat=len(CAPTURE_FACTORS)))
+
+
+def capture_name(bits: tuple[int, ...]) -> str:
+    return "+".join(f for f, b in zip(CAPTURE_FACTORS, bits) if b) or "baseline"
+
+
+def probe_class_a(models: tuple[Any, Any], tokenizer: Any, tokens: int, limit: int | None = None) -> dict[str, Any]:
+    from dataclasses import replace
+
+    from ironmule import runtime
+
+    plain, fused = models
+    prompts = [chat_ids(tokenizer, q, long, limit) for q, long in PROMPT_SET]
+    results: dict[str, Any] = {}
+    reference: dict[int, dict[str, Any]] = {}
+    for bits in capture_sets():
+        knobs = {f: CAPTURE_LEVELS[f][b] for f, b in zip(CAPTURE_FACTORS, bits)}
+        engine = runtime.Engine(fused if knobs["fuse_projections"] else plain, tokenizer,
+                                replace(runtime.Knobs(**knobs), fuse_projections=False))
+        rows = []
+        try:
+            for p, ids in enumerate(prompts):
+                feed = None if not any(bits) else reference[p]["picks"]
+                row = capture_set(engine, ids, tokens, feed, knobs["speculate_k"])
+                if not any(bits):
+                    reference[p] = row
+                rows.append(row)
+        except Exception as exc:  # noqa: BLE001 - recorded; the other sets still run
+            results[capture_name(bits)] = {"error": repr(exc)}
+            continue
+        finally:
+            engine.close()
+        results[capture_name(bits)] = {"rows": rows}
+    return {"sets": results, "prompt_tokens": [len(ids) for ids in prompts]}
+
+
+def probe_separability(models: tuple[Any, Any], tokenizer: Any, decode_winner: dict[str, Any], rounds: int,
+                       tokens: int, limit: int | None = None) -> dict[str, Any]:
+    """`head_skip_prefill` x `fuse_projections` x HW3's decode winner (2 x 2 x 2) through `Engine.generate`,
+    plus `prefill_into_fixed` alone (E1's kill on Metal, re-measured on CUDA), in HW3's round design."""
+    from dataclasses import replace
+
+    from ironmule import runtime
+
+    plain, fused = models
+    arms: dict[str, dict[str, Any]] = {}
+    for hs, fp, dw in itertools.product((0, 1), repeat=3):
+        knobs = {"head_skip_prefill": bool(hs), "fuse_projections": bool(fp), **(decode_winner if dw else {})}
+        name = "+".join(n for n, b in (("head_skip_prefill", hs), ("fuse_projections", fp), ("decode_winner", dw))
+                        if b) or "baseline"
+        arms[name] = knobs
+    arms["prefill_into_fixed"] = {"prefill_into_fixed": True}
+    engines = {name: runtime.Engine(fused if knobs.get("fuse_projections") else plain, tokenizer,
+                                    replace(runtime.Knobs(**knobs), fuse_projections=False))
+               for name, knobs in arms.items()}
+    eos = tuple(sorted(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id]))
+    prompts = [chat_ids(tokenizer, q, long, limit) for q, long in PROMPT_SET]
+    names = list(arms)
+    others = [n for n in names if n != "baseline"]
+    reference: dict[int, list[int]] = {}
+    runs = []
+    for round_ in range(-1, rounds):
+        shift = max(round_, 0) % len(others)
+        order = ["baseline", *others[shift:], *others[:shift]] + ([] if round_ < 0 else ["baseline"])
+        for position, name in enumerate(order):
+            for p, ids in enumerate(prompts):
+                row: dict[str, Any] = {"arm": name, "round": round_, "prompt": p, "position": position}
+                try:
+                    result = engines[name].generate(ids, tokens, eos)
+                except Exception as exc:  # noqa: BLE001
+                    row["error"] = repr(exc)
+                else:
+                    logical = list(result["logical_tokens"])
+                    if name == "baseline":
+                        reference.setdefault(p, logical)
+                    row.update({"prefill_ms": result["prefill_ns"] / 1e6,
+                                "ms_per_token": result["decode_ns"] / 1e6 / max(1, len(result["physical_tokens"]) - 1),
+                                "first_difference": _first_difference(logical, reference[p])})
+                runs.append(row)
+    for engine in engines.values():
+        engine.close()
+    return {"arms": {name: {k: v for k, v in knobs.items()} for name, knobs in arms.items()}, "runs": runs,
+            "prompt_tokens": [len(ids) for ids in prompts]}
+
+
+def probe_widths(models: tuple[Any, Any], tokenizer: Any, decode_sets: dict[str, dict[str, Any]], rounds: int,
+                 tokens: int, limit: int | None = None) -> list[dict[str, Any]]:
+    """Each decode set on the product's grouped path (`Runtime.serve`, `ThroughputMode`) at widths 1, 2 and 4,
+    short prompts: wall seconds per decode round, from which a further session's cost follows. At width 1
+    the sequential path applies readback and speculation; grouped rounds step one token at a time."""
+    from dataclasses import replace
+
+    from ironmule import runtime
+    from ironmule.service import Request, Runtime, ThroughputMode
+
+    plain, fused = models
+    prompts = [chat_ids(tokenizer, q, False, limit) for q in range(max(WIDTHS_HW4))]
+    rows = []
+    for round_ in range(rounds):
+        names = list(decode_sets)
+        shift = round_ % len(names)
+        for name in names[shift:] + names[:shift]:
+            knobs = decode_sets[name]
+            for width in WIDTHS_HW4:
+                engine = runtime.Engine(fused if knobs.get("fuse_projections") else plain, tokenizer,
+                                        replace(runtime.Knobs(**knobs), fuse_projections=False))
+                served = Runtime(engine, tokenizer, mode=ThroughputMode(max_width=max(width, 1)))
+                try:
+                    group = [Request(prompt_ids=prompts[i], max_tokens=tokens) for i in range(width)]
+                    served.serve(group)  # warm: compile this capacity and width outside the clock
+                    started = time.perf_counter()
+                    results = served.serve([Request(prompt_ids=prompts[i], max_tokens=tokens) for i in range(width)])
+                    seconds = time.perf_counter() - started
+                    rows.append({"set": name, "width": width, "round": round_, "seconds": seconds,
+                                 "tokens": [len(r.tokens) for r in results],
+                                 "digests": [_digest(r.tokens) for r in results]})
+                except Exception as exc:  # noqa: BLE001
+                    rows.append({"set": name, "width": width, "round": round_, "error": repr(exc)})
+                finally:
+                    served.close()
+    return rows
+
+
+def probe_compile(models: tuple[Any, Any], tokenizer: Any, decode_sets: dict[str, dict[str, Any]],
+                  limit: int | None = None) -> list[dict[str, Any]]:
+    """What a new compiled decode body costs: the first request at a capacity the engine has not seen, minus
+    the same request again, at three capacities."""
+    from dataclasses import replace
+
+    from ironmule import runtime
+
+    plain, fused = models
+    eos = tuple(sorted(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id]))
+    ids = chat_ids(tokenizer, 0, False, limit)
+    rows = []
+    for name, knobs in decode_sets.items():
+        engine = runtime.Engine(fused if knobs.get("fuse_projections") else plain, tokenizer,
+                                replace(runtime.Knobs(**knobs), fuse_projections=False))
+        try:
+            for tokens in (16, 80, 144):  # three capacities 64 apart
+                started = time.perf_counter()
+                engine.generate(ids, tokens, eos)
+                first = time.perf_counter() - started
+                started = time.perf_counter()
+                engine.generate(ids, tokens, eos)
+                rows.append({"set": name, "tokens": tokens, "first_seconds": first,
+                             "again_seconds": time.perf_counter() - started})
+        finally:
+            engine.close()
+    return rows
+
+
+def probe_prefill_floor(model: Any, rows: tuple[int, ...], repeats: int) -> list[dict[str, Any]]:
+    """The prefill's compute floor: each linear layer at M = prompt rows, achieved TFLOP/s."""
+    import mlx.core as mx
+
+    out = []
+    for name, call, width, weight_bytes in linear_layers(model):
+        outputs = weight_bytes // 2 // width
+        for m in rows:
+            x = mx.random.normal((1, m, width), key=mx.random.key(m)).astype(mx.bfloat16)
+            seconds = _median_time(lambda: call(x), repeats)
+            out.append({"layer": name, "rows": m, "seconds": seconds,
+                        "tflop_per_s": 2 * m * width * outputs / seconds / 1e12})
+    return out
+
+
+def class_a_sets(capture: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Each capture set's verdict against the baseline, bit for bit (HW4's class A)."""
+    sets = capture.get("sets") or {}
+    base = (sets.get("baseline") or {}).get("rows")
+    verdicts: dict[str, dict[str, Any]] = {}
+    if not base:
+        return verdicts
+    for name, entry in sets.items():
+        rows = entry.get("rows")
+        if not rows:
+            verdicts[name] = {"class_a": False, "reason": entry.get("error", "no rows")}
+            continue
+        fused = "fused_argmax" in name.split("+")
+        prefill = all(r["prefill_logits"] == b["prefill_logits"] and r["prefill_state"] == b["prefill_state"]
+                      for r, b in zip(rows, base))
+        if fused:
+            steps = all(r["picks"] == b["picks"] for r, b in zip(rows, base))
+        else:
+            steps = all(r["steps"] == b["steps"] for r, b in zip(rows, base))
+        final = all(r["final_state"] == b["final_state"] for r, b in zip(rows, base))
+        first_step = min((i for r, b in zip(rows, base) for i, (x, y) in enumerate(zip(r["steps"], b["steps"]))
+                          if x != y and not fused), default=None)
+        windows = None
+        if any("verify_windows" in r for r in rows):
+            windows = all(digests == b["steps"][int(at):int(at) + len(digests)]
+                          for r, b in zip(rows, base) for at, digests in (r.get("verify_windows") or {}).items())
+        verdicts[name] = {"prefill": prefill, "steps": steps, "final_state": final, "verify_windows": windows,
+                          "first_differing_step": first_step,
+                          "class_a": prefill and steps and final and windows is not False}
+    for name, verdict in verdicts.items():  # fused argmax hides its logits: class A only if its twin is
+        parts = name.split("+")
+        if "fused_argmax" in parts and verdict.get("class_a"):
+            twin = "+".join(x for x in parts if x != "fused_argmax") or "baseline"
+            verdict["class_a"] = bool(verdicts.get(twin, {}).get("class_a"))
+            verdict["assumes"] = "argmax of bit-identical logits picks the same token"
+    return verdicts
+
+
+def decode_sets_from(verdicts: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The decode knob sets HW4's width and compile parts measure: every class-A capture set without the
+    prefill knob, each with readback 1 and 4 (readback moves only the host's reads)."""
+    out: dict[str, dict[str, Any]] = {}
+    for name, verdict in verdicts.items():
+        parts = [x for x in name.split("+") if x != "baseline"]
+        if not verdict.get("class_a") or "head_skip_prefill" in parts:
+            continue
+        knobs = {f: CAPTURE_LEVELS[f][1] for f in parts}
+        for readback in (1, 4):
+            label = "+".join(parts + (["readback_every"] if readback == 4 else [])) or "baseline"
+            out[label] = {**knobs, "readback_every": readback}
+    return out or {"baseline": {}}
+
+
+def probe_hw4(model_id: str, out: Path | None, decode_winner: dict[str, Any], *, smoke: bool = False,
+              loaded: tuple[Any, Any, Any] | None = None) -> dict[str, Any]:
+    from mlx.utils import tree_flatten
+
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.hw4.v1", "model": model_id, "smoke": smoke,
+                              "decode_winner": decode_winner, "started_unix": time.time(), "env": environment()}
+
+    def save() -> None:
+        if out is not None:
+            out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+
+    if loaded is None:
+        from huggingface_hub import snapshot_download
+        from mlx_lm import load
+
+        path = snapshot_download(model_id, revision=REVISION if model_id == MODEL else None,
+                                 allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                 "tokenizer*"])
+        plain, tokenizer = load(path)
+        fused, _ = load(path)
+        report["revision"] = Path(path).name
+    else:
+        plain, fused, tokenizer = loaded
+    from ironmule import fast
+
+    try:
+        fast.fuse_projections(fused)
+    except Exception as exc:  # noqa: BLE001 - the fused sets then fail and are recorded
+        report["fuse_error"] = repr(exc)
+    report["weights_bytes"] = sum(v.nbytes for _, v in tree_flatten(plain.parameters()))
+    models = (plain, fused)
+    tokens, rounds, limit, repeats = (4, 1, 24, 2) if smoke else (TOKENS, ROUNDS, None, REPEATS)
+    save()
+    parts: list[tuple[str, Callable[[], Any]]] = [
+        ("prefill_floor", lambda: probe_prefill_floor(plain, (8,) if smoke else PREFILL_ROWS, repeats)),
+        ("class_a", lambda: probe_class_a(models, tokenizer, tokens, limit)),
+        ("separability", lambda: probe_separability(models, tokenizer, decode_winner, rounds, tokens, limit)),
+    ]
+    for name, part in parts:
+        started = time.time()
+        try:
+            report[name] = part()
+        except Exception as exc:  # noqa: BLE001 - a failed part is recorded and the next one still runs
+            report[name] = {"error": repr(exc)}
+        report.setdefault("seconds", {})[name] = time.time() - started
+        save()
+    decode_sets = decode_sets_from(class_a_sets(report["class_a"]) if "sets" in report["class_a"] else {})
+    report["decode_sets"] = decode_sets
+    for name, part in (("widths", lambda: probe_widths(models, tokenizer, decode_sets, rounds, tokens, limit)),
+                       ("compile", lambda: probe_compile(models, tokenizer, decode_sets, limit))):
+        started = time.time()
+        try:
+            report[name] = part()
+        except Exception as exc:  # noqa: BLE001
+            report[name] = {"error": repr(exc)}
+        report.setdefault("seconds", {})[name] = time.time() - started
+        save()
+    report["finished_unix"] = time.time()
+    report["analysis"] = analyse_hw4(report)
+    save()
+    return report
+
+
 def environment() -> dict[str, Any]:
     from importlib import metadata
 
@@ -743,6 +1134,123 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any
     return out
 
 
+def analyse_hw4(report: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """HW4's decisions and RL7's first two kill rules, as fixed in BACKLOG before data."""
+    out: dict[str, Any] = {"schema": "ironmule.cuda_probe.hw4.analysis.v1"}
+    capture = report.get("class_a") or {}
+    verdicts = class_a_sets(capture) if "sets" in capture else {}
+    class_a = sorted(n for n, v in verdicts.items() if v.get("class_a") and n != "baseline")
+    out["class_a"] = {"verdicts": verdicts, "sets": class_a}
+    decisions: dict[str, Any] = {}
+    decisions["RL7 kill 1 (class A)"] = ("knob axis empty: fewer than two class-A sets besides the baseline"
+                                         if len(class_a) < 2 else f"{len(class_a)} class-A sets: continue")
+    # separability: 2 x 2 x 2 on log total cost, per (prompt, round) cell against that round's baseline
+    sep = report.get("separability") or {}
+    runs = [r for r in sep.get("runs") or [] if r["round"] >= 0 and "error" not in r]
+    if runs:
+        exact = {r["arm"] for r in sep["runs"]} - {r["arm"] for r in sep["runs"]
+                                                   if "error" in r or r.get("first_difference") is not None}
+        cells: dict[tuple[str, int, int], list[dict[str, Any]]] = {}
+        for r in runs:
+            cells.setdefault((r["arm"], r["prompt"], r["round"]), []).append(r)
+
+        def value(arm: str, p: int, r: int, n: int) -> float | None:
+            rows = cells.get((arm, p, r))
+            if not rows:
+                return None
+            return statistics.fmean(2 * x["prefill_ms"] + n * x["ms_per_token"] for x in rows)
+
+        keys = sorted({(p, r) for _, p, r in cells})
+        factors = ("head_skip_prefill", "fuse_projections", "decode_winner")
+
+        def arm_of(bits: tuple[int, ...]) -> str:
+            return "+".join(f for f, b in zip(factors, bits) if b) or "baseline"
+
+        separability: dict[str, Any] = {"exact_arms": sorted(exact)}
+        for n in (16, 64, 256):
+            contrasts: dict[str, list[float]] = {}
+            for p, r in keys:
+                logs = {bits: value(arm_of(bits), p, r, n) for bits in itertools.product((0, 1), repeat=3)}
+                if any(v is None for v in logs.values()):
+                    continue
+                logs = {b: math.log(v) for b, v in logs.items()}
+                for i, j in ((0, 2), (1, 2), (0, 1)):
+                    def at(x: int, y: int) -> float:
+                        return statistics.fmean(v for b, v in logs.items() if b[i] == x and b[j] == y)
+                    contrasts.setdefault(f"{factors[i]}*{factors[j]}", []).append(
+                        (at(1, 1) - at(1, 0) - at(0, 1) + at(0, 0)) / 2)
+            separability[str(n)] = {name: {"interaction": math.exp(statistics.fmean(v)),
+                                           "ci95": [math.exp(x) for x in _bootstrap_mean(v, resamples)]}
+                                    for name, v in contrasts.items()}
+        fixed = [(value("prefill_into_fixed", p, r, 0) or 0) / value("baseline", p, r, 0) for p, r in keys
+                 if value("prefill_into_fixed", p, r, 0) and value("baseline", p, r, 0)]
+        separability["prefill_into_fixed"] = {"exact": "prefill_into_fixed" in exact,
+                                              "prefill_ratio": _geomean(fixed) if fixed else None}
+        coupled = [f"{n}:{k}" for n in ("16", "64", "256") for k, v in separability.get(n, {}).items()
+                   if "decode_winner" in k and not (v["ci95"][0] <= 1 <= v["ci95"][1])]
+        separability["verdict"] = ("prefill and decode knobs couple: " + ", ".join(coupled)) if coupled \
+            else "separable: the best combination is the best prefill set plus the best decode set"
+        out["separability"] = separability
+    # widths: seconds per decode round, a further session's cost, and RL7 kill 2 (dominance)
+    widths = [w for w in report.get("widths") or [] if isinstance(w, dict) and "error" not in w]
+    if widths:
+        step: dict[tuple[str, int, int], float] = {(w["set"], w["width"], w["round"]): w["seconds"] / max(w["tokens"])
+                                                   for w in widths}
+        sets_ = sorted({w["set"] for w in widths})
+        rounds = sorted({w["round"] for w in widths})
+        per_set = {}
+        for name in sets_:
+            slopes = []
+            for r in rounds:
+                points = [(wd, step[name, wd, r]) for wd in WIDTHS_HW4 if (name, wd, r) in step]
+                if len(points) >= 2:
+                    mx_ = statistics.fmean(x for x, _ in points)
+                    my = statistics.fmean(y for _, y in points)
+                    den = sum((x - mx_) ** 2 for x, _ in points)
+                    slopes.append(sum((x - mx_) * (y - my) for x, y in points) / den if den else 0.0)
+            per_set[name] = {"seconds_per_round": {str(wd): statistics.median(step[name, wd, r] for r in rounds
+                                                                              if (name, wd, r) in step)
+                                                   for wd in WIDTHS_HW4},
+                             "seconds_per_extra_session": statistics.median(slopes) if slopes else None}
+        flips = []
+        for a, b in itertools.combinations(sets_, 2):
+            signs = {}
+            for wd in WIDTHS_HW4:
+                diffs = [step[a, wd, r] - step[b, wd, r] for r in rounds if (a, wd, r) in step and (b, wd, r) in step]
+                if diffs and (all(d > 0 for d in diffs) or all(d < 0 for d in diffs)):
+                    signs[wd] = 1 if diffs[0] > 0 else -1
+            if len(set(signs.values())) > 1:
+                flips.append([a, b, signs])
+        digests = {}
+        for w in widths:
+            digests.setdefault(w["width"], {}).setdefault(w["set"], set()).add(tuple(w["digests"]))
+        same = all(len({d for ds in by_set.values() for d in ds}) == 1 for by_set in digests.values())
+        out["widths"] = {"sets": per_set, "flips": flips, "identical_answers_across_sets": same}
+        decisions["RL7 kill 2 (dominance)"] = (
+            "knob sets and scheduling separate: refit the pool model per set, re-rank the fixed schedules, no learner"
+            if not flips else f"{len(flips)} pair(s) change order with the width: continue")
+    compile_rows = [c for c in report.get("compile") or [] if isinstance(c, dict)]
+    if compile_rows:
+        out["compile_seconds"] = {name: statistics.median(c["first_seconds"] - c["again_seconds"]
+                                                          for c in compile_rows if c["set"] == name)
+                                  for name in sorted({c["set"] for c in compile_rows})}
+    floor = [f for f in report.get("prefill_floor") or [] if isinstance(f, dict)]
+    if floor and report.get("weights_bytes") and runs:
+        best = max(f["tflop_per_s"] for f in floor)
+        long_prompts = [p for p, n in enumerate(sep.get("prompt_tokens") or []) if n >= 512]
+        measured = [x["prefill_ms"] for x in runs if x["arm"] == "baseline" and x["prompt"] in long_prompts]
+        if measured and long_prompts:
+            tokens = statistics.fmean(sep["prompt_tokens"][p] for p in long_prompts)
+            floor_ms = 2 * (report["weights_bytes"] / 2) * tokens / (best * 1e12) * 1000
+            out["gap"] = {"prefill_long_ms": statistics.fmean(measured), "prefill_floor_ms": floor_ms,
+                          "best_tflop_per_s": best,
+                          "prefill_gap_share": 1 - floor_ms / statistics.fmean(measured),
+                          "remedy_classes": {"head_skip_prefill / fusion": "class A if HW4 says so",
+                                             "float16 tensor cores (U2)": "class B: a quality-gated plan"}}
+    out["decisions"] = decisions
+    return out
+
+
 # ---------------------------------------------------------------- Kaggle
 
 _BOOTSTRAP = '''"""IronMule HW3 and TB1 on this Kaggle session; written by tools/cuda_probe.py."""
@@ -753,17 +1261,26 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q",
 '''
 
 
-def write_kernel(directory: Path, owner: str, commit: str) -> Path:
-    """A private script kernel that installs IronMule at `commit` and runs this probe; the report lands in the
-    kernel's output as `cuda_probe_report.json`."""
+def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
+                 decode_winner: dict[str, Any] | None = None) -> Path:
+    """A private script kernel that installs IronMule at `commit` and runs this probe's `plan`; the report lands
+    in the kernel's output as `cuda_probe_report.json` (HW3) or `cuda_probe_hw4_report.json` (HW4)."""
     if not commit or any(c not in "0123456789abcdef" for c in commit) or len(commit) != 40:
         raise ValueError("commit must be a full 40-character lowercase SHA, so the kernel runs exactly it")
     directory.mkdir(parents=True, exist_ok=True)
     body = (Path(__file__).read_text().replace('\nif __name__ == "__main__":\n    sys.exit(main())\n', "")
             .replace("from __future__ import annotations\n", "", 1))
-    entry = f"\nsys.exit(main({['--out', '/kaggle/working/cuda_probe_report.json']!r}))\n"
+    if plan == "hw4":
+        if decode_winner is None:
+            raise ValueError("HW4 needs HW3's decode winner")
+        arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
+                     "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
+    else:
+        arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
+    entry = f"\nsys.exit(main({arguments!r}))\n"
     (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
-    metadata = {"id": f"{owner}/ironmule-cuda-probe", "title": "ironmule-cuda-probe", "code_file": "run.py",
+    name = "ironmule-cuda-probe" + ("-hw4" if plan == "hw4" else "")
+    metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
                 "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
                 "enable_internet": True, "machine_shape": "NvidiaTeslaT4", "dataset_sources": [],
                 "competition_sources": [], "kernel_sources": [], "model_sources": []}
@@ -780,18 +1297,30 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
+    parser.add_argument("--plan", choices=("hw3", "hw4"), default="hw3")
+    parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
+    winner = None if args.decode_winner is None else json.loads(args.decode_winner)
+    if args.plan == "hw4" and not isinstance(winner, dict):
+        parser.error("--plan hw4 needs --decode-winner")
     if args.write_kernel is not None:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
-        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit))}))
+        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, winner))}))
         return 0
     if args.analyse is not None:
-        print(json.dumps(analyse(json.loads(args.analyse.read_text())), indent=1, sort_keys=True))
+        report = json.loads(args.analyse.read_text())
+        result = analyse_hw4(report) if report.get("schema") == "ironmule.cuda_probe.hw4.v1" else analyse(report)
+        print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "hw4":
+        report = probe_hw4(args.model, args.out, winner, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "decisions": report["analysis"]["decisions"]}, default=str),
+              flush=True)
+        return 0
     report = probe(args.model, args.out, smoke=args.smoke)
     print(json.dumps({"report": str(args.out), "decisions": report["analysis"]["decisions"]}, default=str), flush=True)
     return 0
