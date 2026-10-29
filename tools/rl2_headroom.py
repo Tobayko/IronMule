@@ -67,6 +67,10 @@ RL4-S (`--plan h5`, BACKLOG RL4-S, fixed 2026-10-29 before its data) keeps run 4
 best fixed arm and the frozen learned policy), cost, order, noise, verdict and validity, and replays only `spike`
 traffic, on 30 traces (indices 5-34) whose seeds no earlier run and no training used.
 
+RL6 (`--plan h6`, BACKLOG RL6, fixed 2026-10-29 before its data) compares the reference with shortest-job-first at
+widths 1, 2 and 4 and a frozen policy that also picks each group's width, on `bursts` and `spike` (12 traces each,
+indices 35-46); the analysis adds each fixed arm's paired gain over the reference.
+
 The report keeps token counts, times and SHA-256 digests of answers, never prompt or answer text.
 To run it on Kaggle (T4 x2) from a pushed commit:
 
@@ -124,6 +128,8 @@ H2_STATES = ("quiet", "bursts", "spike")
 H2_TRACES = 5
 H5_STATE = 2                       # RL4-S: `spike` only, where run 3's A/A pairs stayed within 1.4 %
 H5_TRACES = tuple(range(5, 35))    # 30 traces whose seeds no earlier run and no training used
+H6_STATES = (1, 2)                 # RL6: `bursts` and `spike`, where width and order matter in the model
+H6_TRACES = tuple(range(35, 47))   # 12 traces per state, seeds unused by every earlier run and training
 H2_MAX_TOKENS = (32, 256)
 # Run 2's long prompts: generic filler of about a thousand tokens before the question, never user text.
 CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8)
@@ -333,6 +339,19 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
         learned = {"rival": rival, "gain": gain, "gain_ci95": [low, _quantile(boot, 0.975)],
                    "verdict": ("the learned policy beats the best fixed arm" if low > noise
                                else "the learned policy does not beat the best fixed arm")}
+        # RL6: each fixed arm against the reference, paired by trace (after run 4's draws, which stay as they were)
+        learned["fixed_vs_reference"] = {}
+        for arm in fixed_arms:
+            if arm == REFERENCE:
+                continue
+            paired = [(sum(WEIGHTS[level] * table[level, t, arm] for level in levels),
+                       sum(WEIGHTS[level] * table[level, t, REFERENCE] for level in levels)) for t in complete]
+            boot = []
+            for _ in range(resamples):
+                sample = [paired[rng.randrange(len(paired))] for _ in paired]
+                boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+            learned["fixed_vs_reference"][arm] = {"gain": 1 - sum(x for x, _ in paired) / sum(y for _, y in paired),
+                                                  "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
     return {**out, "valid": True, "problems": [], "aa_noise": noise, "aa_pairs": len(pairs),
             "reference_cost": reference, "best_fixed": best, "best_fixed_vs_reference": best_cost / reference,
             "decisions": decisions, "mean_cost_per_level": per_level, "learned": learned,
@@ -686,6 +705,9 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
     if plan == "h5":
         report["states"] = [H2_STATES[H5_STATE]]
         traffic = [lambda t: trace_h2(H5_STATE, t, capacity, requests, max_tokens)]
+    elif plan == "h6":
+        report["states"] = [H2_STATES[s] for s in H6_STATES]
+        traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in H6_STATES]
     elif plan in ("h2", "h3", "h4"):
         report["states"] = list(H2_STATES)
         traffic = [lambda t, s=s: trace_h2(s, t, capacity, requests, max_tokens) for s in range(len(H2_STATES))]
@@ -694,7 +716,7 @@ def measure(pool: Any, model: str, *, deadline_s: float, traces: int | None = No
         traffic = [lambda t, level=level, rate=rate: trace(level, t, rate, requests, max_tokens)
                    for level, rate in enumerate(report["rates"])]
     block = 0
-    indices = (range(traces) if traces is not None else H5_TRACES if plan == "h5"
+    indices = (range(traces) if traces is not None else H5_TRACES if plan == "h5" else H6_TRACES if plan == "h6"
                else range(H2_TRACES if plan in ("h2", "h3", "h4") else TRACES))
     for t in indices:
         for level, make in enumerate(traffic):
@@ -745,6 +767,11 @@ def environment() -> dict[str, Any]:
 def arms_h4(best_fixed: str) -> list[str]:
     """Run 4 (BACKLOG RL4-H): the reference, run 3's best fixed arm and the learned policy."""
     return list(dict.fromkeys([REFERENCE, best_fixed, LEARNED]))
+
+
+def arms_h6() -> list[str]:
+    """RL6: the reference, shortest-job-first at widths 1, 2 and 4, and the width-learning policy."""
+    return [REFERENCE, "shortest/w1/g0/sjf", "shortest/w2/g0/sjf", "shortest/w4/g0/sjf", LEARNED]
 
 
 LEARNED = "learned/w8/g0/learned"
@@ -976,8 +1003,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "x1"), default="h1",
-                        help="run 1's to 4's fixed plan, RL4-S's spike-only run, or X1's exactness diagnostic")
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "x1"), default="h1",
+                        help="run 1's to 4's fixed plan, RL4-S's or RL6's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
@@ -991,12 +1018,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         if not args.owner or not args.commit:
             parser.error("--write-kernel needs --owner and --commit")
         extra = []
-        if args.plan in ("h4", "h5"):
-            if not args.policy_json or not args.best_fixed:
-                parser.error(f"--plan {args.plan} needs --policy-json and --best-fixed")
+        if args.plan in ("h4", "h5", "h6"):
+            if not args.policy_json or (not args.best_fixed and args.plan != "h6"):
+                parser.error(f"--plan {args.plan} needs --policy-json" + ("" if args.plan == "h6" else " and --best-fixed"))
             text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
             LearnedPolicy.from_json(json.loads(text))  # refuse a policy whose digest does not match
-            extra = ["--best-fixed", args.best_fixed, "--policy-json", json.dumps(json.loads(text), sort_keys=True)]
+            extra = (["--best-fixed", args.best_fixed] if args.plan != "h6" else []) + \
+                ["--policy-json", json.dumps(json.loads(text), sort_keys=True)]
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra))}))
         return 0
     if args.analyse is not None:
@@ -1023,12 +1051,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
     policy = names = None
-    if args.plan in ("h4", "h5"):
-        if not args.policy_json or not args.best_fixed:
-            parser.error(f"--plan {args.plan} needs --policy-json and --best-fixed")
+    if args.plan in ("h4", "h5", "h6"):
+        if not args.policy_json or (not args.best_fixed and args.plan != "h6"):
+            parser.error(f"--plan {args.plan} needs --policy-json" + ("" if args.plan == "h6" else " and --best-fixed"))
         text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
         policy = LearnedPolicy.from_json(json.loads(text))
-        names = arms_h4(args.best_fixed)
+        names = arms_h6() if args.plan == "h6" else arms_h4(args.best_fixed)
     report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save, policy=policy, names=names)
     report["analysis"] = analyse(report["rl2h"])
     report["finished_unix"] = time.time()

@@ -403,6 +403,55 @@ nothing by itself.** It makes the policy a candidate for the product's opt-in le
 needs its own qualification and rollback (`docs/LIVE_LEARNING.md`), and needs a paired validation on traffic that
 mixes states.
 
+### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
+
+**Mechanism.** Before X1's fix a group decoded at its longest prompt's capacity. An extra session then cost a full
+decode step: 20.0 ms against 19.8 ms alone, fitted to RL2-H2's width arms. That model predicted all 24 of that run's
+cells within 4.1 % and ordered every resolved pair. With each request at its own capacity, the model fitted to
+RL3-H run 2 charges 13.4 ms per extra session, so a width-4 round makes a token about 1.3x cheaper. A group still
+holds every member until its slowest ends. Narrow groups that start the shortest requests first should therefore
+beat the reference's width 8 in first-in, first-out order under load.
+
+**Found by the agent.** REINFORCE was given a width decision (`train --widths`: a softmax over widths 1, 2, 4 and 8
+per group start, beside card and order). Trained in the RL3-H run 2 model, its episode cost fell from 18.5 to 17.5.
+The frozen policy (digest `fef74e9d1077`, schema v2) cost 17.08 on 200 held-out simulated traces per state, against
+19.53 for the reference: 12.5 % less. It did not beat a fixed rule. `shortest/w2/g0/sjf` cost 17.14, so the
+learned policy's simulator gate (0.4 %) fails. The agent mostly rediscovered that rule.
+
+**Evidence against.** The run 2 model saw only width-8 arms after the fix, so its prices for widths 1-4 come from
+rounds inside those groups, not from measured narrow arms. RL2-H2 measured width 1 best, but before the fix.
+
+**Simulated per-state costs** (`bursts`, `spike`), recorded before the run for the fidelity check:
+
+| Arm | `bursts` | `spike` |
+| --- | --- | --- |
+| reference | 19.95 | 36.23 |
+| `shortest/w1/g0/sjf` | 18.31 | 32.14 |
+| `shortest/w2/g0/sjf` | 18.32 | 30.69 |
+| `shortest/w4/g0/sjf` | 19.46 | 31.40 |
+| learned | 18.25 | 30.56 |
+
+**Test (`tools/rl2_headroom.py --plan h6`, Kaggle T4 x2, about 2 session hours).** RL3-H run 2's pool, model,
+revision, engine, cost, cell order and validity. Traffic: `bursts` and `spike`, weighted equally, from run 2's
+generator. Each state gets 12 traces, indices 35-46, whose seeds no earlier run, training or simulation used. Arms:
+the reference `shortest/w8/g0`, `shortest/w1/g0/sjf`, `shortest/w2/g0/sjf`, `shortest/w4/g0/sjf`, and `learned`
+with the frozen v2 policy, whose digest the kernel verifies.
+
+**Decisions (fixed before data).**
+- **Noise:** the nearest-rank 95th percentile of the 24 A/A pairs, which is their second largest.
+- **The fixed candidate, named now:** `shortest/w2/g0/sjf`. Its gain over the reference is paired by trace, with a
+  bootstrap over traces (2,000 resamples). If the 2.5 % bound exceeds the noise, it becomes the candidate default
+  schedule for CUDA. It then still needs its own product change and a paired validation that includes quiet
+  traffic; Apple is unchanged.
+- **The learned arm:** it beats every fixed arm only if its gain's 2.5 % bound over the cheapest fixed arm of the
+  run exceeds the noise. The simulator predicts it will not.
+- **Fidelity, descriptive:** the per-arm predictions above against the measured costs.
+- **Validity:** every request's answer identical across all arms.
+
+**Kill.** For the candidate, a bound at or below the noise: the reference schedule stays for these states and the
+result goes to Tier 0. For the learned arm, the same: no width learner. That is also what its simulator gate
+predicts.
+
 ### L2 — A LoRA-tuned small language model as the planner's prior
 
 **Mechanism.** A small LM fine-tuned with LoRA (Hu et al., ICLR 2022) on stored tune traces could propose a better
