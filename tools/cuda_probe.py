@@ -584,12 +584,106 @@ def analyse_factorial(factorial: dict[str, Any], resamples: int = RESAMPLES) -> 
             "errors": factorial.get("errors") or {}}
 
 
+PHASE_TOKENS = (16, 64, 256, 1024)  # output lengths the phase table is scored at; beyond 64 a model, not a measurement
+
+
+def analyse_phases(factorial: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """Post hoc, added 2026-10-29 while HW3 ran and before its data was read (BACKLOG RL7): it opens RL7 and
+    decides nothing in HW3. Prefill and decode separately for every exact combination, short and long prompts
+    apart; the cost of a request with n output tokens as 2 x prefill + n x decode per token (the product's
+    time in system plus time to first content when nothing queues); and the headroom of a table that picks the
+    cheapest exact combination per context (prompt class, n) over the best single combination, held out by
+    leaving one prompt out, against the same cost's A/A noise."""
+    runs = [r for r in factorial.get("runs") or [] if r["round"] >= 0 and "error" not in r]
+    prompts = factorial.get("prompt_tokens") or []
+    if not runs or not prompts:
+        return {"valid": False, "problems": ["no factorial runs"]}
+    exact = {r["combo"] for r in factorial["runs"]} - {r["combo"] for r in factorial["runs"]
+                                                       if "error" in r or r.get("first_difference") is not None}
+    klass = {p: ("long" if n >= 512 else "short") for p, n in enumerate(prompts)}
+    cell: dict[tuple[str, int, int], list[tuple[float, float]]] = {}
+    for r in runs:
+        if r["combo"] in exact:
+            cell.setdefault((r["combo"], r["prompt"], r["round"]), []).append((r["prefill_ms"], r["ms_per_token"]))
+    mean = {key: (statistics.fmean(v[0] for v in values), statistics.fmean(v[1] for v in values))
+            for key, values in cell.items()}  # the baseline's two runs per round averaged
+
+    def cost(prefill: float, decode: float, n: int) -> float:
+        return 2 * prefill + n * decode
+
+    # A/A: the baseline's last run of a round against its first, per prompt, in the same composite cost
+    aa = []
+    for round_ in sorted({r["round"] for r in runs}):
+        for n in PHASE_TOKENS:
+            pairs = []
+            for p in range(len(prompts)):
+                rows = sorted((r for r in runs if r["combo"] == "baseline" and r["round"] == round_
+                               and r["prompt"] == p), key=lambda r: r["position"])
+                if len(rows) == 2:
+                    pairs.append(cost(rows[1]["prefill_ms"], rows[1]["ms_per_token"], n)
+                                 / cost(rows[0]["prefill_ms"], rows[0]["ms_per_token"], n))
+            if pairs:
+                aa.append(_geomean(pairs))
+    noise = max((abs(1 - x) for x in aa), default=float("nan"))
+    combos_ = sorted({key[0] for key in mean})
+    rounds = sorted({key[2] for key in mean})
+    phases: dict[str, dict[str, dict[str, float]]] = {}
+    for c in combos_:
+        for k in ("short", "long"):
+            ratios = [(mean[c, p, r][0] / mean["baseline", p, r][0], mean[c, p, r][1] / mean["baseline", p, r][1])
+                      for p in range(len(prompts)) if klass[p] == k for r in rounds
+                      if (c, p, r) in mean and ("baseline", p, r) in mean]
+            if ratios:
+                phases.setdefault(c, {})[k] = {"prefill_ratio": _geomean([a for a, _ in ratios]),
+                                               "decode_ratio": _geomean([b for _, b in ratios])}
+
+    def arm_cost(c: str, p: int, n: int, rounds_: list[int]) -> float | None:
+        values = [cost(*mean[c, p, r], n) for r in rounds_ if (c, p, r) in mean]
+        return statistics.fmean(values) if values else None
+
+    winners: dict[str, str] = {}
+    held: list[tuple[float, float]] = []  # (table cost, single-arm cost) per held-out (prompt, round, n)
+    for p in range(len(prompts)):
+        others = [q for q in range(len(prompts)) if q != p]
+        for n in PHASE_TOKENS:
+            same = [q for q in others if klass[q] == klass[p]]
+
+            def total(c: str, group: list[int]) -> float:
+                values = [arm_cost(c, q, n, rounds) for q in group]
+                return sum(values) if all(v is not None for v in values) else float("inf")
+
+            table = min(combos_, key=lambda c: (total(c, same), c))
+            single = min(combos_, key=lambda c: (sum(total(c, [q]) for q in others), c))
+            for r in rounds:
+                if (table, p, r) in mean and (single, p, r) in mean:
+                    held.append((cost(*mean[table, p, r], n), cost(*mean[single, p, r], n)))
+    for k in ("short", "long"):
+        for n in PHASE_TOKENS:
+            group = [p for p in range(len(prompts)) if klass[p] == k]
+            if group:
+                winners[f"{k}/{n}"] = min(combos_, key=lambda c: (sum(arm_cost(c, q, n, rounds) or float("inf")
+                                                                      for q in group), c))
+    headroom = 1 - sum(t for t, _ in held) / sum(s for _, s in held) if held else float("nan")
+    rng = random.Random(0)
+    draws = sorted(1 - sum(t for t, _ in sample) / sum(s for _, s in sample)
+                   for sample in ([rng.choice(held) for _ in held] for _ in range(resamples))) if held else []
+    ci = [draws[int(0.025 * (resamples - 1))], draws[int(0.975 * (resamples - 1))]] if draws else [None, None]
+    one_winner = len(set(winners.values())) == 1
+    return {"label": "post hoc: opens RL7, decides nothing in HW3", "noise": noise, "exact_combos": len(exact),
+            "phases": phases, "winners": winners, "headroom": headroom, "headroom_ci95": ci,
+            "verdict": ("one combination for every context: a single profile, no table and no learner"
+                        if one_winner or (ci[0] is not None and ci[0] <= noise)
+                        else "a per-context table beats one profile: RL7 continues")}
+
+
 def analyse(report: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any]:
     out: dict[str, Any] = {"schema": "ironmule.cuda_probe.analysis.v1"}
     factorial = report.get("factorial") or {}
     f = analyse_factorial(factorial, resamples) if "runs" in factorial else {"valid": False,
                                                                              "problems": [str(factorial.get("error"))]}
     out["factorial"] = f
+    if "runs" in factorial:
+        out["phases"] = analyse_phases(factorial, resamples)
     single = {name: (f.get("combos") or {}).get(name) for name in FACTORS}
     out["decisions"] = decisions = {}
     compiled = single.get("compiled_fixed_cache")

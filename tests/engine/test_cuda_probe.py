@@ -56,16 +56,18 @@ def test_every_part_runs_and_the_engine_knobs_keep_the_tiny_models_tokens(tmp_pa
     assert analysis["factorial"]["main_effects"] is not None and len(analysis["factorial"]["interactions"]) == 10
 
 
-def _factorial(cost, exact=lambda name: True, rounds=5):
-    """A synthetic factorial whose decode cost per combination is `cost(bits)` times the baseline."""
+def _factorial(cost, exact=lambda name: True, rounds=5, prefill=lambda bits, long: 1.0):
+    """A synthetic factorial whose decode cost per combination is `cost(bits)` times the baseline's, and its
+    prefill `prefill(bits, long)` times."""
     runs = []
     for round_ in range(-1, rounds):
         order = probe.round_order(max(round_, 0))
         for position, bits in enumerate(order[:-1] if round_ < 0 else order):
             for p in range(6):
-                name = probe.combo_name(bits)
+                name, jitter, long = probe.combo_name(bits), 1 + 0.001 * ((round_ + p) % 3), p >= 3
                 runs.append({"combo": name, "round": round_, "prompt": p, "position": position,
-                             "ms_per_token": 20.0 * cost(bits) * (1 + 0.001 * ((round_ + p) % 3)),
+                             "ms_per_token": 20.0 * cost(bits) * jitter,
+                             "prefill_ms": (900.0 if long else 60.0) * prefill(bits, long) * jitter,
                              "first_difference": None if exact(name) else 5, "acceptance": 0.0})
     return {"runs": runs, "prompt_tokens": [40, 40, 40, 1100, 1100, 1100]}
 
@@ -122,3 +124,22 @@ def test_the_kernel_runs_exactly_the_pushed_commit(tmp_path):
     compile(source, "run.py", "exec")
     with pytest.raises(ValueError):
         probe.write_kernel(tmp_path / "bad", "someone", "main")
+
+
+def test_the_phase_table_counts_a_prefill_win_where_prefill_dominates_and_a_decode_win_elsewhere():
+    """Post hoc RL7 analysis: fusion halves a long prompt's prefill but slows decode 5 %; compiling speeds decode
+    10 %. Short answers after long prompts want both, long answers want compiling alone."""
+    def decode(bits):
+        return (1.05 if bits[0] else 1.0) * (0.90 if bits[1] else 1.0)
+
+    def prefill(bits, long):
+        return 0.5 if bits[0] and long else 1.0
+
+    phases = probe.analyse_phases(_factorial(decode, prefill=prefill), resamples=200)
+    assert phases["phases"]["fuse_projections"]["long"]["prefill_ratio"] == pytest.approx(0.5, rel=1e-3)
+    assert phases["phases"]["fuse_projections"]["short"]["decode_ratio"] == pytest.approx(1.05, rel=1e-3)
+    assert "fuse_projections" in phases["winners"]["long/16"] and "compiled_fixed_cache" in phases["winners"]["long/16"]
+    assert "fuse_projections" not in phases["winners"]["short/1024"]
+    assert phases["headroom_ci95"][0] > phases["noise"] and phases["verdict"].endswith("RL7 continues")
+    flat = probe.analyse_phases(_factorial(lambda bits: 0.9 if bits[1] else 1.0), resamples=200)
+    assert flat["verdict"].startswith("one combination for every context")
