@@ -480,8 +480,8 @@ class TimedBackend:
         left = {r.request_id: r.max_tokens for r in requests}
         produced = {r.request_id: 0 for r in requests}
         while left:
-            self._before_round(cancels)
             time.sleep(self.round_s + self.per_stream_s * len(left))
+            self._before_cancels(cancels)
             for request, cancel in zip(requests, cancels):
                 rid = request.request_id
                 if rid not in left:
@@ -501,7 +501,7 @@ class TimedBackend:
                                    "prompt_tokens": 3, "completion_tokens": produced[rid]})
         return [{"request_id": r.request_id, "events": [], "metadata": {}} for r in requests]
 
-    def _before_round(self, cancels) -> None:
+    def _before_cancels(self, cancels) -> None:
         pass
 
     def close(self):
@@ -509,14 +509,15 @@ class TimedBackend:
 
 
 class DrainGateBackend(TimedBackend):
-    """Holds a cancelled group's next round until the test releases it, so a request sent during
-    the drain arrives while the drain lasts, however slow the runner is."""
+    """Holds a cancelled group before it acts on the cancellation until the test releases it, so a
+    request sent during the drain arrives while the drain lasts, however slow the runner is. The
+    hold sits after a round's decode: a cancellation seen there ends every member in that round."""
 
     def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self.release = threading.Event()
 
-    def _before_round(self, cancels) -> None:
+    def _before_cancels(self, cancels) -> None:
         if any(cancel.is_set() for cancel in cancels):
             self.release.wait(10)
 
