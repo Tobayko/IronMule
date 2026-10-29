@@ -242,3 +242,55 @@ def test_kb1_stops_when_eight_rows_cost_what_grouped_batch_1_already_saves():
     assert probe.analyse_kb1([layer(1.5, 1.0)], resamples=100)["verdict"].startswith("class A route")
     assert probe.analyse_kb1([layer(6.0, 1.0)], resamples=100)["verdict"].startswith("no lever")
     assert probe.analyse_kb1([layer(1.5, 1.0, invariant=7)], resamples=100)["verdict"].startswith("bug")
+
+
+def _attention_by_row(q, k, v, lengths):
+    """A CPU stand-in for FA2: each row on its own, reading only its first `lengths[b]` positions."""
+    rows, heads, dim = q.shape
+    groups = heads // k.shape[1]
+    out = []
+    for b in range(rows):
+        n = int(lengths[b].item())
+        keys = mx.repeat(k[b, :, :n, :], groups, axis=0).astype(mx.float32)
+        values = mx.repeat(v[b, :, :n, :], groups, axis=0).astype(mx.float32)
+        scores = (q[b].astype(mx.float32)[:, None, :] @ keys.transpose(0, 2, 1))[:, 0, :] * dim ** -0.5
+        out.append((mx.softmax(scores, axis=-1)[:, None, :] @ values)[:, 0, :])
+    return mx.stack(out).astype(mx.bfloat16)
+
+
+def test_the_dense_plan_decodes_like_the_model_and_stacking_rows_changes_no_bit():
+    from mlx_lm.models.cache import make_prompt_cache
+
+    plain, _ = _tiny()
+    plan = probe.DensePlan(plain, linear=_row_by_row, attention=_attention_by_row)
+    prompts = [[5, 9, 13, 17, 21], [3, 7, 11, 15, 19, 23, 27, 31, 35]]
+    singles = []
+    for ids in prompts:
+        states, first = probe._prefill(plain, ids)
+        cache = plan.load_prefill(plan.new_cache(1, 64), 0, states)
+        logits, _ = plan.step(first, mx.array([len(ids)]), cache)
+        singles.append((first, logits))
+        model_cache = make_prompt_cache(plain)
+        plain(mx.array(ids)[None], cache=model_cache)
+        expected = plain(first[:, None], cache=model_cache)[0, -1].astype(mx.float32)
+        assert int(mx.argmax(logits[0]).item()) == int(mx.argmax(expected).item())
+        assert float(mx.max(mx.abs(logits[0] - expected)).item()) < 0.05 * float(mx.max(mx.abs(expected)).item())
+    cache = plan.new_cache(2, 128)  # a different capacity, both rows at their own positions
+    for r, ids in enumerate(prompts):
+        cache = plan.load_prefill(cache, r, probe._prefill(plain, ids)[0])
+    stacked, _ = plan.step(mx.concatenate([f for f, _ in singles]), mx.array([len(p) for p in prompts]), cache)
+    for r, (_, logits) in enumerate(singles):
+        assert mx.array_equal(stacked[r], logits[0]).item()
+
+
+def test_kb1_1_runs_end_to_end_on_cpu_stand_ins(tmp_path):
+    plain, _ = _tiny()
+    plan = probe.DensePlan(plain, linear=_row_by_row, attention=_attention_by_row)
+    report = probe.probe_kb1_report("tiny", tmp_path / "kb1.json", smoke=True, loaded=(plain, _Tokenizer()),
+                                    kernel=_row_by_row, model_level=True, plan=plan)
+    assert "error" not in report["kb1_model"], report["kb1_model"]
+    analysis = report["analysis_model"]
+    assert analysis["(a) exact within the plan"] is True
+    assert set(analysis["(c) quality gate"]["paths"]) == {"main", "long"}
+    assert analysis["(d) one request, plan over today's tuned"] > 0
+    assert "(b) stacked step over grouped round" in analysis and "double capacity step ratio" in analysis

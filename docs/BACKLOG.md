@@ -790,6 +790,33 @@ hours): kill (i) fires, (ii) and (iii) pass.**
   for bit, and against a measured width-8 grouped round on the product path, which must be faster. A quality
   gate against today's answers decides the plan.
 
+**KB1-1 (fixed 2026-10-29 before its data; `tools/cuda_probe.py --plan kb1m`, Kaggle T4, first card, about 0.3
+session hours).** The dense plan (`DensePlan`) is one Qwen 3 decode step for up to eight stacked rows at their own
+positions, used at every B. It runs linears through KB1 and attention through FA2. FA2 reads only up to each row's
+length, split into 64-key chunks at absolute positions and combined in index order, so it is invariant to batch and
+capacity. It uses MLX's own RoPE (one position per row), `rms_norm` and `silu`, and writes the KV cache through a
+pure scatter. Prefill stays MLX's own, one request at a time, so the plan touches the decode path only. Eight
+distinct prompts, alternately short and behind about 1,000 tokens of context, 64 steps. Worked through with the
+second agent, which caught that a full-sequence gate would never run the new code and that FA2 must split the
+keys from the start.
+- **(a) Exact within the plan:** every row's logits at every step are bit-identical between the plan at one row
+  (at the row's own capacity) and stacked at 3 and at 8 rows (a shared capacity), and again at twice that
+  capacity.
+- **(b) Faster than today's grouping:** the stacked 8-row step against a width-8 grouped batch-1 round of today's
+  engine, run as the executor runs one (each member's step at its own capacity, one wait), with the baseline and
+  with the compiled step, the faster of the two counting. Five rounds; the ratio's 95 % bootstrap bound must be
+  below 1.
+- **(c) The numeric plans' quality gate on the decode path:** `ironmule/quality_reference.txt`, 16 chunks of 512
+  tokens, teacher-forced through today's decode step and through the plan's (8 chunks stacked), perplexity ratio
+  by `numeric_choice.ratio_interval`, passing below 1.005. A long variant scores 128 tokens after a 1,024-token
+  prefix (8 chunks), so FA2 is scored far from the start; it must pass too.
+- **Recorded, no decision:** (d) the plan at one row against today's best exact decode (compile + readback 4),
+  since quiet traffic would regress if it is slower; the step at twice the capacity, which shows whether the KV
+  write copies the whole cache; the plan's greedy tokens against today's engine.
+- **Verdict:** (a), (b) and (c) together make the plan a candidate for an opt-in numeric plan with a stacked
+  executor (a slot pool of fixed capacity, one slot per request). Before it is recommended anywhere, an LD1-V-style
+  no-harm check on mixed traffic follows. A failed (a) is a bug, fixed before anything else.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine

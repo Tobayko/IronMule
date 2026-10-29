@@ -100,6 +100,11 @@ PREFILL_ROWS = (256, 1024)         # prefill matmul rows for the compute floor
 KB1_ROWS = (1, 2, 4, 8)
 KB1_SAMPLES = 64                   # real activation rows per layer, from one 64-token forward
 GROUPED_LEVER = 8 / (19.8 + 7 * 13.4) * 19.8  # RL6's fitted grouped batch-1: a width-8 round is 1.39x cheaper per token
+# KB1-1 (BACKLOG KB1, fixed 2026-10-29 before its data)
+KB1M_PROMPTS = 8                   # distinct requests, alternately short and behind ~1,000 tokens of context
+KB1M_STEPS = 64
+KB1M_STACKS = (3, 8)               # an uneven group and a full one
+LONG_PREFIX, LONG_SCORED, LONG_CHUNKS = 1024, 128, 8  # the gate's long-offset variant, so FA2 is scored far out
 
 
 # ---------------------------------------------------------------- the plan
@@ -1022,8 +1027,8 @@ def analyse_kb1(layers: list[dict[str, Any]], resamples: int = RESAMPLES) -> dic
 
 
 def probe_kb1_report(model_id: str, out: Path | None, *, smoke: bool = False,
-                     loaded: tuple[Any, Any] | None = None, kernel: Callable[[Any, Any], Any] | None = None
-                     ) -> dict[str, Any]:
+                     loaded: tuple[Any, Any] | None = None, kernel: Callable[[Any, Any], Any] | None = None,
+                     model_level: bool = False, plan: "DensePlan | None" = None) -> dict[str, Any]:
     report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb1.v1", "model": model_id, "smoke": smoke,
                               "started_unix": time.time(), "env": environment()}
     if loaded is None:
@@ -1043,10 +1048,452 @@ def probe_kb1_report(model_id: str, out: Path | None, *, smoke: bool = False,
     except Exception as exc:  # noqa: BLE001 - recorded, so a failed kernel still leaves a report
         report["kb1"] = {"error": repr(exc)}
         report["analysis"] = {"valid": False, "error": repr(exc)}
+    if model_level:
+        if out is not None:
+            out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+        try:
+            report["kb1_model"] = probe_kb1_model(
+                model, tokenizer, steps=4 if smoke else KB1M_STEPS, rounds=1 if smoke else ROUNDS,
+                limit=24 if smoke else None, plan=plan,
+                gate=gate_items(tokenizer, 4, 12, (16, 6, 4)) if smoke else None)
+            report["analysis_model"] = analyse_kb1_model(report["kb1_model"])
+        except Exception as exc:  # noqa: BLE001
+            report["kb1_model"] = {"error": repr(exc)}
     report["finished_unix"] = time.time()
     if out is not None:
         out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
     return report
+
+
+# ---------------------------------------------------------------- KB1-1: the dense plan, stacked rows, FA2
+
+FA2_CHUNK = 64  # keys per chunk, at absolute positions: the split depends only on a row's own length
+
+FA2_HEADER = DENSE_HEADER + r"""
+__device__ __forceinline__ float one_bf(unsigned short h) { return __uint_as_float(((unsigned int)h) << 16); }
+#define NEG_INF __int_as_float(0xff800000)
+"""
+
+# Pass 1: one warp per (row, KV head, 64-key chunk); each lane scores two keys with the whole head-dim dot in
+# one fixed order, the chunk's max and sum through fixed trees, then P.V with lanes over the head dim.
+FA2_PARTIAL = r"""
+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
+  const unsigned int warp = gid >> 5;
+  const unsigned int lane = threadIdx.x & 31;
+  if (warp >= B * HKV * NC) return;
+  const unsigned int c = warp % NC;
+  const unsigned int b = (warp / NC) / HKV;
+  const unsigned int kh = (warp / NC) % HKV;
+  const int len = lengths[b];
+  const int start = c * 64;
+  if (start >= len) return;
+  const unsigned short* qs = reinterpret_cast<const unsigned short*>(q);
+  const unsigned short* ks = reinterpret_cast<const unsigned short*>(k);
+  const unsigned short* vs = reinterpret_cast<const unsigned short*>(v);
+  const size_t base = ((size_t)b * HKV + kh) * C * D;
+  const int count = min(64, len - start);
+  for (int g = 0; g < G; ++g) {
+    const size_t qo = ((size_t)b * H + kh * G + g) * D;
+    float s[2];
+#pragma unroll
+    for (int j = 0; j < 2; ++j) {
+      const int t = start + j * 32 + (int)lane;
+      if (t < len) {
+        const unsigned short* kr = ks + base + (size_t)t * D;
+        float d = 0.f;
+        for (int i = 0; i < D; ++i) d = __fmaf_rn(one_bf(qs[qo + i]), one_bf(kr[i]), d);
+        s[j] = __fmul_rn(d, SCALE);
+      } else {
+        s[j] = NEG_INF;
+      }
+    }
+    float m = fmaxf(s[0], s[1]);
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
+    float pr[2];
+#pragma unroll
+    for (int j = 0; j < 2; ++j) pr[j] = (s[j] == NEG_INF) ? 0.f : expf(s[j] - m);
+    float sum = __fadd_rn(pr[0], pr[1]);
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) sum = __fadd_rn(sum, __shfl_down_sync(0xffffffffu, sum, o));
+    sum = __shfl_sync(0xffffffffu, sum, 0);
+    float acc[4] = {0.f, 0.f, 0.f, 0.f};
+    for (int t = 0; t < count; ++t) {
+      const float pt = __shfl_sync(0xffffffffu, pr[t >> 5], t & 31);
+      const unsigned short* vr = vs + base + (size_t)(start + t) * D + lane * 4;
+#pragma unroll
+      for (int e = 0; e < 4; ++e) acc[e] = __fmaf_rn(pt, one_bf(vr[e]), acc[e]);
+    }
+    const size_t po = ((size_t)b * H + kh * G + g) * NC + c;
+#pragma unroll
+    for (int e = 0; e < 4; ++e) pacc[po * D + lane * 4 + e] = acc[e];
+    if (lane == 0) {
+      pml[po * 2] = m;
+      pml[po * 2 + 1] = sum;
+    }
+  }
+"""
+
+# Pass 2: one warp per (row, query head) combines that row's chunks in index order.
+FA2_COMBINE = r"""
+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
+  const unsigned int warp = gid >> 5;
+  const unsigned int lane = threadIdx.x & 31;
+  if (warp >= B * H) return;
+  const unsigned int b = warp / H;
+  const unsigned int h = warp % H;
+  const int nc = (lengths[b] + 63) / 64;
+  float M = NEG_INF, L = 0.f;
+  float acc[4] = {0.f, 0.f, 0.f, 0.f};
+  for (int c = 0; c < nc; ++c) {
+    const size_t po = ((size_t)b * H + h) * NC + c;
+    const float mc = pml[po * 2];
+    const float lc = pml[po * 2 + 1];
+    const float mn = fmaxf(M, mc);
+    const float a = expf(M - mn);
+    const float bb = expf(mc - mn);
+    L = __fmaf_rn(L, a, __fmul_rn(lc, bb));
+#pragma unroll
+    for (int e = 0; e < 4; ++e) acc[e] = __fmaf_rn(acc[e], a, __fmul_rn(pacc[po * D + lane * 4 + e], bb));
+    M = mn;
+  }
+#pragma unroll
+  for (int e = 0; e < 4; ++e) out[((size_t)b * H + h) * D + lane * 4 + e] = to_bf(__fdiv_rn(acc[e], L));
+"""
+_fa2_kernels: dict[str, Any] = {}
+
+
+def fa2(q: Any, k: Any, v: Any, lengths: Any) -> Any:
+    """FA2: one decode query per row against a fixed-capacity cache, reading only the first `lengths[b]`
+    positions, split into 64-key chunks at absolute positions and combined in index order. The result depends
+    on neither the capacity nor the other rows."""
+    import mlx.core as mx
+
+    b, h, d = q.shape
+    _, hkv, c, _ = k.shape
+    if d != 128 or h % hkv:
+        raise ValueError("FA2 serves head dim 128 and grouped query heads only")
+    if not _fa2_kernels:
+        scale = f"{d ** -0.5!r}f"
+        _fa2_kernels["partial"] = mx.fast.cuda_kernel(
+            name="ironmule_fa2_partial", input_names=["q", "k", "v", "lengths"], output_names=["pacc", "pml"],
+            source=FA2_PARTIAL.replace("SCALE", scale), header=FA2_HEADER)
+        _fa2_kernels["combine"] = mx.fast.cuda_kernel(
+            name="ironmule_fa2_combine", input_names=["pacc", "pml", "lengths"], output_names=["out"],
+            source=FA2_COMBINE, header=FA2_HEADER)
+    nc = -(-c // FA2_CHUNK)
+    lengths = lengths.astype(mx.int32)
+    template = [("B", b), ("H", h), ("HKV", hkv), ("G", h // hkv), ("D", d), ("C", c), ("NC", nc)]
+    pacc, pml = _fa2_kernels["partial"](
+        inputs=[mx.contiguous(q), k, v, lengths], template=template,
+        grid=(-(-(b * hkv * nc * 32) // 256) * 256, 1, 1), threadgroup=(256, 1, 1),
+        output_shapes=[(b, h, nc, d), (b, h, nc, 2)], output_dtypes=[mx.float32, mx.float32])
+    out = _fa2_kernels["combine"](
+        inputs=[pacc, pml, lengths], template=template, grid=(-(-(b * h * 32) // 256) * 256, 1, 1),
+        threadgroup=(256, 1, 1), output_shapes=[(b, h, d)], output_dtypes=[mx.uint16])[0]
+    return out.view(mx.bfloat16)
+
+
+class DensePlan:
+    """KB1-1: one Qwen 3 decode step for up to eight stacked rows at their own positions, the same forward at
+    every B, so stacking is exact within the plan. Linears through the row kernel, attention through FA2 over
+    a fixed-capacity cache, MLX's own RoPE with one position per row, `rms_norm` and `silu`. It changes
+    answers against today's engine, so it is a numeric plan: opt-in, behind the quality gate."""
+
+    def __init__(self, model: Any, linear: Callable[[Any, Any], Any] | None = None,
+                 attention: Callable[[Any, Any, Any, Any], Any] | None = None):
+        from ironmule.runtime import _trunk
+
+        trunk = _trunk(model)
+        args = model.args
+        self.model, self.trunk, self.args = model, trunk, args
+        self.linear, self.attention = linear or dense_rows, attention or fa2
+        self.heads, self.kv_heads = args.num_attention_heads, args.num_key_value_heads
+        self.dim = getattr(args, "head_dim", None) or args.hidden_size // self.heads
+        self.eps = args.rms_norm_eps
+        if getattr(args, "rope_scaling", None):
+            raise ValueError("the dense plan's RoPE covers unscaled rotary embeddings only")
+        head = getattr(model, "lm_head", None)
+        self.head = head.weight if head is not None and not getattr(args, "tie_word_embeddings", False) \
+            else trunk.embed_tokens.weight
+
+    def rope(self, x: Any, positions: Any) -> Any:
+        """MLX's own RoPE with one position per row (bit-identical to a single row's call on the CPU)."""
+        import mlx.core as mx
+
+        rows, heads, dim = x.shape
+        return mx.fast.rope(x.reshape(rows, heads, 1, dim), dim, traditional=False, base=self.args.rope_theta,
+                            scale=1.0, offset=positions.astype(mx.int32)).reshape(rows, heads, dim)
+
+    def new_cache(self, rows: int, capacity: int) -> list[tuple[Any, Any]]:
+        import mlx.core as mx
+
+        shape = (rows, self.kv_heads, capacity, self.dim)
+        return [(mx.zeros(shape, mx.bfloat16), mx.zeros(shape, mx.bfloat16)) for _ in self.trunk.layers]
+
+    def step(self, tokens: Any, positions: Any, cache: list[tuple[Any, Any]]) -> tuple[Any, list[tuple[Any, Any]]]:
+        """Tokens (B,) at positions (B,) into `cache`; returns float32 logits (B, V) and the updated cache."""
+        import mlx.core as mx
+        from mlx_lm.models.activations import swiglu
+
+        rows = tokens.shape[0]
+        h = self.trunk.embed_tokens(tokens)
+        index = mx.broadcast_to(positions.astype(mx.int32)[:, None, None, None], (rows, self.kv_heads, 1, self.dim))
+        updated = []
+        for layer, (keys, values) in zip(self.trunk.layers, cache):
+            attn, mlp = layer.self_attn, layer.mlp
+            x = mx.fast.rms_norm(h, layer.input_layernorm.weight, self.eps)
+            q = mx.fast.rms_norm(self.linear(x, attn.q_proj.weight).reshape(rows, self.heads, self.dim),
+                                 attn.q_norm.weight, self.eps)
+            k = mx.fast.rms_norm(self.linear(x, attn.k_proj.weight).reshape(rows, self.kv_heads, self.dim),
+                                 attn.k_norm.weight, self.eps)
+            v = self.linear(x, attn.v_proj.weight).reshape(rows, self.kv_heads, self.dim)
+            q, k = self.rope(q, positions), self.rope(k, positions)
+            keys = mx.put_along_axis(keys, index, k[:, :, None, :], axis=2)
+            values = mx.put_along_axis(values, index, v[:, :, None, :], axis=2)
+            o = self.attention(q, keys, values, positions + 1)
+            h = h + self.linear(o.reshape(rows, self.heads * self.dim), attn.o_proj.weight)
+            x = mx.fast.rms_norm(h, layer.post_attention_layernorm.weight, self.eps)
+            h = h + self.linear(swiglu(self.linear(x, mlp.gate_proj.weight), self.linear(x, mlp.up_proj.weight)),
+                                mlp.down_proj.weight)
+            updated.append((keys, values))
+        h = mx.fast.rms_norm(h, self.trunk.norm.weight, self.eps)
+        return self.linear(h, self.head).astype(mx.float32), updated
+
+    def load_prefill(self, cache: list[tuple[Any, Any]], row: int, states: list[tuple[Any, Any]]) -> list[tuple[Any, Any]]:
+        """Copy one request's prefilled keys and values (mlx-lm's cache state, (1, Hkv, L, D)) into row `row`."""
+        out = []
+        for (keys, values), (k, v) in zip(cache, states):
+            n = k.shape[2]
+            keys[row:row + 1, :, :n, :] = k.astype(keys.dtype)
+            values[row:row + 1, :, :n, :] = v.astype(values.dtype)
+            out.append((keys, values))
+        return out
+
+
+def gate_items(tokenizer: Any, chunks: int | None = None, size: int | None = None,
+               long: tuple[int, int, int] = (LONG_PREFIX, LONG_SCORED, LONG_CHUNKS)) -> dict[str, list[tuple[list[int], list[int]]]]:
+    """The numeric plans' quality text (`ironmule.numeric_choice`), as (prefix, scored) pairs: the gate's own
+    16 x 512-token chunks with no prefix, and a long variant whose scored tokens follow a 1,024-token prefix."""
+    from ironmule.numeric_choice import CHUNK_TOKENS, CHUNKS, _text_ids
+
+    chunks, size = chunks or CHUNKS, size or CHUNK_TOKENS
+    ids = _text_ids(tokenizer)
+    main = [([], ids[i * size:(i + 1) * size + 1]) for i in range(chunks)]
+    prefix, scored, count = long
+    step = prefix + scored + 1
+    far = [(ids[i * step:i * step + prefix], ids[i * step + prefix:(i + 1) * step]) for i in range(count)
+           if (i + 1) * step <= len(ids)]
+    return {"main": [m for m in main if len(m[1]) == size + 1], "long": far}
+
+
+def _nll(logits: Any, target: int) -> float:
+    import mlx.core as mx
+
+    row = logits.reshape(-1).astype(mx.float32)
+    return float((mx.logsumexp(row) - row[target]).item())
+
+
+def reference_nll(engine: Any, prefix: list[int], scored: list[int]) -> float:
+    """Today's engine on its decode path, teacher-forced: the prefix and the first scored token prefilled,
+    then every next token's negative log-likelihood from a decode step; the mean over the scored tokens."""
+    import mlx.core as mx
+    from ironmule import runtime
+
+    capacity = capacity_for(len(prefix) + 1, len(scored))
+    captured: list[Any] = []
+    original = runtime._project
+
+    def capture(model: Any, hidden: Any) -> Any:
+        out = original(model, hidden)
+        captured.append(out)
+        return out
+
+    runtime._project = capture
+    try:
+        state, _ = engine._prefill(prefix + scored[:1], capacity)
+    finally:
+        runtime._project = original
+    total = _nll(captured[-1][:, -1, :], scored[1])
+    body = engine._body(capacity, 1)
+    for t in range(1, len(scored) - 1):
+        out = body(mx.array([[scored[t]]]), state)
+        state = out[1]
+        total += _nll(out[0][:, -1, :], scored[t + 1])
+    return total / (len(scored) - 1)
+
+
+def plan_nll(plan: "DensePlan", model: Any, items: list[tuple[list[int], list[int]]], rows: int) -> list[float]:
+    """The plan on its decode path, teacher-forced, `rows` items stacked (exact within the plan)."""
+    import mlx.core as mx
+
+    means = []
+    for start in range(0, len(items), rows):
+        group = items[start:start + rows]
+        width = max(len(prefix) + len(scored) for prefix, scored in group)
+        cache = plan.new_cache(len(group), capacity_for(width, 0))
+        sums = []
+        for r, (prefix, scored) in enumerate(group):
+            states, _ = _prefill(model, prefix + scored[:1])
+            cache = plan.load_prefill(cache, r, states)
+            logits = model(mx.array(prefix + scored[:1])[None])  # the first prediction is the unchanged prefill's
+            sums.append(_nll(logits[:, -1, :], scored[1]))
+        for t in range(1, len(group[0][1]) - 1):
+            tokens = mx.array([scored[t] for _, scored in group])
+            positions = mx.array([len(prefix) + t for prefix, _ in group])
+            logits, cache = plan.step(tokens, positions, cache)
+            mx.eval(logits)
+            for r, (_, scored) in enumerate(group):
+                sums[r] += _nll(logits[r], scored[t + 1])
+        means.extend(total / (len(scored) - 1) for total, (_, scored) in zip(sums, group))
+    return means
+
+
+def probe_kb1_model(model: Any, tokenizer: Any, *, steps: int, rounds: int, limit: int | None = None,
+                    gate: dict[str, Any] | None = None, plan: "DensePlan | None" = None) -> dict[str, Any]:
+    """KB1-1: (a) stacked rows against the same plan at one row, bit for bit; (b) a stacked step of eight
+    against a width-8 grouped round of today's engine; (c) the quality gate on the plan's decode path."""
+    import mlx.core as mx
+    from ironmule import runtime
+
+    plan = plan or DensePlan(model)
+    prompts = [chat_ids(tokenizer, i, i % 2 == 1, limit) for i in range(KB1M_PROMPTS)]
+    prefills = [_prefill(model, ids) for ids in prompts]
+    out: dict[str, Any] = {"prompt_tokens": [len(ids) for ids in prompts]}
+
+    def alone(r: int) -> tuple[list[int], list[str], list[float]]:
+        states, first = prefills[r]
+        cache = plan.load_prefill(plan.new_cache(1, capacity_for(len(prompts[r]), steps)), 0, states)
+        tokens, digests, times = [int(first.item())], [], []
+        for t in range(steps):
+            started = time.perf_counter()
+            logits, cache = plan.step(mx.array([tokens[-1]]), mx.array([len(prompts[r]) + t]), cache)
+            mx.eval(logits)
+            times.append(time.perf_counter() - started)
+            digests.append(_bits(logits[0]))
+            tokens.append(int(mx.argmax(logits[0]).item()))
+        return tokens, digests, times
+
+    singles = [alone(r) for r in range(len(prompts))]
+    out["alone_seconds_per_step"] = statistics.median(t for _, _, times in singles for t in times[2:] or times)
+
+    def stacked(rows: int, stretch: int = 1) -> tuple[list[list[str]], list[float]]:
+        capacity = max(capacity_for(len(prompts[r]), steps) for r in range(rows)) * stretch
+        cache = plan.new_cache(rows, capacity)
+        for r in range(rows):
+            cache = plan.load_prefill(cache, r, prefills[r][0])
+        digests, times = [[] for _ in range(rows)], []
+        for t in range(steps):
+            tokens = mx.array([singles[r][0][t] for r in range(rows)])  # each row fed its own tokens alone
+            positions = mx.array([len(prompts[r]) + t for r in range(rows)])
+            started = time.perf_counter()
+            logits, cache = plan.step(tokens, positions, cache)
+            mx.eval(logits)
+            times.append(time.perf_counter() - started)
+            for r in range(rows):
+                digests[r].append(_bits(logits[r]))
+        return digests, times
+
+    out["stacks"] = {}
+    for rows in KB1M_STACKS:
+        digests, times = stacked(rows)
+        out["stacks"][str(rows)] = {"identical_steps": sum(d == e for r in range(rows)
+                                                           for d, e in zip(digests[r], singles[r][1])),
+                                    "steps": rows * steps, "seconds_per_step": statistics.median(times[2:] or times)}
+    digests, times = stacked(KB1M_PROMPTS, stretch=2)  # the KV write must not copy the whole cache
+    out["double_capacity"] = {"seconds_per_step": statistics.median(times[2:] or times), "steps": KB1M_PROMPTS * steps,
+                              "identical_steps": sum(d == e for r in range(KB1M_PROMPTS)
+                                                     for d, e in zip(digests[r], singles[r][1]))}
+    eos = tuple(sorted(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id]))
+    engines = {"baseline": runtime.Engine(model, tokenizer, runtime.Knobs()),
+               "compiled": runtime.Engine(model, tokenizer, runtime.Knobs(compiled_fixed_cache=True))}
+
+    def grouped_round(engine: Any) -> list[float]:
+        """Today's grouped batch-1 at width 8, as the executor runs a round: every member's step dispatched at
+        its own capacity, one wait for all of them."""
+        states, tokens, bodies = [], [], []
+        for ids in prompts:
+            capacity = capacity_for(len(ids), steps)
+            state, token = engine._prefill(list(ids), capacity)
+            states.append(state)
+            tokens.append(token)
+            bodies.append(engine._body(capacity, 1))
+        times = []
+        for _ in range(steps):
+            started = time.perf_counter()
+            outs = [body(token, state) for body, token, state in zip(bodies, tokens, states)]
+            picks = [mx.argmax(out[0][:, -1:, :], axis=-1) for out in outs]
+            mx.eval(*picks, *[runtime._leaves(out[1]) for out in outs])
+            times.append(time.perf_counter() - started)
+            states, tokens = [out[1] for out in outs], picks
+        return times
+
+    try:
+        for engine in engines.values():
+            grouped_round(engine)  # warm every capacity
+        rounds_out = []
+        for _ in range(rounds):
+            _, times = stacked(KB1M_PROMPTS)
+            today = {name: statistics.median(grouped_round(engine)[2:]) for name, engine in engines.items()}
+            rounds_out.append({"stacked": statistics.median(times[2:] or times), **today})
+        out["speed"] = {"rounds": rounds_out}
+        engine = engines["baseline"]
+        out["agreement"] = [_first_difference(singles[r][0], engine.generate(prompts[r], steps + 1, eos)["physical_tokens"])
+                            for r in range(len(prompts))]
+        tuned = runtime.Engine(model, tokenizer, runtime.Knobs(compiled_fixed_cache=True, readback_every=4))
+        try:  # (d): today's best exact decode, one request at a time
+            rows = []
+            for ids in prompts:
+                tuned.generate(ids, steps + 1, eos)
+                result = tuned.generate(ids, steps + 1, eos)
+                rows.append(result["decode_ns"] / 1e9 / max(1, len(result["physical_tokens"]) - 1))
+            out["today_tuned_seconds_per_token"] = statistics.median(rows)
+        finally:
+            tuned.close()
+        items = gate or gate_items(tokenizer)
+        out["gate"] = {name: {"reference": [reference_nll(engine, prefix, scored) for prefix, scored in group],
+                              "plan": plan_nll(plan, model, group, KB1M_PROMPTS)}
+                       for name, group in items.items() if group}
+    finally:
+        for engine in engines.values():
+            engine.close()
+    return out
+
+
+def analyse_kb1_model(result: dict[str, Any]) -> dict[str, Any]:
+    """KB1-1's three decisions, as fixed in BACKLOG before data."""
+    out: dict[str, Any] = {}
+    stacks = result.get("stacks") or {}
+    checks = [*stacks.values(), *([result["double_capacity"]] if result.get("double_capacity") else [])]
+    out["(a) exact within the plan"] = bool(stacks) and all(v["identical_steps"] == v["steps"] for v in checks)
+    rounds = (result.get("speed") or {}).get("rounds") or []
+    if rounds:
+        ratios = [r["stacked"] / min(r["baseline"], r["compiled"]) for r in rounds]
+        ci = _bootstrap_mean(ratios, 2000)
+        out["(b) stacked step over grouped round"] = {
+            "ratio": statistics.fmean(ratios), "ci95": ci, "passes": ci[1] < 1,
+            "stacked_ms": statistics.median(r["stacked"] for r in rounds) * 1000,
+            "grouped_round_ms": {k: statistics.median(r[k] for r in rounds) * 1000 for k in ("baseline", "compiled")},
+            "alone_ms": (result.get("alone_seconds_per_step") or 0) * 1000}
+    gate = result.get("gate") or {}
+    if gate:
+        from ironmule.numeric_choice import ratio_interval
+
+        verdicts = {name: ratio_interval(g["reference"], g["plan"]) for name, g in gate.items()
+                    if len(g.get("reference") or []) >= 4}
+        out["(c) quality gate"] = {"paths": verdicts, "passes": bool(verdicts) and all(v["passes"]
+                                                                                    for v in verdicts.values())}
+    if result.get("today_tuned_seconds_per_token") and result.get("alone_seconds_per_step"):
+        out["(d) one request, plan over today's tuned"] = (result["alone_seconds_per_step"]
+                                                          / result["today_tuned_seconds_per_token"])
+    if result.get("double_capacity") and (result.get("stacks") or {}).get(str(KB1M_PROMPTS)):
+        out["double capacity step ratio"] = (result["double_capacity"]["seconds_per_step"]
+                                             / result["stacks"][str(KB1M_PROMPTS)]["seconds_per_step"])
+    out["agreement_with_today"] = result.get("agreement")
+    out["verdict"] = ("all three pass: build the plan's stacked executor, opt-in" if out["(a) exact within the plan"]
+                      and (out.get("(b) stacked step over grouped round") or {}).get("passes")
+                      and (out.get("(c) quality gate") or {}).get("passes") else "does not pass as a whole")
+    return out
 
 
 def environment() -> dict[str, Any]:
@@ -1512,8 +1959,8 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan == "kb1":
-        arguments = ["--out", "/kaggle/working/cuda_probe_kb1_report.json", "--plan", "kb1"]
+    elif plan in ("kb1", "kb1m"):
+        arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
     entry = f"\nsys.exit(main({arguments!r}))\n"
@@ -1536,7 +1983,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -1551,16 +1998,18 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = json.loads(args.analyse.read_text())
         schema = report.get("schema")
         result = (analyse_hw4(report) if schema == "ironmule.cuda_probe.hw4.v1" else
-                  analyse_kb1(report.get("kb1") or []) if schema == "ironmule.cuda_probe.kb1.v1" else analyse(report))
+                  {"kb1_0": analyse_kb1(report.get("kb1") or []),
+                   "kb1_1": analyse_kb1_model(report["kb1_model"]) if "stacks" in (report.get("kb1_model") or {})
+                   else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
-    if args.plan == "kb1":
-        report = probe_kb1_report(args.model, args.out, smoke=args.smoke)
-        print(json.dumps({"report": str(args.out), "analysis": {k: v for k, v in report["analysis"].items()
-                                                                 if k not in ("layers",)}}, default=str), flush=True)
+    if args.plan in ("kb1", "kb1m"):
+        report = probe_kb1_report(args.model, args.out, smoke=args.smoke, model_level=args.plan == "kb1m")
+        print(json.dumps({"report": str(args.out), "analysis": report.get("analysis_model") or
+                          {k: v for k, v in report["analysis"].items() if k != "layers"}}, default=str), flush=True)
         return 0
     if args.plan == "hw4":
         report = probe_hw4(args.model, args.out, winner, smoke=args.smoke)
