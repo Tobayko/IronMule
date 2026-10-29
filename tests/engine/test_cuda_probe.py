@@ -207,3 +207,38 @@ def test_rl7_continues_only_when_a_knob_set_changes_order_with_the_group_width()
     crossing = probe.analyse_hw4({"widths": widths(lambda n, w: 14 + 16 * w if n != "baseline" else 20 + 13 * w)})
     assert crossing["decisions"]["RL7 kill 2 (dominance)"].endswith("continue")
     assert crossing["widths"]["sets"]["compiled_fixed_cache"]["seconds_per_extra_session"] == pytest.approx(16)
+
+
+def _row_by_row(x, w):
+    """A stand-in for the CUDA row kernel on the CPU: each row on its own, so it is batch-invariant."""
+    rows = x.reshape(-1, x.shape[-1])
+    out = mx.concatenate([(rows[i:i + 1].astype(mx.float32) @ w.astype(mx.float32).T).astype(mx.bfloat16)
+                          for i in range(rows.shape[0])])
+    return out.reshape(*x.shape[:-1], w.shape[0])
+
+
+def test_kb1_compares_real_activations_bit_for_bit_and_applies_its_three_kills(tmp_path):
+    plain, _ = _tiny()
+    report = probe.probe_kb1_report("tiny", tmp_path / "kb1.json", smoke=True, loaded=(plain, _Tokenizer()),
+                                    kernel=_row_by_row)
+    layers = report["kb1"]
+    assert [e["layer"] for e in layers] == ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj",
+                                           "down_proj", "output"]
+    assert all(e["rows_compared"] == 8 and set(e["rows"]) == {"1", "2", "4", "8"} for e in layers)
+    analysis = report["analysis"]
+    assert analysis["kill (ii) batch-invariant"] is True and analysis["valid"]
+    assert analysis["kill (iii) limit"] == pytest.approx(8 * (19.8 + 7 * 13.4) / (8 * 19.8))
+    assert "verdict" in analysis and json.loads((tmp_path / "kb1.json").read_text())["schema"].endswith("kb1.v1")
+
+
+def test_kb1_stops_when_eight_rows_cost_what_grouped_batch_1_already_saves():
+    def layer(kernel8, mlx1, invariant=8):
+        rows = {m: {"invariant_rows": int(m), "kernel_seconds": [kernel8 if m == "8" else 1.0] * 5,
+                    "mlx_seconds": [mlx1] * 5} for m in ("1", "2", "4", "8")}
+        rows["8"]["invariant_rows"] = invariant
+        return {"layer": "q_proj", "per_step": 28, "weight_bytes": 8_000_000, "identical_to_mlx_at_1": 64,
+                "rows_compared": 64, "max_difference_to_mlx": 0.0, "rows": rows}
+
+    assert probe.analyse_kb1([layer(1.5, 1.0)], resamples=100)["verdict"].startswith("class A route")
+    assert probe.analyse_kb1([layer(6.0, 1.0)], resamples=100)["verdict"].startswith("no lever")
+    assert probe.analyse_kb1([layer(1.5, 1.0, invariant=7)], resamples=100)["verdict"].startswith("bug")

@@ -744,6 +744,53 @@ revision, MLX, prompts and output length as HW3.
 - **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
   across sets for each width (they are all class A).
 
+### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
+
+**Mechanism.** TB1 found that MLX's bf16 product at 2 to 32 rows runs at 41-45 GB/s against 252 at one row on the
+T4, and that its rows differ bit for bit from the row alone. That one path makes true batching both slow and
+inexact. `ironmule/cuda_native.py` already solves this for 4-bit weights: one warp per few output rows, up to eight
+activation rows, a float32 chain per (row, activation row) with pinned roundings, so a row's answer does not
+depend on how many others share the launch. KB1 is the same kernel for an unquantized bf16 weight: it reads each
+weight once for every row and is batch-invariant by construction. Designed with a second agent as sparring
+partner, which corrected the comparison: the lever is measured against grouped batch-1, which already makes a
+width-8 round 1.39x cheaper per token (RL6's fit), not against one request alone.
+
+**KB1-0 (`tools/cuda_probe.py --plan kb1`, Kaggle T4 x2, first card, about 0.3 session hours).** Qwen3 1.7B bf16
+revision `9cd6692`. Block 0's seven linear layers and the output head with their real weights, on the real inputs
+of one 64-token forward. The kernel at one row is compared bit for bit with MLX's own product on all 64 rows. Each
+row at M = 2, 4, 8 is compared with the same kernel at one row. Both are timed alternately at every M, 20 times.
+
+**Kill criteria (fixed before data).**
+- **(i)** At one row the kernel is not bit-identical to MLX on some shape. Then the class-A route (stacked rows on
+  today's answers) is closed, and KB1 proceeds only inside one plan version together with a fixed-shape attention
+  kernel (FA2), so answers change once and pass one quality gate.
+- **(ii)** A row at M > 1 differs from the same kernel at one row. That is a bug, fixed before anything else.
+- **(iii)** The upper 95 % bound of a step's linear time at eight rows (28 x the block's layers plus the head),
+  over MLX's at one row, is at or above 8 / 1.39 = 5.74. Then KB1 has no lever over grouped batch-1, and it stops.
+
+If KB1-0 passes, the model-level test is a stacked step of eight rows (KB1 plus per-row attention) against a
+measured width-8 grouped round, both on the product path. A win there changes the width optimum, and RL6's
+schedule is re-derived from the new per-row cost curve.
+
+### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
+
+**Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
+already reads the host every 4 tokens (`readback_every`) and compiles the step, which together reached 0.918. So
+what pipelining can still hide is likely about a millisecond. It is class A by construction: same graph, only
+`mx.async_eval` scheduling. **Test:** `compiled_fixed_cache` x `readback_every` {1, 4} x pipelined {off, on}
+through the engine, HW3's round design. **Kill:** no resolved gain on top of compile + readback 4.
+
+### FA2 — A fixed-shape decode attention that reads only up to the offset (opened 2026-10-29)
+
+**Mechanism.** HW3: attention over keys cut to the context saves about 15 % of a long-prompt step against
+`FixedKVCache`'s masked attention, and its logits no longer depend on the KV capacity (X1). Slicing the keys in
+the engine would give a new shape every step and recompile the step, so FA2 is an `mx.fast.cuda_kernel` over the
+fixed-capacity cache that loops to the offset read from an array, with a float32 online softmax in one fixed
+order. That makes it capacity- and batch-invariant by construction, but it changes answers once (class B): it
+ships only inside a plan version with a quality gate, together with KB1 if KB1's kill (i) fires. Budget for it
+being slower than MLX's own fused kernel. **Kill:** not faster than the masked attention at 64 and 1,024 tokens,
+or the plan's quality gate fails.
+
 ### RL7 — An RL agent over scheduling and execution knobs together (opened 2026-10-29, before data)
 
 **Mechanism.** The product decides scheduling (card, order, width; RL6) and execution knobs (prefill set, decode

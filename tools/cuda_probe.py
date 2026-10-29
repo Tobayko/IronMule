@@ -96,6 +96,10 @@ CAPTURE_LEVELS = {**LEVELS, "head_skip_prefill": (False, True)}
 SPECULATION_AT = (0, 16, 32)       # decode positions whose k+1 verify window is compared with sequential steps
 WIDTHS_HW4 = (1, 2, 4)
 PREFILL_ROWS = (256, 1024)         # prefill matmul rows for the compute floor
+# KB1-0 (BACKLOG KB1, fixed 2026-10-29 before its data)
+KB1_ROWS = (1, 2, 4, 8)
+KB1_SAMPLES = 64                   # real activation rows per layer, from one 64-token forward
+GROUPED_LEVER = 8 / (19.8 + 7 * 13.4) * 19.8  # RL6's fitted grouped batch-1: a width-8 round is 1.39x cheaper per token
 
 
 # ---------------------------------------------------------------- the plan
@@ -812,6 +816,239 @@ def probe_hw4(model_id: str, out: Path | None, decode_winner: dict[str, Any], *,
     return report
 
 
+# ---------------------------------------------------------------- KB1-0: a batch-invariant dense row kernel
+
+DENSE_HEADER = r"""
+__device__ __forceinline__ float lo_bf(unsigned int u) { return __uint_as_float(u << 16); }
+__device__ __forceinline__ float hi_bf(unsigned int u) { return __uint_as_float(u & 0xffff0000u); }
+__device__ __forceinline__ unsigned short to_bf(float f) {
+  unsigned int u = __float_as_uint(f);
+  if ((u & 0x7fffffffu) > 0x7f800000u) return 0x7fc0;
+  u += 0x7fffu + ((u >> 16) & 1u);
+  return (unsigned short)(u >> 16);
+}
+"""
+
+# `ironmule/cuda_native.py`'s 4-bit row kernel without the dequantisation: one warp per R output rows and
+# M <= 8 activation rows of a bfloat16 weight; each lane walks K in 8-element chunks, every (row, activation
+# row) pair keeps its own float32 chain with pinned roundings, then one shuffle tree. A row's arithmetic does
+# not depend on M, so the kernel is batch-invariant by construction; the weight is read once for all M rows.
+DENSE_SOURCE = r"""
+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
+  const unsigned int row0 = (gid >> 5) * R;
+  const unsigned int lane = threadIdx.x & 31;
+  if (row0 >= N) return;
+  const uint4* w4 = reinterpret_cast<const uint4*>(w);
+  const uint4* xv = reinterpret_cast<const uint4*>(x);
+  float acc[R * M];
+#pragma unroll
+  for (int i = 0; i < R * M; ++i) acc[i] = 0.f;
+  for (unsigned int c = lane; c < K / 8; c += 32) {
+    float xf[M * 8];
+#pragma unroll
+    for (int mo = 0; mo < M; ++mo) {
+      const uint4 xa = xv[(size_t)mo * (K / 8) + c];
+      const unsigned int xw[4] = {xa.x, xa.y, xa.z, xa.w};
+#pragma unroll
+      for (int e = 0; e < 4; ++e) {
+        xf[mo * 8 + 2 * e] = lo_bf(xw[e]);
+        xf[mo * 8 + 2 * e + 1] = hi_bf(xw[e]);
+      }
+    }
+#pragma unroll
+    for (int r = 0; r < R; ++r) {
+      const unsigned int row = row0 + r;
+      if (row < N) {
+        const uint4 q = w4[(size_t)row * (K / 8) + c];
+        const unsigned int qw[4] = {q.x, q.y, q.z, q.w};
+        float wf[8];
+#pragma unroll
+        for (int e = 0; e < 4; ++e) {
+          wf[2 * e] = lo_bf(qw[e]);
+          wf[2 * e + 1] = hi_bf(qw[e]);
+        }
+#pragma unroll
+        for (int mo = 0; mo < M; ++mo) {
+          float d = 0.f;
+#pragma unroll
+          for (int i = 0; i < 8; ++i) d = __fmaf_rn(wf[i], xf[mo * 8 + i], d);
+          acc[r * M + mo] = __fadd_rn(acc[r * M + mo], d);
+        }
+      }
+    }
+  }
+#pragma unroll
+  for (int i = 0; i < R * M; ++i) {
+    float a = acc[i];
+#pragma unroll
+    for (int o = 16; o > 0; o >>= 1) a = __fadd_rn(a, __shfl_down_sync(0xffffffffu, a, o));
+    const unsigned int row = row0 + i / M;
+    if (lane == 0 && row < N) out[(i % M) * N + row] = to_bf(a);
+  }
+"""
+_dense_kernel: Any = None
+
+
+def dense_rows(x: Any, w: Any) -> Any:
+    """`x @ w.T` for a bfloat16 weight and up to 8 rows of bfloat16 activations, through the row kernel."""
+    import mlx.core as mx
+
+    global _dense_kernel
+    if _dense_kernel is None:
+        _dense_kernel = mx.fast.cuda_kernel(name="ironmule_dense_rows", input_names=["x", "w"],
+                                            output_names=["out"], source=DENSE_SOURCE, header=DENSE_HEADER)
+    n, k = w.shape
+    m = x.size // k
+    rows = 4 if n >= 8192 else 2
+    threads = -(-(-(-n // rows) * 32) // 256) * 256
+    out = _dense_kernel(inputs=[mx.contiguous(x.reshape(m, k)), w],
+                        template=[("N", n), ("K", k), ("R", rows), ("M", m)],
+                        grid=(threads, 1, 1), threadgroup=(256, 1, 1), output_shapes=[(m, n)],
+                        output_dtypes=[mx.uint16])[0]
+    return out.view(mx.bfloat16).reshape(*x.shape[:-1], n)
+
+
+def kb1_layers(model: Any) -> list[tuple[str, Any, Callable[[Any], Any], int]]:
+    """(name, weight, MLX's own call, layers per step) for block 0's linear layers and the output head."""
+    from ironmule.runtime import _project, _trunk
+
+    trunk = _trunk(model)
+    block = trunk.layers[0]
+    out = [(name, getattr(owner, name).weight, getattr(owner, name), len(trunk.layers))
+           for owner, names in ((block.self_attn, ("q_proj", "k_proj", "v_proj", "o_proj")),
+                                (block.mlp, ("gate_proj", "up_proj", "down_proj")))
+           for name in names]
+    head = getattr(model, "lm_head", None)
+    weight = head.weight if head is not None and not getattr(model.args, "tie_word_embeddings", False) \
+        else trunk.embed_tokens.weight
+    out.append(("output", weight, lambda x: _project(model, x), 1))
+    return out
+
+
+def kb1_activations(model: Any, tokenizer: Any, samples: int) -> dict[str, Any]:
+    """Real inputs of every KB1 layer: one forward over `samples` prompt tokens, each layer's input captured
+    (the output head's input is the trunk's normed output)."""
+    import mlx.core as mx
+    from ironmule.runtime import _trunk
+
+    trunk = _trunk(model)
+    block = trunk.layers[0]
+    captured: dict[str, Any] = {}
+    swapped = []
+    for owner, names in ((block.self_attn, ("q_proj", "k_proj", "v_proj", "o_proj")),
+                         (block.mlp, ("gate_proj", "up_proj", "down_proj"))):
+        for name in names:
+            module = getattr(owner, name)
+            base = type(module)
+
+            def call(self: Any, x: Any, *args: Any, _name: str = name, _base: Any = base, **kwargs: Any) -> Any:
+                captured.setdefault(_name, x)
+                return _base.__call__(self, x, *args, **kwargs)
+
+            module.__class__ = type(f"Capture_{name}", (base,), {"__call__": call})
+            swapped.append((module, base))
+    try:
+        hidden = trunk(mx.array(row_ids(tokenizer, 0, samples))[None])
+    finally:
+        for module, base in swapped:
+            module.__class__ = base
+    captured["output"] = hidden
+    rows = {name: mx.contiguous(value.reshape(-1, value.shape[-1])[:samples]) for name, value in captured.items()}
+    mx.eval(*rows.values())
+    return rows
+
+
+def probe_kb1(model: Any, tokenizer: Any, repeats: int, samples: int = KB1_SAMPLES,
+              kernel: Callable[[Any, Any], Any] | None = None) -> list[dict[str, Any]]:
+    """KB1-0: per layer, the kernel at one row against MLX's own product bit for bit (every sample row), each
+    row at M = 2, 4, 8 against the same kernel at one row, and both timed alternately at every M."""
+    import mlx.core as mx
+
+    kernel = kernel or dense_rows
+    activations = kb1_activations(model, tokenizer, samples)
+    results = []
+    for name, weight, call, per_step in kb1_layers(model):
+        x = activations[name]
+        mine = [kernel(x[i:i + 1], weight) for i in range(x.shape[0])]
+        theirs = [call(x[i:i + 1]) for i in range(x.shape[0])]
+        mx.eval(*mine, *theirs)
+        identical = sum(bool(mx.array_equal(a, b).item()) for a, b in zip(mine, theirs))
+        difference = max(float(mx.max(mx.abs(a.astype(mx.float32) - b.astype(mx.float32))).item())
+                         for a, b in zip(mine, theirs))
+        entry: dict[str, Any] = {"layer": name, "shape": list(weight.shape), "per_step": per_step,
+                                 "weight_bytes": int(weight.nbytes), "identical_to_mlx_at_1": identical,
+                                 "rows_compared": x.shape[0], "max_difference_to_mlx": difference, "rows": {}}
+        for m in KB1_ROWS:
+            stacked = kernel(x[:m], weight)
+            mx.eval(stacked)
+            invariant = sum(bool(mx.array_equal(stacked[i:i + 1], mine[i]).item()) for i in range(m))
+            kernel_times, mlx_times = _paired_times(lambda: kernel(x[:m], weight), lambda: call(x[:m]), repeats)
+            entry["rows"][str(m)] = {"invariant_rows": invariant, "kernel_seconds": kernel_times,
+                                     "mlx_seconds": mlx_times}
+        results.append(entry)
+    return results
+
+
+def analyse_kb1(layers: list[dict[str, Any]], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """KB1-0's three kill rules, as fixed in BACKLOG before data."""
+    if not layers:
+        return {"valid": False}
+    exact_at_1 = all(e["identical_to_mlx_at_1"] == e["rows_compared"] for e in layers)
+    invariant = all(r["invariant_rows"] == int(m) for e in layers for m, r in e["rows"].items())
+    repeats = min(len(r["kernel_seconds"]) for e in layers for r in e["rows"].values())
+
+    def step(m: str, key: str, i: int) -> float:
+        return sum(e["per_step"] * e["rows"][m][key][i] for e in layers)
+
+    ratios = [step("8", "kernel_seconds", i) / step("1", "mlx_seconds", i) for i in range(repeats)]
+    ci = _bootstrap_mean(ratios, resamples)
+    limit = 8 / GROUPED_LEVER
+    per_layer = {e["layer"]: {m: {"kernel_ms": statistics.median(r["kernel_seconds"]) * 1000,
+                                  "mlx_ms": statistics.median(r["mlx_seconds"]) * 1000,
+                                  "kernel_gb_per_s": e["weight_bytes"] / statistics.median(r["kernel_seconds"]) / 1e9}
+                              for m, r in e["rows"].items()} for e in layers}
+    return {"valid": True,
+            "kill (i) bit-identical to MLX at one row": exact_at_1,
+            "kill (ii) batch-invariant": invariant,
+            "linear step at 8 rows over MLX at one row": statistics.fmean(ratios), "ratio_ci95": ci,
+            "kill (iii) limit": limit, "lever_holds": ci[1] < limit,
+            "verdict": ("bug: a row changes with M, fix the kernel first" if not invariant else
+                        "no lever over grouped batch-1: stop" if ci[1] >= limit else
+                        "class A route: build the stacked step on today's answers" if exact_at_1 else
+                        "lever holds but not bit-identical to MLX: only inside a plan version with FA2"),
+            "layers": per_layer,
+            "identical_to_mlx_at_1": {e["layer"]: f"{e['identical_to_mlx_at_1']}/{e['rows_compared']}" for e in layers},
+            "max_difference_to_mlx": {e["layer"]: e["max_difference_to_mlx"] for e in layers}}
+
+
+def probe_kb1_report(model_id: str, out: Path | None, *, smoke: bool = False,
+                     loaded: tuple[Any, Any] | None = None, kernel: Callable[[Any, Any], Any] | None = None
+                     ) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb1.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment()}
+    if loaded is None:
+        from huggingface_hub import snapshot_download
+        from mlx_lm import load
+
+        path = snapshot_download(model_id, revision=REVISION if model_id == MODEL else None,
+                                 allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                 "tokenizer*"])
+        model, tokenizer = load(path)
+        report["revision"] = Path(path).name
+    else:
+        model, tokenizer = loaded
+    try:
+        report["kb1"] = probe_kb1(model, tokenizer, 2 if smoke else REPEATS, 8 if smoke else KB1_SAMPLES, kernel)
+        report["analysis"] = analyse_kb1(report["kb1"])
+    except Exception as exc:  # noqa: BLE001 - recorded, so a failed kernel still leaves a report
+        report["kb1"] = {"error": repr(exc)}
+        report["analysis"] = {"valid": False, "error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 def environment() -> dict[str, Any]:
     from importlib import metadata
 
@@ -1275,11 +1512,13 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
+    elif plan == "kb1":
+        arguments = ["--out", "/kaggle/working/cuda_probe_kb1_report.json", "--plan", "kb1"]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
     entry = f"\nsys.exit(main({arguments!r}))\n"
     (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
-    name = "ironmule-cuda-probe" + ("-hw4" if plan == "hw4" else "")
+    name = "ironmule-cuda-probe" + ("" if plan == "hw3" else f"-{plan}")
     metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
                 "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
                 "enable_internet": True, "machine_shape": "NvidiaTeslaT4", "dataset_sources": [],
@@ -1297,7 +1536,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -1310,12 +1549,19 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
-        result = analyse_hw4(report) if report.get("schema") == "ironmule.cuda_probe.hw4.v1" else analyse(report)
+        schema = report.get("schema")
+        result = (analyse_hw4(report) if schema == "ironmule.cuda_probe.hw4.v1" else
+                  analyse_kb1(report.get("kb1") or []) if schema == "ironmule.cuda_probe.kb1.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "kb1":
+        report = probe_kb1_report(args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": {k: v for k, v in report["analysis"].items()
+                                                                 if k not in ("layers",)}}, default=str), flush=True)
+        return 0
     if args.plan == "hw4":
         report = probe_hw4(args.model, args.out, winner, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "decisions": report["analysis"]["decisions"]}, default=str),
