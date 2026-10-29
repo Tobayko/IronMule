@@ -147,7 +147,8 @@ RL6 (same setup, `bursts` and `spike` traffic, 2,304 requests identical across a
 limit first with groups of at most two cost 18.0 % less than the default, width 8 in arrival order (95 % 15.0-20.5 %;
 width 1 18.6 %, width 4 11.9 %). LD1-V (same setup, `quiet`, `bursts` and `spike` weighted equally, 1,920 requests
 identical across arms) confirmed it with quiet traffic included: 18.4 % (95 % 14.9-22.2 %), width 1 19.5 %. The
-default is unchanged until the product change. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 %
+server now runs it by default on exactly that setup (two T4s, `--engine tuned`, that model and revision, no stored
+serving policy); everywhere else the default is unchanged and unmeasured. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 %
 -1.9 to 3.4 %) but did not beat it. Run through the product's learned dispatch on mixed traffic, it beat the default
 by 21.2 % but cost 6.9 % more than width 1 in bursts, so it is not qualified (LD1-V).
 

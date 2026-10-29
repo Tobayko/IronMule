@@ -36,13 +36,15 @@ when it is ready:
 | `--learning` | `off` | `active` or `paused`: learn group width and gather wait from this server's traffic; see [live learning](LIVE_LEARNING.md) |
 | `--no-dreaming` | off | with `--learning`: the same learner without model rollouts |
 | `--gpus` | none | `all` or device indices such as `0,1`: one model worker per CUDA GPU, see [Several GPUs](#several-gpus-hw1) |
+| `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
+| `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
 
 ## Routes
 
 | Method | Path | Behaviour |
 | :-- | :-- | :-- |
 | `GET` | `/` | a chat page for the browser; static, served without a key, and every call it makes goes through the routes below. It shows which engine answers and, live, completion tokens per second from sending to the last token |
-| `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, and a `learning` summary when learning is on |
+| `GET` | `/health` | service, mode, backend, the worker's actual `device` (`gpu` or `cpu`), loaded model, queue and completion counters, the `schedule` that serves, and a `learning` summary when learning is on |
 | `GET` | `/ready` | the same report; readiness is part of it |
 | `GET` | `/v1/models` | the registered models, each with its exact snapshot revision |
 | `POST` | `/v1/chat/completions` | `stream: false` gives one JSON completion; `stream: true` gives SSE chunks ending with `data: [DONE]` |
@@ -95,7 +97,8 @@ the card a new request goes to, whether a group starts its shortest requests fir
 v2 policy, the group's width. It never changes what a request answers. Each request still runs
 alone on one worker at its own capacity, and the hardware comparisons checked that every answer
 stayed identical. The policy activates only when the evidence carries its digest, a passed
-comparison, and this server's model, revision, GPU name and number of GPUs. Otherwise the
+comparison, and this server's model, revision, GPU name and number of GPUs, and the engine when the evidence
+names one (the shipped policies were measured on `--engine tuned`). Otherwise the
 reference dispatch serves. `/health` then shows `dispatch` (`learned` or
 `join_shortest_queue`) and a `learned_dispatch` block with the policy digest, the experiment,
 the traffic it was validated on (`domain`), the measured gain, counts of its decisions and
@@ -106,9 +109,23 @@ directory, so a restart with the same policy and evidence keeps it off. New pass
 the policy, or deleting that record, qualifies it again. It cannot be combined with `--learning`.
 
 The first policy ships in `ironmule_product/dispatch/rl4s-t4x2-qwen3-1.7b/` (RL4-S): two T4s,
-`mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928`. On spike traffic it beat the best fixed
-arm by 9.0 % (95 % 6.9-11.1 %). It is not validated on traffic that mixes quiet, bursty and
-spike states (BACKLOG LD1).
+`mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928`, `--engine tuned`. On spike traffic it beat the
+best fixed arm by 9.0 % (95 % 6.9-11.1 %). It is not validated on traffic that mixes quiet, bursty and
+spike states (BACKLOG LD1). The width-learning RL6 policy was tested on mixed traffic and is not
+shipped: it beat the reference by 21.2 % but cost 6.9 % more than the best fixed schedule in bursts
+(BACKLOG LD1-V).
+
+**Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
+on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the
+server starts groups of at most two and, within the queue, the request with the smallest output limit
+first (a request waiting longer than 10 s goes by arrival). With quiet, bursty and spike traffic
+weighted equally this cost 18.4 % less than the default (95 % 14.9-22.2 %, 1,920 requests answered
+identically). It changes no answer. The record and its comparison ship in
+`ironmule_product/dispatch/rl6-t4x2-qwen3-1.7b/schedule.json` and serve only on an exact match of
+engine, model, revision, GPU name and GPU count, and only when the state directory stores no serving
+policy (`ironmule dream` writes one). `--schedule reference` keeps the default. `/health` shows the
+schedule that serves under `schedule`, with its `source`. With `--dispatch-policy`, the learned
+dispatch decides the order and the policy keeps its measured width.
 
 ## When the model worker fails (STAB1)
 

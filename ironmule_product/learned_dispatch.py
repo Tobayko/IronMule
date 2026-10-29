@@ -7,7 +7,8 @@ widths. The server applies it greedily. It changes only where and in which order
 never what a request answers: each request still runs alone on one worker at its own capacity.
 
 It activates only with evidence that names this policy's digest, a passed verdict and the binding
-this server runs: model, revision, GPU name and number of GPUs. Missing, corrupt, foreign or
+this server runs: model, revision, GPU name and number of GPUs, and anything else the evidence names
+(the engine, for the shipped policies). Missing, corrupt, foreign or
 mismatched evidence leaves the reference dispatch serving, with the reason in `/health`. A failure
 while deciding falls back to the reference for that decision. After `MAX_ERRORS` of them, or when
 the operator turns it off (`POST /v1/ironmule/dispatch`), the policy is withdrawn. With a
@@ -162,7 +163,7 @@ class LearnedDispatch:
             if body.get("verdict") != "pass":
                 raise ValueError("the evidence does not report a passed comparison")
             wanted = body.get("binding") or {}
-            mismatched = sorted(key for key in ("model_id", "revision", "gpu", "devices")
+            mismatched = sorted(key for key in {"model_id", "revision", "gpu", "devices", *wanted}
                                 if wanted.get(key) != binding.get(key))
             if mismatched:
                 raise ValueError("the evidence was measured on another setup: " + ", ".join(mismatched))

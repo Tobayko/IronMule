@@ -492,7 +492,7 @@ Measured costs per state:
 | `shortest/w2/g0/sjf` | 2.314 | 15.57 | 28.75 |
 | `shortest/w1/g0/sjf` | 2.305 | 14.47 | 29.18 |
 
-Still owed: the product change for the fixed candidate (BACKLOG RL6) and the ledger entry.
+Still owed: the ledger entry. The fixed candidate's product change is done (BACKLOG RL6).
 
 ### RL6 — Group width and shortest-job-first on CUDA after X1, found by the RL agent (opened 2026-10-29, before data)
 
@@ -571,8 +571,13 @@ Measured costs per state:
 | `shortest/w4/g0/sjf` | 20.40 | 28.12 |
 | learned | 18.53 | 25.94 |
 
-Still owed: the product change for the candidate and the ledger entry. The paired validation with quiet traffic
-is done: LD1-V's (3) passed (18.4 %, 95 % 14.9-22.2 %).
+The paired validation with quiet traffic is done: LD1-V's (3) passed (18.4 %, 95 % 14.9-22.2 %). **Product change
+(2026-10-29):** `ServingPolicy` gained `order` (`fifo` or `sjf`), and the scheduler starts shortest-first under
+`sjf` exactly as the harness's arm did. The schedule ships with its comparison in
+`ironmule_product/dispatch/rl6-t4x2-qwen3-1.7b/schedule.json` and serves by default only on an exact match of
+engine (`tuned`), model, revision, GPU name and GPU count, when no serving policy is stored (`--schedule reference`
+opts out). Still owed: the ledger entry. TB1 can change the best width: if true batching is built, this schedule
+is re-derived, not carried over.
 
 ### HW3 — What a decode step costs on the T4, and which optimisations and combinations keep every token (opened 2026-10-29, before data)
 

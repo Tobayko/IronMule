@@ -4,6 +4,14 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **A qualified schedule on the measured setup (RL6, LD1-V).** `ironmule serve --gpus all --engine tuned` on two
+  Tesla T4s with `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` now starts groups of at most two, and the
+  queued request with the smallest output limit first. With quiet, bursty and spike traffic weighted equally this
+  cost 18.4 % less than the previous default (95 % 14.9-22.2 %), and all 1,920 requests were answered identically.
+  It serves only on an exact match of engine, model, revision, GPU name and GPU count, and only when no serving
+  policy is stored; `--schedule reference` keeps the previous default, and `/health` shows which serves. The
+  learned dispatch's evidence now also names the engine it was measured on (`tuned`).
+
 - **Opt-in learned dispatch (LD1).** `ironmule serve --gpus all --dispatch-policy ... --dispatch-evidence ...`
   lets a policy trained by the RL agent choose each request's card, whether a group starts its shortest requests
   first, and (v2) the group width. Answers do not change. It activates only with evidence for this policy and

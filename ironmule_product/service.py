@@ -196,6 +196,9 @@ class ProductService:
             result["learning"] = self.learning.summary()
         if self.dispatch is not None:
             result["learned_dispatch"] = self.dispatch.status()
+        policy = self.policy
+        result["schedule"] = {"max_width": policy.max_width, "gather_ms": policy.gather_ms, "order": policy.order,
+                              "source": policy.source}
         return result
 
     def accepting(self) -> bool:
@@ -482,10 +485,20 @@ class ProductService:
         grace = (getattr(self, "settings", None) or {}).get("request_timeout_s") or 0.0
         return max(0.001, max(deadlines) - time.monotonic() + grace)
 
-    def _next_session(self) -> _Session | None:
-        dispatch = self.dispatch  # read once: an operator may detach it while this runs
+    def _shortest_first(self) -> Any:
+        """Who decides whether a group starts shortest output limit first: an active learned dispatch (LD1),
+        a policy that always does (RL6), or nobody (arrival order, None). Read once per decision."""
+        dispatch = self.dispatch  # an operator may detach it while this runs
         if dispatch is not None and dispatch.active:
-            return self._next_dispatched(dispatch)
+            return lambda requests: bool(dispatch.sjf(requests))
+        if self.policy.order == "sjf":
+            return lambda requests: True
+        return None
+
+    def _next_session(self) -> _Session | None:
+        decide = self._shortest_first()
+        if decide is not None:
+            return self._next_sorted(decide)
         with self._lock:
             if self._carry:
                 return self._carry.popleft()
@@ -494,10 +507,10 @@ class ProductService:
         except queue.Empty:
             return None
 
-    def _sort_for_dispatch(self, dispatch: Any) -> None:
-        """LD1: every waiting request into the carry, then shortest output limit first when the learned
-        policy chooses it for this group, else arrival order. A request waiting longer than
-        `SJF_AGE_S` starts by arrival. The caller holds `self._lock`."""
+    def _order_waiting(self, decide: Any) -> None:
+        """Every waiting request into the carry, then shortest output limit first when `decide` says so for
+        this group (LD1's policy, or RL6's fixed schedule), else arrival order. A request waiting longer
+        than `SJF_AGE_S` starts by arrival. The caller holds `self._lock`."""
         from .learned_dispatch import SJF_AGE_S
 
         while True:
@@ -506,7 +519,7 @@ class ProductService:
             except queue.Empty:
                 break
         now = time.monotonic_ns()
-        sjf = bool(dispatch.sjf([session.request for session in self._carry]))
+        sjf = decide([session.request for session in self._carry])
 
         def key(session: _Session) -> tuple[bool, int, int]:
             if not sjf:
@@ -518,9 +531,9 @@ class ProductService:
         self._carry.clear()
         self._carry.extend(waiting)
 
-    def _next_dispatched(self, dispatch: Any) -> _Session | None:
+    def _next_sorted(self, decide: Any) -> _Session | None:
         with self._lock:
-            self._sort_for_dispatch(dispatch)
+            self._order_waiting(decide)
             if self._carry:
                 return self._carry.popleft()
         try:
@@ -529,7 +542,7 @@ class ProductService:
             return None
         with self._lock:
             self._carry.append(first)
-            self._sort_for_dispatch(dispatch)
+            self._order_waiting(decide)
             return self._carry.popleft()
 
     def _batch_capacity(self) -> int:
@@ -543,11 +556,11 @@ class ProductService:
         ``width``/``gather_ms`` are a learner's decision (RSI3-LIVE); without one, the policy's, or a
         learned dispatch's width (LD1)."""
         self._group_refused, self._gather_waited_ns = False, 0
-        dispatch = self.dispatch
-        if dispatch is not None and dispatch.active:
+        dispatch, decide = self.dispatch, self._shortest_first()
+        if decide is not None:
             with self._lock:
-                self._sort_for_dispatch(dispatch)
-                if width is None:
+                self._order_waiting(decide)
+                if width is None and dispatch is not None and dispatch.active:
                     width = dispatch.width([first.request] + [session.request for session in self._carry])
         capacity = self._batch_capacity() if width is None else min(self._batch_capacity(), width)
         gather_ms = self.policy.gather_ms if gather_ms is None else gather_ms

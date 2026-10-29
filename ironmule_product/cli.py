@@ -234,6 +234,11 @@ def serve(argv: list[str]) -> int:
                              "GPUs; without matching evidence the reference dispatch serves and /health says why")
     parser.add_argument("--dispatch-evidence", default=None, metavar="EVIDENCE.json",
                         help="LD1: the passed hardware comparison that qualifies --dispatch-policy")
+    parser.add_argument("--schedule", choices=("auto", "reference"), default="auto",
+                        help="RL6: `auto` runs a fixed schedule (group width, shortest output limit first) that "
+                             "ships with the hardware comparison that qualified it, only on exactly the engine, "
+                             "model, revision, GPU and GPU count it was measured on, and only when no serving "
+                             "policy is stored; `reference` keeps the default schedule. /health shows which serves")
     args = parser.parse_args(argv)
     args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
@@ -298,12 +303,22 @@ def serve(argv: list[str]) -> int:
                 service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
-        if spec is not None and args.dispatch_policy is not None:
+        wants_schedule = (args.schedule == "auto" and args.gpus is not None and args.learning == "off"
+                          and args.dispatch_policy is None)
+        binding = None
+        if spec is not None and (args.dispatch_policy is not None or wants_schedule):
             from .device_pool import cuda_devices, gpu_name
-            from .learned_dispatch import LearnedDispatch
             pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
-            binding = {"model_id": spec.model_id, "revision": spec.revision,
+            binding = {"model_id": spec.model_id, "revision": spec.revision, "engine": args.engine,
                        "gpu": gpu_name(pinned) if pinned else None, "devices": len(devices)}
+        if binding is not None and wants_schedule:
+            from .serving_policy import qualified_schedule, stored_policy_exists
+            qualified = None if stored_policy_exists(store.root) else qualified_schedule(binding)
+            if qualified is not None:  # RL6, confirmed by LD1-V: only on the setup it was measured on
+                for shard in getattr(service, "shards", [service]):
+                    shard.policy = qualified[0]
+        if binding is not None and args.dispatch_policy is not None:
+            from .learned_dispatch import LearnedDispatch
             dispatch = LearnedDispatch.load(args.dispatch_policy, args.dispatch_evidence, binding,
                                             kill_path=store.root / "dispatch-withdrawals.json")
             if hasattr(service, "attach"):

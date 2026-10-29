@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import collections
 import json
+from pathlib import Path
 import queue
 import random
 import threading
@@ -22,6 +23,8 @@ from ironmule_product.types import GenerationRequest
 from tools import rl2_headroom as rl2
 
 BINDING = {"model_id": "local/test", "revision": "abc", "gpu": "Tesla T4", "devices": 2}
+MEASURED = {"model_id": "mlx-community/Qwen3-1.7B-bf16", "revision": "9cd6692855d3e06772228e9a962b2606359b2d24",
+            "gpu": "Tesla T4", "devices": 2, "engine": "tuned"}  # RL4-S, RL6 and LD1-V's setup
 
 
 def _request(max_tokens: int, long_prompt: bool = False, request_id: str | None = None) -> GenerationRequest:
@@ -288,14 +291,54 @@ def test_serve_takes_the_policy_and_its_evidence_together_and_never_with_live_le
 
 
 def test_the_shipped_rl4_s_policy_loads_only_on_the_setup_it_was_measured_on():
-    from pathlib import Path
-
     folder = Path(ld.__file__).with_name("dispatch") / "rl4s-t4x2-qwen3-1.7b"
-    measured = {"model_id": "mlx-community/Qwen3-1.7B-bf16", "revision": "9cd6692855d3e06772228e9a962b2606359b2d24",
-                "gpu": "Tesla T4", "devices": 2}
-    dispatch = ld.LearnedDispatch.load(folder / "policy.json", folder / "evidence.json", measured)
+    dispatch = ld.LearnedDispatch.load(folder / "policy.json", folder / "evidence.json", MEASURED)
     assert dispatch.active and dispatch.policy.sha256.startswith("e3f07b833e90")
     assert dispatch.status()["domain"] == ["spike"] and dispatch.status()["gain_ci95"][0] > 0.029
-    for key, other in (("devices", 1), ("gpu", "NVIDIA A100"), ("revision", "main")):
+    for key, other in (("devices", 1), ("gpu", "NVIDIA A100"), ("revision", "main"), ("engine", "reference")):
         assert not ld.LearnedDispatch.load(folder / "policy.json", folder / "evidence.json",
-                                           {**measured, key: other}).active
+                                           {**MEASURED, key: other}).active
+
+
+def test_a_stored_policy_keeps_its_settings_and_may_start_shortest_first(tmp_path):
+    from ironmule_product.serving_policy import POLICY_FILE, load_policy, save_policy
+
+    (tmp_path / POLICY_FILE).write_text(json.dumps({"max_width": 4, "join": False, "gather_ms": 50, "source": "dream"}))
+    assert load_policy(tmp_path) == ServingPolicy(max_width=4, gather_ms=50, source="dream")  # stored before RL6
+    save_policy(tmp_path, ServingPolicy(max_width=2, order="sjf", source="test"))
+    assert load_policy(tmp_path).order == "sjf"
+    with pytest.raises(ValueError):
+        ServingPolicy(order="random")
+
+
+def test_the_qualified_schedule_serves_only_on_the_setup_it_was_measured_on(tmp_path):
+    import shutil
+
+    from ironmule_product.serving_policy import qualified_schedule
+
+    policy, record = qualified_schedule(MEASURED)
+    assert (policy.max_width, policy.order, policy.gather_ms) == (2, "sjf", 0)
+    assert record["experiment"] == "LD1-V-run1-20261029" and record["gain_ci95"][0] > record["noise"]
+    assert record["domain"] == ["quiet", "bursts", "spike"]
+    for key, other in (("devices", 1), ("gpu", "NVIDIA A100"), ("revision", "main"), ("engine", "reference"),
+                       ("model_id", "mlx-community/Qwen3-4B-bf16")):
+        assert qualified_schedule({**MEASURED, key: other}) is None
+    shipped = Path(ld.__file__).with_name("dispatch") / "rl6-t4x2-qwen3-1.7b" / "schedule.json"
+    (tmp_path / "copy").mkdir()
+    tampered = json.loads(shipped.read_text())
+    tampered["policy"]["max_width"] = 8
+    (tmp_path / "copy" / "schedule.json").write_text(json.dumps(tampered))
+    assert qualified_schedule(MEASURED, folder=tmp_path) is None  # the digest no longer holds
+    shutil.copy(shipped, tmp_path / "copy" / "schedule.json")
+    assert qualified_schedule(MEASURED, folder=tmp_path) is not None
+
+
+def test_a_shortest_first_policy_orders_and_narrows_groups_without_any_learned_dispatch():
+    service = _scheduler(None)
+    service.policy = ServingPolicy(max_width=2, order="sjf", source="test")
+    for session in _sessions([9, 3, 6]):
+        service._pending.put(session)
+    assert [service._next_session().request.max_tokens for _ in range(3)] == [3, 6, 9]
+    first, *rest = _sessions([9, 3, 6, 4])
+    service._carry.extend(rest)
+    assert [s.request.max_tokens for s in service._group_for(first)] == [9, 3]  # width 2, the shortest joins
