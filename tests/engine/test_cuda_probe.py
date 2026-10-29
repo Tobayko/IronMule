@@ -294,3 +294,47 @@ def test_kb1_1_runs_end_to_end_on_cpu_stand_ins(tmp_path):
     assert set(analysis["(c) quality gate"]["paths"]) == {"main", "long"}
     assert analysis["(d) one request, plan over today's tuned"] > 0
     assert "(b) stacked step over grouped round" in analysis and "double capacity step ratio" in analysis
+
+
+def test_kb1_2_measures_each_variant_across_widths_and_judges_the_single_row_regression(tmp_path):
+    plain, _ = _tiny()
+    base = probe.DensePlan(plain, linear=_row_by_row, attention=_attention_by_row)
+    variants = {"kb1_1": (base, base.step), "rows1": (base, base.step)}
+    report = probe.probe_kb12_report("tiny", tmp_path / "kb12.json", smoke=True, loaded=(plain, _Tokenizer()),
+                                     variants=variants)
+    assert "error" not in report["kb12"], report["kb12"]
+    analysis = report["analysis"]
+    for name in variants:
+        v = analysis["variants"][name]
+        assert v["exact_across_widths"], name
+        assert set(v["ms_per_step_by_width"]) == {str(w) for w in range(1, 9)}
+    assert analysis["best"] in variants and analysis["(d) single-row regression"] is not None
+
+
+
+def _masked_attention(q, k, v, lengths):
+    """A compile-friendly CPU stand-in: masked attention over the whole capacity, row by row."""
+    rows, heads, dim = q.shape
+    groups = heads // k.shape[1]
+    out = []
+    for b in range(rows):
+        keys = mx.repeat(k[b], groups, axis=0).astype(mx.float32)
+        values = mx.repeat(v[b], groups, axis=0).astype(mx.float32)
+        scores = (q[b].astype(mx.float32)[:, None, :] @ keys.transpose(0, 2, 1))[:, 0, :] * dim ** -0.5
+        scores = mx.where(mx.arange(k.shape[2])[None, :] < lengths[b], scores, -mx.inf)
+        out.append((mx.softmax(scores, axis=-1)[:, None, :] @ values)[:, 0, :])
+    return mx.stack(out).astype(mx.bfloat16)
+
+
+def test_the_plan_step_compiles_and_the_server_loop_reads_every_fourth_step():
+    plain, _ = _tiny()
+    plan = probe.DensePlan(plain, linear=_row_by_row, attention=_masked_attention)
+    compiled = mx.compile(plan.step)
+    states, first = probe._prefill(plain, [5, 9, 13, 17, 21])
+    cache = plan.load_prefill(plan.new_cache(1, 64), 0, states)
+    eager, _ = plan.step(first.astype(mx.uint32), mx.array([5]), cache)
+    traced, _ = compiled(first.astype(mx.uint32), mx.array([5]), cache)
+    assert int(mx.argmax(eager[0]).item()) == int(mx.argmax(traced[0]).item())
+    seconds, tokens = probe.plan_decode(compiled, first.astype(mx.uint32), mx.array([5]),
+                                        plan.load_prefill(plan.new_cache(1, 64), 0, states), 6)
+    assert seconds > 0 and len(tokens) == 1 and len(tokens[0]) == 6

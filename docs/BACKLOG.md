@@ -839,6 +839,27 @@ hours): all three decisions pass.** KB1-0 re-ran in the same session at 1.81x.
   each row's arithmetic unchanged; readback and pipelining in its decode loop) and its cost per further row at
   widths 1-8, which RL7 needs and which re-derives RL6's width.
 
+**KB1-2 (fixed 2026-10-29 before its data; `tools/cuda_probe.py --plan kb12`, Kaggle T4, first card, about 0.3
+session hours).** The plan's single-row speed and its cost per further row, with the decode loop as a server
+would run it: the pick stays on the card, the next step is built before the host reads, and the host reads every
+4 steps. Three variants:
+- **(i)** KB1-1's plan as it ran.
+- **(ii)** One output row per warp at every M. That spreads rows over more warps without changing any row's
+  arithmetic, so it must be bit-identical to (i) and inherits its gate.
+- **(iii)** (ii) with the whole step compiled per shape.
+
+Eight prompts as in KB1-1, 32 steps, widths 1 to 8, five alternating rounds, with today's best exact decode
+(compile + readback 4) re-measured in every round.
+- **Exact:** a variant is eligible only if every row's logits are bit-identical between one row (at its own
+  capacity) and 3 or 8 stacked rows. A variant whose bits differ from (i) must pass the decode-path quality gate
+  itself (main and long variants), run in the same session.
+- **(d) The single-row regression** is closed when the fastest eligible variant at one row is faster than
+  today's tuned decode with a 95 % bound below 1. Otherwise it stands at the measured ratio, and the plan cannot
+  pass a no-harm check in quiet traffic: a request cannot change plans in mid-life, and choosing the plan by load
+  would make answers depend on load.
+- **Recorded:** each variant's milliseconds per step and per token at widths 1-8. The cost per further row is
+  what RL7's simulator and the re-derivation of RL6's width need.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine

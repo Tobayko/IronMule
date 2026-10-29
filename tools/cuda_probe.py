@@ -894,8 +894,9 @@ DENSE_SOURCE = r"""
 _dense_kernel: Any = None
 
 
-def dense_rows(x: Any, w: Any) -> Any:
-    """`x @ w.T` for a bfloat16 weight and up to 8 rows of bfloat16 activations, through the row kernel."""
+def dense_rows(x: Any, w: Any, rows: int | None = None) -> Any:
+    """`x @ w.T` for a bfloat16 weight and up to 8 rows of bfloat16 activations, through the row kernel.
+    `rows` per warp only changes how output rows are spread over warps, never a row's arithmetic."""
     import mlx.core as mx
 
     global _dense_kernel
@@ -904,7 +905,7 @@ def dense_rows(x: Any, w: Any) -> Any:
                                             output_names=["out"], source=DENSE_SOURCE, header=DENSE_HEADER)
     n, k = w.shape
     m = x.size // k
-    rows = 4 if n >= 8192 else 2
+    rows = rows or (4 if n >= 8192 else 2)
     threads = -(-(-(-n // rows) * 32) // 256) * 256
     out = _dense_kernel(inputs=[mx.contiguous(x.reshape(m, k)), w],
                         template=[("N", n), ("K", k), ("R", rows), ("M", m)],
@@ -1323,9 +1324,12 @@ def reference_nll(engine: Any, prefix: list[int], scored: list[int]) -> float:
     return total / (len(scored) - 1)
 
 
-def plan_nll(plan: "DensePlan", model: Any, items: list[tuple[list[int], list[int]]], rows: int) -> list[float]:
+def plan_nll(plan: "DensePlan", model: Any, items: list[tuple[list[int], list[int]]], rows: int,
+             step: Callable[..., Any] | None = None) -> list[float]:
     """The plan on its decode path, teacher-forced, `rows` items stacked (exact within the plan)."""
     import mlx.core as mx
+
+    step = step or plan.step
 
     means = []
     for start in range(0, len(items), rows):
@@ -1341,7 +1345,7 @@ def plan_nll(plan: "DensePlan", model: Any, items: list[tuple[list[int], list[in
         for t in range(1, len(group[0][1]) - 1):
             tokens = mx.array([scored[t] for _, scored in group])
             positions = mx.array([len(prefix) + t for prefix, _ in group])
-            logits, cache = plan.step(tokens, positions, cache)
+            logits, cache = step(tokens, positions, cache)
             mx.eval(logits)
             for r, (_, scored) in enumerate(group):
                 sums[r] += _nll(logits[r], scored[t + 1])
@@ -1493,6 +1497,181 @@ def analyse_kb1_model(result: dict[str, Any]) -> dict[str, Any]:
     out["verdict"] = ("all three pass: build the plan's stacked executor, opt-in" if out["(a) exact within the plan"]
                       and (out.get("(b) stacked step over grouped round") or {}).get("passes")
                       and (out.get("(c) quality gate") or {}).get("passes") else "does not pass as a whole")
+    return out
+
+
+# ---------------------------------------------------------------- KB1-2: the plan's single-row speed and its cost curve
+
+KB12_WIDTHS = tuple(range(1, 9))
+KB12_STEPS = 32
+KB12_READBACK = 4
+
+
+def plan_variants(model: Any) -> dict[str, tuple["DensePlan", Callable[..., Any]]]:
+    """(i) KB1-1's plan; (ii) one output row per warp at every M (each row's arithmetic unchanged); (iii) (ii)
+    with the whole step compiled per shape."""
+    import functools
+
+    import mlx.core as mx
+
+    base = DensePlan(model)
+    spread = DensePlan(model, linear=functools.partial(dense_rows, rows=1))
+    return {"kb1_1": (base, base.step), "rows1": (spread, spread.step),
+            "rows1_compiled": (spread, mx.compile(spread.step))}
+
+
+def plan_decode(step: Callable[..., Any], first: Any, positions: Any, cache: Any, steps: int,
+                readback: int = KB12_READBACK) -> tuple[float, list[list[int]]]:
+    """The plan's decode loop as a server would run it: the pick stays on the card and feeds the next step,
+    which is built before the host reads; the host reads every `readback` steps. Seconds per step, tokens."""
+    import mlx.core as mx
+
+    tokens, pending, out = first, [], []
+    started = time.perf_counter()
+    for t in range(steps):
+        logits, cache = step(tokens, positions + t, cache)
+        tokens = mx.argmax(logits, axis=-1).astype(mx.uint32)
+        pending.append(tokens)
+        if len(pending) == readback or t == steps - 1:
+            mx.eval(*pending)
+            out.extend(p.tolist() for p in pending)
+            pending = []
+        else:
+            mx.async_eval(tokens)
+    seconds = (time.perf_counter() - started) / steps
+    return seconds, [list(col) for col in zip(*out)]
+
+
+def probe_kb1_2(model: Any, tokenizer: Any, *, steps: int = KB12_STEPS, rounds: int = ROUNDS,
+                limit: int | None = None, gate: dict[str, Any] | None = None,
+                variants: dict[str, tuple["DensePlan", Callable[..., Any]]] | None = None) -> dict[str, Any]:
+    import mlx.core as mx
+    from ironmule import runtime
+
+    variants = variants or plan_variants(model)
+    prompts = [chat_ids(tokenizer, i, i % 2 == 1, limit) for i in range(max(KB12_WIDTHS))]
+    prefills = [_prefill(model, ids) for ids in prompts]
+    capacity = max(capacity_for(len(ids), steps) for ids in prompts)
+
+    def stack(plan: "DensePlan", rows: int) -> tuple[Any, Any, Any]:
+        cache = plan.new_cache(rows, capacity)
+        for r in range(rows):
+            cache = plan.load_prefill(cache, r, prefills[r][0])
+        first = mx.concatenate([prefills[r][1] for r in range(rows)]).astype(mx.uint32)
+        return first, mx.array([len(prompts[r]) for r in range(rows)]), cache
+
+    def digests(plan: "DensePlan", step: Callable[..., Any], rows: int, feed: list[list[int]]) -> list[list[str]]:
+        first, positions, cache = stack(plan, rows)
+        out = [[] for _ in range(rows)]
+        tokens = first
+        for t in range(steps):
+            logits, cache = step(tokens, positions + t, cache)
+            mx.eval(logits)
+            for r in range(rows):
+                out[r].append(_bits(logits[r]))
+            tokens = mx.array([feed[r][t] for r in range(rows)], mx.uint32)
+        return out
+
+    result: dict[str, Any] = {"prompt_tokens": [len(ids) for ids in prompts], "variants": {}}
+    reference_digests = None
+    for name, (plan, step) in variants.items():
+        alone = []  # each row alone at its own capacity, fed its own greedy tokens
+        for r in range(max(KB12_WIDTHS)):
+            first = prefills[r][1].astype(mx.uint32)
+            cache = plan.load_prefill(plan.new_cache(1, capacity_for(len(prompts[r]), steps)), 0, prefills[r][0])
+            _, picks = plan_decode(step, first, mx.array([len(prompts[r])]), cache, steps)
+            alone.append([int(first.item())] + picks[0])
+        single = []
+        for r in range(max(KB12_WIDTHS)):
+            first = prefills[r][1].astype(mx.uint32)
+            cache = plan.load_prefill(plan.new_cache(1, capacity_for(len(prompts[r]), steps)), 0, prefills[r][0])
+            row, tokens = [], first
+            for t in range(steps):
+                logits, cache = step(tokens, mx.array([len(prompts[r]) + t]), cache)
+                mx.eval(logits)
+                row.append(_bits(logits[0]))
+                tokens = mx.array([alone[r][t + 1]], mx.uint32)
+            single.append(row)
+        exact = {}
+        for rows in (3, max(KB12_WIDTHS)):
+            got = digests(plan, step, rows, [a[1:] for a in alone])
+            exact[str(rows)] = sum(x == y for r in range(rows) for x, y in zip(got[r], single[r]))
+        entry = {"identical_steps": exact, "steps_per_row": steps}
+        if reference_digests is None:
+            reference_digests = single
+        else:
+            entry["identical_to_kb1_1"] = sum(x == y for a, b in zip(single, reference_digests) for x, y in zip(a, b))
+        result["variants"][name] = entry
+    eos = tuple(sorted(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id]))
+    tuned = runtime.Engine(model, tokenizer, runtime.Knobs(compiled_fixed_cache=True, readback_every=4))
+    timing: list[dict[str, Any]] = []
+    try:
+        for ids in prompts:
+            tuned.generate(ids, steps + 1, eos)
+        for name, (plan, step) in variants.items():  # warm every shape
+            for rows in KB12_WIDTHS:
+                plan_decode(step, *stack(plan, rows), 4)
+        for round_ in range(rounds):
+            names = list(variants)
+            shift = round_ % len(names)
+            row: dict[str, Any] = {"round": round_}
+            for name in names[shift:] + names[:shift]:
+                plan, step = variants[name]
+                row[name] = {str(rows): plan_decode(step, *stack(plan, rows), steps)[0] for rows in KB12_WIDTHS}
+            per = []
+            for ids in prompts:
+                out = tuned.generate(ids, steps + 1, eos)
+                per.append(out["decode_ns"] / 1e9 / max(1, len(out["physical_tokens"]) - 1))
+            row["today_tuned"] = statistics.fmean(per)
+            timing.append(row)
+    finally:
+        tuned.close()
+    result["timing"] = timing
+    differs = [n for n, e in result["variants"].items() if e.get("identical_to_kb1_1") not in (None, max(KB12_WIDTHS) * steps)]
+    if differs:  # a variant with other bits needs its own gate
+        engine = runtime.Engine(model, tokenizer, runtime.Knobs())
+        try:
+            items = gate or gate_items(tokenizer)
+            reference = {k: [reference_nll(engine, prefix, scored) for prefix, scored in group]
+                         for k, group in items.items() if group}
+            result["gate"] = {n: {k: {"reference": reference[k],
+                                      "plan": plan_nll(variants[n][0], model, group, max(KB12_WIDTHS), variants[n][1])}
+                                  for k, group in items.items() if group} for n in differs}
+        finally:
+            engine.close()
+    return result
+
+
+def analyse_kb1_2(result: dict[str, Any]) -> dict[str, Any]:
+    """KB1-2's decisions, as fixed in BACKLOG before data."""
+    out: dict[str, Any] = {"variants": {}}
+    widths = [str(w) for w in KB12_WIDTHS]
+    timing = result.get("timing") or []
+    for name, entry in (result.get("variants") or {}).items():
+        exact = all(v == int(rows) * entry["steps_per_row"] for rows, v in entry["identical_steps"].items())
+        curve = {w: statistics.median(t[name][w] for t in timing) * 1000 for w in widths} if timing else {}
+        ratios = [t[name]["1"] / t["today_tuned"] for t in timing]
+        ci = _bootstrap_mean(ratios, 2000) if ratios else [None, None]
+        gate = (result.get("gate") or {}).get(name)
+        gate_ok = None
+        if gate:
+            from ironmule.numeric_choice import ratio_interval
+            verdicts = {k: ratio_interval(g["reference"], g["plan"]) for k, g in gate.items() if len(g["reference"]) >= 4}
+            gate_ok = all(v["passes"] for v in verdicts.values())
+            out.setdefault("gates", {})[name] = verdicts
+        out["variants"][name] = {"exact_across_widths": exact, "same_bits_as_kb1_1": entry.get("identical_to_kb1_1"),
+                                 "ms_per_step_by_width": curve,
+                                 "ms_per_token_by_width": {w: curve[w] / int(w) for w in curve},
+                                 "one_row_over_today_tuned": statistics.fmean(ratios) if ratios else None,
+                                 "ci95": ci, "gate_passes": gate_ok,
+                                 "eligible": exact and gate_ok is not False}
+    eligible = {n: v for n, v in out["variants"].items() if v["eligible"] and v["ci95"][0] is not None}
+    best = min(eligible, key=lambda n: eligible[n]["one_row_over_today_tuned"]) if eligible else None
+    out["best"] = best
+    out["today_tuned_ms"] = statistics.median(t["today_tuned"] for t in timing) * 1000 if timing else None
+    out["(d) single-row regression"] = (None if best is None else
+                                        "closed" if eligible[best]["ci95"][1] < 1 else
+                                        f"stands: {eligible[best]['one_row_over_today_tuned']:.3f}x today's tuned")
     return out
 
 
@@ -1935,6 +2114,35 @@ def analyse_hw4(report: dict[str, Any], resamples: int = RESAMPLES) -> dict[str,
     return out
 
 
+def probe_kb12_report(model_id: str, out: Path | None, *, smoke: bool = False, loaded: tuple[Any, Any] | None = None,
+                      variants: dict[str, tuple["DensePlan", Callable[..., Any]]] | None = None) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb12.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment()}
+    if loaded is None:
+        from huggingface_hub import snapshot_download
+        from mlx_lm import load
+
+        path = snapshot_download(model_id, revision=REVISION if model_id == MODEL else None,
+                                 allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                 "tokenizer*"])
+        model, tokenizer = load(path)
+        report["revision"] = Path(path).name
+    else:
+        model, tokenizer = loaded
+    try:
+        report["kb12"] = probe_kb1_2(model, tokenizer, steps=4 if smoke else KB12_STEPS, rounds=1 if smoke else ROUNDS,
+                                     limit=24 if smoke else None, variants=variants,
+                                     gate=gate_items(tokenizer, 4, 12, (16, 6, 4)) if smoke else None)
+        report["analysis"] = analyse_kb1_2(report["kb12"])
+    except Exception as exc:  # noqa: BLE001 - recorded
+        report["kb12"] = {"error": repr(exc)}
+        report["analysis"] = {"error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- Kaggle
 
 _BOOTSTRAP = '''"""IronMule HW3 and TB1 on this Kaggle session; written by tools/cuda_probe.py."""
@@ -1959,7 +2167,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m"):
+    elif plan in ("kb1", "kb1m", "kb12"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -1983,7 +2191,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -2000,12 +2208,17 @@ def main(argv: Iterable[str] | None = None) -> int:
         result = (analyse_hw4(report) if schema == "ironmule.cuda_probe.hw4.v1" else
                   {"kb1_0": analyse_kb1(report.get("kb1") or []),
                    "kb1_1": analyse_kb1_model(report["kb1_model"]) if "stacks" in (report.get("kb1_model") or {})
-                   else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else analyse(report))
+                   else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else
+                  analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "kb12":
+        report = probe_kb12_report(args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
+        return 0
     if args.plan in ("kb1", "kb1m"):
         report = probe_kb1_report(args.model, args.out, smoke=args.smoke, model_level=args.plan == "kb1m")
         print(json.dumps({"report": str(args.out), "analysis": report.get("analysis_model") or
