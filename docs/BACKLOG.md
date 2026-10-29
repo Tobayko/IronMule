@@ -1131,6 +1131,29 @@ H9 measures all three engines in one run, so every combination meets the same tr
 - **Cost:** about 4.2 session hours, about 10 minutes of it the plan's installs at each dense pool start.
 
 
+### RL8 — Width and order again, now that a grouped request ends with its own last token (opened 2026-10-29)
+
+**Mechanism.** RL6 and LD1-V chose `shortest/w2/g0/sjf` when every member's completion waited for the group's
+longest member. RL4's pool model says so too ("every member's last token and completion are released when the
+whole group ends"). Since H9's change, each member ends at its own last token. A wider group then no longer costs a
+short request its neighbours' length, only the per-session step cost (17-19 ms per extra session on the T4, HW4).
+So the best width may rise, and shortest-first may matter less. The same holds under the dense plan, where a
+further row costs about 3 ms (KB1-2).
+
+**Evidence against.** Wider grouped batch-1 rounds still slow every member's steps. RL6 found widths 1 and 2
+within 1 %. H9 measures only width 2 (default, KP) and width 8 (dense).
+
+**Test, fixed before its data, after H9:**
+1. Refit RL4's pool model with per-member release on H9's data (the release rule is a model change, gated by
+   RL4's fidelity rule).
+2. Rank widths 1, 2, 4 and 8, with arrival order and shortest-first, for the default as it ships after H9, and
+   widths up to 8 for the dense plan.
+3. Run on hardware only the arms the refitted model cannot separate from the shipped schedule, with LD1-V's cost
+   and rules, as RL6 did.
+
+**Kill:** the shipped schedule stays if no arm beats it with a 2.5 % bound above the noise and no harm in any
+state.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
