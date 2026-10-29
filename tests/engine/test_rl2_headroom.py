@@ -608,3 +608,69 @@ def test_h8_stops_when_a_pool_answers_no_warm_up_request(monkeypatch):
 def test_the_dense_preflight_reports_why_the_plan_did_not_install(tmp_path):
     result = rl2.dense_preflight(str(tmp_path / "no-snapshot"), None, timeout_s=300)
     assert result["ok"] is False and result["error"]
+
+
+def test_kp1_runs_the_default_and_its_class_a_knobs_by_round_and_judges_them_as_fixed(tmp_path, monkeypatch):
+    pytest.importorskip("mlx.core")  # the fake worker reports the baseline knobs from ironmule.runtime
+    from ironmule_product.knob_profile import kp1_knobs
+
+    real_popen = subprocess.Popen
+    commands = []
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            commands.append(list(args))
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setenv("FAKE_REPORT_KNOBS", "1")
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    knobs = kp1_knobs().as_dict()
+
+    def start(engine):
+        extra = {"engine_knobs": {"knobs": knobs, "source": "KP1-candidate"}} if engine == "kp" else {}
+        return start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", cuda_device=device, **extra), rl2.ordered_service())
+
+    def stress(round_, capacity):  # the shape of `trace_stress`, small enough for the fake
+        return [{**item, "max_tokens": 2 + i} for i, item in enumerate(rl2.trace_stress(round_, capacity)[:3])]
+
+    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[63, 64], rounds=2, requests=3,
+                            max_tokens=(2, 3), names=rl2.arms_kp1(), engines=("tuned", "kp"), plan="kp1",
+                            stress=stress)
+    assert sum("--engine-knobs" in c for c in commands) == 2 * 2  # two cards, kp's pool in both rounds
+    assert len(report["rows"]) == 2 * 3 * 4 and len(report["stress_rows"]) == 2 * 2  # A/A for both engines
+    from ironmule.runtime import BASELINE
+
+    assert all(card["selected_knobs"] == (knobs if engine == "kp" else BASELINE.as_dict())
+               for engine, rounds in report["engines"].items() for r in rounds for card in r["engine"])
+    report["preflight"] = {"ok": True}
+    result = rl2.analyse_kp1(report, resamples=50)
+    assert result["valid"], result
+    assert set(result["(2) no harm in any state"]["per_state"]) == {"0", "1", "2"}
+    assert result["stress_cost"]["kp"] is not None and result["second_token_s"]["kp"] is not None
+    request = report["rows"][-1]["requests"][0]
+    saved = dict(request)
+    request["digest"] = "0" * 64  # one answer that differs anywhere kills KP1
+    assert result["kill 2 (answers differ on the product path)"] is False
+    assert rl2.analyse_kp1(report, resamples=50)["kill 2 (answers differ on the product path)"] is True
+    report["rows"][-1]["requests"][0] = saved
+    report["engines"]["kp"][0]["engine"][0]["selected_knobs"] = knobs | {"compiled_fixed_cache": False}
+    assert "a kp pool did not run its arm's knobs" in rl2.analyse_kp1(report, resamples=50)["problems"]
+    report["engines"]["kp"][0]["engine"][0]["selected_knobs"] = knobs
+    del report["preflight"]
+    assert "the preflight did not pass (kill 1)" in rl2.analyse_kp1(report, resamples=50)["problems"]
+
+
+def test_the_kp1_stress_cell_holds_more_capacities_than_the_engine_keeps_bodies():
+    items = rl2.trace_stress(0, 1.0)
+    assert sorted(item["max_tokens"] for item in items) == list(rl2.STRESS_MAX_TOKENS)
+    capacities = {((24 + item["max_tokens"] + 8 + 63) // 64) * 64 for item in items}
+    assert len(capacities) == 16 > 8 and not any(item["long"] for item in items)

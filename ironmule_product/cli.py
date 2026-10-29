@@ -190,6 +190,23 @@ def _stop_group(process: Any) -> None:
             continue
 
 
+def _qualified_knob_options(spec: Any, devices: list[str | None]) -> dict[str, Any]:
+    """KP1: the worker option for a shipped class-A knob set bound to exactly this setup, else nothing."""
+    from .knob_profile import framework_versions, qualified_knobs, shipped_knobs
+
+    if not shipped_knobs():
+        return {}
+    from .device_pool import cuda_devices, gpu_name
+
+    pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
+    found = qualified_knobs({"model_id": spec.model_id, "revision": spec.revision, "engine": "tuned",
+                             "gpu": gpu_name(pinned) if pinned else None, **framework_versions()})
+    if found is None:
+        return {}
+    knobs, record = found
+    return {"engine_knobs": {"knobs": knobs.as_dict(), "source": f"qualified:{record['experiment']}"[:64]}}
+
+
 def _engine_options(engine: str) -> dict[str, Any]:
     """The worker client's options that `--engine` sets beyond the execution variant."""
     from .backend import DENSE_STARTUP_TIMEOUT
@@ -253,6 +270,12 @@ def serve(argv: list[str]) -> int:
                              "ships with the hardware comparison that qualified it, only on exactly the engine, "
                              "model, revision, GPU and GPU count it was measured on, and only when no serving "
                              "policy is stored; `reference` keeps the default schedule. /health shows which serves")
+    parser.add_argument("--knobs", choices=("auto", "reference"), default="auto",
+                        help="KP1: `auto` gives --engine tuned the knob set (compiled step, fewer host reads) that "
+                             "ships with the hardware comparison that qualified it, only on exactly the model, "
+                             "revision, GPU and MLX versions it was measured on, only knobs that leave every answer "
+                             "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
+                             "default knobs")
     args = parser.parse_args(argv)
     args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
@@ -300,11 +323,14 @@ def serve(argv: list[str]) -> int:
                 devices = select_devices(args.gpus, cuda_devices())
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
+            knob_options = _qualified_knob_options(spec, devices) if (
+                args.knobs == "auto" and args.engine == "tuned") else {}
+
             def make_backend(device=devices[0]):
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
-                                       **_engine_options(args.engine))
+                                       **_engine_options(args.engine), **knob_options)
             if len(devices) > 1:
                 from .device_pool import start_pool
                 service = start_pool(store, spec, devices, make_backend, ProductService)

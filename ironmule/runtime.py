@@ -537,8 +537,11 @@ class Engine:
         self._compiled = mx.compile(body, shapeless=False) if self.knobs.compiled_fixed_cache else body
         self._compiled_capacity = (capacity, width)
         bodies[key] = self._compiled
+        counts = self.__dict__.setdefault("body_counts", {"built": 0, "evicted": 0})  # KP1: compile churn
+        counts["built"] += 1
         while len(bodies) > _BODY_CACHE:
             bodies.popitem(last=False)
+            counts["evicted"] += 1
         return self._compiled
 
     def _feed(self, state, ids: list[int], capacity: int):

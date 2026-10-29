@@ -65,7 +65,7 @@ class MLXWorkerClient:
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
-                 cuda_device: str | None = None) -> None:
+                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
@@ -103,6 +103,19 @@ class MLXWorkerClient:
         if execution_variant != "current_engine" and engine_configuration != "current_profile":
             raise ValueError("engine configuration requires current_engine")
         self.engine_configuration = engine_configuration
+        # KP1: class-A knobs for the tuned engine when no stored tune profile applies, as
+        # {"knobs": {...}, "source": label}; they leave every answer unchanged.
+        if engine_knobs is not None:
+            from .knob_profile import class_a_knobs
+
+            if (execution_variant != "current_engine" or engine_configuration != "current_profile"
+                    or not isinstance(engine_knobs, dict) or set(engine_knobs) != {"knobs", "source"}
+                    or class_a_knobs(engine_knobs["knobs"]) is None
+                    or not isinstance(engine_knobs["source"], str)
+                    or re.fullmatch(r"[A-Za-z0-9:._-]{1,64}", engine_knobs["source"]) is None):
+                raise ValueError("engine_knobs must be class-A knobs with a source, for the tuned engine only")
+            engine_knobs = json.loads(json.dumps(engine_knobs))
+        self.engine_knobs = engine_knobs
         if type(trace_prompt_identity) is not bool:
             raise ValueError("trace_prompt_identity must be a boolean")
         self.trace_prompt_identity = trace_prompt_identity
@@ -420,6 +433,9 @@ class MLXWorkerClient:
                     arguments += ["--engine-configuration", self.engine_configuration]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
+                    if self.engine_knobs is not None:
+                        arguments += ["--engine-knobs", json.dumps(self.engine_knobs, sort_keys=True,
+                                                                   separators=(",", ":"))]
                 if self.execution_variant == "automatic":
                     arguments += ["--selection-evidence", json.dumps(
                         self.selection_evidence, ensure_ascii=False, separators=(",", ":"), allow_nan=False)]

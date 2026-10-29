@@ -946,6 +946,70 @@ second agent reviewed it before run 2.*
 
 Run 2 uses the same arms, traces, rounds, cost, noise and decisions, at about 2 session hours.
 
+### KP1 — The class-A knob profile as the tuned engine's default on the measured setup (opened 2026-10-29, before data)
+
+**Mechanism.** HW4 found compile + readback 4 class A on the T4: prefill, every decode step and the final state
+bit-identical to the baseline, and 0.918 of its decode time (HW3, one card, engine bodies). RL7's result, fixed
+before data, says to combine that profile with the best schedule. It is not shipped. A fresh install has no stored
+tune profile, so the tuned engine runs the baseline knobs: no compiled step, and a host read every token. The
+product-level gain is unknown, because of what the probe did not see:
+- with X1 each request decodes at its own capacity;
+- the engine keeps eight decode bodies;
+- a new compiled body costs 13-22 ms (HW4), and it delays a request's second token, not its first.
+
+**Product mechanism.** `ironmule_product/knob_profile.py`:
+- A shipped `knobs.json` with its comparison, digest-checked like the qualified schedule, applies only to exactly
+  the model, revision, GPU name, engine and MLX and mlx-lm versions it was measured on. Class A was shown only on
+  MLX 0.32.4, and the compiled body traces mlx-lm's model code.
+- It may set only knobs that leave every answer unchanged: compile, projection fusion and fused argmax (class A
+  in HW4) and the readback interval (host reads only). Everything else must stay at the baseline, and the worker
+  refuses anything else.
+- A stored, compatible tune profile still comes first. `/health` names the knobs' source.
+
+**Second agent's review, applied before data:**
+- the set is exactly what RL7 named, compile + readback 4, without fused argmax (HW3: 1.00);
+- logits are checked at many capacities, not only token digests;
+- no extra width arm: the step gets cheaper at every width, and RL6 had widths 1 and 2 within 1 %;
+- more traces instead, for power;
+- compile churn is recorded.
+
+**Test (`tools/rl2_headroom.py --plan kp1`, Kaggle T4 x2, about 2.3 session hours).**
+- **Preflight (kill 1):** in a process of its own on one card, the baseline and the KP knobs are compared bit for
+  bit, HW4's method: prefill logits, then 24 decode steps fed the baseline's tokens. It runs on a short and a long
+  prompt, at 16 capacities from 64 to 8,192 where the prompt fits, plus every capacity this run's traffic produces.
+  Any difference stops the run: KP1 is not class A on this stack.
+- **Traffic:** two engine configurations on LD1-V's pool, model and revision: today's default (the tuned engine as
+  a fresh install runs it, with RL6's qualified schedule `shortest/w2/g0/sjf`) and the same with the KP knobs. All
+  three states are weighted equally, with 12 traces on fresh seeds (63-74) in four rounds of three. Each round
+  starts both engines' pools in turn, the first one alternating by round. Within a block each engine's arm runs at
+  the start and end (A/A for both). Both engines get the same warm-up and startup limit as H8 run 2. The cost is
+  LD1-V's.
+- **Expected effect (fixed now, for power):** about 7 % in `quiet`, where decode is most of the cost, and 5-10 % in
+  `bursts` and `spike`.
+- **Kill 2, exactness on the product path:** every request's token ids, finish reason and completion count must
+  be identical across all four cells of a trace and state, both engines included. Any difference kills KP1.
+- **Validity:**
+  - no request fails or ends without an outcome;
+  - at least two complete traces;
+  - each card's knobs and their source are recorded and match the arm.
+- **Noise:** the nearest-rank 95th percentile of all A/A pairs, both engines'.
+- **Decisions:**
+  - **(1) KP beats the default:** its weighted gain, paired by trace with a 2,000-resample bootstrap, has a 2.5 %
+    bound above 0 and above the A/A control. A cell's cost is the mean of its two runs. The A/A control applies the
+    same estimator to each engine's first run against its second, and the larger of the two gains in size is the
+    floor. This is the "every resolved gain" rule against what the estimator finds between identical runs: the
+    answers are identical by kill 2, and the engine order alternates.
+  - **(2) No harm:** in each state the bound is above minus the noise.
+- **Recorded, no decision:**
+  - per-state gains;
+  - first-to-second-token time per request;
+  - decode bodies built and evicted per card;
+  - one stress trace per round with 16 distinct capacities (quiet arrivals, each engine once), since the main
+    traffic's few capacities fit the body cache.
+- **Verdict:** (1) and (2) with kill 1, kill 2 and validity let `knobs.json` ship. Its domain is this setup, and
+  traffic whose active capacities fit the eight cached bodies; the stress trace shows what happens beyond that.
+  Otherwise the default stays, and the result goes to Tier 0 with this entry's number.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine

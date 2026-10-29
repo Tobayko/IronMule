@@ -37,6 +37,7 @@ when it is ready:
 | `--no-dreaming` | off | with `--learning`: the same learner without model rollouts |
 | `--gpus` | none | `all` or device indices such as `0,1`: one model worker per CUDA GPU, see [Several GPUs](#several-gpus-hw1) |
 | `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
+| `--knobs` | `auto` | `--engine tuned` only. `auto`: a knob set qualified on exactly this model, revision, GPU and MLX and mlx-lm versions serves when one ships and no tune profile is stored; it may only change knobs that leave every answer unchanged (compiled step, projection fusion, fused argmax, readback interval). None ships yet (BACKLOG KP1). `reference`: the engine's own knobs |
 | `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
 
 ## Routes

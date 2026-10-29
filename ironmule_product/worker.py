@@ -1143,6 +1143,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
     parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
+    parser.add_argument("--engine-knobs", default=None)  # KP1: class-A knobs when no stored profile applies
     args = parser.parse_args(argv)
     global CHAT_REUSE, THINKING
     CHAT_REUSE = bool(args.chat_reuse) and args.execution_variant == "current_engine"
@@ -1194,8 +1195,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.execution_variant == "current_engine":
             from ironmule_product.engine_bridge import CurrentEngineBridge
             from ironmule_product.types import ModelSpec
-            engine_bridge = CurrentEngineBridge.from_loaded(model, tokenizer, ModelSpec.from_dict(spec),
-                                                           configuration=args.engine_configuration)
+            engine_bridge = CurrentEngineBridge.from_loaded(
+                model, tokenizer, ModelSpec.from_dict(spec), configuration=args.engine_configuration,
+                class_a_knobs=json.loads(args.engine_knobs) if args.engine_knobs is not None else None)
         elif args.execution_variant == "automatic":
             from ironmule_product.automatic_runtime import AutomaticRuntime
             from ironmule_product.types import ModelSpec

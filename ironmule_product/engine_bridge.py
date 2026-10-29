@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Mapping
+import os
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
@@ -230,14 +231,28 @@ class CurrentEngineBridge:
 
     @classmethod
     def from_loaded(cls, model: Any, tokenizer: Any, spec: Any, *,
-                    configuration: BridgeConfiguration = "current_profile") -> "CurrentEngineBridge":
+                    configuration: BridgeConfiguration = "current_profile",
+                    class_a_knobs: dict[str, Any] | None = None) -> "CurrentEngineBridge":
         """Construct from exactly the already loaded model and registered snapshot.
 
         Identity construction reads the supplied snapshot and fails closed; it does
         not use cache discovery, model loading, or inferred revisions.
+
+        ``class_a_knobs`` (KP1), ``{"knobs": ..., "source": label}``, serve the current
+        profile when no compatible stored profile exists; they must differ from the
+        baseline only in knobs that leave every answer unchanged.
         """
         model_id, revision, snapshot_path = _validate_spec(spec)
         configuration = _validate_configuration(configuration)
+        requested = None
+        if class_a_knobs is not None:
+            from .knob_profile import class_a_knobs as decode_class_a
+
+            requested = (decode_class_a(class_a_knobs.get("knobs")) if isinstance(class_a_knobs, dict)
+                         and configuration == "current_profile" else None)
+            source = class_a_knobs.get("source") if isinstance(class_a_knobs, dict) else None
+            if requested is None or not isinstance(source, str) or not 1 <= len(source) <= 64:
+                raise ValueError("class-A knobs serve the current profile only, and only class-A knobs")
         # Keep all IronMule imports here.  Engine's constructor imports MLX only
         # after this method is deliberately invoked by the product worker.
         from ironmule.model_identity import ModelIdentityError, build_model_identity
@@ -278,7 +293,11 @@ class CurrentEngineBridge:
             # Its absence is an explicit baseline choice, never a claim that no
             # historical configuration exists or that baseline is currently best.
             profile = load_profile(model_id, revision=revision, model_identity=identity)
-            if profile is None:
+            if profile is None and requested is not None:
+                knobs = requested
+                profile_available = False
+                profile_source = f"class_a:{source}"
+            elif profile is None:
                 knobs = BASELINE
                 profile_available = False
                 profile_source = "baseline_no_compatible_profile"
@@ -404,6 +423,10 @@ class CurrentEngineBridge:
                 "admitted_requests": len(validated),
                 "max_realised_width": max(widths) if widths else 0,
                 "grouped_rounds": len(widths),
+                # KP1: decode bodies this worker's engine built and evicted so far, and its card
+                "decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
+                                      or {"built": 0, "evicted": 0}),
+                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES"),
             })
             results.append(_result_from_raw(raw, limit, metadata))
         return results

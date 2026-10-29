@@ -680,14 +680,21 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
         ids: list[Any] = []
         prompt = (CONTEXT + "\n\n" if item.get("long") else "") + PROMPTS[item["prompt"]]
         request = GenerationRequest(model, (("user", prompt),), max_tokens=item["max_tokens"], stream=True)
+        finish = None
         try:
             for event in pool.stream(request):
                 if event.get("type") == "token":
                     if out["first_s"] is None and event.get("text"):
                         out["first_s"] = time.monotonic() - scheduled
                     ids.append(event.get("token_id") if event.get("token_id") is not None else event.get("text"))
+                    if len(ids) == 2:  # KP1: a new decode body's compile delays the second token, not the first
+                        out["second_s"] = time.monotonic() - scheduled
                 elif event.get("type") == "done":
                     out["outcome"], out["tokens"] = "ok", int(event.get("completion_tokens") or 0)
+                    finish = event.get("finish_reason")
+                    engine = event.get("engine") if isinstance(event.get("engine"), dict) else {}
+                    if engine.get("decode_bodies") is not None:
+                        out["bodies"], out["device"] = engine["decode_bodies"], engine.get("cuda_device")
         except Overloaded:
             out["outcome"] = "rejected"
         except RequestTimeout:
@@ -697,8 +704,8 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
         except Exception as exc:  # noqa: BLE001 - any other failure is still this request's outcome
             out["error"] = type(exc).__name__
         out["end_s"] = time.monotonic() - scheduled
-        if out["outcome"] == "ok":
-            out["digest"] = hashlib.sha256(json.dumps(ids).encode()).hexdigest()
+        if out["outcome"] == "ok":  # the tokens, and since KP1 how the answer ended
+            out["digest"] = hashlib.sha256(json.dumps([ids, finish, out["tokens"]]).encode()).hexdigest()
         results[index] = out
 
     threads = []
@@ -1048,21 +1055,24 @@ def arms_h8() -> list[str]:
 
 def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[int] = H8_TRACES,
                rounds: int = H8_ROUNDS, requests: int = REQUESTS, max_tokens: tuple[int, ...] | None = None,
-               on_row: Any = None) -> dict[str, Any]:
+               on_row: Any = None, names: list[str] | None = None, engines: tuple[str, str] = ("tuned", "dense"),
+               plan: str = "h8", stress: Any = None) -> dict[str, Any]:
     """`start(engine)` returns a started pool for that engine. Calibration runs once on the tuned pool; then each
-    round measures its traces on both engines, every (trace, state) block an engine's arms in HW3's block order."""
-    names = arms_h8()
+    round measures its traces on both engines, every (trace, state) block an engine's arms in HW3's block order.
+    KP1 reuses it with its own arms and engines, and `stress(round, capacity)`, when given, adds one recorded
+    cell per engine and round (not part of any decision) after that engine's blocks."""
+    names = names or arms_h8()
     traces = list(traces)
     per_round = -(-len(traces) // rounds)
-    report: dict[str, Any] = {"plan": "h8", "arms": names, "states": list(H2_STATES), "deadline_s": deadline_s,
-                              "rows": [], "engines": {}}
+    report: dict[str, Any] = {"plan": plan, "arms": names, "states": list(H2_STATES), "deadline_s": deadline_s,
+                              "rows": [], "engines": {}, "stress_rows": []}
     capacity = None
     block = 0
     for r in range(rounds):
         chunk = traces[r * per_round:(r + 1) * per_round]
         if not chunk:
             break
-        order = ["tuned", "dense"] if r % 2 == 0 else ["dense", "tuned"]
+        order = list(engines) if r % 2 == 0 else list(reversed(engines))
         for engine in order:
             pool = _placement_pool(start(engine))
             try:
@@ -1107,6 +1117,15 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
                             if on_row is not None:
                                 on_row(report)
                         block += 1
+                if stress is not None:
+                    if not wait_idle(pool):
+                        report["stopped"] = f"the {engine} pool did not drain before its stress cell"
+                        return report
+                    set_arm(pool, engine_names[0])
+                    report["stress_rows"].append({"round": r, "engine": engine, "arm": engine_names[0],
+                                                  "requests": replay(pool, model, stress(r, capacity), deadline_s)})
+                    if on_row is not None:
+                        on_row(report)
             finally:
                 pool.close()
     return report
@@ -1280,6 +1299,223 @@ def dense_preflight(snapshot: str, device: str | None, timeout_s: float = 900.0)
         return {"ok": False, "error": f"exit {done.returncode}", "stderr_tail": done.stderr[-4000:]}
 
 
+# ---------------------------------------------------------------- KP1, fixed in BACKLOG before data
+
+KP1_TRACES = range(63, 75)      # fresh seeds: no earlier run, training or simulation used them
+KP1_ROUNDS = 4                  # three traces per round; each round starts both engines' pools, alternating
+KP1_CAPACITIES = (64, 128, 256, 384, 512, 768, 1024, 1280, 1536, 2048, 3072, 4096, 5120, 6144, 7168, 8192)
+KP1_STEPS = 24                  # decode steps per preflight comparison, fed the baseline's tokens
+STRESS_MAX_TOKENS = tuple(40 + 64 * k for k in range(16))  # 16 distinct capacities for one short prompt
+ENGINE_CONFIGURATIONS["kp"] = "current_profile"            # the tuned engine with KP1's knobs
+
+
+def arms_kp1() -> list[str]:
+    """Today's default (RL6's qualified schedule on the tuned engine) without and with KP1's knobs; each runs
+    twice per block (A/A for both engines)."""
+    return ["tuned:shortest/w2/g0/sjf", "kp:shortest/w2/g0/sjf"]
+
+
+def trace_stress(index: int, capacity: float) -> list[dict[str, Any]]:
+    """KP1's recorded stress cell: quiet arrivals, short prompts, one output limit per distinct capacity, so more
+    capacities are active than the engine keeps decode bodies."""
+    rng = random.Random(900 + index)
+    limits = list(STRESS_MAX_TOKENS)
+    rng.shuffle(limits)
+    return [{**item, "long": False, "max_tokens": limit}
+            for item, limit in zip(trace(0, 900 + index, 0.2 * capacity, len(limits)), limits)]
+
+
+_KP1_PREFLIGHT = r"""
+import json, sys, time, traceback
+out = {"ok": False}
+try:
+    from mlx_lm import load
+    from ironmule.runtime import Knobs
+    from ironmule_product.knob_profile import compare_class_a
+    spec = json.loads(sys.argv[2])
+    model, tokenizer = load(sys.argv[1])
+
+    def ids_of(text):
+        return list(tokenizer.apply_chat_template([{"role": "user", "content": text}], add_generation_prompt=True))
+
+    def cap(n, m):
+        return ((n + m + 8 + 63) // 64) * 64
+
+    produced = set()
+    for text in spec["prompts"]:
+        for long in (False, True):
+            n = len(ids_of((spec["context"] + "\n\n" if long else "") + text))
+            produced |= {cap(n, m) for m in spec["max_tokens"] + ([] if long else spec["stress"])}
+    prompts = {"short": ids_of(spec["prompts"][0]), "long": ids_of(spec["context"] + "\n\n" + spec["prompts"][0])}
+    started = time.perf_counter()
+    out = compare_class_a(model, tokenizer, Knobs(**spec["knobs"]), prompts,
+                          sorted(set(spec["capacities"]) | produced), spec["steps"])
+    out.update(produced=sorted(produced), seconds=time.perf_counter() - started)
+except Exception:
+    out["error"] = traceback.format_exc(limit=12)
+print(json.dumps(out))
+"""
+
+
+def kp1_preflight(snapshot: str, device: str | None, knobs: dict[str, Any], timeout_s: float = 1800.0) -> dict[str, Any]:
+    """KP1's kill 1, HW4's method in a process of its own on one card: prefill logits, 24 decode steps fed the
+    baseline's tokens and the final state, bit for bit, baseline against `knobs`, on a short and a long prompt at
+    every capacity in `KP1_CAPACITIES` and every capacity this run's traffic produces."""
+    spec = {"prompts": list(PROMPTS), "context": CONTEXT, "max_tokens": list(H2_MAX_TOKENS),
+            "stress": list(STRESS_MAX_TOKENS), "capacities": list(KP1_CAPACITIES), "steps": KP1_STEPS,
+            "knobs": knobs}
+    environment = dict(os.environ, **({"CUDA_VISIBLE_DEVICES": device} if device is not None else {}))
+    try:
+        done = subprocess.run([sys.executable, "-c", _KP1_PREFLIGHT, snapshot, json.dumps(spec)],
+                              capture_output=True, text=True, timeout=timeout_s, env=environment)
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "error": f"no answer in {timeout_s:.0f} s"}
+    lines = [line for line in done.stdout.splitlines() if line.startswith("{")]
+    try:
+        return json.loads(lines[-1])
+    except (IndexError, ValueError):
+        return {"ok": False, "error": f"exit {done.returncode}", "stderr_tail": done.stderr[-4000:]}
+
+
+def run_kp1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.knob_profile import kp1_knobs
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = cuda_devices() or [None]
+    knobs = kp1_knobs().as_dict()
+    preflight = kp1_preflight(str(spec.snapshot_path), devices[0], knobs)
+    if not preflight.get("ok"):
+        return {"model": model, "revision": revision, "failed": "kp1 preflight (kill 1)", "preflight": preflight}
+
+    def start(engine: str) -> Any:  # the same startup limit for both engines; startup is not in the cost
+        extra = {"engine_knobs": {"knobs": knobs, "source": "KP1-candidate"}} if engine == "kp" else {}
+        return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration="current_profile", cuda_device=device,
+            startup_timeout=DENSE_STARTUP_TIMEOUT, **extra), ordered_service())
+
+    deadline = float(store.settings()["request_timeout_s"] or 120)
+    sizes = ({"traces": [KP1_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else
+             {"traces": KP1_TRACES, "rounds": KP1_ROUNDS})
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=arms_kp1(), engines=("tuned", "kp"),
+                        plan="kp1", stress=None if smoke else trace_stress, **sizes)
+    return {"model": model, "revision": revision, "preflight": preflight, "knobs": knobs, **result}
+
+
+def analyse_kp1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """KP1's kills, validity and decisions, as fixed in BACKLOG before data. A cell's cost is the mean of its
+    two runs. The A/A control applies the same estimator to an arm's first run against its second; KP's bound
+    must clear the larger of those two gains in size, and 0."""
+    from ironmule.runtime import BASELINE
+    from ironmule_product.knob_profile import kp1_knobs
+
+    rows, deadline = report.get("rows", []), float(report.get("deadline_s") or 120)
+    names = report.get("arms") or arms_kp1()
+    levels = list(range(len(report.get("states") or H2_STATES)))
+    problems: list[str] = []
+    if report.get("calibration", {}).get("failed") or "stopped" in report:
+        problems.append("calibration failed or the run stopped")
+    if not (report.get("preflight") or {}).get("ok"):
+        problems.append("the preflight did not pass (kill 1)")
+    expected = {"tuned": BASELINE.as_dict(), "kp": kp1_knobs().as_dict()}
+    for engine, starts in (report.get("engines") or {}).items():
+        for record in starts:
+            if any(card.get("selected_knobs") != expected.get(engine) for card in record.get("engine") or [{}]):
+                problems.append(f"a {engine} pool did not run its arm's knobs")
+                break
+    failures: dict[str, dict[str, int]] = {}
+    digests: dict[tuple[int, int, int], set[str]] = {}
+    for row in rows:
+        for request in row["requests"]:
+            if request.get("outcome") not in COSTED_OUTCOMES:
+                code = str(request.get("error") or request.get("outcome") or "no outcome")
+                failures.setdefault(row["engine"], {})[code] = failures.setdefault(row["engine"], {}).get(code, 0) + 1
+            elif request.get("outcome") == "ok" and request.get("digest"):
+                digests.setdefault((row["level"], row["trace"], request["index"]), set()).add(request["digest"])
+    if failures:
+        problems.append(f"{sum(sum(c.values()) for c in failures.values())} requests failed: {failures}")
+    mismatched = sorted(key for key, found in digests.items() if len(found) > 1)
+    cells = _cell_costs(rows, deadline)
+    complete = [t for t in sorted({row["trace"] for row in rows})
+                if all((level, t, name, run) in cells for level in levels for name in names for run in (0, 1))]
+    if len(complete) < 2:
+        problems.append(f"{len(complete)} complete traces; at least two are needed")
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.kp1.analysis.v1", "complete_traces": complete,
+                           "mismatched_requests": len(mismatched), "failures": failures,
+                           "kill 2 (answers differ on the product path)": bool(mismatched)}
+    if mismatched:
+        problems.append(f"kill 2: {len(mismatched)} requests answered differently across engines or runs")
+    if problems:
+        return {**out, "valid": False, "problems": problems}
+    pairs = [(cells[level, t, name, 0], cells[level, t, name, 1]) for name in names for level in levels
+             for t in complete]
+    noise = _quantile([abs(a - b) / ((a + b) / 2) for a, b in pairs], 0.95)
+    rng = random.Random(seed)
+
+    def paired(cost: Any) -> dict[str, Any]:
+        values = [cost(t) for t in complete]
+        boot = []
+        for _ in range(resamples):
+            sample = [values[rng.randrange(len(values))] for _ in values]
+            boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"gain": 1 - sum(x for x, _ in values) / sum(y for _, y in values),
+                "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    def mean_cost(name: str, t: int, levels_: list[int], runs: tuple[int, ...] = (0, 1)) -> float:
+        return sum(WEIGHTS[lv] * statistics.fmean(cells[lv, t, name, run] for run in runs) for lv in levels_) \
+            / sum(WEIGHTS[lv] for lv in levels_)
+
+    tuned, kp = names
+    controls = {name: paired(lambda t, n=name: (mean_cost(n, t, levels, (1,)), mean_cost(n, t, levels, (0,))))
+                for name in names}
+    floor = max(0.0, *(abs(c["gain"]) for c in controls.values()))  # what the estimator finds between identical runs
+    pooled = paired(lambda t: (mean_cost(kp, t, levels), mean_cost(tuned, t, levels)))
+    per_state = {str(lv): paired(lambda t, lv=lv: (mean_cost(kp, t, [lv]), mean_cost(tuned, t, [lv]))) for lv in levels}
+    seconds = {engine: [r["second_s"] - r["first_s"] for row in rows if row["engine"] == engine
+                        for r in row["requests"] if r.get("second_s") is not None and r.get("first_s") is not None]
+               for engine in ("tuned", "kp")}
+    stress = {engine: [statistics.fmean(request_cost(r, deadline) for r in row["requests"])
+                       for row in report.get("stress_rows", []) if row["engine"] == engine] for engine in ("tuned", "kp")}
+
+    def bodies(rows_: list[dict[str, Any]], engine: str) -> dict[str, dict[str, int]]:
+        top: dict[str, dict[str, int]] = {}
+        for row in rows_:
+            if row["engine"] != engine:
+                continue
+            for r in row["requests"]:
+                if isinstance(r.get("bodies"), dict):
+                    card = top.setdefault(str(r.get("device")), {"built": 0, "evicted": 0})
+                    for key in card:
+                        card[key] = max(card[key], int(r["bodies"].get(key, 0)))
+        return top
+
+    return {**out, "valid": True, "problems": [], "aa_noise": noise, "aa_pairs": len(pairs), "aa_control": controls,
+            "aa_floor": floor,
+            "(1) KP beats the default": {**pooled, "passes": pooled["gain_ci95"][0] > floor},
+            "(2) no harm in any state": {"per_state": per_state,
+                                         "passes": all(v["gain_ci95"][0] > -noise for v in per_state.values())},
+            "mean_cost_per_level": {str(lv): {n: statistics.fmean(mean_cost(n, t, [lv]) for t in complete)
+                                              for n in names} for lv in levels},
+            "second_token_s": {e: {"median": statistics.median(v), "p95": _quantile(v, 0.95)} if v else None
+                               for e, v in seconds.items()},
+            "stress_cost": {e: statistics.fmean(v) if v else None for e, v in stress.items()},
+            "stress_gain": (1 - statistics.fmean(stress["kp"]) / statistics.fmean(stress["tuned"])
+                            if stress["kp"] and stress["tuned"] else None),
+            "decode_bodies_last_seen": {e: bodies(rows + report.get("stress_rows", []), e) for e in ("tuned", "kp")}}
+
+
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
@@ -1323,7 +1559,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "x1"), default="h1",
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "x1"), default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
@@ -1351,7 +1587,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
-        print(json.dumps((analyse_h8 if inner.get("plan") == "h8" else analyse)(inner), indent=1, sort_keys=True))
+        judge = {"h8": analyse_h8, "kp1": analyse_kp1}.get(inner.get("plan"), analyse)
+        print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
@@ -1372,9 +1609,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan == "h8":
-        report["rl2h"] = run_h8(model, work, smoke=args.smoke, on_row=save)
-        report["analysis"] = analyse_h8(report["rl2h"])
+    if args.plan in ("h8", "kp1"):
+        run, judge = (run_h8, analyse_h8) if args.plan == "h8" else (run_kp1, analyse_kp1)
+        report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
+        report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "analysis": {k: v for k, v in report["analysis"].items()

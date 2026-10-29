@@ -34,9 +34,25 @@ def emit(value: dict) -> None:
     OUT.flush()
 
 
+def _engine_metadata(args) -> dict:
+    """The real worker's knob fields (KP1): requested class-A knobs; the baseline only when FAKE_REPORT_KNOBS
+    asks, since reading it imports MLX and slows every start the STAB1 timing tests rely on."""
+    metadata = {"configuration": args.engine_configuration}
+    if args.engine_knobs is not None:
+        requested = json.loads(args.engine_knobs)
+        return {**metadata, "selected_knobs": requested["knobs"], "profile_source": f"class_a:{requested['source']}"}
+    if not os.environ.get("FAKE_REPORT_KNOBS"):
+        return metadata
+    from ironmule.runtime import BASELINE
+
+    return {**metadata, "selected_knobs": BASELINE.as_dict(), "profile_source": "baseline_no_compatible_profile"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", required=True)
+    parser.add_argument("--engine-configuration", default="current_profile")
+    parser.add_argument("--engine-knobs", default=None)
     args, _ = parser.parse_known_args()
     spec = json.loads(args.spec)
     control = {}
@@ -51,7 +67,7 @@ def main() -> int:
         return 4
     emit({"type": "ready", "protocol_version": 1, "model_id": spec["model_id"], "revision": spec["revision"],
           "device": "gpu", "stop_handling": "parent", "context_limit": 8192, "execution_variant": "current_engine",
-          "engine": control.get("engine", {"configuration": "current_profile"}),
+          "engine": control.get("engine", _engine_metadata(args)),
           "sources_sha256": control.get("digest", "a" * 64)})
     commands: queue.Queue = queue.Queue()
     cancelled: set[str] = set()
