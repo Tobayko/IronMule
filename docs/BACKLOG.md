@@ -1050,6 +1050,73 @@ product-level gain is unknown, because of what the probe did not see:
   traffic whose active capacities fit the eight cached bodies; the stress trace shows what happens beyond that.
   Otherwise the default stays, and the result goes to Tier 0 with this entry's number.
 
+**Result, KP1 run 1 (2026-10-29, `KP1-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-kp1` at
+`f497264b27d5db38de33871cd61ac749eff7253d`, 2.50 session hours): valid; kills 1 and 2 pass, (1) and (2) fail, so
+the knobs do not ship.** Kaggle T4 x2, Qwen3 1.7B bf16 at `9cd6692`, MLX 0.32.4, mlx-lm 0.31.3.
+- **Kill 1 passes.** The preflight compared 38 prompt-and-capacity pairs at 27 capacities from 64 to 8,192, the
+  run's own included, in 118 s. Every prefill logit, decode step and final state was bit-identical.
+- **Kill 2 passes.** All 2,304 requests succeeded, and every answer (token ids, finish reason, count) was
+  identical across all four cells of a trace and state, both engines included.
+- **Validity:** each card ran its arm's knobs: the baseline (no stored profile) for the default, KP's for KP.
+- **Noise** 4.68 % over 72 A/A pairs. The A/A floor was 0.37 % (tuned -0.08 %, KP -0.37 %).
+- **(1) fails.** KP's weighted gain was +0.2 % (95 % -1.9 to +1.6 %).
+- **(2) fails.** Per state:
+  - `quiet`: +3.6 % (3.2-4.1 %);
+  - `bursts`: +2.1 % (0.3-4.2 %);
+  - `spike`: -1.3 % (-5.4 to +1.5 %), whose bound is below minus the noise.
+- **Recorded:**
+  - decode bodies built per card: 10-15, 2-7 of them evicted, alike for both engines;
+  - the stress cell with 16 capacities: KP 6.5 % cheaper;
+  - the time from first to second token: 23.6 ms (median) by default against 0.15 ms with KP.
+- **Why, found in the data (post hoc).** In `quiet`, KP finished each answer 115 ms sooner (paired median) but
+  showed its first token 56 ms later. The worker held every token until the next one arrived, so the last could
+  carry the final text. At readback 4 the next token comes a whole chain later, so the first token waited for the
+  chain. The default paid one step on every request too. The worker now sends each token as it is read back.
+  Only the token that ends the answer (EOS or the limit, the only ways the engine stops) carries the final text
+  and finish reason; tests pin that each token leaves before the engine reads the next. KP1 as measured goes to
+  Tier 0. The combination is measured again, with the fix, in H9. Still owed: the ledger entry.
+
+### H9 — The default, KP's knobs and the dense plan on the same traffic, after the first-token fix (opened 2026-10-29, before data)
+
+**Mechanism.** KP1 run 1 and H8 run 2 both measured with the worker holding every token for the next one. That
+costs the first token one step on today's default, and a whole 4-step chain under KP's readback and the dense
+plan's. Since then:
+- the worker sends each token as it is read back;
+- the dense plan prefills with its own head on the last position only (version 2);
+- the dense plan reuses freed slots within a group.
+
+**Re-opens** KP1 run 1 from Tier 0. Its kill rule (fixed before its data): "(1) and (2) with kill 1, kill 2 and
+validity let `knobs.json` ship". What changed is the implementation: the first-token hold the run exposed is gone.
+
+H9 measures all three engines in one run, so every combination meets the same traffic.
+
+**Test (`tools/rl2_headroom.py --plan h9`, Kaggle T4 x2, about 4 session hours).**
+- **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally. 12 fresh traces (75-86) in four
+  rounds of three.
+- **Engines:** `tuned` (the default: baseline knobs, RL6's qualified schedule `shortest/w2/g0/sjf`), `kp` (the
+  same with compile + readback 4) and `dense` (the plan at `shortest/w8/g0/sjf`).
+- **Order:** each round starts the three engines' pools in turn, the order rotating by one engine per round. Within
+  a block each engine's arm runs at the start and end (A/A for all three).
+- **Before any pool:** KP1's bit-for-bit preflight (kill 1) and H8's dense preflight; either failing stops the run.
+- **Warm-up and startup:** the same for all engines, as in H8 run 2 and KP1. The recorded stress cell runs for
+  every engine.
+- **KP part, KP1's rules unchanged:**
+  - kill 2: identical answers across `tuned` and `kp`;
+  - (1): a bound above 0 and above the larger A/A control of the two;
+  - (2): no state's bound below minus their A/A noise.
+  - Pass: `knobs.json` ships for exactly this setup.
+- **Dense part, H8's rules:**
+  - the comparator is the default as it would ship after the KP part: `kp` if the KP part passes, else `tuned`;
+  - (1): the plan's weighted gain over it has a 2.5 % bound above the A/A noise of those two engines;
+  - (2): no state's bound is below minus that noise;
+  - validity also needs the plan's answers identical across its runs and every dense cell `numeric@dense`.
+  - Pass: the plan is recommended for this setup as an opt-in numeric plan; the recommendation names the gain and
+    the answer change.
+- **Validity, both parts:** no request fails or ends without an outcome, and at least two complete traces.
+- **Recorded:** first-token and first-to-second-token times per engine, decode bodies, stress costs, and the
+  plan's answers that match today's.
+
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
@@ -1565,6 +1632,11 @@ processes again.
   21.2 % (95 % 18.3-24.3 %), but in `bursts` it cost 6.9 % more than `shortest/w1/g0/sjf` (95 % bound -12.9 %
   against 8.1 % noise), so the no-harm rule failed. No evidence for it; LD1 ships only RL4-S's spike-bound policy.
   Re-open with a policy trained against a per-state harm constraint, or traffic whose bursts it was trained on.
+
+- **KP1 run 1: compile + readback 4 as the tuned engine's default, through the product (2026-10-29).** Experiment
+  `KP1-run1-20261029` (see KP1 above): answers identical and class A at 27 capacities, but +0.2 % weighted (95 %
+  -1.9 to +1.6 %) and `spike` -1.3 % (bound -5.4 % against 4.7 % noise). The worker held each token for the next,
+  so the first token waited a whole chain; fixed, and re-opened as H9.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:

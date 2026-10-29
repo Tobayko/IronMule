@@ -1055,7 +1055,7 @@ def arms_h8() -> list[str]:
 
 def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[int] = H8_TRACES,
                rounds: int = H8_ROUNDS, requests: int = REQUESTS, max_tokens: tuple[int, ...] | None = None,
-               on_row: Any = None, names: list[str] | None = None, engines: tuple[str, str] = ("tuned", "dense"),
+               on_row: Any = None, names: list[str] | None = None, engines: tuple[str, ...] = ("tuned", "dense"),
                plan: str = "h8", stress: Any = None) -> dict[str, Any]:
     """`start(engine)` returns a started pool for that engine. Calibration runs once on the tuned pool; then each
     round measures its traces on both engines, every (trace, state) block an engine's arms in HW3's block order.
@@ -1072,7 +1072,8 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
         chunk = traces[r * per_round:(r + 1) * per_round]
         if not chunk:
             break
-        order = list(engines) if r % 2 == 0 else list(reversed(engines))
+        shift = r % len(engines)  # the first engine rotates by round (two engines: they alternate)
+        order = list(engines[shift:]) + list(engines[:shift])
         for engine in order:
             pool = _placement_pool(start(engine))
             try:
@@ -1515,6 +1516,81 @@ def analyse_kp1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
             "decode_bodies_last_seen": {e: bodies(rows + report.get("stress_rows", []), e) for e in ("tuned", "kp")}}
 
 
+# ---------------------------------------------------------------- H9, fixed in BACKLOG before data
+
+H9_TRACES = range(75, 87)       # fresh seeds: no earlier run, training or simulation used them
+H9_ROUNDS = 4
+
+
+def arms_h9() -> list[str]:
+    """The default, the same with KP1's knobs, and the dense plan; each runs twice per block (A/A for all)."""
+    return ["tuned:shortest/w2/g0/sjf", "kp:shortest/w2/g0/sjf", "dense:shortest/w8/g0/sjf"]
+
+
+def run_h9(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.knob_profile import kp1_knobs
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = cuda_devices() or [None]
+    knobs = kp1_knobs()
+    preflight = kp1_preflight(str(spec.snapshot_path), devices[0], knobs)
+    if not preflight.get("ok"):
+        return {"model": model, "revision": revision, "failed": "kp1 preflight (kill 1)", "preflight": preflight}
+    dense = dense_preflight(str(spec.snapshot_path), devices[0])
+    if not dense.get("ok"):
+        return {"model": model, "revision": revision, "failed": "dense preflight", "preflight": preflight,
+                "dense_preflight": dense}
+
+    def start(engine: str) -> Any:  # one startup limit for every engine; startup is not in the cost
+        extra = {"engine_knobs": {"knobs": knobs, "source": "KP1-candidate"}} if engine == "kp" else {}
+        return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device, startup_timeout=DENSE_STARTUP_TIMEOUT, **extra), ordered_service())
+
+    deadline = float(store.settings()["request_timeout_s"] or 120)
+    sizes = ({"traces": [H9_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else
+             {"traces": H9_TRACES, "rounds": H9_ROUNDS})
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=arms_h9(),
+                        engines=("tuned", "kp", "dense"), plan="h9", stress=None if smoke else trace_stress, **sizes)
+    return {"model": model, "revision": revision, "preflight": preflight, "dense_preflight": dense, "knobs": knobs,
+            **result}
+
+
+def analyse_h9(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """H9's two parts, as fixed in BACKLOG before data: KP1's rules on `tuned` against `kp`, then H8's on the
+    dense plan against the default as it would ship after them."""
+    tuned, kp, dense = arms_h9()
+    exact = {"tuned", "kp"}
+    kp_part = analyse_kp1({**report, "arms": [tuned, kp], "rows": [r for r in report.get("rows", []) if r["engine"] in exact],
+                           "stress_rows": [r for r in report.get("stress_rows", []) if r["engine"] in exact],
+                           "engines": {e: v for e, v in (report.get("engines") or {}).items() if e in exact}},
+                          resamples, seed)
+    kp_ships = bool(kp_part.get("valid") and kp_part["(1) KP beats the default"]["passes"]
+                    and kp_part["(2) no harm in any state"]["passes"])
+    reference = kp if kp_ships else tuned
+    problems = [] if (report.get("dense_preflight") or {}).get("ok") else ["the dense preflight did not pass"]
+    dense_part = analyse_h8({**report, "arms": [reference, dense]}, resamples, seed)
+    if problems:
+        dense_part = {**dense_part, "valid": False, "problems": problems + list(dense_part.get("problems", []))}
+    return {"schema": "ironmule.rl2_headroom.h9.analysis.v1", "kp_ships": kp_ships, "dense_reference": reference,
+            "kp": kp_part, "dense": dense_part,
+            "dense_recommended": bool(dense_part.get("valid") and dense_part["(1) dense beats today's default"]["passes"]
+                                      and dense_part["(2) no harm in any state"]["passes"])}
+
+
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
@@ -1558,7 +1634,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "x1"), default="h1",
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "x1"), default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
@@ -1586,7 +1662,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
-        judge = {"h8": analyse_h8, "kp1": analyse_kp1}.get(inner.get("plan"), analyse)
+        judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -1608,8 +1684,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1"):
-        run, judge = (run_h8, analyse_h8) if args.plan == "h8" else (run_kp1, analyse_kp1)
+    if args.plan in ("h8", "kp1", "h9"):
+        run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9)}[args.plan]
         report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
         report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()

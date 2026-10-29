@@ -384,30 +384,33 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
     mlx-lm streams, and return the terminal frame ``consume`` produced.
 
     The engine calls back on this thread (a second thread lost 0.5-0.7 s of the first token to the
-    GIL on Gemma 3 1B, SERVE6b). One token is held back so the last can carry the finish reason.
-    After a cancellation the engine runs to its end and nothing more is sent. The streamed tokens
-    must equal the engine's result.
+    GIL on Gemma 3 1B, SERVE6b). Each token is sent as it is read back; the one that ends the
+    answer (EOS or the output limit, the only ways the engine stops) carries the final text and
+    the finish reason. Holding every token for the next one, as before, delayed the first by a
+    whole chained readback (KP1 run 1: 56 ms at readback 4). After a cancellation the engine runs
+    to its end and nothing more is sent. The streamed tokens must equal the engine's result.
     """
     eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
     detokenizer = tokenizer.detokenizer
     streamed: list[int] = []
-    state: dict[str, Any] = {"held": None, "terminal": None}
+    state: dict[str, Any] = {"terminal": None}
 
     def on_token(token: int) -> None:
         streamed.append(token)
         if state["terminal"] is not None or "error" in state:
             return
         try:
-            if state["held"] is not None:
-                state["terminal"] = consume(state["held"])
-                if state["terminal"] is not None:
-                    return
+            last = token in eos or len(streamed) >= max_tokens
             text = ""
             if token not in eos:
                 detokenizer.add_token(token)
                 text = detokenizer.last_segment
-            state["held"] = SimpleNamespace(token=token, text=text, prompt_tokens=prompt_tokens,
-                                            generation_tokens=len(streamed), finish_reason=None)
+            if last:
+                detokenizer.finalize()
+                text += detokenizer.last_segment
+            state["terminal"] = consume(SimpleNamespace(
+                token=token, text=text, prompt_tokens=prompt_tokens, generation_tokens=len(streamed),
+                finish_reason=("stop" if token in eos else "length") if last else None))
         except Exception as exc:  # raised after the engine returns, never inside its executor
             state["error"] = exc
 
@@ -418,13 +421,11 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
         raise state["error"]
     if not streamed or streamed != list(result.tokens):
         raise RuntimeError("streamed tokens differ from the engine result")
-    if state["terminal"] is not None:
-        return state["terminal"]
-    final = state["held"]
-    detokenizer.finalize()
-    final.text += detokenizer.last_segment
-    final.finish_reason = result.finish_reason
-    return consume(final)
+    terminal = state["terminal"]
+    if terminal is None or (terminal["finish_reason"] != "cancelled"
+                            and terminal["finish_reason"] != result.finish_reason):
+        raise RuntimeError("the engine's answer ended other than its last streamed token")
+    return terminal
 
 
 def _generate(
@@ -678,9 +679,10 @@ def _detokenizer_pool(tokenizer: Any) -> _DetokenizerPool:
 class _BatchStream:
     """One grouped request's tokens as the engine reads them back (SERVE4).
 
-    One token is held back so the last can carry the final text; a cancelled request stops
-    sending while the group runs on. Errors are kept and raised after the engine returns,
-    never inside its executor."""
+    Each token is sent as it is read back; the one that ends the answer (EOS or the output limit)
+    carries the final text. Holding every token for the next, as before, delayed the first by a
+    whole chained readback (KP1 run 1). A cancelled request stops sending while the group runs on.
+    Errors are kept and raised after the engine returns, never inside its executor."""
 
     def __init__(self, batch_id: str, request_id: str, prompt_tokens: int, limit: int, pool: _DetokenizerPool,
                  cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any):
@@ -690,7 +692,6 @@ class _BatchStream:
         self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
         self.tail = ""
         self.tokens: list[int] = []
-        self.held: dict[str, Any] | None = None
         self.sent = 0
         self.stopped = False
         self.error: BaseException | None = None
@@ -704,18 +705,17 @@ class _BatchStream:
                 self.stopped = self.cancellations[self.request_id].is_set()
             if self.stopped:
                 return
-            if self.held is not None:
-                _emit(self.held)
-                self.sent += 1
             text = ""
             if token not in self.eos:
                 self.detokenizer.add_token(token)
                 text = self.detokenizer.last_segment
-            self.held = {"type": "token", "batch_id": self.batch_id, "request_id": self.request_id,
-                         "text": text, "token_id": token, "prompt_tokens": self.prompt_tokens,
-                         "completion_tokens": self.sent + 1}
             if token in self.eos or len(self.tokens) >= self.limit:
                 self._release()  # its last token: the detokenizer serves the next admitted stream
+                text += self.tail
+                self.tail = ""
+            _emit({"type": "token", "batch_id": self.batch_id, "request_id": self.request_id, "text": text,
+                   "token_id": token, "prompt_tokens": self.prompt_tokens, "completion_tokens": self.sent + 1})
+            self.sent += 1
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
 
@@ -727,7 +727,7 @@ class _BatchStream:
             self.detokenizer = None
 
     def finish(self, result: Any) -> int:
-        """Send the held token with the final text; returns how many tokens were sent."""
+        """Check the streamed tokens against the engine's result; returns how many were sent."""
         if self.error is not None:
             raise self.error
         with self.lock:
@@ -739,10 +739,6 @@ class _BatchStream:
                                              and self.tokens[:len(produced)] == produced):
             raise RuntimeError("streamed tokens differ from the engine result")
         self._release()
-        if not self.stopped and self.held is not None:
-            self.held["text"] += self.tail
-            _emit(self.held)
-            self.sent += 1
         return self.sent
 
 

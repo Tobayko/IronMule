@@ -674,3 +674,45 @@ def test_the_kp1_stress_cell_holds_more_capacities_than_the_engine_keeps_bodies(
     assert sorted(item["max_tokens"] for item in items) == list(rl2.STRESS_MAX_TOKENS)
     capacities = {((24 + item["max_tokens"] + 8 + 63) // 64) * 64 for item in items}
     assert len(capacities) == 16 > 8 and not any(item["long"] for item in items)
+
+
+def test_h9_runs_three_engines_on_the_same_traffic_and_judges_both_parts_as_fixed(tmp_path, monkeypatch):
+    pytest.importorskip("mlx.core")  # the fake worker reports the baseline knobs from ironmule.runtime
+    from ironmule_product.knob_profile import kp1_knobs
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    monkeypatch.setenv("FAKE_REPORT_KNOBS", "1")
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    started = []
+
+    def start(engine):
+        started.append(engine)
+        extra = {"engine_knobs": {"knobs": kp1_knobs(), "source": "KP1-candidate"}} if engine == "kp" else {}
+        return start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=rl2.ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device, **extra), rl2.ordered_service())
+
+    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[75, 76], rounds=2, requests=3,
+                            max_tokens=(2, 3), names=rl2.arms_h9(), engines=("tuned", "kp", "dense"), plan="h9")
+    assert started == ["tuned", "kp", "dense", "kp", "dense", "tuned"]  # the first engine rotates by round
+    assert len(report["rows"]) == 2 * 3 * 6  # per block: an A/A pair for each of the three engines
+    report.update(preflight={"ok": True}, dense_preflight={"ok": True})
+    result = rl2.analyse_h9(report, resamples=50)
+    assert result["kp"]["valid"] and result["dense"]["valid"], result
+    assert result["dense_reference"] == ("kp:shortest/w2/g0/sjf" if result["kp_ships"] else "tuned:shortest/w2/g0/sjf")
+    assert result["dense"]["best_dense"] == "dense:shortest/w8/g0/sjf"
+    report["dense_preflight"] = {"ok": False}
+    assert not rl2.analyse_h9(report, resamples=50)["dense"]["valid"]
