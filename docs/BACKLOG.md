@@ -621,6 +621,34 @@ exactness before its speed means anything.
 - **Validity:** a combination that errors on any prompt is invalid; the others stand. A crash keeps the rows so
   far.
 
+**Result (2026-10-29, `HW3-run1-20261029`, kernel `tobayko/ironmule-cuda-probe` at
+`c5c5104bfd8673b45c1105f6b2c4209dae1581c9`, Kaggle T4 x2 (first card), Qwen3 1.7B bf16 revision `9cd6692`, MLX
+0.32.4, 0.8 session hours): valid.** All 32 combinations ran on all six prompts in the untimed pass and in five
+rounds without an error, the baseline reproduced its tokens, and the A/A noise was 0.85 % (largest of five).
+- **12 combinations qualify:** every combination with `compiled_fixed_cache` or `readback_every` 4 and without
+  speculation. The best is `compiled_fixed_cache` + `fused_argmax` + `readback_every` 4 at 0.918 of the baseline's
+  decode time (95 % 0.914-0.921). Without `fused_argmax` it is also 0.918 (0.915-0.921). By the HW4 rule this
+  fixes HW4's decode winner: `compiled_fixed_cache`, `fused_argmax`, `readback_every` 4.
+- **(8) compile qualifies:** 0.940 alone (0.936-0.946). `readback_every` 4 alone: 0.961 (0.958-0.965).
+  `fuse_projections` is slower (1.010, 1.007-1.012), and `fused_argmax` alone changes nothing (1.002).
+- **(10) speculation is not exact on this card.** Every combination with `speculate_k` 3 changed tokens, the
+  first at steps 23 to 58 of 64. Acceptance was 0.42-0.47, and the ratio ran from 0.986 to 1.144.
+- **Combinations (main effects on decode time):** compile 0.948, readback 0.940, speculation 1.107, fusion
+  1.003, fused argmax 1.000. Every two-factor interaction is within 0.7 % of 1, except readback x speculation
+  at 0.969. Compile x readback is 1.007: they share host time, so together they return 0.7 % less than the
+  product of their single gains.
+- **(16) overlap is worth building.** On mlx-lm's own loop, pipelining saved 13.5 % of a step after a short
+  prompt and 12.5 % after a long one. That held in all five pairs, with the same tokens.
+- **(6) fused attention is worth building.** Unmasked attention on keys cut to the context was faster at every
+  shape: 194 to 79 us at 64 tokens and 276 to 157 us at 1,024, one row. Over 28 layers that is about 3.3 ms, 15 %
+  of a long-prompt step. It is not identical (largest difference 0.001-0.006), so it is class B. On keys cut to
+  the context the logits would no longer depend on the KV capacity (X1).
+- **(5)/(7) floor:** the best bandwidth was 252 GB/s, the output projection at one row. 3.44 GB of weights then
+  need 13.7 ms per token, 70 % of a short step (19.5 ms).
+- **Post hoc phase table (RL7):** one combination wins every context, and the table's headroom is 0.0 % (95 %
+  -0.05 to 0.01 %). For these five knobs one profile serves: no table and no learner. Prefill took 106 ms for
+  17 prompt tokens and 1,726 ms for 1,026, and none of the five knobs moved it by more than +1.4 %.
+
 ### TB1 — True tensor batching on CUDA: exact, batch-invariant, and what a row costs (opened 2026-10-29, before data)
 
 **Mechanism.** Grouped batch-1 reads every weight once per request: RL6's fitted model charges 20.0 ms for a step
@@ -649,6 +677,22 @@ plan could be exact by itself.
 - **The lever:** 8 x the step time alone over the step time at B = 8, per length. Any lever above 1 counts. The
   per-row cost curve then replaces the 13.4 ms per session in RL4's simulator, which re-derives width and order
   for a batched path: RL6's narrow groups were best only because each further session cost 13.4 ms.
+
+**Result (2026-10-29, in `HW3-run1-20261029`): not exact, and a small lever.**
+- **Not exact.** Stacked rows never gave bit-identical logits (largest difference 0.25-0.31 at every B). Tokens
+  changed in 2 of 8 rows at B = 8 and 2 of 16 at B = 16 for 64-token rows. Rows of 1,024 tokens kept their tokens
+  over 32 steps.
+- **The lever at 8 rows is 1.34x at 64 tokens and 1.27x at 1,024.** Any lever above 1 counts, so it "holds", but
+  a stacked step costs 102-121 ms at B = 2 to 16, against 17.4 ms for one row.
+- **The cause is one kernel path.** MLX's bf16 product at 2 to 32 rows is 5-7x slower than at one row, and flat in
+  M. The output projection takes 2.47 ms at one row and 13.8-15.3 ms at 2 to 32 (252 against 41-45 GB/s). Rows
+  were bit-identical to the row alone only at one row (`v_proj` up to 4, `q_proj` up to 2).
+- **Combination with scheduling.** With this cost curve a stacked group is dearer than grouped batch-1 (20.0 ms
+  plus 13.4 ms per session) at every width up to 7. Scheduling stays grouped batch-1, and RL6's narrow schedule
+  stands.
+- **Verdict, as fixed.** Not exact, so a batched path is not built as an exact path (Tier 0). The gap names one
+  remedy for both the inexactness and the slowness: a small-M kernel that reads each weight once for every row
+  and reduces each row in one fixed order (KB1, to be opened).
 
 ### HW4 — The prefill side, bit-exact knob sets, and what a further session costs per knob set (opened 2026-10-29, before data)
 
@@ -1134,6 +1178,20 @@ processes again.
   the v2 policy that also picks each group's width gained 0.8 % (95 % -1.9 to 3.4 %) over the best fixed arm,
   `shortest/w1/g0/sjf`, against 3.0 % noise. No width learner. The fixed narrow shortest-first schedule it found
   is the candidate default (RL6).
+
+- **Prompt-lookup speculation as an exact knob on CUDA (2026-10-29).** Experiment `HW3-run1-20261029` (see HW3
+  above): on a T4 every combination with `speculate_k` 3 changed tokens (first at steps 23-58 of 64), acceptance
+  0.42-0.47, 0.99-1.14x. The verify forward's k + 1 rows take MLX's slower, non-invariant multi-row path. Re-open
+  with a verify path whose logits are bit-identical to the sequential step (KB1).
+
+- **True tensor batching through MLX's bf16 matmul on the T4 (2026-10-29).** Experiment `HW3-run1-20261029` (see
+  TB1 above): stacked rows changed tokens and never matched bit for bit, and eight rows made a token only 1.34x
+  cheaper, because MLX's bf16 product at 2-32 rows runs at 41-45 GB/s against 252 at one row. Re-open with a
+  small-M kernel (KB1) or another card.
+
+- **`fuse_projections` and `fused_argmax` on CUDA decode (2026-10-29).** Experiment `HW3-run1-20261029`: fusion
+  1.010 (slower) on decode and +0.5-1.4 % on prefill; fused argmax 1.002. Neither helps on a T4 with Qwen3 1.7B
+  bf16.
 
 - **RL6's width policy as the product's learned dispatch on mixed traffic (2026-10-29).** Experiment
   `LD1-V-run1-20261029` (see LD1-V above): through the product's own pool and scheduler it beat the reference by
