@@ -347,6 +347,7 @@ def analyse(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -
 LONG_PROMPT_CHARS = 1000  # a request whose last message is longer counts as a long prompt
 PLACEMENT_FEATURES = 10
 ORDER_FEATURES = 4
+WIDTH_CHOICES = (1, 2, 4, 8)  # RL6: the group widths a policy may start, from the waiting queue's features
 
 
 def _is_long(request: Any) -> bool:
@@ -378,17 +379,23 @@ def order_features(waiting: list[Any]) -> list[float]:
 @dataclass
 class LearnedPolicy:
     """A softmax over cards per request and a logistic `sjf` choice per group start (trained by
-    `tools/rl4_agent.py`); the harness applies it greedily."""
+    `tools/rl4_agent.py`); the harness applies it greedily. With `width` (RL6) it also picks each
+    group's width from `WIDTH_CHOICES`, a softmax over the waiting queue's `order_features`;
+    without it the group width is the arm's."""
     placement: list[float]
     order: list[float]
+    width: list[float] | None = None  # len(WIDTH_CHOICES) rows of ORDER_FEATURES weights
 
     @classmethod
-    def zero(cls) -> "LearnedPolicy":
-        return cls([0.0] * PLACEMENT_FEATURES, [0.0] * ORDER_FEATURES)
+    def zero(cls, widths: bool = False) -> "LearnedPolicy":
+        return cls([0.0] * PLACEMENT_FEATURES, [0.0] * ORDER_FEATURES,
+                   [0.0] * (len(WIDTH_CHOICES) * ORDER_FEATURES) if widths else None)
 
     def to_json(self) -> dict[str, Any]:
-        body = {"schema": "ironmule.rl4.policy.v1", "placement": self.placement, "order": self.order,
-                "features": {"placement": PLACEMENT_FEATURES, "order": ORDER_FEATURES}}
+        body: dict[str, Any] = {"schema": "ironmule.rl4.policy.v1", "placement": self.placement, "order": self.order,
+                                "features": {"placement": PLACEMENT_FEATURES, "order": ORDER_FEATURES}}
+        if self.width is not None:  # a v1 policy keeps its exact body and digest
+            body.update(schema="ironmule.rl4.policy.v2", width=self.width, widths=list(WIDTH_CHOICES))
         return {**body, "sha256": hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
 
     @classmethod
@@ -396,9 +403,23 @@ class LearnedPolicy:
         body = {k: v for k, v in data.items() if k != "sha256"}
         if hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() != data.get("sha256"):
             raise ValueError("policy digest does not match its weights")
-        if body.get("schema") != "ironmule.rl4.policy.v1":
-            raise ValueError("unknown policy schema")
-        return cls(list(body["placement"]), list(body["order"]))
+        if body.get("schema") == "ironmule.rl4.policy.v1":
+            return cls(list(body["placement"]), list(body["order"]))
+        if body.get("schema") == "ironmule.rl4.policy.v2" and body.get("widths") == list(WIDTH_CHOICES):
+            return cls(list(body["placement"]), list(body["order"]), list(body["width"]))
+        raise ValueError("unknown policy schema")
+
+    def width_probabilities(self, waiting: list[Any]) -> list[float]:
+        f = order_features(waiting)
+        scores = [sum(w * x for w, x in zip(self.width[c * ORDER_FEATURES:(c + 1) * ORDER_FEATURES], f))
+                  for c in range(len(WIDTH_CHOICES))]
+        top = max(scores)
+        exps = [math.exp(v - top) for v in scores]
+        return [e / sum(exps) for e in exps]
+
+    def best_width(self, waiting: list[Any]) -> int:
+        p = self.width_probabilities(waiting)
+        return WIDTH_CHOICES[max(range(len(p)), key=lambda i: (p[i], -i))]
 
     def card_probabilities(self, request: Any, cards: list[Any]) -> list[float]:
         scores = [sum(w * x for w, x in zip(self.placement, placement_features(request, cards, c)))
@@ -422,6 +443,10 @@ class LearnedPolicy:
         """(place, order) callables in `tools/rl4_agent.py`'s simulator signature."""
         return (lambda request, cards, now: self.best_card(request, cards),
                 lambda waiting, now: "sjf" if self.uses_sjf(waiting) else "fifo")
+
+    def greedy_width(self) -> Any:
+        """The simulator's per-group width callable, or None when the arm's width applies."""
+        return None if self.width is None else (lambda waiting, now: self.best_width(waiting))
 
 
 @dataclass
@@ -545,6 +570,10 @@ def ordered_service() -> type:
             if self.order in ("sjf", "learned"):
                 with self._lock:
                     self._sort_waiting()
+                    policy = self.learned_policy
+                    if self.order == "learned" and policy is not None and policy.width is not None:
+                        # RL6: the policy picks this group's width from the queue as the group starts
+                        width = policy.best_width([_View.of(s.request) for s in [first, *self._carry]])
             return super()._group_for(first, width, gather_ms)
 
     return OrderedService

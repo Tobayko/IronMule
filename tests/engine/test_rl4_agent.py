@@ -122,3 +122,26 @@ def test_training_keeps_the_seed_that_does_best_on_validation_traffic():
     costs = summary["validation_cost_per_seed"]
     assert len(costs) == 2 and summary["chosen_seed"] == min(range(2), key=lambda i: (costs[i], i))
     assert isinstance(policy, rl4.Policy)
+
+
+def test_a_width_policy_picks_each_groups_width_and_keeps_old_policies_digests():
+    old = rl4.Policy([0.1] * rl4.PLACEMENT_SIZE, [0.2] * rl4.ORDER_SIZE)
+    assert old.to_json()["schema"] == "ironmule.rl4.policy.v1" and old.greedy_width() is None
+    wide = rl4.Policy.zero(widths=True)
+    wide.width[rl2.WIDTH_CHOICES.index(2) * rl4.ORDER_SIZE] = 5.0  # bias towards width 2
+    data = json.loads(json.dumps(wide.to_json()))
+    assert data["schema"] == "ironmule.rl4.policy.v2" and rl4.Policy.from_json(data) == wide
+    queue = [rl4._Request(i, 0.0, 32, False) for i in range(6)]
+    assert wide.best_width(queue) == 2
+    trace = _items(*[(0.0, 32, False)] * 6)
+    groups = []
+    rl4.simulate(MODEL, trace, rl4.fixed_placer("shortest"), rl4.fixed_orderer("fifo"),
+                 width=lambda waiting, now: groups.append(min(2, len(waiting))) or 2)
+    assert groups and max(groups) <= 2
+
+
+def test_reinforce_can_learn_widths_and_the_gate_then_faces_every_fixed_width():
+    policy, curve = rl4.train(MODEL, 1.0, episodes=60, lr=0.1, seed=2, widths=True)
+    assert policy.width is not None and len(curve) == 60
+    result = rl4.judge(MODEL, 1.0, policy, noise=0.035, traces=4)
+    assert set(rl4.WIDTH_ARMS) <= set(result["weighted"]) and result["best_fixed"] in rl4.FIXED_ARMS + rl4.WIDTH_ARMS

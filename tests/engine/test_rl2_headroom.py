@@ -454,3 +454,28 @@ def test_rl4_s_replays_only_spike_traffic_on_traces_no_earlier_run_or_training_u
                      "--best-fixed", "shortest/w8/g0/sjf", "--policy-json", f"@{policy}"]) == 0
     assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "someone/ironmule-rl2-headroom-h5"
     assert "'--plan', 'h5'" in (folder / "run.py").read_text()
+
+
+def test_a_width_policy_sets_each_groups_width_in_the_scheduler():
+    import collections
+    import queue
+
+    from ironmule_product.serving_policy import ServingPolicy
+
+    service = object.__new__(rl2.ordered_service())
+    service._lock, service._carry, service._pending = threading.Lock(), collections.deque(), queue.Queue()
+    service.policy = ServingPolicy(max_width=8, source="test")
+    service.backend = SimpleNamespace(batch_capacity=8, can_batch_requests=lambda requests: True)
+    service.order = "learned"
+    sessions = [SimpleNamespace(request=_live(32), submitted_ns=time.monotonic_ns() + i) for i in range(6)]
+    for choice, expected in ((1, 1), (4, 4), (8, 6)):
+        policy = rl2.LearnedPolicy.zero(widths=True)
+        policy.width[rl2.WIDTH_CHOICES.index(choice) * rl2.ORDER_FEATURES] = 5.0
+        service.learned_policy = policy
+        service._carry.extend(sessions[1:])
+        group = service._group_for(sessions[0])
+        assert len(group) == expected, choice
+        service._carry.clear()
+    service.learned_policy = rl2.LearnedPolicy.zero()  # a v1 policy: the arm's width
+    service._carry.extend(sessions[1:])
+    assert len(service._group_for(sessions[0])) == 6

@@ -49,6 +49,8 @@ HELD_OUT_SEED0 = 50_000          # the simulator gate's held-out traffic
 FIXED_ARMS = ("shortest/w8/g0", "shortest/w8/g0/sjf", "segregate/w8/g0", "segregate/w8/g0/sjf",
               "spill/w8/g0", "spill/w8/g0/sjf")
 SIMULATOR_ONLY_ARMS = ("leastwork/w8/g0", "leastwork/w8/g0/sjf")  # compared in the model, never on hardware
+# RL6: every fixed width a width-learning policy competes with (all run on hardware too)
+WIDTH_ARMS = tuple(f"shortest/w{w}/g0{o}" for w in (1, 2, 4) for o in ("", "/sjf"))
 
 
 @dataclass(frozen=True)
@@ -114,8 +116,9 @@ Orderer = Callable[[list[_Request], float], str]
 
 
 def simulate(model: PoolModel, items: list[dict[str, Any]], place: Placer, order: Orderer,
-             capacity: int = 8) -> list[_Request]:
-    """Replay one trace (rl2_headroom's item format) through the pool model under `place` and `order`."""
+             capacity: int = 8, width: Callable[[list[_Request], float], int] | None = None) -> list[_Request]:
+    """Replay one trace (rl2_headroom's item format) through the pool model under `place` and `order`;
+    `width`, when given, picks each group's width (at most `capacity`) from the ordered queue (RL6)."""
     requests = [_Request(i, item["offset_s"], item["max_tokens"], bool(item.get("long")))
                 for i, item in enumerate(items)]
     cards = [_Card() for _ in range(model.cards)]
@@ -127,7 +130,8 @@ def simulate(model: PoolModel, items: list[dict[str, Any]], place: Placer, order
         if order(card.waiting, now) == "sjf":  # as the harness's OrderedService: aged requests by arrival
             card.waiting.sort(key=lambda r: (now - r.arrive <= rl2.SJF_AGE_S,
                                              r.max_tokens if now - r.arrive <= rl2.SJF_AGE_S else 0, r.arrive))
-        card.running, card.waiting = card.waiting[:capacity], card.waiting[capacity:]
+        size = capacity if width is None else min(capacity, width(card.waiting, now))
+        card.running, card.waiting = card.waiting[:size], card.waiting[size:]
         card.free_at = group_timeline(model, card.running, now)
 
     while pending or any(card.running for card in cards):
@@ -205,10 +209,11 @@ def traffic(state: int, seed: int, capacity_rps: float) -> list[dict[str, Any]]:
 
 
 def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: float = 0.05,
-          seed: int = 0) -> tuple[Policy, list[float]]:
-    """REINFORCE with a running-mean baseline per state; returns the policy and the learning curve."""
+          seed: int = 0, widths: bool = False) -> tuple[Policy, list[float]]:
+    """REINFORCE with a running-mean baseline per state; returns the policy and the learning curve.
+    With `widths` (RL6) the policy also learns each group's width."""
     rng = random.Random(seed)
-    policy = Policy.zero()
+    policy = Policy.zero(widths)
     baseline = [None] * len(rl2.H2_STATES)
     curve = []
     for episode in range(episodes):
@@ -216,6 +221,7 @@ def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: fl
         items = traffic(state, TRAIN_SEED0 + episode, capacity_rps)
         grad_p = [0.0] * PLACEMENT_SIZE
         grad_o = [0.0] * ORDER_SIZE
+        grad_w = [0.0] * (len(rl2.WIDTH_CHOICES) * ORDER_SIZE)
 
         def place(request: _Request, cards: list[_Card], now: float) -> int:
             p = policy.card_probabilities(request, cards)
@@ -234,7 +240,16 @@ def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: fl
                 grad_o[k] += ((1.0 if sjf else 0.0) - q) * f[k]
             return "sjf" if sjf else "fifo"
 
-        value = -cost(simulate(model, items, place, order))
+        def width(waiting: list[_Request], now: float) -> int:
+            p = policy.width_probabilities(waiting)
+            choice = rng.choices(range(len(p)), weights=p)[0]
+            f = order_features(waiting)
+            for c in range(len(p)):  # d log softmax over widths, one weight row per width
+                for k in range(ORDER_SIZE):
+                    grad_w[c * ORDER_SIZE + k] += ((1.0 if c == choice else 0.0) - p[c]) * f[k]
+            return rl2.WIDTH_CHOICES[choice]
+
+        value = -cost(simulate(model, items, place, order, width=width if widths else None))
         if baseline[state] is None:
             baseline[state] = value
         advantage = (value - baseline[state]) / max(1e-6, abs(baseline[state]))
@@ -243,6 +258,9 @@ def train(model: PoolModel, capacity_rps: float, *, episodes: int = 6000, lr: fl
             policy.placement[k] += lr * advantage * grad_p[k]
         for k in range(ORDER_SIZE):
             policy.order[k] += lr * advantage * grad_o[k]
+        if widths:
+            for k in range(len(grad_w)):
+                policy.width[k] += lr * advantage * grad_w[k]
         curve.append(-value)
     return policy, curve
 
@@ -251,13 +269,12 @@ VALIDATION_SEED0 = 30_000        # picks among training seeds; disjoint from tra
 
 
 def train_best(model: PoolModel, capacity_rps: float, *, seeds: int = 4, episodes: int = 12000,
-               lr: float = 0.05, validation_traces: int = 60) -> tuple[Policy, dict[str, Any]]:
+               lr: float = 0.05, validation_traces: int = 60, widths: bool = False) -> tuple[Policy, dict[str, Any]]:
     """Train one policy per seed and keep the one with the lowest weighted cost on validation traffic."""
     runs = []
     for seed in range(seeds):
-        policy, curve = train(model, capacity_rps, episodes=episodes, lr=lr, seed=seed)
-        place, order = policy.greedy()
-        costs = evaluate(model, capacity_rps, {"policy": (place, order, 8)}, validation_traces,
+        policy, curve = train(model, capacity_rps, episodes=episodes, lr=lr, seed=seed, widths=widths)
+        costs = evaluate(model, capacity_rps, {"policy": _learned(policy)}, validation_traces,
                          seed0=VALIDATION_SEED0)["policy"]
         runs.append((sum(w * c for w, c in zip(rl2.WEIGHTS, costs)), seed, policy, curve))
     best = min(runs, key=lambda run: (run[0], run[1]))
@@ -266,26 +283,32 @@ def train_best(model: PoolModel, capacity_rps: float, *, seeds: int = 4, episode
                      "last_tenth_cost": statistics.fmean(best[3][-max(1, len(best[3]) // 10):])}
 
 
-def evaluate(model: PoolModel, capacity_rps: float, policies: dict[str, tuple[Placer, Orderer, int]],
+def _learned(policy: Policy) -> tuple[Placer, Orderer, int, Any]:
+    place, order = policy.greedy()
+    return place, order, 8, policy.greedy_width()
+
+
+def evaluate(model: PoolModel, capacity_rps: float, policies: dict[str, tuple],
              traces: int = 200, seed0: int = HELD_OUT_SEED0) -> dict[str, list[float]]:
-    """Mean cost per state for each policy on the same held-out traffic."""
+    """Mean cost per state for each policy (place, order, capacity[, width]) on the same held-out traffic."""
     out: dict[str, list[float]] = {name: [] for name in policies}
     for state in range(len(rl2.H2_STATES)):
         batch = [traffic(state, seed0 + t, capacity_rps) for t in range(traces)]
-        for name, (place, order, capacity) in policies.items():
-            out[name].append(statistics.fmean(cost(simulate(model, items, place, order, capacity))
+        for name, (place, order, capacity, *width) in policies.items():
+            out[name].append(statistics.fmean(cost(simulate(model, items, place, order, capacity, *width))
                                               for items in batch))
     return out
 
 
 def judge(model: PoolModel, capacity_rps: float, policy: Policy, noise: float, traces: int = 200) -> dict[str, Any]:
-    """The simulator gate: the learned policy against every fixed arm on held-out traffic."""
-    place, order = policy.greedy()
-    arms = {name: arm_policy(name) for name in FIXED_ARMS + SIMULATOR_ONLY_ARMS}
-    arms["learned"] = (place, order, 8)
+    """The simulator gate: the learned policy against every fixed arm on held-out traffic; a policy that
+    picks widths (RL6) also faces every fixed width."""
+    fixed = FIXED_ARMS + (WIDTH_ARMS if policy.width is not None else ())
+    arms = {name: arm_policy(name) for name in fixed + SIMULATOR_ONLY_ARMS}
+    arms["learned"] = _learned(policy)
     per_state = evaluate(model, capacity_rps, arms, traces)
     weighted = {name: sum(w * c for w, c in zip(rl2.WEIGHTS, costs)) for name, costs in per_state.items()}
-    best_fixed = min(FIXED_ARMS, key=lambda name: (weighted[name], name))
+    best_fixed = min(fixed, key=lambda name: (weighted[name], name))
     gain = 1 - weighted["learned"] / weighted[best_fixed]
     best_rule = min(SIMULATOR_ONLY_ARMS, key=lambda name: (weighted[name], name))
     return {"per_state": per_state, "weighted": weighted, "best_fixed": best_fixed, "gain_vs_best_fixed": gain,
@@ -460,6 +483,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     p_train.add_argument("--out", type=Path, required=True)
     p_train.add_argument("--episodes", type=int, default=12000)
     p_train.add_argument("--seeds", type=int, default=4)
+    p_train.add_argument("--widths", action="store_true", help="RL6: also learn each group's width")
     p_judge = sub.add_parser("judge")
     p_judge.add_argument("--model", type=Path, required=True)
     p_judge.add_argument("--policy", type=Path, required=True)
@@ -482,7 +506,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps(fidelity(model, json.loads(args.report.read_text())), indent=1))
     elif args.command == "train":
         model, capacity = load_model(args.model)
-        policy, summary = train_best(model, capacity, seeds=args.seeds, episodes=args.episodes)
+        policy, summary = train_best(model, capacity, seeds=args.seeds, episodes=args.episodes, widths=args.widths)
         args.out.write_text(json.dumps(policy.to_json(), indent=1) + "\n")
         print(json.dumps({**summary, "policy": policy.to_json()}))
     elif args.command == "judge":
