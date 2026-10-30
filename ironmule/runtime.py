@@ -43,6 +43,7 @@ class Knobs:
 
 BASELINE = Knobs()
 _NO_WIRED_LIMIT = object()
+_BODY_CACHE = 8  # decode bodies an engine keeps, one per (capacity, width, knobs)
 _WIRED_LIMIT_LOCK = threading.RLock()
 _WIRED_LIMIT_OWNERS: list[tuple[object, int, int]] = []
 
@@ -135,7 +136,8 @@ class TurnCache:
     """KV states at chat-turn boundaries, reused across requests (SERVE7, `ChatTurnsPlan`).
 
     Stored unpadded and keyed by the exact token prefix, so a later request with a larger
-    capacity can still use one; padding length does not move a token (EXACT2). Reuse is bit
+    capacity can still use one; padding length does not move a token (EXACT2) on Metal and the
+    CPU, but on CUDA it does (X1), so there reuse at another capacity is not exact. Reuse is bit
     exact because the plan ends a prefill chunk at every turn boundary whether or not a state
     is cached. ponytail: bounded by entry count only; a byte budget when long chats need one.
     """
@@ -376,6 +378,7 @@ class Engine:
         self.model, self.tokenizer, self.knobs = model, tokenizer, knobs
         self._compiled = None
         self._compiled_capacity = None
+        self._bodies: OrderedDict[tuple[int, int, str], Any] = OrderedDict()  # X1: one per capacity
         self.prefix_cache: PrefixCache | None = None
         self.turn_boundaries: tuple[int, ...] | None = None  # set by ChatTurnsPlan (SERVE7)
         self.turn_cache = TurnCache()
@@ -502,6 +505,14 @@ class Engine:
     def _body(self, capacity: int, width: int):
         if self._compiled is not None and self._compiled_capacity == (capacity, width):
             return self._compiled
+        # X1: a group's requests decode at their own capacities, so a round alternates between
+        # them; keep the last few bodies (per knob setting) instead of recompiling at each switch.
+        bodies = self.__dict__.setdefault("_bodies", OrderedDict())
+        key = (capacity, width, self.knobs.key())
+        if key in bodies:
+            bodies.move_to_end(key)
+            self._compiled, self._compiled_capacity = bodies[key], (capacity, width)
+            return self._compiled
         fused = self.knobs.fused_argmax
         model, trunk = self.model, _trunk(self.model)
 
@@ -525,6 +536,12 @@ class Engine:
 
         self._compiled = mx.compile(body, shapeless=False) if self.knobs.compiled_fixed_cache else body
         self._compiled_capacity = (capacity, width)
+        bodies[key] = self._compiled
+        counts = self.__dict__.setdefault("body_counts", {"built": 0, "evicted": 0})  # KP1: compile churn
+        counts["built"] += 1
+        while len(bodies) > _BODY_CACHE:
+            bodies.popitem(last=False)
+            counts["evicted"] += 1
         return self._compiled
 
     def _feed(self, state, ids: list[int], capacity: int):

@@ -34,6 +34,10 @@
 
 **IronMule is an open-source local LLM inference runtime and OpenAI-compatible server for Apple Silicon Macs (Metal) and Linux machines with an NVIDIA GPU (CUDA), and — more slowly — Linux machines with only a CPU.** It runs on [MLX](https://github.com/ml-explore/mlx), serving models such as Gemma 3 fully offline, on your own hardware, by reusing work, skipping work that is not needed, and grouping requests — without changing the output by default. It ships as a one-line installer, an OpenAI-compatible HTTP server, and a three-line Python API.
 
+**The project's main goal is the IronMule agent:** an AI inside the server that decides on its own how requests run on
+your hardware, keeps learning by reinforcement learning while it serves, and decides in microseconds. It serves a
+strategy only after it has proven it faster on your machine. See [The IronMule agent](#the-ironmule-agent-the-projects-main-goal).
+
 <a href="docs/assets/ironmule-live-race.mp4"><img src="docs/assets/ironmule-live-race.gif" alt="Six questions answered side by side on an Apple M1 Max with Gemma 3 1B: optimisations off in 2.11 s, IronMule on in 1.28 s, every token identical" width="100%"></a>
 
 Gemma 3 1B on an Apple M1 Max, six questions at once: reference path on the left, IronMule's tuned, grouped settings on the right. Every token is identical on both sides. [Full-resolution video (MP4)](docs/assets/ironmule-live-race.mp4).
@@ -103,6 +107,24 @@ print(result.text)
 ```
 
 `Runtime.load` uses a model already in your Hugging Face cache (`hf download mlx-community/gemma-3-4b-it-4bit`). More: [docs/RUNTIME.md](docs/RUNTIME.md).
+
+## The IronMule agent (the project's main goal)
+
+`ironmule serve --agent on` hands scheduling to the IronMule agent, an AI that runs inside the server. It is
+opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
+
+- **It decides.** At every group start it chooses the order (shortest answer first or arrival order) and how many
+  requests run together. Each decision is a few dot products and takes microseconds. Answers never change.
+- **It learns all the time.** Every finished group updates its model of what this machine's work costs. Every
+  finished request goes into a memory of arrival times and lengths, with no text. While the server is idle, a
+  separate planner process trains a new strategy by reinforcement learning in a simulation of this machine.
+- **It proves before it serves.** A new strategy serves only after it beats the current one in replays of recorded
+  traffic on the real model, with identical answers, by more than two identical runs differ. Errors, failed
+  requests or `POST /v1/ironmule/dispatch {"action": "off"}` withdraw it for good. A real request always
+  interrupts the agent's idle work.
+
+`GET /health` shows what it learned under `agent`: the fitted costs, the plans, each candidate's comparison and what
+serves now.
 
 ## It learns from your machine
 

@@ -1,9 +1,11 @@
 """A protocol-faithful stand-in for the grouped engine worker (STAB1 fault scenarios; no model).
 
 Speaks the real JSON-lines protocol of `ironmule_product.worker` for `current_engine`: the ready
-handshake, `generate_batch` with tokens streamed round-robin across the group, `cancel` honoured at
-the next token, and `batch_done`. Like the real worker (`_BatchStream`), each request's last token and
-its `done` are held until the whole run has finished, so a short member waits for its run's end. A request's last user message selects a fault:
+handshake, `generate_batch` with tokens streamed round-robin across the group, `join_batch` adding
+requests to the running group, `cancel` honoured at the next token, and `batch_done`. Like the real
+worker (`_BatchStream`, since H9), each token is sent as it is produced and a request's `done` follows
+its last token at once, so a short member does not wait for its run's end. A request's last user
+message selects a fault:
 
     crash      the worker writes one stderr line and exits (status 9) after this request's first token
     hang       the worker stops emitting and ignores cancellation (alive, no progress)
@@ -34,9 +36,38 @@ def emit(value: dict) -> None:
     OUT.flush()
 
 
+def _slots(args) -> int:
+    return int(os.environ.get("FAKE_DENSE_SLOTS", "8192"))
+
+
+def _too_long(args, request) -> int | None:
+    """Protocol 2: the limit a request exceeds, counting about five characters a token as the real tokenizer
+    does for the harness's background notes; None when it fits."""
+    limit = min(8192, _slots(args)) if args.engine_configuration == "dense_stacked" else 8192
+    return limit if len(request["messages"][-1]["content"]) // 5 + request["max_tokens"] > limit else None
+
+
+def _engine_metadata(args) -> dict:
+    """The real worker's knob fields (KP1): requested class-A knobs; the baseline only when FAKE_REPORT_KNOBS
+    asks, since reading it imports MLX and slows every start the STAB1 timing tests rely on."""
+    metadata = {"configuration": args.engine_configuration}
+    if args.engine_configuration == "dense_stacked":  # KB1: the slot size the plan installed with
+        metadata["dense_plan"] = {"capacity": _slots(args)}
+    if args.engine_knobs is not None:
+        requested = json.loads(args.engine_knobs)
+        return {**metadata, "selected_knobs": requested["knobs"], "profile_source": f"class_a:{requested['source']}"}
+    if not os.environ.get("FAKE_REPORT_KNOBS"):
+        return metadata
+    from ironmule.runtime import BASELINE
+
+    return {**metadata, "selected_knobs": BASELINE.as_dict(), "profile_source": "baseline_no_compatible_profile"}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--spec", required=True)
+    parser.add_argument("--engine-configuration", default="current_profile")
+    parser.add_argument("--engine-knobs", default=None)
     args, _ = parser.parse_known_args()
     spec = json.loads(args.spec)
     control = {}
@@ -49,11 +80,12 @@ def main() -> int:
     if control.get("fail_start"):
         sys.stderr.write("fake worker: start refused by control file\n")
         return 4
-    emit({"type": "ready", "protocol_version": 1, "model_id": spec["model_id"], "revision": spec["revision"],
+    emit({"type": "ready", "protocol_version": 2, "model_id": spec["model_id"], "revision": spec["revision"],
           "device": "gpu", "stop_handling": "parent", "context_limit": 8192, "execution_variant": "current_engine",
-          "engine": control.get("engine", {"configuration": "current_profile"}),
+          "engine": control.get("engine", _engine_metadata(args)),
           "sources_sha256": control.get("digest", "a" * 64)})
     commands: queue.Queue = queue.Queue()
+    joins: queue.Queue = queue.Queue()
     cancelled: set[str] = set()
     lock = threading.Lock()
 
@@ -63,6 +95,8 @@ def main() -> int:
             if command.get("type") == "cancel":
                 with lock:
                     cancelled.add(command["request_id"])
+            elif command.get("type") == "join_batch":
+                joins.put(command)
             else:
                 commands.put(command)
         commands.put(None)
@@ -84,46 +118,61 @@ def main() -> int:
             emit({"type": "error", "code": "generation_error", "batch_id": batch_id})
             continue
         delay = max([float(f.split(":", 1)[1]) for f in faults if f.startswith("slow:")] or [0.01])
+        def fits(request) -> bool:
+            limit = _too_long(args, request)
+            if limit is not None:
+                emit({"type": "rejected", "batch_id": batch_id, "request_id": request["request_id"],
+                      "code": "invalid_request", "reason": "context_limit" if limit == 8192 else "engine_limit",
+                      "limit": limit})
+            return limit is None
+
         sent = {request["request_id"]: 0 for request in requests}
-        open_ids = [request["request_id"] for request in requests]
+        open_ids = [request["request_id"] for request in requests if fits(request)]
         by_id = {request["request_id"]: request for request in requests}
-        held: dict[str, dict] = {}
-        ends: dict[str, str] = {}
+        requests = list(requests)
+
+        def finish(request_id: str, reason: str) -> None:
+            emit({"type": "done", "batch_id": batch_id, "request_id": request_id, "finish_reason": reason,
+                  "prompt_tokens": 3, "completion_tokens": sent[request_id], "variant": "current_engine",
+                  "metrics": {}, "engine": {"configuration": "current_profile"}})
+            open_ids.remove(request_id)
+
         while open_ids:
+            while True:  # requests the client sent to join this run take part from the next round
+                try:
+                    join = joins.get_nowait()
+                except queue.Empty:
+                    break
+                for request in join["requests"] if join.get("batch_id") == batch_id else ():
+                    sent[request["request_id"]] = 0
+                    by_id[request["request_id"]] = request
+                    requests.append(request)
+                    if fits(request):
+                        open_ids.append(request["request_id"])
             for request_id in list(open_ids):
                 request = by_id[request_id]
                 with lock:
                     stop = request_id in cancelled
-                if stop or sent[request_id] >= request["max_tokens"]:
-                    ends[request_id] = "cancelled" if stop else "length"
-                    open_ids.remove(request_id)
+                if stop:
+                    finish(request_id, "cancelled")
                     continue
                 content = request["messages"][-1]["content"]
                 if content == "hang":
                     while True:
                         time.sleep(3600)
                 index = sent[request_id]
-                if request_id in held:  # one token stays back, as in the real worker
-                    emit(held.pop(request_id))
                 text = hashlib.sha256(f"{content}/{index}".encode()).hexdigest()[:4] + " "
-                held[request_id] = {"type": "token", "batch_id": batch_id, "request_id": request_id, "text": text,
-                                    "token_id": index + 1, "prompt_tokens": 3, "completion_tokens": index + 1}
                 sent[request_id] += 1
+                emit({"type": "token", "batch_id": batch_id, "request_id": request_id, "text": text,
+                      "token_id": index + 1, "prompt_tokens": 3, "completion_tokens": index + 1})
                 if content == "crash":
-                    emit(held.pop(request_id))
                     sys.stderr.write("fake worker: fatal out of memory during decode\n")
                     sys.stderr.flush()
                     os._exit(9)
+                if sent[request_id] >= request["max_tokens"]:
+                    finish(request_id, "length")  # its done goes out with its last token
             if open_ids:
                 time.sleep(delay)
-        for request in requests:  # the run is over: last tokens and completions
-            request_id = request["request_id"]
-            if request_id in held and ends[request_id] != "cancelled":
-                emit(held.pop(request_id))
-            delivered = sent[request_id] - (request_id in held)
-            emit({"type": "done", "batch_id": batch_id, "request_id": request_id, "finish_reason": ends[request_id],
-                  "prompt_tokens": 3, "completion_tokens": delivered if ends[request_id] == "cancelled" else sent[request_id],
-                  "variant": "current_engine", "metrics": {}, "engine": {"configuration": "current_profile"}})
         emit({"type": "batch_done", "batch_id": batch_id, "request_ids": [r["request_id"] for r in requests],
               "memory": {"active": 1, "cache": 2, "peak": 3}})
 

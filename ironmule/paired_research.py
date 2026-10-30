@@ -20,7 +20,7 @@ from typing import Any
 import mlx.core as mx
 import mlx.nn as nn
 
-from .executor import AsyncGroupedB1Executor, Session
+from .executor import AsyncGroupedB1Executor, Session, _capacity
 from .qmv_k3840 import (
     RESULTS_PER_SIMDGROUP,
     NUM_SIMDGROUPS,
@@ -260,11 +260,13 @@ class PairedGroupedExecutor(AsyncGroupedB1Executor):
 
     def _step_group(self, group: list[Session], capacity: int):
         # A pair forms only from requests already at a step boundary. A lone request is
-        # served immediately on the single path; nothing waits for a partner.
-        if len(group) != PAIR_WIDTH:
+        # served immediately on the single path; nothing waits for a partner. One paired
+        # forward has one cache length, so requests with different capacities (X1) step alone.
+        capacities = {_capacity(s, capacity) for s in group}
+        if len(group) != PAIR_WIDTH or len(capacities) != 1:
             self.solo_steps += len(group)
-            return [self.backend.step(s.state, s.tokens[-1], capacity) for s in group]
+            return [self.backend.step(s.state, s.tokens[-1], _capacity(s, capacity)) for s in group]
         self.paired_steps += 1
         return self.backend.step_pair(
-            [s.state for s in group], [s.tokens[-1] for s in group], capacity
+            [s.state for s in group], [s.tokens[-1] for s in group], capacities.pop()
         )
