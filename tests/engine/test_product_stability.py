@@ -174,6 +174,9 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
         # A three-second blocker: both must queue behind it to form one group, even on a loaded test machine.
         crashed, neighbour = _grouped(service, [_request("r-a", "crash"), _request("r-b", "steady")],
                                       blocker=("slow:1.0", 3))
+        groups = [row["ids"] for row in _log(store) if row["event"] == "group"]
+        # The premise: both ran in one group. If not, the scheduler grouped them otherwise, not a crash bug.
+        assert any({"r-a", "r-b"} <= set(ids) for ids in groups), groups
         for result in (crashed, neighbour):
             assert isinstance(result, ProductError) and result.code == "backend_unavailable"
             assert not any(event["type"] == "done" for event in result.events)

@@ -15,10 +15,10 @@ All notable public changes to IronMule are documented here. Measurements and res
   requests into one decode step with IronMule's own batch-invariant kernels. It runs on unquantized Qwen 3 bf16 on
   CUDA below compute capability 8 (a Tesla T4) and is refused elsewhere. A load probe must find every stacked
   width bit-identical to one row. It changes answers against `--engine tuned`, as a numeric plan does, and passed
-  the numeric plans' quality gate on the decode path. On two T4s with Qwen3 1.7B bf16 it cost 24.0 % less than the
-  default on mixed traffic (95 % 20.8-26.7 %), with no traffic state worse, and it is recommended there as an
-  opt-in numeric plan (BACKLOG H9; about half of its answers differ from `--engine tuned`). A request arriving
-  while a group runs takes a slot a finished request freed. Prompt plus answer is limited to 2,048 tokens.
+  the numeric plans' quality gate on the decode path. A request arriving while a group runs takes a slot a
+  finished request freed. On two T4s with Qwen3 1.7B bf16 it cost 48.3 % less than the default on mixed traffic
+  (95 % 45.0-51.4 %), with no traffic state worse, and it is recommended there as an opt-in numeric plan (BACKLOG
+  H10; about half of its answers differ from `--engine tuned`). Prompt plus answer is limited to 2,048 tokens.
 
 - **A stream cancelled inside a chained readback or a speculative draft ends at its cancel.** Before, it could
   receive up to three more tokens; answers of the other requests are unchanged.

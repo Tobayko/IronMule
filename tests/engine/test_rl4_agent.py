@@ -237,3 +237,10 @@ def test_a_joining_card_admits_newcomers_into_freed_places_between_rounds():
     by_mode = {joins: rl4.cost(rl4.simulate(replace(dense, joins=joins, cards=2), spike, rl4.fixed_placer("shortest"),
                                             rl4.fixed_orderer("sjf"))) for joins in (False, True)}
     assert by_mode[True] < by_mode[False]
+
+
+def test_each_run_is_simulated_with_the_join_mode_its_engine_had():
+    run = lambda plan: {"rl2h": {"plan": plan}}  # noqa: E731
+    assert rl4.joins_of(run("h10"), "dense") and not rl4.joins_of(run("h9"), "dense")
+    assert not rl4.joins_of(run("h10"), "tuned")  # join stays off for grouped batch-1
+    assert rl4.release_of(run("h10")) == "member"

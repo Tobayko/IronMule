@@ -410,14 +410,20 @@ def judge(model: PoolModel, capacity_rps: float, policy: Policy, noise: float, t
 
 # ---------------------------------------------------------------- fitting and the fidelity gate
 
-PRODUCT_PLANS = ("h6", "h7", "kp1", "h9")  # RL8: runs through the product, arms naming their engine
-MEMBER_RELEASE_PLANS = ("h9",)            # measured after a grouped member's done followed its last token
+PRODUCT_PLANS = ("h6", "h7", "kp1", "h9", "h10")  # RL8: runs through the product, arms naming their engine
+MEMBER_RELEASE_PLANS = ("h9", "h10")             # measured after a grouped member's done followed its last token
+JOINING_PLANS = ("h10",)                         # measured with the dense plan's slot reuse engaged
 FIXED_PLACEMENTS = ("shortest", "segregate", "spill", "fill", "leastwork")
 
 
 def release_of(report: dict[str, Any]) -> str:
     """The release rule the product had when `report` was measured (RL8)."""
     return "member" if report.get("rl2h", report).get("plan") in MEMBER_RELEASE_PLANS else "group"
+
+
+def joins_of(report: dict[str, Any], engine: str) -> bool:
+    """Whether `engine`'s groups took newcomers when `report` was measured (the dense plan from H10 on)."""
+    return engine == "dense" and report.get("rl2h", report).get("plan") in JOINING_PLANS
 
 
 def _cells(report: dict[str, Any], engine: str = "tuned") -> dict[tuple[int, str], list[list[dict[str, Any]]]]:
@@ -510,9 +516,9 @@ def fit(reports: Iterable[dict[str, Any]], start: PoolModel | None = None, evalu
     change share one set of timings."""
     cells = {}
     for report in reports:
-        release = release_of(report)
+        mode = {"release": release_of(report), "joins": joins_of(report, engine)}
         for key, cell in _cells(report, engine).items():
-            cells[(id(report),) + key] = (key[1], cell, _measured_times(cell), release)
+            cells[(id(report),) + key] = (key[1], cell, _measured_times(cell), mode)
     base = start or PoolModel()
 
     def model_at(x: list[float]) -> PoolModel:
@@ -521,8 +527,8 @@ def fit(reports: Iterable[dict[str, Any]], start: PoolModel | None = None, evalu
     def loss(x: list[float]) -> float:
         m = model_at(x)
         errors = []
-        for arm, cell, measured, release in cells.values():
-            simulated = _simulated_times(replace(m, release=release), arm, cell)
+        for arm, cell, measured, mode in cells.values():
+            simulated = _simulated_times(replace(m, **mode), arm, cell)
             errors += [(math.log(s) - math.log(t)) ** 2 for s, t in zip(simulated, measured)]
         return statistics.fmean(errors)
 
@@ -570,7 +576,7 @@ def fidelity(model: PoolModel, report: dict[str, Any], concordance_min: float = 
     else:
         analysis = rl2.analyse(report.get("rl2h", report), resamples=20)  # only its A/A noise is used
         noise = analysis.get("aa_noise", 0.0) if analysis.get("valid") else 0.0
-    model = replace(model, release=release_of(report))
+    model = replace(model, release=release_of(report), joins=joins_of(report, engine))
     cells = _cells(report, engine)
     states = sorted({state for state, _ in cells})
     result: dict[str, Any] = {"noise": noise, "states": {}, "passes": True}

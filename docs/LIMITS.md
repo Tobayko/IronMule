@@ -165,15 +165,15 @@ numeric plans' quality gate on the decode path; it changes answers against today
 With one host read every 4 steps it serves a request alone at 0.93x (short prompt) and 0.99x (long) of today's tuned
 decode, and each further row costs about 3 ms (KB1-2). It is in the product as the opt-in `--engine dense`.
 
-Through the product on two T4s, with quiet, bursty and spike traffic weighted equally, it cost 24.0 % less than
-the default (95 % 20.8-26.7 %, H9), and no state was worse: quiet 10.0 %, bursts 22.6 %, spike 26.1 %. That run
-measured it after the first-token and per-member-end fixes and with its version 2 prefill. It is recommended on
-exactly that setup (two Tesla T4s, `mlx-community/Qwen3-1.7B-bf16` at `9cd66928`), as an opt-in numeric plan:
-about half of its answers differ from `--engine tuned` (271 of 576 compared were the same). It passed the numeric
-plans' quality gate.
+Through the product on two T4s, with quiet, bursty and spike traffic weighted equally, it cost 48.3 % less than
+the default (95 % 45.0-51.4 %, H10), and no state was worse: quiet 13.6 %, bursts 53.0 %, spike 48.0 %. That run
+measured it as it ships: version 2 prefill, freed slots refilled by newcomers, each request done with its last
+token, at its default width of eight (width four cost 8.3 % more). Without slot reuse it had cost 24.0 % less
+(H9). It is recommended on exactly that setup (two Tesla T4s, `mlx-community/Qwen3-1.7B-bf16` at `9cd66928`), as
+an opt-in numeric plan: about half of its answers differ from `--engine tuned` (258 of 576 compared were the
+same). It passed the numeric plans' quality gate.
 
-Since H9 the plan also refills freed slots within a group; that configuration is being checked (BACKLOG H10). It
-needs unquantized Qwen 3 bf16 on CUDA below compute capability 8, takes about two minutes to start, and serves
+It needs unquantized Qwen 3 bf16 on CUDA below compute capability 8, takes about two minutes to start, and serves
 prompt plus answer up to 2,048 tokens. Not measured: other GPUs, other models, real user traffic.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic

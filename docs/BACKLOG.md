@@ -1267,6 +1267,37 @@ covers the product only after this configuration is checked on hardware.
 - **Recorded:** joined requests per state; cost per state; first-token and end times; the plan's gain over its
   H9 level, read against the default it shares a run with.
 
+**Result, H10 run 1 (2026-10-30, `H10-run1-20261030`, kernel `tobayko/ironmule-rl2-headroom-h10` at
+`2ffcbb8533a65124d17a9c7ed05ab97957d2dbf6`, 2.40 session hours): valid. Both decisions pass, so the recommendation
+covers the plan with slot reuse; w8/sjf stays its schedule.** Kaggle T4 x2, Qwen3 1.7B bf16 at `9cd6692`, MLX
+0.32.4, mlx-lm 0.31.3.
+- **Validity:**
+  - the plan's preflight passed (installed in 117 s);
+  - all 2,880 requests and every warm-up succeeded;
+  - answers were identical within each engine, and every dense cell ran `numeric@dense`;
+  - slot reuse engaged: 839 requests joined a running dense group (32 in `quiet`, 363 in `bursts`, 444 in
+    `spike`), and none joined a tuned group (join stays off there).
+- **Noise:** 8.69 % over 72 A/A pairs.
+- **(1) passes.** `dense:shortest/w8/g0/sjf` cost 48.3 % less than the default, weighted (95 % 45.0-51.4 %).
+- **(2) passes.** Per state:
+  - `quiet` 13.6 % (11.2-15.8 %);
+  - `bursts` 53.0 % (48.8-56.9 %);
+  - `spike` 48.0 % (42.1-53.3 %).
+- **The schedule:** w4/sjf cost 8.3 % more than w8/sjf (95 % 4.7-12.3 %), so w8/sjf stays. RL8's dense model,
+  fitted on H9's runs without joins, had put w4 1.1 % ahead: it extrapolated the joining mode and got the order
+  wrong. The hardware decides.
+- **Refit on H9 and H10 (each run simulated with the join mode it had), recorded:** the dense model passes the
+  fidelity gate on H9, and on H10 its costs are within 10 %, but in `spike` it still orders w4 ahead of w8,
+  where the hardware measured w8 12 % cheaper. So it fails on H10, and it does not decide the plan's width;
+  w8/sjf, as measured, does. What the joining model misses is not known yet.
+- **Recorded:**
+  - mean cost per state, default against w8/sjf: 2.44 against 2.11, 20.26 against 9.53, 25.30 against 13.16;
+  - 258 of 576 compared answers were the same as today's.
+- **Verdict, as fixed:** on exactly two Tesla T4s with Qwen3 1.7B bf16 at `9cd66928`, `--engine dense` (version
+  2, slot reuse, its default schedule `shortest/w8/g0/sjf`) is recommended as an opt-in numeric plan. It costs
+  about half of the shipped default on mixed traffic, and about half its answers differ from `--engine tuned`.
+  Still owed: the ledger entry.
+
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
 **Mechanism.** HW3: on mlx-lm's loop, pipelining saved 12.5-13.5 % of a step with the same tokens. The engine
