@@ -1788,6 +1788,195 @@ def analyse_h11(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
                                                           and part["(2) no harm in any state"]["passes"])}
 
 REPOSITORY = "https://github.com/Tobayko/IronMule"
+# ---------------------------------------------------------------- AG1-V: the agent learning online on hardware
+
+AG1_LEARN_TRACES = range(107, 143)  # 36 fresh seeds for the online phase: no earlier run, training or simulation used them
+AG1_EVAL_TRACES = range(143, 151)   # 8 fresh seeds per state for the held-out comparison
+AG1_PAUSE_S = 120.0                 # idle after each learning trace, in which the agent plans, explores and replays
+AG1_ARMS = ("reference", "agent")
+
+
+def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """BACKLOG AG1, V: one worker on the first GPU, the product's own service, the agent attached as `--agent on`
+    attaches it. The agent learns online from 36 traces of RL2-H2's states with a pause after each; then its serving
+    policy is frozen and compared with the reference schedule on held-out traces (reference, agent, reference per
+    block), the agent's policy deciding through the product's LearnedDispatch hooks (a measurement needs no
+    evidence)."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.cli import _agent
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.learned_dispatch import LearnedDispatch
+    from ironmule_product.serving_policy import ServingPolicy
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = (cuda_devices() or [None])[:1]
+    pool = start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+        spec, execution_variant="current_engine", cuda_device=device), ProductService)
+    shard = pool.shards[0]
+    learn, evaluate = (([AG1_LEARN_TRACES[0]] * 3, [AG1_EVAL_TRACES[0]]) if smoke
+                       else (list(AG1_LEARN_TRACES), list(AG1_EVAL_TRACES)))
+    pause = 1.0 if smoke else AG1_PAUSE_S
+    sizes = {"requests": 3, "max_tokens": (4, 8)} if smoke else {}
+    report: dict[str, Any] = {"plan": "ag1", "arms": list(AG1_ARMS), "states": list(H2_STATES), "learning": [],
+                              "rows": [], "devices": list(devices)}
+    try:
+        deadline = float(store.settings()["request_timeout_s"] or 120)
+        report["deadline_s"] = deadline
+        warm = replay(pool, model, [{"offset_s": 0.0, "prompt": i % len(PROMPTS), "long": i % 2 == 1, "max_tokens": 8}
+                                    for i in range(8)], deadline)
+        report["warmup_ok"] = sum(w.get("outcome") == "ok" for w in warm)
+        report["calibration"] = calibrate(pool, model, deadline, sizes.get("max_tokens"))
+        if report["calibration"].get("failed"):
+            return {"model": model, "revision": revision, **report}
+        capacity = report["calibration"]["capacity_rps"]
+        reference = ServingPolicy(max_width=8, gather_ms=0, source="ag1-reference")  # the default for this setup
+        shard.policy = reference
+        agent = _agent(store, shard, spec)
+        shard.agent = shard.dispatch = agent
+        started = time.monotonic()
+        for k, t in enumerate(learn):  # the online phase: the agent decides, learns and qualifies by itself
+            level = k % len(H2_STATES)
+            items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+            row = {"level": level, "trace": t, "started_s": time.monotonic() - started,
+                   "serving": agent.status()["serving"], "requests": replay(pool, model, items, deadline)}
+            wait_idle(pool)
+            time.sleep(pause)
+            status = agent.status()
+            row["agent"] = {key: status[key] for key in ("serving", "gain", "gain_ci95", "world_model", "candidate",
+                                                       "decisions", "decision_us", "counters", "planner")}
+            report["learning"].append(row)
+            if on_row is not None:
+                on_row(report)
+        final = agent.status()
+        policy = agent.policy
+        report["agent_final"] = {**final, "history": list(agent.history), "evidence": agent.evidence,
+                                 "last_plan": agent.last_plan}
+        agent.close()
+        shard.agent = shard.dispatch = None
+        if policy is None and smoke:  # a smoke still walks the comparison, with a fixed schedule
+            from ironmule_product.agent import fixed_policy
+            from ironmule_product.learned_dispatch import Policy as DispatchPolicy
+
+            policy = DispatchPolicy.from_json(fixed_policy(2, True))
+        if policy is None:
+            report["frozen"] = None
+            report["stopped"] = "the agent qualified no schedule in the online phase; nothing to compare"
+            return {"model": model, "revision": revision, **report}
+        report["frozen"] = {"policy_sha256": policy.sha256, "evidence": agent.evidence}
+        dispatch = LearnedDispatch(policy, {"experiment": "AG1-V measurement"}, None)
+        block = 0
+        for t in evaluate:  # the held-out comparison, LD1-V's block order: reference, agent, reference
+            for level in range(len(H2_STATES)):
+                items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+                for name, run in block_order(list(AG1_ARMS), block):
+                    if not wait_idle(pool):
+                        report["stopped"] = f"the pool did not drain before block {block}"
+                        return {"model": model, "revision": revision, **report}
+                    shard.policy = reference
+                    shard.dispatch = dispatch if name == "agent" else None
+                    report["rows"].append({"level": level, "trace": t, "arm": name, "run": run, "block": block,
+                                           "requests": replay(pool, model, items, deadline)})
+                    if on_row is not None:
+                        on_row(report)
+                block += 1
+        shard.dispatch = None
+        report["dispatch_status"] = dispatch.status()
+    finally:
+        pool.close()
+    return {"model": model, "revision": revision, **report}
+
+
+def analyse_ag1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG1, V, as fixed in BACKLOG before data. Validity: every held-out request answered with the same tokens in all
+    three cells of its block and none failed. Noise: the nearest-rank 95th percentile of the A/A pairs (the
+    reference's two runs). (1) The agent beats the reference: the gain over the reference (the mean of its two
+    runs), paired by trace with the three states weighted equally, has a 2.5 % bound above zero and above the A/A
+    floor (KP1's rule). (2) No harm: each state's bound is above minus the noise."""
+    deadline = float(report.get("deadline_s") or 120)
+    rng = random.Random(seed)
+    cells: dict[tuple[int, int, str, int], list[dict[str, Any]]] = {}
+    for row in report.get("rows", []):
+        cells[row["level"], row["trace"], row["arm"], row["run"]] = row["requests"]
+    blocks = sorted({(lv, t) for lv, t, _, _ in cells})
+    problems, mismatched = [], 0
+    complete = []
+    for lv, t in blocks:
+        trio = [cells.get((lv, t, "reference", 0)), cells.get((lv, t, "agent", 0)), cells.get((lv, t, "reference", 1))]
+        if any(c is None for c in trio):
+            problems.append(f"block {lv}/{t} is incomplete")
+            continue
+        if any(r.get("outcome") != "ok" for c in trio for r in c):
+            problems.append(f"block {lv}/{t} has a request that did not complete")
+        for requests in zip(*trio):
+            if len({r.get("digest") for r in requests}) != 1:
+                mismatched += 1
+        complete.append((lv, t))
+
+    def cost(lv: int, t: int, arm: str, run: int) -> float:
+        return statistics.fmean(request_cost(r, deadline) for r in cells[lv, t, arm, run])
+
+    def reference(lv: int, t: int) -> float:
+        return (cost(lv, t, "reference", 0) + cost(lv, t, "reference", 1)) / 2
+
+    def paired(pairs_of: Any, traces: list[int]) -> dict[str, Any]:
+        pairs = [pairs_of(t) for t in traces]
+        if not pairs:
+            return {"gain": None, "gain_ci95": [None, None]}
+        boot = []
+        for _ in range(resamples):
+            sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+            boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"gain": 1 - sum(x for x, _ in pairs) / sum(y for _, y in pairs),
+                "gain_ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    levels = sorted({lv for lv, _ in complete})
+    traces = sorted({t for lv, t in complete if all((lv2, t) in complete for lv2 in levels)})
+    weighted = lambda arm_cost, t: sum(arm_cost(lv, t) for lv in levels) / len(levels)  # noqa: E731
+    noise = 0.0
+    aa = [abs(1 - cost(lv, t, "reference", 1) / cost(lv, t, "reference", 0)) for lv, t in complete]
+    if aa:
+        noise = sorted(aa)[max(0, math.ceil(0.95 * len(aa)) - 1)]
+    control = paired(lambda t: (weighted(lambda lv, t2: cost(lv, t2, "reference", 1), t),
+                                weighted(lambda lv, t2: cost(lv, t2, "reference", 0), t)), traces)
+    floor = abs(control["gain"]) if control["gain"] is not None else 0.0
+    pooled = paired(lambda t: (weighted(lambda lv, t2: cost(lv, t2, "agent", 0), t), weighted(reference, t)), traces)
+    per_state = {str(lv): paired(lambda t, lv=lv: (cost(lv, t, "agent", 0), reference(lv, t)),
+                                 sorted({t for lv2, t in complete if lv2 == lv})) for lv in levels}
+    valid = not problems and mismatched == 0 and len(traces) >= 2
+    passes = valid and pooled["gain"] is not None and pooled["gain_ci95"][0] > max(0.0, floor)
+    no_harm = valid and all(v["gain_ci95"][0] is not None and v["gain_ci95"][0] > -noise for v in per_state.values())
+    learning = report.get("learning", [])
+    return {"schema": "ironmule.rl2_headroom.ag1.analysis.v1", "valid": valid, "problems": problems,
+            "mismatched_requests": mismatched, "complete_traces": traces, "aa_noise": noise, "aa_floor": floor,
+            "aa_control": control, "(1) the agent beats the reference": {**pooled, "passes": passes},
+            "(2) no harm in any state": {"per_state": per_state, "passes": no_harm},
+            "frozen": report.get("frozen"), "stopped": report.get("stopped"),
+            "online": {"traces": len(learning),
+                       "serving_by_trace": [row.get("agent", {}).get("serving") for row in learning],
+                       "first_learned_trace": next((k for k, row in enumerate(learning)
+                                                    if str(row.get("agent", {}).get("serving", "")).startswith("learned")),
+                                                   None),
+                       "counters": (report.get("agent_final") or {}).get("counters"),
+                       "world_model": (report.get("agent_final") or {}).get("world_model"),
+                       "decision_us": (report.get("agent_final") or {}).get("decision_us")},
+            "verdict": ("invalid" if report.get("rows") and not valid else
+                        "nothing qualified online" if report.get("frozen") is None else
+                        "the agent beats the reference" if passes and no_harm else
+                        "the agent does not beat the reference")}
+
+
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
 import subprocess, sys
@@ -1831,7 +2020,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "x1"),
+                                           "ag1", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -1861,7 +2050,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
-                 "h11": analyse_h11}.get(inner.get("plan"), analyse)
+                 "h11": analyse_h11, "ag1": analyse_ag1}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -1883,9 +2072,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
-                      "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11)}[args.plan]
+                      "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
+                      "ag1": (run_ag1, analyse_ag1)}[args.plan]
         report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
         report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()

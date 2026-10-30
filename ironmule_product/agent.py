@@ -23,7 +23,7 @@ greedy answer on the grouped batch-1 path, and a replayed comparison checks that
    passes when its paired gain's lower 2.5 % bootstrap bound is above zero and above what the same estimator
    finds between the two incumbent runs (KP1's "every resolved gain" rule), and every replayed answer matched
    across the three; there is no minimum effect size. A width the model has never seen is measured in a
-   replay window, never on a user's request.
+   replay window, never on a user's request. A triplet's arms may run in separate idle spells.
 4. *Serve and watch.* A qualified policy decides every group. Two consecutive live windows with failed
    requests, three decision errors, a later comparison it loses, or the operator withdraws it; a withdrawn
    policy's digest is recorded and never serves again under this binding. Learning goes on, and the next
@@ -692,7 +692,10 @@ class Agent:
         return choose
 
     def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
-        """One A/B/AA triplet on a held-out trace: arrivals recorded after the candidate was planned."""
+        """One A/B/AA triplet on a held-out trace: arrivals recorded after the candidate was planned. Each arm is
+        one replay window; an arm that demand cut is run again in the next idle spell, and the arms already run
+        are kept (their cost, whether any request failed and a digest per answer), so a triplet completes on a
+        machine whose idle spells hold one window but not three (AG1 S, run 2). The arm order alternates."""
         candidate = self.candidate
         if candidate is None:
             return
@@ -701,26 +704,33 @@ class Agent:
             return
         incumbent, challenger = self.policy, Policy.from_json(candidate["policy"])
         order = ("b", "a", "aa") if len(candidate["triplets"]) % 2 else ("a", "b", "aa")
-        results: dict[str, Any] = {}
+        done = candidate.setdefault("partial", {})
         for arm in order:
+            if arm in done:
+                continue
             result = replay(trace, self._arm(challenger if arm == "b" else incumbent), preempted)
-            if result is None:  # demand came first: the triplet is discarded, not resumed
-                with self._lock:
+            with self._lock:
+                if result is None:  # demand came first: this arm runs again in the next idle spell
                     candidate["preempted"] = candidate.get("preempted", 0) + 1
                     if candidate["preempted"] >= MAX_PREEMPTIONS:  # this window never fits the idle spells
-                        candidate["used"], candidate["preempted"] = candidate["used"] + 1, 0
-                return
-            results[arm] = result
+                        candidate["used"], candidate["preempted"], candidate["partial"] = candidate["used"] + 1, 0, {}
+                    self._dirty()
+                    return
+                done[arm] = {"cost": window_cost(result["rows"], self.deadline_s),
+                             "failed": any(row.get("outcome") != "ok" for row in result["rows"]),
+                             "answers": [hashlib.sha256(text.encode()).hexdigest()[:16] for text in result["texts"]]}
+                candidate["preempted"] = 0
+                self._dirty()
         with self._lock:
-            candidate["used"], candidate["preempted"] = candidate["used"] + 1, 0
+            candidate["used"], candidate["preempted"], candidate["partial"] = candidate["used"] + 1, 0, {}
             self.counters["triplets"] += 1
-            if not (results["a"]["texts"] == results["b"]["texts"] == results["aa"]["texts"]):
+            if not (done["a"]["answers"] == done["b"]["answers"] == done["aa"]["answers"]):
                 self._reject("a replayed answer differed between the arms")
                 return
-            if any(row.get("outcome") != "ok" for row in results["b"]["rows"]):
+            if done["b"]["failed"]:
                 self._reject("a replayed request failed under the candidate")
                 return
-            candidate["triplets"].append({k: window_cost(results[k]["rows"], self.deadline_s) for k in ("a", "b", "aa")})
+            candidate["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
             verdict = judge(candidate["triplets"])
             candidate["verdict"] = verdict
             if verdict["verdict"] == "pass":

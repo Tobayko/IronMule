@@ -802,3 +802,54 @@ def test_h11_serves_long_prompts_through_both_engines_and_requires_slots_that_ho
     monkeypatch.setenv("FAKE_DENSE_SLOTS", "2048")  # H10's slots reject the long requests (alone, protocol 2)
     problems = " ".join(rl2.analyse_h11(measure(), resamples=50)["problems"])
     assert "slots were [2048]" in problems and "long requests did not all reach an outcome" in problems
+
+
+# ---- AG1, V: the agent learning online on hardware, then frozen against the reference ----
+
+def _ag1_report(agent_factor: float, aa_factor: float = 1.0, mismatch: bool = False, failed: bool = False):
+    rows, block = [], 0
+    for trace in (143, 144, 145, 146):
+        for level, base in enumerate((2.0, 15.0, 30.0)):
+            for name, run in rl2.block_order(list(rl2.AG1_ARMS), block):
+                factor = agent_factor if name == "agent" else (aa_factor if run == 1 else 1.0)
+                requests = [{"outcome": "ok", "first_s": base * factor * 0.2 * (1 + 0.01 * (trace % 3)),
+                             "end_s": base * factor * (1 + 0.01 * (trace % 3)), "digest": f"d{i}"} for i in range(4)]
+                if mismatch and name == "agent":
+                    requests[0] = {**requests[0], "digest": "other"}
+                if failed and name == "agent":
+                    requests[1] = {**requests[1], "outcome": "failed"}
+                rows.append({"level": level, "trace": trace, "arm": name, "run": run, "block": block,
+                             "requests": requests})
+            block += 1
+    learning = [{"agent": {"serving": "reference"}}, {"agent": {"serving": "learned:abc"}}]
+    return {"plan": "ag1", "deadline_s": 120, "rows": rows, "learning": learning,
+            "frozen": {"policy_sha256": "abc"}, "agent_final": {"counters": {"qualified": 1}, "decision_us": 7.5}}
+
+
+def test_ag1_passes_a_resolved_gain_and_records_the_online_phase():
+    result = rl2.analyse_ag1(_ag1_report(0.9, aa_factor=1.002), resamples=200)
+    assert result["valid"] and result["verdict"] == "the agent beats the reference"
+    assert result["(1) the agent beats the reference"]["gain"] == pytest.approx(0.1, abs=0.002)
+    assert result["aa_floor"] == pytest.approx(0.002, abs=1e-4)
+    assert result["online"]["first_learned_trace"] == 1 and result["online"]["decision_us"] == 7.5
+
+
+def test_ag1_a_gain_inside_the_aa_floor_or_a_different_answer_does_not_pass():
+    assert rl2.analyse_ag1(_ag1_report(0.995, aa_factor=1.02), resamples=200)["verdict"] == \
+        "the agent does not beat the reference"
+    mismatched = rl2.analyse_ag1(_ag1_report(0.9, mismatch=True), resamples=200)
+    assert mismatched["verdict"] == "invalid" and mismatched["mismatched_requests"] == 12
+    assert rl2.analyse_ag1(_ag1_report(0.9, failed=True), resamples=200)["verdict"] == "invalid"
+
+
+def test_ag1_without_a_qualified_schedule_reports_that_and_compares_nothing():
+    report = {"plan": "ag1", "rows": [], "learning": [{"agent": {"serving": "reference"}}], "frozen": None,
+              "stopped": "the agent qualified no schedule in the online phase; nothing to compare"}
+    result = rl2.analyse_ag1(report, resamples=50)
+    assert result["verdict"] == "nothing qualified online" and result["online"]["first_learned_trace"] is None
+
+
+def test_ag1_kernel_runs_the_plan_at_the_pinned_commit(tmp_path):
+    folder = rl2.write_kernel(tmp_path / "k", "owner", "a" * 40, plan="ag1")
+    assert "'--plan', 'ag1'" in (folder / "run.py").read_text()
+    assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "owner/ironmule-rl2-headroom-ag1"

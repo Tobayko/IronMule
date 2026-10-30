@@ -71,10 +71,25 @@ learner found no gain on a T4 (P3).
 - **C, mechanics on a real CPU (this container, `Qwen/Qwen3-0.6B` rev `c1899de`, `--agent on`).** Recorded: groups
   observed, plans, explorations, replayed triplets and that every replayed answer matched. No gain is decided: a
   CPU makes about one token a second here.
-- **V, the gain on hardware (Kaggle T4, after the weekly GPU quota resets).** The product on one T4 with
-  `--agent on`, learning online from bursty mixed traffic, then its serving policy frozen and compared with the
-  product's reference schedule on held-out traces through `tools/rl2_headroom.py`, with LD1-V's cost, order,
-  validity and pass rule. Its kernel, traces and session hours are fixed in this entry before its run.
+- **V, the gain on hardware (Kaggle T4, after the weekly GPU quota resets).** *(Fixed 2026-10-30, before its data;
+  the pass rule amended from LD1-V's to KP1's, the rule qualification uses.)* `tools/rl2_headroom.py --plan ag1`,
+  kernel `ironmule-rl2-headroom-ag1` pinned to a pushed commit, "GPU T4 x2" with one worker on the first card,
+  `mlx-community/Qwen3-1.7B-bf16`, the product's own `ProductService` with `--engine tuned`, the agent attached as
+  `--agent on` attaches it, reference schedule `w8/fifo` (the default where no schedule is qualified). About
+  **2.5 session hours**.
+  - *Online phase:* 36 traces of RL2-H2's states in turn (indices 107-142, seeds nothing earlier used), at the
+    calibrated capacity, each followed by 120 s of idle time. The agent decides, learns and qualifies by itself;
+    its status is recorded after each trace.
+  - *Comparison:* the policy serving at the end is frozen and the agent detached. On 8 held-out traces per state
+    (indices 143-150), each block runs reference, frozen policy, reference (LD1-V's order), the policy deciding
+    through the product's LD1 hooks.
+  - *Decisions:* noise is the nearest-rank 95th percentile of the A/A pairs.
+    - **(1)** The gain over the reference (the mean of its two runs), paired by trace with the states weighted
+      equally and a 2,000-resample bootstrap, has a 2.5 % bound above zero and above the A/A floor.
+    - **(2) No harm:** each state's bound is above minus the noise.
+    - **Validity:** every request completes, with the same tokens in all three cells of its block.
+  - If nothing qualified in the online phase, V reports "nothing qualified online" and compares nothing. That
+    is a result about idle time and noise on this setup, not a gain.
 
 **Kill.** S failing (a)-(c) stops V until the loop is fixed. V failing ships no agent default: `--agent` stays opt-in
 and experimental, as every learned path here. A pass still ships only opt-in, bound to the setup it was measured on.
@@ -110,6 +125,22 @@ committed with this entry): (a) and (b) pass, (c) fails, so S fails and the loop
   - When the median error stays above 25 % for a full window of 50 groups, both fits are reopened.
   - `test_thousands_of_groups_keep_the_fit_well_conditioned` fails with the old estimator and passes with the
     new one.
+
+**Result S, run 2 (2026-10-30, `AG1-S-run2-20261030`, at `55ae021`): (a) and (b) pass, (c) fails again, now for
+lack of idle time; the loop was fixed again.**
+- **(a)** At trace 50: 0.147 s + 2.22 s per thousand tokens, 18.9 ms + 15.6 ms (within 1 % of the machine's). The
+  prefill fit stayed put through all 300 traces this time.
+- **(b)** The same two qualifications as run 1: +4.1 % (95 % 1.9-6.5 %, floor 1.7 %), then +4.4 % over that (95 %
+  0.7-7.8 %, floor 0.5 %). Against the reference on the same arrivals, the learned schedules cost 5.6 % less over the
+  131 windows before the change (28.99 against 30.71 per request).
+- **(c)** After the change to the CPU price the model re-learned it within 20 traces (0.39 s + 5.99 s per thousand
+  tokens, 59.9 ms + 59.7 ms against 0.40, 6.0, 60 and 60; one reopening). At trace 170 the planner proposed a
+  learned candidate priced 2.6 % below the incumbent. It never completed a triplet: on the slower machine one
+  replay window takes about two of the four idle minutes, so demand cut the third window every time, and a cut
+  triplet was discarded. Over the 150 windows after the change, the incumbent cost 1.2 % more than the reference.
+- **Fix (before run 3):** the arms already run in a triplet are kept (their cost, whether a request failed, and a
+  digest per answer), and only an arm that demand cut runs again in the next idle spell. The arm order still
+  alternates; the A/A floor measures any drift between spells.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 

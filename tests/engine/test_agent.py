@@ -225,12 +225,36 @@ def test_a_different_replayed_answer_vetoes_a_candidate_whatever_its_speed(tmp_p
     assert agent.counters["rejected"] == 1
 
 
-def test_demand_discards_a_triplet_instead_of_resuming_it(tmp_path):
+def test_an_arm_demand_cut_runs_again_in_the_next_idle_spell_and_finished_arms_are_kept(tmp_path):
     agent = _agent(tmp_path)
     _feed(agent, 32)
     agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
-    agent._qualify(lambda trace, choose, preempted: None, lambda: True)
-    assert agent.candidate["triplets"] == [] and agent.candidate["used"] == 0
+    runs = []
+
+    def cut_after(n):
+        def replay(trace, choose, preempted):
+            runs.append(choose(len(trace), [], 0.0, 0)[2])  # the arm's order: True only for the candidate
+            if len(runs) > n:
+                return None
+            rows = [{"ttft_s": 1.0, "e2e_s": 3.0, "tokens": 4, "outcome": "ok"} for _ in trace]
+            return {"rows": rows, "texts": ["same"] * len(trace), "span_s": 1.0}
+        return replay
+
+    agent._qualify(cut_after(1), lambda: False)  # A runs, B is cut
+    assert set(agent.candidate["partial"]) == {"a"} and agent.candidate["triplets"] == []
+    runs.clear()
+    agent._qualify(cut_after(5), lambda: False)  # the next spell runs only B and AA
+    assert runs == [True, False]
+    assert len(agent.candidate["triplets"]) == 1 and agent.candidate["partial"] == {} and agent.candidate["used"] == 1
+
+
+def test_a_window_cut_again_and_again_gives_way_to_the_next(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 48)
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    for _ in range(ag.MAX_PREEMPTIONS):
+        agent._qualify(lambda trace, choose, preempted: None, lambda: True)
+    assert agent.candidate["used"] == 1 and agent.candidate["partial"] == {} and agent.candidate["triplets"] == []
 
 
 def _promote(agent, policy=None):
