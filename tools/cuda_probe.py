@@ -2001,9 +2001,11 @@ def probe_h11_report(model_id: str, out: Path | None, *, smoke: bool = False, lo
         model, tokenizer = loaded
     try:
         import mlx.core as mx
-        from ironmule.dense_plan import slot_capacity
+        from ironmule.dense_plan import H11_TIERS, slot_capacity
 
-        report["auto_capacity"] = slot_capacity(model, mx.device_info() if mx.cuda.is_available() else None)
+        info = mx.device_info() if mx.cuda.is_available() else None
+        report["auto_capacity"] = slot_capacity(model, info)  # what `install` picks at this commit
+        report["h11_tier"] = slot_capacity(model, info, tiers=H11_TIERS)  # what H11's rule would pick
         report["h11"] = probe_h11(model, tokenizer, rounds=1 if smoke else H11_ROUNDS, steps=4 if smoke else H11_STEPS,
                                   capacities=capacities, long=long, limit=24 if smoke else None, plans=plans,
                                   gate=gate)

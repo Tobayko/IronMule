@@ -174,10 +174,10 @@ an opt-in numeric plan: about half of its answers differ from `--engine tuned` (
 same). It passed the numeric plans' quality gate.
 
 It needs unquantized Qwen 3 bf16 on CUDA below compute capability 8 and takes about two minutes to start. The
-recommendation covers prompt plus answer up to 2,048 tokens, the slot size it was measured with. Since plan
-version 3 a slot holds up to 8,192 tokens (the context limit) where the card has room, as on a T4 with this model,
-and a request too long for its slot is answered `400` on its own; whether the gain holds with longer prompts is
-H11's question, not yet measured. Not measured either: other GPUs, other models, real user traffic.
+recommendation covers prompt plus answer up to 2,048 tokens, the slot size it was measured with and still
+serves; a longer request is answered `400` on its own. Slots of up to 8,192 tokens (the context limit) are built
+and wait for H11's part (a) on the T4, then part (b) decides whether the recommendation extends to them; neither
+has run yet. Not measured either: other GPUs, other models, real user traffic.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a

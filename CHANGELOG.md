@@ -27,9 +27,9 @@ All notable public changes to IronMule are documented here. Measurements and res
   finished request freed. On two T4s with Qwen3 1.7B bf16 it cost 48.3 % less than the default on mixed traffic
   (95 % 45.0-51.4 %), with no traffic state worse, and it is recommended there as an opt-in numeric plan (BACKLOG
   H10; about half of its answers differ from `--engine tuned`). That measurement covers prompt plus answer up to
-  2,048 tokens. Since plan version 3 each request's slot holds up to 8,192 tokens (the context limit) where the
-  card has room beside the model, as on a T4 with Qwen3 1.7B, and prompts longer than 2,048 tokens are prefilled
-  in chunks of 2,048, as mlx-lm does; shorter prompts are prefilled exactly as before (BACKLOG H11).
+  2,048 tokens, which stays the slot size. Slots of up to 8,192 tokens (the context limit), sized to the card,
+  and the chunked prefill longer prompts need (plan version 3, as mlx-lm prefills) are built and wait for BACKLOG
+  H11's measurement; prompts up to 2,048 tokens are prefilled exactly as before.
 
 - **A stream cancelled inside a chained readback or a speculative draft ends at its cancel.** Before, it could
   receive up to three more tokens; answers of the other requests are unchanged.

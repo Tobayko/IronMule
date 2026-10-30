@@ -1305,8 +1305,8 @@ then retired the worker. Since commit `562ccd2` such a request is rejected alone
 dense` still refuses everything between 2,048 and the product's 8,192-token context limit, which `--engine tuned`
 serves.
 
-The plan now takes the largest slot in (8,192, 4,096, 2,048) whose pool fits beside the weights and a 3 GiB
-prefill reserve in 90 % of the card. The reserve covers a 2,048-position chunk's attention at 8,192 keys and the
+The plan can take the largest slot in (8,192, 4,096, 2,048) whose pool fits beside the weights and a 3 GiB
+prefill reserve in 90 % of the card (`H11_TIERS`); until (a) passes, `install` keeps 2,048 (`SLOT_TIERS`). The reserve covers a 2,048-position chunk's attention at 8,192 keys and the
 prompt's own cache before it is copied into its slot. That is 8,192 on a T4 with Qwen3 1.7B bf16: 3.44 GB of
 weights and a 7.5 GB pool. It also prefills a prompt longer than 2,048 positions in chunks of 2,048, as mlx-lm
 does (plan version 3). Prompts up to 2,048 are prefilled exactly as in version 2.
@@ -1373,7 +1373,7 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
   - the tier `slot_capacity` picks on the card.
 
 **Test, part (b): `tools/rl2_headroom.py --plan h11`, Kaggle T4 x2, about 1.8 session hours. It runs only after
-(a) passes, at the commit (a) passed with.**
+(a) passes, at the commit that then admits the 8,192 tier (`SLOT_TIERS = H11_TIERS`) and changes nothing else.**
 - **Setup:** H10's pool, model, revision, cost and states, weighted equally; 8 fresh traces (99-106) in two
   rounds of four. Each round starts both engines' pools in turn, the first one alternating.
 - **Traffic:** H10's traffic per state, where in each trace one request in eight (at least one) sits behind the
@@ -1403,6 +1403,9 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
   - joined requests;
   - answers the same as `tuned`.
 - **Ledger:** owed for both parts once they run.
+- **Status (2026-10-30):** (a)'s kernel (`tobayko/ironmule-cuda-probe-h11`, commit `35d082e` for the tools) was
+  refused by Kaggle: the weekly 30-hour GPU quota is used up. It runs when the quota resets, at the commit that
+  carries this status.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 

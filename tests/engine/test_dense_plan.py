@@ -152,7 +152,8 @@ def test_a_prompt_longer_than_a_prefill_chunk_is_prefilled_chunk_by_chunk_and_a_
 def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
     """A function of the card and the model alone, so both cards of a machine hold the same requests: on a T4
     (16,106,127,360 bytes as MLX reports it) beside Qwen 3 1.7B bf16 (28 layers, 8 KV heads, 3.44 GB of
-    weights) a slot holds the product's whole 8,192-token context."""
+    weights) H11's rule gives a slot the product's whole 8,192-token context; the plan keeps 2,048 until H11 (a)
+    passes."""
     from types import SimpleNamespace
 
     class Stand:
@@ -168,14 +169,15 @@ def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
     def card(total):
         return {"total_memory": total, "compute_capability_major": 7}
 
-    t4 = 16_106_127_360
-    assert dp.slot_capacity(Stand(3_441_149_952), card(t4)) == 8192  # HW3's measured weights
+    t4, tiers = 16_106_127_360, dp.H11_TIERS
+    assert dp.slot_capacity(Stand(3_441_149_952), card(t4), tiers=tiers) == 8192  # HW3's measured weights
+    assert dp.slot_capacity(Stand(3_441_149_952), card(t4)) == 2048  # until H11 (a) admits the larger slots
     per_token = 2 * 28 * 8 * 128 * 2
     edge = int(dp.SLOT_HEADROOM * t4) - 8 * 8192 * per_token - dp.PREFILL_RESERVE  # the most weights 8192 allows
-    assert dp.slot_capacity(Stand(edge), card(t4)) == 8192
-    assert dp.slot_capacity(Stand(edge + 1), card(t4)) == 4096
-    assert dp.slot_capacity(Stand(int(dp.SLOT_HEADROOM * t4)), card(t4)) is None
-    assert dp.slot_capacity(Stand(1), None) == dp.SLOT_TIERS[-1]  # a card that reports no memory: the smallest
+    assert dp.slot_capacity(Stand(edge), card(t4), tiers=tiers) == 8192
+    assert dp.slot_capacity(Stand(edge + 1), card(t4), tiers=tiers) == 4096
+    assert dp.slot_capacity(Stand(int(dp.SLOT_HEADROOM * t4)), card(t4), tiers=tiers) is None
+    assert dp.slot_capacity(Stand(1), None, tiers=tiers) == 2048  # a card that reports no memory: the smallest
 
 def _runtime(model, plan):
     return Runtime(Engine(model, _Tokenizer(), Knobs()), _Tokenizer(), mode=DenseStackedMode(plan))
@@ -529,7 +531,7 @@ def test_h11_compares_slot_sizes_bit_for_bit_times_them_and_records_long_prompts
     report = probe.probe_h11_report("tiny", tmp_path / "h11.json", smoke=True, loaded=(_tiny(), Chat()), plans=plans,
                                     capacities=(128, 256), long=(40, 120, 300), gate=gate)
     assert "error" not in report["h11"], report["h11"]
-    assert report["auto_capacity"] == dp.SLOT_TIERS[-1]  # no card memory reported on the CPU
+    assert report["auto_capacity"] == report["h11_tier"] == 2048  # no card memory reported on the CPU
     result, analysis = report["h11"], report["analysis"]
     assert all(e["tokens_identical"] and e["logit_steps_identical"] == e["logit_steps"]
                for e in result["exact"].values())

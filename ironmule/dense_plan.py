@@ -14,8 +14,8 @@ of an unquantized Qwen 3 model with IronMule's own kernels:
 
 Prefill runs MLX's own layers, one request at a time and, since plan version 3, in chunks of 2,048 positions; since
 plan version 2 only its last position goes through the head, the plan's own at one row, as in every decode step. Each
-request has a slot of the largest size in `SLOT_TIERS` the card holds beside the model (8,192 tokens, the product's
-context limit, on a T4 with Qwen 3 1.7B). The plan changes answers against today's engine, so it is
+request has a slot of the largest size in `SLOT_TIERS` the card holds beside the model: 2,048 tokens until H11 (a)
+admits the 8,192-token slots that hold the product's whole context limit (a T4 with Qwen 3 1.7B has room for them). The plan changes answers against today's engine, so it is
 opt-in like every numeric plan, and it is installed only on a model whose own weights pass a load-time probe:
 every stacked width bit-identical to one row, and the row kernel within tolerance of a float32 reference.
 KB1-1 measured it on a Tesla T4 with Qwen 3 1.7B bf16: exact within the plan, eight requests 3.8x faster than
@@ -202,11 +202,14 @@ KERNEL_SHA256 = hashlib.sha256((DENSE_SOURCE + FA2_PARTIAL + FA2_COMBINE).encode
 #: mlx-lm's own generation does; a prompt up to that length is prefilled exactly as in 2.
 PLAN_VERSION = 3
 PREFILL_CHUNK = 2048
-#: Slot sizes, largest first: 8192 holds the product's whole context limit. The plan takes the largest whose pool
-#: fits beside the weights and a prefill's working memory in `SLOT_HEADROOM` of the card, a function of the card
-#: and the model alone, so both cards of a machine hold the same requests. A slot's size does not move an answer
-#: (FA2 reads a row only up to its position).
-SLOT_TIERS = (8192, 4096, 2048)
+#: Slot sizes, largest first, that `install` picks from: the largest whose pool fits beside the weights and a
+#: prefill's working memory in `SLOT_HEADROOM` of the card, a function of the card and the model alone, so both
+#: cards of a machine hold the same requests. A slot's size does not move an answer by construction (FA2 reads a
+#: row only up to its position), but larger slots wait for H11 (a) on the T4 (memory, cost per step, quality at
+#: long context); until then the plan keeps the 2,048-token slots H10 measured.
+SLOT_TIERS = (2048,)
+#: H11's candidates: 8,192 holds the product's whole context limit.
+H11_TIERS = (8192, 4096, 2048)
 SLOT_HEADROOM = 0.9
 # A 2,048-position chunk's attention at 8,192 keys in float32 (about 1 GiB) and the prompt's own mlx-lm cache
 # before it is copied into its slot (0.9 GiB at 8,000 tokens of Qwen 3 1.7B), with room to spare.
@@ -388,9 +391,10 @@ def refuse(model: Any) -> str | None:
     return None
 
 
-def slot_capacity(model: Any, device_info: dict[str, Any] | None, slots: int = MAX_ROWS) -> int | None:
-    """The largest of `SLOT_TIERS` whose pool fits beside the weights and `PREFILL_RESERVE` in `SLOT_HEADROOM` of
-    the card's memory; the smallest when the card reports none; None when not even that fits."""
+def slot_capacity(model: Any, device_info: dict[str, Any] | None, slots: int = MAX_ROWS,
+                  tiers: Sequence[int] = SLOT_TIERS) -> int | None:
+    """The largest of `tiers` whose pool fits beside the weights and `PREFILL_RESERVE` in `SLOT_HEADROOM` of the
+    card's memory; the smallest when the card reports none; None when not even that fits."""
     from mlx.utils import tree_flatten
 
     from .runtime import _trunk
@@ -400,11 +404,11 @@ def slot_capacity(model: Any, device_info: dict[str, Any] | None, slots: int = M
     total = next((info[key] for key in ("total_memory", "memory_size", "total_memory_bytes", "memory_bytes")
                   if isinstance(info.get(key), int) and info[key] > 0), None)
     if total is None:
-        return SLOT_TIERS[-1]
+        return tiers[-1]
     args = model.args
     weights = sum(value.nbytes for _, value in tree_flatten(model.parameters()))
     per_token = 2 * len(_trunk(model).layers) * args.num_key_value_heads * args.head_dim * 2  # bf16 keys, values
-    return next((tier for tier in SLOT_TIERS
+    return next((tier for tier in tiers
                  if weights + slots * tier * per_token + PREFILL_RESERVE <= SLOT_HEADROOM * total), None)
 
 
