@@ -861,4 +861,4 @@ def test_ag1_profiles_differ_only_where_backlog_ag1_says():
     assert list(t4["learn"]) == list(range(107, 143)) and list(t4["evaluate"]) == list(range(143, 151))
     assert cpu == {"model": "mlx-community/SmolLM2-135M-Instruct-8bit", "variant": "reference",
                    "compute_dtype": "dequantize", "max_tokens": (4, 32), "learn": range(107, 122),
-                   "evaluate": range(143, 147), "pause_s": 360.0, "timeout_s": 1800}
+                   "evaluate": range(143, 147), "pause_s": 360.0, "timeout_s": 1800, "short_prompts": True}

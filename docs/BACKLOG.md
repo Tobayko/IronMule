@@ -97,6 +97,10 @@ learner found no gain on a T4 (P3).
     decides the order only;
   - output limits 4 or 32 tokens, a request timeout of 1,800 s;
   - 15 online traces (indices 107-121) with 360 s idle after each, 4 held-out traces per state (143-146).
+  - every prompt short *(amended 2026-10-30 before any of its data was read: the first start was stopped during its
+    first online trace, because a 1,030-token prompt takes an estimated 25-75 s to prefill on this CPU (3.7 GFLOP/s
+    measured on a 1,024-square product), which would stretch the run past 10 hours and make a replay window longer
+    than an idle spell)*.
   Decisions, validity and analysis are V's. It takes about 3 hours of this CPU and no GPU. A pass is a gain of the
   agent measured on real hardware, bounded to this CPU, this model and this traffic; it says nothing about a T4.
   It runs on the commit whose S and S2 reruns pass (the decision table below changed the agent).

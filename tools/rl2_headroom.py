@@ -1797,10 +1797,11 @@ AG1_ARMS = ("reference", "agent")
 # V on a T4 (the default), and V-CPU: the same harness on a CPU, fixed in BACKLOG AG1 before its data
 AG1_PROFILES = {
     "t4": {"model": MODEL, "variant": "current_engine", "compute_dtype": None, "max_tokens": None,
-           "learn": AG1_LEARN_TRACES, "evaluate": AG1_EVAL_TRACES, "pause_s": AG1_PAUSE_S, "timeout_s": None},
+           "learn": AG1_LEARN_TRACES, "evaluate": AG1_EVAL_TRACES, "pause_s": AG1_PAUSE_S, "timeout_s": None,
+           "short_prompts": False},
     "cpu": {"model": "mlx-community/SmolLM2-135M-Instruct-8bit", "variant": "reference", "compute_dtype": "dequantize",
             "max_tokens": (4, 32), "learn": range(107, 122), "evaluate": range(143, 147), "pause_s": 360.0,
-            "timeout_s": 1800},
+            "timeout_s": 1800, "short_prompts": True},
 }
 
 
@@ -1854,6 +1855,12 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
         if report["calibration"].get("failed"):
             return {"model": model, "revision": revision, **report}
         capacity = report["calibration"]["capacity_rps"]
+
+        def traffic(level: int, t: int) -> list[dict[str, Any]]:
+            items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+            # V-CPU: a 1,030-token prompt takes tens of seconds to prefill on a slow CPU (amended before data)
+            return [{**item, "long": False} for item in items] if setup["short_prompts"] else items
+
         reference = ServingPolicy(max_width=8, gather_ms=0, source="ag1-reference")  # the default for this setup
         shard.policy = reference  # before the agent is built: its binding names the schedule it is measured against
         agent = _agent(store, shard, spec)
@@ -1861,7 +1868,7 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
         started = time.monotonic()
         for k, t in enumerate(learn):  # the online phase: the agent decides, learns and qualifies by itself
             level = k % len(H2_STATES)
-            items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+            items = traffic(level, t)
             row = {"level": level, "trace": t, "started_s": time.monotonic() - started,
                    "serving": agent.status()["serving"], "requests": replay(pool, model, items, deadline)}
             wait_idle(pool)
@@ -1895,7 +1902,7 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
         block = 0
         for t in evaluate:  # the held-out comparison, LD1-V's block order: reference, agent, reference
             for level in range(len(H2_STATES)):
-                items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+                items = traffic(level, t)
                 for name, run in block_order(list(AG1_ARMS), block):
                     if not wait_idle(pool):
                         report["stopped"] = f"the pool did not drain before block {block}"
