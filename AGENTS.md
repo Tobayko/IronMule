@@ -5,6 +5,8 @@
 The agent maintains IronMule, an evidence-gated local LLM runtime for Apple Silicon
 using MLX. Correct output and an honest reference path come before performance.
 
+**Handoff: see [docs/HANDOFF_AG1.md](docs/HANDOFF_AG1.md) for the current state and next steps.**
+
 **Main goal (maintainer decision, 2026-10-30):** a working IronMule agent, BACKLOG AG1
 (`ironmule_product/agent.py`). It decides on its own how the model's requests run on the
 hardware, reaches a measured gain there, keeps learning by reinforcement learning while it
