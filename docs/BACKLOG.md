@@ -90,6 +90,16 @@ learner found no gain on a T4 (P3).
     - **Validity:** every request completes, with the same tokens in all three cells of its block.
   - If nothing qualified in the online phase, V reports "nothing qualified online" and compares nothing. That
     is a result about idle time and noise on this setup, not a gain.
+- **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
+  V's harness runs here with `--profile cpu`, differing from V only in this:
+  - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
+    to float32 (`--compute-dtype dequantize`, about 6 tokens a second here). Its capacity is 1, so the agent
+    decides the order only;
+  - output limits 4 or 32 tokens, a request timeout of 1,800 s;
+  - 15 online traces (indices 107-121) with 360 s idle after each, 4 held-out traces per state (143-146).
+  Decisions, validity and analysis are V's. It takes about 3 hours of this CPU and no GPU. A pass is a gain of the
+  agent measured on real hardware, bounded to this CPU, this model and this traffic; it says nothing about a T4.
+  It runs on the commit whose S and S2 reruns pass (the decision table below changed the agent).
 
 **Kill.** S failing (a)-(c) stops V until the loop is fixed. V failing ships no agent default: `--agent` stays opt-in
 and experimental, as every learned path here. A pass still ships only opt-in, bound to the setup it was measured on.

@@ -1794,9 +1794,17 @@ AG1_LEARN_TRACES = range(107, 143)  # 36 fresh seeds for the online phase: no ea
 AG1_EVAL_TRACES = range(143, 151)   # 8 fresh seeds per state for the held-out comparison
 AG1_PAUSE_S = 120.0                 # idle after each learning trace, in which the agent plans, explores and replays
 AG1_ARMS = ("reference", "agent")
+# V on a T4 (the default), and V-CPU: the same harness on a CPU, fixed in BACKLOG AG1 before its data
+AG1_PROFILES = {
+    "t4": {"model": MODEL, "variant": "current_engine", "compute_dtype": None, "max_tokens": None,
+           "learn": AG1_LEARN_TRACES, "evaluate": AG1_EVAL_TRACES, "pause_s": AG1_PAUSE_S, "timeout_s": None},
+    "cpu": {"model": "mlx-community/SmolLM2-135M-Instruct-8bit", "variant": "reference", "compute_dtype": "dequantize",
+            "max_tokens": (4, 32), "learn": range(107, 122), "evaluate": range(143, 147), "pause_s": 360.0,
+            "timeout_s": 1800},
+}
 
 
-def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:
     """BACKLOG AG1, V: one worker on the first GPU, the product's own service, the agent attached as `--agent on`
     attaches it. The agent learns online from 36 traces of RL2-H2's states with a pause after each; then its serving
     policy is frozen and compared with the reference schedule on held-out traces (reference, agent, reference per
@@ -1812,6 +1820,7 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
     from ironmule_product.service import ProductService
     from ironmule_product.state import ProductStore
 
+    setup = AG1_PROFILES[profile]
     revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
                                                              "*.jinja", "tokenizer*"])).name
     state = work / "rl2h-state"
@@ -1820,19 +1829,21 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
     if added.get("returncode") != 0:
         return {"model": model, "revision": revision, "failed": "models add", "added": added}
     store = ProductStore(state)
-    if smoke:  # a smoke may run on a CPU, where the server mode's 120 s cuts every grouped answer off
-        store.set_request_timeout(1800)
+    if smoke or setup["timeout_s"]:  # on a CPU the server mode's 120 s cuts answers off
+        store.set_request_timeout(setup["timeout_s"] or 1800)
     spec = store.model(model)
     devices = (cuda_devices() or [None])[:1]
     pool = start_pool(store, spec, devices, lambda device: MLXWorkerClient(
-        spec, execution_variant="current_engine", cuda_device=device), ProductService)
+        spec, execution_variant=setup["variant"], compute_dtype=setup["compute_dtype"], cuda_device=device),
+        ProductService)
     shard = pool.shards[0]
-    learn, evaluate = (([AG1_LEARN_TRACES[0]] * 3, [AG1_EVAL_TRACES[0]]) if smoke
-                       else (list(AG1_LEARN_TRACES), list(AG1_EVAL_TRACES)))
-    pause = 1.0 if smoke else AG1_PAUSE_S
-    sizes = {"requests": 3, "max_tokens": (4, 8)} if smoke else {}
-    report: dict[str, Any] = {"plan": "ag1", "arms": list(AG1_ARMS), "states": list(H2_STATES), "learning": [],
-                              "rows": [], "devices": list(devices)}
+    learn, evaluate = (([setup["learn"][0]] * 3, [setup["evaluate"][0]]) if smoke
+                       else (list(setup["learn"]), list(setup["evaluate"])))
+    pause = 1.0 if smoke else setup["pause_s"]
+    sizes = ({"requests": 3, "max_tokens": (4, 8)} if smoke else
+             {"max_tokens": setup["max_tokens"]} if setup["max_tokens"] else {})
+    report: dict[str, Any] = {"plan": "ag1", "profile": profile, "arms": list(AG1_ARMS), "states": list(H2_STATES),
+                              "learning": [], "rows": [], "devices": list(devices)}
     try:
         deadline = float(store.settings()["request_timeout_s"] or 120)
         report["deadline_s"] = deadline
@@ -1844,7 +1855,7 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
             return {"model": model, "revision": revision, **report}
         capacity = report["calibration"]["capacity_rps"]
         reference = ServingPolicy(max_width=8, gather_ms=0, source="ag1-reference")  # the default for this setup
-        shard.policy = reference
+        shard.policy = reference  # before the agent is built: its binding names the schedule it is measured against
         agent = _agent(store, shard, spec)
         shard.agent = shard.dispatch = agent
         started = time.monotonic()
@@ -2031,6 +2042,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
     parser.add_argument("--smoke", action="store_true", help="tiny sizes: checks this tool, measures nothing")
+    parser.add_argument("--profile", choices=sorted(AG1_PROFILES), default="t4",
+                        help="--plan ag1: V on a T4 (default) or V-CPU on this machine's CPU (BACKLOG AG1)")
     parser.add_argument("--analyse", type=Path, metavar="REPORT", help="print the analysis of a finished report")
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
                         help="write a Kaggle kernel folder instead of running (needs --owner and --commit)")
@@ -2081,7 +2094,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
                       "ag1": (run_ag1, analyse_ag1)}[args.plan]
-        report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
+        extra = {"profile": args.profile} if args.plan == "ag1" else {}
+        if args.plan == "ag1" and args.model is None and not args.smoke:
+            model = AG1_PROFILES[args.profile]["model"]
+        report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save, **extra)
         report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()
         save()

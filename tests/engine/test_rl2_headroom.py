@@ -853,3 +853,12 @@ def test_ag1_kernel_runs_the_plan_at_the_pinned_commit(tmp_path):
     folder = rl2.write_kernel(tmp_path / "k", "owner", "a" * 40, plan="ag1")
     assert "'--plan', 'ag1'" in (folder / "run.py").read_text()
     assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "owner/ironmule-rl2-headroom-ag1"
+
+
+def test_ag1_profiles_differ_only_where_backlog_ag1_says():
+    t4, cpu = rl2.AG1_PROFILES["t4"], rl2.AG1_PROFILES["cpu"]
+    assert t4["model"] == rl2.MODEL and t4["variant"] == "current_engine" and t4["pause_s"] == 120.0
+    assert list(t4["learn"]) == list(range(107, 143)) and list(t4["evaluate"]) == list(range(143, 151))
+    assert cpu == {"model": "mlx-community/SmolLM2-135M-Instruct-8bit", "variant": "reference",
+                   "compute_dtype": "dequantize", "max_tokens": (4, 32), "learn": range(107, 122),
+                   "evaluate": range(143, 147), "pause_s": 360.0, "timeout_s": 1800}

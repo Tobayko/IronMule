@@ -584,3 +584,24 @@ def test_a_decode_only_change_reopens_only_the_decode_fit():
     assert world.reopened >= 1
     for key, value in narrow.items():
         assert world.params()[key] == pytest.approx(value, rel=0.1), key
+
+
+def test_the_compiled_table_decides_exactly_as_the_policy_on_every_queue():
+    for body in (ag.fixed_policy(2, True), ag.fixed_policy(8, False),
+                 ag.policy_json([0.0] * ag.PLACEMENT_FEATURES, [0.4, -1.2, 2.0, -0.7],
+                                [0.1 * k - 0.5 for k in range(len(ag.WIDTH_CHOICES) * ag.ORDER_FEATURES)])):
+        policy = Policy.from_json(body)
+        table = ag.compile_table(policy)
+        rng = random.Random(1)
+        for _ in range(300):
+            n = rng.randint(1, ag.TABLE_QUEUE)
+            views = [View(rng.choice((8, 64, 128, 300)), rng.random() < 0.3) for _ in range(n)]
+            longs = sum(v.max_tokens >= ag.LONG_TOKENS for v in views)
+            assert table[n, longs] == (policy.uses_sjf(views), policy.best_width(views))
+
+
+def test_a_queue_longer_than_the_table_is_decided_by_the_policy(tmp_path):
+    agent = _agent(tmp_path)
+    _promote(agent, ag.fixed_policy(4, True))
+    queue = [GenerationRequest("m", (("user", "x"),), max_tokens=32)] * (ag.TABLE_QUEUE + 5)
+    assert agent.sjf(queue) is True and agent.width(queue) == 4

@@ -79,6 +79,7 @@ RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
+TABLE_QUEUE = 16            # queues up to this length are decided from a compiled table, longer ones by the policy
 PLANNER = {"episodes": 3000, "seeds": 2, "lr": 0.05, "harm_weight": 5.0, "validation": 40, "held_out": 80,
            "trace": TRACE, "scale": (0.8, 1.25)}  # gaps scaled log-symmetrically: 0.5-1.5 weighted heavy load
 
@@ -551,6 +552,18 @@ def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[s
     return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high}
 
 
+def compile_table(policy: Policy) -> dict[tuple[int, int], tuple[bool, int | None]]:
+    """Every decision the policy can make for a queue of up to `TABLE_QUEUE` requests. Its features see only how
+    many wait and how many of them are long (`order_features`), so (waiting, long) keys every decision exactly,
+    and serving one is a dictionary lookup instead of two dot products and a softmax."""
+    table = {}
+    for n in range(1, TABLE_QUEUE + 1):
+        for longs in range(n + 1):
+            views = [View(LONG_TOKENS, False)] * longs + [View(1, False)] * (n - longs)
+            table[n, longs] = (policy.uses_sjf(views), policy.best_width(views))
+    return table
+
+
 def behaviour(policy_body: dict[str, Any]) -> str:
     """What a policy does, as a digest of its decisions on every queue of 1-16 requests with any number of long
     ones: two learned policies with different weights but the same decisions are the same schedule, so one
@@ -592,6 +605,8 @@ class Agent:
         self._lock = threading.Lock()
         self._save_lock = threading.Lock()  # one writer of the state file at a time (idle and close)
         self._closed = False
+        self._table: dict[tuple[int, int], tuple[bool, int | None]] | None = None  # the serving policy, compiled
+        self._table_sha256: str | None = None
         self.reason: str | None = None
         self._reset()
         self._load()
@@ -646,12 +661,22 @@ class Agent:
             self.decision_ns += time.perf_counter_ns() - started
         return value
 
+    def _lookup(self, policy: Policy, waiting: list[Any]) -> tuple[bool, int | None]:
+        """The policy's (sjf, width) for this queue: from the compiled table when it holds the queue."""
+        if self._table is None or self._table_sha256 != policy.sha256:
+            self._table, self._table_sha256 = compile_table(policy), policy.sha256
+        entry = self._table.get((len(waiting), sum(1 for r in waiting if r.max_tokens >= LONG_TOKENS)))
+        if entry is not None:
+            return entry
+        views = [View.of(r) for r in waiting]
+        return policy.uses_sjf(views), policy.best_width(views)
+
     def sjf(self, waiting: list[Any]) -> bool | None:
-        return self._decide("order", lambda p: p.uses_sjf([View.of(r) for r in waiting]))
+        return self._decide("order", lambda p: self._lookup(p, waiting)[0])
 
     def width(self, waiting: list[Any]) -> int | None:
         def decide(policy: Policy) -> int | None:
-            width = policy.best_width([View.of(r) for r in waiting])
+            width = self._lookup(policy, waiting)[1]
             return None if width is None else min(self.capacity, width)  # a width-less policy keeps the service's
         return self._decide("width", decide)
 
