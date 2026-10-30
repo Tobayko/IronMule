@@ -34,9 +34,9 @@ format: 7.5 µs per group start in pure Python on this cloud container's CPU. Fo
    schedule, and nothing the model does not price below the incumbent. It plans only with at least 12 groups,
    32 arrivals and a median relative error of the model's group times below 25 % (RL4's fidelity bound).
 3. *Qualify:* while idle (5 s after the last real group), arrivals recorded after the plan are replayed through
-   the real backend with filler prompts, gaps capped at 2 s and output limits at 128 tokens, as RSI3-LIVE does:
-   incumbent, candidate, incumbent (A, B, AA, or B, A, AA). A real request cancels the window; a window cut three
-   times is skipped. A width the model has not priced (fewer than three groups that wide) is measured first, in
+   the real backend with filler prompts and their recorded gaps (idle stretches skipped; output limits capped
+   at 512): incumbent, candidate, incumbent (A, B, AA, or B, A, AA). A real request cancels the window; the arms
+   already run are kept and the cut arm runs in the next idle spell; a window cut three times is skipped. A width the model has not priced (fewer than three groups that wide) is measured first, in
    at most two replay windows with every arrival queued at once, never on a user's request.
 4. *Serve and watch:* a qualified policy decides every group. Three decision errors, two consecutive live
    windows of 24 requests with a failed request, or the operator (`POST /v1/ironmule/dispatch` `off`) withdraw
@@ -141,6 +141,30 @@ lack of idle time; the loop was fixed again.**
 - **Fix (before run 3):** the arms already run in a triplet are kept (their cost, whether a request failed, and a
   digest per answer), and only an arm that demand cut runs again in the next idle spell. The arm order still
   alternates; the A/A floor measures any drift between spells.
+
+**Result S, run 3 (2026-10-30, `AG1-S-run3-20261030`, at `cd1206d`): (a) and (b) pass, (c) fails, and a replay
+defect was found; the loop was fixed again.**
+- **(a)** and **(b)** as in run 2. Without drift, learned schedules served 281 of 300 windows at 5.3 % below the
+  reference on the same arrivals.
+- **(c)** After the change, triplets now completed (127 in all, 69 before the change). The agent compared four
+  candidates on the CPU price and resolved none: a learned one measured +1.7 % (95 % -0.6 to 4.6 %, floor
+  0.9 %), and `w8/sjf` +1.4 % (95 % -0.7 to 3.7 %).
+- **Post hoc, a diagnosis after the data that changes no verdict:**
+  - The run's live traffic was served without noise under every fixed schedule. `w8/sjf` was best on both
+    prices: +7.1 % over the reference on the T4 price, against +5.9 % for `w4/sjf`, and +3.9 % on the CPU price,
+    against -0.7 % for `w4/sjf`.
+  - The agent's second qualification had replaced `w8/sjf` with `w4/sjf` (replay: +4.4 %), the opposite of
+    what the live traffic gives. After the change the incumbent was therefore 4.5 % behind the best schedule.
+  - The cause is the replay window, inherited from RSI3-LIVE:
+    - gaps capped at 2 s turn quiet traffic into bursts;
+    - output limits capped at 128 halve the 256-token requests.
+    So qualification judged a different workload from the one served.
+- **Fix (before run 4):**
+  - A replay window keeps the recorded gaps. The service's replay skips stretches in which nothing waits and
+    nothing runs, releasing the next arrival at once and moving the rest up. That changes no cost, because every
+    time is measured from a request's own scheduled arrival.
+  - Output limits are capped at 512.
+  - The simulator's replay does the same.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 

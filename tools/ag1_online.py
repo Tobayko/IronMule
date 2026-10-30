@@ -59,10 +59,12 @@ class Machine:
         self.params, self.rng = dict(params), random.Random(seed)
 
     def run(self, jobs: list[dict[str, Any]], sjf: Callable, width: Callable, capacity: int,
-            start: float, stop_at: float = math.inf) -> tuple[list[list[dict[str, Any]]], float, bool]:
+            start: float, stop_at: float = math.inf,
+            skip_idle: bool = False) -> tuple[list[list[dict[str, Any]]], float, bool]:
         """Serve `jobs` (arrive, prompt_tokens, max_tokens, tokens, chars) from `start`; returns the groups it ran
         (each member with start, first, end), the time it ended, and whether an arrival at `stop_at` cut it short
-        (a preempted replay). Decisions see only the output limit and the prompt class."""
+        (a preempted replay). Decisions see only the output limit and the prompt class. `skip_idle` releases the
+        next arrival at once while the server is idle, moving the rest up, as the service's replay does."""
         p = self.params
         slow = math.exp(self.rng.gauss(0, WINDOW_SIGMA))
         pending = sorted(jobs, key=lambda j: j["arrive"])
@@ -73,7 +75,12 @@ class Machine:
                 waiting.append(pending[i])
                 i += 1
             if not waiting:
-                now = pending[i]["arrive"]
+                if skip_idle and pending[i]["arrive"] > now:
+                    ahead = pending[i]["arrive"] - now
+                    for job in pending[i:]:
+                        job["arrive"] -= ahead
+                else:
+                    now = pending[i]["arrive"]
                 continue
             if now >= stop_at:
                 return groups, now, True
@@ -146,7 +153,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
                  "max_tokens": tokens, "tokens": tokens} for offset, chars, tokens in trace]
         decide = lambda views: choose(len(views), [(0, v) for v in views[:8]], 0.0, 0)  # noqa: E731
         groups, end, cut = replayer.run(jobs, lambda v: decide(v)[2], lambda v: decide(v)[0], 8, clock[0],
-                                        stop_at=next_arrival[0])
+                                        stop_at=next_arrival[0], skip_idle=True)
         if cut:
             clock[0] = max(clock[0], next_arrival[0])
             return None

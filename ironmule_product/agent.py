@@ -69,8 +69,7 @@ MAX_EXPLORATIONS = 2        # replay windows that may measure one unpriced width
 REPLAN_AFTER = 64           # new arrivals before a fresh plan when no candidate waits
 QUIET_S = 5.0               # idle seconds before a replay window may start (RSI3-LIVE)
 TRACE = 16                  # arrivals per replay window
-MAX_REPLAY_TOKENS = 128     # a replayed output limit is capped here (RSI3-LIVE)
-MAX_REPLAY_GAP_S = 2.0      # and a gap between replayed arrivals (RSI3-LIVE), so a window fits an idle spell
+MAX_REPLAY_TOKENS = 512     # a replayed output limit is capped here
 MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next one is used instead
 MIN_TRIPLETS = 6
 MAX_TRIPLETS = 24
@@ -667,17 +666,18 @@ class Agent:
     def _trace(self, arrivals: Iterable[list[Any]], since: float | None,
                skip: int = 0) -> list[tuple[float, int, int]] | None:
         """TRACE consecutive recorded arrivals (after `since`, past the first `skip`) as the replay window's
-        (offset s, prompt characters, output limit), gaps capped at `MAX_REPLAY_GAP_S`; prompt characters stand
-        in for the recorded tokens at about four characters a token, and long prompts keep their class."""
+        (offset s, prompt characters, output limit), with their recorded gaps: the service skips the idle
+        stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
+        capping output limits at 128 halved the long requests, so qualification favoured a schedule that
+        loses on the recorded traffic (AG1 S, run 3). Prompt characters stand in for the recorded tokens at
+        about four characters a token, and long prompts keep their class."""
         rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + TRACE]
         if len(rows) < TRACE:
             return None
-        out, offset = [], 0.0
-        for k, a in enumerate(rows):
-            if k:
-                offset += min(a[0] - rows[k - 1][0], MAX_REPLAY_GAP_S)
+        out = []
+        for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
-            out.append((round(offset, 6), chars, min(int(a[3]), MAX_REPLAY_TOKENS)))
+            out.append((round(a[0] - rows[0][0], 6), chars, min(int(a[3]), MAX_REPLAY_TOKENS)))
         return out
 
     def _arm(self, policy: Policy | None) -> Callable:

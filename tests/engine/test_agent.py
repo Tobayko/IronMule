@@ -442,3 +442,16 @@ def test_the_cli_refuses_the_agent_beside_another_decision_owner():
     from ironmule_product.cli import serve
     with pytest.raises(SystemExit):
         serve(["--model", "m", "--agent", "on", "--learning", "active"])
+
+
+def test_an_agent_replay_skips_idle_stretches_without_changing_a_cost(tmp_path):
+    service, backend, spec = _service(tmp_path)
+    try:
+        trace = [(0.0, 10, 4), (30.0, 10, 4)]  # 30 s apart: the server is idle in between
+        started = time.monotonic()
+        result = service._replay_window(trace, lambda count, waiting, rate, now: (1, 0, False), lambda: False,
+                                        skip_idle=True)
+        assert time.monotonic() - started < 10 and result is not None
+        assert all(row["outcome"] == "ok" and row["e2e_s"] < 5 for row in result["rows"])
+    finally:
+        service.close()

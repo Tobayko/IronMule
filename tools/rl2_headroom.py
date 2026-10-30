@@ -1820,6 +1820,8 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
     if added.get("returncode") != 0:
         return {"model": model, "revision": revision, "failed": "models add", "added": added}
     store = ProductStore(state)
+    if smoke:  # a smoke may run on a CPU, where the server mode's 120 s cuts every grouped answer off
+        store.set_request_timeout(1800)
     spec = store.model(model)
     devices = (cuda_devices() or [None])[:1]
     pool = start_pool(store, spec, devices, lambda device: MLXWorkerClient(

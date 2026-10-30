@@ -687,7 +687,7 @@ class ProductService:
         return count, [(item.submitted_ns, item.request) for item in oldest]
 
     def _replay_window(self, trace: list[tuple[float, int, int]], choose: Any,
-                       preempted: Any) -> dict[str, Any] | None:
+                       preempted: Any, skip_idle: bool = False) -> dict[str, Any] | None:
         """RSI3-LIVE qualification: replay a metadata trace through the real backend.
 
         ``trace`` holds (arrival offset s, prompt characters, output limit); prompts are a fixed
@@ -697,7 +697,10 @@ class ProductService:
         admitted (RSI3-LIVE-P2): every replayed request stops at its next token boundary (or before
         its prefill), the window returns None, and that request's timeline is recorded. Request
         counters and the RSI4 log are left untouched. New replay work is refused until every
-        replayed request of an earlier window has ended.
+        replayed request of an earlier window has ended. With ``skip_idle`` (AG1), a stretch in which
+        nothing waits and nothing runs is skipped: the next arrival is released at once and the rest of
+        the schedule moves up with it. Every time is measured from a request's own scheduled arrival
+        and the server is idle in between, so no cost changes; the window only takes less time.
         """
         from .learned_dispatch import SJF_AGE_S
         from .live_learning import filler
@@ -775,7 +778,11 @@ class ProductService:
             while (admitted < len(sessions) or waiting) and not aborted.is_set():
                 admit()
                 if not waiting:
-                    aborted.wait(min(0.01, max(0.0, (due[admitted] - time.monotonic_ns()) / 1e9)))
+                    ahead = due[admitted] - time.monotonic_ns()
+                    if skip_idle and ahead > 0:  # the server is idle until then: release it now
+                        due[admitted:] = [moment - ahead for moment in due[admitted:]]
+                        continue
+                    aborted.wait(min(0.01, max(0.0, ahead / 1e9)))
                     continue
                 now = time.monotonic_ns()
                 idle_s = (now - last) / 1e9 if last is not None else 0.0
@@ -888,7 +895,8 @@ class ProductService:
                         self._replay_leftovers = None
                     try:
                         self.agent.idle(lambda: not self._pending.empty() or self._closed.is_set(),
-                                        replay=self._replay_window)
+                                        replay=lambda trace, choose, preempted: self._replay_window(
+                                            trace, choose, preempted, skip_idle=True))
                     except Exception:  # noqa: BLE001 - the agent never stops serving
                         self.agent.reason = "the agent failed while idle; the reference schedule serves"
                 if self.learning is not None:  # RSI3-LIVE: dream while nothing waits; demand preempts
