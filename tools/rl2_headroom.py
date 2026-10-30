@@ -1803,6 +1803,8 @@ AG1_PROFILES = {
             "max_tokens": (4, 32), "learn": range(107, 122), "evaluate": range(143, 147), "pause_s": 360.0,
             "timeout_s": 1800, "short_prompts": True},
 }
+# BACKLOG AG1, V-CPU-2: V-CPU with 40 online traces on fresh seeds, so the sequential test can reach its later looks
+AG1_PROFILES["cpu2"] = {**AG1_PROFILES["cpu"], "learn": range(151, 191), "evaluate": range(191, 195)}
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:

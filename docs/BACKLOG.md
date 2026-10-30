@@ -114,6 +114,13 @@ learner found no gain on a T4 (P3).
     test to resolve a small order-only effect at capacity 1. A rerun with more online traces is a new protocol and
     has to be fixed here before its data. Ledger entry owed.
 
+- **V-CPU-2 (fixed 2026-10-30, after V-CPU's result and before any of its own data).** V-CPU with `--profile cpu2`,
+  differing only in its seeds and budget: 40 online traces on fresh seeds 151-190 and 4 held-out traces per state on
+  seeds 191-194 (no earlier run, training or simulation used them). V-CPU gave 8 triplets in 15 traces, so 40 traces
+  should reach the look at 18. The agent code, decisions, alpha spending, validity and analysis are V's and V-CPU's,
+  unchanged. It takes about 7 hours of this CPU and no GPU. Pass and kill are V-CPU's. Its motive, V-CPU's too-short
+  budget, is named here, and no rule was changed after V-CPU's data.
+
 **Kill.** S failing (a)-(c) stops V until the loop is fixed. V failing ships no agent default: `--agent` stays opt-in
 and experimental, as every learned path here. A pass still ships only opt-in, bound to the setup it was measured on.
 
