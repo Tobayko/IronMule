@@ -194,6 +194,46 @@ serving 150 traces of the live traffic (seed 95,000) noise-free under every fixe
 - **Gate (amended with S2, before its data, stricter than before):** V runs once S run 5 passes (a) and (b) and S2
   run 1 passes (a') and (c'), on the same commit. S's (c) stays recorded as failed.
 
+**Result S run 5 and S2 run 1 (2026-10-30, `AG1-S-run5-20261030`, `AG1-S2-run1-20261030`, both at `3d6e5c3`): all
+four criteria pass. The gate does not open, though: a code review found ways to qualify without a gain, and one
+of them happened in run 5.**
+- **S (a)** At trace 50: 0.147 s + 2.24 s per thousand tokens and 18.9 ms + 15.7 ms (within 1.5 %).
+- **S (b)** `w8/sjf` qualified at trace 9: +9.4 % (95 % 2.0-15.5 %, floor 1.3 %). Learned schedules served 291 of 300
+  windows, 5.3 % below the reference.
+- **S2 (a')** After the change at trace 150 the model read 10.0 ms + 40.1 ms per round (truth 10 and 40) within
+  50 traces, after one reopening.
+- **S2 (c')** At trace 168, 18 traces after the change, `w1/sjf` qualified over `w8/sjf`: +46.5 % (95 % 29.6-66.0 %,
+  floor 1.2 %). After the change the agent's windows cost 46.6 % less than the reference's (22.34 against 41.83).
+- **But:**
+  - In S run 5 a learned policy (`4a68dcb5eeef`) qualified at trace 188 over `w8/sjf`: +4.7 % (95 % 1.9-7.3 %,
+    floor 1.4 %). Served without noise on the same 300 traces, it is 1.7 % *worse* than `w8/sjf` (post hoc check).
+  - The review (sparring agent) traced it, and further holes, to these causes:
+    - the verdict was read after every triplet from 6 to 24 against an uncorrected 2.5 % bound;
+    - a learned twin of a rejected schedule comes back under a new digest;
+    - a failed request under the incumbent (A or AA) inflated the candidate's gain;
+    - kept arms could outlive a change of incumbent;
+    - alternating arm orders put B early under drift;
+    - replay showed the policy at most eight waiting requests where the live schedule shows all;
+    - nothing caught a serving schedule that becomes slower without failing;
+    - `close` raced the scheduler's idle work and the state file had one shared temporary name;
+    - the binding left out the reference schedule and capacity;
+    - a width-less policy raised in `width`;
+    - the prefill fit had no per-group term.
+- **Fix (before S run 6 and S2 run 2, which replace run 5 and run 1 for the gate):**
+  - The verdict is group-sequential, read only at 6, 12, 18 and 24 triplets with the lower bound at 0.625 %
+    (2.5 % split over the four looks). The futility bound stays at 97.5 %.
+  - Exclusion goes by behaviour: a digest of the decisions on every queue of 1-16 requests. What was withdrawn
+    stays excluded.
+  - A failure under A or AA drops the triplet. A triplet runs A, B, AA and is dropped if the incumbent or the
+    pause changed under it.
+  - Replay shows the whole queue.
+  - While no candidate waits, an audit replays the serving schedule against the reference (up to 24 triplets).
+    It withdraws the schedule when it loses with the corrected bound; comparative evidence may withdraw.
+  - `close` stops idle work and plan starts, saves are serialised, and the harness detaches the agent before
+    closing it.
+  - The binding names the reference schedule and capacity, and a width-less policy keeps the service's width.
+  - Prefill gains a per-group term (state schema v2).
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every

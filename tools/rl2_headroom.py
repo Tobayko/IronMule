@@ -1865,8 +1865,11 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
         policy = agent.policy
         report["agent_final"] = {**final, "history": list(agent.history), "evidence": agent.evidence,
                                  "last_plan": agent.last_plan}
+        shard.agent = shard.dispatch = None  # detach first: the scheduler starts no new idle work for it
+        until = time.monotonic() + 600
+        while getattr(shard, "_replay_state", None) is not None and time.monotonic() < until:
+            time.sleep(0.1)  # a replay window still running ends before the comparison starts
         agent.close()
-        shard.agent = shard.dispatch = None
         if policy is None and smoke:  # a smoke still walks the comparison, with a fixed schedule
             from ironmule_product.agent import fixed_policy
             from ironmule_product.learned_dispatch import Policy as DispatchPolicy

@@ -51,14 +51,14 @@ import threading
 import time
 from typing import Any, Callable, Iterable
 
-from .learned_dispatch import (LONG_PROMPT_CHARS, ORDER_FEATURES, PLACEMENT_FEATURES, SJF_AGE_S,
-                               WIDTH_CHOICES, Policy, View, order_features)
+from .learned_dispatch import (LONG_PROMPT_CHARS, LONG_TOKENS, ORDER_FEATURES, PLACEMENT_FEATURES, Policy,
+                               SJF_AGE_S, View, WIDTH_CHOICES, order_features)
 
-STATE_SCHEMA = "ironmule.agent.state.v1"
+STATE_SCHEMA = "ironmule.agent.state.v2"
 EVIDENCE_SCHEMA = "ironmule.agent.evidence.v1"
 PLAN_SCHEMA = "ironmule.agent.plan.v1"
 ENGINE_WIDTH = 4            # ironmule.executor.MAX_GROUP_WIDTH: sessions one grouped decode round serves
-PRIOR = (0.05, 0.2, 0.025, 0.004)  # prefill s/member, s/1000 prompt tokens; decode s/round, s/further session
+PRIOR = (0.05, 0.2, 0.0, 0.025, 0.004)  # prefill s/member, s/1000 prompt tokens, s/group; decode s/round, s/session
 FORGET = 0.995              # recursive least squares forgetting: recent groups weigh more, so drift is tracked
 MAX_TRAFFIC = 2048          # arrivals the memory keeps (metadata only)
 MIN_GROUPS = 12             # groups the world model needs before it may plan
@@ -73,7 +73,9 @@ MAX_REPLAY_TOKENS = 512     # a replayed output limit is capped here
 MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next one is used instead
 MIN_TRIPLETS = 6
 MAX_TRIPLETS = 24
-RESAMPLES = 2000
+LOOKS = (6, 12, 18, 24)     # a comparison is judged only at these numbers of triplets (group-sequential)
+ALPHA = 0.025 / len(LOOKS)  # one-sided error spent at each look, so repeated looks cannot pass a null candidate
+RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
@@ -153,21 +155,22 @@ class WorldModel:
 
     def __init__(self, engine_width: int = ENGINE_WIDTH):
         self.engine_width = engine_width
-        self.prefill = _RLS(PRIOR[:2])
-        self.decode = _RLS(PRIOR[2:])
+        self.prefill = _RLS(PRIOR[:3])
+        self.decode = _RLS(PRIOR[3:])
         self.groups: dict[int, int] = {}
         self.errors: deque[float] = deque(maxlen=50)
         self.since_reopen, self.reopened = 0, 0
 
     def params(self) -> dict[str, float]:
-        a, b = self.prefill.theta
+        a, b, g = self.prefill.theta
         c, d = self.decode.theta
-        return {"prefill_s": max(0.0, a), "prefill_s_per_ktoken": max(0.0, b),
+        return {"prefill_s": max(0.0, a), "prefill_s_per_ktoken": max(0.0, b), "group_s": max(0.0, g),
                 "step_s": max(1e-4, c), "step_s_per_session": max(0.0, d)}
 
     def predict_span(self, members: list[dict[str, Any]]) -> float:
         p = self.params()
-        prefill = sum(p["prefill_s"] + p["prefill_s_per_ktoken"] * m["prompt_tokens"] / 1000 for m in members)
+        prefill = p["group_s"] + sum(p["prefill_s"] + p["prefill_s_per_ktoken"] * m["prompt_tokens"] / 1000
+                                     for m in members)
         rounds, further = decode_rounds([m["tokens"] for m in members], self.engine_width)
         return prefill + p["step_s"] * rounds + p["step_s_per_session"] * further
 
@@ -191,8 +194,10 @@ class WorldModel:
             self.decode.reopen()
             self.since_reopen, self.reopened = 0, self.reopened + 1
         previous = start
-        for member in members:  # each member's own prefill: the time since the one before it had its first token
-            self.prefill.update([1.0, member["prompt_tokens"] / 1000.0], member["first"] - previous)
+        for k, member in enumerate(members):  # each member's own prefill: since the one before had its first token;
+            # the first member's also holds what the group costs once (rendering it, the worker round trip)
+            self.prefill.update([1.0, member["prompt_tokens"] / 1000.0, 1.0 if k == 0 else 0.0],
+                                member["first"] - previous)
             previous = member["first"]
         rounds, further = decode_rounds([m["tokens"] for m in members], self.engine_width)
         if rounds:
@@ -265,7 +270,7 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
             waiting.sort(key=_sjf_key(now))
         size = max(1, min(capacity, width(waiting)))
         group, waiting = waiting[:size], waiting[size:]
-        t = now
+        t = now + params.get("group_s", 0.0)
         remaining = {}
         for job in group:
             t += params["prefill_s"] + params["prefill_s_per_ktoken"] * job.prompt_tokens / 1000
@@ -367,8 +372,8 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
                                   engine_width) for name, arm in arms.items()}
     guard_name = min(arm_costs, key=lambda n: (arm_costs[n], n))
     guard = Policy.from_json(arms[guard_name])
-    excluded = set(payload.get("excluded") or ())  # rejected against this incumbent: never proposed again
-    open_arms = [n for n in arm_costs if arms[n]["sha256"] not in excluded]
+    excluded = set(payload.get("excluded") or ())  # behaviours rejected against this incumbent or withdrawn
+    open_arms = [n for n in arm_costs if behaviour(arms[n]) not in excluded]
     fixed_name = min(open_arms, key=lambda n: (arm_costs[n], n)) if open_arms else None
     runs = []
     for seed in range(int(settings["seeds"])):
@@ -389,7 +394,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
              for name, p in rivals.items()}
     costs["reference"] = _mean_cost(params, held_out, _fixed(min(capacity, int(reference["width"])),
                                                              bool(reference["sjf"])), capacity, engine_width)
-    eligible = [name for name in ("learned", "best_fixed") if name in rivals and rivals[name]["sha256"] not in excluded]
+    eligible = [name for name in ("learned", "best_fixed") if name in rivals and behaviour(rivals[name]) not in excluded]
     choice = min(eligible, key=lambda name: (costs[name], name)) if eligible else None
     incumbent = costs.get("incumbent", costs["reference"])
     proposed = rivals[choice] if choice is not None and costs[choice] < incumbent else None
@@ -471,8 +476,9 @@ def _nearest_rank(values: list[float], q: float) -> float:
     return ordered[max(0, math.ceil(q * len(ordered)) - 1)] if ordered else 0.0
 
 
-def _paired(pairs: list[tuple[float, float]], resamples: int) -> tuple[float, list[float]]:
-    """1 - sum(x) / sum(y) over the pairs, with its 2,000-resample bootstrap interval (seed 0), as KP1's."""
+def _paired(pairs: list[tuple[float, float]], resamples: int,
+            quantiles: tuple[float, ...] = (0.025, 0.975)) -> tuple[float, list[float]]:
+    """1 - sum(x) / sum(y) over the pairs, with bootstrap quantiles (seed 0), as KP1's estimator."""
     rng = random.Random(0)
     boot = []
     for _ in range(resamples):
@@ -480,26 +486,54 @@ def _paired(pairs: list[tuple[float, float]], resamples: int) -> tuple[float, li
         boot.append(1 - sum(x for x, _ in sample) / sum(y for _, y in sample))
     boot.sort()
     return (1 - sum(x for x, _ in pairs) / sum(y for _, y in pairs),
-            [boot[int(0.025 * resamples)], boot[int(0.975 * resamples) - 1]])
+            [boot[min(resamples - 1, max(0, int(q * resamples) - (1 if q > 0.5 else 0)))] for q in quantiles])
 
 
 def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
     """The candidate's gain over the incumbent (B against the mean of A and AA, paired by triplet), against
     the floor: the size of what the same estimator finds between the incumbent's two runs (AA against A).
-    `pass` when the gain's lower 2.5 % bound is above zero and the floor; `fail` when its upper bound cannot
-    reach the floor, or the triplets ran out; else `open`. The A/A noise (nearest-rank 95th percentile of
-    |1 - AA/A|) is reported beside it."""
-    gain, interval = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples)
+    Judged only at the `LOOKS` (group-sequential): `pass` when the gain's lower bound at `ALPHA` (2.5 % split
+    over the looks) is above zero and the floor; `fail` when the upper 97.5 % bound cannot reach the floor,
+    or the last look passed; else `open`. Judging after every triplet with an uncorrected bound let a null
+    candidate pass (AG1 S, run 5). The 95 % interval and the A/A noise (nearest-rank 95th percentile of
+    |1 - AA/A|) are reported beside it."""
+    gain, (bound, low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
+                                       (ALPHA, 0.025, 0.975))
     control, _ = _paired([(t["aa"], t["a"]) for t in triplets], resamples)
     floor = max(0.0, abs(control))
-    verdict = "open"
-    if len(triplets) >= MIN_TRIPLETS:
-        if interval[0] > floor:
+    verdict, n = "open", len(triplets)
+    if n in LOOKS or n >= MAX_TRIPLETS:
+        if bound > floor:
             verdict = "pass"
-        elif interval[1] <= floor or len(triplets) >= MAX_TRIPLETS:
+        elif high <= floor or n >= MAX_TRIPLETS:
             verdict = "fail"
-    return {"verdict": verdict, "triplets": len(triplets), "gain": gain, "gain_ci95": interval, "floor": floor,
-            "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95)}
+    return {"verdict": verdict, "triplets": n, "gain": gain, "gain_ci95": [low, high], "bound": bound,
+            "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95)}
+
+
+def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """An audit of the serving schedule (B) against the reference (A, AA): `harm` when, at a look, the upper
+    bound of its gain at 1 - `ALPHA` is below zero, i.e. it loses to the reference with the corrected bound."""
+    gain, (low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
+                                (0.025, 1 - ALPHA))
+    n = len(triplets)
+    verdict = "open"
+    if n in LOOKS or n >= MAX_TRIPLETS:
+        verdict = "harm" if high < 0 else ("confirmed" if n >= MAX_TRIPLETS else "open")
+    return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high}
+
+
+def behaviour(policy_body: dict[str, Any]) -> str:
+    """What a policy does, as a digest of its decisions on every queue of 1-16 requests with any number of long
+    ones: two learned policies with different weights but the same decisions are the same schedule, so one
+    that lost is not tried again under a new digest."""
+    policy = Policy.from_json(policy_body)
+    decisions = []
+    for n in range(1, 17):
+        for longs in range(n + 1):
+            views = [View(LONG_TOKENS * 2, False)] * longs + [View(LONG_TOKENS // 4, False)] * (n - longs)
+            decisions.append([policy.uses_sjf(views), policy.best_width(views)])
+    return hashlib.sha256(json.dumps(decisions).encode()).hexdigest()[:16]
 
 
 # ---------------------------------------------------------------- the agent in the server
@@ -528,6 +562,8 @@ class Agent:
         self._last_activity = clock()
         self._dirty_since: float | None = None
         self._lock = threading.Lock()
+        self._save_lock = threading.Lock()  # one writer of the state file at a time (idle and close)
+        self._closed = False
         self.reason: str | None = None
         self._reset()
         self._load()
@@ -542,8 +578,9 @@ class Agent:
         self.withdrawn: list[dict[str, Any]] = []
         self.history: deque[dict[str, Any]] = deque(maxlen=50)
         self.explored: dict[int, int] = {}
-        # candidates rejected against each incumbent ("reference" while none serves), until the model reopens
+        # behaviours rejected against each incumbent ("reference" while none serves), until the model reopens
         self.rejected: dict[str, list[str]] = {}
+        self.audit: dict[str, Any] | None = None  # the serving schedule replayed against the reference
         self.rejected_epoch = 0
         self.last_plan: dict[str, Any] | None = None
         self.paused = False
@@ -585,7 +622,10 @@ class Agent:
         return self._decide("order", lambda p: p.uses_sjf([View.of(r) for r in waiting]))
 
     def width(self, waiting: list[Any]) -> int | None:
-        return self._decide("width", lambda p: min(self.capacity, p.best_width([View.of(r) for r in waiting])))
+        def decide(policy: Policy) -> int | None:
+            width = policy.best_width([View.of(r) for r in waiting])
+            return None if width is None else min(self.capacity, width)  # a width-less policy keeps the service's
+        return self._decide("width", decide)
 
     def card(self, request: Any, cards: list[list[Any]]) -> int | None:
         return None  # placement across GPUs stays with the pool's dispatch
@@ -635,8 +675,11 @@ class Agent:
     # ---- idle work (scheduler thread, nothing waiting) ----
 
     def idle(self, preempted: Callable[[], bool], replay: Callable | None = None) -> None:
-        """Collect a finished plan or start one, explore an unpriced width, run one qualification triplet, save.
-        Every step returns as soon as `preempted()` says demand arrived."""
+        """Collect a finished plan or start one, explore an unpriced width, run one qualification triplet (or,
+        with no candidate, one audit triplet of the serving schedule), save. Every step returns as soon as
+        `preempted()` says demand arrived."""
+        if self._closed:
+            return
         if self._planner is not None and self._planner_stopped:
             try:
                 self._planner.send_signal(signal.SIGCONT)
@@ -648,7 +691,10 @@ class Agent:
             quiet = self.clock() - self._last_activity >= QUIET_S
             if quiet and replay is not None and not preempted():
                 if not self._explore(replay, preempted) and not preempted():
-                    self._qualify(replay, preempted)
+                    if self.candidate is not None:
+                        self._qualify(replay, preempted)
+                    else:
+                        self._audit(replay, preempted)
             if self._planner is None and self.candidate is None:
                 self._start_plan()
         self.save()
@@ -701,38 +747,56 @@ class Agent:
             return min(self.capacity, policy.best_width(views) or self.capacity), 0, policy.uses_sjf(views)
         return choose
 
-    def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
-        """One A/B/AA triplet on a held-out trace: arrivals recorded after the candidate was planned. Each arm is
-        one replay window; an arm that demand cut is run again in the next idle spell, and the arms already run
-        are kept (their cost, whether any request failed and a digest per answer), so a triplet completes on a
-        machine whose idle spells hold one window but not three (AG1 S, run 2). The arm order alternates."""
-        candidate = self.candidate
-        if candidate is None:
-            return
-        trace = self._trace(self.traffic, since=candidate["since"], skip=candidate["used"] * TRACE)
+    def _triplet(self, state: dict[str, Any], replay: Callable, preempted: Callable[[], bool],
+                 a: Policy | None, b: Policy | None) -> dict[str, Any] | None:
+        """Run what is left of one A, B, AA triplet (always in that order, so B sits in the middle of any drift)
+        on the next held-out trace of `state` (arrivals recorded after `state["since"]`). An arm that demand cut
+        runs again in the next idle spell and the arms already run are kept (cost, whether a request failed, a
+        digest per answer; AG1 S, run 2), bound to the serving schedule they ran against: if that changed or
+        the agent was paused meanwhile, the kept arms are dropped. Returns the finished arms, else None."""
+        trace = self._trace(self.traffic, since=state["since"], skip=state["used"] * TRACE)
         if trace is None:
-            return
-        incumbent, challenger = self.policy, Policy.from_json(candidate["policy"])
-        order = ("b", "a", "aa") if len(candidate["triplets"]) % 2 else ("a", "b", "aa")
-        done = candidate.setdefault("partial", {})
-        for arm in order:
+            return None
+        bound = [self._incumbent_key(), self.paused]
+        done = state.setdefault("partial", {})
+        if done.get("bound", bound) != bound:
+            done.clear()
+        done["bound"] = bound
+        for arm in ("a", "b", "aa"):
             if arm in done:
                 continue
-            result = replay(trace, self._arm(challenger if arm == "b" else incumbent), preempted)
+            result = replay(trace, self._arm(b if arm == "b" else a), preempted)
             with self._lock:
+                if [self._incumbent_key(), self.paused] != bound:
+                    state["partial"] = {}  # the serving schedule changed under this triplet
+                    return None
                 if result is None:  # demand came first: this arm runs again in the next idle spell
-                    candidate["preempted"] = candidate.get("preempted", 0) + 1
-                    if candidate["preempted"] >= MAX_PREEMPTIONS:  # this window never fits the idle spells
-                        candidate["used"], candidate["preempted"], candidate["partial"] = candidate["used"] + 1, 0, {}
+                    state["preempted"] = state.get("preempted", 0) + 1
+                    if state["preempted"] >= MAX_PREEMPTIONS:  # this window never fits the idle spells
+                        state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
                     self._dirty()
-                    return
+                    return None
                 done[arm] = {"cost": window_cost(result["rows"], self.deadline_s),
                              "failed": any(row.get("outcome") != "ok" for row in result["rows"]),
                              "answers": [hashlib.sha256(text.encode()).hexdigest()[:16] for text in result["texts"]]}
-                candidate["preempted"] = 0
+                state["preempted"] = 0
                 self._dirty()
         with self._lock:
-            candidate["used"], candidate["preempted"], candidate["partial"] = candidate["used"] + 1, 0, {}
+            state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
+            return done
+
+    def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
+        """One A/B/AA triplet of the candidate (B) against the serving schedule on arrivals recorded after the
+        candidate was planned; judged at the looks."""
+        candidate = self.candidate
+        if candidate is None:
+            return
+        done = self._triplet(candidate, replay, preempted, self.policy, Policy.from_json(candidate["policy"]))
+        if done is None:
+            return
+        with self._lock:
+            if self.candidate is not candidate:
+                return
             self.counters["triplets"] += 1
             if not (done["a"]["answers"] == done["b"]["answers"] == done["aa"]["answers"]):
                 self._reject("a replayed answer differed between the arms")
@@ -740,6 +804,8 @@ class Agent:
             if done["b"]["failed"]:
                 self._reject("a replayed request failed under the candidate")
                 return
+            if done["a"]["failed"] or done["aa"]["failed"]:
+                return  # a failure under the incumbent says nothing about the candidate: the triplet is not counted
             candidate["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
             verdict = judge(candidate["triplets"])
             candidate["verdict"] = verdict
@@ -748,6 +814,35 @@ class Agent:
             elif verdict["verdict"] == "fail":
                 self._reject(f"its gain {verdict['gain']:.1%} (95 % {verdict['gain_ci95'][0]:.1%} to "
                              f"{verdict['gain_ci95'][1]:.1%}) did not clear the A/A floor {verdict['floor']:.1%}")
+            self._dirty()
+
+    def _audit(self, replay: Callable, preempted: Callable[[], bool]) -> None:
+        """While no candidate waits, the serving schedule (B) is replayed against the reference (A, AA) on
+        arrivals recorded after it began serving, up to `MAX_TRIPLETS` per schedule. If it loses with the
+        corrected bound it is withdrawn: comparative evidence may withdraw, as ordinary observations may.
+        This also catches a schedule that has become slower without failing anything."""
+        audit = self.audit
+        if self.policy is None or audit is None or audit.get("incumbent") != self.policy.sha256 \
+                or audit.get("verdict") in ("harm", "confirmed"):
+            return
+        done = self._triplet(audit, replay, preempted, None, self.policy)
+        if done is None:
+            return
+        with self._lock:
+            if self.audit is not audit or self.policy is None or self.policy.sha256 != audit["incumbent"]:
+                return
+            if any(done[arm]["failed"] for arm in ("a", "aa")) or \
+                    not (done["a"]["answers"] == done["b"]["answers"] == done["aa"]["answers"]):
+                return  # not a valid audit triplet; a differing answer is the candidate check's business
+            audit["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
+            verdict = harm(audit["triplets"])
+            audit["verdict"] = verdict["verdict"]
+            self.counters["audits"] = self.counters.get("audits", 0) + 1
+            if verdict["verdict"] == "harm":
+                self._withdraw(f"it lost to the reference in replays: {verdict['gain']:.1%} "
+                               f"(bound {verdict['high']:.1%})")
+            elif verdict["verdict"] == "confirmed":
+                self._event("audited", policy=audit["incumbent"][:12], gain=verdict["gain"], low=verdict["low"])
             self._dirty()
 
     def _promote(self, candidate: dict[str, Any], verdict: dict[str, Any]) -> None:
@@ -762,6 +857,8 @@ class Agent:
         self.policy, self.evidence = policy, {**body, "sha256": hashlib.sha256(
             json.dumps(body, sort_keys=True).encode()).hexdigest()}
         self.candidate, self.errors, self._monitor, self._failed_windows = None, 0, [], 0
+        self.audit = {"incumbent": policy.sha256, "since": max((a[0] for a in self.traffic), default=0.0),
+                      "used": 0, "triplets": [], "verdict": "open"}
         self.counters["qualified"] += 1
         self.arrivals_at_plan = self.arrivals
         self._event("qualified", policy=policy.sha256[:12], gain=verdict["gain"], ci95=verdict["gain_ci95"],
@@ -771,17 +868,19 @@ class Agent:
         return "reference" if self.policy is None else self.policy.sha256
 
     def _excluded(self) -> list[str]:
-        """What the planner may not propose against the serving schedule: what lost to it already. Proposing a
-        loser again and again until one comparison passes by chance would turn noise into a qualification
-        (AG1 S, run 4). A reopened world model (the machine changed) clears the list."""
+        """Behaviours the planner may not propose: what lost to the serving schedule already, and anything
+        withdrawn. Proposing a loser again and again, under its own digest or a learned twin's, until one
+        comparison passes by chance would turn noise into a qualification (AG1 S, runs 4 and 5). A reopened
+        world model (the machine changed) clears what lost, not what was withdrawn."""
         if self.rejected_epoch != self.world.reopened:
             self.rejected, self.rejected_epoch = {}, self.world.reopened
-        return list(self.rejected.get(self._incumbent_key(), ()))
+        withdrawn = [w["behaviour"] for w in self.withdrawn if w.get("behaviour")]
+        return sorted(set(self.rejected.get(self._incumbent_key(), ())) | set(withdrawn))
 
     def _reject(self, reason: str) -> None:
         if self.candidate is not None:
             self._excluded()
-            self.rejected.setdefault(self._incumbent_key(), []).append(self.candidate["policy"]["sha256"])
+            self.rejected.setdefault(self._incumbent_key(), []).append(behaviour(self.candidate["policy"]))
         self.counters["rejected"] += 1
         self._event("rejected", policy=self.candidate["policy"]["sha256"][:12] if self.candidate else None,
                     reason=reason)
@@ -796,7 +895,13 @@ class Agent:
     def _withdraw(self, reason: str) -> None:
         if self.policy is None:
             return
-        self.withdrawn.append({"policy_sha256": self.policy.sha256, "reason": reason, "unix": time.time()})
+        try:
+            signature = behaviour(_policy_body(self.policy))
+        except Exception:  # noqa: BLE001 - a policy too broken to describe is still withdrawn by its digest
+            signature = None
+        self.withdrawn.append({"policy_sha256": self.policy.sha256, "behaviour": signature, "reason": reason,
+                               "unix": time.time()})
+        self.audit = None
         self.counters["withdrawn"] += 1
         self._event("withdrawn", policy=self.policy.sha256[:12], reason=reason)
         self.policy, self.evidence, self.reason = None, None, f"withdrawn: {reason}"
@@ -821,6 +926,8 @@ class Agent:
     # ---- the planner process ----
 
     def _start_plan(self) -> None:
+        if self._closed:
+            return
         fidelity = self.world.fidelity()
         if (sum(self.world.groups.values()) < MIN_GROUPS or len(self.traffic) < MIN_ARRIVALS
                 or fidelity is None or fidelity > FIDELITY
@@ -865,7 +972,7 @@ class Agent:
             self.arrivals_at_plan = self.arrivals
             proposed = result.get("candidate")
             if proposed is not None and (any(w["policy_sha256"] == proposed["sha256"] for w in self.withdrawn)
-                                         or proposed["sha256"] in self._excluded()):
+                                         or behaviour(proposed) in self._excluded()):
                 proposed = None  # a withdrawn policy never serves again, a rejected one is not tried again
             self.last_plan = {k: result.get(k) for k in ("choice", "best_fixed", "excluded", "model_costs", "arm_costs",
                                                           "model_gain_vs_incumbent", "curve", "episodes", "cpu_s")}
@@ -900,6 +1007,10 @@ class Agent:
     def save(self, force: bool = False) -> None:
         if self._dirty_since is None or (not force and self.clock() - self._dirty_since < SAVE_AFTER_S):
             return
+        with self._save_lock:
+            self._save()
+
+    def _save(self) -> None:
         with self._lock:
             state = {"schema": STATE_SCHEMA, "binding": self.binding, "binding_sha256": self.binding_sha256,
                      "world": self.world.to_json(), "traffic": list(self.traffic),
@@ -908,11 +1019,11 @@ class Agent:
                      "history": list(self.history), "counters": self.counters, "paused": self.paused,
                      "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan,
                      "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()},
-                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch}
+                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit}
             self._dirty_since = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
-            partial = self.path.with_name(self.path.name + ".partial")
+            partial = self.path.with_name(f"{self.path.name}.partial-{os.getpid()}-{threading.get_ident()}")
             fd = os.open(partial, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "w") as stream:
                 json.dump(state, stream)
@@ -942,6 +1053,7 @@ class Agent:
             self.explored = {int(k): int(v) for k, v in (state.get("explored") or {}).items()}
             self.rejected = {str(k): list(v) for k, v in (state.get("rejected") or {}).items()}
             self.rejected_epoch = int(state.get("rejected_epoch", 0))
+            self.audit = state.get("audit")
             if state.get("policy") is not None:
                 policy, evidence = Policy.from_json(state["policy"]), state.get("evidence") or {}
                 body = {k: v for k, v in evidence.items() if k != "sha256"}
@@ -960,6 +1072,8 @@ class Agent:
             self.reason = f"its saved state was set aside ({exc}); learning starts fresh"
 
     def close(self) -> None:
+        """Stop for good: no idle work or plan starts after this, the planner is stopped, the state saved."""
+        self._closed = True
         self._stop_planner()
         self._dirty()
         self.save(force=True)
@@ -981,6 +1095,9 @@ class Agent:
                 "candidate": None if candidate is None else {
                     "policy_sha256": candidate["policy"]["sha256"], "choice": candidate["plan"].get("choice"),
                     "triplets": len(candidate["triplets"]), "verdict": candidate.get("verdict")},
+                "audit": None if self.audit is None else {
+                    "policy_sha256": self.audit.get("incumbent"), "triplets": len(self.audit.get("triplets", ())),
+                    "verdict": self.audit.get("verdict")},
                 "decisions": dict(self.decisions), "errors": self.errors,
                 "decision_us": None if not decisions else self.decision_ns / decisions / 1000,
                 "counters": dict(self.counters), "history": list(self.history)[-10:]}

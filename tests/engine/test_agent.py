@@ -141,16 +141,17 @@ def test_a_schedule_rejected_against_the_incumbent_is_never_proposed_again():
     payload = {"model": TRUTH, "arrivals": _arrivals(), "capacity": 8, "seed": 0, "reference": REFERENCE,
                "incumbent": None, "settings": {"episodes": 150, "seeds": 1, "validation": 10, "held_out": 20}}
     first = plan(payload)
-    again = plan({**payload, "excluded": [first["candidate"]["sha256"]]})
-    assert again["candidate"] is None or again["candidate"]["sha256"] != first["candidate"]["sha256"]
-    assert first["candidate"]["sha256"] in again["excluded"]
+    lost = ag.behaviour(first["candidate"])
+    again = plan({**payload, "excluded": [lost]})
+    assert again["candidate"] is None or ag.behaviour(again["candidate"]) != lost
+    assert lost in again["excluded"]
 
 
 def test_the_agent_remembers_what_lost_to_its_incumbent_until_the_machine_changes(tmp_path):
     agent = _agent(tmp_path)
     agent.candidate = {"policy": ag.fixed_policy(4, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
     agent._reject("lost")
-    assert agent._excluded() == [ag.fixed_policy(4, True)["sha256"]]
+    assert agent._excluded() == [ag.behaviour(ag.fixed_policy(4, True))]
     _promote(agent, ag.fixed_policy(8, True))
     assert agent._excluded() == []  # a new incumbent: everything may challenge it
     agent.candidate = {"policy": ag.fixed_policy(4, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
@@ -263,7 +264,8 @@ def test_an_arm_demand_cut_runs_again_in_the_next_idle_spell_and_finished_arms_a
         return replay
 
     agent._qualify(cut_after(1), lambda: False)  # A runs, B is cut
-    assert set(agent.candidate["partial"]) == {"a"} and agent.candidate["triplets"] == []
+    assert "a" in agent.candidate["partial"] and "b" not in agent.candidate["partial"]
+    assert agent.candidate["triplets"] == []
     runs.clear()
     agent._qualify(cut_after(5), lambda: False)  # the next spell runs only B and AA
     assert runs == [True, False]
@@ -477,3 +479,93 @@ def test_an_agent_replay_skips_idle_stretches_without_changing_a_cost(tmp_path):
         assert all(row["outcome"] == "ok" and row["e2e_s"] < 5 for row in result["rows"])
     finally:
         service.close()
+
+
+def test_a_learned_twin_of_a_rejected_schedule_is_excluded_too():
+    fixed = ag.fixed_policy(4, True)
+    twin_order = [30.0, 0.0, 0.0, 0.0]  # other weights, the same decisions everywhere
+    twin_width = []
+    for choice in ag.WIDTH_CHOICES:
+        twin_width += [33.0 if choice == 4 else 1.0, 0.0, 0.0, 0.0]
+    twin = ag.policy_json([0.0] * ag.PLACEMENT_FEATURES, twin_order, twin_width)
+    assert twin["sha256"] != fixed["sha256"] and ag.behaviour(twin) == ag.behaviour(fixed)
+    assert ag.behaviour(ag.fixed_policy(8, True)) != ag.behaviour(fixed)
+
+
+def _arm_cost_replay(costs, fail_arm=None):
+    """A replay stand-in pricing each arm by what it decides: the reference (no sjf), or a policy by its width."""
+    calls = []
+
+    def replay(trace, choose, preempted):
+        width, _, sjf = choose(len(trace), [], 0.0, 0)
+        index = len(calls)
+        calls.append((width, sjf))
+        cost = costs(width, sjf)
+        rows = [{"ttft_s": cost / 4, "e2e_s": cost * 3 / 4, "tokens": 4, "outcome": "ok"} for _ in trace]
+        if fail_arm is not None and index % 3 == fail_arm:
+            rows[0] = {**rows[0], "outcome": "failed"}
+        return {"rows": rows, "texts": ["same"] * len(trace), "span_s": 1.0}
+    return replay, calls
+
+
+def test_a_failure_under_the_incumbent_never_counts_for_the_candidate(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 16 * 3)
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    replay, calls = _arm_cost_replay(lambda width, sjf: 10.0, fail_arm=0)  # arm A fails, all cost the same
+    agent._qualify(replay, lambda: False)
+    assert [sjf for _, sjf in calls] == [False, True, False]  # always A, B, AA
+    assert agent.candidate["triplets"] == [] and agent.candidate["used"] == 1
+
+
+def test_a_triplet_whose_incumbent_changed_meanwhile_is_dropped(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 32)
+    _promote(agent, ag.fixed_policy(8, True))
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    replay, _ = _arm_cost_replay(lambda width, sjf: 10.0)
+    agent._qualify(lambda trace, choose, preempted: replay(trace, choose, preempted) if not agent.candidate.get(
+        "partial", {}).get("a") else None, lambda: False)  # A runs, B is cut
+    assert "a" in agent.candidate["partial"]
+    agent.control("off")
+    agent.control("on")  # the incumbent was withdrawn meanwhile: the kept arm ran against another schedule
+    seen = []
+    agent._qualify(lambda trace, choose, preempted: seen.append(1) or replay(trace, choose, preempted), lambda: False)
+    assert len(seen) == 3  # all three arms ran again
+
+
+def test_an_audit_withdraws_a_serving_schedule_that_loses_to_the_reference(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 8)
+    _promote(agent, ag.fixed_policy(2, True))
+    _feed(agent, 16 * max(ag.LOOKS), start=500.0)
+    replay, _ = _arm_cost_replay(lambda width, sjf: 12.0 if sjf else 10.0)  # the schedule is 20 % slower
+    for _ in range(ag.LOOKS[0]):
+        agent._audit(replay, lambda: False)
+    assert not agent.active and "lost to the reference" in agent.withdrawn[-1]["reason"]
+
+
+def test_an_audit_confirms_a_schedule_that_holds_up(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 8)
+    _promote(agent, ag.fixed_policy(2, True))
+    _feed(agent, 16 * ag.MAX_TRIPLETS, start=500.0)
+    replay, _ = _arm_cost_replay(lambda width, sjf: 9.0 if sjf else 10.0)
+    for _ in range(ag.MAX_TRIPLETS):
+        agent._audit(replay, lambda: False)
+    assert agent.active and agent.audit["verdict"] == "confirmed"
+    assert agent.history[-1]["event"] == "audited"
+
+
+def test_a_width_less_policy_keeps_the_services_width_and_close_ends_idle_work(tmp_path):
+    agent = _agent(tmp_path)
+    body = {"schema": "ironmule.rl4.policy.v1", "placement": [0.0] * ag.PLACEMENT_FEATURES,
+            "order": [5.0, 0.0, 0.0, 0.0], "features": {"placement": ag.PLACEMENT_FEATURES, "order": ag.ORDER_FEATURES}}
+    import hashlib as _h
+    v1 = {**body, "sha256": _h.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
+    agent.policy = Policy.from_json(v1)
+    request = GenerationRequest("m", (("user", "x"),), max_tokens=32)
+    assert agent.width([request]) is None and agent.errors == 0
+    agent.close()
+    agent._last_activity = -1e9
+    agent.idle(lambda: False, replay=lambda *a: pytest.fail("idle work after close"))

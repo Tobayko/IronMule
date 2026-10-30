@@ -460,6 +460,9 @@ def _agent(store: ProductStore, service: Any, spec: ModelSpec) -> Any:
                "runtime": _runtime_versions()}
     policy = service.policy
     capacity = service._batch_capacity()
+    # what the agent's evidence was measured against: a changed schedule or capacity starts it fresh
+    binding.update(capacity=capacity, schedule={"max_width": policy.max_width, "gather_ms": policy.gather_ms,
+                                                "order": policy.order, "source": policy.source})
     agent = Agent(store.root / "agent", binding, capacity=capacity, device=backend.device,
                   reference={"width": capacity, "sjf": policy.order == "sjf", "gather_ms": policy.gather_ms},
                   deadline_s=service.settings["request_timeout_s"] or 120.0)

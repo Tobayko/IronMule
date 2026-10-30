@@ -687,7 +687,7 @@ class ProductService:
         return count, [(item.submitted_ns, item.request) for item in oldest]
 
     def _replay_window(self, trace: list[tuple[float, int, int]], choose: Any,
-                       preempted: Any, skip_idle: bool = False) -> dict[str, Any] | None:
+                       preempted: Any, skip_idle: bool = False, whole_queue: bool = False) -> dict[str, Any] | None:
         """RSI3-LIVE qualification: replay a metadata trace through the real backend.
 
         ``trace`` holds (arrival offset s, prompt characters, output limit); prompts are a fixed
@@ -701,6 +701,8 @@ class ProductService:
         nothing waits and nothing runs is skipped: the next arrival is released at once and the rest of
         the schedule moves up with it. Every time is measured from a request's own scheduled arrival
         and the server is idle in between, so no cost changes; the window only takes less time.
+        ``whole_queue`` (AG1) shows ``choose`` every waiting request, as the live schedule sees them, instead
+        of the first eight.
         """
         from .learned_dispatch import SJF_AGE_S
         from .live_learning import filler
@@ -787,8 +789,8 @@ class ProductService:
                 now = time.monotonic_ns()
                 idle_s = (now - last) / 1e9 if last is not None else 0.0
                 rate = 0.0 if gap is None else 1.0 / max(gap, idle_s, 1e-3)  # the live estimate's formula
-                decision = choose(len(waiting), [(item.submitted_ns, item.request) for item in waiting[:8]],
-                                  rate, now)
+                decision = choose(len(waiting), [(item.submitted_ns, item.request)
+                                                 for item in (waiting if whole_queue else waiting[:8])], rate, now)
                 width, gather_ms = decision[0], decision[1]
                 width = max(1, min(width, self._batch_capacity()))
                 if len(decision) > 2 and decision[2]:  # AG1: shortest output limit first, as `_order_waiting`
@@ -896,7 +898,7 @@ class ProductService:
                     try:
                         self.agent.idle(lambda: not self._pending.empty() or self._closed.is_set(),
                                         replay=lambda trace, choose, preempted: self._replay_window(
-                                            trace, choose, preempted, skip_idle=True))
+                                            trace, choose, preempted, skip_idle=True, whole_queue=True))
                     except Exception:  # noqa: BLE001 - the agent never stops serving
                         self.agent.reason = "the agent failed while idle; the reference schedule serves"
                 if self.learning is not None:  # RSI3-LIVE: dream while nothing waits; demand preempts
