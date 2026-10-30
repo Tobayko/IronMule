@@ -252,6 +252,23 @@ stays shut.**
   - Alpha is spent strict-early, lenient-late (0.1, 0.2, 0.4 and 1.8 % at the four looks; 2.5 % in all).
   - The planner scales recorded gaps log-symmetrically, 0.8-1.25 (0.5-1.5 weighted heavy load).
 
+**Result S run 7 and S2 run 3 (2026-10-30, `AG1-S-run7-20261030`, `AG1-S2-run3-20261030`, both at `a353e41`): all
+four criteria pass on one commit, so V's gate is open.**
+- **S (a)** At trace 50 every parameter was within 1.5 % of the machine's.
+- **S (b)** At trace 26 `w8/sjf` qualified over the reference: +6.3 % (95 % 2.9-9.2 %, floor 1.85 %). By the
+  noise-free check it is the best fixed schedule, and its 24-triplet audit confirmed it (+6.4 %, lower 95 %
+  bound 1.6 %). Nine later candidates were rejected; none of them qualified. A learned schedule served 274 of
+  300 windows, 6.4 % below the reference on the same arrivals (28.54 against 30.48 per request).
+- **S2 (a')** 50 traces after the change every parameter was within 2.4 % of the new price.
+- **S2 (c')** At trace 186, 36 traces after the change, `w1/sjf` qualified over `w8/sjf`: +44.5 % (95 %
+  35.4-50.5 %, floor 4.1 %). Its audit confirmed it (+55.6 % over the reference). After the change the agent's
+  windows cost 42.3 % less than the reference's (24.12 against 41.83).
+- **Recorded, not decided:**
+  - A decision inside the agent (view, lock, policy) took 11.6 µs on this cloud CPU, in pure Python; order
+    and width at a group start together 25 µs.
+  - The planner preview (2 x 3,000 episodes) took 15 CPU-seconds.
+  - Simulated wall time per 300-trace run: 3-7 minutes.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every
