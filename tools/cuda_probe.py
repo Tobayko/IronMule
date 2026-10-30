@@ -34,6 +34,11 @@ step fed the baseline's tokens, the final state, speculation's verify windows); 
 on the grouped path; compile cost per new body; the prefill's compute floor. Its decisions and RL7's first two kill
 rules are in `analyse_hw4`.
 
+H11 (`--plan h11`, BACKLOG H11, fixed 2026-10-30 before its data): the product's dense plan with 2,048- and
+8,192-token slots, the same eight requests in each, bit for bit and timed in ABBA rounds at widths 1, 2, 4 and 8;
+then, with only the larger pool held, long prompts' prefill, one long row among short ones, and the peak memory.
+Its decisions are in `analyse_h11`.
+
 The report keeps digests of token ids and arrays, counts, times and logit differences, never prompt or answer
 text. To run it on Kaggle (T4 x2; it uses the first card):
 
@@ -1689,6 +1694,237 @@ def analyse_kb1_2(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# ---------------------------------------------------------------- H11: the dense plan's slot size
+
+H11_CAPACITIES = (2048, 8192)   # H10's slot, and one that holds the product's whole context limit
+H11_WIDTHS = (1, 2, 4, 8)
+H11_STEPS = 32                  # eight host reads of four chained steps, as the product's executor decodes
+H11_ROUNDS = 10
+H11_LONG = (2000, 4000, 8000)   # prompt tokens of the long-prompt parts (prefill time, peak memory, a long row)
+
+
+def long_ids(tokenizer: Any, length: int) -> list[int]:
+    """A chat prompt of exactly `length` ids: the background notes repeated, then the first question's prompt."""
+    tail = chat_ids(tokenizer, 0, False)
+    filler, body = list(tokenizer.encode(CONTEXT)), []
+    while len(body) < length - len(tail):
+        body += filler
+    return body[:max(0, length - len(tail))] + tail
+
+
+def h11_plans(model: Any, capacities: Iterable[int]) -> dict[int, Any]:
+    """The product's own plan at each slot size, each through `install`'s load probe."""
+    import mlx.core as mx
+    from ironmule.dense_plan import install
+
+    return {capacity: install(model, mx.device_info(), capacity=capacity)[0] for capacity in capacities}
+
+
+def dense_decode(backend: Any, states: list[Any], firsts: list[int], steps: int) -> tuple[float, list[list[int]]]:
+    """`steps` decode steps of `states` as the product's executor runs them: chains of the plan's readback, one
+    host read per chain. Seconds per step, and each row's tokens."""
+    from ironmule.dense_plan import READBACK
+
+    states, tokens, out = list(states), list(firsts), [[] for _ in states]
+    started, done = time.perf_counter(), 0
+    while done < steps:
+        count = min(READBACK, steps - done)
+        chains = backend.steps_group(states, tokens, count)
+        backend.complete_chains(chains)
+        for i, chain in enumerate(chains):
+            picks = [backend.read(handle) for handle in chain]
+            out[i] += [token for token, _ in picks]
+            tokens[i], states[i] = picks[-1]
+        done += count
+    return (time.perf_counter() - started) / steps, out
+
+
+def probe_h11(model: Any, tokenizer: Any, *, rounds: int = H11_ROUNDS, steps: int = H11_STEPS,
+              capacities: tuple[int, ...] = H11_CAPACITIES, long: tuple[int, ...] = H11_LONG,
+              limit: int | None = None, plans: Callable[[Any, Iterable[int]], dict[int, Any]] = h11_plans
+              ) -> dict[str, Any]:
+    """H11 (a), as fixed in BACKLOG before data: the same eight requests in slots of each size, bit for bit and
+    timed in ABBA rounds; then, with only the largest pool held, long prompts: prefill time, the decode step with
+    one long row among short ones, and the peak memory beside the weights."""
+    import gc
+
+    import mlx.core as mx
+    from ironmule.dense_plan import DenseBackend, DenseState
+    from ironmule.plans import StrictOneShotPlan
+
+    eos = tuple(sorted(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id]))
+    strict = StrictOneShotPlan()
+    prompts = [chat_ids(tokenizer, i % len(PROMPTS), i % 2 == 1, limit) for i in range(max(H11_WIDTHS))]
+    built = plans(model, capacities)
+    backends = {c: DenseBackend(plan, eos) for c, plan in built.items()}
+    seated: dict[int, tuple[list[Any], list[int]]] = {}
+    for c, backend in backends.items():
+        rows = [backend.prefill(ids, strict, c) for ids in prompts]
+        seated[c] = ([state for state, _ in rows], [first for _, first in rows])
+
+    def fresh(c: int, width: int, start: int = 0) -> tuple[list[Any], list[int]]:
+        states, firsts = seated[c]  # FA2 reads a row only up to its position, so a rewound slot decodes afresh
+        return ([DenseState(s.slot, len(prompts[start + i])) for i, s in enumerate(states[start:start + width])],
+                firsts[start:start + width])
+
+    result: dict[str, Any] = {"capacities": list(capacities), "prompt_tokens": [len(ids) for ids in prompts],
+                              "steps": steps}
+    tokens = {c: {str(w): dense_decode(backends[c], *fresh(c, w), steps)[1] for w in (1, max(H11_WIDTHS))}
+              for c in capacities}
+    width = max(H11_WIDTHS)
+    feed = tokens[capacities[0]][str(width)]
+    bits: dict[int, list[list[str]]] = {}
+    for c in capacities:
+        states, firsts = fresh(c, width)
+        plan, current, rows = built[c], mx.array(firsts, mx.uint32), [[] for _ in range(width)]
+        slots = mx.array([s.slot for s in states], mx.int32)
+        for t in range(steps):
+            logits = plan.forward(current, slots, mx.array([s.offset + t for s in states], mx.int32))
+            mx.eval(logits)
+            for r in range(width):
+                rows[r].append(_bits(logits[r]))
+            current = mx.array([feed[r][t] for r in range(width)], mx.uint32)
+        bits[c] = rows
+    base = capacities[0]
+    result["exact"] = {str(c): {"tokens_identical": tokens[c] == tokens[base],
+                                "logit_steps_identical": sum(a == b for x, y in zip(bits[c], bits[base])
+                                                             for a, b in zip(x, y)),
+                                "logit_steps": width * steps} for c in capacities}
+    for c in capacities:  # every shape once before any timed run
+        for w in H11_WIDTHS:
+            dense_decode(backends[c], *fresh(c, w), 4)
+    timing = []
+    for round_ in range(rounds):
+        order = list(capacities) if round_ % 2 == 0 else list(reversed(capacities))
+        sequence = order + list(reversed(order))  # ABBA: each size twice per round, for its A/A pair
+        seen: dict[int, int] = {}
+        for c in sequence:
+            run = seen.get(c, 0)
+            seen[c] = run + 1
+            timing.append({"round": round_, "capacity": c, "run": run,
+                           "seconds_per_step": {str(w): dense_decode(backends[c], *fresh(c, w), steps)[0]
+                                                for w in H11_WIDTHS}})
+    result["timing"] = timing
+    largest = max(capacities)
+    keep, backend = built[largest], backends[largest]
+    del built, backends
+    gc.collect()
+    mx.clear_cache()
+    mx.reset_peak_memory()
+    info = mx.device_info() if mx.cuda.is_available() else {}
+    total = next((info[k] for k in ("total_memory", "memory_size") if isinstance(info.get(k), int)), None)
+    from mlx.utils import tree_flatten
+
+    record: dict[str, Any] = {"capacity": largest, "total_memory": total,
+                              "weights_bytes": sum(v.nbytes for _, v in tree_flatten(model.parameters())),
+                              "prefill_s": {}}
+    record["eight_rows_short_s"] = dense_decode(backend, *fresh(largest, width), steps)[0]
+    states, firsts = fresh(largest, width - 1)  # seven short rows hold their slots; the eighth makes room
+    backend.release(seated[largest][0][width - 1])
+    for length in long:
+        if length + steps > largest:
+            continue
+        ids = long_ids(tokenizer, length)
+        started = time.perf_counter()
+        state, first = backend.prefill(ids, strict, largest)
+        record["prefill_s"][str(length)] = time.perf_counter() - started
+        if length == max(n for n in long if n + steps <= largest):
+            record["eight_rows_one_long_s"] = dense_decode(backend, states + [state], firsts + [first], steps)[0]
+            record["long_row_tokens"] = length
+        backend.release(state)
+    record["peak_memory"] = mx.get_peak_memory()
+    record["active_memory"] = mx.get_active_memory()
+    try:
+        record["nvidia_smi_used"] = subprocess.run(["nvidia-smi", "--query-gpu=memory.used", "--format=csv,noheader"],
+                                                   capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        record["nvidia_smi_used"] = None
+    result["long"] = record
+    del keep
+    return result
+
+
+def analyse_h11(result: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """H11 (a)'s decisions, as fixed in BACKLOG before data."""
+    from ironmule.dense_plan import SLOT_HEADROOM
+
+    def _quantile(values: list[float], q: float) -> float:  # nearest rank, as rl2_headroom's A/A noise
+        ordered = sorted(values)
+        return ordered[min(len(ordered) - 1, max(0, math.ceil(q * len(ordered)) - 1))]
+
+    capacities = result.get("capacities") or list(H11_CAPACITIES)
+    small, large = min(capacities), max(capacities)
+    exact = result.get("exact") or {}
+    a1 = all(e.get("tokens_identical") and e.get("logit_steps_identical") == e.get("logit_steps")
+             for e in exact.values()) and len(exact) == len(capacities)
+    rows = result.get("timing") or []
+    cell = {(r["round"], r["capacity"], r["run"]): r["seconds_per_step"] for r in rows}
+    rounds = sorted({r["round"] for r in rows})
+    widths = [str(w) for w in H11_WIDTHS]
+    pairs = [(cell[k, c, 0][w], cell[k, c, 1][w]) for k in rounds for c in capacities for w in widths
+             if (k, c, 0) in cell and (k, c, 1) in cell]
+    noise = _quantile([abs(a - b) / ((a + b) / 2) for a, b in pairs], 0.95) if pairs else None
+    ratios = [statistics.fmean(cell[k, large, 0][w] / cell[k, small, 0][w] for w in widths)
+              for k in rounds if (k, large, 0) in cell and (k, small, 0) in cell]
+    out: dict[str, Any] = {"schema": "ironmule.cuda_probe.h11.analysis.v1", "(a1) answers identical": a1,
+                           "aa_noise": noise, "rounds": len(ratios)}
+    if ratios and noise is not None:
+        gain = 1 - statistics.fmean(ratios)
+        ci = [1 - bound for bound in reversed(_bootstrap_mean(ratios, resamples, seed))]
+        verdict = "harm" if ci[1] < -noise else "gain" if ci[0] > noise else "no resolved difference"
+        out["(a2) larger slot per step"] = {"gain": gain, "gain_ci95": ci, "verdict": verdict,
+                                            "per_width_ms": {w: {str(c): statistics.median(
+                                                cell[k, c, 0][w] for k in rounds if (k, c, 0) in cell) * 1000
+                                                for c in capacities} for w in widths}}
+    long = result.get("long") or {}
+    total, peak = long.get("total_memory"), long.get("peak_memory")
+    out["(a3) peak memory within the slot rule's headroom"] = (
+        None if not total or peak is None else
+        {"peak_bytes": peak, "weights_bytes": long.get("weights_bytes"), "limit_bytes": SLOT_HEADROOM * total,
+         "passes": peak <= SLOT_HEADROOM * total})  # MLX's peak counts the weights and the pool it holds
+    out["prefill_s"] = long.get("prefill_s")
+    if long.get("eight_rows_one_long_s") and long.get("eight_rows_short_s"):
+        out["one_long_row_over_short"] = long["eight_rows_one_long_s"] / long["eight_rows_short_s"]
+    a2 = (out.get("(a2) larger slot per step") or {}).get("verdict")
+    a3 = (out["(a3) peak memory within the slot rule's headroom"] or {}).get("passes")
+    out["ship_8192"] = bool(a1 and a2 in ("no resolved difference", "gain") and a3)
+    return out
+
+
+def probe_h11_report(model_id: str, out: Path | None, *, smoke: bool = False, loaded: tuple[Any, Any] | None = None,
+                     plans: Callable[[Any, Iterable[int]], dict[int, Any]] = h11_plans,
+                     capacities: tuple[int, ...] = H11_CAPACITIES, long: tuple[int, ...] = H11_LONG
+                     ) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.h11.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment()}
+    if loaded is None:
+        from huggingface_hub import snapshot_download
+        from mlx_lm import load
+
+        path = snapshot_download(model_id, revision=REVISION if model_id == MODEL else None,
+                                 allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                 "tokenizer*"])
+        model, tokenizer = load(path)
+        report["revision"] = Path(path).name
+    else:
+        model, tokenizer = loaded
+    try:
+        import mlx.core as mx
+        from ironmule.dense_plan import slot_capacity
+
+        report["auto_capacity"] = slot_capacity(model, mx.device_info() if mx.cuda.is_available() else None)
+        report["h11"] = probe_h11(model, tokenizer, rounds=1 if smoke else H11_ROUNDS, steps=4 if smoke else H11_STEPS,
+                                  capacities=capacities, long=long, limit=24 if smoke else None, plans=plans)
+        report["analysis"] = analyse_h11(report["h11"])
+    except Exception as exc:  # noqa: BLE001 - recorded
+        report["h11"] = {"error": repr(exc)}
+        report["analysis"] = {"error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 def environment() -> dict[str, Any]:
     from importlib import metadata
 
@@ -2181,7 +2417,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -2205,7 +2441,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -2223,12 +2459,17 @@ def main(argv: Iterable[str] | None = None) -> int:
                   {"kb1_0": analyse_kb1(report.get("kb1") or []),
                    "kb1_1": analyse_kb1_model(report["kb1_model"]) if "stacks" in (report.get("kb1_model") or {})
                    else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else
-                  analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else analyse(report))
+                  analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else
+                  analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "h11":
+        report = probe_h11_report(args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
+        return 0
     if args.plan == "kb12":
         report = probe_kb12_report(args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)

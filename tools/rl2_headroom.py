@@ -146,6 +146,12 @@ H2_MAX_TOKENS = (32, 256)
 CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8)
 
 
+def prompt_text(item: dict[str, Any]) -> str:
+    """A trace item's prompt: its question, behind the background notes once (`long`) or `context` times (H11)."""
+    return "".join(CONTEXT + "\n\n" for _ in range(item.get("context") or (1 if item.get("long") else 0))) \
+        + PROMPTS[item["prompt"]]
+
+
 # ---------------------------------------------------------------- the plan, fixed before data
 
 def arm_name(placement: str, width: int, gather_ms: int) -> str:
@@ -676,10 +682,9 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
     def client(index: int, item: dict[str, Any]) -> None:
         scheduled = start + item["offset_s"]
         out: dict[str, Any] = {"index": index, "outcome": "failed", "first_s": None, "end_s": None,
-                               "digest": None, "tokens": 0}
+                               "digest": None, "tokens": 0, "context": item.get("context") or 0}
         ids: list[Any] = []
-        prompt = (CONTEXT + "\n\n" if item.get("long") else "") + PROMPTS[item["prompt"]]
-        request = GenerationRequest(model, (("user", prompt),), max_tokens=item["max_tokens"], stream=True)
+        request = GenerationRequest(model, (("user", prompt_text(item)),), max_tokens=item["max_tokens"], stream=True)
         finish = None
         try:
             for event in pool.stream(request):
@@ -691,6 +696,7 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
                         out["second_s"] = time.monotonic() - scheduled
                 elif event.get("type") == "done":
                     out["outcome"], out["tokens"] = "ok", int(event.get("completion_tokens") or 0)
+                    out["prompt_tokens"] = event.get("prompt_tokens")
                     finish = event.get("finish_reason")
                     engine = event.get("engine") if isinstance(event.get("engine"), dict) else {}
                     if engine.get("decode_bodies") is not None:
@@ -859,8 +865,7 @@ X1_REVISION = "9cd6692855d3e06772228e9a962b2606359b2d24"  # the revision of MODE
 
 def _x1_ids(tokenizer: Any, item: dict[str, Any]) -> list[int]:
     """The prompt as `replay` sends it and the worker renders it (chat template, thinking on)."""
-    prompt = (CONTEXT + "\n\n" if item.get("long") else "") + PROMPTS[item["prompt"]]
-    return list(tokenizer.apply_chat_template([{"role": "user", "content": prompt}], add_generation_prompt=True,
+    return list(tokenizer.apply_chat_template([{"role": "user", "content": prompt_text(item)}], add_generation_prompt=True,
                                               tokenize=True))
 
 
@@ -1056,12 +1061,16 @@ def arms_h8() -> list[str]:
 def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[int] = H8_TRACES,
                rounds: int = H8_ROUNDS, requests: int = REQUESTS, max_tokens: tuple[int, ...] | None = None,
                on_row: Any = None, names: list[str] | None = None, engines: tuple[str, ...] = ("tuned", "dense"),
-               plan: str = "h8", stress: Any = None) -> dict[str, Any]:
+               plan: str = "h8", stress: Any = None, traffic: Any = None,
+               warm_extra: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """`start(engine)` returns a started pool for that engine. Calibration runs once on the tuned pool; then each
     round measures its traces on both engines, every (trace, state) block an engine's arms in HW3's block order.
     KP1 reuses it with its own arms and engines, and `stress(round, capacity)`, when given, adds one recorded
-    cell per engine and round (not part of any decision) after that engine's blocks."""
+    cell per engine and round (not part of any decision) after that engine's blocks. H11 passes its own
+    `traffic(state, trace, capacity, requests, max_tokens)` and `warm_extra` requests sent once per card in the
+    warm-up."""
     names = names or arms_h8()
+    traffic = traffic or trace_h2
     traces = list(traces)
     per_round = -(-len(traces) // rounds)
     report: dict[str, Any] = {"plan": plan, "arms": names, "states": list(H2_STATES), "deadline_s": deadline_s,
@@ -1081,7 +1090,8 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
                 # pays its first compiles (bodies per capacity; the plan's kernels compile in its load probe) in
                 # a timed cell.
                 warm = replay(pool, model, [{"offset_s": 0.0, "prompt": i % len(PROMPTS), "long": i % 2 == 1,
-                                             "max_tokens": 8} for i in range(8 * len(pool.shards))], deadline_s)
+                                             "max_tokens": 8} for i in range(8 * len(pool.shards))]
+                              + [dict(item) for item in (warm_extra or []) for _ in pool.shards], deadline_s)
                 report["engines"].setdefault(engine, []).append(
                     {"round": r, "warmup_ok": sum(w.get("outcome") == "ok" for w in warm),
                      "warmup_failed": sum(w.get("outcome") not in COSTED_OUTCOMES for w in warm),
@@ -1105,7 +1115,7 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
                 engine_names = [n for n in names if arm_engine(n) == engine]
                 for t in chunk:
                     for level in range(len(H2_STATES)):
-                        items = trace_h2(level, t, capacity, requests, max_tokens)
+                        items = traffic(level, t, capacity, requests, max_tokens)
                         for name, run in block_order(engine_names, block):
                             if not wait_idle(pool):
                                 report["stopped"] = f"the {engine} pool did not drain before block {block}"
@@ -1666,6 +1676,91 @@ def analyse_h10(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
                                 and part["(2) no harm in any state"]["passes"])}
 
 
+H11_TRACES = range(99, 107)     # fresh seeds: no earlier run, training or simulation used them
+H11_ROUNDS = 2
+H11_CONTEXTS = (2, 4, 7)        # the background notes this often: about 2,050, 4,060 and 7,090 prompt tokens
+H11_LONG_EVERY = 8              # one request in eight, at least one per trace, sits behind a long context
+
+
+def arms_h11() -> list[str]:
+    """The default against the dense plan with slots that hold the product's whole context (H11)."""
+    return ["tuned:shortest/w2/g0/sjf", "dense:shortest/w8/g0/sjf"]
+
+
+def trace_h11(state: int, index: int, capacity: float, requests: int = REQUESTS,
+              max_tokens: tuple[int, ...] | None = None) -> list[dict[str, Any]]:
+    """H10's traffic for one state, with one request in eight (at least one) behind a long context."""
+    items = trace_h2(state, index, capacity, requests, max_tokens)
+    rng = random.Random(3000 * state + index)
+    long = set(rng.sample(range(len(items)), max(1, round(len(items) / H11_LONG_EVERY))))
+    return [{**item, "context": rng.choice(H11_CONTEXTS)} if i in long else item for i, item in enumerate(items)]
+
+
+def run_h11(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = cuda_devices() or [None]
+    preflight = dense_preflight(str(spec.snapshot_path), devices[0])
+    if not preflight.get("ok"):
+        return {"model": model, "revision": revision, "failed": "dense preflight", "preflight": preflight}
+
+    def start(engine: str) -> Any:  # one startup limit for both engines; startup is not in the cost
+        return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device, startup_timeout=DENSE_STARTUP_TIMEOUT), ordered_service())
+
+    deadline = float(store.settings()["request_timeout_s"] or 120)
+    sizes = ({"traces": [H11_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else
+             {"traces": H11_TRACES, "rounds": H11_ROUNDS})
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=arms_h11(), engines=("tuned", "dense"),
+                        plan="h11", traffic=trace_h11,
+                        warm_extra=[{"offset_s": 0.0, "prompt": 0, "context": max(H11_CONTEXTS), "max_tokens": 8}],
+                        **sizes)
+    return {"model": model, "revision": revision, "preflight": preflight, **result}
+
+
+def analyse_h11(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """H11 (b), as fixed in BACKLOG before data: H8's decisions on traffic with long prompts; valid only when both
+    engines answered every request, long ones included, and the dense workers' slots held the whole context."""
+    part = analyse_h8({**report, "arms": arms_h11()}, resamples, seed)
+    problems = list(part.get("problems", []))
+    if not (report.get("preflight") or {}).get("ok"):
+        problems.append("the dense preflight did not pass")
+    slots = sorted({(worker.get("dense_plan") or {}).get("capacity") for entry in report.get("engines", {}).get("dense", [])
+                    for worker in entry.get("engine") or []}, key=str)
+    if slots != [8192]:
+        problems.append(f"the dense workers' slots were {slots}, not 8,192 tokens")
+    long: dict[str, dict[str, int]] = {}
+    for row in report.get("rows", []):
+        for request in row["requests"]:
+            if request.get("context"):
+                counts = long.setdefault(row["engine"], {"sent": 0, "ok": 0})
+                counts["sent"] += 1
+                counts["ok"] += request.get("outcome") == "ok"
+    if set(long) != {"tuned", "dense"} or any(c["sent"] == 0 or c["ok"] != c["sent"] for c in long.values()):
+        problems.append(f"long requests were not all answered by both engines: {long}")
+    joined = sum(row.get("joined") or 0 for row in report.get("rows", []) if row["engine"] == "dense")
+    out = {**part, "schema": "ironmule.rl2_headroom.h11.analysis.v1", "dense_slots": slots, "long_requests": long,
+           "dense_joined": joined}
+    if problems:
+        return {**out, "valid": False, "problems": problems}
+    return {**out, "recommended_up_to_context_limit": bool(part["(1) dense beats today's default"]["passes"]
+                                                          and part["(2) no harm in any state"]["passes"])}
+
+
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
@@ -1709,7 +1804,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "x1"),
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
+                                           "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -1738,8 +1834,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
-        judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10}.get(inner.get("plan"),
-                                                                                                    analyse)
+        judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
+                 "h11": analyse_h11}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -1761,9 +1857,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
-                      "h10": (run_h10, analyse_h10)}[args.plan]
+                      "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11)}[args.plan]
         report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
         report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()

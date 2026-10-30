@@ -12,8 +12,10 @@ of an unquantized Qwen 3 model with IronMule's own kernels:
   rows move a request's answer;
 * MLX's own RoPE (one position per row), `rms_norm` and `silu`, which act on each row alone.
 
-Prefill runs MLX's own layers, one request at a time; since plan version 2 only its last position goes through
-the head, the plan's own at one row, as in every decode step. The plan changes answers against today's engine, so it is
+Prefill runs MLX's own layers, one request at a time and, since plan version 3, in chunks of 2,048 positions; since
+plan version 2 only its last position goes through the head, the plan's own at one row, as in every decode step. Each
+request has a slot of the largest size in `SLOT_TIERS` the card holds beside the model (8,192 tokens, the product's
+context limit, on a T4 with Qwen 3 1.7B). The plan changes answers against today's engine, so it is
 opt-in like every numeric plan, and it is installed only on a model whose own weights pass a load-time probe:
 every stacked width bit-identical to one row, and the row kernel within tolerance of a float32 reference.
 KB1-1 measured it on a Tesla T4 with Qwen 3 1.7B bf16: exact within the plan, eight requests 3.8x faster than
@@ -196,8 +198,17 @@ FA2_COMBINE = r"""
 KERNEL_SHA256 = hashlib.sha256((DENSE_SOURCE + FA2_PARTIAL + FA2_COMBINE).encode()).hexdigest()
 #: The plan's arithmetic outside the kernels. 2: the prefill's first token comes from the plan's own head at one
 #: row (the decode steps' head), not MLX's head over every prompt position, which HW4 timed at 17 % of a long
-#: prompt's prefill.
-PLAN_VERSION = 2
+#: prompt's prefill. 3: a prompt longer than `PREFILL_CHUNK` is prefilled in chunks of that many positions, as
+#: mlx-lm's own generation does; a prompt up to that length is prefilled exactly as in 2.
+PLAN_VERSION = 3
+PREFILL_CHUNK = 2048
+#: Slot sizes, largest first: 8192 holds the product's whole context limit. The plan takes the largest whose pool
+#: fits beside the weights and a prefill's working memory in `SLOT_HEADROOM` of the card, a function of the card
+#: and the model alone, so both cards of a machine hold the same requests. A slot's size does not move an answer
+#: (FA2 reads a row only up to its position).
+SLOT_TIERS = (8192, 4096, 2048)
+SLOT_HEADROOM = 0.9
+PREFILL_RESERVE = 2 * 1024 ** 3  # a 2,048-position chunk's attention at 8,192 keys, float32, with room to spare
 
 _kernels: dict[str, Any] = {}
 _kernel_lock = threading.Lock()
@@ -312,7 +323,10 @@ class DensePlan:
         the head, the plan's own at one row, as every decode step's does. Float32 logits (1, V)."""
         import mlx.core as mx
 
-        hidden = self.trunk(ids, cache=cache)  # the final norm included
+        for start in range(0, ids.shape[1], PREFILL_CHUNK):  # since plan version 3, in chunks as mlx-lm prefills
+            if start:
+                mx.eval([c.state for c in cache])  # bound each chunk's working memory
+            hidden = self.trunk(ids[:, start:start + PREFILL_CHUNK], cache=cache)  # the final norm included
         return self.linear(hidden[0, -1:, :], self.head).astype(mx.float32)
 
     def forward(self, tokens: Any, slots: Any, positions: Any) -> Any:
@@ -372,15 +386,39 @@ def refuse(model: Any) -> str | None:
     return None
 
 
+def slot_capacity(model: Any, device_info: dict[str, Any] | None, slots: int = MAX_ROWS) -> int | None:
+    """The largest of `SLOT_TIERS` whose pool fits beside the weights and `PREFILL_RESERVE` in `SLOT_HEADROOM` of
+    the card's memory; the smallest when the card reports none; None when not even that fits."""
+    from mlx.utils import tree_flatten
+
+    from .runtime import _trunk
+
+    info = device_info or {}
+    # MLX's CUDA backend reports `total_memory` (PERF1-X run 1 on a T4); Metal `memory_size`.
+    total = next((info[key] for key in ("total_memory", "memory_size", "total_memory_bytes", "memory_bytes")
+                  if isinstance(info.get(key), int) and info[key] > 0), None)
+    if total is None:
+        return SLOT_TIERS[-1]
+    args = model.args
+    weights = sum(value.nbytes for _, value in tree_flatten(model.parameters()))
+    per_token = 2 * len(_trunk(model).layers) * args.num_key_value_heads * args.head_dim * 2  # bf16 keys, values
+    return next((tier for tier in SLOT_TIERS
+                 if weights + slots * tier * per_token + PREFILL_RESERVE <= SLOT_HEADROOM * total), None)
+
+
 def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_ROWS,
-            capacity: int = 2048) -> tuple[DensePlan, dict[str, Any]]:
+            capacity: int | None = None) -> tuple[DensePlan, dict[str, Any]]:
     """Build the plan for `model`, or refuse. The probe on the model's own weights must find every stacked width
     bit-identical to one row, and the row kernel within tolerance of a float32 reference. Probing every width
-    also compiles every kernel shape the plan serves with, so no request waits for a compile."""
+    also compiles every kernel shape the plan serves with, so no request waits for a compile. The slots are
+    `slot_capacity`'s size unless `capacity` names one."""
     from .numeric_plans import CUDA_PRE_AMPERE, device_class
 
     if device_class(device_info) != CUDA_PRE_AMPERE:
         raise ValueError("the dense plan exists for CUDA GPUs below compute capability 8 only")
+    capacity = slot_capacity(model, device_info, slots) if capacity is None else capacity
+    if capacity is None:
+        raise ValueError("the dense plan's smallest slot pool does not fit this card beside the model")
     plan = DensePlan(model, slots=slots, capacity=capacity)
     record = probe(plan)
     if not record["stacked_rows_identical"]:

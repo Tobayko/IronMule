@@ -124,7 +124,58 @@ def test_the_prefill_sends_only_the_last_position_through_the_plans_own_head():
     assert rows == [1] and logits.shape == (1, 256) and logits.dtype == mx.float32
     expected = model(ids, cache=make_prompt_cache(model))[0, -1].astype(mx.float32)
     assert float(mx.max(mx.abs(logits[0] - expected)).item()) < 0.05 * float(mx.max(mx.abs(expected)).item())
-    assert dp.PLAN_VERSION == 2
+    assert dp.PLAN_VERSION == 3
+
+
+def test_a_prompt_longer_than_a_prefill_chunk_is_prefilled_chunk_by_chunk_and_a_shorter_one_in_one_call(monkeypatch):
+    """Plan version 3: a prompt up to `PREFILL_CHUNK` positions is prefilled in one call, exactly as in version 2;
+    a longer one chunk by chunk into the same cache, as mlx-lm's own generation prefills, close to one call."""
+    from mlx_lm.models.cache import make_prompt_cache
+
+    model = _tiny()
+    plan = _plan(model)
+    calls, original = [], plan.trunk
+    plan.trunk = lambda ids, cache: calls.append(ids.shape[1]) or original(ids, cache=cache)
+    monkeypatch.setattr(dp, "PREFILL_CHUNK", 4)
+    plan.prefill(mx.array([[5, 9, 13, 17]]), make_prompt_cache(model))
+    assert calls == [4]
+    calls.clear()
+    ids = mx.array([[5, 9, 13, 17, 21, 25, 29, 33, 37, 41]])
+    cache = make_prompt_cache(model)
+    chunked = plan.prefill(ids, cache)
+    assert calls == [4, 4, 2] and cache[0].offset == 10
+    monkeypatch.setattr(dp, "PREFILL_CHUNK", 2048)
+    whole = plan.prefill(ids, make_prompt_cache(model))
+    assert float(mx.max(mx.abs(chunked - whole)).item()) < 1e-3 * float(mx.max(mx.abs(whole)).item())
+
+
+def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
+    """A function of the card and the model alone, so both cards of a machine hold the same requests: on a T4
+    (16,106,127,360 bytes as MLX reports it) beside Qwen 3 1.7B bf16 (28 layers, 8 KV heads, about 4 GB of
+    weights) a slot holds the product's whole 8,192-token context."""
+    from types import SimpleNamespace
+
+    class Stand:
+        args = SimpleNamespace(num_key_value_heads=8, head_dim=128)
+        model = SimpleNamespace(layers=[None] * 28)
+
+        def __init__(self, weights):
+            self.weights = weights
+
+        def parameters(self):
+            return {"weights": SimpleNamespace(nbytes=self.weights)}
+
+    def card(total):
+        return {"total_memory": total, "compute_capability_major": 7}
+
+    t4 = 16_106_127_360
+    assert dp.slot_capacity(Stand(4_100_000_000), card(t4)) == 8192
+    per_token = 2 * 28 * 8 * 128 * 2
+    edge = int(dp.SLOT_HEADROOM * t4) - 8 * 8192 * per_token - dp.PREFILL_RESERVE  # the most weights 8192 allows
+    assert dp.slot_capacity(Stand(edge), card(t4)) == 8192
+    assert dp.slot_capacity(Stand(edge + 1), card(t4)) == 4096
+    assert dp.slot_capacity(Stand(int(dp.SLOT_HEADROOM * t4)), card(t4)) is None
+    assert dp.slot_capacity(Stand(1), None) == dp.SLOT_TIERS[-1]  # a card that reports no memory: the smallest
 
 def _runtime(model, plan):
     return Runtime(Engine(model, _Tokenizer(), Knobs()), _Tokenizer(), mode=DenseStackedMode(plan))
@@ -456,3 +507,32 @@ def test_a_dense_group_admits_a_waiting_request_when_a_member_finishes_through_t
         tokens = [f["token_id"] for f in frames if isinstance(f, dict) and f.get("type") == "token"]
         assert tokens == bridge.generate(tokenizer.encode(text), limit).tokens, item.request.request_id
     assert bridge.free_slots() == plan.slots
+
+
+def test_h11_compares_slot_sizes_bit_for_bit_times_them_and_records_long_prompts_on_cpu_stand_ins(tmp_path):
+    """H11 (a)'s tool on CPU stand-ins (it checks the tool, measures nothing): the same requests in slots of two
+    sizes, the same tokens and logits; ABBA timing with an A/A pair per size; long prompts in the larger pool."""
+    import json
+
+    from tools import cuda_probe as probe
+
+    class Chat(_ChatTokenizer):
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return self.encode(messages[0]["content"])
+
+    def plans(model, capacities):
+        return {c: dp.DensePlan(model, capacity=c, linear=_rows, attention=_attention) for c in capacities}
+
+    report = probe.probe_h11_report("tiny", tmp_path / "h11.json", smoke=True, loaded=(_tiny(), Chat()), plans=plans,
+                                    capacities=(128, 256), long=(40, 120, 300))
+    assert "error" not in report["h11"], report["h11"]
+    assert report["auto_capacity"] == dp.SLOT_TIERS[-1]  # no card memory reported on the CPU
+    result, analysis = report["h11"], report["analysis"]
+    assert all(e["tokens_identical"] and e["logit_steps_identical"] == e["logit_steps"]
+               for e in result["exact"].values())
+    assert analysis["(a1) answers identical"] is True
+    assert sorted((r["capacity"], r["run"]) for r in result["timing"]) == [(128, 0), (128, 1), (256, 0), (256, 1)]
+    assert set(result["long"]["prefill_s"]) == {"40", "120"}  # 300 does not fit a 256-token slot
+    assert result["long"]["long_row_tokens"] == 120 and "one_long_row_over_short" in analysis
+    assert analysis["(a2) larger slot per step"]["verdict"] in ("harm", "gain", "no resolved difference")
+    assert json.loads((tmp_path / "h11.json").read_text())["schema"] == "ironmule.cuda_probe.h11.v1"

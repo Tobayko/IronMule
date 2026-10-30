@@ -36,10 +36,23 @@ def emit(value: dict) -> None:
     OUT.flush()
 
 
+def _slots(args) -> int:
+    return int(os.environ.get("FAKE_DENSE_SLOTS", "8192"))
+
+
+def _too_long(args, request) -> int | None:
+    """Protocol 2: the limit a request exceeds, counting about five characters a token as the real tokenizer
+    does for the harness's background notes; None when it fits."""
+    limit = min(8192, _slots(args)) if args.engine_configuration == "dense_stacked" else 8192
+    return limit if len(request["messages"][-1]["content"]) // 5 + request["max_tokens"] > limit else None
+
+
 def _engine_metadata(args) -> dict:
     """The real worker's knob fields (KP1): requested class-A knobs; the baseline only when FAKE_REPORT_KNOBS
     asks, since reading it imports MLX and slows every start the STAB1 timing tests rely on."""
     metadata = {"configuration": args.engine_configuration}
+    if args.engine_configuration == "dense_stacked":  # KB1: the slot size the plan installed with
+        metadata["dense_plan"] = {"capacity": _slots(args)}
     if args.engine_knobs is not None:
         requested = json.loads(args.engine_knobs)
         return {**metadata, "selected_knobs": requested["knobs"], "profile_source": f"class_a:{requested['source']}"}
@@ -105,8 +118,16 @@ def main() -> int:
             emit({"type": "error", "code": "generation_error", "batch_id": batch_id})
             continue
         delay = max([float(f.split(":", 1)[1]) for f in faults if f.startswith("slow:")] or [0.01])
+        def fits(request) -> bool:
+            limit = _too_long(args, request)
+            if limit is not None:
+                emit({"type": "rejected", "batch_id": batch_id, "request_id": request["request_id"],
+                      "code": "invalid_request", "reason": "context_limit" if limit == 8192 else "engine_limit",
+                      "limit": limit})
+            return limit is None
+
         sent = {request["request_id"]: 0 for request in requests}
-        open_ids = [request["request_id"] for request in requests]
+        open_ids = [request["request_id"] for request in requests if fits(request)]
         by_id = {request["request_id"]: request for request in requests}
         requests = list(requests)
 
@@ -125,8 +146,9 @@ def main() -> int:
                 for request in join["requests"] if join.get("batch_id") == batch_id else ():
                     sent[request["request_id"]] = 0
                     by_id[request["request_id"]] = request
-                    open_ids.append(request["request_id"])
                     requests.append(request)
+                    if fits(request):
+                        open_ids.append(request["request_id"])
             for request_id in list(open_ids):
                 request = by_id[request_id]
                 with lock:

@@ -753,3 +753,48 @@ def test_h10_measures_the_dense_plan_with_slot_reuse_and_requires_that_joins_hap
     for row in report["rows"]:
         row["joined"] = 0  # a run in which slot reuse never engaged measures the wrong thing
     assert "slot reuse did not engage" in " ".join(rl2.analyse_h10(report, resamples=50)["problems"])
+
+
+def test_h11_serves_long_prompts_through_both_engines_and_requires_slots_that_hold_the_whole_context(tmp_path,
+                                                                                                    monkeypatch):
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+
+    def start(engine):
+        return start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=rl2.ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device), rl2.ordered_service())
+
+    assert rl2.prompt_text({"prompt": 2, "long": True}) == rl2.CONTEXT + "\n\n" + rl2.PROMPTS[2]  # as H10 sent it
+    assert all(sum(1 for item in rl2.trace_h11(level, 99, 2.0) if item.get("context")) == 2 for level in range(3))
+
+    def measure():
+        report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[99, 100], rounds=2, requests=6,
+                                max_tokens=(2, 12), names=rl2.arms_h11(), engines=("tuned", "dense"), plan="h11",
+                                traffic=rl2.trace_h11,
+                                warm_extra=[{"offset_s": 0.0, "prompt": 0, "context": 7, "max_tokens": 8}])
+        report["preflight"] = {"ok": True}
+        return report
+
+    report = measure()
+    assert all(e["warmup_ok"] == 18 for rounds in report["engines"].values() for e in rounds)  # the long one too
+    result = rl2.analyse_h11(report, resamples=50)
+    assert result["valid"], result.get("problems")
+    assert result["dense_slots"] == [8192] and result["long_requests"]["dense"]["ok"] > 0
+    assert "recommended_up_to_context_limit" in result
+    monkeypatch.setenv("FAKE_DENSE_SLOTS", "2048")  # H10's slots reject the long requests (alone, protocol 2)
+    problems = " ".join(rl2.analyse_h11(measure(), resamples=50)["problems"])
+    assert "slots were [2048]" in problems and "long requests were not all answered" in problems
