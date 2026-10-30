@@ -24,7 +24,7 @@ from .errors import BackendUnavailable, InvalidRequest, ProductError, RequestTim
 from .types import GenerationRequest, ModelSpec
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2  # 2: a grouped request too long to run is rejected alone (`rejected` frame)
 MAX_PROTOCOL_LINE = 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
 STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
@@ -37,6 +37,9 @@ WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "c
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
                                    "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
 CONTEXT_LIMIT = 8192
+# The worker rejects a grouped request alone when its prompt and output limit exceed the context limit or the
+# engine's own bound (KB1: the dense plan's slot).
+REJECTION_REASONS = frozenset({"context_limit", "engine_limit"})
 
 
 class _StartupGuardFailure(Exception):
@@ -712,7 +715,8 @@ class MLXWorkerClient:
 
             def poll_cancels() -> None:
                 for request, cancel in zip(request_list, cancel_list):
-                    if cancel is not None and cancel.is_set() and request.request_id not in cancel_sent:
+                    if (cancel is not None and cancel.is_set() and request.request_id not in cancel_sent
+                            and request.request_id not in terminals):  # an ended request has nothing to stop
                         self._send({"type": "cancel", "request_id": request.request_id}, deadline)
                         cancel_sent.add(request.request_id)
                 send_joins()
@@ -824,6 +828,20 @@ class MLXWorkerClient:
                                                  "prompt_ids_sha256": digest, "engine": engine,
                                                  "selection": selection,
                                                  "delivery": "buffered_completion"}
+                    elif kind == "rejected":
+                        # Too long to run: the worker rejected this request alone, before any token, and the
+                        # others go on. Its caller reports it as the single path reports the same request.
+                        reason, limit = event.get("reason"), event.get("limit")
+                        if (event.get("code") != "invalid_request" or reason not in REJECTION_REASONS
+                                or type(limit) is not int or not 1 <= limit <= CONTEXT_LIMIT
+                                or events_by_id[request_id]):
+                            raise BackendUnavailable("backend batch rejection event is invalid")
+                        events_by_id[request_id].append(event)
+                        if on_event is not None:
+                            on_event(request_id, event)
+                        terminals[request_id] = {"variant": self.execution_variant, "finish_reason": None,
+                                                 "rejected": reason, "limit": limit, "engine": None,
+                                                 "delivery": "rejected"}
                     else:
                         raise BackendUnavailable("backend emitted an unknown batch event")
             except BaseException as exc:

@@ -28,7 +28,7 @@ if __package__ in (None, ""):
 from ironmule_product.model_policy import ModelPolicyError, config_model_type, validate_model_config
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2  # 2: a grouped request too long to run is rejected alone (`rejected` frame)
 MAX_LINE = 1024 * 1024
 CONTEXT_LIMIT = 8192
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
@@ -615,9 +615,41 @@ def _generate(
     return terminal
 
 
+class RequestTooLong(ValueError):
+    """A request whose prompt and output limit exceed the context limit, or the engine's own (KB1: the dense
+    plan's slot). In a group it is rejected alone, as the single path rejects it, and the others run."""
+
+    def __init__(self, request_id: str, reason: str, limit: int) -> None:
+        super().__init__(reason)
+        self.request_id, self.reason, self.limit = request_id, reason, limit
+
+
+def _rejected(batch_id: str, error: RequestTooLong) -> dict[str, Any]:
+    return {"type": "rejected", "batch_id": batch_id, "request_id": error.request_id, "code": "invalid_request",
+            "reason": error.reason, "limit": error.limit}
+
+
+def _render_rows(requests: list[Any], model_id: str, tokenizer: Any, batch_id: str, *, allow_stream: bool,
+                 limit: int | None) -> tuple[list[tuple[str, list[int], int]], list[str]]:
+    """The rows that fit, and every request id in order; each request too long to run gets its `rejected` frame
+    here. Any other invalid request still fails the batch: the service validated it, so it is a protocol fault."""
+    ids = [request.get("request_id") if isinstance(request, dict) else None for request in requests]
+    if len(set(map(str, ids))) != len(ids):
+        raise ValueError("duplicate request id")
+    rows = []
+    for request in requests:
+        try:
+            rows.append(_render_engine_request(request, model_id, tokenizer, allow_stream=allow_stream,
+                                               limit=limit))
+        except RequestTooLong as error:
+            _emit(_rejected(batch_id, error))
+    return rows, ids
+
+
 def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: Any,
-                           allow_stream: bool = False) -> tuple[str, list[int], int]:
-    """Apply exactly the single-request identity and rendering validation."""
+                           allow_stream: bool = False, limit: int | None = None) -> tuple[str, list[int], int]:
+    """Apply exactly the single-request identity and rendering validation; `limit` is the engine's own bound
+    on prompt plus output tokens, if it has one below the context limit."""
     request_id = command.get("request_id")
     if not isinstance(request_id, str) or not request_id or len(request_id) > 256:
         raise ValueError("invalid request id")
@@ -641,7 +673,9 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
         raise ValueError("invalid prompt ids")
     ids = list(raw_ids)
     if len(ids) + max_tokens > CONTEXT_LIMIT:
-        raise ValueError("context limit")
+        raise RequestTooLong(request_id, "context_limit", CONTEXT_LIMIT)
+    if limit is not None and len(ids) + max_tokens > limit:
+        raise RequestTooLong(request_id, "engine_limit", limit)
     return request_id, ids, max_tokens
 
 
@@ -762,7 +796,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                       engine_bridge: Any, cancellations: dict[str, threading.Event],
                       pending_cancellations: set[str], lock: threading.Lock,
                       *, rendered_override: list[tuple[str, list[int], int]] | None = None,
-                      selection: dict[str, Any] | None = None) -> None:
+                      order: list[str] | None = None, selection: dict[str, Any] | None = None) -> None:
     batch_id = command.get("batch_id")
     requests = command.get("requests")
     # SERVE4: the current-profile engine and the dense plan stream every grouped request's tokens as
@@ -776,8 +810,11 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         return
     registered: list[str] = []
     try:
-        rendered = (rendered_override if rendered_override is not None else
-                    [_render_engine_request(request, model_id, tokenizer, allow_stream=live) for request in requests])
+        limit = getattr(engine_bridge, "request_limit", lambda: None)()  # KB1: the dense plan's slot
+        if rendered_override is not None:
+            rendered, order = rendered_override, list(order or [row[0] for row in rendered_override])
+        else:
+            rendered, order = _render_rows(requests, model_id, tokenizer, batch_id, allow_stream=live, limit=limit)
         request_ids = [row[0] for row in rendered]
         if len(set(request_ids)) != len(request_ids):
             raise ValueError("duplicate request id")
@@ -793,13 +830,13 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         pool = _detokenizer_pool(tokenizer)
         streams: dict[str, _BatchStream] = {}
         # SERVE7 in the grouped path: every request, joined ones too, keeps its chat-turn plan.
-        messages_by_id = {row[0]: request.get("messages") for row, request in zip(rendered, requests)} \
+        messages_by_id = {request.get("request_id"): request.get("messages") for request in requests} \
             if rendered_override is None else {}
 
         def cuts_for(row: tuple[str, list[int], int]) -> list[int] | None:
             return (_turn_boundaries(tokenizer, messages_by_id[row[0]], row[1])
                     if live and CHAT_REUSE and messages_by_id.get(row[0]) else None)
-        all_ids = list(request_ids)
+        all_ids = list(order)  # rejected requests too, in the order they came
         leftovers: list[tuple[str, list[int], int]] = []
 
         def drain_joins() -> list[tuple[str, list[int], int]]:
@@ -815,7 +852,14 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 if not isinstance(join.get("requests"), list):
                     raise ValueError("invalid join")
                 for request in join["requests"]:
-                    row = _render_engine_request(request, model_id, tokenizer, allow_stream=True)
+                    try:
+                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit)
+                    except RequestTooLong as error:  # rejected alone; the run goes on
+                        if error.request_id in all_ids:
+                            raise ValueError("duplicate request id") from None
+                        all_ids.append(error.request_id)
+                        _emit(_rejected(batch_id, error))
+                        continue
                     messages_by_id[row[0]] = request.get("messages")
                     if row[0] in all_ids:
                         raise ValueError("duplicate request id")
@@ -863,7 +907,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 slots = getattr(engine_bridge, "free_slots", lambda: None)()  # KB1: the dense plan's free slots
                 candidates, waiting[:] = waiting + drain_joins(), []
                 for row in candidates:
-                    if len(row[1]) + row[2] + 8 > capacity:
+                    # The dense plan's run spans its whole slot, so a row within its limit always fits it.
+                    if (len(row[1]) + row[2] > limit) if limit is not None else (len(row[1]) + row[2] + 8 > capacity):
                         leftovers.append(row)  # too long for this run's cache; it runs right after
                         continue
                     if slots is not None and len(fresh) >= slots:
@@ -983,10 +1028,11 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
         return
     registered: list[str] = []
     try:
-        rendered = [_render_engine_request(request, model_id, tokenizer) for request in requests]
+        rendered, order = _render_rows(requests, model_id, tokenizer, batch_id, allow_stream=False, limit=None)
         request_ids = [row[0] for row in rendered]
-        if len(set(request_ids)) != len(request_ids):
-            raise ValueError("duplicate request id")
+        if not rendered:  # every request was too long to run, and each has its own rejection
+            _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": order})
+            return
         decision = automatic_runtime.choose_many(
             [row[1] for row in rendered], [row[2] for row in rendered], stream=False,
             session_requests=len(rendered), group_width=min(4, len(rendered)),
@@ -998,7 +1044,7 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
         if selected not in {"reference", "prefix_reuse"}:
             bridge = automatic_runtime.engine_for(selected)
             _run_engine_batch(command, model_id, tokenizer, bridge, cancellations,
-                              pending_cancellations, lock, rendered_override=rendered,
+                              pending_cancellations, lock, rendered_override=rendered, order=order,
                               selection=selection)
             return
         with lock:
@@ -1077,7 +1123,7 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
                 terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
                     separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
             _emit(terminal)
-        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": request_ids})
+        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": order})
     except ValueError:
         _note_failure("batch")
         _safe_batch_error("invalid_request", batch_id)

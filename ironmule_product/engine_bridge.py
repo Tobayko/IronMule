@@ -467,6 +467,13 @@ class CurrentEngineBridge:
         """The token ids the engine stops on, so a stream ends exactly where the engine does."""
         return tuple(self._runtime.backend.eos_ids)
 
+    def request_limit(self) -> int | None:
+        """KB1: the most prompt plus output tokens the dense plan's slot holds; None where only the worker's
+        context limit applies."""
+        if self._configuration != "dense_stacked":
+            return None
+        return self._runtime.backend.request_limit()
+
     def free_slots(self) -> int | None:
         """KB1: free slots in the dense plan's pool, which bound who may join a run; None for other plans."""
         if self._configuration != "dense_stacked":

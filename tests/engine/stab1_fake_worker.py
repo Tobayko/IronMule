@@ -67,7 +67,7 @@ def main() -> int:
     if control.get("fail_start"):
         sys.stderr.write("fake worker: start refused by control file\n")
         return 4
-    emit({"type": "ready", "protocol_version": 1, "model_id": spec["model_id"], "revision": spec["revision"],
+    emit({"type": "ready", "protocol_version": 2, "model_id": spec["model_id"], "revision": spec["revision"],
           "device": "gpu", "stop_handling": "parent", "context_limit": 8192, "execution_variant": "current_engine",
           "engine": control.get("engine", _engine_metadata(args)),
           "sources_sha256": control.get("digest", "a" * 64)})

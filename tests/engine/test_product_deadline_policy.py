@@ -37,7 +37,7 @@ def _transport(tmp_path: Path, body: str, *, startup_timeout=None) -> MLXWorkerC
     client._process = process  # noqa: SLF001 - real protocol transport fixture
     client._ready_payload = {  # noqa: SLF001
         "type": "ready",
-        "protocol_version": 1,
+        "protocol_version": 2,
         "model_id": "local/test",
         "revision": "revision",
         "device": "gpu",

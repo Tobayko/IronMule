@@ -325,6 +325,30 @@ def test_the_worker_streams_a_lone_dense_batch_and_lets_a_request_join_it(monkey
 
 
 
+def test_a_request_too_long_for_a_slot_is_rejected_alone_and_the_group_runs(monkeypatch):
+    """A prompt plus output limit beyond the dense plan's slot failed its whole group (and the client then retired
+    the worker); it is now rejected alone before any token, a joiner too, and the others are answered as before."""
+    import threading
+
+    worker, bridge, plan, tokenizer, sent = _worker_world(monkeypatch)
+    long_text = "word " * plan.capacity
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1",
+                      "requests": [_chat("d", long_text), _chat("c", "joined later")]})
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [_chat("a", "short one"), _chat("b", long_text)]}
+    worker._run_engine_batch(command, "m", tokenizer, bridge, {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    rejected = [event for event in sent if event["type"] == "rejected"]
+    assert [(e["request_id"], e["reason"], e["limit"]) for e in rejected] == [
+        ("b", "engine_limit", plan.capacity), ("d", "engine_limit", plan.capacity)]
+    assert not [e for e in sent if e.get("request_id") in ("b", "d") and e["type"] != "rejected"]
+    for rid, text in (("a", "short one"), ("c", "joined later")):
+        streamed = [event["token_id"] for event in sent if event["type"] == "token" and event["request_id"] == rid]
+        assert streamed == bridge.generate(tokenizer.encode(text), 6).tokens, rid
+    assert sent[-1] == {**sent[-1], "type": "batch_done", "request_ids": ["a", "b", "d", "c"]}
+    assert bridge.free_slots() == plan.slots
+
+
 def test_a_joiner_that_finds_every_slot_taken_takes_the_first_one_a_member_frees(monkeypatch):
     """KB1: with both slots of a two-slot plan taken, a joiner waits inside the run and takes the slot the
     short member frees, instead of waiting for the whole run to end."""

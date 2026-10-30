@@ -4,6 +4,14 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **A request too long to run fails alone, not with its group.** When a request's prompt plus `max_tokens`
+  exceeded the 8,192-token context limit, or the dense plan's 2,048-token slot, every request grouped with it
+  failed too. The parent then retired the worker as broken and reloaded the model. On `--engine tuned` and
+  `--engine dense` a lone request runs as a group as well, so one long prompt was enough, and four within ten
+  minutes exhausted the worker's restarts and stopped the server from serving. The worker now rejects that
+  request alone before generating anything, with the single path's `400`, and the others in its group are
+  answered as before. Worker protocol version 2.
+
 - **Streamed tokens leave as soon as they are read.** The worker used to hold each token until the next one
   arrived, so the last could carry the final text. That delayed every request's first token by one decode step,
   and by a whole chain of steps where the engine reads several at once. Each token is now sent as it is read, and

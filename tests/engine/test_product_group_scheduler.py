@@ -363,3 +363,34 @@ def test_a_joiner_the_worker_never_served_goes_back_to_the_front_of_the_queue():
     assert [item.request.request_id for item in service._carry] == ["c", "d"]  # in order, before anything new
     assert waiting.events.empty() and not waiting.joined and waiting.outcome is None  # no error, not retired
     assert service._completed == 2 and service._failed == 0 and service._last_batch_size == 2
+
+
+class _RejectingTransport(_SlotTransport):
+    """Protocol 2: the worker rejects member `b` as too long to run, before any token; the others run."""
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+        on_event("b", {"type": "rejected", "request_id": "b", "code": "invalid_request", "reason": "engine_limit",
+                       "limit": 2048})
+        self.joined = [request.request_id for request, _ in joins()]  # b's place is free at once
+        for rid in [rid for rid in members if rid != "b"] + self.joined:
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+        return [{"request_id": rid, "events": [], "metadata": {}} for rid in members + self.joined]
+
+
+def test_a_member_the_worker_rejects_as_too_long_fails_alone_with_a_400_and_frees_its_place():
+    from ironmule_product.errors import InvalidRequest
+
+    backend = _RejectingTransport(reuses_slots=True)
+    service = _service(backend)
+    service.policy = ServingPolicy()
+    first, too_long, waiting = (_Session(_request(value), None) for value in ("a", "b", "c"))
+    service._pending.put(waiting)
+    service._perform_batch([first, too_long])
+    error = too_long.events.get_nowait()
+    assert isinstance(error, InvalidRequest) and error.status == 400 and "2048-token" in str(error)
+    assert too_long.events.empty()
+    assert backend.joined == ["c"]  # its place went to the next request
+    assert [first.events.get_nowait()["type"], waiting.events.get_nowait()["type"]] == ["done", "done"]
+    assert service._completed == 2 and service._failed == 1

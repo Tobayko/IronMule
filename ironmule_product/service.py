@@ -992,6 +992,12 @@ class ProductService:
                 session.terminal_seen = True
             elif kind == "error":
                 raise BackendUnavailable("model worker failed")
+            elif kind == "rejected" and done is None and generated == 0:
+                # The worker rejected this grouped request alone (protocol 2); the single path's answer.
+                limit = event.get("limit")
+                raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token "
+                                     + ("context limit" if event.get("reason") == "context_limit"
+                                        else "limit of this server's engine"))
             else:
                 raise BackendUnavailable("worker emitted an invalid event")
         if done is None:
@@ -1219,7 +1225,8 @@ class ProductService:
             if request_id in unheard:
                 consume(unheard.pop(request_id))
             queues[request_id].put(event)
-            if event.get("type") == "done":  # STAB1: a finished member ends now, not when its group does
+            # STAB1: a finished member ends now, not when its group does; a rejected one never started.
+            if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
                 finished.add(request_id)
 

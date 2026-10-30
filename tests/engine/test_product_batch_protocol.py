@@ -163,3 +163,46 @@ def test_a_join_that_arrives_after_the_run_ended_is_handed_back_not_failed(monke
             with pytest.raises(BackendUnavailable, match="completion is invalid"):
                 client.complete_batch([_request("a", stream=True), _request("b", stream=True)],
                                       joins=lambda handed=handed: handed.pop() if handed else [])
+
+
+def test_a_member_rejected_as_too_long_ends_alone_and_the_worker_is_kept(monkeypatch) -> None:
+    """Protocol 2: the worker rejects a request too long to run before any token. The batch completes for the
+    others, the rejected member is never sent a cancel, and the warm worker stays; a rejection after a token
+    is a broken stream."""
+    for late, ok in ((False, True), (True, False)):
+        client = MLXWorkerClient(_spec(), execution_variant="current_engine", engine_configuration="dense_stacked")
+        monkeypatch.setattr(MLXWorkerClient, "ready", property(lambda self: True))
+        unusable = []
+        monkeypatch.setattr(client, "_mark_unusable", lambda unusable=unusable: unusable.append(True))
+        sent, delivered = [], []
+        monkeypatch.setattr(client, "_send", lambda command, deadline, sent=sent: sent.append(command))
+        cancel_b = threading.Event()
+
+        def frames(sent=sent, late=late):
+            batch = sent[0]["batch_id"]
+            if late:
+                yield {"type": "token", "batch_id": batch, "request_id": "b", "text": "x", "token_id": 1,
+                       "prompt_tokens": 1, "completion_tokens": 1}
+            yield {"type": "rejected", "batch_id": batch, "request_id": "b", "code": "invalid_request",
+                   "reason": "engine_limit", "limit": 2048}
+            cancel_b.set()  # its caller gives up on it: nothing to stop at the worker
+            yield {"type": "token", "batch_id": batch, "request_id": "a", "text": "x", "token_id": 1,
+                   "prompt_tokens": 1, "completion_tokens": 1}
+            yield {"type": "done", "batch_id": batch, "request_id": "a", "finish_reason": "length",
+                   "prompt_tokens": 1, "completion_tokens": 1, "variant": "current_engine", "engine": {}}
+            yield {"type": "batch_done", "batch_id": batch, "request_ids": ["a", "b"]}
+
+        stream = frames()
+        monkeypatch.setattr(client, "_read_event", lambda deadline, on_tick=None, stream=stream: next(stream))
+        requests = [_request("a", stream=True), _request("b", stream=True)]
+        if ok:
+            rows = client.complete_batch(requests, cancels=[None, cancel_b],
+                                         on_event=lambda rid, event: delivered.append((rid, event["type"])))
+            assert [(row["request_id"], row["metadata"].get("rejected")) for row in rows] == [
+                ("a", None), ("b", "engine_limit")]
+            assert ("b", "rejected") in delivered and not unusable
+            assert [command["type"] for command in sent] == ["generate_batch"]  # no cancel for b
+        else:
+            with pytest.raises(BackendUnavailable, match="rejection event is invalid"):
+                client.complete_batch(requests, cancels=[None, cancel_b])
+            assert unusable

@@ -443,9 +443,13 @@ class DenseBackend:
         with self._lock:
             return len(self._free)
 
+    def request_limit(self) -> int:
+        """The most prompt plus output tokens one slot holds; the worker rejects a longer request alone."""
+        return self.plan.capacity
+
     def capacity_for(self, prompt_lens: Sequence[int], max_tokens: int) -> int:
         needed = max(prompt_lens) + max_tokens
-        if needed > self.plan.capacity:
+        if needed > self.request_limit():
             raise ValueError(f"{needed} tokens do not fit the dense plan's {self.plan.capacity}-token slots")
         return self.plan.capacity
 
