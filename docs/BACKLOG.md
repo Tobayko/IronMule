@@ -234,6 +234,24 @@ of them happened in run 5.**
   - The binding names the reference schedule and capacity, and a width-less policy keeps the service's width.
   - Prefill gains a per-group term (state schema v2).
 
+**Result S run 6 and S2 run 2 (2026-10-30, at `f850704`): S passes (a) and (b); S2 fails (a') by 0.4 points. The gate
+stays shut.**
+- **No false qualification this time.** Learned policy `115547b60687` qualified at trace 134 over the reference:
+  +6.2 % (95 % 1.8-10.0 %, floor 0.5 %). Served without noise it is +4.9 % over the reference, a real gain (post hoc
+  check). Its 24-triplet audit against the reference ended `confirmed`.
+- **The cost:** `w8/sjf` (+6.2 % without noise) was rejected against the reference with +6.3 % (95 % 2.9-9.2 %,
+  floor 1.8 %). Its 95 % bound cleared the floor, but the evenly split 0.625 % bound did not at any look.
+- **S2 (c')** `w1/sjf` qualified 10 traces after the change: +45.2 % (95 % 35.1-58.9 %). Its audit confirmed it,
+  and the agent's windows after the change cost 49.4 % less than the reference's.
+- **S2 (a') fails:** 50 traces after the change the prefill intercept read 0.161 s against 0.146 s (+10.4 %); the
+  other parameters were within 1.3 %. The decode-only change had reopened both fits.
+- **Fix (before S run 7 and S2 run 3):**
+  - Prefill and decode errors are tracked apart, and only the part that stops fitting is reopened
+    (`test_a_decode_only_change_reopens_only_the_decode_fit` fails under the old rule).
+  - The per-group prefill term starts sure of zero, since groups of one cannot tell it apart.
+  - Alpha is spent strict-early, lenient-late (0.1, 0.2, 0.4 and 1.8 % at the four looks; 2.5 % in all).
+  - The planner scales recorded gaps log-symmetrically, 0.8-1.25 (0.5-1.5 weighted heavy load).
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every

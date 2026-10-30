@@ -74,13 +74,13 @@ MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next 
 MIN_TRIPLETS = 6
 MAX_TRIPLETS = 24
 LOOKS = (6, 12, 18, 24)     # a comparison is judged only at these numbers of triplets (group-sequential)
-ALPHA = 0.025 / len(LOOKS)  # one-sided error spent at each look, so repeated looks cannot pass a null candidate
+ALPHAS = (0.001, 0.002, 0.004, 0.018)  # one-sided error spent at each look (O'Brien-Fleming-like), 2.5 % in all
 RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
 PLANNER = {"episodes": 3000, "seeds": 2, "lr": 0.05, "harm_weight": 5.0, "validation": 40, "held_out": 80,
-           "trace": TRACE, "scale": (0.5, 1.5)}
+           "trace": TRACE, "scale": (0.8, 1.25)}  # gaps scaled log-symmetrically: 0.5-1.5 weighted heavy load
 
 
 # ---------------------------------------------------------------- the world model
@@ -90,17 +90,17 @@ class _RLS:
     symmetric with a positive diagonal (else it is reopened, keeping the fit) and its trace at or below its start:
     in AG1 S run 1 it lost both after about 2,600 groups and the prefill fit ran off."""
 
-    def __init__(self, theta: Iterable[float], spread: float = 1e2):
+    def __init__(self, theta: Iterable[float], spread: Iterable[float] | float = 1e2):
         self.theta = [float(x) for x in theta]
-        self.spread = spread
         n = len(self.theta)
-        self.p = [[spread if i == j else 0.0 for j in range(n)] for i in range(n)]
+        self.spread = [float(v) for v in spread] if isinstance(spread, (list, tuple)) else [float(spread)] * n
+        self.p = [[self.spread[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
         self.n = 0
 
     def reopen(self) -> None:
         """Forget how sure the fit is, not what it found: the next groups move it as at the start."""
         n = len(self.theta)
-        self.p = [[self.spread if i == j else 0.0 for j in range(n)] for i in range(n)]
+        self.p = [[self.spread[i] if i == j else 0.0 for j in range(n)] for i in range(n)]
 
     def predict(self, x: list[float]) -> float:
         return sum(t * v for t, v in zip(self.theta, x))
@@ -120,18 +120,18 @@ class _RLS:
                 or any(p[i][i] <= 0 for i in range(n))):
             self.reopen()  # a numerical failure keeps the last finite fit
             return
-        trace, limit = sum(p[i][i] for i in range(n)), self.spread * n
+        trace, limit = sum(p[i][i] for i in range(n)), sum(self.spread)
         if trace > limit:
             p = [[v * limit / trace for v in row] for row in p]
         self.theta, self.p = theta, p
         self.n += 1
 
     def to_json(self) -> dict[str, Any]:
-        return {"theta": self.theta, "p": self.p, "n": self.n}
+        return {"theta": self.theta, "p": self.p, "n": self.n, "spread": self.spread}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "_RLS":
-        model = cls(data["theta"])
+        model = cls(data["theta"], data.get("spread", 1e2))
         model.p = [[float(v) for v in row] for row in data["p"]]
         model.n = int(data["n"])
         return model
@@ -155,11 +155,15 @@ class WorldModel:
 
     def __init__(self, engine_width: int = ENGINE_WIDTH):
         self.engine_width = engine_width
-        self.prefill = _RLS(PRIOR[:3])
+        # the per-group term starts sure of zero: groups of one cannot tell it from the per-member term, so
+        # without wider groups to separate them the split wandered (AG1 S2, run 2)
+        self.prefill = _RLS(PRIOR[:3], spread=(1e2, 1e2, 1e-2))
         self.decode = _RLS(PRIOR[3:])
         self.groups: dict[int, int] = {}
         self.errors: deque[float] = deque(maxlen=50)
-        self.since_reopen, self.reopened = 0, 0
+        # each part's own recent errors: a part is reopened only when it is the one that went wrong
+        self.part_errors: dict[str, deque[float]] = {"prefill": deque(maxlen=50), "decode": deque(maxlen=50)}
+        self.since_reopen, self.reopened = {"prefill": 0, "decode": 0}, 0
 
     def params(self) -> dict[str, float]:
         a, b, g = self.prefill.theta
@@ -176,9 +180,11 @@ class WorldModel:
 
     def observe(self, members: list[dict[str, Any]]) -> bool:
         """One finished group (each member: start, first, end in seconds, prompt_tokens, tokens, ok). A group
-        with a failed member or inconsistent times teaches nothing. Returns whether it was learned. When the
-        model's recent median error passes `FIDELITY`, the machine changed or the fit went wrong: both parts
-        are reopened (at most once per window of errors), so it re-learns instead of planning on stale prices."""
+        with a failed member or inconsistent times teaches nothing. Returns whether it was learned. When a part's
+        prices stop fitting, the machine changed or the fit went wrong. Prefill and decode errors are tracked
+        apart: the part whose own recent median error passes `FIDELITY` is reopened (at most once per
+        window of its errors), so it re-learns while the part that still fits keeps its precision (reopening
+        both after a decode-only change let the prefill fit wander 10.4 %, AG1 S2 run 2)."""
         if not members or any(not m.get("ok") or m["tokens"] < 1 or m["first"] < m["start"] or m["end"] < m["first"]
                               for m in members):
             return False
@@ -187,19 +193,30 @@ class WorldModel:
         span = max(m["end"] for m in members) - start
         predicted = self.predict_span(members)
         self.errors.append(abs(predicted - span) / max(span, 1e-3))
-        self.since_reopen += 1
-        fidelity = self.fidelity()
-        if fidelity is not None and fidelity > FIDELITY and self.since_reopen >= self.errors.maxlen:
-            self.prefill.reopen()
-            self.decode.reopen()
-            self.since_reopen, self.reopened = 0, self.reopened + 1
+        p = self.params()
+        prefill_time = members[-1]["first"] - start
+        prefill_guess = p["group_s"] + sum(p["prefill_s"] + p["prefill_s_per_ktoken"] * m["prompt_tokens"] / 1000
+                                           for m in members)
+        self.part_errors["prefill"].append(abs(prefill_guess - prefill_time) / max(prefill_time, 1e-3))
+        rounds, further = decode_rounds([m["tokens"] for m in members], self.engine_width)
+        if rounds:
+            decode_time = max(m["end"] for m in members) - members[-1]["first"]
+            decode_guess = p["step_s"] * rounds + p["step_s_per_session"] * further
+            self.part_errors["decode"].append(abs(decode_guess - decode_time) / max(decode_time, 1e-3))
+        for part, fit in (("prefill", self.prefill), ("decode", self.decode)):
+            errors = self.part_errors[part]
+            self.since_reopen[part] += 1
+            if (len(errors) >= errors.maxlen and statistics.median(errors) > FIDELITY
+                    and self.since_reopen[part] >= errors.maxlen):
+                fit.reopen()  # this part went wrong (the machine changed or its fit did); the other keeps its own
+                self.since_reopen[part], self.reopened = 0, self.reopened + 1
+                errors.clear()
         previous = start
         for k, member in enumerate(members):  # each member's own prefill: since the one before had its first token;
             # the first member's also holds what the group costs once (rendering it, the worker round trip)
             self.prefill.update([1.0, member["prompt_tokens"] / 1000.0, 1.0 if k == 0 else 0.0],
                                 member["first"] - previous)
             previous = member["first"]
-        rounds, further = decode_rounds([m["tokens"] for m in members], self.engine_width)
         if rounds:
             self.decode.update([float(rounds), float(further)], max(m["end"] for m in members) - members[-1]["first"])
         width = len(members)
@@ -219,7 +236,7 @@ class WorldModel:
     def to_json(self) -> dict[str, Any]:
         return {"engine_width": self.engine_width, "prefill": self.prefill.to_json(), "decode": self.decode.to_json(),
                 "groups": {str(k): v for k, v in self.groups.items()}, "errors": list(self.errors),
-                "reopened": self.reopened}
+                "part_errors": {k: list(v) for k, v in self.part_errors.items()}, "reopened": self.reopened}
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "WorldModel":
@@ -227,6 +244,8 @@ class WorldModel:
         model.prefill, model.decode = _RLS.from_json(data["prefill"]), _RLS.from_json(data["decode"])
         model.groups = {int(k): int(v) for k, v in data["groups"].items()}
         model.errors.extend(float(e) for e in data["errors"])
+        for part, errors in (data.get("part_errors") or {}).items():
+            model.part_errors[part].extend(float(e) for e in errors)
         model.reopened = int(data.get("reopened", 0))
         return model
 
@@ -492,16 +511,19 @@ def _paired(pairs: list[tuple[float, float]], resamples: int,
 def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
     """The candidate's gain over the incumbent (B against the mean of A and AA, paired by triplet), against
     the floor: the size of what the same estimator finds between the incumbent's two runs (AA against A).
-    Judged only at the `LOOKS` (group-sequential): `pass` when the gain's lower bound at `ALPHA` (2.5 % split
-    over the looks) is above zero and the floor; `fail` when the upper 97.5 % bound cannot reach the floor,
-    or the last look passed; else `open`. Judging after every triplet with an uncorrected bound let a null
-    candidate pass (AG1 S, run 5). The 95 % interval and the A/A noise (nearest-rank 95th percentile of
+    Judged only at the `LOOKS` (group-sequential): `pass` when the gain's lower bound at that look's share of
+    `ALPHAS` (2.5 % in all, strict early and lenient late) is above zero and the floor; `fail` when the upper
+    97.5 % bound cannot reach the floor, or the last look passed; else `open`. Judging after every triplet with
+    an uncorrected bound let a null candidate pass (AG1 S, run 5); an even split cost too much power at the last
+    look (run 6). The 95 % interval and the A/A noise (nearest-rank 95th percentile of
     |1 - AA/A|) are reported beside it."""
+    n = len(triplets)
+    alpha = _alpha(n)
     gain, (bound, low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
-                                       (ALPHA, 0.025, 0.975))
+                                       (alpha, 0.025, 0.975))
     control, _ = _paired([(t["aa"], t["a"]) for t in triplets], resamples)
     floor = max(0.0, abs(control))
-    verdict, n = "open", len(triplets)
+    verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:
         if bound > floor:
             verdict = "pass"
@@ -511,11 +533,17 @@ def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[
             "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95)}
 
 
+def _alpha(n: int) -> float:
+    """The one-sided error spent at a look after `n` triplets (the last look's between looks and beyond)."""
+    return ALPHAS[LOOKS.index(n)] if n in LOOKS else ALPHAS[-1]
+
+
 def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
     """An audit of the serving schedule (B) against the reference (A, AA): `harm` when, at a look, the upper
-    bound of its gain at 1 - `ALPHA` is below zero, i.e. it loses to the reference with the corrected bound."""
+    bound of its gain at 1 minus that look's alpha is below zero: it loses to the reference with the corrected
+    bound."""
     gain, (low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
-                                (0.025, 1 - ALPHA))
+                                (0.025, 1 - _alpha(len(triplets))))
     n = len(triplets)
     verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:

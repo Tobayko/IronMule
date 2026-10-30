@@ -569,3 +569,18 @@ def test_a_width_less_policy_keeps_the_services_width_and_close_ends_idle_work(t
     agent.close()
     agent._last_activity = -1e9
     agent.idle(lambda: False, replay=lambda *a: pytest.fail("idle work after close"))
+
+
+def test_a_decode_only_change_reopens_only_the_decode_fit():
+    """AG1 S2 run 2: after a change of the decode price, reopening the prefill fit too let it wander 10.4 %."""
+    rng = random.Random(9)
+    world = WorldModel()
+    for _ in range(200):
+        world.observe(_group(TRUTH, rng, rng.choice((1, 2, 4, 8))))
+    narrow = {**TRUTH, "step_s": 0.010, "step_s_per_session": 0.040}
+    for _ in range(400):
+        world.observe(_group(narrow, rng, 1 if rng.random() < 0.8 else 2, prompts=(24,)))
+        assert world.prefill.p[0][0] < 1.0  # never reopened (a reopened fit starts at 100)
+    assert world.reopened >= 1
+    for key, value in narrow.items():
+        assert world.params()[key] == pytest.approx(value, rel=0.1), key
