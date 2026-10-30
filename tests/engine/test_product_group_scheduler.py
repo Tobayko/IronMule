@@ -74,6 +74,7 @@ def _service(backend: _Transport) -> ProductService:
     service._completed = service._failed = service._cancelled = 0
     service._last_batch_size = None
     service._batch_count = 0
+    service._joined = 0
     return service
 
 
@@ -319,6 +320,7 @@ def test_a_dense_group_lets_a_newcomer_take_a_freed_slot_and_other_engines_count
         service._perform_batch(sessions[:2])
         assert backend.joined_rounds == expected, reuses
         assert service._completed == 2 + sum(map(len, expected))
+        assert service._joined == sum(map(len, expected))  # what /health reports as joined_requests
 
 
 

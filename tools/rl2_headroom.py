@@ -1111,9 +1111,11 @@ def measure_h8(start: Any, model: str, *, deadline_s: float, traces: Iterable[in
                                 report["stopped"] = f"the {engine} pool did not drain before block {block}"
                                 return report
                             set_arm(pool, name)
+                            joined_before = pool.health().get("joined_requests") or 0
                             row = {"level": level, "trace": t, "arm": name, "run": run, "block": block, "round": r,
                                    "engine": engine, "execution": pool.health().get("execution"),
                                    "started_unix": time.time(), "requests": replay(pool, model, items, deadline_s)}
+                            row["joined"] = (pool.health().get("joined_requests") or 0) - joined_before  # H10
                             report["rows"].append(row)
                             if on_row is not None:
                                 on_row(report)
@@ -1597,6 +1599,73 @@ def analyse_h9(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0
                                       and dense_part["(2) no harm in any state"]["passes"])}
 
 
+# ---------------------------------------------------------------- H10, fixed in BACKLOG before data
+
+H10_TRACES = range(87, 99)      # fresh seeds: no earlier run, training or simulation used them
+H10_ROUNDS = 4
+
+
+def arms_h10() -> list[str]:
+    """The default against the dense plan with slot reuse at H9's width and at RL8's."""
+    return ["tuned:shortest/w2/g0/sjf", "dense:shortest/w8/g0/sjf", "dense:shortest/w4/g0/sjf"]
+
+
+def run_h10(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import DENSE_STARTUP_TIMEOUT, MLXWorkerClient
+    from ironmule_product.device_pool import cuda_devices, start_pool
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {"model": model, "revision": revision, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    spec = store.model(model)
+    devices = cuda_devices() or [None]
+    preflight = dense_preflight(str(spec.snapshot_path), devices[0])
+    if not preflight.get("ok"):
+        return {"model": model, "revision": revision, "failed": "dense preflight", "preflight": preflight}
+
+    def start(engine: str) -> Any:  # one startup limit for both engines; startup is not in the cost
+        return start_pool(store, spec, devices, lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device, startup_timeout=DENSE_STARTUP_TIMEOUT), ordered_service())
+
+    deadline = float(store.settings()["request_timeout_s"] or 120)
+    sizes = ({"traces": [H10_TRACES[0]], "rounds": 1, "requests": 3, "max_tokens": (4, 8)} if smoke else
+             {"traces": H10_TRACES, "rounds": H10_ROUNDS})
+    result = measure_h8(start, model, deadline_s=deadline, on_row=on_row, names=arms_h10(), engines=("tuned", "dense"),
+                        plan="h10", **sizes)
+    return {"model": model, "revision": revision, "preflight": preflight, **result}
+
+
+def analyse_h10(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """H10, as fixed in BACKLOG before data: H8's decisions for the better dense arm, slot reuse as a validity
+    condition, and RL8's rule for the plan's width."""
+    part = analyse_h8({**report, "arms": arms_h10()}, resamples, seed)
+    joined = {lv: sum(row.get("joined") or 0 for row in report.get("rows", [])
+                      if row["engine"] == "dense" and row["level"] == lv)
+              for lv in range(len(report.get("states") or H2_STATES))}
+    problems = list(part.get("problems", []))
+    if not (report.get("preflight") or {}).get("ok"):
+        problems.append("the dense preflight did not pass")
+    if joined.get(1, 0) + joined.get(2, 0) == 0:
+        problems.append("no dense cell of `bursts` or `spike` reported a joined request: slot reuse did not engage")
+    out = {**part, "schema": "ironmule.rl2_headroom.h10.analysis.v1", "joined_per_state": joined}
+    if problems:
+        return {**out, "valid": False, "problems": problems}
+    w8, w4 = arms_h10()[1:]
+    width = part["sjf_within_dense"]  # analyse_h8 pairs its second dense arm against its first: w4 against w8
+    return {**out, "w4_over_w8": width, "recommended_width": "w4" if width["gain_ci95"][0] > part["aa_noise"] else "w8",
+            "recommended": bool(part["(1) dense beats today's default"]["passes"]
+                                and part["(2) no harm in any state"]["passes"])}
+
+
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""
 from __future__ import annotations
@@ -1640,7 +1709,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
-    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "x1"), default="h1",
+    parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "x1"),
+                        default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
     parser.add_argument("--best-fixed", help="run 4: run 3's best fixed arm")
@@ -1668,7 +1738,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
-        judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9}.get(inner.get("plan"), analyse)
+        judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10}.get(inner.get("plan"),
+                                                                                                    analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -1690,8 +1761,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9"):
-        run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9)}[args.plan]
+    if args.plan in ("h8", "kp1", "h9", "h10"):
+        run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
+                      "h10": (run_h10, analyse_h10)}[args.plan]
         report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save)
         report["analysis"] = judge(report["rl2h"])
         report["finished_unix"] = time.time()

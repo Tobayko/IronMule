@@ -1142,6 +1142,39 @@ H9 measures all three engines in one run, so every combination meets the same tr
   nothing, and the service puts it at the front of the queue for the next group. Tests cover each side; the
   harness's fake worker now speaks the current protocol (tokens as produced, `done` with the last, joins).
 
+**Result, H9 run 1 (2026-10-29/30, `H9-run1-20261029`, kernel `tobayko/ironmule-rl2-headroom-h9` at
+`843a865374a9da83e7f8d88ab8ecefd46304b718`, 3.74 session hours): valid. The dense plan passes both decisions and is
+recommended for this setup as an opt-in numeric plan; KP's knobs fail (1) narrowly and do not ship.** Kaggle T4
+x2, Qwen3 1.7B bf16 at `9cd6692`, MLX 0.32.4, mlx-lm 0.31.3.
+- **Validity:**
+  - both preflights passed: KP bit-for-bit at 27 capacities (38 pairs); the plan installed in 116 s and served
+    three requests together as alone;
+  - all 3,456 requests succeeded, and every warm-up;
+  - each engine ran its knobs on both cards in every round (baseline; `class_a:KP1-candidate`; the dense plan);
+  - answers were identical across `tuned` and `kp` (kill 2) and within the plan.
+- **KP part** (noise 5.33 %, A/A floor 0.81 %):
+  - (1) fails: the weighted gain was +1.7 % (95 % 0.39-3.15 %), whose bound does not clear the floor;
+  - (2) passes: `quiet` +6.1 % (5.7-6.7 %), `bursts` +0.8 % (-1.1 to +2.4 %), `spike` +1.9 % (0.4-3.6 %);
+  - recorded: the stress cell 8.7 % cheaper; median first-to-second token 94 ms for KP against 27 ms by default,
+    since KP's second token comes with its first 4-step chain.
+
+  Compared with KP1 run 1, the first-token fix turned spike's -1.3 % into +1.9 % and lifted `quiet` from 3.6 %
+  to 6.1 %. The weighted gain still sits within the A/A control's reach.
+- **Dense part, against `tuned` (the KP part failed; noise 4.52 %):**
+  - (1) passes: the plan's weighted cost was 24.0 % lower (95 % 20.8-26.7 %);
+  - (2) passes: `quiet` 10.0 % (9.4-10.7 %), `bursts` 22.6 % (15.9-27.3 %), `spike` 26.1 % (22.0-30.5 %);
+  - against `kp`, descriptive: 22.7 % (19.9-25.2 %).
+  - Mean cost per state, default against the plan: 2.30 against 2.07, 16.73 against 12.95, 26.59 against 19.65.
+  - 271 of 576 compared answers were the same as today's; the plan changes answers by design and passed the
+    numeric plans' quality gate (KB1-1).
+- **What it measured:** the plan at version 2, with every member ending at its own last token. Slot reuse did not
+  engage (see the note above). Compared with H8 run 2's 7.9 %, the first-token fix, the per-member end and
+  version 2 together tripled the plan's lead.
+- **Verdict, as fixed:** the dense plan is recommended on exactly this setup (two Tesla T4s, Qwen3 1.7B bf16 at
+  `9cd66928`), opt-in, with the gain and the answer change named. The product has since changed (slot reuse
+  always on), so that configuration is checked in H10 before the recommendation covers it. KP's knobs go to
+  Tier 0 again. Still owed: the ledger entry.
+
 
 ### RL8 — Width and order again, now that a grouped request ends with its own last token (opened 2026-10-29)
 
@@ -1188,6 +1221,51 @@ state.
 - **What is left for RL8:** the refit on H9's member-release data, and the dense plan, whose further row costs
   about 3 ms against 16 ms. That needs its own step model (stacked rounds of up to eight rows, slots refilled
   as members end), fitted to H9's dense cells.
+
+**Result, steps 1 and 2 (2026-10-30, on H9's data; local, no GPU).**
+- **The tuned engine.** Refitted on RL6, LD1-V, KP1 and H9 (each under its release rule), the model passes the
+  fidelity gate on all four (squared log error 0.0021). With member release, `shortest/w2/g0/sjf` stays best
+  (15.51 weighted, against 15.74 for w4/sjf and w1/sjf, and 16.35 for w8/sjf). The shipped schedule stays: no
+  hardware run for the tuned engine.
+- **The dense plan.** A model with eight stacked rows per round, fitted to H9's dense cells (error 0.0005),
+  passes the fidelity gate. Prefill is 0.123 s + 1.6 ms per token (version 2, cheaper than the tuned engine's
+  2.2), and a round 18.5 ms + 3.6 ms per further row (KB1-2: about 3 ms).
+  - Without slot reuse, as measured: w8/sjf is best, at 11.30.
+  - With slot reuse (the product now): w4/sjf at 8.88 and w8/sjf at 8.98. Slot reuse is predicted to take
+    another 21 % off the plan's cost.
+- **The RL agent on the dense plan** (harm-guarded, 3 seeds): -1.0 to +0.8 % against the best fixed arm, well
+  inside the noise. No learner; the fixed rule is the answer here too.
+- **Next: H10** checks the plan as the product now serves it (slot reuse), at w8/sjf and w4/sjf.
+
+### H10 — The dense plan as the product now serves it, with slot reuse (opened 2026-10-30, before data)
+
+**Mechanism.** H9 recommended the dense plan, measured without slot reuse. The product now always lets a
+newcomer take a slot a finished member freed, and a join that arrives as a run ends goes to the next group
+instead of failing it. RL8's dense model, fitted to H9 and passing its fidelity gate, predicts another 21 %
+off the plan's cost from that: w8/sjf 8.98 and w4/sjf 8.88, against 11.30 without joins. The recommendation
+covers the product only after this configuration is checked on hardware.
+
+**Test (`tools/rl2_headroom.py --plan h10`, Kaggle T4 x2, about 3 session hours).**
+- **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally; 12 fresh traces (87-98) in four
+  rounds of three. Each round starts both engines' pools in turn, the first one alternating.
+- **Arms:** `tuned:shortest/w2/g0/sjf` (the default, A/A per block), `dense:shortest/w8/g0/sjf` (H9's arm, A/A
+  per block) and `dense:shortest/w4/g0/sjf` (RL8's pick with joins). Equal warm-up and startup as in H9; the plan's
+  preflight before any pool.
+- **Validity:**
+  - no request fails or ends without an outcome;
+  - answers identical within each engine;
+  - every dense cell `numeric@dense`;
+  - at least two complete traces;
+  - slot reuse engaged: the dense cells of `bursts` and `spike` together report joined requests (`/health`'s
+    `joined_requests`, counted per cell). Without that, the run measures the wrong thing and is invalid.
+- **Decisions (H8's rules):**
+  - (1) the better dense arm's weighted gain over the default has a 2.5 % bound above the noise;
+  - (2) no state's bound is below minus the noise.
+  - Pass: the recommendation covers the plan with slot reuse.
+- **The plan's schedule (RL8's kill):** w4/sjf replaces w8/sjf only if its paired gain over w8/sjf has a 2.5 %
+  bound above the noise; otherwise w8/sjf stays the recommended schedule.
+- **Recorded:** joined requests per state; cost per state; first-token and end times; the plan's gain over its
+  H9 level, read against the default it shares a run with.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
@@ -1709,6 +1787,10 @@ processes again.
   `KP1-run1-20261029` (see KP1 above): answers identical and class A at 27 capacities, but +0.2 % weighted (95 %
   -1.9 to +1.6 %) and `spike` -1.3 % (bound -5.4 % against 4.7 % noise). The worker held each token for the next,
   so the first token waited a whole chain; fixed, and re-opened as H9.
+
+- **KP's knobs after the first-token fix (2026-10-30).** Experiment `H9-run1-20261029` (see H9): +1.7 % weighted
+  (95 % 0.39-3.15 %) against a 0.81 % A/A floor, no harm in any state, `quiet` +6.1 %. Too small to resolve in 12
+  traces. Re-open with more traces, or once the default's own cost changes again.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:

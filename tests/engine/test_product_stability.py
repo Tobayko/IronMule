@@ -171,7 +171,9 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
     try:
         before = _call(service, _request("r-0", "steady"))
         pid = _pid(service)
-        crashed, neighbour = _grouped(service, [_request("r-a", "crash"), _request("r-b", "steady")])
+        # A three-second blocker: both must queue behind it to form one group, even on a loaded test machine.
+        crashed, neighbour = _grouped(service, [_request("r-a", "crash"), _request("r-b", "steady")],
+                                      blocker=("slow:1.0", 3))
         for result in (crashed, neighbour):
             assert isinstance(result, ProductError) and result.code == "backend_unavailable"
             assert not any(event["type"] == "done" for event in result.events)

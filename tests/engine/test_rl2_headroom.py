@@ -717,3 +717,39 @@ def test_h9_runs_three_engines_on_the_same_traffic_and_judges_both_parts_as_fixe
     assert set(result["dense_against_each"]) == {"tuned:shortest/w2/g0/sjf", "kp:shortest/w2/g0/sjf"}
     report["dense_preflight"] = {"ok": False}
     assert not rl2.analyse_h9(report, resamples=50)["dense"]["valid"]
+
+
+def test_h10_measures_the_dense_plan_with_slot_reuse_and_requires_that_joins_happened(tmp_path, monkeypatch):
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+
+    def start(engine):
+        return start_pool(store, spec, ["0", "1"], lambda device: MLXWorkerClient(
+            spec, execution_variant="current_engine", engine_configuration=rl2.ENGINE_CONFIGURATIONS[engine],
+            cuda_device=device), rl2.ordered_service())
+
+    report = rl2.measure_h8(start, spec.model_id, deadline_s=30, traces=[87, 88], rounds=2, requests=6,
+                            max_tokens=(2, 12), names=rl2.arms_h10(), engines=("tuned", "dense"), plan="h10")
+    assert all("joined" in row for row in report["rows"])
+    assert sum(row["joined"] for row in report["rows"] if row["engine"] == "tuned") == 0  # join stays off there
+    report["preflight"] = {"ok": True}
+    result = rl2.analyse_h10(report, resamples=50)
+    assert result["joined_per_state"][1] + result["joined_per_state"][2] > 0, result["joined_per_state"]
+    assert result["valid"], result.get("problems")
+    assert result["recommended_width"] in ("w4", "w8") and "w4_over_w8" in result
+    for row in report["rows"]:
+        row["joined"] = 0  # a run in which slot reuse never engaged measures the wrong thing
+    assert "slot reuse did not engage" in " ".join(rl2.analyse_h10(report, resamples=50)["problems"])

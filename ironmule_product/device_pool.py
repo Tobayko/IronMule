@@ -27,7 +27,8 @@ from .service import STABILITY_LOG
 from .serving_policy import ServingLog
 from .types import GenerationRequest
 
-_SUMMED = ("queued_requests", "active_requests", "completed_requests", "failed_requests", "cancelled_requests")
+_SUMMED = ("queued_requests", "active_requests", "completed_requests", "failed_requests", "cancelled_requests",
+           "joined_requests")
 
 
 def cuda_devices(environ: Any = os.environ, run: Callable[..., Any] = subprocess.run) -> list[str]:

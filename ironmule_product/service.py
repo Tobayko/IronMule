@@ -154,6 +154,7 @@ class ProductService:
         self._completed = self._failed = self._cancelled = 0
         self._last_batch_size: int | None = None
         self._batch_count = 0
+        self._joined = 0  # requests that joined a running group (SERVE8, the dense plan's slot reuse)
         # START1: work the scheduler may run while nothing is waiting, given a "preempted" check.
         # It runs on this thread, so no request can reach the backend while it does.
         self.idle_task = None
@@ -188,7 +189,7 @@ class ProductService:
                     "loaded_model": self.spec.model_id if self.spec else None,
                     "queued_requests": self._pending.qsize() + len(self._carry), "active_requests": len(self._active),
                     "completed_requests": self._completed, "failed_requests": self._failed,
-                    "cancelled_requests": self._cancelled,
+                    "cancelled_requests": self._cancelled, "joined_requests": self._joined,
                     "optimization": optimization}
             if self._last_batch_size is not None:
                 result.update(last_batch_size=self._last_batch_size, batch_count=self._batch_count)
@@ -1246,6 +1247,7 @@ class ProductService:
             with self._lock:
                 self._last_batch_size = len(live) + len(joined)
                 self._batch_count += 1
+                self._joined += len(joined)
         finally:
             for item in list(unheard.values()):  # the run failed before they streamed: they report it too
                 consume(unheard.pop(item.request.request_id))
