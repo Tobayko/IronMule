@@ -166,6 +166,34 @@ defect was found; the loop was fixed again.**
   - Output limits are capped at 512.
   - The simulator's replay does the same.
 
+**Result S, run 4 (2026-10-30, `AG1-S-run4-20261030`, at `7558cdb`): (a) and (b) pass, (c) fails, and a second defect
+was found.**
+- **(b)** With faithful replays the agent qualified `w8/sjf`, the schedule the noise-free check calls best. From
+  trace 9 on a learned schedule served 291 of 300 windows, 5.8 % below the reference on the same arrivals.
+- **The defect.** The planner priced `w4/sjf` below `w8/sjf` and proposed it ten times; nine comparisons rejected
+  it (-9.5 % to +3.9 %), and the tenth passed (+7.3 %, 95 % 2.6-10.6 %, floor 0.75 %). Served without noise,
+  `w4/sjf` is 1.3 % worse than `w8/sjf` on this traffic, so the tenth pass was the multiple-testing error the
+  rule cannot see when the same loser is tried again and again.
+- **(c)** With the drift to the CPU price, `w8/sjf` kept serving. Four candidates were rejected, and the learned
+  schedules cost 2.6 % less than the reference after the change (runs 2 and 3: 1.2 % more).
+- **Post hoc, changing no verdict:** the noise-free check says `w8/sjf` is also the best fixed schedule on the CPU
+  price (+3.9 % over the reference). (c) as written could only pass if the agent replaced the best schedule. It
+  was ill-posed for this drift. S stays failed as recorded.
+- **Fix (before run 5):** a candidate rejected against the serving schedule is not proposed against it again
+  until the world model reopens (the machine changed); the planner then proposes the next schedule the model
+  prices below the incumbent, or nothing.
+
+**S2, a drift that changes the best schedule (fixed 2026-10-30, after S run 4's data and before its own).** S's
+(c) cannot pass when the best schedule survives the change. S2 is S with the drift at trace 150 going to a price
+with the T4's prefill and rounds of 10 ms + 40 ms per further session. It was chosen with no agent run on it, by
+serving 150 traces of the live traffic (seed 95,000) noise-free under every fixed schedule. There `w1/sjf` costs
+20.00 against 38.24 for `w8/sjf` (47.7 % less); on the T4 price `w8/sjf` stays best.
+- **Decision S2:**
+  - (a') every world-model parameter within 10 % of the new price 50 traces after the change;
+  - (c') a candidate planned on the new price qualifies within 150 traces after it.
+- **Gate (amended with S2, before its data, stricter than before):** V runs once S run 5 passes (a) and (b) and S2
+  run 1 passes (a') and (c'), on the same commit. S's (c) stays recorded as failed.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every

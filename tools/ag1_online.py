@@ -46,6 +46,8 @@ from ironmule_product.learned_dispatch import SJF_AGE_S  # noqa: E402
 MACHINES = {
     "t4": {"prefill_s": 0.1456, "prefill_s_per_ktoken": 2.2214, "step_s": 0.01871, "step_s_per_session": 0.01568},
     "cpu": {"prefill_s": 0.40, "prefill_s_per_ktoken": 6.0, "step_s": 0.06, "step_s_per_session": 0.06},
+    # S2: the T4's prefill, with rounds where a further session costs four base steps, so narrow groups win
+    "narrow": {"prefill_s": 0.1456, "prefill_s_per_ktoken": 2.2214, "step_s": 0.010, "step_s_per_session": 0.040},
 }
 CAPACITY_RPS = 0.5205   # RL2-H's calibration for one card (H9), which RL2-H2's states are scaled by
 WINDOW_SIGMA = 0.03     # the machine's state per window
@@ -168,6 +170,12 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     windows, t, end = [], 0.0, -ag.QUIET_S
     next_arrival = [0.0]
     logged: dict[str, int] = {}
+    events: list[dict[str, Any]] = []  # every agent event with the trace it happened before (its status keeps 50)
+
+    def collect(trace: int) -> None:
+        for event in list(agent.history):
+            if not any(event is seen["event_ref"] for seen in events[-60:]):
+                events.append({"event_ref": event, "trace": trace, **event})
     for k, trace in enumerate(live_traces(traces, seed)):
         if drift_at is not None and k == drift_at:
             server.params = counterfactual.params = replayer.params = MACHINES[drift]
@@ -186,6 +194,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
             if clock[0] == before:
                 break  # nothing left to do before the traffic comes
         clock[0] = max(clock[0], next_arrival[0])
+        collect(k)
         serving = agent.status()["serving"]
         groups, end, _ = server.run(jobs, lambda v: bool(agent.sjf(v)) if agent.active else reference_sjf(v),
                                     lambda v: (agent.width(v) or 8) if agent.active else reference_width(v),
@@ -203,11 +212,13 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
             logged = dict(agent.counters)
             log(json.dumps({"trace": k, "serving": serving, "events": logged,
                             "world": {k2: round(v, 4) for k2, v in agent.world.params().items()}}))
+    collect(traces)
     status = agent.status()
     agent.close()
     return {"schema": "ironmule.ag1.online.v1", "machine": machine, "drift_at": drift_at, "drift": drift,
             "traces": traces, "seed": seed, "episodes": episodes, "windows": windows,
-            "history": list(agent.history), "counters": agent.counters, "final": status}
+            "history": [{k: v for k, v in e.items() if k != "event_ref"} for e in events],
+            "counters": agent.counters, "final": status}
 
 
 def summarise(result: dict[str, Any]) -> dict[str, Any]:

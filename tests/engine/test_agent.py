@@ -137,6 +137,28 @@ def test_the_planner_is_deterministic_and_proposes_only_what_the_model_prices_lo
     assert again["candidate"] is None
 
 
+def test_a_schedule_rejected_against_the_incumbent_is_never_proposed_again():
+    payload = {"model": TRUTH, "arrivals": _arrivals(), "capacity": 8, "seed": 0, "reference": REFERENCE,
+               "incumbent": None, "settings": {"episodes": 150, "seeds": 1, "validation": 10, "held_out": 20}}
+    first = plan(payload)
+    again = plan({**payload, "excluded": [first["candidate"]["sha256"]]})
+    assert again["candidate"] is None or again["candidate"]["sha256"] != first["candidate"]["sha256"]
+    assert first["candidate"]["sha256"] in again["excluded"]
+
+
+def test_the_agent_remembers_what_lost_to_its_incumbent_until_the_machine_changes(tmp_path):
+    agent = _agent(tmp_path)
+    agent.candidate = {"policy": ag.fixed_policy(4, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    agent._reject("lost")
+    assert agent._excluded() == [ag.fixed_policy(4, True)["sha256"]]
+    _promote(agent, ag.fixed_policy(8, True))
+    assert agent._excluded() == []  # a new incumbent: everything may challenge it
+    agent.candidate = {"policy": ag.fixed_policy(4, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    agent._reject("lost again")
+    agent.world.reopened += 1  # the machine changed
+    assert agent._excluded() == []
+
+
 def test_a_width_the_backend_cannot_run_is_never_proposed():
     payload = {"model": TRUTH, "arrivals": _arrivals(), "capacity": 2, "seed": 0, "reference": {"width": 2, "sjf": False},
                "incumbent": None, "widths": [1, 2],

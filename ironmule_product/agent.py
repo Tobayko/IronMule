@@ -367,6 +367,9 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
                                   engine_width) for name, arm in arms.items()}
     guard_name = min(arm_costs, key=lambda n: (arm_costs[n], n))
     guard = Policy.from_json(arms[guard_name])
+    excluded = set(payload.get("excluded") or ())  # rejected against this incumbent: never proposed again
+    open_arms = [n for n in arm_costs if arms[n]["sha256"] not in excluded]
+    fixed_name = min(open_arms, key=lambda n: (arm_costs[n], n)) if open_arms else None
     runs = []
     for seed in range(int(settings["seeds"])):
         weights, curve = _train(params, arrivals, capacity, engine_width, guard, allowed, settings,
@@ -377,20 +380,24 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     best = min(runs, key=lambda r: (r[0], r[1]))
     learned = policy_json([0.0] * PLACEMENT_FEATURES, best[2][0], best[2][1])
     reference = payload["reference"]
-    rivals = {"learned": learned, "best_fixed": arms[guard_name]}
+    rivals = {"learned": learned}
+    if fixed_name is not None:
+        rivals["best_fixed"] = arms[fixed_name]
     if payload.get("incumbent") is not None:
         rivals["incumbent"] = payload["incumbent"]
     costs = {name: _mean_cost(params, held_out, _deciders(Policy.from_json(p), capacity), capacity, engine_width)
              for name, p in rivals.items()}
     costs["reference"] = _mean_cost(params, held_out, _fixed(min(capacity, int(reference["width"])),
                                                              bool(reference["sjf"])), capacity, engine_width)
-    choice = "learned" if costs["learned"] < costs["best_fixed"] else "best_fixed"
+    eligible = [name for name in ("learned", "best_fixed") if name in rivals and rivals[name]["sha256"] not in excluded]
+    choice = min(eligible, key=lambda name: (costs[name], name)) if eligible else None
     incumbent = costs.get("incumbent", costs["reference"])
-    proposed = rivals[choice] if costs[choice] < incumbent else None
+    proposed = rivals[choice] if choice is not None and costs[choice] < incumbent else None
     step = max(1, len(best[3]) // 50)
     return {"schema": PLAN_SCHEMA, "candidate": proposed, "choice": choice if proposed else None,
-            "best_fixed": guard_name, "model_costs": costs, "arm_costs": arm_costs,
-            "model_gain_vs_incumbent": 1 - costs[choice] / incumbent if incumbent else 0.0,
+            "best_fixed": fixed_name, "guard": guard_name, "excluded": sorted(excluded), "model_costs": costs,
+            "arm_costs": arm_costs,
+            "model_gain_vs_incumbent": 1 - costs[choice] / incumbent if choice is not None and incumbent else 0.0,
             "curve": [statistics.fmean(best[3][k:k + step]) for k in range(0, len(best[3]), step)],
             "episodes": int(settings["episodes"]) * int(settings["seeds"]), "widths": allowed,
             "cpu_s": time.process_time() - started}
@@ -535,6 +542,9 @@ class Agent:
         self.withdrawn: list[dict[str, Any]] = []
         self.history: deque[dict[str, Any]] = deque(maxlen=50)
         self.explored: dict[int, int] = {}
+        # candidates rejected against each incumbent ("reference" while none serves), until the model reopens
+        self.rejected: dict[str, list[str]] = {}
+        self.rejected_epoch = 0
         self.last_plan: dict[str, Any] | None = None
         self.paused = False
         self.errors = 0
@@ -757,7 +767,21 @@ class Agent:
         self._event("qualified", policy=policy.sha256[:12], gain=verdict["gain"], ci95=verdict["gain_ci95"],
                     floor=verdict["floor"], choice=candidate["plan"].get("choice"))
 
+    def _incumbent_key(self) -> str:
+        return "reference" if self.policy is None else self.policy.sha256
+
+    def _excluded(self) -> list[str]:
+        """What the planner may not propose against the serving schedule: what lost to it already. Proposing a
+        loser again and again until one comparison passes by chance would turn noise into a qualification
+        (AG1 S, run 4). A reopened world model (the machine changed) clears the list."""
+        if self.rejected_epoch != self.world.reopened:
+            self.rejected, self.rejected_epoch = {}, self.world.reopened
+        return list(self.rejected.get(self._incumbent_key(), ()))
+
     def _reject(self, reason: str) -> None:
+        if self.candidate is not None:
+            self._excluded()
+            self.rejected.setdefault(self._incumbent_key(), []).append(self.candidate["policy"]["sha256"])
         self.counters["rejected"] += 1
         self._event("rejected", policy=self.candidate["policy"]["sha256"][:12] if self.candidate else None,
                     reason=reason)
@@ -806,7 +830,7 @@ class Agent:
         payload = {"model": self.world.params(), "arrivals": arrivals, "capacity": self.capacity,
                    "engine_width": self.engine_width, "seed": self.counters["plans"],
                    "widths": [w for w in WIDTH_CHOICES if w <= self.capacity and self.world.supported(w)],
-                   "reference": self.reference, "settings": self.planner_settings,
+                   "reference": self.reference, "settings": self.planner_settings, "excluded": self._excluded(),
                    "incumbent": None if self.policy is None else _policy_body(self.policy)}
         self.root.mkdir(parents=True, exist_ok=True)
         source, target = self.root / "plan-in.json", self.root / "plan-out.json"
@@ -840,9 +864,10 @@ class Agent:
             self.counters["plans"] += 1
             self.arrivals_at_plan = self.arrivals
             proposed = result.get("candidate")
-            if proposed is not None and any(w["policy_sha256"] == proposed["sha256"] for w in self.withdrawn):
-                proposed = None  # a withdrawn policy never serves again under this binding
-            self.last_plan = {k: result.get(k) for k in ("choice", "best_fixed", "model_costs", "arm_costs",
+            if proposed is not None and (any(w["policy_sha256"] == proposed["sha256"] for w in self.withdrawn)
+                                         or proposed["sha256"] in self._excluded()):
+                proposed = None  # a withdrawn policy never serves again, a rejected one is not tried again
+            self.last_plan = {k: result.get(k) for k in ("choice", "best_fixed", "excluded", "model_costs", "arm_costs",
                                                           "model_gain_vs_incumbent", "curve", "episodes", "cpu_s")}
             if proposed is not None:
                 self.candidate = {"policy": proposed, "plan": self.last_plan, "since": self._plan_since,
@@ -882,7 +907,8 @@ class Agent:
                      "evidence": self.evidence, "candidate": self.candidate, "withdrawn": self.withdrawn,
                      "history": list(self.history), "counters": self.counters, "paused": self.paused,
                      "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan,
-                     "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()}}
+                     "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()},
+                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch}
             self._dirty_since = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -914,6 +940,8 @@ class Agent:
             self.arrivals, self.arrivals_at_plan = int(state["arrivals"]), int(state["arrivals_at_plan"])
             self.candidate, self.last_plan = state.get("candidate"), state.get("last_plan")
             self.explored = {int(k): int(v) for k, v in (state.get("explored") or {}).items()}
+            self.rejected = {str(k): list(v) for k, v in (state.get("rejected") or {}).items()}
+            self.rejected_epoch = int(state.get("rejected_epoch", 0))
             if state.get("policy") is not None:
                 policy, evidence = Policy.from_json(state["policy"]), state.get("evidence") or {}
                 body = {k: v for k, v in evidence.items() if k != "sha256"}
