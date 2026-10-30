@@ -146,7 +146,8 @@ def test_a_prompt_longer_than_a_prefill_chunk_is_prefilled_chunk_by_chunk_and_a_
     assert calls == [4, 4, 2] and cache[0].offset == 10
     monkeypatch.setattr(dp, "PREFILL_CHUNK", 2048)
     whole = plan.prefill(ids, make_prompt_cache(model))
-    assert float(mx.max(mx.abs(chunked - whole)).item()) < 1e-3 * float(mx.max(mx.abs(whole)).item())
+    # Not bit-identical (other matmul shapes round bf16 activations otherwise: 0.4 % on Metal in CI), but close.
+    assert float(mx.max(mx.abs(chunked - whole)).item()) < 0.02 * float(mx.max(mx.abs(whole)).item())
 
 
 def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
