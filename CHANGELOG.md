@@ -4,6 +4,14 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **The IronMule agent (opt-in, experimental): `ironmule serve --agent on`.** The project's new main goal. The agent
+  decides each group's order and width in microseconds and learns what this machine's groups cost from every
+  request it serves. While the server is idle, it trains a new schedule by reinforcement learning in a separate
+  low-priority process. The new schedule serves only after replays of recorded traffic through the real model show
+  it beating the current one with identical answers. Withdrawal is persistent, and a real request always
+  interrupts idle work. Not with `--learning` or `--dispatch-policy`; one worker; not the dense plan yet. No speed-up
+  is claimed until its hardware run (BACKLOG AG1).
+
 - **A request too long to run fails alone, not with its group.** When a request's prompt plus `max_tokens`
   exceeded the 8,192-token context limit, or the dense plan's 2,048-token slot, every request grouped with it
   failed too. The parent then retired the worker as broken and reloaded the model. On `--engine tuned` and

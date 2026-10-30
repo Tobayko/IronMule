@@ -104,6 +104,24 @@ print(result.text)
 
 `Runtime.load` uses a model already in your Hugging Face cache (`hf download mlx-community/gemma-3-4b-it-4bit`). More: [docs/RUNTIME.md](docs/RUNTIME.md).
 
+## The IronMule agent (the project's main goal)
+
+`ironmule serve --agent on` hands scheduling to the IronMule agent, an AI that runs inside the server. It is
+opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
+
+- **It decides.** At every group start it chooses the order (shortest answer first or arrival order) and how many
+  requests run together. Each decision is a few dot products and takes microseconds. Answers never change.
+- **It learns all the time.** Every finished group updates its model of what this machine's work costs. Every
+  finished request goes into a memory of arrival times and lengths, with no text. While the server is idle, a
+  separate planner process trains a new strategy by reinforcement learning in a simulation of this machine.
+- **It proves before it serves.** A new strategy serves only after it beats the current one in replays of recorded
+  traffic on the real model, with identical answers, by more than two identical runs differ. Errors, failed
+  requests or `POST /v1/ironmule/dispatch {"action": "off"}` withdraw it for good. A real request always
+  interrupts the agent's idle work.
+
+`GET /health` shows what it learned under `agent`: the fitted costs, the plans, each candidate's comparison and what
+serves now.
+
 ## It learns from your machine
 
 `ironmule autopilot` and `ironmule learn` turn IronMule into a small learning system. It does not use a language model to make decisions; it uses statistics that update after every test it runs.

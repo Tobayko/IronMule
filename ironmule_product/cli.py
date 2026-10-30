@@ -255,6 +255,11 @@ def serve(argv: list[str]) -> int:
                         help="with --learning: the same learner without model rollouts (comparison arm)")
     parser.add_argument("--no-replay", action="store_true",
                         help="with --learning: no idle replay qualification (an external harness qualifies, P3)")
+    parser.add_argument("--agent", choices=("off", "on"), default="off",
+                        help="AG1: the IronMule agent decides each group's order and width, learns what this "
+                             "machine's groups cost from every request, trains a schedule while idle and serves it "
+                             "only after it beat the incumbent in a replayed comparison on this server. Never "
+                             "changes an answer; one worker; not with --learning or --dispatch-policy")
     parser.add_argument("--gpus", default=None, metavar="all|0,1",
                         help="HW1: one model worker per listed CUDA GPU (`all`: every GPU this machine shows), "
                              "each request on the GPU with the shortest queue. Each worker loads the whole model; "
@@ -288,6 +293,8 @@ def serve(argv: list[str]) -> int:
         parser.error("--dispatch-policy and --dispatch-evidence go together")
     if args.dispatch_policy is not None and args.learning != "off":
         parser.error("--dispatch-policy and --learning both decide groups; use one")
+    if args.agent == "on" and (args.learning != "off" or args.dispatch_policy is not None):
+        parser.error("--agent decides groups itself; use it without --learning and --dispatch-policy")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -323,6 +330,8 @@ def serve(argv: list[str]) -> int:
                 devices = select_devices(args.gpus, cuda_devices())
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
+            if len(devices) > 1 and args.agent == "on":
+                raise InvalidRequest("--agent models one worker; use it with one GPU (HW1)")
             knob_options = _qualified_knob_options(spec, devices) if (
                 args.knobs == "auto" and args.engine == "tuned") else {}
 
@@ -343,6 +352,8 @@ def serve(argv: list[str]) -> int:
                 service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
+        if spec is not None and args.agent == "on":
+            service.agent = service.dispatch = _agent(store, service, spec)
         wants_schedule = (args.schedule == "auto" and args.gpus is not None and args.learning == "off"
                           and args.dispatch_policy is None)
         binding = None
@@ -365,7 +376,7 @@ def serve(argv: list[str]) -> int:
                 service.attach(dispatch)
             else:
                 service.dispatch = dispatch
-        if (spec is not None and args.engine == "tuned" and len(devices) == 1
+        if (spec is not None and args.engine == "tuned" and len(devices) == 1 and service.agent is None
                 and (service.learning is None or not service.learning.eligible)):
             # Idle tuning unloads the worker; learning keeps the serving model loaded (RSI3-LIVE).
             service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
@@ -432,6 +443,30 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
     return learning
 
 
+def _agent(store: ProductStore, service: Any, spec: ModelSpec) -> Any:
+    """AG1: the agent bound to this hardware, model, plan and software; its learning lives in the state directory."""
+    from .agent import Agent
+    from .readiness import hardware_identity
+
+    backend = service.backend
+    if getattr(backend, "reuses_slots", False) is True:
+        raise InvalidRequest("--agent prices one group at a time; the dense plan's slot reuse is not modelled yet")
+    hardware = hardware_identity()
+    binding = {"hardware": {"chip_name": hardware["chip_name"], "gpu_devices": hardware["gpu_devices"]},
+               "device": backend.device, "model": {"id": spec.model_id, "revision": spec.revision},
+               "plan": {"execution_variant": backend.execution_variant,
+                        "engine_configuration": backend.engine_configuration, "compute_dtype": backend.compute_dtype,
+                        "chat_reuse": backend.chat_reuse, "thinking": backend.thinking},
+               "runtime": _runtime_versions()}
+    policy = service.policy
+    capacity = service._batch_capacity()
+    agent = Agent(store.root / "agent", binding, capacity=capacity, device=backend.device,
+                  reference={"width": capacity, "sjf": policy.order == "sjf", "gather_ms": policy.gather_ms},
+                  deadline_s=service.settings["request_timeout_s"] or 120.0)
+    print(json.dumps({"agent": {k: agent.status()[k] for k in ("serving", "reason", "traffic")}}), flush=True)
+    return agent
+
+
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"  # 3.4 GB, not gated; every IronMule study measured it
 CPU_MODEL = "mlx-community/Qwen3-0.6B-4bit"  # the model CPU3 measured; 4B answers far too slowly on a CPU
 CPU_REQUEST_TIMEOUT_S = 900
@@ -470,6 +505,7 @@ def start(argv: list[str]) -> int:
     parser.add_argument("--chat-reuse", action="store_true", help="see `ironmule serve --help`")
     parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",
                         help="see `ironmule serve --help`")
+    parser.add_argument("--agent", choices=("off", "on"), default="off", help="see `ironmule serve --help`")
     args = parser.parse_args(argv)
     store = ProductStore(args.state_dir)
     cpu_only = _cpu_only()
@@ -512,7 +548,8 @@ def start(argv: list[str]) -> int:
     engine = (["--engine", args.engine] if args.engine != "reference" else []) + (
         ["--chat-reuse"] if args.chat_reuse else []) + (
         ["--no-thinking"] if cpu_only else []) + (  # CPU5: thinking costs minutes on a CPU
-        ["--learning", args.learning] if args.learning != "off" else [])
+        ["--learning", args.learning] if args.learning != "off" else []) + (
+        ["--agent", args.agent] if args.agent != "off" else [])
     return serve(["--model", model, "--port", str(args.port), *engine, *plan, *state])
 
 

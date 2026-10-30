@@ -7,6 +7,15 @@ Diese Datei ist der kompakte Einstieg: Gate-/Entscheidstabellen und Verweise.
 Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 `docs/ARBEITSJOURNAL.md`.
 
+## Hauptziel — 2026-10-30
+
+Das Hauptziel des Projekts ist ein funktionierender IronMule-Agent (Backlog AG1,
+`ironmule serve --agent on`). Er entscheidet selbst, wie die Anfragen des Modells auf
+der Hardware laufen, erreicht dort eine gemessene Steigerung, lernt im Betrieb laufend
+per Reinforcement Learning weiter und entscheidet in Mikrosekunden. Er ändert keine
+Antwort und setzt nur ein, was er auf der eigenen Maschine bewiesen hat. Der Stand der
+Messungen steht in `docs/BACKLOG.md` unter AG1.
+
 ## Aktuelle Produktprüfung — 2026-09-08
 
 **Neu, PROD14:** Die neue Prefix-Worker- und vorhandene Engine-BASELINE-Einbindung

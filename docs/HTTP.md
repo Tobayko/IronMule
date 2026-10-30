@@ -39,6 +39,7 @@ when it is ready:
 | `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
 | `--knobs` | `auto` | `--engine tuned` only. `auto`: a knob set qualified on exactly this model, revision, GPU and MLX and mlx-lm versions serves when one ships and no tune profile is stored; it may only change knobs that leave every answer unchanged (compiled step, projection fusion, fused argmax, readback interval). None ships yet (BACKLOG KP1). `reference`: the engine's own knobs |
 | `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
+| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, below); one worker; not with `--learning` or `--dispatch-policy` |
 
 ## Routes
 
@@ -51,8 +52,8 @@ when it is ready:
 | `POST` | `/v1/chat/completions` | `stream: false` gives one JSON completion; `stream: true` gives SSE chunks ending with `data: [DONE]` |
 | `GET` | `/v1/ironmule/learning` | live-learning status: serving, mode, candidate, the strategy that serves and why |
 | `POST` | `/v1/ironmule/learning` | `{"action": "pause" \| "resume" \| "rollback" \| "compare"}`; `400` when learning is off |
-| `GET` | `/v1/ironmule/dispatch` | the learned dispatch's status (LD1): active or not and why, policy digest, evidence, decisions, errors |
-| `POST` | `/v1/ironmule/dispatch` | `{"action": "off"}` withdraws the learned dispatch without a restart; `400` when none is configured |
+| `GET` | `/v1/ironmule/dispatch` | the learned dispatch's status (LD1), or the agent's (AG1): active or not and why, policy digest, evidence, decisions, errors |
+| `POST` | `/v1/ironmule/dispatch` | `{"action": "off"}` withdraws the learned dispatch without a restart; `400` when none is configured. With `--agent on`, `off` also pauses the agent's learning and `{"action": "on"}` resumes it |
 
 The request body is read as OpenAI chat completion input: `messages` (required,
 non-empty) and `max_tokens` or `max_completion_tokens`. Sampling fields are accepted
@@ -115,6 +116,21 @@ best fixed arm by 9.0 % (95 % 6.9-11.1 %). It is not validated on traffic that m
 spike states (BACKLOG LD1). The width-learning RL6 policy was tested on mixed traffic and is not
 shipped: it beat the reference by 21.2 % but cost 6.9 % more than the best fixed schedule in bursts
 (BACKLOG LD1-V).
+
+**The IronMule agent (AG1, opt-in, experimental).** `--agent on` makes the agent the owner of two scheduling
+choices: whether a group starts with the smallest output limits and how many requests it holds (1, 2, 4 or 8,
+within the engine's capacity). It never changes an answer. It learns from every finished group what this machine's
+work costs, keeps a metadata memory of arrivals (no text), trains a new schedule by reinforcement learning in a
+separate low-priority process while the server is idle, and replays recorded arrivals with a filler prompt through
+the real model to compare the new schedule with the one serving (A, B, A again). The new one serves only when its
+gain's lower 95 % bound is above zero and above what two runs of the same schedule differ by, and every replayed
+answer matched. Until then the server's own schedule serves. A real request cancels a replay at once. Three
+errors, two windows of 24 requests with failures, or `{"action": "off"}` withdraw a serving schedule; its digest
+is recorded and never serves again under this setup. What it learned lives in `agent/` in the state directory,
+bound to the hardware, device, model, revision, plan and software versions; any change starts fresh. `/health`
+shows an `agent` block: what serves and its measured gain, the fitted costs, the planner, the candidate and its
+comparison, decision counts and the mean decision time. It refuses the dense plan, whose freed slots it does not
+model yet, and runs on one worker. Its gain on hardware is not measured yet (BACKLOG AG1).
 
 **Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
 on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the

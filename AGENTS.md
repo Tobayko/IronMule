@@ -5,6 +5,13 @@
 The agent maintains IronMule, an evidence-gated local LLM runtime for Apple Silicon
 using MLX. Correct output and an honest reference path come before performance.
 
+**Main goal (maintainer decision, 2026-10-30):** a working IronMule agent, BACKLOG AG1
+(`ironmule_product/agent.py`). It decides on its own how the model's requests run on the
+hardware, reaches a measured gain there, keeps learning by reinforcement learning while it
+serves, and decides in microseconds. Work that advances it comes first. It is held to every
+rule in this guide: it changes no answer, it serves only what it proved on the machine it runs
+on, and its gains need the evidence described under Performance and evidence.
+
 This is the shared engineering guide for Codex, Claude and Gemini. Providers may
 use different tools; correctness, evidence, testing, safety and completion standards
 remain the same. Keep shared behavior here, not in separate provider rulebooks.
@@ -37,7 +44,8 @@ needs only the affected text and applicable documentation conventions.
 figures need -- measurement/verification harnesses for one specific kept test, plus the
 figure renderer -- and the Kaggle harness of an open backlog entry written while the
 research repository was out of reach, each with its own focused test
-(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`, `tools/rl4_agent.py`, `tools/cuda_probe.py`); such a
+(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`, `tools/rl4_agent.py`, `tools/cuda_probe.py`,
+`tools/ag1_online.py`); such a
 harness moves there once it is reachable. Inspect the selected tool and its contract before running it.
 
 The research workflow that used to route through this file -- the experiment ledger,

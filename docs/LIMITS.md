@@ -95,6 +95,18 @@ other platforms (Windows) adapters run unsupervised. Tested on macOS arm64 and L
 graceful SIGTERM termination included. The CPU adapter's activation and rollback on macOS are still shown by
 the integration tests only (OPT3-D (a): protocol 2 vetoed a stalled run, reference kept).
 
+## The IronMule agent (`--agent on`, AG1, opt-in)
+
+No hardware result yet: nothing here claims that the agent makes a server faster. What has run is the agent's
+code against a simulated server and on this repository's tests (BACKLOG AG1, S). It decides two things only:
+order and group width. Placement across GPUs, engine, plan, knobs and output are outside it. Its world model
+assumes one group at a time with members prefilled one after another, so it refuses the dense plan's slot reuse
+and runs on one worker. Its replays use arrival times, prompt lengths and output limits with a filler prompt
+(capped at 128 tokens and 2 s gaps), as RSI3-LIVE's do. Prompt-content effects and answers longer than 128 tokens
+are therefore not represented. A schedule it qualifies is proven only for the binding it was measured under, and on
+the traffic that machine saw. Where idle spells are shorter than a replay window, nothing qualifies and the
+server's own schedule keeps serving.
+
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 
 Shown end to end on one Apple M1 Max with `gemma-3-1b-it-4bit` (rev `2d44e83d`) under `--engine tuned`

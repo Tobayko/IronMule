@@ -107,6 +107,7 @@ class _Session:
     end_ns: int | None = None    # RSI3-LIVE: when the scheduler retired it
     outcome: str | None = None   # RSI3-LIVE: ok, cancelled, else failed
     tokens: int = 0              # RSI3-LIVE: completion tokens delivered
+    prompt_tokens: int = 0       # AG1: the prompt's tokens, as the worker reported them
     group: int | None = None     # STAB1: the scheduler group that served it
     error: str | None = None     # STAB1: the error code delivered to the caller, if any
 
@@ -122,6 +123,7 @@ class ProductService:
     serving_log: ServingLog | None = None
     learning: Any = None  # RSI3-LIVE: an attached live_learning.LiveLearning owns each group decision
     dispatch: Any = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; None keeps FIFO order
+    agent: Any = None  # AG1: an agent.Agent, also attached as `dispatch`, which decides and learns each group
     backend: Any = None
     _group_refused = False
     _gather_waited_ns = 0
@@ -197,7 +199,9 @@ class ProductService:
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()
-        if self.dispatch is not None:
+        if self.agent is not None:
+            result["agent"] = self.agent.status()
+        elif self.dispatch is not None:
             result["learned_dispatch"] = self.dispatch.status()
         policy = self.policy
         result["schedule"] = {"max_width": policy.max_width, "gather_ms": policy.gather_ms, "order": policy.order,
@@ -305,9 +309,37 @@ class ProductService:
     def dispatch_control(self, action: str) -> dict[str, Any]:
         from .learned_dispatch import control
         try:
+            if self.agent is not None:  # AG1: "off" withdraws and pauses, "on" resumes learning
+                return self.agent.control(action)
             return control(self.dispatch, action)
         except ValueError as exc:
             raise InvalidRequest(str(exc)) from exc
+
+    def _agent_observe(self, group: list[_Session], replay: bool = False) -> None:
+        """AG1: a finished group's timings, in seconds (arrivals on the wall clock), and no text."""
+        agent = self.agent
+        if agent is None:
+            return
+        wall = time.time() - time.monotonic()
+        starts = [item.dispatched_ns for item in group if item.dispatched_ns is not None]
+        if not starts:
+            return
+        start = min(starts)
+        members = []
+        for item in group:
+            if item.first_ns is None or item.end_ns is None or item.joined:
+                return  # a group a request joined is not the one-group-at-a-time model the agent prices
+            messages = item.request.messages or ()
+            members.append({"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
+                            "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
+                            "prompt_tokens": item.prompt_tokens,
+                            "prompt_chars": len(messages[-1][1]) if messages else 0,
+                            "max_tokens": item.request.max_tokens, "tokens": item.tokens,
+                            "ok": item.outcome == "ok"})
+        try:
+            agent.observe_group(members, replay=replay)
+        except Exception:  # noqa: BLE001 - the agent never stops serving
+            agent.reason = "the agent failed while learning; the reference schedule serves"
 
     def models(self) -> list[dict[str, Any]]:
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",
@@ -667,10 +699,12 @@ class ProductService:
         counters and the RSI4 log are left untouched. New replay work is refused until every
         replayed request of an earlier window has ended.
         """
+        from .learned_dispatch import SJF_AGE_S
         from .live_learning import filler
 
         if (self.backend is None or not self.backend.ready or self.spec is None
-                or (self.learning is not None and self.learning.replay_blocked)):
+                or (self.learning is not None and self.learning.replay_blocked)
+                or getattr(self, "_replay_leftovers", None) is not None):
             return None
         timeout = self.settings["request_timeout_s"] or 120
         deadline = time.monotonic() + timeout + (trace[-1][0] if trace else 0.0)
@@ -746,9 +780,15 @@ class ProductService:
                 now = time.monotonic_ns()
                 idle_s = (now - last) / 1e9 if last is not None else 0.0
                 rate = 0.0 if gap is None else 1.0 / max(gap, idle_s, 1e-3)  # the live estimate's formula
-                width, gather_ms = choose(len(waiting), [(item.submitted_ns, item.request) for item in waiting[:8]],
-                                          rate, now)
+                decision = choose(len(waiting), [(item.submitted_ns, item.request) for item in waiting[:8]],
+                                  rate, now)
+                width, gather_ms = decision[0], decision[1]
                 width = max(1, min(width, self._batch_capacity()))
+                if len(decision) > 2 and decision[2]:  # AG1: shortest output limit first, as `_order_waiting`
+                    waiting.sort(key=lambda item: (now - item.submitted_ns <= SJF_AGE_S * 1e9,
+                                                   item.request.max_tokens
+                                                   if now - item.submitted_ns <= SJF_AGE_S * 1e9 else 0,
+                                                   item.submitted_ns))
                 until = time.monotonic_ns() + gather_ms * 1_000_000
                 while (len(waiting) < width and admitted < len(sessions) and time.monotonic_ns() < until
                        and not aborted.is_set()):
@@ -769,6 +809,8 @@ class ProductService:
                 for item in group:
                     item.end_ns = item.end_ns or time.monotonic_ns()
                     item.outcome = item.outcome or "failed"
+                if not aborted.is_set():
+                    self._agent_observe(group, replay=True)
                 _set_replay_phase(state, "prestart")
         finally:
             if aborted.is_set() or admitted < len(sessions) or waiting:
@@ -789,10 +831,11 @@ class ProductService:
                 (self._completed, self._failed, self._cancelled, self._last_batch_size, self._batch_count) = saved
             self.serving_log = log
             unsettled = [thread for thread in threads if thread.is_alive()]
-            if unsettled and self.learning is not None:
+            if unsettled:
                 # Old model work is not provably over: no new replay until it is.
                 self._replay_leftovers = unsettled
-                self.learning.replay_blocked = "an earlier replay window has not ended yet"
+                if self.learning is not None:
+                    self.learning.replay_blocked = "an earlier replay window has not ended yet"
         if aborted.is_set():
             self._replay_first_pending = window
             return None
@@ -839,6 +882,15 @@ class ProductService:
                 continue
             session = self._next_session()
             if session is None:
+                if self.agent is not None:  # AG1: plan, explore and qualify while nothing waits; demand preempts
+                    leftovers = getattr(self, "_replay_leftovers", None)
+                    if leftovers is not None and not any(thread.is_alive() for thread in leftovers):
+                        self._replay_leftovers = None
+                    try:
+                        self.agent.idle(lambda: not self._pending.empty() or self._closed.is_set(),
+                                        replay=self._replay_window)
+                    except Exception:  # noqa: BLE001 - the agent never stops serving
+                        self.agent.reason = "the agent failed while idle; the reference schedule serves"
                 if self.learning is not None:  # RSI3-LIVE: dream while nothing waits; demand preempts
                     leftovers = getattr(self, "_replay_leftovers", None)
                     if leftovers is not None and not any(thread.is_alive() for thread in leftovers):
@@ -863,6 +915,8 @@ class ProductService:
             idle_since = float("inf")
             taken = time.monotonic_ns()
             group = [session]
+            if self.agent is not None:
+                self.agent.busy()
             decision = None
             if self.learning is not None:
                 try:
@@ -905,6 +959,7 @@ class ProductService:
                 self._note_worker_exit()
                 for item in group:
                     self._retire(item)
+                self._agent_observe(group)
                 if decision is not None:
                     try:
                         waiting, oldest = self._queued()
@@ -1020,6 +1075,7 @@ class ProductService:
             self._completed += 1
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
+        session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)
         session.end_ns = time.monotonic_ns()
         if self.serving_log is not None:
             end = time.monotonic_ns()
@@ -1279,6 +1335,11 @@ class ProductService:
         if backend is not None:
             backend.close()
         self._thread.join(timeout=30.0 if restarting else 2.0)
+        if self.agent is not None:
+            try:
+                self.agent.close()  # stops its planner, persists what it learned
+            except Exception:  # noqa: BLE001
+                pass
         if self.learning is not None:
             try:
                 self.learning.close()  # persists experience and policy state
