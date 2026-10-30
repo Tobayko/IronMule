@@ -269,6 +269,20 @@ four criteria pass on one commit, so V's gate is open.**
   - The planner preview (2 x 3,000 episodes) took 15 CPU-seconds.
   - Simulated wall time per 300-trace run: 3-7 minutes.
 
+**V's harness as a CPU smoke (2026-10-30, mechanics only, no gain claim).** `tools/rl2_headroom.py --plan ag1 --smoke` ran
+on this cloud container's CPU with `Qwen/Qwen3-0.6B` (rev `c1899de`, bf16, about one token a second), through the
+product's own service and worker. The harness file was loaded at `7558cdb` and the agent module after `f850704`, so
+mixed code ran; this checks the tool, nothing more.
+- Calibration: 16 of 16 requests completed.
+- Online phase (3 tiny traces): the agent observed 7 real groups of width 1 and 2. It planned nothing, being below
+  its 12-group minimum.
+- Comparison with the smoke's fixed stand-in policy (`w2/sjf`, used only when nothing qualified): 9 cells, every
+  request completed with the same tokens in all three cells of its block, and the dispatch made 26 decisions with
+  no error.
+- The analysis reads "invalid", as the rule requires two complete traces and a smoke has one.
+- With 7 groups of near-equal prompts the fitted prices were meaningless (14.9 s per group), and the agent was right
+  not to plan on them.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every
