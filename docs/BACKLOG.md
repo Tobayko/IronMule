@@ -104,6 +104,15 @@ learner found no gain on a T4 (P3).
   Decisions, validity and analysis are V's. It takes about 3 hours of this CPU and no GPU. A pass is a gain of the
   agent measured on real hardware, bounded to this CPU, this model and this traffic; it says nothing about a T4.
   It runs on the commit whose S and S2 reruns pass (the decision table below changed the agent).
+  - **Result (2026-10-30, run at `1db94a7`): nothing qualified online, so there is no hardware gain and no evaluation.**
+    The agent planned one candidate, `w1/sjf` (`633ceda2cdce`). The 15 online traces produced 8 replay triplets. At
+    the look after 6 triplets the candidate neither qualified nor was rejected, and the online phase ended before the
+    look at 12. The agent served the reference throughout. Its world model fit 864 groups (median relative error
+    7.4 %, never reopened). The analysis reads `valid: false, verdict: nothing qualified online` with no problems,
+    which is the protocol's stop "nothing to compare". By the Kill rule, `--agent` stays opt-in and experimental.
+    *Descriptive, not part of the verdict:* the 15-trace budget bought too few triplets for the group-sequential
+    test to resolve a small order-only effect at capacity 1. A rerun with more online traces is a new protocol and
+    has to be fixed here before its data. Ledger entry owed.
 
 **Kill.** S failing (a)-(c) stops V until the loop is fixed. V failing ships no agent default: `--agent` stays opt-in
 and experimental, as every learned path here. A pass still ships only opt-in, bound to the setup it was measured on.

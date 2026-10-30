@@ -24,17 +24,10 @@ hardware gain.
 
 ## Running or scheduled
 
-- **V-CPU (real hardware, this container's CPU).**
-  - Command: `python3 tools/rl2_headroom.py --plan ag1 --profile cpu --out <scratchpad>/ag1/vcpu_report.json`.
-  - It started about 14:46 UTC at `1db94a7` and takes about 5 hours. The protocol is in BACKLOG AG1
-    (V-CPU), amended before data to short prompts only.
-  - Last seen: 3 online traces done. The agent planned `w1/sjf` (`633ceda2cdce`) as its candidate; no
-    triplets yet.
-  - When it ends, run `python3 tools/rl2_headroom.py --analyse <report>`. Record the result under V-CPU
-    in BACKLOG by its fixed rules (pass: the gain's 2.5 % bound is above 0 and above the A/A floor, and
-    no state is harmed beyond the noise). Commit and push.
-  - The scratchpad does not survive the container. If the run was lost, restart it at the current HEAD;
-    the agent code is unchanged since `217fd2a`.
+- **V-CPU (real hardware, this container's CPU): done, no gain.** The run at `1db94a7` qualified nothing online:
+  8 triplets in 15 traces, the look at 6 was inconclusive, and the phase ended before the look at 12. The result is
+  in BACKLOG AG1 (V-CPU). A rerun needs a new protocol fixed before its data, with more online traces (more
+  triplets) or traffic where order matters more.
 - **V on a Kaggle T4 and H11 (a).**
   - Scheduled task `trig_01LoEUJyHcJcK3z8FsEmexvN` fires at 2026-10-31T00:30Z. Pushes were refused
     because the weekly 30-hour GPU quota was used up.
@@ -48,7 +41,7 @@ hardware gain.
 
 ## Next steps
 
-1. Record the V-CPU result. On a pass, update LIMITS and README with the measured, bounded gain.
+1. V-CPU is recorded (no gain). Optionally, fix and run a longer V-CPU-2 protocol.
 2. Record V (T4) once it has run. A pass ships only opt-in, bound to that setup.
 3. Open work toward the goal:
    - model the dense plan's slot reuse, so the agent can run there too (currently refused);
