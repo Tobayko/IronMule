@@ -208,7 +208,9 @@ PREFILL_CHUNK = 2048
 #: (FA2 reads a row only up to its position).
 SLOT_TIERS = (8192, 4096, 2048)
 SLOT_HEADROOM = 0.9
-PREFILL_RESERVE = 2 * 1024 ** 3  # a 2,048-position chunk's attention at 8,192 keys, float32, with room to spare
+# A 2,048-position chunk's attention at 8,192 keys in float32 (about 1 GiB) and the prompt's own mlx-lm cache
+# before it is copied into its slot (0.9 GiB at 8,000 tokens of Qwen 3 1.7B), with room to spare.
+PREFILL_RESERVE = 3 * 1024 ** 3
 
 _kernels: dict[str, Any] = {}
 _kernel_lock = threading.Lock()

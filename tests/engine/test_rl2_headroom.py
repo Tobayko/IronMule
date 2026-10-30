@@ -793,8 +793,12 @@ def test_h11_serves_long_prompts_through_both_engines_and_requires_slots_that_ho
     assert all(e["warmup_ok"] == 18 for rounds in report["engines"].values() for e in rounds)  # the long one too
     result = rl2.analyse_h11(report, resamples=50)
     assert result["valid"], result.get("problems")
-    assert result["dense_slots"] == [8192] and result["long_requests"]["dense"]["ok"] > 0
+    assert result["dense_slots"] == [8192] and result["long_outcomes"]["dense"].get("ok", 0) > 0
     assert "recommended_up_to_context_limit" in result
+    assert set(result["short_and_long"]["dense"]["0"]) == {"short", "long"} and result["offered_work_per_state"]
+    timed_out = next(r for row in report["rows"] if row["engine"] == "dense" for r in row["requests"] if r["context"])
+    timed_out.update(outcome="timeout", digest=None)  # a long request that times out is a cost, not a defect
+    assert rl2.analyse_h11(report, resamples=50)["valid"]
     monkeypatch.setenv("FAKE_DENSE_SLOTS", "2048")  # H10's slots reject the long requests (alone, protocol 2)
     problems = " ".join(rl2.analyse_h11(measure(), resamples=50)["problems"])
-    assert "slots were [2048]" in problems and "long requests were not all answered" in problems
+    assert "slots were [2048]" in problems and "long requests did not all reach an outcome" in problems

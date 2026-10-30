@@ -1733,33 +1733,59 @@ def run_h11(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[
 
 
 def analyse_h11(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
-    """H11 (b), as fixed in BACKLOG before data: H8's decisions on traffic with long prompts; valid only when both
-    engines answered every request, long ones included, and the dense workers' slots held the whole context."""
+    """H11 (b), as fixed in BACKLOG before data (amended before data after review): H8's decisions on traffic
+    with long prompts. Valid only when both engines served long requests with no failed or missing outcome (a
+    timeout is a cost, a rejection for length a broken fit rule) and the dense workers' slots held the whole
+    context. Short and long requests are reported apart per engine and state, and so is the offered work."""
     part = analyse_h8({**report, "arms": arms_h11()}, resamples, seed)
     problems = list(part.get("problems", []))
+    deadline = float(report.get("deadline_s") or 120)
     if not (report.get("preflight") or {}).get("ok"):
         problems.append("the dense preflight did not pass")
     slots = sorted({(worker.get("dense_plan") or {}).get("capacity") for entry in report.get("engines", {}).get("dense", [])
                     for worker in entry.get("engine") or []}, key=str)
     if slots != [8192]:
         problems.append(f"the dense workers' slots were {slots}, not 8,192 tokens")
-    long: dict[str, dict[str, int]] = {}
+    outcomes: dict[str, dict[str, int]] = {}
+    split: dict[str, dict[str, dict[str, Any]]] = {}
+    offered: dict[str, dict[str, int]] = {}
     for row in report.get("rows", []):
         for request in row["requests"]:
-            if request.get("context"):
-                counts = long.setdefault(row["engine"], {"sent": 0, "ok": 0})
-                counts["sent"] += 1
-                counts["ok"] += request.get("outcome") == "ok"
-    if set(long) != {"tuned", "dense"} or any(c["sent"] == 0 or c["ok"] != c["sent"] for c in long.values()):
-        problems.append(f"long requests were not all answered by both engines: {long}")
+            kind = "long" if request.get("context") else "short"
+            if kind == "long":
+                counts = outcomes.setdefault(row["engine"], {})
+                key = str(request.get("error") or request.get("outcome") or "no outcome")
+                counts[key] = counts.get(key, 0) + 1
+            if row.get("run") != 0:
+                continue
+            cell = split.setdefault(row["engine"], {}).setdefault(str(row["level"]), {}).setdefault(
+                kind, {"requests": 0, "cost": 0.0, "first_s": [], "timeouts": 0})
+            cell["requests"] += 1
+            cell["cost"] += request_cost(request, deadline)
+            cell["timeouts"] += request.get("outcome") == "timeout"
+            if request.get("first_s") is not None:
+                cell["first_s"].append(request["first_s"])
+            if row["engine"] == "tuned" and request.get("outcome") == "ok":
+                work = offered.setdefault(str(row["level"]), {"prompt_tokens": 0, "completion_tokens": 0})
+                work["prompt_tokens"] += int(request.get("prompt_tokens") or 0)
+                work["completion_tokens"] += int(request.get("tokens") or 0)
+    for engine in split.values():
+        for state in engine.values():
+            for cell in state.values():
+                cell["mean_cost"] = cell.pop("cost") / max(1, cell["requests"])
+                firsts = cell.pop("first_s")
+                cell["mean_first_s"] = statistics.fmean(firsts) if firsts else None
+    if set(outcomes) != {"tuned", "dense"} or any(
+            sum(counts.values()) == 0 or set(counts) - set(COSTED_OUTCOMES) for counts in outcomes.values()):
+        problems.append(f"long requests did not all reach an outcome in both engines: {outcomes}")
     joined = sum(row.get("joined") or 0 for row in report.get("rows", []) if row["engine"] == "dense")
-    out = {**part, "schema": "ironmule.rl2_headroom.h11.analysis.v1", "dense_slots": slots, "long_requests": long,
+    out = {**part, "schema": "ironmule.rl2_headroom.h11.analysis.v1", "dense_slots": slots,
+           "long_outcomes": outcomes, "short_and_long": split, "offered_work_per_state": offered,
            "dense_joined": joined}
     if problems:
         return {**out, "valid": False, "problems": problems}
     return {**out, "recommended_up_to_context_limit": bool(part["(1) dense beats today's default"]["passes"]
                                                           and part["(2) no harm in any state"]["passes"])}
-
 
 REPOSITORY = "https://github.com/Tobayko/IronMule"
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_headroom.py."""

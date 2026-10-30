@@ -151,7 +151,7 @@ def test_a_prompt_longer_than_a_prefill_chunk_is_prefilled_chunk_by_chunk_and_a_
 
 def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
     """A function of the card and the model alone, so both cards of a machine hold the same requests: on a T4
-    (16,106,127,360 bytes as MLX reports it) beside Qwen 3 1.7B bf16 (28 layers, 8 KV heads, about 4 GB of
+    (16,106,127,360 bytes as MLX reports it) beside Qwen 3 1.7B bf16 (28 layers, 8 KV heads, 3.44 GB of
     weights) a slot holds the product's whole 8,192-token context."""
     from types import SimpleNamespace
 
@@ -169,7 +169,7 @@ def test_the_slot_size_is_the_largest_tier_the_card_holds_beside_the_model():
         return {"total_memory": total, "compute_capability_major": 7}
 
     t4 = 16_106_127_360
-    assert dp.slot_capacity(Stand(4_100_000_000), card(t4)) == 8192
+    assert dp.slot_capacity(Stand(3_441_149_952), card(t4)) == 8192  # HW3's measured weights
     per_token = 2 * 28 * 8 * 128 * 2
     edge = int(dp.SLOT_HEADROOM * t4) - 8 * 8192 * per_token - dp.PREFILL_RESERVE  # the most weights 8192 allows
     assert dp.slot_capacity(Stand(edge), card(t4)) == 8192
@@ -523,8 +523,11 @@ def test_h11_compares_slot_sizes_bit_for_bit_times_them_and_records_long_prompts
     def plans(model, capacities):
         return {c: dp.DensePlan(model, capacity=c, linear=_rows, attention=_attention) for c in capacities}
 
+    text = [(i * 7) % 200 + 1 for i in range(400)]
+    gate = {name: [(text[i * 20:i * 20 + prefix], text[i * 20 + prefix:i * 20 + prefix + 9]) for i in range(4)]
+            for name, prefix in (("3k", 30), ("6k", 60))}
     report = probe.probe_h11_report("tiny", tmp_path / "h11.json", smoke=True, loaded=(_tiny(), Chat()), plans=plans,
-                                    capacities=(128, 256), long=(40, 120, 300))
+                                    capacities=(128, 256), long=(40, 120, 300), gate=gate)
     assert "error" not in report["h11"], report["h11"]
     assert report["auto_capacity"] == dp.SLOT_TIERS[-1]  # no card memory reported on the CPU
     result, analysis = report["h11"], report["analysis"]
@@ -534,5 +537,12 @@ def test_h11_compares_slot_sizes_bit_for_bit_times_them_and_records_long_prompts
     assert sorted((r["capacity"], r["run"]) for r in result["timing"]) == [(128, 0), (128, 1), (256, 0), (256, 1)]
     assert set(result["long"]["prefill_s"]) == {"40", "120"}  # 300 does not fit a 256-token slot
     assert result["long"]["long_row_tokens"] == 120 and "one_long_row_over_short" in analysis
-    assert analysis["(a2) larger slot per step"]["verdict"] in ("harm", "gain", "no resolved difference")
+    long_row = result["long"]["long_row_exact"]  # one long row beside seven short ones, against each apart
+    assert long_row["tokens_identical"] and long_row["logit_steps_identical"] == long_row["logit_steps"] == 8 * 4
+    a2 = analysis["(a2) larger slot per step"]
+    assert a2["verdict"] in ("harm", "gain", "no resolved difference") and set(a2["per_width"]) == {"1", "2", "4", "8"}
+    quality = analysis["(a4) quality at long context"]
+    assert set(quality["groups"]) == {"3k", "6k"} and all(len(result["gate"][g]["plan"]) == 4 for g in quality["groups"])
+    assert analysis["(a3) memory"] is None  # no card memory on the CPU: nothing passes by default
+    assert analysis["ship_8192"] is False
     assert json.loads((tmp_path / "h11.json").read_text())["schema"] == "ironmule.cuda_probe.h11.v1"

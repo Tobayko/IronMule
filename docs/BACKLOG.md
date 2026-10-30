@@ -1305,35 +1305,67 @@ then retired the worker. Since commit `562ccd2` such a request is rejected alone
 dense` still refuses everything between 2,048 and the product's 8,192-token context limit, which `--engine tuned`
 serves.
 
-The plan now takes the largest slot in (8,192, 4,096, 2,048) whose pool fits beside the weights and a 2 GiB
-prefill reserve in 90 % of the card. That is 8,192 on a T4 with Qwen3 1.7B bf16, a 7.5 GB pool. It also prefills
-a prompt longer than 2,048 positions in chunks of 2,048, as mlx-lm does (plan version 3). Prompts up to 2,048
-are prefilled exactly as in version 2.
+The plan now takes the largest slot in (8,192, 4,096, 2,048) whose pool fits beside the weights and a 3 GiB
+prefill reserve in 90 % of the card. The reserve covers a 2,048-position chunk's attention at 8,192 keys and the
+prompt's own cache before it is copied into its slot. That is 8,192 on a T4 with Qwen3 1.7B bf16: 3.44 GB of
+weights and a 7.5 GB pool. It also prefills a prompt longer than 2,048 positions in chunks of 2,048, as mlx-lm
+does (plan version 3). Prompts up to 2,048 are prefilled exactly as in version 2.
 
 By construction the slot size moves no answer: FA2's combine reads a row's chunks only up to its position. What
 the larger slot can cost is FA2's partial kernel. It launches warps for every 64-key chunk of the slot, and the
 warps past a row's position exit at once: four times as many at 8,192 as at 2,048.
 
-**Test, part (a): `tools/cuda_probe.py --plan h11`, one Kaggle T4, about 0.4 session hours.**
-- **Setup:** the product's plan installed twice through `install` (load probe included), with 2,048- and
-  8,192-token slots. The same eight requests (H10's mix: short questions and the same questions after about
-  1,000 tokens of notes) are prefilled into both.
-- **(a1) Answers, kill.** Every row's tokens over 32 steps at widths 1 and 8, and every row's logits at every
-  step of a width-8 decode fed the same tokens, must be bit-identical between the two slot sizes. If not, the
-  slot size moves answers against the construction, and the plan keeps 2,048.
+**Amended before data (2026-10-30), after a review of the protocol as first written:**
+- (a1) now also checks a row far past 2,048 beside short ones.
+- (a2)'s noise is now measured on the gain's own statistic, with a verdict per width as well.
+- (a3)'s bar now counts the worker's cache and the CUDA context.
+- (a4), quality at long context, is new.
+- In (b), a long request that times out is now a cost, not an invalid run.
+
+**Test, part (a): `tools/cuda_probe.py --plan h11`, one Kaggle T4, about 0.5 session hours.**
+- **Setup:**
+  - The reference's long-context likelihoods (a4) are taken first, with nothing else held.
+  - The product's plan is then installed twice through `install` (load probe included), with 2,048- and
+    8,192-token slots. The same eight requests (H10's mix: short questions and the same questions after about
+    1,000 tokens of notes) are prefilled into both.
+  - MLX's cache limit is the worker's (1 GiB).
+- **(a1) Answers, kill.** Everything below must be bit-identical:
+  - between the two slot sizes, every row's tokens over 32 steps at widths 1 and 8, and every row's logits at
+    every step of a width-8 decode fed the same tokens;
+  - in the 8,192 pool, one 8,000-token row decoded beside seven short rows (tokens and every step's logits)
+    against the seven decoded without it and the long row decoded alone.
+
+  If not, the slot size moves answers against the construction, and the plan keeps 2,048.
 - **(a2) Cost of the larger slot.**
   - Measurement: 32 steps per width (1, 2, 4, 8), decoded as the product's executor does (chains of four, one
     host read each), in 10 ABBA rounds. Each size runs twice per round; those two runs are its A/A pair.
   - Statistic: per round, the 8,192 slot's time over the 2,048 slot's, averaged over widths; gain = 1 minus
-    their mean, with a 2,000-resample bootstrap over rounds. Noise = the nearest-rank 95th percentile of the A/A
-    pairs' relative differences.
-  - Verdict: `harm` if the gain's 97.5 % bound is below minus the noise; `gain` if its 2.5 % bound is above the
-    noise; otherwise no resolved difference.
+    their mean, with a 2,000-resample bootstrap over rounds.
+  - Noise: the nearest-rank 95th percentile, over rounds and sizes, of the same statistic's A/A value (the
+    second run over the first, averaged over widths).
+  - Per width: the same, each width on its own with its own noise.
+  - Verdict:
+    - `harm` if the pooled gain's or any width's 97.5 % bound is below minus its noise;
+    - `gain` if the pooled 2.5 % bound is above the noise and no width shows harm;
+    - otherwise no resolved difference.
   - On `harm`: before (b) runs, FA2's grid is cut to the longest live row's chunks, so a short-only step again
     launches exactly H10's kernel, and (a) is repeated.
-- **(a3) Memory, kill.** Only the 8,192 pool is held. A prompt of 8,000 tokens is prefilled while seven short
-  rows hold their slots, then decoded with them. MLX's peak memory must stay within 90 % of the card (the slot
-  rule's headroom). If not, the rule is wrong for the T4 and its tier drops to 4,096.
+- **(a3) Memory, kill.** Only the 8,192 pool is held. An 8,000-token prompt is prefilled while seven short rows
+  hold their slots, then decoded with them. MLX's peak active memory, plus the 1 GiB cache limit, plus the CUDA
+  context, must stay within 97 % of the card. The context is `nvidia-smi`'s memory in use minus MLX's active and
+  cached memory, measured idle with the pool held. If not, the rule is wrong for the T4 and its tier drops to
+  4,096.
+- **(a4) Quality at long context, kill.**
+  - Material: the numeric plans' quality text (11,756 Qwen 3 tokens), teacher-forced on the decode path.
+    - Group `3k`: eight windows of 3,000 prefix tokens and 256 scored.
+    - Group `6k`: four windows of 6,000 prefix tokens and 128 scored.
+    - The scored spans do not overlap.
+  - The plan, prefilled in chunks into its 8,192 slots and decoded stacked, against the engine's baseline.
+  - Pass: in each group, the bootstrap ratio of perplexities passes the numeric plans' bound (97.5 % below 1.005,
+    `ratio_interval`).
+  - If not, the plan keeps 2,048-token slots: long requests are refused, not served by a plan whose quality is
+    not shown there.
+- **Ship rule:** 8,192-token slots stay only if (a1), (a3) and (a4) pass and (a2) shows no harm.
 - **Recorded:**
   - prefill time of 2,000-, 4,000- and 8,000-token prompts;
   - the step time of eight rows with one 8,000-token row against eight short rows;
@@ -1346,7 +1378,8 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
   rounds of four. Each round starts both engines' pools in turn, the first one alternating.
 - **Traffic:** H10's traffic per state, where in each trace one request in eight (at least one) sits behind the
   background notes repeated 2, 4 or 7 times: about 2,050, 4,060 or 7,090 prompt tokens, chosen from the trace's
-  seed. The output limits are H10's, so every request fits the context limit.
+  seed. The output limits are H10's, so every request fits the context limit. Calibration still uses short
+  traffic, so the states carry more work than in H10; the offered work per state is recorded.
 - **Warm-up:** as in H10, plus one 7,090-token request per card, so that neither engine pays its first long
   prefill in a timed cell.
 - **Arms:** `tuned:shortest/w2/g0/sjf` (the default) and `dense:shortest/w8/g0/sjf` (the plan as recommended),
@@ -1356,14 +1389,19 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
     dense cell `numeric@dense`; at least two complete traces;
   - the plan's preflight passed;
   - every dense worker reports 8,192-token slots;
-  - both engines answered every long request.
+  - both engines served long requests, and none of those ended without a costed outcome. A timeout counts as a
+    cost; a rejection for length means the fit rule is broken and invalidates the run.
 - **Decisions (H8's rules):**
   - (1) the dense arm's weighted gain over the default has a 2.5 % bound above the noise;
   - (2) no state's bound is below minus the noise.
   - Pass: the recommendation covers prompts plus answers up to the 8,192-token context limit. Otherwise it stays
     bounded to 2,048 tokens, and longer requests are served but not recommended.
-- **Recorded:** cost per state; the long requests' cost in each engine; joined requests; answers the same as
-  `tuned`.
+- **Recorded:**
+  - cost per state;
+  - per engine and state, short and long requests apart: mean cost, mean time to first content, timeouts;
+  - the long requests' outcomes;
+  - joined requests;
+  - answers the same as `tuned`.
 - **Ledger:** owed for both parts once they run.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
