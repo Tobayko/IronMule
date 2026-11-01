@@ -28,9 +28,11 @@ hardware gain.
   8 triplets in 15 traces, the look at 6 was inconclusive, and the phase ended before the look at 12. The result is
   in BACKLOG AG1 (V-CPU). A rerun needs a new protocol fixed before its data, with more online traces (more
   triplets) or traffic where order matters more.
+- **V-CPU-2 (40 traces, `--profile cpu2`): lost.** A container restart ended it after 25 traces (17 triplets,
+  looks at 6 and 12 inconclusive, no verdict). It is not rerun on the same seeds. See BACKLOG.
 - **V on a Kaggle T4 and H11 (a).**
-  - Scheduled task `trig_01LoEUJyHcJcK3z8FsEmexvN` fires at 2026-10-31T00:30Z. Pushes were refused
-    because the weekly 30-hour GPU quota was used up.
+  - V was pushed on 2026-11-01 at `3cb1e8f` as private kernel `tobayko/ironmule-rl2-headroom-ag1` (version 1),
+    expected 2.5 session hours. H11 (a) is still to push.
   - Kernel: `python3 tools/rl2_headroom.py --write-kernel DIR --owner tobayko --commit <pushed HEAD> --plan ag1`,
     then `kaggle kernels push -p DIR --accelerator NvidiaTeslaT4`, using `KAGGLE_USERNAME=tobayko` and a
     dummy `KAGGLE_KEY` (the proxy injects the real one).

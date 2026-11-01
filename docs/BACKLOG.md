@@ -120,6 +120,10 @@ learner found no gain on a T4 (P3).
   should reach the look at 18. The agent code, decisions, alpha spending, validity and analysis are V's and V-CPU's,
   unchanged. It takes about 7 hours of this CPU and no GPU. Pass and kill are V-CPU's. Its motive, V-CPU's too-short
   budget, is named here, and no rule was changed after V-CPU's data.
+  - **Run 1 (2026-10-30, at `3cb1e8f`): lost, no verdict.** A restart of the cloud container ended the process
+    after 25 of 40 online traces. By then it had 17 triplets of its one candidate, `w1/sjf`. The looks at 6 and 12
+    were inconclusive, nothing qualified or was rejected, and no evaluation ran. It is not rerun on these seeds,
+    because a second attempt after reading its interim looks would be a repeated test. The T4 run V comes first.
 
 **Kill.** S failing (a)-(c) stops V until the loop is fixed. V failing ships no agent default: `--agent` stays opt-in
 and experimental, as every learned path here. A pass still ships only opt-in, bound to the setup it was measured on.
