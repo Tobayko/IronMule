@@ -90,6 +90,21 @@ learner found no gain on a T4 (P3).
     - **Validity:** every request completes, with the same tokens in all three cells of its block.
   - If nothing qualified in the online phase, V reports "nothing qualified online" and compares nothing. That
     is a result about idle time and noise on this setup, not a gain.
+  - **Result (2026-11-01, kernel `tobayko/ironmule-rl2-headroom-ag1` v1 at `3cb1e8f`, about 2.2 session hours):
+    nothing qualified online, so there is no hardware gain and no comparison.** The run is valid as far as it went:
+    all 36 online traces completed, 0 answers mismatched, and the analysis found no problems.
+    - The agent planned one candidate, the best fixed schedule (`c63bf219337e`), and explored twice.
+    - Its 36 traces gave 17 replay triplets of that candidate. At 17 triplets the candidate's gain was +3.5 % (95 %
+      -6.5 to +15.5 %) against 5.2 % replay noise. The looks at 6 and 12 were inconclusive, and the run never
+      reached the look at 18.
+    - The reference served throughout. The world model fit 1,138 groups at widths 1-8 to a median relative error of
+      4.0 %, and never reopened.
+    - By the Kill rule, `--agent` stays opt-in and experimental.
+    - *Descriptive, not part of the verdict.* V-CPU and V both gave about 0.47 triplets per trace. On the T4, one
+      triplet's noise (5.2 %) is wider than the candidate's point gain. Enough triplets to resolve a few-percent
+      gain needs either far more idle replay per trace or a lower-noise replay, such as pairing at the group level
+      instead of the window. Either is a mechanism change, to be fixed here before any rerun.
+    - Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
