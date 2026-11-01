@@ -71,10 +71,12 @@ QUIET_S = 5.0               # idle seconds before a replay window may start (RSI
 TRACE = 16                  # arrivals per replay window
 MAX_REPLAY_TOKENS = 512     # a replayed output limit is capped here
 MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next one is used instead
-MIN_TRIPLETS = 6
-MAX_TRIPLETS = 24
-LOOKS = (6, 12, 18, 24)     # a comparison is judged only at these numbers of triplets (group-sequential)
-ALPHAS = (0.001, 0.002, 0.004, 0.018)  # one-sided error spent at each look (O'Brien-Fleming-like), 2.5 % in all
+MIN_TRIPLETS = 12
+MAX_TRIPLETS = 96
+# A comparison is judged only at these numbers of triplets (group-sequential). On a T4 one 16-arrival triplet's gain
+# spread about 23 %, so 24 triplets could not resolve the few percent a schedule gains there (AG1 V).
+LOOKS = (12, 24, 48, 96)
+ALPHAS = (0.0005, 0.002, 0.006, 0.0165)  # one-sided error spent at each look (O'Brien-Fleming-like), 2.5 % in all
 RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3

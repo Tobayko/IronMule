@@ -1805,6 +1805,11 @@ AG1_PROFILES = {
 }
 # BACKLOG AG1, V-CPU-2: V-CPU with 40 online traces on fresh seeds, so the sequential test can reach its later looks
 AG1_PROFILES["cpu2"] = {**AG1_PROFILES["cpu"], "learn": range(151, 191), "evaluate": range(191, 195)}
+# BACKLOG AG1, V2: V with 64-request traces (four replay windows each) and time to replay them, on fresh seeds
+# and three tiers on the same held-out traces: the default (`w8/fifo`), the best fixed schedule earlier runs found
+# (RL6's `w2/sjf`) and the agent, measured even when the agent qualified nothing (then it serves the default)
+AG1_PROFILES["t4b"] = {**AG1_PROFILES["t4"], "requests": 64, "learn": range(195, 219), "evaluate": range(219, 223),
+                       "pause_s": 480.0, "fixed": (2, True)}
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:
@@ -1844,7 +1849,7 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
                        else (list(setup["learn"]), list(setup["evaluate"])))
     pause = 1.0 if smoke else setup["pause_s"]
     sizes = ({"requests": 3, "max_tokens": (4, 8)} if smoke else
-             {"max_tokens": setup["max_tokens"]} if setup["max_tokens"] else {})
+             {key: setup[key] for key in ("max_tokens", "requests") if setup.get(key)})
     report: dict[str, Any] = {"plan": "ag1", "profile": profile, "arms": list(AG1_ARMS), "states": list(H2_STATES),
                               "learning": [], "rows": [], "devices": list(devices)}
     try:
@@ -1895,29 +1900,41 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             from ironmule_product.learned_dispatch import Policy as DispatchPolicy
 
             policy = DispatchPolicy.from_json(fixed_policy(2, True))
-        if policy is None:
+        tiers = setup.get("fixed") is not None
+        if policy is None and not tiers:
             report["frozen"] = None
             report["stopped"] = "the agent qualified no schedule in the online phase; nothing to compare"
             return {"model": model, "revision": revision, **report}
-        report["frozen"] = {"policy_sha256": policy.sha256, "evidence": agent.evidence}
-        dispatch = LearnedDispatch(policy, {"experiment": "AG1-V measurement"}, None)
+        report["frozen"] = None if policy is None else {"policy_sha256": policy.sha256, "evidence": agent.evidence}
+        if policy is None:  # V2: the tiers are still measured; the agent serves the default, as it did online
+            report["stopped"] = "the agent qualified no schedule in the online phase; its tier is the default's"
+        dispatch = None if policy is None else LearnedDispatch(policy, {"experiment": "AG1-V measurement"}, None)
+        arms = list(AG1_ARMS)
+        if tiers:
+            from ironmule_product.agent import fixed_policy
+            from ironmule_product.learned_dispatch import Policy as DispatchPolicy
+
+            fixed = LearnedDispatch(DispatchPolicy.from_json(fixed_policy(*setup["fixed"])),
+                                    {"experiment": "AG1-V2 fixed tier"}, None)
+            arms = ["reference", "fixed", "agent"]
+            report["arms"] = arms
         block = 0
         for t in evaluate:  # the held-out comparison, LD1-V's block order: reference, agent, reference
             for level in range(len(H2_STATES)):
                 items = traffic(level, t)
-                for name, run in block_order(list(AG1_ARMS), block):
+                for name, run in block_order(arms, block):
                     if not wait_idle(pool):
                         report["stopped"] = f"the pool did not drain before block {block}"
                         return {"model": model, "revision": revision, **report}
                     shard.policy = reference
-                    shard.dispatch = dispatch if name == "agent" else None
+                    shard.dispatch = dispatch if name == "agent" else fixed if name == "fixed" else None
                     report["rows"].append({"level": level, "trace": t, "arm": name, "run": run, "block": block,
                                            "requests": replay(pool, model, items, deadline)})
                     if on_row is not None:
                         on_row(report)
                 block += 1
         shard.dispatch = None
-        report["dispatch_status"] = dispatch.status()
+        report["dispatch_status"] = dispatch.status() if dispatch is not None else None
     finally:
         pool.close()
     return {"model": model, "revision": revision, **report}
@@ -1939,6 +1956,8 @@ def analyse_ag1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
     complete = []
     for lv, t in blocks:
         trio = [cells.get((lv, t, "reference", 0)), cells.get((lv, t, "agent", 0)), cells.get((lv, t, "reference", 1))]
+        if "fixed" in (report.get("arms") or ()):  # V2's tier between the default and the agent
+            trio.append(cells.get((lv, t, "fixed", 0)))
         if any(c is None for c in trio):
             problems.append(f"block {lv}/{t} is incomplete")
             continue
@@ -1988,6 +2007,13 @@ def analyse_ag1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
             "aa_control": control, "(1) the agent beats the reference": {**pooled, "passes": passes},
             "(2) no harm in any state": {"per_state": per_state, "passes": no_harm},
             "frozen": report.get("frozen"), "stopped": report.get("stopped"),
+            **({"tiers": {
+                "fixed over the default": paired(lambda t: (weighted(lambda lv, t2: cost(lv, t2, "fixed", 0), t),
+                                                            weighted(reference, t)), traces),
+                "agent over the default": pooled,
+                "agent over fixed": paired(lambda t: (weighted(lambda lv, t2: cost(lv, t2, "agent", 0), t),
+                                                      weighted(lambda lv, t2: cost(lv, t2, "fixed", 0), t)), traces)}}
+               if "fixed" in (report.get("arms") or ()) and traces else {}),
             "online": {"traces": len(learning),
                        "serving_by_trace": [row.get("agent", {}).get("serving") for row in learning],
                        "first_learned_trace": next((k for k, row in enumerate(learning)
@@ -2010,7 +2036,8 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-q",
 '''
 
 
-def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", extra: list[str] | None = None) -> Path:
+def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", extra: list[str] | None = None,
+                 suffix: str = "") -> Path:
     """A private script kernel that installs IronMule at `commit` and runs this file's `plan` (with
     `extra` arguments, such as run 4's frozen policy); the report lands in the kernel's output as
     `rl2_headroom_report.json`."""
@@ -2025,7 +2052,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
         body = f"_EMBEDDED_SOURCE = __import__('base64').b64decode({encoded!r}).decode()\n" + body
     arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, *(extra or [])]
     entry = f"\nsys.exit(main({arguments!r}))\n"
-    name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}")
+    name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}") + suffix
     (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
     metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
                 "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
@@ -2071,7 +2098,11 @@ def main(argv: Iterable[str] | None = None) -> int:
             LearnedPolicy.from_json(json.loads(text))  # refuse a policy whose digest does not match
             extra = (["--best-fixed", args.best_fixed] if needs_fixed else []) + \
                 ["--policy-json", json.dumps(json.loads(text), sort_keys=True)]
-        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra))}))
+        suffix = ""
+        if args.plan == "ag1" and args.profile != "t4":  # e.g. V2's profile, as its own kernel
+            extra, suffix = extra + ["--profile", args.profile], f"-{args.profile}"
+        print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra,
+                                                     suffix))}))
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())

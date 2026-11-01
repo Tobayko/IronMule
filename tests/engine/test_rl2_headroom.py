@@ -806,12 +806,15 @@ def test_h11_serves_long_prompts_through_both_engines_and_requires_slots_that_ho
 
 # ---- AG1, V: the agent learning online on hardware, then frozen against the reference ----
 
-def _ag1_report(agent_factor: float, aa_factor: float = 1.0, mismatch: bool = False, failed: bool = False):
+def _ag1_report(agent_factor: float, aa_factor: float = 1.0, mismatch: bool = False, failed: bool = False,
+                fixed_factor: float | None = None):
     rows, block = [], 0
+    arms = list(rl2.AG1_ARMS) if fixed_factor is None else ["reference", "fixed", "agent"]
     for trace in (143, 144, 145, 146):
         for level, base in enumerate((2.0, 15.0, 30.0)):
-            for name, run in rl2.block_order(list(rl2.AG1_ARMS), block):
-                factor = agent_factor if name == "agent" else (aa_factor if run == 1 else 1.0)
+            for name, run in rl2.block_order(arms, block):
+                factor = (agent_factor if name == "agent" else fixed_factor if name == "fixed" else
+                          (aa_factor if run == 1 else 1.0))
                 requests = [{"outcome": "ok", "first_s": base * factor * 0.2 * (1 + 0.01 * (trace % 3)),
                              "end_s": base * factor * (1 + 0.01 * (trace % 3)), "digest": f"d{i}"} for i in range(4)]
                 if mismatch and name == "agent":
@@ -822,8 +825,21 @@ def _ag1_report(agent_factor: float, aa_factor: float = 1.0, mismatch: bool = Fa
                              "requests": requests})
             block += 1
     learning = [{"agent": {"serving": "reference"}}, {"agent": {"serving": "learned:abc"}}]
-    return {"plan": "ag1", "deadline_s": 120, "rows": rows, "learning": learning,
+    return {"plan": "ag1", "deadline_s": 120, "rows": rows, "learning": learning, "arms": arms,
             "frozen": {"policy_sha256": "abc"}, "agent_final": {"counters": {"qualified": 1}, "decision_us": 7.5}}
+
+
+def test_ag1_v2_reports_three_tiers_default_fixed_agent():
+    result = rl2.analyse_ag1(_ag1_report(0.8, fixed_factor=0.9), resamples=200)
+    tiers = result["tiers"]
+    assert result["valid"] and result["verdict"] == "the agent beats the reference"
+    assert tiers["fixed over the default"]["gain"] == pytest.approx(0.1, abs=0.002)
+    assert tiers["agent over the default"]["gain"] == pytest.approx(0.2, abs=0.002)
+    assert tiers["agent over fixed"]["gain"] == pytest.approx(1 - 0.8 / 0.9, abs=0.002)
+    unqualified = {**_ag1_report(1.0, fixed_factor=0.9), "frozen": None}
+    result = rl2.analyse_ag1(unqualified, resamples=200)
+    assert result["verdict"] == "nothing qualified online"
+    assert result["tiers"]["fixed over the default"]["gain"] == pytest.approx(0.1, abs=0.002)
 
 
 def test_ag1_passes_a_resolved_gain_and_records_the_online_phase():
@@ -855,6 +871,14 @@ def test_ag1_kernel_runs_the_plan_at_the_pinned_commit(tmp_path):
     assert json.loads((folder / "kernel-metadata.json").read_text())["id"] == "owner/ironmule-rl2-headroom-ag1"
 
 
+def test_ag1_kernel_for_another_profile_is_its_own_kernel_and_runs_that_profile(tmp_path, capsys):
+    assert rl2.main(["--write-kernel", str(tmp_path / "k"), "--owner", "owner", "--commit", "b" * 40,
+                     "--plan", "ag1", "--profile", "t4b"]) == 0
+    assert "'--profile', 't4b'" in (tmp_path / "k" / "run.py").read_text()
+    assert json.loads((tmp_path / "k" / "kernel-metadata.json").read_text())["id"] == \
+        "owner/ironmule-rl2-headroom-ag1-t4b"
+
+
 def test_ag1_profiles_differ_only_where_backlog_ag1_says():
     t4, cpu = rl2.AG1_PROFILES["t4"], rl2.AG1_PROFILES["cpu"]
     assert t4["model"] == rl2.MODEL and t4["variant"] == "current_engine" and t4["pause_s"] == 120.0
@@ -863,3 +887,5 @@ def test_ag1_profiles_differ_only_where_backlog_ag1_says():
                    "compute_dtype": "dequantize", "max_tokens": (4, 32), "learn": range(107, 122),
                    "evaluate": range(143, 147), "pause_s": 360.0, "timeout_s": 1800, "short_prompts": True}
     assert rl2.AG1_PROFILES["cpu2"] == {**cpu, "learn": range(151, 191), "evaluate": range(191, 195)}
+    assert rl2.AG1_PROFILES["t4b"] == {**t4, "requests": 64, "learn": range(195, 219), "evaluate": range(219, 223),
+                                       "pause_s": 480.0, "fixed": (2, True)}

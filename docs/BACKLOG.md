@@ -105,6 +105,39 @@ learner found no gain on a T4 (P3).
       gain needs either far more idle replay per trace or a lower-noise replay, such as pairing at the group level
       instead of the window. Either is a mechanism change, to be fixed here before any rerun.
     - Ledger entry owed.
+- **V2, the gain on hardware with enough triplets (fixed 2026-11-01, after V's result and before any of its own
+  data).** This protocol is shaped by V's data, and is labelled so. V and V-CPU each gave one replay window per
+  16-request trace. On the T4 a triplet's gain spread about 23 %, which you can read back from the 95 % interval
+  at 17 triplets, so the looks up to 24 could not resolve a gain of a few percent. Two things change:
+  - **The agent's judge** (`agent.py`). The looks move from (6, 12, 18, 24) to (12, 24, 48, 96), and the one-sided
+    alpha spent at them from (0.1, 0.2, 0.4, 1.8 %) to (0.05, 0.2, 0.6, 1.65 %), 2.5 % in all. `MAX_TRIPLETS` is
+    96, and the futility rule and the audit's looks follow. Nothing else in the agent changes.
+  - **The harness**, as `--profile t4b`. Each online trace has 64 requests, so four replay windows. There are 24
+    online traces on fresh seeds 195-218, with 480 s idle after each so that four triplets fit. The held-out
+    comparison uses 4 traces per state on seeds 219-222, also of 64 requests. Everything else is V's: model,
+    engine, one worker, reference `w8/fifo`, states, cost, decisions (1) and (2), and validity.
+  - **Three tiers (maintainer request, 2026-11-01).** Each held-out block runs the default (`w8/fifo`) twice as
+    its A/A pair, plus the best fixed schedule earlier runs found (RL6's `w2/sjf`, through the product's dispatch
+    hooks) and the agent, in rotated order. The fixed tier gives no answer of its own, and its tokens join the
+    validity check. Recorded, not decided:
+    - fixed over the default;
+    - the agent over the default;
+    - the agent over fixed.
+
+    Any gain of the agent over the fixed tier is what RL added. If the agent qualified nothing online, the tiers
+    are still measured, and its tier is the default schedule it served. The verdict stays "nothing qualified
+    online".
+  - **Gate:** S and S2 are rerun at the commit, and must pass (a)-(c) and (a')-(c') as before.
+    - Passed: S run 9 and S2 run 5, local.
+    - S: at trace 50, every world-model parameter is within 1.1 %. At trace 50 `w8/sjf` qualified (+6.6 %, 95 %
+      3.7-9.6 %, floor 0.8 %), and two later candidates were rejected. Learned windows cost 6.2 % less than the
+      reference.
+    - S2: 50 traces after the change, every parameter is within 2.9 %. At trace 182, 32 traces after the change,
+      `w1/sjf` qualified (+44.7 %, 95 % 37.2-50.7 %), and its audit confirmed it (+53.3 %). After the change,
+      windows cost 43.0 % less than the reference.
+  - **Cost:** about 8.5 session hours on one Kaggle T4, within the 12-hour session limit.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup. It
+    ships only opt-in.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
