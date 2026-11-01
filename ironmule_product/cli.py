@@ -129,8 +129,10 @@ class IdleTuner:
     MAX_FAILURES = 2
 
     def __init__(self, service: Any, spec: Any, make_backend: Any, *, popen: Any = subprocess.Popen,
-                 log: Any = print) -> None:
+                 log: Any = print, cuda_device: str | None = None) -> None:
         self.service, self.spec, self.make_backend, self.popen, self.log = service, spec, make_backend, popen, log
+        # HW1: a server pinned to one GPU tunes on that GPU, not on whichever CUDA lists first.
+        self.environ = None if cuda_device is None else {**os.environ, "CUDA_VISIBLE_DEVICES": cuda_device}
         self.done = False
         self.failures = 0
         tool = [sys.executable, "-c", "import sys, ironmule_cli; sys.exit(ironmule_cli.main(sys.argv[1:]))", "tune",
@@ -139,7 +141,7 @@ class IdleTuner:
         self.tune = tool + ["--explorer", "planner", "--budget-minutes", "5"]
 
     def _confirmed(self) -> bool:
-        shown = subprocess.run(self.show, capture_output=True, text=True, timeout=120)
+        shown = subprocess.run(self.show, capture_output=True, text=True, timeout=120, env=self.environ)
         return shown.returncode == 0 and "no profile for this hardware yet" not in shown.stdout
 
     def __call__(self, preempted: Any) -> None:
@@ -155,7 +157,7 @@ class IdleTuner:
         outcome = "interrupted"
         try:
             process = self.popen(self.tune, start_new_session=True, stdin=subprocess.DEVNULL,
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=self.environ)
             while process.poll() is None:
                 if preempted():
                     _stop_group(process)
@@ -188,6 +190,34 @@ def _stop_group(process: Any) -> None:
             continue
 
 
+def _qualified_knob_options(spec: Any, devices: list[str | None]) -> dict[str, Any]:
+    """KP1: the worker option for a shipped class-A knob set bound to exactly this setup, else nothing."""
+    from .knob_profile import framework_versions, qualified_knobs, shipped_knobs
+
+    if not shipped_knobs():
+        return {}
+    from .device_pool import cuda_devices, gpu_name
+
+    pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
+    found = qualified_knobs({"model_id": spec.model_id, "revision": spec.revision, "engine": "tuned",
+                             "gpu": gpu_name(pinned) if pinned else None, **framework_versions()})
+    if found is None:
+        return {}
+    knobs, record = found
+    return {"engine_knobs": {"knobs": knobs, "source": f"qualified:{record['experiment']}"[:64]}}
+
+
+def _engine_options(engine: str) -> dict[str, Any]:
+    """The worker client's options that `--engine` sets beyond the execution variant."""
+    from .backend import DENSE_STARTUP_TIMEOUT
+
+    if engine == "rust2":
+        return {"engine_configuration": "rust2"}
+    if engine == "dense":  # KB1: its probe compiles every kernel shape before the worker is ready
+        return {"engine_configuration": "dense_stacked", "startup_timeout": DENSE_STARTUP_TIMEOUT}
+    return {}
+
+
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
     choice = parser.add_mutually_exclusive_group(required=True)
@@ -198,13 +228,16 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "stock", "ironmule"), default="reference",
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "stock", "ironmule"), default="reference",
                         help="stock/ironmule are the earlier names of reference/tuned. "
                              "experimental: stream from IronMule's engine with this machine's confirmed "
                              "`ironmule tune` profile (the untuned engine where none exists); not yet faster "
                              "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
                              "rust2 (CUDA, Qwen3 dense 4-bit): the rust2 binary named by IRONMULE_RUST2_BINARY, "
-                             "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV)",)
+                             "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV). "
+                             "dense (CUDA below compute capability 8, Qwen 3 bf16): the opt-in dense numeric plan, up "
+                             "to eight requests in one decode step through IronMule's own kernels; answers differ from "
+                             "the other engines' but never with the group (KB1)",)
     parser.add_argument("--no-thinking", action="store_true",
                         help="answer without a thinking section where the model's chat template has one "
                              "(start sets it on a machine without a GPU, CPU5)")
@@ -222,12 +255,46 @@ def serve(argv: list[str]) -> int:
                         help="with --learning: the same learner without model rollouts (comparison arm)")
     parser.add_argument("--no-replay", action="store_true",
                         help="with --learning: no idle replay qualification (an external harness qualifies, P3)")
+    parser.add_argument("--agent", choices=("off", "on"), default="off",
+                        help="AG1: the IronMule agent decides each group's order and width, learns what this "
+                             "machine's groups cost from every request, trains a schedule while idle and serves it "
+                             "only after it beat the incumbent in a replayed comparison on this server. Never "
+                             "changes an answer; one worker; not with --learning or --dispatch-policy")
+    parser.add_argument("--gpus", default=None, metavar="all|0,1",
+                        help="HW1: one model worker per listed CUDA GPU (`all`: every GPU this machine shows), "
+                             "each request on the GPU with the shortest queue. Each worker loads the whole model; "
+                             "live learning and idle tuning run only with one GPU. Default: one worker, as before")
+    parser.add_argument("--dispatch-policy", default=None, metavar="POLICY.json",
+                        help="LD1: opt-in learned dispatch (where, in which order and how wide requests run; "
+                             "never what they answer). Needs --dispatch-evidence for this model, revision and "
+                             "GPUs; without matching evidence the reference dispatch serves and /health says why")
+    parser.add_argument("--dispatch-evidence", default=None, metavar="EVIDENCE.json",
+                        help="LD1: the passed hardware comparison that qualifies --dispatch-policy")
+    parser.add_argument("--schedule", choices=("auto", "reference"), default="auto",
+                        help="RL6: `auto` runs a fixed schedule (group width, shortest output limit first) that "
+                             "ships with the hardware comparison that qualified it, only on exactly the engine, "
+                             "model, revision, GPU and GPU count it was measured on, and only when no serving "
+                             "policy is stored; `reference` keeps the default schedule. /health shows which serves")
+    parser.add_argument("--knobs", choices=("auto", "reference"), default="auto",
+                        help="KP1: `auto` gives --engine tuned the knob set (compiled step, fewer host reads) that "
+                             "ships with the hardware comparison that qualified it, only on exactly the model, "
+                             "revision, GPU and MLX versions it was measured on, only knobs that leave every answer "
+                             "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
+                             "default knobs")
     args = parser.parse_args(argv)
     args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
     if args.engine != "reference" and args.compute_dtype is not None:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
+    if args.gpus is not None and args.no_model:
+        parser.error("--gpus places model workers; --no-model starts none")
+    if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
+        parser.error("--dispatch-policy and --dispatch-evidence go together")
+    if args.dispatch_policy is not None and args.learning != "off":
+        parser.error("--dispatch-policy and --learning both decide groups; use one")
+    if args.agent == "on" and (args.learning != "off" or args.dispatch_policy is not None):
+        parser.error("--agent decides groups itself; use it without --learning and --dispatch-policy")
     from .backend import MLXWorkerClient
     from .calibration import CalibrationFailure, model_lease
     from .http_server import create_server
@@ -257,23 +324,64 @@ def serve(argv: list[str]) -> int:
                 raise InvalidRequest(f"--engine {args.engine} and --compute-dtype cannot be combined yet")
             if args.chat_reuse and args.engine != "tuned":
                 raise InvalidRequest("--chat-reuse needs --engine tuned")
-            def make_backend():
+            devices = [None]
+            if args.gpus is not None:
+                from .device_pool import cuda_devices, select_devices
+                devices = select_devices(args.gpus, cuda_devices())
+            if len(devices) > 1 and args.learning != "off":
+                raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
+            if len(devices) > 1 and args.agent == "on":
+                raise InvalidRequest("--agent models one worker; use it with one GPU (HW1)")
+            knob_options = _qualified_knob_options(spec, devices) if (
+                args.knobs == "auto" and args.engine == "tuned") else {}
+
+            def make_backend(device=devices[0]):
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
-                                       thinking=not args.no_thinking,
+                                       thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
-                                       **({"engine_configuration": "rust2"} if args.engine == "rust2" else {}))
-            backend = make_backend()
-            backend.start()
-        service = ProductService(store, backend=backend, spec=spec)
-        if spec is not None:
-            service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
+                                       **_engine_options(args.engine), **knob_options)
+            if len(devices) > 1:
+                from .device_pool import start_pool
+                service = start_pool(store, spec, devices, make_backend, ProductService)
+            else:
+                backend = make_backend()
+                backend.start()
+        if service is None:
+            service = ProductService(store, backend=backend, spec=spec)
+            if spec is not None:
+                service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
-        if spec is not None and args.engine == "tuned" and (service.learning is None or not service.learning.eligible):
+        if spec is not None and args.agent == "on":
+            service.agent = service.dispatch = _agent(store, service, spec)
+        wants_schedule = (args.schedule == "auto" and args.gpus is not None and args.learning == "off"
+                          and args.dispatch_policy is None)
+        binding = None
+        if spec is not None and (args.dispatch_policy is not None or wants_schedule):
+            from .device_pool import cuda_devices, gpu_name
+            pinned = [device for device in devices if device is not None] or cuda_devices()[:1]
+            binding = {"model_id": spec.model_id, "revision": spec.revision, "engine": args.engine,
+                       "gpu": gpu_name(pinned) if pinned else None, "devices": len(devices)}
+        if binding is not None and wants_schedule:
+            from .serving_policy import qualified_schedule, stored_policy_exists
+            qualified = None if stored_policy_exists(store.root) else qualified_schedule(binding)
+            if qualified is not None:  # RL6, confirmed by LD1-V: only on the setup it was measured on
+                for shard in getattr(service, "shards", [service]):
+                    shard.policy = qualified[0]
+        if binding is not None and args.dispatch_policy is not None:
+            from .learned_dispatch import LearnedDispatch
+            dispatch = LearnedDispatch.load(args.dispatch_policy, args.dispatch_evidence, binding,
+                                            kill_path=store.root / "dispatch-withdrawals.json")
+            if hasattr(service, "attach"):
+                service.attach(dispatch)
+            else:
+                service.dispatch = dispatch
+        if (spec is not None and args.engine == "tuned" and len(devices) == 1 and service.agent is None
+                and (service.learning is None or not service.learning.eligible)):
             # Idle tuning unloads the worker; learning keeps the serving model loaded (RSI3-LIVE).
             service.idle_task = IdleTuner(service, spec, lambda: MLXWorkerClient(
                 spec, execution_variant="current_engine", chat_reuse=args.chat_reuse,
-                thinking=not args.no_thinking))
+                thinking=not args.no_thinking, cuda_device=devices[0]), cuda_device=devices[0])
         server = create_server(service, host=args.host, port=args.port,
                                api_key=os.environ.get(args.api_key_env),
                                tls_cert=args.tls_cert, tls_key=args.tls_key)
@@ -335,6 +443,33 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
     return learning
 
 
+def _agent(store: ProductStore, service: Any, spec: ModelSpec) -> Any:
+    """AG1: the agent bound to this hardware, model, plan and software; its learning lives in the state directory."""
+    from .agent import Agent
+    from .readiness import hardware_identity
+
+    backend = service.backend
+    if getattr(backend, "reuses_slots", False) is True:
+        raise InvalidRequest("--agent prices one group at a time; the dense plan's slot reuse is not modelled yet")
+    hardware = hardware_identity()
+    binding = {"hardware": {"chip_name": hardware["chip_name"], "gpu_devices": hardware["gpu_devices"]},
+               "device": backend.device, "model": {"id": spec.model_id, "revision": spec.revision},
+               "plan": {"execution_variant": backend.execution_variant,
+                        "engine_configuration": backend.engine_configuration, "compute_dtype": backend.compute_dtype,
+                        "chat_reuse": backend.chat_reuse, "thinking": backend.thinking},
+               "runtime": _runtime_versions()}
+    policy = service.policy
+    capacity = service._batch_capacity()
+    # what the agent's evidence was measured against: a changed schedule or capacity starts it fresh
+    binding.update(capacity=capacity, schedule={"max_width": policy.max_width, "gather_ms": policy.gather_ms,
+                                                "order": policy.order, "source": policy.source})
+    agent = Agent(store.root / "agent", binding, capacity=capacity, device=backend.device,
+                  reference={"width": capacity, "sjf": policy.order == "sjf", "gather_ms": policy.gather_ms},
+                  deadline_s=service.settings["request_timeout_s"] or 120.0)
+    print(json.dumps({"agent": {k: agent.status()[k] for k in ("serving", "reason", "traffic")}}), flush=True)
+    return agent
+
+
 DEFAULT_MODEL = "mlx-community/gemma-3-4b-it-4bit"  # 3.4 GB, not gated; every IronMule study measured it
 CPU_MODEL = "mlx-community/Qwen3-0.6B-4bit"  # the model CPU3 measured; 4B answers far too slowly on a CPU
 CPU_REQUEST_TIMEOUT_S = 900
@@ -373,6 +508,7 @@ def start(argv: list[str]) -> int:
     parser.add_argument("--chat-reuse", action="store_true", help="see `ironmule serve --help`")
     parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",
                         help="see `ironmule serve --help`")
+    parser.add_argument("--agent", choices=("off", "on"), default="off", help="see `ironmule serve --help`")
     args = parser.parse_args(argv)
     store = ProductStore(args.state_dir)
     cpu_only = _cpu_only()
@@ -415,7 +551,8 @@ def start(argv: list[str]) -> int:
     engine = (["--engine", args.engine] if args.engine != "reference" else []) + (
         ["--chat-reuse"] if args.chat_reuse else []) + (
         ["--no-thinking"] if cpu_only else []) + (  # CPU5: thinking costs minutes on a CPU
-        ["--learning", args.learning] if args.learning != "off" else [])
+        ["--learning", args.learning] if args.learning != "off" else []) + (
+        ["--agent", args.agent] if args.agent != "off" else [])
     return serve(["--model", model, "--port", str(args.port), *engine, *plan, *state])
 
 

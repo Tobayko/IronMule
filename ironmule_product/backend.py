@@ -10,6 +10,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import selectors
 import subprocess
 import sys
@@ -23,18 +24,22 @@ from .errors import BackendUnavailable, InvalidRequest, ProductError, RequestTim
 from .types import GenerationRequest, ModelSpec
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2  # 2: a grouped request too long to run is rejected alone (`rejected` frame)
 MAX_PROTOCOL_LINE = 1024 * 1024
 MAX_STDERR_BYTES = 256 * 1024
 STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
 DEFAULT_TIMEOUT = 120.0
+DENSE_STARTUP_TIMEOUT = 600.0  # KB1: the dense plan compiles and probes every kernel shape before it is ready
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
-                                   "baseline_throughput", "core_throughput", "rust2"))
+                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
 CONTEXT_LIMIT = 8192
+# The worker rejects a grouped request alone when its prompt and output limit exceed the context limit or the
+# engine's own bound (KB1: the dense plan's slot).
+REJECTION_REASONS = frozenset({"context_limit", "engine_limit"})
 
 
 class _StartupGuardFailure(Exception):
@@ -62,9 +67,16 @@ class MLXWorkerClient:
                  trace_prompt_identity: bool = False,
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
-                 compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True) -> None:
+                 compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
+                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
+        # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
+        # it); None leaves the inherited environment alone, as before.
+        if cuda_device is not None and (not isinstance(cuda_device, str)
+                                        or re.fullmatch(r"[A-Za-z0-9-]{1,64}", cuda_device) is None):
+            raise ValueError("cuda_device must be one CUDA device index or UUID")
+        self.cuda_device = cuda_device
         if compute_dtype not in (None, "float32", "native", "dequantize"):
             raise ValueError("compute_dtype must be None, float32, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
@@ -94,6 +106,19 @@ class MLXWorkerClient:
         if execution_variant != "current_engine" and engine_configuration != "current_profile":
             raise ValueError("engine configuration requires current_engine")
         self.engine_configuration = engine_configuration
+        # KP1: class-A knobs for the tuned engine when no stored tune profile applies, as
+        # {"knobs": {...}, "source": label}; they leave every answer unchanged.
+        if engine_knobs is not None:
+            from .knob_profile import class_a_knobs
+
+            if (execution_variant != "current_engine" or engine_configuration != "current_profile"
+                    or not isinstance(engine_knobs, dict) or set(engine_knobs) != {"knobs", "source"}
+                    or class_a_knobs(engine_knobs["knobs"]) is None
+                    or not isinstance(engine_knobs["source"], str)
+                    or re.fullmatch(r"[A-Za-z0-9:._-]{1,64}", engine_knobs["source"]) is None):
+                raise ValueError("engine_knobs must be class-A knobs with a source, for the tuned engine only")
+            engine_knobs = json.loads(json.dumps(engine_knobs))
+        self.engine_knobs = engine_knobs
         if type(trace_prompt_identity) is not bool:
             raise ValueError("trace_prompt_identity must be a boolean")
         self.trace_prompt_identity = trace_prompt_identity
@@ -151,7 +176,8 @@ class MLXWorkerClient:
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
-        if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
+        if self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
+                                                                                        "dense_stacked"):
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
                 and self._ready_payload.get("automatic_batch_qualified") is True):
@@ -159,9 +185,16 @@ class MLXWorkerClient:
         return 1
 
     @property
+    def reuses_slots(self) -> bool:
+        """KB1: whether a member that ends frees room a newcomer may take while its group runs (the dense
+        plan's slot pool); every other engine counts members over the group's life."""
+        return self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked"
+
+    @property
     def streams_batches(self) -> bool:
         """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
-        return self.execution_variant == "current_engine" and self.engine_configuration == "current_profile"
+        return self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
+                                                                                            "dense_stacked")
 
     def can_batch_requests(self, requests: Any) -> bool:
         """Check metadata admission to the opt-in transport without model execution."""
@@ -391,6 +424,8 @@ class MLXWorkerClient:
                 "HF_HUB_DISABLE_TELEMETRY": "1",
                 "DO_NOT_TRACK": "1",
             })
+            if self.cuda_device is not None:
+                environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
             try:
                 arguments = [sys.executable, "-I", "-u", str(worker), "--spec",
                              json.dumps(self.spec.as_dict(), separators=(",", ":"))]
@@ -407,6 +442,9 @@ class MLXWorkerClient:
                     arguments += ["--engine-configuration", self.engine_configuration]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
+                    if self.engine_knobs is not None:
+                        arguments += ["--engine-knobs", json.dumps(self.engine_knobs, sort_keys=True,
+                                                                   separators=(",", ":"))]
                 if self.execution_variant == "automatic":
                     arguments += ["--selection-evidence", json.dumps(
                         self.selection_evidence, ensure_ascii=False, separators=(",", ":"), allow_nan=False)]
@@ -640,6 +678,7 @@ class MLXWorkerClient:
         if not self.can_batch_requests(requests):
             raise InvalidRequest("requests are not eligible for grouped execution")
         request_list = list(requests)
+        initial = len(request_list)
         if cancels is None:
             cancel_list: list[threading.Event | None] = [None] * len(request_list)
         elif (not isinstance(cancels, (list, tuple)) or len(cancels) != len(request_list)
@@ -676,7 +715,8 @@ class MLXWorkerClient:
 
             def poll_cancels() -> None:
                 for request, cancel in zip(request_list, cancel_list):
-                    if cancel is not None and cancel.is_set() and request.request_id not in cancel_sent:
+                    if (cancel is not None and cancel.is_set() and request.request_id not in cancel_sent
+                            and request.request_id not in terminals):  # an ended request has nothing to stop
                         self._send({"type": "cancel", "request_id": request.request_id}, deadline)
                         cancel_sent.add(request.request_id)
                 send_joins()
@@ -722,17 +762,25 @@ class MLXWorkerClient:
                     kind = event.get("type")
                     if kind == "batch_done":
                         ids = event.get("request_ids")
-                        if (event.get("batch_id") != batch_id or ids != [r.request_id for r in request_list]
-                                or set(terminals) != set(request_by_id) or self._stdout_buffer):
+                        # A join sent while the worker was already ending the run arrives after it: the worker
+                        # drops it, so it is missing here with nothing streamed, and goes back to the caller.
+                        unserved = {r.request_id for r in request_list[initial:]
+                                    if isinstance(ids, list) and r.request_id not in ids
+                                    and not events_by_id[r.request_id] and r.request_id not in terminals}
+                        if (event.get("batch_id") != batch_id
+                                or ids != [r.request_id for r in request_list if r.request_id not in unserved]
+                                or set(terminals) | unserved != set(request_by_id) or self._stdout_buffer):
                             raise BackendUnavailable("backend batch completion is invalid")
                         memory = event.get("memory")
                         self.last_memory = ({k: v for k, v in memory.items() if type(v) is int and v >= 0}
                                             if isinstance(memory, dict) else None)
-                        rows = [{"request_id": request.request_id,
+                        rows = [{"request_id": request.request_id, "events": [], "metadata": None, "unserved": True}
+                                if request.request_id in unserved else
+                                {"request_id": request.request_id,
                                  "events": events_by_id[request.request_id],
                                  "metadata": terminals[request.request_id]}
                                 for request in request_list]
-                        self.last_batch_metadata = [dict(row["metadata"]) for row in rows]
+                        self.last_batch_metadata = [dict(row["metadata"]) for row in rows if not row.get("unserved")]
                         return rows
                     if kind == "error":  # the worker's own report names the failure (STAB1: it was misread)
                         code = event.get("code")
@@ -780,6 +828,20 @@ class MLXWorkerClient:
                                                  "prompt_ids_sha256": digest, "engine": engine,
                                                  "selection": selection,
                                                  "delivery": "buffered_completion"}
+                    elif kind == "rejected":
+                        # Too long to run: the worker rejected this request alone, before any token, and the
+                        # others go on. Its caller reports it as the single path reports the same request.
+                        reason, limit = event.get("reason"), event.get("limit")
+                        if (event.get("code") != "invalid_request" or reason not in REJECTION_REASONS
+                                or type(limit) is not int or not 1 <= limit <= CONTEXT_LIMIT
+                                or events_by_id[request_id]):
+                            raise BackendUnavailable("backend batch rejection event is invalid")
+                        events_by_id[request_id].append(event)
+                        if on_event is not None:
+                            on_event(request_id, event)
+                        terminals[request_id] = {"variant": self.execution_variant, "finish_reason": None,
+                                                 "rejected": reason, "limit": limit, "engine": None,
+                                                 "delivery": "rejected"}
                     else:
                         raise BackendUnavailable("backend emitted an unknown batch event")
             except BaseException as exc:

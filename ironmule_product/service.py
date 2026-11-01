@@ -19,6 +19,7 @@ from .serving_policy import ServingLog, ServingPolicy, load_policy
 
 STABILITY_LOG = "stability-log.jsonl"  # STAB1: admission, groups, ends, worker exits; bounded like the serving log
 MAX_RESTARTS, RESTART_WINDOW_S = 3, 600.0  # STAB1: a fourth worker loss within ten minutes stops recovery
+MAX_GROUP_MEMBERS = 32  # requests one group may serve over its life, its joiners included (the batch protocol's 32)
 RESTART_BACKOFF_S = (0.0, 5.0, 20.0)  # before the 1st, 2nd and 3rd attempt: device memory may free late
 # What a replacement must report as the first worker did; `engine` holds the tuned profile the learner is bound to.
 _IDENTITY_KEYS = ("model_id", "revision", "device", "execution_variant", "sources_sha256", "engine")
@@ -106,6 +107,7 @@ class _Session:
     end_ns: int | None = None    # RSI3-LIVE: when the scheduler retired it
     outcome: str | None = None   # RSI3-LIVE: ok, cancelled, else failed
     tokens: int = 0              # RSI3-LIVE: completion tokens delivered
+    prompt_tokens: int = 0       # AG1: the prompt's tokens, as the worker reported them
     group: int | None = None     # STAB1: the scheduler group that served it
     error: str | None = None     # STAB1: the error code delivered to the caller, if any
 
@@ -120,6 +122,8 @@ class ProductService:
     policy: ServingPolicy = ServingPolicy()   # RSI4; __init__ loads the stored one
     serving_log: ServingLog | None = None
     learning: Any = None  # RSI3-LIVE: an attached live_learning.LiveLearning owns each group decision
+    dispatch: Any = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; None keeps FIFO order
+    agent: Any = None  # AG1: an agent.Agent, also attached as `dispatch`, which decides and learns each group
     backend: Any = None
     _group_refused = False
     _gather_waited_ns = 0
@@ -152,6 +156,7 @@ class ProductService:
         self._completed = self._failed = self._cancelled = 0
         self._last_batch_size: int | None = None
         self._batch_count = 0
+        self._joined = 0  # requests that joined a running group (SERVE8, the dense plan's slot reuse)
         # START1: work the scheduler may run while nothing is waiting, given a "preempted" check.
         # It runs on this thread, so no request can reach the backend while it does.
         self.idle_task = None
@@ -178,14 +183,15 @@ class ProductService:
         with self._lock:
             result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self._backend_ready()),
                     "mode": self.settings["mode"],
-                    "execution": ("exact" if getattr(self.backend, "compute_dtype", None) is None
+                    "execution": ("numeric@dense" if getattr(self.backend, "engine_configuration", None) == "dense_stacked"
+                                  else "exact" if getattr(self.backend, "compute_dtype", None) is None
                                   else f"exact@{self.backend.compute_dtype}"),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
                                 else getattr(self.backend, "execution_variant", "reference")),
                     "loaded_model": self.spec.model_id if self.spec else None,
                     "queued_requests": self._pending.qsize() + len(self._carry), "active_requests": len(self._active),
                     "completed_requests": self._completed, "failed_requests": self._failed,
-                    "cancelled_requests": self._cancelled,
+                    "cancelled_requests": self._cancelled, "joined_requests": self._joined,
                     "optimization": optimization}
             if self._last_batch_size is not None:
                 result.update(last_batch_size=self._last_batch_size, batch_count=self._batch_count)
@@ -193,7 +199,40 @@ class ProductService:
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()
+        if self.agent is not None:
+            result["agent"] = self.agent.status()
+        elif self.dispatch is not None:
+            result["learned_dispatch"] = self.dispatch.status()
+        policy = self.policy
+        result["schedule"] = {"max_width": policy.max_width, "gather_ms": policy.gather_ms, "order": policy.order,
+                              "source": policy.source}
+        engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine")
+        if isinstance(engine, dict) and isinstance(engine.get("selected_knobs"), dict):  # KP1: which knobs serve
+            from .knob_profile import class_a_knobs
+
+            result["knobs"] = {"source": engine.get("profile_source"), "values": engine["selected_knobs"],
+                               "class_a": class_a_knobs(engine["selected_knobs"]) is not None}
         return result
+
+    def accepting(self) -> bool:
+        """HW1: whether `stream` would admit a request now (open, and a worker ready or being replaced)."""
+        with self._lock:
+            return not self._closed.is_set() and self._backend_ready()
+
+    def outstanding(self) -> int:
+        """HW1: admitted requests not yet retired, queued or in flight; what a device pool balances."""
+        with self._lock:
+            return len(self._sessions)
+
+    def holds(self, request_id: str) -> bool:
+        """HW1: whether this request id is admitted here and not yet retired."""
+        with self._lock:
+            return request_id in self._sessions
+
+    def admitted_requests(self) -> list[GenerationRequest]:
+        """LD1: the requests admitted here and not yet retired, which a learned placement reads."""
+        with self._lock:
+            return [session.request for session in self._sessions.values()]
 
     def note(self, event: str, **fields: Any) -> None:
         """STAB1: one lifecycle event: ids, counts, times and codes, never prompt or answer text. A worker
@@ -262,6 +301,45 @@ class ProductService:
         except ValueError as exc:
             raise InvalidRequest(str(exc)) from exc
         return self.learning_status()
+
+    def dispatch_status(self) -> dict[str, Any]:
+        from .learned_dispatch import status_of
+        return status_of(self.dispatch)
+
+    def dispatch_control(self, action: str) -> dict[str, Any]:
+        from .learned_dispatch import control
+        try:
+            if self.agent is not None:  # AG1: "off" withdraws and pauses, "on" resumes learning
+                return self.agent.control(action)
+            return control(self.dispatch, action)
+        except ValueError as exc:
+            raise InvalidRequest(str(exc)) from exc
+
+    def _agent_observe(self, group: list[_Session], replay: bool = False) -> None:
+        """AG1: a finished group's timings, in seconds (arrivals on the wall clock), and no text."""
+        agent = self.agent
+        if agent is None:
+            return
+        wall = time.time() - time.monotonic()
+        starts = [item.dispatched_ns for item in group if item.dispatched_ns is not None]
+        if not starts:
+            return
+        start = min(starts)
+        members = []
+        for item in group:
+            if item.first_ns is None or item.end_ns is None or item.joined:
+                return  # a group a request joined is not the one-group-at-a-time model the agent prices
+            messages = item.request.messages or ()
+            members.append({"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
+                            "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
+                            "prompt_tokens": item.prompt_tokens,
+                            "prompt_chars": len(messages[-1][1]) if messages else 0,
+                            "max_tokens": item.request.max_tokens, "tokens": item.tokens,
+                            "ok": item.outcome == "ok"})
+        try:
+            agent.observe_group(members, replay=replay)
+        except Exception:  # noqa: BLE001 - the agent never stops serving
+            agent.reason = "the agent failed while learning; the reference schedule serves"
 
     def models(self) -> list[dict[str, Any]]:
         return [{"id": spec.model_id, "object": "model", "owned_by": "local",
@@ -448,7 +526,20 @@ class ProductService:
         grace = (getattr(self, "settings", None) or {}).get("request_timeout_s") or 0.0
         return max(0.001, max(deadlines) - time.monotonic() + grace)
 
+    def _shortest_first(self) -> Any:
+        """Who decides whether a group starts shortest output limit first: an active learned dispatch (LD1),
+        a policy that always does (RL6), or nobody (arrival order, None). Read once per decision."""
+        dispatch = self.dispatch  # an operator may detach it while this runs
+        if dispatch is not None and dispatch.active:
+            return lambda requests: bool(dispatch.sjf(requests))
+        if self.policy.order == "sjf":
+            return lambda requests: True
+        return None
+
     def _next_session(self) -> _Session | None:
+        decide = self._shortest_first()
+        if decide is not None:
+            return self._next_sorted(decide)
         with self._lock:
             if self._carry:
                 return self._carry.popleft()
@@ -456,6 +547,44 @@ class ProductService:
             return self._pending.get(timeout=0.1)
         except queue.Empty:
             return None
+
+    def _order_waiting(self, decide: Any) -> None:
+        """Every waiting request into the carry, then shortest output limit first when `decide` says so for
+        this group (LD1's policy, or RL6's fixed schedule), else arrival order. A request waiting longer
+        than `SJF_AGE_S` starts by arrival. The caller holds `self._lock`."""
+        from .learned_dispatch import SJF_AGE_S
+
+        while True:
+            try:
+                self._carry.append(self._pending.get_nowait())
+            except queue.Empty:
+                break
+        now = time.monotonic_ns()
+        sjf = decide([session.request for session in self._carry])
+
+        def key(session: _Session) -> tuple[bool, int, int]:
+            if not sjf:
+                return (False, 0, session.submitted_ns)
+            aged = now - session.submitted_ns > SJF_AGE_S * 1e9
+            return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
+
+        waiting = sorted(self._carry, key=key)
+        self._carry.clear()
+        self._carry.extend(waiting)
+
+    def _next_sorted(self, decide: Any) -> _Session | None:
+        with self._lock:
+            self._order_waiting(decide)
+            if self._carry:
+                return self._carry.popleft()
+        try:
+            first = self._pending.get(timeout=0.1)
+        except queue.Empty:
+            return None
+        with self._lock:
+            self._carry.append(first)
+            self._order_waiting(decide)
+            return self._carry.popleft()
 
     def _batch_capacity(self) -> int:
         capacity = getattr(self.backend, "batch_capacity", 1)
@@ -465,8 +594,15 @@ class ProductService:
     def _group_for(self, first: _Session, width: int | None = None, gather_ms: int | None = None) -> list[_Session]:
         """Take only work already admitted, waiting at most the gather time for company.
 
-        ``width``/``gather_ms`` are a learner's decision (RSI3-LIVE); without one, the policy's."""
+        ``width``/``gather_ms`` are a learner's decision (RSI3-LIVE); without one, the policy's, or a
+        learned dispatch's width (LD1)."""
         self._group_refused, self._gather_waited_ns = False, 0
+        dispatch, decide = self.dispatch, self._shortest_first()
+        if decide is not None:
+            with self._lock:
+                self._order_waiting(decide)
+                if width is None and dispatch is not None and dispatch.active:
+                    width = dispatch.width([first.request] + [session.request for session in self._carry])
         capacity = self._batch_capacity() if width is None else min(self._batch_capacity(), width)
         gather_ms = self.policy.gather_ms if gather_ms is None else gather_ms
         if capacity == 1:
@@ -551,7 +687,7 @@ class ProductService:
         return count, [(item.submitted_ns, item.request) for item in oldest]
 
     def _replay_window(self, trace: list[tuple[float, int, int]], choose: Any,
-                       preempted: Any) -> dict[str, Any] | None:
+                       preempted: Any, skip_idle: bool = False, whole_queue: bool = False) -> dict[str, Any] | None:
         """RSI3-LIVE qualification: replay a metadata trace through the real backend.
 
         ``trace`` holds (arrival offset s, prompt characters, output limit); prompts are a fixed
@@ -561,12 +697,19 @@ class ProductService:
         admitted (RSI3-LIVE-P2): every replayed request stops at its next token boundary (or before
         its prefill), the window returns None, and that request's timeline is recorded. Request
         counters and the RSI4 log are left untouched. New replay work is refused until every
-        replayed request of an earlier window has ended.
+        replayed request of an earlier window has ended. With ``skip_idle`` (AG1), a stretch in which
+        nothing waits and nothing runs is skipped: the next arrival is released at once and the rest of
+        the schedule moves up with it. Every time is measured from a request's own scheduled arrival
+        and the server is idle in between, so no cost changes; the window only takes less time.
+        ``whole_queue`` (AG1) shows ``choose`` every waiting request, as the live schedule sees them, instead
+        of the first eight.
         """
+        from .learned_dispatch import SJF_AGE_S
         from .live_learning import filler
 
         if (self.backend is None or not self.backend.ready or self.spec is None
-                or (self.learning is not None and self.learning.replay_blocked)):
+                or (self.learning is not None and self.learning.replay_blocked)
+                or getattr(self, "_replay_leftovers", None) is not None):
             return None
         timeout = self.settings["request_timeout_s"] or 120
         deadline = time.monotonic() + timeout + (trace[-1][0] if trace else 0.0)
@@ -637,14 +780,24 @@ class ProductService:
             while (admitted < len(sessions) or waiting) and not aborted.is_set():
                 admit()
                 if not waiting:
-                    aborted.wait(min(0.01, max(0.0, (due[admitted] - time.monotonic_ns()) / 1e9)))
+                    ahead = due[admitted] - time.monotonic_ns()
+                    if skip_idle and ahead > 0:  # the server is idle until then: release it now
+                        due[admitted:] = [moment - ahead for moment in due[admitted:]]
+                        continue
+                    aborted.wait(min(0.01, max(0.0, ahead / 1e9)))
                     continue
                 now = time.monotonic_ns()
                 idle_s = (now - last) / 1e9 if last is not None else 0.0
                 rate = 0.0 if gap is None else 1.0 / max(gap, idle_s, 1e-3)  # the live estimate's formula
-                width, gather_ms = choose(len(waiting), [(item.submitted_ns, item.request) for item in waiting[:8]],
-                                          rate, now)
+                decision = choose(len(waiting), [(item.submitted_ns, item.request)
+                                                 for item in (waiting if whole_queue else waiting[:8])], rate, now)
+                width, gather_ms = decision[0], decision[1]
                 width = max(1, min(width, self._batch_capacity()))
+                if len(decision) > 2 and decision[2]:  # AG1: shortest output limit first, as `_order_waiting`
+                    waiting.sort(key=lambda item: (now - item.submitted_ns <= SJF_AGE_S * 1e9,
+                                                   item.request.max_tokens
+                                                   if now - item.submitted_ns <= SJF_AGE_S * 1e9 else 0,
+                                                   item.submitted_ns))
                 until = time.monotonic_ns() + gather_ms * 1_000_000
                 while (len(waiting) < width and admitted < len(sessions) and time.monotonic_ns() < until
                        and not aborted.is_set()):
@@ -665,6 +818,8 @@ class ProductService:
                 for item in group:
                     item.end_ns = item.end_ns or time.monotonic_ns()
                     item.outcome = item.outcome or "failed"
+                if not aborted.is_set():
+                    self._agent_observe(group, replay=True)
                 _set_replay_phase(state, "prestart")
         finally:
             if aborted.is_set() or admitted < len(sessions) or waiting:
@@ -685,10 +840,11 @@ class ProductService:
                 (self._completed, self._failed, self._cancelled, self._last_batch_size, self._batch_count) = saved
             self.serving_log = log
             unsettled = [thread for thread in threads if thread.is_alive()]
-            if unsettled and self.learning is not None:
+            if unsettled:
                 # Old model work is not provably over: no new replay until it is.
                 self._replay_leftovers = unsettled
-                self.learning.replay_blocked = "an earlier replay window has not ended yet"
+                if self.learning is not None:
+                    self.learning.replay_blocked = "an earlier replay window has not ended yet"
         if aborted.is_set():
             self._replay_first_pending = window
             return None
@@ -735,6 +891,16 @@ class ProductService:
                 continue
             session = self._next_session()
             if session is None:
+                if self.agent is not None:  # AG1: plan, explore and qualify while nothing waits; demand preempts
+                    leftovers = getattr(self, "_replay_leftovers", None)
+                    if leftovers is not None and not any(thread.is_alive() for thread in leftovers):
+                        self._replay_leftovers = None
+                    try:
+                        self.agent.idle(lambda: not self._pending.empty() or self._closed.is_set(),
+                                        replay=lambda trace, choose, preempted: self._replay_window(
+                                            trace, choose, preempted, skip_idle=True, whole_queue=True))
+                    except Exception:  # noqa: BLE001 - the agent never stops serving
+                        self.agent.reason = "the agent failed while idle; the reference schedule serves"
                 if self.learning is not None:  # RSI3-LIVE: dream while nothing waits; demand preempts
                     leftovers = getattr(self, "_replay_leftovers", None)
                     if leftovers is not None and not any(thread.is_alive() for thread in leftovers):
@@ -759,6 +925,8 @@ class ProductService:
             idle_since = float("inf")
             taken = time.monotonic_ns()
             group = [session]
+            if self.agent is not None:
+                self.agent.busy()
             decision = None
             if self.learning is not None:
                 try:
@@ -801,6 +969,7 @@ class ProductService:
                 self._note_worker_exit()
                 for item in group:
                     self._retire(item)
+                self._agent_observe(group)
                 if decision is not None:
                     try:
                         waiting, oldest = self._queued()
@@ -888,6 +1057,12 @@ class ProductService:
                 session.terminal_seen = True
             elif kind == "error":
                 raise BackendUnavailable("model worker failed")
+            elif kind == "rejected" and done is None and generated == 0:
+                # The worker rejected this grouped request alone (protocol 2); the single path's answer.
+                limit = event.get("limit")
+                raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token "
+                                     + ("context limit" if event.get("reason") == "context_limit"
+                                        else "limit of this server's engine"))
             else:
                 raise BackendUnavailable("worker emitted an invalid event")
         if done is None:
@@ -910,6 +1085,7 @@ class ProductService:
             self._completed += 1
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
+        session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)
         session.end_ns = time.monotonic_ns()
         if self.serving_log is not None:
             end = time.monotonic_ns()
@@ -1062,9 +1238,15 @@ class ProductService:
                                                                   for item in live}
         consumers: list[threading.Thread] = []
         joined: list[_Session] = []
+        finished: set[str] = set()
+        members = [item.request.request_id for item in live]  # every member over the group's life
+        unheard: dict[str, _Session] = {}  # joiners without a frame yet; their consumer starts with the first
+        # KB1: the dense plan frees a member's slot when it ends, so a newcomer may take it; every other
+        # engine counts members over the group's life, as measured (SERVE8, RL6, LD1-V).
+        reuses = getattr(self.backend, "reuses_slots", False) is True
 
         def consume(item: _Session) -> None:
-            queues[item.request.request_id] = queue.Queue()
+            queues.setdefault(item.request.request_id, queue.Queue())
             consumer = threading.Thread(target=self._deliver, name="ironmule-batch-stream", daemon=True,
                                         args=(item, iter(queues[item.request.request_id].get, None), handled))
             consumers.append(consumer)
@@ -1074,9 +1256,13 @@ class ProductService:
             """SERVE8: requests waiting now join the running group while fewer than its capacity
             stream at once; the backend's metadata gate decides as for a new group."""
             taken = []
-            if not self.policy.join:  # RSI4: a learned policy may queue newcomers instead
+            # RSI4: a learned policy may queue newcomers instead. SERVE8 killed joining for grouped batch-1, where
+            # every joiner slows every step; the dense plan's freed slot costs a newcomer about 3 ms a step (KB1-2)
+            # and filling it is the point, so a slot-reusing backend always takes newcomers.
+            if not self.policy.join and not reuses:
                 return taken
-            while len(consumers) < self._batch_capacity():  # members over the group's life, as before STAB1
+            while ((len(members) - len(finished) if reuses else len(members)) < self._batch_capacity()
+                   and len(members) < MAX_GROUP_MEMBERS):  # members over the group's life, as before STAB1
                 with self._lock:
                     item = self._carry.popleft() if self._carry else None
                 if item is None:
@@ -1089,20 +1275,26 @@ class ProductService:
                         self._carry.appendleft(item)  # keeps its place; the scheduler serves it next
                     break
                 item.dispatched_ns = time.monotonic_ns()
-                item.joined, item.width = True, len(consumers) + 1
+                item.joined, item.width = True, len(members) + 1
                 item.group = live[0].group
                 self.note("join", id=item.request.request_id, group=item.group)
                 with self._lock:
                     self._active.add(item.request.request_id)
-                consume(item)
+                queues[item.request.request_id] = queue.Queue()
+                unheard[item.request.request_id] = item
+                members.append(item.request.request_id)
                 joined.append(item)
                 taken.append((item.request, item.backend_cancel))
             return taken
 
         def deliver(request_id: str, event: dict[str, Any]) -> None:
+            if request_id in unheard:
+                consume(unheard.pop(request_id))
             queues[request_id].put(event)
-            if event.get("type") == "done":  # STAB1: a finished member ends now, not when its group does
+            # STAB1: a finished member ends now, not when its group does; a rejected one never started.
+            if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
+                finished.add(request_id)
 
         queues.clear()
         for item in live:
@@ -1114,10 +1306,24 @@ class ProductService:
             )
             if not isinstance(rows, list) or len(rows) != len(live) + len(joined):
                 raise BackendUnavailable("model worker returned an invalid batch")
+            handed_back = {row.get("request_id") for row in rows if isinstance(row, dict) and row.get("unserved")}
+            for item in reversed([item for item in joined if item.request.request_id in handed_back]):
+                if unheard.pop(item.request.request_id, None) is None:
+                    raise BackendUnavailable("model worker handed back a request it served")
+                queues.pop(item.request.request_id)
+                joined.remove(item)
+                item.joined, item.width, item.group, item.dispatched_ns = False, 1, None, None
+                self.note("join_returned", id=item.request.request_id)
+                with self._lock:  # it never ran: back to the front of the queue, served by the next group
+                    self._active.discard(item.request.request_id)
+                    self._carry.appendleft(item)
             with self._lock:
                 self._last_batch_size = len(live) + len(joined)
                 self._batch_count += 1
+                self._joined += len(joined)
         finally:
+            for item in list(unheard.values()):  # the run failed before they streamed: they report it too
+                consume(unheard.pop(item.request.request_id))
             for request_id in list(queues):
                 queues[request_id].put(None)
             for consumer in consumers:
@@ -1139,6 +1345,11 @@ class ProductService:
         if backend is not None:
             backend.close()
         self._thread.join(timeout=30.0 if restarting else 2.0)
+        if self.agent is not None:
+            try:
+                self.agent.close()  # stops its planner, persists what it learned
+            except Exception:  # noqa: BLE001
+                pass
         if self.learning is not None:
             try:
                 self.learning.close()  # persists experience and policy state

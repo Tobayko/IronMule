@@ -32,7 +32,11 @@
 
 ## What is IronMule?
 
-**IronMule is an open-source local LLM inference runtime and OpenAI-compatible server for Apple Silicon Macs (Metal) and Linux machines with an NVIDIA GPU (CUDA), and — more slowly — Linux machines with only a CPU.** It runs on [MLX](https://github.com/ml-explore/mlx), serving models such as Gemma 3 fully offline, on your own hardware, by reusing work, skipping work that is not needed, and grouping requests — without changing the output by default. It ships as a one-line installer, an OpenAI-compatible HTTP server, and a three-line Python API.
+**IronMule runs AI language models on your own computer: up to 1.82× faster with exactly the same answers, or up to 5× with an opt-in mode on older NVIDIA graphics cards.** It works on Apple Silicon Macs and on Linux PCs with an NVIDIA GPU (more slowly, also on a CPU alone), fully offline. It is fast because it reuses work, skips work that is not needed and answers several questions together. Each speed-up is checked to give the same answer as the normal path before it is used. IronMule is built on [MLX](https://github.com/ml-explore/mlx) and runs models such as Gemma 3 and Qwen 3. You install it with one line, and you can use it as a local chat server or from three lines of Python.
+
+**The project's main goal is the IronMule agent:** an AI inside the server that decides on its own how requests run on
+your hardware, keeps learning by reinforcement learning while it serves, and decides in microseconds. It serves a
+strategy only after it has proven it faster on your machine. See [The IronMule agent](#the-ironmule-agent-the-projects-main-goal).
 
 <a href="docs/assets/ironmule-live-race.mp4"><img src="docs/assets/ironmule-live-race.gif" alt="Six questions answered side by side on an Apple M1 Max with Gemma 3 1B: optimisations off in 2.11 s, IronMule on in 1.28 s, every token identical" width="100%"></a>
 
@@ -82,7 +86,7 @@ ironmule models add mlx-community/gemma-3-1b-it-4bit --download
 ironmule serve --model mlx-community/gemma-3-1b-it-4bit
 ```
 
-`ironmule doctor --json` gives a machine-readable report. The server listens on `http://127.0.0.1:8080`: open it in a browser, or call the OpenAI-compatible API:
+`ironmule doctor --json` gives a machine-readable report. The server listens on `http://127.0.0.1:8080`: open it in a browser, or call its chat API:
 
 ```bash
 curl http://127.0.0.1:8080/v1/chat/completions \
@@ -103,6 +107,24 @@ print(result.text)
 ```
 
 `Runtime.load` uses a model already in your Hugging Face cache (`hf download mlx-community/gemma-3-4b-it-4bit`). More: [docs/RUNTIME.md](docs/RUNTIME.md).
+
+## The IronMule agent (the project's main goal)
+
+`ironmule serve --agent on` hands scheduling to the IronMule agent, an AI that runs inside the server. It is
+opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
+
+- **It decides.** At every group start it chooses the order (shortest answer first or arrival order) and how many
+  requests run together. Each decision is a few dot products and takes microseconds. Answers never change.
+- **It learns all the time.** Every finished group updates its model of what this machine's work costs. Every
+  finished request goes into a memory of arrival times and lengths, with no text. While the server is idle, a
+  separate planner process trains a new strategy by reinforcement learning in a simulation of this machine.
+- **It proves before it serves.** A new strategy serves only after it beats the current one in replays of recorded
+  traffic on the real model, with identical answers, by more than two identical runs differ. Errors, failed
+  requests or `POST /v1/ironmule/dispatch {"action": "off"}` withdraw it for good. A real request always
+  interrupts the agent's idle work.
+
+`GET /health` shows what it learned under `agent`: the fitted costs, the plans, each candidate's comparison and what
+serves now.
 
 ## It learns from your machine
 

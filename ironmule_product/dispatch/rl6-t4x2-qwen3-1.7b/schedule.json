@@ -1,0 +1,30 @@
+{
+ "binding": {
+  "devices": 2,
+  "engine": "tuned",
+  "gpu": "Tesla T4",
+  "model_id": "mlx-community/Qwen3-1.7B-bf16",
+  "revision": "9cd6692855d3e06772228e9a962b2606359b2d24"
+ },
+ "domain": [
+  "quiet",
+  "bursts",
+  "spike"
+ ],
+ "experiment": "LD1-V-run1-20261029",
+ "gain": 0.18361036534612918,
+ "gain_ci95": [
+  0.14924781220032934,
+  0.22165187214187165
+ ],
+ "noise": 0.08077570906886157,
+ "policy": {
+  "gather_ms": 0,
+  "max_width": 2,
+  "order": "sjf"
+ },
+ "rival": "shortest/w8/g0",
+ "schema": "ironmule.schedule_evidence.v1",
+ "sha256": "71a8c80219d93f5c8fc218fa12a9adb4b1e336a2db3c027b2c808a96dcc74052",
+ "verdict": "pass"
+}

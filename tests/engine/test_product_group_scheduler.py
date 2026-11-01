@@ -74,6 +74,7 @@ def _service(backend: _Transport) -> ProductService:
     service._completed = service._failed = service._cancelled = 0
     service._last_batch_size = None
     service._batch_count = 0
+    service._joined = 0
     return service
 
 
@@ -272,3 +273,124 @@ def test_a_lone_stream_runs_as_a_group_so_the_next_chat_can_join_it():
     service._perform_batch([alone])
     assert backend.batch_calls == [["a"]] and backend.joined == ["b"]
     assert service._completed == 2 and service._pending.unfinished_tasks == 0
+
+
+class _SlotTransport(_Transport):
+    """KB1: a streaming worker whose first member ends before the others, then asks for joiners again."""
+
+    streams_batches = True
+    batch_capacity = 2
+
+    def __init__(self, reuses_slots: bool) -> None:
+        super().__init__()
+        self.reuses_slots = reuses_slots
+        self.joined_rounds: list[list[str]] = []
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+
+        def done(rid):
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+
+        for _ in range(3):  # each round: who may join now, then the oldest member still running ends
+            fresh = [request.request_id for request, _ in joins()]
+            self.joined_rounds.append(fresh)
+            members += fresh
+            running = [rid for rid in members if rid not in self.ended]
+            if running:
+                self.ended.add(running[0])
+                done(running[0])
+        for rid in members:
+            if rid not in self.ended:
+                self.ended.add(rid)
+                done(rid)
+        return [{"request_id": rid, "events": [], "metadata": {}} for rid in members]
+
+
+def test_a_dense_group_lets_a_newcomer_take_a_freed_slot_and_other_engines_count_members_over_its_life():
+    for reuses, expected in ((True, [[], ["c"], ["d"]]), (False, [[], [], []])):
+        backend = _SlotTransport(reuses)
+        backend.ended = set()
+        service = _service(backend)
+        service.policy = ServingPolicy(join=True)
+        sessions = [_Session(_request(value), None) for value in ("a", "b", "c", "d")]
+        for waiting in sessions[2:]:
+            service._pending.put(waiting)
+        service._perform_batch(sessions[:2])
+        assert backend.joined_rounds == expected, reuses
+        assert service._completed == 2 + sum(map(len, expected))
+        assert service._joined == sum(map(len, expected))  # what /health reports as joined_requests
+
+
+
+def test_a_slot_reusing_backend_takes_newcomers_without_the_join_policy_and_others_do_not():
+    for reuses, expected in ((True, [[], ["c"], ["d"]]), (False, [[], [], []])):
+        backend = _SlotTransport(reuses)
+        backend.ended = set()
+        service = _service(backend)
+        service.policy = ServingPolicy()  # join off, the default since SERVE8
+        sessions = [_Session(_request(value), None) for value in ("a", "b", "c", "d")]
+        for waiting in sessions[2:]:
+            service._pending.put(waiting)
+        service._perform_batch(sessions[:2])
+        assert backend.joined_rounds == expected, reuses
+
+
+class _LateJoinTransport(_SlotTransport):
+    """The worker ended the run before the join reached it: the joiner comes back unserved."""
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+        for rid in members:
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+        late = [request.request_id for request, _ in joins()]  # taken just as the run ended
+        self.late = late
+        return ([{"request_id": rid, "events": [], "metadata": {}} for rid in members]
+                + [{"request_id": rid, "events": [], "metadata": None, "unserved": True} for rid in late])
+
+
+def test_a_joiner_the_worker_never_served_goes_back_to_the_front_of_the_queue():
+    backend = _LateJoinTransport(reuses_slots=True)
+    service = _service(backend)
+    service.policy = ServingPolicy()
+    first, second, waiting, behind = (_Session(_request(value), None) for value in ("a", "b", "c", "d"))
+    service._pending.put(waiting)
+    service._pending.put(behind)
+    service._perform_batch([first, second])
+    assert backend.late == ["c", "d"]
+    assert [item.request.request_id for item in service._carry] == ["c", "d"]  # in order, before anything new
+    assert waiting.events.empty() and not waiting.joined and waiting.outcome is None  # no error, not retired
+    assert service._completed == 2 and service._failed == 0 and service._last_batch_size == 2
+
+
+class _RejectingTransport(_SlotTransport):
+    """Protocol 2: the worker rejects member `b` as too long to run, before any token; the others run."""
+
+    def complete_batch(self, requests, *, cancels, timeout, on_event=None, joins=None):
+        members = [request.request_id for request in requests]
+        on_event("b", {"type": "rejected", "request_id": "b", "code": "invalid_request", "reason": "engine_limit",
+                       "limit": 2048})
+        self.joined = [request.request_id for request, _ in joins()]  # b's place is free at once
+        for rid in [rid for rid in members if rid != "b"] + self.joined:
+            on_event(rid, {"type": "done", "request_id": rid, "finish_reason": "length", "prompt_tokens": 1,
+                           "completion_tokens": 1})
+        return [{"request_id": rid, "events": [], "metadata": {}} for rid in members + self.joined]
+
+
+def test_a_member_the_worker_rejects_as_too_long_fails_alone_with_a_400_and_frees_its_place():
+    from ironmule_product.errors import InvalidRequest
+
+    backend = _RejectingTransport(reuses_slots=True)
+    service = _service(backend)
+    service.policy = ServingPolicy()
+    first, too_long, waiting = (_Session(_request(value), None) for value in ("a", "b", "c"))
+    service._pending.put(waiting)
+    service._perform_batch([first, too_long])
+    error = too_long.events.get_nowait()
+    assert isinstance(error, InvalidRequest) and error.status == 400 and "2048-token" in str(error)
+    assert too_long.events.empty()
+    assert backend.joined == ["c"]  # its place went to the next request
+    assert [first.events.get_nowait()["type"], waiting.events.get_nowait()["type"]] == ["done", "done"]
+    assert service._completed == 2 and service._failed == 1

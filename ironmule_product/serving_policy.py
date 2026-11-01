@@ -15,6 +15,7 @@ the RSI4 run compares it with fixed SERVE8 on held-out traffic.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import hashlib
 import json
 from pathlib import Path
 import statistics
@@ -25,6 +26,8 @@ POLICY_FILE = "serving-policy.json"
 LOG_FILE = "serving-log.jsonl"
 WIDTHS = (1, 2, 4, 8)
 GATHERS_MS = (0, 50, 150, 400)
+ORDERS = ("fifo", "sjf")
+SCHEDULE_SCHEMA = "ironmule.schedule_evidence.v1"
 
 
 @dataclass(frozen=True)
@@ -33,6 +36,7 @@ class ServingPolicy:
     join: bool = False  # SERVE8 killed: joining cost 1B 14 % aggregate tok/s with 4 chats (SERVE8c)
     gather_ms: int = 0
     source: str = "default"
+    order: str = "fifo"  # RL6: "sjf" starts the waiting request with the smallest output limit first
 
     def __post_init__(self) -> None:
         if not (type(self.max_width) is int and 1 <= self.max_width <= 32):
@@ -41,6 +45,8 @@ class ServingPolicy:
             raise ValueError("join must be a bool")
         if not (type(self.gather_ms) is int and 0 <= self.gather_ms <= 2000):
             raise ValueError("gather_ms must be an int in 0..2000")
+        if self.order not in ORDERS:
+            raise ValueError("order must be fifo or sjf")
 
 
 def load_policy(root: Path) -> ServingPolicy:
@@ -49,9 +55,47 @@ def load_policy(root: Path) -> ServingPolicy:
     path = Path(root) / POLICY_FILE
     try:
         data = json.loads(path.read_text())
-        return ServingPolicy(**{k: data[k] for k in ("max_width", "join", "gather_ms", "source")})
+        return ServingPolicy(**{k: data[k] for k in ("max_width", "join", "gather_ms", "source")},
+                             order=data.get("order", "fifo"))
     except (OSError, ValueError, KeyError, TypeError):
         return ServingPolicy()
+
+
+def stored_policy_exists(root: Path | None) -> bool:
+    return root is not None and (Path(root) / POLICY_FILE).exists()
+
+
+def qualified_schedule(binding: dict[str, Any], folder: Path | None = None) -> tuple[ServingPolicy, dict] | None:
+    """RL6/LD1-V: a fixed schedule shipped with the hardware comparison that qualified it, for exactly the
+    model, revision, GPU name, GPU count and engine it was measured on. Anything else, or a record whose digest,
+    schema or verdict does not hold, gives None and the default schedule serves."""
+    folder = Path(__file__).with_name("dispatch") if folder is None else Path(folder)
+    for path in sorted(folder.glob("*/schedule.json")):
+        try:
+            record = json.loads(path.read_text())
+            body = {k: v for k, v in record.items() if k != "sha256"}
+            if (hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest() != record.get("sha256")
+                    or body.get("schema") != SCHEDULE_SCHEMA or body.get("verdict") != "pass"):
+                continue
+            wanted = body.get("binding") or {}
+            if any(wanted.get(key) != binding.get(key) for key in {"model_id", "revision", "gpu", "devices", *wanted}):
+                continue
+            policy = body["policy"]
+            return (ServingPolicy(max_width=policy["max_width"], gather_ms=policy["gather_ms"],
+                                  order=policy["order"], source=f"qualified:{body['experiment']}"), body)
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return None
+
+
+def schedule_record(experiment: str, binding: dict[str, Any], policy: ServingPolicy, domain: list[str],
+                    rival: str, gain: float, gain_ci95: list[float], noise: float) -> dict[str, Any]:
+    """The record `qualified_schedule` accepts, from a passed comparison; the verdict is the bound's."""
+    body = {"schema": SCHEDULE_SCHEMA, "experiment": experiment, "binding": binding,
+            "policy": {"max_width": policy.max_width, "gather_ms": policy.gather_ms, "order": policy.order},
+            "domain": list(domain), "rival": rival, "gain": gain, "gain_ci95": list(gain_ci95), "noise": noise,
+            "verdict": "pass" if gain_ci95[0] > noise else "fail"}
+    return {**body, "sha256": hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
 
 
 def save_policy(root: Path, policy: ServingPolicy, evidence: dict[str, Any] | None = None) -> Path:

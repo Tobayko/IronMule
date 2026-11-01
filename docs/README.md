@@ -2,6 +2,8 @@
 
 ## User documentation
 
+- **The IronMule agent (the project's main goal):** [HTTP.md](HTTP.md#routes) (`--agent on`), its protocol and every
+  result in [BACKLOG.md](BACKLOG.md) under AG1, and its limits in [LIMITS.md](LIMITS.md).
 - [BENCHMARKS.md](BENCHMARKS.md) — measured throughput by model, device and mode.
 - [HTTP.md](HTTP.md) — the OpenAI-compatible server: routes, auth, limits.
 - [RUNTIME.md](RUNTIME.md) — the Python `Runtime`/`Engine` API and execution plans.

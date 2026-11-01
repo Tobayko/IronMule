@@ -28,7 +28,7 @@ if __package__ in (None, ""):
 from ironmule_product.model_policy import ModelPolicyError, config_model_type, validate_model_config
 
 
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2  # 2: a grouped request too long to run is rejected alone (`rejected` frame)
 MAX_LINE = 1024 * 1024
 CONTEXT_LIMIT = 8192
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
@@ -377,6 +377,12 @@ def _turn_boundaries(tokenizer: Any, messages: list[dict[str, Any]], prompt_ids:
     return cuts
 
 
+def _stop_ids(engine_bridge: Any, tokenizer: Any) -> set[int]:
+    """The ids the engine stops on (`ironmule.tune._eos_ids`, which may add `eos_token_id`), else the tokenizer's."""
+    ids = getattr(engine_bridge, "eos_ids", None)
+    return set(ids()) if callable(ids) else set(getattr(tokenizer, "eos_token_ids", ()) or ())
+
+
 def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], max_tokens: int,
                    prompt_tokens: int, holder: dict[str, Any], consume: Any,
                    boundaries: list[int] | None = None) -> dict[str, Any] | None:
@@ -384,30 +390,33 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
     mlx-lm streams, and return the terminal frame ``consume`` produced.
 
     The engine calls back on this thread (a second thread lost 0.5-0.7 s of the first token to the
-    GIL on Gemma 3 1B, SERVE6b). One token is held back so the last can carry the finish reason.
-    After a cancellation the engine runs to its end and nothing more is sent. The streamed tokens
-    must equal the engine's result.
+    GIL on Gemma 3 1B, SERVE6b). Each token is sent as it is read back; the one that ends the
+    answer (EOS or the output limit, the only ways the engine stops) carries the final text and
+    the finish reason. Holding every token for the next one, as before, delayed the first by a
+    whole chained readback (KP1 run 1: 56 ms at readback 4). After a cancellation the engine runs
+    to its end and nothing more is sent. The streamed tokens must equal the engine's result.
     """
-    eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+    eos = _stop_ids(engine_bridge, tokenizer)
     detokenizer = tokenizer.detokenizer
     streamed: list[int] = []
-    state: dict[str, Any] = {"held": None, "terminal": None}
+    state: dict[str, Any] = {"terminal": None}
 
     def on_token(token: int) -> None:
         streamed.append(token)
         if state["terminal"] is not None or "error" in state:
             return
         try:
-            if state["held"] is not None:
-                state["terminal"] = consume(state["held"])
-                if state["terminal"] is not None:
-                    return
+            last = token in eos or len(streamed) >= max_tokens
             text = ""
             if token not in eos:
                 detokenizer.add_token(token)
                 text = detokenizer.last_segment
-            state["held"] = SimpleNamespace(token=token, text=text, prompt_tokens=prompt_tokens,
-                                            generation_tokens=len(streamed), finish_reason=None)
+            if last:
+                detokenizer.finalize()
+                text += detokenizer.last_segment
+            state["terminal"] = consume(SimpleNamespace(
+                token=token, text=text, prompt_tokens=prompt_tokens, generation_tokens=len(streamed),
+                finish_reason=("stop" if token in eos else "length") if last else None))
         except Exception as exc:  # raised after the engine returns, never inside its executor
             state["error"] = exc
 
@@ -418,13 +427,11 @@ def _engine_stream(engine_bridge: Any, tokenizer: Any, prompt_ids: list[int], ma
         raise state["error"]
     if not streamed or streamed != list(result.tokens):
         raise RuntimeError("streamed tokens differ from the engine result")
-    if state["terminal"] is not None:
-        return state["terminal"]
-    final = state["held"]
-    detokenizer.finalize()
-    final.text += detokenizer.last_segment
-    final.finish_reason = result.finish_reason
-    return consume(final)
+    terminal = state["terminal"]
+    if terminal is None or (terminal["finish_reason"] != "cancelled"
+                            and terminal["finish_reason"] != result.finish_reason):
+        raise RuntimeError("the engine's answer ended other than its last streamed token")
+    return terminal
 
 
 def _generate(
@@ -608,9 +615,41 @@ def _generate(
     return terminal
 
 
+class RequestTooLong(ValueError):
+    """A request whose prompt and output limit exceed the context limit, or the engine's own (KB1: the dense
+    plan's slot). In a group it is rejected alone, as the single path rejects it, and the others run."""
+
+    def __init__(self, request_id: str, reason: str, limit: int) -> None:
+        super().__init__(reason)
+        self.request_id, self.reason, self.limit = request_id, reason, limit
+
+
+def _rejected(batch_id: str, error: RequestTooLong) -> dict[str, Any]:
+    return {"type": "rejected", "batch_id": batch_id, "request_id": error.request_id, "code": "invalid_request",
+            "reason": error.reason, "limit": error.limit}
+
+
+def _render_rows(requests: list[Any], model_id: str, tokenizer: Any, batch_id: str, *, allow_stream: bool,
+                 limit: int | None) -> tuple[list[tuple[str, list[int], int]], list[str]]:
+    """The rows that fit, and every request id in order; each request too long to run gets its `rejected` frame
+    here. Any other invalid request still fails the batch: the service validated it, so it is a protocol fault."""
+    ids = [request.get("request_id") if isinstance(request, dict) else None for request in requests]
+    if len(set(map(str, ids))) != len(ids):
+        raise ValueError("duplicate request id")
+    rows = []
+    for request in requests:
+        try:
+            rows.append(_render_engine_request(request, model_id, tokenizer, allow_stream=allow_stream,
+                                               limit=limit))
+        except RequestTooLong as error:
+            _emit(_rejected(batch_id, error))
+    return rows, ids
+
+
 def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: Any,
-                           allow_stream: bool = False) -> tuple[str, list[int], int]:
-    """Apply exactly the single-request identity and rendering validation."""
+                           allow_stream: bool = False, limit: int | None = None) -> tuple[str, list[int], int]:
+    """Apply exactly the single-request identity and rendering validation; `limit` is the engine's own bound
+    on prompt plus output tokens, if it has one below the context limit."""
     request_id = command.get("request_id")
     if not isinstance(request_id, str) or not request_id or len(request_id) > 256:
         raise ValueError("invalid request id")
@@ -634,13 +673,18 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
         raise ValueError("invalid prompt ids")
     ids = list(raw_ids)
     if len(ids) + max_tokens > CONTEXT_LIMIT:
-        raise ValueError("context limit")
+        raise RequestTooLong(request_id, "context_limit", CONTEXT_LIMIT)
+    if limit is not None and len(ids) + max_tokens > limit:
+        raise RequestTooLong(request_id, "engine_limit", limit)
     return request_id, ids, max_tokens
 
 
 # Engine configurations whose worker accepts grouped requests: the historical throughput
 # candidates (buffered) and the current profile's streaming groups (SERVE4).
-BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile"})
+BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked"})
+# The ones whose groups stream, take joins and stop on cancel (SERVE4, SERVE8): the client sends them lone
+# streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
+STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked"})
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -675,19 +719,24 @@ def _detokenizer_pool(tokenizer: Any) -> _DetokenizerPool:
 class _BatchStream:
     """One grouped request's tokens as the engine reads them back (SERVE4).
 
-    One token is held back so the last can carry the final text; a cancelled request stops
-    sending while the group runs on. Errors are kept and raised after the engine returns,
-    never inside its executor."""
+    Each token is sent as it is read back; the one that ends the answer (EOS or the output limit)
+    carries the final text, and its `done` follows at once, so the member leaves the group's
+    caller then rather than when the whole run ends (H9). Holding every token for the next, as
+    before, delayed the first by a whole chained readback (KP1 run 1). A cancelled request stops
+    sending while the group runs on. Errors are kept and raised after the engine returns, never
+    inside its executor; the streamed tokens are still checked against the run's result there."""
 
     def __init__(self, batch_id: str, request_id: str, prompt_tokens: int, limit: int, pool: _DetokenizerPool,
-                 cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any):
+                 cancellations: dict[str, threading.Event], lock: threading.Lock, tokenizer: Any,
+                 eos: set[int] | None = None, terminal: Any = None):
         self.batch_id, self.request_id, self.prompt_tokens, self.limit = batch_id, request_id, prompt_tokens, limit
         self.pool, self.detokenizer = pool, pool.acquire()
         self.cancellations, self.lock = cancellations, lock
-        self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ())
+        self.eos = set(getattr(tokenizer, "eos_token_ids", ()) or ()) if eos is None else set(eos)
+        self.terminal = terminal  # (finish reason, completion tokens, computed tokens) -> the member's done
+        self.finished: str | None = None  # the finish reason its done carried, once sent
         self.tail = ""
         self.tokens: list[int] = []
-        self.held: dict[str, Any] | None = None
         self.sent = 0
         self.stopped = False
         self.error: BaseException | None = None
@@ -701,18 +750,22 @@ class _BatchStream:
                 self.stopped = self.cancellations[self.request_id].is_set()
             if self.stopped:
                 return
-            if self.held is not None:
-                _emit(self.held)
-                self.sent += 1
             text = ""
             if token not in self.eos:
                 self.detokenizer.add_token(token)
                 text = self.detokenizer.last_segment
-            self.held = {"type": "token", "batch_id": self.batch_id, "request_id": self.request_id,
-                         "text": text, "token_id": token, "prompt_tokens": self.prompt_tokens,
-                         "completion_tokens": self.sent + 1}
-            if token in self.eos or len(self.tokens) >= self.limit:
+            last = token in self.eos or len(self.tokens) >= self.limit
+            if last:
                 self._release()  # its last token: the detokenizer serves the next admitted stream
+                text += self.tail
+                self.tail = ""
+            _emit({"type": "token", "batch_id": self.batch_id, "request_id": self.request_id, "text": text,
+                   "token_id": token, "prompt_tokens": self.prompt_tokens, "completion_tokens": self.sent + 1})
+            self.sent += 1
+            if last and self.terminal is not None:
+                finish = "stop" if token in self.eos else "length"
+                _emit(self.terminal(finish, self.sent, len(self.tokens)))
+                self.finished = finish
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
 
@@ -724,7 +777,7 @@ class _BatchStream:
             self.detokenizer = None
 
     def finish(self, result: Any) -> int:
-        """Send the held token with the final text; returns how many tokens were sent."""
+        """Check the streamed tokens against the engine's result; returns how many were sent."""
         if self.error is not None:
             raise self.error
         with self.lock:
@@ -736,10 +789,6 @@ class _BatchStream:
                                              and self.tokens[:len(produced)] == produced):
             raise RuntimeError("streamed tokens differ from the engine result")
         self._release()
-        if not self.stopped and self.held is not None:
-            self.held["text"] += self.tail
-            _emit(self.held)
-            self.sent += 1
         return self.sent
 
 
@@ -747,12 +796,13 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                       engine_bridge: Any, cancellations: dict[str, threading.Event],
                       pending_cancellations: set[str], lock: threading.Lock,
                       *, rendered_override: list[tuple[str, list[int], int]] | None = None,
-                      selection: dict[str, Any] | None = None) -> None:
+                      order: list[str] | None = None, selection: dict[str, Any] | None = None) -> None:
     batch_id = command.get("batch_id")
     requests = command.get("requests")
-    # SERVE4: the current-profile engine streams every grouped request's tokens as they are
-    # read back; the historical throughput configurations keep their buffered completion.
-    live = rendered_override is None and engine_bridge.metadata().get("configuration") == "current_profile"
+    # SERVE4: the current-profile engine and the dense plan stream every grouped request's tokens as
+    # they are read back; the historical throughput configurations keep their buffered completion.
+    live = (rendered_override is None
+            and engine_bridge.metadata().get("configuration") in STREAMED_BATCH_CONFIGURATIONS)
     if (not isinstance(batch_id, str) or not 1 <= len(batch_id) <= 256
             or command.get("variant") not in {"current_engine", "automatic"} or not isinstance(requests, list)
             or not (1 if live else 2) <= len(requests) <= 32):
@@ -760,8 +810,11 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         return
     registered: list[str] = []
     try:
-        rendered = (rendered_override if rendered_override is not None else
-                    [_render_engine_request(request, model_id, tokenizer, allow_stream=live) for request in requests])
+        limit = getattr(engine_bridge, "request_limit", lambda: None)()  # KB1: the dense plan's slot
+        if rendered_override is not None:
+            rendered, order = rendered_override, list(order or [row[0] for row in rendered_override])
+        else:
+            rendered, order = _render_rows(requests, model_id, tokenizer, batch_id, allow_stream=live, limit=limit)
         request_ids = [row[0] for row in rendered]
         if len(set(request_ids)) != len(request_ids):
             raise ValueError("duplicate request id")
@@ -777,13 +830,13 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
         pool = _detokenizer_pool(tokenizer)
         streams: dict[str, _BatchStream] = {}
         # SERVE7 in the grouped path: every request, joined ones too, keeps its chat-turn plan.
-        messages_by_id = {row[0]: request.get("messages") for row, request in zip(rendered, requests)} \
+        messages_by_id = {request.get("request_id"): request.get("messages") for request in requests} \
             if rendered_override is None else {}
 
         def cuts_for(row: tuple[str, list[int], int]) -> list[int] | None:
             return (_turn_boundaries(tokenizer, messages_by_id[row[0]], row[1])
                     if live and CHAT_REUSE and messages_by_id.get(row[0]) else None)
-        all_ids = list(request_ids)
+        all_ids = list(order)  # rejected requests too, in the order they came
         leftovers: list[tuple[str, list[int], int]] = []
 
         def drain_joins() -> list[tuple[str, list[int], int]]:
@@ -794,10 +847,19 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     join = JOINS.get_nowait()
                 except queue.Empty:
                     return rows
-                if join.get("batch_id") != batch_id or not isinstance(join.get("requests"), list):
-                    raise ValueError("join for another batch")
+                if join.get("batch_id") != batch_id:
+                    continue  # it arrived after its own batch ended; the client hands such a request back
+                if not isinstance(join.get("requests"), list):
+                    raise ValueError("invalid join")
                 for request in join["requests"]:
-                    row = _render_engine_request(request, model_id, tokenizer, allow_stream=True)
+                    try:
+                        row = _render_engine_request(request, model_id, tokenizer, allow_stream=True, limit=limit)
+                    except RequestTooLong as error:  # rejected alone; the run goes on
+                        if error.request_id in all_ids:
+                            raise ValueError("duplicate request id") from None
+                        all_ids.append(error.request_id)
+                        _emit(_rejected(batch_id, error))
+                        continue
                     messages_by_id[row[0]] = request.get("messages")
                     if row[0] in all_ids:
                         raise ValueError("duplicate request id")
@@ -811,6 +873,24 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     all_ids.append(row[0])
                     rows.append(row)
 
+        stop_ids = _stop_ids(engine_bridge, tokenizer)
+
+        def terminal_for(row: tuple[str, list[int], int]) -> Any:
+            """H9: the member's done, sent with its last token instead of after the whole run."""
+            def build(finish: str, completion: int, computed: int) -> dict[str, Any]:
+                frame = {"type": "done", "batch_id": batch_id, "request_id": row[0], "finish_reason": finish,
+                         "prompt_tokens": len(row[1]), "completion_tokens": completion,
+                         "variant": command["variant"], "metrics": {},
+                         "engine": {**engine_bridge.metadata(), **getattr(engine_bridge, "counters", dict)(),
+                                    "delivery": "streamed", "computed_tokens": computed}}
+                if command.get("trace_prompt_identity") is True:
+                    frame["prompt_ids_sha256"] = hashlib.sha256(json.dumps(row[1], sort_keys=True,
+                        separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+                if selection is not None:
+                    frame["selection"] = selection
+                return frame
+            return build
+
         report = rendered
         while report:
             with lock:
@@ -818,17 +898,24 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             active = [row for row in report if row[0] not in skipped]
             for row in active if live else ():
                 streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations, lock,
-                                               tokenizer)
+                                               tokenizer, eos=stop_ids, terminal=terminal_for(row))
             joined: list[tuple[str, list[int], int]] = []
+            waiting: list[tuple[str, list[int], int]] = []  # KB1: joiners waiting for a slot of this run
 
             def admit(capacity: int) -> list[tuple[list[int], int, Any]]:
                 fresh = []
-                for row in drain_joins():
-                    if len(row[1]) + row[2] + 8 > capacity:
+                slots = getattr(engine_bridge, "free_slots", lambda: None)()  # KB1: the dense plan's free slots
+                candidates, waiting[:] = waiting + drain_joins(), []
+                for row in candidates:
+                    # The dense plan's run spans its whole slot, so a row within its limit always fits it.
+                    if (len(row[1]) + row[2] > limit) if limit is not None else (len(row[1]) + row[2] + 8 > capacity):
                         leftovers.append(row)  # too long for this run's cache; it runs right after
                         continue
+                    if slots is not None and len(fresh) >= slots:
+                        waiting.append(row)  # no free slot now; it takes the first one a member frees
+                        continue
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
-                                                   lock, tokenizer)
+                                                   lock, tokenizer, eos=stop_ids, terminal=terminal_for(row))
                     joined.append(row)
                     fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row)))
                 return fresh
@@ -850,6 +937,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                                                        **({"boundaries": turns}
                                                           if any(cut is not None for cut in turns) else {}))
                            if active else [])
+            leftovers.extend(waiting)  # the run ended before a slot freed for them; they run right after
             if not isinstance(results, list) or len(results) != len(active) + len(joined):
                 raise RuntimeError("invalid grouped result count")
             result_by_id = {row[0]: result for row, result in zip(active + joined, results)}
@@ -882,6 +970,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 if request_id in streams:
                     emitted_tokens = streams[request_id].finish(result)
                     tokens = ()  # already sent as the engine read them back
+                    if streams[request_id].finished is not None:  # its done went out with its last token
+                        if result.finish_reason != streams[request_id].finished:
+                            raise RuntimeError("the engine's answer ended other than its streamed done")
+                        continue
                 for index, token in enumerate(tokens):
                     if type(token) is not int or token < 0:
                         raise RuntimeError("invalid grouped token")
@@ -936,10 +1028,11 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
         return
     registered: list[str] = []
     try:
-        rendered = [_render_engine_request(request, model_id, tokenizer) for request in requests]
+        rendered, order = _render_rows(requests, model_id, tokenizer, batch_id, allow_stream=False, limit=None)
         request_ids = [row[0] for row in rendered]
-        if len(set(request_ids)) != len(request_ids):
-            raise ValueError("duplicate request id")
+        if not rendered:  # every request was too long to run, and each has its own rejection
+            _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": order})
+            return
         decision = automatic_runtime.choose_many(
             [row[1] for row in rendered], [row[2] for row in rendered], stream=False,
             session_requests=len(rendered), group_width=min(4, len(rendered)),
@@ -951,7 +1044,7 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
         if selected not in {"reference", "prefix_reuse"}:
             bridge = automatic_runtime.engine_for(selected)
             _run_engine_batch(command, model_id, tokenizer, bridge, cancellations,
-                              pending_cancellations, lock, rendered_override=rendered,
+                              pending_cancellations, lock, rendered_override=rendered, order=order,
                               selection=selection)
             return
         with lock:
@@ -1030,7 +1123,7 @@ def _run_automatic_batch(command: dict[str, Any], model_id: str, model: Any, tok
                 terminal["prompt_ids_sha256"] = hashlib.sha256(json.dumps(prompt_ids, sort_keys=True,
                     separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode()).hexdigest()
             _emit(terminal)
-        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": request_ids})
+        _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": order})
     except ValueError:
         _note_failure("batch")
         _safe_batch_error("invalid_request", batch_id)
@@ -1133,11 +1226,12 @@ def main(argv: list[str] | None = None) -> int:
                         help="current_engine: reuse KV state across chat turns (ChatTurnsPlan, SERVE7)")
     parser.add_argument("--engine-configuration", default="current_profile",
                         choices=("current_profile", "baseline_interactive", "core_interactive",
-                                 "baseline_throughput", "core_throughput", "rust2"))
+                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
     parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
+    parser.add_argument("--engine-knobs", default=None)  # KP1: class-A knobs when no stored profile applies
     args = parser.parse_args(argv)
     global CHAT_REUSE, THINKING
     CHAT_REUSE = bool(args.chat_reuse) and args.execution_variant == "current_engine"
@@ -1189,8 +1283,9 @@ def main(argv: list[str] | None = None) -> int:
         elif args.execution_variant == "current_engine":
             from ironmule_product.engine_bridge import CurrentEngineBridge
             from ironmule_product.types import ModelSpec
-            engine_bridge = CurrentEngineBridge.from_loaded(model, tokenizer, ModelSpec.from_dict(spec),
-                                                           configuration=args.engine_configuration)
+            engine_bridge = CurrentEngineBridge.from_loaded(
+                model, tokenizer, ModelSpec.from_dict(spec), configuration=args.engine_configuration,
+                class_a_knobs=json.loads(args.engine_knobs) if args.engine_knobs is not None else None)
         elif args.execution_variant == "automatic":
             from ironmule_product.automatic_runtime import AutomaticRuntime
             from ironmule_product.types import ModelSpec

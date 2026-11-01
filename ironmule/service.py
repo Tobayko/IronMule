@@ -196,6 +196,29 @@ class ThroughputMode:
         return AsyncGroupedB1Executor(backend, telemetry, max_width=self.max_width)
 
 
+class DenseStackedMode:
+    """KB1: the opt-in `dense` numeric plan. Up to eight requests share one stacked decode step through IronMule's
+    own kernels; answers change against today's engine (it is a numeric plan) but never with the group. The
+    Runtime takes its backend from this mode, so prefill writes each request into a slot of the plan's pool."""
+
+    name = "dense_stacked"
+    groups = True
+
+    def __init__(self, plan, max_width: int = 8):
+        self.plan, self.max_width = plan, max_width
+        self._backend = None
+
+    def backend(self, engine, eos_ids):
+        from .dense_plan import DenseBackend
+        if self._backend is None:
+            self._backend = DenseBackend(self.plan, eos_ids)
+        return self._backend
+
+    def executor(self, backend, telemetry):
+        from .dense_plan import DenseStackedExecutor
+        return DenseStackedExecutor(backend, telemetry, max_width=self.max_width)
+
+
 class PairedThroughputMode:
     """Opt-in research mode: two ready requests share one weight sweep.
 
@@ -576,7 +599,9 @@ class Runtime:
             self.model_identity = identity
             self.model_id = identity.model_id if identity is not None else model_id
             self.quantisation = identity.quantisation if identity is not None else quantisation
-            self.backend = MLXBackend(engine, _eos_ids(tokenizer))
+            factory = getattr(self.mode, "backend", None)  # KB1: a mode may bring its own backend
+            self.backend = (factory(engine, _eos_ids(tokenizer)) if callable(factory)
+                            else MLXBackend(engine, _eos_ids(tokenizer)))
             self.telemetry = Telemetry(mode=self.mode.name)
             self.online_controller = None
             if online_controller is not None:

@@ -481,6 +481,7 @@ class TimedBackend:
         produced = {r.request_id: 0 for r in requests}
         while left:
             time.sleep(self.round_s + self.per_stream_s * len(left))
+            self._before_cancels(cancels)
             for request, cancel in zip(requests, cancels):
                 rid = request.request_id
                 if rid not in left:
@@ -500,8 +501,25 @@ class TimedBackend:
                                    "prompt_tokens": 3, "completion_tokens": produced[rid]})
         return [{"request_id": r.request_id, "events": [], "metadata": {}} for r in requests]
 
+    def _before_cancels(self, cancels) -> None:
+        pass
+
     def close(self):
         pass
+
+
+class DrainGateBackend(TimedBackend):
+    """Holds a cancelled group before it acts on the cancellation until the test releases it, so a
+    request sent during the drain arrives while the drain lasts, however slow the runner is. The
+    hold sits after a round's decode: a cancellation seen there ends every member in that round."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.release = threading.Event()
+
+    def _before_cancels(self, cancels) -> None:
+        if any(cancel.is_set() for cancel in cancels):
+            self.release.wait(10)
 
 
 @pytest.fixture()
@@ -743,15 +761,17 @@ def test_a_real_request_preempts_replay_in_every_phase(tmp_path, library, phase,
 
 
 def test_a_request_arriving_while_replay_drains_is_recorded_as_drain(tmp_path, library):
-    backend = TimedBackend(round_s=0.15)
+    backend = DrainGateBackend(round_s=0.15)
     server, service = _replaying_server(tmp_path, library, backend, [(0.0, 50, 64)] * 4)
     try:
         assert _wait_phase(service, "decode")
         threads = [threading.Thread(target=_chat, args=(server, "first", 3))]
         threads[0].start()
-        assert _wait_phase(service, "drain", 2.0)
+        assert _wait_phase(service, "drain")
         threads.append(threading.Thread(target=_chat, args=(server, "second", 3)))
         threads[1].start()
+        assert _eventually(lambda: service.outstanding() >= 2), "the second request arrived during the drain"
+        backend.release.set()
         for thread in threads:
             thread.join(10)
         assert _eventually(lambda: len(service.learning.preemptions) >= 2)

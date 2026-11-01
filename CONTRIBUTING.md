@@ -30,7 +30,8 @@ to follow them:
    request that answers it. The result moves to the research repository's
    `research/LEDGER.md` if it shipped, or to Tier 0 as one line with its number and
    experiment ID if it was rejected. A backlog that keeps its corpses stops describing
-   what is left to do.
+   what is left to do. If the research repository is out of reach, the protocol and the
+   result go into the entry itself, which says that its ledger entry is still owed.
 3. **Put back what you learn.** A new idea, a new dead end, a number that surprised you
    — the same day, even half-formed, even if it is probably wrong.
 
@@ -43,7 +44,7 @@ baseline. The research repository's `research/LEDGER.md` shows the format that i
 throughout this project: a question, competing explanations, criteria fixed before the
 run, the result, and what it does not show.
 
-Four of the sixteen experiments in that ledger exist because a promising idea turned
+Many experiments in that ledger and in Tier 0 exist because a promising idea turned
 out not to work. Negative results are kept, not deleted — they are the reason the
 positive ones are worth anything.
 
@@ -55,6 +56,9 @@ pytest tests/engine -q -m "not integration"   # fast, no model needed
 pytest tests/engine -q -m integration         # needs a local model snapshot
 python -m ironmule.benchmark --requests 6 --max-tokens 48
 ```
+
+On Linux without a GPU, install `".[cpu,dev]"` instead: the same suites run on MLX's
+CPU build (CI runs them on macOS).
 
 `tests/engine/` is the engine package's own suite and runs on any Mac. A handful of
 files directly under `tests/` -- the learned-dispatch lifecycle, the portable-collection
@@ -94,10 +98,13 @@ git clone https://github.com/styler-ai/ProjectAtlas.git ProjectAtlas
 - **One logical change per commit.** A commit whose body needs to enumerate five
   unrelated changes is five commits.
 - **Branch names** are `feat/<topic>`, `fix/<topic>`, `docs/<topic>` or
-  `research/<topic>`. Never name a branch after the tool that produced it.
-- **Attribution.** Where a tool materially authored code, add a single trailer:
-  `Co-Authored-By: Claude <noreply@anthropic.com>`. No model version, no session link,
-  no generated-with footer in the commit body or the pull request description.
+  `research/<topic>`. Never name a branch after the tool that produced it yourself; a
+  branch an agent harness assigns (such as `claude/<name>`) is kept as assigned, and the
+  pull request title names the topic.
+- **Attribution.** Where a tool materially authored code, add a single trailer naming that
+  tool, for Claude `Co-Authored-By: Claude <noreply@anthropic.com>`. No model version, no
+  session link, no generated-with footer in the commit body or the pull request
+  description, even when the tool or its harness suggests them.
 - **No emoji** in commits, pull requests, documentation, code comments or figure
   captions.
 - **English everywhere.** German is allowed only in `docs/ARBEITSJOURNAL.md`, the

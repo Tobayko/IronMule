@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from collections.abc import Mapping
+import os
 from pathlib import Path
 from typing import Any, Literal, Sequence
 
@@ -32,6 +33,7 @@ class EngineBridgeResult:
 
 BridgeConfiguration = Literal[
     "current_profile",
+    "dense_stacked",
     "baseline_interactive",
     "core_interactive",
     "baseline_throughput",
@@ -67,7 +69,8 @@ _HISTORICAL_CONFIGURATIONS = {
         "max_width": 4,
     },
 }
-_CONFIGURATIONS = frozenset(("current_profile", *_HISTORICAL_CONFIGURATIONS))
+_CONFIGURATIONS = frozenset(("current_profile", "dense_stacked", *_HISTORICAL_CONFIGURATIONS))
+DENSE_WIDTH = 8  # KB1: the dense plan stacks up to eight requests into one decode step
 MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
 
 
@@ -214,8 +217,10 @@ class CurrentEngineBridge:
     def __init__(self, runtime: Any, *, identity: Any, knobs: Any,
                  profile_available: bool, profile_source: str,
                  configuration: BridgeConfiguration,
-                 historical_configuration_candidate: dict[str, Any] | None) -> None:
+                 historical_configuration_candidate: dict[str, Any] | None,
+                 dense_plan: dict[str, Any] | None = None) -> None:
         self._runtime = runtime
+        self._dense_plan = dense_plan
         self._identity = identity
         self._knobs = knobs
         self._profile_available = profile_available
@@ -226,14 +231,32 @@ class CurrentEngineBridge:
 
     @classmethod
     def from_loaded(cls, model: Any, tokenizer: Any, spec: Any, *,
-                    configuration: BridgeConfiguration = "current_profile") -> "CurrentEngineBridge":
+                    configuration: BridgeConfiguration = "current_profile",
+                    class_a_knobs: dict[str, Any] | None = None) -> "CurrentEngineBridge":
         """Construct from exactly the already loaded model and registered snapshot.
 
         Identity construction reads the supplied snapshot and fails closed; it does
         not use cache discovery, model loading, or inferred revisions.
+
+        ``class_a_knobs`` (KP1), ``{"knobs": ..., "source": label}``, serve the current
+        profile when no compatible stored profile exists; they must differ from the
+        baseline only in knobs that leave every answer unchanged.
         """
         model_id, revision, snapshot_path = _validate_spec(spec)
         configuration = _validate_configuration(configuration)
+        requested = None
+        if class_a_knobs is not None:
+            from .knob_profile import class_a_knobs as decode_class_a
+
+            mapping = (decode_class_a(class_a_knobs.get("knobs")) if isinstance(class_a_knobs, dict)
+                       and configuration == "current_profile" else None)
+            if mapping is not None:
+                from ironmule.runtime import Knobs as RuntimeKnobs  # `Knobs` is bound further down
+
+                requested = RuntimeKnobs(**mapping)
+            source = class_a_knobs.get("source") if isinstance(class_a_knobs, dict) else None
+            if requested is None or not isinstance(source, str) or not 1 <= len(source) <= 64:
+                raise ValueError("class-A knobs serve the current profile only, and only class-A knobs")
         # Keep all IronMule imports here.  Engine's constructor imports MLX only
         # after this method is deliberately invoked by the product worker.
         from ironmule.model_identity import ModelIdentityError, build_model_identity
@@ -251,7 +274,17 @@ class CurrentEngineBridge:
             ) from exc
 
         historical_candidate = _historical_configuration_metadata(configuration)
-        if historical_candidate is not None:
+        dense_record = None
+        if configuration == "dense_stacked":
+            # KB1: the opt-in dense numeric plan; `install` refuses anything it was not built for and probes the
+            # model's own weights (stacked rows bit-identical) before it serves.
+            import mlx.core as mx
+            from ironmule.dense_plan import install
+            from ironmule.service import DenseStackedMode
+            plan, dense_record = install(model, mx.device_info() if mx.cuda.is_available() else None)
+            knobs, profile_available, profile_source = BASELINE, False, "dense_numeric_plan"
+            mode = DenseStackedMode(plan, max_width=DENSE_WIDTH)
+        elif historical_candidate is not None:
             # These values are an explicit, archived B39d candidate.  They are
             # neither a compatible tune profile nor an automatic selection.
             knobs = Knobs(**historical_candidate["knobs"])
@@ -264,7 +297,11 @@ class CurrentEngineBridge:
             # Its absence is an explicit baseline choice, never a claim that no
             # historical configuration exists or that baseline is currently best.
             profile = load_profile(model_id, revision=revision, model_identity=identity)
-            if profile is None:
+            if profile is None and requested is not None:
+                knobs = requested
+                profile_available = False
+                profile_source = f"class_a:{source}"
+            elif profile is None:
                 knobs = BASELINE
                 profile_available = False
                 profile_source = "baseline_no_compatible_profile"
@@ -287,7 +324,7 @@ class CurrentEngineBridge:
         return cls(runtime, identity=identity, knobs=knobs,
                    profile_available=profile_available, profile_source=profile_source,
                    configuration=configuration,
-                   historical_configuration_candidate=historical_candidate)
+                   historical_configuration_candidate=historical_candidate, dense_plan=dense_record)
 
     def generate(self, prompt_ids: Sequence[int], max_tokens: int, on_token=None,
                  boundaries: Sequence[int] | None = None) -> EngineBridgeResult:
@@ -333,12 +370,15 @@ class CurrentEngineBridge:
         if len(stops) != len(validated) or any(stop is not None and emit is None
                                                for stop, emit in zip(stops, emitters)):
             raise ValueError("cancelled must match prompt_ids and needs a streamed request")
+        dense = self._configuration == "dense_stacked"
+        if dense and any(cuts is not None for cuts in turns):
+            raise ValueError("the dense plan serves one-shot prompts; chat-turn reuse is another plan")
         # SERVE7: a request with chat-turn boundaries runs the opt-in ChatTurnsPlan.
         requests = [Request(prompt_ids=ids, max_tokens=limit,
                             plan=StrictOneShotPlan() if cuts is None else ChatTurnsPlan(cuts),
                             stream=TokenStream(emit, stop) if emit is not None else None)
                     for ids, limit, emit, cuts, stop in zip(validated, limits, emitters, turns, stops)]
-        from ironmule.service import ThroughputMode
+        from ironmule.service import DenseStackedMode, ThroughputMode
         mode = self._runtime.mode
         if self._configuration == "current_profile" and (len(requests) > 1 or admit is not None) and self._may_group():
             # SERVE4: simultaneous requests interleave their decode steps (grouped batch-1, exact)
@@ -356,7 +396,8 @@ class CurrentEngineBridge:
                 joined_limits.append(limit)
             return fresh
         try:
-            raw_results = (self._runtime.serve(requests) if admit is None or type(self._runtime.mode) is not ThroughputMode
+            groups_joins = type(self._runtime.mode) in (ThroughputMode, DenseStackedMode)
+            raw_results = (self._runtime.serve(requests) if admit is None or not groups_joins
                            else self._runtime.serve(requests, admit=take))
         finally:
             self._runtime.mode = mode
@@ -368,7 +409,8 @@ class CurrentEngineBridge:
         if type(fallback_count) is not int or fallback_count < 0:
             raise RuntimeError("IronMule returned invalid fallback telemetry")
         widths = list(telemetry.realised_widths)
-        if any(type(width) is not int or not 1 <= width <= 4 for width in widths):
+        widest = DENSE_WIDTH if dense else 4
+        if any(type(width) is not int or not 1 <= width <= widest for width in widths):
             raise RuntimeError("IronMule returned invalid realised-width telemetry")
         results = []
         for raw, limit in zip(raw_results, limits):
@@ -385,6 +427,7 @@ class CurrentEngineBridge:
                 "admitted_requests": len(validated),
                 "max_realised_width": max(widths) if widths else 0,
                 "grouped_rounds": len(widths),
+                **self.counters(),
             })
             results.append(_result_from_raw(raw, limit, metadata))
         return results
@@ -411,7 +454,31 @@ class CurrentEngineBridge:
             "historical_configuration_candidate": self._historical_configuration_candidate,
             "current_identity": self._identity.to_dict(),
             "plan": "strict_one_shot",
+            **({"dense_plan": dict(self._dense_plan)} if self._dense_plan is not None else {}),
         }
+
+    def counters(self) -> dict[str, Any]:
+        """KP1: decode bodies this worker's engine built and evicted so far, and its card (no request data)."""
+        return {"decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
+                                      or {"built": 0, "evicted": 0}),
+                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES")}
+
+    def eos_ids(self) -> tuple[int, ...]:
+        """The token ids the engine stops on, so a stream ends exactly where the engine does."""
+        return tuple(self._runtime.backend.eos_ids)
+
+    def request_limit(self) -> int | None:
+        """KB1: the most prompt plus output tokens the dense plan's slot holds; None where only the worker's
+        context limit applies."""
+        if self._configuration != "dense_stacked":
+            return None
+        return self._runtime.backend.request_limit()
+
+    def free_slots(self) -> int | None:
+        """KB1: free slots in the dense plan's pool, which bound who may join a run; None for other plans."""
+        if self._configuration != "dense_stacked":
+            return None
+        return self._runtime.backend.free_slots()
 
     def close(self) -> None:
         """Release only Engine/Runtime state created and owned by this bridge."""

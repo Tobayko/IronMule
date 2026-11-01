@@ -95,6 +95,18 @@ other platforms (Windows) adapters run unsupervised. Tested on macOS arm64 and L
 graceful SIGTERM termination included. The CPU adapter's activation and rollback on macOS are still shown by
 the integration tests only (OPT3-D (a): protocol 2 vetoed a stalled run, reference kept).
 
+## The IronMule agent (`--agent on`, AG1, opt-in)
+
+No hardware result yet: nothing here claims that the agent makes a server faster. What has run is the agent's
+code against a simulated server and on this repository's tests (BACKLOG AG1, S). It decides two things only:
+order and group width. Placement across GPUs, engine, plan, knobs and output are outside it. Its world model
+assumes one group at a time with members prefilled one after another, so it refuses the dense plan's slot reuse
+and runs on one worker. Its replays use recorded arrival times, prompt lengths and output limits (capped at 512
+tokens) with a filler prompt, skipping only stretches in which the server is idle. Prompt-content effects and
+answers longer than 512 tokens are therefore not represented. A schedule it qualifies is proven only for the binding it was measured under, and on
+the traffic that machine saw. Where idle spells are shorter than a replay window, nothing qualifies and the
+server's own schedule keeps serving.
+
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 
 Shown end to end on one Apple M1 Max with `gemma-3-1b-it-4bit` (rev `2d44e83d`) under `--engine tuned`
@@ -124,6 +136,60 @@ traffic): the contextual bandit, RL and RL with dreaming did not beat the best s
 light load (rejected, no qualified gain), the run at the registered load was invalid by its own calibration check and
 showed the learned arms 3-4 % worse. No learned policy is activated anywhere. Not measured: other GPUs, larger models,
 memory pressure, real user traffic, the CPU device.
+
+RL2-H (backlog RL2; one Kaggle "GPU T4 x2" session, `mlx-community/Qwen3-1.7B-bf16`, `--engine tuned`, one HW1
+worker per card, Poisson traffic at 0.2-0.95 of measured capacity, 64- or 128-token answers): no learner can gain
+from deciding placement (shortest queue or fill) or group width and gather wait per load level. The per-level best of
+20 fixed arms beat the best single arm by -0.05 % held out against 3.5 % A/A noise, and the default (shortest queue,
+width up to 8, no wait) was within 0.4 % of the best arm at every level, so it stays and no whole-machine learner is
+built for these decisions. Not measured: other models and checkpoints, longer prompts or answers, bursty or real
+traffic, one card, the MEM2 cache bound, detokenizing threads.
+
+RL3-H (backlog RL3, run 2; the same session type, model and pool under quiet, bursty and spike traffic with
+1,000-token prompts and 32- or 256-token answers): placing or ordering requests by output limit gains nothing
+measurable. No decision's held-out headroom cleared the 18.7 % A/A noise, and separating long from short requests
+cost 15-24 % in bursts. A REINFORCE agent trained in a simulator fitted to that run (RL4) gained 2.8 % in
+simulation, too little to test on this hardware. Tested where that testbed is quiet, in spike traffic only (RL4-S, 30
+new traces, all answers identical across arms), the same frozen policy beat the best fixed arm by 9.0 % (95 %
+6.9-11.1 %, A/A noise 2.9 %). The product can now run it as an opt-in learned dispatch (LD1), off by default and
+bound to that measured setup: two T4s, that model and revision. It is unvalidated on traffic that mixes quiet,
+bursty and spike states, and on every other model, GPU or card count.
+
+RL6 (same setup, `bursts` and `spike` traffic, 2,304 requests identical across arms): starting the shortest output
+limit first with groups of at most two cost 18.0 % less than the default, width 8 in arrival order (95 % 15.0-20.5 %;
+width 1 18.6 %, width 4 11.9 %). LD1-V (same setup, `quiet`, `bursts` and `spike` weighted equally, 1,920 requests
+identical across arms) confirmed it with quiet traffic included: 18.4 % (95 % 14.9-22.2 %), width 1 19.5 %. The
+server now runs it by default on exactly that setup (two T4s, `--engine tuned`, that model and revision, no stored
+serving policy); everywhere else the default is unchanged and unmeasured. A width-learning RL policy matched that fixed schedule (+0.8 %, 95 %
+-1.9 to 3.4 %) but did not beat it. Run through the product's learned dispatch on mixed traffic, it beat the default
+by 21.2 % but cost 6.9 % more than width 1 in bursts, so it is not qualified (LD1-V).
+
+Decode on one T4 (HW3, HW4 and TB1, Qwen3 1.7B bf16, MLX 0.32.4, 6 prompts x 64 tokens): compiling the decode
+step plus reading the host every 4 tokens made decode 8.2 % faster (0.918, 95 % 0.914-0.921), and HW4 found its
+logits and state bit-identical to the untuned engine's. Skipping the output head over the prompt
+(`head_skip_prefill`) changes the prefill's logits on this card. Prompt-lookup speculation changed tokens there,
+and so did stacking requests into one forward (true tensor batching), which also made a token only 1.34x cheaper
+at eight rows, because MLX's bf16 product at 2-32 rows is 5-7x slower than at one row. A decode step reaches 70 %
+of the weight-bandwidth floor (252 GB/s measured). Prefill of a 1,026-token prompt takes 1.7 s. A research plan
+that stacks up to eight requests into one decode step with IronMule's own kernels (KB1-1) answered every request
+bit for bit the same at 1, 3 or 8 rows, decoded eight requests 3.8x faster than today's grouping, and passed the
+numeric plans' quality gate on the decode path; it changes answers against today's engine (as a numeric plan does).
+With one host read every 4 steps it serves a request alone at 0.93x (short prompt) and 0.99x (long) of today's tuned
+decode, and each further row costs about 3 ms (KB1-2). It is in the product as the opt-in `--engine dense`.
+
+Through the product on two T4s, with quiet, bursty and spike traffic weighted equally, it cost 48.3 % less than
+the default (95 % 45.0-51.4 %, H10), and no state was worse: quiet 13.6 %, bursts 53.0 %, spike 48.0 %. That run
+measured it as it ships: version 2 prefill, freed slots refilled by newcomers, each request done with its last
+token, at its default width of eight (width four cost 8.3 % more). Without slot reuse it had cost 24.0 % less
+(H9). It is recommended on exactly that setup (two Tesla T4s, `mlx-community/Qwen3-1.7B-bf16` at `9cd66928`), as
+an opt-in numeric plan: about half of its answers differ from `--engine tuned` (258 of 576 compared were the
+same). It passed the numeric plans' quality gate.
+
+It needs unquantized Qwen 3 bf16 on CUDA below compute capability 8 and takes about two minutes to start. The
+recommendation covers prompt plus answer up to 2,048 tokens, the slot size it was measured with and still
+serves; a longer request is answered `400` on its own. Slots of up to 8,192 tokens (the context limit) are built
+and wait for H11's part (a) on the T4, then part (b) decides whether the recommendation extends to them; neither
+has run yet. Not measured either: other GPUs, other models, real user traffic.
 
 Stability (STAB1, ledger; one Kaggle T4, `gemma-3-1b-it-4bit`, `--engine tuned` in server mode, run 1 of P3's synthetic
 traffic): the worker's CUDA memory grows to the 15 GiB card's limit within each run, and under sustained overload a
@@ -299,9 +365,10 @@ unpaired). Qwen3 spends short answers in its `<think>` block first. Linux x86_64
 **Group width is capped at 4.** Not a tuning knob: width 8 regressed in E14b and E2
 and E3 independently, at the `M=8` kernel regime. Requesting more raises.
 
-**One capacity per `serve()` call.** The KV cache is fixed-shape, so a batch is
-allocated to the longest prompt in it. A single long request therefore inflates
-memory for the whole batch. Capacity above 8192 is refused rather than allocated.
+**One capacity per request.** The KV cache is fixed-shape. Each request is
+allocated what it would get alone, from its own prompt length and output limit (X1:
+on CUDA the cache length moves decode logits, so a shared group capacity made an
+answer depend on the group). Capacity above 8192 is refused rather than allocated.
 
 **Grouping helps only when groups fill.** With 2–3 token answers the realised width
 fell to 1.83 and the gain fell below threshold in both E15 and E16. A service whose
@@ -313,9 +380,14 @@ workload. A latency-sensitive single-request path should stay in `InteractiveMod
 **Fallback discards work.** A failed group restarts its requests from prefill. That
 is correct and wasteful; it is not an optimisation path.
 
-**Ragged prompt lengths within a group are untested.** Every measured group used a
-shared cache offset. Requests of genuinely different prefill lengths in one group
-are outside what was verified.
+**Ragged prompt lengths within a group are untested on hardware.** Every measured group used a
+shared cache offset. On two Kaggle T4s (RL3-H, Qwen3 1.7B bf16) one short request was answered
+differently when grouped with about 1,000-token prompts, because the group's KV capacity then
+followed the long prompts and on CUDA the cache length moves decode logits (X1: up to 0.75, a
+token flipped in 2 of 16 prompts within 32 tokens; the CPU build was bit-exact). Each request now
+decodes at its own capacity, which the runtime contract tests check; on the T4s the re-run then
+answered all 1,680 requests identically across six arms. Opt-in reuse that re-pads a stored state to another capacity (`ChatTurnsPlan`'s
+turn cache) is not exact on CUDA for the same reason.
 
 **Sustained load is untested.** All measurements used eight requests. Queue effects
 that only appear under continuous arrival are unknown.

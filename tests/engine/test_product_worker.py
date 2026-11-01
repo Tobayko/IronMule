@@ -92,7 +92,7 @@ def _attached_transport(tmp_path: Path, body: str) -> MLXWorkerClient:
     client = MLXWorkerClient(_spec(tmp_path), startup_timeout=1)
     client._process = process  # noqa: SLF001 - transport fixture, no model path
     client._ready_payload = {
-        "type": "ready", "protocol_version": 1, "model_id": "local/test",
+        "type": "ready", "protocol_version": 2, "model_id": "local/test",
         "revision": "revision", "device": "gpu", "stop_handling": "parent", "context_limit": 8192,
     }
     return client
@@ -364,7 +364,7 @@ def test_slow_startup_guard_cannot_bypass_absolute_deadline(tmp_path, monkeypatc
     spec = _spec(tmp_path)
 
     def fake_popen(*args, **kwargs):
-        body = ("import json, sys, time; print(json.dumps({'type':'ready','protocol_version':1,"
+        body = ("import json, sys, time; print(json.dumps({'type':'ready','protocol_version':2,"
                 f"'model_id':{spec.model_id!r},'revision':{spec.revision!r},"
                 "'device':'gpu','stop_handling':'parent'}), flush=True); time.sleep(5)")
         process = real_popen(
@@ -531,6 +531,31 @@ def test_engine_stream_hands_each_token_on_with_text_and_finishes_on_the_last():
     assert [row.finish_reason for row in rows] == [None, None, "stop"]
     assert holder["result"].tokens == [72, 105, 0]
 
+
+
+def test_engine_stream_sends_each_token_before_the_engine_reads_the_next():
+    """KP1 run 1: holding each token for the next delayed the first by a whole chained readback (56 ms at
+    readback 4). The token that ends the answer, EOS or the limit, still carries the finish reason."""
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    for tokens, limit, finish in (([72, 105, 0], 8, "stop"), ([72, 105], 2, "length")):
+        rows, consume = _collect()
+        consumed = []
+
+        class Bridge:
+            def generate(self, prompt_ids, max_tokens, on_token=None):
+                for token in tokens:
+                    on_token(token)
+                    consumed.append(len(rows))  # frames handed on by the time the engine reads the next
+                return SimpleNamespace(tokens=list(tokens), finish_reason=finish, token_count=len(tokens), text="",
+                                       metadata={})
+
+        terminal = worker._engine_stream(Bridge(), _StreamTokenizer(), [1, 2], limit, 2, {}, consume)
+        assert consumed == list(range(1, len(tokens) + 1)) and terminal == {"finish_reason": finish}
+        assert [row.finish_reason for row in rows] == [None] * (len(tokens) - 1) + [finish]
+        assert "".join(row.text for row in rows) == "Hi"
 
 def test_engine_stream_stops_sending_after_a_cancellation():
     from ironmule_product import worker
@@ -756,7 +781,7 @@ def test_ready_handshake_reports_the_actual_device_and_refuses_unknown_ones(tmp_
     processes = []
     real_popen = backend_module.subprocess.Popen
     spec = _spec(tmp_path)
-    ready = {"type": "ready", "protocol_version": 1, "model_id": spec.model_id, "revision": spec.revision,
+    ready = {"type": "ready", "protocol_version": 2, "model_id": spec.model_id, "revision": spec.revision,
              "stop_handling": "parent", **({"device": device} if device else {})}
 
     def fake_popen(*args, **kwargs):
@@ -826,7 +851,7 @@ def test_ready_handshake_carries_a_valid_source_identity(tmp_path, monkeypatch, 
     processes = []
     real_popen = backend_module.subprocess.Popen
     spec = _spec(tmp_path)
-    ready = {"type": "ready", "protocol_version": 1, "model_id": spec.model_id, "revision": spec.revision,
+    ready = {"type": "ready", "protocol_version": 2, "model_id": spec.model_id, "revision": spec.revision,
              "stop_handling": "parent", "device": "gpu", "sources_sha256": digest}
 
     def fake_popen(*args, **kwargs):
@@ -877,3 +902,208 @@ def test_the_cuda_cache_bound_is_set_on_cuda_only_and_can_be_turned_off():
     for bad in ("-1", "1.5", "lots"):
         with pytest.raises(ValueError):
             _apply_cuda_cache_limit(_FakeMx(True), {CUDA_CACHE_LIMIT_ENV: bad})
+
+
+
+def test_a_grouped_stream_sends_each_token_before_the_engine_reads_the_next(monkeypatch):
+    """KP1 run 1, the grouped path: every token leaves as the engine reads it back; the last carries the final
+    text, and nothing waits for a token that comes a chained readback later."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent, emitted_by_then = [], []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            for token in (72, 105, 0):
+                on_tokens[0](token)
+                emitted_by_then.append(sum(event["type"] == "token" for event in sent))
+            return [SimpleNamespace(tokens=[72, 105, 0], text="", finish_reason="stop", token_count=3, metadata={})]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": "a", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True}]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert emitted_by_then == [1, 2, 3]
+    tokens = [event for event in sent if event["type"] == "token"]
+    assert "".join(event["text"] for event in tokens) == "Hi" and [e["completion_tokens"] for e in tokens] == [1, 2, 3]
+    done = [event for event in sent if event["type"] == "done"]
+    assert done[0]["completion_tokens"] == 3 and done[0]["finish_reason"] == "stop"
+
+
+def test_a_grouped_member_is_done_with_its_last_token_not_when_the_run_ends(monkeypatch):
+    """H9: a member's done follows its last token at once, so its caller is answered then and the service sees
+    room in the group; the streamed tokens are still checked against the run's result afterwards."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    scripts = {0: [72, 0], 1: [79, 107, 33, 0]}  # a ends at its second token, b runs on
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def eos_ids(self):
+            return (0,)
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            for step in range(4):
+                for index, emit in enumerate(on_tokens):
+                    if step < len(scripts[index]):
+                        emit(scripts[index][step])
+            return [SimpleNamespace(tokens=scripts[i], text="", finish_reason="stop", token_count=len(scripts[i]),
+                                    metadata={}) for i in range(2)]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": rid, "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for rid in ("a", "b")]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    order = [(event["type"], event.get("request_id")) for event in sent]
+    assert order.index(("done", "a")) < [i for i, e in enumerate(order) if e == ("token", "b")][2]
+    done = {event["request_id"]: event for event in sent if event["type"] == "done"}
+    assert sorted(done) == ["a", "b"] and len([e for e in sent if e["type"] == "done"]) == 2  # once each
+    assert done["a"]["completion_tokens"] == 2 and done["b"]["completion_tokens"] == 4
+    assert done["a"]["engine"]["delivery"] == "streamed" and sent[-1]["type"] == "batch_done"
+
+
+def test_a_join_left_over_from_an_ended_batch_is_dropped_and_the_next_batch_runs(monkeypatch):
+    """A join that reached the worker after its own batch ended stays queued; the next batch drops it (the client
+    handed that request back) instead of failing as a join for another batch."""
+    import queue
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    monkeypatch.setattr(worker, "JOINS", queue.Queue())
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-0", "requests": [
+        {"request_id": "late", "model": "m", "messages": [{"role": "user", "content": "x"}], "max_tokens": 4,
+         "stream": True}]})
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            assert admit(64) == []  # the stale join is not admitted
+            for token in (72, 0):
+                on_tokens[0](token)
+            return [SimpleNamespace(tokens=[72, 0], text="", finish_reason="stop", token_count=2, metadata={})]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": "a", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True}]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    assert sent[-1] == {**sent[-1], "type": "batch_done", "request_ids": ["a"]}
+
+
+def test_a_grouped_request_beyond_the_context_limit_is_rejected_alone_on_either_batch_path(monkeypatch):
+    """Protocol 2: a prompt plus output limit beyond the context limit failed its whole group, and the client
+    retired the worker over it. The worker now rejects that request alone, before any token, on the engine path
+    and the automatic one, and names it in batch_done in the order it came."""
+    import queue
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1] * len(messages[0]["content"])
+
+    def chat(rid, length, max_tokens=8):
+        return {"request_id": rid, "model": "m", "messages": [{"role": "user", "content": "x" * length}],
+                "max_tokens": max_tokens, "stream": True}
+
+    class Bridge:
+        def metadata(self):
+            return {"configuration": "current_profile"}
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            assert len(ids) == 2  # the over-long request never reaches the engine
+            for stream in on_tokens:
+                for token in (72, 0):
+                    stream(token)
+            return [SimpleNamespace(tokens=[72, 0], text="", finish_reason="stop", token_count=2, metadata={})
+                    for _ in ids]
+
+    sent = []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+    monkeypatch.setattr(worker, "JOINS", queue.Queue())
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [chat("a", 3), chat("b", worker.CONTEXT_LIMIT), chat("c", 3)]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    assert [(e["request_id"], e["reason"], e["limit"]) for e in sent if e["type"] == "rejected"] == [
+        ("b", "context_limit", worker.CONTEXT_LIMIT)]
+    assert sorted(e["request_id"] for e in sent if e["type"] == "done") == ["a", "c"]
+    assert sent[-1] == {**sent[-1], "type": "batch_done", "request_ids": ["a", "b", "c"]}
+
+    sent.clear()
+    runtime = SimpleNamespace(choose_many=lambda ids, limits, **_: SimpleNamespace(candidate_id="reference"),
+                              last_decision={})
+
+    def stream_generate(model, tokenizer, prompt_ids, max_tokens):
+        yield SimpleNamespace(generation_tokens=1, token=72, text="h", finish_reason="stop")
+
+    command = {"type": "generate_batch", "batch_id": "batch-2", "variant": "automatic",
+               "requests": [{**chat("a", 3), "stream": False}, {**chat("b", worker.CONTEXT_LIMIT), "stream": False}]}
+    worker._run_automatic_batch(command, "m", None, Tokenizer(), stream_generate, runtime, {}, set(),
+                                threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"], sent
+    assert [e["request_id"] for e in sent if e["type"] == "rejected"] == ["b"]
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a"]
+    assert sent[-1] == {"type": "batch_done", "batch_id": "batch-2", "request_ids": ["a", "b"]}

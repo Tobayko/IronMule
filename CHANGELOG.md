@@ -4,6 +4,80 @@ All notable public changes to IronMule are documented here. Measurements and res
 
 ## [Unreleased]
 
+- **The IronMule agent (opt-in, experimental): `ironmule serve --agent on`.** The project's new main goal. The agent
+  decides each group's order and width in microseconds and learns what this machine's groups cost from every
+  request it serves. While the server is idle, it trains a new schedule by reinforcement learning in a separate
+  low-priority process. The new schedule serves only after replays of recorded traffic through the real model show
+  it beating the current one with identical answers. Withdrawal is persistent, and a real request always
+  interrupts idle work. Not with `--learning` or `--dispatch-policy`; one worker; not the dense plan yet. No speed-up
+  is claimed until its hardware run (BACKLOG AG1).
+
+- **A request too long to run fails alone, not with its group.** When a request's prompt plus `max_tokens`
+  exceeded the 8,192-token context limit, or the dense plan's 2,048-token slot, every request grouped with it
+  failed too. The parent then retired the worker as broken and reloaded the model. On `--engine tuned` and
+  `--engine dense` a lone request runs as a group as well, so one long prompt was enough, and four within ten
+  minutes exhausted the worker's restarts and stopped the server from serving. The worker now rejects that
+  request alone before generating anything, with the single path's `400`, and the others in its group are
+  answered as before. Worker protocol version 2.
+
+- **Streamed tokens leave as soon as they are read.** The worker used to hold each token until the next one
+  arrived, so the last could carry the final text. That delayed every request's first token by one decode step,
+  and by a whole chain of steps where the engine reads several at once. Each token is now sent as it is read, and
+  only the one that ends the answer waits for the final text. A request served in a group is now complete with
+  its own last token, instead of when the group's longest request ends, so a short request no longer waits for
+  a long neighbour. Answers are unchanged; the effect is measured in BACKLOG H9.
+
+- **Opt-in dense numeric plan (KB1), experimental.** `ironmule serve --engine dense` stacks up to eight
+  requests into one decode step with IronMule's own batch-invariant kernels. It runs on unquantized Qwen 3 bf16 on
+  CUDA below compute capability 8 (a Tesla T4) and is refused elsewhere. A load probe must find every stacked
+  width bit-identical to one row. It changes answers against `--engine tuned`, as a numeric plan does, and passed
+  the numeric plans' quality gate on the decode path. A request arriving while a group runs takes a slot a
+  finished request freed. On two T4s with Qwen3 1.7B bf16 it cost 48.3 % less than the default on mixed traffic
+  (95 % 45.0-51.4 %), with no traffic state worse, and it is recommended there as an opt-in numeric plan (BACKLOG
+  H10; about half of its answers differ from `--engine tuned`). That measurement covers prompt plus answer up to
+  2,048 tokens, which stays the slot size. Slots of up to 8,192 tokens (the context limit), sized to the card,
+  and the chunked prefill longer prompts need (plan version 3, as mlx-lm prefills) are built and wait for BACKLOG
+  H11's measurement; prompts up to 2,048 tokens are prefilled exactly as before.
+
+- **A stream cancelled inside a chained readback or a speculative draft ends at its cancel.** Before, it could
+  receive up to three more tokens; answers of the other requests are unchanged.
+
+- **A qualified schedule on the measured setup (RL6, LD1-V).** `ironmule serve --gpus all --engine tuned` on two
+  Tesla T4s with `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` now starts groups of at most two, and the
+  queued request with the smallest output limit first. With quiet, bursty and spike traffic weighted equally this
+  cost 18.4 % less than the previous default (95 % 14.9-22.2 %), and all 1,920 requests were answered identically.
+  It serves only on an exact match of engine, model, revision, GPU name and GPU count, and only when no serving
+  policy is stored; `--schedule reference` keeps the previous default, and `/health` shows which serves. The
+  learned dispatch's evidence now also names the engine it was measured on (`tuned`).
+
+- **Opt-in learned dispatch (LD1).** `ironmule serve --gpus all --dispatch-policy ... --dispatch-evidence ...`
+  lets a policy trained by the RL agent choose each request's card, whether a group starts its shortest requests
+  first, and (v2) the group width. Answers do not change. It activates only with evidence for this policy and
+  this model, revision, GPU name and GPU count; otherwise the reference serves, and `/health` says why. It is off
+  by default. The shipped RL4-S policy (two T4s, Qwen3 1.7B bf16) beat the best fixed arm by 9.0 % on spike
+  traffic (95 % 6.9-11.1 %, 1,920 requests identical across arms). Mixed traffic is not validated yet.
+  `POST /v1/ironmule/dispatch` with `{"action": "off"}` withdraws it without a restart, and the withdrawal
+  outlasts a restart until new evidence qualifies the policy again.
+
+- **On CUDA a request's answer no longer depends on what it is grouped with (X1).** A group shared one KV
+  capacity, sized to its longest prompt and largest output limit, and on Kaggle's T4s the cache length moves
+  decode logits (by up to 0.75 across 16 prompts, flipping a token in two of them within 32 tokens). A short
+  request grouped with a long prompt could therefore get a different answer than alone. Each request now prefills
+  and decodes at the capacity it would get alone; the group's capacity still bounds it, so memory does not grow.
+  The engine keeps one decode body per capacity, and the opt-in paired path pairs only requests with equal
+  capacities. One check on the MLX CPU build found the logits bit-identical; Metal is not re-measured (BACKLOG X1).
+
+- **Autopilot no longer picks the `native` plan for an unquantized checkpoint.** On a CUDA card that emulates
+  bfloat16 its numeric choice took `native` for any Qwen 3 or Gemma 3 checkpoint, but those kernels replace 4-bit
+  weights only, so an unquantized one could then neither be tuned nor loaded. `native` now counts as a no-op where
+  the model has no such weights, and the next plan is considered as before (BACKLOG U1).
+
+- **`ironmule serve --gpus all` serves from every CUDA GPU (HW1).** One model worker per listed card, pinned with
+  `CUDA_VISIBLE_DEVICES`, each with its own unchanged queue, scheduler and recovery (a lost worker returns on its own
+  card); a request goes to the card with the fewest unfinished requests and stays there. `/health` lists the cards.
+  Live learning and idle tuning still need one card. The default is unchanged (one worker). Tested with the
+  protocol-faithful fake worker only; the gain on Kaggle's two T4s is not measured yet (BACKLOG HW1).
+
 - **On CUDA the worker bounds MLX's cache of freed buffers to 1 GiB (MEM2).** On a 15 GiB T4 that cache grew to
   11 GiB beside about 3 GiB MLX does not count until the device filled and the worker was lost. The bound changes
   no output; its effect on worker losses and speed is not yet measured (the preregistered comparison was stopped

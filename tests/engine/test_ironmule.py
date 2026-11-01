@@ -508,3 +508,21 @@ def test_encode_passes_template_options_only_when_asked():
     assert Runtime.encode(owner, "hi") == [1, 2, 3]
     assert Runtime.encode(owner, "hi", enable_thinking=False) == [1, 2, 3]
     assert seen == [{}, {"enable_thinking": False}]
+
+
+def test_the_engine_keeps_one_decode_body_per_capacity():
+    """X1: a group's requests decode at their own capacities, so a round switches between them; the
+    engine reuses each capacity's body instead of rebuilding it, and a knob change never reuses one."""
+    engine = Engine.__new__(Engine)
+    engine.model = SimpleNamespace(model=object())
+    engine.knobs = BASELINE
+    engine._compiled = engine._compiled_capacity = None
+    small, large = engine._body(64, 1), engine._body(1088, 1)
+    assert small is not large
+    assert engine._body(64, 1) is small and engine._body(1088, 1) is large
+    engine.knobs = Knobs(fused_argmax=True)
+    engine._compiled = None
+    assert engine._body(64, 1) is not small
+    for capacity in range(128, 128 + 64 * runtime._BODY_CACHE, 64):
+        engine._body(capacity, 1)
+    assert len(engine._bodies) == runtime._BODY_CACHE
