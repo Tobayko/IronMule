@@ -1715,6 +1715,21 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
 - **Status (2026-10-30):** (a)'s kernel (`tobayko/ironmule-cuda-probe-h11`, commit `35d082e` for the tools) was
   refused by Kaggle: the weekly 30-hour GPU quota is used up. It runs when the quota resets, at the commit that
   carries this status.
+- **Result, part (a) (2026-11-01, kernel `tobayko/ironmule-cuda-probe-h11` v1 at `3cb1e8f`, one Kaggle T4, 0.22
+  session hours): the 8,192-token slots do not ship. The plan keeps 2,048-token slots, and (b) does not run.**
+  - (a1) passes. Every row's tokens and logits are bit-identical between the slot sizes. The 8,000-token row
+    matched at all 256 logit steps beside seven short rows.
+  - (a2) `harm`. The larger slot costs 8.1 % per step (95 % 7.8-8.4 %, noise 0.9 %), with harm at every width:
+    7.2 % at width 1, 19.4 % at 2, 4.2 % at 4 and 1.7 % at 8. This is the empty-warp cost the mechanism named.
+  - (a3) passes. The peak was 13.68 GB, against a bar of 15.62 GB, with a CUDA context of 0.64 GB.
+  - (a4) fails, which is a kill. At 3,000-token prefixes the perplexity ratio is 1.0003 (95 % 0.9965-1.0035, a
+    pass). At 6,000 it is 1.0070 (95 % 1.0059-1.0078), above the 1.005 bound.
+  - Recorded: prefill takes 2.77 s, 5.84 s and 13.34 s at 2,000, 4,000 and 8,000 tokens. One 8,000-token row
+    makes an eight-row step 1.44 times as long as eight short rows.
+  - By the ship rule, `install` keeps `SLOT_TIERS` at 2,048, and `--engine dense` keeps refusing longer requests.
+    The FA2 grid cut that (a2)'s harm calls for is moot while (a4) fails. Reopening needs a changed mechanism
+    for long-context quality, not a rerun.
+  - Ledger entry owed.
 
 ### OV1 — Build the next decode step before reading the token (opened 2026-10-29)
 
@@ -2240,6 +2255,13 @@ processes again.
 - **KP's knobs after the first-token fix (2026-10-30).** Experiment `H9-run1-20261029` (see H9): +1.7 % weighted
   (95 % 0.39-3.15 %) against a 0.81 % A/A floor, no harm in any state, `quiet` +6.1 %. Too small to resolve in 12
   traces. Re-open with more traces, or once the default's own cost changes again.
+
+- **H11 dense slots of 8,192 tokens (2026-11-01).** Experiment `H11a-run1-20261101` (kernel
+  `tobayko/ironmule-cuda-probe-h11` v1, commit `3cb1e8f`; see H11). Tested on one T4 with Qwen 3 1.7B bf16.
+  Answers were bit-identical and memory fit. At 6,000-token prefixes, though, the plan's perplexity ratio was
+  1.0070 (95 % to 1.0078), above the 1.005 bound. The larger slot also cost 8.1 % per step. The dense plan keeps
+  2,048-token slots. Re-open with a changed mechanism for long-context accuracy, such as float32 accumulation in
+  the long-key combine, and with FA2's grid cut to live chunks.
 
 - **MOLE1 local adaptive route and indexed preparation.** Experiments
   `MOLE1-LOCAL-1-20260912-attempt1` and `MOLE1-LOCAL-2-20260912-attempt1`:
