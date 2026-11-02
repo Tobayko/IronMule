@@ -127,6 +127,12 @@ class _RLS:
         trace, limit = sum(p[i][i] for i in range(n)), sum(self.spread)
         if trace > limit:
             p = [[v * limit / trace for v in row] for row in p]
+        # each parameter's own variance stays at or below its start (D P D with a diagonal D keeps P positive
+        # definite): forgetting in a direction no group excites, as groups of one leave the per-group term,
+        # otherwise regrows it up to the whole trace and the prefill split wandered 11.8 % (AG1 S2, run 6)
+        scale = [min(1.0, math.sqrt(self.spread[i] / p[i][i])) for i in range(n)]
+        if any(s < 1.0 for s in scale):
+            p = [[p[i][j] * scale[i] * scale[j] for j in range(n)] for i in range(n)]
         self.theta, self.p = theta, p
         self.n += 1
 

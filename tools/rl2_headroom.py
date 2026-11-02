@@ -1814,6 +1814,10 @@ AG1_PROFILES["t4b"] = {**AG1_PROFILES["t4"], "requests": 64, "learn": range(195,
 # replay, at most 16 online traces ending after the one in which the agent qualified, and 3 held-out traces a state
 AG1_PROFILES["t4c"] = {**AG1_PROFILES["t4b"], "learn": range(223, 239), "evaluate": range(239, 242),
                        "pause_s": 1200.0, "timeout_s": 900, "stop_on_qualify": True}
+# BACKLOG AG1, V4: the agent with busy-period windows (V3's replay judge scored a burst's first 16 arrivals); the
+# fixed tier is `w8/sjf`, the best fixed schedule on whole traces in V3's world model; sized to the GPU quota left
+AG1_PROFILES["t4d"] = {**AG1_PROFILES["t4c"], "learn": range(242, 254), "evaluate": range(254, 256),
+                       "pause_s": 800.0, "fixed": (8, True)}
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:

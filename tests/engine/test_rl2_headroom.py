@@ -894,3 +894,7 @@ def test_ag1_profiles_differ_only_where_backlog_ag1_says():
                                        "stop_on_qualify": True}
     used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4c"]
     assert not (set(rl2.AG1_PROFILES["t4c"]["learn"]) | set(rl2.AG1_PROFILES["t4c"]["evaluate"])) & set().union(*used)
+    assert rl2.AG1_PROFILES["t4d"] == {**rl2.AG1_PROFILES["t4c"], "learn": range(242, 254),
+                                       "evaluate": range(254, 256), "pause_s": 800.0, "fixed": (8, True)}
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4d"]
+    assert not (set(rl2.AG1_PROFILES["t4d"]["learn"]) | set(rl2.AG1_PROFILES["t4d"]["evaluate"])) & set().union(*used)

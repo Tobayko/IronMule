@@ -259,6 +259,55 @@ learner found no gain on a T4 (P3).
       The scheduling headroom over the default on this setup is therefore about half a percent, which matches
       RL8's 0.1-1 %. The fix is entry V4 below.
     - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V4, busy-period windows (fixed 2026-11-02, after V3's result and its post hoc diagnosis, before any V4 data).**
+  Shaped by V3's data, and labelled so.
+  - **Mechanism change** (`agent.py`, commit `6b2d661` and the covariance bound below):
+    - The planner's windows (`resample`) and the replay judge's windows (`_trace`) start at an arrival that finds
+      the server empty, under the reference schedule in the world model.
+    - Each window runs to the next such arrival: at least 16 arrivals, at most 128.
+    - A replay window stays fixed in the triplet's state until its triplet ends.
+    - Exploration keeps its 16 arrivals.
+    - Everything else in the agent is unchanged: looks, alphas, floor, veto and decisions.
+  - **Covariance bound** (`_RLS.update`): each parameter's variance stays at or below its starting spread. S2 run 6,
+    the first gate run with busy windows, failed (a'): at trace 200 the prefill term read -11.8 % and the per-group
+    term +0.021 s against a truth of 0, while their sum was within 2.3 %. Groups of one cannot separate the two
+    terms. Forgetting regrew the per-group term's variance up to the whole trace bound, so the split wandered.
+  - **Harness, `--profile t4d`:** V3's `t4c` with these changes:
+    - at most 12 online traces on fresh seeds 242-253, with 800 s of idle after each;
+    - 2 held-out traces per state on fresh seeds 254-255;
+    - the fixed tier is `w8/sjf`, the best fixed schedule on whole traces in V3's world model, instead of
+      `w2/sjf`.
+
+    Everything else is V3's: model, engine, worker, the 900 s deadline, states, cost, decisions (1) and (2),
+    validity (two complete traces per state suffice), the three recorded tiers, early stop on qualification and
+    "nothing qualified online".
+  - **Gate:**
+    - the agent and harness tests pass;
+    - S passes (a) and (b);
+    - S2 passes (a') and (c').
+
+    All three run on the commit the kernel pins.
+    - **Passed 2026-11-02** (S run 11, S2 run 7, local, on the tree committed with this entry). S2 run 6 failed
+      (a'), as above.
+    - S: at trace 50, every world-model parameter is within 1.2 %. At trace 50 `w8/sjf` qualified (+6.6 %, floor
+      0.8 %). Later, two learned candidates were rejected.
+    - S2: at trace 200, 50 traces after the change, every parameter is within 0.8 %, and the per-group term reads
+      0.0004 s. At trace 207 a learned candidate qualified (+2.9 %). At trace 223, 73 traces after the change,
+      `w1/sjf` qualified (+42.3 %, floor 1.1 %). After the change, windows cost 31.5 % less than the reference.
+    - *Descriptive:* over traces 200-299 the largest single parameter error was 12.2 %, so the split still moves
+      at times while groups of one serve.
+  - **Cost:** at most about 6.2 session hours on one Kaggle T4. That is about 0.3 h of setup, 12 traces of about
+    300 s serving and 800 s idle (3.7 h), and 24 held-out cells at V3's rate of about 330 s (2.2 h). It fits the
+    7.3 h of weekly quota left after V3.
+  - **What V3 predicts, descriptively:**
+    - In the model, `w8/sjf` gains about +0.5 % over `w8/fifo` on whole traces (+1.1 % in spike), and every
+      narrower schedule loses.
+    - Replay windows are about 16 arrivals in quiet traffic and up to the whole 64 in bursts and spikes, about 2
+      triplets a trace, so the look at 24 is reachable only near the end of the 12 traces.
+    - A gain this small may not resolve. If the agent qualifies `w8/sjf`, its tier and the fixed tier are the same
+      schedule. That shows the agent finding the best fixed schedule on its own, not RL adding to it.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
+    Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
