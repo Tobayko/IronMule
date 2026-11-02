@@ -181,6 +181,12 @@ learner found no gain on a T4 (P3).
     recorded tiers and "nothing qualified online".
   - **Gate:** the harness tests and the CPU smoke of `--profile t4c` pass. The agent is unchanged, so S and S2
     need no rerun.
+    - Passed 2026-11-02, before any V3 data. On this container the T4 profile's worker (`current_engine`) did not
+      start within its startup deadline, so the smoke ran `t4c` with V-CPU's worker (reference engine,
+      dequantized) and SmolLM2-135M.
+    - Every step ran: deadline 900 s, warmup, calibration, three online traces, then one held-out block per state
+      with all four arms. All 36 requests completed and none differed across arms. The smoke reads "invalid" only
+      because it has one held-out trace and the rule needs two.
   - **Cost:** at most about 10.5 session hours on one Kaggle T4. That is 16 traces of about 320 s serving and
     1,200 s idle (6.8 h), held-out blocks at V2's rate of about 330 s a cell (3.3 h) and setup. The 12-hour limit
     is the binding constraint, so there is no slack for more traces.
