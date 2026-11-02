@@ -227,6 +227,37 @@ learner found no gain on a T4 (P3).
       - windows of 16 arrivals cut from 64-request bursts, so the queue a schedule leaves behind for the next window
         is never paid for.
     - Fixing it is a mechanism change. It needs its own entry before any rerun.
+    - **Diagnosis (2026-11-02, post hoc, descriptive; it changes no verdict above).** The script
+      `v3_window_sim.py`, not committed, rebuilds the held-out traces from their seeds with each request's
+      measured prompt and output tokens. It prices them with the world model the agent ended V3 with. Gains are
+      `w2/sjf` against `w8/fifo`, as the mean over the 9 traces:
+
+      | Priced | Gain |
+      | --- | --- |
+      | Served | -5.1 % |
+      | Model, on whole 64-request traces | -4.8 % |
+      | Model, on the same traces cut into 16-arrival windows | +3.5 % |
+      | Model, 16-arrival windows with outputs capped at 512 | +3.5 % (the cap is irrelevant here) |
+
+      Per trace, the whole-trace model tracks the served result: bursts 240 -16.2 % against -17.8 %, spike 239
+      -4.9 % against -5.2 %. The 16-arrival window turns spike from about -5 % to +6 to +14 %.
+
+      So the world model was right, and the window was wrong. Both the planner (`resample`, windows of `TRACE`)
+      and the replay judge (`_trace`, windows of `TRACE`) score a schedule on 16 of a burst's 64 queued
+      requests. That leaves out the backlog a low-throughput schedule builds up for the requests behind them,
+      which is where `w2/sjf` loses.
+
+      On whole traces the model ranks the fixed schedules by gain over `w8/fifo` (quiet / bursts / spike /
+      equal weight):
+
+      | Schedule | Quiet | Bursts | Spike | Equal weight |
+      | --- | --- | --- | --- | --- |
+      | `w8/sjf` | 0.0 % | +0.3 % | +1.1 % | +0.5 % |
+      | `w4/sjf` | 0.0 % | -5.2 % | -1.5 % | -2.2 % |
+      | `w2/sjf` | 0.0 % | -9.7 % | -4.5 % | -4.8 % |
+
+      The scheduling headroom over the default on this setup is therefore about half a percent, which matches
+      RL8's 0.1-1 %. The fix is entry V4 below.
     - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:

@@ -204,11 +204,11 @@ def _replay_factory(costs, texts=None):
     return replay, calls
 
 
-def _feed(agent, n=64, start=0.0):
+def _feed(agent, n=64, start=0.0, gap=1.0):
     rng = random.Random(3)
     for k in range(n):
-        group = _group(TRUTH, rng, 1, start=start + k)
-        group[0]["arrive"] = start + k
+        group = _group(TRUTH, rng, 1, start=start + k * gap)
+        group[0]["arrive"] = start + k * gap
         agent.observe_group(group)
 
 
@@ -218,7 +218,7 @@ def test_a_candidate_serves_only_after_it_wins_replayed_triplets_on_held_out_tra
     agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {"choice": "best_fixed"}, "since": 31.5,
                        "triplets": [], "used": 0}
     assert agent._trace(agent.traffic, since=31.5) is None  # nothing recorded after the plan yet
-    _feed(agent, 16 * ag.MIN_TRIPLETS, start=100.0)
+    _feed(agent, 16 * ag.MIN_TRIPLETS, start=100.0, gap=10.0)  # the server empties between arrivals
     # A, B, AA (or B, A, AA): the candidate (the arm that sorts shortest-first) costs 20 % less
     replay, calls = _replay_factory(lambda i: 0.0)
 
@@ -538,7 +538,7 @@ def test_an_audit_withdraws_a_serving_schedule_that_loses_to_the_reference(tmp_p
     agent = _agent(tmp_path)
     _feed(agent, 8)
     _promote(agent, ag.fixed_policy(2, True))
-    _feed(agent, 16 * max(ag.LOOKS), start=500.0)
+    _feed(agent, 16 * max(ag.LOOKS), start=500.0, gap=10.0)  # the server empties between arrivals
     replay, _ = _arm_cost_replay(lambda width, sjf: 12.0 if sjf else 10.0)  # the schedule is 20 % slower
     for _ in range(ag.LOOKS[0]):
         agent._audit(replay, lambda: False)
@@ -549,7 +549,7 @@ def test_an_audit_confirms_a_schedule_that_holds_up(tmp_path):
     agent = _agent(tmp_path)
     _feed(agent, 8)
     _promote(agent, ag.fixed_policy(2, True))
-    _feed(agent, 16 * ag.MAX_TRIPLETS, start=500.0)
+    _feed(agent, 16 * ag.MAX_TRIPLETS, start=500.0, gap=10.0)  # the server empties between arrivals
     replay, _ = _arm_cost_replay(lambda width, sjf: 9.0 if sjf else 10.0)
     for _ in range(ag.MAX_TRIPLETS):
         agent._audit(replay, lambda: False)
@@ -605,3 +605,66 @@ def test_a_queue_longer_than_the_table_is_decided_by_the_policy(tmp_path):
     _promote(agent, ag.fixed_policy(4, True))
     queue = [GenerationRequest("m", (("user", "x"),), max_tokens=32)] * (ag.TABLE_QUEUE + 5)
     assert agent.sjf(queue) is True and agent.width(queue) == 4
+
+
+V3_MODEL = {"prefill_s": 0.1056, "prefill_s_per_ktoken": 1.404, "group_s": 0.0189, "step_s": 0.0203,
+            "step_s_per_session": 0.0180}  # the world model the agent ended AG1 V3 with (Kaggle T4, Qwen3-1.7B)
+
+
+def _bursty_arrivals(seed, traces=6):
+    """V3-like traffic: 64-request spikes inside one second, an idle gap, then quiet arrivals; outputs 32 or 256
+    tokens, half the prompts long. [offset s, prompt tokens, long, output limit, tokens made]."""
+    rng, out, t = random.Random(seed), [], 0.0
+    for _ in range(traces):
+        for offset in sorted(rng.uniform(0, 1.0) for _ in range(64)):
+            long = rng.random() < 0.5
+            limit = rng.choice((32, 256))
+            out.append([t + offset, 1030 if long else 20, long, limit, limit])
+        t += 1500.0
+        for _ in range(16):
+            limit = rng.choice((32, 256))
+            out.append([t, 20, False, limit, limit])
+            t += 30.0
+        t += 1500.0
+    return out
+
+
+def test_a_busy_window_spans_the_whole_burst_and_stops_where_the_server_empties():
+    arrivals = _bursty_arrivals(1, traces=1)
+    jobs = ag._jobs(arrivals)
+    assert ag.busy_size(V3_MODEL, jobs, REFERENCE, 8, 4) == 64  # the whole spike, not its first 16
+    quiet = ag._jobs(arrivals[64:])
+    assert ag.busy_size(V3_MODEL, quiet, REFERENCE, 8, 4) == ag.TRACE  # quiet traffic empties after every arrival
+    assert ag.busy_size(V3_MODEL, jobs, REFERENCE, 8, 4, maximum=40) == 40  # a server that never empties is cut
+    starts = ag.busy_starts(V3_MODEL, arrivals, REFERENCE, 8, 4)
+    assert 0 in starts and not any(0 < k < 64 for k in starts)
+
+
+def test_busy_windows_stop_the_planner_preferring_the_narrow_schedule_v3_served_slower():
+    """AG1 V3: on 16-arrival windows the model priced `w2/sjf` below `w8/fifo`; served on whole traces it lost
+    6.5 %. On whole busy periods the same model ranks it below the default, as served."""
+    arrivals = _bursty_arrivals(2)
+    payload = {"model": V3_MODEL, "arrivals": arrivals, "capacity": 8, "engine_width": 4, "seed": 0,
+               "widths": [1, 2, 4, 8], "reference": REFERENCE,
+               "settings": {"episodes": 20, "seeds": 1, "validation": 24, "held_out": 24}}
+    fixed = plan({**payload, "settings": {**payload["settings"], "busy": False}})["arm_costs"]
+    busy = plan(payload)["arm_costs"]
+    assert fixed["w2/sjf"] < fixed["w8/fifo"]  # the V3 mistake, reproduced
+    assert busy["w2/sjf"] > busy["w8/fifo"]
+    assert min(busy, key=busy.get) in ("w8/sjf", "w8/fifo")
+
+
+def test_a_replay_window_spans_the_backlog_and_the_next_window_starts_after_it(tmp_path):
+    agent = _agent(tmp_path)
+    _feed(agent, 32)  # one arrival a second, each about 3 s of work: the server never empties
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    seen = []
+
+    def replay(trace, choose, preempted):
+        seen.append(len(trace))
+        rows = [{"ttft_s": 1.0, "e2e_s": 3.0, "tokens": 4, "outcome": "ok"} for _ in trace]
+        return {"rows": rows, "texts": ["same"] * len(trace), "span_s": 1.0}
+
+    agent._qualify(replay, lambda: False)
+    assert seen == [31] * 3  # every recorded arrival after the plan: the burst never ended
+    assert agent.candidate["skip"] == 31 and agent.candidate["trace"] is None and agent.candidate["used"] == 1

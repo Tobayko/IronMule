@@ -69,6 +69,7 @@ MAX_EXPLORATIONS = 2        # replay windows that may measure one unpriced width
 REPLAN_AFTER = 64           # new arrivals before a fresh plan when no candidate waits
 QUIET_S = 5.0               # idle seconds before a replay window may start (RSI3-LIVE)
 TRACE = 16                  # arrivals per replay window
+MAX_WINDOW = 128            # arrivals a busy-period window may span; a server that never empties is cut here
 MAX_REPLAY_TOKENS = 512     # a replayed output limit is capped here
 MAX_PREEMPTIONS = 3         # demand cut a held-out window this often: the next one is used instead
 MIN_TRIPLETS = 12
@@ -351,16 +352,67 @@ def _fixed(width: int, sjf: bool) -> tuple[Callable, Callable]:
     return (lambda waiting: sjf), (lambda waiting: width)
 
 
-def resample(arrivals: list[list[Any]], rng: random.Random, size: int, scale: tuple[float, float]) -> list[Job]:
-    """A window of `size` consecutive recorded arrivals, its gaps scaled by one factor drawn from `scale`
-    (lighter and heavier load than recorded), as model jobs. An arrival is [offset s, prompt tokens,
-    long prompt, output limit, tokens made]."""
-    start = rng.randrange(max(1, len(arrivals) - size + 1))
-    window = arrivals[start:start + size]
-    factor = rng.uniform(*scale)
-    t0 = window[0][0]
+def _jobs(arrivals: list[list[Any]], factor: float = 1.0) -> list[Job]:
+    """Recorded arrivals [offset s, prompt tokens, long prompt, output limit, tokens made] as model jobs, timed
+    from the first, their gaps scaled by `factor`."""
+    t0 = arrivals[0][0] if arrivals else 0.0
     return [Job(k, (a[0] - t0) * factor, int(a[3]), bool(a[2]), int(a[1]), max(1, int(a[4])))
-            for k, a in enumerate(window)]
+            for k, a in enumerate(arrivals)]
+
+
+def _reference_deciders(reference: dict[str, Any], capacity: int) -> tuple[Callable, Callable]:
+    return _fixed(max(1, min(capacity, int(reference["width"]))), bool(reference["sjf"]))
+
+
+def _idle_marks(params: dict[str, float], jobs: list[Job], reference: dict[str, Any], capacity: int,
+                engine_width: int) -> list[bool]:
+    """Per job: whether it arrives at an empty server (every earlier job ended) when the reference schedule
+    serves them all in the model. The first job always does."""
+    copy = [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens) for j in jobs]
+    if copy:
+        simulate(params, copy, *_reference_deciders(reference, capacity), capacity, engine_width)
+    marks, done = [], -math.inf
+    for job in copy:
+        marks.append(done <= job.arrive)
+        done = max(done, job.end if job.end is not None else job.arrive)
+    return marks
+
+
+def busy_size(params: dict[str, float], jobs: list[Job], reference: dict[str, Any], capacity: int,
+              engine_width: int, minimum: int = TRACE, maximum: int = MAX_WINDOW) -> int:
+    """How many leading jobs make a window of whole busy periods (AG1 V4): at least `minimum`, then up to the first
+    later arrival that finds the reference schedule's server empty in the model, at most `maximum`. A window cut
+    inside a busy period leaves out the backlog a slow schedule builds for the requests behind it, and that
+    flipped `w2/sjf` from -4.8 % on whole traces to +3.5 % on 16-arrival windows (AG1 V3)."""
+    jobs = jobs[:maximum]
+    if len(jobs) <= minimum:
+        return len(jobs)
+    marks = _idle_marks(params, jobs, reference, capacity, engine_width)
+    return next((k for k in range(minimum, len(jobs)) if marks[k]), len(jobs))
+
+
+def resample(arrivals: list[list[Any]], rng: random.Random, size: int, scale: tuple[float, float],
+             busy: dict[str, Any] | None = None) -> list[Job]:
+    """A window of consecutive recorded arrivals, its gaps scaled by one factor drawn from `scale` (lighter and
+    heavier load than recorded), as model jobs. Without `busy`, `size` arrivals from anywhere. With `busy`
+    ({"params", "reference", "capacity", "engine_width", "starts"}), it starts at a recorded arrival that found
+    the server empty (`starts`) and spans whole busy periods of the reference schedule: at least `size`
+    arrivals, at most `MAX_WINDOW` (AG1 V4)."""
+    if busy is None:
+        start = rng.randrange(max(1, len(arrivals) - size + 1))
+        return _jobs(arrivals[start:start + size], rng.uniform(*scale))
+    starts = busy["starts"] or [0]
+    start = starts[rng.randrange(len(starts))]
+    jobs = _jobs(arrivals[start:start + MAX_WINDOW], rng.uniform(*scale))
+    return jobs[:busy_size(busy["params"], jobs, busy["reference"], busy["capacity"], busy["engine_width"], size)]
+
+
+def busy_starts(params: dict[str, float], arrivals: list[list[Any]], reference: dict[str, Any], capacity: int,
+                engine_width: int, size: int = TRACE) -> list[int]:
+    """Recorded arrivals that find the reference schedule's server empty in the model and leave at least `size`
+    arrivals after them: where a busy-period window may start."""
+    marks = _idle_marks(params, _jobs(arrivals), reference, capacity, engine_width)
+    return [k for k, mark in enumerate(marks) if mark and k <= len(arrivals) - min(size, len(arrivals))]
 
 
 def _arms(capacity: int) -> dict[str, dict[str, Any]]:
@@ -385,8 +437,14 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     capacity, engine_width = int(payload["capacity"]), int(payload.get("engine_width", ENGINE_WIDTH))
     rng = random.Random(int(payload.get("seed", 0)))
     size, scale = int(settings["trace"]), tuple(settings["scale"])
-    validation = [resample(arrivals, random.Random(30_000 + k), size, scale) for k in range(settings["validation"])]
-    held_out = [resample(arrivals, random.Random(50_000 + k), size, scale) for k in range(settings["held_out"])]
+    busy = None
+    if settings.get("busy", True):  # AG1 V4: whole busy periods, not fixed windows
+        busy = {"params": params, "reference": payload["reference"], "capacity": capacity,
+                "engine_width": engine_width,
+                "starts": busy_starts(params, arrivals, payload["reference"], capacity, engine_width, size)}
+    validation = [resample(arrivals, random.Random(30_000 + k), size, scale, busy)
+                  for k in range(settings["validation"])]
+    held_out = [resample(arrivals, random.Random(50_000 + k), size, scale, busy) for k in range(settings["held_out"])]
     arms = _arms(capacity)
     allowed = [w for w in WIDTH_CHOICES if w <= max(1, capacity) and w in payload.get("widths", WIDTH_CHOICES)]
     arms = {name: arm for name, arm in arms.items() if int(name[1:].split("/")[0]) in allowed}
@@ -400,7 +458,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     runs = []
     for seed in range(int(settings["seeds"])):
         weights, curve = _train(params, arrivals, capacity, engine_width, guard, allowed, settings,
-                                random.Random(rng.randrange(1 << 30) + seed))
+                                random.Random(rng.randrange(1 << 30) + seed), busy)
         candidate = Policy.from_json(policy_json([0.0] * PLACEMENT_FEATURES, weights[0], weights[1]))
         runs.append((_mean_cost(params, validation, _deciders(candidate, capacity), capacity, engine_width), seed,
                      weights, curve))
@@ -431,7 +489,8 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, engine_width: int, guard: Policy,
-           allowed: list[int], settings: dict[str, Any], rng: random.Random) -> tuple[tuple[list, list], list]:
+           allowed: list[int], settings: dict[str, Any], rng: random.Random,
+           busy: dict[str, Any] | None = None) -> tuple[tuple[list, list], list]:
     """REINFORCE with a running-mean baseline (as `tools/rl4_agent.train`), order and width heads only; each
     episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8)."""
     order = [0.0] * ORDER_FEATURES
@@ -443,7 +502,7 @@ def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, e
     baseline, curve = None, []
     lr, harm = float(settings["lr"]), float(settings["harm_weight"])
     for _ in range(int(settings["episodes"])):
-        jobs = resample(arrivals, rng, int(settings["trace"]), tuple(settings["scale"]))
+        jobs = resample(arrivals, rng, int(settings["trace"]), tuple(settings["scale"]), busy)
         grad_o = [0.0] * ORDER_FEATURES
         grad_w = [0.0] * len(width)
 
@@ -763,6 +822,7 @@ class Agent:
         trace = self._trace(self.traffic, since=None)
         if not unpriced or trace is None:
             return False
+        trace = trace[:TRACE]  # a measurement of a width needs no whole busy period
         width = unpriced[0]
         result = replay([(0.0, chars, tokens) for _, chars, tokens in trace],
                         lambda count, waiting, rate, now: (width, 0, False), preempted)
@@ -781,10 +841,17 @@ class Agent:
         stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
         capping output limits at 128 halved the long requests, so qualification favoured a schedule that
         loses on the recorded traffic (AG1 S, run 3). Prompt characters stand in for the recorded tokens at
-        about four characters a token, and long prompts keep their class."""
-        rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + TRACE]
+        about four characters a token, and long prompts keep their class.
+
+        The window spans whole busy periods of the reference schedule in the world model (AG1 V4): at least
+        `TRACE` arrivals, then up to the next arrival that finds the server empty, at most `MAX_WINDOW`. Sixteen
+        arrivals cut from a 64-request burst scored `w2/sjf` +6.8 % on replay where it lost 6.5 % served (AG1
+        V3). The recorded traffic may end inside a busy period only because the server is idle now (replays
+        run only then), so its last period is complete."""
+        rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + MAX_WINDOW]
         if len(rows) < TRACE:
             return None
+        rows = rows[:busy_size(self.world.params(), _jobs(rows), self.reference, self.capacity, self.engine_width)]
         out = []
         for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
@@ -809,9 +876,11 @@ class Agent:
         runs again in the next idle spell and the arms already run are kept (cost, whether a request failed, a
         digest per answer; AG1 S, run 2), bound to the serving schedule they ran against: if that changed or
         the agent was paused meanwhile, the kept arms are dropped. Returns the finished arms, else None."""
-        trace = self._trace(self.traffic, since=state["since"], skip=state["used"] * TRACE)
+        skip = int(state.get("skip", state["used"] * TRACE))
+        trace = state.get("trace") or self._trace(self.traffic, since=state["since"], skip=skip)
         if trace is None:
             return None
+        state["trace"] = trace  # the window is fixed until its triplet ends: the model it was cut by keeps learning
         bound = [self._incumbent_key(), self.paused]
         done = state.setdefault("partial", {})
         if done.get("bound", bound) != bound:
@@ -828,7 +897,7 @@ class Agent:
                 if result is None:  # demand came first: this arm runs again in the next idle spell
                     state["preempted"] = state.get("preempted", 0) + 1
                     if state["preempted"] >= MAX_PREEMPTIONS:  # this window never fits the idle spells
-                        state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
+                        self._next_window(state, skip, trace)
                     self._dirty()
                     return None
                 done[arm] = {"cost": window_cost(result["rows"], self.deadline_s),
@@ -837,8 +906,13 @@ class Agent:
                 state["preempted"] = 0
                 self._dirty()
         with self._lock:
-            state["used"], state["preempted"], state["partial"] = state["used"] + 1, 0, {}
+            self._next_window(state, skip, trace)
             return done
+
+    @staticmethod
+    def _next_window(state: dict[str, Any], skip: int, trace: list) -> None:
+        state["used"], state["skip"], state["trace"] = state["used"] + 1, skip + len(trace), None
+        state["preempted"], state["partial"] = 0, {}
 
     def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
         """One A/B/AA triplet of the candidate (B) against the serving schedule on arrivals recorded after the
