@@ -34,7 +34,7 @@
 
 **IronMule runs AI language models on your own computer: up to 1.82× faster with exactly the same answers, or up to 5× with an opt-in mode on older NVIDIA graphics cards.** It works on Apple Silicon Macs and on Linux PCs with an NVIDIA GPU (more slowly, also on a CPU alone), fully offline. It is fast because it reuses work, skips work that is not needed and answers several questions together. Each speed-up is checked to give the same answer as the normal path before it is used. IronMule is built on [MLX](https://github.com/ml-explore/mlx) and runs models such as Gemma 3 and Qwen 3. You install it with one line, and you can use it as a local chat server or from three lines of Python.
 
-**The project's main goal is the IronMule agent:** an AI inside the server that decides on its own how requests run on
+**The project's main goal is the IronMule agent:** a small decision model inside the server, not a language model. It decides on its own how requests run on
 your hardware, keeps learning by reinforcement learning while it serves, and decides in microseconds. It serves a
 strategy only after it has proven it faster on your machine. See [The IronMule agent](#the-ironmule-agent-the-projects-main-goal).
 
@@ -110,8 +110,8 @@ print(result.text)
 
 ## The IronMule agent (the project's main goal)
 
-`ironmule serve --agent on` hands scheduling to the IronMule agent, an AI that runs inside the server. It is
-opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
+`ironmule serve --agent on` hands scheduling to the IronMule agent, a small decision model that runs inside the
+server. It is not a language model: the language model is only the work it schedules. It is opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
 
 - **It decides.** At every group start it chooses the order (shortest answer first or arrival order) and how many
   requests run together. Each decision is a few dot products and takes microseconds. Answers never change.
