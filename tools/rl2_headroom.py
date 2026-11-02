@@ -1810,6 +1810,10 @@ AG1_PROFILES["cpu2"] = {**AG1_PROFILES["cpu"], "learn": range(151, 191), "evalua
 # (RL6's `w2/sjf`) and the agent, measured even when the agent qualified nothing (then it serves the default)
 AG1_PROFILES["t4b"] = {**AG1_PROFILES["t4"], "requests": 64, "learn": range(195, 219), "evaluate": range(219, 223),
                        "pause_s": 480.0, "fixed": (2, True)}
+# BACKLOG AG1, V3: V2 with a 900 s deadline so a 64-request spike completes, 1,200 s idle so a trace's four windows
+# replay, at most 16 online traces ending after the one in which the agent qualified, and 3 held-out traces a state
+AG1_PROFILES["t4c"] = {**AG1_PROFILES["t4b"], "learn": range(223, 239), "evaluate": range(239, 242),
+                       "pause_s": 1200.0, "timeout_s": 900, "stop_on_qualify": True}
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:
@@ -1886,6 +1890,9 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             report["learning"].append(row)
             if on_row is not None:
                 on_row(report)
+            if setup.get("stop_on_qualify") and agent.policy is not None:  # V3: held-out needs nothing more
+                report["online_ended_after"] = t
+                break
         final = agent.status()
         policy = agent.policy
         report["agent_final"] = {**final, "history": list(agent.history), "evidence": agent.evidence,

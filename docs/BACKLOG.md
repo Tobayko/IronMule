@@ -138,6 +138,54 @@ learner found no gain on a T4 (P3).
   - **Cost:** about 8.5 session hours on one Kaggle T4, within the 12-hour session limit.
   - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup. It
     ships only opt-in.
+  - **Result (2026-11-02, kernel `tobayko/ironmule-rl2-headroom-ag1-t4b` v1 at `e18cd96`, 9.75 session hours):
+    invalid, and nothing qualified online.**
+    - **Why invalid.** The fixed validity rule says every held-out request completes. In `bursts` and `spike`, 10 to
+      27 of a trace's 64 requests hit the 120 s request deadline, in every arm, on all four held-out traces. Sixty-four
+      requests per trace overload the T4 in those states. A spike puts all 64 arrivals inside one second; V's 16 never
+      timed out. Sixteen requests differ across arms, all of them only in whether they finished before the deadline.
+      Every request that completed in all arms answered with the same tokens.
+    - **Online.** 24 traces, 617 groups, 3 plans, 0 explorations, 36 triplets, 0 qualified, 0 rejected; the reference
+      served throughout. The world model reached a 2.1 % median relative error over 1,684 groups and reopened 3
+      times. At arrival 192 (trace 198) the planner proposed `w4/sjf` (`1c205576ee02`, model gain +3.0 %). Not the
+      RL6 schedule `w2/sjf`: its model priced that at 17.20 against `w4/sjf`'s 16.52 and the reference's 17.06.
+    - At the look at 12 triplets the corrected bound was below the floor. At 24 it did not pass either: the bound
+      at the look's 0.2 % is not in the report, which shows the bound at 1.65 % between looks. At the last trace,
+      36 triplets gave +3.0 % (95 % +0.7 to +5.6 %, floor 0.03 %, noise 3.0 %). The run ended before the look at
+      48.
+    - **Three tiers**, *descriptive only, since the run is invalid*. They are bootstrap 95 % intervals over 4 traces
+      per state with the states weighted equally, and the A/A control is +0.2 % (95 % -0.3 to +0.6 %):
+      - fixed `w2/sjf` over the default `w8/fifo`: -2.7 % (95 % -3.9 to -1.7 %);
+      - the agent over the default: -0.03 % (95 % -0.4 to +0.3 %). The agent served the default, as the protocol
+        says when nothing qualified;
+      - the agent over fixed: +2.6 % (95 % +1.6 to +3.8 %). That is the default against `w2/sjf`, not anything RL
+        added.
+    - *Descriptive.* The agent made 1.5 triplets per trace, not the four the protocol assumed. A replay arm of an
+      overloaded window takes about 90 s, so a triplet takes about 270 s, and 480 s of idle holds one or two. The
+      triplets were about three times less noisy than V's: the 95 % width at 17 triplets was 6.7 points, against
+      V's 22.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V3, V2 with completable traces and room for the look at 48 (fixed 2026-11-02, after V2's result and before any
+  of its own data).** Shaped by V2's data, and labelled so. The agent does not change: `agent.py` is the code that
+  passed V2's gate (S run 9, S2 run 5). The harness runs as `--profile t4c`, which is V2's `t4b` with four changes:
+  - **The request deadline is 900 s**, through the product's own `request_timeout_s`, for the whole run. A spike of
+    64 requests takes about 250 to 300 s to drain on the T4, so every request can complete. Validity, the cost and
+    its failure penalty are unchanged, priced at the new deadline. The agent's replays already ran without a
+    deadline failure in V2.
+  - **1,200 s idle after each online trace**, so the four windows of a trace fit at about 270 s a triplet.
+  - **At most 16 online traces on fresh seeds 223-238.** The online phase ends after the trace in which the agent
+    qualified a schedule, since the held-out comparison needs nothing more from it.
+  - **Held-out: 3 traces per state on fresh seeds 239-241.** Each block runs the same four arms as V2: the default
+    twice, fixed `w2/sjf` and the agent, in rotated order.
+  - Everything else is V2's: model, engine, worker, states, cost, decisions (1) and (2), validity, the three
+    recorded tiers and "nothing qualified online".
+  - **Gate:** the harness tests and the CPU smoke of `--profile t4c` pass. The agent is unchanged, so S and S2
+    need no rerun.
+  - **Cost:** at most about 10.5 session hours on one Kaggle T4. That is 16 traces of about 320 s serving and
+    1,200 s idle (6.8 h), held-out blocks at V2's rate of about 330 s a cell (3.3 h) and setup. The 12-hour limit
+    is the binding constraint, so there is no slack for more traces.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
+    Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized

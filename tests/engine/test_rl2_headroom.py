@@ -889,3 +889,8 @@ def test_ag1_profiles_differ_only_where_backlog_ag1_says():
     assert rl2.AG1_PROFILES["cpu2"] == {**cpu, "learn": range(151, 191), "evaluate": range(191, 195)}
     assert rl2.AG1_PROFILES["t4b"] == {**t4, "requests": 64, "learn": range(195, 219), "evaluate": range(219, 223),
                                        "pause_s": 480.0, "fixed": (2, True)}
+    assert rl2.AG1_PROFILES["t4c"] == {**rl2.AG1_PROFILES["t4b"], "learn": range(223, 239),
+                                       "evaluate": range(239, 242), "pause_s": 1200.0, "timeout_s": 900,
+                                       "stop_on_qualify": True}
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4c"]
+    assert not (set(rl2.AG1_PROFILES["t4c"]["learn"]) | set(rl2.AG1_PROFILES["t4c"]["evaluate"])) & set().union(*used)
