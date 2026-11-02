@@ -192,6 +192,42 @@ learner found no gain on a T4 (P3).
     is the binding constraint, so there is no slack for more traces.
   - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
     Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
+  - **Result (2026-11-02, kernel `tobayko/ironmule-rl2-headroom-ag1-t4c` v1 at `2762ef8`, 10.3 session hours):
+    valid, and nothing qualified online.** Every held-out request completed in every arm, 0 answers mismatched,
+    3 complete traces per state, no problems.
+    - **Online.** All 16 traces ran (no early stop): 481 groups, 2 plans, 0 explorations, 41 triplets, 0 qualified,
+      0 rejected; the reference served throughout. The world model reached a 4.6 % median relative error over 1,551
+      groups and reopened 4 times. The first plan (32 arrivals) proposed nothing. The second (108 arrivals)
+      proposed the best fixed schedule, here `w2/sjf` (`c63bf219337e`, model gain +2.9 %; model costs `w2/sjf`
+      7.18, `w4/sjf` 7.20, `w8/fifo` 7.41).
+    - Neither look reached passed: at 24 triplets the bound at the look's 0.2 % was -0.1 %, below the floor of
+      0.1 %. At the last trace, 41 triplets gave the candidate +6.8 % over the reference (95 % +3.6 to +9.7 %, floor
+      0.1 %, noise 0.7 %). The run ended 7 triplets before the look at 48.
+    - **Decisions.** (1) fails: +0.1 % (95 % +0.03 to +0.2 %), with the bound below the A/A floor of 0.1 %. The
+      agent served the default, so this is an A/A difference. (2) passes. A/A control +0.1 % (95 % -0.06 to +0.2 %),
+      noise 1.2 %.
+    - **Three tiers** (recorded, not decided; 3 traces per state, states weighted equally):
+      - fixed `w2/sjf` over the default `w8/fifo`: -6.5 % (95 % -7.7 to -4.7 %);
+      - the agent over the default: +0.1 % (95 % +0.03 to +0.2 %). It served the default;
+      - the agent over fixed: +6.3 % (95 % +4.5 to +7.4 %). That is the default against `w2/sjf`, not anything RL
+        added.
+    - *Descriptive, the finding that matters:* the agent's replay judge and the served comparison disagree in
+      sign. On replay, `w2/sjf` beat `w8/fifo` by +6.8 %. Served end to end on held-out traffic, it lost by 6.5 %.
+      Per state, the mean request cost was: quiet even (2.87-3.07 s in every arm); bursts 22.8 / 108.4 / 68.0 s
+      under `w2/sjf` against 22.5 / 92.0 / 60.6 s under the default; spike 214.5 / 275.3 / 231.0 s against
+      203.9 / 263.9 / 219.9 s. The world model mispriced it the same way (+3.1 % in the model).
+    - Had the run reached the look at 48, the candidate would probably have qualified, and the agent would have
+      served a schedule that costs more on the traffic it was proposed for. Decision (2) would then have been
+      the guard. The replay is what the planner's proposal is checked against, so this is a defect in the
+      mechanism (step 3), not in the noise.
+    - Candidate causes, not tested:
+      - filler prompts instead of the recorded prompt lengths' content;
+      - output limits capped at 512;
+      - idle stretches skipped;
+      - windows of 16 arrivals cut from 64-request bursts, so the queue a schedule leaves behind for the next window
+        is never paid for.
+    - Fixing it is a mechanism change. It needs its own entry before any rerun.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
