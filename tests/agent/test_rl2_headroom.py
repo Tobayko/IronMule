@@ -1045,7 +1045,7 @@ def test_ag4c_compares_the_agents_path_with_the_default_on_the_same_arrivals(tmp
         report = rl2.measure_ag4c(pool, spec.model_id, 30.0, traces=[0, 1], requests=3, limit=3)
     finally:
         pool.close()
-    assert report["calibration"]["ok"] == 8 and len(report["rows"]) == 3 * 2 * 3
+    assert report["calibration"]["ok"] == 3 and len(report["rows"]) == 3 * 2 * 3
     assert [row["arm"] for row in report["rows"][:3]] == ["default", "agent", "default"]
     result = rl2.analyse_ag4c(report, resamples=50)
     assert result["valid"] and result["complete_blocks"] == 6 and set(result["passes"]) == {"tokens_per_s",

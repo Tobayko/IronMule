@@ -1030,6 +1030,16 @@ with nothing given to it, serve more tokens per second than today's default thro
   on its 4-bit weights. The agent's CPU check chose `dequantize` there by itself (0.124 of stock time, logits
   within 1.45 % of the float32 plan). At that speed the run would not fit a 12-hour session, so it uses V-CPU's
   smaller model and an output limit of 32 instead of 64.
+- *Amended again before any data (2026-11-03), after a second local tool smoke:*
+  - On this container the agent's own CPU check, on its first sight of `SmolLM2-135M-Instruct-8bit`, measured
+    260.4 s for a 16-token answer on the 8-bit weights and 7.3 s with `dequantize` (0.028 of stock time, logits
+    within 0.28 % of the float32 plan, the same top token). It chose `dequantize` by itself.
+  - At 16 s a token on the default path, the sizes above would take more than a day.
+  - So the run uses 2 traces per state (seeds 410-411), 4 requests per trace, an output limit of 16, and a 7,200 s
+    request deadline.
+  - It runs on this cloud container's CPU. A Kaggle CPU was about 2x slower in V5-CPU, and the run would not fit
+    a 12-hour session there. A container restart loses the run, and is reported as such.
+  - Expected: about 4.5 hours, nearly all of it the default path's cells.
 - *Pass (both):*
   - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
     bound above 1 (2,000 resamples);

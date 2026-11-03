@@ -2334,10 +2334,10 @@ def run_ag4r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
 # ---------------------------------------------------------------- AG4-C: the agent's own setup on a CPU (BACKLOG AG4)
 
 AG4C_MODEL = "mlx-community/SmolLM2-135M-Instruct-8bit"  # V-CPU's model; Qwen3-0.6B-4bit took 9 s a token here
-AG4C_TRACES = range(410, 414)                   # fresh seeds: 4 traces per state
+AG4C_TRACES = range(410, 412)                   # fresh seeds: 2 traces per state
 AG4C_LOAD = 0.8                                 # arrival rate over the default path's calibrated capacity
-AG4C_REQUESTS = 8
-AG4C_LIMIT = 32
+AG4C_REQUESTS = 4
+AG4C_LIMIT = 16
 
 
 def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C_TRACES, load: float = AG4C_LOAD,
@@ -2345,7 +2345,7 @@ def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C
     """Every block (state, trace) runs the default path, the agent's chosen path and the default path again, on the
     same arrivals, both paths loaded side by side (path 0 the default, path 1 the agent's choice)."""
     pool.router = ForcedRoute(0)
-    burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, 8, (limit,))]
+    burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, requests, (limit,))]
     done = replay(pool, model, burst, deadline_s)
     makespan = max(r["end_s"] or 0.0 for r in done) or 1.0
     capacity = sum(r["outcome"] == "ok" for r in done) / makespan
@@ -2439,12 +2439,12 @@ def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     if added.get("returncode") != 0:
         return {**report, "failed": "models add", "added": added}
     store = ProductStore(state)
-    store.set_request_timeout(1800)
+    store.set_request_timeout(7200)
     spec = store.model(model)
     makers = [lambda: MLXWorkerClient(spec), lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"])]
     pool = start_paths(store, spec, makers, ["cpu:default", "cpu:agent"], ProductService, ForcedRoute(0))
     try:
-        measured = measure_ag4c(pool, model, 1800.0, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
+        measured = measure_ag4c(pool, model, 7200.0, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
                                                        if smoke else {}),
                                 on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
     finally:
