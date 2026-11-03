@@ -831,6 +831,17 @@ Alpaca prompts, one limit of 512), with the world model starting from the machin
 generic prior.
 - *Kept if:* it qualifies the agent's schedule at least 10 traces earlier than S-LP run 1 on both prices.
 - *Otherwise:* AG3 stays report-only.
+- **Result (2026-11-03): not kept; AG3 stays report-only.**
+  - *T4 price:* the agent planned `w8/pred` at trace 10 (S-LP run 1: trace 34), but replay rejected it at trace
+    106. Two later candidates were also rejected, nothing qualified in the 300 traces, and the reference served
+    throughout. S-LP run 1, with the generic prior, qualified at trace 130.
+  - *CPU price:* it qualified `w8/pred` at trace 99, as S-LP run 1 did, and served 8.2 % below the best fixed
+    schedule.
+  - Neither price qualified 10 traces earlier.
+  - *Descriptive:* the world model leaves its generic prior within a few groups. What holds the agent back is how
+    fast the length model learns and how many replay triplets it collects, not what it knows about the machine.
+    The T4 rejection, one seed each, shows how noisy a single simulated run's verdict is, not that the prior
+    harms.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
