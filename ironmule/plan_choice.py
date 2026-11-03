@@ -220,7 +220,38 @@ def decide(stacked: dict[str, Any]) -> dict[str, Any]:
                       f"{stacked['gate']['ratio']:.5f}, first token {ttft:.2f}x"}
 
 
-def measure_in_process(model_id: str, compute_dtype: str | None) -> dict[str, Any]:
+def measure_base(model: Any, tokenizer: Any, *, steps: int = SPEED_STEPS, long_prompt: str | None = None
+                 ) -> dict[str, dict[str, float]]:
+    """The served path's own single-request speed: seconds to the first token and per decode step, short and long."""
+    from .tune import DEFAULT_PROMPT
+
+    out = {}
+    for name, prompt in (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT)):
+        first, step = _base_speed(model, list(tokenizer.encode(prompt)), steps)
+        out[name] = {"base_first_s": first, "base_step_s": step}
+    return out
+
+
+def stacked_base(numeric_plan: str | None) -> str | None:
+    """The plan a stacked engine runs on: KB2's Gemma plan on `native`, KB1's dense plan on the checkpoint's own
+    bf16. A float plan NUM1 chose (float16, float32) is not what either was built on, so it is compared against,
+    not stacked on (AG4-Q run 1: the dense plan refused float16 weights)."""
+    return "native" if numeric_plan == "native" else None
+
+
+def against(stacked: dict[str, Any], base: dict[str, dict[str, float]]) -> dict[str, Any]:
+    """`stacked` with its speed rows compared against `base` (the path that serves without stacking); the stacked
+    engine's own base path's numbers stay beside them as `stacked_base_*`."""
+    if not stacked.get("eligible"):
+        return stacked
+    speed = {}
+    for name, row in stacked["speed"].items():
+        speed[name] = {**row, "stacked_base_first_s": row["base_first_s"], "stacked_base_step_s": row["base_step_s"],
+                       **base[name]}
+    return {**stacked, "speed": speed}
+
+
+def measure_in_process(model_id: str, compute_dtype: str | None, base_only: bool = False) -> dict[str, Any]:
     """Load the model on its base path (the numeric plan NUM1 chose) and measure the stacked engine."""
     import mlx.core as mx
 
@@ -229,21 +260,23 @@ def measure_in_process(model_id: str, compute_dtype: str | None) -> dict[str, An
 
     engine, tokenizer = load_engine(model_id, BASELINE, compute_dtype=compute_dtype)
     try:
+        if base_only:
+            return measure_base(engine.model, tokenizer)
         return measure_stacked(engine.model, tokenizer, mx.device_info() if mx.cuda.is_available() else None)
     finally:
         _close_engine(engine)
         _release_device_memory()
 
 
-def _measure_in_child(model_id: str, compute_dtype: str | None) -> dict[str, Any]:
+def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool = False) -> dict[str, Any]:
     import subprocess
     import sys
 
     code = ("import json, sys; from ironmule.plan_choice import measure_in_process; "
-            "print('@@STACKED ' + json.dumps(measure_in_process(sys.argv[1], sys.argv[2] or None), default=str), "
-            "flush=True)")
-    proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or ""], stdout=subprocess.PIPE,
-                          text=True, timeout=7200)
+            "print('@@STACKED ' + json.dumps(measure_in_process(sys.argv[1], sys.argv[2] or None, sys.argv[3] == '1'), "
+            "default=str), flush=True)")
+    proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or "", "1" if base_only else "0"],
+                          stdout=subprocess.PIPE, text=True, timeout=7200)
     lines = [line for line in proc.stdout.splitlines() if line.startswith("@@STACKED ")]
     if proc.returncode or not lines:
         return {"eligible": False, "reason": f"the measurement child exited with status {proc.returncode}"}
@@ -252,7 +285,7 @@ def _measure_in_child(model_id: str, compute_dtype: str | None) -> dict[str, Any
 
 def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: Callable[[str], None] = print,
                  numeric: Callable[..., dict[str, Any]] | None = None,
-                 measure: Callable[[str, str | None], dict[str, Any]] | None = None) -> dict[str, Any]:
+                 measure: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
     """The agent's setup for this machine and model: {"compute_dtype", "engine": "dense" | "reference", "reason",
     "numeric", "stacked", "decision"}; made once and stored."""
     key = f"{fingerprint}-{identity_sha256[:16]}"
@@ -263,8 +296,13 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
     base = numeric(model_id, fingerprint, identity_sha256, log=log)
     compute_dtype = base.get("plan")
     log(f"agent: numeric plan {compute_dtype or 'none (checkpoint dtype)'}: {base.get('reason')}")
-    log("agent: measuring the stacked engine on this card ...")
-    stacked = (measure or _measure_in_child)(model_id, compute_dtype)
+    measure = measure or _measure_in_child
+    on = stacked_base(compute_dtype)
+    log(f"agent: measuring the stacked engine on this card (on {on or 'the checkpoint dtype'}) ...")
+    stacked = measure(model_id, on)
+    if stacked.get("eligible") and on != compute_dtype:  # compare against the path that would serve instead
+        log(f"agent: measuring {compute_dtype or 'the checkpoint dtype'} alone, the path it competes with ...")
+        stacked = against(stacked, measure(model_id, compute_dtype, base_only=True))
     decision = decide(stacked)
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
     setup = {"compute_dtype": compute_dtype, "engine": "dense" if decision["stacked"] else "reference",

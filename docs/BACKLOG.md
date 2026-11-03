@@ -975,6 +975,15 @@ cheaper than the default)?
 - *Otherwise:* the decision and its reason are recorded, and AG4's rule or gate is re-examined before KB2.
 - *Cost:* about 0.5 session hours (a 3.4 GB download, NUM1's candidates in children, the gate's 16 x 512 decode
   steps). That fits the roughly 0.75 hours left this week. A session cut by the quota is reported as such.
+- **Run 1 (2026-11-03, kernel `tobayko/ironmule-cuda-probe-ag4` v1 at `29fd91a`, Kaggle T4, 3 minutes): the
+  chooser had a bug, so no stacked engine was compared.**
+  - NUM1 took `float16` from its measured table (0.310 of stock time, quality inside 1.005).
+  - `choose_setup` then measured the stacked engine on top of that plan. The dense plan refused it ("serves bfloat16
+    weights only"), so the agent kept the reference engine with `float16`.
+  - *Implementation fix, not an analysis change:* a stacked engine now runs on the plan it was built on (KB1's on
+    the checkpoint's bf16, KB2's on `native`, `stacked_base`). It is then compared against the path that would
+    serve instead: NUM1's choice, measured alone in its own child (`measure_base`, `against`). The rule and gate are
+    unchanged. Run 2 repeats AG4-Q at the fixed commit.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
