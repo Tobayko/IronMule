@@ -2341,7 +2341,8 @@ AG4C_LIMIT = 16
 
 
 def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C_TRACES, load: float = AG4C_LOAD,
-                 requests: int = AG4C_REQUESTS, limit: int = AG4C_LIMIT, on_row: Any = None) -> dict[str, Any]:
+                 requests: int = AG4C_REQUESTS, limit: int = AG4C_LIMIT, levels: Any = None,
+                 on_row: Any = None) -> dict[str, Any]:
     """Every block (state, trace) runs the default path, the agent's chosen path and the default path again, on the
     same arrivals, both paths loaded side by side (path 0 the default, path 1 the agent's choice)."""
     pool.router = ForcedRoute(0)
@@ -2354,7 +2355,7 @@ def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C
                                               "ok": sum(r["outcome"] == "ok" for r in done)},
                               "deadline_s": deadline_s, "rows": []}
     block = 0
-    for level in range(len(H2_STATES)):
+    for level in (range(len(H2_STATES)) if levels is None else levels):
         for t in traces:
             items = trace_h2(level, t, load * capacity, requests, (limit,))
             for arm, run, index in (("default", 0, 0), ("agent", 0, 1), ("default", 1, 0)):
@@ -2413,6 +2414,9 @@ def analyse_ag4c(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     return out
 
 
+AG4C_RUN2 = {"traces": range(412, 414), "levels": (1, 2)}  # post hoc to run 1: bursts and spike, fresh seeds
+
+
 def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
     """AG4-C on this machine's CPU: the product's own `choose_setup`, then the default path and the agent's path
     side by side through the product, on the same arrivals."""
@@ -2445,7 +2449,7 @@ def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     pool = start_paths(store, spec, makers, ["cpu:default", "cpu:agent"], ProductService, ForcedRoute(0))
     try:
         measured = measure_ag4c(pool, model, 7200.0, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
-                                                       if smoke else {}),
+                                                       if smoke else AG4C_RUN2),
                                 on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
     finally:
         pool.close()

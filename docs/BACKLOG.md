@@ -1040,6 +1040,23 @@ with nothing given to it, serve more tokens per second than today's default thro
   - It runs on this cloud container's CPU. A Kaggle CPU was about 2x slower in V5-CPU, and the run would not fit
     a 12-hour session there. A container restart loses the run, and is reported as such.
   - Expected: about 4.5 hours, nearly all of it the default path's cells.
+- **Run 1 (2026-11-03, this container's CPU, x86_64 with 4 cores, at `b0030fa`): lost to a container restart after
+  1 of 6 blocks. Invalid by the rule (fewer than two complete blocks).**
+  - *The agent's own setup:* `dequantize` on the reference engine (no stacked engine on a CPU).
+  - Calibration on the default path: 0.0044 requests a second, 918 s for 4 answers of 16 tokens.
+  - *The one complete block (quiet, trace 410), descriptive only:*
+    - first token: 3.8 s on the agent's path against 155.7 s and 156.8 s on the default's two runs;
+    - a whole answer: 5-8 s against 222-254 s;
+    - tokens per second over the block's span: 0.019 against 0.018;
+    - 3 of the 4 answers were bit-identical to the default's.
+  - *Why the tokens per second did not move (descriptive):* in RL2-H2's quiet state the arrivals are about 20
+    minutes apart here, so a block's span is set by the arrivals, not by how fast the path computes. This metric can
+    show a speed-up only in bursts and spike.
+- **Run 2, labelled post hoc to run 1 (fixed 2026-11-03, before its own data).**
+  - *What changes:* only RL2-H2's bursts and spike states, where requests overlap and the span is set by
+    computing, on fresh seeds 412-413 (2 traces per state, 4 blocks).
+  - *What stays:* everything else, the pass rule included.
+  - *Expected:* about 2.5 hours on this container. Another restart is reported as such.
 - *Pass (both):*
   - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
     bound above 1 (2,000 resamples);
