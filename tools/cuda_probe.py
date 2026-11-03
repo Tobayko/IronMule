@@ -2676,8 +2676,15 @@ def analyse_kb2(result: dict[str, Any], resamples: int = RESAMPLES) -> dict[str,
         c["identical_steps"] == c["steps"] for c in checks)
     rounds = (result.get("speed") or {}).get("rounds") or []
     if rounds:
-        top = str(max(int(k) for k in rounds[0]["plan"]))
+        # Amended after the smoke, before KB2-0's data: the width with the most tokens per second on the median
+        # curve over rounds (the smoke's step jumped from 162 ms at 7 rows to 354 ms at 8), fixed before the
+        # bootstrap; the width-8 ratio is recorded beside it.
+        widths = [int(k) for k in rounds[0]["plan"]]
+        top = str(min(widths, key=lambda w: statistics.median(r["plan"][str(w)] for r in rounds) / w))
         ratios = [r["plan"][top] / (int(top) * r["native_one"]) for r in rounds]
+        widest = str(max(widths))
+        out["(b) recorded: ratio at the widest stack"] = statistics.fmean(
+            r["plan"][widest] / (int(widest) * r["native_one"]) for r in rounds)
         ci = _bootstrap_mean(ratios, resamples)
         out["(b) stacked step over single steps"] = {
             "width": int(top), "ratio": statistics.fmean(ratios), "ci95": ci, "passes": ci[1] < KB2_LEVER,

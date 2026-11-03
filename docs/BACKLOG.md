@@ -1741,6 +1741,20 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
   native reference worker, under a protocol fixed here before that run.
 - **Smoke first:** a `--smoke` kernel on a T4 before the run checks the install, the kernels' compilation and the
   path. It measures nothing, and costs about 0.25 of the week's remaining 0.9 GPU hours.
+- **Smoke result (2026-11-03, kernel `tobayko/ironmule-cuda-probe-kb2-smoke` v1 at `54f1894`, Kaggle T4, 7 minutes):
+  the tool works end to end.**
+  - The native plan installed (338 modules, probe error 0.0028), and the FA2 kernels compiled.
+  - Every stacked row was bit-identical to the row alone, in both pools.
+  - The plan's greedy tokens matched today's on all 8 prompts over the smoke's 5 tokens.
+  - *Descriptive, a smoke measures nothing:*
+    - one round of 4 steps gave 52.9 ms a step at one row against 52.1 ms for today's native step;
+    - about 15 ms more for each further row up to 6 rows, 162 ms at 7 rows, and 354 ms at 8 rows;
+    - the gate on 4 chunks of 12 tokens read 1.20 and 1.01, too few tokens to say anything.
+- **Amended after the smoke, before KB2-0's data (post hoc to the smoke, not to the run):** (b) is read at the width
+  with the most tokens per second on the median curve over the five rounds, fixed before the bootstrap, instead of
+  at 8 rows. The ratio at 8 rows is recorded beside it. The agent would serve the best width, and the smoke's step
+  jumped at 8 rows (register pressure in the row kernel at eight activation rows is the suspect, not yet shown).
+  The bound (below 0.5) and (a), (c) are unchanged.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 

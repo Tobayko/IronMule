@@ -366,7 +366,8 @@ def test_kb2_runs_end_to_end_on_cpu_stand_ins(tmp_path):
     assert set(kb2["exact_long"]["stacks"]) == {str(probe.KB2_LONG_ROWS)}
     assert max(kb2["prompt_tokens"]) <= 64 and len(kb2["prompt_tokens"]) == probe.KB2_ROWS
     b = analysis["(b) stacked step over single steps"]
-    assert b["width"] == probe.KB2_ROWS and set(b["plan_ms_by_width"]) == {str(w) for w in range(1, 9)}
+    assert 1 <= b["width"] <= probe.KB2_ROWS and set(b["plan_ms_by_width"]) == {str(w) for w in range(1, 9)}
+    assert "(b) recorded: ratio at the widest stack" in analysis
     assert set(analysis["(c) quality gate"]["paths"]) == {"main", "long"}
     assert analysis["(d) one request, plan over native"] > 0
     assert json.loads((tmp_path / "kb2.json").read_text())["schema"] == "ironmule.cuda_probe.kb2.v1"
@@ -381,8 +382,11 @@ def test_kb2_decisions_read_the_fixed_rules():
     assert analysis["(a) exact within the plan"] is True
     b = analysis["(b) stacked step over single steps"]
     assert b["passes"] and abs(b["ratio"] - 0.082 / (8 * 0.047)) < 1e-9
-    slow = [{"plan": {**r["plan"], "8": 0.2}, "native_one": 0.047} for r in rounds]  # 0.2 / 0.376 = 0.53
+    slow = [{"plan": {w: 0.05 * int(w) for w in r["plan"]}, "native_one": 0.047} for r in rounds]  # no lever
     assert not probe.analyse_kb2({**result, "speed": {"rounds": slow}})["(b) stacked step over single steps"]["passes"]
+    cliff = [{"plan": {**r["plan"], "8": 0.354}, "native_one": 0.052} for r in rounds]  # the smoke's 8-row jump
+    b = probe.analyse_kb2({**result, "speed": {"rounds": cliff}})["(b) stacked step over single steps"]
+    assert b["width"] == 7 and b["passes"]
     broken = {**result, "exact": {"stacks": {"3": stack, "8": {"identical_steps": 9, "steps": 10}}}}
     assert probe.analyse_kb2(broken)["(a) exact within the plan"] is False
     assert probe.analyse_kb2(result)["verdict"] == "does not pass as a whole"  # no gate yet

@@ -182,3 +182,12 @@ def test_the_product_bridge_picks_the_gemma_plan_for_a_4bit_gemma(monkeypatch):
     monkeypatch.setattr(dg, "refuse", lambda model, native=True: "the Gemma dense plan serves Gemma 3 checkpoints only")
     calls.clear()
     assert engine_bridge.install_dense(object(), None)[0] == "qplan" and calls == ["qwen"]
+
+
+class _Tok:
+    """A stand-in tokenizer inside the tiny model's vocabulary (for the gate text and speed prompts)."""
+
+    eos_token_id = 255
+
+    def encode(self, text):
+        return [ord(c) % 200 + 1 for c in text]
