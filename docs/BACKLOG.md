@@ -354,6 +354,16 @@ learner found no gain on a T4 (P3).
     - the harness tests pass;
     - a CPU smoke of `--profile cpu3` passes, both locally and as a Kaggle CPU kernel. The Kaggle smoke checks the
       install and the session, and measures nothing.
+    - **Passed 2026-11-03, before any V5-CPU data**, at `a608921`, both smokes with SmolLM2-135M:
+      - harness tests green;
+      - local: every step ran, all 36 held-out requests completed and none differed across the four arms;
+      - Kaggle CPU kernel `tobayko/ironmule-rl2-headroom-ag1-cpu3-smoke` v1: x86_64, 4 CPUs, Python 3.13, mlx 0.32.4,
+        35 minutes, the same outcome.
+      - Both read "invalid" only because a smoke has one held-out trace.
+      - *Cost check:* the Kaggle CPU is about 2x slower than this container today (about 7 s against 3.5 s per
+        smoke request, calibrated capacity 0.13 against 0.27 requests a second). Priced from the smoke rather than
+        from V-CPU-2, the run takes about 30 x 560 s (4.7 h) online plus 48 held-out cells of about 180 s (2.4 h)
+        plus setup, about 7.5 h. That is inside the 12 h session.
   - **Cost:** no GPU hours. V-CPU-2 ran about 580 s of this container's CPU per online trace, and V-CPU about 50 s
     per held-out cell. So at most about 30 x 580 s (4.8 h) plus 48 cells (0.7 h) plus setup (0.3 h), about 6 h.
     That is inside a Kaggle session's 12 h if its CPU is no more than about 2x slower than this container's.
