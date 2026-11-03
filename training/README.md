@@ -33,6 +33,8 @@ measured on the hardware it claims, and its protocol was fixed before its data.
    python training/ag1_online.py --traces 300 --prompts prompts.jsonl --limit 512 --out sim.json
    ```
 
+   `--profile v-g12` mirrors a hardware protocol's per-card sizes for a dry run of its online phase.
+
    A prompts file has one `{"prompt": ..., "tokens": ...}` per line. It is built from a public dataset, kept
    outside the repository, and never committed.
 3. **Smoke locally.** A smoke checks the tool and measures nothing:
@@ -72,6 +74,6 @@ measured on the hardware it claims, and its protocol was fixed before its data.
 | `cpu`, `cpu2`, `cpu3` | CPU, SmolLM2-135M | AG1 V-CPU, V5-CPU: order only (capacity 1) |
 | `cpu-lp` | CPU, SmolLM2-135M, Dolly prompts | AG2 smoke path (real prompts, one limit) |
 | `t4-g12-lp` | 2 x T4, Gemma 3 12B `native`, Dolly | AG2 gate (smoke) |
-| `t4-g12-v` | 2 x T4, Gemma 3 12B `native`, Dolly, limit 256 | AG2 V-G12, the hardware gain |
+| `t4-g12-v` | 2 x T4, Gemma 3 12B `native`, Dolly, limit 256 | AG2 V-G12 (replaced before its data by KB2) |
 
 A new protocol gets a new profile on fresh seeds. A test checks that no two profiles share a seed.

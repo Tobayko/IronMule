@@ -2487,6 +2487,255 @@ def probe_kb12_report(model_id: str, out: Path | None, *, smoke: bool = False, l
     return report
 
 
+# ---------------------------------------------------------------- KB2: Gemma 3 at 4 bit, stacked (BACKLOG KB2)
+
+KB2_MODEL = "mlx-community/gemma-3-12b-it-4bit"
+KB2_REVISION = "86cc6a8dedbc456dd0e4af01a9d09f396f77e558"  # the native plan's gated revision (AG2's gate ran it)
+KB2_ROWS = 8
+KB2_CAPACITY = 1024                # eight slots of 1,024 tokens: 3.2 GB of keys and values beside 8 GB of weights
+KB2_LONG_ROWS = 4
+KB2_LONG_CAPACITY = 2048           # four slots of 2,048 for rows past the 1,024-token sliding window
+KB2_PROMPT_LIMIT = 700             # the long main prompts' last tokens, so 700 + steps fit a 1,024-token slot
+KB2_LONG_PROMPT = 1300             # past the window
+KB2_STEPS = 48
+KB2_STACKS = (3, 8)
+KB2_LEVER = 0.5                    # (b): eight stacked rows must cost under half of eight single steps
+KB2_LONG_GATE = (1536, 128, 4)     # (c) long: prefix, scored tokens, chunks; scored past the window
+
+
+def kb2_native_step(model: Any) -> Callable[..., Any]:
+    """Today's path for one request under the native plan: mlx-lm's own model and caches, one token a step."""
+    import mlx.core as mx
+
+    def step(token: int, cache: list[Any]) -> Any:
+        return model(mx.array([[token]]), cache=cache)[0, -1].astype(mx.float32)
+    return step
+
+
+def kb2_native_nll(model: Any, prefix: list[int], scored: list[int]) -> float:
+    """The native plan's reference path teacher-forced: prefill, then every next token's NLL from a decode step."""
+    import mlx.core as mx
+
+    cache = model.make_cache()
+    logits = model(mx.array(prefix + scored[:1])[None], cache=cache)[0, -1]
+    total = _nll(logits, scored[1])
+    step = kb2_native_step(model)
+    for t in range(1, len(scored) - 1):
+        total += _nll(step(scored[t], cache), scored[t + 1])
+    return total / (len(scored) - 1)
+
+
+def kb2_plan_nll(plan: Any, items: list[tuple[list[int], list[int]]]) -> list[float]:
+    """The plan teacher-forced, `plan.slots` items stacked; the first prediction is the plan's own prefill head."""
+    import mlx.core as mx
+
+    means = []
+    for start in range(0, len(items), plan.slots):
+        group = items[start:start + plan.slots]
+        sums = []
+        for slot, (prefix, scored) in enumerate(group):
+            cache = plan.new_cache()
+            sums.append(_nll(plan.prefill(mx.array(prefix + scored[:1])[None], cache), scored[1]))
+            plan.write_prefill(slot, cache)
+        slots = mx.arange(len(group), dtype=mx.int32)
+        for t in range(1, len(group[0][1]) - 1):
+            tokens = mx.array([scored[t] for _, scored in group])
+            positions = mx.array([len(prefix) + t for prefix, _ in group], dtype=mx.int32)
+            logits = plan.forward(tokens, slots, positions)
+            mx.eval(logits)
+            for r, (_, scored) in enumerate(group):
+                sums[r] += _nll(logits[r], scored[t + 1])
+        means.extend(total / (len(scored) - 1) for total, (_, scored) in zip(sums, group))
+    return means
+
+
+def kb2_exactness(plan: Any, prompts: list[list[int]], steps: int, stacks: tuple[int, ...]) -> dict[str, Any]:
+    """(a): every row alone (one row, its own slot) and stacked with the others, fed the tokens it picked alone;
+    each step's logits compared bit for bit. Also returns the rows' greedy tokens and one-row step times."""
+    import mlx.core as mx
+
+    firsts = []
+    for slot, ids in enumerate(prompts):
+        cache = plan.new_cache()
+        firsts.append(int(mx.argmax(plan.prefill(mx.array(ids)[None], cache)[0]).item()))
+        plan.write_prefill(slot, cache)
+    singles, times = [], []
+    for r, ids in enumerate(prompts):
+        tokens, digests = [firsts[r]], []
+        for t in range(steps):
+            started = time.perf_counter()
+            logits = plan.forward(mx.array([tokens[-1]]), mx.array([r], dtype=mx.int32),
+                                  mx.array([len(ids) + t], dtype=mx.int32))
+            mx.eval(logits)
+            times.append(time.perf_counter() - started)
+            digests.append(_bits(logits[0]))
+            tokens.append(int(mx.argmax(logits[0]).item()))
+        singles.append((tokens, digests))
+    out = {"alone_seconds_per_step": statistics.median(times[2:] or times), "stacks": {},
+           "tokens": [tokens for tokens, _ in singles]}
+    for rows in stacks:
+        identical = 0
+        for t in range(steps):  # the slots are rewritten at the same positions with the same keys and values
+            logits = plan.forward(mx.array([singles[r][0][t] for r in range(rows)]),
+                                  mx.arange(rows, dtype=mx.int32),
+                                  mx.array([len(prompts[r]) + t for r in range(rows)], dtype=mx.int32))
+            mx.eval(logits)
+            identical += sum(_bits(logits[r]) == singles[r][1][t] for r in range(rows))
+        out["stacks"][str(rows)] = {"identical_steps": identical, "steps": rows * steps}
+    return out
+
+
+def kb2_speed(model: Any, plan: Any, prompts: list[list[int]], steps: int, rounds: int) -> dict[str, Any]:
+    """(b): per round, the plan's stacked step at every width 1-8 and today's native step for one request,
+    alternating; medians per round. Their ratio at width 8 is the tokens-per-second lever."""
+    import mlx.core as mx
+
+    step = kb2_native_step(model)
+    out = []
+    for _ in range(rounds):
+        widths = {}
+        for rows in range(1, len(prompts) + 1):
+            times = []
+            for t in range(steps):
+                tokens = mx.array([(17 * r + t) % 1000 + 10 for r in range(rows)])
+                started = time.perf_counter()
+                mx.eval(mx.argmax(plan.forward(tokens, mx.arange(rows, dtype=mx.int32),
+                                               mx.array([len(prompts[r]) + t for r in range(rows)],
+                                                        dtype=mx.int32)), axis=-1))
+                times.append(time.perf_counter() - started)
+            widths[str(rows)] = statistics.median(times[2:] or times)
+        cache = model.make_cache()
+        mx.eval(model(mx.array(prompts[0])[None], cache=cache))
+        times, token = [], 10
+        for t in range(steps):
+            started = time.perf_counter()
+            token = int(mx.argmax(step(token, cache)).item())
+            times.append(time.perf_counter() - started)
+        out.append({"plan": widths, "native_one": statistics.median(times[2:] or times)})
+    return {"rounds": out}
+
+
+def probe_kb2(model: Any, tokenizer: Any, device_info: dict[str, Any], *, steps: int, rounds: int,
+              capacity: int = KB2_CAPACITY, long_capacity: int = KB2_LONG_CAPACITY,
+              prompt_limit: int = KB2_PROMPT_LIMIT, long_prompt: int = KB2_LONG_PROMPT,
+              gate: dict[str, Any] | None = None, make_plan: Callable[[int, int], Any] | None = None
+              ) -> dict[str, Any]:
+    """KB2-0: (a) exact within the plan, (b) the lever over today's single-request step, (c) the quality gate
+    against today's native decode; (d) recorded. The native plan is installed first, as the product does.
+    `make_plan(slots, capacity)` replaces the CUDA plan (and the native install) with a CPU stand-in in tests."""
+    import gc
+
+    import mlx.core as mx
+    from ironmule import cuda_native, dense_gemma
+
+    out: dict[str, Any] = {"native": cuda_native.install(model, device_info) if make_plan is None else None}
+    prompts = [chat_ids(tokenizer, i % len(PROMPTS), i % 2 == 1, prompt_limit) for i in range(KB2_ROWS)]
+    out["prompt_tokens"] = [len(ids) for ids in prompts]
+    if make_plan is None:
+        plan, out["install"] = dense_gemma.install(model, device_info, slots=KB2_ROWS, capacity=capacity)
+    else:
+        plan = make_plan(KB2_ROWS, capacity)
+        out["install"] = dense_gemma.probe(plan)
+    out["exact"] = kb2_exactness(plan, prompts, steps, KB2_STACKS)
+    eos = set(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id])
+    native = []
+    for ids in prompts:  # (d) recorded: the plan's greedy tokens against today's
+        cache = model.make_cache()
+        token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
+        tokens = [token]
+        for _ in range(steps):
+            token = int(mx.argmax(kb2_native_step(model)(token, cache)).item())
+            tokens.append(token)
+            if token in eos:
+                break
+        native.append(tokens)
+    out["agreement_with_native"] = [_first_difference(a, b) for a, b in zip(out["exact"]["tokens"], native)]
+    out["speed"] = kb2_speed(model, plan, prompts, steps, rounds)
+    items = gate or gate_items(tokenizer, long=KB2_LONG_GATE)
+    out["gate"] = {"main": {"reference": [kb2_native_nll(model, p, s) for p, s in items["main"]],
+                            "plan": kb2_plan_nll(plan, items["main"])}}
+    del plan
+    gc.collect()
+    mx.clear_cache()
+    long_plan = (dense_gemma.GemmaDensePlan(model, slots=KB2_LONG_ROWS, capacity=long_capacity) if make_plan is None
+                 else make_plan(KB2_LONG_ROWS, long_capacity))
+    longs = [row_ids(tokenizer, r, long_prompt) for r in range(KB2_LONG_ROWS)]
+    out["exact_long"] = kb2_exactness(long_plan, longs, steps, (KB2_LONG_ROWS,))
+    if items.get("long"):
+        out["gate"]["long"] = {"reference": [kb2_native_nll(model, p, s) for p, s in items["long"]],
+                               "plan": kb2_plan_nll(long_plan, items["long"])}
+    return out
+
+
+def analyse_kb2(result: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """KB2-0's decisions, as fixed in BACKLOG before data."""
+    out: dict[str, Any] = {}
+    checks = [*((result.get("exact") or {}).get("stacks") or {}).values(),
+              *((result.get("exact_long") or {}).get("stacks") or {}).values()]
+    out["(a) exact within the plan"] = len(checks) == len(KB2_STACKS) + 1 and all(
+        c["identical_steps"] == c["steps"] for c in checks)
+    rounds = (result.get("speed") or {}).get("rounds") or []
+    if rounds:
+        top = str(max(int(k) for k in rounds[0]["plan"]))
+        ratios = [r["plan"][top] / (int(top) * r["native_one"]) for r in rounds]
+        ci = _bootstrap_mean(ratios, resamples)
+        out["(b) stacked step over single steps"] = {
+            "width": int(top), "ratio": statistics.fmean(ratios), "ci95": ci, "passes": ci[1] < KB2_LEVER,
+            "tokens_per_second_x": 1 / statistics.fmean(ratios),
+            "plan_ms_by_width": {k: statistics.median(r["plan"][k] for r in rounds) * 1000 for k in rounds[0]["plan"]},
+            "native_one_ms": statistics.median(r["native_one"] for r in rounds) * 1000}
+        out["(d) one request, plan over native"] = (out["(b) stacked step over single steps"]["plan_ms_by_width"]["1"]
+                                                    / out["(b) stacked step over single steps"]["native_one_ms"])
+    gate = result.get("gate") or {}
+    if gate:
+        from ironmule.numeric_choice import ratio_interval
+
+        verdicts = {name: ratio_interval(g["reference"], g["plan"]) for name, g in gate.items()
+                    if len(g.get("reference") or []) >= 4}
+        out["(c) quality gate"] = {"paths": verdicts, "passes": len(verdicts) == 2 and all(
+            v["passes"] for v in verdicts.values())}
+    out["agreement_with_native"] = result.get("agreement_with_native")
+    passes = (out["(a) exact within the plan"] and (out.get("(b) stacked step over single steps") or {}).get("passes")
+              and (out.get("(c) quality gate") or {}).get("passes"))
+    out["verdict"] = ("all three pass: build the Gemma plan's stacked executor, opt-in" if passes
+                      else "does not pass as a whole")
+    return out
+
+
+def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
+                     loaded: tuple[Any, Any, dict[str, Any]] | None = None,
+                     make_plan: Callable[[int, int], Any] | None = None) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb2.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment()}
+    try:
+        if loaded is None:
+            import mlx.core as mx
+            from huggingface_hub import snapshot_download
+            from mlx_lm import load
+
+            path = snapshot_download(model_id, revision=KB2_REVISION if model_id == KB2_MODEL else None,
+                                     allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                     "tokenizer*"])
+            model, tokenizer = load(path)
+            report["revision"] = Path(path).name
+            device_info = dict(mx.device_info())
+        else:
+            model, tokenizer, device_info = loaded
+        report["kb2"] = probe_kb2(model, tokenizer, device_info, steps=4 if smoke else KB2_STEPS,
+                                  rounds=1 if smoke else ROUNDS,
+                                  **({"capacity": 64, "long_capacity": 128, "prompt_limit": 24, "long_prompt": 40,
+                                      "gate": gate_items(tokenizer, 4, 12, (48, 6, 4))} if smoke else {}),
+                                  make_plan=make_plan)
+        report["analysis"] = analyse_kb2(report["kb2"])
+    except Exception as exc:  # noqa: BLE001 - recorded
+        report["kb2"] = {**(report.get("kb2") or {}), "error": repr(exc)}
+        report["analysis"] = {"error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- Kaggle
 
 _BOOTSTRAP = '''"""IronMule HW3 and TB1 on this Kaggle session; written by tools/cuda_probe.py."""
@@ -2511,7 +2760,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -2535,7 +2784,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -2554,12 +2803,17 @@ def main(argv: Iterable[str] | None = None) -> int:
                    "kb1_1": analyse_kb1_model(report["kb1_model"]) if "stacks" in (report.get("kb1_model") or {})
                    else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else
                   analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else
-                  analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else analyse(report))
+                  analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else
+                  analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "kb2":
+        report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
+        return 0
     if args.plan == "h11":
         report = probe_h11_report(args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)

@@ -342,3 +342,47 @@ def test_the_plan_step_compiles_and_the_server_loop_reads_every_fourth_step():
     seconds, tokens = probe.plan_decode(compiled, first.astype(mx.uint32), mx.array([5]),
                                         plan.load_prefill(plan.new_cache(1, 64), 0, states), 6)
     assert seconds > 0 and len(tokens) == 1 and len(tokens[0]) == 6
+
+
+def test_kb2_runs_end_to_end_on_cpu_stand_ins(tmp_path):
+    """KB2-0 on a tiny random 4-bit Gemma 3 with FA2's semantics in plain MLX: every part runs and the analysis
+    reads each decision. The CPU's quantized product is not batch-invariant, so (a) is not asserted here; the
+    kernels' exactness is the hardware run's to show."""
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+
+    def make_plan(slots, capacity):
+        return dense_gemma.GemmaDensePlan(model, slots=slots, capacity=capacity,
+                                          attention=dense_gemma.reference_attention, native=False)
+
+    report = probe.probe_kb2_report("tiny", tmp_path / "kb2.json", smoke=True, loaded=(model, _Tokenizer(), {}),
+                                    make_plan=make_plan)
+    assert "error" not in report["kb2"], report["kb2"]
+    kb2, analysis = report["kb2"], report["analysis"]
+    assert set(kb2["exact"]["stacks"]) == {str(n) for n in probe.KB2_STACKS}
+    assert set(kb2["exact_long"]["stacks"]) == {str(probe.KB2_LONG_ROWS)}
+    assert max(kb2["prompt_tokens"]) <= 64 and len(kb2["prompt_tokens"]) == probe.KB2_ROWS
+    b = analysis["(b) stacked step over single steps"]
+    assert b["width"] == probe.KB2_ROWS and set(b["plan_ms_by_width"]) == {str(w) for w in range(1, 9)}
+    assert set(analysis["(c) quality gate"]["paths"]) == {"main", "long"}
+    assert analysis["(d) one request, plan over native"] > 0
+    assert json.loads((tmp_path / "kb2.json").read_text())["schema"] == "ironmule.cuda_probe.kb2.v1"
+
+
+def test_kb2_decisions_read_the_fixed_rules():
+    rounds = [{"plan": {str(w): 0.05 + 0.004 * w for w in range(1, 9)}, "native_one": 0.047} for _ in range(5)]
+    stack = {"identical_steps": 10, "steps": 10}
+    result = {"exact": {"stacks": {"3": stack, "8": stack}}, "exact_long": {"stacks": {"4": stack}},
+              "speed": {"rounds": rounds}}
+    analysis = probe.analyse_kb2(result)
+    assert analysis["(a) exact within the plan"] is True
+    b = analysis["(b) stacked step over single steps"]
+    assert b["passes"] and abs(b["ratio"] - 0.082 / (8 * 0.047)) < 1e-9
+    slow = [{"plan": {**r["plan"], "8": 0.2}, "native_one": 0.047} for r in rounds]  # 0.2 / 0.376 = 0.53
+    assert not probe.analyse_kb2({**result, "speed": {"rounds": slow}})["(b) stacked step over single steps"]["passes"]
+    broken = {**result, "exact": {"stacks": {"3": stack, "8": {"identical_steps": 9, "steps": 10}}}}
+    assert probe.analyse_kb2(broken)["(a) exact within the plan"] is False
+    assert probe.analyse_kb2(result)["verdict"] == "does not pass as a whole"  # no gate yet

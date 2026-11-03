@@ -101,5 +101,6 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **AG2's simulation passed.** With real prompts and one limit for all, the agent learned answer lengths (rank
   correlation 0.63), qualified "shortest predicted first" by itself, and then served 6.9 % (T4 price) and 8.2 %
   (CPU price) below the best fixed rule in hindsight.
-- **The hardware test** V-G12 runs Gemma 3 12B under `native` on two T4s, with its protocol fixed in the
-  backlog before its data.
+- **Tokens per second come first (owner, 2026-11-03).** Order cannot add them at a fixed capacity, so V-G12 was
+  replaced before its data. The lever is stacking requests into one step: KB2 builds that plan for 4-bit Gemma 3
+  (`ironmule/dense_gemma.py`), and the agent then decides its width.

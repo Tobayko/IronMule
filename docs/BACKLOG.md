@@ -818,6 +818,18 @@ the owner's `--compute-dtype native` plan.
   cells of about 5 min (2.0 h). That is about **9.7 session hours** on one "GPU T4 x2" session, inside the 12-hour
   limit.
 - It runs after the weekly GPU quota resets. The gate left about 0.9 hours this week.
+- **Replaced before any of its data (owner, 2026-11-03): V-G12 does not run.** The owner set tokens per second as
+  the agent's first measure ("The main goal"). At capacity 1 the order moves no tokens per second, so V-G12 could
+  show none by construction. A dry run of its online phase in the simulator then found it would most likely not
+  qualify in time either:
+  - *Setup:* `training/ag1_online.py --profile v-g12`, per card: the gate's Gemma 3 12B price on a T4, capacity 1,
+    16 requests a trace at half the two cards' calibrated rate, limit 256, 360 s idle, 40 traces, and a twin
+    card's answers teaching the shared length model. Answer lengths are a proxy (an assumption): Dolly's
+    reference answers in tokens, scaled by 3 or by 6. Scaled by 6, the mean at a limit of 512 is 277 tokens,
+    near the gate's calibrated 300.
+  - *Result, 3 seeds per scale:* the agent qualified nothing in all 6 runs. The length model reached a Spearman
+    correlation of 0.31-0.44, against S-LP's 0.63. Two runs reached 12 triplets, and each was rejected.
+  - The weekend's GPU hours go to KB2-0 instead.
 - *Kill and ship:* as AG1 V. A pass is the agent's gain measured on two T4s, bounded to this model, plan, workload and
   cost. It ships opt-in only.
 
@@ -1615,6 +1627,64 @@ revision, MLX, prompts and output length as HW3.
   remedy (float16 tensor cores on the T4, U2, are class B: a quality-gated plan, not an exact knob).
 - **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
   across sets for each width (they are all class A).
+
+### KB2 — Gemma 3 at 4 bit stacked into one decode step (opened 2026-11-03, owner decision, before data)
+
+**Why.** The owner's measure is tokens per second, with time to first token no worse. A 4-bit Gemma 3 under
+the `native` plan runs one request at a time on the reference worker. Gemma 3 12B makes about 21 tokens a second
+on a T4, because every step reads all 8 GB of weights for one token (AG3: about 53 % of the bandwidth). The
+dense plan showed the lever on Qwen 3 1.7B bf16: eight stacked rows decoded 3.8x faster than today's grouping
+(KB1-1), and through the product it cost 48.3 % less (H10). Order and width over batch-1 work cannot add tokens
+per second (AG1, AG2). Stacking can, and it gives the agent a width that moves them.
+
+**Mechanism.** `ironmule/dense_gemma.py`, a numeric plan of its own:
+- The linears run `ironmule/cuda_native.py`'s 4-bit row kernel. It already takes up to eight activation rows, each
+  in its own float32 chain with pinned roundings, and it is the native plan's decode path at one row.
+- Attention runs FA2 from `dense_plan.py`, with three changes:
+  - E = D / 32 values per lane, for Gemma 3's head dimension of 256;
+  - the score scale as a constant (`query_pre_attn_scalar`);
+  - a sliding window: a row reads [max(0, length - window), length).
+  A row reads only its own slot and length, so the other rows and the pool's capacity cannot move its answer.
+- RoPE runs per layer kind, with one position per row (local base, or global base with linear scaling). The
+  embedding, the RMS norms with `1 + weight`, and GELU are the model's own.
+- Prefill is MLX's own, one request at a time, with plain caches and mlx-lm's masks. Its keys come out in
+  position order and go straight into the request's slot.
+- *Off CUDA:* `tests/engine/test_dense_gemma.py` checks the plan against mlx-lm's Gemma 3 step by step, with
+  FA2's semantics in plain MLX on a tiny random 4-bit model and prompts shorter and longer than its window. It
+  catches a wrong window, RoPE scale or embedding scale (each mutation fails the test).
+
+**KB2-0 (`tools/cuda_probe.py --plan kb2`, one Kaggle T4, about 1 session hour).**
+- *Setup:* `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, with the native plan installed as the product
+  installs it.
+- *Pools:*
+  - eight slots of 1,024 tokens (3.2 GB beside the weights), with eight chat prompts, alternately short and with
+    700 tokens of context;
+  - then four slots of 2,048 tokens for rows of 1,300 tokens, past the 1,024-token window.
+- *Runs:* 48 decode steps.
+- **(a) Exact within the plan (a failure is a bug, fixed before anything else).** Every row's logits at every step
+  are bit-identical between the row alone and stacked at 3 and 8 rows (main pool), and at 4 rows (long pool).
+- **(b) The lever, kill.** The plan's stacked step at eight rows, over eight of today's single-request native
+  steps:
+  - five rounds, alternating, each a median over 48 steps;
+  - a 2,000-resample bootstrap over the rounds;
+  - it must have its 97.5 % bound below 0.5, so stacking at least doubles tokens per second at width eight.
+  - Otherwise KB2 stops: the row kernel's weight reads do not amortise on this model.
+- **(c) The numeric plans' quality gate, kill.** `ironmule/quality_reference.txt` is teacher-forced through
+  today's native decode (mlx-lm's own model and caches) and through the plan, eight rows stacked. The perplexity
+  ratio by `numeric_choice.ratio_interval` must pass below 1.005 on both paths:
+  - the gate's 16 x 512-token chunks;
+  - a long variant, 4 chunks scoring 128 tokens after a 1,536-token prefix, so past the window. It runs in the
+    2,048-token pool, four rows stacked.
+- **Recorded, no decision:**
+  - (d) the plan at one row over today's native step. Quiet traffic would regress if it is slower;
+  - the step time at every width 1-8, the cost curve the agent's width decision will price;
+  - where the plan's greedy tokens first differ from today's.
+- **Verdict:** (a), (b) and (c) together make the plan a candidate opt-in numeric plan for 4-bit Gemma 3. The next
+  step is its stacked executor in the product (as `--engine dense` for Qwen 3 bf16), with the agent deciding its
+  width. A product run on two T4s then measures tokens per second and time to first token against today's
+  native reference worker, under a protocol fixed here before that run.
+- **Smoke first:** a `--smoke` kernel on a T4 before the run checks the install, the kernels' compilation and the
+  path. It measures nothing, and costs about 0.25 of the week's remaining 0.9 GPU hours.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
