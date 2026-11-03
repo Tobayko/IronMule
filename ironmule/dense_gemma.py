@@ -308,11 +308,11 @@ class GemmaDensePlan:
             hidden = self.trunk(ids[:, start:start + PREFILL_CHUNK], cache=cache)
         return self.head(hidden[0, -1:, :]).astype(mx.float32)
 
-    def write_prefill(self, slot: int, cache: Sequence[Any]) -> None:
-        """One request's prefilled keys and values (a `new_cache` after `prefill`) into `slot`."""
+    def write_prefill(self, slot: int, states: Sequence[tuple[Any, Any]]) -> None:
+        """One request's prefilled keys and values (each layer's `new_cache()` state after `prefill`, (1, Hkv, L, D))
+        into `slot`; the same call as `DensePlan.write_prefill`, so `DenseBackend` serves either plan."""
         import mlx.core as mx
 
-        states = [c.state for c in cache]
         length = states[0][0].shape[2]
         if length > self.capacity:
             raise ValueError(f"a {length}-token prefill does not fit a {self.capacity}-token slot")

@@ -53,7 +53,7 @@ def plan_decode(plan, prompts, feeds, steps):
     for slot, prompt in enumerate(prompts):
         cache = plan.new_cache()
         first.append(plan.prefill(mx.array(prompt)[None], cache)[0])
-        plan.write_prefill(slot, cache)
+        plan.write_prefill(slot, [c.state for c in cache])
     rows = [[f] for f in first]
     slots = mx.arange(len(prompts), dtype=mx.int32)
     for t in range(steps):
@@ -131,7 +131,7 @@ def test_prefill_cache_is_in_position_order_past_the_window():
     cache = plan.new_cache()
     plan.prefill(mx.array(list(range(1, 15)))[None], cache)
     assert all(isinstance(c, KVCache) and c.state[0].shape[2] == 14 for c in cache)
-    plan.write_prefill(2, cache)
+    plan.write_prefill(2, [c.state for c in cache])
 
 
 def test_slot_capacity_picks_the_largest_tier_that_fits():
@@ -139,3 +139,26 @@ def test_slot_capacity_picks_the_largest_tier_that_fits():
     assert dg.slot_capacity(model, None) == dg.SLOT_TIERS[-1]
     assert dg.slot_capacity(model, {"total_memory": 16 * 1024 ** 3}) == dg.SLOT_TIERS[0]
     assert dg.slot_capacity(model, {"total_memory": 1024}) is None
+
+
+def test_the_products_dense_backend_serves_the_gemma_plan():
+    """`DenseBackend` (the executor's backend behind `--engine dense`) takes the Gemma plan as it is: its prefill
+    uses the plan's own position-ordered cache, and stacked steps follow the plan's own forward."""
+    from ironmule.dense_plan import DenseBackend
+    from ironmule.plans import StrictOneShotPlan
+
+    model = tiny_model(2)
+    backend = DenseBackend(plan_of(model), eos_ids=(255,), readback=2)
+    prompts = [[3, 4, 5], list(range(20, 32))]  # the second is past the window
+    states, firsts = zip(*(backend.prefill(p, StrictOneShotPlan(), backend.capacity_for([len(p)], 8)) for p in prompts))
+    assert backend.free_slots() == 2 and [s.offset for s in states] == [3, 12]
+    chains = backend.steps_group(list(states), list(firsts), 3)
+    backend.complete_chains(chains)
+    picks = [[backend.read(h)[0] for h in chain] for chain in chains]
+    plan = plan_of(model)
+    expected = plan_decode(plan, prompts, [[f, *p[:2]] for f, p in zip(firsts, picks)], 3)
+    for r in range(2):
+        assert [int(mx.argmax(row).item()) for row in expected[r][1:]] == picks[r]
+    for state in states:
+        backend.release(state)
+    assert backend.free_slots() == 4

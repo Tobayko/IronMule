@@ -2536,7 +2536,7 @@ def kb2_plan_nll(plan: Any, items: list[tuple[list[int], list[int]]]) -> list[fl
         for slot, (prefix, scored) in enumerate(group):
             cache = plan.new_cache()
             sums.append(_nll(plan.prefill(mx.array(prefix + scored[:1])[None], cache), scored[1]))
-            plan.write_prefill(slot, cache)
+            plan.write_prefill(slot, [c.state for c in cache])
         slots = mx.arange(len(group), dtype=mx.int32)
         for t in range(1, len(group[0][1]) - 1):
             tokens = mx.array([scored[t] for _, scored in group])
@@ -2558,7 +2558,7 @@ def kb2_exactness(plan: Any, prompts: list[list[int]], steps: int, stacks: tuple
     for slot, ids in enumerate(prompts):
         cache = plan.new_cache()
         firsts.append(int(mx.argmax(plan.prefill(mx.array(ids)[None], cache)[0]).item()))
-        plan.write_prefill(slot, cache)
+        plan.write_prefill(slot, [c.state for c in cache])
     singles, times = [], []
     for r, ids in enumerate(prompts):
         tokens, digests = [firsts[r]], []

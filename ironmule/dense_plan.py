@@ -510,7 +510,9 @@ class DenseBackend:
                 raise RuntimeError("no free slot in the dense plan's pool")
             slot = self._free.pop(0)
         try:
-            cache = make_prompt_cache(self.plan.model)
+            # A plan with its own prefill cache (KB2's Gemma plan: every layer in position order) names it.
+            new_cache = getattr(self.plan, "new_cache", None)
+            cache = new_cache() if new_cache is not None else make_prompt_cache(self.plan.model)
             first = mx.argmax(self.plan.prefill(mx.array(list(prompt_ids))[None], cache), axis=-1)
             self.plan.write_prefill(slot, [c.state for c in cache])
             mx.eval(first)
