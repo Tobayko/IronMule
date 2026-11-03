@@ -145,7 +145,8 @@ NUM1's numeric plan, then a stacked engine (`dense`) if one passes its decode-pa
 It may choose a plan that changes answers slightly, by the owner's decision. `/health`'s `agent_setup` block shows
 the choice, every candidate's gate and speeds, and the reason. If the stacked engine wins only under load and both
 fit the card, both serve, and the agent routes each request to the path where it should finish first. `/health`'s
-`paths` block shows each path's learned costs, the decisions and the decision time. While the stacked engine serves, the online agent
+`paths` block shows each path's learned costs, the decisions and the decision time. `agent_setup.levers` lists every
+lever the agent knows, and what happened to each on this machine, including the planned ones (BACKLOG HQ1). While the stacked engine serves, the online agent
 does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. Details
 and the training workflow: [AGENT.md](AGENT.md).
 

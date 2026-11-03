@@ -1846,6 +1846,57 @@ revision, MLX, prompts and output length as HW3.
 - **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
   across sets for each width (they are all class A).
 
+### HQ1 — Levers read from HyperQwen, kept for the agent to use (opened 2026-11-03, owner request, before data)
+
+**Source.** [syv-ai/HyperQwen](https://github.com/syv-ai/HyperQwen) (read 2026-11-03). It is a patch series on
+vLLM for Qwen3.8-27B on one RTX 3090. By its own measurements it takes one request from 46 to 127 tokens a second
+(2.8x), and 64 concurrent requests from 370 to 1,035 (2.8x). Every setting was tuned by hand for that one model and
+card. The owner asked that these levers be remembered, applied, and brought into the agent. The agent's lever list
+(`ironmule.plan_choice.LEVERS`, shown in `/health` under `agent_setup.levers`) names each one, built or not. A built
+lever passes the same gate and rule as every plan there (AG4).
+
+**Why it is fast, in its own numbers:**
+1. *Speculative decoding* (most of the single-request gain). A small drafter proposes 4-7 tokens, and the model
+   verifies them in one memory-bound step, so about 3 tokens land per step.
+   - The drafter was made cheap: int4, and a 40k-token draft vocabulary counted over the model's own outputs
+     (+10 % on its own).
+   - Drafts are also copied from the prompt when the answer repeats it: up to 381 tokens a second.
+2. *Tensor cores for batched decode* (most of the concurrent gain). At 40-64 rows a decode step is bound by
+   arithmetic, not by memory. int8 activations on int8 tensor cores run 4x the math.
+3. *Memory for more concurrent requests.* The embedding and head go to int8 (2.6 GB freed), and the recurrent state
+   goes to fp16: 37 resident requests became 64.
+4. *Verify-step kernels.* Split-KV attention for a few query rows (FA2 used 24 of 82 SMs there), and a sampler that
+   never sorts.
+
+**The routes for IronMule, in this order (none is built yet; each needs its protocol here before its data):**
+- **TC1, tensor-core rows for the stacked plans.**
+  - *Why:* KB2's smoke showed the same wall. The native row kernel's scalar float32 FMAs add about 15 ms per further
+    Gemma 3 12B row on a T4, so 8 rows give about 2x instead of the bandwidth bound's 8x.
+  - *Mechanism:* the T4 (sm75) has fp16 (65 TFLOPS) and int8 (130 TOPS) tensor cores. A row kernel on `mma.sync`
+    keeps each row's arithmetic independent of the others: fixed tile order, rows zero-padded to the tile. So the
+    plan stays batch-invariant.
+  - *Gate:* it changes numerics, so it is a numeric plan with the perplexity gate, which the agent may then choose.
+  - *Kill:* the stacked 8-row step must fall below half of KB2-0's measured 8-row step, with every row still
+    bit-identical alone and stacked.
+- **SP1, speculation from the context.**
+  - *Why:* AG4-Q showed the stacked engine losing for one request alone. Speculation is the single-request lever.
+  - *Mechanism:* drafts copied from the request's own prompt and earlier answer (no drafter to train), verified by
+    the stacked plan's rows. KB1's rows verify up to 8 positions bit-identically to one row, at 1.8x one row's cost
+    (KB1-0).
+  - *Why it is allowed now:* prompt-lookup speculation was dropped earlier because it changed tokens on the T4
+    (HW3). Under the owner's AG4 decision a plan may change answers if it passes the gate.
+  - *Kill:* a single request through the product must reach at least 1.3x the base path's tokens per second on
+    Dolly prompts, with time to first token no worse.
+- **KV8, an 8-bit KV cache in the stacked plans.**
+  - *Mechanism:* keys and values stored in int8 per token and head, and dequantized inside FA2's chunk loop. That
+    halves the pool, so Gemma 3 12B fits 16 slots instead of 8 on a T4, or longer slots.
+  - *Kill:* the perplexity gate, and AG4's rule on the larger pool.
+- **HQ-head, an int8 head and embedding for bf16 checkpoints** (Qwen 3 1.7B's head is bf16 in the dense plan). It
+  frees memory for slots and a share of each step's reads.
+  - *Kill:* the perplexity gate, and a measurable step-time drop.
+- *Not carried over:* the recurrent-state precision (no such layer in our models), the draft-vocabulary
+  calibration (until a trained drafter exists), and vLLM-specific patches.
+
 ### KB2 — Gemma 3 at 4 bit stacked into one decode step (opened 2026-11-03, owner decision, before data)
 
 **Why.** The owner's measure is tokens per second, with time to first token no worse. A 4-bit Gemma 3 under

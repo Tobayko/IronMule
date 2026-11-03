@@ -375,7 +375,7 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.agent == "on" and agent_setup is not None:
             for each in [service, *getattr(service, "shards", [])]:
                 each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
-                                                                    "numeric", "stacked")}
+                                                                    "numeric", "stacked", "levers")}
         if spec is not None and args.agent == "on" and args.engine == "route":
             print(json.dumps({"agent": {"serving": "two paths, routed per request", "reason": agent_setup["reason"]}}),
                   flush=True)

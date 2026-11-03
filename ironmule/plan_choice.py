@@ -29,6 +29,25 @@ from typing import Any, Callable
 from .hw import STORE
 
 WIDTH = 8
+#: Every lever the agent knows, built or not (BACKLOG AG4, HQ1). A built lever is measured and gated on this machine
+#: by `choose_setup`; a planned one is listed so the agent's status says what is known and not yet available. When one
+#: is built it joins the same gate and rule.
+LEVERS: tuple[dict[str, str], ...] = (
+    {"name": "numeric_plan", "status": "built", "backlog": "NUM1",
+     "what": "compute the weights in another type (native, float16, float32, dequantize) where it is faster here"},
+    {"name": "stacked_engine", "status": "built", "backlog": "KB1, KB2",
+     "what": "up to eight requests in one decode step, each row's answer independent of the others"},
+    {"name": "routed_paths", "status": "built", "backlog": "AG4 step 2a",
+     "what": "the single path and the stacked engine side by side, each request routed where it finishes first"},
+    {"name": "tensor_core_rows", "status": "planned", "backlog": "HQ1 TC1",
+     "what": "the stacked rows on fp16 or int8 tensor cores, so a further row costs almost nothing (HyperQwen)"},
+    {"name": "context_speculation", "status": "planned", "backlog": "HQ1 SP1",
+     "what": "drafts copied from the request's own context, verified by the stacked rows (HyperQwen)"},
+    {"name": "kv_cache_8bit", "status": "planned", "backlog": "HQ1 KV8",
+     "what": "8-bit keys and values, twice the slots on the same card (HyperQwen)"},
+    {"name": "int8_head", "status": "planned", "backlog": "HQ1 HQ-head",
+     "what": "an int8 head and embedding for bf16 checkpoints, memory back for slots (HyperQwen)"},
+)
 QUIET_FLOOR = 0.9       # the stacked engine's single-request tokens per second over the base path's, at least
 TTFT_SLACK = 1.1        # its time to the first token over the base path's, at most
 SPEED_STEPS = 32
@@ -314,6 +333,25 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
     return json.loads(lines[-1][len("@@STACKED "):])
 
 
+def levers(setup: dict[str, Any]) -> list[dict[str, str]]:
+    """Each lever with what happened to it in this setup: used, measured and not chosen (and why), not eligible here,
+    or not built yet."""
+    stacked, decision = setup.get("stacked") or {}, setup.get("decision") or {}
+    engine, plan = setup.get("engine"), setup.get("compute_dtype")
+    numeric_reason = (setup.get("numeric") or {}).get("reason")
+    if engine == "dense":
+        stacked_here, routed_here = "used", "not needed: the stacked engine wins everywhere"
+    elif engine == "route":
+        stacked_here, routed_here = "used beside the single path", "used"
+    else:
+        stacked_here = (f"measured, not chosen: {decision.get('reason')}" if stacked.get("eligible")
+                        else f"not eligible here: {stacked.get('reason')}")
+        routed_here = f"not taken: {decision.get('reason')}"
+    state = {"numeric_plan": f"used: {plan}" if plan else f"measured, none chosen: {numeric_reason}",
+             "stacked_engine": stacked_here, "routed_paths": routed_here}
+    return [{**lever, "here": state.get(lever["name"], "not built yet")} for lever in LEVERS]
+
+
 def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: Callable[[str], None] = print,
                  numeric: Callable[..., dict[str, Any]] | None = None,
                  measure: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
@@ -339,4 +377,5 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
     engine = "dense" if decision["stacked"] else "route" if decision.get("route") else "reference"
     setup = {"compute_dtype": compute_dtype, "engine": engine,
              "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision}
+    setup["levers"] = levers(setup)
     return _save(key, setup)

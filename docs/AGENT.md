@@ -76,6 +76,16 @@ both paths' costs from every finished request. In simulation, priced by that T4 
 least as fast as the better path at every load, with the earliest first tokens. The hardware test (AG4-R) is
 fixed in the backlog.
 
+The agent also keeps a list of every lever it knows (`plan_choice.LEVERS`, `/health`'s `agent_setup.levers`). For
+each one it says whether it was used, measured and not chosen, not eligible on this machine, or not built yet. The
+levers read from HyperQwen (BACKLOG HQ1) are listed there as planned:
+- tensor-core rows for the stacked plans;
+- speculation from the request's own context;
+- an 8-bit KV cache;
+- an int8 head.
+
+Each joins the same gate and rule once it is built.
+
 The choice is stored per hardware and model, and `/health` shows it under `agent_setup`. The owner allowed the
 agent to choose plans that change answers slightly, if they pass its gate. A named `--engine` or `--compute-dtype`
 is always kept. While a stacked engine serves, the online agent does not attach yet, because it does not model slot

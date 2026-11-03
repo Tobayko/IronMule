@@ -135,3 +135,21 @@ def test_the_product_serves_the_float16_plan_nums1_can_choose():
     assert '"float16"' in source and "mx.float16" in source
     with pytest.raises(ValueError):
         MLXWorkerClient(ModelSpec("m", "r", "/tmp/m", 1), compute_dtype="int8")
+
+
+def test_the_setup_lists_every_lever_the_agent_knows_built_or_not(tmp_path, monkeypatch):
+    """HQ1: the levers read from HyperQwen are known to the agent and shown as not built yet; the built ones say
+    what happened to them on this machine."""
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+    measured = _measured(base_step=0.0173, plan_steps={"1": 0.0212, "8": 0.0275})
+    measured["memory"] = {"two_paths_fit": True}
+    setup = pc.choose_setup("m", "fp", "c" * 64, log=lambda _: None,
+                            numeric=lambda *a, **k: {"plan": None, "reason": "none"},
+                            measure=lambda *a, **k: measured)
+    by_name = {lever["name"]: lever for lever in setup["levers"]}
+    assert set(by_name) == {lever["name"] for lever in pc.LEVERS}
+    assert by_name["routed_paths"]["here"] == "used" and by_name["stacked_engine"]["here"].startswith("used")
+    assert by_name["numeric_plan"]["here"].startswith("measured, none chosen")
+    for planned in ("tensor_core_rows", "context_speculation", "kv_cache_8bit", "int8_head"):
+        assert by_name[planned]["status"] == "planned" and by_name[planned]["here"] == "not built yet"
+        assert "HyperQwen" in by_name[planned]["what"]
