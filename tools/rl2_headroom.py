@@ -147,7 +147,10 @@ CONTEXT = "Background notes, not needed for the answer. " + " ".join(PROMPTS * 8
 
 
 def prompt_text(item: dict[str, Any]) -> str:
-    """A trace item's prompt: its question, behind the background notes once (`long`) or `context` times (H11)."""
+    """A trace item's prompt: its question, behind the background notes once (`long`) or `context` times (H11);
+    an AG2 item carries a real instruction prompt as `text`."""
+    if item.get("text"):
+        return item["text"]
     return "".join(CONTEXT + "\n\n" for _ in range(item.get("context") or (1 if item.get("long") else 0))) \
         + PROMPTS[item["prompt"]]
 
@@ -727,10 +730,12 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
     return results
 
 
-def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, ...] | None = None) -> dict[str, Any]:
-    """Requests completed per second under the reference from a burst of 16 per GPU at once."""
+def calibrate(pool: Any, model: str, deadline_s: float, max_tokens: tuple[int, ...] | None = None,
+              items: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Requests completed per second under the reference from a burst of 16 per GPU at once (`items`, AG2: the
+    workload's own requests instead of the fixed questions)."""
     set_arm(pool, REFERENCE)
-    burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, 16 * len(pool.shards), max_tokens)]
+    burst = [{**item, "offset_s": 0.0} for item in (items or trace(9, 0, 1.0, 16 * len(pool.shards), max_tokens))]
     done = replay(pool, model, burst, deadline_s)
     ok = [r for r in done if r["outcome"] == "ok"]
     outcomes: dict[str, int] = {}
@@ -1823,6 +1828,59 @@ AG1_PROFILES["t4d"] = {**AG1_PROFILES["t4c"], "learn": range(242, 254), "evaluat
 # `w1/sjf` (capacity 1: the order is the only decision), 4 held-out traces a state, fresh seeds
 AG1_PROFILES["cpu3"] = {**AG1_PROFILES["cpu"], "learn": range(256, 286), "evaluate": range(286, 290),
                         "stop_on_qualify": True, "fixed": (1, True), "accelerator": "cpu"}
+# BACKLOG AG2: real instruction prompts (Dolly 15k, fetched at run time) with one output limit for all, so answers end
+# at EOS and "shortest limit first" is arrival order; the agent may order by its learned answer-length prediction.
+# The fixed tier is the best limit-ordered schedule its action space holds at capacity 1, `w1/sjf`.
+DOLLY_URL = "https://huggingface.co/datasets/databricks/databricks-dolly-15k/resolve/main/databricks-dolly-15k.jsonl"
+AG2_PROMPT_CHARS = 600
+AG1_PROFILES["cpu-lp"] = {**AG1_PROFILES["cpu3"], "max_tokens": (128,), "prompts": "dolly", "learn": range(290, 320),
+                          "evaluate": range(320, 324), "short_prompts": False}
+
+
+def dolly_prompts(work: Path) -> tuple[list[str], str]:
+    """AG2: Dolly 15k's instructions (with their context, cut at `AG2_PROMPT_CHARS`), shuffled by a fixed seed, and the
+    file's digest. Online traces draw from the first 12,000, held-out traces from the rest, calibration from the end."""
+    import urllib.request
+
+    path = work / "dolly.jsonl"
+    if not path.exists():
+        urllib.request.urlretrieve(DOLLY_URL, path)
+    data = path.read_bytes()
+    prompts = []
+    for line in data.decode().splitlines():
+        if line.strip():
+            row = json.loads(line)
+            text = (row["instruction"] + ("\n" + row["context"] if row.get("context") else "")).strip()
+            prompts.append(text[:AG2_PROMPT_CHARS])
+    random.Random(15).shuffle(prompts)
+    return prompts, hashlib.sha256(data).hexdigest()
+
+
+def lp_items(items: list[dict[str, Any]], prompts: list[str], trace_index: int, held_out: bool,
+             limit: int) -> list[dict[str, Any]]:
+    """AG2: a trace's arrivals with real prompts and one output limit; the prompt pool is split so held-out traces
+    never reuse an online prompt."""
+    pool = prompts[12_000:-64] if held_out else prompts[:12_000]
+    rng = random.Random(7_000 + trace_index)
+    return [{**item, "long": False, "max_tokens": limit, "text": pool[rng.randrange(len(pool))]} for item in items]
+
+
+class _PredictingDispatch:
+    """AG2's held-out arm: the frozen policy deciding through the LD1 hooks, ordering by the frozen length model."""
+
+    def __init__(self, dispatch: Any, lengths: Any):
+        self._dispatch, self._lengths = dispatch, lengths
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._dispatch, name)
+
+    def order_key(self, request: Any) -> float | None:
+        from ironmule_product.length_model import features
+
+        policy = self._dispatch.policy
+        if policy is None or policy.key != "predicted":
+            return None
+        return min(float(request.max_tokens), self._lengths.predict(features(request), int(request.max_tokens)))
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:
@@ -1871,13 +1929,22 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
         warm = replay(pool, model, [{"offset_s": 0.0, "prompt": i % len(PROMPTS), "long": i % 2 == 1, "max_tokens": 8}
                                     for i in range(8)], deadline)
         report["warmup_ok"] = sum(w.get("outcome") == "ok" for w in warm)
-        report["calibration"] = calibrate(pool, model, deadline, sizes.get("max_tokens"))
+        prompts = None
+        if setup.get("prompts") == "dolly":  # AG2
+            prompts, report["prompts_sha256"] = dolly_prompts(work)
+            report["prompts"] = {"source": DOLLY_URL, "count": len(prompts), "limit": setup["max_tokens"][0]}
+        calibration_items = None if prompts is None else [
+            {"offset_s": 0.0, "prompt": 0, "long": False, "max_tokens": setup["max_tokens"][0], "text": text}
+            for text in prompts[-64:][:16 * len(pool.shards)]]
+        report["calibration"] = calibrate(pool, model, deadline, sizes.get("max_tokens"), calibration_items)
         if report["calibration"].get("failed"):
             return {"model": model, "revision": revision, **report}
         capacity = report["calibration"]["capacity_rps"]
 
         def traffic(level: int, t: int) -> list[dict[str, Any]]:
             items = trace_h2(level, t, capacity, sizes.get("requests", REQUESTS), sizes.get("max_tokens"))
+            if prompts is not None:  # AG2: real prompts, one limit, answers ending at EOS
+                return lp_items(items, prompts, t, t in setup["evaluate"], setup["max_tokens"][0])
             # V-CPU: a 1,030-token prompt takes tens of seconds to prefill on a slow CPU (amended before data)
             return [{**item, "long": False} for item in items] if setup["short_prompts"] else items
 
@@ -1894,8 +1961,9 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             wait_idle(pool)
             time.sleep(pause)
             status = agent.status()
-            row["agent"] = {key: status[key] for key in ("serving", "gain", "gain_ci95", "world_model", "candidate",
-                                                       "decisions", "decision_us", "counters", "planner")}
+            row["agent"] = {key: status.get(key) for key in ("serving", "gain", "gain_ci95", "world_model",
+                                                           "candidate", "lengths", "decisions", "decision_us",
+                                                           "counters", "planner")}
             report["learning"].append(row)
             if on_row is not None:
                 on_row(report)
@@ -1904,6 +1972,9 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
                 break
         final = agent.status()
         policy = agent.policy
+        from ironmule_product.length_model import LengthModel
+
+        lengths = LengthModel.from_json(agent.lengths.to_json())  # AG2: frozen with the policy
         report["agent_final"] = {**final, "history": list(agent.history), "evidence": agent.evidence,
                                  "last_plan": agent.last_plan}
         shard.agent = shard.dispatch = None  # detach first: the scheduler starts no new idle work for it
@@ -1925,6 +1996,8 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
         if policy is None:  # V2: the tiers are still measured; the agent serves the default, as it did online
             report["stopped"] = "the agent qualified no schedule in the online phase; its tier is the default's"
         dispatch = None if policy is None else LearnedDispatch(policy, {"experiment": "AG1-V measurement"}, None)
+        if dispatch is not None and policy.key == "predicted":
+            dispatch = _PredictingDispatch(dispatch, lengths)
         arms = list(AG1_ARMS)
         if tiers:
             from ironmule_product.agent import fixed_policy

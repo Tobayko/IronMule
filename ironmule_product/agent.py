@@ -29,14 +29,19 @@ greedy answer on the grouped batch-1 path, and a replayed comparison checks that
    policy's digest is recorded and never serves again under this binding. Learning goes on, and the next
    candidate must qualify again.
 
+**AG2.** "Shortest first" may sort by the answer length a small online model predicts
+(`length_model.LengthModel`) instead of the output limit. The model learns from every finished live request,
+each request's prediction is made once when it is first seen, and a schedule that orders by it is planned and
+qualified as any other: it changes the order only, never an answer.
+
 It is off by default (`ironmule serve --agent on`), refused together with `--learning` and
 `--dispatch-policy` (one decision owner), and keeps the reference schedule whenever it cannot prove better.
 """
 
 from __future__ import annotations
 
-from collections import deque
-from dataclasses import dataclass
+from collections import OrderedDict, deque
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import math
@@ -53,6 +58,7 @@ from typing import Any, Callable, Iterable
 
 from .learned_dispatch import (LONG_PROMPT_CHARS, LONG_TOKENS, ORDER_FEATURES, PLACEMENT_FEATURES, Policy,
                                SJF_AGE_S, View, WIDTH_CHOICES, order_features)
+from .length_model import LengthModel, features as length_features
 
 STATE_SCHEMA = "ironmule.agent.state.v2"
 EVIDENCE_SCHEMA = "ironmule.agent.evidence.v1"
@@ -82,6 +88,8 @@ RESAMPLES = 4000
 MONITOR_WINDOW = 24         # live requests per monitoring window
 MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
+MIN_PREDICTED = 32          # AG2: recorded arrivals with a prediction before "shortest predicted first" is planned
+LENGTH_CACHE = 4096         # AG2: requests whose features and prediction are kept until they finish
 TABLE_QUEUE = 16            # queues up to this length are decided from a compiled table, longer ones by the policy
 PLANNER = {"episodes": 3000, "seeds": 2, "lr": 0.05, "harm_weight": 5.0, "validation": 40, "held_out": 80,
            "trace": TRACE, "scale": (0.8, 1.25)}  # gaps scaled log-symmetrically: 0.5-1.5 weighted heavy load
@@ -273,15 +281,28 @@ class Job:
     tokens: int
     first: float | None = None
     end: float | None = None
+    predicted: float | None = None  # AG2: the answer length predicted when it arrived, if recorded
 
 
-def _sjf_key(now: float) -> Callable[[Job], tuple]:
+def _order_value(job: Job, key: str) -> float:
+    if key == "predicted" and job.predicted is not None:
+        return min(float(job.max_tokens), job.predicted)
+    return float(job.max_tokens)
+
+
+def _sjf_key(now: float, key: str = "limit") -> Callable[[Job], tuple]:
     """The service's shortest-first order (`ProductService._order_waiting`): aged requests by arrival."""
-    return lambda r: (now - r.arrive <= SJF_AGE_S, r.max_tokens if now - r.arrive <= SJF_AGE_S else 0, r.arrive)
+    return lambda r: (now - r.arrive <= SJF_AGE_S, _order_value(r, key) if now - r.arrive <= SJF_AGE_S else 0,
+                      r.arrive)
+
+
+def _fresh(jobs: list[Job]) -> list[Job]:
+    return [replace(j, first=None, end=None) for j in jobs]
 
 
 def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
-             width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH) -> float:
+             width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH,
+             key: str = "limit") -> float:
     """One card that runs one group at a time, members prefilled one after another, decode rounds of at most
     `engine_width` sessions, each member ending at its own last token (member release, H9). Returns the mean
     request cost: time in system plus time to first token, the live learner's contract."""
@@ -296,7 +317,7 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
             now = pending[i].arrive
             continue
         if sjf(waiting):
-            waiting.sort(key=_sjf_key(now))
+            waiting.sort(key=_sjf_key(now, key))
         size = max(1, min(capacity, width(waiting)))
         group, waiting = waiting[:size], waiting[size:]
         t = now + params.get("group_s", 0.0)
@@ -320,19 +341,22 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
     return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
 
 
-def fixed_policy(width: int, sjf: bool) -> dict[str, Any]:
-    """A fixed schedule in the LD1 v2 policy format: the bias feature picks the order and the width."""
+def fixed_policy(width: int, sjf: bool, key: str = "limit") -> dict[str, Any]:
+    """A fixed schedule in the LD1 v2 policy format: the bias feature picks the order and the width; `key` is
+    what shortest-first sorts by (AG2)."""
     order = [20.0 if sjf else -20.0] + [0.0] * (ORDER_FEATURES - 1)
     rows = []
     for choice in WIDTH_CHOICES:
         rows += [20.0 if choice == width else 0.0] + [0.0] * (ORDER_FEATURES - 1)
-    return policy_json([0.0] * PLACEMENT_FEATURES, order, rows)
+    return policy_json([0.0] * PLACEMENT_FEATURES, order, rows, key)
 
 
-def policy_json(placement: list[float], order: list[float], width: list[float]) -> dict[str, Any]:
+def policy_json(placement: list[float], order: list[float], width: list[float], key: str = "limit") -> dict[str, Any]:
     body = {"schema": "ironmule.rl4.policy.v2", "placement": placement, "order": order,
             "features": {"placement": PLACEMENT_FEATURES, "order": ORDER_FEATURES},
             "width": width, "widths": list(WIDTH_CHOICES)}
+    if key != "limit":  # AG2; absent means the output limit, so every earlier digest stays valid
+        body["order_key"] = key
     return {**body, "sha256": hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()}
 
 
@@ -353,16 +377,21 @@ def _deciders(policy: Policy, capacity: int) -> tuple[Callable, Callable]:
             lambda waiting: min(capacity, policy.best_width(_views(waiting)) or capacity))
 
 
+def _cost_of(params: dict[str, float], jobs: list[Job], policy: Policy, capacity: int, engine_width: int) -> float:
+    return simulate(params, jobs, *_deciders(policy, capacity), capacity, engine_width, policy.key)
+
+
 def _fixed(width: int, sjf: bool) -> tuple[Callable, Callable]:
     """The reference schedule's deciders: its own width (any, not only a catalogue width) and order."""
     return (lambda waiting: sjf), (lambda waiting: width)
 
 
 def _jobs(arrivals: list[list[Any]], factor: float = 1.0) -> list[Job]:
-    """Recorded arrivals [offset s, prompt tokens, long prompt, output limit, tokens made] as model jobs, timed
-    from the first, their gaps scaled by `factor`."""
+    """Recorded arrivals [offset s, prompt tokens, long prompt, output limit, tokens made, predicted tokens (AG2,
+    may be missing)] as model jobs, timed from the first, their gaps scaled by `factor`."""
     t0 = arrivals[0][0] if arrivals else 0.0
-    return [Job(k, (a[0] - t0) * factor, int(a[3]), bool(a[2]), int(a[1]), max(1, int(a[4])))
+    return [Job(k, (a[0] - t0) * factor, int(a[3]), bool(a[2]), int(a[1]), max(1, int(a[4])),
+                predicted=float(a[5]) if len(a) > 5 and a[5] is not None else None)
             for k, a in enumerate(arrivals)]
 
 
@@ -374,7 +403,7 @@ def _idle_marks(params: dict[str, float], jobs: list[Job], reference: dict[str, 
                 engine_width: int) -> list[bool]:
     """Per job: whether it arrives at an empty server (every earlier job ended) when the reference schedule
     serves them all in the model. The first job always does."""
-    copy = [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens) for j in jobs]
+    copy = _fresh(jobs)
     if copy:
         simulate(params, copy, *_reference_deciders(reference, capacity), capacity, engine_width)
     marks, done = [], -math.inf
@@ -421,17 +450,31 @@ def busy_starts(params: dict[str, float], arrivals: list[list[Any]], reference: 
     return [k for k, mark in enumerate(marks) if mark and k <= len(arrivals) - min(size, len(arrivals))]
 
 
-def _arms(capacity: int) -> dict[str, dict[str, Any]]:
-    return {f"w{w}/{'sjf' if s else 'fifo'}": fixed_policy(w, s)
+def _arms(capacity: int, predicted: bool = False) -> dict[str, dict[str, Any]]:
+    """The fixed schedules; with `predicted` (AG2) also shortest predicted answer first at every width."""
+    arms = {f"w{w}/{'sjf' if s else 'fifo'}": fixed_policy(w, s)
             for w in WIDTH_CHOICES if w <= max(1, capacity) for s in (False, True)}
+    if predicted:
+        arms.update({f"w{w}/pred": fixed_policy(w, True, "predicted") for w in WIDTH_CHOICES if w <= max(1, capacity)})
+    return arms
+
+
+def predictions_recorded(arrivals: list[list[Any]]) -> bool:
+    """AG2: whether enough recorded arrivals carry a prediction to plan and replay by it."""
+    with_prediction = sum(1 for a in arrivals if len(a) > 5 and a[5] is not None)
+    return with_prediction >= MIN_PREDICTED and with_prediction >= 0.9 * len(arrivals)
 
 
 def _mean_cost(params: dict[str, float], windows: list[list[Job]], deciders: tuple[Callable, Callable],
-               capacity: int, engine_width: int) -> float:
+               capacity: int, engine_width: int, key: str = "limit") -> float:
     sjf, width = deciders
-    return statistics.fmean(simulate(params, [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens,
-                                                  j.tokens) for j in window], sjf, width, capacity, engine_width)
+    return statistics.fmean(simulate(params, _fresh(window), sjf, width, capacity, engine_width, key)
                             for window in windows)
+
+
+def _policy_cost(params: dict[str, float], windows: list[list[Job]], policy: Policy, capacity: int,
+                 engine_width: int) -> float:
+    return _mean_cost(params, windows, _deciders(policy, capacity), capacity, engine_width, policy.key)
 
 
 def plan(payload: dict[str, Any]) -> dict[str, Any]:
@@ -451,11 +494,11 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     validation = [resample(arrivals, random.Random(30_000 + k), size, scale, busy)
                   for k in range(settings["validation"])]
     held_out = [resample(arrivals, random.Random(50_000 + k), size, scale, busy) for k in range(settings["held_out"])]
-    arms = _arms(capacity)
+    arms = _arms(capacity, predictions_recorded(arrivals))
     allowed = [w for w in WIDTH_CHOICES if w <= max(1, capacity) and w in payload.get("widths", WIDTH_CHOICES)]
     arms = {name: arm for name, arm in arms.items() if int(name[1:].split("/")[0]) in allowed}
-    arm_costs = {name: _mean_cost(params, validation, _deciders(Policy.from_json(arm), capacity), capacity,
-                                  engine_width) for name, arm in arms.items()}
+    arm_costs = {name: _policy_cost(params, validation, Policy.from_json(arm), capacity, engine_width)
+                 for name, arm in arms.items()}
     guard_name = min(arm_costs, key=lambda n: (arm_costs[n], n))
     guard = Policy.from_json(arms[guard_name])
     excluded = set(payload.get("excluded") or ())  # behaviours rejected against this incumbent or withdrawn
@@ -466,8 +509,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
         weights, curve = _train(params, arrivals, capacity, engine_width, guard, allowed, settings,
                                 random.Random(rng.randrange(1 << 30) + seed), busy)
         candidate = Policy.from_json(policy_json([0.0] * PLACEMENT_FEATURES, weights[0], weights[1]))
-        runs.append((_mean_cost(params, validation, _deciders(candidate, capacity), capacity, engine_width), seed,
-                     weights, curve))
+        runs.append((_policy_cost(params, validation, candidate, capacity, engine_width), seed, weights, curve))
     best = min(runs, key=lambda r: (r[0], r[1]))
     learned = policy_json([0.0] * PLACEMENT_FEATURES, best[2][0], best[2][1])
     reference = payload["reference"]
@@ -476,7 +518,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
         rivals["best_fixed"] = arms[fixed_name]
     if payload.get("incumbent") is not None:
         rivals["incumbent"] = payload["incumbent"]
-    costs = {name: _mean_cost(params, held_out, _deciders(Policy.from_json(p), capacity), capacity, engine_width)
+    costs = {name: _policy_cost(params, held_out, Policy.from_json(p), capacity, engine_width)
              for name, p in rivals.items()}
     costs["reference"] = _mean_cost(params, held_out, _fixed(min(capacity, int(reference["width"])),
                                                              bool(reference["sjf"])), capacity, engine_width)
@@ -530,9 +572,8 @@ def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, e
                     grad_w[c * ORDER_FEATURES + k] += ((1.0 if c == chosen else 0.0) - p[c]) * f[k]
             return WIDTH_CHOICES[chosen]
 
-        copy = [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens) for j in jobs]
-        value = -simulate(params, copy, sjf, pick, capacity, engine_width)
-        rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width)
+        value = -simulate(params, _fresh(jobs), sjf, pick, capacity, engine_width)
+        rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
         value -= harm * max(0.0, -value - rival)
         if baseline is None:
             baseline = value
@@ -641,6 +682,8 @@ def behaviour(policy_body: dict[str, Any]) -> str:
         for longs in range(n + 1):
             views = [View(LONG_TOKENS * 2, False)] * longs + [View(LONG_TOKENS // 4, False)] * (n - longs)
             decisions.append([policy.uses_sjf(views), policy.best_width(views)])
+    if policy.key != "limit":  # AG2: the same decisions sorted by another key are another schedule
+        decisions.append(policy.key)
     return hashlib.sha256(json.dumps(decisions).encode()).hexdigest()[:16]
 
 
@@ -681,7 +724,10 @@ class Agent:
     def _reset(self) -> None:
         """Everything this binding learns, at its start."""
         self.world = WorldModel(self.engine_width)
-        self.traffic: deque[list[Any]] = deque(maxlen=MAX_TRAFFIC)  # [arrive s, prompt tokens, long, limit, tokens]
+        # [arrive s, prompt tokens, long, limit, tokens, predicted tokens]
+        self.traffic: deque[list[Any]] = deque(maxlen=MAX_TRAFFIC)
+        self.lengths = LengthModel()  # AG2
+        self._predicted: OrderedDict[str, tuple[Any, float]] = OrderedDict()
         self.policy: Policy | None = None
         self.evidence: dict[str, Any] | None = None
         self.candidate: dict[str, Any] | None = None  # {"policy", "plan", "since", "triplets", "used"}
@@ -750,6 +796,32 @@ class Agent:
     def card(self, request: Any, cards: list[list[Any]]) -> int | None:
         return None  # placement across GPUs stays with the pool's dispatch
 
+    def length_of(self, request: Any) -> tuple[Any, float]:
+        """AG2: a request's length features and its predicted answer tokens, made once when it is first seen
+        and kept until it finishes (so the prediction recorded for it is the one made before it taught)."""
+        rid = getattr(request, "request_id", None) or id(request)
+        with self._lock:
+            known = self._predicted.get(rid)
+            if known is not None:
+                return known
+            feats = length_features(request)
+            known = (feats, self.lengths.predict(feats, int(request.max_tokens)))
+            self._predicted[rid] = known
+            while len(self._predicted) > LENGTH_CACHE:
+                self._predicted.popitem(last=False)
+            return known
+
+    def order_key(self, request: Any) -> float | None:
+        """What shortest-first sorts this request by under the serving policy: its predicted answer length
+        when the policy orders by it (AG2), else None (the output limit)."""
+        policy = self.policy
+        if policy is None or self.paused or policy.key != "predicted":
+            return None
+        try:
+            return min(float(request.max_tokens), self.length_of(request)[1])
+        except Exception:  # noqa: BLE001 - a prediction fault falls back to the output limit
+            return None
+
     # ---- observation ----
 
     def busy(self) -> None:
@@ -772,10 +844,19 @@ class Agent:
                 self.counters["replayed_groups" if replay else "groups"] += 1
             if not replay:
                 for m in members:
+                    known = m.get("length")  # AG2: (features, prediction made when it arrived), if the service had it
+                    rid = m.get("request_id")
+                    if rid is not None:
+                        self._predicted.pop(rid, None)
                     if m.get("ok"):
+                        predicted = None
+                        if known is not None:
+                            feats, predicted = known
+                            if int(m["tokens"]) > 0:
+                                self.lengths.learn(feats, int(m["tokens"]), predicted)
                         self.traffic.append([m["arrive"], int(m["prompt_tokens"]),
                                              int(m.get("prompt_chars", 0)) > LONG_PROMPT_CHARS, int(m["max_tokens"]),
-                                             int(m["tokens"])])
+                                             int(m["tokens"]), None if predicted is None else round(predicted, 2)])
                         self.arrivals += 1
                     if self.active:
                         self._monitor.append(bool(m.get("ok")))
@@ -830,7 +911,7 @@ class Agent:
             return False
         trace = trace[:TRACE]  # a measurement of a width needs no whole busy period
         width = unpriced[0]
-        result = replay([(0.0, chars, tokens) for _, chars, tokens in trace],
+        result = replay([(0.0, *row[1:]) for row in trace],
                         lambda count, waiting, rate, now: (width, 0, False), preempted)
         if result is not None:
             with self._lock:
@@ -841,7 +922,7 @@ class Agent:
         return True
 
     def _trace(self, arrivals: Iterable[list[Any]], since: float | None,
-               skip: int = 0) -> list[tuple[float, int, int]] | None:
+               skip: int = 0) -> list[tuple[float, int, int, int, float]] | None:
         """TRACE consecutive recorded arrivals (after `since`, past the first `skip`) as the replay window's
         (offset s, prompt characters, output limit), with their recorded gaps: the service skips the idle
         stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
@@ -853,7 +934,12 @@ class Agent:
         `TRACE` arrivals, then up to the next arrival that finds the server empty, at most `MAX_WINDOW`. Sixteen
         arrivals cut from a 64-request burst scored `w2/sjf` +6.8 % on replay where it lost 6.5 % served (AG1
         V3). The recorded traffic may end inside a busy period only because the server is idle now (replays
-        run only then), so its last period is complete."""
+        run only then), so its last period is complete.
+
+        Each row is (offset s, prompt characters, tokens to make, output limit, predicted tokens). A replayed
+        request makes the tokens its recorded answer made (AG2: a chat answer that ended at EOS long before its
+        limit is replayed at its own length) and is ordered by its recorded limit or recorded prediction, as the
+        arm's key says; a row recorded without a prediction is ordered by its limit under either key."""
         rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + MAX_WINDOW]
         if len(rows) < TRACE:
             return None
@@ -861,7 +947,10 @@ class Agent:
         out = []
         for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
-            out.append((round(a[0] - rows[0][0], 6), chars, min(int(a[3]), MAX_REPLAY_TOKENS)))
+            limit = min(int(a[3]), MAX_REPLAY_TOKENS)
+            predicted = a[5] if len(a) > 5 and a[5] is not None else limit
+            out.append((round(a[0] - rows[0][0], 6), chars, max(1, min(int(a[4]), limit)), limit,
+                        min(float(limit), float(predicted))))
         return out
 
     def _arm(self, policy: Policy | None) -> Callable:
@@ -870,9 +959,10 @@ class Agent:
             width, sjf = int(self.reference["width"]), bool(self.reference["sjf"])
             return lambda count, waiting, rate, now: (width, int(self.reference.get("gather_ms", 0)), sjf)
 
-        def choose(count: int, waiting: list[tuple[int, Any]], rate: float, now: int) -> tuple[int, int, bool]:
+        def choose(count: int, waiting: list[tuple[int, Any]], rate: float, now: int) -> tuple:
             views = [View.of(request) for _, request in waiting]
-            return min(self.capacity, policy.best_width(views) or self.capacity), 0, policy.uses_sjf(views)
+            decision = (min(self.capacity, policy.best_width(views) or self.capacity), 0, policy.uses_sjf(views))
+            return decision if policy.key == "limit" else (*decision, policy.key)  # AG2: the replay's sort key
         return choose
 
     def _triplet(self, state: dict[str, Any], replay: Callable, preempted: Callable[[], bool],
@@ -1154,7 +1244,8 @@ class Agent:
                      "history": list(self.history), "counters": self.counters, "paused": self.paused,
                      "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan,
                      "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()},
-                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit}
+                     "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit,
+                     "lengths": self.lengths.to_json()}
             self._dirty_since = None
         try:
             self.root.mkdir(parents=True, exist_ok=True)
@@ -1189,6 +1280,8 @@ class Agent:
             self.rejected = {str(k): list(v) for k, v in (state.get("rejected") or {}).items()}
             self.rejected_epoch = int(state.get("rejected_epoch", 0))
             self.audit = state.get("audit")
+            if state.get("lengths") is not None:
+                self.lengths = LengthModel.from_json(state["lengths"])
             if state.get("policy") is not None:
                 policy, evidence = Policy.from_json(state["policy"]), state.get("evidence") or {}
                 body = {k: v for k, v in evidence.items() if k != "sha256"}
@@ -1226,6 +1319,8 @@ class Agent:
                 "world_model": {**self.world.params(), "groups": dict(self.world.groups),
                                 "median_relative_error": self.world.fidelity(), "reopened": self.world.reopened},
                 "traffic": len(self.traffic), "planner": "running" if self._planner is not None else "idle",
+                "lengths": {"seen": self.lengths.seen, "spearman": self.lengths.quality(),
+                            "order_key": None if self.policy is None else self.policy.key},
                 "last_plan": self.last_plan,
                 "candidate": None if candidate is None else {
                     "policy_sha256": candidate["policy"]["sha256"], "choice": candidate["plan"].get("choice"),
@@ -1239,7 +1334,7 @@ class Agent:
 
 
 def _policy_body(policy: Policy) -> dict[str, Any]:
-    return policy_json(list(policy.placement), list(policy.order), list(policy.width or ()))
+    return policy_json(list(policy.placement), list(policy.order), list(policy.width or ()), policy.key)
 
 
 def _lower_priority() -> None:

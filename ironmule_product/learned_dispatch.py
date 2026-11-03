@@ -33,6 +33,7 @@ SJF_AGE_S = 10.0           # a request waiting longer starts by arrival under sh
 PLACEMENT_FEATURES = 10
 ORDER_FEATURES = 4
 WIDTH_CHOICES = (1, 2, 4, 8)
+ORDER_KEYS = ("limit", "predicted")  # AG2: shortest output limit first, or shortest predicted answer first
 MAX_ERRORS = 3
 POLICY_SCHEMAS = ("ironmule.rl4.policy.v1", "ironmule.rl4.policy.v2")
 EVIDENCE_SCHEMA = "ironmule.dispatch_evidence.v1"
@@ -94,6 +95,7 @@ class Policy:
     order: tuple[float, ...]
     width: tuple[float, ...] | None
     sha256: str
+    key: str = "limit"  # AG2: what "shortest first" sorts by; "predicted" needs the agent's length model
 
     @classmethod
     def from_json(cls, data: dict[str, Any]) -> "Policy":
@@ -108,8 +110,11 @@ class Policy:
                 or (width is not None and (body.get("widths") != list(WIDTH_CHOICES)
                                            or len(width) != len(WIDTH_CHOICES) * ORDER_FEATURES))):
             raise ValueError("the policy's shape does not match this server's features")
+        key = body.get("order_key", "limit")
+        if key not in ORDER_KEYS:
+            raise ValueError("unknown order key")
         return cls(tuple(placement), tuple(order), None if width is None else tuple(float(x) for x in width),
-                   data["sha256"])
+                   data["sha256"], key)
 
     def best_card(self, request: View, cards: list[list[View]]) -> int:
         scores = [sum(w * x for w, x in zip(self.placement, placement_features(request, cards, c)))
@@ -160,6 +165,8 @@ class LearnedDispatch:
                 raise ValueError("unknown evidence schema")
             if body.get("policy_sha256") != policy.sha256:
                 raise ValueError("the evidence qualifies a different policy")
+            if policy.key != "limit":
+                raise ValueError("the policy orders by predicted answer length, which only the agent serves")
             if body.get("verdict") != "pass":
                 raise ValueError("the evidence does not report a passed comparison")
             wanted = body.get("binding") or {}

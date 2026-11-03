@@ -341,7 +341,7 @@ def test_exploration_measures_an_unpriced_width_with_every_arrival_queued_at_onc
     agent._explore(lambda trace, choose, preempted: seen.append((trace, choose(16, [], 0.0, 0))) or {"rows": []},
                    lambda: False)
     trace, decision = seen[0]
-    assert {offset for offset, _, _ in trace} == {0.0} and decision == (2, 0, False)
+    assert {row[0] for row in trace} == {0.0} and decision == (2, 0, False)
     assert agent.explored == {2: 1}
 
 
@@ -668,3 +668,134 @@ def test_a_replay_window_spans_the_backlog_and_the_next_window_starts_after_it(t
     agent._qualify(replay, lambda: False)
     assert seen == [31] * 3  # every recorded arrival after the plan: the burst never ended
     assert agent.candidate["skip"] == 31 and agent.candidate["trace"] is None and agent.candidate["used"] == 1
+
+
+# ---------------------------------------------------------------- AG2: ordering by a predicted answer length
+
+def _answers(rng, n):
+    """Prompts whose kind sets the answer's length, all with one output limit: the chat traffic AG2 is for."""
+    kinds = [("Answer yes or no: is {} red?", 3), ("Name the capital of {}.", 8),
+             ("Write a long essay about {}.", 300), ("Explain in detail how {} works.", 180)]
+    for k in range(n):
+        text, tokens = rng.choice(kinds)
+        yield text.format(f"thing{rng.randrange(50)}"), max(1, int(tokens * rng.uniform(0.8, 1.2)))
+
+
+def test_the_length_model_learns_answer_lengths_online_and_keeps_no_text():
+    from ironmule_product.length_model import LengthModel, features
+    model = LengthModel()
+    rng = random.Random(1)
+    for prompt, tokens in _answers(rng, 600):
+        request = GenerationRequest("m", (("user", prompt),), max_tokens=512)
+        feats = features(request)
+        model.learn(feats, tokens, model.predict(feats, 512))
+    assert model.quality() > 0.8
+    short = features(GenerationRequest("m", (("user", "Answer yes or no: is thing7 red?"),), max_tokens=512))
+    long = features(GenerationRequest("m", (("user", "Write a long essay about thing7."),), max_tokens=512))
+    assert model.predict(short, 512) < 20 < 150 < model.predict(long, 512)
+    assert model.predict(long, 64) == 64  # never above the request's own limit
+    saved = json.dumps(model.to_json())
+    assert "essay" not in saved and "thing" not in saved
+    assert LengthModel.from_json(json.loads(saved)).predict(long, 512) == pytest.approx(model.predict(long, 512))
+
+
+def test_a_limit_ordered_policy_keeps_its_digest_and_a_predicted_one_is_another_schedule():
+    limit, predicted = ag.fixed_policy(2, True), ag.fixed_policy(2, True, "predicted")
+    assert "order_key" not in limit and Policy.from_json(limit).key == "limit"
+    assert Policy.from_json(predicted).key == "predicted" and predicted["sha256"] != limit["sha256"]
+    assert ag.behaviour(predicted) != ag.behaviour(limit)
+    assert ag._policy_body(Policy.from_json(predicted)) == predicted
+    tampered = {**predicted, "order_key": "oracle"}
+    with pytest.raises(ValueError):
+        Policy.from_json(tampered)
+
+
+def test_ld1_refuses_a_policy_that_orders_by_prediction(tmp_path):
+    from ironmule_product.learned_dispatch import EVIDENCE_SCHEMA, LearnedDispatch, _digest
+    policy = ag.fixed_policy(2, True, "predicted")
+    body = {"schema": EVIDENCE_SCHEMA, "policy_sha256": policy["sha256"], "verdict": "pass", "binding": {}}
+    (tmp_path / "p.json").write_text(json.dumps(policy))
+    (tmp_path / "e.json").write_text(json.dumps({**body, "sha256": _digest(body)}))
+    dispatch = LearnedDispatch.load(tmp_path / "p.json", tmp_path / "e.json", {})
+    assert not dispatch.active and "only the agent" in dispatch.reason
+
+
+def test_the_agent_predicts_once_learns_from_live_answers_and_records_the_prediction(tmp_path):
+    agent = _agent(tmp_path)
+    rng = random.Random(2)
+    for k, (prompt, tokens) in enumerate(_answers(rng, 400)):
+        request = GenerationRequest("m", (("user", prompt),), max_tokens=512, request_id=f"r{k}")
+        known = agent.length_of(request)
+        assert agent.length_of(request) is known  # made once, when first seen
+        agent.observe_group([{"arrive": float(k), "start": k + 0.1, "first": k + 0.2, "end": k + 0.2 + tokens * 0.01,
+                              "prompt_tokens": 12, "prompt_chars": len(prompt), "max_tokens": 512, "tokens": tokens,
+                              "ok": True, "length": known, "request_id": f"r{k}"}])
+    assert agent.lengths.seen == 400 and agent.status()["lengths"]["spearman"] > 0.8
+    assert all(len(row) == 6 and row[5] is not None for row in agent.traffic)
+    assert not agent._predicted  # a finished request's prediction is not kept
+    assert ag.predictions_recorded(list(agent.traffic))
+    # no serving policy orders by prediction yet: the service sorts by the limit
+    assert agent.order_key(GenerationRequest("m", (("user", "Write a long essay about x."),), max_tokens=512)) is None
+
+
+def test_the_planner_proposes_shortest_predicted_first_where_limits_say_nothing():
+    rng = random.Random(4)
+    arrivals, t = [], 0.0
+    for burst in range(30):  # bursts of eight, every limit 512, answers of 3 to 300 tokens
+        for _ in range(8):
+            tokens = rng.choice((3, 8, 180, 300))
+            predicted = tokens * rng.uniform(0.7, 1.3)
+            arrivals.append([t, 24, False, 512, tokens, predicted])
+            t += 0.05
+        t += 60.0
+    result = plan({"model": TRUTH, "arrivals": arrivals, "capacity": 1, "reference": {"width": 1, "sjf": False},
+                   "settings": {"episodes": 200, "seeds": 1, "validation": 10, "held_out": 10}})
+    assert result["best_fixed"] == "w1/pred"
+    assert Policy.from_json(result["candidate"]).key == "predicted"
+    assert result["arm_costs"]["w1/pred"] < 0.8 * result["arm_costs"]["w1/sjf"]
+    # without recorded predictions the arm is not offered
+    bare = plan({"model": TRUTH, "arrivals": [a[:5] for a in arrivals], "capacity": 1,
+                 "reference": {"width": 1, "sjf": False},
+                 "settings": {"episodes": 200, "seeds": 1, "validation": 10, "held_out": 10}})
+    assert "w1/pred" not in bare["arm_costs"]
+
+
+def test_a_predicted_policy_orders_live_requests_by_their_prediction(tmp_path):
+    agent = _agent(tmp_path)
+    agent.policy = Policy.from_json(ag.fixed_policy(1, True, "predicted"))
+    long = GenerationRequest("m", (("user", "a"),), max_tokens=512, request_id="long")
+    short = GenerationRequest("m", (("user", "b"),), max_tokens=512, request_id="short")
+    agent._predicted["long"], agent._predicted["short"] = (((), 0.0, 0.0), 300.0), (((), 0.0, 0.0), 5.0)
+    assert agent.order_key(long) == 300.0 and agent.order_key(short) == 5.0
+    assert agent.order_key(GenerationRequest("m", (("user", "c"),), max_tokens=4, request_id="long")) == 4.0
+    agent.paused = True
+    assert agent.order_key(short) is None
+
+
+def test_a_replay_makes_each_answer_its_recorded_length_and_sorts_by_the_arms_key(tmp_path):
+    service, backend, spec = _service(tmp_path)
+    agent = _agent(tmp_path)
+    service.agent = service.dispatch = agent
+    try:
+        # (offset, chars, tokens to make, recorded limit, recorded prediction): one limit for all
+        trace = [(0.0, 10, 64, 512, 70.0), (0.0, 10, 4, 512, 3.0), (0.0, 10, 32, 512, 40.0), (0.0, 10, 2, 512, 2.5)]
+        by_limit = service._replay_window(trace, lambda count, waiting, rate, now: (2, 0, True), lambda: False)
+        assert by_limit is not None and backend.groups == [[64, 4], [32, 2]]  # equal limits: arrival order
+        backend.groups.clear()
+        by_prediction = service._replay_window(trace, lambda count, waiting, rate, now: (2, 0, True, "predicted"),
+                                               lambda: False)
+        assert by_prediction is not None and backend.groups == [[2, 4], [32, 64]]
+    finally:
+        service.close()
+
+
+def test_the_agents_trace_replays_recorded_lengths_and_predictions(tmp_path):
+    agent = _agent(tmp_path)
+    for k in range(20):
+        agent.traffic.append([100.0 + k * 50, 12, False, 512, 10 + k, 12.5 + k])
+    trace = agent._trace(agent.traffic, since=None)
+    assert trace[0][2:] == (10, 512, 12.5)
+    agent.traffic.clear()
+    for k in range(20):  # recorded before AG2: ordered by the limit under either key
+        agent.traffic.append([100.0 + k * 50, 12, False, 600, 10 + k])
+    assert agent._trace(agent.traffic, since=None)[0][2:] == (10, 512, 512.0)

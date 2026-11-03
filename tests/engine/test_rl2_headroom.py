@@ -916,3 +916,44 @@ def test_ag1_cpu_profile_kernel_is_a_cpu_session_that_installs_the_cpu_build(tmp
     gpu = json.loads((rl2.write_kernel(tmp_path / "g", "owner", "c" * 40, plan="ag1") /
                       "kernel-metadata.json").read_text())
     assert gpu["enable_gpu"] is True and gpu["machine_shape"] == "NvidiaTeslaT4"
+
+
+def test_ag2_cpu_profile_uses_real_prompts_one_limit_and_fresh_seeds():
+    lp = rl2.AG1_PROFILES["cpu-lp"]
+    assert lp == {**rl2.AG1_PROFILES["cpu3"], "max_tokens": (128,), "prompts": "dolly", "learn": range(290, 320),
+                  "evaluate": range(320, 324), "short_prompts": False}
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "cpu-lp"]
+    assert not (set(lp["learn"]) | set(lp["evaluate"])) & set().union(*used)
+
+
+def test_ag2_items_carry_real_prompts_with_one_limit_and_held_out_prompts_are_unseen():
+    prompts = [f"prompt {k}" for k in range(15_000)]
+    items = rl2.trace_h2(1, 300, 0.2, 16)
+    online = rl2.lp_items(items, prompts, 300, False, 128)
+    held = rl2.lp_items(items, prompts, 320, True, 128)
+    assert all(i["max_tokens"] == 128 and not i["long"] and rl2.prompt_text(i) == i["text"] for i in online + held)
+    assert [i["offset_s"] for i in online] == [i["offset_s"] for i in items]
+    assert {i["text"] for i in online} <= set(prompts[:12_000])
+    assert not {i["text"] for i in held} & set(prompts[:12_000])
+    assert rl2.lp_items(items, prompts, 300, False, 128) == online  # fixed by the trace index
+
+
+def test_ag2_held_out_arm_orders_by_the_frozen_length_model():
+    from ironmule_product import agent as ag
+    from ironmule_product.learned_dispatch import LearnedDispatch, Policy
+    from ironmule_product.length_model import LengthModel, features
+    from ironmule_product.types import GenerationRequest
+
+    lengths = LengthModel()
+    for _ in range(300):
+        for text, tokens in (("Answer yes or no: is it red?", 3), ("Write a long essay about the sea.", 400)):
+            request = GenerationRequest("m", (("user", text),), max_tokens=512)
+            lengths.learn(features(request), tokens)
+    predicted = rl2._PredictingDispatch(LearnedDispatch(Policy.from_json(ag.fixed_policy(1, True, "predicted")),
+                                                        {}, None), lengths)
+    short = GenerationRequest("m", (("user", "Answer yes or no: is it red?"),), max_tokens=512)
+    long = GenerationRequest("m", (("user", "Write a long essay about the sea."),), max_tokens=512)
+    assert predicted.active and predicted.sjf([short, long]) is True
+    assert predicted.order_key(short) < 20 < 200 < predicted.order_key(long)
+    by_limit = rl2._PredictingDispatch(LearnedDispatch(Policy.from_json(ag.fixed_policy(1, True)), {}, None), lengths)
+    assert by_limit.order_key(long) is None

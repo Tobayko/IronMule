@@ -110,6 +110,7 @@ class _Session:
     prompt_tokens: int = 0       # AG1: the prompt's tokens, as the worker reported them
     group: int | None = None     # STAB1: the scheduler group that served it
     error: str | None = None     # STAB1: the error code delivered to the caller, if any
+    order_values: dict | None = None  # AG2, replay only: the recorded limit and prediction it is sorted by
 
 
 class ProductService:
@@ -326,16 +327,23 @@ class ProductService:
             return
         start = min(starts)
         members = []
+        length_of = None if replay else getattr(agent, "length_of", None)
         for item in group:
             if item.first_ns is None or item.end_ns is None or item.joined:
                 return  # a group a request joined is not the one-group-at-a-time model the agent prices
             messages = item.request.messages or ()
-            members.append({"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
-                            "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
-                            "prompt_tokens": item.prompt_tokens,
-                            "prompt_chars": len(messages[-1][1]) if messages else 0,
-                            "max_tokens": item.request.max_tokens, "tokens": item.tokens,
-                            "ok": item.outcome == "ok"})
+            member = {"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
+                      "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
+                      "prompt_tokens": item.prompt_tokens,
+                      "prompt_chars": len(messages[-1][1]) if messages else 0,
+                      "max_tokens": item.request.max_tokens, "tokens": item.tokens,
+                      "ok": item.outcome == "ok"}
+            if length_of is not None:  # AG2: hashed features and the prediction made when it arrived; no text
+                try:
+                    member["length"], member["request_id"] = length_of(item.request), item.request.request_id
+                except Exception:  # noqa: BLE001 - a prediction fault only costs this lesson
+                    pass
+            members.append(member)
         try:
             agent.observe_group(members, replay=replay)
         except Exception:  # noqa: BLE001 - the agent never stops serving
@@ -561,12 +569,19 @@ class ProductService:
                 break
         now = time.monotonic_ns()
         sjf = decide([session.request for session in self._carry])
+        dispatch = self.dispatch
+        order_key = getattr(dispatch, "order_key", None) if sjf else None
 
-        def key(session: _Session) -> tuple[bool, int, int]:
+        def value(request: GenerationRequest) -> float:
+            """AG2: the agent's predicted answer length when its serving policy orders by it, else the limit."""
+            predicted = order_key(request) if order_key is not None else None
+            return request.max_tokens if predicted is None else predicted
+
+        def key(session: _Session) -> tuple[bool, float, int]:
             if not sjf:
                 return (False, 0, session.submitted_ns)
             aged = now - session.submitted_ns > SJF_AGE_S * 1e9
-            return (not aged, 0 if aged else session.request.max_tokens, session.submitted_ns)
+            return (not aged, 0 if aged else value(session.request), session.submitted_ns)
 
         waiting = sorted(self._carry, key=key)
         self._carry.clear()
@@ -691,7 +706,9 @@ class ProductService:
         """RSI3-LIVE qualification: replay a metadata trace through the real backend.
 
         ``trace`` holds (arrival offset s, prompt characters, output limit); prompts are a fixed
-        filler, never user text. ``choose(queue, waiting, rate, now_ns)`` gives each group's width
+        filler, never user text. AG2 rows add (tokens to make, recorded limit, recorded prediction): the
+        request makes that many tokens, and ``choose`` may return a fourth element, "limit" or "predicted",
+        naming which recorded value shortest-first sorts by. ``choose(queue, waiting, rate, now_ns)`` gives each group's width
         and gather wait; groups run through this scheduler's own group execution. Runs on the
         scheduler thread while nothing waits. A real request cancels the window the moment it is
         admitted (RSI3-LIVE-P2): every replayed request stops at its next token boundary (or before
@@ -713,9 +730,10 @@ class ProductService:
             return None
         timeout = self.settings["request_timeout_s"] or 120
         deadline = time.monotonic() + timeout + (trace[-1][0] if trace else 0.0)
-        sessions = [_Session(GenerationRequest(self.spec.model_id, (("user", filler(chars)),), max_tokens=tokens,
-                                               request_id=f"replay-{index}-{time.monotonic_ns()}"), deadline)
-                    for index, (_, chars, tokens) in enumerate(trace)]
+        sessions = [_Session(GenerationRequest(self.spec.model_id, (("user", filler(row[1])),), max_tokens=row[2],
+                                               request_id=f"replay-{index}-{time.monotonic_ns()}"), deadline,
+                             order_values=None if len(row) < 5 else {"limit": row[3], "predicted": row[4]})
+                    for index, row in enumerate(trace)]
         texts: dict[str, list[str]] = {item.request.request_id: [] for item in sessions}
         stop, aborted = threading.Event(), threading.Event()
         window = self._replay_windows = getattr(self, "_replay_windows", 0) + 1
@@ -757,7 +775,7 @@ class ProductService:
         for thread in threads:
             thread.start()
         start = time.monotonic_ns()
-        due = [start + int(offset * 1e9) for offset, _, _ in trace]
+        due = [start + int(row[0] * 1e9) for row in trace]
         waiting: list[_Session] = []
         admitted, gap, last = 0, None, None
 
@@ -794,10 +812,14 @@ class ProductService:
                 width, gather_ms = decision[0], decision[1]
                 width = max(1, min(width, self._batch_capacity()))
                 if len(decision) > 2 and decision[2]:  # AG1: shortest output limit first, as `_order_waiting`
+                    order_by = decision[3] if len(decision) > 3 else "limit"  # AG2: or the recorded prediction
+
+                    def recorded(item: _Session, order_by: str = order_by) -> float:
+                        values = item.order_values
+                        return item.request.max_tokens if values is None else values[order_by]
                     waiting.sort(key=lambda item: (now - item.submitted_ns <= SJF_AGE_S * 1e9,
-                                                   item.request.max_tokens
-                                                   if now - item.submitted_ns <= SJF_AGE_S * 1e9 else 0,
-                                                   item.submitted_ns))
+                                                   recorded(item) if now - item.submitted_ns <= SJF_AGE_S * 1e9
+                                                   else 0, item.submitted_ns))
                 until = time.monotonic_ns() + gather_ms * 1_000_000
                 while (len(waiting) < width and admitted < len(sessions) and time.monotonic_ns() < until
                        and not aborted.is_set()):

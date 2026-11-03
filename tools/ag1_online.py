@@ -17,6 +17,11 @@ where a further session in a round costs as much as the first), to show the agen
 
     python tools/ag1_online.py --traces 300 --out ag1_online.json [--drift-at 150 --drift cpu]
 
+`--prompts FILE.jsonl` (AG2) gives the requests real prompt texts ({"prompt", "tokens"} per line, outside the
+repository) with one output limit for all (`--limit`), each answer ending at its own recorded length, as chat
+answers end at EOS. The agent's length model then learns online from those texts, and every window is also run
+under each fixed schedule that orders by the limit, so the summary can name the best of them in hindsight.
+
 This is a simulation of the server, not a hardware result: what it can show is that the loop learns, plans,
 qualifies and re-learns on its own, and how long that takes in traffic; what the agent gains on a machine
 is measured on that machine (AG1-V).
@@ -61,12 +66,14 @@ class Machine:
         self.params, self.rng = dict(params), random.Random(seed)
 
     def run(self, jobs: list[dict[str, Any]], sjf: Callable, width: Callable, capacity: int,
-            start: float, stop_at: float = math.inf,
-            skip_idle: bool = False) -> tuple[list[list[dict[str, Any]]], float, bool]:
+            start: float, stop_at: float = math.inf, skip_idle: bool = False,
+            order_value: Callable | None = None) -> tuple[list[list[dict[str, Any]]], float, bool]:
         """Serve `jobs` (arrive, prompt_tokens, max_tokens, tokens, chars) from `start`; returns the groups it ran
         (each member with start, first, end), the time it ended, and whether an arrival at `stop_at` cut it short
         (a preempted replay). Decisions see only the output limit and the prompt class. `skip_idle` releases the
-        next arrival at once while the server is idle, moving the rest up, as the service's replay does."""
+        next arrival at once while the server is idle, moving the rest up, as the service's replay does.
+        `order_value(job)` is what shortest-first sorts by (AG2); by default the output limit."""
+        value = order_value or (lambda j: j["max_tokens"])
         p = self.params
         slow = math.exp(self.rng.gauss(0, WINDOW_SIGMA))
         pending = sorted(jobs, key=lambda j: j["arrive"])
@@ -89,7 +96,7 @@ class Machine:
             views = [_Request(j) for j in waiting]
             if sjf(views):
                 waiting.sort(key=lambda j: (now - j["arrive"] <= SJF_AGE_S,
-                                            j["max_tokens"] if now - j["arrive"] <= SJF_AGE_S else 0, j["arrive"]))
+                                            value(j) if now - j["arrive"] <= SJF_AGE_S else 0, j["arrive"]))
             size = max(1, min(capacity, width([_Request(j) for j in waiting])))
             group, waiting = waiting[:size], waiting[size:]
             t = now
@@ -120,42 +127,71 @@ class _Request:
 
     def __init__(self, job: dict[str, Any]):
         self.max_tokens = job["max_tokens"]
-        self.messages = (("user", "x" * job["chars"]),)
+        self.messages = (("user", job.get("prompt") or "x" * job["chars"]),)
+        self.request_id = job.get("id")
 
 
 def cost(members: list[dict[str, Any]]) -> float:
     return statistics.fmean((m["end"] - m["arrive"]) + (m["first"] - m["arrive"]) for m in members)
 
 
-def live_traces(traces: int, seed: int) -> list[list[dict[str, Any]]]:
+def live_traces(traces: int, seed: int, prompts: list[dict[str, Any]] | None = None,
+                limit: int = 512) -> list[list[dict[str, Any]]]:
     out = []
+    draw = random.Random(seed)
     for k in range(traces):
         state = k % len(rl2.H2_STATES)
         items = rl2.trace_h2(state, seed + k, CAPACITY_RPS)
-        out.append([{"arrive": it["offset_s"], "prompt_tokens": 1030 if it["long"] else 24,
-                     "chars": 4200 if it["long"] else 100, "max_tokens": it["max_tokens"],
-                     "tokens": it["max_tokens"], "state": state} for it in items])
+        jobs = []
+        for i, it in enumerate(items):
+            job = {"arrive": it["offset_s"], "prompt_tokens": 1030 if it["long"] else 24,
+                   "chars": 4200 if it["long"] else 100, "max_tokens": it["max_tokens"],
+                   "tokens": it["max_tokens"], "state": state, "id": f"live-{k}-{i}"}
+            if prompts:  # AG2: a real prompt, one limit for all, the answer ending at its own length
+                p = prompts[draw.randrange(len(prompts))]
+                job.update(prompt=p["prompt"], chars=len(p["prompt"]), prompt_tokens=max(1, len(p["prompt"]) // 4),
+                           max_tokens=limit, tokens=max(1, min(limit, int(p["tokens"]))))
+            jobs.append(job)
+        out.append(jobs)
     return out
 
 
+FIXED = [(w, s) for w in (1, 2, 4, 8) for s in (False, True)]  # hindsight comparators, ordered by the limit
+
+
 def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: int | None = None,
-        drift: str = "cpu", episodes: int = 1500, root: Path | None = None, log: Callable = print) -> dict[str, Any]:
+        drift: str = "cpu", episodes: int = 1500, root: Path | None = None, log: Callable = print,
+        prompts: list[dict[str, Any]] | None = None, limit: int = 512) -> dict[str, Any]:
     root = Path(root or tempfile.mkdtemp(prefix="ag1-online-"))
     params = MACHINES[machine]
     server, counterfactual = Machine(params, seed), Machine(params, seed + 1)
     replayer = Machine(params, seed + 2)
+    fixed = {f"w{w}/{'sjf' if s else 'fifo'}": Machine(params, seed + 3 + k) for k, (w, s) in enumerate(FIXED)} \
+        if prompts else {}
     clock = [0.0]
     agent = ag.Agent(root / "agent", {"simulated": machine, "seed": seed}, capacity=8,
                      reference={"width": 8, "sjf": False, "gather_ms": 0}, clock=lambda: clock[0],
                      planner_settings={"episodes": episodes, "seeds": 2})
     reference_sjf, reference_width = (lambda w: False), (lambda w: 8)
 
-    def replay(trace: list[tuple[float, int, int]], choose: Callable, preempted: Callable) -> dict[str, Any] | None:
-        jobs = [{"arrive": clock[0] + offset, "prompt_tokens": max(1, chars // 4), "chars": chars,
-                 "max_tokens": tokens, "tokens": tokens} for offset, chars, tokens in trace]
+    def replay(trace: list[tuple], choose: Callable, preempted: Callable) -> dict[str, Any] | None:
+        jobs = []
+        for row in trace:  # (offset, chars, tokens to make[, limit, prediction]) as the service's replay takes them
+            offset, chars, tokens = row[:3]
+            limit, predicted = (row[3], row[4]) if len(row) > 4 else (tokens, tokens)
+            jobs.append({"arrive": clock[0] + offset, "prompt_tokens": max(1, chars // 4), "chars": chars,
+                         "max_tokens": limit, "tokens": tokens, "predicted": predicted})
         decide = lambda views: choose(len(views), [(0, v) for v in views[:8]], 0.0, 0)  # noqa: E731
-        groups, end, cut = replayer.run(jobs, lambda v: decide(v)[2], lambda v: decide(v)[0], 8, clock[0],
-                                        stop_at=next_arrival[0], skip_idle=True)
+        key = [None]
+
+        def sjf(views: list) -> bool:
+            decision = decide(views)
+            key[0] = decision[3] if len(decision) > 3 else "limit"
+            return decision[2]
+        groups, end, cut = replayer.run(jobs, sjf, lambda v: decide(v)[0], 8, clock[0],
+                                        stop_at=next_arrival[0], skip_idle=True,
+                                        order_value=lambda j: j["predicted"] if key[0] == "predicted"
+                                        else j["max_tokens"])
         if cut:
             clock[0] = max(clock[0], next_arrival[0])
             return None
@@ -176,7 +212,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
         for event in list(agent.history):
             if not any(event is seen["event_ref"] for seen in events[-60:]):
                 events.append({"event_ref": event, "trace": trace, **event})
-    for k, trace in enumerate(live_traces(traces, seed)):
+    for k, trace in enumerate(live_traces(traces, seed, prompts, limit)):
         if drift_at is not None and k == drift_at:
             server.params = counterfactual.params = replayer.params = MACHINES[drift]
             log(json.dumps({"trace": k, "drift": drift}))
@@ -196,17 +232,32 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
         clock[0] = max(clock[0], next_arrival[0])
         collect(k)
         serving = agent.status()["serving"]
-        groups, end, _ = server.run(jobs, lambda v: bool(agent.sjf(v)) if agent.active else reference_sjf(v),
-                                    lambda v: (agent.width(v) or 8) if agent.active else reference_width(v),
-                                    8, clock[0])
+        active = agent.active
+
+        def order_value(job: dict[str, Any]) -> float:  # AG2: the agent's key when its policy orders by prediction
+            value = agent.order_key(_Request(job)) if active else None
+            return job["max_tokens"] if value is None else value
+        groups, end, _ = server.run(jobs, lambda v: bool(agent.sjf(v)) if active else reference_sjf(v),
+                                    lambda v: (agent.width(v) or 8) if active else reference_width(v),
+                                    8, clock[0], order_value=order_value)
         base, _, _ = counterfactual.run(jobs, reference_sjf, reference_width, 8, clock[0])
+        fixed_costs = {}
+        for (name, machine_), (w, s) in zip(fixed.items(), FIXED):
+            ran, _, _ = machine_.run(jobs, lambda v, s=s: s, lambda v, w=w: w, 8, clock[0])
+            fixed_costs[name] = cost([m for g in ran for m in g])
         for members in groups:
-            agent.observe_group([{**m, "ok": True, "prompt_chars": m["chars"]} for m in members])
+            observed = []
+            for m in members:
+                row = {**m, "ok": True, "prompt_chars": m["chars"]}
+                if prompts:  # the service hands the agent each live request's length features
+                    row["length"], row["request_id"] = agent.length_of(_Request(m)), m["id"]
+                observed.append(row)
+            agent.observe_group(observed)
         clock[0] = end
         live = [m for g in groups for m in g]
         windows.append({"trace": k, "state": rl2.H2_STATES[trace[0]["state"]], "serving": serving,
                         "agent_cost": cost(live), "reference_cost": cost([m for g in base for m in g]),
-                        "t_s": jobs[0]["arrive"]})
+                        "t_s": jobs[0]["arrive"], **({"fixed_costs": fixed_costs} if fixed_costs else {})})
         t = end + PAUSE_S
         if k % 30 == 0 or agent.counters != logged:
             logged = dict(agent.counters)
@@ -216,6 +267,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     status = agent.status()
     agent.close()
     return {"schema": "ironmule.ag1.online.v1", "machine": machine, "drift_at": drift_at, "drift": drift,
+            "prompts": len(prompts) if prompts else None, "limit": limit if prompts else None,
             "traces": traces, "seed": seed, "episodes": episodes, "windows": windows,
             "history": [{k: v for k, v in e.items() if k != "event_ref"} for e in events],
             "counters": agent.counters, "final": status}
@@ -235,6 +287,11 @@ def summarise(result: dict[str, Any]) -> dict[str, Any]:
     for name, rows in phases.items():
         a, r = sum(w["agent_cost"] for w in rows), sum(w["reference_cost"] for w in rows)
         out[name] = {"windows": len(rows), "agent": a / len(rows), "reference": r / len(rows), "gain": 1 - a / r}
+        if all("fixed_costs" in w for w in rows):  # AG2: the best schedule ordered by the limit, in hindsight
+            totals = {arm: sum(w["fixed_costs"][arm] for w in rows) for arm in rows[0]["fixed_costs"]}
+            best = min(totals, key=totals.get)
+            out[name].update(best_fixed=best, best_fixed_cost=totals[best] / len(rows),
+                             gain_vs_best_fixed=1 - a / totals[best])
     return out
 
 
@@ -246,10 +303,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--drift-at", type=int, default=None)
     parser.add_argument("--drift", choices=sorted(MACHINES), default="cpu")
     parser.add_argument("--episodes", type=int, default=1500)
+    parser.add_argument("--prompts", default=None, help="AG2: JSONL of {prompt, tokens}, kept outside the repository")
+    parser.add_argument("--limit", type=int, default=512, help="AG2: the one output limit every request sends")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     started = time.time()
-    result = run(args.traces, args.seed, args.machine, args.drift_at, args.drift, args.episodes)
+    prompts = ([json.loads(line) for line in Path(args.prompts).read_text().splitlines() if line.strip()]
+               if args.prompts else None)
+    result = run(args.traces, args.seed, args.machine, args.drift_at, args.drift, args.episodes,
+                 prompts=prompts, limit=args.limit)
     result["summary"] = summarise(result)
     result["wall_s"] = time.time() - started
     Path(args.out).write_text(json.dumps(result, indent=1))
