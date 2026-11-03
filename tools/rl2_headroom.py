@@ -1836,11 +1836,12 @@ AG2_PROMPT_CHARS = 600
 AG1_PROFILES["cpu-lp"] = {**AG1_PROFILES["cpu3"], "max_tokens": (128,), "prompts": "dolly", "learn": range(290, 320),
                           "evaluate": range(320, 324), "short_prompts": False}
 # BACKLOG AG2, the T4 gate: the owner's Gemma 3 12B under the owner's `native` plan (the reference worker, capacity 1),
-# Dolly prompts with one limit of 512; first as a smoke that fixes the full run's sizes
+# on both T4s of the session with an agent per card (owner request: multi-GPU), Dolly prompts with one limit of 512;
+# first as a smoke that fixes the full run's sizes
 AG1_PROFILES["t4-g12-lp"] = {**AG1_PROFILES["t4"], "model": "mlx-community/gemma-3-12b-it-4bit", "variant": "reference",
                              "compute_dtype": "native", "max_tokens": (512,), "prompts": "dolly",
                              "learn": range(324, 354), "evaluate": range(354, 358), "timeout_s": 1800,
-                             "stop_on_qualify": True, "fixed": (1, True)}
+                             "stop_on_qualify": True, "fixed": (1, True), "cards": 2}
 
 
 def dolly_prompts(work: Path) -> tuple[list[str], str]:
@@ -1917,11 +1918,11 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
     if smoke or setup["timeout_s"]:  # on a CPU the server mode's 120 s cuts answers off
         store.set_request_timeout(setup["timeout_s"] or 1800)
     spec = store.model(model)
-    devices = (cuda_devices() or [None])[:1]
+    devices = (cuda_devices() or [None])[:int(setup.get("cards", 1))]  # AG2: an agent per card
     pool = start_pool(store, spec, devices, lambda device: MLXWorkerClient(
         spec, execution_variant=setup["variant"], compute_dtype=setup["compute_dtype"], cuda_device=device),
         ProductService)
-    shard = pool.shards[0]
+    shard, shards = pool.shards[0], list(pool.shards)
     learn, evaluate = (([setup["learn"][0]] * 3, [setup["evaluate"][0]]) if smoke
                        else (list(setup["learn"]), list(setup["evaluate"])))
     pause = 1.0 if smoke else setup["pause_s"]
@@ -1955,9 +1956,12 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             return [{**item, "long": False} for item in items] if setup["short_prompts"] else items
 
         reference = ServingPolicy(max_width=8, gather_ms=0, source="ag1-reference")  # the default for this setup
-        shard.policy = reference  # before the agent is built: its binding names the schedule it is measured against
-        agent = _agent(store, shard, spec)
-        shard.agent = shard.dispatch = agent
+        agents = []
+        for each, device in zip(shards, devices):
+            each.policy = reference  # before the agent is built: its binding names the schedule it is measured against
+            agents.append(_agent(store, each, spec, card=device if len(shards) > 1 else None))
+            each.agent = each.dispatch = agents[-1]
+        agent = agents[0]
         started = time.monotonic()
         for k, t in enumerate(learn):  # the online phase: the agent decides, learns and qualifies by itself
             level = k % len(H2_STATES)
@@ -1970,40 +1974,58 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             row["agent"] = {key: status.get(key) for key in ("serving", "gain", "gain_ci95", "world_model",
                                                            "candidate", "lengths", "decisions", "decision_us",
                                                            "counters", "planner")}
+            if len(agents) > 1:  # AG2: every card's agent, the first one's also under "agent" as before
+                row["agents"] = [{key: s.get(key) for key in ("serving", "gain", "candidate", "lengths", "counters")}
+                                 for s in (a.status() for a in agents)]
             report["learning"].append(row)
             if on_row is not None:
                 on_row(report)
-            if setup.get("stop_on_qualify") and agent.policy is not None:  # V3: held-out needs nothing more
+            if setup.get("stop_on_qualify") and all(a.policy is not None for a in agents):  # V3: held-out needs nothing more
                 report["online_ended_after"] = t
                 break
-        final = agent.status()
-        policy = agent.policy
         from ironmule_product.length_model import LengthModel
 
-        lengths = LengthModel.from_json(agent.lengths.to_json())  # AG2: frozen with the policy
-        report["agent_final"] = {**final, "history": list(agent.history), "evidence": agent.evidence,
-                                 "last_plan": agent.last_plan}
-        shard.agent = shard.dispatch = None  # detach first: the scheduler starts no new idle work for it
+        finals = [{**a.status(), "history": list(a.history), "evidence": a.evidence, "last_plan": a.last_plan}
+                  for a in agents]
+        policies = [a.policy for a in agents]
+        lengths_by_card = [LengthModel.from_json(a.lengths.to_json()) for a in agents]  # AG2: frozen with the policy
+        policy, lengths = policies[0], lengths_by_card[0]
+        report["agent_final"] = finals[0]
+        if len(agents) > 1:
+            report["agents_final"] = finals
+        for each in shards:
+            each.agent = each.dispatch = None  # detach first: the scheduler starts no new idle work for it
         until = time.monotonic() + 600
-        while getattr(shard, "_replay_state", None) is not None and time.monotonic() < until:
+        while any(getattr(each, "_replay_state", None) is not None for each in shards) and time.monotonic() < until:
             time.sleep(0.1)  # a replay window still running ends before the comparison starts
-        agent.close()
+        for a in agents:
+            a.close()
         if policy is None and smoke:  # a smoke still walks the comparison, with a fixed schedule
             from ironmule_product.agent import fixed_policy
             from ironmule_product.learned_dispatch import Policy as DispatchPolicy
 
             policy = DispatchPolicy.from_json(fixed_policy(2, True))
+            policies = [policy] * len(agents)
         tiers = setup.get("fixed") is not None
+        if len(agents) > 1 and policy is None and any(p is not None for p in policies):
+            policy = next(p for p in policies if p is not None)  # a card that qualified something counts
         if policy is None and not tiers:
             report["frozen"] = None
             report["stopped"] = "the agent qualified no schedule in the online phase; nothing to compare"
             return {"model": model, "revision": revision, **report}
         report["frozen"] = None if policy is None else {"policy_sha256": policy.sha256, "evidence": agent.evidence}
+        if len(agents) > 1 and policy is not None:
+            report["frozen"]["cards"] = [None if p is None else {"policy_sha256": p.sha256, "evidence": a.evidence}
+                                         for p, a in zip(policies, agents)]
         if policy is None:  # V2: the tiers are still measured; the agent serves the default, as it did online
             report["stopped"] = "the agent qualified no schedule in the online phase; its tier is the default's"
-        dispatch = None if policy is None else LearnedDispatch(policy, {"experiment": "AG1-V measurement"}, None)
-        if dispatch is not None and policy.key == "predicted":
-            dispatch = _PredictingDispatch(dispatch, lengths)
+        def frozen_dispatch(p: Any, frozen_lengths: Any) -> Any:
+            if p is None:
+                return None
+            made = LearnedDispatch(p, {"experiment": "AG1-V measurement"}, None)
+            return _PredictingDispatch(made, frozen_lengths) if p.key == "predicted" else made
+        dispatches = [frozen_dispatch(p, ln) for p, ln in zip(policies, lengths_by_card)]
+        dispatch = dispatches[0]
         arms = list(AG1_ARMS)
         if tiers:
             from ironmule_product.agent import fixed_policy
@@ -2021,14 +2043,16 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
                     if not wait_idle(pool):
                         report["stopped"] = f"the pool did not drain before block {block}"
                         return {"model": model, "revision": revision, **report}
-                    shard.policy = reference
-                    shard.dispatch = dispatch if name == "agent" else fixed if name == "fixed" else None
+                    for each, own in zip(shards, dispatches):
+                        each.policy = reference
+                        each.dispatch = own if name == "agent" else fixed if name == "fixed" else None
                     report["rows"].append({"level": level, "trace": t, "arm": name, "run": run, "block": block,
                                            "requests": replay(pool, model, items, deadline)})
                     if on_row is not None:
                         on_row(report)
                 block += 1
-        shard.dispatch = None
+        for each in shards:
+            each.dispatch = None
         report["dispatch_status"] = dispatch.status() if dispatch is not None else None
     finally:
         pool.close()

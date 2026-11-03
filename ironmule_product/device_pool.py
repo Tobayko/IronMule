@@ -100,6 +100,7 @@ class DevicePool:
     """The `ProductService` surface the HTTP server uses, over one service per device."""
 
     learning = None
+    agents: list[Any] | None = None  # AG2: one agent per device, attached by the CLI; placement stays the pool's
     dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
 
     def __init__(self, shards: list[Any], devices: list[str]):
@@ -174,6 +175,9 @@ class DevicePool:
         result["dispatch"] = "learned" if dispatch is not None and dispatch.active else "join_shortest_queue"
         if dispatch is not None:
             result["learned_dispatch"] = dispatch.status()
+        if self.agents:
+            result["agents"] = [{"cuda_device": device, **agent.status()} for device, agent in zip(self.devices,
+                                                                                                 self.agents)]
         return result
 
     def learning_status(self) -> dict[str, Any]:
@@ -192,12 +196,19 @@ class DevicePool:
 
     def dispatch_status(self) -> dict[str, Any]:
         from .learned_dispatch import status_of
+        if self.agents:
+            return {"agents": [{"cuda_device": device, **agent.status()}
+                               for device, agent in zip(self.devices, self.agents)]}
         return status_of(self.dispatch)
 
     def dispatch_control(self, action: str) -> dict[str, Any]:
-        """One dispatch object serves every device, so withdrawing it once withdraws it everywhere."""
+        """One dispatch object serves every device, so withdrawing it once withdraws it everywhere; with an agent
+        per device (AG2), the operator's action reaches every one of them."""
         from .learned_dispatch import control
         try:
+            if self.agents:
+                return {"agents": [{"cuda_device": device, **agent.control(action)}
+                                   for device, agent in zip(self.devices, self.agents)]}
             return control(self.dispatch, action)
         except ValueError as exc:
             raise InvalidRequest(str(exc)) from exc

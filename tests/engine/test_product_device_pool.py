@@ -271,3 +271,28 @@ def test_health_names_the_knobs_each_card_serves_with_and_whether_they_are_class
         assert "knobs" not in plain.health()  # the fake reports no knobs unless asked; nothing is invented
     finally:
         plain.close()
+
+
+def test_an_agent_per_device_reports_and_obeys_the_operator_while_placement_stays_the_pools(tmp_path):
+    """AG2: on several GPUs each card gets its own agent, bound to its card; health, status and the operator's
+    off/on reach every one, and placement stays join-the-shortest-queue."""
+    from ironmule_product.agent import Agent
+
+    binding = {"hardware": {"chip_name": "test", "gpu_devices": 2}, "device": "gpu", "model": {"id": "m"}}
+    agents = [Agent(tmp_path / "agent", {**binding, "card": card}, capacity=1,
+                    reference={"width": 1, "sjf": False, "gather_ms": 0}) for card in ("0", "1")]
+    assert agents[0].path != agents[1].path  # their learning never mixes
+    first, second = _Shard("a"), _Shard("b")
+    pool = DevicePool([first, second], ["0", "1"])
+    pool.agents = agents
+    assert [entry["cuda_device"] for entry in pool.health()["agents"]] == ["0", "1"]
+    assert pool.health()["dispatch"] == "join_shortest_queue"
+    assert len(pool.dispatch_status()["agents"]) == 2
+    assert all(entry["paused"] for entry in pool.dispatch_control("off")["agents"])
+    assert all(agent.paused for agent in agents)
+    assert not any(entry["paused"] for entry in pool.dispatch_control("on")["agents"])
+    for index in range(2):
+        list(pool.stream(_request(f"r{index}")))
+    assert first.admitted == ["r0"] and second.admitted == ["r1"]
+    for agent in agents:
+        agent.close()

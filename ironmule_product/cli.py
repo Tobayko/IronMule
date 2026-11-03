@@ -330,8 +330,6 @@ def serve(argv: list[str]) -> int:
                 devices = select_devices(args.gpus, cuda_devices())
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
-            if len(devices) > 1 and args.agent == "on":
-                raise InvalidRequest("--agent models one worker; use it with one GPU (HW1)")
             knob_options = _qualified_knob_options(spec, devices) if (
                 args.knobs == "auto" and args.engine == "tuned") else {}
 
@@ -353,7 +351,14 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
         if spec is not None and args.agent == "on":
-            service.agent = service.dispatch = _agent(store, service, spec)
+            shards = getattr(service, "shards", None)
+            if shards:  # AG2: one agent per GPU, bound to its card, ordering and learning from that card's queue
+                service.agents = [_agent(store, shard, spec, card=device)
+                                  for shard, device in zip(shards, service.devices)]
+                for shard, agent in zip(shards, service.agents):
+                    shard.agent = shard.dispatch = agent
+            else:
+                service.agent = service.dispatch = _agent(store, service, spec)
         wants_schedule = (args.schedule == "auto" and args.gpus is not None and args.learning == "off"
                           and args.dispatch_policy is None)
         binding = None
@@ -443,8 +448,9 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
     return learning
 
 
-def _agent(store: ProductStore, service: Any, spec: ModelSpec) -> Any:
-    """AG1: the agent bound to this hardware, model, plan and software; its learning lives in the state directory."""
+def _agent(store: ProductStore, service: Any, spec: ModelSpec, card: str | None = None) -> Any:
+    """AG1: the agent bound to this hardware, model, plan and software; its learning lives in the state directory.
+    On several GPUs each card gets its own (`card`, AG2), so their learning and evidence never mix."""
     from .agent import Agent
     from .readiness import hardware_identity
 
@@ -458,6 +464,8 @@ def _agent(store: ProductStore, service: Any, spec: ModelSpec) -> Any:
                         "engine_configuration": backend.engine_configuration, "compute_dtype": backend.compute_dtype,
                         "chat_reuse": backend.chat_reuse, "thinking": backend.thinking},
                "runtime": _runtime_versions()}
+    if card is not None:
+        binding["card"] = card
     policy = service.policy
     capacity = service._batch_capacity()
     # what the agent's evidence was measured against: a changed schedule or capacity starts it fresh

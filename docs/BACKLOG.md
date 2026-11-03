@@ -705,9 +705,27 @@ place of the limit itself.
   planned order is dropped. The profile stays for smokes.
 - The hardware test of AG2 is a T4 with a model whose answers end at EOS.
 
+**Multi-GPU (owner request, 2026-11-03).**
+- *Exploratory simulation, after V4's data:* two cards on the AG1 simulator's T4 price, the pool placing each
+  request at arrival, 300 traces of 32 requests at the two cards' capacity, one limit, lognormal answers. The table
+  gives each policy's gain over today's pool (least outstanding requests, arrival order):
+
+  | Correlation rho | Order by prediction, width 1 | Also place by predicted work, width 1 | Order by prediction, width 8 | Also place by predicted work, width 8 |
+  | --: | --: | --: | --: | --: |
+  | 0.5 | +15.0 % | +15.3 % | +7.2 % | +8.1 % |
+  | 0.63 | +18.7 % | +19.2 % | +8.7 % | +10.4 % |
+  | 1.0 (oracle) | +30.5 % | +31.5 % | +13.2 % | +15.4 % |
+
+  Placement by predicted work alone gains +0.7 to +2.8 %, about what RL2 and RL3 found for placement. The ordering
+  carries the lever on two cards as on one. So AG2 keeps the pool's placement and orders each card's queue.
+- *Change:* `ironmule serve --agent on --gpus all` was refused on several GPUs. It now attaches one agent per card
+  (bound to its card, so its learning and evidence never mix). The pool reports and controls all of them, and keeps
+  join-the-shortest-queue placement. The harness gains `cards`: one agent per card, and each card's frozen policy and
+  length model in the held-out arm.
+
 **T4 gate: a Gemma 3 12B smoke (fixed 2026-11-03, before its data).** This is the owner's requested model, under
 the owner's `--compute-dtype native` plan.
-- *Profile:* `--profile t4-g12-lp`, a `--smoke` run on one Kaggle T4:
+- *Profile:* `--profile t4-g12-lp`, a `--smoke` run on both T4s of a Kaggle "GPU T4 x2" session, one agent per card:
   - `mlx-community/gemma-3-12b-it-4bit` (its `native` plan is gated at rev `86cc6a8`; the run records the revision
     it downloads);
   - the reference worker with `--compute-dtype native`, at capacity 1;
@@ -720,8 +738,8 @@ the owner's `--compute-dtype native` plan.
   - the calibrated capacity and the tokens per second.
 - These fix the full T4 protocol's limit, trace count, idle time and session hours, written here before that
   run's data.
-- *Cost:* about 0.7 session hours (an 8 GB download, the calibration burst and the smoke's small traces). That fits
-  the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is reported as such, and nothing is
+- *Cost:* about 0.7 session hours (an 8 GB download loaded once per card, a 32-request calibration burst and the
+  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is reported as such, and nothing is
   inferred from it.
 
 **Other routes from the same search, not yet entries (kept so they are not re-derived):**
