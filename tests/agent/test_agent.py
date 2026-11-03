@@ -892,3 +892,12 @@ def test_a_named_plan_is_kept_even_with_the_agent_on(monkeypatch, tmp_path):
     assert "engine_configuration" not in seen
     seen = _serve_until_backend(monkeypatch, tmp_path, [], {"engine": "dense", "compute_dtype": None, "reason": "x"})
     assert "setup" not in seen and seen["execution_variant"] == "reference"
+
+
+def test_the_agents_two_path_setup_starts_both_workers_on_one_card(monkeypatch, tmp_path):
+    """AG4 step 2: `route` starts the single path (NUM1's plan) first; the stacked engine beside it."""
+    setup = {"engine": "route", "compute_dtype": "float16", "reason": "routes each request",
+             "stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                             "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
+    seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], setup)
+    assert seen["compute_dtype"] == "float16" and seen.get("execution_variant", "reference") == "reference"

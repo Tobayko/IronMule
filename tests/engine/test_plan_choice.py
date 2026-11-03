@@ -108,3 +108,13 @@ def test_a_model_without_a_stacked_engine_is_measured_as_ineligible():
 
     assert pc.measure_stacked(object(), None, None, make_plan=refuse) == {
         "eligible": False, "reason": "the dense plan serves Qwen 3 checkpoints only"}
+
+
+def test_a_stacked_engine_that_wins_only_under_load_serves_beside_the_single_path_where_both_fit():
+    """AG4 step 2: AG4-Q run 2's numbers (dense 5x at width 8, 0.82x alone); with room for two copies the agent
+    serves both and routes each request, without room it keeps the single path."""
+    measured = _measured(base_step=0.0173, plan_steps={"1": 0.0212, "8": 0.0275})
+    fits = pc.decide({**measured, "memory": {"two_paths_fit": True}})
+    assert not fits["stacked"] and fits["route"] and "routes each request" in fits["reason"]
+    tight = pc.decide({**measured, "memory": {"two_paths_fit": False}})
+    assert not tight["stacked"] and not tight["route"]

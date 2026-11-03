@@ -187,7 +187,8 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     pieces = [ids[i * size:(i + 1) * size + 1] for i in range(chunks) if (i + 1) * size + 1 <= len(ids)]
     reference = [_decode_nll(model, piece) for piece in pieces]
     candidate = _plan_nll(plan, pieces)
-    out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate)}
+    out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate),
+                           "memory": _memory(model, plan, device_info)}
     speed = {}
     for name, prompt in (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT)):
         prompt_ids = list(tokenizer.encode(prompt))
@@ -197,6 +198,25 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
                        "plan_step_s": {str(w): s for w, s in plan_steps.items()}}
     out["speed"] = speed
     return out
+
+
+ROUTE_RESERVE = 3 * 1024 ** 3  # two workers' working memory beside two copies of the weights and the pool
+ROUTE_HEADROOM = 0.9
+
+
+def _memory(model: Any, plan: Any, device_info: dict[str, Any] | None) -> dict[str, Any]:
+    """Whether two serving paths fit this card at once: two copies of the weights, the stacked pool and
+    `ROUTE_RESERVE`, in `ROUTE_HEADROOM` of the card (unknown when the card reports no size)."""
+    from mlx.utils import tree_flatten
+
+    info = device_info or {}
+    total = next((info[k] for k in ("total_memory", "memory_size") if isinstance(info.get(k), int) and info[k] > 0),
+                 None)
+    weights = sum(v.nbytes for _, v in tree_flatten(model.parameters()))
+    pool = sum(a.nbytes for a in (*getattr(plan, "keys", []), *getattr(plan, "values", [])))
+    need = 2 * weights + pool + ROUTE_RESERVE
+    return {"weights": weights, "pool": pool, "total": total,
+            "two_paths_fit": None if total is None else need <= ROUTE_HEADROOM * total}
 
 
 def decide(stacked: dict[str, Any]) -> dict[str, Any]:
@@ -215,12 +235,17 @@ def decide(stacked: dict[str, Any]) -> dict[str, Any]:
     tps = {"base_one": base_tps, "stacked_one": one_tps, f"stacked_{width}": wide_tps}
     if wide_tps <= base_tps:
         return {"stacked": False, "tokens_per_second": tps, "reason": "stacking makes no more tokens per second here"}
+    # AG4 step 2 (amended after AG4-Q run 2): a stacked engine that wins under load but not alone serves beside the
+    # single path, and the router sends each request where it finishes first, if both fit the card.
+    fits = (stacked.get("memory") or {}).get("two_paths_fit") is True
     if one_tps < QUIET_FLOOR * base_tps:
-        return {"stacked": False, "tokens_per_second": tps,
-                "reason": f"one request alone would run at {one_tps / base_tps:.2f}x, below {QUIET_FLOOR}"}
+        why = f"one request alone would run at {one_tps / base_tps:.2f}x, below {QUIET_FLOOR}"
+        return {"stacked": False, "route": fits, "tokens_per_second": tps,
+                "reason": why + ("; both paths serve and the agent routes each request" if fits else "")}
     if ttft > TTFT_SLACK:
-        return {"stacked": False, "tokens_per_second": tps,
-                "reason": f"the first token would come {ttft:.2f}x later, above {TTFT_SLACK}"}
+        why = f"the first token would come {ttft:.2f}x later, above {TTFT_SLACK}"
+        return {"stacked": False, "route": fits, "tokens_per_second": tps,
+                "reason": why + ("; both paths serve and the agent routes each request" if fits else "")}
     return {"stacked": True, "tokens_per_second": tps, "ttft_ratio": ttft,
             "reason": f"{wide_tps / base_tps:.2f}x the tokens per second at width {width}, gate ratio "
                       f"{stacked['gate']['ratio']:.5f}, first token {ttft:.2f}x"}
@@ -311,6 +336,7 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
         stacked = against(stacked, measure(model_id, compute_dtype, base_only=True))
     decision = decide(stacked)
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
-    setup = {"compute_dtype": compute_dtype, "engine": "dense" if decision["stacked"] else "reference",
+    engine = "dense" if decision["stacked"] else "route" if decision.get("route") else "reference"
+    setup = {"compute_dtype": compute_dtype, "engine": engine,
              "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision}
     return _save(key, setup)

@@ -338,6 +338,8 @@ def serve(argv: list[str]) -> int:
                 devices = select_devices(args.gpus, cuda_devices())
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
+            if args.engine == "route" and len(devices) > 1:
+                raise InvalidRequest("the agent's two paths share one card; use it with one GPU for now")
             knob_options = _qualified_knob_options(spec, devices) if (
                 args.knobs == "auto" and args.engine == "tuned") else {}
 
@@ -346,7 +348,19 @@ def serve(argv: list[str]) -> int:
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
                                        **_engine_options(args.engine), **knob_options)
-            if len(devices) > 1:
+            if args.engine == "route":  # AG4 step 2: the single path and the stacked engine on one card, routed
+                from ironmule_product.path_router import PathRouter
+
+                from .device_pool import start_paths
+                device = devices[0]
+                single = lambda: MLXWorkerClient(spec, compute_dtype=agent_setup["compute_dtype"],  # noqa: E731
+                                                 thinking=not args.no_thinking, cuda_device=device)
+                stacked = lambda: MLXWorkerClient(spec, thinking=not args.no_thinking, cuda_device=device,  # noqa: E731
+                                                  execution_variant="current_engine", **_engine_options("dense"))
+                label = device if device is not None else "0"
+                service = start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
+                                      ProductService, PathRouter.from_setup(agent_setup))
+            elif len(devices) > 1:
                 from .device_pool import start_pool
                 service = start_pool(store, spec, devices, make_backend, ProductService)
             else:
@@ -362,7 +376,10 @@ def serve(argv: list[str]) -> int:
             for each in [service, *getattr(service, "shards", [])]:
                 each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
                                                                     "numeric", "stacked")}
-        if spec is not None and args.agent == "on" and args.engine == "dense":
+        if spec is not None and args.agent == "on" and args.engine == "route":
+            print(json.dumps({"agent": {"serving": "two paths, routed per request", "reason": agent_setup["reason"]}}),
+                  flush=True)
+        elif spec is not None and args.agent == "on" and args.engine == "dense":
             # AG4: the stacked engine serves its measured schedule (w8, slot reuse); the online agent does not
             # attach yet, because its world model prices one group at a time, not slot reuse (AG4, step 3).
             print(json.dumps({"agent": {"serving": "the chosen stacked engine's own schedule", "reason":

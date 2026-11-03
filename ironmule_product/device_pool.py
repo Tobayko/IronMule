@@ -102,6 +102,7 @@ class DevicePool:
     learning = None
     agents: list[Any] | None = None  # AG2: one agent per device, attached by the CLI; placement stays the pool's
     dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
+    router = None  # AG4 step 2: a path_router.PathRouter over two serving paths on one card (the shards, in order)
 
     def __init__(self, shards: list[Any], devices: list[str]):
         if not shards or len(shards) != len(devices):
@@ -145,10 +146,17 @@ class DevicePool:
             order = self._order(request)
             if not order:
                 raise BackendUnavailable("no model worker is ready")
+            router = self.router
+            outstanding = [shard.outstanding() for shard in self.shards]
+            if router is not None and len(order) == len(self.shards):
+                chosen = router.choose(outstanding, request.max_tokens)
+                order.remove(chosen)
+                order.insert(0, chosen)
             overloaded: Overloaded | None = None
             for index in order:
                 try:
-                    return self.shards[index].stream(request)
+                    events = self.shards[index].stream(request)
+                    return events if router is None else router.watch(index, outstanding[index] + 1, events)
                 except Overloaded as exc:  # this device's queue is full; a longer one may not be
                     overloaded = exc
             raise overloaded
@@ -165,6 +173,8 @@ class DevicePool:
         for key in ("last_batch_size", "batch_count", "worker", "in_flight", "groups_started",
                     "oldest_queued_s", "learning"):
             result.pop(key, None)
+        if self.router is not None:
+            result["paths"] = self.router.status()
         result["devices"] = [{"cuda_device": device, "ready": health["ready"], "device": health.get("device"),
                               "worker": health.get("worker"), "in_flight": health.get("in_flight"),
                               "queued_requests": health.get("queued_requests"),
@@ -222,6 +232,14 @@ class DevicePool:
     def close(self) -> None:
         for shard in self.shards:
             shard.close()
+
+
+def start_paths(store: Any, spec: Any, makers: list[Callable[[], Any]], labels: list[str],
+                service_type: Callable[..., Any], router: Any) -> DevicePool:
+    """AG4 step 2: several serving paths of one model on one card (each its own worker), placed by `router`."""
+    pool = start_pool(store, spec, labels, lambda label: makers[labels.index(label)](), service_type)
+    pool.router = router
+    return pool
 
 
 def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable[[str], Any],

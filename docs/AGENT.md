@@ -69,6 +69,13 @@ the agent finds them itself before it serves (`ironmule/plan_choice.py`):
    - AG4's rule: more tokens per second at its best width, at least 0.9x for one request alone, and a first
      token at most 1.1x later.
 
+When the stacked engine wins only under load (on a T4 with Qwen 3 1.7B it made 5x the tokens per second at
+width 8, but was 18 % slower alone), and both fit the card, the agent serves both. It then routes every request,
+in microseconds, to the path where it is expected to finish first (`ironmule_product/path_router.py`). It learns
+both paths' costs from every finished request. In simulation, priced by that T4 measurement, the router was at
+least as fast as the better path at every load, with the earliest first tokens. The hardware test (AG4-R) is
+fixed in the backlog.
+
 The choice is stored per hardware and model, and `/health` shows it under `agent_setup`. The owner allowed the
 agent to choose plans that change answers slightly, if they pass its gate. A named `--engine` or `--compute-dtype`
 is always kept. While a stacked engine serves, the online agent does not attach yet, because it does not model slot
@@ -106,6 +113,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |
 | `ironmule/plan_choice.py` | AG4: the agent's own choice of numeric plan and stacked engine, once per machine and model |
+| `ironmule_product/path_router.py` | AG4: routes each request between two paths on one card, learning their costs online |
 | `ironmule/dense_gemma.py` | KB2: up to eight 4-bit Gemma 3 requests stacked into one decode step |
 | `ironmule_product/hardware_profile.py` | AG3: the device, its bandwidth, the decode floor and how much of it is used |
 | `ironmule_product/learned_dispatch.py` | the policy format the agent shares with LD1 (`Policy`, `View`, order key) |

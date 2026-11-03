@@ -7,6 +7,7 @@ The agent itself ships in `ironmule_product/`. Nothing here is imported by the p
 | :-- | :-- |
 | `ag1_online.py` | The agent, unchanged, against a simulated server priced by a machine's fitted costs. Live traces, idle replays and qualification run on a simulated clock. `--prompts` adds real prompt texts with one limit for all (AG2). |
 | `rl2_headroom.py` | The hardware harness. It runs the product's own service with the agent attached, records the online phase, then compares the default, the fixed rule and the frozen agent on held-out traces. `--plan ag1 --profile NAME` picks a protocol, `--write-kernel` writes a Kaggle kernel, and `--analyse` judges a report. |
+| `ag4_routing.py` | AG4 step 2: the product's router between a single path and a stacked engine on one card, against each path alone, priced by a hardware measurement. |
 | `rl4_agent.py` | RL4, the offline REINFORCE agent whose policy format the product's learned dispatch (LD1) and the agent share. |
 
 Their tests are in [tests/agent/](../tests/agent/). The tests run without a model or GPU, also in CI:

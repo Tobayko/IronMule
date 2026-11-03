@@ -948,7 +948,49 @@ protocol (traffic, arms, cost) is fixed here after KB2-0 and before that run's d
 **Step 2 (later).** Re-choose while serving, when the measured traffic or the software changes. This needs a
 second worker to switch engines without dropping requests.
 
-**Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
+**Step 2a: both paths on one card, routed per request (built 2026-11-03, after AG4-Q run 2; labelled as shaped by
+that run's data).** AG4-Q run 2 showed the stacked engine winning under load (5x at width 8) and losing alone
+(0.82x, a later first token). So the choice depends on the load, and a fixed choice at startup leaves one side's
+gain unused.
+- *Mechanism.* `ironmule_product/path_router.py`. Where the stacked engine passes its gate and wins at width 8 but
+  fails the quiet floor or the first-token rule, and two copies fit the card (two copies of the weights, the pool
+  and 3 GiB in 90 % of the card), the agent's setup is `route`. Both paths serve on one card, each its own worker:
+  NUM1's single path and the stacked engine.
+- For each request the router predicts its finish time on each path from what is outstanding there, and sends it
+  to the earlier one. Ties go to the single path, so a quiet server behaves as the single path alone.
+- *Online learning:* recursive least squares on each path's seconds per token against how many requests share it
+  (forgetting 0.995), plus running means of the first token and of the tokens per request. It starts from the
+  AG4 measurement on this card and learns from every finished request. A decision takes a few microseconds (test:
+  under 100 µs in pure Python, measured as `decision_us` in `/health`'s `paths` block).
+- *Simulation (`training/ag4_routing.py`, priced by AG4-Q run 2's T4 numbers; descriptive, no hardware claim):*
+  - Traffic: RL2-H2's three states, 30 traces of 32 requests per load, answers from Dolly's lengths (scale 3,
+    capped at 256).
+  - The table gives tokens per second and the mean and 95th-percentile first token.
+
+  | Load (over the single path's capacity) | Single path alone | Stacked alone | Router |
+  | --: | --: | --: | --: |
+  | 0.3 | 7.5, 13.8 s, 63.5 s | 7.7, 3.1 s, 16.1 s | 7.8, 2.4 s, 12.0 s |
+  | 0.8 | 19.1, 15.4 s, 65.7 s | 20.9, 3.2 s, 16.2 s | 21.1, 2.5 s, 12.1 s |
+  | 1.5 | 30.9, 16.5 s, 64.4 s | 37.2, 3.1 s, 15.9 s | 37.4, 2.7 s, 12.2 s |
+  | 3.0 | 46.0, 19.6 s, 61.6 s | 67.0, 3.3 s, 15.6 s | 68.7, 2.7 s, 11.8 s |
+
+  - The router is at least as fast as the better path at every load, with the earliest first tokens. At load 3 it
+    makes 49 % more tokens per second than the single path the agent chose alone.
+  - RL2-H2's bursts and spike queue the single path even at low mean load, which is why its first token waits.
+- **AG4-R, the hardware test (fixed now, before its data; it runs after KB2-0, when the quota allows).**
+  - *Setup:* one Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, served by `ironmule serve --agent on`
+    with the agent's own setup. It is `route` if AG4's rule says so; otherwise the run reports that and stops.
+  - *Arms, on the same traces through the product:* the router; the single path alone (NUM1's `float16`, what the
+    agent chose before step 2a); the stacked engine alone.
+  - *Traffic:* RL2-H2's states at loads 0.8 and 3.0, on fresh seeds, 6 traces per state and load.
+  - *Pass:* both, on the pooled traces:
+    - the router's tokens per second over the single path's has a 2.5 % bound above 0 (paired by trace, 2,000
+      resamples);
+    - its mean and 95th-percentile first token are no worse than the single path's beyond the A/A noise of two
+      runs of the single path.
+  - *Otherwise:* the router does not ship as the agent's setup.
+  - *Harness:* still to be built: the product's own server driven by `training/rl2_headroom.py`'s replay.
+- **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
 `_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
 schedule (w8 with joins, H10), and `/health` says so.
 
