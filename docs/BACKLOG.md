@@ -375,6 +375,37 @@ learner found no gain on a T4 (P3).
       agent finding, proving and serving that schedule on its own, not RL adding to it.
   - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to that Kaggle CPU, this
     model, this traffic and this cost; it says nothing about a GPU. It ships only opt-in.
+  - **Result (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag1-cpu3` at `451e282`, no GPU hours): the
+    session was cut by Kaggle's 12 h limit, the analysis reads invalid, and nothing qualified online.**
+    - **Cut by the time limit.** 43 of 48 held-out cells ran. Block quiet/289 is complete. Bursts/289 lacks the
+      reference's second run, and spike/289 never started. The online phase took about 6 h, not the 4.7 h priced:
+      about 730 s a trace against 560 s. The held-out cells took about 480 s each, not 180 s.
+    - **Verdict by the fixed analyser: invalid** (`block 1/289 is incomplete`). 0 answers mismatched, every run
+      request completed, and traces 286-288 are complete in every state.
+    - *Discrepancy, reported and not resolved here.* The protocol's prose says two complete traces per state
+      suffice. `analyse_ag1` counts any incomplete block as a problem. The verdict above is the analyser's. Read by
+      the prose instead, the run would be valid with 3 traces per state. The outcome would not change: (1) fails at
+      +0.05 % (95 % -0.5 to +0.6 %), and (2) passes (quiet +0.5 %, bursts +0.1 %, spike -0.04 %; every bound above
+      minus the noise of 3.3 %). The agent served the default throughout, so all of this is an A/A difference.
+    - **Online.** All 30 traces ran (no early stop): 480 groups, 2 plans, 0 explorations, 7 triplets, 0 qualified,
+      0 rejected. The reference served throughout. The world model reached a 2.7 % median relative error over 1,290
+      groups and never reopened. The first plan (32 arrivals) proposed nothing. The second (96 arrivals, after
+      about 1.4 h) proposed the best fixed schedule, `w1/sjf` (`633ceda2cdce`, model gain +0.5 %; model costs
+      `w1/sjf` 59.38, `w1/fifo` 59.74).
+    - No look was reached: the run ended with 7 triplets, 5 short of the look at 12. At that point the candidate
+      read +0.6 % over the reference (95 % +0.1 to +1.2 %, bound 0.05 %, floor 1.2 %, noise 4.4 %), verdict open.
+    - **Three tiers** (recorded, not decided; traces 286-288, states weighted equally):
+      - fixed `w1/sjf` over the default: +1.0 % (95 % -0.1 to +1.6 %);
+      - the agent over the default: +0.05 % (95 % -0.5 to +0.6 %). It served the default;
+      - the agent over fixed: -1.0 % (95 % -2.1 to +0.2 %). That is the default against `w1/sjf`, not anything RL
+        took away.
+    - *Descriptive.* As on the T4 (V4), replay (+0.6 % at 7 triplets) and the served fixed tier (+1.0 %) agree in
+      sign and roughly in size with the model's +0.5 %. The order-only gain on this traffic is about 0.5-1 %. The
+      noise of a single trace is 3-4 %. At 7 triplets in the 23 traces after the plan, the 12-triplet look needs
+      about 40 traces. Like V4, the run was short of triplets, not of signal. This action space (order by limit, at
+      capacity 1) holds too little gain to qualify within one session, which is why AG2 changes the key the order
+      sorts by instead.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized

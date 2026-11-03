@@ -96,8 +96,8 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 
 ## Where it stands
 
-- **No hardware gain yet.** Through AG1 V4 the agent's actions (order by limit, width) had no headroom over the
-  best fixed rule above the noise.
+- **No hardware gain yet.** Through AG1 V4 (T4) and V5-CPU (Kaggle CPU, cut by the 12 h limit) the agent's
+  actions (order by limit, width) had no headroom over the best fixed rule above the noise.
 - **AG2's simulation passed.** With real prompts and one limit for all, the agent learned answer lengths (rank
   correlation 0.63), qualified "shortest predicted first" by itself, and then served 6.9 % (T4 price) and 8.2 %
   (CPU price) below the best fixed rule in hindsight.
