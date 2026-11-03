@@ -1015,6 +1015,31 @@ gain unused.
     - *Descriptive, a smoke measures nothing (4 requests of up to 16 tokens):* the stacked engine's learned
       per-row cost was 106 ms. In answers this short, a newcomer's prefill stalling the running rows dominates the
       per-token time. The full run's 256-token answers price that stall per token, as it should be.
+**AG4-C, the agent's own setup against today's default on a CPU (fixed 2026-11-03, before its data).** No GPU
+hours are left this week, and a Kaggle CPU session spends none. Does the agent's own setup, chosen on that machine
+with nothing given to it, serve more tokens per second than today's default through the product?
+- *Setup:* `training/rl2_headroom.py --plan ag4c` on a Kaggle CPU session at a pushed commit, with
+  `mlx-community/SmolLM2-135M-Instruct-8bit` (V-CPU's model). The product's `choose_setup` runs first. NUM1's CPU
+  check decides between the checkpoint's 4-bit weights and `dequantize` (CPU3 found `dequantize` about 6x faster
+  by hand). If the agent keeps the default, the run reports that and stops.
+- *Arms, both paths loaded side by side through the product:* the default (the reference worker, no plan) and the
+  agent's chosen path. Each block runs default, agent, default on the same arrivals.
+- *Traffic:* RL2-H2's three states at 0.8 of the default path's calibrated capacity, fresh seeds 410-413 (4 traces
+  per state), 8 requests per trace, an output limit of 32.
+- *Sized after a local tool smoke, before any data:* on this container `Qwen3-0.6B-4bit` took about 9 s a token
+  on its 4-bit weights. The agent's CPU check chose `dequantize` there by itself (0.124 of stock time, logits
+  within 1.45 % of the float32 plan). At that speed the run would not fit a 12-hour session, so it uses V-CPU's
+  smaller model and an output limit of 32 instead of 64.
+- *Pass (both):*
+  - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
+    bound above 1 (2,000 resamples);
+  - its mean and 95th-percentile first token are no worse than the default's beyond the A/A noise of the
+    default's two runs.
+- *A pass* is the agent's own measured gain on that CPU, model and traffic. The setting itself (`dequantize`) is
+  NUM1's, found by hand first. What AG4-C shows is the agent choosing it, unasked, on a machine it had not seen,
+  and that the choice pays through the product. *Otherwise* AG4's CPU setup does not ship.
+- *Cost:* no GPU hours; about 2-3 hours of a Kaggle CPU session (12 blocks of 3 cells).
+
 - **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
 `_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
 schedule (w8 with joins, H10), and `/health` says so.

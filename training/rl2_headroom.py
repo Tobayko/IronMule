@@ -2331,6 +2331,127 @@ def run_ag4r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     return {**report, **measured}
 
 
+# ---------------------------------------------------------------- AG4-C: the agent's own setup on a CPU (BACKLOG AG4)
+
+AG4C_MODEL = "mlx-community/SmolLM2-135M-Instruct-8bit"  # V-CPU's model; Qwen3-0.6B-4bit took 9 s a token here
+AG4C_TRACES = range(410, 414)                   # fresh seeds: 4 traces per state
+AG4C_LOAD = 0.8                                 # arrival rate over the default path's calibrated capacity
+AG4C_REQUESTS = 8
+AG4C_LIMIT = 32
+
+
+def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C_TRACES, load: float = AG4C_LOAD,
+                 requests: int = AG4C_REQUESTS, limit: int = AG4C_LIMIT, on_row: Any = None) -> dict[str, Any]:
+    """Every block (state, trace) runs the default path, the agent's chosen path and the default path again, on the
+    same arrivals, both paths loaded side by side (path 0 the default, path 1 the agent's choice)."""
+    pool.router = ForcedRoute(0)
+    burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, 8, (limit,))]
+    done = replay(pool, model, burst, deadline_s)
+    makespan = max(r["end_s"] or 0.0 for r in done) or 1.0
+    capacity = sum(r["outcome"] == "ok" for r in done) / makespan
+    report: dict[str, Any] = {"plan": "ag4c", "arms": ["default", "agent"], "states": list(H2_STATES),
+                              "calibration": {"capacity_rps": capacity, "makespan_s": makespan,
+                                              "ok": sum(r["outcome"] == "ok" for r in done)},
+                              "deadline_s": deadline_s, "rows": []}
+    block = 0
+    for level in range(len(H2_STATES)):
+        for t in traces:
+            items = trace_h2(level, t, load * capacity, requests, (limit,))
+            for arm, run, index in (("default", 0, 0), ("agent", 0, 1), ("default", 1, 0)):
+                pool.router = ForcedRoute(index)
+                wait_idle(pool, timeout_s=deadline_s)
+                rows = replay(pool, model, items, deadline_s)
+                for item, row in zip(items, rows):
+                    row["offset_s"] = item["offset_s"]
+                report["rows"].append({"level": level, "trace": t, "arm": arm, "run": run, "block": block,
+                                       "requests": rows})
+                if on_row is not None:
+                    on_row(report)
+            block += 1
+    return report
+
+
+def analyse_ag4c(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG4-C as fixed in BACKLOG before data: the agent's path over the default (the mean of its two runs), paired
+    by block; tokens per second must have a 2.5 % bound above 1, and the mean and 95th-percentile first token must be
+    no worse than the default's beyond the A/A noise of the default's two runs."""
+    rng = random.Random(seed)
+    cells = {(row["block"], row["arm"], row["run"]): _cell(row["requests"]) for row in report.get("rows", [])}
+    blocks = sorted({b for b, _, _ in cells})
+    complete = [b for b in blocks if all(cells.get(k) for k in ((b, "default", 0), (b, "default", 1), (b, "agent", 0)))]
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag4c.analysis.v1", "complete_blocks": len(complete),
+                           "setup": {k: (report.get("setup") or {}).get(k) for k in ("engine", "compute_dtype",
+                                                                                     "reason")}}
+    if report.get("stopped"):
+        return {**out, "valid": False, "verdict": f"stopped: {report['stopped']}"}
+    problems = [f"block {b} is incomplete or has a failed request" for b in blocks if b not in complete]
+    if len(complete) < 2:
+        return {**out, "valid": False, "problems": problems, "verdict": "invalid: fewer than two complete blocks"}
+
+    def ratio(key: str) -> dict[str, Any]:
+        pairs = [(cells[b, "agent", 0][key], (cells[b, "default", 0][key] + cells[b, "default", 1][key]) / 2)
+                 for b in complete]
+        boot = []
+        for _ in range(resamples):
+            sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+            boot.append(sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"ratio": sum(x for x, _ in pairs) / sum(y for _, y in pairs),
+                "ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    noise = {}
+    for key in ("tokens_per_s", "ttft_mean_s", "ttft_p95_s"):
+        values = sorted(abs(cells[b, "default", 1][key] / cells[b, "default", 0][key] - 1) for b in complete)
+        noise[key] = values[max(0, math.ceil(0.95 * len(values)) - 1)]
+    tps = ratio("tokens_per_s")
+    ttft = {key: ratio(key) for key in ("ttft_mean_s", "ttft_p95_s")}
+    gain = tps["ci95"][0] > 1.0
+    no_worse = all(v["ratio"] <= 1 + noise[key] for key, v in ttft.items())
+    out.update(valid=not problems, problems=problems, aa_noise=noise, agent_tokens_per_s=tps, agent_ttft=ttft,
+               passes={"tokens_per_s": gain, "ttft_no_worse": no_worse})
+    out["verdict"] = ("invalid" if problems else "pass: the agent's own setup beats the default here"
+                      if gain and no_worse else "fail")
+    return out
+
+
+def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG4-C on this machine's CPU: the product's own `choose_setup`, then the default path and the agent's path
+    side by side through the product, on the same arrivals."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule.plan_choice import choose_setup
+    from ironmule.tune import resolve_local_model
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.device_pool import start_paths
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model",
+                                                             "*.jinja", "tokenizer*"])).name
+    identity = resolve_local_model(model, revision=revision).identity
+    setup = choose_setup(model, "ag4c-" + platform.machine(), identity.identity_sha256)
+    report: dict[str, Any] = {"plan": "ag4c", "model": model, "revision": revision, "setup": setup}
+    if setup["engine"] != "reference" or setup["compute_dtype"] is None:
+        return {**report, "stopped": f"the agent kept {setup['engine']} with {setup['compute_dtype']}: "
+                                     f"{setup['reason']}"}
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {**report, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    store.set_request_timeout(1800)
+    spec = store.model(model)
+    makers = [lambda: MLXWorkerClient(spec), lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"])]
+    pool = start_paths(store, spec, makers, ["cpu:default", "cpu:agent"], ProductService, ForcedRoute(0))
+    try:
+        measured = measure_ag4c(pool, model, 1800.0, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
+                                                       if smoke else {}),
+                                on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
+    finally:
+        pool.close()
+    return {**report, **measured}
+
+
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by training/rl2_headroom.py."""
 from __future__ import annotations
 import subprocess, sys
@@ -2377,7 +2498,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "ag4r", "x1"),
+                                           "ag1", "ag4r", "ag4c", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -2406,7 +2527,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         suffix = ""
         if args.plan == "ag1" and args.profile != "t4":  # e.g. V2's profile, as its own kernel
             extra, suffix = extra + ["--profile", args.profile], f"-{args.profile}"
-        cpu = args.plan == "ag1" and AG1_PROFILES[args.profile].get("accelerator") == "cpu"
+        cpu = (args.plan == "ag1" and AG1_PROFILES[args.profile].get("accelerator") == "cpu") or args.plan == "ag4c"
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra,
                                                      suffix, cpu=cpu))}))
         return 0
@@ -2414,7 +2535,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
-                 "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r}.get(inner.get("plan"), analyse)
+                 "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
+                 "ag4c": analyse_ag4c}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -2430,16 +2552,19 @@ def main(argv: Iterable[str] | None = None) -> int:
     save()
     work = Path(tempfile.mkdtemp(prefix="ironmule-rl2h-"))
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
+    if args.plan == "ag4c" and args.model is None:
+        model = AG4C_MODEL
     if args.plan == "x1":
         report["x1"] = run_x1(model, args.out, smoke=args.smoke)
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
-                      "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r)}[args.plan]
+                      "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
+                      "ag4c": (run_ag4c, analyse_ag4c)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]

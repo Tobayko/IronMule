@@ -1018,3 +1018,36 @@ def test_ag4r_runs_three_arms_on_the_same_two_workers_and_judges_them(tmp_path, 
     result = rl2.analyse_ag4r(report, resamples=50)
     assert result["valid"] and result["complete_blocks"] == 6
     assert set(result["passes"]) == {"tokens_per_s", "ttft_no_worse"} and result["verdict"]
+
+
+def test_ag4c_compares_the_agents_path_with_the_default_on_the_same_arrivals(tmp_path, monkeypatch):
+    from ironmule_product.device_pool import start_paths
+    from ironmule_product.service import ProductService
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    makers = [lambda: MLXWorkerClient(spec, execution_variant="current_engine")] * 2
+    pool = start_paths(store, spec, makers, ["cpu:default", "cpu:agent"], ProductService, rl2.ForcedRoute(0))
+    try:
+        report = rl2.measure_ag4c(pool, spec.model_id, 30.0, traces=[0, 1], requests=3, limit=3)
+    finally:
+        pool.close()
+    assert report["calibration"]["ok"] == 8 and len(report["rows"]) == 3 * 2 * 3
+    assert [row["arm"] for row in report["rows"][:3]] == ["default", "agent", "default"]
+    result = rl2.analyse_ag4c(report, resamples=50)
+    assert result["valid"] and result["complete_blocks"] == 6 and set(result["passes"]) == {"tokens_per_s",
+                                                                                           "ttft_no_worse"}
+    assert rl2.analyse_ag4c({"stopped": "the agent kept reference with None"})["verdict"].startswith("stopped")
