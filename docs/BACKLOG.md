@@ -666,6 +666,64 @@ place of the limit itself.
   reports "no signal" and AG2 is closed for that workload.
 - A pass ships opt-in only, bound to the measured setup.
 
+**Implementation (2026-11-03, `ec78d03`).**
+- `ironmule_product/length_model.py` holds the length model.
+- An order key in the LD1 policy format (`order_key`, absent means the limit, so every earlier digest holds). LD1
+  refuses a predicted policy, because only the agent serves one.
+- The planner gains `w{1,2,4,8}/pred` arms once at least 32 recorded arrivals, and 90 % of them, carry a prediction.
+- Replays make each answer its recorded length and sort by the arm's recorded key. *(This also changes AG1's
+  replays, which ran every answer to its capped limit. In V4 that made no difference: 761 of 768 answers ended at
+  their limit.)*
+- `tools/ag1_online.py --prompts` replays real prompts with one limit for all, and adds hindsight comparators.
+- `--profile cpu-lp` in the harness.
+- Tests in `test_agent.py` and `test_rl2_headroom.py`.
+
+**S-LP result (2026-11-03, at `ec78d03`'s agent and simulator, local): passed on both prices.**
+- *Setup:* 300 traces of RL2-H2's states, seed 90,000, limit 512 for every request. Prompts and answer lengths
+  come from 20,000 Alpaca rows (answer tokens taken as 1.3 per word: median 39, mean 57, 90th percentile 129). The
+  length model learns online from nothing.
+- *T4 price:*
+  - The agent planned `w8/pred` at trace 34 and qualified it at trace 130 (replay gain +4.6 %), inside the 150
+    allowed.
+  - While it served (170 windows), windows cost 6.74 s against 7.24 s for the best limit-ordered fixed schedule in
+    hindsight (`w8/fifo`): **6.9 % less**.
+  - Before it served, the gap was 0.2 %.
+- *CPU price:*
+  - The agent planned `w8/pred` at trace 2 and qualified it at trace 99 (replay gain +6.6 %).
+  - While it served (201 windows), windows cost **8.2 % less** than the best limit-ordered fixed schedule in
+    hindsight (`w8/fifo`).
+- *The length model:* Spearman 0.63 over its last 512 predictions on both prices.
+- Both runs clear "at least 5 % less than ordering by the limit". AG2 goes to hardware.
+- This is a simulation, so no hardware claim follows from it.
+
+**The Kaggle CPU run is dropped (2026-11-03, from a pre-check of the workload, before any gain data).**
+- *The pre-check:* SmolLM2-135M (dequantized, this container's CPU, greedy), the CPU profile's model, answered 16
+  Dolly prompts under a limit of 128. Eleven answers reached the limit; the others took 42 to 113 tokens.
+- That gives the length model almost nothing to separate. Each answer also took about 25 s here, about 50 s on a
+  Kaggle CPU.
+- So `--profile cpu-lp` would spend a session where little answer-length variance exists, and the CPU step of the
+  planned order is dropped. The profile stays for smokes.
+- The hardware test of AG2 is a T4 with a model whose answers end at EOS.
+
+**T4 gate: a Gemma 3 12B smoke (fixed 2026-11-03, before its data).** This is the owner's requested model, under
+the owner's `--compute-dtype native` plan.
+- *Profile:* `--profile t4-g12-lp`, a `--smoke` run on one Kaggle T4:
+  - `mlx-community/gemma-3-12b-it-4bit` (its `native` plan is gated at rev `86cc6a8`; the run records the revision
+    it downloads);
+  - the reference worker with `--compute-dtype native`, at capacity 1;
+  - Dolly prompts and one limit of 512;
+  - a 1,800 s deadline;
+  - the fixed tier `w1/sjf`.
+- *What it records* (it measures no gain):
+  - whether the plan runs through the product and the agent's harness;
+  - the calibration burst's 16 answer lengths and how they ended;
+  - the calibrated capacity and the tokens per second.
+- These fix the full T4 protocol's limit, trace count, idle time and session hours, written here before that
+  run's data.
+- *Cost:* about 0.7 session hours (an 8 GB download, the calibration burst and the smoke's small traces). That fits
+  the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is reported as such, and nothing is
+  inferred from it.
+
 **Other routes from the same search, not yet entries (kept so they are not re-derived):**
 - *preemption with a re-predicted remaining length* (TRAIL; ELIS's iterative shortest-remaining-time-first). This
   needs the engine to pause a session and resume it exactly.

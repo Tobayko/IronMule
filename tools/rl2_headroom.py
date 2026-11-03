@@ -1835,6 +1835,12 @@ DOLLY_URL = "https://huggingface.co/datasets/databricks/databricks-dolly-15k/res
 AG2_PROMPT_CHARS = 600
 AG1_PROFILES["cpu-lp"] = {**AG1_PROFILES["cpu3"], "max_tokens": (128,), "prompts": "dolly", "learn": range(290, 320),
                           "evaluate": range(320, 324), "short_prompts": False}
+# BACKLOG AG2, the T4 gate: the owner's Gemma 3 12B under the owner's `native` plan (the reference worker, capacity 1),
+# Dolly prompts with one limit of 512; first as a smoke that fixes the full run's sizes
+AG1_PROFILES["t4-g12-lp"] = {**AG1_PROFILES["t4"], "model": "mlx-community/gemma-3-12b-it-4bit", "variant": "reference",
+                             "compute_dtype": "native", "max_tokens": (512,), "prompts": "dolly",
+                             "learn": range(324, 354), "evaluate": range(354, 358), "timeout_s": 1800,
+                             "stop_on_qualify": True, "fixed": (1, True)}
 
 
 def dolly_prompts(work: Path) -> tuple[list[str], str]:

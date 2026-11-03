@@ -957,3 +957,13 @@ def test_ag2_held_out_arm_orders_by_the_frozen_length_model():
     assert predicted.order_key(short) < 20 < 200 < predicted.order_key(long)
     by_limit = rl2._PredictingDispatch(LearnedDispatch(Policy.from_json(ag.fixed_policy(1, True)), {}, None), lengths)
     assert by_limit.order_key(long) is None
+
+
+def test_ag2_t4_gate_is_the_owners_gemma_under_its_native_plan_on_fresh_seeds():
+    g12 = rl2.AG1_PROFILES["t4-g12-lp"]
+    assert g12["model"] == "mlx-community/gemma-3-12b-it-4bit" and g12["variant"] == "reference"
+    assert g12["compute_dtype"] == "native" and g12["max_tokens"] == (512,) and g12["prompts"] == "dolly"
+    assert g12["fixed"] == (1, True) and g12["stop_on_qualify"] and g12["timeout_s"] == 1800
+    assert g12.get("accelerator") != "cpu"
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4-g12-lp"]
+    assert not (set(g12["learn"]) | set(g12["evaluate"])) & set().union(*used)
