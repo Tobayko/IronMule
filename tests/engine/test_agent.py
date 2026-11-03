@@ -799,3 +799,18 @@ def test_the_agents_trace_replays_recorded_lengths_and_predictions(tmp_path):
     for k in range(20):  # recorded before AG2: ordered by the limit under either key
         agent.traffic.append([100.0 + k * 50, 12, False, 600, 10 + k])
     assert agent._trace(agent.traffic, since=None)[0][2:] == (10, 512, 512.0)
+
+
+def test_agents_on_several_cards_share_one_length_model_and_learn_from_each_other(tmp_path):
+    first = Agent(tmp_path / "agent", {**BINDING, "card": "0"}, capacity=1, reference=REFERENCE)
+    second = Agent(tmp_path / "agent", {**BINDING, "card": "1"}, capacity=1, reference=REFERENCE)
+    second.lengths.seen = 5  # the copy with more lessons survives a restart
+    survivor = second.lengths
+    ag.share_lengths([first, second])
+    assert first.lengths is second.lengths is survivor
+    request = GenerationRequest("m", (("user", "Write a long essay about the sea."),), max_tokens=512, request_id="x")
+    known = first.length_of(request)
+    first.observe_group([{"arrive": 1.0, "start": 1.1, "first": 1.2, "end": 9.0, "prompt_tokens": 9,
+                          "prompt_chars": 33, "max_tokens": 512, "tokens": 400, "ok": True, "length": known,
+                          "request_id": "x"}])
+    assert second.lengths.seen == 6

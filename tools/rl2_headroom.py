@@ -1842,6 +1842,10 @@ AG1_PROFILES["t4-g12-lp"] = {**AG1_PROFILES["t4"], "model": "mlx-community/gemma
                              "compute_dtype": "native", "max_tokens": (512,), "prompts": "dolly",
                              "learn": range(324, 354), "evaluate": range(354, 358), "timeout_s": 1800,
                              "stop_on_qualify": True, "fixed": (1, True), "cards": 2}
+# BACKLOG AG2, V-G12: the full run the gate sized (limit 256 halves the time per answer and keeps 40-256 tokens of
+# spread; 32 requests a trace give each card about 16, one replay window a trace; 360 s idle fits its triplet)
+AG1_PROFILES["t4-g12-v"] = {**AG1_PROFILES["t4-g12-lp"], "max_tokens": (256,), "requests": 32,
+                            "learn": range(358, 398), "evaluate": range(398, 400), "pause_s": 360.0}
 
 
 def dolly_prompts(work: Path) -> tuple[list[str], str]:
@@ -1961,6 +1965,9 @@ def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile:
             each.policy = reference  # before the agent is built: its binding names the schedule it is measured against
             agents.append(_agent(store, each, spec, card=device if len(shards) > 1 else None))
             each.agent = each.dispatch = agents[-1]
+        from ironmule_product.agent import share_lengths
+
+        share_lengths(agents)  # AG2: answer lengths depend on the model, not the card
         agent = agents[0]
         started = time.monotonic()
         for k, t in enumerate(learn):  # the online phase: the agent decides, learns and qualifies by itself

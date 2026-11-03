@@ -967,3 +967,11 @@ def test_ag2_t4_gate_is_the_owners_gemma_under_its_native_plan_on_fresh_seeds():
     assert g12.get("accelerator") != "cpu"
     used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4-g12-lp"]
     assert not (set(g12["learn"]) | set(g12["evaluate"])) & set().union(*used)
+
+
+def test_ag2_full_t4_run_is_the_gate_with_the_sizes_it_fixed():
+    v = rl2.AG1_PROFILES["t4-g12-v"]
+    assert v == {**rl2.AG1_PROFILES["t4-g12-lp"], "max_tokens": (256,), "requests": 32, "learn": range(358, 398),
+                 "evaluate": range(398, 400), "pause_s": 360.0}
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4-g12-v"]
+    assert not (set(v["learn"]) | set(v["evaluate"])) & set().union(*used)

@@ -353,8 +353,11 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.agent == "on":
             shards = getattr(service, "shards", None)
             if shards:  # AG2: one agent per GPU, bound to its card, ordering and learning from that card's queue
+                from .agent import share_lengths
+
                 service.agents = [_agent(store, shard, spec, card=device)
                                   for shard, device in zip(shards, service.devices)]
+                share_lengths(service.agents)  # answer lengths depend on the model, not the card
                 for shard, agent in zip(shards, service.agents):
                     shard.agent = shard.dispatch = agent
             else:

@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections import deque
 import math
 import re
+import threading
 from typing import Any
 import zlib
 
@@ -63,7 +64,7 @@ class LengthModel:
         self.w_limit = 0.0
         self.seen = 0
         self.recent: deque[tuple[float, float]] = deque(maxlen=QUALITY_WINDOW)
-
+        self._lock = threading.Lock()  # several agents (one per GPU, AG2) may share one model
     def _score(self, feats: tuple[tuple[int, ...], float, float]) -> float:
         indices, chars, limit = feats
         scale = 1.0 / math.sqrt(len(indices) or 1)
@@ -77,6 +78,10 @@ class LengthModel:
     def learn(self, feats: tuple[tuple[int, ...], float, float], tokens: int, predicted: float | None = None) -> None:
         """One finished request: its features and the tokens its answer took. `predicted` is the prediction
         made when the request was first seen (before this lesson), recorded for the status's correlation."""
+        with self._lock:
+            self._learn(feats, tokens, predicted)
+
+    def _learn(self, feats: tuple[tuple[int, ...], float, float], tokens: int, predicted: float | None) -> None:
         indices, chars, limit = feats
         target = math.log1p(max(1, int(tokens)))
         error = target - self._score(feats)
@@ -96,6 +101,10 @@ class LengthModel:
         return spearman([p for p, _ in pairs], [t for _, t in pairs])
 
     def to_json(self) -> dict[str, Any]:
+        with self._lock:
+            return self._json()
+
+    def _json(self) -> dict[str, Any]:
         return {"schema": SCHEMA, "weights": {str(k): round(v, 6) for k, v in self.weights.items() if v},
                 "bias": self.bias, "w_chars": self.w_chars, "w_limit": self.w_limit, "seen": self.seen,
                 "recent": [list(pair) for pair in self.recent]}

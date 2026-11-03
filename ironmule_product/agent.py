@@ -1333,6 +1333,16 @@ class Agent:
                 "counters": dict(self.counters), "history": list(self.history)[-10:]}
 
 
+def share_lengths(agents: list["Agent"]) -> None:
+    """AG2, several GPUs: one length model for every card's agent. How long an answer runs depends on the model and
+    the prompt, not on the card, so each card learns from every card's answers; the one with the most lessons
+    (after a restart, each card resumed its own copy) becomes the shared one."""
+    if len(agents) > 1:
+        shared = max((a.lengths for a in agents), key=lambda m: m.seen)
+        for a in agents:
+            a.lengths = shared
+
+
 def _policy_body(policy: Policy) -> dict[str, Any]:
     return policy_json(list(policy.placement), list(policy.order), list(policy.width or ()), policy.key)
 
