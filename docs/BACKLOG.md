@@ -1006,6 +1006,15 @@ gain unused.
       NUM1 can choose `float16`.
     - *Fixed:* the worker, its client and `--compute-dtype` take `float16` (the checkpoint's floating weights in
       float16, as `ironmule.tune` already loads that plan). Smoke 2 repeats it.
+  - **Smoke 2 (2026-11-03, the same kernel v2 at `321d116`, Kaggle T4, 14 minutes): the tool works end to end; it
+    measures nothing.**
+    - The agent chose `route` again on its own.
+    - Both workers (`float16` and the dense engine) loaded and served together on one T4.
+    - All 3 blocks of 4 cells completed with no failed request.
+    - The router split its 12 requests 6 and 6, in 17 µs per decision.
+    - *Descriptive, a smoke measures nothing (4 requests of up to 16 tokens):* the stacked engine's learned
+      per-row cost was 106 ms. In answers this short, a newcomer's prefill stalling the running rows dominates the
+      per-token time. The full run's 256-token answers price that stall per token, as it should be.
 - **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
 `_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
 schedule (w8 with joins, H10), and `/health` says so.
