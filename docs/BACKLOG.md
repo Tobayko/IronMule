@@ -602,6 +602,77 @@ mixed code ran; this checks the tool, nothing more.
 - With 7 groups of near-equal prompts the fitted prices were meaningless (14.9 s per group), and the agent was right
   not to plan on them.
 
+### AG2 — The agent learns how long an answer will be, and orders by it (opened 2026-11-03, before hardware data)
+
+**Why (owner request, 2026-11-03: beat the fixed rules, with ideas from the literature).** Through V4, the agent never
+beat the best fixed schedule. Its actions so far are a group's order (output limit first, or arrival) and width,
+and in every measured setup the fixed rule is close to optimal for them: RL8 put the headroom at 0.1-1 %, below
+replay noise. Two exploratory simulations on 2026-11-03 asked where a learner could do better. Both ran after V4's
+data and are labelled so; they decide nothing on hardware. Script: the AG1 simulator's machine (`tools/ag1_online.py`),
+600 traces of RL2-H2's states per cell, run outside the repository.
+- **A schedule per traffic state** against the best single fixed schedule: +0.02 % on the T4 price with 16-request
+  traces, +0.18 % with 64, 0.00 % on the CPU price. *Closed by this simulation:* a state-dependent schedule has no
+  headroom worth an experiment here.
+- **Ordering by a predicted answer length.** Our test traffic so far sets an output limit that every answer
+  reaches: of V4's 768 online requests, 761 ended at their limit. Then "shortest limit first" is the true shortest
+  job first, and nothing is left to learn. In chat traffic, clients often send one limit (or none), and answers end
+  at EOS, so "shortest limit first" falls back to arrival order. The literature's largest scheduling gains come from
+  predicting the answer length instead: Fu et al. (NeurIPS 2024, arXiv 2408.15792) rank by a learned predictor, and
+  so do SSJF (arXiv 2404.08509), ELIS (arXiv 2505.09142) and TIE (arXiv 2604.00499). In the simulator, with every
+  limit 512 and lognormal answers (median 150 tokens, sigma 1, capped at the limit), ordering by a predictor whose
+  correlation with the log length is rho, against ordering by the limit, at load 1.0:
+
+  | rho | width 1 (T4 / CPU price) | width 4 | width 8 |
+  | --: | --: | --: | --: |
+  | 0.0 | +0.7 % / +1.0 % | -0.2 % / +0.3 % | -0.2 % / -0.2 % |
+  | 0.3 | +8.2 % / +9.2 % | +5.1 % / +6.5 % | +3.1 % / +3.3 % |
+  | 0.5 | +12.6 % / +14.3 % | +8.9 % / +10.6 % | +4.8 % / +6.0 % |
+  | 1.0 (oracle) | +24.4 % / +27.5 % | +16.4 % / +18.8 % | +8.8 % / +10.1 % |
+
+  At load 0.6 the gains are within 1 point of these.
+- **How large rho gets online.** An online learner with no prior, run as the agent would run it: SGD on hashed word
+  unigrams and bigrams of the prompt's first 64 words plus its log length, predict then learn, 6,000 shuffled
+  requests. Spearman correlation with the answer's log length, over requests 500-2,000 and then 2,000-6,000:
+  - Dolly 15k (human answers, CC BY-SA 3.0): 0.30, then 0.45;
+  - Alpaca (model answers, CC BY-NC 4.0): 0.45, then 0.60;
+  - prompt length alone: -0.10 to -0.24.
+
+  A prediction cost 16-54 µs in pure Python. It is made once when a request arrives, so the decision at a group
+  start still only reads a number.
+
+**Mechanism.** The agent gains a second order key: the predicted answer length, capped at the request's limit, in
+place of the limit itself.
+- A length model is learned online from every finished request (label: completion tokens). Its features are
+  hashed word unigrams and bigrams of the last user message (at most its first 64 words), log prompt characters
+  and log output limit. It is updated by SGD, with weights only, and stores no text.
+- The agent's policy carries which key it orders by. The planner proposes "shortest predicted first" as a
+  candidate when the model is fit, and the candidate is proven by the same replay triplets and judge as AG1. A
+  replayed arrival keeps its recorded prediction and replays its recorded answer length as its limit.
+- Like every AG1 action, it changes the order of requests only, never an answer. State stays bound to the
+  machine, model and plan, and the length model's weights live under `<state-dir>/agent/`.
+
+**Kill criterion.**
+- **S-LP in simulation:** the agent, unchanged except for this key, on the simulator with EOS-ended answers
+  (Alpaca-like rho, learned online, not given) qualifies the predicted order within 150 traces, and its windows cost
+  at least 5 % less than ordering by the limit. Anything less stops AG2 before hardware.
+- **On hardware:** AG1 V's qualification rule and decisions. The workload uses real instruction prompts (Dolly 15k,
+  fetched at run time, not committed), one limit for all, and answers ending at EOS. The protocol is fixed here
+  before its data. Planned order:
+  1. a Kaggle CPU session, which spends no GPU quota;
+  2. Gemma 3 12B under the owner's `--compute-dtype native` plan on a T4 once the weekly quota resets. There the
+     plan runs one request at a time, which is where this lever is largest in the simulation.
+
+  If the online model's Spearman correlation after 500 requests of the hardware workload is below 0.2, the run
+  reports "no signal" and AG2 is closed for that workload.
+- A pass ships opt-in only, bound to the measured setup.
+
+**Other routes from the same search, not yet entries (kept so they are not re-derived):**
+- *preemption with a re-predicted remaining length* (TRAIL; ELIS's iterative shortest-remaining-time-first). This
+  needs the engine to pause a session and resume it exactly.
+- *prefix-aware grouping* (arXiv 2605.06046), grouping requests that share a cached prefix. Its gain depends on
+  shared system prompts in the traffic.
+- *load-adaptive prefill chunking* (DRLServe). The engine has no chunked prefill to adapt.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every
