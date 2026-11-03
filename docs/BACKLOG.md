@@ -59,7 +59,7 @@ the pool model may misprice an engine (the dense plan's slot reuse is not modell
 learner found no gain on a T4 (P3).
 
 **Tests.**
-- **S, the loop in simulation (`tools/ag1_online.py`, local, no GPU).** The agent unchanged against a simulated
+- **S, the loop in simulation (`training/ag1_online.py`, local, no GPU).** The agent unchanged against a simulated
   server priced by RL8's H9 fit (a window slowdown of 3 % and a round slowdown of 2 %, lognormal), 300 live traces
   cycling through RL2-H2's quiet, bursty and spike states (seed 90,000, 240 s pauses), 1,500 planner episodes per
   seed; and the same with the machine changed at trace 150 to a price where a further session costs a whole step
@@ -72,7 +72,7 @@ learner found no gain on a T4 (P3).
   observed, plans, explorations, replayed triplets and that every replayed answer matched. No gain is decided: a
   CPU makes about one token a second here.
 - **V, the gain on hardware (Kaggle T4, after the weekly GPU quota resets).** *(Fixed 2026-10-30, before its data;
-  the pass rule amended from LD1-V's to KP1's, the rule qualification uses.)* `tools/rl2_headroom.py --plan ag1`,
+  the pass rule amended from LD1-V's to KP1's, the rule qualification uses.)* `training/rl2_headroom.py --plan ag1`,
   kernel `ironmule-rl2-headroom-ag1` pinned to a pushed commit, "GPU T4 x2" with one worker on the first card,
   `mlx-community/Qwen3-1.7B-bf16`, the product's own `ProductService` with `--engine tuned`, the agent attached as
   `--agent on` attaches it, reference schedule `w8/fifo` (the default where no schedule is qualified). About
@@ -588,7 +588,7 @@ four criteria pass on one commit, so V's gate is open.**
   - The planner preview (2 x 3,000 episodes) took 15 CPU-seconds.
   - Simulated wall time per 300-trace run: 3-7 minutes.
 
-**V's harness as a CPU smoke (2026-10-30, mechanics only, no gain claim).** `tools/rl2_headroom.py --plan ag1 --smoke` ran
+**V's harness as a CPU smoke (2026-10-30, mechanics only, no gain claim).** `training/rl2_headroom.py --plan ag1 --smoke` ran
 on this cloud container's CPU with `Qwen/Qwen3-0.6B` (rev `c1899de`, bf16, about one token a second), through the
 product's own service and worker. The harness file was loaded at `7558cdb` and the agent module after `f850704`, so
 mixed code ran; this checks the tool, nothing more.
@@ -608,7 +608,7 @@ mixed code ran; this checks the tool, nothing more.
 beat the best fixed schedule. Its actions so far are a group's order (output limit first, or arrival) and width,
 and in every measured setup the fixed rule is close to optimal for them: RL8 put the headroom at 0.1-1 %, below
 replay noise. Two exploratory simulations on 2026-11-03 asked where a learner could do better. Both ran after V4's
-data and are labelled so; they decide nothing on hardware. Script: the AG1 simulator's machine (`tools/ag1_online.py`),
+data and are labelled so; they decide nothing on hardware. Script: the AG1 simulator's machine (`training/ag1_online.py`),
 600 traces of RL2-H2's states per cell, run outside the repository.
 - **A schedule per traffic state** against the best single fixed schedule: +0.02 % on the T4 price with 16-request
   traces, +0.18 % with 64, 0.00 % on the CPU price. *Closed by this simulation:* a state-dependent schedule has no
@@ -674,7 +674,7 @@ place of the limit itself.
 - Replays make each answer its recorded length and sort by the arm's recorded key. *(This also changes AG1's
   replays, which ran every answer to its capped limit. In V4 that made no difference: 761 of 768 answers ended at
   their limit.)*
-- `tools/ag1_online.py --prompts` replays real prompts with one limit for all, and adds hindsight comparators.
+- `training/ag1_online.py --prompts` replays real prompts with one limit for all, and adds hindsight comparators.
 - `--profile cpu-lp` in the harness.
 - Tests in `test_agent.py` and `test_rl2_headroom.py`.
 
@@ -934,7 +934,7 @@ traces already do. **Test.** After HW1 and MEM2 exist: measure headroom first, t
 single setting on the same recorded traces (as OPT2-CAL did); train and qualify a learner only where that headroom
 exceeds the A/A noise. **Kill.** Headroom inside the A/A noise for every decision: a fixed policy ships, no learner.
 
-**RL2-H, the headroom measurement (protocol fixed 2026-10-28, before data).** `tools/rl2_headroom.py`, one
+**RL2-H, the headroom measurement (protocol fixed 2026-10-28, before data).** `training/rl2_headroom.py`, one
 Kaggle "GPU T4 x2" kernel, `mlx-community/Qwen3-1.7B-bf16` on the tuned engine, one HW1 worker per card.
 *Decisions measured:* placement (`shortest`, HW1's join-the-shortest-queue, against `fill`, the lowest-index card
 with fewer than `width` requests outstanding, else the shortest) and the live learner's schedule catalogue (width
@@ -982,7 +982,7 @@ Poisson arrivals with 64-128-token answers kept about 2.4 requests in the system
 rarely formed and no request held a group long; the states where width, wait and placement could matter differently
 (bursts that build a queue, long answers holding a group while short ones wait, as in HOL1, and long prompts that make
 prefill matter) never occurred. Same model, cards, engine, pool, cost, order, headroom, noise, release rule and
-validity as RL2-H (`tools/rl2_headroom.py --plan h2`). *States:* `quiet` (run 1's light level: Poisson at 0.2 of
+validity as RL2-H (`training/rl2_headroom.py --plan h2`). *States:* `quiet` (run 1's light level: Poisson at 0.2 of
 capacity, short prompts, 64 or 128 tokens), `bursts` (four bursts of four arrivals inside 0.2 s each, burst starts
 Poisson at 0.6 of capacity / 4) and `spike` (all 16 arrivals inside 1 s); in `bursts` and `spike` half the prompts
 carry a fixed generic context of about 1,000 tokens and the output limit is 32 or 256 tokens; equal weights.
@@ -1019,7 +1019,7 @@ requests and a reward weighting fast requests ten times more. Here the cost weig
 Shortest-job-first can starve long requests, so it ages: past 10 s a request starts by arrival. Placement by length
 can leave one card idle while the other queues, which `spill` guards against.
 
-**Test (RL3-H, `tools/rl2_headroom.py --plan h3`).** The same pool, model, engine, traffic (run 2's `quiet`,
+**Test (RL3-H, `training/rl2_headroom.py --plan h3`).** The same pool, model, engine, traffic (run 2's `quiet`,
 `bursts` and `spike` traces, the same seeds), cost, order of cells, headroom, noise, release rule and validity
 as RL2-H2. A request is `long` with an output limit of at least 128 tokens. Arms: placement `shortest`
 (reference), `segregate` (long to the last card, short to the first) or `spill` (`segregate` unless the preferred
@@ -1072,7 +1072,7 @@ and `FixedKVCache` always passes one. Decode therefore runs the unfused path ove
 matmul. The reductions in that path can be ordered differently for different cache lengths, and that can flip a
 near-tied greedy token.
 
-**Test (`tools/rl2_headroom.py --plan x1`, Kaggle T4 x2, about half a session hour).** The model and revision are
+**Test (`training/rl2_headroom.py --plan x1`, Kaggle T4 x2, about half a session hour).** The model and revision are
 RL3-H's. Each card gets its own child process, pinned as HW1 pins a worker. The engine is the one a worker without
 a tuned profile runs (BASELINE knobs). (a) Request 14 is served alone and in its RL3-H burst (requests 12-15)
 through `Runtime.serve`, three times each. (b) Each of the 16 short prompts is decoded directly for 32 tokens at
@@ -1133,7 +1133,7 @@ no better than RL3's best fixed arm, and every learned arm so far (P3, P4, OPT1)
   53 resolvable pairs as the hardware did; that preview is not RL4's gate, which is RL3-H.)
 - *Simulator gate:* on 200 held-out simulated traces per state, the learned policy must beat the best fixed arm
   by more than RL3-H's A/A noise.
-- *Hardware (RL4-H):* `tools/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs
+- *Hardware (RL4-H):* `training/rl2_headroom.py` gains a `learned` arm that applies the frozen policy. It runs
   against the reference and RL3-H's best fixed arm on RL3-H's states and traces, with the same cost, order, noise
   and validity as RL3-H. The policy is frozen and its digest recorded before the run.
 
@@ -1167,7 +1167,7 @@ there. On RL4's 200 held-out spike traces it cost 34.64, against 36.15 for RL3-H
 `shortest/w8/g0/sjf` and 35.99 for the best simulator-only rule: a gain of 4.2 %, three times run 2's spike noise.
 Nothing is retrained or refitted for this entry.
 
-**Test (`tools/rl2_headroom.py --plan h5`, Kaggle T4 x2, about 1.5 session hours).** RL3-H run 2's pool, model,
+**Test (`training/rl2_headroom.py --plan h5`, Kaggle T4 x2, about 1.5 session hours).** RL3-H run 2's pool, model,
 revision, engine, cost, cell order and validity. Traffic: `spike` only, from run 2's generator. It uses 30 traces
 (indices 5-34) whose seeds no earlier run and no training, validation or held-out simulation used. Arms: the
 reference `shortest/w8/g0`, `shortest/w8/g0/sjf`, and `learned` with the frozen policy, whose digest the kernel
@@ -1224,7 +1224,7 @@ refused together with `--learning`, and changes no answer. The RL4-S policy and 
 
 **Question.** Does the product's own learned dispatch (LD1), running RL6's width-learning policy (digest
 `fef74e9d1077`), beat the product's reference when quiet, bursty and spike traffic all count? RL6 measured that
-policy only in `bursts` and `spike`. **Test (`tools/rl2_headroom.py --plan h7`, Kaggle T4 x2, about 2 session
+policy only in `bursts` and `spike`. **Test (`training/rl2_headroom.py --plan h7`, Kaggle T4 x2, about 2 session
 hours).** Same pool, model, revision, engine, cost, cell order and validity as RL6. All three states are weighted
 equally, with 8 traces each (indices 47-54) whose seeds no earlier run, training or simulation used.
 
@@ -1305,7 +1305,7 @@ rounds inside those groups, not from measured narrow arms. RL2-H2 measured width
 | `shortest/w4/g0/sjf` | 19.46 | 31.40 |
 | learned | 18.25 | 30.56 |
 
-**Test (`tools/rl2_headroom.py --plan h6`, Kaggle T4 x2, about 2 session hours).** RL3-H run 2's pool, model,
+**Test (`training/rl2_headroom.py --plan h6`, Kaggle T4 x2, about 2 session hours).** RL3-H run 2's pool, model,
 revision, engine, cost, cell order and validity. Traffic: `bursts` and `spike`, weighted equally, from run 2's
 generator. Each state gets 12 traces, indices 35-46, whose seeds no earlier run, training or simulation used. Arms:
 the reference `shortest/w8/g0`, `shortest/w1/g0/sjf`, `shortest/w2/g0/sjf`, `shortest/w4/g0/sjf`, and `learned`
@@ -1671,7 +1671,7 @@ runs (i) with that loop (`DenseBackend.steps_group`, 4 steps per host read); com
 needs a functional pool update first, since `DensePlan.forward` writes its slots in place. It is open as a next
 step and is not shipped. Still owed: the ledger entry.
 
-**H8: the dense plan through the product (fixed 2026-10-29 before its data; `tools/rl2_headroom.py --plan h8`,
+**H8: the dense plan through the product (fixed 2026-10-29 before its data; `training/rl2_headroom.py --plan h8`,
 Kaggle T4 x2, about 2 session hours).** `--engine dense` serves the plan on the tuned engine's worker path. Its
 slot-pool executor and bridge are in `ironmule/dense_plan.py`, `ironmule_product/engine_bridge.py` and the worker,
 with contract tests on CPU stand-ins. The arms are:
@@ -1796,7 +1796,7 @@ product-level gain is unknown, because of what the probe did not see:
 - more traces instead, for power;
 - compile churn is recorded.
 
-**Test (`tools/rl2_headroom.py --plan kp1`, Kaggle T4 x2, about 2.3 session hours).**
+**Test (`training/rl2_headroom.py --plan kp1`, Kaggle T4 x2, about 2.3 session hours).**
 - **Preflight (kill 1):** in a process of its own on one card, the baseline and the KP knobs are compared bit for
   bit, HW4's method: prefill logits, then 24 decode steps fed the baseline's tokens. It runs on a short and a long
   prompt, at 16 capacities from 64 to 8,192 where the prompt fits, plus every capacity this run's traffic produces.
@@ -1878,7 +1878,7 @@ validity let `knobs.json` ship". What changed is the implementation: the first-t
 
 H9 measures all three engines in one run, so every combination meets the same traffic.
 
-**Test (`tools/rl2_headroom.py --plan h9`, Kaggle T4 x2).**
+**Test (`training/rl2_headroom.py --plan h9`, Kaggle T4 x2).**
 - **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally. 12 fresh traces (75-86) in three
   rounds of four.
 - **Engines:** `tuned` (the default: baseline knobs, RL6's qualified schedule `shortest/w2/g0/sjf`), `kp` (the
@@ -2028,7 +2028,7 @@ instead of failing it. RL8's dense model, fitted to H9 and passing its fidelity 
 off the plan's cost from that: w8/sjf 8.98 and w4/sjf 8.88, against 11.30 without joins. The recommendation
 covers the product only after this configuration is checked on hardware.
 
-**Test (`tools/rl2_headroom.py --plan h10`, Kaggle T4 x2, about 3 session hours).**
+**Test (`training/rl2_headroom.py --plan h10`, Kaggle T4 x2, about 3 session hours).**
 - **Setup:** LD1-V's pool, model, revision, cost and states, weighted equally; 12 fresh traces (87-98) in four
   rounds of three. Each round starts both engines' pools in turn, the first one alternating.
 - **Arms:** `tuned:shortest/w2/g0/sjf` (the default, A/A per block), `dense:shortest/w8/g0/sjf` (H9's arm, A/A
@@ -2155,7 +2155,7 @@ warps past a row's position exit at once: four times as many at 8,192 as at 2,04
   - `nvidia-smi`'s memory in use;
   - the tier `slot_capacity` picks on the card.
 
-**Test, part (b): `tools/rl2_headroom.py --plan h11`, Kaggle T4 x2, about 1.8 session hours. It runs only after
+**Test, part (b): `training/rl2_headroom.py --plan h11`, Kaggle T4 x2, about 1.8 session hours. It runs only after
 (a) passes, at the commit that then admits the 8,192 tier (`SLOT_TIERS = H11_TIERS`) and changes nothing else.**
 - **Setup:** H10's pool, model, revision, cost and states, weighted equally; 8 fresh traces (99-106) in two
   rounds of four. Each round starts both engines' pools in turn, the first one alternating.
@@ -2256,7 +2256,7 @@ cannot be enumerated on hardware. **The objective stays the product's request co
 to first content). Every phase's improvement is credited and reported per phase (prefill, decode, queueing).
 Clipping each phase at zero is rejected, because it would reward arms that are slower overall.
 
-**Plan, in `tools/rl4_agent.py`.**
+**Plan, in `training/rl4_agent.py`.**
 1. Give the pool model parameters per knob set from HW3 and HW4: prefill ms per prompt length per prefill set,
    decode ms per round and per further session per decode set, compile seconds per new body. Speculation and
    readback apply only at width 1.

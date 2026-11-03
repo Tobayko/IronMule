@@ -1,6 +1,6 @@
 """LD1: a learned dispatch policy, opt-in and bound to the evidence that qualified it.
 
-The policy is the one `tools/rl4_agent.py` trains (BACKLOG RL4, RL4-S, RL6): per request a softmax
+The policy is the one `training/rl4_agent.py` trains (BACKLOG RL4, RL4-S, RL6): per request a softmax
 over GPUs from that request's output limit and prompt length and each GPU's admitted work, per
 group start a logistic choice of shortest-job-first, and in a v2 policy a softmax over group
 widths. The server applies it greedily. It changes only where and in which order requests run,
@@ -59,7 +59,7 @@ def _is_long(view: View) -> bool:
 
 
 def placement_features(request: View, cards: list[list[View]], card: int) -> list[float]:
-    """The same features as `tools/rl2_headroom.placement_features`, for one candidate GPU."""
+    """The same features as `training/rl2_headroom.placement_features`, for one candidate GPU."""
     outstanding = cards[card]
     load = len(outstanding) / 8.0
     longs = sum(_is_long(r) for r in outstanding) / 8.0

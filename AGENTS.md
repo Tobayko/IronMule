@@ -32,6 +32,7 @@ needs only the affected text and applicable documentation conventions.
 | Product purpose, usage or public claims | [README.md](README.md); for claims, [docs/LIMITS.md](docs/LIMITS.md) and the supporting [ledger](https://github.com/Tobayko/IronMule-Research/blob/main/research/LEDGER.md) entry in the research repository |
 | Runtime, executor, plans, cache or scheduling in [ironmule/](ironmule/) | [docs/RUNTIME.md](docs/RUNTIME.md), affected implementation and [runtime contract tests](tests/engine/test_ironmule_runtime.py) |
 | Service, workers, HTTP, calibration or state in [ironmule_product/](ironmule_product/) | [docs/HTTP.md](docs/HTTP.md), affected modules and matching `test_product_*` / `test_automatic_*` files in [tests/engine/](tests/engine/) |
+| The agent (AG1, AG2): decisions, learning, length model, training | [docs/AGENT.md](docs/AGENT.md), [training/README.md](training/README.md), BACKLOG AG1/AG2 and [tests/agent/](tests/agent/) |
 | Learned dispatch, qualification or recovery | LIMITS, relevant modules and tests: [learner](tests/learning/test_local_learner.py), [activation](tests/learning/test_activation.py), [monitoring](tests/learning/test_monitoring.py), [requalification](tests/learning/test_requalification.py), [readiness](tests/learning/test_readiness.py) |
 | Performance, benchmarks or optimisation experiments | [docs/BACKLOG.md](docs/BACKLOG.md), including Tier 0 and its reopening rule |
 | Shared evidence in [friday_evidence/](friday_evidence/) | Affected module, callers and tests; see Friday Evidence below |
@@ -40,13 +41,13 @@ needs only the affected text and applicable documentation conventions.
 | Releases | [docs/RELEASING.md](docs/RELEASING.md), including its full pre-publication gates |
 | Figures or aggregate evidence views | [tools/make_figures.py](tools/make_figures.py) for [docs/assets/](docs/assets/) |
 
-[tools/](tools/) now holds only what the product, the kept tests, CI or the README
-figures need -- measurement/verification harnesses for one specific kept test, plus the
-figure renderer -- and the Kaggle harness of an open backlog entry written while the
-research repository was out of reach, each with its own focused test
-(`tools/kaggle_whole_machine.py`, `tools/rl2_headroom.py`, `tools/rl4_agent.py`, `tools/cuda_probe.py`,
-`tools/ag1_online.py`); such a
-harness moves there once it is reachable. Inspect the selected tool and its contract before running it.
+[training/](training/) holds what trains, simulates and measures the agent (its simulator, its Kaggle harness
+and RL4), with the workflow in its README. [tools/](tools/) holds what the product, the kept tests, CI or the
+README figures need -- measurement/verification harnesses for one specific kept test, plus the figure renderer
+-- and the Kaggle harnesses of open hardware entries written while the research repository was out of reach,
+each with its own focused test (`tools/kaggle_whole_machine.py`, `tools/cuda_probe.py`); such a harness moves
+there once it is reachable. `tools/measure_dispatch_plan.py` stays where it is: the provenance contract test
+names it. Inspect the selected tool and its contract before running it.
 
 The research workflow that used to route through this file -- the experiment ledger,
 preregistration and sealed-study conventions, the Kaggle harnesses, the SSOT corpus and

@@ -197,7 +197,8 @@ ironmule benchmark                          # measure your own machine
 | `native/` | Rust: the online controller and the experiment planner (learning core) |
 | `friday_evidence/` | Storage and provenance for measurements |
 | `evidence/` | Redacted results behind every published number |
-| `tests/` | `engine/` and `runtime/` (runtime, server), `learning/` (learned dispatch), `evidence/` and `claims/` (measurements, published numbers) |
+| `training/` | Training, simulation and hardware measurement of the agent ([how](training/README.md)) |
+| `tests/` | `engine/` and `runtime/` (runtime, server), `agent/` (the agent and its training tools), `learning/` (learned dispatch), `evidence/` and `claims/` (measurements, published numbers) |
 | `docs/` | User documentation, index in [docs/README.md](docs/README.md) |
 | `tools/` | Figure and evidence tools |
 
@@ -205,6 +206,7 @@ Raw data, experiment scripts and the full research record live in the separate [
 
 ## Learn more
 
+- **[The agent](docs/AGENT.md)** — the main goal: how it decides and learns, and [how to train it](training/README.md).
 - **[Benchmarks](docs/BENCHMARKS.md)** — every model family, native kernels, quality gates.
 - **[HTTP API](docs/HTTP.md)** · **[Runtime](docs/RUNTIME.md)** · **[Limits](docs/LIMITS.md)** (rejected ideas: [docs/BACKLOG.md](docs/BACKLOG.md))
 - **[Documentation index](docs/README.md)** — every other doc, including the pinned qualification specs.

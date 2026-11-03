@@ -39,7 +39,7 @@ when it is ready:
 | `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
 | `--knobs` | `auto` | `--engine tuned` only. `auto`: a knob set qualified on exactly this model, revision, GPU and MLX and mlx-lm versions serves when one ships and no tune profile is stored; it may only change knobs that leave every answer unchanged (compiled step, projection fusion, fused argmax, readback interval). None ships yet (BACKLOG KP1). `reference`: the engine's own knobs |
 | `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
-| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, below); one worker; not with `--learning` or `--dispatch-policy` |
+| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, AG2, below); with `--gpus` one agent per card; not with `--learning` or `--dispatch-policy` |
 
 ## Routes
 
@@ -94,7 +94,7 @@ worker to that card. Not measured yet: the throughput gain on Kaggle's two T4s a
 both cards return the same tokens for the same request (BACKLOG HW1).
 
 **Learned dispatch (LD1, opt-in).** `--dispatch-policy POLICY.json --dispatch-evidence EVIDENCE.json`
-replaces three scheduling choices with a policy the RL agent learned (`tools/rl4_agent.py`):
+replaces three scheduling choices with a policy the RL agent learned (`training/rl4_agent.py`):
 the card a new request goes to, whether a group starts its shortest requests first, and, in a
 v2 policy, the group's width. It never changes what a request answers. Each request still runs
 alone on one worker at its own capacity, and the hardware comparisons checked that every answer
@@ -130,7 +130,17 @@ is recorded and never serves again under this setup. What it learned lives in `a
 bound to the hardware, device, model, revision, plan and software versions; any change starts fresh. `/health`
 shows an `agent` block: what serves and its measured gain, the fitted costs, the planner, the candidate and its
 comparison, decision counts and the mean decision time. It refuses the dense plan, whose freed slots it does not
-model yet, and runs on one worker. Its gain on hardware is not measured yet (BACKLOG AG1).
+model yet. Its gain on hardware is not measured yet (BACKLOG AG1, AG2).
+
+*Predicted answer lengths (AG2).* "Smallest first" may sort by the answer length a small online model predicts
+instead of the output limit, which says nothing when every client sends the same limit. The model learns from
+every finished request (hashed word features of the last message and the completion tokens; weights only, no
+text), and a schedule that orders by it is planned and qualified like any other. `/health`'s `agent` block shows
+`lengths`: requests learned from, the recent predictions' rank correlation with the truth, and the order key that
+serves. *Several GPUs.* With `--gpus all`, each card gets its own agent, bound to its card, and the cards share one
+length model. Placement stays join-the-shortest-queue. `/health` and `/v1/ironmule/dispatch` list every card's
+agent, and `{"action": "off"}` or `"on"` reaches all of them. Details and the training workflow:
+[AGENT.md](AGENT.md).
 
 **Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
 on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the

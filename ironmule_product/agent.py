@@ -10,7 +10,7 @@ greedy answer on the grouped batch-1 path, and a replayed comparison checks that
 
 1. *Observe.* Every finished group, real or replayed, updates a world model by recursive least squares:
    prefill seconds per member and per thousand prompt tokens, decode seconds per round and per further
-   session in a round, as the pool model of `tools/rl4_agent.py` (RL4, RL8) prices them. Every finished
+   session in a round, as the pool model of `training/rl4_agent.py` (RL4, RL8) prices them. Every finished
    request goes into a traffic memory of metadata (arrival, prompt tokens, output limit, tokens made);
    no prompt or answer text is kept.
 2. *Plan.* While the server is idle, a planner process (its own process, so serving threads keep the
@@ -539,7 +539,7 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
 def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, engine_width: int, guard: Policy,
            allowed: list[int], settings: dict[str, Any], rng: random.Random,
            busy: dict[str, Any] | None = None) -> tuple[tuple[list, list], list]:
-    """REINFORCE with a running-mean baseline (as `tools/rl4_agent.train`), order and width heads only; each
+    """REINFORCE with a running-mean baseline (as `training/rl4_agent.train`), order and width heads only; each
     episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8)."""
     order = [0.0] * ORDER_FEATURES
     width = [0.0] * (len(WIDTH_CHOICES) * ORDER_FEATURES)
