@@ -235,9 +235,9 @@ def serve(argv: list[str]) -> int:
                              "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
                              "rust2 (CUDA, Qwen3 dense 4-bit): the rust2 binary named by IRONMULE_RUST2_BINARY, "
                              "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV). "
-                             "dense (CUDA below compute capability 8, Qwen 3 bf16): the opt-in dense numeric plan, up "
-                             "to eight requests in one decode step through IronMule's own kernels; answers differ from "
-                             "the other engines' but never with the group (KB1)",)
+                             "dense (CUDA below compute capability 8, Qwen 3 bf16 or Gemma 3 at 4 bit): the opt-in dense "
+                             "numeric plan, up to eight requests in one decode step through IronMule's own kernels; "
+                             "answers differ from the other engines' but never with the group (KB1, KB2)",)
     parser.add_argument("--no-thinking", action="store_true",
                         help="answer without a thinking section where the model's chat template has one "
                              "(start sets it on a machine without a GPU, CPU5)")

@@ -162,3 +162,23 @@ def test_the_products_dense_backend_serves_the_gemma_plan():
     for state in states:
         backend.release(state)
     assert backend.free_slots() == 4
+
+
+def test_the_product_bridge_picks_the_gemma_plan_for_a_4bit_gemma(monkeypatch):
+    """`--engine dense` on a 4-bit Gemma 3 installs the native row kernel and then KB2's plan; any other model
+    goes to KB1's plan, which refuses what it was not built for."""
+    from ironmule import cuda_native, dense_plan
+    from ironmule_product import engine_bridge
+
+    calls = []
+    monkeypatch.setattr(cuda_native, "install", lambda model, info: calls.append("native") or {"modules": 1})
+    monkeypatch.setattr(dg, "refuse", lambda model, native=True: None if not native or "native" in calls
+                        else "install the native plan first")
+    monkeypatch.setattr(dg, "install", lambda model, info: calls.append("gemma") or ("plan", {"capacity": 1024}))
+    monkeypatch.setattr(dense_plan, "install", lambda model, info: calls.append("qwen") or ("qplan", {}))
+    plan, record = engine_bridge.install_dense(tiny_model(), {"total_memory": 1})
+    assert plan == "plan" and calls == ["native", "gemma"]
+    assert record["model_family"] == "gemma3" and record["native"] == {"modules": 1}
+    monkeypatch.setattr(dg, "refuse", lambda model, native=True: "the Gemma dense plan serves Gemma 3 checkpoints only")
+    calls.clear()
+    assert engine_bridge.install_dense(object(), None)[0] == "qplan" and calls == ["qwen"]

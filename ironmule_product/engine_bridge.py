@@ -71,6 +71,25 @@ _HISTORICAL_CONFIGURATIONS = {
 }
 _CONFIGURATIONS = frozenset(("current_profile", "dense_stacked", *_HISTORICAL_CONFIGURATIONS))
 DENSE_WIDTH = 8  # KB1: the dense plan stacks up to eight requests into one decode step
+
+
+def install_dense(model: Any, device_info: dict[str, Any] | None) -> tuple[Any, dict[str, Any]]:
+    """The stacked plan for `model`: KB2's Gemma plan for a 4-bit Gemma 3 (the native plan's row kernel installed
+    first, as `--compute-dtype native` installs it), else KB1's dense plan (Qwen 3 bf16). Each refuses what it was
+    not built for and probes the model's own weights before it serves."""
+    from ironmule import dense_gemma
+
+    if dense_gemma.refuse(model, native=False) is None:
+        if dense_gemma.refuse(model) is not None:
+            from ironmule.cuda_native import install as install_native
+            native = install_native(model, device_info)
+        else:
+            native = None
+        plan, record = dense_gemma.install(model, device_info)
+        return plan, {**record, "model_family": "gemma3", "native": native}
+    from ironmule.dense_plan import install
+
+    return install(model, device_info)
 MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
 
 
@@ -279,9 +298,8 @@ class CurrentEngineBridge:
             # KB1: the opt-in dense numeric plan; `install` refuses anything it was not built for and probes the
             # model's own weights (stacked rows bit-identical) before it serves.
             import mlx.core as mx
-            from ironmule.dense_plan import install
             from ironmule.service import DenseStackedMode
-            plan, dense_record = install(model, mx.device_info() if mx.cuda.is_available() else None)
+            plan, dense_record = install_dense(model, mx.device_info() if mx.cuda.is_available() else None)
             knobs, profile_available, profile_source = BASELINE, False, "dense_numeric_plan"
             mode = DenseStackedMode(plan, max_width=DENSE_WIDTH)
         elif historical_candidate is not None:
