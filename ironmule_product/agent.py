@@ -58,6 +58,7 @@ from typing import Any, Callable, Iterable
 
 from .learned_dispatch import (LONG_PROMPT_CHARS, LONG_TOKENS, ORDER_FEATURES, PLACEMENT_FEATURES, Policy,
                                SJF_AGE_S, View, WIDTH_CHOICES, order_features)
+from .hardware_profile import utilisation
 from .length_model import LengthModel, features as length_features
 
 STATE_SCHEMA = "ironmule.agent.state.v2"
@@ -697,7 +698,7 @@ class Agent:
     def __init__(self, root: str | Path, binding: dict[str, Any], *, capacity: int, reference: dict[str, Any],
                  engine_width: int = ENGINE_WIDTH, deadline_s: float = 120.0, device: str | None = None,
                  clock: Callable[[], float] = time.monotonic, planner_command: list[str] | None = None,
-                 planner_settings: dict[str, Any] | None = None):
+                 planner_settings: dict[str, Any] | None = None, hardware: dict[str, Any] | None = None):
         self.root = Path(root)
         self.binding = dict(binding)
         self.binding_sha256 = hashlib.sha256(json.dumps(self.binding, sort_keys=True).encode()).hexdigest()
@@ -706,6 +707,7 @@ class Agent:
         self.deadline_s, self.device, self.clock = deadline_s, device, clock
         self.planner_command = planner_command or [sys.executable, "-m", "ironmule_product.agent", "plan"]
         self.planner_settings = dict(planner_settings or {})
+        self.hardware = dict(hardware) if hardware else None  # AG3: the architecture it runs on (reported only)
         self._planner: subprocess.Popen | None = None
         self._planner_files: tuple[Path, Path] | None = None
         self._planner_stopped = False
@@ -1321,6 +1323,11 @@ class Agent:
                 "traffic": len(self.traffic), "planner": "running" if self._planner is not None else "idle",
                 "lengths": {"seen": self.lengths.seen, "spearman": self.lengths.quality(),
                             "order_key": None if self.policy is None else self.policy.key},
+                "hardware": None if self.hardware is None else {
+                    **self.hardware, "utilisation": utilisation(
+                        self.hardware, self.world.params()["step_s"]
+                        if sum(self.world.groups.values()) >= MIN_GROUPS else None,
+                        self.world.params()["step_s_per_session"] if self.world.supported(2) else None)},
                 "last_plan": self.last_plan,
                 "candidate": None if candidate is None else {
                     "policy_sha256": candidate["policy"]["sha256"], "choice": candidate["plan"].get("choice"),

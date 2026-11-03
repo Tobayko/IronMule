@@ -474,9 +474,15 @@ def _agent(store: ProductStore, service: Any, spec: ModelSpec, card: str | None 
     # what the agent's evidence was measured against: a changed schedule or capacity starts it fresh
     binding.update(capacity=capacity, schedule={"max_width": policy.max_width, "gather_ms": policy.gather_ms,
                                                 "order": policy.order, "source": policy.source})
+    from .hardware_profile import device_name, profile
+
+    apple = str(hardware["chip_name"] or "").startswith("Apple")  # Apple's GPU is named by its chip
+    name = (device_name(card or getattr(backend, "cuda_device", None)) if backend.device == "gpu" and not apple
+            else hardware["chip_name"])
     agent = Agent(store.root / "agent", binding, capacity=capacity, device=backend.device,
                   reference={"width": capacity, "sjf": policy.order == "sjf", "gather_ms": policy.gather_ms},
-                  deadline_s=service.settings["request_timeout_s"] or 120.0)
+                  deadline_s=service.settings["request_timeout_s"] or 120.0,
+                  hardware=profile(name, spec.weight_bytes or spec.snapshot_path, backend.compute_dtype))
     print(json.dumps({"agent": {k: agent.status()[k] for k in ("serving", "reason", "traffic")}}), flush=True)
     return agent
 

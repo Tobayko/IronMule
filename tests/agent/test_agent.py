@@ -814,3 +814,25 @@ def test_agents_on_several_cards_share_one_length_model_and_learn_from_each_othe
                           "prompt_chars": 33, "max_tokens": 512, "tokens": 400, "ok": True, "length": known,
                           "request_id": "x"}])
     assert second.lengths.seen == 6
+
+
+def test_the_agent_knows_its_hardware_and_reports_how_much_of_its_bandwidth_decode_uses(tmp_path):
+    """AG3: a T4 (320 GB/s) reading 3.4 GB of weights per step has a 10.6 ms floor; the world model's measured
+    step against it is the share of bandwidth used, and its inverse the most a bandwidth-bound kernel could gain."""
+    from ironmule_product.hardware_profile import bandwidth_gb_s, profile, utilisation
+
+    assert bandwidth_gb_s("Tesla T4") == 320.0 and bandwidth_gb_s("Apple M1 Max") == 400.0
+    assert bandwidth_gb_s("NVIDIA A100-SXM4-80GB") == 2039.0 and bandwidth_gb_s("NVIDIA A100-PCIE-40GB") == 1555.0
+    assert bandwidth_gb_s("Intel(R) Xeon(R) CPU") is None
+    hardware = profile("Tesla T4", 3_400_000_000, None)
+    assert hardware["decode_floor_ms"] == pytest.approx(10.625) and hardware["reason"] is None
+    assert profile("Tesla T4", 3_400_000_000, "float32")["decode_floor_ms"] is None  # widened weights: no floor
+    assert profile("Unknown GPU", 3_400_000_000, None)["reason"].startswith("the device's memory bandwidth")
+    used = utilisation(hardware, 0.0187)
+    assert used["bandwidth_share"] == pytest.approx(0.568, abs=1e-3) and used["kernel_headroom_x"] == pytest.approx(1.76)
+    agent = Agent(tmp_path / "agent", BINDING, capacity=8, reference=REFERENCE, hardware=hardware)
+    assert agent.status()["hardware"]["utilisation"] is None  # nothing measured yet
+    _feed(agent, 40)
+    reported = agent.status()["hardware"]
+    assert reported["device"] == "Tesla T4" and reported["utilisation"]["decode_ms"] == pytest.approx(19.0, rel=0.1)
+    assert _agent(tmp_path / "other").status()["hardware"] is None  # no profile, no claim

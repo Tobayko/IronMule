@@ -55,6 +55,16 @@ Four steps repeat while the server runs (`ironmule_product/agent.py`):
 - **No text is kept.** The traffic memory holds metadata, and the length model holds weights over hashed buckets.
 - **Opt-in.** `--agent on`. Without a qualified policy the server's own schedule serves.
 
+## What it knows about the hardware (AG3)
+
+The world model learns what this machine's work costs. The agent also knows the machine's architecture
+(`ironmule_product/hardware_profile.py`): the device, its published peak memory bandwidth, and the weights a
+decode step reads. From these it knows the decode floor, the fastest a memory-bound step can be. Its status
+reports how much of the bandwidth a measured step uses, the most a faster kernel could gain, and how much a
+further session in a round adds. On a T4 that showed about 55 % bandwidth use, so up to about 1.8x is left in
+kernels, and a further session costs 91 % of a step, so grouped batch-1 reads the weights once per session. Both
+are levers outside the agent's own actions (BACKLOG AG3).
+
 ## Running it
 
 ```bash
@@ -76,6 +86,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |
+| `ironmule_product/hardware_profile.py` | AG3: the device, its bandwidth, the decode floor and how much of it is used |
 | `ironmule_product/learned_dispatch.py` | the policy format the agent shares with LD1 (`Policy`, `View`, order key) |
 | `ironmule_product/service.py` | where the scheduler asks the agent, feeds it finished groups, and replays |
 | `ironmule_product/device_pool.py` | several GPUs: placement, one agent per card in health and control |

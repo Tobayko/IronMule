@@ -791,6 +791,47 @@ the owner's `--compute-dtype native` plan.
   shared system prompts in the traffic.
 - *load-adaptive prefill chunking* (DRLServe). The engine has no chunked prefill to adapt.
 
+### AG3 — The agent knows the machine's architecture (opened 2026-11-03, owner request)
+
+**Question (owner, 2026-11-03).** Would the agent adapt better if it knew the computer's hardware architecture, and
+what else could then be optimised? The agent already learns the machine empirically: its world model fits what
+prefill, a decode round and a further session cost on this card. Knowing the architecture can add three things:
+1. a starting point for that fit (a prior from the hardware), so the agent plans sooner;
+2. the gap between the measured costs and the hardware's limit, which shows where speed is left;
+3. a guard on what the card can hold (memory). This one is not built, because no measured run has hit it.
+
+**Mechanism (2026-11-03).** `ironmule_product/hardware_profile.py` reads the device's name (`nvidia-smi` per card,
+or the Apple chip). It looks the name up in a table of published peak memory bandwidths; an unknown device gets no
+value, never a guess. With the checkpoint's weight bytes it gives the decode floor: a memory-bound step reads every
+weight once, so it takes at least `weight bytes / bandwidth`. The agent's status (`/health`, `agent.hardware`) reports:
+- the profile;
+- once the world model has fitted 12 groups:
+  - the share of bandwidth a measured decode step uses;
+  - the most a bandwidth-bound kernel could gain;
+  - how much of a whole step a further session in a round adds.
+
+It changes no decision and no answer.
+
+**What the measured fits already say** (derived from earlier runs' world models, not a new measurement):
+
+| Setup | Weights | Floor | Measured step | Bandwidth used | Kernel headroom at most | Further session costs |
+| :-- | --: | --: | --: | --: | --: | --: |
+| T4, Qwen3 1.7B bf16, tuned engine (V4, 813 groups) | 3.44 GB | 10.8 ms | 19.6 ms | 55 % | 1.8x | 0.91 of a step |
+| T4, Gemma 3 12B 4 bit, `native` (gate, 5 groups only) | 8.03 GB | 25.1 ms | 47.2 ms | 53 % | 1.9x | not fitted |
+
+- *Kernels:* decode on the T4 uses about half the card's memory bandwidth. Up to about 1.8x is left in kernels,
+  not in scheduling.
+- *Batching:* a further session in a grouped batch-1 round costs 91 % of a step, so every session reads the
+  weights again. That is why the dense plan, which shares a round's weight reads, served 48 % faster (H10).
+- Both levers sit outside the agent's actions. Its actions change only the order and width of exact grouped work.
+  A kernel change goes through the controlled worker, with its own correctness and evidence gates.
+
+**The prior, tested in simulation (2026-11-03, exploratory, after AG2's data).** The setup is S-LP's (300 traces,
+Alpaca prompts, one limit of 512), with the world model starting from the machine's own price instead of the
+generic prior.
+- *Kept if:* it qualifies the agent's schedule at least 10 traces earlier than S-LP run 1 on both prices.
+- *Otherwise:* AG3 stays report-only.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every
