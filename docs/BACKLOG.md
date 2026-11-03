@@ -739,7 +739,14 @@ the owner's `--compute-dtype native` plan.
 - These fix the full T4 protocol's limit, trace count, idle time and session hours, written here before that
   run's data.
 - *Cost:* about 0.7 session hours (an 8 GB download loaded once per card, a 32-request calibration burst and the
-  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is reported as such, and nothing is
+  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week.
+- *Local smoke first (2026-11-03, at `e6b5d82`, `--profile cpu-lp --smoke` with SmolLM2-135M on this container's
+  CPU):* the harness's AG2 path ran end to end:
+  - Dolly's 15,011 prompts were fetched (sha256 `2df90833...`);
+  - the 16-request calibration burst on Dolly prompts completed;
+  - three online traces fed the length model;
+  - all 36 held-out requests completed, with 0 answers differing across the four arms and no problems.
+  - It reads "invalid" only because a smoke has one held-out trace. A session cut by the quota is reported as such, and nothing is
   inferred from it.
 
 **Other routes from the same search, not yet entries (kept so they are not re-derived):**
