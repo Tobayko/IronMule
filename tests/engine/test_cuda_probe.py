@@ -390,3 +390,30 @@ def test_kb2_decisions_read_the_fixed_rules():
     broken = {**result, "exact": {"stacks": {"3": stack, "8": {"identical_steps": 9, "steps": 10}}}}
     assert probe.analyse_kb2(broken)["(a) exact within the plan"] is False
     assert probe.analyse_kb2(result)["verdict"] == "does not pass as a whole"  # no gate yet
+
+
+def test_ag4_runs_the_products_own_choice_and_records_it(tmp_path, monkeypatch):
+    import importlib
+
+    import huggingface_hub
+
+    from ironmule import plan_choice
+
+    tune = importlib.import_module("ironmule.tune")  # `ironmule.tune` the package attribute is the function
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(tmp_path / "abc123"))
+    monkeypatch.setattr(tune, "resolve_local_model", lambda model_id, revision=None: type(
+        "R", (), {"identity": type("I", (), {"identity_sha256": "f" * 64})()})())
+    seen = {}
+
+    def choose(model_id, fingerprint, identity, log):
+        seen.update(model=model_id, fingerprint=fingerprint, identity=identity)
+        log("agent: stacked engine: 2.1x")
+        return {"engine": "dense", "compute_dtype": None, "reason": "2.1x"}
+
+    monkeypatch.setattr(plan_choice, "choose_setup", choose)
+    report = probe.probe_ag4_report("m", tmp_path / "ag4.json")
+    assert "error" not in report and report["setup"]["engine"] == "dense" and report["revision"] == "abc123"
+    assert seen["identity"] == "f" * 64 and seen["fingerprint"].startswith("kaggle-")
+    assert report["log"] == ["agent: stacked engine: 2.1x"]
+    assert json.loads((tmp_path / "ag4.json").read_text())["schema"] == "ironmule.cuda_probe.ag4.v1"

@@ -960,6 +960,22 @@ schedule (w8 with joins, H10), and `/health` says so.
 - Tests: `tests/engine/test_plan_choice.py`, and the CLI wiring in `tests/agent/test_agent.py`.
 - No hardware run yet: the stacked Gemma engine waits for KB2-0, and AG4's kill run for its protocol.
 
+**AG4-Q, the agent's own setup on a T4 (fixed 2026-11-03, before its data).** Does the agent find on its own, on
+the hardware, the setup that people found by hand for Qwen 3 1.7B bf16 on a T4 (H10: the dense engine, 48.3 %
+cheaper than the default)?
+- *Run:* `tools/cuda_probe.py --plan ag4` on one Kaggle T4 at the pushed commit. It runs the product's own
+  `choose_setup` for `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, with nothing given to it, and records the
+  decision with every gate, speed and reason.
+- *Expected (descriptive, from H9/H10 and NUM1's table):* NUM1 keeps the checkpoint's bf16 or takes a plan its
+  table recommends. The stacked engine passes its gate, at about 1x alone and several times the tokens per second
+  at width 8 (KB1-2: 0.93-0.99x alone, about 3 ms per further row).
+- *Pass:* the agent chooses the dense engine by AG4's rule, and its gate passed on the decode path. Then the
+  product-level gain of that choice on this setup is H10's measurement (a hand-chosen run of the same engine).
+  That holds for the setup only and is no new measurement.
+- *Otherwise:* the decision and its reason are recorded, and AG4's rule or gate is re-examined before KB2.
+- *Cost:* about 0.5 session hours (a 3.4 GB download, NUM1's candidates in children, the gate's 16 x 512 decode
+  steps). That fits the roughly 0.75 hours left this week. A session cut by the quota is reported as such.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every

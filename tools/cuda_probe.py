@@ -2743,6 +2743,36 @@ def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
     return report
 
 
+# ---------------------------------------------------------------- AG4-Q: the agent's own setup on a T4
+
+def probe_ag4_report(model_id: str, out: Path | None, *, smoke: bool = False) -> dict[str, Any]:
+    """AG4-Q (BACKLOG AG4): the product's own choice (`ironmule.plan_choice.choose_setup`) made on this card for
+    `model_id`, with every number behind it. The store key's fingerprint is the GPU's name (no hardware probe)."""
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.ag4.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment()}
+    try:
+        from huggingface_hub import snapshot_download
+
+        from ironmule.plan_choice import choose_setup
+        from ironmule.tune import resolve_local_model
+
+        path = snapshot_download(model_id, revision=REVISION if model_id == MODEL else None,
+                                 allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja", "tokenizer*"])
+        report["revision"] = Path(path).name
+        identity = resolve_local_model(model_id, revision=report["revision"]).identity
+        gpu = (environment().get("gpus") or ["unknown"])[0]
+        lines: list[str] = []
+        report["setup"] = choose_setup(model_id, "kaggle-" + hashlib.sha256(gpu.encode()).hexdigest()[:12],
+                                       identity.identity_sha256, log=lambda line: (lines.append(line), print(line)))
+        report["log"] = lines
+    except Exception as exc:  # noqa: BLE001 - recorded
+        report["error"] = repr(exc)
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- Kaggle
 
 _BOOTSTRAP = '''"""IronMule HW3 and TB1 on this Kaggle session; written by tools/cuda_probe.py."""
@@ -2767,7 +2797,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -2791,7 +2821,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -2817,6 +2847,12 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.out is None:
         parser.error("--out is required to run")
     os.environ.setdefault("CUDA_VISIBLE_DEVICES", "0")  # one card; set before MLX loads
+    if args.plan == "ag4":
+        report = probe_ag4_report(args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "setup": {k: (report.get("setup") or {}).get(k) for k in
+                                                              ("engine", "compute_dtype", "reason")},
+                          "error": report.get("error")}, default=str), flush=True)
+        return 0
     if args.plan == "kb2":
         report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
