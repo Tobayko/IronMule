@@ -22,6 +22,17 @@ the system plus its time to the first token. Ordering lowers that, but at a fixe
 second: the same work runs on the same engine. Tokens per second move only through what the engine can run at
 once (width, true batching) and how fast its kernels are (AG3).
 
+**The agent sets up what was found by hand (owner, 2026-11-03).** "Things we already found out, the AI should
+learn and set on its own." The settings found by hand runs so far are the numeric plan (`native` about 6x on 4-bit
+checkpoints of an emulating GPU), the stacked engine (H10: 48 % cheaper), the width (w8 on the dense plan, w2 on
+the tuned engine), the order and the class-A knobs. The owner was asked whether the agent may also choose plans
+that change answers slightly. The answer was **yes, always**: under `--agent on`, a plan that passes the agent's
+own on-machine gate may serve without a further switch. The gate is the numeric plans' perplexity gate against
+the reference path (bound 1.005), the plan's load probe, and a speed check. This replaces "it changes no answer"
+for plan choice inside agent mode (AG4). It is never silent: the chosen plan, its gate and its reason are in
+`/health` and the agent's status. The agent stays opt-in. Without `--agent on`, the caller's plan is kept as
+before.
+
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
 **Mechanism.** `ironmule_product/agent.py`, opt-in (`ironmule serve --agent on`), one decision owner (refused
@@ -891,6 +902,51 @@ generic prior.
     fast the length model learns and how many replay triplets it collects, not what it knows about the machine.
     The T4 rejection, one seed each, shows how noisy a single simulated run's verdict is, not that the prior
     harms.
+
+### AG4 — The agent chooses the plan and the engine itself (opened 2026-11-03, owner decision, before data)
+
+**Why.** Every large tokens-per-second gain so far was a setting a person found by hand on Kaggle:
+- the `native` plan for a 4-bit checkpoint on an emulating GPU (about 6x);
+- the stacked engine (H10: 48 % cheaper on two T4s);
+- its width (w8);
+- for Gemma 3 at 4 bit, KB2.
+
+The agent (AG1, AG2) decides only order and width, and it starts from whatever plan and engine the operator
+named. The owner wants the agent to learn and set these itself ("The main goal"), and allowed output-changing plans
+that pass its own gate.
+
+**Mechanism (step 1, at startup).** `ironmule serve --agent on` with no `--engine` and no `--compute-dtype` chooses
+both itself on this machine, before it serves. The choice is made once per hardware fingerprint and model identity,
+and stored with its evidence like NUM1's.
+- *Candidates:*
+  - the reference path (always eligible, the incumbent);
+  - NUM1's numeric plans (`ironmule/numeric_choice.py`, which already gates each plan on the device with the
+    perplexity gate and a speed check; consent is now implied by agent mode);
+  - a stacked engine where its `refuse` lets the model through:
+    - `dense` for Qwen 3 bf16 on pre-Ampere CUDA;
+    - KB2's Gemma plan for Gemma 3 at 4 bit on the `native` plan.
+- *A stacked engine's gate, all measured in a child process on this card:*
+  - its load probe (every stacked width bit-identical to one row);
+  - the perplexity gate against the reference path (16 x 512 tokens, the 97.5 % bound of the ratio below 1.005);
+  - tokens per second at width 1 and width 8 against the reference path's single-request decode;
+  - the time to the first token of a short and a long prompt.
+- *Decision rule (fixed now):* the candidate with the most tokens per second at width 8 among those that pass
+  their gate, if:
+  - its single-request tokens per second are at least 0.9x the reference path's (quiet traffic must not
+    regress);
+  - and its time to first token is no worse than the reference path's by more than 10 %.
+  Otherwise the reference path serves. The online agent then learns width and order inside the chosen engine,
+  as before.
+- *Visible:* `/health` and the agent's status carry the chosen plan and engine, every candidate's gate and speeds,
+  and the reason.
+
+**Kill (fixed now).** On a Kaggle T4 with Gemma 3 12B at 4 bit, the agent's own choice must reach at least 2x the
+tokens per second of today's default (`--engine reference` without a plan), with time to first token no worse,
+measured through the product. Otherwise AG4 does not ship as the agent's default setup. The product run's full
+protocol (traffic, arms, cost) is fixed here after KB2-0 and before that run's data.
+
+**Step 2 (later).** Re-choose while serving, when the measured traffic or the software changes. This needs a
+second worker to switch engines without dropping requests.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 

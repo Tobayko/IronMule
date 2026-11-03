@@ -12,6 +12,9 @@ serves, and decides in microseconds. Work that advances it comes first. It is he
 rule in this guide: it changes no answer, it serves only what it proved on the machine it runs
 on, and its gains need the evidence described under Performance and evidence. Its gain is measured first in
 tokens per second, with time to first token no worse (owner, 2026-11-03; BACKLOG, "The main goal").
+Under `--agent on` it may also choose an output-changing numeric plan or stacked engine by itself, but only one
+that passes its own on-machine quality gate, and never silently (owner, 2026-11-03; BACKLOG AG4). Outside agent
+mode the caller's plan is preserved as below.
 
 This is the shared engineering guide for Codex, Claude and Gemini. Providers may
 use different tools; correctness, evidence, testing, safety and completion standards
