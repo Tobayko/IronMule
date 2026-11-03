@@ -998,6 +998,14 @@ gain unused.
     week's quota.
   - *Smoke first:* a `--smoke` kernel checks that both workers fit and run together on one T4, and measures
     nothing.
+  - **Smoke 1 (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag4r-smoke` v1 at `526934d`, Kaggle T4, 9
+    minutes): stopped before serving, on a product gap.**
+    - The agent's own setup, made again from scratch on the card, was `route`: NUM1's `float16`, and the dense
+      engine 0.82x alone.
+    - The product's worker then refused `float16`. It knew only `float32`, `native` and `dequantize`, although
+      NUM1 can choose `float16`.
+    - *Fixed:* the worker, its client and `--compute-dtype` take `float16` (the checkpoint's floating weights in
+      float16, as `ironmule.tune` already loads that plan). Smoke 2 repeats it.
 - **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
 `_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
 schedule (w8 with joins, H10), and `/health` says so.

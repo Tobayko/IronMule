@@ -246,7 +246,7 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--chat-reuse", action="store_true",
                         help="reuse each chat's earlier turns instead of recomputing them (--engine tuned only); "
                              "exact within its own plan, which differs from the strict one (SERVE7)")
-    parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None,
+    parser.add_argument("--compute-dtype", choices=("float32", "float16", "native", "dequantize"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere), or "
                              "dequantize on a machine without a GPU; changes output; see `ironmule plans`")
     parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",

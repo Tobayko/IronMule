@@ -1230,7 +1230,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
-    parser.add_argument("--compute-dtype", choices=("float32", "native", "dequantize"), default=None)
+    parser.add_argument("--compute-dtype", choices=("float32", "float16", "native", "dequantize"), default=None)
     parser.add_argument("--engine-knobs", default=None)  # KP1: class-A knobs when no stored profile applies
     args = parser.parse_args(argv)
     global CHAT_REUSE, THINKING
@@ -1263,6 +1263,8 @@ def main(argv: list[str] | None = None) -> int:
             import mlx.core as mx
             if args.compute_dtype == "float32":
                 model.set_dtype(mx.float32)  # floating parameters only; opt-in, changes output
+            elif args.compute_dtype == "float16":  # NUM1's plan for a bf16 checkpoint on an emulating GPU (AG4)
+                model.set_dtype(mx.float16)
             elif args.compute_dtype == "dequantize":  # CPU3: dense float32 weights; opt-in, changes output
                 from ironmule.numeric_plans import dequantize_model
                 dequantize_model(model)

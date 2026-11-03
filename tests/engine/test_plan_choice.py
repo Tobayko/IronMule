@@ -118,3 +118,20 @@ def test_a_stacked_engine_that_wins_only_under_load_serves_beside_the_single_pat
     assert not fits["stacked"] and fits["route"] and "routes each request" in fits["reason"]
     tight = pc.decide({**measured, "memory": {"two_paths_fit": False}})
     assert not tight["stacked"] and not tight["route"]
+
+
+def test_the_product_serves_the_float16_plan_nums1_can_choose():
+    """AG4-R's smoke on a T4: NUM1 chose `float16`, which the product's worker did not accept. It does now, in the
+    client, the serve flag and the worker's own arguments."""
+    import inspect
+
+    from ironmule_product import worker
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.types import ModelSpec
+
+    client = MLXWorkerClient(ModelSpec("m", "r", "/tmp/m", 1), compute_dtype="float16")
+    assert client.compute_dtype == "float16"
+    source = inspect.getsource(worker.main)
+    assert '"float16"' in source and "mx.float16" in source
+    with pytest.raises(ValueError):
+        MLXWorkerClient(ModelSpec("m", "r", "/tmp/m", 1), compute_dtype="int8")

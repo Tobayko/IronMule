@@ -77,8 +77,8 @@ class MLXWorkerClient:
                                         or re.fullmatch(r"[A-Za-z0-9-]{1,64}", cuda_device) is None):
             raise ValueError("cuda_device must be one CUDA device index or UUID")
         self.cuda_device = cuda_device
-        if compute_dtype not in (None, "float32", "native", "dequantize"):
-            raise ValueError("compute_dtype must be None, float32, native or dequantize")
+        if compute_dtype not in (None, "float32", "float16", "native", "dequantize"):
+            raise ValueError("compute_dtype must be None, float32, float16, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
             raise ValueError("compute_dtype is available on the reference worker only")
         # Opt-in numeric plan (PORT1): changes output, reported in health.
