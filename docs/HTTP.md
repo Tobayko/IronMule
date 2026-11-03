@@ -39,7 +39,7 @@ when it is ready:
 | `--schedule` | `auto` | `auto`: a fixed schedule qualified on exactly this setup serves when one ships and no serving policy is stored (see [Qualified schedule](#several-gpus-hw1)); `reference`: the default schedule |
 | `--knobs` | `auto` | `--engine tuned` only. `auto`: a knob set qualified on exactly this model, revision, GPU and MLX and mlx-lm versions serves when one ships and no tune profile is stored; it may only change knobs that leave every answer unchanged (compiled step, projection fusion, fused argmax, readback interval). None ships yet (BACKLOG KP1). `reference`: the engine's own knobs |
 | `--dispatch-policy`, `--dispatch-evidence` | none | opt-in learned dispatch with the comparison that qualifies it (LD1, below) |
-| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, AG2, below); with `--gpus` one agent per card; not with `--learning` or `--dispatch-policy` |
+| `--agent` | `off` | `on`: the IronMule agent decides each group's order and width and learns online (AG1, AG2, below); with no `--engine` and no `--compute-dtype` it first chooses the plan and engine itself (AG4, below); with `--gpus` one agent per card; not with `--learning` or `--dispatch-policy` |
 
 ## Routes
 
@@ -139,8 +139,13 @@ text), and a schedule that orders by it is planned and qualified like any other.
 `lengths`: requests learned from, the recent predictions' rank correlation with the truth, and the order key that
 serves. *Several GPUs.* With `--gpus all`, each card gets its own agent, bound to its card, and the cards share one
 length model. Placement stays join-the-shortest-queue. `/health` and `/v1/ironmule/dispatch` list every card's
-agent, and `{"action": "off"}` or `"on"` reaches all of them. Details and the training workflow:
-[AGENT.md](AGENT.md).
+agent, and `{"action": "off"}` or `"on"` reaches all of them. *Its own setup (AG4).* With `--agent on` and neither
+`--engine` nor `--compute-dtype`, the agent chooses both on this machine before it serves, once per hardware and model:
+NUM1's numeric plan, then a stacked engine (`dense`) if one passes its decode-path quality gate and AG4's speed rule.
+It may choose a plan that changes answers slightly, by the owner's decision. `/health`'s `agent_setup` block shows
+the choice, every candidate's gate and speeds, and the reason. While the stacked engine serves, the online agent
+does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. Details
+and the training workflow: [AGENT.md](AGENT.md).
 
 **Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
 on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the

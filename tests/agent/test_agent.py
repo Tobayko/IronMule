@@ -836,3 +836,59 @@ def test_the_agent_knows_its_hardware_and_reports_how_much_of_its_bandwidth_deco
     reported = agent.status()["hardware"]
     assert reported["device"] == "Tesla T4" and reported["utilisation"]["decode_ms"] == pytest.approx(19.0, rel=0.1)
     assert _agent(tmp_path / "other").status()["hardware"] is None  # no profile, no claim
+
+
+class _Stop(Exception):
+    pass
+
+
+def _serve_until_backend(monkeypatch, tmp_path, argv, setup):
+    """Run `serve` until it builds the worker client; returns that client's keyword arguments."""
+    import contextlib
+
+    from ironmule_product import backend as backend_module, calibration, cli
+    seen = {}
+
+    class Store:
+        root = tmp_path
+
+        def __init__(self, *_):
+            pass
+
+        def settings(self):
+            return {}
+
+        def model(self, name):
+            return type("Spec", (), {"model_id": name, "revision": "r"})()
+
+    def client(spec, **kwargs):
+        seen.update(kwargs)
+        raise _Stop
+
+    monkeypatch.setattr(cli, "ProductStore", Store)
+    monkeypatch.setattr(calibration, "model_lease", lambda store: contextlib.nullcontext())
+    monkeypatch.setattr(cli, "_agent_setup", lambda spec: seen.setdefault("setup", spec) and setup)
+    monkeypatch.setattr(backend_module, "MLXWorkerClient", client)
+    with pytest.raises(_Stop):
+        cli.serve(["--model", "m", *argv])
+    return seen
+
+
+def test_with_the_agent_on_and_no_plan_named_the_agent_chooses_the_engine(monkeypatch, tmp_path):
+    """AG4: `--agent on` without `--engine` and `--compute-dtype` takes the agent's own setup."""
+    dense = {"engine": "dense", "compute_dtype": "native", "reason": "2.4x"}
+    seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], dense)
+    assert "setup" in seen and seen["execution_variant"] == "current_engine"
+    assert seen["engine_configuration"] == "dense_stacked" and seen["compute_dtype"] is None
+    plain = {"engine": "reference", "compute_dtype": "native", "reason": "no stacked engine"}
+    seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], plain)
+    assert seen["execution_variant"] == "reference" and seen["compute_dtype"] == "native"
+
+
+def test_a_named_plan_is_kept_even_with_the_agent_on(monkeypatch, tmp_path):
+    seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on", "--engine", "tuned"],
+                                {"engine": "dense", "compute_dtype": None, "reason": "x"})
+    assert "setup" not in seen and seen["execution_variant"] == "current_engine"
+    assert "engine_configuration" not in seen
+    seen = _serve_until_backend(monkeypatch, tmp_path, [], {"engine": "dense", "compute_dtype": None, "reason": "x"})
+    assert "setup" not in seen and seen["execution_variant"] == "reference"

@@ -200,6 +200,8 @@ class ProductService:
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()
+        if getattr(self, "agent_setup", None) is not None:  # AG4: the plan and engine the agent chose, and why
+            result["agent_setup"] = self.agent_setup
         if self.agent is not None:
             result["agent"] = self.agent.status()
         elif self.dispatch is not None:

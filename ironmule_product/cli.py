@@ -228,8 +228,10 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "stock", "ironmule"), default="reference",
-                        help="stock/ironmule are the earlier names of reference/tuned. "
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "stock", "ironmule"), default=None,
+                        help="default reference; with --agent on and no --compute-dtype the agent chooses the plan and "
+                             "engine itself on this machine (AG4). stock/ironmule are the earlier names of "
+                             "reference/tuned. "
                              "experimental: stream from IronMule's engine with this machine's confirmed "
                              "`ironmule tune` profile (the untuned engine where none exists); not yet faster "
                              "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
@@ -282,7 +284,8 @@ def serve(argv: list[str]) -> int:
                              "unchanged, and only when no tune profile is stored; `reference` keeps the engine's "
                              "default knobs")
     args = parser.parse_args(argv)
-    args.engine = {"stock": "reference", "ironmule": "tuned"}.get(args.engine, args.engine)  # earlier names
+    agent_chooses = args.agent == "on" and args.engine is None and args.compute_dtype is None and not args.no_model
+    args.engine = {"stock": "reference", "ironmule": "tuned", None: "reference"}.get(args.engine, args.engine)
     if not 0 <= args.port <= 65535:
         parser.error("--port must be from 0 to 65535")
     if args.engine != "reference" and args.compute_dtype is not None:
@@ -302,7 +305,7 @@ def serve(argv: list[str]) -> int:
 
     store = ProductStore(args.state_dir)
     store.settings()
-    backend = service = server = None
+    backend = service = server = agent_setup = None
     lease = None
     lease_entered = False
     previous_term = signal.getsignal(signal.SIGTERM)
@@ -320,6 +323,11 @@ def serve(argv: list[str]) -> int:
                 lease_entered = True
             except CalibrationFailure as exc:
                 raise InvalidRequest("model resources are in use by another IronMule operation") from exc
+            agent_setup = None
+            if agent_chooses:  # AG4: the agent sets up plan and engine itself, once per machine and model
+                agent_setup = _agent_setup(spec)
+                args.engine = agent_setup["engine"]
+                args.compute_dtype = agent_setup["compute_dtype"] if args.engine == "reference" else None
             if args.engine != "reference" and args.compute_dtype is not None:
                 raise InvalidRequest(f"--engine {args.engine} and --compute-dtype cannot be combined yet")
             if args.chat_reuse and args.engine != "tuned":
@@ -350,7 +358,16 @@ def serve(argv: list[str]) -> int:
                 service.make_backend = make_backend  # STAB1: a lost worker is replaced, within bounds
         if spec is not None and args.learning != "off":
             service.learning = _live_learning(store, service, spec, args)
-        if spec is not None and args.agent == "on":
+        if spec is not None and args.agent == "on" and agent_setup is not None:
+            for each in [service, *getattr(service, "shards", [])]:
+                each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
+                                                                    "numeric", "stacked")}
+        if spec is not None and args.agent == "on" and args.engine == "dense":
+            # AG4: the stacked engine serves its measured schedule (w8, slot reuse); the online agent does not
+            # attach yet, because its world model prices one group at a time, not slot reuse (AG4, step 3).
+            print(json.dumps({"agent": {"serving": "the chosen stacked engine's own schedule", "reason":
+                                        "the online agent does not model slot reuse yet"}}), flush=True)
+        elif spec is not None and args.agent == "on":
             shards = getattr(service, "shards", None)
             if shards:  # AG2: one agent per GPU, bound to its card, ordering and learning from that card's queue
                 from .agent import share_lengths
@@ -449,6 +466,22 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
                             dreaming=not args.no_dreaming, replay=not args.no_replay)
     print(json.dumps({"learning": learning.summary(), "reason": learning.reason}), flush=True)
     return learning
+
+
+def _agent_setup(spec: ModelSpec) -> dict[str, Any]:
+    """AG4: the agent's own plan and engine for this machine and model (`ironmule.plan_choice`), measured once on
+    the device and stored with its evidence; printed, and shown in `/health` as `agent_setup`."""
+    from ironmule.autopilot import _probe_out_of_process
+    from ironmule.hw import probe
+    from ironmule.plan_choice import choose_setup
+    from ironmule.tune import resolve_local_model
+
+    hardware = _probe_out_of_process(probe)
+    identity = resolve_local_model(spec.model_id, revision=spec.revision).identity
+    setup = choose_setup(spec.model_id, hardware["fingerprint"], identity.identity_sha256,
+                         log=lambda line: print(json.dumps({"agent_setup": line}), flush=True))
+    print(json.dumps({"agent_setup": {k: setup.get(k) for k in ("engine", "compute_dtype", "reason")}}), flush=True)
+    return setup
 
 
 def _agent(store: ProductStore, service: Any, spec: ModelSpec, card: str | None = None) -> Any:

@@ -55,6 +55,25 @@ Four steps repeat while the server runs (`ironmule_product/agent.py`):
 - **No text is kept.** The traffic memory holds metadata, and the length model holds weights over hashed buckets.
 - **Opt-in.** `--agent on`. Without a qualified policy the server's own schedule serves.
 
+## Its own setup: plan and engine (AG4)
+
+The largest gains so far were settings a person found by hand: the `native` plan for a 4-bit checkpoint on an
+emulating GPU, the stacked `dense` engine, and its width. With `--agent on` and no `--engine` or `--compute-dtype`,
+the agent finds them itself before it serves (`ironmule/plan_choice.py`):
+
+1. NUM1 measures each numeric plan on this device (perplexity gate, speed) and keeps the fastest that passes.
+2. On that path, a stacked engine where one exists for the model. That is KB1's for Qwen 3 bf16, or KB2's for
+   4-bit Gemma 3 (`ironmule/dense_gemma.py`). It must pass, on this card:
+   - its load probe;
+   - the quality gate on the decode path;
+   - AG4's rule: more tokens per second at its best width, at least 0.9x for one request alone, and a first
+     token at most 1.1x later.
+
+The choice is stored per hardware and model, and `/health` shows it under `agent_setup`. The owner allowed the
+agent to choose plans that change answers slightly, if they pass its gate. A named `--engine` or `--compute-dtype`
+is always kept. While a stacked engine serves, the online agent does not attach yet, because it does not model slot
+reuse (BACKLOG AG4, step 3).
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture
@@ -86,6 +105,8 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | :-- | :-- |
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |
+| `ironmule/plan_choice.py` | AG4: the agent's own choice of numeric plan and stacked engine, once per machine and model |
+| `ironmule/dense_gemma.py` | KB2: up to eight 4-bit Gemma 3 requests stacked into one decode step |
 | `ironmule_product/hardware_profile.py` | AG3: the device, its bandwidth, the decode floor and how much of it is used |
 | `ironmule_product/learned_dispatch.py` | the policy format the agent shares with LD1 (`Policy`, `View`, order key) |
 | `ironmule_product/service.py` | where the scheduler asks the agent, feeds it finished groups, and replays |

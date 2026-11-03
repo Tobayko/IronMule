@@ -948,6 +948,18 @@ protocol (traffic, arms, cost) is fixed here after KB2-0 and before that run's d
 **Step 2 (later).** Re-choose while serving, when the measured traffic or the software changes. This needs a
 second worker to switch engines without dropping requests.
 
+**Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
+`_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
+schedule (w8 with joins, H10), and `/health` says so.
+
+**Implementation (2026-11-03).**
+- `ironmule/plan_choice.py` (`choose_setup`, `measure_stacked`, `decide`).
+- `ironmule serve --agent on` without `--engine` and `--compute-dtype` applies the choice. A named one is kept.
+- `--engine dense` serves a 4-bit Gemma 3 through KB2's plan (`engine_bridge.install_dense`).
+- `/health` carries `agent_setup`.
+- Tests: `tests/engine/test_plan_choice.py`, and the CLI wiring in `tests/agent/test_agent.py`.
+- No hardware run yet: the stacked Gemma engine waits for KB2-0, and AG4's kill run for its protocol.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every
