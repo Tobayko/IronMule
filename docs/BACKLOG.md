@@ -984,6 +984,29 @@ cheaper than the default)?
     the checkpoint's bf16, KB2's on `native`, `stacked_base`). It is then compared against the path that would
     serve instead: NUM1's choice, measured alone in its own child (`measure_base`, `against`). The rule and gate are
     unchanged. Run 2 repeats AG4-Q at the fixed commit.
+- **Run 2 (2026-11-03, kernel `tobayko/ironmule-cuda-probe-ag4` v2 at `cd31095`, Kaggle T4, 8 minutes): the agent
+  chose by itself, on the hardware, and by AG4's rule it kept `float16` on the reference engine. That is not the
+  dense engine.**
+  - *NUM1:* `float16` from its measured table (0.310 of the stock bf16 time). Alone it made 57.7 tokens a second
+    here.
+  - *The dense engine (on the checkpoint's bf16):*
+    - load probe passed: stacked rows identical, row kernel within 0.0025;
+    - **gate passed on the decode path**, ratio 0.9997 (95 % 0.9983-1.0011);
+    - **290.9 tokens a second at width 8, 5.0x the `float16` path's single request**;
+    - but 47.3 tokens a second alone, 0.82x. That fails the quiet floor of 0.9, so the agent did not take it.
+  - *First token, recorded:* on the 300-token prompt the dense engine took 0.36 s against `float16`'s 0.06 s. The
+    dense plan prefills with MLX's bf16, which the T4 emulates. On the short prompt the base path's 7.8 s
+    included its first compile; the timing had no warm-up. *Fixed after this run:* both paths are warmed before
+    the clock. This does not change the decision, which failed on the quiet floor alone.
+  - *Reading.* Neither engine wins everywhere on this card, and the agent's rule saw that:
+    - the dense engine makes 5x the tokens per second under load;
+    - it is 18 % slower for a request alone, and its first token comes much later on longer prompts.
+    That makes the choice load-dependent. Two levers follow:
+    - serve both paths and route by queue length (AG4 step 2, with two workers on one card: 2 x 3.4 GB fits a
+      T4);
+    - prefill the dense plan in float16 (a numeric change with its own gate), so its first token stops waiting
+      on bf16 emulation.
+    Neither is built yet. Ledger entry owed.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 

@@ -122,6 +122,7 @@ def _base_speed(model: Any, ids: list[int], steps: int) -> tuple[float, float]:
     import mlx.core as mx
     from mlx_lm.models.cache import make_prompt_cache
 
+    mx.eval(model(mx.array(ids)[None], cache=make_prompt_cache(model)))  # warm: compile outside the clock (AG4-Q 2)
     cache = make_prompt_cache(model)
     started = time.perf_counter()
     token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
@@ -140,6 +141,11 @@ def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int,
 
     new_cache = getattr(plan, "new_cache", None)
     first = 0.0
+    warm = new_cache() if new_cache is not None else None
+    if warm is None:
+        from mlx_lm.models.cache import make_prompt_cache
+        warm = make_prompt_cache(plan.model)
+    mx.eval(plan.prefill(mx.array(ids)[None], warm))  # warm: compile outside the clock
     for slot in range(plan.slots):
         if new_cache is not None:
             cache = new_cache()
