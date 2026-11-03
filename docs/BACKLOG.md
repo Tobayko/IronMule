@@ -308,6 +308,33 @@ learner found no gain on a T4 (P3).
       schedule. That shows the agent finding the best fixed schedule on its own, not RL adding to it.
   - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to this setup: the T4,
     Qwen3-1.7B bf16, these states and this cost. It ships only opt-in.
+  - **Result (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag1-t4d` v1 at `a7dc097`, 6.1 session hours):
+    valid, and nothing qualified online.** Every held-out request completed in every arm, 0 answers mismatched,
+    2 complete traces per state, no problems.
+    - **Online.** All 12 traces ran (no early stop): 324 groups, 2 plans, 1 exploration, 9 triplets, 0 qualified,
+      0 rejected; the reference served throughout. The world model reached a 1.5 % median relative error over 813
+      groups and reopened 6 times. The first plan (32 arrivals) proposed nothing. The second (128 arrivals)
+      proposed the best fixed schedule, here `w8/sjf` (`5aaabf717ed4`, model gain +2.5 %; model costs `w8/sjf`
+      16.93, `w8/fifo` 17.39, `w4/sjf` 17.83, `w2/sjf` 19.46).
+    - No look was reached: the run ended with 9 triplets, 3 before the look at 12. At that point the candidate read
+      +1.4 % over the reference (95 % +0.7 to +2.1 %, bound 0.7 %, floor 0.03 %, noise 2.2 %), verdict open.
+    - **Decisions.** (1) fails: -1.5 % (95 % -2.9 to -0.03 %). The agent served the default, so this is an A/A
+      difference. (2) passes (quiet -0.1 %, bursts -4.0 %, spike -0.6 %; bursts' interval reaches -7.1 %, within
+      the rule because the agent served the default). A/A control -0.8 % (95 % -1.7 to +0.2 %), noise 9.9 %.
+    - **Three tiers** (recorded, not decided; 2 traces per state, states weighted equally):
+      - fixed `w8/sjf` over the default `w8/fifo`: +0.9 % (95 % +0.6 to +1.2 %);
+      - the agent over the default: -1.5 % (95 % -2.9 to -0.03 %). It served the default;
+      - the agent over fixed: -2.4 % (95 % -3.5 to -1.2 %). That is the default against `w8/sjf`, not anything RL
+        took away.
+    - *Descriptive.* V3's defect is gone in this run: replay (+1.4 % at 9 triplets) and the served fixed tier
+      (+0.9 %) agree in sign and roughly in size, and the model's +0.5 % prediction on whole traces is in the same
+      range. The run was short of triplets, not of signal. Busy windows in bursts and spike span most of a
+      64-request trace, so a triplet replays about 3 windows of 100-250 s each, and 800 s of idle held 0.75
+      triplets a trace instead of the predicted 2.
+    - *Descriptive.* The agent arm's bursts deficit is noise between two runs of the same schedule: in bursts block
+      4 the two reference arms read 48.3 and 52.6 s mean request cost and the agent, also serving the reference,
+      53.8 s.
+    - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
