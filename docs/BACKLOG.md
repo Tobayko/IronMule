@@ -1846,7 +1846,12 @@ revision, MLX, prompts and output length as HW3.
 - **Validity:** a set that errors is invalid and the others stand; the width part's answers must be identical
   across sets for each width (they are all class A).
 
-### HQ1 — Levers read from HyperQwen, kept for the agent to use (opened 2026-11-03, owner request, before data)
+### HQ1 — Levers read from HyperQwen, Strata and vLLM, kept for the agent to use (opened 2026-11-03, owner request, before data)
+
+**Owner's boundary (2026-11-03): the model is never changed or made smaller.** No new quantisation of weights, no
+pruned or distilled models, no drafter trained in the model's place. Only how the given model runs on the hardware:
+kernels, batching, scheduling, memory layout, speculation that the model itself verifies. Every route below stays
+inside that boundary. The int8 head from the first version of this entry re-quantised weights, so it is dropped.
 
 **Source.** [syv-ai/HyperQwen](https://github.com/syv-ai/HyperQwen) (read 2026-11-03). It is a patch series on
 vLLM for Qwen3.8-27B on one RTX 3090. By its own measurements it takes one request from 46 to 127 tokens a second
@@ -1891,11 +1896,48 @@ lever passes the same gate and rule as every plan there (AG4).
   - *Mechanism:* keys and values stored in int8 per token and head, and dequantized inside FA2's chunk loop. That
     halves the pool, so Gemma 3 12B fits 16 slots instead of 8 on a T4, or longer slots.
   - *Kill:* the perplexity gate, and AG4's rule on the larger pool.
-- **HQ-head, an int8 head and embedding for bf16 checkpoints** (Qwen 3 1.7B's head is bf16 in the dense plan). It
-  frees memory for slots and a share of each step's reads.
-  - *Kill:* the perplexity gate, and a measurable step-time drop.
-- *Not carried over:* the recurrent-state precision (no such layer in our models), the draft-vocabulary
-  calibration (until a trained drafter exists), and vLLM-specific patches.
+  - The cache holds the model's activations at run time, not its weights; the model is unchanged.
+- *Not carried over:*
+  - the int8 head (it re-quantises weights; the owner's boundary);
+  - HyperQwen's requantised drafter and its draft vocabulary (a second model);
+  - the recurrent-state precision (no such layer in our models);
+  - vLLM-specific patches.
+
+**From Strata ([mach10x/strata](https://github.com/mach10x/strata), read 2026-11-03).** It is llama.cpp-based, and
+runs a 125B mixture-of-experts model on a 12 GB card. What concerns running the model, not shrinking it:
+- *An online draft policy, which is a decision model of exactly the agent's kind* (`src/spec/draft_policy.cpp`):
+  - for each verify window size, an exponential moving average of the measured round time;
+  - for prompt-lookup drafts, an acceptance rate per match-length bucket, with a prior worth 4 observations that
+    real windows soon override;
+  - each round it picks the window size with the most expected tokens per millisecond, and drafts only where that
+    beats plain decoding by a margin;
+  - a size that has never been measured is probed a few times before its guessed cost may veto it.
+  - Measured there: code edits 6-11 % faster, other text unchanged, output the same (the model verifies).
+  - **SP1 takes this policy as its decision**, learned online per machine like the router's costs.
+- *An expert cache:* the most-used experts of a mixture-of-experts model fill spare VRAM, and the CPU computes the
+  rest in place at the same time; the cache adapts to the conversation.
+  - **EC1** (a route for when a mixture-of-experts model is served; `cuda_native` already runs Gemma 4 26B-A4B's
+    experts): the agent learns which experts are hot on this traffic and keeps them on the card.
+  - *Kill:* tokens per second over the plan without the cache, through the product.
+- *Prompts in chunks of 2,048-8,192 tokens* (see CP1).
+
+**From vLLM ([vllm-project/vllm](https://github.com/vllm-project/vllm) docs, read 2026-11-03).**
+- **CP1, chunked prefill with decode first** (`docs/configuration/optimization.md`). Long prefills are cut into
+  chunks and batched with the running decode steps, decodes scheduled first. A token budget per step trades
+  inter-token latency (small) against time to first token (large).
+  - *Why for us:* AG4-Q measured the dense engine's first token at 0.36 s on a 300-token prompt. A newcomer's
+    prefill stalls every running row (H10's joins), and AG4-R's smoke saw the stall dominate short answers.
+  - *Mechanism:* the stacked plan prefills a joiner in chunks between decode steps. The chunk size is a knob the
+    agent learns, like vLLM's `max_num_batched_tokens`, from measured step times.
+  - *Kill:* AG4-R-style traffic through the product: tokens per second no worse and running rows' inter-token
+    time lower, with time to first token no worse than one prefill at once.
+- **PK1, a paged KV cache** (`docs/design/paged_attention.md`). Keys and values live in fixed-size blocks allocated
+  as a request grows, not in a fixed slot per request. More requests and longer contexts fit the same memory, at the
+  same precision. This also answers H11's slot limit.
+  - *Kill:* concurrent requests that fit, and tokens per second at the product's context limit, no worse per step.
+- *Batch invariance* (`docs/features/batch_invariance.md`): vLLM offers it only from compute capability 8.0. KB1 and
+  KB2 give it on a T4 (7.5), which is why the stacked plans may take any width without moving an answer.
+- *Already here:* CUDA graphs (MLX's CUDA backend captures graphs) and prefix caching (the product's prefix reuse).
 
 ### KB2 — Gemma 3 at 4 bit stacked into one decode step (opened 2026-11-03, owner decision, before data)
 

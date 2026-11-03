@@ -150,6 +150,9 @@ def test_the_setup_lists_every_lever_the_agent_knows_built_or_not(tmp_path, monk
     assert set(by_name) == {lever["name"] for lever in pc.LEVERS}
     assert by_name["routed_paths"]["here"] == "used" and by_name["stacked_engine"]["here"].startswith("used")
     assert by_name["numeric_plan"]["here"].startswith("measured, none chosen")
-    for planned in ("tensor_core_rows", "context_speculation", "kv_cache_8bit", "int8_head"):
+    sources = {"tensor_core_rows": "HyperQwen", "context_speculation": "Strata", "chunked_prefill": "vLLM",
+               "paged_kv": "vLLM", "kv_cache_8bit": "HyperQwen", "expert_cache": "Strata"}
+    for planned, source in sources.items():
         assert by_name[planned]["status"] == "planned" and by_name[planned]["here"] == "not built yet"
-        assert "HyperQwen" in by_name[planned]["what"]
+        assert source in by_name[planned]["what"]
+    assert "int8_head" not in by_name  # it re-quantised weights: the owner's boundary (HQ1)

@@ -42,12 +42,21 @@ LEVERS: tuple[dict[str, str], ...] = (
     {"name": "tensor_core_rows", "status": "planned", "backlog": "HQ1 TC1",
      "what": "the stacked rows on fp16 or int8 tensor cores, so a further row costs almost nothing (HyperQwen)"},
     {"name": "context_speculation", "status": "planned", "backlog": "HQ1 SP1",
-     "what": "drafts copied from the request's own context, verified by the stacked rows (HyperQwen)"},
+     "what": "drafts copied from the request's own context and verified by the model, the window size chosen per "
+             "round by a policy learned online from measured round times and acceptance (HyperQwen, Strata)"},
+    {"name": "chunked_prefill", "status": "planned", "backlog": "HQ1 CP1",
+     "what": "a newcomer's prefill in chunks between decode steps, the chunk size learned (vLLM)"},
+    {"name": "paged_kv", "status": "planned", "backlog": "HQ1 PK1",
+     "what": "keys and values in blocks allocated as a request grows, more requests at the same precision (vLLM)"},
     {"name": "kv_cache_8bit", "status": "planned", "backlog": "HQ1 KV8",
-     "what": "8-bit keys and values, twice the slots on the same card (HyperQwen)"},
-    {"name": "int8_head", "status": "planned", "backlog": "HQ1 HQ-head",
-     "what": "an int8 head and embedding for bf16 checkpoints, memory back for slots (HyperQwen)"},
+     "what": "8-bit keys and values at run time, twice the slots on the same card; the weights are untouched "
+             "(HyperQwen)"},
+    {"name": "expert_cache", "status": "planned", "backlog": "HQ1 EC1",
+     "what": "for a mixture-of-experts model, the experts this traffic uses most kept on the card, learned online "
+             "(Strata)"},
 )
+#: The owner's boundary (BACKLOG HQ1): no lever changes or shrinks the model's weights.
+MODEL_UNCHANGED = True
 QUIET_FLOOR = 0.9       # the stacked engine's single-request tokens per second over the base path's, at least
 TTFT_SLACK = 1.1        # its time to the first token over the base path's, at most
 SPEED_STEPS = 32

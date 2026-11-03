@@ -78,11 +78,16 @@ fixed in the backlog.
 
 The agent also keeps a list of every lever it knows (`plan_choice.LEVERS`, `/health`'s `agent_setup.levers`). For
 each one it says whether it was used, measured and not chosen, not eligible on this machine, or not built yet. The
-levers read from HyperQwen (BACKLOG HQ1) are listed there as planned:
+levers read from HyperQwen, Strata and vLLM (BACKLOG HQ1) are listed there as planned:
 - tensor-core rows for the stacked plans;
-- speculation from the request's own context;
+- speculation from the request's own context, its window chosen by a policy learned online (Strata's);
+- chunked prefill;
+- a paged KV cache;
 - an 8-bit KV cache;
-- an int8 head.
+- an expert cache for mixture-of-experts models.
+
+None of them changes or shrinks the model's weights. That is the owner's boundary: only how the model runs on the
+hardware changes.
 
 Each joins the same gate and rule once it is built.
 
