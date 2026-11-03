@@ -898,3 +898,21 @@ def test_ag1_profiles_differ_only_where_backlog_ag1_says():
                                        "evaluate": range(254, 256), "pause_s": 800.0, "fixed": (8, True)}
     used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4d"]
     assert not (set(rl2.AG1_PROFILES["t4d"]["learn"]) | set(rl2.AG1_PROFILES["t4d"]["evaluate"])) & set().union(*used)
+    assert rl2.AG1_PROFILES["cpu3"] == {**cpu, "learn": range(256, 286), "evaluate": range(286, 290),
+                                        "stop_on_qualify": True, "fixed": (1, True), "accelerator": "cpu"}
+    used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "cpu3"]
+    assert not (set(rl2.AG1_PROFILES["cpu3"]["learn"]) | set(rl2.AG1_PROFILES["cpu3"]["evaluate"])) & set().union(*used)
+
+
+def test_ag1_cpu_profile_kernel_is_a_cpu_session_that_installs_the_cpu_build(tmp_path):
+    assert rl2.main(["--write-kernel", str(tmp_path / "k"), "--owner", "owner", "--commit", "c" * 40,
+                     "--plan", "ag1", "--profile", "cpu3"]) == 0
+    metadata = json.loads((tmp_path / "k" / "kernel-metadata.json").read_text())
+    assert metadata["id"] == "owner/ironmule-rl2-headroom-ag1-cpu3"
+    assert metadata["enable_gpu"] is False and "machine_shape" not in metadata
+    source = (tmp_path / "k" / "run.py").read_text()
+    assert "ironmule[cpu] @ git+" in source and "ironmule[cuda]" not in source
+    assert "'--profile', 'cpu3'" in source
+    gpu = json.loads((rl2.write_kernel(tmp_path / "g", "owner", "c" * 40, plan="ag1") /
+                      "kernel-metadata.json").read_text())
+    assert gpu["enable_gpu"] is True and gpu["machine_shape"] == "NvidiaTeslaT4"

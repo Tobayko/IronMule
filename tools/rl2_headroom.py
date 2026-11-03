@@ -1818,6 +1818,11 @@ AG1_PROFILES["t4c"] = {**AG1_PROFILES["t4b"], "learn": range(223, 239), "evaluat
 # fixed tier is `w8/sjf`, the best fixed schedule on whole traces in V3's world model; sized to the GPU quota left
 AG1_PROFILES["t4d"] = {**AG1_PROFILES["t4c"], "learn": range(242, 254), "evaluate": range(254, 256),
                        "pause_s": 800.0, "fixed": (8, True)}
+# BACKLOG AG1, V5-CPU: V-CPU with V4's agent (busy-period windows) on a Kaggle CPU session, which spends no GPU
+# quota; at most 30 online traces ending after the one in which the agent qualified, the three tiers with the fixed
+# `w1/sjf` (capacity 1: the order is the only decision), 4 held-out traces a state, fresh seeds
+AG1_PROFILES["cpu3"] = {**AG1_PROFILES["cpu"], "learn": range(256, 286), "evaluate": range(286, 290),
+                        "stop_on_qualify": True, "fixed": (1, True), "accelerator": "cpu"}
 
 
 def run_ag1(model: str, work: Path, *, smoke: bool, on_row: Any = None, profile: str = "t4") -> dict[str, Any]:
@@ -2043,15 +2048,15 @@ _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by tools/rl2_h
 from __future__ import annotations
 import subprocess, sys
 subprocess.run([sys.executable, "-m", "pip", "install", "-q",
-                "ironmule[cuda] @ git+{repository}@{commit}"], check=True)
+                "ironmule[{extra}] @ git+{repository}@{commit}"], check=True)
 '''
 
 
 def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", extra: list[str] | None = None,
-                 suffix: str = "") -> Path:
+                 suffix: str = "", cpu: bool = False) -> Path:
     """A private script kernel that installs IronMule at `commit` and runs this file's `plan` (with
     `extra` arguments, such as run 4's frozen policy); the report lands in the kernel's output as
-    `rl2_headroom_report.json`."""
+    `rl2_headroom_report.json`. With `cpu` it is a CPU session (MLX's CPU backend, no GPU and no GPU quota)."""
     if not commit or any(c not in "0123456789abcdef" for c in commit) or len(commit) != 40:
         raise ValueError("commit must be a full 40-character lowercase SHA, so the kernel runs exactly it")
     directory.mkdir(parents=True, exist_ok=True)
@@ -2064,11 +2069,13 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
     arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, *(extra or [])]
     entry = f"\nsys.exit(main({arguments!r}))\n"
     name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}") + suffix
-    (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit) + body + entry)
+    extra_name = "cpu" if cpu else "cuda"
+    (directory / "run.py").write_text(_BOOTSTRAP.format(repository=REPOSITORY, commit=commit, extra=extra_name)
+                                      + body + entry)
     metadata = {"id": f"{owner}/{name}", "title": name, "code_file": "run.py",
-                "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
-                "enable_internet": True, "machine_shape": "NvidiaTeslaT4", "dataset_sources": [],
-                "competition_sources": [], "kernel_sources": [], "model_sources": []}
+                "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": not cpu,
+                "enable_internet": True, "dataset_sources": [], "competition_sources": [], "kernel_sources": [],
+                "model_sources": [], **({} if cpu else {"machine_shape": "NvidiaTeslaT4"})}
     (directory / "kernel-metadata.json").write_text(json.dumps(metadata, indent=1) + "\n")
     return directory
 
@@ -2112,8 +2119,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         suffix = ""
         if args.plan == "ag1" and args.profile != "t4":  # e.g. V2's profile, as its own kernel
             extra, suffix = extra + ["--profile", args.profile], f"-{args.profile}"
+        cpu = args.plan == "ag1" and AG1_PROFILES[args.profile].get("accelerator") == "cpu"
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra,
-                                                     suffix))}))
+                                                     suffix, cpu=cpu))}))
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())

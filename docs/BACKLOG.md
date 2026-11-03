@@ -335,6 +335,36 @@ learner found no gain on a T4 (P3).
       4 the two reference arms read 48.3 and 52.6 s mean request cost and the agent, also serving the reference,
       53.8 s.
     - By the Kill rule, `--agent` stays opt-in and experimental. Ledger entry owed.
+- **V5-CPU, V4's agent on a Kaggle CPU session (fixed 2026-11-03, after V4's result and before any of its own
+  data).** V4 left about 1.2 of the week's GPU hours, too few for a T4 rerun with enough triplets. A Kaggle CPU
+  session spends no GPU quota and, unlike this cloud container (whose restart lost V-CPU-2), runs to its end.
+  - **Agent:** `agent.py` exactly as V4 ran it, which passed S run 11 and S2 run 7. No mechanism change.
+  - **Harness, `--profile cpu3`:** V-CPU's `cpu` (SmolLM2-135M 8 bit rev `0f0d9b8`, the reference engine with
+    weights dequantized to float32, capacity 1, outputs of 4 or 32 tokens, short prompts, 1,800 s deadline, 360 s of
+    idle after each online trace) with these changes:
+    - V4's agent and V3's early stop: at most 30 online traces on fresh seeds 256-285, ending after the trace in
+      which the agent qualified a schedule;
+    - V2's three tiers on 4 held-out traces per state, fresh seeds 286-289: the default (twice), the fixed `w1/sjf`
+      and the agent, in rotated order. At capacity 1 the order is the only decision, so `w1/sjf` is the best fixed
+      schedule the agent's action space holds;
+    - the kernel is a Kaggle CPU session that installs `ironmule[cpu]` (`write_kernel(..., cpu=True)`).
+  - Everything else is V's and V3's: states, cost, decisions (1) and (2), validity (two complete traces per state
+    suffice), the recorded tiers and "nothing qualified online".
+  - **Gate:**
+    - the harness tests pass;
+    - a CPU smoke of `--profile cpu3` passes, both locally and as a Kaggle CPU kernel. The Kaggle smoke checks the
+      install and the session, and measures nothing.
+  - **Cost:** no GPU hours. V-CPU-2 ran about 580 s of this container's CPU per online trace, and V-CPU about 50 s
+    per held-out cell. So at most about 30 x 580 s (4.8 h) plus 48 cells (0.7 h) plus setup (0.3 h), about 6 h.
+    That is inside a Kaggle session's 12 h if its CPU is no more than about 2x slower than this container's.
+  - **What earlier runs predict, descriptively:**
+    - V-CPU and V-CPU-2 planned the same candidate, `w1/sjf`.
+    - V-CPU-2's looks at 6 and 12 triplets were inconclusive. So the order-only gain on this traffic may be small
+      against the noise, and the run may again end before a look passes.
+    - If the agent qualifies `w1/sjf`, its tier and the fixed tier are the same schedule. A pass then shows the
+      agent finding, proving and serving that schedule on its own, not RL adding to it.
+  - **Kill and ship:** as V. A pass is the agent's gain measured on real hardware, bounded to that Kaggle CPU, this
+    model, this traffic and this cost; it says nothing about a GPU. It ships only opt-in.
 - **V-CPU, the same on this cloud container's CPU (fixed 2026-10-30, before its data).** While the GPU quota is spent,
   V's harness runs here with `--profile cpu`, differing from V only in this:
   - model `mlx-community/SmolLM2-135M-Instruct-8bit` (rev `0f0d9b8`), the reference engine with weights dequantized
