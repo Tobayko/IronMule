@@ -739,15 +739,50 @@ the owner's `--compute-dtype native` plan.
 - These fix the full T4 protocol's limit, trace count, idle time and session hours, written here before that
   run's data.
 - *Cost:* about 0.7 session hours (an 8 GB download loaded once per card, a 32-request calibration burst and the
-  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week.
+  smoke's small traces). That fits the roughly 1.2 GPU hours V4 left this week. A session cut by the quota is
+  reported as such, and nothing is inferred from it.
 - *Local smoke first (2026-11-03, at `e6b5d82`, `--profile cpu-lp --smoke` with SmolLM2-135M on this container's
   CPU):* the harness's AG2 path ran end to end:
   - Dolly's 15,011 prompts were fetched (sha256 `2df90833...`);
   - the 16-request calibration burst on Dolly prompts completed;
   - three online traces fed the length model;
   - all 36 held-out requests completed, with 0 answers differing across the four arms and no problems.
-  - It reads "invalid" only because a smoke has one held-out trace. A session cut by the quota is reported as such, and nothing is
-  inferred from it.
+  - It reads "invalid" only because a smoke has one held-out trace.
+- **Gate result (2026-11-03): passed.** Kaggle kernel `tobayko/ironmule-rl2-headroom-ag1-t4-g12-lp-smoke` v1, pinned
+  to `e6b5d82`.
+  - *Setup:* two Tesla T4s (driver 580.178.04), Python 3.13, mlx 0.32.4, mlx-lm 0.31.3, Gemma 3 12B at rev
+    `86cc6a8` (the gated revision), and one agent per card. The harness took 16.4 minutes.
+  - *Calibration:* all 32 requests completed in 237 s, a capacity of 0.135 requests a second for both cards. That is
+    about 15 s per answer on one card, at about 21 tokens a second (the fitted 47 ms per decode step).
+  - *Answers:* the 45 answers to the smoke's five distinct Dolly prompts took 40, 121, 129, 305 and 512 tokens; the
+    longest reached the limit.
+  - *Validity:* all 36 held-out requests completed, with 0 answers differing across the four arms. The run reads
+    "invalid" only because a smoke has one held-out trace.
+  - It measures no gain.
+  - Ledger entry owed.
+
+**V-G12, AG2's gain on hardware (fixed 2026-11-03, after the gate and before any of its own data).**
+- *Profile:* `--profile t4-g12-v`. It is the gate's setup (Gemma 3 12B, `native`, both T4s with an agent per card,
+  Dolly prompts, a 1,800 s deadline, the fixed tier `w1/sjf`), with these sizes, set from the gate:
+  - **one limit of 256**, which halves the time per answer and keeps 40 to 256 tokens of spread;
+  - **32 requests a trace**, about 16 per card, so one replay window per card per trace;
+  - **360 s of idle time** after each online trace, enough for a triplet of about 16 answers of about 7 s;
+  - at most **40 online traces** on fresh seeds 358-397, ending after the trace in which every card qualified;
+  - **2 held-out traces per state** on seeds 398-399.
+- *One change, made before any of this run's data* (`fcefb29`): the cards' agents share one length model
+  (`agent.share_lengths`), so each card learns from both cards' answers. An answer's length depends on the model
+  and the prompt, not on the card. Each card's policy, world model, replays and evidence stay its own.
+- *Decisions:* AG1 V's decisions (1) and (2), its validity rule, and the three tiers, recorded and not decided. Under
+  one limit the fixed `w1/sjf` orders by arrival, so it is the default's schedule. That is the point of the test: the
+  hard rule has no information that the agent learns.
+- *No signal:* if the shared length model's Spearman correlation is below 0.2 once it has seen 500 requests, the run
+  reports "no signal" for this workload.
+- *Cost:* about 0.4 h of setup, 40 traces of about 5 min of serving plus 6 min of idle (7.3 h), and 24 held-out
+  cells of about 5 min (2.0 h). That is about **9.7 session hours** on one "GPU T4 x2" session, inside the 12-hour
+  limit.
+- It runs after the weekly GPU quota resets. The gate left about 0.9 hours this week.
+- *Kill and ship:* as AG1 V. A pass is the agent's gain measured on two T4s, bounded to this model, plan, workload and
+  cost. It ships opt-in only.
 
 **Other routes from the same search, not yet entries (kept so they are not re-derived):**
 - *preemption with a re-predicted remaining length* (TRAIL; ELIS's iterative shortest-remaining-time-first). This
