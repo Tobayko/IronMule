@@ -10,7 +10,8 @@ using MLX. Correct output and an honest reference path come before performance.
 hardware, reaches a measured gain there, keeps learning by reinforcement learning while it
 serves, and decides in microseconds. Work that advances it comes first. It is held to every
 rule in this guide: it changes no answer, it serves only what it proved on the machine it runs
-on, and its gains need the evidence described under Performance and evidence.
+on, and its gains need the evidence described under Performance and evidence. Its gain is measured first in
+tokens per second, with time to first token no worse (owner, 2026-11-03; BACKLOG, "The main goal").
 
 This is the shared engineering guide for Codex, Claude and Gemini. Providers may
 use different tools; correctness, evidence, testing, safety and completion standards

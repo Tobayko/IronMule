@@ -53,6 +53,17 @@ MACHINES = {
     "cpu": {"prefill_s": 0.40, "prefill_s_per_ktoken": 6.0, "step_s": 0.06, "step_s_per_session": 0.06},
     # S2: the T4's prefill, with rounds where a further session costs four base steps, so narrow groups win
     "narrow": {"prefill_s": 0.1456, "prefill_s_per_ktoken": 2.2214, "step_s": 0.010, "step_s_per_session": 0.040},
+    # AG2 V-G12: Gemma 3 12B 4 bit under `native` on one T4, the reference worker at capacity 1 (the gate's fit:
+    # 0.49 s prefill, 47.2 ms a step; its prompt-token slope from 5 groups is not trusted, 1 s per 1,000 is assumed)
+    "t4-g12": {"prefill_s": 0.4886, "prefill_s_per_ktoken": 1.0, "step_s": 0.04715, "step_s_per_session": 0.04715},
+}
+# Presets that mirror a hardware protocol's sizes, for a dry run of its online phase (`--profile`)
+PROFILES = {
+    # AG2 V-G12 per card: 32 requests a trace over two cards is 16 a card at half the two cards' calibrated rate
+    # (0.135 requests a second), limit 256, 360 s idle, at most 40 traces; the other card's answers teach the
+    # shared length model (`twin`)
+    "v-g12": {"machine": "t4-g12", "capacity": 1, "requests": 16, "rate": 0.135 / 2, "pause_s": 360.0,
+              "traces": 40, "limit": 256, "twin": True, "episodes": 3000},
 }
 CAPACITY_RPS = 0.5205   # RL2-H's calibration for one card (H9), which RL2-H2's states are scaled by
 WINDOW_SIGMA = 0.03     # the machine's state per window
@@ -136,12 +147,13 @@ def cost(members: list[dict[str, Any]]) -> float:
 
 
 def live_traces(traces: int, seed: int, prompts: list[dict[str, Any]] | None = None,
-                limit: int = 512) -> list[list[dict[str, Any]]]:
+                limit: int = 512, requests: int = rl2.REQUESTS,
+                rate: float = CAPACITY_RPS) -> list[list[dict[str, Any]]]:
     out = []
     draw = random.Random(seed)
     for k in range(traces):
         state = k % len(rl2.H2_STATES)
-        items = rl2.trace_h2(state, seed + k, CAPACITY_RPS)
+        items = rl2.trace_h2(state, seed + k, rate, requests)
         jobs = []
         for i, it in enumerate(items):
             job = {"arrive": it["offset_s"], "prompt_tokens": 1030 if it["long"] else 24,
@@ -161,7 +173,12 @@ FIXED = [(w, s) for w in (1, 2, 4, 8) for s in (False, True)]  # hindsight compa
 
 def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: int | None = None,
         drift: str = "cpu", episodes: int = 1500, root: Path | None = None, log: Callable = print,
-        prompts: list[dict[str, Any]] | None = None, limit: int = 512) -> dict[str, Any]:
+        prompts: list[dict[str, Any]] | None = None, limit: int = 512, capacity: int = 8,
+        pause_s: float = PAUSE_S, requests: int = rl2.REQUESTS, rate: float = CAPACITY_RPS,
+        twin: bool = False) -> dict[str, Any]:
+    """`capacity`, `pause_s`, `requests` and `rate` size the server and its traffic. `twin` (AG2, two cards) has a
+    second card's answers to the same traffic teach the shared length model after every trace, as
+    `agent.share_lengths` does; that card's own agent, replays and qualification are not simulated."""
     root = Path(root or tempfile.mkdtemp(prefix="ag1-online-"))
     params = MACHINES[machine]
     server, counterfactual = Machine(params, seed), Machine(params, seed + 1)
@@ -169,7 +186,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     fixed = {f"w{w}/{'sjf' if s else 'fifo'}": Machine(params, seed + 3 + k) for k, (w, s) in enumerate(FIXED)} \
         if prompts else {}
     clock = [0.0]
-    agent = ag.Agent(root / "agent", {"simulated": machine, "seed": seed}, capacity=8,
+    agent = ag.Agent(root / "agent", {"simulated": machine, "seed": seed}, capacity=capacity,
                      reference={"width": 8, "sjf": False, "gather_ms": 0}, clock=lambda: clock[0],
                      planner_settings={"episodes": episodes, "seeds": 2})
     reference_sjf, reference_width = (lambda w: False), (lambda w: 8)
@@ -212,7 +229,8 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
         for event in list(agent.history):
             if not any(event is seen["event_ref"] for seen in events[-60:]):
                 events.append({"event_ref": event, "trace": trace, **event})
-    for k, trace in enumerate(live_traces(traces, seed, prompts, limit)):
+    twins = live_traces(traces, seed + 50_000, prompts, limit, requests, rate) if twin and prompts else None
+    for k, trace in enumerate(live_traces(traces, seed, prompts, limit, requests, rate)):
         if drift_at is not None and k == drift_at:
             server.params = counterfactual.params = replayer.params = MACHINES[drift]
             log(json.dumps({"trace": k, "drift": drift}))
@@ -239,11 +257,13 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
             return job["max_tokens"] if value is None else value
         groups, end, _ = server.run(jobs, lambda v: bool(agent.sjf(v)) if active else reference_sjf(v),
                                     lambda v: (agent.width(v) or 8) if active else reference_width(v),
-                                    8, clock[0], order_value=order_value)
-        base, _, _ = counterfactual.run(jobs, reference_sjf, reference_width, 8, clock[0])
+                                    capacity, clock[0], order_value=order_value)
+        base, _, _ = counterfactual.run(jobs, reference_sjf, reference_width, capacity, clock[0])
         fixed_costs = {}
         for (name, machine_), (w, s) in zip(fixed.items(), FIXED):
-            ran, _, _ = machine_.run(jobs, lambda v, s=s: s, lambda v, w=w: w, 8, clock[0])
+            if w > capacity:
+                continue
+            ran, _, _ = machine_.run(jobs, lambda v, s=s: s, lambda v, w=w: w, capacity, clock[0])
             fixed_costs[name] = cost([m for g in ran for m in g])
         for members in groups:
             observed = []
@@ -253,12 +273,18 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
                     row["length"], row["request_id"] = agent.length_of(_Request(m)), m["id"]
                 observed.append(row)
             agent.observe_group(observed)
+        if twins is not None:  # the other card's answers, learned by the shared length model
+            for job in twins[k]:
+                feats, predicted = agent.length_of(_Request({**job, "id": f"twin-{job['id']}"}))
+                with agent._lock:
+                    agent._predicted.pop(f"twin-{job['id']}", None)
+                agent.lengths.learn(feats, int(job["tokens"]), predicted)
         clock[0] = end
         live = [m for g in groups for m in g]
         windows.append({"trace": k, "state": rl2.H2_STATES[trace[0]["state"]], "serving": serving,
                         "agent_cost": cost(live), "reference_cost": cost([m for g in base for m in g]),
                         "t_s": jobs[0]["arrive"], **({"fixed_costs": fixed_costs} if fixed_costs else {})})
-        t = end + PAUSE_S
+        t = end + pause_s
         if k % 30 == 0 or agent.counters != logged:
             logged = dict(agent.counters)
             log(json.dumps({"trace": k, "serving": serving, "events": logged,
@@ -267,6 +293,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     status = agent.status()
     agent.close()
     return {"schema": "ironmule.ag1.online.v1", "machine": machine, "drift_at": drift_at, "drift": drift,
+            "capacity": capacity, "pause_s": pause_s, "requests": requests, "rate": rate, "twin": twin,
             "prompts": len(prompts) if prompts else None, "limit": limit if prompts else None,
             "traces": traces, "seed": seed, "episodes": episodes, "windows": windows,
             "history": [{k: v for k, v in e.items() if k != "event_ref"} for e in events],
@@ -305,13 +332,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--episodes", type=int, default=1500)
     parser.add_argument("--prompts", default=None, help="AG2: JSONL of {prompt, tokens}, kept outside the repository")
     parser.add_argument("--limit", type=int, default=512, help="AG2: the one output limit every request sends")
+    parser.add_argument("--profile", choices=sorted(PROFILES), default=None,
+                        help="a hardware protocol's sizes (overrides --traces, --machine, --limit, --episodes)")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     started = time.time()
     prompts = ([json.loads(line) for line in Path(args.prompts).read_text().splitlines() if line.strip()]
                if args.prompts else None)
-    result = run(args.traces, args.seed, args.machine, args.drift_at, args.drift, args.episodes,
-                 prompts=prompts, limit=args.limit)
+    sizes = dict(PROFILES[args.profile]) if args.profile else {
+        "machine": args.machine, "traces": args.traces, "limit": args.limit, "episodes": args.episodes}
+    result = run(sizes.pop("traces"), args.seed, sizes.pop("machine"), args.drift_at, args.drift,
+                 sizes.pop("episodes"), prompts=prompts, **sizes)
     result["summary"] = summarise(result)
     result["wall_s"] = time.time() - started
     Path(args.out).write_text(json.dumps(result, indent=1))

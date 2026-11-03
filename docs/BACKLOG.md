@@ -16,6 +16,12 @@ while it serves, and decides as fast as a small decision model. Every rule below
 changes no answer, a gain counts only when it is measured, and it serves nothing it has not proven on the
 machine it runs on.
 
+**What "gain" means (owner, 2026-11-03).** Tokens per second come first. Waiting time counts too, but less, and
+the time to the first token must not get worse. AG1 and AG2 so far judge a schedule by each request's time in
+the system plus its time to the first token. Ordering lowers that, but at a fixed capacity it moves no tokens per
+second: the same work runs on the same engine. Tokens per second move only through what the engine can run at
+once (width, true batching) and how fast its kernels are (AG3).
+
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
 **Mechanism.** `ironmule_product/agent.py`, opt-in (`ironmule serve --agent on`), one decision owner (refused
