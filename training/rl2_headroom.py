@@ -2154,6 +2154,183 @@ def analyse_ag1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
                         "the agent does not beat the reference")}
 
 
+# ---------------------------------------------------------------- AG4-R: the agent's two paths, routed (BACKLOG AG4)
+
+AG4R_ARMS = ("single", "router", "stacked")   # the single path forced, the agent's router, the stacked engine forced
+AG4R_LOADS = (0.8, 3.0)                       # arrival rate over the single path's calibrated capacity
+AG4R_TRACES = range(400, 406)                 # fresh seeds: 6 traces per state and load
+AG4R_LIMIT = 256
+
+
+class ForcedRoute:
+    """A router that always picks one path: the single path alone, or the stacked engine alone, on the same two
+    loaded workers as the agent's router."""
+
+    def __init__(self, index: int):
+        self.index = index
+
+    def choose(self, outstanding: Any, max_tokens: int) -> int:
+        return self.index
+
+    def watch(self, index: int, sharing: int, events: Any) -> Any:
+        return events
+
+    def status(self) -> dict[str, Any]:
+        return {"forced": self.index}
+
+
+def measure_ag4r(pool: Any, model: str, router: Any, prompts: list[str] | None, deadline_s: float, *,
+                 loads: tuple[float, ...] = AG4R_LOADS, traces: Any = AG4R_TRACES, requests: int = 32,
+                 limit: int = AG4R_LIMIT, on_row: Any = None) -> dict[str, Any]:
+    """Every block (state, load, trace) runs the single path, the router, the stacked engine (rotated) and the single
+    path again, on the same arrivals; the router keeps learning across blocks."""
+    def items_for(level: int, load: float, t: int, capacity: float) -> list[dict[str, Any]]:
+        items = trace_h2(level, t, load * capacity, requests, (limit,))
+        return lp_items(items, prompts, t, True, limit) if prompts else items
+
+    pool.router = ForcedRoute(0)
+    calibration_items = None if not prompts else [
+        {"offset_s": 0.0, "prompt": 0, "long": False, "max_tokens": limit, "text": text} for text in prompts[-16:]]
+    burst = [{**item, "offset_s": 0.0} for item in (calibration_items or trace(9, 0, 1.0, 16, (limit,)))]
+    started = time.monotonic()
+    done = replay(pool, model, burst, deadline_s)
+    makespan = max(r["end_s"] or 0.0 for r in done) or (time.monotonic() - started)
+    capacity = sum(r["outcome"] == "ok" for r in done) / makespan
+    report: dict[str, Any] = {"plan": "ag4r", "arms": list(AG4R_ARMS), "states": list(H2_STATES), "loads": list(loads),
+                              "calibration": {"capacity_rps": capacity, "makespan_s": makespan,
+                                              "ok": sum(r["outcome"] == "ok" for r in done)},
+                              "deadline_s": deadline_s, "rows": []}
+    routes = {"single": ForcedRoute(0), "stacked": ForcedRoute(1), "router": router}
+    block = 0
+    for load in loads:
+        for level in range(len(H2_STATES)):
+            for t in traces:
+                items = items_for(level, load, t, capacity)
+                others = list(AG4R_ARMS[1:])
+                order = [("single", 0), *((name, 0) for name in (others if block % 2 == 0 else others[::-1])),
+                         ("single", 1)]
+                for arm, run in order:
+                    pool.router = routes[arm]
+                    wait_idle(pool)
+                    requests_out = replay(pool, model, items, deadline_s)
+                    for item, row in zip(items, requests_out):
+                        row["offset_s"] = item["offset_s"]
+                    report["rows"].append({"level": level, "load": load, "trace": t, "arm": arm, "run": run,
+                                           "block": block, "requests": requests_out})
+                    if on_row is not None:
+                        on_row(report)
+                block += 1
+    pool.router = router
+    report["router"] = router.status()
+    return report
+
+
+def _cell(requests: list[dict[str, Any]]) -> dict[str, float] | None:
+    ok = [r for r in requests if r.get("outcome") == "ok" and r.get("first_s") is not None]
+    if len(ok) != len(requests):
+        return None
+    span = max(r["offset_s"] + r["end_s"] for r in ok) - min(r["offset_s"] for r in ok)
+    first = sorted(r["first_s"] for r in ok)
+    return {"tokens_per_s": sum(r["tokens"] for r in ok) / span, "ttft_mean_s": statistics.fmean(first),
+            "ttft_p95_s": first[max(0, math.ceil(0.95 * len(first)) - 1)]}
+
+
+def analyse_ag4r(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG4-R as fixed in BACKLOG before data. Pass: the router's tokens per second over the single path's (the mean
+    of its two runs), paired by block, has a 2.5 % bound above 0; and its mean and 95th-percentile first token, pooled,
+    are no worse than the single path's beyond the A/A noise (the single path's second run against its first)."""
+    rng = random.Random(seed)
+    cells: dict[tuple[int, str, int], dict[str, float] | None] = {}
+    for row in report.get("rows", []):
+        cells[row["block"], row["arm"], row["run"]] = _cell(row["requests"])
+    blocks = sorted({b for b, _, _ in cells})
+    complete = [b for b in blocks if all(cells.get(k) for k in ((b, "single", 0), (b, "single", 1), (b, "router", 0),
+                                                                (b, "stacked", 0)))]
+    problems = [f"block {b} is incomplete or has a failed request" for b in blocks if b not in complete]
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag4r.analysis.v1", "complete_blocks": len(complete),
+                           "problems": problems, "router": report.get("router")}
+    if len(complete) < 2:
+        return {**out, "valid": False, "verdict": "invalid: fewer than two complete blocks"}
+
+    def single(b: int, key: str) -> float:
+        return (cells[b, "single", 0][key] + cells[b, "single", 1][key]) / 2
+
+    def ratio(arm: str, key: str, blocks_: list[int]) -> dict[str, Any]:
+        pairs = [(cells[b, arm, 0][key], single(b, key)) for b in blocks_]
+        boot = []
+        for _ in range(resamples):
+            sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+            boot.append(sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"ratio": sum(x for x, _ in pairs) / sum(y for _, y in pairs),
+                "ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    aa = {key: sorted(abs(cells[b, "single", 1][key] / cells[b, "single", 0][key] - 1) for b in complete)
+          for key in ("tokens_per_s", "ttft_mean_s", "ttft_p95_s")}
+    noise = {key: values[max(0, math.ceil(0.95 * len(values)) - 1)] for key, values in aa.items()}
+    tps = ratio("router", "tokens_per_s", complete)
+    ttft = {key: ratio("router", key, complete) for key in ("ttft_mean_s", "ttft_p95_s")}
+    gain = tps["ci95"][0] > 1.0
+    no_worse = all(v["ratio"] <= 1 + noise[key] for key, v in ttft.items())
+    out.update(valid=not problems, aa_noise=noise, router_tokens_per_s=tps, router_ttft=ttft,
+               stacked_tokens_per_s=ratio("stacked", "tokens_per_s", complete),
+               stacked_ttft={key: ratio("stacked", key, complete) for key in ("ttft_mean_s", "ttft_p95_s")},
+               per_load={str(load): {"router_tokens_per_s": ratio("router", "tokens_per_s", [
+                   b for b in complete if any(r["block"] == b and r["load"] == load for r in report["rows"])])}
+                   for load in report.get("loads", [])},
+               passes={"tokens_per_s": gain, "ttft_no_worse": no_worse})
+    out["verdict"] = ("invalid" if problems else "pass: the router ships as the agent's setup" if gain and no_worse
+                      else "fail: the router does not ship")
+    return out
+
+
+def run_ag4r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG4-R on one card: the product's own `choose_setup`, then, if it says `route`, both paths in their own workers
+    and the three arms through the product on the same arrivals."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule.plan_choice import choose_setup
+    from ironmule.tune import resolve_local_model
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.cli import _engine_options
+    from ironmule_product.device_pool import cuda_devices, start_paths
+    from ironmule_product.path_router import PathRouter
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, revision=X1_REVISION if model == MODEL else None,
+                                      allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                      "tokenizer*"])).name
+    identity = resolve_local_model(model, revision=revision).identity
+    setup = choose_setup(model, "kaggle-ag4r", identity.identity_sha256)
+    report: dict[str, Any] = {"plan": "ag4r", "model": model, "revision": revision, "setup": setup}
+    if setup["engine"] != "route":
+        return {**report, "stopped": f"the agent's setup is {setup['engine']}, not route: {setup['reason']}"}
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {**report, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    store.set_request_timeout(1800)
+    spec = store.model(model)
+    device = (cuda_devices() or [None])[0]
+    makers = [lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"], cuda_device=device),
+              lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device,
+                                      **_engine_options("dense"))]
+    router = PathRouter.from_setup(setup)
+    pool = start_paths(store, spec, makers, [f"{device}:single", f"{device}:stacked"], ProductService, router)
+    try:
+        prompts, digest = dolly_prompts(work)
+        report["prompts_sha256"] = digest
+        measured = measure_ag4r(pool, model, router, prompts, 1800.0,
+                                **({"loads": (3.0,), "traces": [AG4R_TRACES[0]], "requests": 4, "limit": 16}
+                                   if smoke else {}), on_row=lambda partial: on_row({**report, **partial})
+                                if on_row else None)
+    finally:
+        pool.close()
+    return {**report, **measured}
+
+
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by training/rl2_headroom.py."""
 from __future__ import annotations
 import subprocess, sys
@@ -2200,7 +2377,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "x1"),
+                                           "ag1", "ag4r", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -2237,7 +2414,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
-                 "h11": analyse_h11, "ag1": analyse_ag1}.get(inner.get("plan"), analyse)
+                 "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -2259,10 +2436,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
-                      "ag1": (run_ag1, analyse_ag1)}[args.plan]
+                      "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]

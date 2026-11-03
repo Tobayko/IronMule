@@ -989,7 +989,15 @@ gain unused.
     - its mean and 95th-percentile first token are no worse than the single path's beyond the A/A noise of two
       runs of the single path.
   - *Otherwise:* the router does not ship as the agent's setup.
-  - *Harness:* still to be built: the product's own server driven by `training/rl2_headroom.py`'s replay.
+  - *Harness (built 2026-11-03):* `training/rl2_headroom.py --plan ag4r`. It runs the product's `choose_setup`, then
+    both paths in their own workers on one card, and all three arms through the same two loaded workers. The
+    single path and the stacked engine are forced by a fixed route, and the router keeps learning across blocks.
+    Each block runs single, router and stacked (rotated), then single again, on the same arrivals. A calibration
+    burst on the single path sets the loads. `analyse_ag4r` applies the rule above.
+  - *Cost:* about 3.5 session hours (36 blocks of 4 cells of about 80 s, plus setup). It runs after KB2-0 in the
+    week's quota.
+  - *Smoke first:* a `--smoke` kernel checks that both workers fit and run together on one T4, and measures
+    nothing.
 - **Step 3 (later).** The online agent inside the stacked engine. Its world model prices one group at a time, so
 `_agent` refuses an engine with slot reuse. Until it models joins, the stacked engine serves its measured
 schedule (w8 with joins, H10), and `/health` says so.

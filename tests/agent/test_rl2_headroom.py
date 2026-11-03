@@ -975,3 +975,46 @@ def test_ag2_full_t4_run_is_the_gate_with_the_sizes_it_fixed():
                  "evaluate": range(398, 400), "pause_s": 360.0}
     used = [set(p["learn"]) | set(p["evaluate"]) for name, p in rl2.AG1_PROFILES.items() if name != "t4-g12-v"]
     assert not (set(v["learn"]) | set(v["evaluate"])) & set().union(*used)
+
+
+def test_ag4r_runs_three_arms_on_the_same_two_workers_and_judges_them(tmp_path, monkeypatch):
+    """AG4-R: the single path forced, the agent's router and the stacked engine forced, on two fake workers that
+    stand in for the single path and the stacked engine on one card."""
+    from ironmule_product.device_pool import start_paths
+    from ironmule_product.path_router import PathRouter
+    from ironmule_product.service import ProductService
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    setup = {"stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                             "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
+    router = PathRouter.from_setup(setup)
+    makers = [lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device="0")] * 2  # the fake
+    # worker speaks the current engine's protocol; on the card the first is the reference worker with NUM1's plan
+    pool = start_paths(store, spec, makers, ["0:single", "0:stacked"], ProductService, router)
+    saved = []
+    try:
+        report = rl2.measure_ag4r(pool, spec.model_id, router, None, 30.0, loads=(3.0,), traces=[0, 1], requests=3,
+                                  limit=3, on_row=lambda partial: saved.append(len(partial["rows"])))
+    finally:
+        pool.close()
+    assert report["calibration"]["ok"] == 16 and report["calibration"]["capacity_rps"] > 0
+    assert len(report["rows"]) == 3 * 2 * 4 == saved[-1]  # 3 states x 2 traces x (single, router, stacked, single)
+    assert {row["arm"] for row in report["rows"]} == set(rl2.AG4R_ARMS)
+    assert report["router"]["decisions"]["single"] + report["router"]["decisions"]["stacked"] > 0
+    result = rl2.analyse_ag4r(report, resamples=50)
+    assert result["valid"] and result["complete_blocks"] == 6
+    assert set(result["passes"]) == {"tokens_per_s", "ttft_no_worse"} and result["verdict"]
