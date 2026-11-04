@@ -1088,6 +1088,22 @@ with nothing given to it, serve more tokens per second than today's default thro
     sizes.
   - *Expected:* 7-10 hours on this container (a default run is at most 3,600 s plus the time its worker needs to
     finish a request it was working on). A restart loses the run and is reported as such.
+  - *Result (2026-11-04, this container's CPU, x86_64 with 4 cores, at `19c3d0a`, 8.0 hours): valid, pass.*
+    - *The agent's own setup:* on a fresh store it measured again and chose `dequantize` by itself (0.0247 of stock
+      time for a 16-token answer, logits within 0.28 % of the float32 plan), on the reference engine.
+    - *All 4 blocks complete:* the agent's path answered all 16 of its requests; 22 of the default path's 32 missed
+      the 3,600 s deadline and were censored in its favour.
+    - *Tokens per second:* the agent's path 24.5x the default's (95 % 12.3x to 31.3x), paired by block, 2,000
+      resamples. The bound is far above 1.
+    - *First token:* mean 0.048x the default's (95 % 0.042x to 0.052x), 95th percentile 0.068x; the A/A noise of
+      the default's two runs was 1.5 % and 1.1 %. No worse, by a wide margin.
+    - *Answers:* `dequantize` is an output-changing plan (the owner allows it under `--agent on` behind its own
+      quality gate, which it passed); of the 5 requests both paths finished, 1 answer was bit-identical.
+    - *What it shows:* the agent, unasked, on a machine and model it had not seen, picks its own numeric plan, and
+      through the product that choice serves about 24x the tokens per second of today's default with first
+      tokens about 20x sooner. The setting itself is NUM1's, found by hand first; the gain is the agent's to
+      choose and is measured on this CPU, this model (`SmolLM2-135M-Instruct-8bit`) and RL2-H2's bursts and spike
+      traffic only. The ledger entry is still owed.
 - *Pass (both):*
   - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
     bound above 1 (2,000 resamples);

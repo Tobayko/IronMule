@@ -76,6 +76,10 @@ both paths' costs from every finished request. In simulation, priced by that T4 
 least as fast as the better path at every load, with the earliest first tokens. The hardware test (AG4-R) is
 fixed in the backlog.
 
+Measured on hardware (AG4-C run 3, one cloud CPU, `SmolLM2-135M-Instruct-8bit`): the agent chose `dequantize` by
+itself and served 24.5x the default's tokens per second (95 % 12.3x to 31.3x), first tokens about 20x sooner, on
+bursts and spike traffic. LIMITS has the validity domain.
+
 The agent also keeps a list of every lever it knows (`plan_choice.LEVERS`, `/health`'s `agent_setup.levers`). For
 each one it says whether it was used, measured and not chosen, not eligible on this machine, or not built yet. The
 levers read from HyperQwen, Strata and vLLM (BACKLOG HQ1) are listed there as planned:

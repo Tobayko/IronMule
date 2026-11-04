@@ -97,8 +97,9 @@ the integration tests only (OPT3-D (a): protocol 2 vetoed a stalled run, referen
 
 ## The IronMule agent (`--agent on`, AG1, opt-in)
 
-No hardware result yet: nothing here claims that the agent makes a server faster. What has run is the agent's
-code against a simulated server and on this repository's tests (BACKLOG AG1, S). It decides two things only:
+One hardware result so far, for its own setup (AG4, below). The online part, the order and width it learns while
+it serves, has no hardware gain yet: what has run is its code against a simulated server, on this repository's
+tests and in hardware runs that qualified nothing (BACKLOG AG1, S, V to V5-CPU). That online part decides two things only:
 order and group width. Placement across GPUs, engine, plan, knobs and output are outside it. Its world model
 assumes one group at a time with members prefilled one after another, so it refuses the dense plan's slot reuse
 and runs on one worker. Its replays use recorded arrival times, prompt lengths and output limits (capped at 512
@@ -106,6 +107,17 @@ tokens) with a filler prompt, skipping only stretches in which the server is idl
 answers longer than 512 tokens are therefore not represented. A schedule it qualifies is proven only for the binding it was measured under, and on
 the traffic that machine saw. Where idle spells are shorter than a replay window, nothing qualifies and the
 server's own schedule keeps serving.
+
+### Its own setup at startup (AG4)
+
+AG4-C run 3 (BACKLOG AG4) is the one measured gain: on one cloud CPU (x86_64, 4 cores), with
+`mlx-community/SmolLM2-135M-Instruct-8bit`, the agent chose `dequantize` by itself. Through the product it then
+served 24.5x the default path's tokens per second (95 % 12.3x to 31.3x), with first tokens about 20x sooner, on
+RL2-H2's bursts and spike traffic (4 blocks, 16 requests per path and run, 16-token answers). The default path
+missed the 3,600 s deadline on 22 of its 32 requests; those were counted as finished at the deadline, in its
+favour. `dequantize` changes answers within its quality gate (logits within 0.28 % of the float32 plan; 1 of
+5 comparable answers bit-identical). Nothing here covers another CPU, another model, quiet traffic, a GPU, the
+stacked engine or the router (AG4-R is still open).
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 
