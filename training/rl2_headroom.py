@@ -2225,7 +2225,14 @@ def measure_ag4r(pool: Any, model: str, router: Any, prompts: list[str] | None, 
     return report
 
 
-def _cell(requests: list[dict[str, Any]]) -> dict[str, float] | None:
+def _cell(requests: list[dict[str, Any]], censor: dict[str, float] | None = None) -> dict[str, float] | None:
+    """Tokens per second over the span and first-token times of one cell; None if a request failed. With `censor`
+    (AG4-C run 3, the default path only) a failed request counts as if it had produced its whole token limit, first
+    token and last, at the deadline: never later than it really would have, so it can only flatter that path."""
+    if censor is not None:
+        requests = [r if r.get("outcome") == "ok" and r.get("first_s") is not None else
+                    {**r, "outcome": "ok", "first_s": censor["deadline_s"], "end_s": censor["deadline_s"],
+                     "tokens": censor["limit"]} for r in requests]
     ok = [r for r in requests if r.get("outcome") == "ok" and r.get("first_s") is not None]
     if len(ok) != len(requests):
         return None
@@ -2377,10 +2384,15 @@ def analyse_ag4c(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     by block; tokens per second must have a 2.5 % bound above 1, and the mean and 95th-percentile first token must be
     no worse than the default's beyond the A/A noise of the default's two runs."""
     rng = random.Random(seed)
-    cells = {(row["block"], row["arm"], row["run"]): _cell(row["requests"]) for row in report.get("rows", [])}
+    censor = report.get("censor_default")  # run 3 on: the default path's failures are censored, never the agent's
+    cells = {(row["block"], row["arm"], row["run"]): _cell(row["requests"], censor if row["arm"] == "default" else None)
+             for row in report.get("rows", [])}
+    censored = sum(r.get("outcome") != "ok" for row in report.get("rows", []) if row["arm"] == "default"
+                   for r in row["requests"]) if censor else 0
     blocks = sorted({b for b, _, _ in cells})
     complete = [b for b in blocks if all(cells.get(k) for k in ((b, "default", 0), (b, "default", 1), (b, "agent", 0)))]
     out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag4c.analysis.v1", "complete_blocks": len(complete),
+                           "censored_default_requests": censored,
                            "setup": {k: (report.get("setup") or {}).get(k) for k in ("engine", "compute_dtype",
                                                                                      "reason")}}
     if report.get("stopped"):
@@ -2415,6 +2427,10 @@ def analyse_ag4c(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
 
 
 AG4C_RUN2 = {"traces": range(412, 414), "levels": (1, 2)}  # post hoc to run 1: bursts and spike, fresh seeds
+# Run 3, post hoc to run 2 (whose default path missed the deadline in 2 of 4 blocks): fresh seeds, a 3,600 s deadline,
+# and the default path's failures censored at it (`_cell`); an agent failure still voids its block.
+AG4C_RUN3 = {"traces": range(414, 416), "levels": (1, 2)}
+AG4C_RUN3_DEADLINE_S = 3600.0
 
 
 def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
@@ -2443,13 +2459,16 @@ def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     if added.get("returncode") != 0:
         return {**report, "failed": "models add", "added": added}
     store = ProductStore(state)
-    store.set_request_timeout(7200)
+    deadline = 7200.0 if smoke else AG4C_RUN3_DEADLINE_S
+    store.set_request_timeout(int(deadline))
+    if not smoke:  # fixed before run 3's data; partial reports carry it too
+        report["censor_default"] = {"deadline_s": deadline, "limit": AG4C_LIMIT}
     spec = store.model(model)
     makers = [lambda: MLXWorkerClient(spec), lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"])]
     pool = start_paths(store, spec, makers, ["cpu:default", "cpu:agent"], ProductService, ForcedRoute(0))
     try:
-        measured = measure_ag4c(pool, model, 7200.0, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
-                                                       if smoke else AG4C_RUN2),
+        measured = measure_ag4c(pool, model, deadline, **({"traces": [AG4C_TRACES[0]], "requests": 2, "limit": 8}
+                                                         if smoke else AG4C_RUN3),
                                 on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
     finally:
         pool.close()

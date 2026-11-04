@@ -1051,3 +1051,30 @@ def test_ag4c_compares_the_agents_path_with_the_default_on_the_same_arrivals(tmp
     assert result["valid"] and result["complete_blocks"] == 6 and set(result["passes"]) == {"tokens_per_s",
                                                                                            "ttft_no_worse"}
     assert rl2.analyse_ag4c({"stopped": "the agent kept reference with None"})["verdict"].startswith("stopped")
+
+
+def test_ag4c_run3_censors_only_the_default_paths_failures_and_only_in_its_favour():
+    """AG4-C run 3: a default-path request that misses the deadline counts as its whole token limit, first token and
+    last, at the deadline; an agent-path failure still voids its block."""
+    def row(block, arm, run, requests):
+        return {"block": block, "arm": arm, "run": run, "level": 1, "trace": block, "requests": requests}
+
+    def req(first, end, offset=0.0, outcome="ok"):
+        return ({"outcome": outcome, "first_s": first, "end_s": end, "offset_s": offset, "tokens": 16}
+                if outcome == "ok" else {"outcome": outcome, "first_s": None, "end_s": 100.0, "offset_s": offset,
+                                         "tokens": 0})
+
+    slow = [req(50, 60), req(None, None, outcome="timeout")]
+    fast = [req(2, 3), req(4, 5)]
+    rows = [r for b in range(3) for r in (row(b, "default", 0, slow), row(b, "agent", 0, fast),
+                                          row(b, "default", 1, slow))]
+    assert rl2._cell(slow) is None
+    cell = rl2._cell(slow, {"deadline_s": 100.0, "limit": 16})
+    assert cell["tokens_per_s"] == 32 / 100 and cell["ttft_p95_s"] == 100.0
+    censored = rl2.analyse_ag4c({"rows": rows, "censor_default": {"deadline_s": 100.0, "limit": 16}}, resamples=50)
+    assert censored["valid"] and censored["complete_blocks"] == 3 and censored["censored_default_requests"] == 6
+    assert censored["verdict"].startswith("pass")
+    assert rl2.analyse_ag4c({"rows": rows}, resamples=50)["verdict"].startswith("invalid")  # runs 1-2
+    broken = rows[:1] + [row(0, "agent", 0, [req(2, 3), req(None, None, outcome="timeout")])] + rows[2:]
+    voided = rl2.analyse_ag4c({"rows": broken, "censor_default": {"deadline_s": 100.0, "limit": 16}}, resamples=50)
+    assert voided["verdict"] == "invalid" and voided["complete_blocks"] == 2

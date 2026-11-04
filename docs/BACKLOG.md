@@ -1061,6 +1061,33 @@ with nothing given to it, serve more tokens per second than today's default thro
     takes about 70 minutes to its first token on the default path, and every block runs that path twice (the A/A
     control). Block 0 took about 2.6 hours, so the four blocks need about 10-13 hours. The run and its rule are
     unchanged; only the time estimate was wrong.
+  - *Result (2026-11-04, this container's CPU, at `745b6f7`, 15.2 hours): invalid by the fixed rule.* The
+    default path missed the 7,200 s deadline in blocks 1 and 2 (bursts trace 413: 2 of 4 requests in both of its
+    runs; spike trace 412: 3 of 4 in both), so only blocks 0 and 3 are complete, and a block with a failed request
+    makes the run invalid. The agent's path answered every request in every block.
+  - *The agent's own setup:* `dequantize` on the reference engine again (the stored choice, not re-measured).
+  - *On the two complete blocks, descriptive only:* the agent's tokens per second were 37.8x the default's
+    (95 % 37.3x to 38.2x), its mean first token 0.026x (95 % 0.026x to 0.027x), and the A/A noise of the default's
+    two runs 1.2 %. Both parts of the pass rule would hold there.
+  - *What went wrong (a flaw of the protocol, not of either path):* a block whose baseline is too slow for the
+    deadline is dropped, so the slower the default, the less the run can show. The rule was fixed before the data
+    and stands for this run.
+  - *Post hoc, descriptive only, not a verdict:* with run 3's censoring (below) applied to run 2 at its 7,200 s
+    deadline, all 4 blocks count (10 default requests censored): 30.5x tokens per second (95 % 19.8x to 37.8x),
+    mean first token 0.035x.
+- **Run 3, labelled post hoc to run 2 (fixed 2026-11-04, before its own data).**
+  - *What changes:*
+    - a default-path request that misses the deadline counts as if it had produced its whole token limit, its
+      first token and its last, at the deadline. That is never later than it really would have, so it can only
+      flatter the default (`_cell`'s `censor`, `censor_default` in the report);
+    - an agent-path failure still makes its block incomplete, and an incomplete block still makes the run invalid;
+    - the deadline is 3,600 s instead of 7,200 s, which shortens the run and flatters the default further;
+    - fresh seeds 414-415, bursts and spike again (4 blocks).
+  - *What stays:* the agent's setup is chosen by `choose_setup` as before, the pass rule (tokens per second
+    with a 2.5 % bound above 1, first token no worse beyond the A/A noise), 2,000 resamples, the model and the
+    sizes.
+  - *Expected:* 7-10 hours on this container (a default run is at most 3,600 s plus the time its worker needs to
+    finish a request it was working on). A restart loses the run and is reported as such.
 - *Pass (both):*
   - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
     bound above 1 (2,000 resamples);
