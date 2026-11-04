@@ -1057,6 +1057,10 @@ with nothing given to it, serve more tokens per second than today's default thro
     computing, on fresh seeds 412-413 (2 traces per state, 4 blocks).
   - *What stays:* everything else, the pass rule included.
   - *Expected:* about 2.5 hours on this container. Another restart is reported as such.
+  - *Duration, recorded while it runs (2026-11-04):* the estimate was wrong. A 1,034-token prompt in bursts
+    takes about 70 minutes to its first token on the default path, and every block runs that path twice (the A/A
+    control). Block 0 took about 2.6 hours, so the four blocks need about 10-13 hours. The run and its rule are
+    unchanged; only the time estimate was wrong.
 - *Pass (both):*
   - the agent's tokens per second over the default's (the mean of its two runs), paired by block, has a 2.5 %
     bound above 1 (2,000 resamples);
