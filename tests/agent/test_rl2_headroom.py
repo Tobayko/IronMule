@@ -1012,12 +1012,21 @@ def test_ag4r_runs_three_arms_on_the_same_two_workers_and_judges_them(tmp_path, 
     finally:
         pool.close()
     assert report["calibration"]["ok"] == 16 and report["calibration"]["capacity_rps"] > 0
-    assert len(report["rows"]) == 3 * 2 * 4 == saved[-1]  # 3 states x 2 traces x (single, router, stacked, single)
+    assert len(report["rows"]) == 3 * 2 * 5 == saved[-1]  # 3 states x 2 traces x (single, 3 arms rotated, single)
     assert {row["arm"] for row in report["rows"]} == set(rl2.AG4R_ARMS)
+    middles = [tuple(r["arm"] for r in report["rows"] if r["block"] == b)[1:4] for b in range(3)]
+    assert len(set(middles)) == 3 and all(set(m) == {"router", "stacked", "frozen"} for m in middles)  # rotated
     assert report["router"]["decisions"]["single"] + report["router"]["decisions"]["stacked"] > 0
+    assert report["frozen"]["frozen"] and all(path["requests"] == 0 for path in report["frozen"]["paths"].values())
+    assert router.costs[0].seen + router.costs[1].seen > 0  # the router learned; the frozen copy did not
     result = rl2.analyse_ag4r(report, resamples=50)
     assert result["valid"] and result["complete_blocks"] == 6
     assert set(result["passes"]) == {"tokens_per_s", "ttft_no_worse"} and result["verdict"]
+    assert set(result["learning"]["passes"]) == {"tokens_per_s", "ttft_no_worse"}
+    assert result["learning"]["verdict"].startswith(("pass", "fail"))
+    old = {**report, "arms": ["single", "router", "stacked"],
+           "rows": [r for r in report["rows"] if r["arm"] != "frozen"]}  # a report from before the frozen arm
+    assert rl2.analyse_ag4r(old, resamples=50)["complete_blocks"] == 6 and "learning" not in rl2.analyse_ag4r(old)
 
 
 def test_ag4c_compares_the_agents_path_with_the_default_on_the_same_arrivals(tmp_path, monkeypatch):

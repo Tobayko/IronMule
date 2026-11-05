@@ -998,6 +998,22 @@ gain unused.
     week's quota.
   - *Smoke first:* a `--smoke` kernel checks that both workers fit and run together on one T4, and measures
     nothing.
+  - **Amended 2026-11-05, before any AG4-R data: a fourth arm, the router frozen at its startup prices.** The
+    pass rule above decides whether routing ships. It cannot say whether *learning while serving* adds anything,
+    because a router with AG4's startup prices alone might route as well. That is the main goal's open part (LIMITS:
+    online learning has no hardware gain yet).
+    - *Arm:* `frozen`, a copy of the router taken before its first finished request. It decides exactly as the router
+      does but never learns. Each block runs single, then router, stacked and frozen in cyclic rotation, then single
+      again, on the same arrivals.
+    - *Learning decision (recorded, it does not change the router's ship rule):* learning while serving shows a
+      measured gain on this card if the router's tokens per second over the frozen router's, paired by block, has a
+      2.5 % bound above 1 (2,000 resamples), and its mean and 95th-percentile first token are no worse than the
+      frozen router's beyond the same A/A noise. Otherwise: "no measured gain from learning while serving" on this
+      setup, and LIMITS keeps saying so. The later half of the blocks is reported too, descriptively, since the
+      router keeps learning across blocks.
+    - *Expected:* if AG4's startup prices are already accurate, the two routers decide alike and the learning
+      decision fails. That would be an honest result, not a fault of the run.
+    - *Cost:* 36 blocks of 5 cells of about 80 s, plus setup, about **4.4 session hours** instead of 3.5.
   - **Smoke 1 (2026-11-03, kernel `tobayko/ironmule-rl2-headroom-ag4r-smoke` v1 at `526934d`, Kaggle T4, 9
     minutes): stopped before serving, on a product gap.**
     - The agent's own setup, made again from scratch on the card, was `route`: NUM1's `float16`, and the dense

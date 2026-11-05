@@ -93,6 +93,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -2156,7 +2157,8 @@ def analyse_ag1(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 
 
 # ---------------------------------------------------------------- AG4-R: the agent's two paths, routed (BACKLOG AG4)
 
-AG4R_ARMS = ("single", "router", "stacked")   # the single path forced, the agent's router, the stacked engine forced
+AG4R_ARMS = ("single", "router", "stacked", "frozen")  # the single path forced, the agent's router, the stacked
+# engine forced, and the same router frozen at its startup prices (added 2026-11-05, before any AG4-R data)
 AG4R_LOADS = (0.8, 3.0)                       # arrival rate over the single path's calibrated capacity
 AG4R_TRACES = range(400, 406)                 # fresh seeds: 6 traces per state and load
 AG4R_LIMIT = 256
@@ -2179,15 +2181,35 @@ class ForcedRoute:
         return {"forced": self.index}
 
 
+class FrozenRouter:
+    """The agent's router with the prices it starts from, never learning: the same decisions as the learning router
+    would make before its first finished request. Against it, the learning router shows what learning while serving
+    adds on the card (AG4-R's learning comparison)."""
+
+    def __init__(self, router: Any):
+        self.inner = type(router)(router.names, [copy.deepcopy(cost) for cost in router.costs])
+
+    def choose(self, outstanding: Any, max_tokens: int) -> int:
+        return self.inner.choose(outstanding, max_tokens)
+
+    def watch(self, index: int, sharing: int, events: Any) -> Any:
+        return events
+
+    def status(self) -> dict[str, Any]:
+        return {**self.inner.status(), "frozen": True}
+
+
 def measure_ag4r(pool: Any, model: str, router: Any, prompts: list[str] | None, deadline_s: float, *,
                  loads: tuple[float, ...] = AG4R_LOADS, traces: Any = AG4R_TRACES, requests: int = 32,
                  limit: int = AG4R_LIMIT, on_row: Any = None) -> dict[str, Any]:
-    """Every block (state, load, trace) runs the single path, the router, the stacked engine (rotated) and the single
-    path again, on the same arrivals; the router keeps learning across blocks."""
+    """Every block (state, load, trace) runs the single path, the router, the stacked engine and the frozen router
+    (rotated) and the single path again, on the same arrivals; the router keeps learning across blocks, the frozen
+    one keeps the prices the router started from."""
     def items_for(level: int, load: float, t: int, capacity: float) -> list[dict[str, Any]]:
         items = trace_h2(level, t, load * capacity, requests, (limit,))
         return lp_items(items, prompts, t, True, limit) if prompts else items
 
+    frozen = FrozenRouter(router)  # before the router has seen a finished request
     pool.router = ForcedRoute(0)
     calibration_items = None if not prompts else [
         {"offset_s": 0.0, "prompt": 0, "long": False, "max_tokens": limit, "text": text} for text in prompts[-16:]]
@@ -2200,15 +2222,15 @@ def measure_ag4r(pool: Any, model: str, router: Any, prompts: list[str] | None, 
                               "calibration": {"capacity_rps": capacity, "makespan_s": makespan,
                                               "ok": sum(r["outcome"] == "ok" for r in done)},
                               "deadline_s": deadline_s, "rows": []}
-    routes = {"single": ForcedRoute(0), "stacked": ForcedRoute(1), "router": router}
+    routes = {"single": ForcedRoute(0), "stacked": ForcedRoute(1), "router": router, "frozen": frozen}
     block = 0
     for load in loads:
         for level in range(len(H2_STATES)):
             for t in traces:
                 items = items_for(level, load, t, capacity)
                 others = list(AG4R_ARMS[1:])
-                order = [("single", 0), *((name, 0) for name in (others if block % 2 == 0 else others[::-1])),
-                         ("single", 1)]
+                turn = block % len(others)
+                order = [("single", 0), *((name, 0) for name in others[turn:] + others[:turn]), ("single", 1)]
                 for arm, run in order:
                     pool.router = routes[arm]
                     wait_idle(pool)
@@ -2222,6 +2244,7 @@ def measure_ag4r(pool: Any, model: str, router: Any, prompts: list[str] | None, 
                 block += 1
     pool.router = router
     report["router"] = router.status()
+    report["frozen"] = frozen.status()
     return report
 
 
@@ -2251,8 +2274,8 @@ def analyse_ag4r(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     for row in report.get("rows", []):
         cells[row["block"], row["arm"], row["run"]] = _cell(row["requests"])
     blocks = sorted({b for b, _, _ in cells})
-    complete = [b for b in blocks if all(cells.get(k) for k in ((b, "single", 0), (b, "single", 1), (b, "router", 0),
-                                                                (b, "stacked", 0)))]
+    arms = report.get("arms") or AG4R_ARMS[:3]  # a report from before the frozen arm has three
+    complete = [b for b in blocks if cells.get((b, "single", 1)) and all(cells.get((b, arm, 0)) for arm in arms)]
     problems = [f"block {b} is incomplete or has a failed request" for b in blocks if b not in complete]
     out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag4r.analysis.v1", "complete_blocks": len(complete),
                            "problems": problems, "router": report.get("router")}
@@ -2262,8 +2285,9 @@ def analyse_ag4r(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     def single(b: int, key: str) -> float:
         return (cells[b, "single", 0][key] + cells[b, "single", 1][key]) / 2
 
-    def ratio(arm: str, key: str, blocks_: list[int]) -> dict[str, Any]:
-        pairs = [(cells[b, arm, 0][key], single(b, key)) for b in blocks_]
+    def ratio(arm: str, key: str, blocks_: list[int], base: str = "single") -> dict[str, Any]:
+        pairs = [(cells[b, arm, 0][key], single(b, key) if base == "single" else cells[b, base, 0][key])
+                 for b in blocks_]
         boot = []
         for _ in range(resamples):
             sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
@@ -2287,6 +2311,21 @@ def analyse_ag4r(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
                passes={"tokens_per_s": gain, "ttft_no_worse": no_worse})
     out["verdict"] = ("invalid" if problems else "pass: the router ships as the agent's setup" if gain and no_worse
                       else "fail: the router does not ship")
+    if "frozen" in arms:
+        # Learning while serving, fixed 2026-11-05 before any AG4-R data: the learning router over the frozen one,
+        # paired by block. It decides only whether learning adds a measured gain; the router's ship rule is above.
+        late = complete[len(complete) // 2:]
+        learn_tps = ratio("router", "tokens_per_s", complete, "frozen")
+        learn_ttft = {key: ratio("router", key, complete, "frozen") for key in ("ttft_mean_s", "ttft_p95_s")}
+        learn_gain = learn_tps["ci95"][0] > 1.0
+        learn_no_worse = all(v["ratio"] <= 1 + noise[key] for key, v in learn_ttft.items())
+        out["learning"] = {
+            "router_over_frozen_tokens_per_s": learn_tps, "router_over_frozen_ttft": learn_ttft,
+            "late_half_tokens_per_s": ratio("router", "tokens_per_s", late, "frozen") if late else None,
+            "frozen_over_single_tokens_per_s": ratio("frozen", "tokens_per_s", complete),
+            "passes": {"tokens_per_s": learn_gain, "ttft_no_worse": learn_no_worse}, "frozen": report.get("frozen"),
+            "verdict": ("invalid" if problems else "pass: learning while serving adds a measured gain"
+                        if learn_gain and learn_no_worse else "fail: no measured gain from learning while serving")}
     return out
 
 
