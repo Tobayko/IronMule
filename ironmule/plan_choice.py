@@ -54,6 +54,9 @@ LEVERS: tuple[dict[str, str], ...] = (
     {"name": "expert_cache", "status": "planned", "backlog": "HQ1 EC1",
      "what": "for a mixture-of-experts model, the experts this traffic uses most kept on the card, learned online "
              "(Strata)"},
+    {"name": "tpu_path", "status": "planned", "backlog": "TP1",
+     "what": "a TPU as one more device: a JAX decode path on the model's own bf16 weights, measured and chosen "
+             "like any other path (Kaggle TPU v5e; TP0 probes it first)"},
 )
 #: The owner's boundary (BACKLOG HQ1): no lever changes or shrinks the model's weights.
 MODEL_UNCHANGED = True

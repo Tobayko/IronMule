@@ -1174,6 +1174,31 @@ cheaper than the default)?
       on bf16 emulation.
     Neither is built yet. Ledger entry owed.
 
+### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
+
+The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30
+GPU hours, and none of them has been used yet.
+- *The gap:* MLX, IronMule's runtime, has no TPU backend, so nothing in the product can use one today. A TPU path
+  would be a second runtime (JAX), with the model's own bf16 weights, never changed or shrunk (owner boundary,
+  HQ1). It would sit beside the T4 paths as one more path for the agent to measure and choose (AG4).
+- *Mechanism:* a TPU v5e chip does bf16 matrix products natively, with far more memory bandwidth than a T4 (which
+  emulates bf16, U1). Decode is bound by streaming the weights, so a decode step could be much shorter there.
+- *Kill:* TP1 is closed unless a JAX decode path for `Qwen3-1.7B` on one v5e chip makes more tokens per second
+  than the T4's best path measured so far (57.7 alone with float16, 290.9 at width 8 with the dense plan, AG4-Q
+  run 2), at the agent's quality gate. It is never built if TP0 shows that even its matrix products alone cannot
+  reach that.
+- **TP0, a probe before building anything (fixed 2026-11-05, before its data; descriptive only, no claim).**
+  `tools/tpu_probe.py` on one Kaggle TPU session records:
+  - the devices JAX sees, the host CPU and its memory;
+  - whether MLX's CPU build installs on the host;
+  - the median of 20 timed bf16 products, after 3 warm-ups, at one decode step's shapes of `Qwen3-1.7B` (q, k, v,
+    o, gate, up, down; 28 layers), for 1, 8 and 64 rows, on one TPU chip with JAX and on the host CPU with MLX.
+  - *Read as:* each runtime's matrix time for one decode step and the tokens per second that time alone would
+    allow (a ceiling, not a speed: attention, norms, sampling and the host are left out).
+  - *Decides:* if the TPU's ceiling at 1 row is not above 57.7 and at 8 rows not above 290.9, TP1 is closed in
+    Tier 0. Otherwise the next step is a JAX decode path, fixed here before it is built.
+  - *Cost:* about 0.3 TPU hours of this week's 20, which lapse on 2026-11-07 unused.
+
 ## PROD1 — Approved product implementation (2026-09-05)
 
 The user approved the product-wrapper plan, real-hardware validation of every

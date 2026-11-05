@@ -49,7 +49,7 @@ needs only the affected text and applicable documentation conventions.
 and RL4), with the workflow in its README. [tools/](tools/) holds what the product, the kept tests, CI or the
 README figures need -- measurement/verification harnesses for one specific kept test, plus the figure renderer
 -- and the Kaggle harnesses of open hardware entries written while the research repository was out of reach,
-each with its own focused test (`tools/kaggle_whole_machine.py`, `tools/cuda_probe.py`); such a harness moves
+each with its own focused test (`tools/kaggle_whole_machine.py`, `tools/cuda_probe.py`, `tools/tpu_probe.py`); such a harness moves
 there once it is reachable. `tools/measure_dispatch_plan.py` stays where it is: the provenance contract test
 names it. Inspect the selected tool and its contract before running it.
 
