@@ -1214,6 +1214,11 @@ GPU hours, and none of them has been used yet.
   - *Decides:* if the TPU's ceiling at 1 row is not above 57.7 and at 8 rows not above 290.9, TP1 is closed in
     Tier 0. Otherwise the next step is a JAX decode path, fixed here before it is built.
   - *Cost:* about 0.3 TPU hours of this week's 20, which lapse on 2026-11-07 unused.
+  - **Queued, not run (2026-11-05).** The kernel `tobayko/ironmule-tpu-probe` at `08c96d4` was pushed at 04:58 UTC
+    and was still waiting at 16:35 UTC. It spent no TPU hours. When the owner tried a TPU session in Kaggle's web
+    editor that afternoon, Kaggle answered "TPUs are popular right now. You are #789 in the queue." So the wait is
+    Kaggle's shared TPU queue, not the API submission. The kernel stays queued; if it has not run by 2026-11-07
+    00:00 UTC, this week's TPU hours lapse and TP0 waits for the next week.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
