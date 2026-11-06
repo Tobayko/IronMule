@@ -1219,6 +1219,11 @@ GPU hours, and none of them has been used yet.
     editor that afternoon, Kaggle answered "TPUs are popular right now. You are #789 in the queue." So the wait is
     Kaggle's shared TPU queue, not the API submission. The kernel stays queued; if it has not run by 2026-11-07
     00:00 UTC, this week's TPU hours lapse and TP0 waits for the next week.
+  - **Still queued after more than 24 hours (2026-11-06, 07:00 UTC).** The kernel submitted through the API had not
+    been given a TPU 26 hours after its push. A status poll every 3 minutes from 23:00 to 01:01 UTC read `QUEUED`
+    all 40 times, as did the check at 07:00 UTC. It has still spent no TPU hours. The owner is waiting in the web
+    editor's TPU queue as well. No further check-in is scheduled this week; if neither run gets a TPU before
+    2026-11-07 00:00 UTC, TP0 moves to the next week's quota.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
