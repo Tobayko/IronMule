@@ -1270,6 +1270,22 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
   - *Fixed (no protocol change):* the base path is timed before the plan exists, and freed buffers are returned
     first. A model no stacked plan serves is now refused before anything is timed (`stacked_refusal`).
   - Run 2 is the same AG5-G at the fixed commit.
+- **AG5-G run 2 (2026-11-07, kernel v2 at `fd576f4`, two T4s, 2.1 session hours): stopped before serving, again
+  in the agent's own measurement. No data.**
+  - NUM1 chose `native` within its gate 3 minutes into the session. The stacked measurement's child process then
+    ran for its whole 7,200 s timeout without a result, and the timeout crashed the run. It printed nothing, so
+    where the time went is not recorded.
+  - *Likely cause (an inference, not a measurement):* the gate's reference still ran on the native path after the
+    plan's pool existed. That path's prefill of each of the 16 chunks builds the 2 GB float16 head copy beside the
+    weights and the 3.2 GB pool. KB2-G's probe computed the same reference before any pool, and it gated the same
+    plan, weights and card in 26 minutes. For scale: AG6-H's measurement of Qwen 3 1.7B on a T4 took 355 s.
+  - *Fixed (no protocol change):*
+    - the gate's reference on the base path now also runs before the plan exists, as in the probe;
+    - the child logs each stage with its elapsed seconds to the session log;
+    - a measurement past `MEASURE_TIMEOUT_S` (3,600 s) is killed and ends as "no stacked engine", with the reason;
+    - a failed measurement of the competing path is refused instead of raising a `KeyError`.
+  - Run 3 is the same AG5-G at the fixed commit. If its measurement again passes 3,600 s, the stage log shows
+    where, and the run stops by its rule.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's

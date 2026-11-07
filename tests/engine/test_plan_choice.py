@@ -94,9 +94,14 @@ def test_measure_stacked_runs_on_a_cpu_stand_in():
                                           native=False)
         return plan, dense_gemma.probe(plan)
 
+    lines = []
     measured = pc.measure_stacked(model, _Tok(), None, chunks=4, size=16, steps=3, long_prompt="x" * 40,
-                                  make_plan=make_plan)
+                                  make_plan=make_plan, log=lines.append)
     assert measured["eligible"] and set(measured["gate"]) >= {"ratio", "interval", "passes"}
+    assert [line.split(": ")[2].split(" (")[0] for line in lines] == [
+        "base path timed", "gate reference on the base path, 4 chunks", "stacked plan installed",
+        "gate on the stacked plan", "stacked steps timed at every width, short prompt",
+        "stacked steps timed at every width, long prompt"]
     assert set(measured["speed"]) == {"short", "long"}
     assert set(measured["speed"]["short"]["plan_step_s"]) == {"1", "2", "3", "4"}, "AG5: every width is timed"
     assert "stacked" in pc.decide(measured)
@@ -283,11 +288,13 @@ def test_the_router_prices_the_stacked_path_at_the_agents_width():
     assert PathRouter.from_setup({**setup, "width": None}).costs[1].capacity == 8
 
 
-def test_the_base_path_is_timed_before_the_stacked_plan_takes_its_pool(monkeypatch):
+def test_the_base_path_runs_before_the_stacked_plan_takes_its_pool(monkeypatch):
     """AG5-G run 1: on a T4 the base path's whole-prompt prefill (a 2 GB float16 head copy for Gemma 3 12B) ran
-    out of memory beside the stacked plan's pool. The base path is now timed first, the plan made after."""
+    out of memory beside the stacked plan's pool; run 2, with the gate's reference on the base path beside the
+    pool, did not finish in two hours. Its timing and the gate's reference now run first, the plan after."""
     calls = []
     monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: calls.append("base") or (0.1, 0.05))
+    monkeypatch.setattr(pc, "_decode_nll", lambda model, ids, lead=None: calls.append("reference") or 1.0)
     monkeypatch.setattr(pc, "_release_memory", lambda: calls.append("release"))
 
     def make_plan(model, info):
@@ -295,5 +302,29 @@ def test_the_base_path_is_timed_before_the_stacked_plan_takes_its_pool(monkeypat
         raise ValueError("the dense plan serves Qwen 3 checkpoints only")
 
     tok = type("T", (), {"encode": lambda self, text: [1, 2, 3]})()
-    assert pc.measure_stacked(object(), tok, None, make_plan=make_plan)["eligible"] is False
-    assert calls == ["base", "base", "release", "plan"]
+    assert pc.measure_stacked(object(), tok, None, chunks=2, size=1, make_plan=make_plan)["eligible"] is False
+    assert calls == ["base", "base", "reference", "reference", "release", "plan"]
+
+
+def test_a_measurement_past_its_time_is_refused_and_the_base_path_kept(monkeypatch):
+    """AG5-G run 2: the child's timeout crashed the agent's setup (and the run) after two hours; it now ends in an
+    ineligible stacked engine with the reason, and the child is killed by `subprocess.run`."""
+    import subprocess
+
+    def run(*args, timeout=None, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], timeout)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    out = pc._measure_in_child("m", "native")
+    assert out == {"eligible": False,
+                   "reason": f"the measurement did not finish within {pc.MEASURE_TIMEOUT_S} s"}
+    assert pc.MEASURE_TIMEOUT_S <= 3600
+
+
+def test_a_stacked_engine_without_a_measured_rival_is_not_eligible():
+    """`against` read the base-only measurement's speed rows unchecked, so a failed child raised a KeyError."""
+    stacked = {"eligible": True, "speed": {"short": {"base_first_s": 0.1, "base_step_s": 0.05}}}
+    failed = {"eligible": False, "reason": "the measurement child exited with status 1"}
+    assert pc.against(stacked, failed) == {
+        "eligible": False,
+        "reason": "the path it competes with was not measured: the measurement child exited with status 1"}

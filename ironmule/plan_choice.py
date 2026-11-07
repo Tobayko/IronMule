@@ -64,6 +64,7 @@ MODEL_UNCHANGED = True
 QUIET_FLOOR = 0.9       # the stacked engine's single-request tokens per second over the base path's, at least
 TTFT_SLACK = 1.1        # its time to the first token over the base path's, at most
 SPEED_STEPS = 32
+MEASURE_TIMEOUT_S = 3600  # a stacked measurement past this is a failure: KB2's probe gated Gemma 3 12B in 26 min
 SHORT_PROMPT = "Explain in detail how rain forms, step by step."
 
 
@@ -240,29 +241,41 @@ def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int,
 def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
                     chunks: int | None = None, size: int | None = None, steps: int = SPEED_STEPS,
                     long_prompt: str | None = None,
-                    make_plan: Callable[[Any, dict[str, Any] | None], tuple[Any, dict[str, Any]]] | None = None
-                    ) -> dict[str, Any]:
+                    make_plan: Callable[[Any, dict[str, Any] | None], tuple[Any, dict[str, Any]]] | None = None,
+                    log: Callable[[str], None] | None = None) -> dict[str, Any]:
     """Everything AG4's rule reads about the stacked engine on this model, which already carries its base plan.
 
-    The base path is timed before the stacked plan exists. Its prefill runs the head over the whole prompt through
-    a float16 copy of the head (about 2 GB for Gemma 3 12B), which fits beside the weights but not beside the plan's
-    pool as well (AG5-G run 1, as KB2-0 run 1 found for the probe)."""
+    Everything on the base path runs before the stacked plan exists: its timing and the gate's reference. Its
+    prefill runs the head over the whole prompt through a float16 copy of the head (about 2 GB for Gemma 3 12B),
+    which fits beside the weights but not beside the plan's pool as well. AG5-G run 1 ran out of memory timing it
+    beside the pool; run 2, with the gate's reference beside the pool, did not finish within two hours, where KB2's
+    probe, reference first, gated the same plan in 26 minutes. `log` gets each stage with the seconds so far."""
     from .numeric_choice import CHUNK_TOKENS, CHUNKS, gate_chunks, ratio_interval
     from .tune import DEFAULT_PROMPT
+
+    started = time.perf_counter()
+
+    def note(stage: str) -> None:
+        if log is not None:
+            log(f"agent: stacked measurement: {stage} ({time.perf_counter() - started:.0f} s)")
 
     if make_plan is None and (reason := stacked_refusal(model, device_info)) is not None:
         return {"eligible": False, "reason": reason}  # nothing timed for a model no stacked plan serves
     prompts = (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT))
     base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps) for name, prompt in prompts}
+    note("base path timed")
+    items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
+    leads, pieces = [lead for lead, _ in items], [piece for _, piece in items]
+    reference = [_decode_nll(model, piece, lead) for lead, piece in items]
+    note(f"gate reference on the base path, {len(items)} chunks")
     _release_memory()
     try:
         plan, record = (make_plan or stacked_plan)(model, device_info)
     except ValueError as exc:
         return {"eligible": False, "reason": str(exc)}
-    items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
-    leads, pieces = [lead for lead, _ in items], [piece for _, piece in items]
-    reference = [_decode_nll(model, piece, lead) for lead, piece in items]
+    note("stacked plan installed")
     candidate = _plan_nll(plan, pieces, leads)
+    note("gate on the stacked plan")
     out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate),
                            "memory": _memory(model, plan, device_info)}
     speed = {}
@@ -272,6 +285,7 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
         plan_first, plan_steps = _plan_speed(plan, prompt_ids, steps)
         speed[name] = {"base_first_s": base_first, "base_step_s": base_step, "plan_first_s": plan_first,
                        "plan_step_s": {str(w): s for w, s in plan_steps.items()}}
+        note(f"stacked steps timed at every width, {name} prompt")
     out["speed"] = speed
     return out
 
@@ -355,6 +369,8 @@ def against(stacked: dict[str, Any], base: dict[str, dict[str, float]]) -> dict[
     engine's own base path's numbers stay beside them as `stacked_base_*`."""
     if not stacked.get("eligible"):
         return stacked
+    if any(name not in base for name in stacked["speed"]):  # its measurement failed: nothing to compare against
+        return {"eligible": False, "reason": f"the path it competes with was not measured: {base.get('reason')}"}
     speed = {}
     for name, row in stacked["speed"].items():
         speed[name] = {**row, "stacked_base_first_s": row["base_first_s"], "stacked_base_step_s": row["base_step_s"],
@@ -369,11 +385,14 @@ def measure_in_process(model_id: str, compute_dtype: str | None, base_only: bool
     from .runtime import BASELINE
     from .tune import _close_engine, _release_device_memory, load_engine
 
+    import sys
+
     engine, tokenizer = load_engine(model_id, BASELINE, compute_dtype=compute_dtype)
     try:
         if base_only:
             return measure_base(engine.model, tokenizer)
-        return measure_stacked(engine.model, tokenizer, mx.device_info() if mx.cuda.is_available() else None)
+        return measure_stacked(engine.model, tokenizer, mx.device_info() if mx.cuda.is_available() else None,
+                               log=lambda line: print(line, file=sys.stderr, flush=True))
     finally:
         _close_engine(engine)
         _release_device_memory()
@@ -386,8 +405,11 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
     code = ("import json, sys; from ironmule.plan_choice import measure_in_process; "
             "print('@@STACKED ' + json.dumps(measure_in_process(sys.argv[1], sys.argv[2] or None, sys.argv[3] == '1'), "
             "default=str), flush=True)")
-    proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or "", "1" if base_only else "0"],
-                          stdout=subprocess.PIPE, text=True, timeout=7200)
+    try:
+        proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or "", "1" if base_only else "0"],
+                              stdout=subprocess.PIPE, text=True, timeout=MEASURE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:  # the child is killed; the agent keeps the base path and says why
+        return {"eligible": False, "reason": f"the measurement did not finish within {MEASURE_TIMEOUT_S} s"}
     lines = [line for line in proc.stdout.splitlines() if line.startswith("@@STACKED ")]
     if proc.returncode or not lines:
         return {"eligible": False, "reason": f"the measurement child exited with status {proc.returncode}"}
