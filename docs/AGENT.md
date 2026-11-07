@@ -195,5 +195,9 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
   replaces (95 % 1.33x to 1.64x), first tokens 0.55x. It found one switch by itself; switching back where another
   mode wins is not shown yet. The run's data also exposed a worker defect, now fixed: from a batch's second run
   on, a joining request was rejected as too long for the engine.
-- **AG5-G (the agent's own width on Gemma 3 12B) has no result yet.** Run 1 ran out of memory in the agent's
-  startup measurement, and run 2's measurement did not finish within its two hours (BACKLOG AG5).
+- **AG5-G (the agent's own width on Gemma 3 12B) has no serving result yet.** Runs 1 to 3 stopped in the agent's
+  startup measurement (out of memory, a timeout, out of memory again), each fixed. Run 4 measured everything and
+  chose by its rule not to stack: width 6 made 2.12x, but one request alone 0.897x, below AG4's 0.9 floor.
+- **KB3 (2026-11-07): the Gemma plan's attention, rewritten bit for bit.** FA2 version 3 computes the same values in
+  the same order with a warp per query head and coalesced key loads; on a T4 its outputs were bit-identical, and one
+  request alone made 0.928x the native path, against 0.884x before. AG5-G runs again on it (run 5).

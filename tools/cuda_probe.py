@@ -3082,13 +3082,13 @@ def probe_kb2l_report(model_id: str, out: Path | None, *, smoke: bool = False,
     return report
 
 
-# ---------------------------------------------------------------- KB3-0: FA2 v2 against v1, bit for bit, and its speed
+# ---------------------------------------------------------------- KB3: FA2 v3 against v1, bit for bit, and its speed
 
 KB3_DECODE_WIDTHS = (1, 6, 8)
 KB3_DECODE_STEPS = 64
 KB3_ROUNDS = 3
-KB3_RATIO = 0.92   # v2's one-request ratio by AG4's formula (stacked_one / base_one), at least
-KB3_WIDE = 0.98    # v2's best-width tokens per second over v1's, at least
+KB3_RATIO = 0.92   # the candidate's one-request ratio by AG4's formula (stacked_one / base_one), at least
+KB3_WIDE = 0.98    # the candidate's best-width tokens per second over v1's, at least
 
 
 def kb3_random_cases(seed: int = 3) -> list[dict[str, Any]]:
@@ -3105,7 +3105,7 @@ def kb3_random_cases(seed: int = 3) -> list[dict[str, Any]]:
 
 
 def kb3_compare_random(cases: list[dict[str, Any]], fa2: Callable[..., Any], *, kv_heads: int = 8,
-                       capacity: int = KB2_CAPACITY, slots: int = KB2_ROWS, candidate: int = 2) -> list[dict[str, Any]]:
+                       capacity: int = KB2_CAPACITY, slots: int = KB2_ROWS, candidate: int = 3) -> list[dict[str, Any]]:
     """Each case through `fa2` at version 1 and `candidate` on the same random pool and queries; identical bit for
     bit?"""
     import mlx.core as mx
@@ -3155,11 +3155,12 @@ def kb3_decode(plan: Any, prompts: list[list[int]], steps: int) -> dict[str, Any
 def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *, steps: int = KB3_DECODE_STEPS,
               rounds: int = KB3_ROUNDS, speed_steps: int | None = None, widths: tuple[int, ...] = KB3_DECODE_WIDTHS,
               cases: list[dict[str, Any]] | None = None, make_plan: Callable[[], Any] | None = None,
-              fa2: Callable[..., Any] | None = None, texts: dict[str, str] | None = None, candidate: int = 2,
+              fa2: Callable[..., Any] | None = None, texts: dict[str, str] | None = None, candidate: int = 3,
               out: dict[str, Any] | None = None) -> dict[str, Any]:
-    """KB3-0 (BACKLOG KB3, fixed before its data): (a) FA2 v2 against v1 bit for bit on random pools and on real
-    decode steps of the plan; (b) plan_choice's own timing, the native path's one-request step before any pool
-    exists and the plan's step at every width with v1 and v2 alternated. `make_plan` and `fa2` replace the CUDA
+    """KB3-0 and KB3-1 (BACKLOG KB3, fixed before their data): (a) FA2's `candidate` version against version 1,
+    bit for bit, on random pools and on real decode steps of the plan; (b) plan_choice's own timing, the native
+    path's one-request step before any pool exists and the plan's step at every width with both versions
+    alternated. `make_plan` and `fa2` replace the CUDA
     plan and kernels with stand-ins in tests. `out` is filled as the probe goes."""
     import functools
 
@@ -3220,7 +3221,8 @@ def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
 
 
 def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
-    """KB3-0's decision (KB3-1's, with version 3 as the candidate), as fixed in BACKLOG KB3 before their data."""
+    """KB3-1's decision (KB3-0's for its reports, whose candidate was version 2), as fixed in BACKLOG KB3 before their
+    data."""
     random_cases = result.get("random") or []
     decode = result.get("decode") or {}
     c = str(result.get("candidate", 2))
@@ -3263,7 +3265,7 @@ def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def probe_kb3_report(model_id: str, out: Path | None, *, smoke: bool = False,
-                     loaded: tuple[Any, Any, dict[str, Any]] | None = None, candidate: int = 2,
+                     loaded: tuple[Any, Any, dict[str, Any]] | None = None, candidate: int = 3,
                      **kwargs: Any) -> dict[str, Any]:
     report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb3.v1", "model": model_id, "smoke": smoke,
                               "started_unix": time.time(), "env": environment(), "kb3": {}}
@@ -3355,7 +3357,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "kb3", "kb31", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "kb31", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -3380,7 +3382,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--owner")
     parser.add_argument("--commit")
     parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l",
-                                           "kb3", "kb31", "ag4"), default="hw3")
+                                           "kb31", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -3421,9 +3423,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
                          default=str), flush=True)
         return 0
-    if args.plan in ("kb3", "kb31"):  # KB3-0 tries FA2 version 2, KB3-1 version 3
-        report = probe_kb3_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke,
-                                  candidate=2 if args.plan == "kb3" else 3)
+    if args.plan == "kb31":  # KB3-1: FA2 version 3 against version 1 (KB3-0's version 2 is at 09db8ad)
+        report = probe_kb3_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": {k: report["analysis"].get(k) for k in
                           ("verdict", "(a) random pools identical", "(a) decode identical", "(b) one-request ratio",
                            "(b) best-width tokens per second", "error")}}, default=str), flush=True)

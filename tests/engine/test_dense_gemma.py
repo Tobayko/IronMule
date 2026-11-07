@@ -198,9 +198,10 @@ class _Tok:
         return [ord(c) % 200 + 1 for c in text]
 
 
-def test_fa2_v2_launches_a_warp_per_query_head_and_v1_is_unchanged(monkeypatch):
-    """KB3: version 2 runs G warps where version 1 ran one (G query heads per KV head); version 1's launch and
-    identity (KB2's evidence is bound to it) do not move, and the plan still serves version 1 until KB3-0 passes."""
+def test_the_plan_serves_fa2_v3_with_a_warp_per_query_head_and_v1_is_unchanged(monkeypatch):
+    """KB3-1: the plan serves FA2 version 3, which runs G warps where version 1 ran one (G query heads per KV head)
+    and stages only a chunk's valid key rows. Version 1's launch and identity, to which KB2's evidence is bound, do
+    not move; version 2 (KB3-0) is gone."""
     import pytest
 
     launched = []
@@ -216,37 +217,17 @@ def test_fa2_v2_launches_a_warp_per_query_head_and_v1_is_unchanged(monkeypatch):
     q = mx.zeros((b, h, d), dtype=mx.bfloat16)
     pool = mx.zeros((4 * kv * capacity, d), dtype=mx.bfloat16)
     lengths, slots = mx.array([5, 300, 1024]), mx.array([0, 1, 2])
-    for version in (1, 2):
+    for version in (1, None):
         dg.fa2(q, pool, pool, lengths, slots, kv, capacity, 0.0625, 0, version=version)
     nc = capacity // dg.FA2_CHUNK
-    (one, grid_one, _), _, (two, grid_two, template), _ = launched
-    assert (one, two) == ("partial", "partial_v2") and template["G"] == 2
+    (one, grid_one, _), _, (served, grid_served, template), _ = launched
+    assert (one, served) == ("partial", "partial_v3") and template["G"] == 2
     assert grid_one == -(-(b * kv * nc * 32) // 256) * 256
-    assert grid_two == -(-(b * kv * 2 * nc * 32) // 256) * 256
-    with pytest.raises(ValueError, match="unknown FA2 version"):
-        dg.fa2(q, pool, pool, lengths, slots, kv, capacity, 0.0625, 0, version=4)
-    assert dg.FA2_VERSION == 1
+    assert grid_served == -(-(b * kv * 2 * nc * 32) // 256) * 256
+    for gone in (2, 4):
+        with pytest.raises(ValueError, match="unknown FA2 version"):
+            dg.fa2(q, pool, pool, lengths, slots, kv, capacity, 0.0625, 0, version=gone)
+    assert (dg.FA2_VERSION, dg.PLAN_VERSION) == (3, 2) and not hasattr(dg, "PARTIAL_V2")
     assert dg.KERNEL_SHA256 == "54b1d3a2e975305d03a81915bc1f4d67be9332ddfdc3487e82b0b70d36dc1c7f"
-    assert dg.KERNEL_V2_SHA256 != dg.KERNEL_SHA256
-
-
-def test_fa2_v3_launches_like_v2_from_its_own_source(monkeypatch):
-    """KB3-1: version 3 is version 2's layout with the row loop bounded by the chunk's valid rows; it gets its own
-    kernel and identity, and the plan still serves version 1."""
-    launched = []
-
-    def kernel(name, scale):
-        def run(inputs, template, grid, threadgroup, output_shapes, output_dtypes):
-            launched.append((name, grid[0]))
-            return [mx.zeros(shape, dtype=dtype) for shape, dtype in zip(output_shapes, output_dtypes)]
-        return run
-
-    monkeypatch.setattr(dg, "_kernel", kernel)
-    q = mx.zeros((1, 16, 256), dtype=mx.bfloat16)
-    pool = mx.zeros((8 * 1024, 256), dtype=mx.bfloat16)
-    for version in (2, 3):
-        dg.fa2(q, pool, pool, mx.array([12]), mx.array([0]), 8, 1024, 0.0625, 0, version=version)
-    assert [name for name, _ in launched] == ["partial_v2", "combine", "partial_v3", "combine"]
-    assert launched[0][1] == launched[2][1], "the same warps as version 2"
-    assert len({dg.KERNEL_SHA256, dg.KERNEL_V2_SHA256, dg.KERNEL_V3_SHA256}) == 3 and dg.FA2_VERSION == 1
+    assert dg.KERNEL_V3_SHA256 != dg.KERNEL_SHA256
     assert "for (int r = 0; r < count; ++r)" in dg.PARTIAL_V3 and "if (second)" in dg.PARTIAL_V3

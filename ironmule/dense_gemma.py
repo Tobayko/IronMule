@@ -33,7 +33,7 @@ from typing import Any, Callable, Sequence
 
 MAX_ROWS = 8
 FA2_CHUNK = 64
-PLAN_VERSION = 1
+PLAN_VERSION = 2  # 2: FA2 version 3 (KB3-1); outputs bit-identical to version 1's
 PREFILL_CHUNK = 2048
 #: Slot sizes, largest first: the largest whose pool fits beside the weights and `PREFILL_RESERVE` in
 #: `SLOT_HEADROOM` of the card. Gemma 3 12B keeps 384 KiB of keys and values per token (48 layers, 8 KV heads of
@@ -151,90 +151,20 @@ COMBINE = r"""
   for (int e = 0; e < E; ++e) out[((size_t)b * H + h) * D + lane * E + e] = to_bf(__fdiv_rn(acc[e], L));
 """
 
-# KB3: FA2 version 2. Two changes to how the work is laid out, none to what is computed or in which order, so its
-# outputs must be bit-identical to version 1's (KB3-0 tests that on the card):
-# 1. one warp per (row, KV head, query head, chunk): the former loop over the G query heads of a KV head becomes G
+# KB3: FA2 version 3, the plan's kernel since KB3-1 (2026-11-07). It lays the work out differently from version 1
+# but computes the same values in the same order, so its outputs are bit-identical to version 1's (KB3-1 found
+# them so on a T4, on random pools and on real decode steps):
+# 1. one warp per (row, KV head, query head, chunk): version 1's loop over the G query heads of a KV head becomes G
 #    warps, each running that loop's body for its head (G times the warps at one row);
-# 2. each warp stages its chunk's keys in shared memory, 32 dimensions at a time, the 32 lanes reading 64
-#    contiguous bytes of one key row per load; each lane then forms the same products in the same order (dimension
-#    0 to D-1) from there, where version 1 read its own 512-byte key row 2 bytes at a time.
-# Rows of the tile are padded to 34 values, so the lanes' reads of rows `lane` and `32 + lane` hit 32 banks.
-PARTIAL_V2 = r"""
-  __shared__ unsigned short tile[8][64 * 34];
-  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
-  const unsigned int warp = gid >> 5;
-  const unsigned int lane = threadIdx.x & 31;
-  if (warp >= B * HKV * G * NC) return;
-  const unsigned int c = warp % NC;
-  const unsigned int g = (warp / NC) % G;
-  const unsigned int kh = (warp / (NC * G)) % HKV;
-  const unsigned int b = warp / (NC * G * HKV);
-  const int len = lengths[b];
-  const int lo = (W > 0 && len > W) ? len - W : 0;
-  const int start = c * 64;
-  if (start >= len || start + 64 <= lo) return;
-  const unsigned short* qs = reinterpret_cast<const unsigned short*>(q);
-  const unsigned short* ks = reinterpret_cast<const unsigned short*>(k);
-  const unsigned short* vs = reinterpret_cast<const unsigned short*>(v);
-  const size_t base = ((size_t)slots[b] * HKV + kh) * C * D;
-  const int count = min(64, len - start);
-  unsigned short* kt = tile[threadIdx.x >> 5];
-  const size_t qo = ((size_t)b * H + kh * G + g) * D;
-  float d0 = 0.f, d1 = 0.f;
-  for (int i0 = 0; i0 < D; i0 += 32) {
-    for (int r = 0; r < 64; ++r) {
-      const int t = start + r;
-      kt[r * 34 + lane] = (t < len) ? ks[base + (size_t)t * D + i0 + lane] : (unsigned short)0;
-    }
-    __syncwarp();
-    for (int i = 0; i < 32; ++i) {
-      const float qi = one_bf(qs[qo + i0 + i]);
-      d0 = __fmaf_rn(qi, one_bf(kt[lane * 34 + i]), d0);
-      d1 = __fmaf_rn(qi, one_bf(kt[(32 + lane) * 34 + i]), d1);
-    }
-    __syncwarp();
-  }
-  float s[2];
-  {
-    const int t0 = start + (int)lane;
-    const int t1 = start + 32 + (int)lane;
-    s[0] = (t0 < len && t0 >= lo) ? __fmul_rn(d0, SCALE) : NEG_INF;
-    s[1] = (t1 < len && t1 >= lo) ? __fmul_rn(d1, SCALE) : NEG_INF;
-  }
-  float m = fmaxf(s[0], s[1]);
-#pragma unroll
-  for (int o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
-  float pr[2];
-#pragma unroll
-  for (int j = 0; j < 2; ++j) pr[j] = (s[j] == NEG_INF) ? 0.f : expf(s[j] - m);
-  float sum = __fadd_rn(pr[0], pr[1]);
-#pragma unroll
-  for (int o = 16; o > 0; o >>= 1) sum = __fadd_rn(sum, __shfl_down_sync(0xffffffffu, sum, o));
-  sum = __shfl_sync(0xffffffffu, sum, 0);
-  float acc[E];
-#pragma unroll
-  for (int e = 0; e < E; ++e) acc[e] = 0.f;
-  for (int t = 0; t < count; ++t) {
-    const float pt = __shfl_sync(0xffffffffu, pr[t >> 5], t & 31);
-    if (pt == 0.f) continue;
-    const unsigned short* vr = vs + base + (size_t)(start + t) * D + lane * E;
-#pragma unroll
-    for (int e = 0; e < E; ++e) acc[e] = __fmaf_rn(pt, one_bf(vr[e]), acc[e]);
-  }
-  const size_t po = ((size_t)b * H + kh * G + g) * NC + c;
-#pragma unroll
-  for (int e = 0; e < E; ++e) pacc[po * D + lane * E + e] = acc[e];
-  if (lane == 0) {
-    pml[po * 2] = m;
-    pml[po * 2 + 1] = sum;
-  }
-"""
-
-# KB3-1: FA2 version 3, version 2 with three more changes that keep every operation and its order (KB3-0 found v2
-# bit-identical but 3.2 ms slower than v1 at one row on a 12-token prompt, where it staged and multiplied all 64
-# key rows of a chunk): the tile loads only the chunk's valid rows (`count`, the same for the whole warp), the
-# second half of the keys is multiplied only where the chunk has more than 32, and the row loop is unrolled by 8.
-# Rows past `count` keep stale values; their scores are -inf in every version, so nothing reads them.
+# 2. each warp stages its chunk's valid key rows (`count`, the same for the whole warp) in shared memory, 32
+#    dimensions at a time, the 32 lanes reading 64 contiguous bytes of one key row per load, unrolled by 8; each lane
+#    then forms the same products in the same order (dimension 0 to D-1) from there, where version 1 read its own
+#    512-byte key row 2 bytes at a time;
+# 3. the second half of a chunk's keys is multiplied only where the chunk has more than 32 of them.
+# Rows of the tile are padded to 34 values, so the lanes' reads of rows `lane` and `32 + lane` hit 32 banks. Rows
+# past `count` keep stale values; their scores are -inf, so nothing reads them. Version 2, items 1 and 2 without
+# the bound on the rows, item 3 and the unrolling, was bit-identical but slower on short prompts (KB3-0); its source
+# is at commit 09db8ad.
 PARTIAL_V3 = r"""
   __shared__ unsigned short tile[8][64 * 34];
   const unsigned int gid = cooperative_groups::this_grid().thread_rank();
@@ -311,11 +241,10 @@ PARTIAL_V3 = r"""
 
 #: What the kernels' answers are bound to: a changed source is a changed plan.
 KERNEL_SHA256 = hashlib.sha256((PARTIAL + COMBINE).encode()).hexdigest()
-KERNEL_V2_SHA256 = hashlib.sha256((PARTIAL_V2 + COMBINE).encode()).hexdigest()
 KERNEL_V3_SHA256 = hashlib.sha256((PARTIAL_V3 + COMBINE).encode()).hexdigest()
-#: The FA2 version the plan serves; another only once its KB3 test found it bit-identical to 1 on the card and
-#: fast enough (KB3-0: version 2 was bit-identical but not fast enough).
-FA2_VERSION = 1
+#: The FA2 version the plan serves: 3 since KB3-1 found it bit-identical to 1 on a T4 and fast enough for one
+#: request (0.928x the native path, against version 1's 0.884x). Version 1 stays for that comparison.
+FA2_VERSION = 3
 
 _kernels: dict[str, Any] = {}
 _kernel_lock = threading.Lock()
@@ -327,8 +256,8 @@ def _kernel(name: str, scale: float) -> Any:
     key = f"{name}:{scale!r}"
     with _kernel_lock:
         if key not in _kernels:
-            if name in ("partial", "partial_v2", "partial_v3"):
-                source = {"partial": PARTIAL, "partial_v2": PARTIAL_V2, "partial_v3": PARTIAL_V3}[name]
+            if name in ("partial", "partial_v3"):
+                source = PARTIAL if name == "partial" else PARTIAL_V3
                 _kernels[key] = mx.fast.cuda_kernel(
                     name=f"ironmule_fa2g_{name}", input_names=["q", "k", "v", "lengths", "slots"],
                     output_names=["pacc", "pml"], source=source.replace("SCALE", f"{scale!r}f"), header=HEADER)
@@ -350,7 +279,7 @@ def fa2(q: Any, keys: Any, values: Any, lengths: Any, slots: Any, kv_heads: int,
     if d % 32:
         raise ValueError(f"FA2 takes a head dim divisible by 32, got {d}")
     version = FA2_VERSION if version is None else version
-    if version not in (1, 2, 3):
+    if version not in (1, 3):
         raise ValueError(f"unknown FA2 version {version}")
     nc = -(-capacity // FA2_CHUNK)
     lengths, slots = lengths.astype(mx.int32), slots.astype(mx.int32)
@@ -582,7 +511,7 @@ def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_
     record = probe(plan)
     if not record["stacked_rows_identical"]:
         raise ValueError("the Gemma dense plan's stacked rows differ from one row on this model")
-    kernel = {1: KERNEL_SHA256, 2: KERNEL_V2_SHA256, 3: KERNEL_V3_SHA256}[FA2_VERSION]
+    kernel = KERNEL_SHA256 if FA2_VERSION == 1 else KERNEL_V3_SHA256
     return plan, {**record, "kernel_sha256": kernel,
                   "fa2_version": FA2_VERSION, "plan_version": PLAN_VERSION, "slots": slots,
                   "capacity": capacity}

@@ -636,7 +636,7 @@ class _ChatTok:
         return self.encode(messages[-1]["content"])
 
 
-def test_kb3_runs_its_comparison_and_timing_on_a_cpu_stand_in():
+def test_kb3_compares_version_3_with_version_1_on_a_cpu_stand_in(tmp_path):
     """The probe's plumbing on a tiny 4-bit Gemma 3 with FA2's semantics in plain MLX for both versions (the CUDA
     kernels need the card): random pools, decode from the same prefills with each version, timing alternated."""
     from ironmule import dense_gemma
@@ -647,27 +647,30 @@ def test_kb3_runs_its_comparison_and_timing_on_a_cpu_stand_in():
     model = tiny_model()
     plan = dense_gemma.GemmaDensePlan(model, slots=4, capacity=96, attention=dense_gemma.reference_attention,
                                       native=False)
-    calls = []
+    seen = set()
 
     def fa2(*args, version):
-        calls.append(version)
+        seen.add(version)
         return dense_gemma.reference_attention(*args)
 
     cases = [{"G": 1, "D": plan.dim, "B": 2, "W": 0, "lengths": [5, 64]},
              {"G": 1, "D": plan.dim, "B": 3, "W": 16, "lengths": [1, 40, 96]}]
     out = cp.probe_kb3(model, _ChatTok(), None, steps=3, rounds=2, speed_steps=3, widths=(1, 2), cases=cases,
                        make_plan=lambda: plan, fa2=fa2, texts={"short": "hi there", "long": "x" * 30})
+    assert seen == {1, 3} and out["candidate"] == 3
     assert [c["identical"] for c in out["random"]] == [True, True]
-    assert set(out["decode"]) == {"1", "2"} and len(out["decode"]["2"]["1"]["hashes"]) == 3
-    assert out["decode"]["2"]["1"] == out["decode"]["2"]["2"], "same arithmetic, same steps"
-    assert len(out["base"]["short"]) == 2 and len(out["plan"]["2"]["long"]) == 2
-    assert 1 in calls and 2 in calls
+    assert set(out["decode"]) == {"1", "2"} and set(out["decode"]["2"]) == {"1", "3"}
+    assert out["decode"]["2"]["1"] == out["decode"]["2"]["3"] and len(out["decode"]["2"]["1"]["hashes"]) == 3
+    assert len(out["base"]["short"]) == 2 and len(out["plan"]["3"]["long"]) == 2
     analysis = cp.analyse_kb3(out)
     assert analysis["(a) random pools identical"] and analysis["(a) decode identical"]
-    assert set(analysis["(b) one-request ratio"]) == {"1", "2"}
+    assert analysis["candidate"] == 3 and set(analysis["(b) one-request ratio"]) == {"1", "3"}
+    folder = cp.write_kernel(tmp_path / "k", "owner", "d" * 40, "kb31")
+    assert "'--plan', 'kb31'" in (folder / "run.py").read_text()
+    assert '"id": "owner/ironmule-cuda-probe-kb31"' in (folder / "kernel-metadata.json").read_text()
 
 
-def test_kb3_rejects_v2_on_any_differing_bit_and_needs_its_speed_margin():
+def test_kb3_rejects_a_candidate_on_any_differing_bit_and_needs_its_speed_margin():
     from tools import cuda_probe as cp
 
     step = {"1": 0.05, "6": 0.13}
@@ -685,29 +688,3 @@ def test_kb3_rejects_v2_on_any_differing_bit_and_needs_its_speed_margin():
     wide_loss = {**result, "plan": {**result["plan"], "2": {"short": [{"1": 0.0505, "6": 0.14}],
                                                             "long": [{"1": 0.0505, "6": 0.14}]}}}
     assert not cp.analyse_kb3(wide_loss)["passes"], "the best width may not lose more than 2 %"
-
-
-def test_kb3_1_compares_version_3_with_version_1_and_writes_its_own_kernel(tmp_path):
-    from ironmule import dense_gemma
-
-    from tests.engine.test_dense_gemma import tiny_model
-    from tools import cuda_probe as cp
-
-    model = tiny_model()
-    plan = dense_gemma.GemmaDensePlan(model, slots=2, capacity=96, attention=dense_gemma.reference_attention,
-                                      native=False)
-    seen = set()
-
-    def fa2(*args, version):
-        seen.add(version)
-        return dense_gemma.reference_attention(*args)
-
-    out = cp.probe_kb3(model, _ChatTok(), None, steps=2, rounds=1, speed_steps=3, widths=(1,),
-                       cases=[{"G": 1, "D": plan.dim, "B": 1, "W": 0, "lengths": [7]}], make_plan=lambda: plan,
-                       fa2=fa2, texts={"short": "hi", "long": "y" * 20}, candidate=3)
-    assert seen == {1, 3} and set(out["decode"]["1"]) == {"1", "3"} and set(out["plan"]) == {"1", "3"}
-    analysis = cp.analyse_kb3(out)
-    assert analysis["candidate"] == 3 and set(analysis["(b) one-request ratio"]) == {"1", "3"}
-    folder = cp.write_kernel(tmp_path / "k", "owner", "d" * 40, "kb31")
-    assert "'--plan', 'kb31'" in (folder / "run.py").read_text()
-    assert '"id": "owner/ironmule-cuda-probe-kb31"' in (folder / "kernel-metadata.json").read_text()

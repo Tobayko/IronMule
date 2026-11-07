@@ -2604,7 +2604,7 @@ native path's rose by 0.2 ms. That rise is FA2 (`dense_gemma.PARTIAL`):
 - each lane reads its own 512-byte key row in 2-byte loads, and does so again for each of the G query heads
   that share a KV head (G = 2 for Gemma 3 12B).
 
-**Mechanism (FA2 version 2, `dense_gemma.PARTIAL_V2`).**
+**Mechanism (FA2 version 2; it ran in KB3-0 and is removed since KB3-1, its source at `09db8ad`).**
 1. One warp per (row, KV head, query head, chunk) instead of per (row, KV head, chunk) looping over the G query
    heads. That gives G times the warps at one row, and each warp does exactly the former loop body for its head.
 2. Each warp stages its chunk's keys in shared memory, 32 dimensions at a time, with coalesced loads: the 32 lanes
@@ -2661,6 +2661,22 @@ the test below demands bit-identity.
     best width within 2 % of v1's.
   - *Decision:* as KB3-0. If v3 passes, it becomes the plan's kernel (`FA2_VERSION` 3, `PLAN_VERSION` 2), and
     AG5-G runs again (run 5). If not, v1 stays and KB3 closes in Tier 0 with both results.
+- **KB3-1 result: passes; v3 is the plan's kernel (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb31` v1 at
+  `191484c`, Kaggle T4, 19.9 minutes, peak 12.3 GB).** The plan was KB2's: kernel `54b1d3a2...`, version 1, eight
+  1,024-token slots, at revision `86cc6a8`. The protocol was KB3-0's, with v3 in v2's place.
+  - **(a) Bit-identical:** all 48 random cases, and every one of 64 decode steps at widths 1, 6 and 8.
+  - **(b) Fast enough:** v3's one-request ratio by AG4's formula was 0.928, at least 0.92 (v1 in the same
+    session: 0.884). Its best width, 6, made 46.09 tokens per second against v1's 44.87 (+2.7 %). The native path
+    made 20.93 alone.
+  - *Recorded:*
+    | step at one row | v1 | v3 |
+    | :-- | --: | --: |
+    | long prompt (314 tokens) | 57.98 ms | 52.61 ms |
+    | short prompt (12 tokens) | 50.56 ms | 50.36 ms |
+  - *Shipped:* `dense_gemma.FA2_VERSION` is 3 and `PLAN_VERSION` 2. By (a), the plan's answers are v1's, so
+    KB2's gate and exactness verdicts carry over, and the agent still gates the plan on its own card at startup.
+    v1 stays as the reference for this comparison. v2 is removed; its source is at `09db8ad`, where KB3-0 ran it.
+  - *Next:* AG5-G run 5, the same AG5-G at the commit that ships v3, run once. The ledger entry is still owed.
 
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 
