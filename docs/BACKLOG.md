@@ -1302,6 +1302,28 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
       second failure is raised as before;
     - each stage's log line carries the allocator's active, cached and peak gigabytes.
   - Run 4 is the same AG5-G at the fixed commit.
+- **AG5-G run 4 (2026-11-07, kernel v4 at `b076efd`, two T4s, 0.4 session hours): valid stop by the rule. The
+  agent measured everything and chose not to stack; no serving data.**
+  - The measurement ran to its end in 1,115 s, with no step retried and a peak of 13.28 GB. The stage log read:
+    | stage | seconds | active | cached | peak |
+    | :-- | --: | --: | --: | --: |
+    | base path timed | 32 | 7.19 | 6.11 | 11.61 |
+    | gate reference (16 chunks) | 463 | 7.19 | 6.65 | 11.61 |
+    | plan installed | 616 | 10.41 | 0.90 | 11.61 |
+    | gate on the plan | 1,029 | 10.41 | 1.01 | 11.61 |
+    | every width, short prompt | 1,067 | 10.41 | 3.05 | 13.28 |
+    | every width, long prompt | 1,115 | 10.41 | 2.80 | 13.28 |
+  - The gate passed: ratio 0.9988, 95 % 0.9967-1.0008, as in KB2-G.
+  - The width curve, tokens per second: 18.6 at 1 row, 29.2, 33.0, 36.2, 40.7, **43.9 at 6**, 37.2 at 7 and
+    20.4 at 8. The native path alone made 20.7, so AG5's rule picked width 6 (2.12x).
+  - AG4's rule then refused the engine. One request alone on the plan would run at 0.897x the native path, below
+    the 0.9 floor. Two paths do not fit the card either: 2 x 7.19 GB of weights plus the 3.2 GB pool and the
+    reserve exceed it. So the agent kept the native path, and AG5-G stopped as its rule says.
+  - *Where the 10 % goes:* the plan's one-row step was 50.4 ms on the short prompt and 57.8 ms on the long one
+    (about 300 tokens), against the native path's 48.2 and 48.4 ms. The rise with context, 7.4 ms against 0.2 ms
+    natively, is the plan's attention (KB3).
+  - AG5 stays open. The width rule chose a width, but a stacked engine the agent chooses on this card is still
+    missing. KB3 targets that.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
@@ -2571,6 +2593,44 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
   - The long pool stayed bit-identical, 192 of 192 steps alone and stacked at 4 rows.
   - With KB2-G's (a) and main path (0.9988, 95 % up to 1.0008) and run 2's (b) (2.006x at width 6), KB2's verdict
     is met. AG5-G may now run as fixed. The ledger entry is still owed.
+
+### KB3 — The Gemma plan's attention reads its keys coalesced, one warp per query head, arithmetic unchanged (opened 2026-11-07, before data)
+
+**Why (AG5-G run 4).** On a T4 with Gemma 3 12B at 4 bit, the agent's own measurement found the stacked plan 2.12x
+faster at width 6, but 0.897x for one request alone. AG4's floor is 0.9, so the agent refused the plan. The plan's
+one-row step rose from 50.4 ms to 57.8 ms between the short and the long prompt (about 300 tokens), while the
+native path's rose by 0.2 ms. That rise is FA2 (`dense_gemma.PARTIAL`):
+- at one row only one warp per KV head and 64-key chunk runs: 40 warps for 300 tokens on a 40-SM card;
+- each lane reads its own 512-byte key row in 2-byte loads, and does so again for each of the G query heads
+  that share a KV head (G = 2 for Gemma 3 12B).
+
+**Mechanism (FA2 version 2, `dense_gemma.PARTIAL_V2`).**
+1. One warp per (row, KV head, query head, chunk) instead of per (row, KV head, chunk) looping over the G query
+   heads. That gives G times the warps at one row, and each warp does exactly the former loop body for its head.
+2. Each warp stages its chunk's keys in shared memory, 32 dimensions at a time, with coalesced loads: the 32 lanes
+   read 64 contiguous bytes of one key row. Each lane then forms the same products in the same order (dimension
+   0 to D-1) from shared memory.
+The combine kernel and every other step are unchanged. Every floating-point operation and its order stay the
+same, so v2's outputs must be bit-identical to v1's. That is why KB2's gate and exactness can carry over, and why
+the test below demands bit-identity.
+
+**KB3-0, the hardware test (fixed now, before its data).** One Kaggle T4, `tools/cuda_probe.py --plan kb3`, about
+0.4 session hours. The model, revision and plan are KB2's: native plan first, eight 1,024-token slots.
+- *(a) Exactness, bit for bit, v2 against v1 on the same inputs:*
+  - random pools at widths 1 to 8, with lengths from 1 to the capacity, with and without a window, and for 1, 2
+    and 4 query heads per KV head;
+  - and 64 real decode steps of the plan at widths 1, 6 and 8, run once with each version from the same
+    prefills: every step's logits identical.
+- *(b) Speed:* plan_choice's own timing, the native path's one-request step and the plan's step at every width
+  on its short and long prompts, with v1 and v2 alternated over 3 rounds (medians).
+- **Decision:**
+  - if any bit differs in (a), v2 is rejected (Tier 0);
+  - if (a) holds, v2's one-request ratio by AG4's formula (`stacked_one / base_one`) is at least 0.92, and its
+    best-width tokens per second are within 2 % of v1's or better, v2 becomes the plan's kernel (`PLAN_VERSION`
+    2). KB2's verdict then carries over by (a), and AG5-G runs again as fixed (run 5);
+  - if (a) holds but (b) falls short, the result is recorded and v1 stays.
+- *Recorded, no decision:* v1's ratio in the same session, each width's step under both versions, and the
+  attention's share of the one-row step.
 
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 

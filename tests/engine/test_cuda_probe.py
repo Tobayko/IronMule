@@ -620,3 +620,68 @@ def test_ag4_runs_the_products_own_choice_and_records_it(tmp_path, monkeypatch):
     assert seen["identity"] == "f" * 64 and seen["fingerprint"].startswith("kaggle-")
     assert report["log"] == ["agent: stacked engine: 2.1x"]
     assert json.loads((tmp_path / "ag4.json").read_text())["schema"] == "ironmule.cuda_probe.ag4.v1"
+
+
+# ---------------------------------------------------------------- KB3-0
+
+class _ChatTok:
+    """The tiny model's stand-in tokenizer, with the chat template `chat_ids` reads."""
+
+    eos_token_id = 255
+
+    def encode(self, text):
+        return [ord(c) % 200 + 1 for c in text]
+
+    def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+        return self.encode(messages[-1]["content"])
+
+
+def test_kb3_runs_its_comparison_and_timing_on_a_cpu_stand_in():
+    """The probe's plumbing on a tiny 4-bit Gemma 3 with FA2's semantics in plain MLX for both versions (the CUDA
+    kernels need the card): random pools, decode from the same prefills with each version, timing alternated."""
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+    from tools import cuda_probe as cp
+
+    model = tiny_model()
+    plan = dense_gemma.GemmaDensePlan(model, slots=4, capacity=96, attention=dense_gemma.reference_attention,
+                                      native=False)
+    calls = []
+
+    def fa2(*args, version):
+        calls.append(version)
+        return dense_gemma.reference_attention(*args)
+
+    cases = [{"G": 1, "D": plan.dim, "B": 2, "W": 0, "lengths": [5, 64]},
+             {"G": 1, "D": plan.dim, "B": 3, "W": 16, "lengths": [1, 40, 96]}]
+    out = cp.probe_kb3(model, _ChatTok(), None, steps=3, rounds=2, speed_steps=3, widths=(1, 2), cases=cases,
+                       make_plan=lambda: plan, fa2=fa2, texts={"short": "hi there", "long": "x" * 30})
+    assert [c["identical"] for c in out["random"]] == [True, True]
+    assert set(out["decode"]) == {"1", "2"} and len(out["decode"]["2"]["1"]["hashes"]) == 3
+    assert out["decode"]["2"]["1"] == out["decode"]["2"]["2"], "same arithmetic, same steps"
+    assert len(out["base"]["short"]) == 2 and len(out["plan"]["2"]["long"]) == 2
+    assert 1 in calls and 2 in calls
+    analysis = cp.analyse_kb3(out)
+    assert analysis["(a) random pools identical"] and analysis["(a) decode identical"]
+    assert set(analysis["(b) one-request ratio"]) == {"1", "2"}
+
+
+def test_kb3_rejects_v2_on_any_differing_bit_and_needs_its_speed_margin():
+    from tools import cuda_probe as cp
+
+    step = {"1": 0.05, "6": 0.13}
+    same = {"hashes": ["a"], "tokens": [[1]]}
+    result = {"random": [{"identical": True}], "decode": {"1": {"1": same, "2": same}},
+              "base": {"short": [0.048], "long": [0.048]},
+              "plan": {"1": {"short": [step], "long": [step]},
+                       "2": {"short": [{"1": 0.0505, "6": 0.13}], "long": [{"1": 0.0505, "6": 0.13}]}}}
+    assert cp.analyse_kb3(result)["verdict"].startswith("v2 becomes the plan's kernel")  # 0.95 >= 0.92
+    slow = {**result, "plan": {**result["plan"], "2": {"short": [{"1": 0.056, "6": 0.13}],
+                                                       "long": [{"1": 0.056, "6": 0.13}]}}}
+    assert cp.analyse_kb3(slow)["verdict"].startswith("v2 is bit-identical but not fast enough")  # 0.857
+    differs = {**result, "decode": {"1": {"1": same, "2": {"hashes": ["b"], "tokens": [[1]]}}}}
+    assert cp.analyse_kb3(differs)["verdict"].startswith("v2 is rejected")
+    wide_loss = {**result, "plan": {**result["plan"], "2": {"short": [{"1": 0.0505, "6": 0.14}],
+                                                            "long": [{"1": 0.0505, "6": 0.14}]}}}
+    assert not cp.analyse_kb3(wide_loss)["passes"], "the best width may not lose more than 2 %"

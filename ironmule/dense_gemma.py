@@ -151,8 +151,90 @@ COMBINE = r"""
   for (int e = 0; e < E; ++e) out[((size_t)b * H + h) * D + lane * E + e] = to_bf(__fdiv_rn(acc[e], L));
 """
 
+# KB3: FA2 version 2. Two changes to how the work is laid out, none to what is computed or in which order, so its
+# outputs must be bit-identical to version 1's (KB3-0 tests that on the card):
+# 1. one warp per (row, KV head, query head, chunk): the former loop over the G query heads of a KV head becomes G
+#    warps, each running that loop's body for its head (G times the warps at one row);
+# 2. each warp stages its chunk's keys in shared memory, 32 dimensions at a time, the 32 lanes reading 64
+#    contiguous bytes of one key row per load; each lane then forms the same products in the same order (dimension
+#    0 to D-1) from there, where version 1 read its own 512-byte key row 2 bytes at a time.
+# Rows of the tile are padded to 34 values, so the lanes' reads of rows `lane` and `32 + lane` hit 32 banks.
+PARTIAL_V2 = r"""
+  __shared__ unsigned short tile[8][64 * 34];
+  const unsigned int gid = cooperative_groups::this_grid().thread_rank();
+  const unsigned int warp = gid >> 5;
+  const unsigned int lane = threadIdx.x & 31;
+  if (warp >= B * HKV * G * NC) return;
+  const unsigned int c = warp % NC;
+  const unsigned int g = (warp / NC) % G;
+  const unsigned int kh = (warp / (NC * G)) % HKV;
+  const unsigned int b = warp / (NC * G * HKV);
+  const int len = lengths[b];
+  const int lo = (W > 0 && len > W) ? len - W : 0;
+  const int start = c * 64;
+  if (start >= len || start + 64 <= lo) return;
+  const unsigned short* qs = reinterpret_cast<const unsigned short*>(q);
+  const unsigned short* ks = reinterpret_cast<const unsigned short*>(k);
+  const unsigned short* vs = reinterpret_cast<const unsigned short*>(v);
+  const size_t base = ((size_t)slots[b] * HKV + kh) * C * D;
+  const int count = min(64, len - start);
+  unsigned short* kt = tile[threadIdx.x >> 5];
+  const size_t qo = ((size_t)b * H + kh * G + g) * D;
+  float d0 = 0.f, d1 = 0.f;
+  for (int i0 = 0; i0 < D; i0 += 32) {
+    for (int r = 0; r < 64; ++r) {
+      const int t = start + r;
+      kt[r * 34 + lane] = (t < len) ? ks[base + (size_t)t * D + i0 + lane] : (unsigned short)0;
+    }
+    __syncwarp();
+    for (int i = 0; i < 32; ++i) {
+      const float qi = one_bf(qs[qo + i0 + i]);
+      d0 = __fmaf_rn(qi, one_bf(kt[lane * 34 + i]), d0);
+      d1 = __fmaf_rn(qi, one_bf(kt[(32 + lane) * 34 + i]), d1);
+    }
+    __syncwarp();
+  }
+  float s[2];
+  {
+    const int t0 = start + (int)lane;
+    const int t1 = start + 32 + (int)lane;
+    s[0] = (t0 < len && t0 >= lo) ? __fmul_rn(d0, SCALE) : NEG_INF;
+    s[1] = (t1 < len && t1 >= lo) ? __fmul_rn(d1, SCALE) : NEG_INF;
+  }
+  float m = fmaxf(s[0], s[1]);
+#pragma unroll
+  for (int o = 16; o > 0; o >>= 1) m = fmaxf(m, __shfl_xor_sync(0xffffffffu, m, o));
+  float pr[2];
+#pragma unroll
+  for (int j = 0; j < 2; ++j) pr[j] = (s[j] == NEG_INF) ? 0.f : expf(s[j] - m);
+  float sum = __fadd_rn(pr[0], pr[1]);
+#pragma unroll
+  for (int o = 16; o > 0; o >>= 1) sum = __fadd_rn(sum, __shfl_down_sync(0xffffffffu, sum, o));
+  sum = __shfl_sync(0xffffffffu, sum, 0);
+  float acc[E];
+#pragma unroll
+  for (int e = 0; e < E; ++e) acc[e] = 0.f;
+  for (int t = 0; t < count; ++t) {
+    const float pt = __shfl_sync(0xffffffffu, pr[t >> 5], t & 31);
+    if (pt == 0.f) continue;
+    const unsigned short* vr = vs + base + (size_t)(start + t) * D + lane * E;
+#pragma unroll
+    for (int e = 0; e < E; ++e) acc[e] = __fmaf_rn(pt, one_bf(vr[e]), acc[e]);
+  }
+  const size_t po = ((size_t)b * H + kh * G + g) * NC + c;
+#pragma unroll
+  for (int e = 0; e < E; ++e) pacc[po * D + lane * E + e] = acc[e];
+  if (lane == 0) {
+    pml[po * 2] = m;
+    pml[po * 2 + 1] = sum;
+  }
+"""
+
 #: What the kernels' answers are bound to: a changed source is a changed plan.
 KERNEL_SHA256 = hashlib.sha256((PARTIAL + COMBINE).encode()).hexdigest()
+KERNEL_V2_SHA256 = hashlib.sha256((PARTIAL_V2 + COMBINE).encode()).hexdigest()
+#: The FA2 version the plan serves; 2 only once KB3-0 found it bit-identical to 1 on the card and fast enough.
+FA2_VERSION = 1
 
 _kernels: dict[str, Any] = {}
 _kernel_lock = threading.Lock()
@@ -164,10 +246,11 @@ def _kernel(name: str, scale: float) -> Any:
     key = f"{name}:{scale!r}"
     with _kernel_lock:
         if key not in _kernels:
-            if name == "partial":
+            if name in ("partial", "partial_v2"):
+                source = PARTIAL if name == "partial" else PARTIAL_V2
                 _kernels[key] = mx.fast.cuda_kernel(
-                    name="ironmule_fa2g_partial", input_names=["q", "k", "v", "lengths", "slots"],
-                    output_names=["pacc", "pml"], source=PARTIAL.replace("SCALE", f"{scale!r}f"), header=HEADER)
+                    name=f"ironmule_fa2g_{name}", input_names=["q", "k", "v", "lengths", "slots"],
+                    output_names=["pacc", "pml"], source=source.replace("SCALE", f"{scale!r}f"), header=HEADER)
             else:
                 _kernels[key] = mx.fast.cuda_kernel(
                     name="ironmule_fa2g_combine", input_names=["pacc", "pml", "lengths"], output_names=["out"],
@@ -176,21 +259,26 @@ def _kernel(name: str, scale: float) -> Any:
 
 
 def fa2(q: Any, keys: Any, values: Any, lengths: Any, slots: Any, kv_heads: int, capacity: int,
-        scale: float, window: int) -> Any:
+        scale: float, window: int, version: int | None = None) -> Any:
     """One decode query per row (B, H, D) against its own slot of a pool laid out (slots, kv_heads, capacity, D),
-    flat or not, reading positions [max(0, length - window), length) (`window` 0: from the start)."""
+    flat or not, reading positions [max(0, length - window), length) (`window` 0: from the start). `version` picks
+    the partial kernel (None: `FA2_VERSION`); both compute the same values in the same order (KB3)."""
     import mlx.core as mx
 
     b, h, d = q.shape
     if d % 32:
         raise ValueError(f"FA2 takes a head dim divisible by 32, got {d}")
+    version = FA2_VERSION if version is None else version
+    if version not in (1, 2):
+        raise ValueError(f"unknown FA2 version {version}")
     nc = -(-capacity // FA2_CHUNK)
     lengths, slots = lengths.astype(mx.int32), slots.astype(mx.int32)
     template = [("B", b), ("H", h), ("HKV", kv_heads), ("G", h // kv_heads), ("D", d), ("E", d // 32),
                 ("C", capacity), ("NC", nc), ("W", window)]
-    pacc, pml = _kernel("partial", scale)(
+    warps = b * kv_heads * nc * (h // kv_heads if version == 2 else 1)
+    pacc, pml = _kernel("partial" if version == 1 else "partial_v2", scale)(
         inputs=[mx.contiguous(q), keys, values, lengths, slots], template=template,
-        grid=(-(-(b * kv_heads * nc * 32) // 256) * 256, 1, 1), threadgroup=(256, 1, 1),
+        grid=(-(-(warps * 32) // 256) * 256, 1, 1), threadgroup=(256, 1, 1),
         output_shapes=[(b, h, nc, d), (b, h, nc, 2)], output_dtypes=[mx.float32, mx.float32])
     out = _kernel("combine", scale)(
         inputs=[pacc, pml, lengths], template=template, grid=(-(-(b * h * 32) // 256) * 256, 1, 1),
@@ -413,5 +501,6 @@ def install(model: Any, device_info: dict[str, Any] | None, *, slots: int = MAX_
     record = probe(plan)
     if not record["stacked_rows_identical"]:
         raise ValueError("the Gemma dense plan's stacked rows differ from one row on this model")
-    return plan, {**record, "kernel_sha256": KERNEL_SHA256, "plan_version": PLAN_VERSION, "slots": slots,
+    return plan, {**record, "kernel_sha256": KERNEL_SHA256 if FA2_VERSION == 1 else KERNEL_V2_SHA256,
+                  "fa2_version": FA2_VERSION, "plan_version": PLAN_VERSION, "slots": slots,
                   "capacity": capacity}

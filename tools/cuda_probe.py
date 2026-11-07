@@ -3082,6 +3082,219 @@ def probe_kb2l_report(model_id: str, out: Path | None, *, smoke: bool = False,
     return report
 
 
+# ---------------------------------------------------------------- KB3-0: FA2 v2 against v1, bit for bit, and its speed
+
+KB3_DECODE_WIDTHS = (1, 6, 8)
+KB3_DECODE_STEPS = 64
+KB3_ROUNDS = 3
+KB3_RATIO = 0.92   # v2's one-request ratio by AG4's formula (stacked_one / base_one), at least
+KB3_WIDE = 0.98    # v2's best-width tokens per second over v1's, at least
+
+
+def kb3_random_cases(seed: int = 3) -> list[dict[str, Any]]:
+    """(a)'s random pools: every width from 1 to 8, lengths from 1 to the capacity (chunk edges included), with
+    and without a window, for 1, 2 and 4 query heads per KV head (Gemma 3 12B has 2), at head dims 256 and 128."""
+    rng = random.Random(seed)
+    cases = []
+    for g in (1, 2, 4):
+        for d in (256, 128):
+            for b in range(1, 9):
+                lengths = [rng.choice((1, 63, 64, 65, rng.randint(1, KB2_CAPACITY), KB2_CAPACITY)) for _ in range(b)]
+                cases.append({"G": g, "D": d, "B": b, "W": (0, 1024, 512, 100)[b % 4], "lengths": lengths})
+    return cases
+
+
+def kb3_compare_random(cases: list[dict[str, Any]], fa2: Callable[..., Any], *, kv_heads: int = 8,
+                       capacity: int = KB2_CAPACITY, slots: int = KB2_ROWS) -> list[dict[str, Any]]:
+    """Each case through `fa2` at version 1 and 2 on the same random pool and queries; identical bit for bit?"""
+    import mlx.core as mx
+
+    out = []
+    for index, case in enumerate(cases):
+        mx.random.seed(1000 + index)
+        h, d, b = kv_heads * case["G"], case["D"], case["B"]
+        keys = (mx.random.normal((slots * kv_heads * capacity, d)) * 0.5).astype(mx.bfloat16)
+        values = mx.random.normal((slots * kv_heads * capacity, d)).astype(mx.bfloat16)
+        q = mx.random.normal((b, h, d)).astype(mx.bfloat16)
+        lengths = mx.array(case["lengths"], dtype=mx.int32)
+        rows = mx.array([(7 * r + 3) % slots for r in range(b)], dtype=mx.int32)
+        one, two = (fa2(q, keys, values, lengths, rows, kv_heads, capacity, d ** -0.5, case["W"], version=v)
+                    for v in (1, 2))
+        mx.eval(one, two)
+        out.append({**case, "identical": bool(mx.array_equal(one.view(mx.uint16), two.view(mx.uint16)).item())})
+    return out
+
+
+def kb3_decode(plan: Any, prompts: list[list[int]], steps: int) -> dict[str, Any]:
+    """`steps` greedy steps of the plan from fresh prefills of `prompts` (one slot each), every step's logits
+    hashed and its tokens kept."""
+    import mlx.core as mx
+    import numpy as np
+
+    tokens = []
+    for slot, ids in enumerate(prompts):
+        cache = plan.new_cache()
+        logits = plan.prefill(mx.array(ids)[None], cache)
+        plan.write_prefill(slot, [c.state for c in cache])
+        tokens.append(int(mx.argmax(logits[0]).item()))
+        del cache
+    positions = [len(ids) for ids in prompts]
+    rows = mx.arange(len(prompts), dtype=mx.int32)
+    hashes, picked = [], []
+    for _ in range(steps):
+        logits = plan.forward(mx.array(tokens), rows, mx.array(positions, dtype=mx.int32))
+        mx.eval(logits)
+        hashes.append(hashlib.sha256(np.asarray(logits).tobytes()).hexdigest()[:16])
+        tokens = [int(t) for t in mx.argmax(logits, axis=-1).tolist()]
+        picked.append(tokens)
+        positions = [p + 1 for p in positions]
+    return {"hashes": hashes, "tokens": picked}
+
+
+def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *, steps: int = KB3_DECODE_STEPS,
+              rounds: int = KB3_ROUNDS, speed_steps: int | None = None, widths: tuple[int, ...] = KB3_DECODE_WIDTHS,
+              cases: list[dict[str, Any]] | None = None, make_plan: Callable[[], Any] | None = None,
+              fa2: Callable[..., Any] | None = None, texts: dict[str, str] | None = None,
+              out: dict[str, Any] | None = None) -> dict[str, Any]:
+    """KB3-0 (BACKLOG KB3, fixed before its data): (a) FA2 v2 against v1 bit for bit on random pools and on real
+    decode steps of the plan; (b) plan_choice's own timing, the native path's one-request step before any pool
+    exists and the plan's step at every width with v1 and v2 alternated. `make_plan` and `fa2` replace the CUDA
+    plan and kernels with stand-ins in tests. `out` is filled as the probe goes."""
+    import functools
+
+    from ironmule import cuda_native, dense_gemma, plan_choice
+    from ironmule.tune import DEFAULT_PROMPT
+
+    out = {} if out is None else out
+    out["memory"] = {}
+    fa2 = fa2 or dense_gemma.fa2
+    speed_steps = speed_steps or plan_choice.SPEED_STEPS
+
+    def stage(name: str) -> None:
+        out["stage"] = name
+        out["memory"][name] = kb2_memory()
+
+    stage("load")
+    if make_plan is None:
+        out["native"] = cuda_native.install(model, device_info)
+    texts = texts or {"short": plan_choice.SHORT_PROMPT, "long": DEFAULT_PROMPT}  # plan_choice's own prompts
+    ids = {name: list(tokenizer.encode(text)) for name, text in texts.items()}
+    out["prompt_tokens"] = {name: len(v) for name, v in ids.items()}
+    stage("native one-request step")  # before any pool: its prefill builds the head's float16 copy
+    out["base"] = {name: [plan_choice._base_speed(model, ids[name], speed_steps)[1] for _ in range(rounds)]
+                   for name in texts}
+    plan_choice._release_memory()
+    stage("plan")
+    if make_plan is None:
+        plan, out["install"] = dense_gemma.install(model, device_info, slots=KB2_ROWS, capacity=KB2_CAPACITY)
+    else:
+        plan = make_plan()
+    stage("(a) random pools")
+    out["random"] = kb3_compare_random(cases if cases is not None else kb3_random_cases(), fa2,
+                                       kv_heads=plan.kv_heads, capacity=plan.capacity, slots=plan.slots)
+    plan_choice._release_memory()
+    stage("(a) decode")
+    prompts = [chat_ids(tokenizer, i % len(PROMPTS), i % 2 == 1, min(KB2_PROMPT_LIMIT, plan.capacity - steps - 1))
+               for i in range(max(widths))]
+    out["decode"] = {}
+    for width in widths:
+        runs = {}
+        for version in (1, 2):
+            plan.attention = functools.partial(fa2, version=version)
+            runs[str(version)] = kb3_decode(plan, prompts[:width], steps)
+        out["decode"][str(width)] = runs
+    plan_choice._release_memory()
+    stage("(b) plan steps")
+    out["plan"] = {"1": {name: [] for name in texts}, "2": {name: [] for name in texts}}
+    for _ in range(rounds):
+        for version in (1, 2):
+            plan.attention = functools.partial(fa2, version=version)
+            for name in texts:
+                _, by_width = plan_choice._plan_speed(plan, ids[name], speed_steps)
+                out["plan"][str(version)][name].append({str(w): s for w, s in by_width.items()})
+    stage("done")
+    return out
+
+
+def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
+    """KB3-0's decision, as fixed in BACKLOG KB3 before its data."""
+    random_cases = result.get("random") or []
+    decode = result.get("decode") or {}
+    random_ok = bool(random_cases) and all(case.get("identical") for case in random_cases)
+    decode_ok = bool(decode) and all(runs["1"]["hashes"] == runs["2"]["hashes"]
+                                     and runs["1"]["tokens"] == runs["2"]["tokens"] for runs in decode.values())
+    out: dict[str, Any] = {"(a) random pools identical": random_ok,
+                           "(a) random cases": len(random_cases),
+                           "(a) random cases that differ": [c for c in random_cases if not c.get("identical")][:8],
+                           "(a) decode identical": decode_ok,
+                           "(a) decode widths": sorted(decode, key=int)}
+    exact = random_ok and decode_ok
+    base, plan = result.get("base") or {}, result.get("plan") or {}
+    if base and plan.get("1") and plan.get("2"):
+        names = sorted(base)
+        base_one = statistics.fmean(1 / statistics.median(base[name]) for name in names)
+
+        def curve(version: str) -> dict[str, float]:
+            widths = plan[version][names[0]][0]
+            return {w: statistics.fmean(int(w) / statistics.median(run[w] for run in plan[version][name])
+                                        for name in names) for w in widths}
+
+        curves = {version: curve(version) for version in ("1", "2")}
+        ratios = {version: curves[version]["1"] / base_one for version in ("1", "2")}
+        best = {version: max(curves[version].values()) for version in ("1", "2")}
+        steps = {version: {name: {w: round(statistics.median(run[w] for run in plan[version][name]) * 1000, 2)
+                                  for w in plan[version][name][0]} for name in names} for version in ("1", "2")}
+        out.update({"(b) base one-request tokens per second": base_one,
+                    "(b) one-request ratio": ratios, "(b) best-width tokens per second": best,
+                    "(b) curve tokens per second": curves, "(b) step ms": steps})
+        fast = ratios["2"] >= KB3_RATIO and best["2"] >= KB3_WIDE * best["1"]
+    else:
+        fast = False
+    out["passes"] = exact and fast
+    out["verdict"] = ("v2 is rejected: an output differs from v1 bit for bit" if not exact else
+                      "v2 becomes the plan's kernel: bit-identical and fast enough" if fast else
+                      "v2 is bit-identical but not fast enough; v1 stays")
+    return out
+
+
+def probe_kb3_report(model_id: str, out: Path | None, *, smoke: bool = False,
+                     loaded: tuple[Any, Any, dict[str, Any]] | None = None, **kwargs: Any) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb3.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment(), "kb3": {}}
+
+    def save() -> None:
+        if out is not None:
+            out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+
+    try:
+        if loaded is None:
+            import mlx.core as mx
+            from huggingface_hub import snapshot_download
+            from mlx_lm import load
+
+            path = snapshot_download(model_id, revision=KB2_REVISION if model_id == KB2_MODEL else None,
+                                     allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                     "tokenizer*"])
+            model, tokenizer = load(path)
+            report["revision"] = Path(path).name
+            device_info = dict(mx.device_info())
+        else:
+            model, tokenizer, device_info = loaded
+        probe_kb3(model, tokenizer, device_info, out=report["kb3"],
+                  **({"steps": 4, "rounds": 1, "speed_steps": 3, "widths": (1, 2)} if smoke else {}), **kwargs)
+        report["analysis"] = analyse_kb3(report["kb3"])
+    except Exception as exc:  # noqa: BLE001 - recorded, with what came before it
+        report["kb3"]["error"] = repr(exc)
+        try:
+            report["kb3"]["memory_at_error"] = kb2_memory()
+        except Exception:  # noqa: BLE001 - MLX itself may be what failed
+            pass
+        report["analysis"] = {"error": repr(exc), **analyse_kb3(report["kb3"])}
+    report["finished_unix"] = time.time()
+    save()
+    return report
+
+
 # ---------------------------------------------------------------- AG4-Q: the agent's own setup on a T4
 
 def probe_ag4_report(model_id: str, out: Path | None, *, smoke: bool = False) -> dict[str, Any]:
@@ -3136,7 +3349,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "kb3", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -3160,7 +3373,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "ag4"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l",
+                                           "kb3", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -3183,7 +3397,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                   analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else
                   analyse_kb2d(report.get("kb2d") or {}) if schema == "ironmule.cuda_probe.kb2d.v1" else
                   analyse_kb2g(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2g.v1" else
-                  analyse_kb2l(report.get("kb2l") or {}) if schema == "ironmule.cuda_probe.kb2l.v1" else analyse(report))
+                  analyse_kb2l(report.get("kb2l") or {}) if schema == "ironmule.cuda_probe.kb2l.v1" else
+                  analyse_kb3(report.get("kb3") or {}) if schema == "ironmule.cuda_probe.kb3.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
@@ -3199,6 +3414,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = probe_kb2d_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
                          default=str), flush=True)
+        return 0
+    if args.plan == "kb3":
+        report = probe_kb3_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": {k: report["analysis"].get(k) for k in
+                          ("verdict", "(a) random pools identical", "(a) decode identical", "(b) one-request ratio",
+                           "(b) best-width tokens per second", "error")}}, default=str), flush=True)
         return 0
     if args.plan == "kb2l":
         report = probe_kb2l_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
