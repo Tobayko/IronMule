@@ -1190,6 +1190,67 @@ cheaper than the default)?
       on bf16 emulation.
     Neither is built yet. Ledger entry owed.
 
+### AG5 — The agent learns the stacked engine's width, and keeps learning it while it serves (opened 2026-11-07, owner request, before data)
+
+**Why (owner, 2026-11-07).** The owner wants a self-learning AI that makes the decisions, pursued with dreaming
+and RL, and fast visible gains in tokens per second. The decision with the largest measured lever that nothing
+learns yet is the stacked engine's width.
+- AG4's rule judges the engine at width 8 only (`plan_choice._plan_speed` times widths 1 and 8), and the product
+  always stacks up to 8 (`engine_bridge.DENSE_WIDTH`).
+- KB2-0 run 2 measured the Gemma plan's step: 48.8 ms at 1 row, 67.8, 85.1, 113.0, 122.1, 141.3 at 6, 190.3 at 7
+  and 394.1 at 8. Today's native step is 47.3 ms.
+- At width 8 the plan makes 20.3 tokens per second, below today's 21.1, so AG4's rule would refuse it. At width 6
+  it makes 42.5, which is 2.006x.
+- The best width depends on the model and the card: Qwen 3's dense plan is best at 8 (AG4-Q: 290.9 tokens/s).
+
+Recent work points the same way. In batching, RL's edge over hand-tuned heuristics comes from combinatorial,
+multi-resource decisions rather than single-resource timing (arXiv 2607.05272). Nightjar (arXiv 2512.22420) uses a
+contextual bandit to pick a decode-side setting per batch size, scored by tokens per second.
+
+**Mechanism.**
+1. *Startup, the agent measures:* `plan_choice` times the stacked step at every width from 1 to the pool's slots,
+   and judges the engine at its best width, the one with the most tokens per second on that curve. AG4's other
+   conditions are unchanged. The setup records the curve and the width.
+2. *Serving at the learned width:* the product builds the stacked engine with that many slots (`--dense-width`),
+   so neither a starting group nor a joiner exceeds it, and its pool is smaller.
+3. *Online, AG5-L (fixed before its data, once 1 and 2 have a hardware result):* the agent keeps a step-cost
+   model per width from the steps it serves and re-chooses the width by replaying its logged traffic in that
+   model (dreaming, as RSI4's `dream` does for group width) and by trying a neighbouring width now and then (a
+   bandit). This is the part that keeps learning.
+
+Width changes no answer: within the plan every row is bit-identical alone or stacked (KB1-1, KB2 (a)), so this
+decision needs no quality gate of its own.
+
+**Amendment to AG4's rule (2026-11-07, before AG5-G's data).** "More tokens per second at its best width"
+replaces "at width 8". AG4-Q, AG4-R and AG4-C measured under the width-8 rule and stay as recorded; AG4-R runs at
+`b1c2382` and is not touched.
+
+**Kill.** AG5 is closed, and the agent keeps width 8, if AG5-G fails by its rule below or the agent at its own width
+makes fewer tokens per second than at width 8 on the same card.
+
+**AG5-G, the hardware test (fixed now, before its data; it runs only if KB2-G passes).**
+- *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
+  `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
+- *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
+  chunks). If it does not choose the stacked engine, the run stops and records why.
+- *Arms, through the product, as AG4-C:*
+  - `default`: today's reference worker with `--compute-dtype native`, one request at a time;
+  - `agent`: the agent's setup, the native plan with the Gemma stacked engine at the agent's width.
+  Each block (state, load, trace) runs default, agent, default on the same arrivals.
+- *Traffic:* AG4-C's bursts and spike states at AG4-R's loads, 0.8 and 3.0 of the default path's calibrated
+  capacity, one fresh trace each, 12 requests, a 256-token limit. Prompts are short (the question alone): a
+  1,024-token slot cannot hold the long variant's roughly 1,200-token context plus 256 tokens.
+- *Cards:* phase 1 runs default on card 0 and the agent on card 1; phase 2 swaps them, on the same traces. That
+  makes 8 blocks.
+- **Decision (AG4-C's analysis, unchanged):** pass if the agent's tokens per second over the default's (the mean of
+  its two runs), paired by block, has its 2.5 % bound above 1, and the mean and 95th-percentile first token are no
+  worse than the default's beyond the default's A/A noise.
+  - A failed agent request voids its block. The default path's failures are censored at the 3,600 s deadline, as
+    in AG4-C run 3. Fewer than two complete blocks make the run invalid.
+- *Recorded, no decision:* the width the agent chose and its curve, the ratios per load and per phase, and the
+  requests that joined a running group.
+- A pass is the agent's gain on this card, model and traffic. It ships opt-in (`--agent on`).
+
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 
 The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30

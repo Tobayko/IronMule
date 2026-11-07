@@ -207,14 +207,16 @@ def _qualified_knob_options(spec: Any, devices: list[str | None]) -> dict[str, A
     return {"engine_knobs": {"knobs": knobs, "source": f"qualified:{record['experiment']}"[:64]}}
 
 
-def _engine_options(engine: str) -> dict[str, Any]:
-    """The worker client's options that `--engine` sets beyond the execution variant."""
+def _engine_options(engine: str, width: int | None = None) -> dict[str, Any]:
+    """The worker client's options that `--engine` sets beyond the execution variant; `width` is the stacked
+    engine's (AG5: the agent's measured best width; None keeps 8)."""
     from .backend import DENSE_STARTUP_TIMEOUT
 
     if engine == "rust2":
         return {"engine_configuration": "rust2"}
     if engine == "dense":  # KB1: its probe compiles every kernel shape before the worker is ready
-        return {"engine_configuration": "dense_stacked", "startup_timeout": DENSE_STARTUP_TIMEOUT}
+        return {"engine_configuration": "dense_stacked", "startup_timeout": DENSE_STARTUP_TIMEOUT,
+                **({"dense_width": width} if width is not None else {})}
     return {}
 
 
@@ -342,12 +344,14 @@ def serve(argv: list[str]) -> int:
                 raise InvalidRequest("the agent's two paths share one card; use it with one GPU for now")
             knob_options = _qualified_knob_options(spec, devices) if (
                 args.knobs == "auto" and args.engine == "tuned") else {}
+            # AG5: the stacked engine serves at the width the agent measured best on this card (None keeps 8).
+            stacked_width = (agent_setup or {}).get("width") if args.engine in ("dense", "route") else None
 
             def make_backend(device=devices[0]):
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
-                                       **_engine_options(args.engine), **knob_options)
+                                       **_engine_options(args.engine, stacked_width), **knob_options)
             if args.engine == "route":  # AG4 step 2: the single path and the stacked engine on one card, routed
                 from ironmule_product.path_router import PathRouter
 
@@ -356,7 +360,8 @@ def serve(argv: list[str]) -> int:
                 single = lambda: MLXWorkerClient(spec, compute_dtype=agent_setup["compute_dtype"],  # noqa: E731
                                                  thinking=not args.no_thinking, cuda_device=device)
                 stacked = lambda: MLXWorkerClient(spec, thinking=not args.no_thinking, cuda_device=device,  # noqa: E731
-                                                  execution_variant="current_engine", **_engine_options("dense"))
+                                                  execution_variant="current_engine",
+                                                  **_engine_options("dense", stacked_width))
                 label = device if device is not None else "0"
                 service = start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
                                       ProductService, PathRouter.from_setup(agent_setup))

@@ -68,9 +68,14 @@ class MLXWorkerClient:
                  engine_configuration: str = "current_profile",
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
-                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None) -> None:
+                 cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
+                 dense_width: int | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
+        if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
+                                        or engine_configuration != "dense_stacked"):
+            raise ValueError("dense_width must be 1-8 and needs the dense_stacked configuration (AG5)")
+        self.dense_width = dense_width
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
         if cuda_device is not None and (not isinstance(cuda_device, str)
@@ -440,6 +445,8 @@ class MLXWorkerClient:
                                   "--prefix-cache-max-bytes", str(self.prefix_cache_max_bytes)]
                 if self.execution_variant == "current_engine":
                     arguments += ["--engine-configuration", self.engine_configuration]
+                    if self.dense_width is not None:
+                        arguments += ["--dense-width", str(self.dense_width)]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
                     if self.engine_knobs is not None:

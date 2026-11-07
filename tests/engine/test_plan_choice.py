@@ -98,7 +98,7 @@ def test_measure_stacked_runs_on_a_cpu_stand_in():
                                   make_plan=make_plan)
     assert measured["eligible"] and set(measured["gate"]) >= {"ratio", "interval", "passes"}
     assert set(measured["speed"]) == {"short", "long"}
-    assert set(measured["speed"]["short"]["plan_step_s"]) == {"1", "4"}
+    assert set(measured["speed"]["short"]["plan_step_s"]) == {"1", "2", "3", "4"}, "AG5: every width is timed"
     assert "stacked" in pc.decide(measured)
 
 
@@ -222,3 +222,47 @@ def test_a_setup_stored_under_the_old_gate_is_measured_again(tmp_path, monkeypat
     setup = pc.choose_setup("m", "fp", "a" * 64, log=lambda _: None, numeric=numeric, measure=measure)
     assert calls == ["numeric", ("measure", "native")] and setup["engine"] != "dense"
     assert json.loads(store.read_text())[key]["gate_version"] == GATE_VERSION
+
+
+KB2_RUN2_STEPS = {"1": 0.04884, "2": 0.06781, "3": 0.08511, "4": 0.11297, "5": 0.12212, "6": 0.14133,
+                  "7": 0.19027, "8": 0.39412}  # KB2-0 run 2's Gemma plan on a T4; today's native step 0.04726
+
+
+def test_the_stacked_engine_is_judged_and_served_at_its_best_width():
+    """AG5: on KB2-0 run 2's curve the width-8 rule refused the plan (20.3 against 21.2 tokens/s); at its best width,
+    6, it makes about 2x, and the setup serves at 6."""
+    decision = pc.decide(_measured(base_step=0.04726, plan_steps=KB2_RUN2_STEPS, base_first=0.5, plan_first=0.5))
+    assert decision["stacked"] and decision["width"] == 6 and "at width 6" in decision["reason"]
+    assert decision["tokens_per_second"]["stacked_6"] == pytest.approx(6 / 0.14133)
+    assert set(decision["tokens_per_second"]["by_width"]) == set(KB2_RUN2_STEPS)
+    assert decision["tokens_per_second"]["by_width"]["8"] < decision["tokens_per_second"]["base_one"]
+
+
+def test_a_tie_takes_the_narrower_width_and_no_width_wins_is_refused():
+    tie = pc.decide(_measured(plan_steps={"1": 0.053, "4": 0.1, "8": 0.2}))
+    assert tie["stacked"] and tie["width"] == 4
+    flat = pc.decide(_measured(base_step=0.05, plan_steps={"1": 0.06, "2": 0.12, "8": 0.48}))
+    assert not flat["stacked"] and "at any width" in flat["reason"]
+
+
+def test_the_setup_carries_the_width_the_engine_serves_at(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+
+    def numeric(model_id, fingerprint, identity, log):
+        return {"plan": "native", "reason": "recommended"}
+
+    def measure(model_id, compute_dtype, base_only=False):
+        return _measured(base_step=0.04726, plan_steps=KB2_RUN2_STEPS, base_first=0.5, plan_first=0.5)
+
+    setup = pc.choose_setup("m", "fp", "b" * 64, log=lambda _: None, numeric=numeric, measure=measure)
+    assert setup["engine"] == "dense" and setup["width"] == 6
+
+
+def test_the_router_prices_the_stacked_path_at_the_agents_width():
+    from ironmule_product.path_router import PathRouter
+
+    setup = {"stacked": _measured(base_step=0.04726, plan_steps=KB2_RUN2_STEPS), "width": 6}
+    router = PathRouter.from_setup(setup)
+    assert router.costs[1].capacity == 6
+    assert router.costs[1].theta[1] == pytest.approx((0.14133 - 0.04884) / 5 * 1000)
+    assert PathRouter.from_setup({**setup, "width": None}).costs[1].capacity == 8

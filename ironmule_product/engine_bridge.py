@@ -73,10 +73,12 @@ _CONFIGURATIONS = frozenset(("current_profile", "dense_stacked", *_HISTORICAL_CO
 DENSE_WIDTH = 8  # KB1: the dense plan stacks up to eight requests into one decode step
 
 
-def install_dense(model: Any, device_info: dict[str, Any] | None) -> tuple[Any, dict[str, Any]]:
+def install_dense(model: Any, device_info: dict[str, Any] | None,
+                  slots: int = DENSE_WIDTH) -> tuple[Any, dict[str, Any]]:
     """The stacked plan for `model`: KB2's Gemma plan for a 4-bit Gemma 3 (the native plan's row kernel installed
     first, as `--compute-dtype native` installs it), else KB1's dense plan (Qwen 3 bf16). Each refuses what it was
-    not built for and probes the model's own weights before it serves."""
+    not built for and probes the model's own weights before it serves. `slots` is the stacked width (AG5: the
+    agent's measured best width); the pool holds that many requests, so no group or joiner exceeds it."""
     from ironmule import dense_gemma
 
     if dense_gemma.refuse(model, native=False) is None:
@@ -85,11 +87,20 @@ def install_dense(model: Any, device_info: dict[str, Any] | None) -> tuple[Any, 
             native = install_native(model, device_info)
         else:
             native = None
-        plan, record = dense_gemma.install(model, device_info)
+        plan, record = dense_gemma.install(model, device_info, slots=slots)
         return plan, {**record, "model_family": "gemma3", "native": native}
     from ironmule.dense_plan import install
 
-    return install(model, device_info)
+    return install(model, device_info, slots=slots)
+
+
+def dense_width(value: Any) -> int:
+    """AG5: a stacked width the product accepts, 1 to `DENSE_WIDTH`; None means `DENSE_WIDTH`."""
+    if value is None:
+        return DENSE_WIDTH
+    if type(value) is not int or not 1 <= value <= DENSE_WIDTH:
+        raise ValueError(f"the stacked width must be an int from 1 to {DENSE_WIDTH}")
+    return value
 MAX_GROUP_REQUESTS = 32  # Admitted requests; actual grouped execution width remains <=4.
 
 
@@ -251,7 +262,8 @@ class CurrentEngineBridge:
     @classmethod
     def from_loaded(cls, model: Any, tokenizer: Any, spec: Any, *,
                     configuration: BridgeConfiguration = "current_profile",
-                    class_a_knobs: dict[str, Any] | None = None) -> "CurrentEngineBridge":
+                    class_a_knobs: dict[str, Any] | None = None,
+                    width: int | None = None) -> "CurrentEngineBridge":
         """Construct from exactly the already loaded model and registered snapshot.
 
         Identity construction reads the supplied snapshot and fails closed; it does
@@ -263,6 +275,9 @@ class CurrentEngineBridge:
         """
         model_id, revision, snapshot_path = _validate_spec(spec)
         configuration = _validate_configuration(configuration)
+        width = dense_width(width)  # AG5: the stacked engine's width; refused before anything loads
+        if width != DENSE_WIDTH and configuration != "dense_stacked":
+            raise ValueError("a stacked width applies to the dense_stacked configuration only")
         requested = None
         if class_a_knobs is not None:
             from .knob_profile import class_a_knobs as decode_class_a
@@ -299,9 +314,11 @@ class CurrentEngineBridge:
             # model's own weights (stacked rows bit-identical) before it serves.
             import mlx.core as mx
             from ironmule.service import DenseStackedMode
-            plan, dense_record = install_dense(model, mx.device_info() if mx.cuda.is_available() else None)
+            plan, dense_record = install_dense(model, mx.device_info() if mx.cuda.is_available() else None,
+                                               slots=width)
+            dense_record = {**dense_record, "width": width}
             knobs, profile_available, profile_source = BASELINE, False, "dense_numeric_plan"
-            mode = DenseStackedMode(plan, max_width=DENSE_WIDTH)
+            mode = DenseStackedMode(plan, max_width=width)
         elif historical_candidate is not None:
             # These values are an explicit, archived B39d candidate.  They are
             # neither a compatible tune profile nor an automatic selection.

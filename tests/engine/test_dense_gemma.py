@@ -174,14 +174,19 @@ def test_the_product_bridge_picks_the_gemma_plan_for_a_4bit_gemma(monkeypatch):
     monkeypatch.setattr(cuda_native, "install", lambda model, info: calls.append("native") or {"modules": 1})
     monkeypatch.setattr(dg, "refuse", lambda model, native=True: None if not native or "native" in calls
                         else "install the native plan first")
-    monkeypatch.setattr(dg, "install", lambda model, info: calls.append("gemma") or ("plan", {"capacity": 1024}))
-    monkeypatch.setattr(dense_plan, "install", lambda model, info: calls.append("qwen") or ("qplan", {}))
+    monkeypatch.setattr(dg, "install", lambda model, info, slots=8: calls.append(("gemma", slots))
+                        or ("plan", {"capacity": 1024}))
+    monkeypatch.setattr(dense_plan, "install", lambda model, info, slots=8: calls.append(("qwen", slots))
+                        or ("qplan", {}))
     plan, record = engine_bridge.install_dense(tiny_model(), {"total_memory": 1})
-    assert plan == "plan" and calls == ["native", "gemma"]
+    assert plan == "plan" and calls == ["native", ("gemma", 8)]
     assert record["model_family"] == "gemma3" and record["native"] == {"modules": 1}
+    calls.clear()
+    engine_bridge.install_dense(tiny_model(), {"total_memory": 1}, slots=6)  # AG5: the agent's width
+    assert calls == ["native", ("gemma", 6)]
     monkeypatch.setattr(dg, "refuse", lambda model, native=True: "the Gemma dense plan serves Gemma 3 checkpoints only")
     calls.clear()
-    assert engine_bridge.install_dense(object(), None)[0] == "qplan" and calls == ["qwen"]
+    assert engine_bridge.install_dense(object(), None, slots=5)[0] == "qplan" and calls == [("qwen", 5)]
 
 
 class _Tok:

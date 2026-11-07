@@ -1087,3 +1087,133 @@ def test_ag4c_run3_censors_only_the_default_paths_failures_and_only_in_its_favou
     broken = rows[:1] + [row(0, "agent", 0, [req(2, 3), req(None, None, outcome="timeout")])] + rows[2:]
     voided = rl2.analyse_ag4c({"rows": broken, "censor_default": {"deadline_s": 100.0, "limit": 16}}, resamples=50)
     assert voided["verdict"] == "invalid" and voided["complete_blocks"] == 2
+
+
+def test_ag5g_runs_both_phases_with_swapped_cards_and_the_agents_width(tmp_path, monkeypatch):
+    """AG5-G with every outside piece stubbed: the agent decides first, the default path and the agent's stacked
+    engine (at the agent's width) share a phase on two cards, phase 2 swaps them, calibration runs once per phase,
+    prompts are short, and the blocks are numbered across loads and phases."""
+    import importlib
+
+    import huggingface_hub
+
+    from ironmule import plan_choice
+    from ironmule_product import device_pool, state
+
+    tune = importlib.import_module("ironmule.tune")  # `ironmule.tune` the package attribute is the function
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(tmp_path / "86cc6a8"))
+    monkeypatch.setattr(tune, "resolve_local_model", lambda model, revision=None: SimpleNamespace(
+        identity=SimpleNamespace(identity_sha256="e" * 64)))
+    monkeypatch.setattr(plan_choice, "choose_setup", lambda model, fingerprint, identity: {
+        "engine": "dense", "width": 6, "compute_dtype": None, "reason": "2.01x at width 6",
+        "decision": {"tokens_per_second": {"by_width": {"6": 42.5, "8": 20.3}}}})
+    monkeypatch.setattr(device_pool, "cuda_devices", lambda: ["0", "1"])
+    monkeypatch.setattr(rl2, "_ironmule", lambda *a, **k: {"returncode": 0})
+
+    class Store:
+        def __init__(self, root):
+            pass
+
+        def set_request_timeout(self, seconds):
+            self.timeout = seconds
+
+        def model(self, model_id):
+            return ModelSpec("local/test", "revision", str(tmp_path), 1)
+
+    monkeypatch.setattr(state, "ProductStore", Store)
+    pools, clients, replayed = [], [], []
+
+    class Pool:
+        def __init__(self, makers, labels):
+            self.labels, self.router = labels, None
+            clients.append([make() for make in makers])
+
+        def health(self):
+            return {"execution": "fake"}
+
+        def close(self):
+            pass
+
+    def start_paths(store, spec, makers, labels, service, router):
+        pools.append(Pool(makers, labels))
+        return pools[-1]
+
+    monkeypatch.setattr(device_pool, "start_paths", start_paths)
+
+    def replay(pool, model, items, deadline_s):
+        replayed.append((pool.labels[pool.router.index], [dict(item) for item in items]))
+        return [{"outcome": "ok", "first_s": 0.1, "end_s": 1.0 + i, "tokens": 8} for i, _ in enumerate(items)]
+
+    monkeypatch.setattr(rl2, "replay", replay)
+    monkeypatch.setattr(rl2, "wait_idle", lambda pool, timeout_s=None: True)
+    report = rl2.run_ag5g(rl2.AG5G_MODEL, tmp_path, smoke=False)
+    assert "stopped" not in report and report["width"] == 6
+    assert [pool.labels for pool in pools] == [["0:default", "1:agent"], ["1:default", "0:agent"]]
+    default, agent = clients[0]
+    assert default.compute_dtype == "native" and default.cuda_device == "0" and default.dense_width is None
+    assert agent.engine_configuration == "dense_stacked" and agent.dense_width == 6 and agent.cuda_device == "1"
+    assert clients[1][1].cuda_device == "0"
+    calibrations = [labels for labels, items in replayed if all(item["offset_s"] == 0.0 for item in items)
+                    and len(items) == rl2.AG5G_REQUESTS and labels.endswith("default")]
+    assert len(report["phases"]) == 2 and len(calibrations) >= 2
+    assert all(not item.get("long") for _, items in replayed for item in items), "short prompts only"
+    blocks = sorted({row["block"] for row in report["rows"]})
+    assert blocks == list(range(8)) and len(report["rows"]) == 8 * 3
+    assert {(row["phase"], row["load"]) for row in report["rows"]} == {(p, l) for p in (0, 1) for l in rl2.AG5G_LOADS}
+    analysis = rl2.analyse_ag5g(report, resamples=50)
+    assert analysis["complete_blocks"] == 8 and analysis["width"] == 6
+    assert set(analysis["recorded"]) == {"load 0.8", "load 3.0", "phase 0", "phase 1"}
+    assert analysis["curve_tokens_per_s"] == {"6": 42.5, "8": 20.3}
+
+
+def test_ag5g_stops_when_the_agent_does_not_choose_the_stacked_engine(tmp_path, monkeypatch):
+    import importlib
+
+    import huggingface_hub
+
+    from ironmule import plan_choice
+    from ironmule_product import device_pool
+
+    tune = importlib.import_module("ironmule.tune")
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(tmp_path / "86cc6a8"))
+    monkeypatch.setattr(device_pool, "cuda_devices", lambda: ["0"])
+    assert "two cards" in rl2.run_ag5g(rl2.AG5G_MODEL, tmp_path, smoke=False)["stopped"]
+    monkeypatch.setattr(device_pool, "cuda_devices", lambda: ["0", "1"])
+    monkeypatch.setattr(tune, "resolve_local_model", lambda model, revision=None: SimpleNamespace(
+        identity=SimpleNamespace(identity_sha256="e" * 64)))
+    monkeypatch.setattr(plan_choice, "choose_setup", lambda model, fingerprint, identity: {
+        "engine": "reference", "width": None, "compute_dtype": "native", "reason": "the quality gate"})
+    saved = []
+    stopped = rl2.run_ag5g(rl2.AG5G_MODEL, tmp_path, smoke=False, on_row=lambda partial: saved.append(dict(partial)))
+    assert "not the stacked engine" in stopped["stopped"]
+    assert saved and saved[0]["setup"]["engine"] == "reference", "the decision is saved before anything else runs"
+    assert rl2.analyse_ag5g(stopped)["verdict"].startswith("stopped")
+
+
+def test_ag5g_records_a_path_that_does_not_start(tmp_path, monkeypatch):
+    import importlib
+
+    import huggingface_hub
+
+    from ironmule import plan_choice
+    from ironmule_product import device_pool, state
+
+    tune = importlib.import_module("ironmule.tune")
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", lambda *a, **k: str(tmp_path / "86cc6a8"))
+    monkeypatch.setattr(tune, "resolve_local_model", lambda model, revision=None: SimpleNamespace(
+        identity=SimpleNamespace(identity_sha256="e" * 64)))
+    monkeypatch.setattr(plan_choice, "choose_setup", lambda model, fingerprint, identity: {
+        "engine": "dense", "width": 6, "compute_dtype": None, "reason": "2.01x at width 6"})
+    monkeypatch.setattr(device_pool, "cuda_devices", lambda: ["0", "1"])
+    monkeypatch.setattr(rl2, "_ironmule", lambda *a, **k: {"returncode": 0})
+    monkeypatch.setattr(state, "ProductStore", lambda root: SimpleNamespace(
+        set_request_timeout=lambda seconds: None, model=lambda model_id: ModelSpec("local/t", "r", str(tmp_path), 1)))
+
+    def start_paths(*args, **kwargs):
+        raise RuntimeError("worker exited before ready")
+
+    monkeypatch.setattr(device_pool, "start_paths", start_paths)
+    report = rl2.run_ag5g(rl2.AG5G_MODEL, tmp_path, smoke=False)
+    assert "phase 0" in report["failed"] and "worker exited" in report["failed"] and report["setup"]["width"] == 6

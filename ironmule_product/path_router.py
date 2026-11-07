@@ -83,9 +83,10 @@ class PathRouter:
         self._decision_ns = 0
 
     @classmethod
-    def from_setup(cls, setup: dict[str, Any], stacked_width: int = 8) -> "PathRouter":
+    def from_setup(cls, setup: dict[str, Any], stacked_width: int | None = None) -> "PathRouter":
         """From AG4's measurement on this card: the single path's step and first token, the stacked engine's step
-        at one row and at its width."""
+        at one row and at its width (AG5: the agent's chosen width, else 8)."""
+        stacked_width = stacked_width or setup.get("width") or 8
         rows = list(setup["stacked"]["speed"].values())
         mean = lambda key: sum(r[key] for r in rows) / len(rows)  # noqa: E731
         one = sum(r["plan_step_s"]["1"] for r in rows) / len(rows)

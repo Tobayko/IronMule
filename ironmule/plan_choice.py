@@ -8,13 +8,14 @@ output-changing plans that pass its own gate on this machine. Two steps:
 2. On that base path, a stacked engine (KB1's dense plan for Qwen 3 bf16, KB2's Gemma plan for 4-bit Gemma 3) is
    measured where its `refuse` lets the model through. A stacked plan only changes the decode path, so its gate runs
    there: the reference text teacher-forced through the base path's own decode and through the plan, eight rows
-   stacked, against `numeric_plans.QUALITY_BOUND`. Tokens per second are measured at width 1 and width 8, and the
-   time to the first token on a short and a long prompt.
+   stacked, against `numeric_plans.QUALITY_BOUND`. Tokens per second are measured at every width from 1 to the
+   pool's slots (AG5), and the time to the first token on a short and a long prompt.
 
-Decision rule (fixed in BACKLOG AG4 before data): the stacked engine serves if it passed its load probe and its gate,
-makes more tokens per second at width 8 than the base path does for one request, keeps at least `QUIET_FLOOR` of the
-base path's single-request tokens per second, and its first token is at most `TTFT_SLACK` slower. Otherwise the base
-path serves. The decision and every number behind it are stored per hardware fingerprint and model identity, and the
+Decision rule (fixed in BACKLOG AG4 before data; amended by AG5 before AG5-G's data): the stacked engine serves if it
+passed its load probe and its gate, makes more tokens per second at its best width (the most tokens per second on the
+measured curve; it then serves at that width) than the base path does for one request, keeps at least `QUIET_FLOOR`
+of the base path's single-request tokens per second, and its first token is at most `TTFT_SLACK` slower. Otherwise
+the base path serves. The decision and every number behind it are stored per hardware fingerprint and model identity, and the
 product shows them; nothing is chosen silently.
 """
 
@@ -198,7 +199,7 @@ def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int,
         first = first or time.perf_counter() - started
         plan.write_prefill(slot, [c.state for c in cache])
     widths = {}
-    for width in sorted({1, plan.slots}):
+    for width in range(1, plan.slots + 1):  # AG5: the whole curve; Gemma's plan is best at 6 and falls off at 8
         times = []
         for t in range(steps):
             started = time.perf_counter()
@@ -267,26 +268,30 @@ def decide(stacked: dict[str, Any]) -> dict[str, Any]:
         return {"stacked": False, "reason": f"the stacked engine failed the quality gate "
                 f"(ratio {stacked['gate']['ratio']:.5f}, bound {stacked['gate']['interval'][1]:.5f})"}
     rows = list(stacked["speed"].values())
-    width = str(max(int(w) for w in rows[0]["plan_step_s"]))
+    curve = {w: statistics.fmean(int(w) / r["plan_step_s"][w] for r in rows) for w in rows[0]["plan_step_s"]
+             if all(w in r["plan_step_s"] for r in rows)}
+    width = max(curve, key=lambda w: (curve[w], -int(w)))  # AG5: the best width; the narrower one on a tie
     base_tps = statistics.fmean(1 / r["base_step_s"] for r in rows)
     one_tps = statistics.fmean(1 / r["plan_step_s"]["1"] for r in rows)
-    wide_tps = statistics.fmean(int(width) / r["plan_step_s"][width] for r in rows)
+    wide_tps = curve[width]
     ttft = max(r["plan_first_s"] / r["base_first_s"] for r in rows)
-    tps = {"base_one": base_tps, "stacked_one": one_tps, f"stacked_{width}": wide_tps}
+    tps = {"base_one": base_tps, "stacked_one": one_tps, f"stacked_{width}": wide_tps,
+           "by_width": {w: curve[w] for w in sorted(curve, key=int)}}
     if wide_tps <= base_tps:
-        return {"stacked": False, "tokens_per_second": tps, "reason": "stacking makes no more tokens per second here"}
+        return {"stacked": False, "tokens_per_second": tps, "width": int(width),
+                "reason": "stacking makes no more tokens per second here at any width"}
     # AG4 step 2 (amended after AG4-Q run 2): a stacked engine that wins under load but not alone serves beside the
     # single path, and the router sends each request where it finishes first, if both fit the card.
     fits = (stacked.get("memory") or {}).get("two_paths_fit") is True
     if one_tps < QUIET_FLOOR * base_tps:
         why = f"one request alone would run at {one_tps / base_tps:.2f}x, below {QUIET_FLOOR}"
-        return {"stacked": False, "route": fits, "tokens_per_second": tps,
+        return {"stacked": False, "route": fits, "tokens_per_second": tps, "width": int(width),
                 "reason": why + ("; both paths serve and the agent routes each request" if fits else "")}
     if ttft > TTFT_SLACK:
         why = f"the first token would come {ttft:.2f}x later, above {TTFT_SLACK}"
-        return {"stacked": False, "route": fits, "tokens_per_second": tps,
+        return {"stacked": False, "route": fits, "tokens_per_second": tps, "width": int(width),
                 "reason": why + ("; both paths serve and the agent routes each request" if fits else "")}
-    return {"stacked": True, "tokens_per_second": tps, "ttft_ratio": ttft,
+    return {"stacked": True, "tokens_per_second": tps, "ttft_ratio": ttft, "width": int(width),
             "reason": f"{wide_tps / base_tps:.2f}x the tokens per second at width {width}, gate ratio "
                       f"{stacked['gate']['ratio']:.5f}, first token {ttft:.2f}x"}
 
@@ -397,6 +402,7 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
     engine = "dense" if decision["stacked"] else "route" if decision.get("route") else "reference"
     setup = {"compute_dtype": compute_dtype, "engine": engine,
-             "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision}
+             "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision,
+             "width": decision.get("width") if engine in ("dense", "route") else None}  # AG5: serves at this width
     setup["levers"] = levers(setup)
     return _save(key, setup)

@@ -2388,22 +2388,30 @@ AG4C_LIMIT = 16
 
 def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C_TRACES, load: float = AG4C_LOAD,
                  requests: int = AG4C_REQUESTS, limit: int = AG4C_LIMIT, levels: Any = None,
-                 on_row: Any = None) -> dict[str, Any]:
+                 on_row: Any = None, capacity: float | None = None, short: bool = False,
+                 first_block: int = 0) -> dict[str, Any]:
     """Every block (state, trace) runs the default path, the agent's chosen path and the default path again, on the
-    same arrivals, both paths loaded side by side (path 0 the default, path 1 the agent's choice)."""
+    same arrivals, both paths loaded side by side (path 0 the default, path 1 the agent's choice). AG5-G passes a
+    `capacity` calibrated once per phase, `short` (the question alone, no context) and its running block number."""
     pool.router = ForcedRoute(0)
-    burst = [{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, requests, (limit,))]
-    done = replay(pool, model, burst, deadline_s)
-    makespan = max(r["end_s"] or 0.0 for r in done) or 1.0
-    capacity = sum(r["outcome"] == "ok" for r in done) / makespan
+
+    def shorten(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{**item, "long": False} for item in items] if short else items
+
+    calibration = None
+    if capacity is None:
+        burst = shorten([{**item, "offset_s": 0.0} for item in trace(9, 0, 1.0, requests, (limit,))])
+        done = replay(pool, model, burst, deadline_s)
+        makespan = max(r["end_s"] or 0.0 for r in done) or 1.0
+        capacity = sum(r["outcome"] == "ok" for r in done) / makespan
+        calibration = {"capacity_rps": capacity, "makespan_s": makespan, "ok": sum(r["outcome"] == "ok" for r in done)}
     report: dict[str, Any] = {"plan": "ag4c", "arms": ["default", "agent"], "states": list(H2_STATES),
-                              "calibration": {"capacity_rps": capacity, "makespan_s": makespan,
-                                              "ok": sum(r["outcome"] == "ok" for r in done)},
+                              "calibration": calibration or {"capacity_rps": capacity, "given": True},
                               "deadline_s": deadline_s, "rows": []}
-    block = 0
+    block = first_block
     for level in (range(len(H2_STATES)) if levels is None else levels):
         for t in traces:
-            items = trace_h2(level, t, load * capacity, requests, (limit,))
+            items = shorten(trace_h2(level, t, load * capacity, requests, (limit,)))
             for arm, run, index in (("default", 0, 0), ("agent", 0, 1), ("default", 1, 0)):
                 pool.router = ForcedRoute(index)
                 wait_idle(pool, timeout_s=deadline_s)
@@ -2514,6 +2522,115 @@ def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     return {**report, **measured}
 
 
+# ---------------------------------------------------------------- AG5-G: the agent's own width, Gemma 3 on T4s
+
+AG5G_MODEL = "mlx-community/gemma-3-12b-it-4bit"
+AG5G_REVISION = "86cc6a8dedbc456dd0e4af01a9d09f396f77e558"  # KB2's revision
+AG5G_LOADS = (0.8, 3.0)        # AG4-R's loads, over the default path's calibrated capacity
+AG5G_LEVELS = (1, 2)           # AG4-C's states: bursts and spike
+AG5G_TRACES = (430,)           # a fresh seed, run in both phases
+AG5G_REQUESTS = 12
+AG5G_LIMIT = 256
+AG5G_DEADLINE_S = 3600.0       # AG4-C run 3's deadline and censoring of the default path
+
+
+def run_ag5g(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG5-G (BACKLOG AG5, fixed before its data): the product's own `choose_setup` decides; then the default path
+    (the native plan, one request at a time) and the agent's setup (the native plan with the stacked engine at the
+    agent's width) side by side on two cards, through the product, on the same arrivals; phase 2 swaps the cards."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule.plan_choice import choose_setup
+    from ironmule.tune import resolve_local_model
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.cli import _engine_options
+    from ironmule_product.device_pool import cuda_devices, start_paths
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, revision=AG5G_REVISION if model == AG5G_MODEL else None,
+                                      allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                      "tokenizer*"])).name
+    report: dict[str, Any] = {"plan": "ag5g", "model": model, "revision": revision}
+    devices = cuda_devices()
+    if len(devices) < 2:
+        return {**report, "stopped": f"AG5-G needs two cards, this session has {len(devices)}"}
+    identity = resolve_local_model(model, revision=revision).identity
+    setup = choose_setup(model, "kaggle-ag5g", identity.identity_sha256)
+    report["setup"] = setup
+    if on_row is not None:
+        on_row(report)  # the agent's decision is kept whatever happens next
+    if setup["engine"] != "dense" or not setup.get("width"):
+        return {**report, "stopped": f"the agent's setup is {setup['engine']}, not the stacked engine: "
+                                     f"{setup['reason']}"}
+    width = int(setup["width"])
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {**report, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    deadline = 600.0 if smoke else AG5G_DEADLINE_S
+    store.set_request_timeout(int(deadline))
+    report.update(censor_default={"deadline_s": deadline, "limit": AG5G_LIMIT}, width=width, rows=[], phases=[],
+                  arms=["default", "agent"], states=list(H2_STATES), deadline_s=deadline)
+    spec = store.model(model)
+    sizes = {"requests": 2, "limit": 8} if smoke else {"requests": AG5G_REQUESTS, "limit": AG5G_LIMIT}
+    loads, levels, traces = ((AG5G_LOADS[-1],), AG5G_LEVELS[:1], AG5G_TRACES) if smoke else (
+        AG5G_LOADS, AG5G_LEVELS, AG5G_TRACES)
+    for phase, (default_card, agent_card) in enumerate(((devices[0], devices[1]), (devices[1], devices[0]))):
+        makers = [lambda card=default_card: MLXWorkerClient(spec, compute_dtype="native", cuda_device=card),
+                  lambda card=agent_card: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=card,
+                                                          **_engine_options("dense", width))]
+        try:
+            pool = start_paths(store, spec, makers, [f"{default_card}:default", f"{agent_card}:agent"],
+                               ProductService, ForcedRoute(0))
+        except Exception as exc:  # noqa: BLE001 - recorded: the stacked engine has not served Gemma before
+            report["failed"] = f"phase {phase}: the paths did not start: {exc!r}"[:500]
+            return report
+        try:
+            capacity = None
+            for load in loads:
+                measured = measure_ag4c(pool, model, deadline, traces=traces, load=load, levels=levels,
+                                        capacity=capacity, short=True, first_block=len({r["block"] for r in
+                                                                                         report["rows"]}),
+                                        **sizes)
+                if capacity is None:
+                    capacity = measured["calibration"]["capacity_rps"]
+                    report["phases"].append({"phase": phase, "default_card": default_card, "agent_card": agent_card,
+                                             "calibration": measured["calibration"],
+                                             "execution": pool.health().get("execution")})
+                for row in measured["rows"]:
+                    report["rows"].append({**row, "phase": phase, "load": load})
+                if on_row is not None:
+                    on_row(report)
+        finally:
+            pool.close()
+    return report
+
+
+def analyse_ag5g(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG5-G as fixed in BACKLOG AG5 before its data: AG4-C's analysis unchanged over all blocks (it decides), and
+    the same ratio per load and per phase, recorded only."""
+    out = analyse_ag4c(report, resamples, seed)
+    out["schema"] = "ironmule.rl2_headroom.ag5g.analysis.v1"
+    setup = report.get("setup") or {}
+    out["width"] = report.get("width")
+    out["curve_tokens_per_s"] = ((setup.get("decision") or {}).get("tokens_per_second") or {}).get("by_width")
+    out["agent_setup_reason"] = setup.get("reason")
+    if report.get("stopped") or not report.get("rows"):
+        return out
+    recorded = {}
+    for key, value in (("load", lambda row: row.get("load")), ("phase", lambda row: row.get("phase"))):
+        for each in sorted({value(row) for row in report["rows"]}):
+            part = analyse_ag4c({**report, "rows": [row for row in report["rows"] if value(row) == each]},
+                                resamples, seed)
+            recorded[f"{key} {each}"] = {"tokens_per_s": part.get("agent_tokens_per_s"),
+                                         "ttft": part.get("agent_ttft"), "complete_blocks": part.get("complete_blocks")}
+    out["recorded"] = recorded
+    return out
+
+
 _BOOTSTRAP = '''"""IronMule RL2-H on this Kaggle session; written by training/rl2_headroom.py."""
 from __future__ import annotations
 import subprocess, sys
@@ -2560,7 +2677,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "ag4r", "ag4c", "x1"),
+                                           "ag1", "ag4r", "ag4c", "ag5g", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -2598,7 +2715,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
-                 "ag4c": analyse_ag4c}.get(inner.get("plan"), analyse)
+                 "ag4c": analyse_ag4c, "ag5g": analyse_ag5g}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -2616,17 +2733,19 @@ def main(argv: Iterable[str] | None = None) -> int:
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
     if args.plan == "ag4c" and args.model is None:
         model = AG4C_MODEL
+    if args.plan == "ag5g" and args.model is None:
+        model = AG5G_MODEL
     if args.plan == "x1":
         report["x1"] = run_x1(model, args.out, smoke=args.smoke)
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
                       "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
-                      "ag4c": (run_ag4c, analyse_ag4c)}[args.plan]
+                      "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]

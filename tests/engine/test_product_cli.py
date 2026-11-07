@@ -121,3 +121,45 @@ def test_the_dense_engine_gets_its_configuration_and_time_to_probe_its_kernels()
     spec = ModelSpec("local/test", "revision", "/models/test", 1)
     client = MLXWorkerClient(spec, execution_variant="current_engine", **product_cli._engine_options("dense"))
     assert client.startup_timeout == DENSE_STARTUP_TIMEOUT > DEFAULT_TIMEOUT
+    assert client.dense_width is None
+
+
+def test_the_agents_width_reaches_the_stacked_worker_and_nothing_else(tmp_path, monkeypatch):
+    """AG5: the width the agent measured best goes to the dense worker as `--dense-width`; it is refused outside
+    the dense configuration and outside 1-8, before any process starts."""
+    import subprocess
+
+    import pytest
+
+    import ironmule_product.cli as product_cli
+    from ironmule_product import engine_bridge
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.types import ModelSpec
+
+    options = product_cli._engine_options("dense", 6)
+    assert options["dense_width"] == 6 and options["engine_configuration"] == "dense_stacked"
+    assert product_cli._engine_options("dense", None) == product_cli._engine_options("dense")
+    spec = ModelSpec("local/test", "revision", "/models/test", 1)
+    client = MLXWorkerClient(spec, execution_variant="current_engine", **options)
+    seen = []
+
+    class Stop(Exception):
+        pass
+
+    def popen(arguments, **_):
+        seen.append(list(arguments))
+        raise Stop
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    with pytest.raises(Exception):
+        client.start()
+    assert seen and seen[0][seen[0].index("--dense-width") + 1] == "6"
+    for bad in (0, 9, True, "6"):
+        with pytest.raises(ValueError):
+            MLXWorkerClient(spec, execution_variant="current_engine", engine_configuration="dense_stacked",
+                            dense_width=bad)
+    with pytest.raises(ValueError):
+        MLXWorkerClient(spec, execution_variant="current_engine", dense_width=6)  # not the dense configuration
+    assert engine_bridge.dense_width(None) == 8 and engine_bridge.dense_width(6) == 6
+    with pytest.raises(ValueError):
+        engine_bridge.dense_width(9)

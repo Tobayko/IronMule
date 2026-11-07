@@ -68,6 +68,9 @@ the agent finds them itself before it serves (`ironmule/plan_choice.py`):
    - the quality gate on the decode path;
    - AG4's rule: more tokens per second at its best width, at least 0.9x for one request alone, and a first
      token at most 1.1x later.
+   - Since AG5 (2026-11-07) the agent times every width from 1 to 8. It judges the engine at its best width and
+     serves it at that width. On a T4, KB2-0's Gemma plan makes 2.0x at width 6 but 0.96x at width 8, where the
+     old width-8 rule would have refused it.
 
 Both gates score the same fixed text, cut into 16 chunks of 512 tokens. Since GATE2 (2026-11-07), each chunk
 starts with the tokenizer's BOS, as a chat request does. Without it, Gemma 3 was unstable on every path, today's
