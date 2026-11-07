@@ -108,7 +108,7 @@ def test_measure_stacked_runs_on_a_cpu_stand_in():
 
 
 def test_a_model_without_a_stacked_engine_is_measured_as_ineligible(monkeypatch):
-    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: (0.1, 0.05))
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None: (0.1, 0.05))
 
     def refuse(model, info):
         raise ValueError("the dense plan serves Qwen 3 checkpoints only")
@@ -122,7 +122,7 @@ def test_a_model_no_stacked_plan_serves_is_refused_before_anything_is_timed(monk
     """On a CPU, or for a model neither plan serves, the agent refuses the stacked engine without timing the base
     path: on a slow CPU the base path's 32 timed steps alone can take minutes."""
     timed = []
-    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: timed.append(1) or (0.1, 0.05))
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None: timed.append(1) or (0.1, 0.05))
     out = pc.measure_stacked(object(), None, None)
     assert out["eligible"] is False and "CUDA GPUs below compute capability 8" in out["reason"] and timed == []
     t4 = {"compute_capability_major": 7, "device_name": "Tesla T4"}
@@ -293,7 +293,8 @@ def test_the_base_path_runs_before_the_stacked_plan_takes_its_pool(monkeypatch):
     out of memory beside the stacked plan's pool; run 2, with the gate's reference on the base path beside the
     pool, did not finish in two hours. Its timing and the gate's reference now run first, the plan after."""
     calls = []
-    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: calls.append("base") or (0.1, 0.05))
+    monkeypatch.setattr(pc, "_base_speed",
+                        lambda model, ids, steps, samples=None: calls.append("base") or (0.1, 0.05))
     monkeypatch.setattr(pc, "_decode_nll", lambda model, ids, lead=None: calls.append("reference") or 1.0)
     monkeypatch.setattr(pc, "_release_memory", lambda: calls.append("release"))
 
@@ -429,3 +430,27 @@ def test_the_stage_log_carries_the_allocator_and_the_record_its_retries():
                                   make_plan=make_plan, log=lines.append)
     assert measured["retried_out_of_memory"] == []
     assert all("active" in line and "peak" in line for line in lines), lines
+
+
+def test_first_tokens_are_medians_of_several_prefills_and_their_samples_are_kept():
+    """AG5-G run 5 (post hoc): the rule's first-token ratio read 1.05 in run 4 and 1.18 in run 5 for the same
+    prefill code, each side timed once. Each side is now the median of several prefills, all of them recorded."""
+    import statistics
+
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import _Tok, tiny_model
+
+    model = tiny_model()
+
+    def make_plan(model_, info):
+        plan = dense_gemma.GemmaDensePlan(model_, slots=3, capacity=96, attention=dense_gemma.reference_attention,
+                                          native=False)
+        return plan, dense_gemma.probe(plan)
+
+    measured = pc.measure_stacked(model, _Tok(), None, chunks=4, size=16, steps=3, long_prompt="x" * 40,
+                                  make_plan=make_plan)
+    for row in measured["speed"].values():
+        assert len(row["base_first_samples_s"]) == pc.FIRST_SAMPLES and len(row["plan_first_samples_s"]) == 3
+        assert row["base_first_s"] == statistics.median(row["base_first_samples_s"])
+        assert row["plan_first_s"] == statistics.median(row["plan_first_samples_s"])

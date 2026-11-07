@@ -64,6 +64,7 @@ MODEL_UNCHANGED = True
 QUIET_FLOOR = 0.9       # the stacked engine's single-request tokens per second over the base path's, at least
 TTFT_SLACK = 1.1        # its time to the first token over the base path's, at most
 SPEED_STEPS = 32
+FIRST_SAMPLES = 5  # base-path prefills behind each first-token time (their median); the plan's are its slots'
 MEASURE_TIMEOUT_S = 3600  # a stacked measurement past this is a failure: KB2's probe gated Gemma 3 12B in 26 min
 SHORT_PROMPT = "Explain in detail how rain forms, step by step."
 
@@ -220,16 +221,23 @@ def _again_if_out_of_memory(step: Callable[[], Any], retried: list[str], name: s
         return step()
 
 
-def _base_speed(model: Any, ids: list[int], steps: int) -> tuple[float, float]:
-    """(seconds to the first token, seconds per decode step) for one request on the base path."""
+def _base_speed(model: Any, ids: list[int], steps: int, samples: list[float] | None = None) -> tuple[float, float]:
+    """(seconds to the first token, seconds per decode step) for one request on the base path. The first token is
+    the median of `FIRST_SAMPLES` prefills, each from a fresh cache (`samples` gets them all): AG5-G runs 4 and 5
+    timed it once, and the same prefill read 0.742 s in one session and 0.685 s in the next."""
     import mlx.core as mx
     from mlx_lm.models.cache import make_prompt_cache
 
     mx.eval(model(mx.array(ids)[None], cache=make_prompt_cache(model)))  # warm: compile outside the clock (AG4-Q 2)
-    cache = make_prompt_cache(model)
-    started = time.perf_counter()
-    token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
-    first = time.perf_counter() - started
+    firsts = []
+    for _ in range(FIRST_SAMPLES):
+        cache = make_prompt_cache(model)
+        started = time.perf_counter()
+        token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
+        firsts.append(time.perf_counter() - started)
+    if samples is not None:
+        samples.extend(firsts)
+    first = statistics.median(firsts)
     times = []
     for _ in range(steps):
         started = time.perf_counter()
@@ -238,12 +246,15 @@ def _base_speed(model: Any, ids: list[int], steps: int) -> tuple[float, float]:
     return first, statistics.median(times[2:] or times)
 
 
-def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int, float]]:
-    """(seconds to the first token, {width: seconds per stacked step}) on the plan, every slot holding `ids`."""
+def _plan_speed(plan: Any, ids: list[int], steps: int, samples: list[float] | None = None
+                ) -> tuple[float, dict[int, float]]:
+    """(seconds to the first token, {width: seconds per stacked step}) on the plan, every slot holding `ids`. The
+    first token is the median of the slots' prefills (`samples` gets them all); AG5-G runs 4 and 5 kept the first
+    slot's alone."""
     import mlx.core as mx
 
     new_cache = getattr(plan, "new_cache", None)
-    first = 0.0
+    firsts = []
     warm = new_cache() if new_cache is not None else None
     if warm is None:
         from mlx_lm.models.cache import make_prompt_cache
@@ -257,7 +268,7 @@ def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int,
             cache = make_prompt_cache(plan.model)
         started = time.perf_counter()
         mx.eval(mx.argmax(plan.prefill(mx.array(ids)[None], cache), axis=-1))
-        first = first or time.perf_counter() - started
+        firsts.append(time.perf_counter() - started)
         plan.write_prefill(slot, [c.state for c in cache])
     widths = {}
     for width in range(1, plan.slots + 1):  # AG5: the whole curve; Gemma's plan is best at 6 and falls off at 8
@@ -269,7 +280,9 @@ def _plan_speed(plan: Any, ids: list[int], steps: int) -> tuple[float, dict[int,
                                            mx.array([len(ids) + t] * width, dtype=mx.int32)), axis=-1))
             times.append(time.perf_counter() - started)
         widths[width] = statistics.median(times[2:] or times)
-    return first, widths
+    if samples is not None:
+        samples.extend(firsts)
+    return statistics.median(firsts), widths
 
 
 def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
@@ -299,7 +312,9 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     if make_plan is None and (reason := stacked_refusal(model, device_info)) is not None:
         return {"eligible": False, "reason": reason}  # nothing timed for a model no stacked plan serves
     prompts = (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT))
-    base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps) for name, prompt in prompts}
+    base_firsts: dict[str, list[float]] = {name: [] for name, _ in prompts}
+    base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps, base_firsts[name])
+            for name, prompt in prompts}
     note("base path timed")
     items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
     leads, pieces = [lead for lead, _ in items], [piece for _, piece in items]
@@ -321,10 +336,12 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
         prompt_ids = list(tokenizer.encode(prompt))
         base_first, base_step = base[name]
         _release_memory()
-        plan_first, plan_steps = _again_if_out_of_memory(lambda: _plan_speed(plan, prompt_ids, steps), retried,
-                                                         f"speed, {name} prompt")
+        plan_firsts: list[float] = []
+        plan_first, plan_steps = _again_if_out_of_memory(
+            lambda: _plan_speed(plan, prompt_ids, steps, plan_firsts), retried, f"speed, {name} prompt")
         speed[name] = {"base_first_s": base_first, "base_step_s": base_step, "plan_first_s": plan_first,
-                       "plan_step_s": {str(w): s for w, s in plan_steps.items()}}
+                       "plan_step_s": {str(w): s for w, s in plan_steps.items()},
+                       "base_first_samples_s": base_firsts[name], "plan_first_samples_s": plan_firsts[-plan.slots:]}
         note(f"stacked steps timed at every width, {name} prompt")
     out["speed"] = speed
     out["retried_out_of_memory"] = retried

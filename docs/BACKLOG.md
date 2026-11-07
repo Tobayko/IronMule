@@ -1324,6 +1324,24 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
     natively, is the plan's attention (KB3).
   - AG5 stays open. The width rule chose a width, but a stacked engine the agent chooses on this card is still
     missing. KB3 targets that.
+- **AG5-G run 5 (2026-11-07, kernel v5 at `91610fb`, two T4s, 0.4 session hours): valid stop by the rule, on
+  the other condition. No serving data.** It was identical to run 4 except for the FA2 kernel: only
+  `ironmule/dense_gemma.py` differed, and the harness file was the same.
+  - The plan served FA2 version 3 (kernel `622a8bfe...`, plan version 2). The gate read 0.9988020931047558, the
+    same value to the last digit as run 4, so the plan's answers were unchanged.
+  - One request alone now made 0.914x the native path (19.14 tokens per second against 20.94), above the 0.9
+    floor. Width 6 made 44.18 tokens per second (2.11x).
+  - The rule refused on the first token instead. On the long prompt the plan's first token took 0.810 s against
+    the native path's 0.685 s, 1.18x, above 1.1. In run 4 the same two prefills had read 0.781 s and 0.742 s
+    (1.05x). FA2 does not run in a prefill, so nothing in the kernel change touched these times.
+  - *Post hoc (after run 5's data, labelled so; run 5's verdict stands):* both first-token times were single
+    timings. The native path's own prefill moved by 8 % between the two sessions, enough to flip the rule.
+    - Each side is now the median of several prefills: 5 fresh ones on the native path, and the plan's 8 slot
+      prefills, which it ran anyway and of which it kept only the first.
+    - Every sample is recorded (`base_first_samples_s`, `plan_first_samples_s`).
+    - The rule itself is unchanged: 1.1x, on the worse prompt.
+  - Run 6 is the same AG5-G at the commit with that measurement, run once. If the plan's prefill is really about
+    15 % slower, the medians show it, and the rule refuses again.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
