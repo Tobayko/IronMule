@@ -901,3 +901,23 @@ def test_the_agents_two_path_setup_starts_both_workers_on_one_card(monkeypatch, 
                                              "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
     seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], setup)
     assert seen["compute_dtype"] == "float16" and seen.get("execution_variant", "reference") == "reference"
+
+
+def test_the_agents_two_path_setup_serves_through_the_learning_router(monkeypatch, tmp_path):
+    """AG6: `route` hands both paths to the policy router, which starts in `route` at the agent's width."""
+    from ironmule_product import device_pool
+    from ironmule_product.path_router import PolicyRouter
+    setup = {"engine": "route", "compute_dtype": "float16", "reason": "routes each request", "width": 6,
+             "stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                             "plan_step_s": {"1": 0.021, "6": 0.026, "8": 0.028}}}}}
+    taken = {}
+
+    def start_paths(store, spec, makers, labels, service, router):
+        taken.update(labels=labels, router=router)
+        raise _Stop
+
+    monkeypatch.setattr(device_pool, "start_paths", start_paths)
+    _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], setup)
+    router = taken["router"]
+    assert isinstance(router, PolicyRouter) and router.mode == "route"
+    assert taken["labels"] == ["0:single", "0:stacked"] and router.costs[1].capacity == 6

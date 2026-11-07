@@ -353,7 +353,8 @@ def serve(argv: list[str]) -> int:
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
                                        **_engine_options(args.engine, stacked_width), **knob_options)
             if args.engine == "route":  # AG4 step 2: the single path and the stacked engine on one card, routed
-                from ironmule_product.path_router import PathRouter
+                # AG6: the router learns its serving mode (route, stacked or single) by dreaming (AG6-H)
+                from ironmule_product.path_router import PolicyRouter
 
                 from .device_pool import start_paths
                 device = devices[0]
@@ -364,7 +365,7 @@ def serve(argv: list[str]) -> int:
                                                   **_engine_options("dense", stacked_width))
                 label = device if device is not None else "0"
                 service = start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
-                                      ProductService, PathRouter.from_setup(agent_setup))
+                                      ProductService, PolicyRouter.from_setup(agent_setup))
             elif len(devices) > 1:
                 from .device_pool import start_pool
                 service = start_pool(store, spec, devices, make_backend, ProductService)
@@ -382,8 +383,8 @@ def serve(argv: list[str]) -> int:
                 each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
                                                                     "numeric", "stacked", "levers")}
         if spec is not None and args.agent == "on" and args.engine == "route":
-            print(json.dumps({"agent": {"serving": "two paths, routed per request", "reason": agent_setup["reason"]}}),
-                  flush=True)
+            print(json.dumps({"agent": {"serving": "two paths on one card; the agent dreams whether to route, stack or "
+                                                   "serve single", "reason": agent_setup["reason"]}}), flush=True)
         elif spec is not None and args.agent == "on" and args.engine == "dense":
             # AG4: the stacked engine serves its measured schedule (w8, slot reuse); the online agent does not
             # attach yet, because its world model prices one group at a time, not slot reuse (AG4, step 3).

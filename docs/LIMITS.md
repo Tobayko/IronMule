@@ -97,8 +97,9 @@ the integration tests only (OPT3-D (a): protocol 2 vetoed a stalled run, referen
 
 ## The IronMule agent (`--agent on`, AG1, opt-in)
 
-One hardware result so far, for its own setup (AG4, below). The online part, the order and width it learns while
-it serves, has no hardware gain yet: what has run is its code against a simulated server, on this repository's
+Two hardware results so far: its own setup at startup (AG4) and the serving mode it learns while it serves on two
+paths (AG6), both below. The online part that orders and sizes groups, the order and width it learns while it
+serves, has no hardware gain yet: what has run is its code against a simulated server, on this repository's
 tests and in hardware runs that qualified nothing (BACKLOG AG1, S, V to V5-CPU). That online part decides two things only:
 order and group width. Placement across GPUs, engine, plan, knobs and output are outside it. Its world model
 assumes one group at a time with members prefilled one after another, so it refuses the dense plan's slot reuse
@@ -117,7 +118,20 @@ RL2-H2's bursts and spike traffic (4 blocks, 16 requests per path and run, 16-to
 missed the 3,600 s deadline on 22 of its 32 requests; those were counted as finished at the deadline, in its
 favour. `dequantize` changes answers within its quality gate (logits within 0.28 % of the float32 plan; 1 of
 5 comparable answers bit-identical). Nothing here covers another CPU, another model, quiet traffic, a GPU, the
-stacked engine or the router (AG4-R is still open).
+stacked engine or the router (AG4-R run 1 was cut by Kaggle's time limit and is invalid).
+
+### The serving mode it learns while serving (AG6)
+
+AG6-H (BACKLOG AG6) is the measured gain from learning while serving: on one Kaggle T4, with
+`mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, the agent's setup was two paths on the card, the float16 single path
+and the stacked engine at width 8. Dreaming over the traffic it served, the agent moved from routing each request
+to stacking every request after its first 32, and it then made 1.51x the tokens per second of the router it
+replaces (95 % 1.33x to 1.64x), with mean first tokens at 0.55x (95th percentile 0.49x). That was on RL2-H2's
+bursts and spike states at 0.8 and 3.0 times the single path's capacity, 16 blocks of 32 requests with
+256-token answers, through the product at `c58fb4b`. Every answer was one of the two gated paths' own. Its gain is
+one switch it learned by itself; the run did not show it switching back, since stacking won in every state there,
+and the forced stacked engine was 0.75 % faster still. Nothing here covers quiet traffic, another model, card or
+card count, answers of other lengths, or a setup other than `route`.
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 
@@ -195,7 +209,9 @@ measured it as it ships: version 2 prefill, freed slots refilled by newcomers, e
 token, at its default width of eight (width four cost 8.3 % more). Without slot reuse it had cost 24.0 % less
 (H9). It is recommended on exactly that setup (two Tesla T4s, `mlx-community/Qwen3-1.7B-bf16` at `9cd66928`), as
 an opt-in numeric plan: about half of its answers differ from `--engine tuned` (258 of 576 compared were the
-same). It passed the numeric plans' quality gate.
+same). It passed the numeric plans' quality gate. Until a fix on 2026-11-07 (BACKLOG AG6-H), the worker rejected a
+request that joined a batch after the batch's first run as too long for the engine; runs before then measured that
+worker.
 
 It needs unquantized Qwen 3 bf16 on CUDA below compute capability 8 and takes about two minutes to start. The
 recommendation covers prompt plus answer up to 2,048 tokens, the slot size it was measured with and still

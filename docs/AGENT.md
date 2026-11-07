@@ -86,6 +86,22 @@ is invalid by its rule, but it showed where the agent falls short. On that traff
 2.10x the single path's tokens per second, against the routed setup's 1.44x. The router learned too little to shift
 towards it (1.007x over the frozen router), and it sent some requests to a path whose slot could not hold them.
 
+## Its serving mode, learned by dreaming (AG6)
+
+With two paths on the card, the agent now also learns how to use them (`PolicyRouter` in
+`ironmule_product/path_router.py`). It has three modes: `route` (the router above), `stacked` (every request to
+the stacked engine, and one its slot cannot hold to the single path) and `single`. Every 16 finished requests, once
+32 are logged, it dreams: it replays the arrivals and answer lengths of its last 64 requests under each mode, in a
+world model built from the prices it learned and the card's time shared between the two paths. It moves to the
+mode with the most tokens per second if that mode is at least 5 % ahead and its mean first token is at most 1.1x
+the current mode's. The dream runs after a request has finished; a decision stays a lookup, under a microsecond.
+Each path still answers with its own gated plan, so no answer changes beyond the two paths' own.
+
+On one T4 with Qwen 3 1.7B (AG6-H, 2026-11-07) the agent started in `route`, moved to `stacked` at its first dream
+after 32 requests, and kept it. It made 1.51x the router's tokens per second (95 % 1.33x to 1.64x), with mean first
+tokens at 0.55x. `ironmule serve --agent on` serves this way wherever the agent's setup is `route`, and `/health`
+shows the mode, the dreams and the switches under `paths`.
+
 Measured on hardware (AG4-C run 3, one cloud CPU, `SmolLM2-135M-Instruct-8bit`): the agent chose `dequantize` by
 itself and served 24.5x the default's tokens per second (95 % 12.3x to 31.3x), first tokens about 20x sooner, on
 bursts and spike traffic. LIMITS has the validity domain.
@@ -142,7 +158,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 | `ironmule_product/agent.py` | the agent: world model, planner, replay qualification, judge, decisions, state |
 | `ironmule_product/length_model.py` | AG2's online answer-length model |
 | `ironmule/plan_choice.py` | AG4: the agent's own choice of numeric plan and stacked engine, once per machine and model |
-| `ironmule_product/path_router.py` | AG4: routes each request between two paths on one card, learning their costs online |
+| `ironmule_product/path_router.py` | AG4: routes each request between two paths on one card, learning their costs online; AG6: `PolicyRouter` dreams which serving mode to use |
 | `ironmule/dense_gemma.py` | KB2: up to eight 4-bit Gemma 3 requests stacked into one decode step |
 | `ironmule_product/hardware_profile.py` | AG3: the device, its bandwidth, the decode floor and how much of it is used |
 | `ironmule_product/learned_dispatch.py` | the policy format the agent shares with LD1 (`Policy`, `View`, order key) |
@@ -169,3 +185,10 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
   gated the same plan again on BOS-led chunks: the main path passed (0.9988, 95 % up to 1.0008), but the long path,
   4 chunks past the window, did not (95 % up to 1.0080). KB2-L repeated the long path with 16 windows and it passed
   (0.9973, 95 % up to 1.0012). The plan is now a candidate opt-in plan, and AG5-G measures it through the product.
+- **AG6-H on a T4 (2026-11-07): the first hardware gain from learning while serving.** Dreaming over the traffic
+  it served, the agent switched from routing to stacking and made 1.51x the tokens per second of the router it
+  replaces (95 % 1.33x to 1.64x), first tokens 0.55x. It found one switch by itself; switching back where another
+  mode wins is not shown yet. The run's data also exposed a worker defect, now fixed: from a batch's second run
+  on, a joining request was rejected as too long for the engine.
+- **AG5-G (the agent's own width on Gemma 3 12B) has no result yet.** Run 1 ran out of memory in the agent's
+  startup measurement, and run 2's measurement did not finish within its two hours (BACKLOG AG5).

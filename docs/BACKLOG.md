@@ -1369,6 +1369,40 @@ not evidence for a claim).**
   trace, so a time cut leaves every load and state measured. The stacked worker serves at the width AG5's rule
   chose. Before the hardware run, the tests cover the arms, the rotation, the mode record, the time guard and the
   decision rule with stand-in workers.
+- **AG6-H result: passes (2026-11-07; kernel `tobayko/ironmule-rl2-headroom-ag6h` v1 at `c58fb4b`, one Kaggle T4,
+  3.2 session hours).** The agent's own setup was `route`: the float16 single path beside the stacked engine at
+  width 8, because one request alone ran at 0.81x on the stacked engine. All 16 blocks completed, no request
+  failed, and no time cut was needed. The A/A noise of the two single runs was 1.3 % in tokens per second and 2.7 %
+  in the mean first token.
+  - **Decision:** the agent over the router, paired by block, made 1.512x the tokens per second (95 %
+    1.335-1.639). Its mean first token was 0.553x the router's (95 % 0.445-0.622), its 95th percentile 0.487x
+    (95 % 0.336-0.613). Both conditions hold, so AG6 passes by its rule.
+  - *Recorded:*
+    - the agent over the single path, 2.58x (95 % 2.08-3.03), with first tokens at 0.19x (mean) and 0.21x (p95);
+    - the agent over the forced stacked engine, 0.9925x (95 % 0.9877-0.9967);
+    - the router over the single path, 1.70x, and the stacked engine over it, 2.59x;
+    - the agent over the router by load and state: 1.019x (0.8, bursts), 1.551x (0.8, spike), 1.294x (3.0, bursts)
+      and 1.734x (3.0, spike).
+  - *What it learned:* its first dream, after block 0's 32 requests, moved it from `route` to `stacked`, and its 30
+    later dreams kept `stacked`. Its gain over the router is that switch, learned from the traffic it served.
+    Afterwards it served as the forced stacked engine does. Block 0, served wholly in `route`, read 0.965x the
+    forced arm, and blocks 3 and 13 read 0.980x and 0.967x; the other 13 blocks were 0.993-1.002x. The run does not
+    show it moving back where another mode wins, because on this card, model and traffic `stacked` won in every
+    load and state. A decision took 0.85 us, against the router's 11.7 us.
+  - *Correctness:* each of the 128 prompts was answered 20 times (4 blocks by 5 arm runs). Every prompt had at
+    most two distinct answers, the single path's and the stacked engine's, both gated (AG4); 8 prompts had one. The
+    single path's answers were identical in every block and in both of its runs.
+  - *A product defect, found in this run's data:* the pool fell back to the single path 15 times. In block 13 the
+    forced stacked arm handed 8 short requests to the single path, which served them one after another. The
+    worker's result loop rebound the dense plan's slot limit to the last member's output limit
+    (`ironmule_product/worker.py`, since `562ccd25` on 2026-10-30). So from a batch's second run on, a request
+    joining it was rejected as too long for the engine (prompt plus 256 tokens against 256). In this route setup
+    the single path then served it. Under `--engine dense` alone the client would have got a 400, and under
+    `current_profile` the same happened once a batch had a second run. It is fixed with tests after this run (`359f8d6`). All
+    arms ran on the same worker, so the comparison stands. The fix can only keep more rows on the stacked engine.
+  - *Ships:* the policy learner serves opt-in under `--agent on` wherever the agent's setup is `route`. The claim
+    is bounded to one T4, Qwen 3 1.7B bf16 at `9cd6692`, these four load-and-state cells, 32-request blocks with
+    256-token answers and the product at `c58fb4b`. The ledger entry is still owed.
 
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 
