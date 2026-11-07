@@ -2367,6 +2367,26 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
     width 6 gets 1,024-token slots, which never pass the 1,024-token window. Whether the plan may serve there, scoped
     to the window, is a new claim; it needs its own protocol and fresh data, and the owner's decision.
 
+- **KB2-L, the long path with power (owner decision 2026-11-07; fixed now, before its data).** It reopens KB2's
+  Tier 0 entry once more. The kill it failed was (c), long path: "the perplexity ratio by
+  `numeric_choice.ratio_interval` must pass below 1.005" on 4 chunks of 128 tokens past the window. The new
+  evidence is KB2-G itself. Its main path passed, and its long path's mean was 1.0003, but 4 chunks, 512 scored
+  tokens, could not clear the bound with the per-chunk spread the main path shows (up to 0.010 nats).
+  - *Power, fixed before the data:* the bound is 0.005 nats a token (ln 1.005). The 95 % half-width of a mean over
+    n windows is about 1.96 x SD / sqrt(n). At KB2-G's long spread (SD 0.0079 nats) that is 0.0078 for 4 windows,
+    wider than the bound even at a true ratio of 1, and 0.0039 for 16. At the main path's spread (SD 0.0043) it is
+    0.0021 for 16.
+  - *Run:* `tools/cuda_probe.py --plan kb2l` on one Kaggle T4, the same model and revision, at a pushed commit,
+    about 0.2 session hours. The plan is run 2's (`dense_gemma.py` unchanged since `9d388e9`).
+  - *Windows:* 16, each a 1,536-token prefix led by exactly one BOS (gate 2), then 128 scored tokens past the
+    1,024-token window, spread over the quality text as H11 spreads its windows (scored tokens disjoint). The
+    plan runs four rows stacked in 2,048-token slots, against today's native decode teacher-forced on the same
+    windows.
+  - **Decides:** the long path passes if its ratio's 95 % upper bound is below 1.005 over all 16 windows, and the
+    long pool's rows are bit-identical alone and stacked. Fewer than 16 windows, or any exactness miss, fails it.
+  - *Verdict:* a pass, with KB2-G's (a) and main path and run 2's (b), makes KB2 a candidate opt-in numeric plan
+    for 4-bit Gemma 3, and AG5-G may then run as fixed. A fail keeps KB2 in Tier 0 with no further re-gate.
+
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 
 **Why.** KB2-D showed that the gate's main chunks, cut from mid-text with no BOS, put Gemma 3 where every path,
