@@ -1259,7 +1259,8 @@ makes fewer tokens per second than at width 8 on the same card.
 
 **AG5-G, the hardware test (fixed now, before its data; it runs only if KB2-G passes).** *Not run:* KB2-G did not
 pass (2026-11-07), so the Gemma plan has no gate to serve under. The width rule and its wiring (1 and 2) stand for
-every stacked engine; AG5-G waits for a stacked engine whose gate passes.
+every stacked engine; AG5-G waits for a stacked engine whose gate passes. *KB2-L passed the same day, and KB2's
+verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path fallback.*
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
@@ -2465,6 +2466,14 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
   - *Verdict:* a pass, with KB2-G's (a) and main path and run 2's (b), makes KB2 a candidate opt-in numeric plan
     for 4-bit Gemma 3, and AG5-G may then run as fixed. A fail keeps KB2 in Tier 0 with no further re-gate.
 
+- **KB2-L result: passes (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2l` v1 at `7f05b80`, Kaggle T4, 8
+  minutes, peak 12.6 GB). KB2 is a candidate opt-in numeric plan for 4-bit Gemma 3.**
+  - Long path, 16 windows of 128 tokens after a BOS-led 1,536-token prefix: ratio 0.9973, 95 % 0.9935-1.0012,
+    below 1.005. The differences per window ranged from -0.0161 to +0.0123 nats a token, mean -0.0027.
+  - The long pool stayed bit-identical, 192 of 192 steps alone and stacked at 4 rows.
+  - With KB2-G's (a) and main path (0.9988, 95 % up to 1.0008) and run 2's (b) (2.006x at width 6), KB2's verdict
+    is met. AG5-G may now run as fixed. The ledger entry is still owed.
+
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 
 **Why.** KB2-D showed that the gate's main chunks, cut from mid-text with no BOS, put Gemma 3 where every path,
@@ -3637,7 +3646,9 @@ processes again.
   (see KB2): KB2-D's new evidence that the gate's lead-free chunks are unstable for every path, and GATE2.
   **KB2-G (commit `4a01f49`): back in Tier 0.** Gate 2's main path passed (0.9988, 95 % up to 1.0008), but its long
   path, 4 chunks past the window, read 1.0003 with 95 % up to 1.0080. Re-open only with a new mechanism or new
-  evidence, for example serving scoped to the window under its own protocol.
+  evidence, for example serving scoped to the window under its own protocol. **Reopened again as KB2-L (owner
+  decision, 2026-11-07) and passed:** the long path on 16 windows read 0.9973, 95 % up to 1.0012. KB2 is no longer
+  rejected; this entry stays as its history.
 
 - **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
   `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,
