@@ -388,8 +388,11 @@ def test_a_member_the_worker_rejects_as_too_long_fails_alone_with_a_400_and_free
     first, too_long, waiting = (_Session(_request(value), None) for value in ("a", "b", "c"))
     service._pending.put(waiting)
     service._perform_batch([first, too_long])
+    from ironmule_product.errors import EngineLimitExceeded
+
     error = too_long.events.get_nowait()
     assert isinstance(error, InvalidRequest) and error.status == 400 and "2048-token" in str(error)
+    assert isinstance(error, EngineLimitExceeded) and error.code == "invalid_request", "another path may hold it"
     assert too_long.events.empty()
     assert backend.joined == ["c"]  # its place went to the next request
     assert [first.events.get_nowait()["type"], waiting.events.get_nowait()["type"]] == ["done", "done"]

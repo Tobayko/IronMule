@@ -22,7 +22,7 @@ import subprocess
 import threading
 from typing import Any, Callable, Iterator
 
-from .errors import BackendUnavailable, InvalidRequest, Overloaded
+from .errors import BackendUnavailable, EngineLimitExceeded, InvalidRequest, Overloaded
 from .service import STABILITY_LOG
 from .serving_policy import ServingLog
 from .types import GenerationRequest
@@ -103,6 +103,7 @@ class DevicePool:
     agents: list[Any] | None = None  # AG2: one agent per device, attached by the CLI; placement stays the pool's
     dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
     router = None  # AG4 step 2: a path_router.PathRouter over two serving paths on one card (the shards, in order)
+    path_fallbacks = 0  # routed requests a path could not hold, served by the next path instead
 
     def __init__(self, shards: list[Any], devices: list[str]):
         if not shards or len(shards) != len(devices):
@@ -156,10 +157,39 @@ class DevicePool:
             for index in order:
                 try:
                     events = self.shards[index].stream(request)
-                    return events if router is None else router.watch(index, outstanding[index] + 1, events)
+                    if router is None:
+                        return events
+                    return self._held(request, index, router.watch(index, outstanding[index] + 1, events),
+                                      [other for other in order if other != index], outstanding)
                 except Overloaded as exc:  # this device's queue is full; a longer one may not be
                     overloaded = exc
             raise overloaded
+
+    def _held(self, request: GenerationRequest, index: int, events: Iterator[dict[str, Any]], others: list[int],
+              outstanding: list[int]) -> Iterator[dict[str, Any]]:
+        """A routed request whose path cannot hold it (EngineLimitExceeded, before any token: the stacked
+        engine's slot, AG4-R run 1) goes to the next path in order; the router learns nothing from the refusal."""
+        streamed = False
+        try:
+            for event in events:
+                streamed = streamed or event.get("type") == "token"
+                yield event
+            return
+        except EngineLimitExceeded:
+            if streamed or not others:
+                raise
+        with self._lock:
+            self.path_fallbacks += 1
+            fallback = None
+            for other in others:
+                try:
+                    fallback = self.shards[other].stream(request)
+                    break
+                except Overloaded:
+                    continue
+            if fallback is None:
+                raise Overloaded("no other path can take this request now; retry later")
+        yield from self.router.watch(other, outstanding[other] + 1, fallback)
 
     def cancel(self, request_id: str) -> bool:
         return any(shard.cancel(request_id) for shard in self.shards)
@@ -174,7 +204,7 @@ class DevicePool:
                     "oldest_queued_s", "learning"):
             result.pop(key, None)
         if self.router is not None:
-            result["paths"] = self.router.status()
+            result["paths"] = {**self.router.status(), "fallbacks": self.path_fallbacks}
         result["devices"] = [{"cuda_device": device, "ready": health["ready"], "device": health.get("device"),
                               "worker": health.get("worker"), "in_flight": health.get("in_flight"),
                               "queued_requests": health.get("queued_requests"),

@@ -60,6 +60,9 @@ class _Shard:
     def holds(self, request_id):
         return False
 
+    def health(self):
+        return {"ready": True}
+
     def stream(self, request):
         self.streamed.append(request.request_id)
         return iter([{"type": "token", "text": "a"}, {"type": "done", "completion_tokens": 1}])
@@ -75,3 +78,67 @@ def test_the_pool_places_by_the_router_and_reports_it():
     list(pool.stream(request))
     assert stacked.streamed == ["r1"] and single.streamed == []
     assert pool.router.status()["decisions"]["stacked"] == 1
+
+
+class _NoRoom(_Shard):
+    """A path whose slot cannot hold the request: it refuses before any token, as the stacked engine does."""
+
+    def __init__(self, outstanding, after_token=False):
+        super().__init__(outstanding)
+        self.after_token = after_token
+
+    def stream(self, request):
+        from ironmule_product.errors import EngineLimitExceeded
+
+        self.streamed.append(request.request_id)
+
+        def events():
+            if self.after_token:
+                yield {"type": "token", "text": "a"}
+            raise EngineLimitExceeded("the prompt and max_tokens exceed the 1024-token limit of this server's engine")
+        return events()
+
+
+def test_a_request_the_chosen_path_cannot_hold_is_served_by_the_other_path():
+    """AG4-R run 1: the router sent over-long requests to the stacked engine, which refused them. The pool now
+    serves them on the next path, counts it, and the router learns nothing from the refusal."""
+    from ironmule_product.types import GenerationRequest
+
+    single, stacked = _Shard(1), _NoRoom(0)
+    pool = DevicePool([single, stacked], ["0:single", "0:stacked"])
+    pool.router = PathRouter.from_setup(SETUP)
+    seen = pool.router.costs[1].seen
+    request = GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64, request_id="r1")
+    events = list(pool.stream(request))
+    assert [e["type"] for e in events] == ["token", "done"]
+    assert stacked.streamed == ["r1"] and single.streamed == ["r1"]
+    assert pool.path_fallbacks == 1 and pool.health()["paths"]["fallbacks"] == 1
+    assert pool.router.costs[1].seen == seen, "the refusal teaches the router nothing"
+
+
+def test_a_refusal_after_a_token_or_a_context_limit_is_not_rerouted():
+    import pytest
+
+    from ironmule_product.errors import EngineLimitExceeded, InvalidRequest
+    from ironmule_product.types import GenerationRequest
+
+    late = DevicePool([_Shard(1), _NoRoom(0, after_token=True)], ["0:single", "0:stacked"])
+    late.router = PathRouter.from_setup(SETUP)
+    request = GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64, request_id="r2")
+    with pytest.raises(EngineLimitExceeded):
+        list(late.stream(request))
+    assert late.shards[0].streamed == [] and late.path_fallbacks == 0
+
+    class ContextLimit(_Shard):
+        def stream(self, request):
+            def events():
+                raise InvalidRequest("the prompt and max_tokens exceed the 4096-token context limit")
+                yield  # pragma: no cover
+            return events()
+
+    context = DevicePool([_Shard(1), ContextLimit(0)], ["0:single", "0:stacked"])
+    context.router = PathRouter.from_setup(SETUP)
+    with pytest.raises(InvalidRequest):
+        list(context.stream(GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64,
+                                              request_id="r3")))
+    assert context.shards[0].streamed == [] and context.path_fallbacks == 0

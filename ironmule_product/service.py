@@ -13,7 +13,7 @@ import threading
 import time
 from typing import Any, Iterator
 
-from .errors import (BackendUnavailable, InvalidRequest, StateError,
+from .errors import (BackendUnavailable, EngineLimitExceeded, InvalidRequest, StateError,
                      Overloaded, ProductError, RequestCancelled, RequestTimeout)
 from .serving_policy import ServingLog, ServingPolicy, load_policy
 
@@ -1084,9 +1084,10 @@ class ProductService:
             elif kind == "rejected" and done is None and generated == 0:
                 # The worker rejected this grouped request alone (protocol 2); the single path's answer.
                 limit = event.get("limit")
-                raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token "
-                                     + ("context limit" if event.get("reason") == "context_limit"
-                                        else "limit of this server's engine"))
+                if event.get("reason") == "context_limit":
+                    raise InvalidRequest(f"the prompt and max_tokens exceed the {limit}-token context limit")
+                raise EngineLimitExceeded(f"the prompt and max_tokens exceed the {limit}-token "
+                                          "limit of this server's engine")
             else:
                 raise BackendUnavailable("worker emitted an invalid event")
         if done is None:
