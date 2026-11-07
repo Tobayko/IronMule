@@ -1282,6 +1282,64 @@ every stacked engine; AG5-G waits for a stacked engine whose gate passes.
   requests that joined a running group.
 - A pass is the agent's gain on this card, model and traffic. It ships opt-in (`--agent on`).
 
+### AG6 — The agent learns its serving policy from the traffic it serves, by dreaming (opened 2026-11-07, owner request, before data)
+
+**Why (AG4-R run 1, descriptive).** On one T4 with Qwen 3 1.7B, the stacked engine alone made 2.10x the single
+path's tokens per second and the agent's router 1.44x. The router decides one request at a time: each goes where
+it would finish first. A request alone finishes sooner on the single path, so the router sends it there while that
+path is free. Requests arriving meanwhile are left to the stacked engine, which then runs with few rows, so its
+stacking advantage goes unused. Its online learning (recursive least squares on each path's prices) moved its
+tokens per second by 1.007x over a frozen copy. The owner wants a self-learning agent that decides, pursued with
+dreaming and RL (2026-11-07).
+
+**Mechanism (`ironmule_product/path_router.py`, `PolicyRouter`).**
+- *Modes:* `route` (today's router), `stacked` (every request to the stacked engine; one it cannot hold goes to
+  the single path, as the pool now does) and `single`.
+- *World model:* the router's learned prices for each path, plus an event replay of each path:
+  - the single path serves one request at a time, its first token then a fixed price per token;
+  - the stacked engine steps all its rows together at the learned price for that many rows, up to its width, and a
+    newcomer waits for a free row and pays its first-token time.
+- *Dreaming:* every 16 finished requests, with at least 32 logged, the agent replays the arrivals and token counts
+  of its last 64 finished requests in that model under each mode. It moves to the mode with the most replayed tokens
+  per second whose replayed mean first token is at most 1.1x the current mode's. It moves only if the gain is at
+  least 5 %. The replay runs after a request finishes, never inside a routing decision; a decision stays a lookup
+  plus, in `route`, the router's arithmetic, a few microseconds.
+- *No answer changes:* each path serves its own answers, and both passed their gates (AG4).
+
+**Check in simulation (fixed now, before it runs; AG4-R run 1's data already exists, so this is a model check,
+not evidence for a claim).**
+- On run 1's 20 complete blocks, the dreamer starts from the prices the agent measured at startup.
+- For each block it replays the block's arrivals and token counts under the three modes and names its best mode
+  by the rule above. That mode is compared with the measured arms: `single`, `router` and `stacked` on the same
+  arrivals.
+- **Pass:** the named mode is the measured best arm by tokens per second, or within 5 % of it, in at least 80 % of
+  the blocks. Its replayed stacked-over-single tokens per second, pooled, must lie within 25 % of the measured 2.10.
+- If it fails, the world model is repaired before any hardware run, as V3's replay was before V4.
+
+**AG6-H, the hardware test (fixed now, before its data).**
+- *Setup:* one Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, `training/rl2_headroom.py --plan ag6h`
+  at a pushed commit. The product's `choose_setup` runs first; if it is not `route`, the run stops and records why.
+- *Arms, through the product on the same two loaded workers:*
+  - `single`, forced;
+  - `router`, today's agent, learning as in AG4-R;
+  - `agent`, the `PolicyRouter`, starting in `route` from the same prices, learning and dreaming across blocks;
+  - `stacked`, forced, with the pool's fallback;
+  - then `single` again, for the A/A noise.
+  The middle three rotate by block.
+- *Traffic:* RL2-H2's bursts and spike states at loads 0.8 and 3.0 over the single path's calibrated capacity, 4
+  fresh traces each (16 blocks), 32 Dolly requests, a 256-token limit, as AG4-R.
+- *Cost, from run 1's measured cells:* about 300 s a cell in bursts and 62 s in a spike at load 0.8, and an assumed
+  150 s at load 3.0. That gives about 4 session hours. The harness starts no new block after 10 hours and records
+  a time cut as such.
+- **Decision:** the agent passes if its tokens per second over the router's, paired by block, have a 2.5 % bound
+  above 1 (2,000 resamples), and its mean and 95th-percentile first token are no worse than the router's beyond
+  the A/A noise of the two single runs. A failed request voids its block; fewer than 4 complete blocks make the run
+  invalid.
+- *Recorded, no decision:* the agent over the single path and over the forced stacked engine, both with 95 %
+  intervals; which mode the agent held in each block, and when it switched; the pool's fallbacks.
+- A pass is a hardware gain from learning while serving on this card, model and traffic. LIMITS' agent section
+  then says so, and the policy learner ships opt-in under `--agent on`.
+
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 
 The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30
