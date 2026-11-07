@@ -1224,6 +1224,24 @@ GPU hours, and none of them has been used yet.
     all 40 times, as did the check at 07:00 UTC. It has still spent no TPU hours. The owner is waiting in the web
     editor's TPU queue as well. No further check-in is scheduled this week; if neither run gets a TPU before
     2026-11-07 00:00 UTC, TP0 moves to the next week's quota.
+  - **Result (ran 2026-11-06, about 20:35 UTC; kernel `tobayko/ironmule-tpu-probe` v1 at `08c96d4`; about 110 s,
+    roughly 0.03 TPU hours).** The session had a TPU v5 lite with 8 chips (JAX 0.11.0) and an x86_64 host with 224
+    CPUs and 377.8 GiB. MLX 0.32.4's CPU build installed there. Matrix time for one decode step and the ceiling it
+    allows:
+
+    | Runtime | 1 row | 8 rows | 64 rows |
+    | --- | --- | --- | --- |
+    | JAX, one v5e chip | 48.1 ms, 20.8 tokens/s | 44.2 ms, 180.8 tokens/s | 46.1 ms, 1,388 tokens/s |
+    | MLX, host CPU | 1,225 ms, 0.8 tokens/s | 5,049 ms, 1.6 tokens/s | 37,382 ms, 1.7 tokens/s |
+
+    *Verdict by the fixed rule:* the TPU's ceiling is 20.8 at 1 row (not above 57.7) and 180.8 at 8 rows (not
+    above 290.9), so **TP1 is closed in Tier 0**. The ledger entry in the research repository is still owed.
+  - *Post hoc reading (after the data; it does not change the verdict):* every JAX product took 0.20-0.29 ms
+    whatever its size, from 2048x1024 to 6144x2048 and from 1 to 64 rows, which is 58-64 GB/s of weights against
+    the chip's much higher memory bandwidth. Each product was jitted and timed alone to completion, so this is a
+    per-call floor (dispatch and host sync), not the chip's streaming speed, and the probe cannot say what a
+    decode step compiled as one program would reach. A reopening needs that changed implementation: a probe that
+    times a whole jitted decode step, fixed before its data.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 
@@ -3258,6 +3276,12 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
+  `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,
+  each jitted and timed alone, allowed at most 20.8 tokens/s at 1 row and 180.8 at 8 rows, below the T4's 57.7 and
+  290.9. TP1's rule closes it. Re-open with a probe that times a whole decode step compiled as one program (each
+  product cost a flat 0.2-0.3 ms, a per-call floor), or with a new model or TPU generation.
 
 - **RL2 learner for GPU placement and group schedule (2026-10-28).** Experiment `RL2-H-run1-20261028` (kernel
   `tobayko/ironmule-rl2-headroom` v1, commit `258ccbe`; see RL2-H above): on two T4s with Qwen 3 1.7B bfloat16 at
