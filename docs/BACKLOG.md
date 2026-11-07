@@ -1031,6 +1031,35 @@ gain unused.
     - *Descriptive, a smoke measures nothing (4 requests of up to 16 tokens):* the stacked engine's learned
       per-row cost was 106 ms. In answers this short, a newcomer's prefill stalling the running rows dominates the
       per-token time. The full run's 256-token answers price that stall per token, as it should be.
+  - **Run 1 (2026-11-07, kernel `tobayko/ironmule-rl2-headroom-ag4r` v1 at `b1c2382`, one Kaggle T4, Qwen 3 1.7B
+    bf16 at `9cd6692`): cut by Kaggle's 12-hour limit after 22 of 36 blocks, invalid by the fixed rule.**
+    - The agent chose `route` on its own again: NUM1's `float16`, and the stacked engine at 0.82x for one request
+      alone. Setup took 8 minutes.
+    - **Why it ran out of time.** The cells measured all 11.8 hours; nothing waited idle. The protocol priced a cell
+      at about 80 s, but a cell lasts as long as its 32 arrivals are spread. The median cell took 791 s in the quiet
+      state at load 0.8, 301 s in bursts, 62 s in a spike, and 215 s quiet at load 3.0. All 36 blocks would have
+      needed about 25 hours. Load 0.8 ran in full; load 3.0 reached only its quiet state, and its bursts and spike
+      never ran.
+    - **Problems (the rule voids the run):** block 22 is incomplete, and in blocks 13 and 14 (spike, load 0.8)
+      the stacked engine rejected 8 of 32 requests alone, and the frozen router's cell lost 7. The rejection reads
+      "the prompt and max_tokens exceed the ...-token limit of this server's engine": some Dolly prompts plus 256
+      tokens do not fit the stacked engine's slot. The forced stacked arm cannot avoid them. The frozen router sent
+      such requests there, so **the router does not check whether a path can hold a request**. That is a product
+      defect, fixed before run 2.
+    - *Descriptive only (20 complete blocks, no verdict; pooled ratios against the single path, 95 % in brackets):*
+      - the router: 1.44x the tokens per second (1.13-1.68), its mean first token 0.35x (0.32-0.37), its 95th
+        percentile 0.43x. By load, 1.57x at 0.8 and 1.000x at 3.0, where only the quiet state ran;
+      - **the stacked engine alone: 2.10x the tokens per second (1.32-2.70), its mean first token 0.19x
+        (0.14-0.21)**, although AG4's rule set it aside for its 0.82x on one request alone;
+      - learning while serving: the router over the frozen router 1.007x the tokens per second (0.998-1.013), its
+        first token later (mean 1.16x, 95th percentile 1.30x), and the late half 1.011x (1.003-1.017). No gain from
+        learning is shown, and it cost first-token time;
+      - A/A noise of the single path's two runs: 0.06 % tokens per second, 4.7 % mean first token.
+    - *What it says (post hoc, it changes no verdict):* on this traffic the agent's own measurement of one request
+      alone misled it. The stacked engine it set aside made 2.10x where its routed setup made 1.44x. Its router
+      learned too little, too slowly, to find that out while serving. That is where a learning agent should gain.
+      Run 2 needs a protocol that fits a session, and the router has to respect each path's request limit.
+    - The ledger entry is still owed. About 12 session hours were spent.
 **AG4-C, the agent's own setup against today's default on a CPU (fixed 2026-11-03, before its data).** No GPU
 hours are left this week, and a Kaggle CPU session spends none. Does the agent's own setup, chosen on that machine
 with nothing given to it, serve more tokens per second than today's default through the product?

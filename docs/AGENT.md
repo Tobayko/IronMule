@@ -82,7 +82,10 @@ width 8, but was 18 % slower alone), and both fit the card, the agent serves bot
 in microseconds, to the path where it is expected to finish first (`ironmule_product/path_router.py`). It learns
 both paths' costs from every finished request. In simulation, priced by that T4 measurement, the router was at
 least as fast as the better path at every load, with the earliest first tokens. The hardware test (AG4-R) is
-fixed in the backlog.
+fixed in the backlog. Its run 1 on a T4 (2026-11-07) was cut by Kaggle's 12-hour limit after 22 of 36 blocks and
+is invalid by its rule, but it showed where the agent falls short. On that traffic the stacked engine alone made
+2.10x the single path's tokens per second, against the routed setup's 1.44x. The router learned too little to shift
+towards it (1.007x over the frozen router), and it sent some requests to a path whose slot could not hold them.
 
 Measured on hardware (AG4-C run 3, one cloud CPU, `SmolLM2-135M-Instruct-8bit`): the agent chose `dequantize` by
 itself and served 24.5x the default's tokens per second (95 % 12.3x to 31.3x), first tokens about 20x sooner, on
