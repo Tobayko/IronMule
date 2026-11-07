@@ -1261,6 +1261,15 @@ makes fewer tokens per second than at width 8 on the same card.
 pass (2026-11-07), so the Gemma plan has no gate to serve under. The width rule and its wiring (1 and 2) stand for
 every stacked engine; AG5-G waits for a stacked engine whose gate passes. *KB2-L passed the same day, and KB2's
 verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path fallback.*
+- **AG5-G run 1 (2026-11-07, kernel `tobayko/ironmule-rl2-headroom-ag5g` v1 at `b8231b7`, two T4s, 20 minutes):
+  stopped before serving, on a defect in the agent's own measurement. No data.**
+  - The agent's `measure_stacked` installed the stacked plan, with its 3.2 GB pool, and only then timed today's
+    native path. That path prefills a whole prompt through a 2 GB float16 copy of the head, and the card ran out
+    of memory. KB2-0 run 1 had found the same in the probe. The measurement's child process failed, so the agent
+    saw "no stacked engine", kept the native path, and the run stopped as its rule says.
+  - *Fixed (no protocol change):* the base path is timed before the plan exists, and freed buffers are returned
+    first. A model no stacked plan serves is now refused before anything is timed (`stacked_refusal`).
+  - Run 2 is the same AG5-G at the fixed commit.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's

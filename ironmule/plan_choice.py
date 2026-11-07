@@ -98,6 +98,19 @@ def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
     return data[key]
 
 
+def stacked_refusal(model: Any, device_info: dict[str, Any] | None) -> str | None:
+    """Why no stacked plan can serve this model on this device, found before anything is allocated or timed; None
+    where one may (its install still probes the weights and may refuse)."""
+    from . import dense_gemma, dense_plan
+    from .numeric_plans import CUDA_PRE_AMPERE, device_class
+
+    if device_class(device_info) != CUDA_PRE_AMPERE:
+        return "the stacked engines exist for CUDA GPUs below compute capability 8 only"
+    if dense_gemma.refuse(model, native=False) is None:
+        return dense_gemma.refuse(model)  # KB2's plan also needs the native row kernel on every linear
+    return dense_plan.refuse(model)
+
+
 def stacked_plan(model: Any, device_info: dict[str, Any] | None, *, slots: int = WIDTH,
                  capacity: int | None = None) -> tuple[Any, dict[str, Any]]:
     """The stacked plan this model takes (`ValueError` with the reason where none does). The base path's plan must
@@ -159,6 +172,19 @@ def _plan_nll(plan: Any, chunks: list[list[int]], leads: list[list[int]] | None 
     return means
 
 
+def _release_memory() -> None:
+    """Return freed buffers to the device before the stacked plan allocates its pool."""
+    import gc
+
+    gc.collect()
+    try:
+        import mlx.core as mx
+
+        mx.clear_cache()
+    except Exception:  # noqa: BLE001 - no MLX device to release; nothing held
+        pass
+
+
 def _base_speed(model: Any, ids: list[int], steps: int) -> tuple[float, float]:
     """(seconds to the first token, seconds per decode step) for one request on the base path."""
     import mlx.core as mx
@@ -216,10 +242,19 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
                     long_prompt: str | None = None,
                     make_plan: Callable[[Any, dict[str, Any] | None], tuple[Any, dict[str, Any]]] | None = None
                     ) -> dict[str, Any]:
-    """Everything AG4's rule reads about the stacked engine on this model, which already carries its base plan."""
+    """Everything AG4's rule reads about the stacked engine on this model, which already carries its base plan.
+
+    The base path is timed before the stacked plan exists. Its prefill runs the head over the whole prompt through
+    a float16 copy of the head (about 2 GB for Gemma 3 12B), which fits beside the weights but not beside the plan's
+    pool as well (AG5-G run 1, as KB2-0 run 1 found for the probe)."""
     from .numeric_choice import CHUNK_TOKENS, CHUNKS, gate_chunks, ratio_interval
     from .tune import DEFAULT_PROMPT
 
+    if make_plan is None and (reason := stacked_refusal(model, device_info)) is not None:
+        return {"eligible": False, "reason": reason}  # nothing timed for a model no stacked plan serves
+    prompts = (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT))
+    base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps) for name, prompt in prompts}
+    _release_memory()
     try:
         plan, record = (make_plan or stacked_plan)(model, device_info)
     except ValueError as exc:
@@ -231,9 +266,9 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate),
                            "memory": _memory(model, plan, device_info)}
     speed = {}
-    for name, prompt in (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT)):
+    for name, prompt in prompts:
         prompt_ids = list(tokenizer.encode(prompt))
-        base_first, base_step = _base_speed(model, prompt_ids, steps)
+        base_first, base_step = base[name]
         plan_first, plan_steps = _plan_speed(plan, prompt_ids, steps)
         speed[name] = {"base_first_s": base_first, "base_step_s": base_step, "plan_first_s": plan_first,
                        "plan_step_s": {str(w): s for w, s in plan_steps.items()}}

@@ -102,12 +102,27 @@ def test_measure_stacked_runs_on_a_cpu_stand_in():
     assert "stacked" in pc.decide(measured)
 
 
-def test_a_model_without_a_stacked_engine_is_measured_as_ineligible():
+def test_a_model_without_a_stacked_engine_is_measured_as_ineligible(monkeypatch):
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: (0.1, 0.05))
+
     def refuse(model, info):
         raise ValueError("the dense plan serves Qwen 3 checkpoints only")
 
-    assert pc.measure_stacked(object(), None, None, make_plan=refuse) == {
+    tok = type("T", (), {"encode": lambda self, text: [1, 2, 3]})()
+    assert pc.measure_stacked(object(), tok, None, make_plan=refuse) == {
         "eligible": False, "reason": "the dense plan serves Qwen 3 checkpoints only"}
+
+
+def test_a_model_no_stacked_plan_serves_is_refused_before_anything_is_timed(monkeypatch):
+    """On a CPU, or for a model neither plan serves, the agent refuses the stacked engine without timing the base
+    path: on a slow CPU the base path's 32 timed steps alone can take minutes."""
+    timed = []
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: timed.append(1) or (0.1, 0.05))
+    out = pc.measure_stacked(object(), None, None)
+    assert out["eligible"] is False and "CUDA GPUs below compute capability 8" in out["reason"] and timed == []
+    t4 = {"compute_capability_major": 7, "device_name": "Tesla T4"}
+    reason = pc.stacked_refusal(type("M", (), {"args": None})(), t4)
+    assert reason == "the dense plan serves Qwen 3 checkpoints only" and timed == []
 
 
 def test_a_stacked_engine_that_wins_only_under_load_serves_beside_the_single_path_where_both_fit():
@@ -266,3 +281,19 @@ def test_the_router_prices_the_stacked_path_at_the_agents_width():
     assert router.costs[1].capacity == 6
     assert router.costs[1].theta[1] == pytest.approx((0.14133 - 0.04884) / 5 * 1000)
     assert PathRouter.from_setup({**setup, "width": None}).costs[1].capacity == 8
+
+
+def test_the_base_path_is_timed_before_the_stacked_plan_takes_its_pool(monkeypatch):
+    """AG5-G run 1: on a T4 the base path's whole-prompt prefill (a 2 GB float16 head copy for Gemma 3 12B) ran
+    out of memory beside the stacked plan's pool. The base path is now timed first, the plan made after."""
+    calls = []
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps: calls.append("base") or (0.1, 0.05))
+    monkeypatch.setattr(pc, "_release_memory", lambda: calls.append("release"))
+
+    def make_plan(model, info):
+        calls.append("plan")
+        raise ValueError("the dense plan serves Qwen 3 checkpoints only")
+
+    tok = type("T", (), {"encode": lambda self, text: [1, 2, 3]})()
+    assert pc.measure_stacked(object(), tok, None, make_plan=make_plan)["eligible"] is False
+    assert calls == ["base", "base", "release", "plan"]
