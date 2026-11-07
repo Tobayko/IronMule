@@ -54,6 +54,11 @@ Four steps repeat while the server runs (`ironmule_product/agent.py`):
   corrupt or stale state starts fresh, and a serving policy resumes only with evidence that names it.
 - **No text is kept.** The traffic memory holds metadata, and the length model holds weights over hashed buckets.
 - **Opt-in.** `--agent on`. Without a qualified policy the server's own schedule serves.
+- **It never stops the server or fails a request (owner, 2026-11-07).** Its setup at startup, the start of the
+  engine it chose, the router's decisions, its learning and its dreams each fall back on failure: to the reference
+  engine (a failed measurement), to its gated numeric plan on the reference engine and then the checkpoint's dtype
+  (a chosen engine that does not start), or to a path in placement order (a router fault). Each fallback is printed
+  or counted in `/health`. A plan the caller named is kept and its failure reported, never replaced.
 
 ## Its own setup: plan and engine (AG4)
 

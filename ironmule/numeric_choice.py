@@ -198,9 +198,10 @@ def _faster(ratios: dict[str, float]) -> bool:
 def _stored(key: str) -> dict[str, Any] | None:
     """The decision stored for `key`, or None when there is none or it was made under another `GATE_VERSION`."""
     try:
-        stored = json.loads(_store().read_text()).get(key)
+        data = json.loads(_store().read_text())
     except (OSError, ValueError):
         return None
+    stored = data.get(key) if isinstance(data, dict) else None  # a store of another shape holds nothing usable
     return stored if isinstance(stored, dict) and stored.get("gate_version") == GATE_VERSION else None
 
 
@@ -445,13 +446,20 @@ def choose(model_id: str, fingerprint: str, identity_sha256: str, *, log: Callab
 
 
 def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
+    """Store `decision` under `key`; a store that cannot be written loses only the memory of it (the caller in
+    the parent then reads no decision and keeps stock)."""
     path = _store()
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
         data = {}
+    if not isinstance(data, dict):
+        data = {}
     decision = {**decision, "gate_version": GATE_VERSION}
     data[key] = decision
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, indent=1, sort_keys=True, default=str) + "\n")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=1, sort_keys=True, default=str) + "\n")
+    except OSError:
+        pass
     return decision

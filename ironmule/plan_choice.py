@@ -77,25 +77,33 @@ def _stored(key: str) -> dict[str, Any] | None:
     from .numeric_choice import GATE_VERSION
 
     try:
-        stored = json.loads(_store().read_text()).get(key)
+        data = json.loads(_store().read_text())
     except (OSError, ValueError):
         return None
+    stored = data.get(key) if isinstance(data, dict) else None  # a store of another shape holds nothing usable
     return stored if isinstance(stored, dict) and stored.get("gate_version") == GATE_VERSION else None
 
 
 def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
+    """Store `decision` under `key` and return it as stored; a store that cannot be written (a full or read-only
+    disk) loses only the memory of it, and the next start measures again."""
     path = _store()
     try:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
         data = {}
+    if not isinstance(data, dict):
+        data = {}
     from .numeric_choice import GATE_VERSION
 
     data[key] = {**decision, "decided_unix": time.time(), "gate_version": GATE_VERSION}
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(data, indent=1, sort_keys=True, default=str))
-    tmp.replace(path)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=1, sort_keys=True, default=str))
+        tmp.replace(path)
+    except OSError:
+        pass
     return data[key]
 
 
@@ -413,7 +421,13 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
     lines = [line for line in proc.stdout.splitlines() if line.startswith("@@STACKED ")]
     if proc.returncode or not lines:
         return {"eligible": False, "reason": f"the measurement child exited with status {proc.returncode}"}
-    return json.loads(lines[-1][len("@@STACKED "):])
+    try:
+        measured = json.loads(lines[-1][len("@@STACKED "):])
+    except ValueError:
+        measured = None
+    if not isinstance(measured, dict):
+        return {"eligible": False, "reason": "the measurement child returned no readable result"}
+    return measured
 
 
 def levers(setup: dict[str, Any]) -> list[dict[str, str]]:
@@ -445,17 +459,25 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
         return stored
     if numeric is None:
         from .numeric_choice import choose_out_of_process as numeric
-    base = numeric(model_id, fingerprint, identity_sha256, log=log)
+    try:
+        base = numeric(model_id, fingerprint, identity_sha256, log=log)
+    except Exception as exc:  # noqa: BLE001 - a failed gate keeps the checkpoint's dtype, as a refused plan does
+        base = {"plan": None, "reason": f"the numeric gate failed ({type(exc).__name__}: {exc})"[:300]}
     compute_dtype = base.get("plan")
     log(f"agent: numeric plan {compute_dtype or 'none (checkpoint dtype)'}: {base.get('reason')}")
     measure = measure or _measure_in_child
     on = stacked_base(compute_dtype)
     log(f"agent: measuring the stacked engine on this card (on {on or 'the checkpoint dtype'}) ...")
-    stacked = measure(model_id, on)
-    if stacked.get("eligible") and on != compute_dtype:  # compare against the path that would serve instead
-        log(f"agent: measuring {compute_dtype or 'the checkpoint dtype'} alone, the path it competes with ...")
-        stacked = against(stacked, measure(model_id, compute_dtype, base_only=True))
-    decision = decide(stacked)
+    try:
+        stacked = measure(model_id, on)
+        if stacked.get("eligible") and on != compute_dtype:  # compare against the path that would serve instead
+            log(f"agent: measuring {compute_dtype or 'the checkpoint dtype'} alone, the path it competes with ...")
+            stacked = against(stacked, measure(model_id, compute_dtype, base_only=True))
+        decision = decide(stacked)
+    except Exception as exc:  # noqa: BLE001 - a failed measurement or rule keeps the base path, with the reason
+        stacked = {"eligible": False,
+                   "reason": f"the stacked engine's measurement failed ({type(exc).__name__}: {exc})"[:300]}
+        decision = decide(stacked)
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
     engine = "dense" if decision["stacked"] else "route" if decision.get("route") else "reference"
     setup = {"compute_dtype": compute_dtype, "engine": engine,

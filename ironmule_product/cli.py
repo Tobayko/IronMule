@@ -340,8 +340,10 @@ def serve(argv: list[str]) -> int:
                 devices = select_devices(args.gpus, cuda_devices())
             if len(devices) > 1 and args.learning != "off":
                 raise InvalidRequest("--learning models one worker; use it with one GPU (HW1)")
-            if args.engine == "route" and len(devices) > 1:
-                raise InvalidRequest("the agent's two paths share one card; use it with one GPU for now")
+            if args.engine == "route" and len(devices) > 1:  # only the agent chooses `route`
+                agent_setup = _fallback_setup(agent_setup, "its two paths share one card, and this server runs on "
+                                              "several", agent_setup.get("compute_dtype"))
+                args.engine, args.compute_dtype = "reference", agent_setup["compute_dtype"]
             knob_options = _qualified_knob_options(spec, devices) if (
                 args.knobs == "auto" and args.engine == "tuned") else {}
             # AG5: the stacked engine serves at the width the agent measured best on this card (None keeps 8).
@@ -352,26 +354,54 @@ def serve(argv: list[str]) -> int:
                                        thinking=not args.no_thinking, cuda_device=device,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
                                        **_engine_options(args.engine, stacked_width), **knob_options)
-            if args.engine == "route":  # AG4 step 2: the single path and the stacked engine on one card, routed
-                # AG6: the router learns its serving mode (route, stacked or single) by dreaming (AG6-H)
-                from ironmule_product.path_router import PolicyRouter
+            def start_serving() -> tuple[Any, Any]:
+                """(service, backend) for the engine `args` names now."""
+                if args.engine == "route":  # AG4 step 2: the single path and the stacked engine on one card
+                    # AG6: the router learns its serving mode (route, stacked or single) by dreaming (AG6-H)
+                    from ironmule_product.path_router import PolicyRouter
 
-                from .device_pool import start_paths
-                device = devices[0]
-                single = lambda: MLXWorkerClient(spec, compute_dtype=agent_setup["compute_dtype"],  # noqa: E731
-                                                 thinking=not args.no_thinking, cuda_device=device)
-                stacked = lambda: MLXWorkerClient(spec, thinking=not args.no_thinking, cuda_device=device,  # noqa: E731
-                                                  execution_variant="current_engine",
-                                                  **_engine_options("dense", stacked_width))
-                label = device if device is not None else "0"
-                service = start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
-                                      ProductService, PolicyRouter.from_setup(agent_setup))
-            elif len(devices) > 1:
-                from .device_pool import start_pool
-                service = start_pool(store, spec, devices, make_backend, ProductService)
-            else:
-                backend = make_backend()
-                backend.start()
+                    from .device_pool import start_paths
+                    device = devices[0]
+                    single = lambda: MLXWorkerClient(spec, compute_dtype=agent_setup["compute_dtype"],  # noqa: E731
+                                                     thinking=not args.no_thinking, cuda_device=device)
+                    stacked = lambda: MLXWorkerClient(spec, thinking=not args.no_thinking,  # noqa: E731
+                                                      cuda_device=device, execution_variant="current_engine",
+                                                      **_engine_options("dense", stacked_width))
+                    label = device if device is not None else "0"
+                    return start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
+                                       ProductService, PolicyRouter.from_setup(agent_setup)), None
+                if len(devices) > 1:
+                    from .device_pool import start_pool
+                    return start_pool(store, spec, devices, make_backend, ProductService), None
+                started = make_backend()
+                try:
+                    started.start()
+                except BaseException:
+                    started.close()
+                    raise
+                return None, started
+
+            try:
+                service, backend = start_serving()
+            except Exception as exc:  # noqa: BLE001 - only the agent's own choice falls back
+                if not agent_chooses:
+                    raise  # a plan the caller named is kept, and its failure reported
+                # The agent's choice did not start here (a worker that ran out of memory, a kernel that failed):
+                # its gated numeric plan on the reference engine serves instead, else stock; never silently.
+                tried, failure = {(args.engine, args.compute_dtype)}, exc
+                for compute_dtype in (agent_setup.get("compute_dtype"), None):
+                    if ("reference", compute_dtype) in tried:
+                        continue
+                    tried.add(("reference", compute_dtype))
+                    agent_setup = _fallback_setup(agent_setup, failure, compute_dtype)
+                    args.engine, args.compute_dtype = "reference", compute_dtype
+                    try:
+                        service, backend = start_serving()
+                        break
+                    except Exception as again:  # noqa: BLE001 - the next fallback, or the last failure below
+                        failure = again
+                else:
+                    raise failure
         if service is None:
             service = ProductService(store, backend=backend, spec=spec)
             if spec is not None:
@@ -381,7 +411,7 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.agent == "on" and agent_setup is not None:
             for each in [service, *getattr(service, "shards", [])]:
                 each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
-                                                                    "numeric", "stacked", "levers")}
+                                                                    "numeric", "stacked", "levers", "fallback_from")}
         if spec is not None and args.agent == "on" and args.engine == "route":
             print(json.dumps({"agent": {"serving": "two paths on one card; the agent dreams whether to route, stack or "
                                                    "serve single", "reason": agent_setup["reason"]}}), flush=True)
@@ -392,16 +422,22 @@ def serve(argv: list[str]) -> int:
                                         "the online agent does not model slot reuse yet"}}), flush=True)
         elif spec is not None and args.agent == "on":
             shards = getattr(service, "shards", None)
-            if shards:  # AG2: one agent per GPU, bound to its card, ordering and learning from that card's queue
-                from .agent import share_lengths
+            try:
+                if shards:  # AG2: one agent per GPU, bound to its card, ordering and learning from that card's queue
+                    from .agent import share_lengths
 
-                service.agents = [_agent(store, shard, spec, card=device)
-                                  for shard, device in zip(shards, service.devices)]
-                share_lengths(service.agents)  # answer lengths depend on the model, not the card
-                for shard, agent in zip(shards, service.agents):
-                    shard.agent = shard.dispatch = agent
-            else:
-                service.agent = service.dispatch = _agent(store, service, spec)
+                    agents = [_agent(store, shard, spec, card=device) for shard, device in zip(shards, service.devices)]
+                    share_lengths(agents)  # answer lengths depend on the model, not the card
+                    service.agents = agents
+                    for shard, agent in zip(shards, agents):
+                        shard.agent = shard.dispatch = agent
+                else:
+                    agent = _agent(store, service, spec)
+                    service.agent = service.dispatch = agent
+            except Exception as exc:  # noqa: BLE001 - the server's own schedule serves without the online agent
+                print(json.dumps({"agent": {"serving": "the server's own schedule", "reason":
+                                            f"the online agent did not start ({type(exc).__name__}: {exc})"[:300]}}),
+                      flush=True)
         wants_schedule = (args.schedule == "auto" and args.gpus is not None and args.learning == "off"
                           and args.dispatch_policy is None)
         binding = None
@@ -493,18 +529,37 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
 
 def _agent_setup(spec: ModelSpec) -> dict[str, Any]:
     """AG4: the agent's own plan and engine for this machine and model (`ironmule.plan_choice`), measured once on
-    the device and stored with its evidence; printed, and shown in `/health` as `agent_setup`."""
+    the device and stored with its evidence; printed, and shown in `/health` as `agent_setup`. It never stops the
+    server: whatever fails in the measurement leaves the reference engine on the checkpoint's dtype, with why."""
     from ironmule.autopilot import _probe_out_of_process
     from ironmule.hw import probe
     from ironmule.plan_choice import choose_setup
     from ironmule.tune import resolve_local_model
 
-    hardware = _probe_out_of_process(probe)
-    identity = resolve_local_model(spec.model_id, revision=spec.revision).identity
-    setup = choose_setup(spec.model_id, hardware["fingerprint"], identity.identity_sha256,
-                         log=lambda line: print(json.dumps({"agent_setup": line}), flush=True))
+    try:
+        hardware = _probe_out_of_process(probe)
+        identity = resolve_local_model(spec.model_id, revision=spec.revision).identity
+        setup = choose_setup(spec.model_id, hardware["fingerprint"], identity.identity_sha256,
+                             log=lambda line: print(json.dumps({"agent_setup": line}), flush=True))
+        if setup.get("engine") not in ("reference", "dense", "route"):
+            raise ValueError(f"unknown engine {setup.get('engine')!r}")
+    except Exception as exc:  # noqa: BLE001 - the agent's setup is an optimisation; the reference path is not
+        setup = {"engine": "reference", "compute_dtype": None, "width": None,
+                 "reason": f"the agent's setup failed ({type(exc).__name__}: {exc})"[:300]
+                           + "; the reference engine serves on the checkpoint's dtype"}
     print(json.dumps({"agent_setup": {k: setup.get(k) for k in ("engine", "compute_dtype", "reason")}}), flush=True)
     return setup
+
+
+def _fallback_setup(setup: dict[str, Any], cause: BaseException | str, compute_dtype: str | None) -> dict[str, Any]:
+    """The agent's own choice cannot serve here; the reference engine serves `compute_dtype` (the agent's gated
+    numeric plan, or None for the checkpoint's dtype) instead. Printed, and kept in `/health` (`fallback_from`)."""
+    why = cause if isinstance(cause, str) else f"{type(cause).__name__}: {cause}"
+    reason = (f"the agent chose {setup.get('engine')}, which did not start ({why})"[:300]
+              + f"; the reference engine serves on {compute_dtype or 'the checkpoint dtype'}")
+    print(json.dumps({"agent_setup": {"fallback": reason}}), flush=True)
+    return {**setup, "engine": "reference", "compute_dtype": compute_dtype, "width": None, "reason": reason,
+            "fallback_from": setup.get("fallback_from") or setup.get("engine")}
 
 
 def _agent(store: ProductStore, service: Any, spec: ModelSpec, card: str | None = None) -> Any:

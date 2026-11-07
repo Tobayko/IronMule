@@ -838,8 +838,8 @@ def test_the_agent_knows_its_hardware_and_reports_how_much_of_its_bandwidth_deco
     assert _agent(tmp_path / "other").status()["hardware"] is None  # no profile, no claim
 
 
-class _Stop(Exception):
-    pass
+class _Stop(BaseException):
+    """Stops `serve` at the first worker it builds; a BaseException, so the agent's start fallback lets it pass."""
 
 
 def _serve_until_backend(monkeypatch, tmp_path, argv, setup):
@@ -901,6 +901,157 @@ def test_the_agents_two_path_setup_starts_both_workers_on_one_card(monkeypatch, 
                                              "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
     seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], setup)
     assert seen["compute_dtype"] == "float16" and seen.get("execution_variant", "reference") == "reference"
+
+
+def _serve_recording(monkeypatch, tmp_path, argv, setup, start_paths=None, start_fails=0):
+    """Run `serve` until it builds a worker that would start; returns every worker client's keyword arguments.
+    `start_fails` workers fail to start first (as a card out of memory does)."""
+    import contextlib
+
+    from ironmule_product import backend as backend_module, calibration, cli, device_pool
+    built, failing = [], [start_fails]
+
+    class Store:
+        root = tmp_path
+
+        def __init__(self, *_):
+            pass
+
+        def settings(self):
+            return {}
+
+        def model(self, name):
+            return type("Spec", (), {"model_id": name, "revision": "r"})()
+
+    class Client:
+        def __init__(self, spec, **kwargs):
+            built.append(kwargs)
+
+        def start(self):
+            if failing[0]:
+                failing[0] -= 1
+                raise RuntimeError("cudaMalloc: out of memory")
+            raise _Stop
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli, "ProductStore", Store)
+    monkeypatch.setattr(calibration, "model_lease", lambda store: contextlib.nullcontext())
+    monkeypatch.setattr(cli, "_agent_setup", lambda spec: setup)
+    monkeypatch.setattr(backend_module, "MLXWorkerClient", Client)
+    if start_paths is not None:
+        monkeypatch.setattr(device_pool, "start_paths", start_paths)
+    with pytest.raises(_Stop):
+        cli.serve(["--model", "m", *argv])
+    return built
+
+
+_ROUTE = {"engine": "route", "compute_dtype": "float16", "reason": "routes each request", "width": 8,
+          "stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                          "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
+
+
+def test_when_the_agents_two_paths_do_not_start_its_single_path_serves(monkeypatch, tmp_path, capsys):
+    """Stability (owner, 2026-11-07): a choice of the agent's that cannot start never stops the server. The
+    two paths not starting (a card out of memory) leaves the agent's gated plan on the reference engine."""
+    from ironmule_product.errors import BackendUnavailable
+
+    def start_paths(*args, **kwargs):
+        raise BackendUnavailable("the worker for CUDA device 0:stacked did not start")
+
+    built = _serve_recording(monkeypatch, tmp_path, ["--agent", "on"], _ROUTE, start_paths=start_paths)
+    assert built[-1]["compute_dtype"] == "float16" and built[-1]["execution_variant"] == "reference"
+    assert "engine_configuration" not in built[-1]
+    assert "the agent chose route, which did not start" in capsys.readouterr().out
+
+
+def test_when_the_agents_stacked_engine_does_not_start_its_plan_then_stock_serve(monkeypatch, tmp_path, capsys):
+    dense = {"engine": "dense", "compute_dtype": "native", "reason": "2.0x", "width": 6}
+    built = _serve_recording(monkeypatch, tmp_path, ["--agent", "on"], dense, start_fails=2)
+    assert [b.get("engine_configuration") for b in built] == ["dense_stacked", None, None]
+    assert built[0]["dense_width"] == 6
+    assert [b["compute_dtype"] for b in built] == [None, "native", None], "its gated plan first, then stock"
+    assert capsys.readouterr().out.count('"fallback"') == 2
+
+
+def test_a_plan_the_caller_named_is_kept_when_it_does_not_start(monkeypatch, tmp_path):
+    """The caller's plan is preserved (AGENTS.md): `--engine dense` that cannot start is reported, not swapped."""
+    import contextlib
+
+    from ironmule_product import backend as backend_module, calibration, cli
+
+    class Store:
+        root = tmp_path
+
+        def __init__(self, *_):
+            pass
+
+        def settings(self):
+            return {}
+
+        def model(self, name):
+            return type("Spec", (), {"model_id": name, "revision": "r"})()
+
+    built = []
+
+    class Client:
+        def __init__(self, spec, **kwargs):
+            built.append(kwargs)
+
+        def start(self):
+            raise RuntimeError("cudaMalloc: out of memory")
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(cli, "ProductStore", Store)
+    monkeypatch.setattr(calibration, "model_lease", lambda store: contextlib.nullcontext())
+    monkeypatch.setattr(backend_module, "MLXWorkerClient", Client)
+    with pytest.raises(RuntimeError, match="out of memory"):
+        cli.serve(["--model", "m", "--engine", "dense"])
+    assert len(built) == 1 and built[0]["engine_configuration"] == "dense_stacked"
+
+
+def test_the_agents_two_paths_on_several_cards_fall_back_to_its_plan_on_each(monkeypatch, tmp_path, capsys):
+    from ironmule_product import device_pool
+
+    monkeypatch.setattr(device_pool, "cuda_devices", lambda: ["0", "1"])
+    monkeypatch.setattr(device_pool, "select_devices", lambda gpus, devices: ["0", "1"])
+
+    def start_pool(store, spec, devices, make_backend, service_type):
+        client = make_backend(devices[0])
+        client.start()
+
+    monkeypatch.setattr(device_pool, "start_pool", start_pool)
+    built = _serve_recording(monkeypatch, tmp_path, ["--agent", "on", "--gpus", "all"], _ROUTE)
+    assert built[-1]["compute_dtype"] == "float16" and built[-1]["execution_variant"] == "reference"
+    assert "two paths share one card" in capsys.readouterr().out
+
+
+def test_the_agents_setup_never_stops_the_server(monkeypatch):
+    """Whatever fails in the agent's measurement (here the setup itself raising) leaves the reference engine."""
+    import importlib
+    import subprocess
+
+    import ironmule.autopilot as autopilot
+    import ironmule.plan_choice as plan_choice
+    from ironmule_product import cli
+
+    tune = importlib.import_module("ironmule.tune")  # `ironmule.tune` the attribute is a function
+
+    monkeypatch.setattr(autopilot, "_probe_out_of_process", lambda probe: {"fingerprint": "f"})
+    monkeypatch.setattr(tune, "resolve_local_model",
+                        lambda model, revision=None: type("R", (), {"identity": type("I", (), {
+                            "identity_sha256": "a" * 64})()})())
+
+    def broken(*args, **kwargs):
+        raise subprocess.TimeoutExpired(["python"], 3600)
+
+    monkeypatch.setattr(plan_choice, "choose_setup", broken)
+    setup = cli._agent_setup(type("Spec", (), {"model_id": "m", "revision": "r"})())
+    assert setup["engine"] == "reference" and setup["compute_dtype"] is None
+    assert setup["reason"].startswith("the agent's setup failed (TimeoutExpired")
 
 
 def test_the_agents_two_path_setup_serves_through_the_learning_router(monkeypatch, tmp_path):

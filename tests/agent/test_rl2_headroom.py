@@ -1329,3 +1329,20 @@ def test_ag6h_decision_reads_the_fixed_rule():
     voided = rl2.analyse_ag6h(report(30.0, blocks=5, failed_block=2), resamples=200)
     assert voided["voided_blocks"] == [2] and voided["complete_blocks"] == 4 and voided["valid"]
     assert rl2.analyse_ag6h(report(30.0, blocks=3), resamples=50)["verdict"].startswith("invalid")
+
+
+def test_a_run_that_fails_still_leaves_its_report_and_ends_in_order(tmp_path, monkeypatch):
+    """AG5-G run 2: the agent's measurement timed out, the exception ended the session, and its report held only
+    the environment. A failing run now records what it measured, and where and why it stopped."""
+    def run(model, work, *, smoke, on_row=None):
+        on_row({"plan": "ag6h", "setup": {"engine": "route"}})
+        raise subprocess.TimeoutExpired(["python"], 7200)
+
+    monkeypatch.setattr(rl2, "run_ag6h", run)
+    monkeypatch.setattr(rl2, "environment", lambda: {"machine": "test"})
+    out = tmp_path / "report.json"
+    assert rl2.main(["--out", str(out), "--plan", "ag6h"]) == 0
+    report = json.loads(out.read_text())
+    assert report["rl2h"] == {"plan": "ag6h", "setup": {"engine": "route"}}, "what it measured is kept"
+    assert report["failed"]["error"].startswith("TimeoutExpired") and "Traceback" in report["failed"]["traceback"]
+    assert "finished_unix" in report

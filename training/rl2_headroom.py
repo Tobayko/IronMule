@@ -108,6 +108,7 @@ import sys
 import tempfile
 import threading
 import time
+import traceback
 from typing import Any, Iterable
 
 MODEL = "mlx-community/Qwen3-1.7B-bf16"
@@ -2984,6 +2985,15 @@ def main(argv: Iterable[str] | None = None) -> int:
         args.out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
 
     save()
+
+    def failed(exc: BaseException) -> int:
+        """A run that fails still ends in order: its report keeps what it measured, and where and why it stopped."""
+        report["failed"] = {"error": f"{type(exc).__name__}: {exc}"[:2000], "traceback": traceback.format_exc()[-8000:]}
+        report["finished_unix"] = time.time()
+        save()
+        print(json.dumps({"report": str(args.out), "failed": report["failed"]["error"]}), flush=True)
+        return 0
+
     work = Path(tempfile.mkdtemp(prefix="ironmule-rl2h-"))
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
     if args.plan == "ag4c" and args.model is None:
@@ -2991,7 +3001,10 @@ def main(argv: Iterable[str] | None = None) -> int:
     if args.plan == "ag5g" and args.model is None:
         model = AG5G_MODEL
     if args.plan == "x1":
-        report["x1"] = run_x1(model, args.out, smoke=args.smoke)
+        try:
+            report["x1"] = run_x1(model, args.out, smoke=args.smoke)
+        except Exception as exc:  # noqa: BLE001 - recorded in the report
+            return failed(exc)
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
@@ -3005,8 +3018,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]
-        report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save, **extra)
-        report["analysis"] = judge(report["rl2h"])
+        try:
+            report["rl2h"] = run(model, work, smoke=args.smoke, on_row=save, **extra)
+            report["analysis"] = judge(report["rl2h"])
+        except Exception as exc:  # noqa: BLE001 - recorded in the report
+            return failed(exc)
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "analysis": {k: v for k, v in report["analysis"].items()
@@ -3020,8 +3036,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         text = Path(args.policy_json[1:]).read_text() if args.policy_json.startswith("@") else args.policy_json
         policy = LearnedPolicy.from_json(json.loads(text))
         names = {"h6": arms_h6, "h7": arms_h7}[args.plan]() if not needs_fixed else arms_h4(args.best_fixed)
-    report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save, policy=policy, names=names)
-    report["analysis"] = analyse(report["rl2h"])
+    try:
+        report["rl2h"] = run(model, work, smoke=args.smoke, plan=args.plan, on_row=save, policy=policy, names=names)
+        report["analysis"] = analyse(report["rl2h"])
+    except Exception as exc:  # noqa: BLE001 - recorded in the report
+        return failed(exc)
     report["finished_unix"] = time.time()
     save()
     print(json.dumps({"report": str(args.out), "verdict": report["analysis"]["verdict"]}), flush=True)

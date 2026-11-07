@@ -1420,6 +1420,29 @@ not evidence for a claim).**
     is bounded to one T4, Qwen 3 1.7B bf16 at `9cd6692`, these four load-and-state cells, 32-request blocks with
     256-token answers and the product at `c58fb4b`. The ledger entry is still owed.
 
+### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
+
+The owner asked that aborts stop and that nothing crash. Today's runs had shown how the agent could stop work.
+In AG5-G run 1 its own measurement ran out of memory, so it lost the stacked engine; in run 2 the measurement
+timed out, and the timeout raised through `choose_setup` and ended the run. A chosen engine that did not start, or
+`route` on several cards, stopped `serve`, and a router or dream fault would have broken the response stream it ran
+in. None of it is a performance change, and no
+decision moves, so it needs no hardware evidence; each case has a test that injects the failure.
+- *Setup:* a failure anywhere in the agent's measurement (`cli._agent_setup`, `plan_choice.choose_setup`: the
+  numeric gate, the stacked measurement and its child, the rule, an unreadable child result, a store of another
+  shape or on a read-only disk) leaves the reference engine on the checkpoint's dtype, with the reason.
+- *Start:* when the engine the agent chose does not start (a card out of memory, a kernel that fails), or it chose
+  `route` on several cards, its gated numeric plan serves on the reference engine, else the checkpoint's dtype. It
+  is printed and shown as `agent_setup.fallback_from`. A plan the caller named is kept and its failure reported.
+- *Serving:* a router decision that fails serves the request in placement order (`router_faults`); a learning or
+  dream fault keeps the mode and lets the answer go out (`errors`, `last_error` in `/health`'s `paths`). A
+  rerouted request is now priced at its new path's load as it stands, not as it was when the request came: AG6-H
+  had taught the single path a 7.3 s first token from requests that waited there behind earlier refusals.
+- *Harness:* a Kaggle run that raises records the error and its traceback in its report, keeps what it measured
+  and ends in order (`training/rl2_headroom.py`), so no session ends without a result to read.
+- *Not covered:* a worker that dies mid-request is STAB1's (it is replaced, and the request fails as before); a
+  driver fault that takes the whole process down is outside Python's reach.
+
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 
 The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30

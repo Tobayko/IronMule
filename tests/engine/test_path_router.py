@@ -210,3 +210,91 @@ def test_the_policy_router_dreams_every_sixteen_finished_requests_and_serves_its
     assert router.choose([5, 0], 256) == 1 and router.choose([0, 9], 256) == 1, "a lookup in its mode"
     status = router.status()
     assert status["mode"] == "stacked" and status["last_dream"]["requests"] == DREAM_MIN
+
+
+# ---------------------------------------------------------------- stability: a router fault never fails a request
+
+def test_a_decision_that_fails_serves_on_the_first_path_and_is_counted():
+    router = PathRouter.from_setup(SETUP)
+
+    def broken(outstanding, tokens):
+        raise ZeroDivisionError("no price")
+
+    router.costs[1].expected = broken
+    assert router.choose([0, 0], 64) == 0
+    status = router.status()
+    assert status["errors"] == 1 and status["last_error"].startswith("choose: ZeroDivisionError")
+
+
+def test_learning_that_fails_never_breaks_the_stream_it_watches():
+    router = PathRouter.from_setup(SETUP)
+
+    def broken(*args):
+        raise ValueError("bad sample")
+
+    router.observe = broken
+    events = [{"type": "token", "text": "a"}, {"type": "token", "text": "b"}, {"type": "done", "completion_tokens": 2}]
+    assert list(router.watch(1, 1, iter(events))) == events
+    assert router.status()["errors"] == 1
+
+
+def test_a_dream_that_fails_keeps_the_mode_and_the_answer_goes_out(monkeypatch):
+    from ironmule_product import path_router
+    from ironmule_product.path_router import DREAM_MIN, PolicyRouter
+
+    def broken(*args):
+        raise RuntimeError("the replay diverged")
+
+    monkeypatch.setattr(path_router, "dream", broken)
+    router = PolicyRouter(["single", "stacked"], _costs())
+    for i in range(DREAM_MIN - 1):
+        router.finished(100.0 + 0.001 * i, 200)
+    events = [{"type": "token", "text": "a"}, {"type": "done", "completion_tokens": 1}]
+    assert list(router.watch(1, 1, iter(events))) == events  # the 32nd request finishes and the dream fails
+    status = router.status()
+    assert status["mode"] == "route" and status["dreams"] == 0 and status["errors"] == 1
+    assert status["last_error"].startswith("dream: RuntimeError")
+
+
+def test_the_pool_serves_a_request_when_the_router_itself_fails():
+    from ironmule_product.types import GenerationRequest
+
+    class Broken:
+        def choose(self, outstanding, max_tokens):
+            raise KeyError("costs")
+
+        def watch(self, index, sharing, events):
+            return events
+
+        def status(self):
+            raise RuntimeError("no status")
+
+    single, stacked = _Shard(1), _Shard(0)
+    pool = DevicePool([single, stacked], ["0:single", "0:stacked"])
+    pool.router = Broken()
+    request = GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64, request_id="r1")
+    assert [e["type"] for e in pool.stream(request)] == ["token", "done"]
+    assert stacked.streamed == ["r1"], "placement order (least outstanding first) served it"
+    paths = pool.health()["paths"]
+    assert paths["router_faults"] == 1 and paths["status_error"].startswith("RuntimeError")
+
+
+def test_a_rerouted_request_is_priced_at_the_load_its_new_path_has_now():
+    """AG6-H: a request the stacked engine refused was taught to the router at the single path's load when the
+    request first came (often none), though it waited behind earlier refusals there. The single path's learned
+    first token rose to 7.3 s, which no request alone ever took."""
+    from ironmule_product.types import GenerationRequest
+
+    single, stacked = _Shard(0), _NoRoom(0)
+    pool = DevicePool([single, stacked], ["0:single", "0:stacked"])
+    pool.router = PathRouter.from_setup(SETUP)
+    seen = []
+    watch = pool.router.watch
+    pool.router.watch = lambda index, sharing, events: seen.append((index, sharing)) or watch(index, sharing, events)
+    pool.router.choose = lambda outstanding, max_tokens: 1
+    single._outstanding = 0
+    request = GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64, request_id="r1")
+    stream = pool.stream(request)
+    single._outstanding = 3  # three refusals got there first
+    assert [e["type"] for e in stream] == ["token", "done"]
+    assert seen == [(1, 1), (0, 4)]

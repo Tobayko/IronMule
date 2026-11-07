@@ -328,3 +328,52 @@ def test_a_stacked_engine_without_a_measured_rival_is_not_eligible():
     assert pc.against(stacked, failed) == {
         "eligible": False,
         "reason": "the path it competes with was not measured: the measurement child exited with status 1"}
+
+
+# ---------------------------------------------------------------- stability: the setup never fails the server
+
+def test_a_measurement_or_gate_that_raises_leaves_the_base_path_with_the_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+
+    def measure(model_id, compute_dtype, base_only=False):
+        raise MemoryError("cudaMalloc failed")
+
+    setup = pc.choose_setup("m", "fp", "d" * 64, log=lambda _: None,
+                            numeric=lambda *a, **k: {"plan": "native", "reason": "within the gate"},
+                            measure=measure)
+    assert setup["engine"] == "reference" and setup["compute_dtype"] == "native"
+    assert "measurement failed (MemoryError: cudaMalloc failed)" in setup["reason"]
+
+    def numeric(*args, **kwargs):
+        raise OSError("disk")
+
+    setup = pc.choose_setup("m", "fp", "e" * 64, log=lambda _: None, numeric=numeric,
+                            measure=lambda *a, **k: {"eligible": False, "reason": "no plan"})
+    assert setup["compute_dtype"] is None and setup["numeric"]["reason"].startswith("the numeric gate failed")
+
+
+def test_a_store_of_another_shape_or_on_a_read_only_disk_never_fails_the_setup(tmp_path, monkeypatch):
+    from ironmule import numeric_choice as nc
+
+    odd = tmp_path / "odd.json"
+    odd.write_text("[1, 2, 3]")
+    monkeypatch.setattr(pc, "_store", lambda: odd)
+    monkeypatch.setattr(nc, "_store", lambda: odd)
+    assert pc._stored("k") is None and nc._stored("k") is None
+    blocked = tmp_path / "file"
+    blocked.write_text("")
+    monkeypatch.setattr(pc, "_store", lambda: blocked / "plan_choice.json")  # its folder is a file
+    monkeypatch.setattr(nc, "_store", lambda: blocked / "numeric.json")
+    assert pc._save("k", {"engine": "reference"})["engine"] == "reference"
+    assert nc._save("k", {"plan": None})["plan"] is None
+
+
+def test_a_child_that_prints_no_readable_result_is_refused(monkeypatch):
+    import subprocess
+
+    class Done:
+        returncode, stdout = 0, "@@STACKED {not json\n"
+
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
+    assert pc._measure_in_child("m", None) == {"eligible": False,
+                                               "reason": "the measurement child returned no readable result"}

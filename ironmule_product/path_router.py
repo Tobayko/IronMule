@@ -83,6 +83,14 @@ class PathRouter:
         self.decisions = [0] * len(names)
         self._lock = threading.Lock()
         self._decision_ns = 0
+        self.errors, self.last_error = 0, None
+        self._errors_lock = threading.Lock()
+
+    def _failed(self, where: str, exc: BaseException) -> None:
+        """A decision or learning error never reaches a request: it is counted and shown in `/health`."""
+        with self._errors_lock:
+            self.errors += 1
+            self.last_error = f"{where}: {type(exc).__name__}: {exc}"[:300]
 
     @classmethod
     def from_setup(cls, setup: dict[str, Any], stacked_width: int | None = None) -> "PathRouter":
@@ -100,9 +108,13 @@ class PathRouter:
     def choose(self, outstanding: Sequence[int], max_tokens: int) -> int:
         started = time.perf_counter_ns()
         with self._lock:
-            tokens = [min(float(max_tokens), cost.tokens) for cost in self.costs]
-            expected = [cost.expected(n, t) for cost, n, t in zip(self.costs, outstanding, tokens)]
-            best = min(range(len(expected)), key=lambda i: (expected[i], i))
+            try:
+                tokens = [min(float(max_tokens), cost.tokens) for cost in self.costs]
+                expected = [cost.expected(n, t) for cost, n, t in zip(self.costs, outstanding, tokens)]
+                best = min(range(len(expected)), key=lambda i: (expected[i], i))
+            except Exception as exc:  # noqa: BLE001 - a failed decision serves on the first path
+                self._failed("choose", exc)
+                best = 0
             self.decisions[best] += 1
             self._decision_ns = time.perf_counter_ns() - started
             return best
@@ -116,20 +128,24 @@ class PathRouter:
         started = time.monotonic()
         first = None
         for event in events:
-            if first is None and event.get("type") == "token":
-                first = time.monotonic() - started
-            if event.get("type") == "done":
-                end = time.monotonic() - started
-                tokens = int(event.get("completion_tokens") or 0)
-                if first is not None:
-                    self.observe(index, sharing, tokens, end - first, first)
+            try:
+                if first is None and event.get("type") == "token":
+                    first = time.monotonic() - started
+                if event.get("type") == "done" and first is not None:
+                    end = time.monotonic() - started
+                    self.observe(index, sharing, int(event.get("completion_tokens") or 0), end - first, first)
+            except Exception as exc:  # noqa: BLE001 - learning never breaks the stream it watches
+                self._failed("learn", exc)
             yield event
 
     def status(self) -> dict[str, Any]:
         with self._lock:
-            return {"paths": {name: cost.status() for name, cost in zip(self.names, self.costs)},
-                    "decisions": dict(zip(self.names, self.decisions)),
-                    "decision_us": round(self._decision_ns / 1000, 2)}
+            out = {"paths": {name: cost.status() for name, cost in zip(self.names, self.costs)},
+                   "decisions": dict(zip(self.names, self.decisions)),
+                   "decision_us": round(self._decision_ns / 1000, 2)}
+        with self._errors_lock:
+            out.update(errors=self.errors, last_error=self.last_error)
+        return out
 
 
 # ---------------------------------------------------------------- AG6: the serving policy, learned by dreaming
@@ -260,8 +276,11 @@ class PolicyRouter(PathRouter):
     def watch(self, index: int, sharing: int, events: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
         arrived = time.monotonic()
         for event in super().watch(index, sharing, events):
-            if event.get("type") == "done":
-                self.finished(arrived, int(event.get("completion_tokens") or 0))
+            try:
+                if event.get("type") == "done":
+                    self.finished(arrived, int(event.get("completion_tokens") or 0))
+            except Exception as exc:  # noqa: BLE001 - a failed dream keeps the mode; the answer goes out
+                self._failed("dream", exc)
             yield event
 
     def finished(self, arrived: float, tokens: int) -> None:

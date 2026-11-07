@@ -145,10 +145,16 @@ NUM1's numeric plan, then a stacked engine (`dense`) if one passes its decode-pa
 It may choose a plan that changes answers slightly, by the owner's decision. `/health`'s `agent_setup` block shows
 the choice, every candidate's gate and speeds, and the reason. If the stacked engine wins only under load and both
 fit the card, both serve, and the agent routes each request to the path where it should finish first. `/health`'s
-`paths` block shows each path's learned costs, the decisions and the decision time. `agent_setup.levers` lists every
+`paths` block shows each path's learned costs, the decisions and the decision time; since AG6 also the serving
+mode the agent dreamed (`mode`, `dreams`, `switches`, `last_dream`), the requests the pool moved to the other path
+(`fallbacks`), and any router fault (`errors`, `last_error`, `router_faults`). `agent_setup.levers` lists every
 lever the agent knows, and what happened to each on this machine, including the planned ones (BACKLOG HQ1). While the stacked engine serves, the online agent
-does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. Details
-and the training workflow: [AGENT.md](AGENT.md).
+does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. *Never
+stopped by the agent.* A failed measurement serves the reference engine; a choice of the agent's that does not
+start (a card out of memory) serves its gated numeric plan on the reference engine, else the checkpoint's dtype,
+printed and shown as `agent_setup.fallback_from`; a router or dream fault serves the request on a path and is
+counted. A named engine that does not start is reported, not replaced. Details and the training workflow:
+[AGENT.md](AGENT.md).
 
 **Qualified schedule (RL6, confirmed by LD1-V).** On the setup the RL runs measured -- `--gpus all`
 on two Tesla T4s, `--engine tuned`, `mlx-community/Qwen3-1.7B-bf16` at revision `9cd66928` -- the

@@ -103,6 +103,7 @@ class DevicePool:
     agents: list[Any] | None = None  # AG2: one agent per device, attached by the CLI; placement stays the pool's
     dispatch = None  # LD1: an evidence-bound learned_dispatch.LearnedDispatch; attach() also hands it to each device
     router = None  # AG4 step 2: a path_router.PathRouter over two serving paths on one card (the shards, in order)
+    router_faults = 0  # decisions the router failed to make; placement order served those requests
     path_fallbacks = 0  # routed requests a path could not hold, served by the next path instead
 
     def __init__(self, shards: list[Any], devices: list[str]):
@@ -150,9 +151,12 @@ class DevicePool:
             router = self.router
             outstanding = [shard.outstanding() for shard in self.shards]
             if router is not None and len(order) == len(self.shards):
-                chosen = router.choose(outstanding, request.max_tokens)
-                order.remove(chosen)
-                order.insert(0, chosen)
+                try:
+                    chosen = router.choose(outstanding, request.max_tokens)
+                    order.remove(chosen)
+                    order.insert(0, chosen)
+                except Exception:  # noqa: BLE001 - a router fault never fails a request: placement order serves
+                    self.router_faults += 1
             overloaded: Overloaded | None = None
             for index in order:
                 try:
@@ -182,6 +186,7 @@ class DevicePool:
             self.path_fallbacks += 1
             fallback = None
             for other in others:
+                sharing = self.shards[other].outstanding() + 1  # as it stands now, not when the request came
                 try:
                     fallback = self.shards[other].stream(request)
                     break
@@ -189,7 +194,7 @@ class DevicePool:
                     continue
             if fallback is None:
                 raise Overloaded("no other path can take this request now; retry later")
-        yield from self.router.watch(other, outstanding[other] + 1, fallback)
+        yield from self.router.watch(other, sharing, fallback)
 
     def cancel(self, request_id: str) -> bool:
         return any(shard.cancel(request_id) for shard in self.shards)
@@ -204,7 +209,11 @@ class DevicePool:
                     "oldest_queued_s", "learning"):
             result.pop(key, None)
         if self.router is not None:
-            result["paths"] = {**self.router.status(), "fallbacks": self.path_fallbacks}
+            try:
+                paths = self.router.status()
+            except Exception as exc:  # noqa: BLE001 - health answers even when the router cannot
+                paths = {"status_error": f"{type(exc).__name__}: {exc}"[:300]}
+            result["paths"] = {**paths, "fallbacks": self.path_fallbacks, "router_faults": self.router_faults}
         result["devices"] = [{"cuda_device": device, "ready": health["ready"], "device": health.get("device"),
                               "worker": health.get("worker"), "in_flight": health.get("in_flight"),
                               "queued_requests": health.get("queued_requests"),
