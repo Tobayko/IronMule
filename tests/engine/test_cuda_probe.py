@@ -532,6 +532,50 @@ def test_kb2g_decisions_read_the_fixed_rules():
     assert slow["(b) limitation"] is True and slow["verdict"].startswith("(a), (c) and run 2's (b) pass")
 
 
+def test_kb2l_scores_sixteen_bos_led_windows_past_the_window_on_cpu_stand_ins(tmp_path):
+    """KB2-L on CPU stand-ins: 16 windows, each prefix led by exactly one BOS, scored regions disjoint, the plan four
+    rows stacked; the analysis reads the fixed rule (a CPU run checks the tool, not the plan)."""
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+
+    class BosTok(_Tokenizer):
+        bos_token_id = 2
+
+        def encode(self, text):
+            return [2] + [ord(c) % 200 + 3 for c in text]
+
+    def make_plan(slots, capacity):
+        return dense_gemma.GemmaDensePlan(model, slots=slots, capacity=capacity,
+                                          attention=dense_gemma.reference_attention, native=False)
+
+    report = probe.probe_kb2l_report("tiny", tmp_path / "kb2l.json", smoke=True, loaded=(model, BosTok(), {}),
+                                     make_plan=make_plan)
+    kb2l, analysis = report["kb2l"], report["analysis"]
+    assert "error" not in kb2l, kb2l
+    assert analysis["windows"] == 16 == analysis["windows led by BOS"] and len(analysis["differences"]) == 16
+    items = probe.h11_gate_items(BosTok(), {"long": (24, 6, 16)})["long"]
+    assert len(items) == 16 and all(prefix.count(2) == 1 for prefix, _ in items)
+    assert set(analysis) >= {"(a) long pool exact", "(c) long path", "verdict"}
+    assert json.loads((tmp_path / "kb2l.json").read_text())["schema"] == "ironmule.cuda_probe.kb2l.v1"
+
+
+def test_kb2l_decision_reads_the_fixed_rule():
+    reference = [2.4 + 0.01 * i for i in range(16)]
+    windows = [{"led_by_bos": True}] * 16
+
+    def result(shift=0.0, identical=10, count=16):
+        return {"exact_long": {"stacks": {"4": {"identical_steps": identical, "steps": 10}}}, "windows": windows[:count],
+                "gate": {"long": {"reference": reference[:count], "plan": [x + shift for x in reference[:count]]}}}
+
+    assert probe.analyse_kb2l(result())["verdict"].startswith("passes")
+    assert probe.analyse_kb2l(result(shift=0.02))["verdict"].startswith("does not pass")
+    assert probe.analyse_kb2l(result(identical=9))["verdict"].startswith("does not pass")
+    assert probe.analyse_kb2l(result(count=4))["verdict"].startswith("does not pass"), "16 windows, as fixed"
+
+
 def test_kb2_decisions_read_the_fixed_rules():
     rounds = [{"plan": {str(w): 0.05 + 0.004 * w for w in range(1, 9)}, "native_one": 0.047} for _ in range(5)]
     stack = {"identical_steps": 10, "steps": 10}

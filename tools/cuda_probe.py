@@ -2987,6 +2987,101 @@ def probe_kb2d_report(model_id: str, out: Path | None, *, smoke: bool = False,
     return report
 
 
+# ---------------------------------------------------------------- KB2-L: the long path with power
+
+KB2L_GATE = {"long": (1536, 128, 16)}  # 16 windows past the 1,024-token window, scored tokens disjoint (KB2-G had 4)
+
+
+def probe_kb2l(model: Any, tokenizer: Any, device_info: dict[str, Any], *, gate: dict[str, Any] | None = None,
+               steps: int = KB2_STEPS, make_plan: Callable[[int, int], Any] | None = None,
+               out: dict[str, Any] | None = None) -> dict[str, Any]:
+    """KB2-L: the gate's long path past the window with 16 windows (gate 2's BOS lead, H11's spread), the plan four
+    rows stacked in 2,048-token slots against today's native decode; (a) on the long pool again. The native
+    references run before the pool exists (KB2-0 run 1)."""
+    import gc
+
+    import mlx.core as mx
+    from ironmule import cuda_native, dense_gemma
+    from ironmule.numeric_choice import GATE_VERSION
+
+    out = {} if out is None else out
+    out.update(gate_version=GATE_VERSION, memory={})
+    out["native"] = cuda_native.install(model, device_info) if make_plan is None else None
+    items = (gate or h11_gate_items(tokenizer, KB2L_GATE))["long"]
+    out["windows"] = [{"prefix_tokens": len(prefix), "scored_tokens": len(scored), "led_by_bos": bool(prefix) and
+                       prefix[0] == getattr(tokenizer, "bos_token_id", None)} for prefix, scored in items]
+    out["stage"] = "native references"
+    reference = [kb2_native_nll(model, prefix, scored) for prefix, scored in items]
+    out["memory"]["native references"] = kb2_memory()
+    gc.collect()
+    mx.clear_cache()
+    out["stage"] = "long pool"
+    plan = (dense_gemma.GemmaDensePlan(model, slots=KB2_LONG_ROWS, capacity=KB2_LONG_CAPACITY) if make_plan is None
+            else make_plan(KB2_LONG_ROWS, KB2_LONG_CAPACITY))
+    out["stage"] = "exact long"
+    longs = [row_ids(tokenizer, r, KB2_LONG_PROMPT) for r in range(KB2_LONG_ROWS)]
+    out["exact_long"] = kb2_exactness(plan, longs, steps, (KB2_LONG_ROWS,))
+    out["stage"] = "long gate"
+    out["gate"] = {"long": {"reference": reference, "plan": kb2_plan_nll(plan, items)}}
+    out["memory"]["done"] = kb2_memory()
+    out["stage"] = "done"
+    return out
+
+
+def analyse_kb2l(result: dict[str, Any]) -> dict[str, Any]:
+    """KB2-L's decision, as fixed in BACKLOG KB2 before its data: the long path's ratio below 1.005 at 95 % over its
+    16 windows, and the long pool's rows bit-identical alone and stacked."""
+    from ironmule.numeric_choice import ratio_interval
+
+    stacks = ((result.get("exact_long") or {}).get("stacks") or {}).values()
+    exact = bool(stacks) and all(c["identical_steps"] == c["steps"] for c in stacks)
+    gate = (result.get("gate") or {}).get("long") or {}
+    verdict = ratio_interval(gate["reference"], gate["plan"]) if len(gate.get("reference") or []) >= 4 else None
+    windows = result.get("windows") or []
+    out = {"(a) long pool exact": exact, "(c) long path": verdict, "windows": len(windows),
+           "windows led by BOS": sum(w.get("led_by_bos") for w in windows), "gate_version": result.get("gate_version"),
+           "differences": [p - r for r, p in zip(gate.get("reference") or [], gate.get("plan") or [])]}
+    out["verdict"] = ("passes: with KB2-G's (a) and main path and run 2's (b), KB2 is a candidate opt-in plan"
+                      if exact and verdict and verdict["passes"] and len(windows) == KB2L_GATE["long"][2]
+                      else "does not pass: KB2 stays in Tier 0")
+    return out
+
+
+def probe_kb2l_report(model_id: str, out: Path | None, *, smoke: bool = False,
+                      loaded: tuple[Any, Any, dict[str, Any]] | None = None,
+                      make_plan: Callable[[int, int], Any] | None = None) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb2l.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment(), "kb2l": {}}
+    try:
+        if loaded is None:
+            import mlx.core as mx
+            from huggingface_hub import snapshot_download
+            from mlx_lm import load
+
+            path = snapshot_download(model_id, revision=KB2_REVISION if model_id == KB2_MODEL else None,
+                                     allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                     "tokenizer*"])
+            model, tokenizer = load(path)
+            report["revision"] = Path(path).name
+            device_info = dict(mx.device_info())
+        else:
+            model, tokenizer, device_info = loaded
+        probe_kb2l(model, tokenizer, device_info, steps=4 if smoke else KB2_STEPS, make_plan=make_plan,
+                   gate=h11_gate_items(tokenizer, {"long": (24, 6, 16)}) if smoke else None, out=report["kb2l"])
+        report["analysis"] = analyse_kb2l(report["kb2l"])
+    except Exception as exc:  # noqa: BLE001 - recorded, with what came before it
+        report["kb2l"]["error"] = repr(exc)
+        try:
+            report["kb2l"]["memory_at_error"] = kb2_memory()
+        except Exception:  # noqa: BLE001
+            pass
+        report["analysis"] = {"error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- AG4-Q: the agent's own setup on a T4
 
 def probe_ag4_report(model_id: str, out: Path | None, *, smoke: bool = False) -> dict[str, Any]:
@@ -3041,7 +3136,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -3065,7 +3160,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "ag4"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -3087,7 +3182,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                   analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else
                   analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else
                   analyse_kb2d(report.get("kb2d") or {}) if schema == "ironmule.cuda_probe.kb2d.v1" else
-                  analyse_kb2g(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2g.v1" else analyse(report))
+                  analyse_kb2g(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2g.v1" else
+                  analyse_kb2l(report.get("kb2l") or {}) if schema == "ironmule.cuda_probe.kb2l.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
@@ -3103,6 +3199,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = probe_kb2d_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
                          default=str), flush=True)
+        return 0
+    if args.plan == "kb2l":
+        report = probe_kb2l_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
         return 0
     if args.plan == "kb2g":
         report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke,
