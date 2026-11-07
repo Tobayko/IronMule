@@ -2631,6 +2631,36 @@ the test below demands bit-identity.
   - if (a) holds but (b) falls short, the result is recorded and v1 stays.
 - *Recorded, no decision:* v1's ratio in the same session, each width's step under both versions, and the
   attention's share of the one-row step.
+- **KB3-0 result: (a) passes, (b) does not; v1 stays (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb3` v1 at
+  `09db8ad`, Kaggle T4, 20.5 minutes, peak 12.3 GB).** The plan was KB2's: kernel `54b1d3a2...`, version 1,
+  eight 1,024-token slots, at revision `86cc6a8`.
+  - **(a) Bit-identical:** all 48 random cases (G of 1, 2 and 4; D of 256 and 128; widths 1 to 8; windows),
+    and every one of 64 real decode steps at widths 1, 6 and 8 (logits hashes and tokens).
+  - **(b) Not fast enough:** v2's one-request ratio by AG4's formula was 0.904, below 0.92 (v1 in the same
+    session: 0.889). The native path made 20.57 tokens per second alone.
+  - *Recorded:*
+    | step at one row | v1 | v2 |
+    | :-- | --: | --: |
+    | long prompt (314 tokens) | 60.28 ms | 54.29 ms |
+    | short prompt (12 tokens) | 50.04 ms | 53.25 ms |
+    - v2 helped the long prompt by 6.0 ms but cost the short one 3.2 ms.
+    - At the best width, 6, v2 made 47.81 tokens per second against v1's 45.93 (+4.1 %).
+  - *Why the short prompt lost (an inference from the kernels, not measured):* v2 stages all 64 key rows of a
+    chunk and forms both keys' products in every lane, valid or not. v1 skips a lane's invalid key. With 12
+    tokens, v2 does about five times v1's key work, and its second warp per KV head adds launch work that a short
+    context cannot use.
+  - By the rule, v1 stays and `FA2_VERSION` remains 1. AG5-G does not run again on KB3-0.
+- **KB3-1, version 3 (fixed now, before its data; a new implementation, so this is not a re-analysis of KB3-0).**
+  - *Mechanism:* v2, plus three changes that keep every operation and its order:
+    - the tile loads only the chunk's valid rows (its `count`, the same for the whole warp);
+    - the second half of a chunk's keys is computed only when the chunk has more than 32 of them (also the same
+      for the whole warp);
+    - the row loop is unrolled by 8, so more loads are in flight.
+  - *Test:* KB3-0's protocol unchanged, with v3 in v2's place. (a) is v3 against v1, bit for bit, on the same
+    random pools and decode steps. (b) uses the same thresholds: a one-request ratio of at least 0.92, and the
+    best width within 2 % of v1's.
+  - *Decision:* as KB3-0. If v3 passes, it becomes the plan's kernel (`FA2_VERSION` 3, `PLAN_VERSION` 2), and
+    AG5-G runs again (run 5). If not, v1 stays and KB3 closes in Tier 0 with both results.
 
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 

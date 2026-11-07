@@ -3105,8 +3105,9 @@ def kb3_random_cases(seed: int = 3) -> list[dict[str, Any]]:
 
 
 def kb3_compare_random(cases: list[dict[str, Any]], fa2: Callable[..., Any], *, kv_heads: int = 8,
-                       capacity: int = KB2_CAPACITY, slots: int = KB2_ROWS) -> list[dict[str, Any]]:
-    """Each case through `fa2` at version 1 and 2 on the same random pool and queries; identical bit for bit?"""
+                       capacity: int = KB2_CAPACITY, slots: int = KB2_ROWS, candidate: int = 2) -> list[dict[str, Any]]:
+    """Each case through `fa2` at version 1 and `candidate` on the same random pool and queries; identical bit for
+    bit?"""
     import mlx.core as mx
 
     out = []
@@ -3119,7 +3120,7 @@ def kb3_compare_random(cases: list[dict[str, Any]], fa2: Callable[..., Any], *, 
         lengths = mx.array(case["lengths"], dtype=mx.int32)
         rows = mx.array([(7 * r + 3) % slots for r in range(b)], dtype=mx.int32)
         one, two = (fa2(q, keys, values, lengths, rows, kv_heads, capacity, d ** -0.5, case["W"], version=v)
-                    for v in (1, 2))
+                    for v in (1, candidate))
         mx.eval(one, two)
         out.append({**case, "identical": bool(mx.array_equal(one.view(mx.uint16), two.view(mx.uint16)).item())})
     return out
@@ -3154,7 +3155,7 @@ def kb3_decode(plan: Any, prompts: list[list[int]], steps: int) -> dict[str, Any
 def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *, steps: int = KB3_DECODE_STEPS,
               rounds: int = KB3_ROUNDS, speed_steps: int | None = None, widths: tuple[int, ...] = KB3_DECODE_WIDTHS,
               cases: list[dict[str, Any]] | None = None, make_plan: Callable[[], Any] | None = None,
-              fa2: Callable[..., Any] | None = None, texts: dict[str, str] | None = None,
+              fa2: Callable[..., Any] | None = None, texts: dict[str, str] | None = None, candidate: int = 2,
               out: dict[str, Any] | None = None) -> dict[str, Any]:
     """KB3-0 (BACKLOG KB3, fixed before its data): (a) FA2 v2 against v1 bit for bit on random pools and on real
     decode steps of the plan; (b) plan_choice's own timing, the native path's one-request step before any pool
@@ -3166,9 +3167,10 @@ def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
     from ironmule.tune import DEFAULT_PROMPT
 
     out = {} if out is None else out
-    out["memory"] = {}
+    out["memory"], out["candidate"] = {}, candidate
     fa2 = fa2 or dense_gemma.fa2
     speed_steps = speed_steps or plan_choice.SPEED_STEPS
+    versions = (1, candidate)
 
     def stage(name: str) -> None:
         out["stage"] = name
@@ -3191,7 +3193,8 @@ def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
         plan = make_plan()
     stage("(a) random pools")
     out["random"] = kb3_compare_random(cases if cases is not None else kb3_random_cases(), fa2,
-                                       kv_heads=plan.kv_heads, capacity=plan.capacity, slots=plan.slots)
+                                       kv_heads=plan.kv_heads, capacity=plan.capacity, slots=plan.slots,
+                                       candidate=candidate)
     plan_choice._release_memory()
     stage("(a) decode")
     prompts = [chat_ids(tokenizer, i % len(PROMPTS), i % 2 == 1, min(KB2_PROMPT_LIMIT, plan.capacity - steps - 1))
@@ -3199,15 +3202,15 @@ def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
     out["decode"] = {}
     for width in widths:
         runs = {}
-        for version in (1, 2):
+        for version in versions:
             plan.attention = functools.partial(fa2, version=version)
             runs[str(version)] = kb3_decode(plan, prompts[:width], steps)
         out["decode"][str(width)] = runs
     plan_choice._release_memory()
     stage("(b) plan steps")
-    out["plan"] = {"1": {name: [] for name in texts}, "2": {name: [] for name in texts}}
+    out["plan"] = {str(version): {name: [] for name in texts} for version in versions}
     for _ in range(rounds):
-        for version in (1, 2):
+        for version in versions:
             plan.attention = functools.partial(fa2, version=version)
             for name in texts:
                 _, by_width = plan_choice._plan_speed(plan, ids[name], speed_steps)
@@ -3217,12 +3220,13 @@ def probe_kb3(model: Any, tokenizer: Any, device_info: dict[str, Any] | None, *,
 
 
 def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
-    """KB3-0's decision, as fixed in BACKLOG KB3 before its data."""
+    """KB3-0's decision (KB3-1's, with version 3 as the candidate), as fixed in BACKLOG KB3 before their data."""
     random_cases = result.get("random") or []
     decode = result.get("decode") or {}
+    c = str(result.get("candidate", 2))
     random_ok = bool(random_cases) and all(case.get("identical") for case in random_cases)
-    decode_ok = bool(decode) and all(runs["1"]["hashes"] == runs["2"]["hashes"]
-                                     and runs["1"]["tokens"] == runs["2"]["tokens"] for runs in decode.values())
+    decode_ok = bool(decode) and all(runs["1"]["hashes"] == runs[c]["hashes"]
+                                     and runs["1"]["tokens"] == runs[c]["tokens"] for runs in decode.values())
     out: dict[str, Any] = {"(a) random pools identical": random_ok,
                            "(a) random cases": len(random_cases),
                            "(a) random cases that differ": [c for c in random_cases if not c.get("identical")][:8],
@@ -3230,7 +3234,8 @@ def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
                            "(a) decode widths": sorted(decode, key=int)}
     exact = random_ok and decode_ok
     base, plan = result.get("base") or {}, result.get("plan") or {}
-    if base and plan.get("1") and plan.get("2"):
+    out["candidate"] = int(c)
+    if base and plan.get("1") and plan.get(c):
         names = sorted(base)
         base_one = statistics.fmean(1 / statistics.median(base[name]) for name in names)
 
@@ -3239,26 +3244,27 @@ def analyse_kb3(result: dict[str, Any]) -> dict[str, Any]:
             return {w: statistics.fmean(int(w) / statistics.median(run[w] for run in plan[version][name])
                                         for name in names) for w in widths}
 
-        curves = {version: curve(version) for version in ("1", "2")}
-        ratios = {version: curves[version]["1"] / base_one for version in ("1", "2")}
-        best = {version: max(curves[version].values()) for version in ("1", "2")}
+        curves = {version: curve(version) for version in ("1", c)}
+        ratios = {version: curves[version]["1"] / base_one for version in ("1", c)}
+        best = {version: max(curves[version].values()) for version in ("1", c)}
         steps = {version: {name: {w: round(statistics.median(run[w] for run in plan[version][name]) * 1000, 2)
-                                  for w in plan[version][name][0]} for name in names} for version in ("1", "2")}
+                                  for w in plan[version][name][0]} for name in names} for version in ("1", c)}
         out.update({"(b) base one-request tokens per second": base_one,
                     "(b) one-request ratio": ratios, "(b) best-width tokens per second": best,
                     "(b) curve tokens per second": curves, "(b) step ms": steps})
-        fast = ratios["2"] >= KB3_RATIO and best["2"] >= KB3_WIDE * best["1"]
+        fast = ratios[c] >= KB3_RATIO and best[c] >= KB3_WIDE * best["1"]
     else:
         fast = False
     out["passes"] = exact and fast
-    out["verdict"] = ("v2 is rejected: an output differs from v1 bit for bit" if not exact else
-                      "v2 becomes the plan's kernel: bit-identical and fast enough" if fast else
-                      "v2 is bit-identical but not fast enough; v1 stays")
+    out["verdict"] = (f"v{c} is rejected: an output differs from v1 bit for bit" if not exact else
+                      f"v{c} becomes the plan's kernel: bit-identical and fast enough" if fast else
+                      f"v{c} is bit-identical but not fast enough; v1 stays")
     return out
 
 
 def probe_kb3_report(model_id: str, out: Path | None, *, smoke: bool = False,
-                     loaded: tuple[Any, Any, dict[str, Any]] | None = None, **kwargs: Any) -> dict[str, Any]:
+                     loaded: tuple[Any, Any, dict[str, Any]] | None = None, candidate: int = 2,
+                     **kwargs: Any) -> dict[str, Any]:
     report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb3.v1", "model": model_id, "smoke": smoke,
                               "started_unix": time.time(), "env": environment(), "kb3": {}}
 
@@ -3280,7 +3286,7 @@ def probe_kb3_report(model_id: str, out: Path | None, *, smoke: bool = False,
             device_info = dict(mx.device_info())
         else:
             model, tokenizer, device_info = loaded
-        probe_kb3(model, tokenizer, device_info, out=report["kb3"],
+        probe_kb3(model, tokenizer, device_info, out=report["kb3"], candidate=candidate,
                   **({"steps": 4, "rounds": 1, "speed_steps": 3, "widths": (1, 2)} if smoke else {}), **kwargs)
         report["analysis"] = analyse_kb3(report["kb3"])
     except Exception as exc:  # noqa: BLE001 - recorded, with what came before it
@@ -3349,7 +3355,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "kb3", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l", "kb3", "kb31", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -3374,7 +3380,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--owner")
     parser.add_argument("--commit")
     parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "kb2l",
-                                           "kb3", "ag4"), default="hw3")
+                                           "kb3", "kb31", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -3415,8 +3421,9 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
                          default=str), flush=True)
         return 0
-    if args.plan == "kb3":
-        report = probe_kb3_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
+    if args.plan in ("kb3", "kb31"):  # KB3-0 tries FA2 version 2, KB3-1 version 3
+        report = probe_kb3_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke,
+                                  candidate=2 if args.plan == "kb3" else 3)
         print(json.dumps({"report": str(args.out), "analysis": {k: report["analysis"].get(k) for k in
                           ("verdict", "(a) random pools identical", "(a) decode identical", "(b) one-request ratio",
                            "(b) best-width tokens per second", "error")}}, default=str), flush=True)

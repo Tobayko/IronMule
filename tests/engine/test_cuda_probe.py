@@ -685,3 +685,29 @@ def test_kb3_rejects_v2_on_any_differing_bit_and_needs_its_speed_margin():
     wide_loss = {**result, "plan": {**result["plan"], "2": {"short": [{"1": 0.0505, "6": 0.14}],
                                                             "long": [{"1": 0.0505, "6": 0.14}]}}}
     assert not cp.analyse_kb3(wide_loss)["passes"], "the best width may not lose more than 2 %"
+
+
+def test_kb3_1_compares_version_3_with_version_1_and_writes_its_own_kernel(tmp_path):
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+    from tools import cuda_probe as cp
+
+    model = tiny_model()
+    plan = dense_gemma.GemmaDensePlan(model, slots=2, capacity=96, attention=dense_gemma.reference_attention,
+                                      native=False)
+    seen = set()
+
+    def fa2(*args, version):
+        seen.add(version)
+        return dense_gemma.reference_attention(*args)
+
+    out = cp.probe_kb3(model, _ChatTok(), None, steps=2, rounds=1, speed_steps=3, widths=(1,),
+                       cases=[{"G": 1, "D": plan.dim, "B": 1, "W": 0, "lengths": [7]}], make_plan=lambda: plan,
+                       fa2=fa2, texts={"short": "hi", "long": "y" * 20}, candidate=3)
+    assert seen == {1, 3} and set(out["decode"]["1"]) == {"1", "3"} and set(out["plan"]) == {"1", "3"}
+    analysis = cp.analyse_kb3(out)
+    assert analysis["candidate"] == 3 and set(analysis["(b) one-request ratio"]) == {"1", "3"}
+    folder = cp.write_kernel(tmp_path / "k", "owner", "d" * 40, "kb31")
+    assert "'--plan', 'kb31'" in (folder / "run.py").read_text()
+    assert '"id": "owner/ironmule-cuda-probe-kb31"' in (folder / "kernel-metadata.json").read_text()
