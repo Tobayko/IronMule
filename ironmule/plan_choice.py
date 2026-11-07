@@ -182,16 +182,42 @@ def _plan_nll(plan: Any, chunks: list[list[int]], leads: list[list[int]] | None 
 
 
 def _release_memory() -> None:
-    """Return freed buffers to the device before the stacked plan allocates its pool."""
+    """Return freed buffers to the device: before the stacked plan allocates its pool, and between stages."""
     import gc
 
     gc.collect()
     try:
         import mlx.core as mx
 
+        getattr(mx, "synchronize", lambda: None)()  # frees queued on the stream land before the cache is cleared
         mx.clear_cache()
     except Exception:  # noqa: BLE001 - no MLX device to release; nothing held
         pass
+
+
+def _memory_now() -> str:
+    """MLX's allocator as one line: active, cached and peak gigabytes (empty where MLX does not report them)."""
+    try:
+        import mlx.core as mx
+
+        return ", ".join(f"{name} {getattr(mx, f'get_{name}_memory')() / 1e9:.2f} GB"
+                         for name in ("active", "cache", "peak"))
+    except Exception:  # noqa: BLE001 - only a log line
+        return ""
+
+
+def _again_if_out_of_memory(step: Callable[[], Any], retried: list[str], name: str) -> Any:
+    """`step()`, and once more after returning every freed buffer if the device ran out of memory (AG5-G run 3:
+    the long prompt's first prefill on the stacked plan failed in `cudaMallocAsync` after the gate had passed).
+    A second failure is raised, so the stacked engine is then not chosen."""
+    try:
+        return step()
+    except RuntimeError as exc:
+        if "out of memory" not in str(exc).lower():
+            raise
+        retried.append(name)
+        _release_memory()
+        return step()
 
 
 def _base_speed(model: Any, ids: list[int], steps: int) -> tuple[float, float]:
@@ -262,10 +288,13 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     from .tune import DEFAULT_PROMPT
 
     started = time.perf_counter()
+    retried: list[str] = []
 
     def note(stage: str) -> None:
         if log is not None:
-            log(f"agent: stacked measurement: {stage} ({time.perf_counter() - started:.0f} s)")
+            memory = _memory_now()
+            log(f"agent: stacked measurement: {stage} ({time.perf_counter() - started:.0f} s"
+                + (f"; {memory})" if memory else ")"))
 
     if make_plan is None and (reason := stacked_refusal(model, device_info)) is not None:
         return {"eligible": False, "reason": reason}  # nothing timed for a model no stacked plan serves
@@ -274,7 +303,8 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     note("base path timed")
     items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
     leads, pieces = [lead for lead, _ in items], [piece for _, piece in items]
-    reference = [_decode_nll(model, piece, lead) for lead, piece in items]
+    reference = _again_if_out_of_memory(lambda: [_decode_nll(model, piece, lead) for lead, piece in items],
+                                        retried, "gate reference")
     note(f"gate reference on the base path, {len(items)} chunks")
     _release_memory()
     try:
@@ -282,7 +312,7 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     except ValueError as exc:
         return {"eligible": False, "reason": str(exc)}
     note("stacked plan installed")
-    candidate = _plan_nll(plan, pieces, leads)
+    candidate = _again_if_out_of_memory(lambda: _plan_nll(plan, pieces, leads), retried, "gate")
     note("gate on the stacked plan")
     out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate),
                            "memory": _memory(model, plan, device_info)}
@@ -290,11 +320,14 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     for name, prompt in prompts:
         prompt_ids = list(tokenizer.encode(prompt))
         base_first, base_step = base[name]
-        plan_first, plan_steps = _plan_speed(plan, prompt_ids, steps)
+        _release_memory()
+        plan_first, plan_steps = _again_if_out_of_memory(lambda: _plan_speed(plan, prompt_ids, steps), retried,
+                                                         f"speed, {name} prompt")
         speed[name] = {"base_first_s": base_first, "base_step_s": base_step, "plan_first_s": plan_first,
                        "plan_step_s": {str(w): s for w, s in plan_steps.items()}}
         note(f"stacked steps timed at every width, {name} prompt")
     out["speed"] = speed
+    out["retried_out_of_memory"] = retried
     return out
 
 

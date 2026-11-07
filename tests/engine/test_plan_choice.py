@@ -377,3 +377,55 @@ def test_a_child_that_prints_no_readable_result_is_refused(monkeypatch):
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
     assert pc._measure_in_child("m", None) == {"eligible": False,
                                                "reason": "the measurement child returned no readable result"}
+
+
+def test_a_step_that_runs_out_of_memory_runs_once_more_after_freeing_and_is_recorded(monkeypatch):
+    """AG5-G run 3: after its gate had passed, the long prompt's first prefill on the stacked plan failed in
+    `cudaMallocAsync ... out of memory`. A step that runs out of memory now runs once more after every freed buffer
+    went back; a second failure, or any other error, is raised as before."""
+    import pytest
+
+    released, calls, retried = [], [], []
+    monkeypatch.setattr(pc, "_release_memory", lambda: released.append(1))
+
+    def flaky():
+        calls.append(1)
+        if len(calls) == 1:
+            raise RuntimeError("cudaMallocAsync(&data, size, stream) failed: out of memory")
+        return "timed"
+
+    assert pc._again_if_out_of_memory(flaky, retried, "speed, long prompt") == "timed"
+    assert calls == [1, 1] and released == [1] and retried == ["speed, long prompt"]
+
+    def always():
+        raise RuntimeError("cudaMallocAsync failed: out of memory")
+
+    with pytest.raises(RuntimeError, match="out of memory"):
+        pc._again_if_out_of_memory(always, [], "gate")
+
+    def other():
+        calls.append("other")
+        raise RuntimeError("an illegal memory access was encountered")
+
+    with pytest.raises(RuntimeError, match="illegal memory access"):
+        pc._again_if_out_of_memory(other, [], "gate")
+    assert calls.count("other") == 1, "only running out of memory is tried again"
+
+
+def test_the_stage_log_carries_the_allocator_and_the_record_its_retries():
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import _Tok, tiny_model
+
+    model = tiny_model()
+
+    def make_plan(model_, info):
+        plan = dense_gemma.GemmaDensePlan(model_, slots=2, capacity=96, attention=dense_gemma.reference_attention,
+                                          native=False)
+        return plan, dense_gemma.probe(plan)
+
+    lines = []
+    measured = pc.measure_stacked(model, _Tok(), None, chunks=4, size=16, steps=3, long_prompt="x" * 40,
+                                  make_plan=make_plan, log=lines.append)
+    assert measured["retried_out_of_memory"] == []
+    assert all("active" in line and "peak" in line for line in lines), lines

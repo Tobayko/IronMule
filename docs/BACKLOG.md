@@ -1286,6 +1286,22 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
     - a failed measurement of the competing path is refused instead of raising a `KeyError`.
   - Run 3 is the same AG5-G at the fixed commit. If its measurement again passes 3,600 s, the stage log shows
     where, and the run stops by its rule.
+- **AG5-G run 3 (2026-11-07, kernel v3 at `f737494`, two T4s, 0.35 session hours): stopped before serving, at
+  the measurement's last stage. No data.**
+  - The reordering worked. The stage log read: base path timed at 30 s, gate reference on the native path
+    (16 chunks) at 448 s, plan installed at 595 s, gate on the plan at 995 s, and every width timed on the short
+    prompt at 1,031 s.
+  - Then the long prompt's first prefill on the plan (about 300 tokens) failed in
+    `cudaMallocAsync ... out of memory`. The child exited, the agent read "no stacked engine", and the run
+    stopped by its rule. The gate's numbers were lost with the child.
+  - *Cause:* not identified. The log carried no allocator figures, and the plan writes every prefill into its
+    pool at once, so nothing piled up there.
+  - *Fixed (no protocol change):*
+    - freed buffers go back to the device at every stage boundary, as KB2's probe does;
+    - a step that runs out of memory runs once more after that and is recorded (`retried_out_of_memory`), and a
+      second failure is raised as before;
+    - each stage's log line carries the allocator's active, cached and peak gigabytes.
+  - Run 4 is the same AG5-G at the fixed commit.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
