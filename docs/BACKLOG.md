@@ -1228,7 +1228,9 @@ replaces "at width 8". AG4-Q, AG4-R and AG4-C measured under the width-8 rule an
 **Kill.** AG5 is closed, and the agent keeps width 8, if AG5-G fails by its rule below or the agent at its own width
 makes fewer tokens per second than at width 8 on the same card.
 
-**AG5-G, the hardware test (fixed now, before its data; it runs only if KB2-G passes).**
+**AG5-G, the hardware test (fixed now, before its data; it runs only if KB2-G passes).** *Not run:* KB2-G did not
+pass (2026-11-07), so the Gemma plan has no gate to serve under. The width rule and its wiring (1 and 2) stand for
+every stacked engine; AG5-G waits for a stacked engine whose gate passes.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
@@ -2313,6 +2315,28 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
   - *Verdict:* (a) and (c) here, with run 2's (b), make the plan a candidate opt-in numeric plan for 4-bit Gemma 3.
     The next step is then the one fixed under KB2's verdict above. Otherwise KB2 returns to Tier 0 with this run's
     numbers.
+
+- **KB2-G result: valid, does not pass; KB2 returns to Tier 0 (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2g`
+  v1 at `4a01f49`, Kaggle T4, 26 minutes, peak 12.6 GB).** The plan was run 2's: kernel `54b1d3a2...`, version 1,
+  eight 1,024-token slots. Gate 2 led 15 of 16 main chunks with BOS; chunk 0 starts with the text's own.
+  - **(a) passes again:** 144/144, 384/384 and 192/192 steps bit-identical.
+  - **(c) main passes:** 16 x 512 tokens, ratio 0.9988, 95 % 0.9967-1.0008. Every chunk is within 0.010 nats a
+    token of the native path.
+  - **(c) long fails:** 4 x 128 tokens after a 1,536-token prefix, ratio 1.0003, 95 % 0.9944-1.0080, not below
+    1.005. The gate needs both paths.
+  - *(b) and (d), recorded:* at width 6 the ratio read 0.5074 (95 % 0.5022-0.5121, 1.97x tokens per second) on
+    this card, whose native step was 48.8 ms against run 2's 47.3. Run 2's (b) decided, so this changes nothing.
+    It is noted as a limitation: the margin over 2x does not hold on every T4. The ratio at width 8 read 1.039. At
+    one row the plan was 1.040x today's step.
+  - **Verdict by the fixed rule: does not pass. KB2 returns to Tier 0, and AG5-G, which needed KB2-G to pass, does
+    not run.** The ledger entry is still owed.
+  - *Post hoc reading (after the data; it changes no verdict):* the long path's chunk differences were -0.0073,
+    -0.0006, -0.0022 and +0.0114 nats a token, a mean of +0.0003. The bound fails on one chunk whose gap is as large
+    as the main path's widest (-0.0100). With 4 chunks of 128 scored tokens, 512 in all against the main path's
+    8,192, the bootstrap cannot clear a 0.5 % bound with this spread. So the long path's failure is a matter of power
+    as much as of quality: neither a loss nor its absence is shown past the window. In the product the plan at
+    width 6 gets 1,024-token slots, which never pass the 1,024-token window. Whether the plan may serve there, scoped
+    to the window, is a new claim; it needs its own protocol and fresh data, and the owner's decision.
 
 ### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
 
@@ -3484,6 +3508,9 @@ processes again.
   directions). KB2's rule stops it at (c). Re-open with a fixed implementation found by a diagnostic of those chunks,
   re-gated under a protocol fixed before its data, or with a new model or card. **Reopened 2026-11-07 as KB2-G**
   (see KB2): KB2-D's new evidence that the gate's lead-free chunks are unstable for every path, and GATE2.
+  **KB2-G (commit `4a01f49`): back in Tier 0.** Gate 2's main path passed (0.9988, 95 % up to 1.0008), but its long
+  path, 4 chunks past the window, read 1.0003 with 95 % up to 1.0080. Re-open only with a new mechanism or new
+  evidence, for example serving scoped to the window under its own protocol.
 
 - **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
   `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,

@@ -70,7 +70,8 @@ the agent finds them itself before it serves (`ironmule/plan_choice.py`):
      token at most 1.1x later.
    - Since AG5 (2026-11-07) the agent times every width from 1 to 8. It judges the engine at its best width and
      serves it at that width. On a T4, KB2-0's Gemma plan makes 2.0x at width 6 but 0.96x at width 8, where the
-     old width-8 rule would have refused it.
+     old width-8 rule would have refused it. That plan does not serve yet, because its gate failed past the window
+     (KB2-G).
 
 Both gates score the same fixed text, cut into 16 chunks of 512 tokens. Since GATE2 (2026-11-07), each chunk
 starts with the tokenizer's BOS, as a chat request does. Without it, Gemma 3 was unstable on every path, today's
@@ -162,5 +163,6 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **KB2-0 on a T4 (2026-11-07): fast and exact, but not through the quality gate.** Six stacked rows made 2.006x
   today's tokens per second for Gemma 3 12B at 4 bit, bit for bit like each row alone, but the gate's main path
   failed (perplexity ratio up to 1.177 at 95 %), so KB2 stopped by its rule (BACKLOG KB2). KB2-D then traced the
-  failure to chunks without BOS, where every path is unstable, so the gate changed for every plan (GATE2), and
-  KB2-G gates the same plan again on BOS-led chunks.
+  failure to chunks without BOS, where every path is unstable, so the gate changed for every plan (GATE2). KB2-G
+  gated the same plan again on BOS-led chunks: the main path passed (0.9988, 95 % up to 1.0008), but the long path,
+  4 chunks past the window, did not (95 % up to 1.0080), so KB2 is back in Tier 0 and the plan does not serve.
