@@ -942,7 +942,8 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 raise RuntimeError("invalid grouped result count")
             result_by_id = {row[0]: result for row, result in zip(active + joined, results)}
             pre_cancelled = skipped
-            for request_id, prompt_ids, limit in report + joined:
+            # `max_tokens`, not `limit`: `admit` and `drain_joins` read the engine's slot limit in later runs
+            for request_id, prompt_ids, max_tokens in report + joined:
                 if request_id in pre_cancelled:
                     terminal = {"type": "done", "batch_id": batch_id, "request_id": request_id,
                                 "finish_reason": "cancelled", "prompt_tokens": len(prompt_ids),
@@ -962,7 +963,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     stopped = result.finish_reason == "cancelled" and cancellations[request_id].is_set()
                 if (not isinstance(tokens, (list, tuple)) or type(result.token_count) is not int
                         or result.token_count != len(tokens)
-                        or not (0 if stopped else 1) <= result.token_count <= limit
+                        or not (0 if stopped else 1) <= result.token_count <= max_tokens
                         or (result.finish_reason not in {"stop", "length"} and not stopped)
                         or not isinstance(result.text, str) or not isinstance(result.metadata, dict)):
                     raise RuntimeError("invalid grouped engine result")

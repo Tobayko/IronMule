@@ -660,8 +660,9 @@ def test_no_thinking_reaches_the_chat_template_only_when_set(monkeypatch):
     assert seen == [{}, {"enable_thinking": False}]
 
 
-def _join_world(monkeypatch, capacity):
-    """A grouped batch of two that admits a third request sent while it runs (SERVE8)."""
+def _join_world(monkeypatch, capacity, late=False):
+    """A grouped batch of two that admits a third request sent while it runs (SERVE8); `late` sends it after the
+    first run's last admission, so the batch's second run takes it."""
     import threading
     from types import SimpleNamespace
 
@@ -691,10 +692,12 @@ def _join_world(monkeypatch, capacity):
             calls.append(len(ids))
             names = ["c"] if len(ids) == 1 else ["a", "b"]
             emitters = list(on_tokens)
-            worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [
+            join = {"type": "join_batch", "batch_id": "batch-1", "requests": [
                 {"request_id": "c", "model": "m", "messages": [{"role": "user", "content": "xyz"}],
-                 "max_tokens": 8, "stream": True}]}) if len(calls) == 1 else None
+                 "max_tokens": 8, "stream": True}]}
+            worker.JOINS.put(join) if len(calls) == 1 and not late else None
             joined = admit(capacity)
+            worker.JOINS.put(join) if len(calls) == 1 and late else None
             names += ["c"] * len(joined)
             emitters += [emit for _, _, emit, _ in joined]
             for step in range(2):
@@ -731,6 +734,16 @@ def test_a_joined_request_too_long_for_the_run_is_served_right_after_it(monkeypa
     assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
     assert sent[-1]["request_ids"] == ["a", "b", "c"]
     assert len(built) == 2  # c reused a detokenizer a or b gave back
+
+
+def test_a_request_sent_after_the_first_run_is_judged_by_the_engines_limit_not_a_members(monkeypatch):
+    """AG6-H: the result loop rebound the engine's request limit to the last member's max_tokens, so a request
+    that came after a batch's first run was rejected as too long for the engine (3 prompt + 8 > 8)."""
+    sent, calls, built = _join_world(monkeypatch, capacity=64, late=True)
+    assert not [e for e in sent if e["type"] == "rejected"], sent
+    assert calls == [2, 1]  # the second run served it
+    assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    assert [e["token_id"] for e in sent if e["type"] == "token" and e["request_id"] == "c"] == [33, 0]
 
 
 def test_chat_reuse_reaches_the_engine_in_the_grouped_path(monkeypatch):

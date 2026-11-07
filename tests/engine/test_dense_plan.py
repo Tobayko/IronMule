@@ -425,6 +425,35 @@ def test_a_joiner_that_finds_every_slot_taken_takes_the_first_one_a_member_frees
     assert bridge.free_slots() == plan.slots
 
 
+def test_a_joiner_after_the_first_run_keeps_the_slot_limit_not_a_members_output_limit(monkeypatch):
+    """AG6-H: the result loop's per-request output limit shadowed the dense plan's slot limit, so after a batch's
+    first run every joiner was measured against the last member's max_tokens: a short request was rejected as
+    too long for the engine (and, with the stacked engine alone, failed), or deferred to a later run."""
+    import threading
+
+    worker, bridge, plan, tokenizer, sent = _worker_world(monkeypatch, slots=2)
+    runs, original = [], bridge.generate_many
+
+    def generate_many(*args, **kwargs):
+        runs.append(len(args[0]))
+        out = original(*args, **kwargs)
+        if len(runs) == 1:  # arrives after the first run's last admission, before the next run starts
+            worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [_chat("d", "came late")]})
+        return out
+
+    monkeypatch.setattr(bridge, "generate_many", generate_many)
+    worker.JOINS.put({"type": "join_batch", "batch_id": "batch-1", "requests": [_chat("c", "waits for a slot")]})
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [_chat("a", "short one"), _chat("b", "same length")]}
+    worker._run_engine_batch(command, "m", tokenizer, bridge, {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] in ("error", "rejected")], sent
+    assert len(runs) == 2  # d came after the first run ended, so a second run served it
+    for rid, text in (("a", "short one"), ("b", "same length"), ("c", "waits for a slot"), ("d", "came late")):
+        streamed = [event["token_id"] for event in sent if event["type"] == "token" and event["request_id"] == rid]
+        assert streamed == bridge.generate(tokenizer.encode(text), 6).tokens, rid
+    assert bridge.free_slots() == plan.slots
+
+
 class _InProcessWorker:
     """The real worker's batch path behind `MLXWorkerClient.complete_batch`'s contract, in this process: the
     service's group code on one side, `worker._run_engine_batch` with a real dense bridge on the other, the
