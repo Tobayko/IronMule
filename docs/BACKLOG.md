@@ -2203,6 +2203,36 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
       the controls agree. No plan bug is shown then;
     - **the missing BOS is the trigger** if, on all five chunks, `plan_decode_bos` agrees with `native_decode_bos`.
   - KB2 stays in Tier 0 whatever this shows. The gate's text and chunking are not changed after the fact.
+- **KB2-D result (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2d` v1 at `e763e31`, Kaggle T4, 20 minutes,
+  peak 11.1 GB).** The check holds: `native_decode` and `plan_decode` reproduce run 2's chunk means to four places.
+  Mean NLL a token:
+
+  | Chunk | stock one-shot | native one-shot | native decode | plan decode | stock + BOS | native + BOS | plan + BOS |
+  | --- | --- | --- | --- | --- | --- | --- | --- |
+  | 0 | 2.923 | 2.914 | 2.921 | 2.917 | 3.037 | 3.049 | 3.042 |
+  | 1 | 5.246 | 5.419 | 5.317 | 6.267 | 2.712 | 2.712 | 2.706 |
+  | 2 | 6.445 | 5.977 | 6.688 | 5.696 | 2.748 | 2.738 | 2.739 |
+  | 3 | 4.222 | 4.337 | 4.297 | 4.280 | 2.476 | 2.475 | 2.478 |
+  | 4 | 4.992 | 4.907 | 5.142 | 4.897 | 2.669 | 2.675 | 2.670 |
+
+  - *Readings by the fixed rule:*
+    - **The missing BOS is the trigger: yes.** With BOS, the plan agrees with today's native path on all five
+      chunks, within 0.000-0.007 nats a token, and no token differs by more than 1 nat on chunks 1, 2 and 4.
+      Every path's NLL on chunks 1-4 falls from 4.2-6.7 to 2.5-2.7.
+    - **Chunks 2 and 4: unstable for every path.** Without BOS, `native_decode` disagrees with both one-shot paths
+      as well. On chunk 2, today's own one-shot and decoded paths differ by 0.71 nats a token.
+    - **Chunk 1: a plan bug is suspected by the rule.** The plan is 0.95 above `native_decode`, which agrees with
+      both one-shot paths (0.07 and 0.10). The plan first leaves it by more than 1 nat at token 14.
+  - *Post hoc reading (after the data; it changes no verdict):* without BOS the independent paths themselves spread
+    by up to 0.47 nats a token (stock one-shot against native one-shot, chunk 2), so chunk 1 may be the same
+    instability with the plan landing furthest out. With BOS the plan sits within 0.006 of the native path on
+    chunk 1 too. This run cannot rule a plan bug in or out on chunk 1. What it shows is that the gate's main
+    chunks, which start mid-text with no BOS, put Gemma 3 where every path, today's included, is unstable. Chat
+    prompts always start with BOS.
+  - *What follows, for the owner to decide:* the gate's text and chunking are shared by every numeric plan and by
+    the agent's on-machine gate (`ironmule/numeric_choice.py`), so changing them is a decision across plans, not
+    a fix for KB2. If the gate gets BOS-led chunks, KB2 can be re-gated under a protocol fixed before that run.
+    KB2 stays in Tier 0 until then. The ledger entry is still owed.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
