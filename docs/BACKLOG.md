@@ -1354,6 +1354,11 @@ not evidence for a claim).**
   intervals; which mode the agent held in each block, and when it switched; the pool's fallbacks.
 - A pass is a hardware gain from learning while serving on this card, model and traffic. LIMITS' agent section
   then says so, and the policy learner ships opt-in under `--agent on`.
+- *Harness (built 2026-11-07, before any AG6-H data):* `measure_ag6h` and `analyse_ag6h` in
+  `training/rl2_headroom.py`. Blocks run trace by trace, each trace's four load-and-state blocks before the next
+  trace, so a time cut leaves every load and state measured. The stacked worker serves at the width AG5's rule
+  chose. Before the hardware run, the tests cover the arms, the rotation, the mode record, the time guard and the
+  decision rule with stand-in workers.
 
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 

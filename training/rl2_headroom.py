@@ -2574,6 +2574,203 @@ def check_ag6(report: dict[str, Any]) -> dict[str, Any]:
             "verdict": "pass" if share >= AG6_CHECK_SHARE and close else "fail: repair the world model first"}
 
 
+# ---------------------------------------------------------------- AG6-H: the learning agent on one T4
+
+AG6H_ARMS = ("single", "router", "agent", "stacked")   # the middle three rotate; `single` runs again at the end
+AG6H_LOADS = (0.8, 3.0)
+AG6H_LEVELS = (1, 2)                                  # bursts and spike
+AG6H_TRACES = range(440, 444)                         # fresh seeds: 4 traces per state and load
+AG6H_REQUESTS = 32
+AG6H_LIMIT = 256
+AG6H_BUDGET_S = 10 * 3600.0                           # no new block after 10 hours (AG4-R run 1 was cut at 12)
+AG6H_MIN_BLOCKS = 4
+
+
+def measure_ag6h(pool: Any, model: str, router: Any, agent: Any, prompts: list[str] | None, deadline_s: float, *,
+                 loads: tuple[float, ...] = AG6H_LOADS, levels: tuple[int, ...] = AG6H_LEVELS,
+                 traces: Any = AG6H_TRACES, requests: int = AG6H_REQUESTS, limit: int = AG6H_LIMIT,
+                 budget_s: float = AG6H_BUDGET_S, on_row: Any = None) -> dict[str, Any]:
+    """AG6-H (BACKLOG AG6, fixed before its data): every block (trace, load, state) runs the single path, then the
+    router, the learning agent and the stacked engine (rotated), then the single path again, on the same arrivals.
+    The router and the agent keep learning across blocks; the agent's mode is recorded around each of its cells.
+    Blocks run trace by trace, so a time cut keeps every load and state; none starts after `budget_s`."""
+    def items_for(level: int, load: float, t: int, capacity: float) -> list[dict[str, Any]]:
+        items = trace_h2(level, t, load * capacity, requests, (limit,))
+        return lp_items(items, prompts, t, True, limit) if prompts else items
+
+    started = time.monotonic()
+    pool.router = ForcedRoute(0)
+    calibration_items = None if not prompts else [
+        {"offset_s": 0.0, "prompt": 0, "long": False, "max_tokens": limit, "text": text} for text in prompts[-16:]]
+    burst = [{**item, "offset_s": 0.0} for item in (calibration_items or trace(9, 0, 1.0, 16, (limit,)))]
+    done = replay(pool, model, burst, deadline_s)
+    makespan = max(r["end_s"] or 0.0 for r in done) or (time.monotonic() - started)
+    capacity = sum(r["outcome"] == "ok" for r in done) / makespan
+    report: dict[str, Any] = {"plan": "ag6h", "arms": list(AG6H_ARMS), "states": list(H2_STATES), "loads": list(loads),
+                              "levels": list(levels), "calibration": {"capacity_rps": capacity, "makespan_s": makespan,
+                                                                     "ok": sum(r["outcome"] == "ok" for r in done)},
+                              "deadline_s": deadline_s, "budget_s": budget_s, "rows": []}
+    routes = {"single": ForcedRoute(0), "stacked": ForcedRoute(1), "router": router, "agent": agent}
+    block = 0
+    for t in traces:
+        for load in loads:
+            for level in levels:
+                if time.monotonic() - started > budget_s:
+                    report["time_cut"] = {"after_blocks": block, "elapsed_s": time.monotonic() - started}
+                    break
+                items = items_for(level, load, t, capacity)
+                others = list(AG6H_ARMS[1:])
+                turn = block % len(others)
+                order = [("single", 0), *((name, 0) for name in others[turn:] + others[:turn]), ("single", 1)]
+                for arm, run in order:
+                    pool.router = routes[arm]
+                    wait_idle(pool, timeout_s=deadline_s)
+                    before = agent.mode if arm == "agent" else None
+                    requests_out = replay(pool, model, items, deadline_s)
+                    for item, row in zip(items, requests_out):
+                        row["offset_s"] = item["offset_s"]
+                    row = {"level": level, "load": load, "trace": t, "arm": arm, "run": run, "block": block,
+                           "requests": requests_out}
+                    if arm == "agent":
+                        row["agent"] = {"mode_before": before, "mode_after": agent.mode,
+                                        "switches": len(agent.switches), "dreams": agent.dreams}
+                    report["rows"].append(row)
+                    if on_row is not None:
+                        on_row(report)
+                block += 1
+            if "time_cut" in report:
+                break
+        if "time_cut" in report:
+            break
+    pool.router = router
+    health = pool.health()
+    report.update(router=router.status(), agent=agent.status(), fallbacks=(health.get("paths") or {}).get("fallbacks"),
+                  elapsed_s=time.monotonic() - started)
+    return report
+
+
+def analyse_ag6h(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG6-H as fixed in BACKLOG AG6 before its data. Pass: the agent's tokens per second over the router's, paired
+    by block, has a 2.5 % bound above 1 (2,000 resamples), and its mean and 95th-percentile first token are no worse
+    than the router's beyond the A/A noise of the two single runs. A failed request voids its block; fewer than 4
+    complete blocks make the run invalid. Recorded: the agent over the single path and over the stacked engine,
+    the other arms over the single path, the agent's modes, and the pool's fallbacks."""
+    rng = random.Random(seed)
+    cells = {(row["block"], row["arm"], row["run"]): _cell(row["requests"]) for row in report.get("rows", [])}
+    blocks = sorted({b for b, _, _ in cells})
+    arms = report.get("arms") or list(AG6H_ARMS)
+    complete = [b for b in blocks if cells.get((b, "single", 1)) and all(cells.get((b, arm, 0)) for arm in arms)]
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag6h.analysis.v1", "complete_blocks": len(complete),
+                           "voided_blocks": [b for b in blocks if b not in complete],
+                           "time_cut": report.get("time_cut"), "fallbacks": report.get("fallbacks"),
+                           "setup": {k: (report.get("setup") or {}).get(k) for k in ("engine", "compute_dtype",
+                                                                                     "width", "reason")}}
+    if report.get("stopped"):
+        return {**out, "valid": False, "verdict": f"stopped: {report['stopped']}"}
+    if len(complete) < AG6H_MIN_BLOCKS:
+        return {**out, "valid": False, "verdict": f"invalid: fewer than {AG6H_MIN_BLOCKS} complete blocks"}
+
+    def value(b: int, arm: str, key: str) -> float:
+        if arm == "single":
+            return (cells[b, "single", 0][key] + cells[b, "single", 1][key]) / 2
+        return cells[b, arm, 0][key]
+
+    def ratio(arm: str, base: str, key: str, blocks_: list[int]) -> dict[str, Any] | None:
+        if not blocks_:
+            return None
+        pairs = [(value(b, arm, key), value(b, base, key)) for b in blocks_]
+        boot = []
+        for _ in range(resamples):
+            sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+            boot.append(sum(x for x, _ in sample) / sum(y for _, y in sample))
+        return {"ratio": sum(x for x, _ in pairs) / sum(y for _, y in pairs),
+                "ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    aa = {key: sorted(abs(cells[b, "single", 1][key] / cells[b, "single", 0][key] - 1) for b in complete)
+          for key in ("tokens_per_s", "ttft_mean_s", "ttft_p95_s")}
+    noise = {key: values[max(0, math.ceil(0.95 * len(values)) - 1)] for key, values in aa.items()}
+    tps = ratio("agent", "router", "tokens_per_s", complete)
+    ttft = {key: ratio("agent", "router", key, complete) for key in ("ttft_mean_s", "ttft_p95_s")}
+    gain = tps["ci95"][0] > 1.0
+    no_worse = all(v["ratio"] <= 1 + noise[key] for key, v in ttft.items())
+    where = {(row["block"]): (row["load"], row["level"]) for row in report.get("rows", [])}
+    by = {}
+    for load in report.get("loads", []):
+        for level in report.get("levels", []):
+            part = [b for b in complete if where.get(b) == (load, level)]
+            by[f"load {load}, {H2_STATES[level]}"] = {
+                "blocks": len(part), "agent_over_router": ratio("agent", "router", "tokens_per_s", part),
+                "agent_over_single": ratio("agent", "single", "tokens_per_s", part),
+                "stacked_over_single": ratio("stacked", "single", "tokens_per_s", part)}
+    modes = [{"block": row["block"], **row["agent"]} for row in report.get("rows", []) if row.get("agent")]
+    out.update(valid=True, aa_noise=noise, agent_over_router_tokens_per_s=tps, agent_over_router_ttft=ttft,
+               passes={"tokens_per_s": gain, "ttft_no_worse": no_worse},
+               recorded={"agent_over_single": ratio("agent", "single", "tokens_per_s", complete),
+                         "agent_over_stacked": ratio("agent", "stacked", "tokens_per_s", complete),
+                         "router_over_single": ratio("router", "single", "tokens_per_s", complete),
+                         "stacked_over_single": ratio("stacked", "single", "tokens_per_s", complete),
+                         "agent_ttft_over_single": {key: ratio("agent", "single", key, complete)
+                                                    for key in ("ttft_mean_s", "ttft_p95_s")},
+                         "by_load_and_state": by, "agent_modes": modes,
+                         "agent": report.get("agent"), "router": report.get("router")})
+    out["verdict"] = ("pass: the learning agent beats today's router on this card" if gain and no_worse
+                      else "fail: no measured gain over today's router")
+    return out
+
+
+def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG6-H on one card: the product's own `choose_setup`; if it says `route`, both paths in their own workers, and
+    the four arms through the product on the same arrivals."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule.plan_choice import choose_setup
+    from ironmule.tune import resolve_local_model
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.cli import _engine_options
+    from ironmule_product.device_pool import cuda_devices, start_paths
+    from ironmule_product.path_router import PathRouter, PolicyRouter
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, revision=X1_REVISION if model == MODEL else None,
+                                      allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                      "tokenizer*"])).name
+    identity = resolve_local_model(model, revision=revision).identity
+    setup = choose_setup(model, "kaggle-ag6h", identity.identity_sha256)
+    report: dict[str, Any] = {"plan": "ag6h", "model": model, "revision": revision, "setup": setup}
+    if on_row is not None:
+        on_row(report)
+    if setup["engine"] != "route":
+        return {**report, "stopped": f"the agent's setup is {setup['engine']}, not route: {setup['reason']}"}
+    state = work / "rl2h-state"
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {**report, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    store.set_request_timeout(1800)
+    spec = store.model(model)
+    device = (cuda_devices() or [None])[0]
+    makers = [lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"], cuda_device=device),
+              lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device,
+                                      **_engine_options("dense", setup.get("width")))]
+    router, agent = PathRouter.from_setup(setup), PolicyRouter.from_setup(setup)
+    try:
+        pool = start_paths(store, spec, makers, [f"{device}:single", f"{device}:stacked"], ProductService, router)
+    except Exception as exc:  # noqa: BLE001 - recorded with the agent's setup
+        return {**report, "failed": f"the paths did not start: {exc!r}"[:500]}
+    try:
+        prompts, digest = dolly_prompts(work)
+        report["prompts_sha256"] = digest
+        measured = measure_ag6h(pool, model, router, agent, prompts, 1800.0,
+                                **({"loads": (3.0,), "levels": (2,), "traces": [AG6H_TRACES[0]], "requests": 4,
+                                    "limit": 16} if smoke else {}),
+                                on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
+    finally:
+        pool.close()
+    return {**report, **measured}
+
+
 # ---------------------------------------------------------------- AG5-G: the agent's own width, Gemma 3 on T4s
 
 AG5G_MODEL = "mlx-community/gemma-3-12b-it-4bit"
@@ -2729,7 +2926,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "ag4r", "ag4c", "ag5g", "x1"),
+                                           "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -2773,7 +2970,7 @@ def main(argv: Iterable[str] | None = None) -> int:
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
-                 "ag4c": analyse_ag4c, "ag5g": analyse_ag5g}.get(inner.get("plan"), analyse)
+                 "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -2799,11 +2996,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g", "ag6h"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
                       "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
-                      "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g)}[args.plan]
+                      "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g),
+                      "ag6h": (run_ag6h, analyse_ag6h)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]

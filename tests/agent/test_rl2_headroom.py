@@ -1240,3 +1240,92 @@ def test_ag6_check_names_the_mode_the_dreamer_would_serve_and_scores_it_by_the_f
     assert result["blocks"] == 2 and [r["named"] for r in result["rows"]] == ["stacked", "router"]
     assert result["named_mode_hits"] == 2 and result["share"] == 1.0
     assert set(result) >= {"replayed_stacked_over_single", "measured_stacked_over_single", "verdict"}
+
+
+def _ag6h_pool(tmp_path, monkeypatch):
+    from ironmule_product.device_pool import start_paths
+    from ironmule_product.path_router import PathRouter, PolicyRouter
+    from ironmule_product.service import ProductService
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    setup = {"stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                             "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
+    router, agent = PathRouter.from_setup(setup), PolicyRouter.from_setup(setup)
+    makers = [lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device="0")] * 2
+    pool = start_paths(store, spec, makers, ["0:single", "0:stacked"], ProductService, router)
+    return pool, spec, router, agent
+
+
+def test_ag6h_runs_four_arms_trace_by_trace_and_records_the_agents_mode(tmp_path, monkeypatch):
+    """AG6-H: the single path, the router, the learning agent and the stacked engine on the same two fake workers;
+    every load and state of a trace before the next trace; the agent's mode around each of its cells."""
+    pool, spec, router, agent = _ag6h_pool(tmp_path, monkeypatch)
+    try:
+        report = rl2.measure_ag6h(pool, spec.model_id, router, agent, None, 30.0, loads=(0.8, 3.0), levels=(1, 2),
+                                  traces=[0, 1], requests=3, limit=3)
+    finally:
+        pool.close()
+    assert len(report["rows"]) == 2 * 2 * 2 * 5 and "time_cut" not in report
+    assert [(r["trace"], r["load"], r["level"]) for r in report["rows"] if r["arm"] == "single" and r["run"] == 0][:4] \
+        == [(0, 0.8, 1), (0, 0.8, 2), (0, 3.0, 1), (0, 3.0, 2)], "a trace's loads and states before the next trace"
+    middles = [tuple(r["arm"] for r in report["rows"] if r["block"] == b)[1:4] for b in range(3)]
+    assert len(set(middles)) == 3 and all(set(m) == {"router", "agent", "stacked"} for m in middles)
+    agent_rows = [r for r in report["rows"] if r["arm"] == "agent"]
+    assert all(set(r["agent"]) == {"mode_before", "mode_after", "switches", "dreams"} for r in agent_rows)
+    assert report["agent"]["mode"] in ("route", "stacked", "single") and report["fallbacks"] == 0
+    analysis = rl2.analyse_ag6h(report, resamples=50)
+    assert analysis["complete_blocks"] == 8 and analysis["valid"]
+    assert set(analysis["recorded"]["by_load_and_state"]) == {"load 0.8, bursts", "load 0.8, spike",
+                                                             "load 3.0, bursts", "load 3.0, spike"}
+
+
+def test_ag6h_starts_no_block_after_its_budget(tmp_path, monkeypatch):
+    pool, spec, router, agent = _ag6h_pool(tmp_path, monkeypatch)
+    try:
+        report = rl2.measure_ag6h(pool, spec.model_id, router, agent, None, 30.0, loads=(0.8,), levels=(1,),
+                                  traces=[0, 1, 2], requests=2, limit=2, budget_s=0.0)
+    finally:
+        pool.close()
+    assert report["time_cut"]["after_blocks"] == 0 and report["rows"] == []
+    assert rl2.analyse_ag6h(report)["verdict"].startswith("invalid")
+
+
+def test_ag6h_decision_reads_the_fixed_rule():
+    def requests(span, first=0.2):
+        return [{"offset_s": 0.0, "end_s": span, "first_s": first, "tokens": 100, "outcome": "ok"} for _ in range(4)]
+
+    def report(agent_span, agent_first=0.2, blocks=4, failed_block=None):
+        rows = []
+        for b in range(blocks):
+            for arm, run, span in (("single", 0, 100.0), ("router", 0, 50.0), ("agent", 0, agent_span),
+                                   ("stacked", 0, 30.0), ("single", 1, 100.0)):
+                cell = requests(span, agent_first if arm == "agent" else 0.2)
+                if b == failed_block and arm == "agent":
+                    cell[0] = {**cell[0], "outcome": "failed", "first_s": None}
+                rows.append({"block": b, "arm": arm, "run": run, "load": 0.8, "level": 2, "trace": b,
+                             "requests": cell, **({"agent": {"mode_before": "route", "mode_after": "stacked",
+                                                            "switches": 1, "dreams": 2}} if arm == "agent" else {})})
+        return {"arms": list(rl2.AG6H_ARMS), "loads": [0.8], "levels": [2], "rows": rows}
+
+    good = rl2.analyse_ag6h(report(30.0), resamples=200)
+    assert good["verdict"].startswith("pass") and good["agent_over_router_tokens_per_s"]["ratio"] == 50.0 / 30.0
+    assert good["recorded"]["agent_over_single"]["ratio"] == 100.0 / 30.0 and len(good["recorded"]["agent_modes"]) == 4
+    assert rl2.analyse_ag6h(report(50.0), resamples=200)["verdict"].startswith("fail"), "no gain over the router"
+    assert rl2.analyse_ag6h(report(30.0, agent_first=0.4), resamples=200)["verdict"].startswith("fail"), "later TTFT"
+    voided = rl2.analyse_ag6h(report(30.0, blocks=5, failed_block=2), resamples=200)
+    assert voided["voided_blocks"] == [2] and voided["complete_blocks"] == 4 and voided["valid"]
+    assert rl2.analyse_ag6h(report(30.0, blocks=3), resamples=50)["verdict"].startswith("invalid")
