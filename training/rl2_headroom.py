@@ -2522,6 +2522,58 @@ def run_ag4c(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     return {**report, **measured}
 
 
+# ---------------------------------------------------------------- AG6: the dreamer checked against AG4-R run 1
+
+AG6_CHECK_WITHIN = 0.95   # the named mode's measured tokens per second, at least this share of the best arm's
+AG6_CHECK_SHARE = 0.8     # in at least this share of the complete blocks
+AG6_CHECK_RATIO = 0.25    # and the replayed stacked-over-single ratio, pooled, within 25 % of the measured one
+
+
+def check_ag6(report: dict[str, Any]) -> dict[str, Any]:
+    """AG6's check in simulation, as fixed in BACKLOG AG6 before it ran: on each complete AG4-R block, the dreamer
+    (from the prices the agent measured at startup) names a mode for the block's arrivals and token counts; that
+    mode's measured arm must be the best arm by tokens per second, or within 5 % of it, in 80 % of the blocks, and
+    the replayed stacked-over-single ratio, pooled, within 25 % of the measured one. A model check on data that
+    already exists, not evidence for a claim."""
+    from ironmule_product.path_router import PolicyRouter, dream
+
+    costs = PolicyRouter.from_setup(report["setup"]).costs
+    cells = {(row["block"], row["arm"], row["run"]): row for row in report.get("rows", [])}
+    blocks = sorted({b for b, _, _ in cells})
+    arm_of = {"route": "router", "stacked": "stacked", "single": "single"}
+    rows, hits = [], 0
+    replayed_single = replayed_stacked = measured_single = measured_stacked = 0.0
+    for b in blocks:
+        needed = [(b, "single", 0), (b, "single", 1), (b, "router", 0), (b, "stacked", 0)]
+        measured = {key: _cell(cells[key]["requests"]) if key in cells else None for key in needed}
+        if any(value is None for value in measured.values()):
+            continue
+        base = cells[b, "single", 0]["requests"]
+        arrivals = [(r["offset_s"], max(1, int(r["tokens"]))) for r in base]
+        result = dream(costs, arrivals, "route")
+        tps = {"single": (measured[b, "single", 0]["tokens_per_s"] + measured[b, "single", 1]["tokens_per_s"]) / 2,
+               "router": measured[b, "router", 0]["tokens_per_s"], "stacked": measured[b, "stacked", 0]["tokens_per_s"]}
+        best = max(tps, key=tps.get)
+        named = arm_of[result["mode"]]
+        hit = tps[named] >= AG6_CHECK_WITHIN * tps[best]
+        hits += hit
+        replayed_single += result["replayed"]["single"]["tokens_per_s"]
+        replayed_stacked += result["replayed"]["stacked"]["tokens_per_s"]
+        measured_single += tps["single"]
+        measured_stacked += tps["stacked"]
+        rows.append({"block": b, "load": cells[b, "single", 0]["load"], "level": cells[b, "single", 0]["level"],
+                     "named": named, "best": best, "hit": hit, "measured": tps,
+                     "replayed": {mode: value["tokens_per_s"] for mode, value in result["replayed"].items()}})
+    if not rows:
+        return {"verdict": "no complete block to check", "blocks": 0}
+    replayed_ratio, measured_ratio = replayed_stacked / replayed_single, measured_stacked / measured_single
+    share = hits / len(rows)
+    close = abs(replayed_ratio / measured_ratio - 1) <= AG6_CHECK_RATIO
+    return {"blocks": len(rows), "named_mode_hits": hits, "share": share, "replayed_stacked_over_single": replayed_ratio,
+            "measured_stacked_over_single": measured_ratio, "ratio_within": close, "rows": rows,
+            "verdict": "pass" if share >= AG6_CHECK_SHARE and close else "fail: repair the world model first"}
+
+
 # ---------------------------------------------------------------- AG5-G: the agent's own width, Gemma 3 on T4s
 
 AG5G_MODEL = "mlx-community/gemma-3-12b-it-4bit"
@@ -2686,6 +2738,8 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--profile", choices=sorted(AG1_PROFILES), default="t4",
                         help="--plan ag1: V on a T4 (default) or V-CPU on this machine's CPU (BACKLOG AG1)")
     parser.add_argument("--analyse", type=Path, metavar="REPORT", help="print the analysis of a finished report")
+    parser.add_argument("--check-ag6", type=Path, metavar="REPORT",
+                        help="AG6's check in simulation: the dreamer against an AG4-R report's measured arms")
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
                         help="write a Kaggle kernel folder instead of running (needs --owner and --commit)")
     parser.add_argument("--owner")
@@ -2709,6 +2763,10 @@ def main(argv: Iterable[str] | None = None) -> int:
         cpu = (args.plan == "ag1" and AG1_PROFILES[args.profile].get("accelerator") == "cpu") or args.plan == "ag4c"
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra,
                                                      suffix, cpu=cpu))}))
+        return 0
+    if args.check_ag6 is not None:
+        report = json.loads(args.check_ag6.read_text())
+        print(json.dumps(check_ag6(report.get("rl2h", report)), indent=1, sort_keys=True, default=str))
         return 0
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())

@@ -1217,3 +1217,26 @@ def test_ag5g_records_a_path_that_does_not_start(tmp_path, monkeypatch):
     monkeypatch.setattr(device_pool, "start_paths", start_paths)
     report = rl2.run_ag5g(rl2.AG5G_MODEL, tmp_path, smoke=False)
     assert "phase 0" in report["failed"] and "worker exited" in report["failed"] and report["setup"]["width"] == 6
+
+
+def test_ag6_check_names_the_mode_the_dreamer_would_serve_and_scores_it_by_the_fixed_rule():
+    """AG6's check on a constructed AG4-R report: a spike block, where the stacked engine was measured best, and a
+    trickle block, where every arm is alike. The dreamer, from the setup's startup prices, names stacking for the
+    spike and keeps routing for the trickle; both count as hits."""
+    row = {"base_first_s": 0.1, "base_step_s": 0.0174, "plan_first_s": 0.1, "plan_step_s": {"1": 0.0229, "8": 0.034}}
+    setup = {"stacked": {"speed": {"short": row, "long": dict(row)}}}
+
+    def cell(block, arm, run, offsets, span):
+        return {"block": block, "arm": arm, "run": run, "load": 0.8, "level": 2 if block == 0 else 0, "trace": 1,
+                "requests": [{"offset_s": o, "end_s": span - o, "first_s": 0.2, "tokens": 200, "outcome": "ok"}
+                             for o in offsets]}
+
+    spike, trickle = [0.001 * i for i in range(32)], [30.0 * i for i in range(32)]
+    rows = [cell(0, "single", 0, spike, 110.0), cell(0, "single", 1, spike, 110.0), cell(0, "router", 0, spike, 55.0),
+            cell(0, "stacked", 0, spike, 30.0)]
+    rows += [cell(1, arm, run, trickle, 935.0) for arm, run in (("single", 0), ("single", 1), ("router", 0),
+                                                                 ("stacked", 0))]
+    result = rl2.check_ag6({"setup": setup, "rows": rows})
+    assert result["blocks"] == 2 and [r["named"] for r in result["rows"]] == ["stacked", "router"]
+    assert result["named_mode_hits"] == 2 and result["share"] == 1.0
+    assert set(result) >= {"replayed_stacked_over_single", "measured_stacked_over_single", "verdict"}

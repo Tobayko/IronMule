@@ -16,7 +16,9 @@ passed AG4's gate.
 
 from __future__ import annotations
 
+import copy
 import math
+import statistics
 import threading
 import time
 from typing import Any, Iterator, Sequence
@@ -128,3 +130,160 @@ class PathRouter:
             return {"paths": {name: cost.status() for name, cost in zip(self.names, self.costs)},
                     "decisions": dict(zip(self.names, self.decisions)),
                     "decision_us": round(self._decision_ns / 1000, 2)}
+
+
+# ---------------------------------------------------------------- AG6: the serving policy, learned by dreaming
+
+MODES = ("route", "stacked", "single")
+DREAM_EVERY = 16      # finished requests between dreams
+DREAM_MIN = 32        # logged requests before the first dream
+DREAM_WINDOW = 64     # the last finished requests a dream replays
+DREAM_GAIN = 1.05     # a mode must replay at least this many times the current mode's tokens per second
+DREAM_TTFT = 1.1      # and a mean first token at most this many times the current mode's
+
+
+class _Path:
+    """One path in the replay: its learned prices, its queue of arrivals and its running rows."""
+
+    def __init__(self, cost: PathCost):
+        self.cost, self.queue, self.active = cost, [], []
+
+    def outstanding(self) -> int:
+        return len(self.queue) + len(self.active)
+
+    def admissible(self, clock: float) -> bool:
+        return bool(self.queue) and self.queue[0][0] <= clock and len(self.active) < self.cost.capacity
+
+    def runnable(self, clock: float) -> bool:
+        return bool(self.active) or self.admissible(clock)
+
+
+def replay(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], mode: str) -> dict[str, float]:
+    """Dream: `arrivals` (seconds from the first, tokens made) served under `mode` in the learned world model of the
+    two paths (index 0 the single path, 1 the stacked engine). Both paths run on one card, so they share its time:
+    while both have work the card serves them a unit each in turn (a newcomer's first token, or one decode step of
+    all of a path's rows at the learned price for that many rows). Tokens per second over the span and the mean
+    first token, as the hardware runs score a cell."""
+    if mode not in MODES:
+        raise ValueError(f"unknown mode {mode!r}")
+    paths = [_Path(costs[0]), _Path(costs[1])]
+    pending = sorted(arrivals)
+    outs: list[dict[str, Any]] = []
+    clock, turn, index = 0.0, 0, 0
+
+    def arrive(upto: float) -> None:
+        nonlocal index
+        while index < len(pending) and pending[index][0] <= upto:
+            arrival, tokens = pending[index]
+            index += 1
+            out: dict[str, Any] = {"arrival": arrival, "tokens": tokens}
+            outs.append(out)
+            if mode == "route":  # as `PathRouter.choose`: each path's learned tokens a request, its outstanding work
+                here = [path.outstanding() for path in paths]
+                chosen = min(range(2), key=lambda i: (costs[i].expected(here[i], costs[i].tokens), i))
+            else:
+                chosen = 1 if mode == "stacked" else 0
+            paths[chosen].queue.append([arrival, tokens, out])
+
+    def unit(path: _Path) -> float:
+        """Run one unit of `path` from `clock`; return its seconds."""
+        if path.admissible(clock):
+            arrival, tokens, out = path.queue.pop(0)
+            out["first"] = clock + path.cost.first_s
+            if tokens <= 1:
+                out["end"] = out["first"]
+            else:
+                path.active.append([tokens - 1, out])
+            return path.cost.first_s
+        seconds = path.cost.step(len(path.active))
+        for row in path.active:
+            row[0] -= 1
+            if row[0] <= 0:
+                row[1]["end"] = clock + seconds
+        path.active = [row for row in path.active if row[0] > 0]
+        return seconds
+
+    while index < len(pending) or any(path.outstanding() for path in paths):
+        arrive(clock)
+        ready = [i for i in range(2) if paths[i].runnable(clock)]
+        if not ready:
+            clock = max(clock, min([pending[index][0]] if index < len(pending) else [clock]
+                                   + [path.queue[0][0] for path in paths if path.queue]))
+            if index >= len(pending) and not any(path.queue for path in paths):
+                break
+            continue
+        if len(ready) == 1:
+            chosen = ready[0]
+        else:
+            chosen, turn = turn, 1 - turn  # the card serves the two paths a unit each, in turn
+        clock += unit(paths[chosen])
+    span = max(out["end"] for out in outs) - min(out["arrival"] for out in outs)
+    return {"tokens_per_s": sum(out["tokens"] for out in outs) / span if span > 0 else 0.0,
+            "ttft_mean_s": statistics.fmean(out["first"] - out["arrival"] for out in outs)}
+
+
+def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], current: str) -> dict[str, Any]:
+    """Replay every mode and name the one to serve: the most tokens per second among the modes whose mean first token
+    is at most `DREAM_TTFT` of the current mode's, if it beats the current mode by `DREAM_GAIN`; else the current."""
+    results = {mode: replay(costs, arrivals, mode) for mode in MODES}
+    now = results[current]
+    allowed = [mode for mode in MODES if results[mode]["ttft_mean_s"] <= DREAM_TTFT * now["ttft_mean_s"]]
+    best = max(allowed, key=lambda mode: (results[mode]["tokens_per_s"], mode == current))
+    chosen = best if results[best]["tokens_per_s"] >= DREAM_GAIN * now["tokens_per_s"] else current
+    return {"mode": chosen, "replayed": results, "requests": len(arrivals)}
+
+
+class PolicyRouter(PathRouter):
+    """AG6: the router's per-request choice inside a serving mode the agent learns by dreaming. Every
+    `DREAM_EVERY` finished requests it replays its last `DREAM_WINDOW` arrivals under each mode in its learned world
+    model and moves to the mode that serves them best (`dream`). A decision stays a lookup, or in `route` the
+    router's arithmetic; the dream runs after a request has finished, not inside a decision."""
+
+    def __init__(self, names: Sequence[str], costs: Sequence[PathCost], mode: str = "route"):
+        super().__init__(names, costs)
+        if mode not in MODES:
+            raise ValueError(f"unknown mode {mode!r}")
+        self.mode, self.switches, self.dreams, self.last_dream = mode, [], 0, None
+        self._log: list[tuple[float, int]] = []
+        self._finished = 0
+
+    def choose(self, outstanding: Sequence[int], max_tokens: int) -> int:
+        if self.mode == "route":
+            return super().choose(outstanding, max_tokens)
+        started = time.perf_counter_ns()
+        with self._lock:
+            best = 1 if self.mode == "stacked" else 0
+            self.decisions[best] += 1
+            self._decision_ns = time.perf_counter_ns() - started
+            return best
+
+    def watch(self, index: int, sharing: int, events: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
+        arrived = time.monotonic()
+        for event in super().watch(index, sharing, events):
+            if event.get("type") == "done":
+                self.finished(arrived, int(event.get("completion_tokens") or 0))
+            yield event
+
+    def finished(self, arrived: float, tokens: int) -> None:
+        """Log one finished request and dream when it is time."""
+        with self._lock:
+            self._log = (self._log + [(arrived, tokens)])[-DREAM_WINDOW:]
+            self._finished += 1
+            if self._finished % DREAM_EVERY or len(self._log) < DREAM_MIN:
+                return
+            first = min(arrival for arrival, _ in self._log)
+            arrivals = [(arrival - first, max(1, tokens)) for arrival, tokens in self._log]
+            costs, mode = copy.deepcopy(self.costs), self.mode  # the prices as they stand; learning goes on
+        result = dream(costs, arrivals, mode)
+        with self._lock:
+            self.dreams += 1
+            self.last_dream = {**result, "at_request": self._finished}
+            if result["mode"] != self.mode:
+                self.switches.append({"at_request": self._finished, "from": self.mode, "to": result["mode"]})
+                self.mode = result["mode"]
+
+    def status(self) -> dict[str, Any]:
+        out = super().status()
+        with self._lock:
+            out.update(mode=self.mode, dreams=self.dreams, switches=list(self.switches), last_dream=self.last_dream)
+        return out

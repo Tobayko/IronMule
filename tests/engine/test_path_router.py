@@ -142,3 +142,71 @@ def test_a_refusal_after_a_token_or_a_context_limit_is_not_rerouted():
         list(context.stream(GenerationRequest(model="m", messages=(("user", "hi"),), max_tokens=64,
                                               request_id="r3")))
     assert context.shards[0].streamed == [] and context.path_fallbacks == 0
+
+
+# ---------------------------------------------------------------- AG6: replay, dream, PolicyRouter
+
+def _costs(stacked_step=0.034, stacked_one=0.0229, first=0.1):
+    from ironmule_product.path_router import PathCost
+
+    return [PathCost(1, 0.0174, 0.0, first, tokens=200.0),
+            PathCost(8, stacked_one, (stacked_step - stacked_one) / 7, first, tokens=200.0)]
+
+
+def test_the_single_path_replays_one_request_at_a_time():
+    import pytest
+
+    from ironmule_product.path_router import PathCost, replay
+
+    costs = [PathCost(1, 0.01, 0.0, 0.1, tokens=3.0), PathCost(8, 0.01, 0.0, 0.1, tokens=3.0)]
+    result = replay(costs, [(0.0, 3), (0.0, 3)], "single")
+    # first: 0.1 then 2 steps of 0.01 -> 0.12; second starts at 0.12 -> first 0.22, ends 0.24
+    assert result["tokens_per_s"] == pytest.approx(6 / 0.24)
+    assert result["ttft_mean_s"] == pytest.approx((0.1 + 0.22) / 2)
+
+
+def test_the_stacked_engine_replays_rows_together_and_newcomers_stall_them():
+    import pytest
+
+    from ironmule_product.path_router import PathCost, replay
+
+    costs = [PathCost(1, 0.01, 0.0, 0.1, tokens=3.0), PathCost(8, 0.01, 0.002, 0.1, tokens=3.0)]
+    result = replay(costs, [(0.0, 3), (0.0, 3)], "stacked")
+    # both admitted in turn (0.1 each), then 2 steps of two rows at 0.012 -> 0.224
+    assert result["tokens_per_s"] == pytest.approx(6 / 0.224)
+    assert result["ttft_mean_s"] == pytest.approx((0.1 + 0.2) / 2)
+
+
+def test_both_paths_share_one_card_so_routing_a_spike_is_slower_than_stacking_it():
+    """AG4-R run 1: in a spike the router made 131 tokens/s and the stacked engine alone 231; replayed as two free
+    servers the router looked like 236. On one shared card the replay gives the measured order."""
+    from ironmule_product.path_router import replay
+
+    spike = [(0.001 * i, 200) for i in range(32)]
+    routed, stacked, single = (replay(_costs(), spike, mode)["tokens_per_s"] for mode in ("route", "stacked", "single"))
+    assert stacked > 1.5 * routed > 1.5 * single
+
+
+def test_the_dream_moves_to_stacking_for_a_spike_and_keeps_its_mode_for_a_trickle():
+    from ironmule_product.path_router import dream
+
+    spike = [(0.001 * i, 200) for i in range(32)]
+    moved = dream(_costs(), spike, "route")
+    assert moved["mode"] == "stacked" and set(moved["replayed"]) == {"route", "stacked", "single"}
+    trickle = [(30.0 * i, 200) for i in range(32)]  # one request at a time: every mode serves it alike
+    assert dream(_costs(), trickle, "route")["mode"] == "route", "no move without a 5 % gain"
+
+
+def test_the_policy_router_dreams_every_sixteen_finished_requests_and_serves_its_mode():
+    from ironmule_product.path_router import DREAM_MIN, PolicyRouter
+
+    router = PolicyRouter(["single", "stacked"], _costs())
+    for i in range(DREAM_MIN - 1):
+        router.finished(100.0 + 0.001 * i, 200)
+    assert router.dreams == 0 and router.mode == "route", "no dream before 32 logged requests"
+    router.finished(100.0 + 0.001 * DREAM_MIN, 200)
+    assert router.dreams == 1 and router.mode == "stacked" and router.switches == [
+        {"at_request": DREAM_MIN, "from": "route", "to": "stacked"}]
+    assert router.choose([5, 0], 256) == 1 and router.choose([0, 9], 256) == 1, "a lookup in its mode"
+    status = router.status()
+    assert status["mode"] == "stacked" and status["last_dream"]["requests"] == DREAM_MIN

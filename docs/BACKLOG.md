@@ -1298,7 +1298,8 @@ dreaming and RL (2026-11-07).
 - *World model:* the router's learned prices for each path, plus an event replay of each path:
   - the single path serves one request at a time, its first token then a fixed price per token;
   - the stacked engine steps all its rows together at the learned price for that many rows, up to its width, and a
-    newcomer waits for a free row and pays its first-token time.
+    newcomer waits for a free row and pays its first-token time;
+  - both run on one card and share its time (repaired after the check below).
 - *Dreaming:* every 16 finished requests, with at least 32 logged, the agent replays the arrivals and token counts
   of its last 64 finished requests in that model under each mode. It moves to the mode with the most replayed tokens
   per second whose replayed mean first token is at most 1.1x the current mode's. It moves only if the gain is at
@@ -1315,6 +1316,20 @@ not evidence for a claim).**
 - **Pass:** the named mode is the measured best arm by tokens per second, or within 5 % of it, in at least 80 % of
   the blocks. Its replayed stacked-over-single tokens per second, pooled, must lie within 25 % of the measured 2.10.
 - If it fails, the world model is repaired before any hardware run, as V3's replay was before V4.
+- **Check, first result (2026-11-07): a pass by the rule, hollow where it counts.** Sixteen of 20 blocks hit, and
+  the replayed stacked-over-single ratio was 2.07 against the measured 2.10. Only the 4 spike blocks separate the
+  modes, though: there the stacked engine measured 228-236 tokens per second and the router 131-136. On all 4 the
+  dreamer named `route`, which it replayed at 236-244. The other 16 blocks are arrival-bound, and every mode
+  serves them alike.
+- **Post hoc repair (after the check's data, labelled so; no hardware data yet).** The frozen router, which kept
+  its startup prices, also made only 129-133 in those spikes, so learning was not the cause. The replay had
+  treated the two paths as two free servers, but both run on one card. While both have work, they share its time.
+  The world model now gives the card to the two paths a unit each in turn: a newcomer's first token, or one decode
+  step of all of a path's rows.
+- **Check, re-run on the repaired model:** 20 of 20 blocks hit, and in all 4 spike blocks the dreamer names
+  `stacked`. The replay there reads route 124-126, stacked 211-212 and single 57, against measured 131-136, 228-236
+  and 65. Pooled, stacked over single replays at 2.07 against the measured 2.10. Since the repair followed the data,
+  this shows only that the repaired model fits run 1. The evidence is AG6-H.
 
 **AG6-H, the hardware test (fixed now, before its data).**
 - *Setup:* one Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, `training/rl2_headroom.py --plan ag6h`
