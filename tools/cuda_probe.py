@@ -2783,6 +2783,165 @@ def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
     return report
 
 
+# ---------------------------------------------------------------- KB2-D: the gate chunks that diverged
+
+KB2D_CHUNKS = (0, 1, 2, 3, 4)      # run 2's main chunks 1, 2 and 4 diverged; 0 and 3 are controls
+KB2D_DIVERGED = (1, 2, 4)
+KB2D_CONTROLS = (0, 3)
+KB2D_AGREE = 0.12                  # nats a token: the largest gap among run 2's 13 close chunks
+KB2D_LEAVES = 1.0                  # where a per-token NLL first leaves another path's by more than this
+
+
+def kb2d_oneshot(model: Any, prefix: list[int], scored: list[int]) -> list[float]:
+    """Per-token NLL with the whole chunk in one forward: position i predicts scored[i + 1]."""
+    import mlx.core as mx
+
+    ids = prefix + scored[:-1]
+    logits = model(mx.array(ids)[None])[0, len(prefix):]
+    rows = logits.astype(mx.float32)
+    out = (mx.logsumexp(rows, axis=-1) - mx.take_along_axis(rows, mx.array(scored[1:])[:, None], axis=-1)[:, 0])
+    mx.eval(out)
+    return [float(v) for v in out.tolist()]
+
+
+def kb2d_native_decode(model: Any, prefix: list[int], scored: list[int]) -> list[float]:
+    """`kb2_native_nll` per token: prefill the prefix and the first scored token, then one token a step."""
+    import mlx.core as mx
+
+    cache = model.make_cache()
+    out = [_nll(model(mx.array(prefix + scored[:1])[None], cache=cache)[0, -1], scored[1])]
+    step = kb2_native_step(model)
+    for t in range(1, len(scored) - 1):
+        out.append(_nll(step(scored[t], cache), scored[t + 1]))
+    return out
+
+
+def kb2d_plan_decode(plan: Any, prefix: list[int], scored: list[int]) -> list[float]:
+    """`kb2_plan_nll` per token for one item in slot 0, one row a step."""
+    import mlx.core as mx
+
+    cache = plan.new_cache()
+    out = [_nll(plan.prefill(mx.array(prefix + scored[:1])[None], cache), scored[1])]
+    plan.write_prefill(0, [c.state for c in cache])
+    slot = mx.array([0], dtype=mx.int32)
+    for t in range(1, len(scored) - 1):
+        logits = plan.forward(mx.array([scored[t]]), slot, mx.array([len(prefix) + t], dtype=mx.int32))
+        mx.eval(logits)
+        out.append(_nll(logits[0], scored[t + 1]))
+    return out
+
+
+def probe_kb2d(model: Any, tokenizer: Any, device_info: dict[str, Any], *, chunks: tuple[int, ...] = KB2D_CHUNKS,
+               gate: dict[str, Any] | None = None, make_plan: Callable[[int, int], Any] | None = None,
+               out: dict[str, Any] | None = None) -> dict[str, Any]:
+    """KB2-D: the per-token NLL of the gate's main chunks on seven paths. mlx-lm's own path runs before the native
+    plan is installed (the install replaces its linears); the Gemma plan's one-slot pool comes last."""
+    import gc
+
+    import mlx.core as mx
+    from ironmule import cuda_native, dense_gemma
+
+    out = {} if out is None else out
+    items = (gate or gate_items(tokenizer))["main"]
+    bos = getattr(tokenizer, "bos_token_id", None)
+    picked = {str(i): items[i] for i in chunks if i < len(items)}
+    out.update(chunks=list(picked), bos=bos, paths={}, memory={})
+
+    def run(name: str, path: Callable[[list[int], list[int]], list[float]], with_bos: bool = False) -> None:
+        if with_bos and bos is None:
+            return
+        out["stage"] = name
+        out["paths"][name] = {i: path(([bos] if with_bos else []) + prefix, scored)
+                              for i, (prefix, scored) in picked.items()}
+        out["memory"][name] = kb2_memory()
+
+    run("stock_oneshot", lambda p, s: kb2d_oneshot(model, p, s))
+    run("stock_oneshot_bos", lambda p, s: kb2d_oneshot(model, p, s), True)
+    out["stage"] = "native install"
+    out["native"] = cuda_native.install(model, device_info) if make_plan is None else None
+    run("native_oneshot", lambda p, s: kb2d_oneshot(model, p, s))
+    run("native_decode", lambda p, s: kb2d_native_decode(model, p, s))
+    run("native_decode_bos", lambda p, s: kb2d_native_decode(model, p, s), True)
+    gc.collect()
+    mx.clear_cache()
+    out["stage"] = "plan"
+    plan = (dense_gemma.GemmaDensePlan(model, slots=1, capacity=KB2_CAPACITY) if make_plan is None
+            else make_plan(1, KB2_CAPACITY))
+    run("plan_decode", lambda p, s: kb2d_plan_decode(plan, p, s))
+    run("plan_decode_bos", lambda p, s: kb2d_plan_decode(plan, p, s), True)
+    out["stage"] = "done"
+    return out
+
+
+def analyse_kb2d(result: dict[str, Any]) -> dict[str, Any]:
+    """KB2-D's readings, as fixed in BACKLOG KB2 before its data. Descriptive only."""
+    paths = result.get("paths") or {}
+    chunks = result.get("chunks") or []
+    means = {name: {i: statistics.fmean(v) for i, v in per.items()} for name, per in paths.items()}
+
+    def agree(a: str, b: str, i: str) -> bool | None:
+        if a not in means or b not in means or i not in means[a] or i not in means[b]:
+            return None
+        return abs(means[a][i] - means[b][i]) <= KB2D_AGREE
+
+    def leaves(a: str, b: str, i: str) -> int | None:
+        if a not in paths or b not in paths:
+            return None
+        return next((t for t, (x, y) in enumerate(zip(paths[a][i], paths[b][i])) if abs(x - y) > KB2D_LEAVES), None)
+
+    out: dict[str, Any] = {"means": means}
+    pairs = [("plan_decode", "native_decode"), ("native_decode", "stock_oneshot"),
+             ("native_decode", "native_oneshot"), ("native_oneshot", "stock_oneshot"),
+             ("plan_decode_bos", "native_decode_bos"), ("native_decode_bos", "stock_oneshot_bos")]
+    out["agree"] = {f"{a} ~ {b}": {i: agree(a, b, i) for i in chunks} for a, b in pairs}
+    out["plan leaves native at token"] = {i: leaves("plan_decode", "native_decode", i) for i in chunks}
+    diverged = [str(i) for i in KB2D_DIVERGED if str(i) in chunks]
+    controls = [str(i) for i in KB2D_CONTROLS if str(i) in chunks]
+    native_independent = {i: bool(agree("native_decode", "stock_oneshot", i)
+                                  or agree("native_decode", "native_oneshot", i)) for i in diverged}
+    out["readings"] = {
+        "plan bug suspected": {i: agree("plan_decode", "native_decode", i) is False and native_independent[i]
+                               for i in diverged},
+        "starts unstable for every path": {
+            i: agree("native_decode", "stock_oneshot", i) is False and agree("native_decode", "native_oneshot", i)
+            is False for i in diverged} if controls and all(
+                agree("native_decode", "stock_oneshot", c) for c in controls) else None,
+        "missing BOS is the trigger": bool(chunks) and all(agree("plan_decode_bos", "native_decode_bos", i)
+                                                           for i in chunks)}
+    return out
+
+
+def probe_kb2d_report(model_id: str, out: Path | None, *, smoke: bool = False,
+                      loaded: tuple[Any, Any, dict[str, Any]] | None = None,
+                      make_plan: Callable[[int, int], Any] | None = None) -> dict[str, Any]:
+    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb2d.v1", "model": model_id, "smoke": smoke,
+                              "started_unix": time.time(), "env": environment(), "kb2d": {}}
+    try:
+        if loaded is None:
+            import mlx.core as mx
+            from huggingface_hub import snapshot_download
+            from mlx_lm import load
+
+            path = snapshot_download(model_id, revision=KB2_REVISION if model_id == KB2_MODEL else None,
+                                     allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                     "tokenizer*"])
+            model, tokenizer = load(path)
+            report["revision"] = Path(path).name
+            device_info = dict(mx.device_info())
+        else:
+            model, tokenizer, device_info = loaded
+        probe_kb2d(model, tokenizer, device_info, gate=gate_items(tokenizer, 5, 12) if smoke else None,
+                   make_plan=make_plan, out=report["kb2d"])
+        report["analysis"] = analyse_kb2d(report["kb2d"])
+    except Exception as exc:  # noqa: BLE001 - recorded, with what came before it
+        report["kb2d"]["error"] = repr(exc)
+        report["analysis"] = {"error": repr(exc)}
+    report["finished_unix"] = time.time()
+    if out is not None:
+        out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+    return report
+
+
 # ---------------------------------------------------------------- AG4-Q: the agent's own setup on a T4
 
 def probe_ag4_report(model_id: str, out: Path | None, *, smoke: bool = False) -> dict[str, Any]:
@@ -2837,7 +2996,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -2861,7 +3020,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "ag4"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -2881,7 +3040,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                    else report.get("kb1_model")} if schema == "ironmule.cuda_probe.kb1.v1" else
                   analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else
                   analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else
-                  analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else analyse(report))
+                  analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else
+                  analyse_kb2d(report.get("kb2d") or {}) if schema == "ironmule.cuda_probe.kb2d.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
@@ -2892,6 +3052,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         print(json.dumps({"report": str(args.out), "setup": {k: (report.get("setup") or {}).get(k) for k in
                                                               ("engine", "compute_dtype", "reason")},
                           "error": report.get("error")}, default=str), flush=True)
+        return 0
+    if args.plan == "kb2d":
+        report = probe_kb2d_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
+                         default=str), flush=True)
         return 0
     if args.plan == "kb2":
         report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)

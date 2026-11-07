@@ -392,6 +392,58 @@ def test_kb2_runs_native_references_before_any_pool_and_keeps_partial_results(tm
     assert json.loads((tmp_path / "kb2.json").read_text())["kb2"]["stage"] == "main pool"
 
 
+def test_kb2d_records_every_path_per_token_on_cpu_stand_ins(tmp_path):
+    """KB2-D on a tiny random 4-bit Gemma 3: all seven paths run on the chunks, one NLL per scored token, and the
+    decode paths agree with the gate's own means (same code as KB2-0's gate)."""
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+
+    class Tokenizer(_Tokenizer):
+        bos_token_id = 2
+
+    def make_plan(slots, capacity):
+        return dense_gemma.GemmaDensePlan(model, slots=slots, capacity=capacity,
+                                          attention=dense_gemma.reference_attention, native=False)
+
+    report = probe.probe_kb2d_report("tiny", tmp_path / "kb2d.json", smoke=True, loaded=(model, Tokenizer(), {}),
+                                     make_plan=make_plan)
+    kb2d = report["kb2d"]
+    assert "error" not in kb2d, kb2d
+    assert kb2d["stage"] == "done" and kb2d["chunks"] == ["0", "1", "2", "3", "4"]
+    assert set(kb2d["paths"]) == {"stock_oneshot", "stock_oneshot_bos", "native_oneshot", "native_decode",
+                                  "native_decode_bos", "plan_decode", "plan_decode_bos"}
+    items = probe.gate_items(Tokenizer(), 5, 12)["main"]
+    for name, per in kb2d["paths"].items():
+        assert all(len(per[str(i)]) == len(items[i][1]) - 1 for i in range(5)), name
+    gate_mean = probe.kb2_native_nll(model, *items[1])
+    assert abs(sum(kb2d["paths"]["native_decode"]["1"]) / 12 - gate_mean) < 1e-6
+    assert abs(probe.kb2_plan_nll(make_plan(1, 1024), [items[1]])[0]
+               - sum(kb2d["paths"]["plan_decode"]["1"]) / 12) < 1e-6
+    readings = report["analysis"]["readings"]
+    assert set(readings["plan bug suspected"]) == {"1", "2", "4"}
+    assert isinstance(readings["missing BOS is the trigger"], bool)
+    assert json.loads((tmp_path / "kb2d.json").read_text())["schema"] == "ironmule.cuda_probe.kb2d.v1"
+
+
+def test_kb2d_readings_follow_the_fixed_rule():
+    def per(means):
+        return {i: [m] * 4 for i, m in means.items()}
+
+    near = {"0": 3.0, "1": 5.3, "2": 6.7, "3": 4.3, "4": 5.1}
+    result = {"chunks": list(near), "paths": {
+        "stock_oneshot": per(near), "native_oneshot": per(near), "native_decode": per(near),
+        "plan_decode": per({**near, "1": 6.5, "2": 5.7}), "stock_oneshot_bos": per(near),
+        "native_decode_bos": per(near), "plan_decode_bos": per(near)}}
+    readings = probe.analyse_kb2d(result)["readings"]
+    assert readings["plan bug suspected"] == {"1": True, "2": True, "4": False}
+    assert readings["starts unstable for every path"] == {"1": False, "2": False, "4": False}
+    assert readings["missing BOS is the trigger"] is True
+    assert probe.analyse_kb2d(result)["plan leaves native at token"]["1"] == 0
+
+
 def test_kb2_decisions_read_the_fixed_rules():
     rounds = [{"plan": {str(w): 0.05 + 0.004 * w for w in range(1, 9)}, "native_one": 0.047} for _ in range(5)]
     stack = {"identical_steps": 10, "steps": 10}

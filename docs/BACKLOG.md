@@ -2180,6 +2180,29 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
     them apart needs a diagnostic, not a re-gate: the per-token NLL of chunks 1, 2 and 4 under the plan, today's
     native path and mlx-lm's unmodified bf16 path. A bug found there would be a new implementation, and that would
     need a new gate, fixed before its data. The gate's text and chunking stay as fixed.
+- **KB2-D, the diagnostic of those chunks (owner approved 2026-11-07; fixed now, before its data; descriptive only,
+  it changes no verdict).** `tools/cuda_probe.py --plan kb2d` on one Kaggle T4, about 0.3 session hours, same model
+  and revision. It records the per-token NLL of the gate's main chunks 0-4 (1, 2 and 4 diverged; 0 and 3 are
+  controls) on seven paths:
+  - `stock_oneshot` and `stock_oneshot_bos`: mlx-lm unmodified (MLX's own quantized matmul), the whole chunk in one
+    forward, run before the native plan is installed;
+  - `native_oneshot`: the native plan, the whole chunk in one forward;
+  - `native_decode` and `native_decode_bos`: the native plan teacher-forced one token a step, the gate's reference;
+  - `plan_decode` and `plan_decode_bos`: the Gemma plan, one row, teacher-forced the same way, the gate's plan side.
+  The `_bos` paths put the tokenizer's BOS token before the chunk and score the same tokens.
+  - *Agreement:* two paths agree on a chunk when their mean NLL differs by at most 0.12 nats a token (the largest
+    gap among run 2's 13 close chunks).
+  - *Check first:* `native_decode` and `plan_decode` reproduce run 2's chunk means (same code); if they do not, the
+    run says nothing about run 2.
+  - *Read as, on chunks 1, 2 and 4:*
+    - **a plan bug is suspected** if `plan_decode` disagrees with `native_decode` while `native_decode` agrees with
+      `stock_oneshot` or `native_oneshot`. The first position where the plan's per-token NLL leaves the native one
+      by more than 1 nat is where to look. A fix is a new implementation and needs a new gate, fixed before its
+      data;
+    - **the starts are unstable for every path** if `native_decode` disagrees with both one-shot paths too, while
+      the controls agree. No plan bug is shown then;
+    - **the missing BOS is the trigger** if, on all five chunks, `plan_decode_bos` agrees with `native_decode_bos`.
+  - KB2 stays in Tier 0 whatever this shows. The gate's text and chunking are not changed after the fact.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
