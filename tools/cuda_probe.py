@@ -2604,8 +2604,8 @@ def kb2_speed(model: Any, plan: Any, prompts: list[list[int]], steps: int, round
                                                         dtype=mx.int32)), axis=-1))
                 times.append(time.perf_counter() - started)
             widths[str(rows)] = statistics.median(times[2:] or times)
-        cache = model.make_cache()
-        mx.eval(model(mx.array(prompts[0])[None], cache=cache))
+        cache = model.make_cache()  # the trunk alone fills it: the head's full-prompt logits and float16 copy
+        mx.eval(plan.trunk(mx.array(prompts[0])[None], cache=cache))  # would not fit beside the plan's pool
         times, token = [], 10
         for t in range(steps):
             started = time.perf_counter()
@@ -2615,31 +2615,51 @@ def kb2_speed(model: Any, plan: Any, prompts: list[list[int]], steps: int, round
     return {"rounds": out}
 
 
+def kb2_memory() -> dict[str, int]:
+    """MLX's allocator now: active, peak and cached bytes (0 where this MLX does not report them)."""
+    import mlx.core as mx
+
+    return {name: int(getattr(mx, f"get_{name}_memory", lambda: 0)()) for name in ("active", "peak", "cache")}
+
+
 def probe_kb2(model: Any, tokenizer: Any, device_info: dict[str, Any], *, steps: int, rounds: int,
               capacity: int = KB2_CAPACITY, long_capacity: int = KB2_LONG_CAPACITY,
               prompt_limit: int = KB2_PROMPT_LIMIT, long_prompt: int = KB2_LONG_PROMPT,
-              gate: dict[str, Any] | None = None, make_plan: Callable[[int, int], Any] | None = None
-              ) -> dict[str, Any]:
+              gate: dict[str, Any] | None = None, make_plan: Callable[[int, int], Any] | None = None,
+              out: dict[str, Any] | None = None) -> dict[str, Any]:
     """KB2-0: (a) exact within the plan, (b) the lever over today's single-request step, (c) the quality gate
     against today's native decode; (d) recorded. The native plan is installed first, as the product does.
-    `make_plan(slots, capacity)` replaces the CUDA plan (and the native install) with a CPU stand-in in tests."""
+    `make_plan(slots, capacity)` replaces the CUDA plan (and the native install) with a CPU stand-in in tests.
+
+    Today's native path computes the head at every prompt position through a float16 copy of the head (about
+    2 GB for Gemma 3 12B). Beside the weights and a plan's 3.2 GB pool that does not fit a T4 (KB2-0 run 1), so
+    every native reference that needs the head ((d) and both gate references) runs before any pool exists; (b)'s
+    native step fills its cache with the trunk alone. `out` is filled as the probe goes, with the stage reached
+    and the allocator at each stage, so a failure keeps what came before it."""
     import gc
 
     import mlx.core as mx
     from ironmule import cuda_native, dense_gemma
 
-    out: dict[str, Any] = {"native": cuda_native.install(model, device_info) if make_plan is None else None}
+    out = {} if out is None else out
+    out["memory"] = {}
+
+    def stage(name: str) -> None:
+        out["stage"] = name
+        out["memory"][name] = kb2_memory()
+
+    def release() -> None:
+        gc.collect()
+        mx.clear_cache()
+
+    stage("load")
+    out["native"] = cuda_native.install(model, device_info) if make_plan is None else None
     prompts = [chat_ids(tokenizer, i % len(PROMPTS), i % 2 == 1, prompt_limit) for i in range(KB2_ROWS)]
     out["prompt_tokens"] = [len(ids) for ids in prompts]
-    if make_plan is None:
-        plan, out["install"] = dense_gemma.install(model, device_info, slots=KB2_ROWS, capacity=capacity)
-    else:
-        plan = make_plan(KB2_ROWS, capacity)
-        out["install"] = dense_gemma.probe(plan)
-    out["exact"] = kb2_exactness(plan, prompts, steps, KB2_STACKS)
     eos = set(getattr(tokenizer, "eos_token_ids", None) or [tokenizer.eos_token_id])
+    stage("native tokens")
     native = []
-    for ids in prompts:  # (d) recorded: the plan's greedy tokens against today's
+    for ids in prompts:  # (d) recorded: today's greedy tokens, compared with the plan's below
         cache = model.make_cache()
         token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
         tokens = [token]
@@ -2649,21 +2669,37 @@ def probe_kb2(model: Any, tokenizer: Any, device_info: dict[str, Any], *, steps:
             if token in eos:
                 break
         native.append(tokens)
-    out["agreement_with_native"] = [_first_difference(a, b) for a, b in zip(out["exact"]["tokens"], native)]
-    out["speed"] = kb2_speed(model, plan, prompts, steps, rounds)
+        del cache
     items = gate or gate_items(tokenizer, long=KB2_LONG_GATE)
-    out["gate"] = {"main": {"reference": [kb2_native_nll(model, p, s) for p, s in items["main"]],
-                            "plan": kb2_plan_nll(plan, items["main"])}}
+    stage("native gate references")
+    references = {name: [kb2_native_nll(model, p, s) for p, s in items[name]]
+                  for name in ("main", "long") if items.get(name)}
+    release()
+    stage("main pool")
+    if make_plan is None:
+        plan, out["install"] = dense_gemma.install(model, device_info, slots=KB2_ROWS, capacity=capacity)
+    else:
+        plan = make_plan(KB2_ROWS, capacity)
+        out["install"] = dense_gemma.probe(plan)
+    stage("exact")
+    out["exact"] = kb2_exactness(plan, prompts, steps, KB2_STACKS)
+    out["agreement_with_native"] = [_first_difference(a, b) for a, b in zip(out["exact"]["tokens"], native)]
+    stage("speed")
+    out["speed"] = kb2_speed(model, plan, prompts, steps, rounds)
+    stage("main gate")
+    out["gate"] = {"main": {"reference": references["main"], "plan": kb2_plan_nll(plan, items["main"])}}
     del plan
-    gc.collect()
-    mx.clear_cache()
+    release()
+    stage("long pool")
     long_plan = (dense_gemma.GemmaDensePlan(model, slots=KB2_LONG_ROWS, capacity=long_capacity) if make_plan is None
                  else make_plan(KB2_LONG_ROWS, long_capacity))
     longs = [row_ids(tokenizer, r, long_prompt) for r in range(KB2_LONG_ROWS)]
+    stage("exact long")
     out["exact_long"] = kb2_exactness(long_plan, longs, steps, (KB2_LONG_ROWS,))
-    if items.get("long"):
-        out["gate"]["long"] = {"reference": [kb2_native_nll(model, p, s) for p, s in items["long"]],
-                               "plan": kb2_plan_nll(long_plan, items["long"])}
+    if "long" in references:
+        stage("long gate")
+        out["gate"]["long"] = {"reference": references["long"], "plan": kb2_plan_nll(long_plan, items["long"])}
+    stage("done")
     return out
 
 
@@ -2728,14 +2764,18 @@ def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
             device_info = dict(mx.device_info())
         else:
             model, tokenizer, device_info = loaded
-        report["kb2"] = probe_kb2(model, tokenizer, device_info, steps=4 if smoke else KB2_STEPS,
-                                  rounds=1 if smoke else ROUNDS,
-                                  **({"capacity": 64, "long_capacity": 128, "prompt_limit": 24, "long_prompt": 40,
-                                      "gate": gate_items(tokenizer, 4, 12, (48, 6, 4))} if smoke else {}),
-                                  make_plan=make_plan)
+        report["kb2"] = {}
+        probe_kb2(model, tokenizer, device_info, steps=4 if smoke else KB2_STEPS, rounds=1 if smoke else ROUNDS,
+                  **({"capacity": 64, "long_capacity": 128, "prompt_limit": 24, "long_prompt": 40,
+                      "gate": gate_items(tokenizer, 4, 12, (48, 6, 4))} if smoke else {}),
+                  make_plan=make_plan, out=report["kb2"])
         report["analysis"] = analyse_kb2(report["kb2"])
     except Exception as exc:  # noqa: BLE001 - recorded
         report["kb2"] = {**(report.get("kb2") or {}), "error": repr(exc)}
+        try:
+            report["kb2"]["memory_at_error"] = kb2_memory()
+        except Exception:  # noqa: BLE001 - MLX itself may be what failed to load
+            pass
         report["analysis"] = {"error": repr(exc)}
     report["finished_unix"] = time.time()
     if out is not None:

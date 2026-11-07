@@ -373,6 +373,25 @@ def test_kb2_runs_end_to_end_on_cpu_stand_ins(tmp_path):
     assert json.loads((tmp_path / "kb2.json").read_text())["schema"] == "ironmule.cuda_probe.kb2.v1"
 
 
+def test_kb2_runs_native_references_before_any_pool_and_keeps_partial_results(tmp_path):
+    """KB2-0 run 1 ran out of memory on the T4 and its report kept nothing. Today's native path (its head over
+    every prompt position) must run before a plan's pool exists, and a failure keeps the stage it reached."""
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+
+    def make_plan(slots, capacity):
+        raise MemoryError("cudaMallocAsync failed: out of memory")
+
+    report = probe.probe_kb2_report("tiny", tmp_path / "kb2.json", smoke=True, loaded=(model, _Tokenizer(), {}),
+                                    make_plan=make_plan)
+    kb2 = report["kb2"]
+    assert "out of memory" in kb2["error"] and kb2["stage"] == "main pool"
+    assert list(kb2["memory"]) == ["load", "native tokens", "native gate references", "main pool"]
+    assert len(kb2["prompt_tokens"]) == probe.KB2_ROWS and "memory_at_error" in kb2
+    assert json.loads((tmp_path / "kb2.json").read_text())["kb2"]["stage"] == "main pool"
+
+
 def test_kb2_decisions_read_the_fixed_rules():
     rounds = [{"plan": {str(w): 0.05 + 0.004 * w for w in range(1, 9)}, "native_one": 0.047} for _ in range(5)]
     stack = {"identical_steps": 10, "steps": 10}

@@ -2143,6 +2143,18 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
   at 8 rows. The ratio at 8 rows is recorded beside it. The agent would serve the best width, and the smoke's step
   jumped at 8 rows (register pressure in the row kernel at eight activation rows is the suspect, not yet shown).
   The bound (below 0.5) and (a), (c) are unchanged.
+- **Run 1 failed, no data (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2` v1 at `03617a0`, Kaggle T4, about
+  6 minutes).** It stopped with `cudaMallocAsync ... out of memory` before any measurement, and the tool's report
+  kept only the error. The likely cause, from the code (the report recorded no stage): the probe ran today's native
+  path, for (d) and for the gate's references, while the plan's 3.2 GB pool was already allocated. That path
+  computes the head at every prompt position through a float16 copy of the 262,144-row head (about 2 GB), which
+  `cuda_native.head_skip_needed` lets fit beside the 8 GB of weights alone, not beside a pool as well. The smoke's
+  pools were 64 and 128 tokens, so it could not show this.
+  - *Tool fix, no change to the protocol:* every native reference that needs the head runs before any pool exists,
+    and (b)'s native step fills its cache with the trunk alone (the same keys and values; the timed decode steps
+    are unchanged). The report now keeps the stage reached, the allocator at each stage and everything measured
+    before a failure.
+  - *Run 2* is the same KB2-0 under the same rules, (b) as amended above.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
