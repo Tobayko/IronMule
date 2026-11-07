@@ -1281,17 +1281,18 @@ class DensePlan:
 def gate_items(tokenizer: Any, chunks: int | None = None, size: int | None = None,
                long: tuple[int, int, int] = (LONG_PREFIX, LONG_SCORED, LONG_CHUNKS)) -> dict[str, list[tuple[list[int], list[int]]]]:
     """The numeric plans' quality text (`ironmule.numeric_choice`), as (prefix, scored) pairs: the gate's own
-    16 x 512-token chunks with no prefix, and a long variant whose scored tokens follow a 1,024-token prefix."""
-    from ironmule.numeric_choice import CHUNK_TOKENS, CHUNKS, _text_ids
+    16 x 512-token chunks, each after the gate's BOS lead (`numeric_choice.gate_chunks`; none for a tokenizer
+    without a BOS), and a long variant whose scored tokens follow a 1,024-token prefix, led the same way."""
+    from ironmule.numeric_choice import CHUNK_TOKENS, CHUNKS, _text_ids, gate_bos, gate_chunks, gate_lead
 
-    chunks, size = chunks or CHUNKS, size or CHUNK_TOKENS
+    main = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
     ids = _text_ids(tokenizer)
-    main = [([], ids[i * size:(i + 1) * size + 1]) for i in range(chunks)]
+    bos = gate_bos(tokenizer)
     prefix, scored, count = long
     step = prefix + scored + 1
-    far = [(ids[i * step:i * step + prefix], ids[i * step + prefix:(i + 1) * step]) for i in range(count)
-           if (i + 1) * step <= len(ids)]
-    return {"main": [m for m in main if len(m[1]) == size + 1], "long": far}
+    far = [(gate_lead(ids[i * step:], bos) + ids[i * step:i * step + prefix], ids[i * step + prefix:(i + 1) * step])
+           for i in range(count) if (i + 1) * step <= len(ids)]
+    return {"main": main, "long": far}
 
 
 def _nll(logits: Any, target: int) -> float:
@@ -1763,13 +1764,15 @@ def h11_gate_items(tokenizer: Any, groups: dict[str, tuple[int, int, int]] = H11
     """The numeric plans' quality text as (prefix, scored) pairs at long prefixes: per group `count` windows whose
     scored tokens do not overlap, spread over the text (its 11,756 Qwen 3 tokens hold eight at 3,000 and four at
     6,000)."""
-    from ironmule.numeric_choice import _text_ids
+    from ironmule.numeric_choice import _text_ids, gate_bos, gate_lead
 
     ids, out = _text_ids(tokenizer), {}
+    bos = gate_bos(tokenizer)
     for name, (prefix, scored, count) in groups.items():
         room = len(ids) - prefix - scored
         stride = max(scored, room // max(1, count - 1)) if room >= 0 else 0
-        out[name] = [(ids[i * stride:i * stride + prefix], ids[i * stride + prefix:i * stride + prefix + scored])
+        out[name] = [(gate_lead(ids[i * stride:], bos) + ids[i * stride:i * stride + prefix],
+                      ids[i * stride + prefix:i * stride + prefix + scored])
                      for i in range(count) if room >= 0 and i * stride + prefix + scored <= len(ids)]
     return out
 
@@ -2671,6 +2674,8 @@ def probe_kb2(model: Any, tokenizer: Any, device_info: dict[str, Any], *, steps:
         native.append(tokens)
         del cache
     items = gate or gate_items(tokenizer, long=KB2_LONG_GATE)
+    out["gate_items"] = {"main_leads": [prefix for prefix, _ in items.get("main") or []],
+                         "long_prefix_tokens": [len(prefix) for prefix, _ in items.get("long") or []]}
     stage("native gate references")
     references = {name: [kb2_native_nll(model, p, s) for p, s in items[name]]
                   for name in ("main", "long") if items.get(name)}
@@ -2745,10 +2750,49 @@ def analyse_kb2(result: dict[str, Any], resamples: int = RESAMPLES) -> dict[str,
     return out
 
 
+#: KB2-G (BACKLOG KB2, fixed before its data): (b) stays decided by KB2-0 run 2, whose plan this run must still be.
+KB2_RUN2_B = {"run": "KB2-0 run 2", "commit": "9d388e9", "width": 6, "ratio": 0.4985, "ci95": [0.4979, 0.4991],
+              "passes": True}
+KB2_RUN2_KERNEL = "54b1d3a2e975305d03a81915bc1f4d67be9332ddfdc3487e82b0b70d36dc1c7f"
+KB2_RUN2_PLAN_VERSION = 1
+
+
+def analyse_kb2g(result: dict[str, Any], resamples: int = RESAMPLES) -> dict[str, Any]:
+    """KB2-G's decisions, as fixed in BACKLOG KB2 before its data: (a) and (c) here, on gate 2's chunks, with run 2's
+    (b); this run's (b) and (d) are recorded only. Invalid unless the plan is run 2's (kernel and version)."""
+    base = analyse_kb2(result, resamples)
+    install = result.get("install") or {}
+    same_plan = (install.get("kernel_sha256") == KB2_RUN2_KERNEL
+                 and install.get("plan_version") == KB2_RUN2_PLAN_VERSION)
+    main = ((result.get("gate_items") or {}).get("main_leads") or [])
+    out: dict[str, Any] = {
+        "valid": same_plan, "same plan as run 2": same_plan, "gate_version": result.get("gate_version"),
+        "main chunks led by BOS": sum(1 for lead in main if lead), "main chunks": len(main),
+        "(a) exact within the plan": base["(a) exact within the plan"],
+        "(c) quality gate": base.get("(c) quality gate"),
+        "(b) decided by": KB2_RUN2_B,
+        "(b) recorded here": base.get("(b) stacked step over single steps"),
+        "(b) recorded here: ratio at the widest stack": base.get("(b) recorded: ratio at the widest stack"),
+        "(d) recorded: one request, plan over native": base.get("(d) one request, plan over native"),
+        "agreement_with_native": base.get("agreement_with_native")}
+    recorded = out["(b) recorded here"] or {}
+    out["(b) limitation"] = (recorded.get("ci95") or [0, 0])[1] >= 0.5 if recorded else None
+    passes = (same_plan and out["(a) exact within the plan"] and KB2_RUN2_B["passes"]
+              and (out["(c) quality gate"] or {}).get("passes"))
+    out["verdict"] = ("invalid: the plan is not run 2's" if not same_plan else
+                      "(a), (c) and run 2's (b) pass: a candidate opt-in numeric plan for 4-bit Gemma 3" if passes
+                      else "does not pass: KB2 returns to Tier 0")
+    return out
+
+
 def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
                      loaded: tuple[Any, Any, dict[str, Any]] | None = None,
-                     make_plan: Callable[[int, int], Any] | None = None) -> dict[str, Any]:
-    report: dict[str, Any] = {"schema": "ironmule.cuda_probe.kb2.v1", "model": model_id, "smoke": smoke,
+                     make_plan: Callable[[int, int], Any] | None = None,
+                     schema: str = "ironmule.cuda_probe.kb2.v1",
+                     analyse: Callable[[dict[str, Any]], dict[str, Any]] = analyse_kb2) -> dict[str, Any]:
+    from ironmule.numeric_choice import GATE_VERSION
+
+    report: dict[str, Any] = {"schema": schema, "model": model_id, "smoke": smoke, "gate_version": GATE_VERSION,
                               "started_unix": time.time(), "env": environment()}
     try:
         if loaded is None:
@@ -2764,12 +2808,12 @@ def probe_kb2_report(model_id: str, out: Path | None, *, smoke: bool = False,
             device_info = dict(mx.device_info())
         else:
             model, tokenizer, device_info = loaded
-        report["kb2"] = {}
+        report["kb2"] = {"gate_version": GATE_VERSION}
         probe_kb2(model, tokenizer, device_info, steps=4 if smoke else KB2_STEPS, rounds=1 if smoke else ROUNDS,
                   **({"capacity": 64, "long_capacity": 128, "prompt_limit": 24, "long_prompt": 40,
                       "gate": gate_items(tokenizer, 4, 12, (48, 6, 4))} if smoke else {}),
                   make_plan=make_plan, out=report["kb2"])
-        report["analysis"] = analyse_kb2(report["kb2"])
+        report["analysis"] = analyse(report["kb2"])
     except Exception as exc:  # noqa: BLE001 - recorded
         report["kb2"] = {**(report.get("kb2") or {}), "error": repr(exc)}
         try:
@@ -2842,7 +2886,8 @@ def probe_kb2d(model: Any, tokenizer: Any, device_info: dict[str, Any], *, chunk
     from ironmule import cuda_native, dense_gemma
 
     out = {} if out is None else out
-    items = (gate or gate_items(tokenizer))["main"]
+    # The chunks as KB2-0 run 2 scored them, with no lead: the `_bos` paths add the BOS themselves.
+    items = [([], piece) for _, piece in (gate or gate_items(tokenizer))["main"]]
     bos = getattr(tokenizer, "bos_token_id", None)
     picked = {str(i): items[i] for i in chunks if i < len(items)}
     out.update(chunks=list(picked), bos=bos, paths={}, memory={})
@@ -2996,7 +3041,7 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "hw3",
             raise ValueError("HW4 needs HW3's decode winner")
         arguments = ["--out", "/kaggle/working/cuda_probe_hw4_report.json", "--plan", "hw4",
                      "--decode-winner", json.dumps(decode_winner, sort_keys=True)]
-    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "ag4"):
+    elif plan in ("kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "ag4"):
         arguments = ["--out", f"/kaggle/working/cuda_probe_{plan}_report.json", "--plan", plan]
     else:
         arguments = ["--out", "/kaggle/working/cuda_probe_report.json"]
@@ -3020,7 +3065,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR", help="write a Kaggle kernel folder instead")
     parser.add_argument("--owner")
     parser.add_argument("--commit")
-    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "ag4"), default="hw3")
+    parser.add_argument("--plan", choices=("hw3", "hw4", "kb1", "kb1m", "kb12", "h11", "kb2", "kb2d", "kb2g", "ag4"), default="hw3")
     parser.add_argument("--decode-winner", help="HW4: HW3's winning decode knobs as JSON, fixed before HW4's data")
     args = parser.parse_args(None if argv is None else list(argv))
     winner = None if args.decode_winner is None else json.loads(args.decode_winner)
@@ -3041,7 +3086,8 @@ def main(argv: Iterable[str] | None = None) -> int:
                   analyse_kb1_2(report.get("kb12") or {}) if schema == "ironmule.cuda_probe.kb12.v1" else
                   analyse_h11(report.get("h11") or {}) if schema == "ironmule.cuda_probe.h11.v1" else
                   analyse_kb2(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2.v1" else
-                  analyse_kb2d(report.get("kb2d") or {}) if schema == "ironmule.cuda_probe.kb2d.v1" else analyse(report))
+                  analyse_kb2d(report.get("kb2d") or {}) if schema == "ironmule.cuda_probe.kb2d.v1" else
+                  analyse_kb2g(report.get("kb2") or {}) if schema == "ironmule.cuda_probe.kb2g.v1" else analyse(report))
         print(json.dumps(result, indent=1, sort_keys=True, default=str))
         return 0
     if args.out is None:
@@ -3057,6 +3103,11 @@ def main(argv: Iterable[str] | None = None) -> int:
         report = probe_kb2d_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)
         print(json.dumps({"report": str(args.out), "analysis": report["analysis"].get("readings", report["analysis"])},
                          default=str), flush=True)
+        return 0
+    if args.plan == "kb2g":
+        report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke,
+                                  schema="ironmule.cuda_probe.kb2g.v1", analyse=analyse_kb2g)
+        print(json.dumps({"report": str(args.out), "analysis": report["analysis"]}, default=str), flush=True)
         return 0
     if args.plan == "kb2":
         report = probe_kb2_report(KB2_MODEL if args.model == MODEL else args.model, args.out, smoke=args.smoke)

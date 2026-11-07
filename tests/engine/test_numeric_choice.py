@@ -71,7 +71,7 @@ def test_unqualified_plans_are_gated_on_the_device(fake_device, monkeypatch, pla
     # gpt-oss has no recommended plan in the table, so every candidate is gated on the device.
     monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gpt_oss")
     reference = [3.0, 3.1, 2.9, 3.05, 3.2, 2.95, 3.0, 3.1]
-    monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids: (
+    monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids, bos=None: (
         reference if engine.model.plan is None else [x + plan_nll_shift for x in reference]))
     monkeypatch.setattr(numeric_choice, "_speed", lambda engine, tokenizer: 1.0 if engine.model.plan is None else plan_s)
     decision = numeric_choice.choose("m", "f", "b" * 64, load=load, log=lambda _: None)
@@ -117,7 +117,7 @@ def test_the_fastest_passing_plan_wins_not_the_first(fake_device, monkeypatch):
     # gpt-oss has no recommended plan in the table, so every candidate is gated on the device.
     monkeypatch.setattr(numeric_choice, "architecture_of", lambda model: "mlx_lm.models.gpt_oss")
     reference = [3.0, 3.1, 2.9, 3.05, 3.2, 2.95, 3.0, 3.1]
-    monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids: reference)
+    monkeypatch.setattr(numeric_choice, "nll_per_chunk", lambda engine, ids, bos=None: reference)
     monkeypatch.setattr(numeric_choice, "_speed", lambda engine, tokenizer: {None: 1.0, "float32": 0.5,
                                                                             "native": 0.1}[engine.model.plan])
     decision = numeric_choice.choose("m", "f", "g" * 64, load=load, log=lambda _: None)
@@ -263,3 +263,77 @@ def test_native_is_not_chosen_for_an_unquantized_checkpoint(fake_device, monkeyp
     assert loads == [None]
     assert numeric_choice._no_op("native", "bfloat16", native_eligible=True) is False
     assert numeric_choice._no_op("native", "bfloat16", native_eligible=None) is False, "unknown keeps the table"
+
+
+class _BosTok:
+    """Puts its BOS (2) before every text it encodes, as Gemma 3's tokenizer does; never 2 inside the text."""
+
+    bos_token_id = 2
+
+    def encode(self, text):
+        return [2] + [ord(c) % 200 + 3 for c in text]
+
+
+class _PlainTok:
+    """Puts nothing before a text, as Qwen 3's tokenizer does."""
+
+    def encode(self, text):
+        return [ord(c) % 200 + 3 for c in text]
+
+
+def test_every_gate_chunk_starts_with_exactly_one_bos_where_the_tokenizer_has_one():
+    ids = numeric_choice._text_ids(_PlainTok())
+    plain = numeric_choice.gate_chunks(_PlainTok(), 4, 16)
+    assert plain == [([], ids[i * 16:(i + 1) * 16 + 1]) for i in range(4)], "unchanged without a BOS (Qwen 3)"
+
+    class Declared(_PlainTok):
+        bos_token_id = 2  # has a BOS but adds none when it encodes (Gemma 4's tokenizer, PORT2-K)
+
+    assert numeric_choice.gate_chunks(Declared(), 4, 16) == [([2], piece) for _, piece in plain]
+
+    class NoneBos(_PlainTok):
+        bos_token_id = None
+
+    assert numeric_choice.gate_chunks(NoneBos(), 4, 16) == plain
+    bos_ids = numeric_choice._text_ids(_BosTok())
+    led = numeric_choice.gate_chunks(_BosTok(), 4, 16)
+    assert [piece for _, piece in led] == [bos_ids[i * 16:(i + 1) * 16 + 1] for i in range(4)], "same tokens"
+    assert led[0] == ([], bos_ids[:17]) and led[0][1][0] == 2, "chunk 0 already starts with BOS: no second one"
+    assert all(lead == [2] for lead, _ in led[1:])
+
+
+def test_nll_per_chunk_scores_the_same_tokens_after_the_bos_lead():
+    mx = pytest.importorskip("mlx.core")
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+    engine = SimpleNamespace(model=model)
+    ids = numeric_choice._text_ids(_BosTok())[:3 * 16 + 1]
+    pieces = [ids[i * 16:(i + 1) * 16 + 1] for i in range(3)]
+
+    def manual(lead, chunk):
+        logits = model(mx.array([lead + chunk[:-1]]))[0, len(lead):].astype(mx.float32)
+        nll = mx.logsumexp(logits, axis=-1) - mx.take_along_axis(logits, mx.array(chunk[1:])[:, None], axis=-1)[:, 0]
+        return float(mx.mean(nll).item())
+
+    plain = numeric_choice.nll_per_chunk(engine, ids, chunks=3, size=16)
+    led = numeric_choice.nll_per_chunk(engine, ids, chunks=3, size=16, bos=2)
+    assert plain == pytest.approx([manual([], piece) for piece in pieces], abs=1e-5), "bos=None as before"
+    assert led == pytest.approx([manual([] if i == 0 else [2], piece) for i, piece in enumerate(pieces)], abs=1e-5)
+    assert led[0] == pytest.approx(plain[0], abs=1e-6) and led[1:] != pytest.approx(plain[1:], abs=1e-3)
+
+
+def test_a_decision_stored_under_the_old_gate_is_measured_again(tmp_path, monkeypatch):
+    """GATE2: a decision made before every chunk had its BOS is evidence under another gate; it authorises nothing."""
+    import json
+
+    store = tmp_path / "numeric.json"
+    monkeypatch.setattr(numeric_choice, "_store", lambda: store)
+    key = "f-" + "c" * 16
+    store.write_text(json.dumps({key: {"plan": "float16", "reason": "gate passed"}}))  # no gate version: gate 1
+    assert numeric_choice._stored(key) is None
+    numeric_choice._save(key, {"plan": "float16", "reason": "gate passed"})
+    assert numeric_choice._stored(key) == {"plan": "float16", "reason": "gate passed",
+                                          "gate_version": numeric_choice.GATE_VERSION}
+    store.write_text(json.dumps({key: {"plan": "float16", "gate_version": numeric_choice.GATE_VERSION - 1}}))
+    assert numeric_choice._stored(key) is None

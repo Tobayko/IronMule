@@ -30,6 +30,9 @@ from .numeric_plans import CUDA_PRE_AMPERE, QUALITY_BOUND, architecture_of, devi
 TEXT = Path(__file__).with_name("quality_reference.txt")
 PLANS = ("native", "float16", "float32")  # every plan the runtime accepts
 CHUNKS, CHUNK_TOKENS = 16, 512
+#: The gate's chunking. 1: cut from mid-text with no lead. 2 (2026-11-07, BACKLOG GATE2): each chunk after the
+#: tokenizer's BOS. A stored decision made under another version is evidence under another gate: measured again.
+GATE_VERSION = 2
 # What tune keeps on almost every machine and model; time is scaled to 128 answered tokens.
 SPEED_KNOBS = {"compiled_fixed_cache": True, "head_skip_prefill": True, "readback_every": 4}
 SPEED_TOKENS = 128
@@ -46,15 +49,40 @@ def _text_ids(tokenizer) -> list[int]:
     return list(tokenizer.encode(text))
 
 
-def nll_per_chunk(engine, ids: list[int], chunks: int = CHUNKS, size: int = CHUNK_TOKENS) -> list[float]:
-    """Mean next-token negative log-likelihood per fixed chunk, as `quality.py` computes it."""
+def gate_bos(tokenizer) -> int | None:
+    """The token every gate chunk starts with: the tokenizer's BOS (Gemma 3 and 4), or None where it declares none
+    (Qwen 3), and then the gate is unchanged. Gemma 3 without its BOS is unstable on every path, today's included,
+    so a chunk cut from mid-text scored a state no chat request reaches (BACKLOG KB2-D); the research gate has put
+    BOS on every chunk since PORT2-K, after Gemma 4's tokenizer, which adds none when it encodes, left it out."""
+    bos = getattr(tokenizer, "bos_token_id", None)
+    return bos if type(bos) is int else None
+
+
+def gate_lead(chunk: list[int], bos: int | None) -> list[int]:
+    """The unscored context before a gate chunk: its BOS where the chunk does not already start with it."""
+    return [] if bos is None or (chunk and chunk[0] == bos) else [bos]
+
+
+def gate_chunks(tokenizer, chunks: int = CHUNKS, size: int = CHUNK_TOKENS) -> list[tuple[list[int], list[int]]]:
+    """The gate's (lead, chunk) pairs: `chunks` consecutive pieces of `size` + 1 tokens of the quality text, each
+    scored on its last `size` tokens after `gate_lead`'s BOS. Unchanged for a tokenizer without a BOS."""
+    ids, bos = _text_ids(tokenizer), gate_bos(tokenizer)
+    pieces = [ids[i * size:(i + 1) * size + 1] for i in range(chunks)]
+    return [(gate_lead(piece, bos), piece) for piece in pieces if len(piece) == size + 1]
+
+
+def nll_per_chunk(engine, ids: list[int], chunks: int = CHUNKS, size: int = CHUNK_TOKENS,
+                  bos: int | None = None) -> list[float]:
+    """Mean next-token negative log-likelihood per fixed chunk, as `quality.py` computes it; with `bos` (from
+    `gate_bos`), each chunk that does not start with it is scored after it, the same tokens scored."""
     import mlx.core as mx
     rows = []
     for index in range(chunks):
         chunk = ids[index * size:(index + 1) * size + 1]
         if len(chunk) < size + 1:
             break
-        logits = engine.model(mx.array([chunk[:-1]]))[0].astype(mx.float32)
+        lead = gate_lead(chunk, bos)
+        logits = engine.model(mx.array([lead + chunk[:-1]]))[0, len(lead):].astype(mx.float32)
         log_probs = logits - mx.logsumexp(logits, axis=-1, keepdims=True)
         nll = -mx.mean(log_probs[mx.arange(size), mx.array(chunk[1:])])
         mx.eval(nll)
@@ -168,10 +196,12 @@ def _faster(ratios: dict[str, float]) -> bool:
 
 
 def _stored(key: str) -> dict[str, Any] | None:
+    """The decision stored for `key`, or None when there is none or it was made under another `GATE_VERSION`."""
     try:
-        return json.loads(_store().read_text()).get(key)
+        stored = json.loads(_store().read_text()).get(key)
     except (OSError, ValueError):
         return None
+    return stored if isinstance(stored, dict) and stored.get("gate_version") == GATE_VERSION else None
 
 
 def choose_out_of_process(model_id: str, fingerprint: str, identity_sha256: str, *,
@@ -222,7 +252,8 @@ def measure_plan(model_id: str, plan: str | None, device: str | None, load: Call
             options = _options(out["architecture"], out["dtype"], device, out["native_eligible"])
             if all(option["verdict"] == "recommended" for option in options):
                 return out
-        out.update(nll=nll_per_chunk(engine, _text_ids(tokenizer)), speed_s=_speed(engine, tokenizer))
+        ids = _text_ids(tokenizer)
+        out.update(nll=nll_per_chunk(engine, ids, bos=gate_bos(tokenizer)), speed_s=_speed(engine, tokenizer))
         return out
     finally:
         _close_engine(engine)
@@ -419,6 +450,7 @@ def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
         data = {}
+    decision = {**decision, "gate_version": GATE_VERSION}
     data[key] = decision
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=1, sort_keys=True, default=str) + "\n")

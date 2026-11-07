@@ -148,7 +148,8 @@ except Exception as exc:
     raise SystemExit(0)
 load_s = time.perf_counter() - started
 try:
-    nll = numeric_choice.nll_per_chunk(engine, numeric_choice._text_ids(tokenizer), chunks=chunks)
+    ids = numeric_choice._text_ids(tokenizer)
+    nll = numeric_choice.nll_per_chunk(engine, ids, chunks=chunks, bos=numeric_choice.gate_bos(tokenizer))
     speed = numeric_choice._speed(engine, tokenizer)
     print("@@U1 " + json.dumps({"plan": plan, "load_s": load_s, "nll": nll, "speed_s": speed,
                                 "nonfinite_chunks": sum(1 for value in nll if value != value or value == float("inf")),

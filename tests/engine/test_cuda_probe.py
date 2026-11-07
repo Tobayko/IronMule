@@ -415,13 +415,15 @@ def test_kb2d_records_every_path_per_token_on_cpu_stand_ins(tmp_path):
     assert kb2d["stage"] == "done" and kb2d["chunks"] == ["0", "1", "2", "3", "4"]
     assert set(kb2d["paths"]) == {"stock_oneshot", "stock_oneshot_bos", "native_oneshot", "native_decode",
                                   "native_decode_bos", "plan_decode", "plan_decode_bos"}
-    items = probe.gate_items(Tokenizer(), 5, 12)["main"]
+    items = [([], piece) for _, piece in probe.gate_items(Tokenizer(), 5, 12)["main"]]  # as run 2 scored them
     for name, per in kb2d["paths"].items():
         assert all(len(per[str(i)]) == len(items[i][1]) - 1 for i in range(5)), name
     gate_mean = probe.kb2_native_nll(model, *items[1])
     assert abs(sum(kb2d["paths"]["native_decode"]["1"]) / 12 - gate_mean) < 1e-6
     assert abs(probe.kb2_plan_nll(make_plan(1, 1024), [items[1]])[0]
                - sum(kb2d["paths"]["plan_decode"]["1"]) / 12) < 1e-6
+    with_bos = probe.kb2_native_nll(model, [2], items[1][1])
+    assert abs(sum(kb2d["paths"]["native_decode_bos"]["1"]) / 12 - with_bos) < 1e-6, "exactly one BOS"
     readings = report["analysis"]["readings"]
     assert set(readings["plan bug suspected"]) == {"1", "2", "4"}
     assert isinstance(readings["missing BOS is the trigger"], bool)
@@ -442,6 +444,92 @@ def test_kb2d_readings_follow_the_fixed_rule():
     assert readings["starts unstable for every path"] == {"1": False, "2": False, "4": False}
     assert readings["missing BOS is the trigger"] is True
     assert probe.analyse_kb2d(result)["plan leaves native at token"]["1"] == 0
+
+
+def test_probe_gate_items_lead_with_bos_like_the_product_gate():
+    """KB1/KB2's gate items follow `numeric_choice.gate_chunks`: unchanged for a tokenizer without a leading BOS,
+    and for one with it every main chunk and long prefix starts with exactly one BOS, the same tokens scored."""
+    from ironmule import numeric_choice
+
+    class BosTok(_Tokenizer):
+        bos_token_id = 2
+
+        def encode(self, text):
+            return [2] + [ord(c) % 200 + 3 for c in text]
+
+    plain = probe.gate_items(_Tokenizer(), 4, 12, (48, 6, 4))
+    ids = numeric_choice._text_ids(_Tokenizer())
+    assert plain["main"] == [([], ids[i * 12:(i + 1) * 12 + 1]) for i in range(4)]
+    assert plain["long"][1] == (ids[55:103], ids[103:110])
+    led = probe.gate_items(BosTok(), 4, 12, (48, 6, 4))
+    bos_ids = numeric_choice._text_ids(BosTok())
+    assert led["main"] == numeric_choice.gate_chunks(BosTok(), 4, 12)
+    assert led["long"][0] == (bos_ids[:48], bos_ids[48:55]), "the text's own BOS leads the first prefix"
+    assert led["long"][1] == ([2] + bos_ids[55:103], bos_ids[103:110])
+    assert all(prefix[0] == 2 and 2 not in prefix[1:] for prefix, _ in led["long"])
+    h11 = probe.h11_gate_items(BosTok(), {"g": (20, 6, 3)})["g"]
+    assert all(prefix[0] == 2 and 2 not in prefix[1:] for prefix, _ in h11)
+    stride = max(6, (len(ids) - 26) // 2)  # the old windows, unchanged without a leading BOS
+    assert probe.h11_gate_items(_Tokenizer(), {"g": (20, 6, 3)})["g"] == [
+        (ids[i * stride:i * stride + 20], ids[i * stride + 20:i * stride + 26]) for i in range(3)]
+
+
+def test_kb2g_runs_on_gate_2s_chunks_and_is_invalid_without_run_2s_plan(tmp_path):
+    """KB2-G on CPU stand-ins: the gate runs on BOS-led chunks (chunk 0 keeps the text's own BOS), and the
+    analysis refuses a plan that is not run 2's (a CPU stand-in has no kernel), whatever the gate reads."""
+    from ironmule import dense_gemma
+    from ironmule.numeric_choice import GATE_VERSION
+
+    from tests.engine.test_dense_gemma import tiny_model
+
+    model = tiny_model()
+
+    class BosTok(_Tokenizer):
+        bos_token_id = 2
+
+        def encode(self, text):
+            return [2] + [ord(c) % 200 + 3 for c in text]
+
+    def make_plan(slots, capacity):
+        return dense_gemma.GemmaDensePlan(model, slots=slots, capacity=capacity,
+                                          attention=dense_gemma.reference_attention, native=False)
+
+    report = probe.probe_kb2_report("tiny", tmp_path / "kb2g.json", smoke=True, loaded=(model, BosTok(), {}),
+                                    make_plan=make_plan, schema="ironmule.cuda_probe.kb2g.v1",
+                                    analyse=probe.analyse_kb2g)
+    kb2, analysis = report["kb2"], report["analysis"]
+    assert "error" not in kb2, kb2
+    assert report["gate_version"] == GATE_VERSION == kb2["gate_version"] == analysis["gate_version"]
+    assert kb2["gate_items"]["main_leads"] == [[], [2], [2], [2]]
+    assert analysis["main chunks led by BOS"] == 3 and analysis["main chunks"] == 4
+    assert set(analysis["(c) quality gate"]["paths"]) == {"main", "long"}
+    assert not analysis["valid"] and analysis["verdict"].startswith("invalid")
+    assert json.loads((tmp_path / "kb2g.json").read_text())["schema"] == "ironmule.cuda_probe.kb2g.v1"
+
+
+def test_kb2g_decisions_read_the_fixed_rules():
+    stack = {"identical_steps": 10, "steps": 10}
+    rounds = [{"plan": {str(w): 0.05 + 0.004 * w for w in range(1, 9)}, "native_one": 0.047} for _ in range(5)]
+    reference = [2.5 + 0.01 * i for i in range(16)]
+
+    def result(plan_shift=0.0, kernel=probe.KB2_RUN2_KERNEL, identical=10, native_one=0.047):
+        return {"install": {"kernel_sha256": kernel, "plan_version": 1},
+                "gate_items": {"main_leads": [[]] + [[2]] * 15},
+                "exact": {"stacks": {"3": stack, "8": {"identical_steps": identical, "steps": 10}}},
+                "exact_long": {"stacks": {"4": stack}},
+                "speed": {"rounds": [{**r, "native_one": native_one} for r in rounds]},
+                "gate": {"main": {"reference": reference, "plan": [x + plan_shift for x in reference]},
+                         "long": {"reference": reference[:4], "plan": [x + plan_shift for x in reference[:4]]}}}
+
+    good = probe.analyse_kb2g(result())
+    assert good["valid"] and good["(a) exact within the plan"] and good["(c) quality gate"]["passes"]
+    assert good["verdict"].startswith("(a), (c) and run 2's (b) pass") and good["(b) limitation"] is False
+    assert good["main chunks led by BOS"] == 15 and good["(b) decided by"]["width"] == 6
+    assert probe.analyse_kb2g(result(plan_shift=0.02))["verdict"] == "does not pass: KB2 returns to Tier 0"
+    assert probe.analyse_kb2g(result(identical=9))["verdict"] == "does not pass: KB2 returns to Tier 0"
+    assert probe.analyse_kb2g(result(kernel="0" * 64))["verdict"].startswith("invalid")
+    slow = probe.analyse_kb2g(result(native_one=0.01))  # this run's (b) is recorded, run 2's decides
+    assert slow["(b) limitation"] is True and slow["verdict"].startswith("(a), (c) and run 2's (b) pass")
 
 
 def test_kb2_decisions_read_the_fixed_rules():

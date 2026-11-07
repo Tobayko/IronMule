@@ -2234,6 +2234,55 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
     a fix for KB2. If the gate gets BOS-led chunks, KB2 can be re-gated under a protocol fixed before that run.
     KB2 stays in Tier 0 until then. The ledger entry is still owed.
 
+- **KB2-G, KB2 reopened under gate 2 (owner decision 2026-11-07; fixed now, before its data).** It reopens the Tier 0
+  entry "KB2 Gemma 3 4-bit stacked decode plan", whose kill was (c): "The perplexity ratio by
+  `numeric_choice.ratio_interval` must pass below 1.005 on both paths." The new hardware evidence is KB2-D: without
+  BOS every path is unstable on the gate's chunks, and with BOS the plan is within 0.007 nats a token of today's
+  native path on all five chunks tested. The gate itself changes for every plan (GATE2 below), not for KB2 alone.
+  - *Run:* `tools/cuda_probe.py --plan kb2g` on one Kaggle T4, the same model and revision, about 0.5 session hours.
+    The plan's code is unchanged since run 2. The run checks this: its install must report run 2's kernel SHA-256
+    (`54b1d3a2...`) and plan version 1, or the run is invalid.
+  - **(c) decides, as fixed for KB2-0, on gate 2's chunks:** the main 16 x 512-token chunks, each after the BOS
+    (chunk 0 already starts with the text's own BOS), eight rows stacked; the long 4 x 128 tokens after a
+    1,536-token prefix that starts with the BOS, four rows stacked. Both paths' upper bounds must be below 1.005.
+  - **(a) decides again:** every row bit-identical alone and stacked, in both pools. A failure is a bug.
+  - **(b) stays decided by run 2** (width 6, ratio 0.4985, 95 % 0.4979-0.4991). This run records (b) and (d) again,
+    descriptive only. If the recorded ratio reads at or above 0.5, that is noted as a limitation, and the product
+    run decides, since it measures tokens per second itself.
+  - *Verdict:* (a) and (c) here, with run 2's (b), make the plan a candidate opt-in numeric plan for 4-bit Gemma 3.
+    The next step is then the one fixed under KB2's verdict above. Otherwise KB2 returns to Tier 0 with this run's
+    numbers.
+
+### GATE2 — Every quality-gate chunk starts with the tokenizer's BOS (owner decision 2026-11-07)
+
+**Why.** KB2-D showed that the gate's main chunks, cut from mid-text with no BOS, put Gemma 3 where every path,
+today's included, is unstable: without BOS today's own one-shot and decoded paths differed by up to 0.71 nats a
+token on one chunk. With BOS all seven paths agreed. Chat requests always start with BOS. The research gate has put
+BOS on every chunk since PORT2-K (2026-09-26), after Gemma 4's tokenizer, which adds none when it encodes, left the
+chunks without it. The product's gate (`ironmule/numeric_choice.py`) had not followed.
+
+**Rule (`GATE_VERSION` 2).** Each chunk is scored on the same tokens as before, after the tokenizer's BOS token as
+unscored context. A chunk that already starts with BOS gets no second one: Gemma 3's tokenizer puts BOS before the
+text, so chunk 0 is unchanged. The bound (1.005), the bootstrap, the text and the chunk sizes are unchanged. It
+applies everywhere the gate's chunks are built:
+- NUM1's one-shot gate (`nll_per_chunk`);
+- the agent's stacked-engine gate (`plan_choice.measure_stacked`);
+- `tools/kaggle_whole_machine.py`;
+- the CUDA probe's gate items for KB1, KB2 and H11, including the long prefixes.
+
+KB2-D's own tool keeps the lead-free chunks it ran on.
+
+**Scope, checked on the tokenizers in use:**
+- Qwen 3 declares no BOS (`bos_token` null), so its gate is unchanged. Every Qwen result stands as measured,
+  AG4-R's included.
+- Gemma 3 (`<bos>`, added when it encodes) gets BOS on chunks 1-15.
+- SmolLM2-135M-Instruct declares `<|im_start|>` and adds none when it encodes. All its chunks now start with it,
+  as each of its chat requests does.
+
+**Old evidence.** Results measured under gate 1 stay as recorded, scoped to that gate. A decision the product or the
+agent stored under gate 1 (`numeric.json`, `plan_choice.json`) no longer authorises anything. It is measured again
+on the next start, because both stores now record the gate version and read only their own.
+
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
 **Mechanism.** TB1 found that MLX's bf16 product at 2 to 32 rows runs at 41-45 GB/s against 252 at one row on the
@@ -3372,7 +3421,8 @@ processes again.
   and six of them made 2.006x today's tokens per second (95 % bound 0.4991 against 0.5), but the quality gate's main
   path read 0.984 with 95 % up to 1.177, not below 1.005 (three of 16 chunks diverge by up to 1 nat a token, in both
   directions). KB2's rule stops it at (c). Re-open with a fixed implementation found by a diagnostic of those chunks,
-  re-gated under a protocol fixed before its data, or with a new model or card.
+  re-gated under a protocol fixed before its data, or with a new model or card. **Reopened 2026-11-07 as KB2-G**
+  (see KB2): KB2-D's new evidence that the gate's lead-free chunks are unstable for every path, and GATE2.
 
 - **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
   `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,

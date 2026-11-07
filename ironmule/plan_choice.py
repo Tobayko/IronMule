@@ -71,10 +71,14 @@ def _store() -> Path:
 
 
 def _stored(key: str) -> dict[str, Any] | None:
+    """The setup stored for `key`, or None when there is none or its gates ran under another gate version."""
+    from .numeric_choice import GATE_VERSION
+
     try:
-        return json.loads(_store().read_text()).get(key)
+        stored = json.loads(_store().read_text()).get(key)
     except (OSError, ValueError):
         return None
+    return stored if isinstance(stored, dict) and stored.get("gate_version") == GATE_VERSION else None
 
 
 def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +87,9 @@ def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
         data = json.loads(path.read_text())
     except (OSError, ValueError):
         data = {}
-    data[key] = {**decision, "decided_unix": time.time()}
+    from .numeric_choice import GATE_VERSION
+
+    data[key] = {**decision, "decided_unix": time.time(), "gate_version": GATE_VERSION}
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, indent=1, sort_keys=True, default=str))
@@ -102,13 +108,14 @@ def stacked_plan(model: Any, device_info: dict[str, Any] | None, *, slots: int =
     return dense_plan.install(model, device_info, slots=slots, capacity=capacity)
 
 
-def _decode_nll(model: Any, ids: list[int]) -> float:
-    """The base path's own decode, teacher-forced: prefill the first token, then one step per token."""
+def _decode_nll(model: Any, ids: list[int], lead: list[int] | None = None) -> float:
+    """The base path's own decode, teacher-forced: prefill the lead (the gate's BOS, if any) and the first token,
+    then one step per token."""
     import mlx.core as mx
     from mlx_lm.models.cache import make_prompt_cache
 
     cache = make_prompt_cache(model)
-    logits = model(mx.array(ids[:1])[None], cache=cache)[0, -1].astype(mx.float32)
+    logits = model(mx.array((lead or []) + ids[:1])[None], cache=cache)[0, -1].astype(mx.float32)
     total = 0.0
     for t in range(1, len(ids)):
         total += float((mx.logsumexp(logits) - logits[ids[t]]).item())
@@ -117,13 +124,16 @@ def _decode_nll(model: Any, ids: list[int]) -> float:
     return total / (len(ids) - 1)
 
 
-def _plan_nll(plan: Any, chunks: list[list[int]]) -> list[float]:
-    """The plan teacher-forced, `plan.slots` chunks stacked; the first prediction is the plan's own prefill head."""
+def _plan_nll(plan: Any, chunks: list[list[int]], leads: list[list[int]] | None = None) -> list[float]:
+    """The plan teacher-forced, `plan.slots` chunks stacked, each after its lead (the gate's BOS, if any); the
+    first prediction is the plan's own prefill head."""
     import mlx.core as mx
 
+    leads = leads or [[] for _ in chunks]
     means = []
     for start in range(0, len(chunks), plan.slots):
         group = chunks[start:start + plan.slots]
+        offsets = [len(lead) for lead in leads[start:start + plan.slots]]
         sums, logits_rows = [0.0] * len(group), []
         for slot, ids in enumerate(group):
             new_cache = getattr(plan, "new_cache", None)
@@ -132,7 +142,7 @@ def _plan_nll(plan: Any, chunks: list[list[int]]) -> list[float]:
             else:
                 from mlx_lm.models.cache import make_prompt_cache
                 cache = make_prompt_cache(plan.model)
-            logits_rows.append(plan.prefill(mx.array(ids[:1])[None], cache)[0])
+            logits_rows.append(plan.prefill(mx.array(leads[start + slot] + ids[:1])[None], cache)[0])
             plan.write_prefill(slot, [c.state for c in cache])
         slots = mx.arange(len(group), dtype=mx.int32)
         for t in range(1, len(group[0])):
@@ -141,7 +151,7 @@ def _plan_nll(plan: Any, chunks: list[list[int]]) -> list[float]:
                 sums[r] += float((mx.logsumexp(row) - row[ids[t]]).item())
             if t + 1 < len(group[0]):
                 logits = plan.forward(mx.array([ids[t] for ids in group]), slots,
-                                      mx.array([t] * len(group), dtype=mx.int32))
+                                      mx.array([offset + t for offset in offsets], dtype=mx.int32))
                 mx.eval(logits)
                 logits_rows = [logits[r] for r in range(len(group))]
         means.extend(total / (len(group[0]) - 1) for total in sums)
@@ -206,18 +216,17 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
                     make_plan: Callable[[Any, dict[str, Any] | None], tuple[Any, dict[str, Any]]] | None = None
                     ) -> dict[str, Any]:
     """Everything AG4's rule reads about the stacked engine on this model, which already carries its base plan."""
-    from .numeric_choice import CHUNK_TOKENS, CHUNKS, _text_ids, ratio_interval
+    from .numeric_choice import CHUNK_TOKENS, CHUNKS, gate_chunks, ratio_interval
     from .tune import DEFAULT_PROMPT
 
     try:
         plan, record = (make_plan or stacked_plan)(model, device_info)
     except ValueError as exc:
         return {"eligible": False, "reason": str(exc)}
-    chunks, size = chunks or CHUNKS, size or CHUNK_TOKENS
-    ids = _text_ids(tokenizer)
-    pieces = [ids[i * size:(i + 1) * size + 1] for i in range(chunks) if (i + 1) * size + 1 <= len(ids)]
-    reference = [_decode_nll(model, piece) for piece in pieces]
-    candidate = _plan_nll(plan, pieces)
+    items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
+    leads, pieces = [lead for lead, _ in items], [piece for _, piece in items]
+    reference = [_decode_nll(model, piece, lead) for lead, piece in items]
+    candidate = _plan_nll(plan, pieces, leads)
     out: dict[str, Any] = {"eligible": True, "install": record, "gate": ratio_interval(reference, candidate),
                            "memory": _memory(model, plan, device_info)}
     speed = {}

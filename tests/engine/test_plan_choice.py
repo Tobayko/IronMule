@@ -156,3 +156,69 @@ def test_the_setup_lists_every_lever_the_agent_knows_built_or_not(tmp_path, monk
         assert by_name[planned]["status"] == "planned" and by_name[planned]["here"] == "not built yet"
         assert source in by_name[planned]["what"]
     assert "int8_head" not in by_name  # it re-quantised weights: the owner's boundary (HQ1)
+
+
+def test_the_agent_gate_scores_bos_led_chunks_like_kb2s_own_teacher_forcing():
+    """With the gate's BOS lead, the agent's two gate paths (the base decode and the stacked plan, rows with and
+    without a lead in one group) equal KB2's independent implementation: same tokens, same positions."""
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import tiny_model
+    from tools import cuda_probe as probe
+
+    model = tiny_model()
+    lead, piece, other = [2], list(range(10, 27)), list(range(40, 57))
+    assert pc._decode_nll(model, piece, lead) == pytest.approx(probe.kb2_native_nll(model, lead, piece), abs=1e-6)
+    assert pc._decode_nll(model, other) == pytest.approx(probe.kb2_native_nll(model, [], other), abs=1e-6)
+    plan = dense_gemma.GemmaDensePlan(model, slots=4, capacity=32, attention=dense_gemma.reference_attention,
+                                      native=False)
+    agent = pc._plan_nll(plan, [piece, other], [lead, []])
+    assert agent == pytest.approx(probe.kb2_plan_nll(plan, [(lead, piece), ([], other)]), abs=1e-6)
+    assert agent[0] != pytest.approx(pc._plan_nll(plan, [piece])[0], abs=1e-4), "the lead is really used"
+
+
+def test_measure_stacked_runs_with_a_bos_tokenizer():
+    from ironmule import dense_gemma
+
+    from tests.engine.test_dense_gemma import _Tok, tiny_model
+
+    class BosTok(_Tok):
+        bos_token_id = 2
+
+        def encode(self, text):
+            return [2] + [ord(c) % 200 + 3 for c in text]
+
+    model = tiny_model()
+
+    def make_plan(model_, info):
+        plan = dense_gemma.GemmaDensePlan(model_, slots=4, capacity=96, attention=dense_gemma.reference_attention,
+                                          native=False)
+        return plan, dense_gemma.probe(plan)
+
+    measured = pc.measure_stacked(model, BosTok(), None, chunks=4, size=16, steps=3, long_prompt="x" * 40,
+                                  make_plan=make_plan)
+    assert measured["eligible"] and measured["gate"]["chunks"] == 4
+
+
+def test_a_setup_stored_under_the_old_gate_is_measured_again(tmp_path, monkeypatch):
+    import json
+
+    from ironmule.numeric_choice import GATE_VERSION
+
+    store = tmp_path / "plan_choice.json"
+    monkeypatch.setattr(pc, "_store", lambda: store)
+    key = "fp-" + "a" * 16
+    store.write_text(json.dumps({key: {"engine": "dense", "compute_dtype": "native"}}))  # made under gate 1
+    calls = []
+
+    def numeric(model_id, fingerprint, identity, log):
+        calls.append("numeric")
+        return {"plan": "native", "reason": "gate passed"}
+
+    def measure(model_id, compute_dtype, base_only=False):
+        calls.append(("measure", compute_dtype))
+        return _measured(passes=False)
+
+    setup = pc.choose_setup("m", "fp", "a" * 64, log=lambda _: None, numeric=numeric, measure=measure)
+    assert calls == ["numeric", ("measure", "native")] and setup["engine"] != "dense"
+    assert json.loads(store.read_text())[key]["gate_version"] == GATE_VERSION

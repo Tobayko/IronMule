@@ -69,6 +69,10 @@ the agent finds them itself before it serves (`ironmule/plan_choice.py`):
    - AG4's rule: more tokens per second at its best width, at least 0.9x for one request alone, and a first
      token at most 1.1x later.
 
+Both gates score the same fixed text, cut into 16 chunks of 512 tokens. Since GATE2 (2026-11-07), each chunk
+starts with the tokenizer's BOS, as a chat request does. Without it, Gemma 3 was unstable on every path, today's
+included (KB2-D). A choice stored under the older gate is measured again on the next start.
+
 When the stacked engine wins only under load (on a T4 with Qwen 3 1.7B it made 5x the tokens per second at
 width 8, but was 18 % slower alone), and both fit the card, the agent serves both. It then routes every request,
 in microseconds, to the path where it is expected to finish first (`ironmule_product/path_router.py`). It learns
@@ -154,5 +158,6 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
   (`ironmule/dense_gemma.py`), and the agent then decides its width.
 - **KB2-0 on a T4 (2026-11-07): fast and exact, but not through the quality gate.** Six stacked rows made 2.006x
   today's tokens per second for Gemma 3 12B at 4 bit, bit for bit like each row alone, but the gate's main path
-  failed (perplexity ratio up to 1.177 at 95 %), so KB2 stopped by its rule (BACKLOG KB2). The agent's own gate
-  still decides on each machine; this card's result says it would reject the plan here.
+  failed (perplexity ratio up to 1.177 at 95 %), so KB2 stopped by its rule (BACKLOG KB2). KB2-D then traced the
+  failure to chunks without BOS, where every path is unstable, so the gate changed for every plan (GATE2), and
+  KB2-G gates the same plan again on BOS-led chunks.
