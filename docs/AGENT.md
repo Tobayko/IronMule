@@ -152,3 +152,7 @@ learning. Learning lives in `agent/` in the state directory, one file per bindin
 - **Tokens per second come first (owner, 2026-11-03).** Order cannot add them at a fixed capacity, so V-G12 was
   replaced before its data. The lever is stacking requests into one step: KB2 builds that plan for 4-bit Gemma 3
   (`ironmule/dense_gemma.py`), and the agent then decides its width.
+- **KB2-0 on a T4 (2026-11-07): fast and exact, but not through the quality gate.** Six stacked rows made 2.006x
+  today's tokens per second for Gemma 3 12B at 4 bit, bit for bit like each row alone, but the gate's main path
+  failed (perplexity ratio up to 1.177 at 95 %), so KB2 stopped by its rule (BACKLOG KB2). The agent's own gate
+  still decides on each machine; this card's result says it would reject the plan here.

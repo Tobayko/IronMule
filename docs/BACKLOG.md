@@ -2155,6 +2155,31 @@ per second (AG1, AG2). Stacking can, and it gives the agent a width that moves t
     are unchanged). The report now keeps the stage reached, the allocator at each stage and everything measured
     before a failure.
   - *Run 2* is the same KB2-0 under the same rules, (b) as amended above.
+- **Run 2: valid, does not pass; KB2 stops at its quality gate (2026-11-07; kernel `tobayko/ironmule-cuda-probe-kb2`
+  v2 at `9d388e9`, Kaggle T4, MLX 0.32.4, mlx-lm 0.31.3, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, about
+  26 minutes).** The run reached its end; the allocator peaked at 12.6 GB (11.1 GB during the native references
+  before any pool), so the fix held.
+  - **(a) passes.** Every row's logits were bit-identical alone and stacked: 144/144 steps at 3 rows, 384/384 at 8
+    (main pool) and 192/192 at 4 rows (long pool, past the window). The install probe matched as well.
+  - **(b) passes, narrowly.** The best width on the median curve is 6: six stacked rows cost 0.4985 of six of today's
+    single native steps (95 % 0.4979-0.4991, below 0.5), so **2.006x the tokens per second**. Five rounds agreed
+    within 1 ms. Step time by width, median ms: 48.8, 67.8, 85.1, 113.0, 122.1, 141.3, 190.3, 394.1 (widths 1-8);
+    today's native step 47.3. Recorded: at 8 rows the ratio is 1.042, slower than eight single steps (the smoke's
+    jump at 8 rows, now measured).
+  - **(c) fails on the main path.** Main, 16 x 512 tokens: ratio 0.984, 95 % 0.825-1.177, not below 1.005. Long, 4
+    chunks after a 1,536-token prefix: ratio 0.9994, 95 % 0.9950-1.0033, passes. The gate needs both.
+  - **(d), recorded:** at one row the plan's step is 1.033x today's native step (3.3 % slower). Its greedy tokens
+    matched today's for all 48 steps on 5 of 8 prompts and first differed at steps 14, 20 and 42 on the others.
+  - **Verdict by the fixed rule: does not pass as a whole. KB2 stops at (c) and goes to Tier 0.** The ledger entry
+    in the research repository is still owed.
+  - *Post hoc reading (after the data; it changes no verdict):* the main path's failure comes from 3 of 16 chunks.
+    13 differ from the reference by at most 0.12 nats a token, while chunk 1 is 0.95 worse, chunk 2 0.99 better and
+    chunk 4 0.25 better. Both signs is not a uniform loss of precision. The main chunks start mid-text with no prefix
+    and no BOS token, where Gemma 3's first position is known to carry outsized activations. The data cannot tell
+    whether that start makes both paths unstable, or whether the plan has a bug at a one-token prefill. Telling
+    them apart needs a diagnostic, not a re-gate: the per-token NLL of chunks 1, 2 and 4 under the plan, today's
+    native path and mlx-lm's unmodified bf16 path. A bug found there would be a new implementation, and that would
+    need a new gate, fixed before its data. The gate's text and chunking stay as fixed.
 
 ### KB1 — A batch-invariant bfloat16 row kernel for up to eight rows on pre-Ampere CUDA (opened 2026-10-29, before data)
 
@@ -3288,6 +3313,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **KB2 Gemma 3 4-bit stacked decode plan (2026-11-07).** KB2-0 run 2 (kernel `tobayko/ironmule-cuda-probe-kb2`
+  v2, commit `9d388e9`; see KB2 above): on one T4 with `gemma-3-12b-it-4bit` at `86cc6a8`, stacked rows were bit-exact
+  and six of them made 2.006x today's tokens per second (95 % bound 0.4991 against 0.5), but the quality gate's main
+  path read 0.984 with 95 % up to 1.177, not below 1.005 (three of 16 chunks diverge by up to 1 nat a token, in both
+  directions). KB2's rule stops it at (c). Re-open with a fixed implementation found by a diagnostic of those chunks,
+  re-gated under a protocol fixed before its data, or with a new model or card.
 
 - **TP1 Kaggle TPU as a decode device (2026-11-07).** Probe TP0 (kernel `tobayko/ironmule-tpu-probe` v1, commit
   `08c96d4`; see TP1 above): on one TPU v5e chip, the bf16 matrix products of one `Qwen3-1.7B` decode step,
