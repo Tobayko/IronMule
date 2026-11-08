@@ -124,8 +124,10 @@ On two T4s with `mlx-community/gemma-3-12b-it-4bit` the agent chose the Gemma st
 (AG5-G run 6, at `5f064c3`, before the review fixes of 2026-11-08). Its worker then failed under a spike: 8
 requests got `backend_unavailable`, and its service answered no request for the next 3 hours, so each one waited
 out its 3,600 s deadline. With fresh workers on the swapped cards it served 4 blocks with no failure. The cause
-is not known and the fault is not reproduced. Until it is fixed, that setup is not shown to be stable, and the run
-gives no gain (invalid by its rule).
+is not known and the fault is not reproduced; the run gives no gain (invalid by its rule). STAB3 (BACKLOG) fixed on
+this branch what its pattern points to, with local fault tests only: the service let 8 requests into a group
+while that plan had 6 slots, a stuck worker held its group up to twice the request timeout, and recovery could
+restart for good. Until AG5-R passes on the card, that setup is not shown to be stable.
 
 ### The serving mode it learns while serving (AG6)
 
@@ -247,8 +249,9 @@ STAB1 that stopped serving for good; now the server replaces the worker (at most
 identity only, old process reaped first): through three overload replays it served every window, the group in flight
 got explicit errors (5 requests), each replacement took about 13 s and no accepted request was lost. A SIGKILLed
 worker was replaced in 17.6 s with identical answers afterwards. Not changed: the memory growth (MEM2); a queued
-request can time out behind a group that holds the worker until its own deadline, and a grouped request's completion
-waits for its engine run (HOL1); past the accept limit a refused client often sees a connection reset instead of the
+request can still time out behind a group that holds the worker, and a grouped request's completion
+waits for its engine run (HOL1); since STAB3 a worker that sends nothing for 300 s while generating is retired then,
+and recovery ends after three restarts without a served request, in tests with stand-in workers only; past the accept limit a refused client often sees a connection reset instead of the
 429 (HTTP1). Not measured: other GPUs and models, the Metal path, `--engine rust2`, real user traffic.
 
 MEM2 (CUDA, one T4): MLX's cache of freed buffers, not held requests or CUDA graphs, filled the device under

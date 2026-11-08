@@ -14,7 +14,8 @@ message selects a fault:
 
 Anything else is served normally: max_tokens tokens whose text derives only from the message, so
 outputs are comparable across workers. `FAKE_STAB1_CONTROL` names a JSON file read at start:
-{"fail_start": true} exits before the handshake, {"digest": "<64 hex>"} changes the source identity.
+{"fail_start": true} exits before the handshake, {"start_delay": S} waits S seconds first (STAB3),
+{"digest": "<64 hex>"} changes the source identity.
 """
 
 from __future__ import annotations
@@ -77,6 +78,8 @@ def main() -> int:
                 control = json.load(stream)
         except (OSError, ValueError):
             control = {}
+    if control.get("start_delay"):  # STAB3: a start that takes this long before it succeeds or fails
+        time.sleep(float(control["start_delay"]))
     if control.get("fail_start"):
         sys.stderr.write("fake worker: start refused by control file\n")
         return 4

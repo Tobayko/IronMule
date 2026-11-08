@@ -311,5 +311,6 @@ def start_pool(store: Any, spec: Any, devices: list[str], make_backend: Callable
     for device, backend in zip(devices, backends):
         shard = service_type(store, backend=backend, spec=spec)
         shard.make_backend = (lambda device=device: make_backend(device))  # STAB1, on the same card
+        shard.label = device  # STAB3: names this shard in the stability log the shards share
         shards.append(shard)
     return DevicePool(shards, devices)

@@ -1343,49 +1343,48 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
   - Run 6 is the same AG5-G at the commit with that measurement, run once. If the plan's prefill is really about
     15 % slower, the medians show it, and the rule refuses again.
 - **AG5-G run 6 (2026-11-07/08, kernel v6 at `5f064c3`, two T4s, 11.3 session hours): invalid by the analysis
-  fixed before its data. The agent chose the stacked engine by itself for the first time. Its worker then failed in
-  the first phase's second block, and that phase served nothing more.** It is valid only for `5f064c3`: it ran
-  before REV1 (`3ae183c`, `3808343`, `4ba5550`) and the fixes after it, and confirms none of them.
+  implemented before its data. The agent chose the stacked engine by itself for the first time. Its worker then
+  failed in phase 0's block 1, and phase 0 served nothing more.** It is valid only for `5f064c3`: it ran before
+  REV1 (`3ae183c`, `3808343`, `4ba5550`) and every fix after it, and confirms none of them.
+  - *Identifiers:* as the artifacts number them (report `phases[].phase`, `rows[].block`). Phase 0 ran the
+    default path on card 0 and the agent on card 1, phase 1 the reverse; this entry's protocol text below calls
+    them phases 1 and 2. Blocks 0-3 are phase 0 (load 0.8 bursts, 0.8 spike, 3.0 bursts, 3.0 spike), blocks 4-7
+    phase 1 in the same order.
   - *The agent's setup:*
     - the numeric plan `native` (0.200 of stock, quality inside 1.005);
     - the stacked measurement ran to its end in 1,102 s, peaking at 13.28 GB;
     - the gate read 0.9988 (95 % 0.9967-1.0008), as in runs 4 and 5.
-  - *The medians settled run 5's first token:*
-    - The long prompt's first token was 0.718 s on the plan against 0.705 s natively, 1.02x (samples 0.714-0.725 s
-      and 0.700-0.706 s). Run 5's single timings had read 1.18x.
+  - *First token, by run 5's post hoc median method:* on the long prompt 0.718 s on the plan against 0.705 s
+    natively, 1.02x (samples 0.714-0.725 s and 0.700-0.706 s). That is one measurement in one session. It does not
+    show that run 5's 1.18x, two single timings in another session, was noise alone.
     - One request alone made 0.959x the native path (19.41 against 20.24 tokens per second).
     - Width 6 made 46.76, 2.31x; the curve was 19.4, 32.0, 36.0, 39.3, 44.6, **46.8**, 39.7 and 21.2 for widths 1
       to 8.
     - So the agent took the stacked engine at width 6.
-  - *What failed (phase 1, the agent's engine on card 1):*
+  - *What failed (phase 0, the agent's engine on card 1):*
     - Block 0 (load 0.8, bursts) was complete.
-    - In block 1 (load 0.8, spike) the first request was answered, 256 tokens in 12.1 s. The 8 that arrived in the
-      next 0.7 s got no token and failed with `backend_unavailable` at 11.8-12.4 s, as the first one ended. The last
-      3 waited out their 3,600 s deadline.
-    - In blocks 2 and 3 (load 3.0) all 24 requests waited out their deadline. That is about 3 of the run's hours.
+    - In block 1 (load 0.8, spike) request 0 was answered, 256 tokens in 12.1 s, at the speed of one row alone.
+      Requests 1-8, which arrived in the next 0.7 s, got no token and failed with `backend_unavailable` at
+      11.8-12.4 s, as request 0 ended. Requests 9-11 waited out their 3,600 s deadline.
+    - In blocks 2 and 3 (load 3.0) all 24 agent requests waited out their deadline.
     - The default path never failed, so none was censored.
-    - In phase 2, with fresh workers and the cards swapped, all 4 blocks were complete with no failure.
-  - *Cause: not in the run's artifacts.*
-    - The harness keeps each request's outcome. The product's worker log and stability notes stay in the session's
-      state directory, which is not in the output.
-    - The service is meant to replace a lost worker at most 3 times in 10 minutes, each start bounded at 600 s, and
-      then to refuse new requests at once (STAB1). Requests that each wait an hour, for 3 hours, are not that path
-      as written. Not reproduced yet.
-  - *Verdict: invalid.* The analysis fixed before the data (`analyse_ag4c`, and its test of a voided block) makes
-    any failed agent request invalidate the run. This entry's text, "a failed agent request voids its block;
-    fewer than two complete blocks make the run invalid", can be read as allowing a valid run on the 5 complete
-    blocks. The discrepancy is reported here, and the code's verdict stands.
-  - *Recorded, no decision.* Over the 5 complete blocks (1 of phase 1, 4 of phase 2):
-    - the agent made 1.742x the default's tokens per second (95 % 1.358-2.103), 1.876x over phase 2's 4 blocks;
+    - In phase 1, with fresh workers and the cards swapped, blocks 4-7 were complete with no failure, on the same
+      arrivals.
+    - The run took 11.3 session hours where about 1.6 were planned; the artifacts hold no per-block times.
+  - *Cause: not in the run's artifacts.* The harness kept each request's outcome; the product's stability log
+    (with each worker exit's last stderr) stayed in a temporary state directory. STAB3 below takes the cause
+    apart on today's code and adds what the next run exports.
+  - *Verdict: invalid, unchanged.* The analysis implemented before the data (`analyse_ag4c`, and its test of a
+    voided block) makes any failed agent request invalidate the run. This entry's text read more loosely ("a failed
+    agent request voids its block; fewer than two complete blocks make the run invalid"); for later runs it now
+    says what the code does (below). That change does not loosen run 6's verdict.
+  - *Recorded, a descriptive subset only:* over the 5 complete blocks (block 0 of phase 0 and blocks 4-7 of
+    phase 1), not a result of the run:
+    - the agent made 1.742x the default's tokens per second (95 % 1.358-2.103), 1.876x over blocks 4-7;
     - its mean first token was 0.227x the default's, and its 95th percentile 0.321x;
     - the default's A/A noise was 0.4 % in tokens per second and 1.0 % in the mean first token.
-  - *Next for AG5:* this is a stability defect in the agent's own chosen setup, and it comes before any gain.
-    1. Reproduce block 1's arrivals, several requests joining a running Gemma stacked batch at width 6, with the
-       worker's and the service's logs kept in the output.
-    2. Find why the service then served nothing for hours, and fix it.
-    3. Rerun AG5-G at the fixed commit.
-    The changes in `3808343` touch the join path (each joiner's cancel check), but nothing shows they bear on
-    this failure. The ledger entry is still owed.
+  - *Next for AG5:* STAB3's local fixes, then its bounded repro on the card (AG5-R), then AG5-G at the fixed
+    commit. The ledger entry is still owed.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's
@@ -1402,8 +1401,11 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
 - **Decision (AG4-C's analysis, unchanged):** pass if the agent's tokens per second over the default's (the mean of
   its two runs), paired by block, has its 2.5 % bound above 1, and the mean and 95th-percentile first token are no
   worse than the default's beyond the default's A/A noise.
-  - A failed agent request voids its block. The default path's failures are censored at the 3,600 s deadline, as
-    in AG4-C run 3. Fewer than two complete blocks make the run invalid.
+  - Any failed agent request makes the run invalid, as `analyse_ag4c` does and its test checks (aligned
+    2026-11-08 for runs after run 6; this wording replaced "a failed agent request voids its block; fewer than two
+    complete blocks make the run invalid"). Incomplete blocks are listed, and the complete blocks' ratios are
+    reported only as a labelled descriptive subset (`subset`). The default path's failures are censored at the
+    3,600 s deadline, as in AG4-C run 3. Fewer than two complete blocks give no subset either.
 - *Recorded, no decision:* the width the agent chose and its curve, the ratios per load and per phase, and the
   requests that joined a running group.
 - A pass is the agent's gain on this card, model and traffic. It ships opt-in (`--agent on`).
@@ -1695,6 +1697,120 @@ and the forced modes.
 
 If either fails, AG7 goes to Tier 0 and the dreaming agent stays as LIMITS bounds it. *Cost:* about 3 session
 hours, to be stated again before a kernel is pushed.
+
+### STAB3 — A worker lost under a spike ends in bounded recovery or a prompt 503 (owner request 2026-11-08; local part shipped, hardware gate pending)
+
+**Why.** AG5-G run 6 (AG5): the agent's Gemma stacked engine at width 6 failed under a spike, 8 joining requests got
+`backend_unavailable`, and its service then answered nothing for hours, each request waiting out its 3,600 s
+deadline. The product's logs, which would have named the cause, were not in the run's output. The owner set two
+questions apart: (A) what triggered the failure, (B) why requests then hung; and a stability gate before AG5-G or
+AG7 runs again.
+
+**A. What triggered `backend_unavailable`: narrowed, not proven.**
+- *How it arises (code, today and at `5f064c3`):* a joiner without a frame gets "worker stream ended without
+  completion" (`backend_unavailable`) when its group's `complete_batch` raises after other members finished. That
+  raise also marks the worker unusable and kills it. Request 0's done, then 8 such failures as it ended, is that
+  path. What raised is not in the artifacts. The candidates are a worker `error` event, a worker exit, or a
+  batch-protocol check.
+- *A defect that produces exactly this pattern, confirmed and fixed:*
+  - The service let up to 8 open members into a stacked-engine group (`STREAM_GROUP_REQUESTS`). The agent's
+    width gave the plan only 6 slots.
+  - A run that starts more rows than free slots raises "no free slot in the dense plan's pool" in prefill. The
+    worker reports `generation_error`, and the client retires the worker with its whole group.
+  - Requests 1-8 were exactly the 8 the service could hand over once request 0 had ended; requests 9-11 stayed
+    queued. The Qwen plan never met this, since its width was 8.
+  - Whether it was run 6's trigger is not shown. It needs the joiners to have waited for request 0's run to end,
+    which request 0's single-row speed suggests, but nothing explains why they did.
+- *Fixes:*
+  - a stacked engine's group holds no more members than its width (`MLXWorkerClient.batch_capacity`);
+  - a worker run starts at most the pool's free slots, and the rest run right after it, in order;
+  - a run with no free slot fails by name instead of waiting.
+  - Tests fail on the previous code: `test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots` (8 rows
+    into 6 slots gave `generation_error`) and `test_the_stacked_engines_group_holds_no_more_members_than_its_width`.
+- A repaired recovery says nothing about this cause; AG5-R tests it on the card.
+
+**B. Why requests then hung: three confirmed defects, fixed.**
+- *B1, the restart budget gave itself back by time alone.* Recovery counted restarts in the last 600 s, while one
+  start may take up to 600 s (the dense startup timeout). Starts that failed slowly fell out of the window before
+  the next one counted, so recovery never gave up. Meanwhile admission stayed open and every admitted request
+  waited out its deadline.
+  - Counter-check on the previous code, a start failing after 0.5 s with a 0.3 s window and 8 s deadlines: 14
+    attempts in 8 s, still `restarting`, and the waiting request timed out.
+  - *Fix:* besides the window, at most 3 restarts in a row without a request served in between. Only a served
+    request gives the budget back, never time or a ready handshake alone.
+  - On the fixed code: refused after 3 attempts, and the waiting request got `503` after 1.6 s.
+- *B2, a live worker without progress held its group up to twice the request timeout* (its last deadline plus a
+  full request timeout), and the requests behind it waited out their deadlines. Counter-check on the previous
+  code: both requests stayed open their whole 8 s deadline.
+  - *Fix:* a generation that sends nothing for `STALL_TIMEOUT_S` (300 s) fails as `backend_unavailable`; the
+    worker is retired and replaced. 300 s is far above a long prefill or a new decode body's compile on the T4.
+- *B3, admission during recovery was implicit.* `ready` read true while a worker was being replaced. Now `ready`
+  is a worker that answered its handshake, and `accepting` says whether a request is admitted.
+  - *The rule:* during recovery requests are admitted up to the queue bound and wait at most until it ends. Once
+    it is refused, waiting and new requests get `503` at once.
+  - Recovery is bounded by 3 starts, each within its startup timeout (600 s for the stacked engine), plus pauses
+    of 0, 5 and 20 s.
+- *Tests (stand-in worker through the real client, transport, scheduler and admission; short timeouts):*
+  - a worker lost while requests join: each request ends exactly once, those in flight fail at once, a later one
+    is served by the replacement;
+  - a live worker without progress: retired at the stall limit (1 s in the test), the request behind it served;
+  - slow-failing restarts: the budget is used up, the waiting request fails at once, a new one is refused at
+    once;
+  - a successful restart: new requests are served, and four losses without a served request end recovery even
+    with a window too short to count.
+  - The three timing tests fail on the previous code. The join test passes on both: the stand-in has no slot
+    limit, so it shows the bounded ending, not cause A.
+- *Not changed:* a grouped request still completes with its engine run (HOL1), and a request may still wait for the
+  worker's startup during recovery.
+
+**Diagnostics, exported as they happen** (`training/rl2_headroom.py`, every plan through `main`):
+- `diagnostics/harness.jsonl` beside the report: run start with commit and versions, phase and block starts and
+  ends with each request's outcome, error and times, each shard's admission and worker state, idle-wait timeouts,
+  and a failed run's traceback. Each line is synced at once.
+- `diagnostics/ironmule-state/`: the product's own state for AG5-G, AG5-R, AG6-H and AG6-Q, so its
+  `stability-log.jsonl` is in the output. It holds admission, groups, joins, ends, worker exits with the worker's
+  last stderr (a failure's type and frames), each restart's start and outcome, and every line's shard and wall
+  time.
+- The kernel passes its commit, and the report keeps it.
+- *Checked with a deliberate failure:* a worker crash under a request, then the run itself raising. The output still
+  held every one of these (`test_diagnostics_reach_the_output_folder_when_the_worker_is_lost_and_the_run_then_aborts`).
+
+**AG5-R — the bounded repro on the card (fixed now, before its data; needs the owner's approval for GPU time).**
+- *Setup:* one Kaggle T4 x2 session, the agent's run-6 worker forced on card 1 (`dense_stacked`, width 6, the
+  checkpoint's own 4-bit weights, as run 6 started it), `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`, no setup
+  measurement, a 600 s request deadline, `--plan ag5r`.
+- *Blocks:*
+  - phase 0's block 0 (load 0.8, bursts) and block 1 (load 0.8, spike), rebuilt from trace 430 and phase 0's
+    capacity of 0.0871 requests a second. The rebuilt arrivals equal run 6's recorded ones to the microsecond, and
+    the prompts are the same short questions.
+  - Then block 1 four times more, for a sporadic fault, and 8 requests at once, more than the 6 slots.
+- *Deviations from run 6:* no default worker on card 0, no setup measurement before the start, a 600 s deadline
+  instead of 3,600 s, and the harness of this commit.
+- *R1, the cause, at the old product:* kernel `ag5r` installing `5f064c3` with this harness. Hypothesis A1: more
+  rows than slots retire the worker.
+  - *Expected if A1 holds:* `eight-at-once` fails with `backend_unavailable`, and the worker's exit tail shows a
+    `RuntimeError` raised in `dense_plan.py` `prefill`.
+  - Whether block 1 itself reproduces run 6 is recorded. A clean block 1 does not exclude a sporadic fault.
+- *R2, the gate, at the fixed commit:*
+  - *Accepted* only if every request of every block is answered (`analyse_ag5r`).
+  - *Controlled:* every failure ended with an error inside its deadline. It is recorded, and does not open AG5-G.
+  - *Hung:* a request waited out its deadline. STAB3 then fails.
+- *Bounds:*
+  - each kernel about 0.35 session hours (install, download, the worker's start of up to 600 s, about 8 minutes
+    of blocks);
+  - no block starts after an hour, so at most about 1.6 hours each;
+  - R1 and R2 together about 0.7 session hours expected, 3.2 at most;
+  - each one ends when its blocks are done, at its time limit, or when the worker does not start.
+- *Exported:* the report, `diagnostics/harness.jsonl` and `diagnostics/ironmule-state/stability-log.jsonl`.
+
+**Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
+invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
+session hours.
+- *Which version each piece of evidence belongs to:*
+  - run 6 describes `5f064c3`;
+  - the local fault tests check the fixed commit's failure handling;
+  - AG5-R checks this load case on the card;
+  - a new AG5-G checks the whole comparison.
 
 ### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
 

@@ -139,6 +139,9 @@ class ProductService:
     _starting: Any = None
     _recovery_refused: str | None = None
     _restarts: list[float] = []  # replaced per instance before any append
+    # STAB3: restarts since a request last completed. Only a served request proves a recovery, so the budget is
+    # not given back by time alone (a slow-failing start took longer than the window and the budget never ran out).
+    _unproven_restarts = 0
 
     def __init__(self, store, *, backend=None, spec: ModelSpec | None = None):
         self.store = store
@@ -182,7 +185,12 @@ class ProductService:
             optimization = {"stage": "unavailable", "engine_started": False,
                             "activation_allowed": False, "error_code": "optimization_status_invalid"}
         with self._lock:
-            result = {"service": "ironmule", "ready": bool(not self._closed.is_set() and self._backend_ready()),
+            accepting = bool(not self._closed.is_set() and self._backend_ready())
+            # STAB3: `ready` is a worker that answered its ready handshake (or idle work between workers, START1),
+            # not a worker being replaced; `accepting` says whether a request is admitted now.
+            result = {"service": "ironmule", "accepting": accepting,
+                    "ready": bool(accepting and (getattr(self, "_idle_busy", False)
+                                                 or (self.backend is not None and self.backend.ready))),
                     "mode": self.settings["mode"],
                     "execution": ("numeric@dense" if getattr(self.backend, "engine_configuration", None) == "dense_stacked"
                                   else "exact" if getattr(self.backend, "compute_dtype", None) is None
@@ -242,8 +250,10 @@ class ProductService:
         exit adds the worker's last stderr (4 KiB), which can hold library output: the log is private
         state like the serving log, and published summaries leave that tail out."""
         log = self.stability_log
-        if log is not None:
-            log.append({"t": round(time.monotonic(), 4), "event": event, **fields})
+        if log is not None:  # STAB3: a pool's shards share one log, so each line names its shard
+            label = getattr(self, "label", None)
+            log.append({"t": round(time.monotonic(), 4), "unix": round(time.time(), 3), "event": event,
+                        **({"shard": label} if label is not None else {}), **fields})
 
     def _stability(self) -> dict[str, Any]:
         """STAB1: what tells a dead worker, a worker without progress, an incomplete group and blocked
@@ -494,6 +504,8 @@ class ProductService:
             refused = "the old worker's exit is not confirmed"
         elif len(self._restarts) >= MAX_RESTARTS:
             refused = f"{MAX_RESTARTS} worker restarts within {RESTART_WINDOW_S:.0f} s"
+        elif self._unproven_restarts >= MAX_RESTARTS:
+            refused = f"{MAX_RESTARTS} worker restarts and no request served since the first"
         if refused is not None:
             self._recovery_refused = refused
             self.note("worker_restart", outcome="refused", reason=reason, refused=refused)
@@ -506,6 +518,9 @@ class ProductService:
                 outcome = "abandoned: service closed"
                 return
             self._restarts.append(time.monotonic())
+            self._unproven_restarts += 1
+            self.note("worker_restart_start", reason=reason, attempt=len(self._restarts),
+                      unproven=self._unproven_restarts)
             with self._lock:
                 if self._closed.is_set():
                     outcome = "abandoned: service closed"
@@ -1119,6 +1134,7 @@ class ProductService:
             raise RequestCancelled("response delivery interrupted")
         with self._lock:
             self._completed += 1
+            self._unproven_restarts = 0  # STAB3: a served request proves the worker serving now
         session.outcome = "ok"
         session.tokens = int(done.get("completion_tokens", generated) or 0)
         session.prompt_tokens = int(done.get("prompt_tokens", prompt_tokens) or 0)

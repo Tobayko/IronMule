@@ -179,17 +179,24 @@ The model runs in a separate worker process. When it dies, reports a generation 
 - every request in its group ends with an explicit error: `503 backend_unavailable`
   before the first token, or an SSE error frame and `[DONE]` after it. A partly streamed
   answer is never continued, restarted or repeated;
-- the server replaces the worker, but only after the old process has been reaped, at most
-  three times in ten minutes (0, 5 and 20 s apart), and only with a worker that reports the
-  same model, revision, device, variant, sources and engine profile. Requests arriving
-  meanwhile wait in the queue under their own deadlines;
-- when recovery is refused, `/health` says why, `ready` is false and requests get `503`
-  at once. Restart the server to try again.
+- the server replaces the worker, but only after the old process has been reaped, and only
+  with a worker that reports the same model, revision, device, variant, sources and engine
+  profile. It tries at most three times in ten minutes (0, 5 and 20 s apart), and at most
+  three times in a row without a request served in between, however long each start takes
+  (STAB3: before, a start slower than the window let recovery go on for good). Each start is
+  bounded by the worker's startup timeout (600 s for `dense`), so recovery ends within three
+  of them plus the pauses;
+- while it does, `/health` reports `ready: false` and `accepting: true`: requests are still
+  admitted, up to the queue bound, and each waits at most until recovery ends, served by the
+  replacement or answered `503` then;
+- when recovery is refused, `/health` says why, `ready` and `accepting` are false, waiting
+  requests get `503` at once and new ones too. Restart the server to try again.
 
 Each request's own deadline (`request_timeout_s`, 120 s by default) ends only that
-request. The worker is retired as unresponsive only when it has not finished a group a
-full request timeout after the group's last deadline; with no request timeout there is no
-such bound. In a group, a request's last token and completion arrive when the worker's
+request. A worker that is alive but sends nothing for 300 s while it generates is retired as
+without progress (STAB3), its group ends with `503` and it is replaced; before, it was retired
+only a full request timeout after the group's last deadline, and every request behind it waited
+out its own deadline. In a group, a request's last token and completion arrive when the worker's
 engine run ends, so a short request grouped with a long one can wait for it.
 
 `/health` adds `worker` (`state`: ready, restarting, lost, refused or unavailable; `pid`,
@@ -198,7 +205,9 @@ and `scheduler_alive`), `in_flight` (the running group's width, open members, ag
 since the worker's last event), `groups_started` and `oldest_queued_s`. The state
 directory keeps a bounded `stability-log.jsonl` (4 MiB, older half dropped): admissions,
 rejections, groups, every request's end and error code, how each HTTP response ended,
-worker exits with the last 4 KiB of the worker's stderr, and restarts. It holds ids, times
+worker exits with the last 4 KiB of the worker's stderr (a failure's type and frames, never its
+message), and each restart's start and outcome. Every line carries a monotonic and a wall time,
+and, when several workers share the state directory, the shard it comes from. It holds ids, times
 and codes, no prompt or answer text; the stderr tail can hold library messages, so keep the
 file private like the rest of the state directory.
 

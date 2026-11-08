@@ -666,6 +666,46 @@ def set_arm(pool: Any, name: str) -> None:
         shard.order = arm_order(name)
 
 
+DIAGNOSTICS: Path | None = None  # STAB3: set by `main` to a folder beside the report, exported with it
+
+
+def _diag(event: str, **fields: Any) -> None:
+    """STAB3: one harness event (phase, block, arm, worker states) appended to `DIAGNOSTICS/harness.jsonl` and
+    synced at once, so the file holds everything up to an abort or a lost worker. No prompt or answer text."""
+    if DIAGNOSTICS is None:
+        return
+    try:
+        DIAGNOSTICS.mkdir(parents=True, exist_ok=True)
+        line = json.dumps({"t": round(time.monotonic(), 4), "unix": round(time.time(), 3), "event": event, **fields},
+                          sort_keys=True, default=str)
+        with (DIAGNOSTICS / "harness.jsonl").open("a") as stream:
+            stream.write(line + "\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+    except OSError:
+        pass  # diagnostics never stop a run
+
+
+def _state_dir(work: Path) -> Path:
+    """STAB3: the product's state, where its stability and serving logs are written as they happen: beside the
+    report (exported) when the harness runs with one, else in the work folder."""
+    return DIAGNOSTICS / "ironmule-state" if DIAGNOSTICS is not None else work / "rl2h-state"
+
+
+def _shards(pool: Any) -> list[dict[str, Any]]:
+    """STAB3: each shard's admission and worker state, for the diagnostics."""
+    out = []
+    for shard in getattr(pool, "shards", []):
+        try:
+            health = shard.health()
+            out.append({"shard": getattr(shard, "label", None), "accepting": health.get("accepting"),
+                        "ready": health.get("ready"), "worker": health.get("worker"),
+                        "queued": health.get("queued_requests"), "active": health.get("active_requests")})
+        except Exception as exc:  # noqa: BLE001 - a diagnostic, never a failure
+            out.append({"shard": getattr(shard, "label", None), "error": type(exc).__name__})
+    return out
+
+
 def wait_idle(pool: Any, timeout_s: float = 120) -> bool:
     until = time.monotonic() + timeout_s
     while time.monotonic() < until:
@@ -2415,10 +2455,16 @@ def measure_ag4c(pool: Any, model: str, deadline_s: float, *, traces: Any = AG4C
             items = shorten(trace_h2(level, t, load * capacity, requests, (limit,)))
             for arm, run, index in (("default", 0, 0), ("agent", 0, 1), ("default", 1, 0)):
                 pool.router = ForcedRoute(index)
-                wait_idle(pool, timeout_s=deadline_s)
+                if not wait_idle(pool, timeout_s=deadline_s):
+                    _diag("wait_idle_timeout", block=block, arm=arm, run=run, shards=_shards(pool))
+                _diag("block_start", block=block, level=level, trace=t, load=load, arm=arm, run=run,
+                      offsets_s=[item["offset_s"] for item in items], shards=_shards(pool))
                 rows = replay(pool, model, items, deadline_s)
                 for item, row in zip(items, rows):
                     row["offset_s"] = item["offset_s"]
+                _diag("block_end", block=block, arm=arm, run=run, shards=_shards(pool),
+                      outcomes=[[row.get("outcome"), row.get("error"), row.get("first_s"), row.get("end_s")]
+                                for row in rows])
                 report["rows"].append({"level": level, "trace": t, "arm": arm, "run": run, "block": block,
                                        "requests": rows})
                 if on_row is not None:
@@ -2469,6 +2515,9 @@ def analyse_ag4c(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     no_worse = all(v["ratio"] <= 1 + noise[key] for key, v in ttft.items())
     out.update(valid=not problems, problems=problems, aa_noise=noise, agent_tokens_per_s=tps, agent_ttft=ttft,
                passes={"tokens_per_s": gain, "ttft_no_worse": no_worse})
+    if problems:  # STAB3: the rule as coded and tested from the start; the ratios are then a subset, not a result
+        out["subset"] = (f"descriptive only: {len(complete)} complete blocks of {len(blocks)}; any failed agent "
+                         "request makes the run invalid")
     out["verdict"] = ("invalid" if problems else "pass: the agent's own setup beats the default here"
                       if gain and no_worse else "fail")
     return out
@@ -2747,7 +2796,7 @@ def _route_paths(model: str, work: Path, plan: str, on_row: Any) -> tuple[dict[s
         on_row(report)
     if setup["engine"] != "route":
         return {**report, "stopped": f"the agent's setup is {setup['engine']}, not route: {setup['reason']}"}, setup, None
-    state = work / "rl2h-state"
+    state = _state_dir(work)
     _ironmule("setup", "--mode", "server", state=state)
     added = _ironmule("models", "add", model, state=state)
     if added.get("returncode") != 0:
@@ -3130,7 +3179,7 @@ def run_ag5g(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
         return {**report, "stopped": f"the agent's setup is {setup['engine']}, not the stacked engine: "
                                      f"{setup['reason']}"}
     width = int(setup["width"])
-    state = work / "rl2h-state"
+    state = _state_dir(work)
     _ironmule("setup", "--mode", "server", state=state)
     added = _ironmule("models", "add", model, state=state)
     if added.get("returncode") != 0:
@@ -3145,6 +3194,8 @@ def run_ag5g(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     loads, levels, traces = ((AG5G_LOADS[-1],), AG5G_LEVELS[:1], AG5G_TRACES) if smoke else (
         AG5G_LOADS, AG5G_LEVELS, AG5G_TRACES)
     for phase, (default_card, agent_card) in enumerate(((devices[0], devices[1]), (devices[1], devices[0]))):
+        _diag("phase_start", phase=phase, default_card=default_card, agent_card=agent_card, width=width,
+              setup={k: setup.get(k) for k in ("engine", "compute_dtype", "width", "reason")})
         makers = [lambda card=default_card: MLXWorkerClient(spec, compute_dtype="native", cuda_device=card),
                   lambda card=agent_card: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=card,
                                                           **_engine_options("dense", width))]
@@ -3171,8 +3222,131 @@ def run_ag5g(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
                 if on_row is not None:
                     on_row(report)
         finally:
+            _diag("phase_end", phase=phase, shards=_shards(pool))
             pool.close()
     return report
+
+
+# ---------------------------------------------------------------- AG5-R: run 6's spike again, with diagnostics
+
+AG5R_CAPACITY_RPS = 0.08705814738877654  # run 6's phase 0 calibration, so its arrivals come back exactly
+AG5R_WIDTH = 6                           # the width the agent chose in run 6
+AG5R_SPIKE_REPEATS = 4                   # the spike block again, for a sporadic fault
+AG5R_DEADLINE_S = 600.0                  # each request's deadline here (run 6: 3,600 s)
+AG5R_BUDGET_S = 3600.0                   # no block starts after an hour
+
+
+def ag5r_blocks(capacity: float = AG5R_CAPACITY_RPS, requests: int = AG5G_REQUESTS,
+                limit: int = AG5G_LIMIT, repeats: int = AG5R_SPIKE_REPEATS) -> list[tuple[str, list[dict[str, Any]]]]:
+    """AG5-R's blocks: run 6's phase 0 blocks 0 (load 0.8, bursts) and 1 (load 0.8, spike), rebuilt from trace 430
+    and phase 0's capacity, short prompts as in AG5-G; the spike `repeats` times more; then 8 requests at once,
+    more than the 6 slots the agent's width gives the plan."""
+    def short(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [{**item, "long": False} for item in items]
+
+    bursts = short(trace_h2(1, AG5G_TRACES[0], 0.8 * capacity, requests, (limit,)))
+    spike = short(trace_h2(2, AG5G_TRACES[0], 0.8 * capacity, requests, (limit,)))
+    eight = [{**item, "offset_s": 0.0} for item in spike[:8]]
+    return ([("phase0-block0", bursts), ("phase0-block1", spike)]
+            + [(f"phase0-block1-again-{k}", spike) for k in range(1, repeats + 1)] + [("eight-at-once", eight)])
+
+
+def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, Any]]]], deadline_s: float, *,
+                 budget_s: float = AG5R_BUDGET_S, on_row: Any = None) -> dict[str, Any]:
+    """Each block through the agent's one path, the card idle between blocks; every block's outcomes and the
+    shard's worker state go to the report and to the diagnostics as they happen."""
+    started = time.monotonic()
+    report: dict[str, Any] = {"blocks": [], "deadline_s": deadline_s, "budget_s": budget_s}
+    for name, items in blocks:
+        if time.monotonic() - started > budget_s:
+            report["time_cut"] = {"before": name, "elapsed_s": time.monotonic() - started}
+            _diag("time_cut", before=name)
+            break
+        if not wait_idle(pool, timeout_s=deadline_s):
+            _diag("wait_idle_timeout", block=name, shards=_shards(pool))
+        _diag("block_start", block=name, offsets_s=[item["offset_s"] for item in items], shards=_shards(pool))
+        began = time.monotonic()
+        rows = replay(pool, model, items, deadline_s)
+        for item, row in zip(items, rows):
+            row["offset_s"] = item["offset_s"]
+        shards = _shards(pool)
+        _diag("block_end", block=name, shards=shards,
+              outcomes=[[row.get("outcome"), row.get("error"), row.get("first_s"), row.get("end_s")] for row in rows])
+        report["blocks"].append({"block": name, "requests": rows, "wall_s": time.monotonic() - began,
+                                 "shards": shards})
+        if on_row is not None:
+            on_row(report)
+    report["elapsed_s"] = time.monotonic() - started
+    return report
+
+
+def analyse_ag5r(report: dict[str, Any]) -> dict[str, Any]:
+    """AG5-R as fixed in BACKLOG before its data. Accepted (the stability gate before AG5-G is run again) only if
+    every request of every block is answered. Otherwise: `controlled` if every failed request ended with an error
+    well inside its deadline (none timed out), `hung` if any waited out its deadline."""
+    blocks = report.get("blocks") or []
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag5r.analysis.v1", "blocks": [],
+                           "time_cut": report.get("time_cut")}
+    for block in blocks:
+        rows = block["requests"]
+        failed = [row for row in rows if row.get("outcome") != "ok"]
+        out["blocks"].append({"block": block["block"], "ok": len(rows) - len(failed), "failed": len(failed),
+                              "errors": sorted({row.get("error") or row.get("outcome") for row in failed}),
+                              "latest_end_s": max([row.get("end_s") or 0.0 for row in rows] or [0.0]),
+                              "worker": (block.get("shards") or [{}])[0].get("worker")})
+    if report.get("stopped") or report.get("failed") or not blocks:
+        return {**out, "verdict": f"not run: {report.get('stopped') or report.get('failed') or 'no block'}"}
+    failures = [row for block in blocks for row in block["requests"] if row.get("outcome") != "ok"]
+    timeouts = [row for row in failures if row.get("outcome") == "timeout"]
+    out["verdict"] = ("accepted: every request of every block was answered" if not failures and not out["time_cut"]
+                      else "hung: a request waited out its deadline" if timeouts
+                      else "controlled: requests failed, each with an error inside its deadline")
+    return out
+
+
+def run_ag5r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG5-R on one card: the agent's run-6 setup forced (the stacked engine at width 6 on the native plan, no
+    setup measurement), run 6's phase 0 card, and `ag5r_blocks`, with the product's logs exported."""
+    from huggingface_hub import snapshot_download
+
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.cli import _engine_options
+    from ironmule_product.device_pool import cuda_devices, start_paths
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+
+    revision = Path(snapshot_download(model, revision=AG5G_REVISION if model == AG5G_MODEL else None,
+                                      allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
+                                                      "tokenizer*"])).name
+    devices = cuda_devices()
+    card = devices[1] if len(devices) > 1 else (devices or [None])[0]  # run 6's phase 0 ran the agent on card 1
+    report: dict[str, Any] = {"plan": "ag5r", "model": model, "revision": revision, "card": card,
+                              "width": AG5R_WIDTH, "setup": "forced: dense, native, width 6 (run 6's own choice)"}
+    if on_row is not None:
+        on_row(report)
+    state = _state_dir(work)
+    _ironmule("setup", "--mode", "server", state=state)
+    added = _ironmule("models", "add", model, state=state)
+    if added.get("returncode") != 0:
+        return {**report, "failed": "models add", "added": added}
+    store = ProductStore(state)
+    store.set_request_timeout(int(AG5R_DEADLINE_S))
+    spec = store.model(model)
+    maker = lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=card,  # noqa: E731
+                                    **_engine_options("dense", AG5R_WIDTH))  # exactly run 6's agent worker
+    _diag("start", card=card, width=AG5R_WIDTH)
+    try:
+        pool = start_paths(store, spec, [maker], [f"{card}:agent"], ProductService, ForcedRoute(0))
+    except Exception as exc:  # noqa: BLE001 - recorded: the worker did not come up
+        _diag("start_failed", error=repr(exc)[:500])
+        return {**report, "failed": f"the stacked engine did not start: {exc!r}"[:500]}
+    try:
+        measured = measure_ag5r(pool, model, ag5r_blocks(**({"requests": 2, "limit": 8, "repeats": 0} if smoke
+                                                            else {})), AG5R_DEADLINE_S,
+                                on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
+    finally:
+        pool.close()
+    return {**report, **measured}
 
 
 def analyse_ag5g(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
@@ -3219,7 +3393,8 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
     if plan == "x1":  # `run_x1` starts its per-device children from this file's own source
         encoded = base64.b64encode(source.encode()).decode()
         body = f"_EMBEDDED_SOURCE = __import__('base64').b64decode({encoded!r}).decode()\n" + body
-    arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, *(extra or [])]
+    arguments = ["--out", "/kaggle/working/rl2_headroom_report.json", "--plan", plan, "--commit", commit,
+                 *(extra or [])]
     entry = f"\nsys.exit(main({arguments!r}))\n"
     name = "ironmule-rl2-headroom" + ("" if plan == "h1" else f"-{plan}") + suffix
     extra_name = "cpu" if cpu else "cuda"
@@ -3234,6 +3409,15 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
 
 
 def main(argv: Iterable[str] | None = None) -> int:
+    global DIAGNOSTICS
+    previous = DIAGNOSTICS
+    try:
+        return _main(argv)
+    finally:
+        DIAGNOSTICS = previous  # a run's diagnostics folder ends with the run (the tests run several in one process)
+
+
+def _main(argv: Iterable[str] | None = None) -> int:
     child = os.environ.get(X1_CHILD)
     if child:  # an X1 child pinned to one device by `run_x1`
         result = exactness_on_device(os.environ["IRONMULE_X1_MODEL"], smoke=bool(os.environ.get("IRONMULE_X1_SMOKE")))
@@ -3243,7 +3427,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "ag6q", "x1"),
+                                           "ag1", "ag4r", "ag4c", "ag5g", "ag5r", "ag6h", "ag6q", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -3288,13 +3472,16 @@ def main(argv: Iterable[str] | None = None) -> int:
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
                  "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h,
-                 "ag6q": analyse_ag6q}.get(inner.get("plan"), analyse)
+                 "ag6q": analyse_ag6q, "ag5r": analyse_ag5r}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
         parser.error("--out is required to run")
+    global DIAGNOSTICS
+    DIAGNOSTICS = args.out.parent / "diagnostics"  # STAB3: exported with the report, written as the run goes
     report: dict[str, Any] = {"schema": "ironmule.rl2_headroom.v1", "plan": args.plan, "smoke": args.smoke,
-                              "started_unix": time.time(), "env": environment()}
+                              "started_unix": time.time(), "env": environment(), "commit": args.commit}
+    _diag("run_start", plan=args.plan, commit=args.commit, env=report["env"])
 
     def save(partial: dict[str, Any] | None = None) -> None:
         if partial is not None:
@@ -3306,6 +3493,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     def failed(exc: BaseException) -> int:
         """A run that fails still ends in order: its report keeps what it measured, and where and why it stopped."""
         report["failed"] = {"error": f"{type(exc).__name__}: {exc}"[:2000], "traceback": traceback.format_exc()[-8000:]}
+        _diag("run_failed", error=report["failed"]["error"], traceback=report["failed"]["traceback"])
         report["finished_unix"] = time.time()
         save()
         print(json.dumps({"report": str(args.out), "failed": report["failed"]["error"]}), flush=True)
@@ -3315,7 +3503,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     model = args.model or (SMOKE_MODEL if args.smoke else MODEL)
     if args.plan == "ag4c" and args.model is None:
         model = AG4C_MODEL
-    if args.plan == "ag5g" and args.model is None:
+    if args.plan in ("ag5g", "ag5r") and args.model is None:
         model = AG5G_MODEL
     if args.plan == "x1":
         try:
@@ -3326,12 +3514,13 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "ag6q"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g", "ag5r", "ag6h", "ag6q"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
                       "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
                       "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g),
-                      "ag6h": (run_ag6h, analyse_ag6h), "ag6q": (run_ag6q, analyse_ag6q)}[args.plan]
+                      "ag6h": (run_ag6h, analyse_ag6h), "ag6q": (run_ag6q, analyse_ag6q),
+                      "ag5r": (run_ag5r, analyse_ag5r)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]

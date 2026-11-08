@@ -1194,3 +1194,80 @@ def test_the_workers_admission_hands_each_joiner_its_own_cancel_check(monkeypatc
     (row, cancelled_now), = admitted
     assert len(row) == 5 and callable(row[4]), "(ids, limit, emit, cuts, cancelled)"
     assert cancelled_now is False, "c was never cancelled"
+
+
+def test_a_dense_run_never_starts_more_rows_than_the_pool_has_free_slots(monkeypatch):
+    """STAB3 (AG5-G run 6): the agent's Gemma stacked engine had 6 slots while the service let 8 requests into a
+    group. A run that prefills more rows than free slots raised "no free slot" and the worker was retired with
+    every member. Now a run takes at most the free slots and the rest run right after, in order."""
+    import threading
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+
+    class Tokenizer:
+        eos_token_ids = {0}
+
+        @property
+        def detokenizer(self):
+            return _StreamTokenizer._Detokenizer()
+
+        def apply_chat_template(self, messages, add_generation_prompt, tokenize):
+            return [1, 2, 3]
+
+    sent, runs = [], []
+    monkeypatch.setattr(worker, "_emit", sent.append)
+    monkeypatch.setattr(worker, "_DETOKENIZER_POOLS", {})
+
+    class Bridge:
+        slots = 6
+
+        def metadata(self):
+            return {"configuration": "dense_stacked"}
+
+        def eos_ids(self):
+            return (0,)
+
+        def request_limit(self):
+            return 1024
+
+        def free_slots(self):
+            return self.slots
+
+        def generate_many(self, ids, limits, on_tokens=None, admit=None, cancelled=None):
+            if len(ids) > self.free_slots():
+                raise RuntimeError("no free slot in the dense plan's pool")
+            runs.append(len(ids))
+            for emit in on_tokens:
+                emit(72)
+                emit(0)
+            return [SimpleNamespace(tokens=[72, 0], text="", finish_reason="stop", token_count=2, metadata={})
+                    for _ in ids]
+
+    command = {"type": "generate_batch", "batch_id": "batch-1", "variant": "current_engine",
+               "requests": [{"request_id": f"r{i}", "model": "m", "messages": [{"role": "user", "content": "x"}],
+                             "max_tokens": 8, "stream": True} for i in range(8)]}
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert not [event for event in sent if event["type"] == "error"]
+    assert runs == [6, 2], "six in the first run, the other two right after"
+    done = [event["request_id"] for event in sent if event["type"] == "done"]
+    assert sorted(done) == [f"r{i}" for i in range(8)] and len(done) == 8, "each answered once"
+    assert sent[-1]["type"] == "batch_done" and sent[-1]["request_ids"] == [f"r{i}" for i in range(8)]
+
+    sent.clear()
+    Bridge.slots = 0  # a pool with no free slot fails the batch by name instead of waiting for a slot
+    worker._run_engine_batch(command, "m", Tokenizer(), Bridge(), {}, set(), threading.Lock())
+    assert [event["type"] for event in sent] == ["error"] and sent[0]["code"] == "generation_error"
+
+
+def test_the_stacked_engines_group_holds_no_more_members_than_its_width():
+    from ironmule_product.backend import STREAM_GROUP_REQUESTS, MLXWorkerClient
+    from ironmule_product.types import ModelSpec
+
+    spec = ModelSpec("local/test", "revision", "/tmp/snapshot", 1)
+    def width(value):
+        return MLXWorkerClient(spec, execution_variant="current_engine", engine_configuration="dense_stacked",
+                               dense_width=value).batch_capacity
+
+    assert width(6) == 6 and width(None) == STREAM_GROUP_REQUESTS == 8 and width(8) == 8
+    assert MLXWorkerClient(spec, execution_variant="current_engine").batch_capacity == STREAM_GROUP_REQUESTS

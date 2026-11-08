@@ -30,6 +30,9 @@ MAX_STDERR_BYTES = 256 * 1024
 STDERR_TAIL_BYTES = 4096  # STAB1: what a worker exit record keeps of the worker's last stderr
 DEFAULT_TIMEOUT = 120.0
 DENSE_STARTUP_TIMEOUT = 600.0  # KB1: the dense plan compiles and probes every kernel shape before it is ready
+# STAB3 (AG5-G run 6): a running generation that sends nothing for this long is a worker without progress; it is
+# retired then instead of at the request deadline plus its grace (up to twice the request timeout before).
+STALL_TIMEOUT_S = 300.0
 _CANCEL_POLL_SECONDS = 0.05
 _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
@@ -146,6 +149,7 @@ class MLXWorkerClient:
         self.last_generation_metadata: dict[str, Any] | None = None
         self.last_batch_metadata: list[dict[str, Any]] | None = None
         self.startup_timeout = None if startup_timeout is None else float(startup_timeout)
+        self.stall_timeout: float | None = STALL_TIMEOUT_S  # STAB3: None waits for the deadline alone
         self._process: subprocess.Popen[bytes] | None = None
         self._ready_payload: dict[str, Any] | None = None
         self._stderr_thread: threading.Thread | None = None
@@ -181,8 +185,10 @@ class MLXWorkerClient:
         if (self.execution_variant == "current_engine"
                 and self.engine_configuration in {"baseline_throughput", "core_throughput"}):
             return 32
-        if self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
-                                                                                        "dense_stacked"):
+        if self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked":
+            # STAB3 (AG5-G run 6): no more open members than the plan has slots; the agent's width may be below 8
+            return min(STREAM_GROUP_REQUESTS, self.dense_width or STREAM_GROUP_REQUESTS)
+        if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
                 and self._ready_payload.get("automatic_batch_qualified") is True):
@@ -380,6 +386,21 @@ class MLXWorkerClient:
                         raise RequestTimeout("backend worker timed out")
         finally:
             selector.close()
+
+    def _read_progress(self, deadline: float | None, **kwargs: Any) -> dict[str, Any]:
+        """STAB3: the next event of a running generation, within the call's deadline and within `stall_timeout`
+        of the one before. A worker that is alive but sends nothing for that long fails as unavailable, so its
+        group and the requests behind it end now and the service replaces it."""
+        stall = self.stall_timeout
+        if stall is None:
+            return self._read_event(deadline, **kwargs)
+        limit = time.monotonic() + stall
+        try:
+            return self._read_event(limit if deadline is None else min(deadline, limit), **kwargs)
+        except RequestTimeout:
+            if deadline is not None and time.monotonic() >= deadline:
+                raise
+            raise BackendUnavailable(f"backend worker made no progress for {stall:g} s") from None
 
     @staticmethod
     def _validate_startup_telemetry(event: dict[str, Any]) -> None:
@@ -758,7 +779,7 @@ class MLXWorkerClient:
                 poll_cancels()
                 while True:
                     try:
-                        event = self._read_event(deadline, on_tick=poll_cancels)
+                        event = self._read_progress(deadline, on_tick=poll_cancels)
                     except RequestTimeout:
                         self._mark_unusable()
                         raise RequestTimeout("batch generation timed out")
@@ -946,7 +967,7 @@ class MLXWorkerClient:
                 self._send(command, deadline)
                 while True:
                     try:
-                        event = self._read_event(deadline, cancel=cancel, on_cancel=request_cancel)
+                        event = self._read_progress(deadline, cancel=cancel, on_cancel=request_cancel)
                     except RequestTimeout:
                         self._mark_unusable()
                         raise RequestTimeout("generation timed out")

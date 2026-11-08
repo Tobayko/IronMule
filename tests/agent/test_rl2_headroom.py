@@ -1087,6 +1087,8 @@ def test_ag4c_run3_censors_only_the_default_paths_failures_and_only_in_its_favou
     broken = rows[:1] + [row(0, "agent", 0, [req(2, 3), req(None, None, outcome="timeout")])] + rows[2:]
     voided = rl2.analyse_ag4c({"rows": broken, "censor_default": {"deadline_s": 100.0, "limit": 16}}, resamples=50)
     assert voided["verdict"] == "invalid" and voided["complete_blocks"] == 2
+    assert voided["subset"].startswith("descriptive only: 2 complete blocks of 3"), "a subset is labelled so"
+    assert "subset" not in censored
 
 
 def test_ag5g_runs_both_phases_with_swapped_cards_and_the_agents_width(tmp_path, monkeypatch):
@@ -1523,3 +1525,105 @@ def test_a_run_that_fails_still_leaves_its_report_and_ends_in_order(tmp_path, mo
     assert report["rl2h"] == {"plan": "ag6h", "setup": {"engine": "route"}}, "what it measured is kept"
     assert report["failed"]["error"].startswith("TimeoutExpired") and "Traceback" in report["failed"]["traceback"]
     assert "finished_unix" in report
+
+
+def test_diagnostics_reach_the_output_folder_when_the_worker_is_lost_and_the_run_then_aborts(tmp_path, monkeypatch):
+    """STAB3: run 6's cause was lost because the product's logs stayed in a temporary folder. A deliberate failure:
+    the worker dies under a request, then the run itself fails. The output folder still holds the harness events,
+    the product's stability log (admission, group, end, the worker's exit with its last stderr, each restart's
+    start and outcome), the commit and the traceback."""
+    from ironmule_product.service import ProductService
+
+    real_popen = subprocess.Popen
+
+    def fake_popen(args, *popen_args, **popen_kwargs):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", str(FAKE), *args[4:]]
+        return real_popen(args, *popen_args, **popen_kwargs)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", fake_popen)
+    monkeypatch.delenv("CUDA_VISIBLE_DEVICES", raising=False)
+
+    def run(model, work, *, smoke, on_row=None):
+        store = ProductStore(rl2._state_dir(work))
+        store.setup("server")
+        snapshot = tmp_path / "snapshot"
+        snapshot.mkdir()
+        spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+        store.register_model(spec)
+        backend = MLXWorkerClient(spec, execution_variant="current_engine")
+        backend.start()
+        service = ProductService(store, backend=backend, spec=spec)
+        service.make_backend = lambda: MLXWorkerClient(spec, execution_variant="current_engine")
+        service.label = "1:agent"
+        rl2._diag("phase_start", phase=0, agent_card="1")
+        try:
+            request = GenerationRequest("local/test", (("user", "crash"),), max_tokens=4, request_id="r-0", stream=True)
+            with pytest.raises(Exception):
+                list(service.stream(request))
+            deadline = time.monotonic() + 15
+            while time.monotonic() < deadline and service.health()["worker"]["state"] != "ready":
+                time.sleep(0.05)
+        finally:
+            service.close()
+        raise RuntimeError("the run stops here, after the worker was lost")
+
+    monkeypatch.setattr(rl2, "run_ag5g", run)
+    monkeypatch.setattr(rl2, "environment", lambda: {"machine": "test", "versions": {"mlx": "x"}})
+    out = tmp_path / "out" / "report.json"
+    out.parent.mkdir()
+    assert rl2.main(["--out", str(out), "--plan", "ag5g", "--commit", "c" * 40]) == 0
+    report = json.loads(out.read_text())
+    assert report["commit"] == "c" * 40 and report["failed"]["error"].startswith("RuntimeError")
+    harness = [json.loads(line) for line in (out.parent / "diagnostics" / "harness.jsonl").read_text().splitlines()]
+    assert [row["event"] for row in harness] == ["run_start", "phase_start", "run_failed"]
+    assert harness[0]["commit"] == "c" * 40 and harness[0]["env"]["versions"] == {"mlx": "x"}
+    assert "RuntimeError" in harness[-1]["traceback"]
+    log = [json.loads(line) for line in
+           (out.parent / "diagnostics" / "ironmule-state" / "stability-log.jsonl").read_text().splitlines()]
+    events = [row["event"] for row in log]
+    for event in ("admit", "group", "end", "worker_exit", "worker_restart_start", "worker_restart"):
+        assert event in events, event
+    exit_ = next(row for row in log if row["event"] == "worker_exit")
+    assert "fatal out of memory" in exit_["stderr_tail"] and exit_["exit_status"] == 9 and exit_["reaped"]
+    end = next(row for row in log if row["event"] == "end")
+    assert end["id"] == "r-0" and end["error"] == "backend_unavailable"
+    assert all(row["shard"] == "1:agent" and "unix" in row for row in log)
+    assert rl2.DIAGNOSTICS is None, "the folder ends with the run"
+
+
+def test_ag5r_rebuilds_run_6s_spike_exactly_and_adds_a_group_larger_than_the_plans_slots():
+    blocks = rl2.ag5r_blocks()
+    names = [name for name, _ in blocks]
+    assert names == ["phase0-block0", "phase0-block1"] + [f"phase0-block1-again-{k}" for k in range(1, 5)] + \
+        ["eight-at-once"]
+    spike = dict(blocks)["phase0-block1"]
+    recorded = [0.0, 0.0695, 0.0728, 0.2177, 0.4498, 0.4755, 0.5094, 0.6037, 0.655, 0.8254, 0.8715, 0.8747]
+    assert [round(item["offset_s"], 4) for item in spike] == recorded, "run 6's report, phase 0, block 1"
+    assert {item["max_tokens"] for item in spike} == {256} and not any(item["long"] for item in spike)
+    eight = dict(blocks)["eight-at-once"]
+    assert len(eight) == 8 > rl2.AG5R_WIDTH and {item["offset_s"] for item in eight} == {0.0}
+
+
+def test_ag5r_runs_every_block_through_one_path_and_reports_each_as_it_ends(tmp_path, monkeypatch):
+    pool, spec, _, _ = _ag6h_pool(tmp_path, monkeypatch)
+    seen = []
+    try:
+        blocks = rl2.ag5r_blocks(requests=3, limit=3, repeats=1)
+        report = rl2.measure_ag5r(pool, spec.model_id, blocks, 30.0, on_row=lambda r: seen.append(len(r["blocks"])))
+    finally:
+        pool.close()
+    assert [b["block"] for b in report["blocks"]] == [name for name, _ in blocks] and seen == [1, 2, 3, 4]
+    assert rl2.analyse_ag5r(report)["verdict"].startswith("accepted")
+
+
+def test_ag5r_tells_an_accepted_run_from_a_controlled_failure_and_a_hang():
+    def report(*outcomes):
+        return {"blocks": [{"block": "b", "requests": [{"outcome": o, "error": e, "end_s": 1.0} for o, e in outcomes],
+                            "shards": [{"worker": {"state": "ready"}}]}]}
+
+    assert rl2.analyse_ag5r(report(("ok", None)))["verdict"].startswith("accepted")
+    controlled = rl2.analyse_ag5r(report(("ok", None), ("failed", "backend_unavailable")))
+    assert controlled["verdict"].startswith("controlled") and controlled["blocks"][0]["errors"] == ["backend_unavailable"]
+    assert rl2.analyse_ag5r(report(("failed", "backend_unavailable"), ("timeout", None)))["verdict"].startswith("hung")
+    assert rl2.analyse_ag5r({"failed": "no worker"})["verdict"] == "not run: no worker"
