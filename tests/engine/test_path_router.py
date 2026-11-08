@@ -309,25 +309,125 @@ def _quiet_costs():
             PathCost(capacity=8, step_s=0.012, step_s_per_row=0.003, first_s=0.100)]
 
 
-def test_on_quiet_traffic_the_dream_leaves_a_mode_whose_first_tokens_come_ten_times_later():
+def test_on_observed_quiet_traffic_the_dream_leaves_a_mode_whose_first_tokens_come_ten_times_later():
     """Every mode's tokens per second is the arrival rate on quiet traffic, so the 5 % rule never moved the agent
-    off `stacked`, whose first tokens came 10x later. At the same throughput the earliest first token now wins."""
-    from ironmule_product.path_router import dream
+    off `stacked`, whose first tokens came 10x later. At the same throughput the earliest first token now wins, on
+    traffic observed to be quiet. Without an observation nothing shows it was quiet, and the mode stays."""
+    from ironmule_product.path_router import dream, observed_quiet
 
     quiet = [(10.0 * i, 32) for i in range(64)]
-    out = dream(_quiet_costs(), quiet, "stacked")
-    assert out["mode"] == "route" and out["rule"] == "first token"
-    assert out["replayed"]["stacked"]["overlapped"] == 0
-    assert dream(_quiet_costs(), quiet, "route")["mode"] == "route", "and it stays: nothing serves sooner"
+    seen = observed_quiet([(10.0 * i, 10.0 * i + 0.5) for i in range(64)])  # each served in 0.5 s, 10 s apart
+    assert seen["quiet"] and seen["overlapped"] == 0
+    out = dream(_quiet_costs(), quiet, "stacked", seen)
+    assert out["mode"] == "route" and out["rule"] == "first token" and out["quiet"] is seen
+    assert dream(_quiet_costs(), quiet, "route", seen)["mode"] == "route", "and it stays: nothing serves sooner"
+    assert dream(_quiet_costs(), quiet, "stacked")["mode"] == "stacked", "no observation, no first-token move"
 
 
 def test_under_load_the_first_token_rule_stays_out_and_the_two_rules_do_not_take_turns():
     """The replay's first tokens are unreliable when requests overlap (AG6-H bursts at load 0.8: it priced the
     router 25 % sooner, the card measured stacking 5x sooner), so the first-token rule waits for quiet traffic."""
-    from ironmule_product.path_router import DREAM_QUIET, dream
+    from ironmule_product.path_router import dream, observed_quiet
 
     spike = [(0.01 * i, 200) for i in range(64)]
-    out = dream(_costs(), spike, "stacked")
-    assert out["replayed"]["stacked"]["overlapped"] > DREAM_QUIET and out["rule"] != "first token"
-    moved = dream(_costs(), spike, "route")["mode"]
-    assert dream(_costs(), spike, moved)["mode"] == moved, "a move for throughput is not undone for latency"
+    seen = observed_quiet([(0.01 * i, 0.01 * i + 5.0) for i in range(64)])  # served together: every one overlaps
+    assert not seen["quiet"] and seen["overlapped"] == 63
+    out = dream(_costs(), spike, "stacked", seen)
+    assert out["rule"] != "first token"
+    moved = dream(_costs(), spike, "route", seen)["mode"]
+    assert dream(_costs(), spike, moved, seen)["mode"] == moved, "a move for throughput is not undone for latency"
+
+
+# ---------------------------------------------------------------- the quiet guard reads observations (owner)
+
+def _served(router, intervals, tokens=32):
+    """`intervals` (arrived, ended) finished through the router's observation path, as `watch` logs them."""
+    for arrived, ended in intervals:
+        router.finished(arrived, tokens, ended)
+
+
+def test_the_quiet_verdict_follows_the_observations_whatever_the_models_prices():
+    """1. With the same observed intervals, prices ten times apart in either direction give the same verdict."""
+    from ironmule_product.path_router import PathCost, PolicyRouter
+
+    quiet = [(10.0 * i, 10.0 * i + 0.5) for i in range(32)]
+    busy = [(0.1 * i, 0.1 * i + 3.0) for i in range(32)]
+    for intervals, expected in ((quiet, True), (busy, False)):
+        verdicts = []
+        for scale in (0.1, 1.0, 10.0):
+            costs = [PathCost(1, 0.010 * scale, 0.0, 0.010 * scale), PathCost(8, 0.012 / scale, 0.003, 0.100 / scale)]
+            router = PolicyRouter(["single", "stacked"], costs, mode="stacked")
+            _served(router, intervals)
+            verdicts.append((router.last_dream["quiet"]["quiet"], router.last_dream["quiet"]["overlapped"]))
+        assert len(set(verdicts)) == 1 and verdicts[0][0] is expected, verdicts
+
+
+def test_the_observed_overlap_is_half_open_and_its_threshold_is_one_in_sixteen():
+    """2. A request overlapped if it arrived while another observed request was being served, [arrived, ended):
+    arriving the instant another ends is not an overlap, arriving together is (both). At most floor(n / 16)."""
+    from ironmule_product.path_router import observed_quiet
+
+    gap = [(10.0 * i, 10.0 * i + 1.0) for i in range(32)]
+    assert observed_quiet(gap)["overlapped"] == 0
+    touching = [(1.0 * i, 1.0 * i + 1.0) for i in range(32)]  # each ends the instant the next arrives
+    assert observed_quiet(touching)["overlapped"] == 0
+    inside = [(1.0 * i, 1.0 * i + 1.0 + 1e-9) for i in range(32)]  # each ends just after the next arrived
+    assert observed_quiet(inside)["overlapped"] == 31
+    together = [(5.0, 6.0), (5.0, 6.0)] + [(100.0 + 10 * i, 101.0 + 10 * i) for i in range(30)]
+    assert observed_quiet(together)["overlapped"] == 2
+    for n, allowed in ((64, 4), (32, 2), (48, 3)):
+        base = [(10.0 * i, 10.0 * i + 1.0) for i in range(n)]
+        at = [base[0]] + [(base[k][0], base[k][0] + 20.0) if k <= allowed else base[k] for k in range(1, n)]
+        assert observed_quiet(at)["overlapped"] == allowed and observed_quiet(at)["quiet"], (n, allowed)
+        one_more = [(base[k][0], base[k][0] + 20.0) if 1 <= k <= allowed + 1 else base[k] for k in range(n)]
+        assert observed_quiet(one_more)["overlapped"] == allowed + 1 and not observed_quiet(one_more)["quiet"]
+    earlier = [(0.0, 50.0)]  # an older request, out of the window, still in service when the window began
+    assert observed_quiet(gap, earlier)["overlapped"] == 5
+
+
+def test_missing_or_incomplete_observations_are_never_taken_for_quiet_traffic():
+    """3. Too few requests, requests in flight, requests that ended without their answer, or a caller with no
+    intervals: not quiet, with the reason."""
+    import pytest
+
+    from ironmule_product.path_router import DREAM_MIN, PolicyRouter, observed_quiet
+
+    gap = [(10.0 * i, 10.0 * i + 1.0) for i in range(DREAM_MIN)]
+    assert observed_quiet(gap[:-1])["reason"] == "too few observed requests"
+    assert observed_quiet(gap, in_flight=1)["reason"] == "requests still in flight"
+    assert observed_quiet(gap, missing=1)["reason"] == "requests ended without their answer"
+    assert not any(observed_quiet(gap, **k)["quiet"] for k in ({"in_flight": 1}, {"missing": 1}))
+    legacy = PolicyRouter(["single", "stacked"], _quiet_costs(), mode="stacked")
+    for arrived, _ in gap:
+        legacy.finished(arrived, 32)  # no observed end
+    assert legacy.last_dream["quiet"]["quiet"] is False and legacy.last_dream["rule"] != "first token"
+
+    router = PolicyRouter(["single", "stacked"], _quiet_costs(), mode="stacked")
+
+    def failing():
+        yield {"type": "token", "text": "a"}
+        raise RuntimeError("the worker died")
+
+    with pytest.raises(RuntimeError):
+        list(router.watch(1, 1, failing()))
+    assert router._in_flight == 0 and len(router._missing) == 1
+    now = router._missing[0]
+    _served(router, [(now + 10.0 * (i + 1), now + 10.0 * (i + 1) + 1.0) for i in range(DREAM_MIN)])
+    assert router.last_dream["quiet"]["quiet"] is True, "the failure was before this window"
+    router._missing.append(router._log[-1][0])
+    _served(router, [(router._log[-1][2] + 10.0 * (i + 1), router._log[-1][2] + 10.0 * (i + 1) + 1.0)
+                     for i in range(16)])
+    assert router.last_dream["quiet"]["reason"] == "requests ended without their answer"
+
+
+def test_bursts_with_observed_overlap_get_no_first_token_move_from_optimistic_prices():
+    """4. Prices that make routing's first tokens look ten times earlier do not open the first-token rule while the
+    served requests were observed to overlap."""
+    from ironmule_product.path_router import PathCost, PolicyRouter
+
+    optimistic = [PathCost(1, 0.010, 0.0, 0.001), PathCost(8, 0.012, 0.003, 0.500)]  # single 500x sooner
+    router = PolicyRouter(["single", "stacked"], optimistic, mode="stacked")
+    _served(router, [(0.2 * i, 0.2 * i + 4.0) for i in range(64)], tokens=200)
+    assert router.dreams == 3 and not router.last_dream["quiet"]["quiet"]
+    assert all(s["to"] != "route" or router.last_dream["rule"] != "first token" for s in router.switches)
+    assert router.last_dream["rule"] != "first token"

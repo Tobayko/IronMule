@@ -2536,7 +2536,7 @@ def check_ag6(report: dict[str, Any]) -> dict[str, Any]:
     mode's measured arm must be the best arm by tokens per second, or within 5 % of it, in 80 % of the blocks, and
     the replayed stacked-over-single ratio, pooled, within 25 % of the measured one. A model check on data that
     already exists, not evidence for a claim."""
-    from ironmule_product.path_router import PolicyRouter, dream
+    from ironmule_product.path_router import PolicyRouter, dream, observed_quiet
 
     costs = PolicyRouter.from_setup(report["setup"]).costs
     cells = {(row["block"], row["arm"], row["run"]): row for row in report.get("rows", [])}
@@ -2551,7 +2551,9 @@ def check_ag6(report: dict[str, Any]) -> dict[str, Any]:
             continue
         base = cells[b, "single", 0]["requests"]
         arrivals = [(r["offset_s"], max(1, int(r["tokens"]))) for r in base]
-        result = dream(costs, arrivals, "route")
+        # the dreamer starts in `route`, so it observes the router arm's served intervals (REV1, owner 2026-11-08)
+        served = [(r["offset_s"], r["offset_s"] + r["end_s"]) for r in cells[b, "router", 0]["requests"]]
+        result = dream(costs, arrivals, "route", observed_quiet(sorted(served)))
         tps = {"single": (measured[b, "single", 0]["tokens_per_s"] + measured[b, "single", 1]["tokens_per_s"]) / 2,
                "router": measured[b, "router", 0]["tokens_per_s"], "stacked": measured[b, "stacked", 0]["tokens_per_s"]}
         best = max(tps, key=tps.get)
@@ -2563,7 +2565,8 @@ def check_ag6(report: dict[str, Any]) -> dict[str, Any]:
         measured_single += tps["single"]
         measured_stacked += tps["stacked"]
         rows.append({"block": b, "load": cells[b, "single", 0]["load"], "level": cells[b, "single", 0]["level"],
-                     "named": named, "best": best, "hit": hit, "measured": tps,
+                     "named": named, "best": best, "hit": hit, "measured": tps, "rule": result["rule"],
+                     "quiet": {k: result["quiet"][k] for k in ("quiet", "overlapped", "requests")},
                      "replayed": {mode: value["tokens_per_s"] for mode, value in result["replayed"].items()}})
     if not rows:
         return {"verdict": "no complete block to check", "blocks": 0}

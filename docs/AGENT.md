@@ -101,8 +101,9 @@ world model built from the prices it learned and the card's time shared between 
 mode with the most tokens per second if that mode is at least 5 % ahead and its mean first token is at most 1.1x
 the current mode's. On quiet traffic, where every mode's tokens per second is just the arrival rate, it also moves to
 the mode with the earliest first tokens, if that one keeps at least 98 % of the throughput and is at least 20 %
-sooner (REV1). Quiet means at most 1 in 16 requests arrives while another is being served: under load the replay's
-first tokens are not reliable. The dream runs after a request has finished; a decision stays a lookup, under a
+sooner (REV1). Quiet is what the router observed, not what the model estimates. Of its last 64 finished requests,
+at most 1 in 16 arrived while another was being served, none is in flight, and none ended without its answer. Under
+load the replay's first tokens are not reliable. The dream runs after a request has finished; a decision stays a lookup, under a
 microsecond.
 Each path still answers with its own gated plan, so no answer changes beyond the two paths' own.
 

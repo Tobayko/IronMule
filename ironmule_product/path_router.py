@@ -158,7 +158,7 @@ DREAM_GAIN = 1.05     # a mode must replay at least this many times the current 
 DREAM_TTFT = 1.1      # and a mean first token at most this many times the current mode's
 DREAM_TIE = 0.98      # with no such winner: a mode with at least this share of the current mode's tokens per second
 DREAM_SOONER = 0.8    # whose mean first token is at most this many times the current mode's, the earliest one,
-DREAM_QUIET = 1 / 16  # and only where at most this share of requests arrived while another was being served
+DREAM_QUIET = 1 / 16  # and only on observed quiet traffic: at most this share of the window overlapped (below)
 
 
 class _Path:
@@ -190,14 +190,11 @@ def replay(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], mod
     outs: list[dict[str, Any]] = []
     clock, turn, index = 0.0, 0, 0
 
-    overlapped = 0
-
     def arrive(upto: float) -> None:
-        nonlocal index, overlapped
+        nonlocal index
         while index < len(pending) and pending[index][0] <= upto:
             arrival, tokens = pending[index]
             index += 1
-            overlapped += any(path.outstanding() for path in paths)  # it found the card at work
             out: dict[str, Any] = {"arrival": arrival, "tokens": tokens}
             outs.append(out)
             if mode == "route":  # as `PathRouter.choose`: each path's learned tokens a request, its outstanding work
@@ -241,11 +238,36 @@ def replay(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], mod
         clock += unit(paths[chosen])
     span = max(out["end"] for out in outs) - min(out["arrival"] for out in outs)
     return {"tokens_per_s": sum(out["tokens"] for out in outs) / span if span > 0 else 0.0,
-            "ttft_mean_s": statistics.fmean(out["first"] - out["arrival"] for out in outs),
-            "overlapped": overlapped / len(outs)}
+            "ttft_mean_s": statistics.fmean(out["first"] - out["arrival"] for out in outs)}
 
 
-def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], current: str) -> dict[str, Any]:
+def observed_quiet(window: Sequence[tuple[float, float]], earlier: Sequence[tuple[float, float]] = (),
+                   in_flight: int = 0, missing: int = 0, minimum: int = DREAM_MIN) -> dict[str, Any]:
+    """Whether the traffic the router served was quiet, from what it observed alone, never from the model's prices.
+
+    `window` holds the served intervals, (arrived, ended) on the router's clock, of the finished requests a dream
+    replays. `earlier` holds those finished before them. A request of the window overlapped if it arrived while
+    another observed request was being served: some other interval with arrived_i <= arrived_j < ended_i
+    (half-open, so a request that arrives the instant another ends did not overlap; two that arrive together
+    both did). It is quiet if at most floor(n * DREAM_QUIET) of the window's n requests overlapped, so at most 4
+    of 64 or 2 of 32. The observation must be complete: at least `minimum` requests, none in flight, and none that
+    ended without its answer inside the window (`missing`). Otherwise it is not quiet."""
+    n = len(window)
+    out: dict[str, Any] = {"quiet": False, "requests": n, "overlapped": None, "allowed": math.floor(n * DREAM_QUIET)}
+    if n < minimum or in_flight or missing:
+        out["reason"] = ("too few observed requests" if n < minimum else
+                         "requests still in flight" if in_flight else "requests ended without their answer")
+        return out
+    served = list(earlier) + list(window)
+    overlapped = sum(1 for j, (arrived, _) in enumerate(window, start=len(earlier))
+                     if any(i != j and start <= arrived < end for i, (start, end) in enumerate(served)))
+    out.update(overlapped=overlapped, quiet=overlapped <= out["allowed"],
+               reason="observed quiet" if overlapped <= out["allowed"] else "observed overlap")
+    return out
+
+
+def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], current: str,
+          quiet: dict[str, Any] | None = None) -> dict[str, Any]:
     """Replay every mode and name the one to serve: the most tokens per second among the modes whose mean first token
     is at most `DREAM_TTFT` of the current mode's, if it beats the current mode by `DREAM_GAIN`.
 
@@ -253,11 +275,11 @@ def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], curr
     `DREAM_TIE` of the current mode's tokens per second, the one with the earliest mean first token, if it is at
     most `DREAM_SOONER` of the current mode's (ties: more tokens per second, then `MODES` order). On quiet traffic
     every mode's tokens per second is the arrival rate, so a mode with ten times later first tokens stayed (review
-    of 2026-11-08). Quiet means that in both modes' replays at most `DREAM_QUIET` of the requests arrived while
-    another was being served: there a first token is the path's learned price alone. Under load the replay's first
-    tokens are unreliable. In AG6-H's bursts at load 0.8 it priced the router's 25 % earlier than stacking's, where
-    the card measured stacking's 5x earlier. The 5 % to move for throughput and the 2 % that may be given up for
-    latency keep the two rules from taking turns."""
+    of 2026-11-08). Quiet is `quiet`, the caller's observation of the served traffic (`observed_quiet`); without
+    one it is not quiet. On quiet traffic a first token is the path's learned single-request price. Under load the
+    replay's first tokens are unreliable: in AG6-H's bursts at load 0.8 it priced the router's 25 % earlier than
+    stacking's, where the card measured stacking's 5x earlier. The 5 % to move for throughput and the 2 % that may
+    be given up for latency keep the two rules from taking turns."""
     results = {mode: replay(costs, arrivals, mode) for mode in MODES}
     now = results[current]
     allowed = [mode for mode in MODES if results[mode]["ttft_mean_s"] <= DREAM_TTFT * now["ttft_mean_s"]]
@@ -268,10 +290,10 @@ def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], curr
         level = [mode for mode in MODES if results[mode]["tokens_per_s"] >= DREAM_TIE * now["tokens_per_s"]]
         soonest = min(level, key=lambda mode: (results[mode]["ttft_mean_s"], -results[mode]["tokens_per_s"],
                                                MODES.index(mode)))
-        quiet = max(now["overlapped"], results[soonest]["overlapped"]) <= DREAM_QUIET
-        sooner = quiet and results[soonest]["ttft_mean_s"] <= DREAM_SOONER * now["ttft_mean_s"]
+        observed = bool(quiet and quiet.get("quiet"))
+        sooner = observed and results[soonest]["ttft_mean_s"] <= DREAM_SOONER * now["ttft_mean_s"]
         chosen, rule = (soonest, "first token") if sooner else (current, "kept")
-    return {"mode": chosen, "rule": rule, "replayed": results, "requests": len(arrivals)}
+    return {"mode": chosen, "rule": rule, "replayed": results, "requests": len(arrivals), "quiet": quiet}
 
 
 class PolicyRouter(PathRouter):
@@ -285,8 +307,10 @@ class PolicyRouter(PathRouter):
         if mode not in MODES:
             raise ValueError(f"unknown mode {mode!r}")
         self.mode, self.switches, self.dreams, self.last_dream = mode, [], 0, None
-        self._log: list[tuple[float, int]] = []
+        self._log: list[tuple[float, int, float]] = []  # (arrived, tokens, ended) of finished requests, observed
         self._finished = 0
+        self._in_flight = 0
+        self._missing: list[float] = []  # arrival times of requests that ended without their answer
 
     def choose(self, outstanding: Sequence[int], max_tokens: int) -> int:
         if self.mode == "route":
@@ -299,26 +323,50 @@ class PolicyRouter(PathRouter):
             return best
 
     def watch(self, index: int, sharing: int, events: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
-        arrived = time.monotonic()
-        for event in super().watch(index, sharing, events):
-            try:
-                if event.get("type") == "done":
-                    self.finished(arrived, int(event.get("completion_tokens") or 0))
-            except Exception as exc:  # noqa: BLE001 - a failed dream keeps the mode; the answer goes out
-                self._failed("dream", exc)
-            yield event
+        from .errors import EngineLimitExceeded
 
-    def finished(self, arrived: float, tokens: int) -> None:
-        """Log one finished request and dream when it is time."""
+        arrived = time.monotonic()
         with self._lock:
-            self._log = (self._log + [(arrived, tokens)])[-DREAM_WINDOW:]
+            self._in_flight += 1
+        answered = rerouted = False
+        try:
+            for event in super().watch(index, sharing, events):
+                try:
+                    if event.get("type") == "done" and not answered:
+                        answered = True
+                        with self._lock:
+                            self._in_flight -= 1
+                        self.finished(arrived, int(event.get("completion_tokens") or 0), time.monotonic())
+                except Exception as exc:  # noqa: BLE001 - a failed dream keeps the mode; the answer goes out
+                    self._failed("dream", exc)
+                yield event
+        except EngineLimitExceeded:
+            rerouted = True  # the pool serves it on the other path, which this router watches again
+            raise
+        finally:
+            if not answered:
+                with self._lock:
+                    self._in_flight -= 1
+                    if not rerouted:  # failed or cancelled: its interval is missing from what was observed
+                        self._missing = (self._missing + [arrived])[-2 * DREAM_WINDOW:]
+
+    def finished(self, arrived: float, tokens: int, ended: float | None = None) -> None:
+        """Log one finished request, with its observed interval, and dream when it is time."""
+        with self._lock:
+            self._log = (self._log + [(arrived, tokens, arrived if ended is None else ended)])[-2 * DREAM_WINDOW:]
             self._finished += 1
-            if self._finished % DREAM_EVERY or len(self._log) < DREAM_MIN:
+            window = self._log[-DREAM_WINDOW:]
+            if self._finished % DREAM_EVERY or len(window) < DREAM_MIN:
                 return
-            first = min(arrival for arrival, _ in self._log)
-            arrivals = [(arrival - first, max(1, tokens)) for arrival, tokens in self._log]
+            first = min(arrival for arrival, _, _ in window)
+            arrivals = [(arrival - first, max(1, tokens)) for arrival, tokens, _ in window]
+            quiet = observed_quiet([(a, e) for a, _, e in window], [(a, e) for a, _, e in self._log[:-DREAM_WINDOW]],
+                                   in_flight=self._in_flight, missing=sum(1 for t in self._missing if t >= first),
+                                   minimum=DREAM_MIN)
+            if ended is None:  # a caller without observed intervals: nothing shows the traffic was quiet
+                quiet = {**quiet, "quiet": False, "reason": "no observed intervals"}
             costs, mode = copy.deepcopy(self.costs), self.mode  # the prices as they stand; learning goes on
-        result = dream(costs, arrivals, mode)
+        result = dream(costs, arrivals, mode, quiet)
         with self._lock:
             self.dreams += 1
             self.last_dream = {**result, "at_request": self._finished}

@@ -1531,6 +1531,26 @@ the old code, and each script now fails its assertion. The serving faults are on
     review's quiet trace now moves to `route`.
   - This changes nothing AG6-H measured. On quiet traffic the choice is a replay of learned single-request prices,
     not measured on hardware (LIMITS).
+  - **Correction, the guard's data source (owner check, 2026-11-08).** As shipped in `4ba5550`, "quiet" counted
+    overlaps inside the replay. Whether a path was busy at a replayed arrival came from the model's prices, so the
+    guard rested on the very estimate it was meant to guard against. It now rests on observation alone
+    (`path_router.observed_quiet`).
+    - *Source:* the router's own served intervals. `PolicyRouter.watch` records each request's arrival (when the
+      pool hands it the stream) and its end (when its `done` passes), both on `time.monotonic()`. It also counts
+      requests in flight, and notes the arrival of any that ended without its answer: failed or cancelled, but
+      not rerouted on an engine refusal, which the other path serves and the router watches again.
+    - *Definition:* the window is the last 64 finished requests a dream replays, at least 32. Up to 64 earlier
+      finished ones are kept as possible overlappers. A request of the window overlapped if it arrived while
+      another observed request was being served, that is arrived_i <= arrived_j < ended_i (half-open: arriving
+      the instant another ends is not an overlap; two that arrive together both overlap).
+    - *Quiet:* at most floor(n / 16) of the window's n requests overlapped (4 of 64, 2 of 32). The observation must
+      be complete: at least 32 requests, none in flight, and none in the window's time span that ended without
+      its answer. A caller without observed intervals gets no first-token move.
+    - *Checks, rerun:* AG4-R run 1's model check, now fed the router arm's served intervals, is unchanged at 20 of
+      20 with the same named modes. None of its blocks is quiet by observation, not even the quiet state at load
+      0.8. Replayed on AG6-H's 16 blocks, no block is observed quiet and none leaves `stacked`, with the startup
+      prices, the learned ones, or prices made to favour routing 500x.
+    - The threshold of 1 in 16 is a heuristic for the hardware test (AG6-Q) to check.
 - **P2, a technical measurement failure was cached for good.** `choose_setup` stored the base path after a child
   had crashed or run out of memory, and reused it after the cause was gone. *Fix:* such a setup serves once, marked
   `measurement_failed`, and is measured again on the next start; a refusal by a rule or a gate is still stored.
