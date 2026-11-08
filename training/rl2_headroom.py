@@ -667,6 +667,7 @@ def set_arm(pool: Any, name: str) -> None:
 
 
 DIAGNOSTICS: Path | None = None  # STAB3: set by `main` to a folder beside the report, exported with it
+BLOCK_BUDGET_S: float | None = None  # STAB3: `--block-budget-s`, no new block after this (AG5-R)
 
 
 def _diag(event: str, **fields: Any) -> None:
@@ -3233,7 +3234,9 @@ AG5R_CAPACITY_RPS = 0.08705814738877654  # run 6's phase 0 calibration, so its a
 AG5R_WIDTH = 6                           # the width the agent chose in run 6
 AG5R_SPIKE_REPEATS = 4                   # the spike block again, for a sporadic fault
 AG5R_DEADLINE_S = 600.0                  # each request's deadline here (run 6: 3,600 s)
-AG5R_BUDGET_S = 3600.0                   # no block starts after an hour
+AG5R_BUDGET_S = 3600.0                   # no block starts after an hour (`--block-budget-s` per run)
+AG5R_RECOVERY_WAIT_S = 900.0             # after a failed block: how long the worker may take to serve again
+AG5R_AFTER = 3                           # normal requests, one at a time, after the load: does it serve on?
 
 
 def ag5r_blocks(capacity: float = AG5R_CAPACITY_RPS, requests: int = AG5G_REQUESTS,
@@ -3247,8 +3250,16 @@ def ag5r_blocks(capacity: float = AG5R_CAPACITY_RPS, requests: int = AG5G_REQUES
     bursts = short(trace_h2(1, AG5G_TRACES[0], 0.8 * capacity, requests, (limit,)))
     spike = short(trace_h2(2, AG5G_TRACES[0], 0.8 * capacity, requests, (limit,)))
     eight = [{**item, "offset_s": 0.0} for item in spike[:8]]
+    after = [{**item, "offset_s": 30.0 * k} for k, item in enumerate(bursts[:AG5R_AFTER])]
     return ([("phase0-block0", bursts), ("phase0-block1", spike)]
-            + [(f"phase0-block1-again-{k}", spike) for k in range(1, repeats + 1)] + [("eight-at-once", eight)])
+            + [(f"phase0-block1-again-{k}", spike) for k in range(1, repeats + 1)] + [("eight-at-once", eight),
+                                                                                    ("after-the-load", after)])
+
+
+def ag5r_section(name: str) -> str:
+    """Which of AG5-R's sections a block belongs to: run 6's own blocks, the repeats, the 8-at-once case, after."""
+    return ("original" if name in ("phase0-block0", "phase0-block1") else "repeats" if "again" in name
+            else "eight" if name == "eight-at-once" else "after")
 
 
 def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, Any]]]], deadline_s: float, *,
@@ -3256,12 +3267,17 @@ def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, A
     """Each block through the agent's one path, the card idle between blocks; every block's outcomes and the
     shard's worker state go to the report and to the diagnostics as they happen."""
     started = time.monotonic()
-    report: dict[str, Any] = {"blocks": [], "deadline_s": deadline_s, "budget_s": budget_s}
+    report: dict[str, Any] = {"blocks": [], "deadline_s": deadline_s, "budget_s": budget_s, "skipped": []}
+    skip_repeats = False
     for name, items in blocks:
         if time.monotonic() - started > budget_s:
             report["time_cut"] = {"before": name, "elapsed_s": time.monotonic() - started}
             _diag("time_cut", before=name)
             break
+        if skip_repeats and ag5r_section(name) == "repeats":
+            report["skipped"].append(name)  # a failure in this case is captured; repeats would add nothing
+            _diag("block_skipped", block=name, reason="a failure is already captured")
+            continue
         if not wait_idle(pool, timeout_s=deadline_s):
             _diag("wait_idle_timeout", block=name, shards=_shards(pool))
         _diag("block_start", block=name, offsets_s=[item["offset_s"] for item in items], shards=_shards(pool))
@@ -3272,10 +3288,27 @@ def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, A
         shards = _shards(pool)
         _diag("block_end", block=name, shards=shards,
               outcomes=[[row.get("outcome"), row.get("error"), row.get("first_s"), row.get("end_s")] for row in rows])
-        report["blocks"].append({"block": name, "requests": rows, "wall_s": time.monotonic() - began,
-                                 "shards": shards})
+        report["blocks"].append({"block": name, "section": ag5r_section(name), "requests": rows,
+                                 "wall_s": time.monotonic() - began, "shards": shards})
         if on_row is not None:
             on_row(report)
+        if any(row.get("outcome") != "ok" for row in rows):
+            # A failure is captured with the worker's exit in the stability log. Wait for the service to serve
+            # again or to refuse; a worker that never serves again ends the run, since later blocks show nothing.
+            until = time.monotonic() + AG5R_RECOVERY_WAIT_S
+            state = None
+            while time.monotonic() < until:
+                state = (_shards(pool) or [{}])[0].get("worker") or {}
+                if state.get("state") in ("ready", "refused"):
+                    break
+                time.sleep(2.0)
+            _diag("after_failure", block=name, worker=state)
+            report["blocks"][-1]["worker_after"] = state
+            if not state or state.get("state") != "ready":
+                report["early_stop"] = {"after": name, "worker": state}
+                _diag("early_stop", after=name, worker=state)
+                break
+            skip_repeats = True
     report["elapsed_s"] = time.monotonic() - started
     return report
 
@@ -3286,11 +3319,13 @@ def analyse_ag5r(report: dict[str, Any]) -> dict[str, Any]:
     well inside its deadline (none timed out), `hung` if any waited out its deadline."""
     blocks = report.get("blocks") or []
     out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag5r.analysis.v1", "blocks": [],
-                           "time_cut": report.get("time_cut")}
+                           "time_cut": report.get("time_cut"), "early_stop": report.get("early_stop"),
+                           "skipped": report.get("skipped"), "hard_limit": report.get("hard_limit")}
     for block in blocks:
         rows = block["requests"]
         failed = [row for row in rows if row.get("outcome") != "ok"]
-        out["blocks"].append({"block": block["block"], "ok": len(rows) - len(failed), "failed": len(failed),
+        out["blocks"].append({"block": block["block"], "section": block.get("section"),
+                              "ok": len(rows) - len(failed), "failed": len(failed),
                               "errors": sorted({row.get("error") or row.get("outcome") for row in failed}),
                               "latest_end_s": max([row.get("end_s") or 0.0 for row in rows] or [0.0]),
                               "worker": (block.get("shards") or [{}])[0].get("worker")})
@@ -3298,10 +3333,43 @@ def analyse_ag5r(report: dict[str, Any]) -> dict[str, Any]:
         return {**out, "verdict": f"not run: {report.get('stopped') or report.get('failed') or 'no block'}"}
     failures = [row for block in blocks for row in block["requests"] if row.get("outcome") != "ok"]
     timeouts = [row for row in failures if row.get("outcome") == "timeout"]
-    out["verdict"] = ("accepted: every request of every block was answered" if not failures and not out["time_cut"]
+    incomplete = out["time_cut"] or out["early_stop"] or out["skipped"] or out["hard_limit"]
+    out["verdict"] = ("accepted: every request of every block was answered" if not failures and not incomplete
                       else "hung: a request waited out its deadline" if timeouts
                       else "controlled: requests failed, each with an error inside its deadline")
     return out
+
+
+def ag5r_log_checks(log: list[dict[str, Any]], width: int = AG5R_WIDTH) -> dict[str, Any]:
+    """AG5-R's checks on the product's stability log (exported beside the report): each admitted request ended
+    exactly once; no group ever held more open members than the engine's width; requests did join running groups;
+    no worker exited or restarted."""
+    admitted = [row["id"] for row in log if row.get("event") == "admit"]
+    ends: dict[str, int] = {}
+    open_by_group: dict[Any, set[str]] = {}
+    widest = 0
+    for row in sorted(log, key=lambda r: r.get("t", 0.0)):
+        event = row.get("event")
+        if event == "group":
+            open_by_group[row.get("group")] = set(row.get("ids") or [])
+        elif event == "join":
+            open_by_group.setdefault(row.get("group"), set()).add(row.get("id"))
+        elif event == "join_returned":
+            for members in open_by_group.values():
+                members.discard(row.get("id"))
+        elif event == "end":
+            ends[row.get("id")] = ends.get(row.get("id"), 0) + 1
+            open_by_group.get(row.get("group"), set()).discard(row.get("id"))
+        if event in ("group", "join"):
+            widest = max([widest] + [len(members) for members in open_by_group.values()])
+    restarts = [row for row in log if row.get("event") in ("worker_exit", "worker_restart", "worker_restart_start")]
+    return {"admitted": len(admitted), "ended_once": all(ends.get(rid) == 1 for rid in admitted),
+            "ended_twice": sorted(rid for rid, n in ends.items() if n > 1),
+            "never_ended": sorted(set(admitted) - set(ends)), "widest_group": widest,
+            "within_width": widest <= width, "joins": sum(1 for row in log if row.get("event") == "join"),
+            "worker_events": [{k: row.get(k) for k in ("event", "reason", "outcome", "exit_status", "unix")}
+                              for row in restarts],
+            "errors": sorted({row.get("error") for row in log if row.get("event") == "end" and row.get("error")})}
 
 
 def run_ag5r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
@@ -3343,6 +3411,7 @@ def run_ag5r(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     try:
         measured = measure_ag5r(pool, model, ag5r_blocks(**({"requests": 2, "limit": 8, "repeats": 0} if smoke
                                                             else {})), AG5R_DEADLINE_S,
+                                budget_s=BLOCK_BUDGET_S or AG5R_BUDGET_S,
                                 on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
     finally:
         pool.close()
@@ -3409,12 +3478,13 @@ def write_kernel(directory: Path, owner: str, commit: str, plan: str = "h1", ext
 
 
 def main(argv: Iterable[str] | None = None) -> int:
-    global DIAGNOSTICS
+    global DIAGNOSTICS, BLOCK_BUDGET_S
     previous = DIAGNOSTICS
     try:
         return _main(argv)
     finally:
         DIAGNOSTICS = previous  # a run's diagnostics folder ends with the run (the tests run several in one process)
+        BLOCK_BUDGET_S = None
 
 
 def _main(argv: Iterable[str] | None = None) -> int:
@@ -3441,7 +3511,11 @@ def _main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--write-kernel", type=Path, metavar="DIR",
                         help="write a Kaggle kernel folder instead of running (needs --owner and --commit)")
     parser.add_argument("--owner")
-    parser.add_argument("--commit")
+    parser.add_argument("--commit", help="the product commit (the kernel installs it and records it)")
+    parser.add_argument("--harness-commit", help="the commit this harness file comes from, recorded")
+    parser.add_argument("--hard-limit-s", type=float,
+                        help="STAB3: end the run after this many seconds whatever it is doing, the report saved")
+    parser.add_argument("--block-budget-s", type=float, help="STAB3 (AG5-R): no new block after this many seconds")
     args = parser.parse_args(None if argv is None else list(argv))
     if args.write_kernel is not None:
         if not args.owner or not args.commit:
@@ -3458,6 +3532,10 @@ def _main(argv: Iterable[str] | None = None) -> int:
         suffix = ""
         if args.plan == "ag1" and args.profile != "t4":  # e.g. V2's profile, as its own kernel
             extra, suffix = extra + ["--profile", args.profile], f"-{args.profile}"
+        for flag, value in (("--harness-commit", args.harness_commit), ("--hard-limit-s", args.hard_limit_s),
+                            ("--block-budget-s", args.block_budget_s)):  # STAB3: recorded and enforced in the run
+            if value is not None:
+                extra += [flag, str(value)]
         cpu = (args.plan == "ag1" and AG1_PROFILES[args.profile].get("accelerator") == "cpu") or args.plan == "ag4c"
         print(json.dumps({"kernel": str(write_kernel(args.write_kernel, args.owner, args.commit, args.plan, extra,
                                                      suffix, cpu=cpu))}))
@@ -3469,6 +3547,13 @@ def _main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
+        if inner.get("plan") == "ag5r":  # STAB3: the stability log beside the report, when it was exported
+            log_path = args.analyse.parent / "diagnostics" / "ironmule-state" / "stability-log.jsonl"
+            if log_path.exists():
+                rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
+                print(json.dumps({"analysis": analyse_ag5r(inner), "log_checks": ag5r_log_checks(rows)}, indent=1,
+                                 sort_keys=True, default=str))
+                return 0
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
                  "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h,
@@ -3477,18 +3562,47 @@ def _main(argv: Iterable[str] | None = None) -> int:
         return 0
     if args.out is None:
         parser.error("--out is required to run")
-    global DIAGNOSTICS
+    global DIAGNOSTICS, BLOCK_BUDGET_S
     DIAGNOSTICS = args.out.parent / "diagnostics"  # STAB3: exported with the report, written as the run goes
+    BLOCK_BUDGET_S = args.block_budget_s
     report: dict[str, Any] = {"schema": "ironmule.rl2_headroom.v1", "plan": args.plan, "smoke": args.smoke,
-                              "started_unix": time.time(), "env": environment(), "commit": args.commit}
-    _diag("run_start", plan=args.plan, commit=args.commit, env=report["env"])
+                              "started_unix": time.time(), "env": environment(), "commit": args.commit,
+                              "harness_commit": args.harness_commit, "hard_limit_s": args.hard_limit_s,
+                              "block_budget_s": args.block_budget_s}
+    _diag("run_start", plan=args.plan, commit=args.commit, harness_commit=args.harness_commit,
+          hard_limit_s=args.hard_limit_s, block_budget_s=args.block_budget_s, env=report["env"])
+    lock = threading.Lock()
 
     def save(partial: dict[str, Any] | None = None) -> None:
-        if partial is not None:
-            report["rl2h"] = partial
-        args.out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
+        with lock:
+            if partial is not None:
+                report["rl2h"] = partial
+            args.out.write_text(json.dumps(report, indent=1, sort_keys=True, default=str) + "\n")
 
     save()
+    if args.hard_limit_s:
+        def expire() -> None:
+            """STAB3: the absolute end, even inside a hung block: what was measured is saved, then the process
+            ends (the session's workers end with it)."""
+            limit = {"after_s": args.hard_limit_s}
+            with lock:
+                report["hard_limit"] = limit
+                if isinstance(report.get("rl2h"), dict):
+                    report["rl2h"] = {**report["rl2h"], "hard_limit": limit}
+                report["finished_unix"] = time.time()
+            _diag("hard_limit", after_s=args.hard_limit_s)
+            for _ in range(3):
+                try:
+                    save()
+                    break
+                except (RuntimeError, ValueError):
+                    time.sleep(0.2)  # the report changed while it was written; once more
+            sys.stdout.flush()
+            os._exit(0)
+
+        timer = threading.Timer(args.hard_limit_s, expire)
+        timer.daemon = True
+        timer.start()
 
     def failed(exc: BaseException) -> int:
         """A run that fails still ends in order: its report keeps what it measured, and where and why it stopped."""

@@ -1803,6 +1803,43 @@ AG7 runs again.
   - each one ends when its blocks are done, at its time limit, or when the worker does not start.
 - *Exported:* the report, `diagnostics/harness.jsonl` and `diagnostics/ironmule-state/stability-log.jsonl`.
 
+**AG5-R as approved (owner, 2026-11-08; fixed before the first kernel, these terms are binding):**
+- *Harness:* one harness commit for both, recorded in each report (`harness_commit`); product `5f064c3` for R1,
+  `b6d1f14` for R2 (`commit`). Kernel `tobayko/ironmule-rl2-headroom-ag5r`: v1 is R1, v2 is R2. Results go to
+  separate folders.
+- *Budget:* 3.2 session hours at most for both.
+  - R1: no new block after 2,160 s, and an absolute end at 3,960 s (`--hard-limit-s`), about 1.2 session hours
+    with the install.
+  - R2: no new block after 3,600 s, and an absolute end at 5,760 s, about 1.7 session hours.
+  - The absolute end saves the report and the diagnostics and stops the process even inside a hung block.
+- *Blocks, with their sections evaluated apart:*
+  - original: phase 0's blocks 0 and 1, rebuilt;
+  - repeats: block 1 four times more;
+  - eight: 8 requests at once;
+  - after: 3 normal requests 30 s apart once the load is over.
+- *Early end:* a block with a failure waits up to 900 s for the worker to serve again.
+  - If it does not, the run ends there: the failure is captured, and later blocks would show nothing.
+  - If it does, the remaining repeats are skipped and the eight and after sections still run.
+- *R1 is read, not forced:*
+  - A slot overflow counts as shown only if the worker's exit tail has a `RuntimeError` whose frame is
+    `dense_plan.py:510:prefill`, the "no free slot" raise at `5f064c3`. The failed group's members and joins in the
+    stability log must also add up to more than 6 rows.
+  - *If only the original section fails that way:* it supports the explanation for run 6.
+  - *If only the eight section fails that way:* the capacity fault is shown on the card, and run 6's cause stays
+    narrowed.
+  - *If nothing fails:* not reproduced, recorded as such.
+  - Run 6's missing logs are not replaced either way.
+- *R2 passes only if:*
+  1. every request of every block is answered (`analyse_ag5r` "accepted", no block skipped or cut);
+  2. no request ends with `backend_unavailable`, another 503 or a timeout;
+  3. each admitted request ends exactly once in the stability log;
+  4. no group ever holds more than 6 open members (`ag5r_log_checks`);
+  5. requests did join running groups;
+  6. no worker exits or restarts;
+  7. after the load, nothing is queued or active, the worker is ready, and the after section is answered.
+
+  A quick, bounded failure is recorded as `controlled`: it shows the failure handling and does not pass R2.
+
 **Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
 invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
 session hours.

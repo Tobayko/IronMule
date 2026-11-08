@@ -1596,7 +1596,9 @@ def test_ag5r_rebuilds_run_6s_spike_exactly_and_adds_a_group_larger_than_the_pla
     blocks = rl2.ag5r_blocks()
     names = [name for name, _ in blocks]
     assert names == ["phase0-block0", "phase0-block1"] + [f"phase0-block1-again-{k}" for k in range(1, 5)] + \
-        ["eight-at-once"]
+        ["eight-at-once", "after-the-load"]
+    after = dict(blocks)["after-the-load"]
+    assert [item["offset_s"] for item in after] == [0.0, 30.0, 60.0], "one at a time, after the load"
     spike = dict(blocks)["phase0-block1"]
     recorded = [0.0, 0.0695, 0.0728, 0.2177, 0.4498, 0.4755, 0.5094, 0.6037, 0.655, 0.8254, 0.8715, 0.8747]
     assert [round(item["offset_s"], 4) for item in spike] == recorded, "run 6's report, phase 0, block 1"
@@ -1613,7 +1615,7 @@ def test_ag5r_runs_every_block_through_one_path_and_reports_each_as_it_ends(tmp_
         report = rl2.measure_ag5r(pool, spec.model_id, blocks, 30.0, on_row=lambda r: seen.append(len(r["blocks"])))
     finally:
         pool.close()
-    assert [b["block"] for b in report["blocks"]] == [name for name, _ in blocks] and seen == [1, 2, 3, 4]
+    assert [b["block"] for b in report["blocks"]] == [name for name, _ in blocks] and seen == [1, 2, 3, 4, 5]
     assert rl2.analyse_ag5r(report)["verdict"].startswith("accepted")
 
 
@@ -1627,3 +1629,69 @@ def test_ag5r_tells_an_accepted_run_from_a_controlled_failure_and_a_hang():
     assert controlled["verdict"].startswith("controlled") and controlled["blocks"][0]["errors"] == ["backend_unavailable"]
     assert rl2.analyse_ag5r(report(("failed", "backend_unavailable"), ("timeout", None)))["verdict"].startswith("hung")
     assert rl2.analyse_ag5r({"failed": "no worker"})["verdict"] == "not run: no worker"
+
+
+def test_the_hard_limit_ends_a_run_that_hangs_and_keeps_what_it_measured(tmp_path):
+    """STAB3: "no new block after an hour" cannot end a block that hangs; the absolute limit can. The run's
+    partial report and the limit are saved, then the process ends."""
+    out = tmp_path / "report.json"
+    script = f"""
+import sys, time
+sys.path.insert(0, {str(Path(__file__).resolve().parents[2])!r})
+from training import rl2_headroom as rl2
+def run(model, work, *, smoke, on_row=None):
+    on_row({{"plan": "ag5r", "blocks": [{{"block": "phase0-block0", "requests": []}}]}})
+    time.sleep(600)
+rl2.run_ag5r = run
+rl2.environment = lambda: {{"machine": "test"}}
+rl2.main(["--out", {str(out)!r}, "--plan", "ag5r", "--commit", "{'a' * 40}", "--harness-commit", "{'b' * 40}",
+          "--hard-limit-s", "1.5", "--block-budget-s", "1"])
+"""
+    started = time.monotonic()
+    done = subprocess.run([sys.executable, "-c", script], timeout=60, capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[-2000:]
+    assert time.monotonic() - started < 30
+    report = json.loads(out.read_text())
+    assert report["hard_limit"] == {"after_s": 1.5} and report["rl2h"]["hard_limit"] == {"after_s": 1.5}
+    assert report["commit"] == "a" * 40 and report["harness_commit"] == "b" * 40 and report["block_budget_s"] == 1.0
+    assert report["rl2h"]["blocks"][0]["block"] == "phase0-block0", "what it measured is kept"
+    events = [json.loads(line)["event"] for line in (tmp_path / "diagnostics" / "harness.jsonl").read_text().splitlines()]
+    assert events == ["run_start", "hard_limit"]
+    assert rl2.analyse_ag5r(report["rl2h"])["verdict"].startswith("not run") or not rl2.analyse_ag5r(
+        report["rl2h"])["verdict"].startswith("accepted")
+
+
+def test_ag5r_waits_for_recovery_after_a_captured_failure_skips_the_repeats_and_checks_service_after(
+        tmp_path, monkeypatch):
+    pool, spec, _, _ = _ag6h_pool(tmp_path, monkeypatch)
+
+    def items(n, text):
+        return [{"offset_s": 0.0, "prompt": 0, "long": False, "max_tokens": 3, "text": text} for _ in range(n)]
+
+    blocks = [("phase0-block1", items(1, "crash")), ("phase0-block1-again-1", items(2, "x")),
+              ("eight-at-once", items(2, "y")), ("after-the-load", items(1, "z"))]
+    try:
+        pool.router = rl2.ForcedRoute(1)
+        report = rl2.measure_ag5r(pool, spec.model_id, blocks, 30.0)
+    finally:
+        pool.close()
+    assert [b["block"] for b in report["blocks"]] == ["phase0-block1", "eight-at-once", "after-the-load"]
+    assert report["skipped"] == ["phase0-block1-again-1"] and report["blocks"][0]["worker_after"]["state"] == "ready"
+    assert [b["section"] for b in report["blocks"]] == ["original", "eight", "after"]
+    analysis = rl2.analyse_ag5r(report)
+    assert analysis["verdict"].startswith("controlled") and analysis["blocks"][0]["errors"] == ["backend_unavailable"]
+    assert analysis["blocks"][2]["failed"] == 0, "the service serves on after the failure"
+
+
+def test_ag5r_log_checks_find_a_double_end_a_group_wider_than_the_engine_and_a_worker_loss():
+    clean = [{"t": 1, "event": "admit", "id": "a"}, {"t": 2, "event": "admit", "id": "b"},
+             {"t": 3, "event": "group", "group": 1, "ids": ["a"]}, {"t": 4, "event": "join", "group": 1, "id": "b"},
+             {"t": 5, "event": "end", "group": 1, "id": "a"}, {"t": 6, "event": "end", "group": 1, "id": "b"}]
+    checks = rl2.ag5r_log_checks(clean, width=2)
+    assert checks["ended_once"] and checks["within_width"] and checks["joins"] == 1 and checks["worker_events"] == []
+    wide = clean[:4] + [{"t": 4.5, "event": "admit", "id": "c"}, {"t": 4.6, "event": "join", "group": 1, "id": "c"}]
+    assert rl2.ag5r_log_checks(wide, width=2)["widest_group"] == 3
+    lost = clean + [{"t": 7, "event": "end", "group": 1, "id": "b"},
+                    {"t": 8, "event": "worker_exit", "reason": "BackendUnavailable: x", "exit_status": 9}]
+    checks = rl2.ag5r_log_checks(lost, width=2)
+    assert not checks["ended_once"] and checks["ended_twice"] == ["b"] and checks["worker_events"][0]["exit_status"] == 9
