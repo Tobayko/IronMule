@@ -1545,6 +1545,19 @@ last 64, and it scores tokens per second over the window's whole span.
   64 of its 80 requests served stacked. Its mean first token there would then be far above the single path's.
 - If a fixed mode or the simple rule wins a phase, that is the result, and it names the next step.
 
+**Offline prediction (world model only; made 2026-11-08 at 02:15 UTC, after the kernel started and before any of its
+data was read; a scratch script, not a claim).** The world model in `path_router.replay` served AG6-Q's trace in
+closed loop, with AG6-H's startup prices as both the card and the agent's model and the mode in force at each
+arrival. All three seeds gave the same result:
+- The agent serves the quiet phase in `route`, as the single path does (first token 0.063 s).
+- It serves the spike in `route`, at 0.81x the stacked engine's tokens per second, with mean first tokens 1.12x
+  later. It switches to `stacked` only at the 80th finished request, the spike's last, after the spike.
+- It returns to `route` at the 144th finished request, 191 s into the second quiet phase. There its mean first token
+  is 3.8x the single path's.
+- So the prediction is a fail in the spike (both conditions) and in the second quiet phase (first tokens).
+- The simple rule passes every phase: 0.97x the stacked engine's tokens per second in the spike, first tokens 1.04x
+  later, and the single path's first tokens when it is quiet.
+
 **Cost:** about 0.15 session hours of setup and warm-up, and 7.1 minutes per arm and repetition (the trace spans
 425 s), about 2 session hours in all.
 
