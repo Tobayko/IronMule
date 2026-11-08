@@ -131,7 +131,10 @@ bursts and spike states at 0.8 and 3.0 times the single path's capacity, 16 bloc
 256-token answers, through the product at `c58fb4b`. Every answer was one of the two gated paths' own. Its gain is
 one switch it learned by itself; the run did not show it switching back, since stacking won in every state there,
 and the forced stacked engine was 0.75 % faster still. Nothing here covers quiet traffic, another model, card or
-card count, answers of other lengths, or a setup other than `route`.
+card count, answers of other lengths, or a setup other than `route`. On quiet traffic, where at most 1 in 16 requests
+arrives while another is being served, the agent also moves to the mode with the earliest first tokens at the same
+throughput (REV1, 2026-11-08). That choice is a replay of its learned single-request prices, not measured on
+hardware; replayed on AG6-H's blocks it changed no decision.
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 

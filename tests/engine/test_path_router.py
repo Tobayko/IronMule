@@ -298,3 +298,36 @@ def test_a_rerouted_request_is_priced_at_the_load_its_new_path_has_now():
     single._outstanding = 3  # three refusals got there first
     assert [e["type"] for e in stream] == ["token", "done"]
     assert seen == [(1, 1), (0, 4)]
+
+
+# ---------------------------------------------------------------- review of 2026-11-08: AG6 on quiet traffic
+
+def _quiet_costs():
+    from ironmule_product.path_router import PathCost
+
+    return [PathCost(capacity=1, step_s=0.010, step_s_per_row=0.0, first_s=0.010),
+            PathCost(capacity=8, step_s=0.012, step_s_per_row=0.003, first_s=0.100)]
+
+
+def test_on_quiet_traffic_the_dream_leaves_a_mode_whose_first_tokens_come_ten_times_later():
+    """Every mode's tokens per second is the arrival rate on quiet traffic, so the 5 % rule never moved the agent
+    off `stacked`, whose first tokens came 10x later. At the same throughput the earliest first token now wins."""
+    from ironmule_product.path_router import dream
+
+    quiet = [(10.0 * i, 32) for i in range(64)]
+    out = dream(_quiet_costs(), quiet, "stacked")
+    assert out["mode"] == "route" and out["rule"] == "first token"
+    assert out["replayed"]["stacked"]["overlapped"] == 0
+    assert dream(_quiet_costs(), quiet, "route")["mode"] == "route", "and it stays: nothing serves sooner"
+
+
+def test_under_load_the_first_token_rule_stays_out_and_the_two_rules_do_not_take_turns():
+    """The replay's first tokens are unreliable when requests overlap (AG6-H bursts at load 0.8: it priced the
+    router 25 % sooner, the card measured stacking 5x sooner), so the first-token rule waits for quiet traffic."""
+    from ironmule_product.path_router import DREAM_QUIET, dream
+
+    spike = [(0.01 * i, 200) for i in range(64)]
+    out = dream(_costs(), spike, "stacked")
+    assert out["replayed"]["stacked"]["overlapped"] > DREAM_QUIET and out["rule"] != "first token"
+    moved = dream(_costs(), spike, "route")["mode"]
+    assert dream(_costs(), spike, moved)["mode"] == moved, "a move for throughput is not undone for latency"

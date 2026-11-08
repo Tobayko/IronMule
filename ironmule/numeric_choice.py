@@ -223,8 +223,8 @@ def choose_out_of_process(model_id: str, fingerprint: str, identity_sha256: str,
         subprocess.run([sys.executable, "-c", code, model_id, fingerprint, identity_sha256],
                        check=True, timeout=3600)
     except (OSError, subprocess.SubprocessError) as exc:
-        return {"plan": None, "reason": f"the gate did not finish ({type(exc).__name__}); stock kept"}
-    return _stored(key) or {"plan": None, "reason": "the gate stored no decision; stock kept"}
+        return {"plan": None, "technical": True, "reason": f"the gate did not finish ({type(exc).__name__}); stock kept"}
+    return _stored(key) or {"plan": None, "technical": True, "reason": "the gate stored no decision; stock kept"}
 
 
 def _options(architecture: str | None, dtype: str | None, device: str | None,

@@ -146,7 +146,8 @@ It may choose a plan that changes answers slightly, by the owner's decision. `/h
 the choice, every candidate's gate and speeds, and the reason. If the stacked engine wins only under load and both
 fit the card, both serve, and the agent routes each request to the path where it should finish first. `/health`'s
 `paths` block shows each path's learned costs, the decisions and the decision time; since AG6 also the serving
-mode the agent dreamed (`mode`, `dreams`, `switches`, `last_dream`), the requests the pool moved to the other path
+mode the agent dreamed (`mode`, `dreams`, `switches`, `last_dream` with the `rule` that chose it), the requests the
+pool moved to the other path
 (`fallbacks`), and any router fault (`errors`, `last_error`, `router_faults`). `agent_setup.levers` lists every
 lever the agent knows, and what happened to each on this machine, including the planned ones (BACKLOG HQ1). While the stacked engine serves, the online agent
 does not attach yet: it does not model slot reuse. A named `--engine` or `--compute-dtype` is always kept. *Never

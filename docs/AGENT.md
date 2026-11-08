@@ -99,7 +99,11 @@ the stacked engine, and one its slot cannot hold to the single path) and `single
 32 are logged, it dreams: it replays the arrivals and answer lengths of its last 64 requests under each mode, in a
 world model built from the prices it learned and the card's time shared between the two paths. It moves to the
 mode with the most tokens per second if that mode is at least 5 % ahead and its mean first token is at most 1.1x
-the current mode's. The dream runs after a request has finished; a decision stays a lookup, under a microsecond.
+the current mode's. On quiet traffic, where every mode's tokens per second is just the arrival rate, it also moves to
+the mode with the earliest first tokens, if that one keeps at least 98 % of the throughput and is at least 20 %
+sooner (REV1). Quiet means at most 1 in 16 requests arrives while another is being served: under load the replay's
+first tokens are not reliable. The dream runs after a request has finished; a decision stays a lookup, under a
+microsecond.
 Each path still answers with its own gated plan, so no answer changes beyond the two paths' own.
 
 On one T4 with Qwen 3 1.7B (AG6-H, 2026-11-07) the agent started in `route`, moved to `stacked` at its first dream

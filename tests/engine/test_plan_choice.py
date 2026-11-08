@@ -317,7 +317,7 @@ def test_a_measurement_past_its_time_is_refused_and_the_base_path_kept(monkeypat
 
     monkeypatch.setattr(subprocess, "run", run)
     out = pc._measure_in_child("m", "native")
-    assert out == {"eligible": False,
+    assert out == {"eligible": False, "technical": True,
                    "reason": f"the measurement did not finish within {pc.MEASURE_TIMEOUT_S} s"}
     assert pc.MEASURE_TIMEOUT_S <= 3600
 
@@ -327,7 +327,7 @@ def test_a_stacked_engine_without_a_measured_rival_is_not_eligible():
     stacked = {"eligible": True, "speed": {"short": {"base_first_s": 0.1, "base_step_s": 0.05}}}
     failed = {"eligible": False, "reason": "the measurement child exited with status 1"}
     assert pc.against(stacked, failed) == {
-        "eligible": False,
+        "eligible": False, "technical": True,
         "reason": "the path it competes with was not measured: the measurement child exited with status 1"}
 
 
@@ -376,7 +376,7 @@ def test_a_child_that_prints_no_readable_result_is_refused(monkeypatch):
         returncode, stdout = 0, "@@STACKED {not json\n"
 
     monkeypatch.setattr(subprocess, "run", lambda *a, **k: Done())
-    assert pc._measure_in_child("m", None) == {"eligible": False,
+    assert pc._measure_in_child("m", None) == {"eligible": False, "technical": True,
                                                "reason": "the measurement child returned no readable result"}
 
 
@@ -454,3 +454,42 @@ def test_first_tokens_are_medians_of_several_prefills_and_their_samples_are_kept
         assert len(row["base_first_samples_s"]) == pc.FIRST_SAMPLES and len(row["plan_first_samples_s"]) == 3
         assert row["base_first_s"] == statistics.median(row["base_first_samples_s"])
         assert row["plan_first_s"] == statistics.median(row["plan_first_samples_s"])
+
+
+def test_a_technical_measurement_failure_is_measured_again_and_a_refusal_is_kept(tmp_path, monkeypatch):
+    """Review of 2026-11-08: a measurement that failed for a technical reason was stored, so the base path served
+    for good after the cause had gone. It now serves the base path once and is measured again on the next start;
+    a refusal by a rule is still stored."""
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+    calls = []
+
+    def numeric(*args, **kwargs):
+        calls.append("numeric")
+        return {"plan": "native", "reason": "a passed gate"}
+
+    def failed(*args, **kwargs):
+        calls.append("failed")
+        raise RuntimeError("out of memory")
+
+    def healthy(*args, **kwargs):
+        calls.append("healthy")
+        row = {"base_first_s": .5, "base_step_s": .052, "plan_first_s": .5, "plan_step_s": {"1": .053, "8": .17}}
+        return {"eligible": True, "install": {}, "speed": {"short": row, "long": dict(row)},
+                "gate": {"passes": True, "ratio": 1.001, "interval": [.998, 1.004]}}
+
+    first = pc.choose_setup("m", "hw", "a" * 64, log=lambda _: None, numeric=numeric, measure=failed)
+    assert first["engine"] == "reference" and first["measurement_failed"] is True
+    second = pc.choose_setup("m", "hw", "a" * 64, log=lambda _: None, numeric=numeric, measure=healthy)
+    assert second["engine"] == "dense" and "measurement_failed" not in second
+    assert pc.choose_setup("m", "hw", "a" * 64, log=lambda _: None, numeric=numeric, measure=failed)["engine"] == \
+        "dense", "a stored success is used"
+    assert calls == ["numeric", "failed", "numeric", "healthy"]
+
+    refused = lambda *args, **kwargs: {"eligible": False, "reason": "the dense plan serves Qwen 3 checkpoints only"}  # noqa: E731
+    pc.choose_setup("m", "hw", "b" * 64, log=lambda _: None, numeric=numeric, measure=refused)
+    again = pc.choose_setup("m", "hw", "b" * 64, log=lambda _: None, numeric=numeric, measure=failed)
+    assert again["engine"] == "reference" and "measurement_failed" not in again, "a refusal is kept, not remeasured"
+
+    for technical in (lambda *a, **k: {"eligible": False, "technical": True, "reason": "child exited with status 1"},):
+        result = pc.choose_setup("m", "hw", "c" * 64, log=lambda _: None, numeric=numeric, measure=technical)
+        assert result["measurement_failed"] is True and pc._stored("hw-" + "c" * 16) is None

@@ -1499,6 +1499,50 @@ decision moves, so it needs no hardware evidence; each case has a test that inje
 - *Not covered:* a worker that dies mid-request is STAB1's (it is replaced, and the request fails as before); a
   driver fault that takes the whole process down is outside Python's reach.
 
+### REV1 — An external review of 2026-11-08: eight findings, all reproduced and fixed (shipped)
+
+A review of PRs 21 to 23 and of this branch at `5f064c3` came with four read-only scripts. They run the
+repository's own functions on synthetic inputs, with no model, GPU or network. All four reproduced their
+findings here (each script exits 0 while its fault is present). Each fix below has a regression test that fails on
+the old code, and each script now fails its assertion. The serving faults are on `main` as well.
+- **P1, the agent's qualification stalled for good.** The triplet cursor counted used arrivals, but the traffic
+  memory keeps 2,048. Once 2,048 were used, no window was found again, and the open candidate blocked replanning.
+  *Fix:* the cursor is the last window's recorded end time (`Agent._next_window`).
+- **P1, a candidate that loses could be promoted.** Eleven triplets against a schedule that was then withdrawn were
+  judged together with one against the reference that served next. That promoted a candidate costing 50 % more than
+  the reference. *Fix:* a candidate's evidence is bound to the incumbent it ran against, and starts over when the
+  incumbent changes.
+- **P1, early failures never withdrew a policy.** `_agent_observe` dropped any group with a request that failed
+  before its first token, so the live monitor never saw those failures. *Fix:* such a group's outcomes still
+  reach the monitor (`Agent.observe_outcomes`); so do those of groups a request joined.
+- **P1, cancelled joiners kept computing.** A joined row's stream had no cancel check, so a joiner whose client
+  had gone computed its whole limit. *Fix:* the worker's admission hands each joiner its own check (a fifth field),
+  and the bridge passes it to the executor.
+- **P1/P2, AG6 stayed stacked on quiet traffic.** On quiet traffic every mode's tokens per second is the arrival
+  rate, so the 5 % rule never left a mode whose first tokens came 10x later. *Fix (an amendment after AG6-H,
+  labelled so):* where no mode wins on throughput, the earliest mean first token wins among the modes with at
+  least 98 % of the current mode's tokens per second, if it is at most 0.8x the current mode's. This applies on
+  quiet traffic only: at most 1 in 16 requests may arrive while another is being served (`DREAM_QUIET`).
+  - Without that limit the rule would have broken AG6-H. In its bursts at load 0.8, with the startup prices, the
+    replay priced the router's first tokens 25 % earlier than stacking's, while the card measured stacking's 5x
+    earlier (0.36-0.40 s against 1.7-2.2 s). Under load the replay's first tokens are not reliable.
+  - *Checks, all replays:* AG4-R run 1's model check is unchanged (20 of 20 blocks, the same named modes). Replayed
+    on AG6-H's 16 blocks, no block leaves `stacked`, with the startup prices or with the agent's learned ones. The
+    review's quiet trace now moves to `route`.
+  - This changes nothing AG6-H measured. On quiet traffic the choice is a replay of learned single-request prices,
+    not measured on hardware (LIMITS).
+- **P2, a technical measurement failure was cached for good.** `choose_setup` stored the base path after a child
+  had crashed or run out of memory, and reused it after the cause was gone. *Fix:* such a setup serves once, marked
+  `measurement_failed`, and is measured again on the next start; a refusal by a rule or a gate is still stored.
+- **P2, constant predictions scored a perfect rank correlation.** Tied values got consecutive ranks. *Fix:* ties
+  share their average rank, and a constant input is undefined (None), as in SciPy. RL4's own copy of the function
+  had the same fault and now uses the product's.
+- **P2, the queue bound could be exceeded.** Admission bounded only the queue, while a shortest-first order moves
+  waiting work to the carry. *Fix:* the bound is on queue plus carry.
+- The review also read AG6-H as a limited positive selection result: 1.512x over the router it replaces, but
+  0.9925x the forced stacked engine, one switch and no switch back. A lasting advantage over the best fixed mode
+  is not shown. That agrees with AG6-H's record and LIMITS.
+
 ### TP1 — Kaggle TPUs as a further device the agent can choose (opened 2026-11-05, owner suggestion, before data)
 
 The owner offered TPUs. Kaggle gives this account 20 TPU hours a week (TPU v5e-8 by default), apart from the 30

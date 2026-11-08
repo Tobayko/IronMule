@@ -428,7 +428,8 @@ def against(stacked: dict[str, Any], base: dict[str, dict[str, float]]) -> dict[
     if not stacked.get("eligible"):
         return stacked
     if any(name not in base for name in stacked["speed"]):  # its measurement failed: nothing to compare against
-        return {"eligible": False, "reason": f"the path it competes with was not measured: {base.get('reason')}"}
+        return {"eligible": False, "technical": True,
+                "reason": f"the path it competes with was not measured: {base.get('reason')}"}
     speed = {}
     for name, row in stacked["speed"].items():
         speed[name] = {**row, "stacked_base_first_s": row["base_first_s"], "stacked_base_step_s": row["base_step_s"],
@@ -467,16 +468,18 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
         proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or "", "1" if base_only else "0"],
                               stdout=subprocess.PIPE, text=True, timeout=MEASURE_TIMEOUT_S)
     except subprocess.TimeoutExpired:  # the child is killed; the agent keeps the base path and says why
-        return {"eligible": False, "reason": f"the measurement did not finish within {MEASURE_TIMEOUT_S} s"}
+        return {"eligible": False, "technical": True,
+                "reason": f"the measurement did not finish within {MEASURE_TIMEOUT_S} s"}
     lines = [line for line in proc.stdout.splitlines() if line.startswith("@@STACKED ")]
     if proc.returncode or not lines:
-        return {"eligible": False, "reason": f"the measurement child exited with status {proc.returncode}"}
+        return {"eligible": False, "technical": True,
+                "reason": f"the measurement child exited with status {proc.returncode}"}
     try:
         measured = json.loads(lines[-1][len("@@STACKED "):])
     except ValueError:
         measured = None
     if not isinstance(measured, dict):
-        return {"eligible": False, "reason": "the measurement child returned no readable result"}
+        return {"eligible": False, "technical": True, "reason": "the measurement child returned no readable result"}
     return measured
 
 
@@ -512,7 +515,8 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
     try:
         base = numeric(model_id, fingerprint, identity_sha256, log=log)
     except Exception as exc:  # noqa: BLE001 - a failed gate keeps the checkpoint's dtype, as a refused plan does
-        base = {"plan": None, "reason": f"the numeric gate failed ({type(exc).__name__}: {exc})"[:300]}
+        base = {"plan": None, "technical": True,
+                "reason": f"the numeric gate failed ({type(exc).__name__}: {exc})"[:300]}
     compute_dtype = base.get("plan")
     log(f"agent: numeric plan {compute_dtype or 'none (checkpoint dtype)'}: {base.get('reason')}")
     measure = measure or _measure_in_child
@@ -525,7 +529,7 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
             stacked = against(stacked, measure(model_id, compute_dtype, base_only=True))
         decision = decide(stacked)
     except Exception as exc:  # noqa: BLE001 - a failed measurement or rule keeps the base path, with the reason
-        stacked = {"eligible": False,
+        stacked = {"eligible": False, "technical": True,
                    "reason": f"the stacked engine's measurement failed ({type(exc).__name__}: {exc})"[:300]}
         decision = decide(stacked)
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
@@ -534,4 +538,9 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
              "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision,
              "width": decision.get("width") if engine in ("dense", "route") else None}  # AG5: serves at this width
     setup["levers"] = levers(setup)
+    if base.get("technical") or stacked.get("technical"):
+        # A measurement that failed for a technical reason (a child that crashed or timed out, a card out of
+        # memory) serves the base path now and is measured again on the next start. Stored, it was reused for
+        # good after the cause had gone (review of 2026-11-08). A refusal by a rule or a gate is stored.
+        return {**setup, "measurement_failed": True}
     return _save(key, setup)

@@ -156,6 +156,9 @@ DREAM_MIN = 32        # logged requests before the first dream
 DREAM_WINDOW = 64     # the last finished requests a dream replays
 DREAM_GAIN = 1.05     # a mode must replay at least this many times the current mode's tokens per second
 DREAM_TTFT = 1.1      # and a mean first token at most this many times the current mode's
+DREAM_TIE = 0.98      # with no such winner: a mode with at least this share of the current mode's tokens per second
+DREAM_SOONER = 0.8    # whose mean first token is at most this many times the current mode's, the earliest one,
+DREAM_QUIET = 1 / 16  # and only where at most this share of requests arrived while another was being served
 
 
 class _Path:
@@ -187,11 +190,14 @@ def replay(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], mod
     outs: list[dict[str, Any]] = []
     clock, turn, index = 0.0, 0, 0
 
+    overlapped = 0
+
     def arrive(upto: float) -> None:
-        nonlocal index
+        nonlocal index, overlapped
         while index < len(pending) and pending[index][0] <= upto:
             arrival, tokens = pending[index]
             index += 1
+            overlapped += any(path.outstanding() for path in paths)  # it found the card at work
             out: dict[str, Any] = {"arrival": arrival, "tokens": tokens}
             outs.append(out)
             if mode == "route":  # as `PathRouter.choose`: each path's learned tokens a request, its outstanding work
@@ -235,18 +241,37 @@ def replay(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], mod
         clock += unit(paths[chosen])
     span = max(out["end"] for out in outs) - min(out["arrival"] for out in outs)
     return {"tokens_per_s": sum(out["tokens"] for out in outs) / span if span > 0 else 0.0,
-            "ttft_mean_s": statistics.fmean(out["first"] - out["arrival"] for out in outs)}
+            "ttft_mean_s": statistics.fmean(out["first"] - out["arrival"] for out in outs),
+            "overlapped": overlapped / len(outs)}
 
 
 def dream(costs: Sequence[PathCost], arrivals: Sequence[tuple[float, int]], current: str) -> dict[str, Any]:
     """Replay every mode and name the one to serve: the most tokens per second among the modes whose mean first token
-    is at most `DREAM_TTFT` of the current mode's, if it beats the current mode by `DREAM_GAIN`; else the current."""
+    is at most `DREAM_TTFT` of the current mode's, if it beats the current mode by `DREAM_GAIN`.
+
+    Else, on quiet traffic only, the earliest first tokens at the same throughput: among the modes with at least
+    `DREAM_TIE` of the current mode's tokens per second, the one with the earliest mean first token, if it is at
+    most `DREAM_SOONER` of the current mode's (ties: more tokens per second, then `MODES` order). On quiet traffic
+    every mode's tokens per second is the arrival rate, so a mode with ten times later first tokens stayed (review
+    of 2026-11-08). Quiet means that in both modes' replays at most `DREAM_QUIET` of the requests arrived while
+    another was being served: there a first token is the path's learned price alone. Under load the replay's first
+    tokens are unreliable. In AG6-H's bursts at load 0.8 it priced the router's 25 % earlier than stacking's, where
+    the card measured stacking's 5x earlier. The 5 % to move for throughput and the 2 % that may be given up for
+    latency keep the two rules from taking turns."""
     results = {mode: replay(costs, arrivals, mode) for mode in MODES}
     now = results[current]
     allowed = [mode for mode in MODES if results[mode]["ttft_mean_s"] <= DREAM_TTFT * now["ttft_mean_s"]]
     best = max(allowed, key=lambda mode: (results[mode]["tokens_per_s"], mode == current))
-    chosen = best if results[best]["tokens_per_s"] >= DREAM_GAIN * now["tokens_per_s"] else current
-    return {"mode": chosen, "replayed": results, "requests": len(arrivals)}
+    if results[best]["tokens_per_s"] >= DREAM_GAIN * now["tokens_per_s"]:
+        chosen, rule = best, "tokens per second"
+    else:
+        level = [mode for mode in MODES if results[mode]["tokens_per_s"] >= DREAM_TIE * now["tokens_per_s"]]
+        soonest = min(level, key=lambda mode: (results[mode]["ttft_mean_s"], -results[mode]["tokens_per_s"],
+                                               MODES.index(mode)))
+        quiet = max(now["overlapped"], results[soonest]["overlapped"]) <= DREAM_QUIET
+        sooner = quiet and results[soonest]["ttft_mean_s"] <= DREAM_SOONER * now["ttft_mean_s"]
+        chosen, rule = (soonest, "first token") if sooner else (current, "kept")
+    return {"mode": chosen, "rule": rule, "replayed": results, "requests": len(arrivals)}
 
 
 class PolicyRouter(PathRouter):
