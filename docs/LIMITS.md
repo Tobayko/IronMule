@@ -135,9 +135,17 @@ card count, answers of other lengths, or a setup other than `route`. On quiet tr
 with the earliest first tokens at the same throughput (REV1, 2026-11-08). Quiet is observed, never estimated: of
 the last 64 finished requests (at least 32), at most 1 in 16 arrived while another was being served, none is in
 flight, and none in that span ended without its answer. That choice is a replay of its learned single-request
-prices, not measured on hardware. Replayed on AG4-R and AG6-H it changed no decision. How fast it follows a load
-change (quiet, a spike, quiet again) is open: BACKLOG AG6-Q is fixed and its hardware run pending, so nothing here
-covers switching back on hardware.
+prices, not measured on hardware. Replayed on AG4-R and AG6-H it changed no decision.
+
+It does not follow a fast load change (AG6-Q, 2026-11-08: same card and model, 64-token answers, 3 repetitions).
+Through a 48-request spike it stayed in `route`, at 0.58x the forced stacked engine's tokens per second. It
+switched to `stacked` only at the spike's last request, in two repetitions, and never in the third. It then served
+the next 64 quiet requests stacked and switched back to `route` 190 s into that quiet phase, with mean first tokens
+there 1.9x the single path's. A one-line rule on the card's observed state (stacked while anything is outstanding,
+else single) came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+every phase. So with a `route` setup under `--agent on`,
+traffic that changes within the agent's 64-request window can give later first tokens than the router it replaces.
+Each dream took about 15 ms, on the thread of the request that had just finished.
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 

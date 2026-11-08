@@ -114,6 +114,12 @@ after 32 requests, and kept it. It made 1.51x the router's tokens per second (95
 tokens at 0.55x. `ironmule serve --agent on` serves this way wherever the agent's setup is `route`, and `/health`
 shows the mode, the dreams and the switches under `paths`.
 
+On a fast load change it is too slow (AG6-Q, 2026-11-08, same card and model). It served a 48-request spike in
+`route` and switched to `stacked` only at the spike's last request, or never. It then held `stacked` for the next 64
+quiet requests, about 190 s, with first tokens 1.9x the single path's. A rule on the card's observed state alone
+came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its first tokens in every phase. BACKLOG AG7 proposes making that rule the agent's starting
+mode.
+
 Measured on hardware (AG4-C run 3, one cloud CPU, `SmolLM2-135M-Instruct-8bit`): the agent chose `dequantize` by
 itself and served 24.5x the default's tokens per second (95 % 12.3x to 31.3x), first tokens about 20x sooner, on
 bursts and spike traffic. LIMITS has the validity domain.

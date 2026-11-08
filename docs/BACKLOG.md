@@ -1569,6 +1569,89 @@ and their rotation, a fresh agent per repetition, the decision record, the time 
 adaptation times on stand-in workers. The dream runs on the thread of the request that finished, before that
 request's last event goes out, so its cost also delays that request's end; the run records it.
 
+**AG6-Q result: fails (2026-11-08; kernel `tobayko/ironmule-rl2-headroom-ag6q` v1 at `cc76d3f`, one T4 of a Kaggle
+T4 x2 session, 1.96 session hours, 1.78 of them measuring).**
+- *Setup and validity:* the agent's own setup was `route`, the float16 single path beside the stacked engine at
+  width 8 (one request alone ran at 0.82x on the stacked engine). The warm-up of 16 requests at once took 19.6 s on
+  the single path and 10.4 s on the stacked engine. All 3 repetitions were valid: no request failed, no request
+  moved to the other path, no router fault, no time cut. Each of the 440 prompts had at most two distinct answers
+  across arms and repetitions, 264 had one.
+- **Decision, pooled over the 3 repetitions:**
+  - *Quiet:* passes. The agent's mean first token was 1.004x the single path's (95 % 1.000-1.007), its tokens per
+    second 1.000x.
+  - *Spike:* fails both conditions. The best fixed mode was the stacked engine: 181.9 tokens per second and a mean
+    first token of 7.32 s. The agent made 105.8 tokens per second, 0.582x (by repetition 0.602, 0.578 and 0.564),
+    with mean first tokens 1.609x later (95 % 1.572-1.650).
+  - *Quiet again:* fails on first tokens. Its mean first token was 0.119 s, 1.884x the single path's 0.063 s (95 %
+    1.753-2.015; 95th percentile 3.10x). Its tokens per second matched `route`'s, the best (1.000x).
+- *What it did:*
+  - It served all 48 spike requests in `route`, which sent 14 of them to the single path.
+  - In repetitions 1 and 2 it switched to `stacked` at the 80th finished request, the spike's last (28.5-28.6 s
+    after the spike's first arrival). It switched back to `route` at the 144th, by the first-token rule on observed
+    quiet traffic, 190.2 and 190.3 s into the second quiet phase. So it served 64 of that phase's 80 requests stacked.
+  - In repetition 0 it never switched.
+- *Why repetition 0 did not switch (found in the data, not tested further):* at the end of that run its learned
+  price of the stacked engine read 131.7 ms a token with no per-row term (startup: 21.6 ms and 1.3 ms a row). In the
+  other two it read 20.7-21.1 ms and 11.1-12.4 ms a row. A likely cause, not tested: a price is learned against the
+  load a request found when it was routed, while it decoded beside the rows that joined it later and beside the
+  other path's share of the card.
+- *Recorded, the simple rule:*
+  - It sent each spike's first request to the single path and the other 47 to the stacked engine.
+  - In the spike it made 0.937x the stacked engine's tokens per second (0.947, 0.932, 0.932), with first tokens
+    1.117x later (95 % 1.102-1.132). In both quiet phases it matched the single path (first tokens 1.000x and
+    0.998x).
+  - Against the agent, it made 1.61x the tokens per second in the spike, with 0.53x the first tokens after it. It
+    would narrowly miss the agent's own spike bounds.
+- *Recorded, the rest:*
+  - Over the whole trace, the arrivals set tokens per second (all within 0.1 %; `route` 24.15). The stacked engine
+    had the earliest mean first token (2.31 s), from the spike's queue.
+  - *Costs:* in the agent, a decision took 13.7 us on average and 61.8 us at most, mostly in `route`'s arithmetic;
+    in the route arm 20.2 us on average and 141.7 us at most. Each repetition had 9 dreams, which took 15.3 ms on
+    average and 20.6 ms at most, each on the thread of the request that had just finished.
+- *Against the offline prediction:* the switch at the 80th request and the return at the 144th, 191 s in, were
+  predicted; they came 190.2-190.3 s in, in two repetitions of three. The model overrated `route` in the spike
+  (0.81x predicted, 0.58x measured) and the simple rule (0.97x predicted, 0.94x measured).
+- **So:** a fixed mode wins each phase: the single path when it is quiet, the stacked engine in the spike. The
+  simple rule came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+  every phase. The agent lost 42 % of the spike's throughput
+  and nearly doubled first tokens after it, where it was also behind the router it replaces. Dreaming every 16
+  requests over the last 64 is too slow for this load change. That names the next step, AG7. The claim is bounded to
+  one T4, Qwen 3 1.7B bf16 at `9cd6692`, this trace, 64-token answers and the product at `cc76d3f`. The ledger entry
+  is still owed.
+
+### AG7 — The serving mode follows the card's observed state, request by request (proposed 2026-11-08 from AG6-Q; not started)
+
+**Why.** In AG6-Q the dreaming agent missed a 48-request spike: it switched to the stacked engine at the spike's last
+request, or never. It then held the stacked engine for 64 quiet requests, 190 s. A rule that looks only at the
+card's observed state came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first
+token in every phase. The decision has to react to each
+request; learning should refine it, not gate it.
+
+**Mechanism.** A new serving mode `reflex` for a `route` setup. It is a lookup on what the pool already passes to
+`choose`, with no prices:
+- an arrival that finds any request outstanding on the card goes to the stacked engine;
+- one that finds the card idle goes to the single path only if the previous arrival also found it idle, else to the
+  stacked engine. The first arrival counts its missing predecessor as idle.
+
+The agent starts in `reflex` and keeps dreaming. It leaves `reflex` only by today's rules: 5 % more tokens per
+second, or the first-token rule on observed quiet traffic.
+- *World model only (offline, 2026-11-08, not a claim):* on AG6-H's 16 blocks served back to back, this rule
+  matched the forced stacked engine (1.000x), where the plain busy rule made 0.944x. On AG6-Q's trace it served like
+  the busy rule.
+- *Not addressed:* the card-sharing bias in the learned prices (AG6-Q, repetition 0). The reflex uses no prices; the
+  dreams still do.
+
+**Kill criterion (fixed now, before any data).** One hardware run on one T4 with the same model: AG6-Q's trace (3
+repetitions) and AG6-H's bursts and spike at loads 0.8 and 3.0 (4 traces each), with the new agent, the busy rule
+and the forced modes.
+1. In each AG6-Q phase, the new agent's mean first token is at most 1.02x the busy rule's, and its tokens per second
+   at least 0.98x.
+2. On AG6-H's blocks, its tokens per second, paired by block, are at least 0.98x the forced stacked engine's (AG6's
+   agent: 0.9925x).
+
+If either fails, AG7 goes to Tier 0 and the dreaming agent stays as LIMITS bounds it. *Cost:* about 3 session
+hours, to be stated again before a kernel is pushed.
+
 ### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
 
 The owner asked that aborts stop and that nothing crash. Today's runs had shown how the agent could stop work.
@@ -4031,6 +4114,16 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **AG6 dreaming as the agent's only reaction to a load change (2026-11-08).** Experiment AG6-Q (kernel
+  `tobayko/ironmule-rl2-headroom-ag6q` v1, commit `cc76d3f`; see AG6-Q above): on one T4 with Qwen 3 1.7B bf16 at
+  `9cd6692`, quiet traffic, a 48-request spike and quiet traffic again, 3 repetitions. The agent served the spike at
+  0.582x the forced stacked engine's tokens per second, with first tokens 1.61x later. In the quiet phase after it,
+  its first tokens were 1.88x the single path's, because it held the stacked engine for 64 requests. The simple
+  busy rule came within 6.3 % of the best fixed mode's tokens per second and 11.7 % of its mean first token in
+  every phase. A dream every 16 requests over the last 64
+  does not follow such a change. Re-open with a mechanism that reacts per request (AG7), or with new evidence on
+  the dreams' cadence and window.
 
 - **KB2 Gemma 3 4-bit stacked decode plan (2026-11-07).** KB2-0 run 2 (kernel `tobayko/ironmule-cuda-probe-kb2`
   v2, commit `9d388e9`; see KB2 above): on one T4 with `gemma-3-12b-it-4bit` at `86cc6a8`, stacked rows were bit-exact
