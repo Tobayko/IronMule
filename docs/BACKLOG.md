@@ -1839,6 +1839,9 @@ AG7 runs again.
   7. after the load, nothing is queued or active, the worker is ready, and the after section is answered.
 
   A quick, bounded failure is recorded as `controlled`: it shows the failure handling and does not pass R2.
+- *Status (2026-11-08, 19:59 UTC): not started.* Kaggle refused R1's push: "Maximum weekly GPU quota of 30.00
+  hours reached". Both kernels are written from harness `1d038b0` and wait unchanged: R1 at `5f064c3`, R2 at
+  `b6d1f14`, with the budgets above. No hardware data exists for AG5-R yet.
 
 **Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
 invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
