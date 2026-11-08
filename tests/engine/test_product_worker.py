@@ -660,7 +660,7 @@ def test_no_thinking_reaches_the_chat_template_only_when_set(monkeypatch):
     assert seen == [{}, {"enable_thinking": False}]
 
 
-def _join_world(monkeypatch, capacity, late=False):
+def _join_world(monkeypatch, capacity, late=False, admitted=None):
     """A grouped batch of two that admits a third request sent while it runs (SERVE8); `late` sends it after the
     first run's last admission, so the batch's second run takes it."""
     import threading
@@ -697,9 +697,11 @@ def _join_world(monkeypatch, capacity, late=False):
                  "max_tokens": 8, "stream": True}]}
             worker.JOINS.put(join) if len(calls) == 1 and not late else None
             joined = admit(capacity)
+            if admitted is not None:  # each row, and what its cancel check says while the run is going
+                admitted.extend((row, row[4]() if len(row) > 4 else None) for row in joined)
             worker.JOINS.put(join) if len(calls) == 1 and late else None
             names += ["c"] * len(joined)
-            emitters += [emit for _, _, emit, _ in joined]
+            emitters += [row[2] for row in joined]  # (ids, limit, emit, cuts, cancelled)
             for step in range(2):
                 for name, emit in zip(names, emitters):
                     emit(scripts[name][step])
@@ -1120,3 +1122,75 @@ def test_a_grouped_request_beyond_the_context_limit_is_rejected_alone_on_either_
     assert [e["request_id"] for e in sent if e["type"] == "rejected"] == ["b"]
     assert [e["request_id"] for e in sent if e["type"] == "done"] == ["a"]
     assert sent[-1] == {"type": "batch_done", "batch_id": "batch-2", "request_ids": ["a", "b"]}
+
+
+def test_a_cancelled_joiner_stops_at_its_next_token_instead_of_computing_its_limit():
+    """Review of 2026-11-08: the bridge gave a joined row a stream without its cancel check, so a joiner whose
+    client had gone computed all its tokens. The worker's admission now hands the check over, and the executor
+    stops the joiner as it stops the run's first rows."""
+    import threading
+
+    from ironmule.executor import AsyncGroupedB1Executor, build_sessions
+    from ironmule.service import ThroughputMode
+    from ironmule.telemetry import Telemetry
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    cancelled = threading.Event()
+    cancelled.set()
+    seen = {}
+
+    class Decoder:
+        eos_ids = (99,)
+
+        def capacity_for(self, prompt_lens, max_tokens):
+            return 64
+
+        def prefill(self, prompt_ids, plan, capacity):
+            return {}, 1
+
+        def reset_state(self, base, offset):
+            return {}
+
+        def step(self, state, token, capacity):
+            return state
+
+        def complete(self, handles):
+            pass
+
+        def read(self, handle):
+            return 1, handle
+
+    class Done(Exception):
+        pass
+
+    class Runtime:
+        mode = ThroughputMode()
+
+        def serve(self, requests, admit=None):
+            joined = admit(64)
+            seen["joiner_checks_cancel"] = joined[0].stream.cancelled is not None
+            decoder, telemetry = Decoder(), Telemetry()
+            sessions = build_sessions(requests + joined, decoder, telemetry, 64)
+            AsyncGroupedB1Executor(decoder, telemetry, max_width=2).run(sessions, 64)
+            seen["computed"] = [len(session.tokens) for session in sessions]
+            seen["stops"] = [session.stop_reason for session in sessions]
+            raise Done
+
+    bridge = object.__new__(CurrentEngineBridge)
+    bridge._closed, bridge._configuration, bridge._groupable, bridge._runtime = False, "current_profile", True, Runtime()
+    emit = lambda token: None  # noqa: E731
+    try:
+        bridge.generate_many([[1]], [8], on_tokens=[emit], cancelled=[cancelled.is_set],
+                             admit=lambda capacity: [([2], 8, emit, None, cancelled.is_set)])
+    except Done:
+        pass
+    assert seen == {"joiner_checks_cancel": True, "computed": [0, 0], "stops": ["cancelled", "cancelled"]}
+
+
+def test_the_workers_admission_hands_each_joiner_its_own_cancel_check(monkeypatch):
+    admitted = []
+    sent, calls, built = _join_world(monkeypatch, capacity=64, admitted=admitted)
+    assert calls == [2] and [e["request_id"] for e in sent if e["type"] == "done"] == ["a", "b", "c"]
+    (row, cancelled_now), = admitted
+    assert len(row) == 5 and callable(row[4]), "(ids, limit, emit, cuts, cancelled)"
+    assert cancelled_now is False, "c was never cancelled"

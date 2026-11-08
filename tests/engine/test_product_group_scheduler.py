@@ -397,3 +397,36 @@ def test_a_member_the_worker_rejects_as_too_long_fails_alone_with_a_400_and_free
     assert backend.joined == ["c"]  # its place went to the next request
     assert [first.events.get_nowait()["type"], waiting.events.get_nowait()["type"]] == ["done", "done"]
     assert service._completed == 2 and service._failed == 1
+
+
+def test_the_queue_bound_counts_the_work_a_shortest_first_order_moved_aside():
+    """Review of 2026-11-08: admission bounded only the queue, and a shortest-first order moves waiting work to the
+    carry, so a server set to hold two waiting requests held three. The bound is now on every waiting request."""
+    from types import SimpleNamespace
+
+    import pytest
+
+    from ironmule_product.errors import Overloaded
+    from ironmule_product.types import ModelSpec
+
+    service = object.__new__(ProductService)
+    service.settings = {"max_pending": 2, "request_timeout_s": 120}
+    service.spec = ModelSpec("local/test", "r", "/tmp/snapshot", 1)
+    service.store = SimpleNamespace(model=lambda _: service.spec)
+    service.backend = SimpleNamespace(ready=True, batch_capacity=8)
+    service.policy = ServingPolicy(max_width=1, order="sjf")
+    service._pending, service._carry, service._sessions = queue.Queue(maxsize=2), deque(), {}
+    service._lock, service._closed, service._active = threading.RLock(), threading.Event(), set()
+    service._completed = service._failed = service._cancelled = 0
+    service._last_batch_size, service._batch_count, service._joined = None, 0, 0
+    service.serving_log = service.stability_log = None
+
+    def ask(name):
+        return service.stream(GenerationRequest("local/test", (("user", "hi"),), max_tokens=2, request_id=name))
+
+    ask("one"), ask("two")
+    running = service._group_for(service._next_session())  # one runs; shortest-first moved the other aside
+    ask("three")
+    with pytest.raises(Overloaded):
+        ask("four")
+    assert len(running) == 1 and service._queued()[0] == 2 == service.settings["max_pending"]

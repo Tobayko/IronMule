@@ -917,7 +917,7 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                     streams[row[0]] = _BatchStream(batch_id, row[0], len(row[1]), row[2], pool, cancellations,
                                                    lock, tokenizer, eos=stop_ids, terminal=terminal_for(row))
                     joined.append(row)
-                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row)))
+                    fresh.append((row[1], row[2], streams[row[0]].on_token, cuts_for(row), cancelled_for(row[0])))
                 return fresh
 
             def cancelled_for(request_id: str):

@@ -865,6 +865,17 @@ class Agent:
                 self._watch()
             self._dirty()
 
+    def observe_outcomes(self, outcomes: list[bool]) -> None:
+        """Live requests of a group the world model cannot price (one failed before its first token, or one joined
+        a running group): their outcomes still reach the live monitor. Before, such a group was dropped whole, so a
+        policy whose requests failed before their first token was never withdrawn (review of 2026-11-08)."""
+        with self._lock:
+            self._last_activity = self.clock()
+            if self.active:
+                self._monitor.extend(bool(ok) for ok in outcomes)
+            self._watch()
+            self._dirty()
+
     def _watch(self) -> None:
         """Two consecutive live windows with a failed request withdraw the serving policy (ordinary
         observations may withdraw, never qualify)."""

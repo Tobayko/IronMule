@@ -328,11 +328,18 @@ class ProductService:
         if not starts:
             return
         start = min(starts)
+        if any(item.first_ns is None or item.end_ns is None or item.joined for item in group):
+            # Not the one-group-at-a-time model the agent prices (a request joined it, or one failed before its
+            # first token), but its outcomes still reach the live monitor (review of 2026-11-08).
+            if not replay:
+                try:
+                    agent.observe_outcomes([item.outcome == "ok" for item in group])
+                except Exception:  # noqa: BLE001 - the agent never stops serving
+                    agent.reason = "the agent failed while learning; the reference schedule serves"
+            return
         members = []
         length_of = None if replay else getattr(agent, "length_of", None)
         for item in group:
-            if item.first_ns is None or item.end_ns is None or item.joined:
-                return  # a group a request joined is not the one-group-at-a-time model the agent prices
             messages = item.request.messages or ()
             member = {"arrive": wall + item.submitted_ns / 1e9, "start": start / 1e9,
                       "first": item.first_ns / 1e9, "end": item.end_ns / 1e9,
@@ -378,6 +385,10 @@ class ProductService:
                 None if timeout is None else time.monotonic() + timeout,
             )
             try:
+                # The bound is on every waiting request: a shortest-first order moves waiting work from the queue
+                # to the carry, which the queue's own bound does not see (review of 2026-11-08).
+                if self._pending.qsize() + len(self._carry) >= self._pending.maxsize > 0:
+                    raise queue.Full
                 self._pending.put_nowait(session)
             except queue.Full:
                 if self.learning is not None:

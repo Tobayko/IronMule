@@ -422,12 +422,16 @@ class CurrentEngineBridge:
         joined_limits: list[int] = []
 
         def take(capacity: int) -> list[Any]:
-            """SERVE8: (ids, limit, on_token, chat-turn boundaries or None) rows admitted into this run."""
+            """SERVE8: (ids, limit, on_token, chat-turn boundaries or None[, cancelled]) rows admitted into this
+            run. A joiner's `cancelled` stops it at its next token boundary, as it stops the run's first rows: without
+            it a cancelled joiner computed its whole limit (review of 2026-11-08)."""
             fresh = []
-            for ids, limit, emit, cuts in admit(capacity):
+            for row in admit(capacity):
+                ids, limit, emit, cuts = row[:4]
+                stop = row[4] if len(row) > 4 else None
                 fresh.append(Request(prompt_ids=_validate_request(ids, limit), max_tokens=limit,
                                      plan=StrictOneShotPlan() if cuts is None else ChatTurnsPlan(cuts),
-                                     stream=TokenStream(emit)))
+                                     stream=TokenStream(emit, stop)))
                 joined_limits.append(limit)
             return fresh
         try:

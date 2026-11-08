@@ -1144,3 +1144,22 @@ def test_rank_correlation_shares_ranks_between_ties_and_is_undefined_for_a_const
     assert spearman([1., 1., 2., 3.], [1., 2., 3., 4.]) == pytest.approx(0.9486832980505138)  # SciPy's value
     assert spearman([1., 2., 3.], [3., 2., 1.]) == pytest.approx(-1.0)
     assert _spearman([64.] * 8, list(range(1, 9))) is None, "the training copy is the product's now"
+
+
+def test_requests_that_fail_before_their_first_token_reach_the_live_monitor(tmp_path):
+    """Review of 2026-11-08: a group with a request that failed before its first token was dropped whole, so a
+    policy failing requests that early was never withdrawn; one failing them after their first token was."""
+    from ironmule_product.service import _Session
+
+    for before_first in (True, False):
+        agent = Agent(tmp_path / str(before_first), {}, capacity=8, reference=_REFERENCE)
+        agent.policy = Policy.from_json(ag.fixed_policy(2, True))
+        service = object.__new__(ProductService)
+        service.agent = agent
+        for n in range(2 * ag.MONITOR_WINDOW):
+            now = time.monotonic_ns()
+            session = _Session(GenerationRequest("local/test", (("user", "hi"),), max_tokens=2, request_id=str(n)),
+                               None, submitted_ns=now - 3_000_000, dispatched_ns=now - 2_000_000,
+                               first_ns=None if before_first else now - 1_000_000, end_ns=now, outcome="failed")
+            service._agent_observe([session])
+        assert not agent.active and len(agent.withdrawn) == 1, before_first
