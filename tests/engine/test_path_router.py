@@ -205,11 +205,16 @@ def test_the_policy_router_dreams_every_sixteen_finished_requests_and_serves_its
         router.finished(100.0 + 0.001 * i, 200)
     assert router.dreams == 0 and router.mode == "route", "no dream before 32 logged requests"
     router.finished(100.0 + 0.001 * DREAM_MIN, 200)
-    assert router.dreams == 1 and router.mode == "stacked" and router.switches == [
-        {"at_request": DREAM_MIN, "from": "route", "to": "stacked"}]
+    assert router.dreams == 1 and router.mode == "stacked" and len(router.switches) == 1
+    switch = router.switches[0]
+    assert {k: switch[k] for k in ("at_request", "from", "to", "rule")} == {
+        "at_request": DREAM_MIN, "from": "route", "to": "stacked", "rule": "tokens per second"}
+    assert isinstance(switch["at_s"], float), "each switch carries its monotonic time"
     assert router.choose([5, 0], 256) == 1 and router.choose([0, 9], 256) == 1, "a lookup in its mode"
     status = router.status()
     assert status["mode"] == "stacked" and status["last_dream"]["requests"] == DREAM_MIN
+    assert status["decision_us_max"] >= status["decision_us_mean"] >= 0.0, "decision cost: mean and max"
+    assert status["dream_ms_max"] >= status["dream_ms_mean"] > 0.0, "the dream's cost is kept apart"
 
 
 # ---------------------------------------------------------------- stability: a router fault never fails a request

@@ -1476,6 +1476,86 @@ not evidence for a claim).**
     is bounded to one T4, Qwen 3 1.7B bf16 at `9cd6692`, these four load-and-state cells, 32-request blocks with
     256-token answers and the product at `c58fb4b`. The ledger entry is still owed.
 
+### AG6-Q — Quiet, a spike, quiet again: does the agent follow a load change on hardware? (owner request 2026-11-08; fixed now, before its data)
+
+**Why.** AG6-H measured blocks of one state each, and REV1's first-token rule for quiet traffic is unmeasured on
+hardware. The owner asked for one continuous load change: does the repaired agent decide right in each phase,
+and do its guards hold?
+
+**Setup.** One Kaggle T4, `mlx-community/Qwen3-1.7B-bf16` at `9cd6692`, `training/rl2_headroom.py --plan ag6q`
+at a pushed commit carrying REV1, the cursor fix and the observed quiet guard (`f2d82e5` or later). The product's
+`choose_setup` runs first; if it is not `route`, the run stops and records why. Both paths are loaded once, and
+every arm uses the same two workers. Before the first repetition, 16 calibration prompts go at once through each
+path to warm it; that is not measured.
+
+**Trace** (one per repetition, seed 450 + r; held-out Dolly prompts as AG4-R; `max_tokens` 64):
+1. *Quiet:* 32 requests at a constant 3.0 s. Alone, one takes about 1.2 s on the single path and 2 s on the
+   stacked engine, so in every mode no request overlaps another.
+2. *Spike:* 48 requests 3.0 s after the last quiet one, all within 0.5 s.
+3. *Quiet again:* 80 requests at 3.0 s, from 90 s after the spike's first arrival. By then even the forced single
+   path has served the spike, about 48 x 1.2 s.
+
+**Arms**, each run once per repetition on the same trace, in an order rotated by repetition, the card idle between
+them:
+- `agent`: the `PolicyRouter`, fresh from the startup prices, starting in `route`;
+- `route`: the `PathRouter`, fresh, per-request routing (a fixed mode);
+- `stacked`, forced;
+- `single`, forced;
+- `busy`, a simple adaptive rule: the stacked engine while any request is outstanding on the card, else the single
+  path.
+
+There are 3 repetitions, and the harness starts none after 3 hours.
+
+**Measured per phase and arm** (pooled over repetitions, and each repetition's value):
+- tokens per second over the phase (from its first arrival to the end of its last request);
+- mean and 95th-percentile first token;
+- requests, failures and cancellations;
+- the agent's mode at each request;
+- its switches (time, request, from, to and the rule);
+- the time to adapt: from a phase's first arrival to the agent's first switch into `stacked` in the spike and back
+  into `route` or `single` in the second quiet phase, censored at the phase's end;
+- the cost of a decision (mean and maximum µs), apart from the cost of the dreams (count, mean and maximum ms).
+
+**Uncertainty.**
+- First-token ratios come with a paired bootstrap over requests: the same request of the same repetition under
+  both arms, 2,000 resamples, 95 %.
+- Tokens per second come as the ratio in each repetition, with their mean.
+
+**Decision (fixed now).** The agent passes if, in each of the three phases:
+1. its mean first token is at most 1.1x that of the best fixed mode in that phase, the one with the earliest mean
+   first token among `single`, `stacked` and `route`; and
+2. its tokens per second are at least 0.95x the best fixed mode's in that phase, the one with the most.
+
+Both are pooled over the valid repetitions: the mean first token over all their requests in the phase, and tokens
+per second as all their tokens over the sum of their spans. A phase's span runs from its first arrival to the end of
+its last request.
+
+A failed request voids its repetition, and fewer than 2 valid repetitions make the run invalid. Every answer must
+be one of the two gated paths' own: per prompt at most two distinct answers across arms.
+
+**Recorded, no decision:** the simple rule's same ratios; the best fixed mode per phase and over the whole trace;
+the adaptation times; the switches; the decision and dream costs.
+
+**Expected risk, stated before the data.** The agent dreams after 32 finished requests and then every 16, on its
+last 64, and it scores tokens per second over the window's whole span.
+- In the spike, a window that still holds most of the first quiet phase may dilute the spike's gain below the 5 %
+  switch, so the agent may serve the spike in `route`.
+- If it does switch to `stacked`, it can return only once the spike has left its 64-request window. That is at the
+  144th finished request, the second quiet phase's 64th: about 190 s after that phase's first arrival, with about
+  64 of its 80 requests served stacked. Its mean first token there would then be far above the single path's.
+- If a fixed mode or the simple rule wins a phase, that is the result, and it names the next step.
+
+**Cost:** about 0.15 session hours of setup and warm-up, and 7.1 minutes per arm and repetition (the trace spans
+425 s), about 2 session hours in all.
+
+*Harness (built 2026-11-08, before any AG6-Q data):* `trace_ag6q`, `BusyRule`, `measure_ag6q`, `analyse_ag6q`
+and `run_ag6q` in `training/rl2_headroom.py`; AG6-H and AG6-Q now share one start (`_route_paths`). The router
+reports what the run records: each switch's time and rule, the mean and maximum cost of a decision, and the count,
+mean and maximum cost of its dreams. Before the hardware run, the tests cover the trace, the simple rule, the arms
+and their rotation, a fresh agent per repetition, the decision record, the time guard, the decision rule and the
+adaptation times on stand-in workers. The dream runs on the thread of the request that finished, before that
+request's last event goes out, so its cost also delays that request's end; the run records it.
+
 ### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
 
 The owner asked that aborts stop and that nothing crash. Today's runs had shown how the agent could stop work.

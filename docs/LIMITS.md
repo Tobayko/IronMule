@@ -135,7 +135,9 @@ card count, answers of other lengths, or a setup other than `route`. On quiet tr
 with the earliest first tokens at the same throughput (REV1, 2026-11-08). Quiet is observed, never estimated: of
 the last 64 finished requests (at least 32), at most 1 in 16 arrived while another was being served, none is in
 flight, and none in that span ended without its answer. That choice is a replay of its learned single-request
-prices, not measured on hardware. Replayed on AG4-R and AG6-H it changed no decision.
+prices, not measured on hardware. Replayed on AG4-R and AG6-H it changed no decision. How fast it follows a load
+change (quiet, a spike, quiet again) is open: BACKLOG AG6-Q is fixed and its hardware run pending, so nothing here
+covers switching back on hardware.
 
 ## Live learning (`--learning`, RSI3-LIVE, opt-in)
 

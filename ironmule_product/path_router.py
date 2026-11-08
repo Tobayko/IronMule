@@ -83,8 +83,15 @@ class PathRouter:
         self.decisions = [0] * len(names)
         self._lock = threading.Lock()
         self._decision_ns = 0
+        self._decision_ns_total = self._decision_ns_max = self._decisions_timed = 0
         self.errors, self.last_error = 0, None
         self._errors_lock = threading.Lock()
+
+    def _timed(self, started: int) -> None:  # the caller holds `_lock`
+        self._decision_ns = time.perf_counter_ns() - started
+        self._decision_ns_total += self._decision_ns
+        self._decision_ns_max = max(self._decision_ns_max, self._decision_ns)
+        self._decisions_timed += 1
 
     def _failed(self, where: str, exc: BaseException) -> None:
         """A decision or learning error never reaches a request: it is counted and shown in `/health`."""
@@ -116,7 +123,7 @@ class PathRouter:
                 self._failed("choose", exc)
                 best = 0
             self.decisions[best] += 1
-            self._decision_ns = time.perf_counter_ns() - started
+            self._timed(started)
             return best
 
     def observe(self, index: int, sharing: int, tokens: int, decode_s: float, first_s: float | None) -> None:
@@ -142,7 +149,9 @@ class PathRouter:
         with self._lock:
             out = {"paths": {name: cost.status() for name, cost in zip(self.names, self.costs)},
                    "decisions": dict(zip(self.names, self.decisions)),
-                   "decision_us": round(self._decision_ns / 1000, 2)}
+                   "decision_us": round(self._decision_ns / 1000, 2),
+                   "decision_us_mean": round(self._decision_ns_total / max(1, self._decisions_timed) / 1000, 2),
+                   "decision_us_max": round(self._decision_ns_max / 1000, 2)}
         with self._errors_lock:
             out.update(errors=self.errors, last_error=self.last_error)
         return out
@@ -311,6 +320,7 @@ class PolicyRouter(PathRouter):
         self._finished = 0
         self._in_flight = 0
         self._missing: list[float] = []  # arrival times of requests that ended without their answer
+        self._dream_ns_total = self._dream_ns_max = 0  # the background evaluation's cost, apart from decisions
 
     def choose(self, outstanding: Sequence[int], max_tokens: int) -> int:
         if self.mode == "route":
@@ -319,7 +329,7 @@ class PolicyRouter(PathRouter):
         with self._lock:
             best = 1 if self.mode == "stacked" else 0
             self.decisions[best] += 1
-            self._decision_ns = time.perf_counter_ns() - started
+            self._timed(started)
             return best
 
     def watch(self, index: int, sharing: int, events: Iterator[dict[str, Any]]) -> Iterator[dict[str, Any]]:
@@ -366,16 +376,23 @@ class PolicyRouter(PathRouter):
             if ended is None:  # a caller without observed intervals: nothing shows the traffic was quiet
                 quiet = {**quiet, "quiet": False, "reason": "no observed intervals"}
             costs, mode = copy.deepcopy(self.costs), self.mode  # the prices as they stand; learning goes on
+        started = time.perf_counter_ns()
         result = dream(costs, arrivals, mode, quiet)
+        took = time.perf_counter_ns() - started
         with self._lock:
             self.dreams += 1
-            self.last_dream = {**result, "at_request": self._finished}
+            self._dream_ns_total += took
+            self._dream_ns_max = max(self._dream_ns_max, took)
+            self.last_dream = {**result, "at_request": self._finished, "dream_ms": round(took / 1e6, 2)}
             if result["mode"] != self.mode:
-                self.switches.append({"at_request": self._finished, "from": self.mode, "to": result["mode"]})
+                self.switches.append({"at_request": self._finished, "from": self.mode, "to": result["mode"],
+                                      "rule": result["rule"], "at_s": time.monotonic()})
                 self.mode = result["mode"]
 
     def status(self) -> dict[str, Any]:
         out = super().status()
         with self._lock:
-            out.update(mode=self.mode, dreams=self.dreams, switches=list(self.switches), last_dream=self.last_dream)
+            out.update(mode=self.mode, dreams=self.dreams, switches=list(self.switches), last_dream=self.last_dream,
+                       dream_ms_mean=round(self._dream_ns_total / max(1, self.dreams) / 1e6, 2),
+                       dream_ms_max=round(self._dream_ns_max / 1e6, 2))
         return out

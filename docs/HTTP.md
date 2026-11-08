@@ -145,8 +145,10 @@ NUM1's numeric plan, then a stacked engine (`dense`) if one passes its decode-pa
 It may choose a plan that changes answers slightly, by the owner's decision. `/health`'s `agent_setup` block shows
 the choice, every candidate's gate and speeds, and the reason. If the stacked engine wins only under load and both
 fit the card, both serve, and the agent routes each request to the path where it should finish first. `/health`'s
-`paths` block shows each path's learned costs, the decisions and the decision time; since AG6 also the serving
-mode the agent dreamed (`mode`, `dreams`, `switches`, `last_dream` with the `rule` that chose it), the requests the
+`paths` block shows each path's learned costs, the decisions and the decision time (the last, `decision_us`, with
+its mean and maximum, `decision_us_mean` and `decision_us_max`); since AG6 also the serving mode the agent dreamed
+(`mode`, `dreams`, `switches` with each one's `rule` and monotonic time `at_s`, `last_dream` with the `rule` that
+chose it and its `dream_ms`, and the dreams' cost `dream_ms_mean` and `dream_ms_max`), the requests the
 pool moved to the other path
 (`fallbacks`), and any router fault (`errors`, `last_error`, `router_faults`). `agent_setup.levers` lists every
 lever the agent knows, and what happened to each on this machine, including the planned ones (BACKLOG HQ1). While the stacked engine serves, the online agent

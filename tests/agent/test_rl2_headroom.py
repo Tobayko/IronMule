@@ -1242,6 +1242,10 @@ def test_ag6_check_names_the_mode_the_dreamer_would_serve_and_scores_it_by_the_f
     assert set(result) >= {"replayed_stacked_over_single", "measured_stacked_over_single", "verdict"}
 
 
+_AG6_SETUP = {"stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
+                                              "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
+
+
 def _ag6h_pool(tmp_path, monkeypatch):
     from ironmule_product.device_pool import start_paths
     from ironmule_product.path_router import PathRouter, PolicyRouter
@@ -1262,9 +1266,7 @@ def _ag6h_pool(tmp_path, monkeypatch):
     snapshot.mkdir()
     spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
     store.register_model(spec)
-    setup = {"stacked": {"speed": {"short": {"base_step_s": 0.0173, "base_first_s": 0.06, "plan_first_s": 0.3,
-                                             "plan_step_s": {"1": 0.021, "8": 0.028}}}}}
-    router, agent = PathRouter.from_setup(setup), PolicyRouter.from_setup(setup)
+    router, agent = PathRouter.from_setup(_AG6_SETUP), PolicyRouter.from_setup(_AG6_SETUP)
     makers = [lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device="0")] * 2
     pool = start_paths(store, spec, makers, ["0:single", "0:stacked"], ProductService, router)
     return pool, spec, router, agent
@@ -1329,6 +1331,181 @@ def test_ag6h_decision_reads_the_fixed_rule():
     voided = rl2.analyse_ag6h(report(30.0, blocks=5, failed_block=2), resamples=200)
     assert voided["voided_blocks"] == [2] and voided["complete_blocks"] == 4 and voided["valid"]
     assert rl2.analyse_ag6h(report(30.0, blocks=3), resamples=50)["verdict"].startswith("invalid")
+
+
+def test_ag6q_trace_is_quiet_then_a_spike_then_quiet_again_as_fixed():
+    """AG6-Q's arrivals as fixed in BACKLOG: 32 quiet requests 3 s apart, 3 s later 48 within 0.5 s, and from 90 s
+    after the spike's first arrival 80 quiet ones 3 s apart, all with one 64-token limit; the seed sets the
+    spike's spread and nothing else of the timing."""
+    items = rl2.trace_ag6q(450)
+    phases = [[i for i in items if i["phase"] == p] for p in range(3)]
+    assert [len(p) for p in phases] == [32, 48, 80] and {i["max_tokens"] for i in items} == {64}
+    assert [i["offset_s"] for i in phases[0]] == [3.0 * k for k in range(32)]
+    spike = [i["offset_s"] for i in phases[1]]
+    assert spike[0] == 96.0 and spike == sorted(spike) and spike[-1] - spike[0] < 0.5
+    assert [i["offset_s"] for i in phases[2]] == [186.0 + 3.0 * k for k in range(80)]
+    other = rl2.trace_ag6q(451)
+    assert [i["offset_s"] for i in other if i["phase"] != 1] == [i["offset_s"] for i in items if i["phase"] != 1]
+    assert [i["offset_s"] for i in other if i["phase"] == 1] != spike and rl2.trace_ag6q(450) == items
+
+
+def test_the_busy_rule_serves_stacked_while_anything_is_outstanding_and_single_otherwise():
+    rule = rl2.BusyRule()
+    assert rule.choose([0, 0], 64) == 0 and rule.choose([1, 0], 64) == 1 and rule.choose([0, 3], 64) == 1
+    assert list(rule.watch(0, 1, iter([{"type": "done"}]))) == [{"type": "done"}], "it watches nothing"
+
+
+def _ag6q(tmp_path, monkeypatch, **kwargs):
+    from ironmule_product.path_router import PathRouter, PolicyRouter
+
+    pool, spec, _, _ = _ag6h_pool(tmp_path, monkeypatch)
+    made = []
+
+    def agent():
+        made.append(PolicyRouter.from_setup(_AG6_SETUP))
+        return made[-1]
+
+    try:
+        report = rl2.measure_ag6q(pool, spec.model_id, lambda: PathRouter.from_setup(_AG6_SETUP), agent, None, 30.0,
+                                  **kwargs)
+    finally:
+        pool.close()
+    return report, made
+
+
+def test_ag6q_runs_five_fresh_arms_a_repetition_rotated_and_records_every_decision(tmp_path, monkeypatch):
+    """AG6-Q on two fake workers: both paths warmed first; per repetition the five arms in a rotated order on the
+    same arrivals, a fresh agent each time; every decision recorded with its time, mode and path."""
+    report, made = _ag6q(tmp_path, monkeypatch, traces=[0, 1], sizes=(3, 4, 3), gap_s=0.05, spike_s=0.01,
+                         recover_s=0.3, limit=3, warmup=2)
+    assert report["warmup"] == {"single": {"ok": 2, "makespan_s": report["warmup"]["single"]["makespan_s"]},
+                                "stacked": {"ok": 2, "makespan_s": report["warmup"]["stacked"]["makespan_s"]}}
+    assert [r["arm"] for r in report["rows"]] == ["agent", "route", "stacked", "single", "busy",
+                                                  "route", "stacked", "single", "busy", "agent"]
+    assert len(made) == 2 and made[0] is not made[1], "a fresh agent every repetition"
+    for row in report["rows"]:
+        assert [r["phase"] for r in row["requests"]] == [0] * 3 + [1] * 4 + [2] * 3
+        assert all(r["outcome"] == "ok" and r["prompt_key"] for r in row["requests"])
+        assert len(row["picks"]) == 10 and all(at > -0.01 for at, _, _ in row["picks"])
+    stacked = [r for r in report["rows"] if r["arm"] == "stacked"][0]
+    assert {index for _, _, index in stacked["picks"]} == {1} and {m for _, m, _ in stacked["picks"]} == {None}
+    agent = [r for r in report["rows"] if r["arm"] == "agent"][0]
+    assert {m for _, m, _ in agent["picks"]} <= {"route", "stacked", "single"} and "switches" in agent
+    assert {"decision_us_mean", "decision_us_max", "dream_ms_mean", "dream_ms_max"} <= set(agent["router"])
+    assert report["fallbacks"] == 0 and report["router_faults"] == 0
+    analysis = rl2.analyse_ag6q(report, resamples=50)
+    assert analysis["valid"] and analysis["valid_repetitions"] == [0, 1]
+    assert set(analysis["phases"]) == {"quiet", "spike", "quiet again"}
+    assert analysis["correctness"]["with_more_than_two"] == [] and analysis["verdict"].split(":")[0] in ("pass", "fail")
+
+
+def test_ag6q_starts_no_repetition_after_its_budget(tmp_path, monkeypatch):
+    report, made = _ag6q(tmp_path, monkeypatch, traces=[0, 1], sizes=(1, 1, 1), gap_s=0.05, recover_s=0.1, limit=2,
+                         warmup=0, budget_s=0.0)
+    assert report["time_cut"]["after_repetitions"] == 0 and report["rows"] == [] and made == []
+    assert rl2.analyse_ag6q(report)["verdict"].startswith("invalid")
+
+
+def _ag6q_report(cost, reps=3, failed=None, answers=lambda arm, rep, k: "single" if arm == "single" else "stacked",
+                 switches=()):
+    """Synthetic AG6-Q rows: `cost(arm, phase)` gives (first token, end) per request; phase starts at 0, 10, 20."""
+    rows = []
+    for rep in range(reps):
+        for arm in rl2.AG6Q_ARMS:
+            requests = []
+            for k in range(12):
+                phase = k // 4
+                first, end = cost(arm, phase)
+                requests.append({"offset_s": 10.0 * phase + 0.5 * (k % 4), "phase": phase, "first_s": first,
+                                 "end_s": end, "tokens": 10, "outcome": "ok", "digest": answers(arm, rep, k),
+                                 "prompt_key": f"p{k}"})
+            if (rep, arm) == failed:
+                requests[5] = {**requests[5], "outcome": "failed", "first_s": None}
+            row = {"repetition": rep, "arm": arm, "requests": requests,
+                   "picks": [[r["offset_s"] + 0.001, "route" if arm == "agent" else None, 0] for r in requests],
+                   "router": {"decision_us_mean": 1.0, "decision_us_max": 3.0, "mode": "route"}}
+            if arm == "agent":
+                row["router"].update(dreams=4, dream_ms_mean=2.0, dream_ms_max=5.0)
+                row["switches"] = [dict(s) for s in switches]
+            rows.append(row)
+    return {"plan": "ag6q", "arms": list(rl2.AG6Q_ARMS), "fixed": list(rl2.AG6Q_FIXED),
+            "phases": list(rl2.AG6Q_PHASES), "rows": rows}
+
+
+def test_ag6q_decision_reads_the_fixed_rule():
+    """Per phase, the agent against the best fixed mode for first tokens and for tokens per second, pooled; a failed
+    request voids its repetition; fewer than two valid repetitions or a third answer make the run invalid."""
+    def cost(agent_first=None, agent_end=None):
+        def at(arm, phase):
+            first, end = {"single": (0.1, 1.0), "stacked": (0.5, 1.2), "route": (0.1, 1.0), "busy": (0.1, 1.0)}[arm] \
+                if arm != "agent" else (0.1, 1.0)
+            if phase == 1:  # the spike: the stacked engine serves it sooner and earlier
+                first, end = {"single": (3.0, 6.0), "stacked": (0.5, 2.0)}.get(arm, (first, end))
+                if arm in ("route", "busy", "agent"):
+                    first, end = (1.0, 3.0) if arm == "route" else (0.5, 2.0)
+            if arm == "agent":
+                first = agent_first(phase) if agent_first else first
+                end = agent_end(phase) if agent_end else end
+            return first, end
+        return at
+
+    good = rl2.analyse_ag6q(_ag6q_report(cost()), resamples=200)
+    assert good["valid"] and good["verdict"].startswith("pass")
+    assert good["phases"]["quiet"]["best_fixed"] == {"ttft_mean": "single", "tokens_per_s": "single"}
+    assert good["phases"]["spike"]["best_fixed"] == {"ttft_mean": "stacked", "tokens_per_s": "stacked"}
+    assert good["phases"]["spike"]["agent"]["ttft_mean"]["ratio"] == pytest.approx(1.0)
+    assert good["phases"]["spike"]["busy"]["tokens_per_s"]["mean_of_repetitions"] == pytest.approx(1.0)
+    assert good["recorded"]["decision_us"]["agent"] == {"mean": 1.0, "max": 3.0}
+    assert good["recorded"]["dream_ms"] == {"dreams": [4, 4, 4], "mean": 2.0, "max": 5.0}
+    late = rl2.analyse_ag6q(_ag6q_report(cost(agent_first=lambda p: 0.5 if p == 2 else (0.5 if p == 1 else 0.1)))
+                            , resamples=200)
+    assert late["verdict"].startswith("fail: quiet again: ttft"), "stacked first tokens after the spike fail it"
+    assert late["phases"]["quiet again"]["agent"]["ttft_mean"]["ratio"] == pytest.approx(5.0)
+    slow = rl2.analyse_ag6q(_ag6q_report(cost(agent_first=lambda p: 1.0 if p == 1 else 0.1,
+                                              agent_end=lambda p: 3.0 if p == 1 else 1.0)), resamples=200)
+    assert slow["verdict"].startswith("fail: spike: ttft and tokens_per_s"), "staying in route through the spike"
+    voided = rl2.analyse_ag6q(_ag6q_report(cost(), failed=(1, "busy")), resamples=50)
+    assert voided["valid"] and voided["voided_repetitions"] == [1] and voided["valid_repetitions"] == [0, 2]
+    assert rl2.analyse_ag6q(_ag6q_report(cost(), reps=2, failed=(0, "agent")))["verdict"].startswith(
+        "invalid: fewer than 2"), "one valid repetition is not enough"
+    third = rl2.analyse_ag6q(_ag6q_report(cost(), answers=lambda arm, rep, k: arm if k == 3 else "same"))
+    assert third["verdict"] == "invalid: 1 prompts answered more than two ways"
+
+
+def test_ag6q_times_the_agents_adaptation_from_each_phases_first_arrival_and_censors_it():
+    def cost(arm, phase):
+        return (0.1, 1.0)
+
+    moved = rl2.analyse_ag6q(_ag6q_report(cost, switches=(
+        {"at_request": 6, "from": "route", "to": "stacked", "rule": "tokens per second", "at_s": 10.75},
+        {"at_request": 10, "from": "stacked", "to": "single", "rule": "first token", "at_s": 21.25})), resamples=20)
+    agent = moved["recorded"]["agent"][0]
+    assert agent["adaptation"]["spike"] == {"after_s": 0.75, "censored": False}
+    assert agent["adaptation"]["quiet again"] == {"after_s": 1.25, "censored": False}
+    assert agent["picks_by_phase"]["spike"]["paths"] == {"0": 4}
+    assert sum(agent["picks_by_phase"]["quiet"]["modes"].values()) == 4
+    never = rl2.analyse_ag6q(_ag6q_report(cost), resamples=20)["recorded"]["agent"][0]["adaptation"]
+    assert never["spike"] == {"after_s": pytest.approx(2.5), "censored": True}, "no switch into stacked: censored"
+    assert never["quiet again"] == {"after_s": 0.0, "censored": False}, "already in route when that phase began"
+    assert json.loads(json.dumps(moved))["recorded"]["agent"][0]["adaptation"]["spike"]["after_s"] == 0.75
+
+
+def test_the_ag6q_plan_runs_from_the_command_line_and_writes_its_own_kernel(tmp_path, monkeypatch):
+    def run(model, work, *, smoke, on_row=None):
+        on_row({"plan": "ag6q", "setup": {"engine": "single"}})
+        return {"plan": "ag6q", "setup": {"engine": "single", "reason": "test"}, "stopped": "not route"}
+
+    monkeypatch.setattr(rl2, "run_ag6q", run)
+    monkeypatch.setattr(rl2, "environment", lambda: {"machine": "test"})
+    out = tmp_path / "report.json"
+    assert rl2.main(["--out", str(out), "--plan", "ag6q"]) == 0
+    report = json.loads(out.read_text())
+    assert report["analysis"]["verdict"] == "stopped: not route" and report["rl2h"]["stopped"] == "not route"
+    folder = tmp_path / "kernel"
+    assert rl2.main(["--write-kernel", str(folder), "--owner", "someone", "--commit", "c" * 40, "--plan", "ag6q"]) == 0
+    metadata = json.loads((folder / "kernel-metadata.json").read_text())
+    assert metadata["id"] == "someone/ironmule-rl2-headroom-ag6q" and metadata["enable_gpu"]
+    assert "'--plan', 'ag6q'" in (folder / "run.py").read_text()
 
 
 def test_a_run_that_fails_still_leaves_its_report_and_ends_in_order(tmp_path, monkeypatch):

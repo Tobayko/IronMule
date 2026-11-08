@@ -104,7 +104,9 @@ the mode with the earliest first tokens, if that one keeps at least 98 % of the 
 sooner (REV1). Quiet is what the router observed, not what the model estimates. Of its last 64 finished requests,
 at most 1 in 16 arrived while another was being served, none is in flight, and none ended without its answer. Under
 load the replay's first tokens are not reliable. The dream runs after a request has finished; a decision stays a lookup, under a
-microsecond.
+microsecond. The dream runs on the thread of the request that finished, before that request's last event goes out,
+so its cost (`dream_ms` under `/health`'s `paths`) also delays that one request's end; decisions are not held up by
+it.
 Each path still answers with its own gated plan, so no answer changes beyond the two paths' own.
 
 On one T4 with Qwen 3 1.7B (AG6-H, 2026-11-07) the agent started in `route`, moved to `stacked` at its first dream

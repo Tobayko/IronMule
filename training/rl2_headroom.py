@@ -2722,9 +2722,10 @@ def analyse_ag6h(report: dict[str, Any], resamples: int = RESAMPLES, seed: int =
     return out
 
 
-def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
-    """AG6-H on one card: the product's own `choose_setup`; if it says `route`, both paths in their own workers, and
-    the four arms through the product on the same arrivals."""
+def _route_paths(model: str, work: Path, plan: str, on_row: Any) -> tuple[dict[str, Any], dict[str, Any], Any]:
+    """AG6-H's and AG6-Q's start on one card: the product's own `choose_setup`; if it says `route`, both paths in
+    their own workers. Returns the report so far, the setup and the pool, or a report that says why it stopped and
+    no pool."""
     from huggingface_hub import snapshot_download
 
     from ironmule.plan_choice import choose_setup
@@ -2732,7 +2733,7 @@ def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     from ironmule_product.backend import MLXWorkerClient
     from ironmule_product.cli import _engine_options
     from ironmule_product.device_pool import cuda_devices, start_paths
-    from ironmule_product.path_router import PathRouter, PolicyRouter
+    from ironmule_product.path_router import PathRouter
     from ironmule_product.service import ProductService
     from ironmule_product.state import ProductStore
 
@@ -2740,17 +2741,17 @@ def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
                                       allow_patterns=["*.json", "*.safetensors", "*.txt", "*.model", "*.jinja",
                                                       "tokenizer*"])).name
     identity = resolve_local_model(model, revision=revision).identity
-    setup = choose_setup(model, "kaggle-ag6h", identity.identity_sha256)
-    report: dict[str, Any] = {"plan": "ag6h", "model": model, "revision": revision, "setup": setup}
+    setup = choose_setup(model, f"kaggle-{plan}", identity.identity_sha256)
+    report: dict[str, Any] = {"plan": plan, "model": model, "revision": revision, "setup": setup}
     if on_row is not None:
         on_row(report)
     if setup["engine"] != "route":
-        return {**report, "stopped": f"the agent's setup is {setup['engine']}, not route: {setup['reason']}"}
+        return {**report, "stopped": f"the agent's setup is {setup['engine']}, not route: {setup['reason']}"}, setup, None
     state = work / "rl2h-state"
     _ironmule("setup", "--mode", "server", state=state)
     added = _ironmule("models", "add", model, state=state)
     if added.get("returncode") != 0:
-        return {**report, "failed": "models add", "added": added}
+        return {**report, "failed": "models add", "added": added}, setup, None
     store = ProductStore(state)
     store.set_request_timeout(1800)
     spec = store.model(model)
@@ -2758,17 +2759,329 @@ def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict
     makers = [lambda: MLXWorkerClient(spec, compute_dtype=setup["compute_dtype"], cuda_device=device),
               lambda: MLXWorkerClient(spec, execution_variant="current_engine", cuda_device=device,
                                       **_engine_options("dense", setup.get("width")))]
-    router, agent = PathRouter.from_setup(setup), PolicyRouter.from_setup(setup)
     try:
-        pool = start_paths(store, spec, makers, [f"{device}:single", f"{device}:stacked"], ProductService, router)
+        pool = start_paths(store, spec, makers, [f"{device}:single", f"{device}:stacked"], ProductService,
+                           PathRouter.from_setup(setup))
     except Exception as exc:  # noqa: BLE001 - recorded with the agent's setup
-        return {**report, "failed": f"the paths did not start: {exc!r}"[:500]}
+        return {**report, "failed": f"the paths did not start: {exc!r}"[:500]}, setup, None
+    return report, setup, pool
+
+
+def run_ag6h(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG6-H on one card: the product's own `choose_setup`; if it says `route`, both paths in their own workers, and
+    the four arms through the product on the same arrivals."""
+    from ironmule_product.path_router import PolicyRouter
+
+    report, setup, pool = _route_paths(model, work, "ag6h", on_row)
+    if pool is None:
+        return report
+    router, agent = pool.router, PolicyRouter.from_setup(setup)
     try:
         prompts, digest = dolly_prompts(work)
         report["prompts_sha256"] = digest
         measured = measure_ag6h(pool, model, router, agent, prompts, 1800.0,
                                 **({"loads": (3.0,), "levels": (2,), "traces": [AG6H_TRACES[0]], "requests": 4,
                                     "limit": 16} if smoke else {}),
+                                on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
+    finally:
+        pool.close()
+    return {**report, **measured}
+
+
+# ---------------------------------------------------------------- AG6-Q: quiet, a spike, quiet again
+
+AG6Q_ARMS = ("agent", "route", "stacked", "single", "busy")  # one run each per repetition, rotated (BACKLOG AG6-Q)
+AG6Q_FIXED = ("single", "stacked", "route")                  # the fixed modes the agent is held against
+AG6Q_PHASES = ("quiet", "spike", "quiet again")
+AG6Q_TRACES = range(450, 453)                                # fresh seeds: one trace a repetition
+AG6Q_SIZES = (32, 48, 80)                                    # requests in each phase
+AG6Q_GAP_S = 3.0                                             # between quiet arrivals, and before the spike
+AG6Q_SPIKE_S = 0.5                                           # the spike's arrivals all fall within this
+AG6Q_RECOVER_S = 90.0                                        # the second quiet phase starts this long after the spike
+AG6Q_LIMIT = 64
+AG6Q_WARMUP = 16                                             # requests at once through each path first, not measured
+AG6Q_BUDGET_S = 3 * 3600.0                                   # no repetition starts after 3 hours
+AG6Q_MIN_REPETITIONS = 2
+AG6Q_TTFT = 1.1                                              # the agent's mean first token, at most this over the best
+AG6Q_TPS = 0.95                                              # its tokens per second, at least this share of the best
+AG6Q_ADAPTED = {1: ("stacked",), 2: ("route", "single")}     # the modes that count as adapted in the spike and after
+
+
+def trace_ag6q(index: int, sizes: tuple[int, int, int] = AG6Q_SIZES, gap_s: float = AG6Q_GAP_S,
+               spike_s: float = AG6Q_SPIKE_S, recover_s: float = AG6Q_RECOVER_S,
+               limit: int = AG6Q_LIMIT) -> list[dict[str, Any]]:
+    """AG6-Q's arrivals: `sizes[0]` quiet requests `gap_s` apart; `gap_s` after the last, a spike of `sizes[1]`
+    within `spike_s`; from `recover_s` after the spike's first arrival, `sizes[2]` quiet requests `gap_s` apart.
+    The spike's spread (and, without real prompts, the prompts) come from the seed `index`."""
+    rng = random.Random(index)
+    quiet, spike, again = sizes
+    at = gap_s * quiet
+    jitter = sorted(rng.uniform(0.0, spike_s) for _ in range(spike))
+    offsets = [(0, gap_s * k) for k in range(quiet)] + [(1, at + j - jitter[0]) for j in jitter] + \
+        [(2, at + recover_s + gap_s * k) for k in range(again)]
+    return [{"offset_s": round(offset, 6), "phase": phase, "prompt": rng.randrange(len(PROMPTS)), "long": False,
+             "max_tokens": limit} for phase, offset in offsets]
+
+
+class BusyRule:
+    """AG6-Q's simple adaptive rule: the stacked engine while any request is outstanding on the card, else the
+    single path. No prices and no learning."""
+
+    def choose(self, outstanding: Any, max_tokens: int) -> int:
+        return 1 if sum(outstanding) > 0 else 0
+
+    def watch(self, index: int, sharing: int, events: Any) -> Any:
+        return events
+
+    def status(self) -> dict[str, Any]:
+        return {"rule": "busy"}
+
+
+class _Picks:
+    """A router, with each of its decisions recorded: when (monotonic), its mode then (if it has one) and the path
+    it picked. The router times its own decisions inside; this record is outside that time."""
+
+    def __init__(self, inner: Any):
+        self.inner, self.picks = inner, []
+
+    def choose(self, outstanding: Any, max_tokens: int) -> int:
+        index = self.inner.choose(outstanding, max_tokens)
+        self.picks.append((time.monotonic(), getattr(self.inner, "mode", None), index))
+        return index
+
+    def watch(self, index: int, sharing: int, events: Any) -> Any:
+        return self.inner.watch(index, sharing, events)
+
+    def status(self) -> dict[str, Any]:
+        return self.inner.status()
+
+
+def measure_ag6q(pool: Any, model: str, make_route: Any, make_agent: Any, prompts: list[str] | None,
+                 deadline_s: float, *, traces: Any = AG6Q_TRACES, sizes: tuple[int, int, int] = AG6Q_SIZES,
+                 gap_s: float = AG6Q_GAP_S, spike_s: float = AG6Q_SPIKE_S, recover_s: float = AG6Q_RECOVER_S,
+                 limit: int = AG6Q_LIMIT, warmup: int = AG6Q_WARMUP, budget_s: float = AG6Q_BUDGET_S,
+                 on_row: Any = None) -> dict[str, Any]:
+    """AG6-Q (BACKLOG, fixed before its data). Both paths are warmed first, unmeasured. Then every repetition
+    replays one trace (quiet, a spike, quiet again) under the five arms, in an order rotated by repetition, the card
+    idle between them. The agent and the route arm start fresh in each repetition (`make_agent`, `make_route`).
+    Every decision is recorded with its time on the trace's clock, the router's mode and the path; the agent's
+    switches likewise. No repetition starts after `budget_s`."""
+    started = time.monotonic()
+    texts = prompts[len(prompts) - warmup:] if prompts and warmup else [None] * warmup
+    warm = [{"offset_s": 0.0, "prompt": k % len(PROMPTS), "long": False, "max_tokens": limit, "text": text}
+            for k, text in enumerate(texts)]
+    report: dict[str, Any] = {"plan": "ag6q", "arms": list(AG6Q_ARMS), "fixed": list(AG6Q_FIXED),
+                              "phases": list(AG6Q_PHASES), "sizes": list(sizes), "gap_s": gap_s, "spike_s": spike_s,
+                              "recover_s": recover_s, "limit": limit, "deadline_s": deadline_s, "budget_s": budget_s,
+                              "warmup": {}, "rows": []}
+    for name, index in (("single", 0), ("stacked", 1)):
+        pool.router = ForcedRoute(index)
+        wait_idle(pool, timeout_s=deadline_s)
+        done = replay(pool, model, warm, deadline_s)
+        report["warmup"][name] = {"ok": sum(r["outcome"] == "ok" for r in done),
+                                  "makespan_s": max([r["end_s"] or 0.0 for r in done] or [0.0])}
+    makers = {"agent": make_agent, "route": make_route, "stacked": lambda: ForcedRoute(1),
+              "single": lambda: ForcedRoute(0), "busy": BusyRule}
+    for rep, t in enumerate(traces):
+        if time.monotonic() - started > budget_s:
+            report["time_cut"] = {"after_repetitions": rep, "elapsed_s": time.monotonic() - started}
+            break
+        items = trace_ag6q(t, sizes, gap_s, spike_s, recover_s, limit)
+        if prompts:
+            items = lp_items(items, prompts, t, True, limit)
+        keys = [hashlib.sha256(prompt_text(item).encode()).hexdigest()[:16] for item in items]
+        turn = rep % len(AG6Q_ARMS)
+        for arm in AG6Q_ARMS[turn:] + AG6Q_ARMS[:turn]:
+            router = makers[arm]()
+            picks = _Picks(router)
+            pool.router = picks
+            wait_idle(pool, timeout_s=deadline_s)
+            zero = time.monotonic() + 0.05  # replay's own clock: its arrivals are scheduled from here
+            out = replay(pool, model, items, deadline_s)
+            for item, key, request in zip(items, keys, out):
+                request.update(offset_s=item["offset_s"], phase=item["phase"], prompt_key=key)
+            row = {"repetition": rep, "trace": t, "arm": arm, "requests": out,
+                   "picks": [[round(at - zero, 4), mode, index] for at, mode, index in picks.picks],
+                   "router": router.status()}
+            if hasattr(router, "switches"):
+                row["switches"] = [{**switch, "at_s": round(switch["at_s"] - zero, 4)} for switch in router.switches]
+            report["rows"].append(row)
+            if on_row is not None:
+                on_row(report)
+    report.update(fallbacks=getattr(pool, "path_fallbacks", None), router_faults=getattr(pool, "router_faults", None),
+                  elapsed_s=time.monotonic() - started)
+    return report
+
+
+def _p95(values: list[float]) -> float:
+    ordered = sorted(values)
+    return ordered[max(0, math.ceil(0.95 * len(ordered)) - 1)]
+
+
+def analyse_ag6q(report: dict[str, Any], resamples: int = RESAMPLES, seed: int = 0) -> dict[str, Any]:
+    """AG6-Q as fixed in BACKLOG before its data. Per phase, over the valid repetitions pooled: the best fixed mode
+    for first tokens is the one among `single`, `stacked` and `route` with the earliest mean first token over all
+    its requests, and for throughput the one with the most tokens per second, all its tokens over all its spans.
+    The agent passes if in every phase its pooled mean first token is at most 1.1x the first's and its pooled
+    tokens per second at least 0.95x the second's. A failed request voids its repetition; fewer than 2 valid
+    repetitions make the run invalid, and so does a prompt answered more than two ways across arms. Recorded, no
+    decision: the simple rule's same ratios; paired bootstrap intervals for the first-token ratios and each
+    repetition's tokens-per-second ratio; the best fixed mode over the whole trace; the agent's modes, switches
+    and times to adapt; and the costs of its decisions and of its dreams."""
+    rng = random.Random(seed)
+    arms = report.get("arms") or list(AG6Q_ARMS)
+    fixed = report.get("fixed") or list(AG6Q_FIXED)
+    names = report.get("phases") or list(AG6Q_PHASES)
+    rows = {(row["repetition"], row["arm"]): row for row in report.get("rows", [])}
+    reps = sorted({rep for rep, _ in rows})
+
+    def answered(row: dict[str, Any] | None) -> bool:
+        return row is not None and all(r.get("outcome") == "ok" and r.get("first_s") is not None
+                                       for r in row["requests"])
+
+    valid = [rep for rep in reps if all(answered(rows.get((rep, arm))) for arm in arms)]
+    answers: dict[str, set[str]] = {}
+    for row in report.get("rows", []):
+        for r in row["requests"]:
+            if r.get("digest"):
+                answers.setdefault(r.get("prompt_key") or "", set()).add(r["digest"])
+    over = sorted(key for key, digests in answers.items() if len(digests) > 2)
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag6q.analysis.v1", "repetitions": len(reps),
+                           "valid_repetitions": valid, "voided_repetitions": [r for r in reps if r not in valid],
+                           "time_cut": report.get("time_cut"), "fallbacks": report.get("fallbacks"),
+                           "router_faults": report.get("router_faults"), "warmup": report.get("warmup"),
+                           "correctness": {"prompts": len(answers),
+                                           "with_one_answer": sum(len(d) == 1 for d in answers.values()),
+                                           "with_more_than_two": over},
+                           "setup": {k: (report.get("setup") or {}).get(k) for k in ("engine", "compute_dtype",
+                                                                                     "width", "reason")}}
+    if report.get("stopped"):
+        return {**out, "valid": False, "verdict": f"stopped: {report['stopped']}"}
+    if over:
+        return {**out, "valid": False, "verdict": f"invalid: {len(over)} prompts answered more than two ways"}
+    if len(valid) < AG6Q_MIN_REPETITIONS:
+        return {**out, "valid": False, "verdict": f"invalid: fewer than {AG6Q_MIN_REPETITIONS} valid repetitions"}
+
+    def part(rep: int, arm: str, phase: int | None) -> list[dict[str, Any]]:
+        return [r for r in rows[rep, arm]["requests"] if phase is None or r["phase"] == phase]
+
+    def span(requests: list[dict[str, Any]]) -> float:
+        return max(r["offset_s"] + r["end_s"] for r in requests) - min(r["offset_s"] for r in requests)
+
+    def pooled(arm: str, phase: int | None) -> dict[str, float]:
+        parts = [part(rep, arm, phase) for rep in valid]
+        first = [r["first_s"] for p in parts for r in p]
+        return {"tokens_per_s": sum(r["tokens"] for p in parts for r in p) / sum(span(p) for p in parts),
+                "ttft_mean_s": statistics.fmean(first), "ttft_p95_s": _p95(first), "requests": len(first)}
+
+    def first_ratio(arm: str, base: str, phase: int | None, key: str) -> dict[str, Any]:
+        pairs = [(a["first_s"], b["first_s"]) for rep in valid
+                 for a, b in zip(part(rep, arm, phase), part(rep, base, phase))]
+        stat = (lambda s: statistics.fmean(x for x, _ in s) / statistics.fmean(y for _, y in s)) \
+            if key == "ttft_mean_s" else (lambda s: _p95([x for x, _ in s]) / _p95([y for _, y in s]))
+        boot = [stat([pairs[rng.randrange(len(pairs))] for _ in pairs]) for _ in range(resamples)]
+        return {"ratio": stat(pairs), "ci95": [_quantile(boot, 0.025), _quantile(boot, 0.975)]}
+
+    def tps_ratio(arm: str, base: str, phase: int | None) -> dict[str, Any]:
+        each = [(sum(r["tokens"] for r in part(rep, arm, phase)) / span(part(rep, arm, phase)))
+                / (sum(r["tokens"] for r in part(rep, base, phase)) / span(part(rep, base, phase))) for rep in valid]
+        return {"ratio": pooled(arm, phase)["tokens_per_s"] / pooled(base, phase)["tokens_per_s"],
+                "by_repetition": each, "mean_of_repetitions": statistics.fmean(each)}
+
+    def against(arm: str, phase: int | None, first_best: str, tps_best: str) -> dict[str, Any]:
+        return {"ttft_mean": first_ratio(arm, first_best, phase, "ttft_mean_s"),
+                "ttft_p95": first_ratio(arm, first_best, phase, "ttft_p95_s"),
+                "tokens_per_s": tps_ratio(arm, tps_best, phase)}
+
+    phases, passes = {}, {}
+    for phase, name in enumerate(names):
+        cells = {arm: pooled(arm, phase) for arm in arms}
+        first_best = min(fixed, key=lambda arm: (cells[arm]["ttft_mean_s"], fixed.index(arm)))
+        tps_best = max(fixed, key=lambda arm: (cells[arm]["tokens_per_s"], -fixed.index(arm)))
+        agent = against("agent", phase, first_best, tps_best)
+        passes[name] = {"ttft": agent["ttft_mean"]["ratio"] <= AG6Q_TTFT,
+                        "tokens_per_s": agent["tokens_per_s"]["ratio"] >= AG6Q_TPS}
+        phases[name] = {"arms": cells, "best_fixed": {"ttft_mean": first_best, "tokens_per_s": tps_best},
+                        "agent": agent, "busy": against("busy", phase, first_best, tps_best)}
+    whole = {arm: pooled(arm, None) for arm in arms}
+    agent_rows = [rows[rep, "agent"] for rep in valid]
+    out.update(valid=True, phases=phases, passes=passes,
+               recorded={"whole_trace": {"arms": whole,
+                                         "best_fixed": {"ttft_mean": min(fixed, key=lambda a: whole[a]["ttft_mean_s"]),
+                                                        "tokens_per_s": max(fixed,
+                                                                            key=lambda a: whole[a]["tokens_per_s"])}},
+                         "agent": [_ag6q_agent(row, names) for row in agent_rows],
+                         "decision_us": {arm: {"mean": statistics.fmean(rows[rep, arm]["router"]["decision_us_mean"]
+                                                                        for rep in valid),
+                                               "max": max(rows[rep, arm]["router"]["decision_us_max"] for rep in valid)}
+                                         for arm in ("agent", "route")},
+                         "dream_ms": {"dreams": [row["router"].get("dreams") for row in agent_rows],
+                                      "mean": statistics.fmean(row["router"].get("dream_ms_mean", 0.0)
+                                                               for row in agent_rows),
+                                      "max": max(row["router"].get("dream_ms_max", 0.0) for row in agent_rows)}})
+    failing = [name for name, ok in passes.items() if not all(ok.values())]
+    out["verdict"] = ("pass: the agent follows the load change within the fixed bounds in every phase" if not failing
+                      else "fail: " + "; ".join(
+                          f"{name}: " + " and ".join(k for k, v in passes[name].items() if not v) +
+                          f" (best fixed: {phases[name]['best_fixed']['ttft_mean']} for first tokens, "
+                          f"{phases[name]['best_fixed']['tokens_per_s']} for tokens per second)" for name in failing))
+    return out
+
+
+def _ag6q_agent(row: dict[str, Any], names: list[str]) -> dict[str, Any]:
+    """One repetition of the agent, by phase name: its modes and paths at the decisions of each phase, its
+    switches, and how long it took to adapt in the spike (into `stacked`) and after it (into `route` or `single`),
+    from the phase's first arrival; censored at the end of the phase's last request when it did not."""
+    requests = row["requests"]
+    starts = {phase: min(r["offset_s"] for r in requests if r["phase"] == phase)
+              for phase in sorted({r["phase"] for r in requests})}
+    ends = {phase: max(r["offset_s"] + r["end_s"] for r in requests if r["phase"] == phase) for phase in starts}
+    switches = row.get("switches") or []
+
+    def phase_of(at: float) -> int:  # the gaps between phases are seconds; a decision lags its arrival by less
+        return max([phase for phase, start in starts.items() if at >= start - 0.5] or [min(starts)])
+
+    def mode_at(at: float) -> str:
+        mode = switches[0]["from"] if switches else (row["router"].get("mode") or "route")
+        for switch in switches:
+            if switch["at_s"] <= at:
+                mode = switch["to"]
+        return mode
+
+    picks: dict[str, dict[str, dict[str, int]]] = {}
+    for at, mode, index in row.get("picks") or []:
+        seen = picks.setdefault(names[phase_of(at)], {"modes": {}, "paths": {}})
+        seen["modes"][str(mode)] = seen["modes"].get(str(mode), 0) + 1
+        seen["paths"][str(index)] = seen["paths"].get(str(index), 0) + 1
+    adapt = {}
+    for phase, wanted in AG6Q_ADAPTED.items():
+        if phase not in starts:
+            continue
+        if mode_at(starts[phase]) in wanted:
+            adapt[names[phase]] = {"after_s": 0.0, "censored": False}
+            continue
+        moved = [s["at_s"] for s in switches if s["to"] in wanted and starts[phase] <= s["at_s"] <= ends[phase]]
+        adapt[names[phase]] = ({"after_s": moved[0] - starts[phase], "censored": False} if moved else
+                               {"after_s": ends[phase] - starts[phase], "censored": True})
+    return {"repetition": row["repetition"], "picks_by_phase": picks, "switches": switches,
+            "adaptation": adapt, "dreams": row["router"].get("dreams")}
+
+
+def run_ag6q(model: str, work: Path, *, smoke: bool, on_row: Any = None) -> dict[str, Any]:
+    """AG6-Q on one card: the product's own `choose_setup`; if it says `route`, both paths in their own workers, and
+    the five arms through the product on the same arrivals, repetition by repetition."""
+    from ironmule_product.path_router import PathRouter, PolicyRouter
+
+    report, setup, pool = _route_paths(model, work, "ag6q", on_row)
+    if pool is None:
+        return report
+    try:
+        prompts, digest = dolly_prompts(work)
+        report["prompts_sha256"] = digest
+        measured = measure_ag6q(pool, model, lambda: PathRouter.from_setup(setup),
+                                lambda: PolicyRouter.from_setup(setup), prompts, 1800.0,
+                                **({"traces": [AG6Q_TRACES[0]], "sizes": (2, 4, 2), "gap_s": 2.0, "recover_s": 20.0,
+                                    "limit": 16, "warmup": 2} if smoke else {}),
                                 on_row=(lambda partial: on_row({**report, **partial})) if on_row else None)
     finally:
         pool.close()
@@ -2930,7 +3243,7 @@ def main(argv: Iterable[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, help="write the measurement report here")
     parser.add_argument("--model", default=None)
     parser.add_argument("--plan", choices=("h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "kp1", "h9", "h10", "h11",
-                                           "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "x1"),
+                                           "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "ag6q", "x1"),
                         default="h1",
                         help="run 1's to 4's fixed plan, RL4-S's, RL6's or LD1-V's run, or X1's exactness diagnostic")
     parser.add_argument("--policy-json", help="run 4: the frozen learned policy (JSON text or @path)")
@@ -2974,7 +3287,8 @@ def main(argv: Iterable[str] | None = None) -> int:
         inner = report.get("rl2h", report)
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
-                 "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h}.get(inner.get("plan"), analyse)
+                 "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h,
+                 "ag6q": analyse_ag6q}.get(inner.get("plan"), analyse)
         print(json.dumps(judge(inner), indent=1, sort_keys=True))
         return 0
     if args.out is None:
@@ -3012,12 +3326,12 @@ def main(argv: Iterable[str] | None = None) -> int:
         save()
         print(json.dumps({"report": str(args.out), "verdict": report["x1"]["summary"]["verdict"]}), flush=True)
         return 0
-    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g", "ag6h"):
+    if args.plan in ("h8", "kp1", "h9", "h10", "h11", "ag1", "ag4r", "ag4c", "ag5g", "ag6h", "ag6q"):
         run, judge = {"h8": (run_h8, analyse_h8), "kp1": (run_kp1, analyse_kp1), "h9": (run_h9, analyse_h9),
                       "h10": (run_h10, analyse_h10), "h11": (run_h11, analyse_h11),
                       "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
                       "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g),
-                      "ag6h": (run_ag6h, analyse_ag6h)}[args.plan]
+                      "ag6h": (run_ag6h, analyse_ag6h), "ag6q": (run_ag6q, analyse_ag6q)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]
