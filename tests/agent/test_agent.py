@@ -669,7 +669,8 @@ def test_a_replay_window_spans_the_backlog_and_the_next_window_starts_after_it(t
     assert seen == [31] * 3  # every recorded arrival after the plan: the burst never ended
     assert agent.candidate["trace"] is None and agent.candidate["used"] == 1
     # the next window starts after this one's last recorded arrival (a time, not a count: review of 2026-11-08)
-    assert agent.candidate["skip"] == 0 and agent.candidate["cursor"] == max(a[0] for a in agent.traffic)
+    last = max(agent.traffic, key=lambda a: (a[0], a[6]))
+    assert agent.candidate["skip"] == 0 and agent.candidate["cursor"] == [last[0], last[6]]  # (time, id)
 
 
 # ---------------------------------------------------------------- AG2: ordering by a predicted answer length
@@ -733,7 +734,7 @@ def test_the_agent_predicts_once_learns_from_live_answers_and_records_the_predic
                               "prompt_tokens": 12, "prompt_chars": len(prompt), "max_tokens": 512, "tokens": tokens,
                               "ok": True, "length": known, "request_id": f"r{k}"}])
     assert agent.lengths.seen == 400 and agent.status()["lengths"]["spearman"] > 0.8
-    assert all(len(row) == 6 and row[5] is not None for row in agent.traffic)
+    assert all(len(row) == 7 and row[5] is not None for row in agent.traffic)  # the 7th field is the arrival's id
     assert not agent._predicted  # a finished request's prediction is not kept
     assert ag.predictions_recorded(list(agent.traffic))
     # no serving policy orders by prediction yet: the service sorts by the limit
@@ -1163,3 +1164,112 @@ def test_requests_that_fail_before_their_first_token_reach_the_live_monitor(tmp_
                                first_ns=None if before_first else now - 1_000_000, end_ns=now, outcome="failed")
             service._agent_observe([session])
         assert not agent.active and len(agent.withdrawn) == 1, before_first
+
+
+# ---------------------------------------------------------------- the cursor at equal timestamps (owner, 2026-11-08)
+
+def _marked_spike(agent, n, tied, at=10.0, order=None):
+    """`n` arrivals in one spike a microsecond apart, each marked by its own output limit (1 + k, below the
+    replay's cap), the ones in `tied` all at the first tied one's time, recorded in `order` (default: k); a spike
+    keeps the server busy, so its windows are cut at MAX_WINDOW."""
+    first = min(tied)
+    for k in (order or range(n)):
+        arrive = at + (first if k in tied else k) * 1e-6
+        group = [{"arrive": arrive, "start": arrive, "first": arrive + 0.1, "end": arrive + 1.0,
+                  "prompt_tokens": 24, "prompt_chars": 96, "max_tokens": 1 + k, "tokens": 1 + k, "ok": True}]
+        agent.observe_group(group)
+
+
+def _windows(agent, rounds):
+    """The marks each replayed window held, and every arm's trace per window (all three must match)."""
+    windows, arms = [], []
+
+    def replay(trace, choose, preempted):
+        arms.append(tuple(row[3] for row in trace))
+        return {"rows": [{"ttft_s": 1.0, "e2e_s": 3.0, "tokens": 4, "outcome": "ok"} for _ in trace],
+                "texts": ["same"] * len(trace), "span_s": 1.0}
+
+    for _ in range(rounds):
+        before = len(arms)
+        agent._qualify(replay, lambda: False)
+        if len(arms) > before:
+            windows.append(arms[before])
+            assert arms[before:] == [arms[before]] * 3, "every arm of a triplet replays the same window"
+    return windows
+
+
+def test_arrivals_sharing_a_time_across_a_window_cut_are_each_used_exactly_once(tmp_path):
+    """The window is cut at MAX_WINDOW inside a spike, where twelve arrivals share one recorded time on both sides
+    of the cut. A cursor of the cut's time alone skipped the tied arrivals that did not fit the first window."""
+    agent = _agent(tmp_path)
+    n = 2 * ag.MAX_WINDOW
+    tied = set(range(ag.MAX_WINDOW - 6, ag.MAX_WINDOW + 6))
+    _marked_spike(agent, n, tied)
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    windows = _windows(agent, 4)
+    used = [mark - 1 for window in windows for mark in window]
+    assert len(windows[0]) == ag.MAX_WINDOW, "the first window is cut inside the tie"
+    assert 0 < len(tied & {mark - 1 for mark in windows[0]}) < len(tied)
+    assert sorted(used) == list(range(n)), "every arrival used once: none skipped at the tie, none counted twice"
+
+
+def test_an_interrupted_triplet_resumes_on_its_window_across_a_restart_and_the_next_window_follows_it(tmp_path):
+    """Demand cuts a triplet after its first arm and the server restarts: the saved window, cursor and kept arm are
+    loaded, the other arms replay the same arrivals, and the next window starts after it, ties included."""
+    n = 2 * ag.MAX_WINDOW
+    tied = set(range(ag.MAX_WINDOW - 6, ag.MAX_WINDOW + 6))
+    agent = _agent(tmp_path)
+    _marked_spike(agent, n, tied)
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0.0, "triplets": [], "used": 0}
+    arms = []
+
+    def replay(trace, choose, preempted, cut=[1]):
+        if len(arms) == cut[0]:  # demand arrives during the second arm, once
+            cut[0] = -1
+            return None
+        arms.append(tuple(row[3] for row in trace))
+        return {"rows": [{"ttft_s": 1.0, "e2e_s": 3.0, "tokens": 4, "outcome": "ok"} for _ in trace],
+                "texts": ["same"] * len(trace), "span_s": 1.0}
+
+    agent._qualify(replay, lambda: False)
+    assert len(arms) == 1 and agent.candidate["trace"] and agent.candidate["used"] == 0
+    agent._dirty()
+    agent.save(force=True)
+    again = _agent(tmp_path)  # a restart: everything comes from the saved state
+    assert again.candidate["trace_end"] == agent.candidate["trace_end"] and again._next_id == n
+    again._qualify(replay, lambda: False)
+    assert len(arms) == 3 and arms[1:] == [arms[0]] * 2, "the other arms replayed the saved window"
+    again._qualify(replay, lambda: False)
+    used = [mark - 1 for window in (arms[0], arms[3]) for mark in window]
+    assert arms[3:] == [arms[3]] * 3 and sorted(used) == list(range(n))
+
+
+def test_arrivals_the_memory_drops_before_use_are_counted_and_qualification_goes_on(tmp_path):
+    agent = _agent(tmp_path)
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": -1.0, "since_id": -1,
+                       "cursor": [5.0, 10], "triplets": [], "used": 0}
+    _marked_spike(agent, ag.MAX_TRAFFIC + 40, {0}, at=10.0)  # 40 of them pushed out unused
+    assert agent.candidate["lost"] == 40 and len(agent.traffic) == ag.MAX_TRAFFIC
+    windows = _windows(agent, 2)
+    assert windows and windows[0][0] == 41, "it goes on with the oldest arrival it still holds"
+
+
+def test_a_cursor_saved_as_a_time_alone_means_every_arrival_at_that_time_was_used(tmp_path):
+    agent = _agent(tmp_path)
+    _marked_spike(agent, 40, {10, 11, 12})
+    tied_time = 10.0 + 10e-6
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": -1.0, "cursor": tied_time,
+                       "triplets": [], "used": 0}
+    windows = _windows(agent, 1)
+    assert windows and min(mark - 1 for mark in windows[0]) == 13, "a legacy cursor skips its whole time, as saved"
+
+
+def test_arrivals_recorded_after_the_plan_at_the_plans_last_time_are_held_out_by_id(tmp_path):
+    agent = _agent(tmp_path)
+    _marked_spike(agent, 20, {18, 19})  # 18 and 19 share a time
+    plan_id = 18  # the planner saw arrivals up to id 18 (mark 19); mark 20 came after it, at the same time
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 10.0 + 18e-6, "since_id": plan_id,
+                       "triplets": [], "used": 0}
+    _marked_spike(agent, 16, {0}, at=20.0)
+    windows = _windows(agent, 1)
+    assert windows and sorted(windows[0])[0] == 1 and 20 in windows[0], "id 19 (mark 20) is held out, ids <= 18 not"

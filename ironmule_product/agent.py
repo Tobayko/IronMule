@@ -711,7 +711,7 @@ class Agent:
         self._planner: subprocess.Popen | None = None
         self._planner_files: tuple[Path, Path] | None = None
         self._planner_stopped = False
-        self._plan_since = 0.0
+        self._plan_since, self._plan_since_id = 0.0, None
         self._last_activity = clock()
         self._dirty_since: float | None = None
         self._lock = threading.Lock()
@@ -749,6 +749,7 @@ class Agent:
                          "qualified": 0, "rejected": 0, "withdrawn": 0}
         self.arrivals_at_plan = 0
         self.arrivals = 0
+        self._next_id = 0  # each recorded arrival's id, in recording order (its 7th field)
         self._monitor: list[bool] = []
         self._failed_windows = 0
 
@@ -856,9 +857,13 @@ class Agent:
                             feats, predicted = known
                             if int(m["tokens"]) > 0:
                                 self.lengths.learn(feats, int(m["tokens"]), predicted)
+                        if len(self.traffic) == self.traffic.maxlen:
+                            self._dropping(self.traffic[0])
                         self.traffic.append([m["arrive"], int(m["prompt_tokens"]),
                                              int(m.get("prompt_chars", 0)) > LONG_PROMPT_CHARS, int(m["max_tokens"]),
-                                             int(m["tokens"]), None if predicted is None else round(predicted, 2)])
+                                             int(m["tokens"]), None if predicted is None else round(predicted, 2),
+                                             self._next_id])
+                        self._next_id += 1
                         self.arrivals += 1
                     if self.active:
                         self._monitor.append(bool(m.get("ok")))
@@ -934,8 +939,49 @@ class Agent:
                 self._dirty()
         return True
 
+    def _ensure_ids(self) -> None:
+        """Give every recorded arrival without one (a state saved before ids, or rows put in directly) the next
+        id, in recording order."""
+        with self._lock:
+            self._ensure_ids_locked()
+
+    def _ensure_ids_locked(self) -> None:  # the caller holds `_lock`
+        for row in self.traffic:
+            if len(row) < 7:
+                row.extend([None] * (6 - len(row)) + [self._next_id])
+                self._next_id += 1
+
+    @staticmethod
+    def _key(row: list[Any]) -> tuple[float, float]:
+        """An arrival's place: its recorded time, then its id (unique, so arrivals at one time keep one order)."""
+        return float(row[0]), float(row[6]) if len(row) > 6 else -1.0
+
+    @staticmethod
+    def _cursor(state: dict[str, Any]) -> tuple[float, float] | None:
+        """Where `state`'s next window starts, after this (time, id). A cursor saved as a time alone (2026-11-08,
+        before ids) means every arrival at that time was used."""
+        cursor = state.get("cursor")
+        if cursor is None:
+            return None
+        if isinstance(cursor, (list, tuple)):
+            return float(cursor[0]), float(cursor[1])
+        return float(cursor), math.inf
+
+    def _dropping(self, row: list[Any]) -> None:
+        """The memory is about to drop `row`: if a qualification had not reached it yet, count it as lost to that
+        state (it continues with the next arrival it still holds)."""
+        for state in (self.candidate, self.audit):
+            if not state or len(row) < 7:
+                continue
+            held_out = row[6] > state["since_id"] if state.get("since_id") is not None else row[0] > state["since"]
+            reached = state.get("trace_end") if state.get("trace") else state.get("cursor")
+            mark = self._cursor({"cursor": reached})
+            if held_out and (mark is None or self._key(row) > mark):
+                state["lost"] = state.get("lost", 0) + 1
+
     def _trace(self, arrivals: Iterable[list[Any]], since: float | None, skip: int = 0,
-               ends: list[float] | None = None) -> list[tuple[float, int, int, int, float]] | None:
+               ends: list[Any] | None = None, after: tuple[float, float] | None = None,
+               since_id: int | None = None) -> list[tuple[float, int, int, int, float]] | None:
         """TRACE consecutive recorded arrivals (after `since`, past the first `skip`) as the replay window's
         (offset s, prompt characters, output limit), with their recorded gaps: the service skips the idle
         stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
@@ -953,12 +999,20 @@ class Agent:
         request makes the tokens its recorded answer made (AG2: a chat answer that ended at EOS long before its
         limit is replayed at its own length) and is ordered by its recorded limit or recorded prediction, as the
         arm's key says; a row recorded without a prediction is ordered by its limit under either key."""
-        rows = sorted(a for a in arrivals if since is None or a[0] > since)[skip:skip + MAX_WINDOW]
+        self._ensure_ids()
+
+        def held_out(a: list[Any]) -> bool:  # recorded after the plan (by id where the state has one)
+            if since_id is not None:
+                return len(a) > 6 and a[6] > since_id
+            return since is None or a[0] > since
+
+        rows = sorted((a for a in arrivals if held_out(a) and (after is None or self._key(a) > after)),
+                      key=self._key)[skip:skip + MAX_WINDOW]
         if len(rows) < TRACE:
             return None
         rows = rows[:busy_size(self.world.params(), _jobs(rows), self.reference, self.capacity, self.engine_width)]
-        if ends is not None:  # where this window ends in recorded time: the next window starts after it
-            ends.append(float(rows[-1][0]))
+        if ends is not None:  # where this window ends, (time, id): the next window starts after it
+            ends.append([float(rows[-1][0]), int(rows[-1][6])])
         out = []
         for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
@@ -990,10 +1044,9 @@ class Agent:
         skip = int(state.get("skip", state["used"] * TRACE))
         trace = state.get("trace")
         if not trace:
-            ends: list[float] = []
-            cursor = state.get("cursor")
-            since = state["since"] if cursor is None else max(state["since"], cursor)
-            trace = self._trace(self.traffic, since=since, skip=skip, ends=ends)
+            ends: list[Any] = []
+            trace = self._trace(self.traffic, since=state["since"], skip=skip, ends=ends, after=self._cursor(state),
+                                since_id=state.get("since_id"))
             if trace is None:
                 return None
             state["trace_end"] = ends[0]
@@ -1028,10 +1081,11 @@ class Agent:
 
     @staticmethod
     def _next_window(state: dict[str, Any], skip: int, trace: list) -> None:
-        """Past this window. The cursor is the window's last recorded arrival time, not a count: the traffic
-        memory keeps only `MAX_TRAFFIC` arrivals, so a count of used arrivals ran past its end once that many were
-        used, and qualification stalled for good (review of 2026-11-08). A state without a window end (saved
-        before) keeps counting."""
+        """Past this window. The cursor is the window's last arrival, (recorded time, id), not a count: the
+        traffic memory keeps only `MAX_TRAFFIC` arrivals, so a count of used arrivals ran past its end once that
+        many were used, and qualification stalled for good (review of 2026-11-08). A time alone skipped the
+        arrivals that shared the cut's time but did not fit the window; the id orders them. A state without a
+        window end (saved before) keeps counting."""
         end = state.pop("trace_end", None)
         if end is not None:
             state["cursor"], state["skip"] = end, 0
@@ -1119,7 +1173,9 @@ class Agent:
         self.policy, self.evidence = policy, {**body, "sha256": hashlib.sha256(
             json.dumps(body, sort_keys=True).encode()).hexdigest()}
         self.candidate, self.errors, self._monitor, self._failed_windows = None, 0, [], 0
+        self._ensure_ids_locked()  # `_promote` runs under `_lock`
         self.audit = {"incumbent": policy.sha256, "since": max((a[0] for a in self.traffic), default=0.0),
+                      "since_id": max((int(a[6]) for a in self.traffic), default=None),
                       "used": 0, "triplets": [], "verdict": "open"}
         self.counters["qualified"] += 1
         self.arrivals_at_plan = self.arrivals
@@ -1213,6 +1269,7 @@ class Agent:
             self.reason = f"the planner did not start: {exc}"
             return
         self._planner_files, self._plan_since = (source, target), arrivals[-1][0]
+        self._plan_since_id = max((int(a[6]) for a in arrivals if len(a) > 6), default=None)
         self._event("planning", arrivals=len(arrivals), model=self.world.params())
 
     def _collect_plan(self) -> None:
@@ -1240,7 +1297,7 @@ class Agent:
                                                           "model_gain_vs_incumbent", "curve", "episodes", "cpu_s")}
             if proposed is not None:
                 self.candidate = {"policy": proposed, "plan": self.last_plan, "since": self._plan_since,
-                                  "triplets": [], "used": 0}
+                                  "since_id": self._plan_since_id, "triplets": [], "used": 0}
             self._event("planned", candidate=None if proposed is None else proposed["sha256"][:12],
                         choice=result.get("choice"), model_gain=result.get("model_gain_vs_incumbent"),
                         cpu_s=result.get("cpu_s"))
@@ -1279,7 +1336,7 @@ class Agent:
                      "policy": None if self.policy is None else _policy_body(self.policy),
                      "evidence": self.evidence, "candidate": self.candidate, "withdrawn": self.withdrawn,
                      "history": list(self.history), "counters": self.counters, "paused": self.paused,
-                     "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan,
+                     "arrivals": self.arrivals, "arrivals_at_plan": self.arrivals_at_plan, "next_id": self._next_id,
                      "last_plan": self.last_plan, "explored": {str(k): v for k, v in self.explored.items()},
                      "rejected": self.rejected, "rejected_epoch": self.rejected_epoch, "audit": self.audit,
                      "lengths": self.lengths.to_json()}
@@ -1307,6 +1364,7 @@ class Agent:
                 raise ValueError("it belongs to another setup")
             self.world = WorldModel.from_json(state["world"])
             self.traffic.extend(state["traffic"])
+            self._next_id = max([int(state.get("next_id", 0))] + [int(a[6]) + 1 for a in self.traffic if len(a) > 6])
             self.withdrawn = list(state["withdrawn"])
             self.history.extend(state["history"])
             self.counters.update(state["counters"])
