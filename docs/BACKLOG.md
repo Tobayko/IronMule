@@ -1545,8 +1545,8 @@ last 64, and it scores tokens per second over the window's whole span.
   64 of its 80 requests served stacked. Its mean first token there would then be far above the single path's.
 - If a fixed mode or the simple rule wins a phase, that is the result, and it names the next step.
 
-**Offline prediction (world model only; made 2026-11-08 at 02:15 UTC, after the kernel started and before any of its
-data was read; a scratch script, not a claim).** The world model in `path_router.replay` served AG6-Q's trace in
+**Offline prediction (world model only; computed 2026-11-08 at 02:08 UTC and committed at 02:09, after the kernel
+started at 02:06 and before any of its data was read; a scratch script, not a claim).** The world model in `path_router.replay` served AG6-Q's trace in
 closed loop, with AG6-H's startup prices as both the card and the agent's model and the mode in force at each
 arrival. All three seeds gave the same result:
 - The agent serves the quiet phase in `route`, as the single path does (first token 0.063 s).
