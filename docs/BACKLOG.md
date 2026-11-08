@@ -1342,6 +1342,50 @@ verdict is met, so AG5-G runs as fixed, at a pushed commit that carries the path
     - The rule itself is unchanged: 1.1x, on the worse prompt.
   - Run 6 is the same AG5-G at the commit with that measurement, run once. If the plan's prefill is really about
     15 % slower, the medians show it, and the rule refuses again.
+- **AG5-G run 6 (2026-11-07/08, kernel v6 at `5f064c3`, two T4s, 11.3 session hours): invalid by the analysis
+  fixed before its data. The agent chose the stacked engine by itself for the first time. Its worker then failed in
+  the first phase's second block, and that phase served nothing more.** It is valid only for `5f064c3`: it ran
+  before REV1 (`3ae183c`, `3808343`, `4ba5550`) and the fixes after it, and confirms none of them.
+  - *The agent's setup:*
+    - the numeric plan `native` (0.200 of stock, quality inside 1.005);
+    - the stacked measurement ran to its end in 1,102 s, peaking at 13.28 GB;
+    - the gate read 0.9988 (95 % 0.9967-1.0008), as in runs 4 and 5.
+  - *The medians settled run 5's first token:*
+    - The long prompt's first token was 0.718 s on the plan against 0.705 s natively, 1.02x (samples 0.714-0.725 s
+      and 0.700-0.706 s). Run 5's single timings had read 1.18x.
+    - One request alone made 0.959x the native path (19.41 against 20.24 tokens per second).
+    - Width 6 made 46.76, 2.31x; the curve was 19.4, 32.0, 36.0, 39.3, 44.6, **46.8**, 39.7 and 21.2 for widths 1
+      to 8.
+    - So the agent took the stacked engine at width 6.
+  - *What failed (phase 1, the agent's engine on card 1):*
+    - Block 0 (load 0.8, bursts) was complete.
+    - In block 1 (load 0.8, spike) the first request was answered, 256 tokens in 12.1 s. The 8 that arrived in the
+      next 0.7 s got no token and failed with `backend_unavailable` at 11.8-12.4 s, as the first one ended. The last
+      3 waited out their 3,600 s deadline.
+    - In blocks 2 and 3 (load 3.0) all 24 requests waited out their deadline. That is about 3 of the run's hours.
+    - The default path never failed, so none was censored.
+    - In phase 2, with fresh workers and the cards swapped, all 4 blocks were complete with no failure.
+  - *Cause: not in the run's artifacts.*
+    - The harness keeps each request's outcome. The product's worker log and stability notes stay in the session's
+      state directory, which is not in the output.
+    - The service is meant to replace a lost worker at most 3 times in 10 minutes, each start bounded at 600 s, and
+      then to refuse new requests at once (STAB1). Requests that each wait an hour, for 3 hours, are not that path
+      as written. Not reproduced yet.
+  - *Verdict: invalid.* The analysis fixed before the data (`analyse_ag4c`, and its test of a voided block) makes
+    any failed agent request invalidate the run. This entry's text, "a failed agent request voids its block;
+    fewer than two complete blocks make the run invalid", can be read as allowing a valid run on the 5 complete
+    blocks. The discrepancy is reported here, and the code's verdict stands.
+  - *Recorded, no decision.* Over the 5 complete blocks (1 of phase 1, 4 of phase 2):
+    - the agent made 1.742x the default's tokens per second (95 % 1.358-2.103), 1.876x over phase 2's 4 blocks;
+    - its mean first token was 0.227x the default's, and its 95th percentile 0.321x;
+    - the default's A/A noise was 0.4 % in tokens per second and 1.0 % in the mean first token.
+  - *Next for AG5:* this is a stability defect in the agent's own chosen setup, and it comes before any gain.
+    1. Reproduce block 1's arrivals, several requests joining a running Gemma stacked batch at width 6, with the
+       worker's and the service's logs kept in the output.
+    2. Find why the service then served nothing for hours, and fix it.
+    3. Rerun AG5-G at the fixed commit.
+    The changes in `3808343` touch the join path (each joiner's cancel check), but nothing shows they bear on
+    this failure. The ledger entry is still owed.
 - *Setup:* one Kaggle session with two T4s, `mlx-community/gemma-3-12b-it-4bit` at `86cc6a8`,
   `training/rl2_headroom.py --plan ag5g` at a pushed commit, about 1.6 session hours.
 - *The agent decides:* the product's own `choose_setup` on card 0 (NUM1, then AG4's amended rule on gate 2's

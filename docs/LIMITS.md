@@ -120,6 +120,13 @@ favour. `dequantize` changes answers within its quality gate (logits within 0.28
 5 comparable answers bit-identical). Nothing here covers another CPU, another model, quiet traffic, a GPU, the
 stacked engine or the router (AG4-R run 1 was cut by Kaggle's time limit and is invalid).
 
+On two T4s with `mlx-community/gemma-3-12b-it-4bit` the agent chose the Gemma stacked engine at width 6 by itself
+(AG5-G run 6, at `5f064c3`, before the review fixes of 2026-11-08). Its worker then failed under a spike: 8
+requests got `backend_unavailable`, and its service answered no request for the next 3 hours, so each one waited
+out its 3,600 s deadline. With fresh workers on the swapped cards it served 4 blocks with no failure. The cause
+is not known and the fault is not reproduced. Until it is fixed, that setup is not shown to be stable, and the run
+gives no gain (invalid by its rule).
+
 ### The serving mode it learns while serving (AG6)
 
 AG6-H (BACKLOG AG6) is the measured gain from learning while serving: on one Kaggle T4, with
