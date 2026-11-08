@@ -667,7 +667,9 @@ def test_a_replay_window_spans_the_backlog_and_the_next_window_starts_after_it(t
 
     agent._qualify(replay, lambda: False)
     assert seen == [31] * 3  # every recorded arrival after the plan: the burst never ended
-    assert agent.candidate["skip"] == 31 and agent.candidate["trace"] is None and agent.candidate["used"] == 1
+    assert agent.candidate["trace"] is None and agent.candidate["used"] == 1
+    # the next window starts after this one's last recorded arrival (a time, not a count: review of 2026-11-08)
+    assert agent.candidate["skip"] == 0 and agent.candidate["cursor"] == max(a[0] for a in agent.traffic)
 
 
 # ---------------------------------------------------------------- AG2: ordering by a predicted answer length
@@ -1072,3 +1074,73 @@ def test_the_agents_two_path_setup_serves_through_the_learning_router(monkeypatc
     router = taken["router"]
     assert isinstance(router, PolicyRouter) and router.mode == "route"
     assert taken["labels"] == ["0:single", "0:stacked"] and router.costs[1].capacity == 6
+
+
+# ---------------------------------------------------------------- review of 2026-11-08: qualification evidence
+
+_REFERENCE = {"width": 8, "sjf": False, "gather_ms": 0}
+
+
+def _review_result(trace, cost):
+    return {"rows": [{"ttft_s": cost / 4, "e2e_s": cost * 3 / 4, "tokens": 64, "outcome": "ok"} for _ in trace],
+            "texts": ["same"] * len(trace), "span_s": 1.0}
+
+
+def test_qualification_keeps_finding_windows_after_the_traffic_memory_drops_old_arrivals(tmp_path):
+    """The cursor counted used arrivals, but the memory keeps only MAX_TRAFFIC of them: once 2,048 were used, no
+    window was ever found again, and the open candidate blocked replanning for good. It is now a recorded time."""
+    agent = Agent(tmp_path, {"review": "sliding-window"}, capacity=8, reference=_REFERENCE)
+    agent.traffic.extend([[1 + i * .001, 24, False, 64, 64, None] for i in range(ag.MAX_TRAFFIC)])
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0., "triplets": [], "used": 0}
+    calls = [0]
+
+    def replay(trace, choose, preempted):
+        index = calls[0]
+        calls[0] += 1
+        return _review_result(trace, 10. if index % 3 != 1 else 9. if (index // 3) % 2 == 0 else 11.)
+
+    for _ in range(16):
+        agent._qualify(replay, lambda: False)
+    assert len(agent.candidate["triplets"]) == 16 and calls[0] == 48
+    agent.traffic.extend([[100 + i * .001, 24, False, 64, 64, None] for i in range(4096)])
+    before = calls[0]
+    for _ in range(4):
+        agent._qualify(replay, lambda: False)
+    assert calls[0] > before, "new arrivals give new windows"
+    assert agent.candidate is None or len(agent.candidate["triplets"]) > 16
+
+
+def test_a_candidates_triplets_against_a_withdrawn_schedule_do_not_count_against_the_new_one(tmp_path):
+    """Eleven triplets against a schedule that was then withdrawn, judged with one against the reference that
+    serves now, promoted a candidate that costs 50 % more than that reference. Its evidence starts over."""
+    agent = Agent(tmp_path, {"review": "incumbent-change"}, capacity=8, reference=_REFERENCE)
+    agent.traffic.extend([[1 + i * 100, 24, False, 64, 64, None] for i in range(16 * 12)])
+    incumbent = {"policy": ag.fixed_policy(8, True), "plan": {}, "since": 0., "triplets": [], "used": 0}
+    agent._promote(incumbent, {"gain": .1, "gain_ci95": [.05, .15], "floor": 0., "noise": 0.})
+    agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0., "triplets": [], "used": 0}
+
+    def replay(trace, choose, preempted):  # candidate 15, the old incumbent 20, the reference 10
+        width, _, sjf = choose(len(trace), [], 0., 0)
+        return _review_result(trace, 15. if width == 2 else 20. if sjf else 10.)
+
+    for _ in range(11):
+        agent._qualify(replay, lambda: False)
+    assert len(agent.candidate["triplets"]) == 11
+    agent.control("off")
+    agent.control("on")
+    agent._qualify(replay, lambda: False)
+    assert not agent.active, "the candidate loses to the reference serving now"
+    assert len(agent.candidate["triplets"]) == 1 and agent.candidate["incumbent"] == "reference"
+    assert any(event["event"] == "restarted" for event in agent.history)
+
+
+def test_rank_correlation_shares_ranks_between_ties_and_is_undefined_for_a_constant():
+    from ironmule_product.length_model import spearman
+
+    from training.rl4_agent import _spearman
+
+    assert spearman([64.] * 8, list(range(1, 9))) is None
+    assert spearman([64.] * 8, [64.] * 8) is None
+    assert spearman([1., 1., 2., 3.], [1., 2., 3., 4.]) == pytest.approx(0.9486832980505138)  # SciPy's value
+    assert spearman([1., 2., 3.], [3., 2., 1.]) == pytest.approx(-1.0)
+    assert _spearman([64.] * 8, list(range(1, 9))) is None, "the training copy is the product's now"

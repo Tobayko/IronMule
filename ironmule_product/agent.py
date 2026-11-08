@@ -923,8 +923,8 @@ class Agent:
                 self._dirty()
         return True
 
-    def _trace(self, arrivals: Iterable[list[Any]], since: float | None,
-               skip: int = 0) -> list[tuple[float, int, int, int, float]] | None:
+    def _trace(self, arrivals: Iterable[list[Any]], since: float | None, skip: int = 0,
+               ends: list[float] | None = None) -> list[tuple[float, int, int, int, float]] | None:
         """TRACE consecutive recorded arrivals (after `since`, past the first `skip`) as the replay window's
         (offset s, prompt characters, output limit), with their recorded gaps: the service skips the idle
         stretches instead. Capping the gaps, as RSI3-LIVE does, turned quiet traffic into bursts, and
@@ -946,6 +946,8 @@ class Agent:
         if len(rows) < TRACE:
             return None
         rows = rows[:busy_size(self.world.params(), _jobs(rows), self.reference, self.capacity, self.engine_width)]
+        if ends is not None:  # where this window ends in recorded time: the next window starts after it
+            ends.append(float(rows[-1][0]))
         out = []
         for a in rows:
             chars = max(LONG_PROMPT_CHARS + 1, a[1] * 4) if a[2] else min(LONG_PROMPT_CHARS, max(1, a[1] * 4))
@@ -975,9 +977,15 @@ class Agent:
         digest per answer; AG1 S, run 2), bound to the serving schedule they ran against: if that changed or
         the agent was paused meanwhile, the kept arms are dropped. Returns the finished arms, else None."""
         skip = int(state.get("skip", state["used"] * TRACE))
-        trace = state.get("trace") or self._trace(self.traffic, since=state["since"], skip=skip)
-        if trace is None:
-            return None
+        trace = state.get("trace")
+        if not trace:
+            ends: list[float] = []
+            cursor = state.get("cursor")
+            since = state["since"] if cursor is None else max(state["since"], cursor)
+            trace = self._trace(self.traffic, since=since, skip=skip, ends=ends)
+            if trace is None:
+                return None
+            state["trace_end"] = ends[0]
         state["trace"] = trace  # the window is fixed until its triplet ends: the model it was cut by keeps learning
         bound = [self._incumbent_key(), self.paused]
         done = state.setdefault("partial", {})
@@ -1009,7 +1017,16 @@ class Agent:
 
     @staticmethod
     def _next_window(state: dict[str, Any], skip: int, trace: list) -> None:
-        state["used"], state["skip"], state["trace"] = state["used"] + 1, skip + len(trace), None
+        """Past this window. The cursor is the window's last recorded arrival time, not a count: the traffic
+        memory keeps only `MAX_TRAFFIC` arrivals, so a count of used arrivals ran past its end once that many were
+        used, and qualification stalled for good (review of 2026-11-08). A state without a window end (saved
+        before) keeps counting."""
+        end = state.pop("trace_end", None)
+        if end is not None:
+            state["cursor"], state["skip"] = end, 0
+        else:
+            state["skip"] = skip + len(trace)
+        state["used"], state["trace"] = state["used"] + 1, None
         state["preempted"], state["partial"] = 0, {}
 
     def _qualify(self, replay: Callable, preempted: Callable[[], bool]) -> None:
@@ -1033,6 +1050,13 @@ class Agent:
                 return
             if done["a"]["failed"] or done["aa"]["failed"]:
                 return  # a failure under the incumbent says nothing about the candidate: the triplet is not counted
+            incumbent = self._incumbent_key()
+            if candidate.get("incumbent", incumbent) != incumbent:
+                # Its triplets were measured against another serving schedule: judged together with new ones they
+                # promoted a candidate that loses to the schedule serving now (review of 2026-11-08). Start over.
+                candidate["triplets"], candidate["verdict"] = [], None
+                self._event("restarted", policy=candidate["policy"]["sha256"][:12], reason="the serving schedule changed")
+            candidate["incumbent"] = incumbent
             candidate["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
             verdict = judge(candidate["triplets"])
             candidate["verdict"] = verdict

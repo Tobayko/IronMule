@@ -542,18 +542,12 @@ def fit(reports: Iterable[dict[str, Any]], start: PoolModel | None = None, evalu
     return model_at(x), best
 
 
-def _spearman(a: list[float], b: list[float]) -> float:
-    def ranks(values: list[float]) -> list[float]:
-        order = sorted(range(len(values)), key=lambda i: values[i])
-        out = [0.0] * len(values)
-        for rank, i in enumerate(order):
-            out[i] = float(rank)
-        return out
-    ra, rb = ranks(a), ranks(b)
-    n = len(a)
-    if n < 2:
-        return 1.0
-    return 1 - 6 * sum((x - y) ** 2 for x, y in zip(ra, rb)) / (n * (n * n - 1))
+def _spearman(a: list[float], b: list[float]) -> float | None:
+    """The product's rank correlation (ties at their average rank; None where it is undefined). This file had its
+    own copy, with consecutive ranks for ties and a formula that assumes none (review of 2026-11-08)."""
+    from ironmule_product.length_model import spearman
+
+    return spearman(a, b)
 
 
 def _aa_noise(report: dict[str, Any]) -> float:

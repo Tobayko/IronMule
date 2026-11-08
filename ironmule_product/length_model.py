@@ -37,10 +37,19 @@ def features(request: Any) -> tuple[tuple[int, ...], float, float]:
 
 
 def _rank(values: list[float]) -> list[float]:
+    """Ranks with ties sharing their average rank: consecutive ranks gave a constant prediction a perfect
+    correlation with any truth (review of 2026-11-08). A constant input then has no spread, and `spearman` is
+    undefined (None), as in SciPy."""
     order = sorted(range(len(values)), key=values.__getitem__)
     ranks = [0.0] * len(values)
-    for rank, index in enumerate(order):
-        ranks[index] = float(rank)
+    start = 0
+    while start < len(order):
+        end = start
+        while end + 1 < len(order) and values[order[end + 1]] == values[order[start]]:
+            end += 1
+        for position in range(start, end + 1):
+            ranks[order[position]] = (start + end) / 2
+        start = end + 1
     return ranks
 
 
