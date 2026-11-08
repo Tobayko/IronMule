@@ -1601,6 +1601,22 @@ the old code, and each script now fails its assertion. The serving faults are on
 - **P1, the agent's qualification stalled for good.** The triplet cursor counted used arrivals, but the traffic
   memory keeps 2,048. Once 2,048 were used, no window was found again, and the open candidate blocked replanning.
   *Fix:* the cursor is the last window's recorded end time (`Agent._next_window`).
+  - **Correction, ties at the cut (owner check, 2026-11-08, `d96a9dd`).** A window is cut at 128 arrivals inside a
+    spike, and arrivals recorded at one time can fall on both sides of the cut. A cursor of the cut's time alone
+    then skipped the tied arrivals beyond it: 6 of 12 in the new test.
+    - *Now:* every recorded arrival gets a monotone id, in recording order, saved with the state. Windows are
+      ordered and cut by (time, id), and the cursor is the last used arrival's (time, id). A candidate's or
+      audit's held-out boundary is an id too, so an arrival recorded after a plan at the plan's last time is held
+      out.
+    - *What the cursor means:* every arrival at or before it, by (time, id), was used by an earlier window, and
+      none after it. A cursor saved by older code as a time alone means every arrival at that time was used.
+    - *Interruption:* a started triplet records its window's end, and all its arms replay that same window, also
+      after a restart. The next window starts after it.
+    - *A full memory:* the memory keeps 2,048 arrivals. Held-out arrivals it drops before a window used them are
+      counted as `lost`, and qualification goes on with the next one it holds; none is used twice.
+    - *Tests:* ties across a cut, an interrupted triplet resumed across a restart, dropped arrivals, a legacy
+      cursor and ties at the held-out boundary. Four fail on the previous code; the legacy cursor's meaning holds
+      on both.
 - **P1, a candidate that loses could be promoted.** Eleven triplets against a schedule that was then withdrawn were
   judged together with one against the reference that served next. That promoted a candidate costing 50 % more than
   the reference. *Fix:* a candidate's evidence is bound to the incumbent it ran against, and starts over when the
