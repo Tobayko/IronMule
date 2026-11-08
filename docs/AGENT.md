@@ -103,8 +103,9 @@ the current mode's. On quiet traffic, where every mode's tokens per second is ju
 the mode with the earliest first tokens, if that one keeps at least 98 % of the throughput and is at least 20 %
 sooner (REV1). Quiet is what the router observed, not what the model estimates. Of its last 64 finished requests,
 at most 1 in 16 arrived while another was being served, none is in flight, and none ended without its answer. Under
-load the replay's first tokens are not reliable. The dream runs after a request has finished; a decision stays a lookup, under a
-microsecond. The dream runs on the thread of the request that finished, before that request's last event goes out,
+load the replay's first tokens are not reliable. The dream runs after a request has finished. A decision stays a lookup
+in `stacked` or `single` (0.85 us in AG6-H) and the router's arithmetic in `route` (13.7 us on average and 62 us at
+most in AG6-Q, where it served mostly in `route`). The dream runs on the thread of the request that finished, before that request's last event goes out,
 so its cost (`dream_ms` under `/health`'s `paths`) also delays that one request's end; decisions are not held up by
 it.
 Each path still answers with its own gated plan, so no answer changes beyond the two paths' own.
