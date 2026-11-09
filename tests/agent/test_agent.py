@@ -1273,3 +1273,85 @@ def test_arrivals_recorded_after_the_plan_at_the_plans_last_time_are_held_out_by
     _marked_spike(agent, 16, {0}, at=20.0)
     windows = _windows(agent, 1)
     assert windows and sorted(windows[0])[0] == 1 and 20 in windows[0], "id 19 (mark 20) is held out, ids <= 18 not"
+
+
+def _simulate_by_rounds(params, jobs, sjf, width, capacity, engine_width=ag.ENGINE_WIDTH, key="limit"):
+    """`simulate` as it was before A1 (2026-11-09), stepping every decode round through the lists: the reference
+    the event-driven one must equal float for float."""
+    import statistics
+
+    pending = sorted(jobs, key=lambda j: (j.arrive, j.index))
+    waiting, now, i = [], 0.0, 0
+    while i < len(pending) or waiting:
+        while i < len(pending) and pending[i].arrive <= now:
+            waiting.append(pending[i])
+            i += 1
+        if not waiting:
+            now = pending[i].arrive
+            continue
+        if sjf(waiting):
+            waiting.sort(key=ag._sjf_key(now, key))
+        size = max(1, min(capacity, width(waiting)))
+        group, waiting = waiting[:size], waiting[size:]
+        t = now + params.get("group_s", 0.0)
+        remaining = {}
+        for job in group:
+            t += params["prefill_s"] + params["prefill_s_per_ktoken"] * job.prompt_tokens / 1000
+            job.first = t
+            remaining[job.index] = job.tokens - 1
+            if remaining[job.index] <= 0:
+                job.end = t
+        active = [j for j in group if remaining[j.index] > 0]
+        while active:
+            served = active[:engine_width]
+            t += params["step_s"] + params["step_s_per_session"] * (len(served) - 1)
+            for job in served:
+                remaining[job.index] -= 1
+                if remaining[job.index] == 0:
+                    job.end = t
+            active = active[len(served):] + [j for j in served if remaining[j.index] > 0]
+        now = t
+    return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
+
+
+def test_the_event_driven_simulator_equals_the_round_by_round_one_float_for_float():
+    """A1: jumping to the next round in which a session ends changes no number the planner sees: every job's first
+    token, end and the mean cost are bit-identical, with fewer sessions than the engine's width, with more (the
+    rotation), at every width and order, on random traffic with answers of 1 token and of many."""
+    rng = random.Random(7)
+    cases = 0
+    for _ in range(400):
+        n = rng.randint(1, 24)
+        params = {"prefill_s": rng.uniform(0.01, 0.3), "prefill_s_per_ktoken": rng.uniform(0.0, 3.0),
+                  "step_s": rng.uniform(0.005, 0.05), "step_s_per_session": rng.uniform(0.0, 0.02),
+                  **({"group_s": rng.uniform(0, 0.05)} if rng.random() < 0.3 else {})}
+
+        def jobs(n=n, seed=rng.randrange(1 << 30)):
+            r, t, out = random.Random(seed), 0.0, []
+            for k in range(n):
+                t += r.expovariate(2.0) if r.random() < 0.7 else 0.0
+                limit = r.choice((1, 2, 3, 16, 32, 256))
+                out.append(Job(k, t, limit, r.random() < 0.3, r.choice((24, 1030)), r.randint(1, limit)))
+            return out
+
+        engine_width = rng.choice((1, 2, 3, 4, 8))
+        capacity = rng.choice((1, 2, 4, 8, 16))
+        wide = rng.choice((1, 2, 4, 8, 32))
+        order = rng.random() < 0.5
+        old, new = jobs(), jobs()
+        a = _simulate_by_rounds(params, old, lambda w: order, lambda w: wide, capacity, engine_width)
+        b = simulate(params, new, lambda w: order, lambda w: wide, capacity, engine_width)
+        assert a == b and [(j.first, j.end) for j in old] == [(j.first, j.end) for j in new], (engine_width, capacity)
+        cases += 1
+    assert cases == 400
+    payload = {"model": TRUTH, "arrivals": _arrivals(), "capacity": 8, "seed": 0, "reference": REFERENCE,
+               "incumbent": None, "settings": {"episodes": 150, "seeds": 1, "validation": 10, "held_out": 20}}
+    fast = plan(payload)
+    original = ag.simulate
+    try:
+        ag.simulate = _simulate_by_rounds
+        slow = plan(payload)
+    finally:
+        ag.simulate = original
+    for key in ("candidate", "choice", "model_costs", "arm_costs", "curve"):
+        assert fast[key] == slow[key], key

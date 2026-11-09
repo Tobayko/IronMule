@@ -41,7 +41,7 @@ It is off by default (`ironmule serve --agent on`), refused together with `--lea
 from __future__ import annotations
 
 from collections import OrderedDict, deque
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import hashlib
 import json
 import math
@@ -298,7 +298,9 @@ def _sjf_key(now: float, key: str = "limit") -> Callable[[Job], tuple]:
 
 
 def _fresh(jobs: list[Job]) -> list[Job]:
-    return [replace(j, first=None, end=None) for j in jobs]
+    """Copies without their simulated times (A1: built directly; `dataclasses.replace` was a third of a plan)."""
+    return [Job(j.index, j.arrive, j.max_tokens, j.long_prompt, j.prompt_tokens, j.tokens, None, None, j.predicted)
+            for j in jobs]
 
 
 def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
@@ -330,16 +332,45 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
             if remaining[job.index] <= 0:
                 job.end = t
         active = [j for j in group if remaining[j.index] > 0]
-        while active:
-            served = active[:engine_width]
-            t += params["step_s"] + params["step_s_per_session"] * (len(served) - 1)
-            for job in served:
-                remaining[job.index] -= 1
-                if remaining[job.index] == 0:
-                    job.end = t
-            active = active[len(served):] + [j for j in served if remaining[j.index] > 0]
+        t = _decode(params, active, remaining, engine_width, t)
         now = t
     return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
+
+
+def _decode(params: dict[str, float], active: list[Job], remaining: dict[int, int], engine_width: int,
+            t: float) -> float:
+    """A group's decode rounds, as `simulate` defines them: a round serves the first `engine_width` sessions and
+    rotates them to the back, and a session ends with the round that gives it its last token. A1 (2026-11-09):
+    instead of stepping round by round through the lists, jump to the next round in which a session ends. With at
+    most `engine_width` sessions every round serves all of them; with more, round r serves the r-th `engine_width`
+    of the endlessly repeated order, so session p gets its last token in round ((remaining - 1) * n + p) //
+    engine_width. Time is still added once per round, so every float is the one the round-by-round loop made."""
+    step_s, per_session = params["step_s"], params["step_s_per_session"]
+    while active:
+        n = len(active)
+        if n <= engine_width:
+            rounds = min(remaining[job.index] for job in active)
+            cost = step_s + per_session * (n - 1)
+            for _ in range(rounds):
+                t += cost
+            for job in active:
+                remaining[job.index] -= rounds
+                if remaining[job.index] == 0:
+                    job.end = t
+            active = [job for job in active if remaining[job.index] > 0]
+            continue
+        rounds = min(((remaining[job.index] - 1) * n + p) // engine_width for p, job in enumerate(active)) + 1
+        cost = step_s + per_session * (engine_width - 1)
+        for _ in range(rounds):
+            t += cost
+        served = rounds * engine_width  # places of the repeated order served so far
+        for p, job in enumerate(active):
+            remaining[job.index] -= (served - 1 - p) // n + 1 if served > p else 0
+            if remaining[job.index] == 0:
+                job.end = t
+        shift = served % n
+        active = [job for job in active[shift:] + active[:shift] if remaining[job.index] > 0]
+    return t
 
 
 def fixed_policy(width: int, sjf: bool, key: str = "limit") -> dict[str, Any]:
@@ -369,8 +400,10 @@ def _probabilities(weights: list[float], features: list[float], rows: int) -> li
     return [e / sum(exps) for e in exps]
 
 
-def _views(waiting: list[Job]) -> list[View]:
-    return [View(j.max_tokens, j.long_prompt) for j in waiting]
+def _views(waiting: list[Job]) -> list[Job]:
+    """What a decision sees of the queue. A job has a `View`'s two fields (`max_tokens`, `long_prompt`), which is
+    all the features read, so it is passed as it is (A1: building a `View` per job and decision cost a tenth)."""
+    return waiting
 
 
 def _deciders(policy: Policy, capacity: int) -> tuple[Callable, Callable]:
