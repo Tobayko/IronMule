@@ -1,9 +1,10 @@
 """STAB4: run 6's arrivals as explicit event plans through the product's own path (control logic only).
 
 The same world as `test_dense_slot_flow.py` (the product's service, client, transport, worker process, bridge,
-Runtime and slot pool; a tiny random Gemma 3 with the CPU reference attention in place of CUDA). The worker pauses
-before each stacked step at which a planned request arrives; the test queues it there and lets the step run once
-the service and the worker agree on the open members. `IRONMULE_STAB4_SEEDS=1-20` adds seeded variations of both
+Runtime and slot pool; a tiny random Gemma 3 with the CPU reference attention in place of CUDA). The plans run in
+lockstep: the worker holds at the start of every executor round (finished requests have returned their slots,
+newcomers not yet admitted); the test queues that round's planned arrivals, waits until the service and the pool
+agree on the open members and every join is in the worker's hands, and lets the round run. `IRONMULE_STAB4_SEEDS=1-20` adds seeded variations of both
 blocks to the four kept here.
 """
 
@@ -16,12 +17,12 @@ import pytest
 
 pytest.importorskip("mlx.core")
 
-from tests.engine.test_dense_slot_flow import SLOTS, World, _paused, _tokens, _until, alone, check_ends, check_pool  # noqa: E402
+from tests.engine.test_dense_slot_flow import SLOTS, World, _tokens, _until, alone, check_ends, check_pool  # noqa: E402
 
 
 # AG5-R's first two blocks are run 6's phase 0 blocks 0 (bursts) and 1 (spike), rebuilt from trace 430
-# (`training/rl2_headroom.py:ag5r_blocks`). Here their arrival times only order events against the worker's stacked
-# steps: an arrival at offset t comes before step 1 + floor(t / STEP_S), where STEP_S is one chained readback
+# (`training/rl2_headroom.py:ag5r_blocks`). Here their arrival times only order events against the worker's rounds
+# (one stacked step each): an arrival at offset t comes at round 1 + floor(t / STEP_S), where STEP_S is one chained readback
 # (4 tokens) of the 256-token answers scaled to LOCAL_LIMIT, at run 6's 0.128 s per step at width 6 (AG5-G's
 # measured curve, 46.8 tokens/s). Prompts, lengths and the clock are local stand-ins: nothing here shows what the
 # T4 did inside run 6, and no time or rate from these runs is a measurement.
@@ -66,7 +67,7 @@ def _sync(world: World, step: int, open_ids: list[str], queued: list[str],
     """At the pause before `step`: every done the worker sent has reached its caller, so the service's count of
     open members is the worker's; the step's arrivals are queued in order; the queue joins the group while it has
     room, and the worker holds those joins before the step runs."""
-    paused = _paused(world, step)
+    paused = _round(world, step)
     sent = [row["id"] for row in world.slots() if row["op"] == "done_sent"]
     assert _until(lambda: all(any(e.get("type") == "done" for e in world.live.get(rid, ())) for rid in sent))
     open_ids = [rid for rid in open_ids if rid not in sent]
@@ -84,20 +85,40 @@ def _sync(world: World, step: int, open_ids: list[str], queued: list[str],
     return open_ids + joining, queued[len(joining):]
 
 
+def _round(world: World, number: int) -> dict:
+    assert _until(lambda: any(row["op"] == "paused_round" and row["round"] == number for row in world.slots()))
+    return next(row for row in world.slots() if row["op"] == "paused_round" and row["round"] == number)
+
+
+ROUNDS = 400  # holds for every executor round the plans can take, in lockstep
+
+
 def play(world: World, first, by_step, after, holds: dict[int, Path]) -> list[str]:
-    """Run the plan; returns every request id in arrival order."""
+    """Run the plan in lockstep: the worker holds at the start of every executor round; there the test lets the
+    service see every done the worker sent, queues the round's planned arrivals, waits until the service has
+    handed every place the group has over and the worker holds those joins, and lets the round run. Requests
+    after the load (`after`) start a new group once the first run has ended. Returns every id in arrival order."""
     world.offer_together(first)
     open_ids, queued, ids = [rid for rid, _, _ in first], [], [rid for rid, _, _ in first]
-    for step in sorted(holds):
-        ids += [rid for rid, _, _ in by_step.get(step, ())]
-        open_ids, queued = _sync(world, step, open_ids, queued, by_step.get(step, []))
-        holds[step].write_text("go")
+    later = list(after)
+    for number in sorted(holds):
+        def reached(number=number) -> bool:
+            ended = {row["id"] for row in world.log() if row["event"] == "end"}
+            return (any(row["op"] == "paused_round" and row["round"] == number for row in world.slots())
+                    or (set(ids) <= ended and not queued))
+        assert _until(reached)
+        if not any(row["op"] == "paused_round" and row["round"] == number for row in world.slots()):
+            if not later:
+                break  # the last run has ended
+            assert _until(lambda: world.service.health()["in_flight"] is None)
+            world.offer_together(later)
+            ids += [rid for rid, _, _ in later]
+            open_ids, later = [rid for rid, _, _ in later], []
+        arrivals = by_step.get(number, []) if not after or later else []
+        ids += [rid for rid, _, _ in arrivals]
+        open_ids, queued = _sync(world, number, open_ids, queued, arrivals)
+        holds[number].write_text("go")
     world.wait()
-    if after:
-        assert _until(lambda: world.service.health()["in_flight"] is None)
-        world.offer_together(after)
-        ids += [rid for rid, _, _ in after]
-        world.wait()
     return ids
 
 
@@ -117,8 +138,8 @@ def test_run_6s_arrivals_in_explicit_event_plans_keep_every_slot_rule(tmp_path, 
     seeded variations of nearby events. Every plan: never a seventh slot, each request once to its end with its
     own answer, the waiting ones served from freed slots, nothing left taken, no worker lost."""
     first, by_step, after = run6_plan(block, seed)
-    holds = {step: tmp_path / f"resume-{step}" for step in by_step}
-    world = World(tmp_path, monkeypatch, faults={"pause": [[step, str(path)] for step, path in holds.items()]})
+    holds = {number: tmp_path / f"resume-{number}" for number in range(1, ROUNDS + 1)}
+    world = World(tmp_path, monkeypatch, faults={"pause_rounds": [[n, str(path)] for n, path in holds.items()]})
     try:
         ids = play(world, first, by_step, after, holds)
         texts_of = {rid: (text, limit) for rid, text, limit in first + after + [a for v in by_step.values() for a in v]}
@@ -139,19 +160,20 @@ def test_run_6s_arrivals_in_explicit_event_plans_keep_every_slot_rule(tmp_path, 
 
 
 def test_the_same_event_plan_gives_the_same_admissions_twice(tmp_path, monkeypatch):
-    """Reproducible: run 6's spike as an event plan, twice; the slots taken and freed, and when, are identical."""
+    """Reproducible: run 6's spike as an event plan, twice; the slots taken and freed, and in which round, are
+    identical."""
     traces = []
     for attempt in ("a", "b"):
         first, by_step, after = run6_plan("phase0-block1", 3)
         root = tmp_path / attempt
         root.mkdir()
-        holds = {step: root / f"resume-{step}" for step in by_step}
+        holds = {number: root / f"resume-{number}" for number in range(1, ROUNDS + 1)}
         with pytest.MonkeyPatch.context() as patch:
-            world = World(root, patch, faults={"pause": [[step, str(path)] for step, path in holds.items()]})
+            world = World(root, patch, faults={"pause_rounds": [[n, str(path)] for n, path in holds.items()]})
             try:
                 play(world, first, by_step, after, holds)
-                traces.append([(row["op"], row.get("slot"), row.get("prompt"), row.get("step"))
-                               for row in world.slots() if row["op"] in ("take", "free", "paused")])
+                traces.append([(row["op"], row.get("slot"), row.get("prompt"), row.get("round"))
+                               for row in world.slots() if row["op"] in ("take", "free", "paused_round")])
             finally:
                 world.close()
     assert traces[0] == traces[1] and len(traces[0]) > 20

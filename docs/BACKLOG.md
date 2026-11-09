@@ -1909,9 +1909,13 @@ and to say which statements that supports and which still need the card.
 - *Run 6's arrivals as event plans* (control logic only): phase 0's blocks 0 and 1 from `ag5r_blocks`, ordered
   against the worker's stacked steps (one chained readback of the 256-token answers scaled to 32 tokens at run 6's
   0.128 s a step at width 6), in run 6's order and in seeded variations of nearby events (an arrival moved by up to
-  one step, arrivals at one step shuffled, lengths 8-40). At each hold the service's open members and the worker's
-  free slots must agree. Four plans are kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more, and all 42 passed once
-  (2026-11-09). The same plan twice gives the same slots taken and freed at the same steps.
+  one step, arrivals at one step shuffled, lengths 8-40). The plans run in lockstep: the worker holds at the start
+  of every executor round, after finished requests have returned their slots and before newcomers are admitted;
+  there the service's open members and the worker's free slots must agree, and the round runs once every join
+  the service sent is in the worker's hands. (Holding before the stacked step instead let a join that the service
+  sent on a done arrive one round early or late, which under load broke the plans' bookkeeping.) Four plans are
+  kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more (result below). The same plan twice gives the same slots taken
+  and freed in the same rounds (5 of 5 under load).
 
 **Found and fixed (each test fails on the code before it):**
 - *A cancelled member's slot stayed empty until its run ended.* The engine stops a cancelled request at once and
@@ -1940,7 +1944,8 @@ and to say which statements that supports and which still need the card.
   requests are queued; the test checks the blocker's own group number and its first token, the exact groups, that
   the worker's exit follows `r-a`'s first token, and only then recovery. Under load (6 busy processes on 4 cores)
   the old test failed none of 12 runs alone but did fail in the full suite; the new one ran 30 times alone and 20
-  times with its file.
+  times with its file, none failed (my first version read the exit row before the scheduler wrote it, and failed 22
+  of those 50; fixed before this count).
 
 **Run 6's trigger, examined locally on run 6's product (`5f064c3`), control logic only:**
 - *Eight rows started into six slots* fail there with exactly the frame AG5-R's R1 looks for:

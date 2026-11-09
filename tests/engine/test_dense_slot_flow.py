@@ -185,7 +185,15 @@ def _tokens(events: list[dict]) -> list[int]:
 
 
 def check_pool(world: World, slots: int = SLOTS) -> dict:
-    """The ledger's invariants: never more taken than the pool has, never a slot taken twice, all returned."""
+    """The ledger's invariants: never more taken than the pool has, never a slot taken twice, all returned. A caller
+    has its done before the worker's run ends and hands its slots back, so this waits (30 s at most) until every
+    take has its free; a slot that never comes back still fails below."""
+
+    def balanced() -> bool:
+        rows = world.slots()
+        return sum(row["op"] == "take" for row in rows) == sum(row["op"] == "free" for row in rows)
+
+    _until(balanced)
     rows = [row for row in world.slots() if row["op"] in ("take", "free")]
     assert not [row for row in rows if "violation" in row], rows
     taken: dict[int, str] = {}

@@ -19,7 +19,10 @@ believes in another width); `DENSE_CPU_CAPACITY` is a slot's context (default 96
 text; {"step_fail": "<text>"} fails every stacked step that holds that request's slot, and
 {"step_fail_once": "<text>"} only the first such step; {"pause": [[step, "<file>"], ...]} holds the worker
 before its stacked step `step` (1-based, counted over the process's life) until `<file>` exists, with a
-`paused` row in the ledger first, so a test can act at a known point of a run. The ledger also records each
+`paused` row in the ledger first, so a test can act at a known point of a run; {"pause_rounds": [[round,
+"<file>"], ...]} holds the worker at the start of its executor round `round` (1-based, over the process's life),
+after finished requests have returned their slots and before newcomers are admitted (`paused_round` row), so a
+test can let every join the service sent arrive first. The ledger also records each
 join the worker receives (`join_received`), each done it sends (`done_sent`) and, on a step, the slots it reads that the pool holds as free
 (`released_slots`: the Runtime's safety net replaying a request after its executor returned every slot).
 """
@@ -174,6 +177,22 @@ def instrument(ledger: str | None, faults: dict, encode) -> None:
         return original_steps(self, states, tokens, count)
 
     DenseBackend.prefill, DenseBackend.release, DenseBackend.steps_group = prefill, release, steps_group
+
+    from ironmule.dense_plan import DenseStackedExecutor
+
+    round_pauses = {int(number): path for number, path in faults.get("pause_rounds", ())}
+    rounds = {"n": 0}
+    original_sweep = DenseStackedExecutor._sweep
+
+    def sweep(self):  # every round of a run starts here, then admits newcomers
+        original_sweep(self)
+        rounds["n"] += 1
+        if rounds["n"] in round_pauses:
+            write({"op": "paused_round", "round": rounds["n"], "free": self.backend.free_slots()})
+            while not os.path.exists(round_pauses[rounds["n"]]):
+                time.sleep(0.01)
+
+    DenseStackedExecutor._sweep = sweep
 
     from ironmule_product import worker
 
