@@ -1855,11 +1855,65 @@ AG7 runs again.
     done at once, slots back after a failed prefill, the fallback types in the failure note). The pass rule,
     budgets and kernel versions (v1 R1, v2 R2) are unchanged.
   - Earlier results keep their commits: run 6 describes `5f064c3`, the local tests the commits they ran on.
-  - *Open, the owner's decision (not adopted):* R1's eight section does not put 8 rows into one run start (STAB4's
-    dry run: 1 member and 7 joins within 14 ms, all served at `5f064c3`), so it will most likely pass whether A1
-    holds or not. To test the overflow there, that block's group would wait until all 8 are queued (for that
-    block only, the serving policy's `gather_ms`, for example 500 ms), at R1 and R2 alike. Until decided, R1's
-    reading records that its eight section did not test a run start.
+  - *Then (decided):* R1's eight section does not put 8 rows into one run start (STAB4's dry run: 1 member and
+    7 joins within 14 ms, all served at `5f064c3`). The owner kept it and had a separate section added: revision 2
+    below.
+
+**AG5-R protocol revision 2 (owner request 2026-11-09; fixed before any AG5-R data; `AG5R_PROTOCOL = "ag5r-rev2"`,
+recorded in every report and diagnostics file):**
+- *Unchanged:* run 6's phase 0 blocks 0 and 1 with their rebuilt arrivals, the four repeats, `eight-at-once`,
+  `after-the-load`, the 600 s deadline, the budgets, the absolute end, the early end and the diagnostics export.
+- *What `eight-at-once` says:* it can run as one starting member with the other seven joining, and then tests
+  dynamic admission. A clean pass does not refute a fault of a group that starts too large.
+- *Added, `eight-at-start`, synthetic (section `start`):* the same 8 requests, after `eight-at-once`, with every
+  shard's serving policy at `gather_ms` 500 for this block only. The previous policy comes back in a `finally`,
+  also when the block raises, and the report records the value in force and the value after. The window only
+  makes 8 ready likely; what started is read from the stability log, never assumed. The same load and setting
+  hold for R1 and R2; the product's fix may give them different groups.
+- *Recorded for it:* the 8 offered ids; their admission and group; the members its first group handed to the
+  worker; the configured width, read before the block (the client's group capacity, the plan's width and slots
+  from the worker's ready event); joins and member ends (R2's product writes `member_done`); the worker's exit
+  tails. Slot occupancy itself is not observable on the card, only its consequences in these rows.
+- *Request ids:* every block's requests now carry fixed ids, `ag5r-<block>-<NN>`, so the log is read by id.
+- *What it tests:* one capacity mechanism, "8 requests ready to start, the engine has 6 slots". It does not
+  rebuild run 6's trigger. Two hypotheses stay apart:
+  - *A1:* a group that starts with more rows than slots overflows the pool. Read only from `eight-at-start`.
+  - *H5:* a joiner's prefill fails inside a run. STAB4 reproduced run 6's pattern with it locally; no section
+    reads it. Run 6's actual cause on the card stays open: its original diagnostics are missing.
+- *R1, the cause (`cause.a1` of the analysis):* A1 is tested only if the start group handed all 8 requests to the
+  old worker. Then `shown` if its exit tail has the `dense_plan.py:510:prefill` frame, `not shown` if all 8 were
+  answered, `failed otherwise` with the tails. Any other start reads "precondition not met" for A1.
+- *R2, the gate (`acceptance` of the analysis):* all 8 answered, at most 6 open members at once, the rest joined
+  or ran after, each request ended once, every member ended in the log. A start group of 8 is not required. The
+  precondition is a start group with as many of the 8 as the service's group capacity allows, and no other.
+- *Analysis, `analyse_ag5r` schema v2,* against `ag5r_expected()` (computed from `ag5r_blocks()`, never from
+  what a report says it ran) and the stability log beside the report:
+  - every expected block exactly once and not empty, every expected id exactly once in the report and admitted and
+    ended exactly once in the log, no unexpected block or id, no time cut, early end, skipped block or absolute end;
+  - the log present and readable, with `member_done` rows (without them the width check cannot be read);
+  - each section's precondition: `eight-at-once` had a request join a running group, `eight-at-start` as above;
+  - all requests answered, and R2's criteria 3 to 7 from the log.
+  - The verdict is the first that applies: `hung` (a request waited out its deadline), `controlled` (requests
+    failed inside their deadlines), `rule violated` (all answered, a log criterion broken), `incomplete`,
+    `precondition not met`, else `accepted`. Every reason is listed, so a controlled run that also lacks a block
+    shows both.
+- *A harness fix found by the local run:* the service state after a block is read once the service is idle, at
+  most 60 s (`idle_after`). A caller has its answer just before the service retires the request, so on a correct
+  run criterion 7 read one request still active.
+- *Local check (2026-11-09, CPU Gemma worker of STAB4, the harness of `4d10f49`; control logic only):*
+
+  | Product | Start group | Joined | `eight-at-start` | A1 (`cause`) | Whole run (`acceptance`) |
+  |---|---|---|---|---|---|
+  | `5f064c3` (R1's) | 8 of 8, service capacity 8, plan 6 slots | none | all 8 `backend_unavailable`, exit frame `dense_plan.py:510:prefill` | shown | controlled (8 failed; the replaced worker served the after section) |
+  | `4d10f49` (R2's) | 6 of 8, service capacity 6, plan 6 slots | the other 2 | all 8 answered | precondition not met (6 of 8) | accepted, 91 requests in 9 blocks, at most 6 open, 74 joins, no worker event |
+
+  The same start groups came both with the scheduler held until all 8 were admitted and with the 500 ms window
+  alone, at both products. The gather time read 500 during the block and 0 after it, each time.
+- *Commits:* harness `4d10f49` for both kernels; R1 installs `5f064c3`, R2 installs `4d10f49`, whose product
+  files equal `a985984`'s (rev 2 changes the harness and tests only). Budgets, hard limits, the pass rule's
+  criteria and the kernel versions (v1 R1, v2 R2) are unchanged; the new block adds about a minute per run on
+  the card.
+- *Status:* both kernels written, not pushed; GPU quota not available. No hardware data exists for AG5-R.
 
 **Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
 invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
