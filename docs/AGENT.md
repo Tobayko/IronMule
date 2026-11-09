@@ -22,6 +22,13 @@ On several GPUs each card has its own agent, and the pool keeps placing requests
 queue. A two-card simulation put almost all of the gain in each card's order and 1-2 points in placement
 (BACKLOG AG2, "Multi-GPU").
 
+What it optimises (AG8, 2026-11-09): by default tokens per second, with the mean first token at most 2 % later
+(`objective: throughput` in its status); AG1's request cost (time in the system plus time to the first token) is
+`latency`. The planner, the replay qualification and the audit all use the same objective, and the objective is part
+of the agent's binding, so nothing learned under one serves under the other. In simulation at the T4's grouped
+batch-1 price no width made more tokens per second than the reference's, so the throughput agent kept the reference
+(BACKLOG AG8).
+
 A decision reads a compiled table, about 7.5 µs in pure Python. A prediction is made once, when a request is
 first seen, so the decision only reads a number.
 
