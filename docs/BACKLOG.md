@@ -1842,6 +1842,24 @@ AG7 runs again.
 - *Status (2026-11-08, 19:59 UTC): not started.* Kaggle refused R1's push: "Maximum weekly GPU quota of 30.00
   hours reached". Both kernels are written from harness `1d038b0` and wait unchanged: R1 at `5f064c3`, R2 at
   `b6d1f14`, with the budgets above. No hardware data exists for AG5-R yet.
+- *Version mapping, updated 2026-11-09 before any AG5-R data (STAB4):*
+  - *Harness:* both kernels are rewritten from `a985984` (was `1d038b0`). For AG5-R its one change is the width
+    check (criterion 4) as approved, implemented as meant: `ag5r_log_checks` closes a member at its
+    `member_done`, not at its `end`, which the service writes when the whole group ends. Found by a CPU dry run
+    of this harness against the real product (STAB4), where a correct run read 12 open members on 6 slots.
+  - *R1:* product `5f064c3`, unchanged, with the same budgets. Its log has no `member_done` rows, so the check
+    reports a group's members over its life there (`member_done_rows: false`), which is what R1's "more than 6
+    rows" reading counts.
+  - *R2:* product `a985984` instead of `b6d1f14`. `b6d1f14` writes no `member_done`, so criterion 4 could not
+    pass on it even when the product is right. `a985984` also carries STAB4's other fixes (a cancelled member's
+    done at once, slots back after a failed prefill, the fallback types in the failure note). The pass rule,
+    budgets and kernel versions (v1 R1, v2 R2) are unchanged.
+  - Earlier results keep their commits: run 6 describes `5f064c3`, the local tests the commits they ran on.
+  - *Open, the owner's decision (not adopted):* R1's eight section does not put 8 rows into one run start (STAB4's
+    dry run: 1 member and 7 joins within 14 ms, all served at `5f064c3`), so it will most likely pass whether A1
+    holds or not. To test the overflow there, that block's group would wait until all 8 are queued (for that
+    block only, the serving policy's `gather_ms`, for example 500 ms), at R1 and R2 alike. Until decided, R1's
+    reading records that its eight section did not test a run start.
 
 **Then AG5-G again,** only after R2 is accepted: its protocol above at the fixed commit, with the aligned
 invalidity rule, failed requests and incomplete blocks kept visible, and the diagnostics exported, about 1.6
