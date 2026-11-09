@@ -1914,7 +1914,7 @@ and to say which statements that supports and which still need the card.
   there the service's open members and the worker's free slots must agree, and the round runs once every join
   the service sent is in the worker's hands. (Holding before the stacked step instead let a join that the service
   sent on a done arrive one round early or late, which under load broke the plans' bookkeeping.) Four plans are
-  kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more (result below). The same plan twice gives the same slots taken
+  kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more, and all 42 passed in lockstep (2026-11-09). The same plan twice gives the same slots taken
   and freed in the same rounds (5 of 5 under load).
 
 **Found and fixed (each test fails on the code before it):**
@@ -2000,8 +2000,12 @@ tokens here, so the harness's own prompts fit).
   likely pass whether A1 holds or not; "nothing fails" there would not tell against A1. The approved protocol is
   unchanged; a change is the owner's (proposal in the AG5-R status below).
 
-**Validation:** the new tests, the runtime contract tests, `tests/engine` and `tests/agent` without the integration
-marker (results in the commit). The ledger entry is still owed.
+**Validation (2026-11-09, at `b483d5f`):** `tests/engine` and `tests/agent` without the integration marker, runtime
+contract tests included: 1,615 passed, 14 skipped, none failed (MLX's CPU build, 4 cores). The new files 3 of 3 and
+the stability file 20 of 20 under 6 busy processes. Once, under that load, the unchanged client-transport test
+`test_cancellation_is_polled_while_waiting_and_finishes_once` (a 0.5 s timeout) failed; alone it passed 3 of 3. Not
+run: the integration marker (no model snapshot here), the other test directories (their 14 environmental failures
+are as before STAB4). The ledger entry is still owed.
 
 ### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
 
