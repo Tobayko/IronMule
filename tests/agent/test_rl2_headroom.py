@@ -1596,7 +1596,12 @@ def test_ag5r_rebuilds_run_6s_spike_exactly_and_adds_a_group_larger_than_the_pla
     blocks = rl2.ag5r_blocks()
     names = [name for name, _ in blocks]
     assert names == ["phase0-block0", "phase0-block1"] + [f"phase0-block1-again-{k}" for k in range(1, 5)] + \
-        ["eight-at-once", "after-the-load"]
+        ["eight-at-once", "eight-at-start", "after-the-load"]
+    assert dict(blocks)["eight-at-start"] == dict(blocks)["eight-at-once"], "rev 2: the same 8, held for the start"
+    assert [rl2.ag5r_section(name) for name in names] == ["original"] * 2 + ["repeats"] * 4 + ["eight", "start", "after"]
+    expected = rl2.ag5r_expected()
+    assert list(expected) == names and expected["eight-at-start"][0] == "ag5r-eight-at-start-00"
+    assert sum(len(ids) for ids in expected.values()) == 12 * 6 + 8 + 8 + 3
     after = dict(blocks)["after-the-load"]
     assert [item["offset_s"] for item in after] == [0.0, 30.0, 60.0], "one at a time, after the load"
     spike = dict(blocks)["phase0-block1"]
@@ -1608,27 +1613,180 @@ def test_ag5r_rebuilds_run_6s_spike_exactly_and_adds_a_group_larger_than_the_pla
 
 
 def test_ag5r_runs_every_block_through_one_path_and_reports_each_as_it_ends(tmp_path, monkeypatch):
+    """Rev 2: each request carries its fixed id; only the start section's groups wait for company, and every
+    shard's policy is back after it. (Acceptance itself needs a slot engine: tests/engine/test_dense_slot_plans.py.)"""
     pool, spec, _, _ = _ag6h_pool(tmp_path, monkeypatch)
-    seen = []
+    seen, during = [], []
+    replay = rl2.replay
+
+    def watching(pool_, model, items, deadline_s, ids=None):
+        during.append((ids[0], [shard.policy.gather_ms for shard in pool_.shards]))
+        return replay(pool_, model, items, deadline_s, ids=ids)
+
+    monkeypatch.setattr(rl2, "replay", watching)
     try:
         blocks = rl2.ag5r_blocks(requests=3, limit=3, repeats=1)
         report = rl2.measure_ag5r(pool, spec.model_id, blocks, 30.0, on_row=lambda r: seen.append(len(r["blocks"])))
+        after = [shard.policy.gather_ms for shard in pool.shards]
     finally:
         pool.close()
-    assert [b["block"] for b in report["blocks"]] == [name for name, _ in blocks] and seen == [1, 2, 3, 4, 5]
-    assert rl2.analyse_ag5r(report)["verdict"].startswith("accepted")
+    assert [b["block"] for b in report["blocks"]] == [name for name, _ in blocks] and seen == [1, 2, 3, 4, 5, 6]
+    assert report["protocol"] == "ag5r-rev2" and report["expected"] == rl2.ag5r_expected(blocks)
+    for block in report["blocks"]:
+        assert [row["request_id"] for row in block["requests"]] == report["expected"][block["block"]]
+    assert [gathers for first, gathers in during if "eight-at-start" in first] == [[500, 500]]
+    assert all(gathers == [0, 0] for first, gathers in during if "eight-at-start" not in first)
+    assert after == [0, 0] and report["blocks"][-2]["gather_ms_after"] == [0, 0]
+    assert all(row["outcome"] == "ok" for block in report["blocks"] for row in block["requests"])
 
 
-def test_ag5r_tells_an_accepted_run_from_a_controlled_failure_and_a_hang():
-    def report(*outcomes):
-        return {"blocks": [{"block": "b", "requests": [{"outcome": o, "error": e, "end_s": 1.0} for o, e in outcomes],
-                            "shards": [{"worker": {"state": "ready"}}]}]}
+def test_ag5r_puts_the_gather_time_back_when_the_start_block_raises(tmp_path, monkeypatch):
+    pool, spec, _, _ = _ag6h_pool(tmp_path, monkeypatch)
 
-    assert rl2.analyse_ag5r(report(("ok", None)))["verdict"].startswith("accepted")
-    controlled = rl2.analyse_ag5r(report(("ok", None), ("failed", "backend_unavailable")))
-    assert controlled["verdict"].startswith("controlled") and controlled["blocks"][0]["errors"] == ["backend_unavailable"]
-    assert rl2.analyse_ag5r(report(("failed", "backend_unavailable"), ("timeout", None)))["verdict"].startswith("hung")
-    assert rl2.analyse_ag5r({"failed": "no worker"})["verdict"] == "not run: no worker"
+    def failing(pool_, model, items, deadline_s, ids=None):
+        raise RuntimeError("the block broke")
+
+    monkeypatch.setattr(rl2, "replay", failing)
+    try:
+        with pytest.raises(RuntimeError, match="the block broke"):
+            rl2.measure_ag5r(pool, spec.model_id, [("eight-at-start", [{"offset_s": 0.0}] * 8)], 30.0)
+        assert [shard.policy.gather_ms for shard in pool.shards] == [0, 0]
+    finally:
+        pool.close()
+
+
+_SMALL = [("phase0-block0", 2), ("phase0-block1", 3), ("phase0-block1-again-1", 3), ("eight-at-once", 8),
+          ("eight-at-start", 8), ("after-the-load", 2)]
+
+
+def _ag5r_world(start_members: int = 6, capacity: int = 6, exit_tail: str | None = None):
+    """A synthetic complete AG5-R report, its stability log and the expected list (rev 2's analysis tests)."""
+    expected = {name: rl2.ag5r_ids(name, n) for name, n in _SMALL}
+    log, blocks, t, group = [], [], 0.0, 0
+    for name, ids in expected.items():
+        section = rl2.ag5r_section(name)
+        rows = [{"request_id": rid, "outcome": "ok", "end_s": 1.0} for rid in ids]
+        width = [{"service_capacity": capacity, "slots": 6, "width": 6}]
+        block = {"block": name, "section": section, "requests": rows,
+                 "shards": [{"worker": {"state": "ready"}, "queued": 0, "active": 0}]}
+        if section == "start":
+            block.update({"gather_ms": [500], "gather_ms_after": [0], "engine_width": width})
+        blocks.append(block)
+        group += 1
+        first = ids[:start_members] if section == "start" else ids[:1]
+        for rid in ids:
+            t += 0.01
+            log.append({"t": t, "event": "admit", "id": rid})
+        t += 0.01
+        log.append({"t": t, "event": "group", "group": group, "ids": first})
+        for rid in ids:
+            if rid in first:
+                continue
+            t += 0.01
+            log += [{"t": t, "event": "member_done", "group": group, "id": first[0]},
+                    {"t": t, "event": "join", "group": group, "id": rid}]
+            first = first[1:] + [rid]
+        if exit_tail is not None and section == "start":
+            log.append({"t": t + 0.001, "event": "worker_exit", "stderr_tail": exit_tail})
+        for rid in ids:
+            t += 0.01
+            log += [{"t": t, "event": "member_done", "group": group, "id": rid},
+                    {"t": t, "event": "end", "group": group, "id": rid, "outcome": "ok"}]
+    return {"protocol": "ag5r-rev2", "blocks": blocks, "skipped": []}, log, expected
+
+
+def test_ag5r_rev2_accepts_only_a_complete_run_against_its_fixed_list():
+    report, log, expected = _ag5r_world()
+    analysis = rl2.analyse_ag5r(report, log, expected)
+    assert analysis["acceptance"]["verdict"] == "accepted", analysis["acceptance"]
+    assert analysis["preconditions"]["eight-at-start"]["start_members"] == expected["eight-at-start"][:6]
+    assert analysis["preconditions"]["eight-at-once"]["joined"], "dynamic admission was exercised"
+    assert analysis["cause"]["a1"].startswith("precondition not met"), "R2's 6-member start says nothing on A1"
+
+
+def _verdict(report, log, expected):
+    return rl2.analyse_ag5r(report, log, expected)["acceptance"]
+
+
+def test_ag5r_rev2_missing_duplicate_empty_or_extra_results_are_incomplete_never_accepted():
+    import copy
+
+    base, log, expected = _ag5r_world()
+    cases = {}
+    report = copy.deepcopy(base)
+    report["blocks"][1]["requests"].pop()  # one request's result is missing
+    cases["missing"] = report
+    report = copy.deepcopy(base)
+    report["blocks"][1]["requests"].append(dict(report["blocks"][1]["requests"][0]))  # one twice
+    cases["twice"] = report
+    report = copy.deepcopy(base)
+    report["blocks"][2]["requests"] = []  # an empty block
+    cases["empty"] = report
+    report = copy.deepcopy(base)
+    del report["blocks"][4]  # a whole section did not run
+    cases["no start section"] = report
+    report = copy.deepcopy(base)
+    report["blocks"].append(copy.deepcopy(report["blocks"][0]))  # a block twice
+    cases["block twice"] = report
+    report = copy.deepcopy(base)
+    report["blocks"].append({"block": "extra", "section": "x", "requests": []})
+    cases["not in the protocol"] = report
+    for key in ("time_cut", "early_stop", "hard_limit"):
+        report = copy.deepcopy(base)
+        report[key] = {"after_s": 1.0}
+        cases[key] = report
+    report = copy.deepcopy(base)
+    report["skipped"] = ["phase0-block1-again-1"]
+    cases["skipped"] = report
+    for name, report in cases.items():
+        acceptance = _verdict(report, log, expected)
+        assert acceptance["verdict"] == "incomplete", (name, acceptance)
+    assert _verdict(base, None, expected)["verdict"] == "incomplete", "no stability log"
+    assert _verdict(base, [], expected)["verdict"] == "incomplete", "an empty stability log"
+    no_done = [row for row in log if row["event"] != "member_done"]
+    assert "member_done" in str(_verdict(base, no_done, expected)["incomplete"]), "the width check cannot be read"
+    lost = [row for row in log if not (row["event"] == "admit" and row["id"] == expected["after-the-load"][1])]
+    assert _verdict(base, lost, expected)["verdict"] == "incomplete", "a request missing from the log"
+    assert _verdict({"failed": "no worker"}, None, expected)["verdict"] == "incomplete"
+    assert rl2.analyse_ag5r({"failed": "no worker"})["verdict"].startswith("incomplete: ")
+    shrunk = {"protocol": "ag5r-rev2", "blocks": base["blocks"][:1], "skipped": []}
+    assert rl2.analyse_ag5r(shrunk, log)["acceptance"]["verdict"] == "incomplete", \
+        "checked against ag5r_expected(), never against what the report ran"
+
+
+def test_ag5r_rev2_unmet_preconditions_and_broken_rules_are_named_and_never_accepted():
+    report, log, expected = _ag5r_world(start_members=3)  # the start group took 3 where the service allows 6
+    acceptance = _verdict(report, log, expected)
+    assert acceptance["verdict"] == "precondition not met" and "eight-at-start" in acceptance["unmet"][0]
+    report, log, expected = _ag5r_world()
+    eight = set(expected["eight-at-once"])
+    static = [row for row in log if not (row["event"] == "join" and row["id"] in eight)]
+    assert _verdict(report, static, expected)["verdict"] == "precondition not met", "no dynamic admission"
+    report["blocks"][4]["gather_ms_after"] = [500]
+    assert _verdict(report, log, expected)["verdict"] == "rule violated", "the gather time stayed"
+    report, log, expected = _ag5r_world()
+    wide = log + [{"t": 999.0, "event": "group", "group": 99, "ids": [f"x{i}" for i in range(7)]}]
+    assert _verdict(report, wide, expected)["verdict"] == "rule violated", "a group wider than 6"
+    report["blocks"][-1]["shards"] = [{"worker": {"state": "restarting"}, "queued": 0, "active": 0}]  # after-the-load
+    assert _verdict(report, log, expected)["verdict"] == "rule violated", "the service was not ready after"
+
+
+def test_ag5r_rev2_tells_hung_from_controlled_and_reads_a1_only_from_a_start_of_eight():
+    report, log, expected = _ag5r_world()
+    report["blocks"][1]["requests"][0].update(outcome="failed", error="backend_unavailable")
+    assert _verdict(report, log, expected)["verdict"] == "controlled"
+    report["blocks"][2]["requests"][0]["outcome"] = "timeout"
+    assert _verdict(report, log, expected)["verdict"] == "hung"
+    report, log, expected = _ag5r_world(start_members=8, capacity=8)  # R1's product: a group of 8 handed over
+    assert rl2.analyse_ag5r(report, log, expected)["cause"]["a1"].startswith("not shown: all 8")
+    frame = '{"worker_error": "batch", "type": "RuntimeError", "frames": ["dense_plan.py:510:prefill"]}'
+    report, log, expected = _ag5r_world(start_members=8, capacity=8, exit_tail=frame)
+    for row in report["blocks"][4]["requests"]:
+        row.update(outcome="failed", error="backend_unavailable")
+    analysis = rl2.analyse_ag5r(report, log, expected)
+    assert analysis["cause"]["a1"].startswith("shown") and analysis["acceptance"]["verdict"] == "controlled"
+    report, log, expected = _ag5r_world(start_members=7, capacity=8)
+    assert rl2.analyse_ag5r(report, log, expected)["cause"]["a1"].startswith("precondition not met")
 
 
 def test_the_hard_limit_ends_a_run_that_hangs_and_keeps_what_it_measured(tmp_path):

@@ -1997,8 +1997,8 @@ tokens here, so the harness's own prompts fit).
   starts with more rows than slots. The overflow needs more than 6 requests queued before a group or a run starts:
   in the tests above the scheduler is held until all 8 are queued, and then `5f064c3` fails with the
   `dense_plan.py:510:prefill` frame. On the card the threads start the same way, so R1's eight section will most
-  likely pass whether A1 holds or not; "nothing fails" there would not tell against A1. The approved protocol is
-  unchanged; a change is the owner's (proposal in the AG5-R status below).
+  likely pass whether A1 holds or not; "nothing fails" there would not tell against A1. The owner kept that
+  section and had a separate start-group section added: AG5-R protocol revision 2, in the AG5-R entry above.
 
 **Validation (2026-11-09, at `b483d5f`):** `tests/engine` and `tests/agent` without the integration marker, runtime
 contract tests included: 1,615 passed, 14 skipped, none failed (MLX's CPU build, 4 cores). The new files 3 of 3 and

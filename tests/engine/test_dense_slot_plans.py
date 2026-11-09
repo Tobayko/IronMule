@@ -177,3 +177,116 @@ def test_the_same_event_plan_gives_the_same_admissions_twice(tmp_path, monkeypat
             finally:
                 world.close()
     assert traces[0] == traces[1] and len(traces[0]) > 20
+
+
+# --- AG5-R rev 2 through the real path: the harness's own blocks, measurement and analysis ---------------------------
+
+def _ag5r_pool(tmp_path: Path, monkeypatch):
+    """The product's pool (`start_paths`, one shard) on the CPU Gemma worker, as `run_ag5r` builds it on the card."""
+    import subprocess
+    import sys
+
+    import ironmule_product.backend as backend_module
+    from ironmule_product.backend import MLXWorkerClient
+    from ironmule_product.device_pool import start_paths
+    from ironmule_product.service import ProductService
+    from ironmule_product.state import ProductStore
+    from ironmule_product.types import ModelSpec
+    from tests.engine import dense_cpu_worker as cpu
+    from training import rl2_headroom as rl2
+
+    real = subprocess.Popen
+
+    def popen(args, *a, **k):
+        if len(args) > 3 and str(args[3]).endswith("worker.py"):
+            args = [sys.executable, "-u", cpu.__file__, *args[4:]]
+        return real(args, *a, **k)
+
+    monkeypatch.setattr(backend_module.subprocess, "Popen", popen)
+    monkeypatch.setenv("DENSE_CPU_LEDGER", str(tmp_path / "ledger.jsonl"))
+    monkeypatch.setenv("DENSE_CPU_CAPACITY", "96")
+    monkeypatch.setenv("DENSE_CPU_FAULTS", "{}")
+    store = ProductStore(tmp_path / "state")
+    store.setup("server")
+    store.set_request_timeout(120)
+    snapshot = tmp_path / "snapshot"
+    snapshot.mkdir()
+    spec = ModelSpec("local/test", "revision", str(snapshot.resolve()), 1)
+    store.register_model(spec)
+    maker = lambda: MLXWorkerClient(spec, execution_variant="current_engine",  # noqa: E731
+                                    engine_configuration="dense_stacked", dense_width=SLOTS)
+    return start_paths(store, spec, [maker], ["cpu:agent"], ProductService, rl2.ForcedRoute(0)), store, spec
+
+
+def test_ag5r_rev2_start_section_and_acceptance_through_the_real_path(tmp_path, monkeypatch):
+    """Rev 2 on today's product: the harness's six blocks (small), its measurement and its analysis on the real
+    stability log. The start block's 8 requests are all queued before the scheduler takes one (a controlled hold:
+    the scheduler waits at a gate until the log shows all 8 admitted), with the harness's 500 ms gather in force;
+    the repaired service starts 6 and the other 2 join. Accepted; A1's precondition (8 start members) is not met
+    here, which is R2's case and is not required of it."""
+    import threading
+
+    from ironmule_product.service import STABILITY_LOG
+    from training import rl2_headroom as rl2
+
+    pool, store, spec = _ag5r_pool(tmp_path, monkeypatch)
+    shard = pool.shards[0]
+    gate, parked, seen = threading.Event(), threading.Event(), {}
+    gate.set()
+    original = shard._next_session
+
+    def gated():
+        if not gate.is_set():
+            parked.set()
+            gate.wait()
+            seen["gather_ms"] = shard.policy.gather_ms  # in force when the held group is taken
+        return original()
+
+    shard._next_session = gated
+    replay = rl2.replay
+
+    def held(pool_, model, items, deadline_s, ids=None):
+        if ids and ids[0].startswith("ag5r-eight-at-start"):
+            parked.clear()
+            gate.clear()
+            assert parked.wait(30)
+
+            def release():
+                log = store.root / STABILITY_LOG
+                _until(lambda: {r.get("id") for r in _log(log) if r.get("event") == "admit"} >= set(ids))
+                gate.set()
+
+            threading.Thread(target=release, daemon=True).start()
+        return replay(pool_, model, items, deadline_s, ids=ids)
+
+    monkeypatch.setattr(rl2, "replay", held)
+    texts = {name: [{"offset_s": 0.0 if name != "after-the-load" else 0.3 * k, "max_tokens": 8, "prompt": 0,
+                     "long": False, "text": f"{name} #{k}"} for k in range(n)]
+             for name, n in (("phase0-block0", 2), ("phase0-block1", 3), ("phase0-block1-again-1", 3),
+                             ("eight-at-once", 8), ("eight-at-start", 8), ("after-the-load", 2))}
+    blocks = list(texts.items())
+    try:
+        report = rl2.measure_ag5r(pool, spec.model_id, blocks, 120.0)
+    finally:
+        pool.close()
+    log = _log(store.root / STABILITY_LOG)
+    analysis = rl2.analyse_ag5r(report, log, rl2.ag5r_expected(blocks))
+    assert analysis["acceptance"]["verdict"] == "accepted", analysis["acceptance"]
+    start = analysis["preconditions"]["eight-at-start"]
+    assert seen["gather_ms"] == rl2.AG5R_START_GATHER_MS and start["gather_ms_after"] == [0]
+    assert start["offered"] == rl2.ag5r_ids("eight-at-start", 8) and start["service_capacity"] == SLOTS
+    assert len(start["start_members"]) == SLOTS and not start["foreign_members"] and start["ready_at_start"]
+    assert sorted(start["joined"]) == sorted(set(start["offered"]) - set(start["start_members"]))
+    assert start["engine_width"][0]["slots"] == SLOTS and analysis["log_checks"]["widest_group"] <= SLOTS
+    assert analysis["cause"]["a1"].startswith("precondition not met: the group started with 6 of 8")
+    assert analysis["preconditions"]["eight-at-once"]["joined"], "the old section still tests dynamic admission"
+    assert max(row.get("realised_width") or 0 for row in report["blocks"][4]["requests"]) <= SLOTS
+
+
+def _log(path: Path) -> list[dict]:
+    import json
+
+    if not path.exists():
+        return []
+    text = path.read_text()
+    return [json.loads(line) for line in text[:text.rfind("\n") + 1].splitlines()]

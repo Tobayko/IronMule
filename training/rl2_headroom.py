@@ -717,20 +717,26 @@ def wait_idle(pool: Any, timeout_s: float = 120) -> bool:
     return False
 
 
-def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float) -> list[dict[str, Any]]:
-    """Send each request at its scheduled offset through the pool; times are from the scheduled arrival."""
+def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float,
+           ids: list[str] | None = None) -> list[dict[str, Any]]:
+    """Send each request at its scheduled offset through the pool; times are from the scheduled arrival. `ids`, when
+    given, are the requests' ids (AG5-R rev 2), kept in each row."""
     from ironmule_product.errors import Overloaded, ProductError, RequestTimeout
     from ironmule_product.types import GenerationRequest
 
     results: list[dict[str, Any]] = [{} for _ in items]
     start = time.monotonic() + 0.05
+    request_ids = ids
 
     def client(index: int, item: dict[str, Any]) -> None:
         scheduled = start + item["offset_s"]
         out: dict[str, Any] = {"index": index, "outcome": "failed", "first_s": None, "end_s": None,
                                "digest": None, "tokens": 0, "context": item.get("context") or 0}
         ids: list[Any] = []
-        request = GenerationRequest(model, (("user", prompt_text(item)),), max_tokens=item["max_tokens"], stream=True)
+        named = {} if request_ids is None else {"request_id": request_ids[index]}
+        request = GenerationRequest(model, (("user", prompt_text(item)),), max_tokens=item["max_tokens"], stream=True,
+                                    **named)
+        out.update({"request_id": request_ids[index]} if request_ids is not None else {})
         finish = None
         try:
             for event in pool.stream(request):
@@ -747,6 +753,8 @@ def replay(pool: Any, model: str, items: list[dict[str, Any]], deadline_s: float
                     engine = event.get("engine") if isinstance(event.get("engine"), dict) else {}
                     if engine.get("decode_bodies") is not None:
                         out["bodies"], out["device"] = engine["decode_bodies"], engine.get("cuda_device")
+                    if engine.get("max_realised_width") is not None:  # rows stacked at most, where the done says
+                        out["realised_width"] = engine["max_realised_width"]  # (a streamed done does not)
         except Overloaded:
             out["outcome"] = "rejected"
         except RequestTimeout:
@@ -3237,13 +3245,21 @@ AG5R_DEADLINE_S = 600.0                  # each request's deadline here (run 6: 
 AG5R_BUDGET_S = 3600.0                   # no block starts after an hour (`--block-budget-s` per run)
 AG5R_RECOVERY_WAIT_S = 900.0             # after a failed block: how long the worker may take to serve again
 AG5R_AFTER = 3                           # normal requests, one at a time, after the load: does it serve on?
+AG5R_PROTOCOL = "ag5r-rev2"              # rev 2 (2026-11-09, before any AG5-R data): the start-group section
+AG5R_START_GATHER_MS = 500               # rev 2: the start section's group waits this long for company, then resets
+AG5R_SECTIONS = ("original", "repeats", "eight", "start", "after")  # every one is required for R2's acceptance
+AG5R_IDLE_WAIT_S = 60.0                  # rev 2: after a block, how long the service may take to be idle again
 
 
 def ag5r_blocks(capacity: float = AG5R_CAPACITY_RPS, requests: int = AG5G_REQUESTS,
                 limit: int = AG5G_LIMIT, repeats: int = AG5R_SPIKE_REPEATS) -> list[tuple[str, list[dict[str, Any]]]]:
     """AG5-R's blocks: run 6's phase 0 blocks 0 (load 0.8, bursts) and 1 (load 0.8, spike), rebuilt from trace 430
     and phase 0's capacity, short prompts as in AG5-G; the spike `repeats` times more; then 8 requests at once,
-    more than the 6 slots the agent's width gives the plan."""
+    more than the 6 slots the agent's width gives the plan. `eight-at-once` is sent as it always was: one member
+    starts and the other seven join it (dynamic admission), so it does not test a group that starts too large.
+    Rev 2 adds `eight-at-start`, a synthetic block: the same 8 requests, with the service's group waiting
+    `AG5R_START_GATHER_MS` for company, so 8 are ready when the group starts (whether they were is checked from
+    the stability log, not assumed)."""
     def short(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [{**item, "long": False} for item in items]
 
@@ -3252,14 +3268,58 @@ def ag5r_blocks(capacity: float = AG5R_CAPACITY_RPS, requests: int = AG5G_REQUES
     eight = [{**item, "offset_s": 0.0} for item in spike[:8]]
     after = [{**item, "offset_s": 30.0 * k} for k, item in enumerate(bursts[:AG5R_AFTER])]
     return ([("phase0-block0", bursts), ("phase0-block1", spike)]
-            + [(f"phase0-block1-again-{k}", spike) for k in range(1, repeats + 1)] + [("eight-at-once", eight),
-                                                                                    ("after-the-load", after)])
+            + [(f"phase0-block1-again-{k}", spike) for k in range(1, repeats + 1)]
+            + [("eight-at-once", eight), ("eight-at-start", eight), ("after-the-load", after)])
 
 
 def ag5r_section(name: str) -> str:
-    """Which of AG5-R's sections a block belongs to: run 6's own blocks, the repeats, the 8-at-once case, after."""
+    """Which of AG5-R's sections a block belongs to: run 6's own blocks, the repeats, the 8-at-once case (dynamic
+    admission), the synthetic start group (rev 2), after."""
     return ("original" if name in ("phase0-block0", "phase0-block1") else "repeats" if "again" in name
-            else "eight" if name == "eight-at-once" else "after")
+            else "eight" if name == "eight-at-once" else "start" if name == "eight-at-start" else "after")
+
+
+def ag5r_ids(name: str, count: int) -> list[str]:
+    """Rev 2: the request ids a block sends, fixed by its name and size, so the stability log can be read by id."""
+    return [f"ag5r-{name}-{index:02d}" for index in range(count)]
+
+
+def ag5r_expected(blocks: list[tuple[str, list[dict[str, Any]]]] | None = None) -> dict[str, list[str]]:
+    """Rev 2: the blocks and request ids a complete AG5-R run has, fixed before any run from `ag5r_blocks()`; the
+    analysis checks a report against this, never against what the report says it ran."""
+    return {name: ag5r_ids(name, len(items)) for name, items in (ag5r_blocks() if blocks is None else blocks)}
+
+
+class _Gathering:
+    """Rev 2: every shard's group waits `gather_ms` for company while this holds, and gets its own policy back after,
+    also when the block raises."""
+
+    def __init__(self, pool: Any, gather_ms: int):
+        self.pool, self.gather_ms, self.saved = pool, gather_ms, []
+
+    def __enter__(self) -> "_Gathering":
+        from dataclasses import replace
+
+        for shard in getattr(self.pool, "shards", []):
+            self.saved.append((shard, shard.policy))
+            shard.policy = replace(shard.policy, gather_ms=self.gather_ms)
+        return self
+
+    def __exit__(self, *exc: Any) -> None:
+        for shard, policy in self.saved:
+            shard.policy = policy
+
+
+def _engine_width(pool: Any) -> list[dict[str, Any]]:
+    """Rev 2: each shard's configured width: the client's group capacity and the plan's slots, as its worker said."""
+    out = []
+    for shard in getattr(pool, "shards", []):
+        backend = getattr(shard, "backend", None)
+        engine = (getattr(backend, "_ready_payload", None) or {}).get("engine") or {}
+        dense = engine.get("dense_plan") or {}
+        out.append({"shard": getattr(shard, "label", None), "service_capacity": getattr(backend, "batch_capacity", None),
+                    "width": dense.get("width"), "slots": dense.get("slots"), "configuration": engine.get("configuration")})
+    return out
 
 
 def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, Any]]]], deadline_s: float, *,
@@ -3267,7 +3327,9 @@ def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, A
     """Each block through the agent's one path, the card idle between blocks; every block's outcomes and the
     shard's worker state go to the report and to the diagnostics as they happen."""
     started = time.monotonic()
-    report: dict[str, Any] = {"blocks": [], "deadline_s": deadline_s, "budget_s": budget_s, "skipped": []}
+    report: dict[str, Any] = {"protocol": AG5R_PROTOCOL, "blocks": [], "deadline_s": deadline_s, "budget_s": budget_s,
+                              "skipped": [], "expected": ag5r_expected(blocks), "engine_width": _engine_width(pool)}
+    _diag("protocol", protocol=AG5R_PROTOCOL, expected=report["expected"], engine_width=report["engine_width"])
     skip_repeats = False
     for name, items in blocks:
         if time.monotonic() - started > budget_s:
@@ -3280,16 +3342,37 @@ def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, A
             continue
         if not wait_idle(pool, timeout_s=deadline_s):
             _diag("wait_idle_timeout", block=name, shards=_shards(pool))
-        _diag("block_start", block=name, offsets_s=[item["offset_s"] for item in items], shards=_shards(pool))
+        ids = ag5r_ids(name, len(items))
+        section = ag5r_section(name)
+        gather = AG5R_START_GATHER_MS if section == "start" else None
+        _diag("block_start", block=name, section=section, ids=ids, offsets_s=[item["offset_s"] for item in items],
+              gather_ms=gather, shards=_shards(pool))
         began = time.monotonic()
-        rows = replay(pool, model, items, deadline_s)
+        extra: dict[str, Any] = {}
+        if gather is not None:
+            extra["engine_width"] = _engine_width(pool)  # before the block: a failed worker is replaced in it
+            gathering = _Gathering(pool, gather)
+            try:
+                with gathering:
+                    extra["gather_ms"] = [shard.policy.gather_ms for shard, _ in gathering.saved]
+                    rows = replay(pool, model, items, deadline_s, ids=ids)
+            finally:  # the policy is back whatever the block did; recorded so the report shows it
+                extra["gather_ms_after"] = [shard.policy.gather_ms for shard in getattr(pool, "shards", [])]
+                _diag("gather_reset", block=name, gather_ms_after=extra["gather_ms_after"])
+        else:
+            rows = replay(pool, model, items, deadline_s, ids=ids)
         for item, row in zip(items, rows):
             row["offset_s"] = item["offset_s"]
+        wall_s = time.monotonic() - began
+        # A caller has its answer just before the service retires the request, so the state is read once the
+        # service is idle, waiting a bounded time: a request still open after that is recorded as such.
+        extra["idle_after"] = wait_idle(pool, timeout_s=min(AG5R_IDLE_WAIT_S, deadline_s))
         shards = _shards(pool)
-        _diag("block_end", block=name, shards=shards,
-              outcomes=[[row.get("outcome"), row.get("error"), row.get("first_s"), row.get("end_s")] for row in rows])
-        report["blocks"].append({"block": name, "section": ag5r_section(name), "requests": rows,
-                                 "wall_s": time.monotonic() - began, "shards": shards})
+        _diag("block_end", block=name, shards=shards, idle_after=extra["idle_after"],
+              outcomes=[[row.get("request_id"), row.get("outcome"), row.get("error"), row.get("first_s"),
+                         row.get("end_s"), row.get("realised_width")] for row in rows])
+        report["blocks"].append({"block": name, "section": section, "requests": rows,
+                                 "wall_s": wall_s, "shards": shards, **extra})
         if on_row is not None:
             on_row(report)
         if any(row.get("outcome") != "ok" for row in rows):
@@ -3313,31 +3396,194 @@ def measure_ag5r(pool: Any, model: str, blocks: list[tuple[str, list[dict[str, A
     return report
 
 
-def analyse_ag5r(report: dict[str, Any]) -> dict[str, Any]:
-    """AG5-R as fixed in BACKLOG before its data. Accepted (the stability gate before AG5-G is run again) only if
-    every request of every block is answered. Otherwise: `controlled` if every failed request ended with an error
-    well inside its deadline (none timed out), `hung` if any waited out its deadline."""
+AG5R_VERDICTS = ("accepted", "controlled", "hung", "rule violated", "incomplete", "precondition not met")
+
+
+def _ag5r_start(log: list[dict[str, Any]], ids: list[str], capacity: int | None) -> dict[str, Any]:
+    """Rev 2: what the stability log shows of a block's start: which of its requests its first group handed to the
+    worker, and the joins, member ends and worker exits after. The service writes a request's `admit` just after
+    queueing it, so a group can be logged before the last `admit`; the precondition is therefore read from the group
+    itself: `ready_at_start` if it started with as many of the block's requests as the service's group capacity
+    allows (all of them where it allows that many) and nothing else. `admitted_before_start` is recorded only."""
+    wanted = set(ids)
+    admitted: list[str] = []
+    first: dict[str, Any] | None = None
+    joins: dict[str, Any] = {}
+    done: list[str] = []
+    exits: list[str] = []
+    for row in log:
+        event = row.get("event")
+        if event == "admit" and row.get("id") in wanted and first is None:
+            admitted.append(row["id"])
+        elif event == "group" and first is None and wanted & set(row.get("ids") or []):
+            first = row
+        elif first is not None and event == "join" and row.get("id") in wanted:
+            joins[row["id"]] = row.get("group")
+        elif first is not None and event == "member_done" and row.get("id") in wanted:
+            done.append(row["id"])
+        elif first is not None and event == "worker_exit":
+            exits.append(str(row.get("stderr_tail") or ""))
+    members = list((first or {}).get("ids") or [])
+    full = len(ids) if capacity is None else min(len(ids), capacity)
+    return {"offered": list(ids), "admitted_before_start": admitted, "service_capacity": capacity,
+            "ready_at_start": first is not None and len([rid for rid in members if rid in wanted]) == full
+            and not [rid for rid in members if rid not in wanted],
+            "start_group": None if first is None else first.get("group"), "start_members": members,
+            "foreign_members": [rid for rid in members if rid not in wanted], "joined": joins,
+            "member_done": done, "worker_exit_tails": exits}
+
+
+def analyse_ag5r(report: dict[str, Any], log: list[dict[str, Any]] | None = None,
+                 expected: dict[str, list[str]] | None = None) -> dict[str, Any]:
+    """AG5-R, rev 2 (fixed 2026-11-09, before any AG5-R data). Two readings, kept apart:
+
+    * `acceptance`, R2's gate: `accepted` only if every block of `expected` (by default `ag5r_expected()`, never the
+      report's own list) ran with each of its request ids exactly once, every request was answered, the stability
+      log is there and shows each admitted request ended once, no group wider than the engine's width, joins, no
+      worker exit or restart, the service idle and ready after the load, and each section's precondition met
+      (`eight`: a request joined a running group; `start`: its group started with as many of the 8 as the service's
+      group capacity allows and nothing else; R2 does not need a group of 8, the repaired service holds 6). Otherwise, the first that applies: `hung` (a request waited out its deadline),
+      `controlled` (requests failed inside their deadlines), `rule violated` (every request answered, a log
+      criterion broken), `incomplete` (a block, a request, the log or what it needs is missing, a block ran twice
+      or empty, or the run was cut), `precondition not met`.
+    * `cause`, R1's reading of A1 (a group that starts with more rows than slots): tested only if the start
+      section's group handed all 8 requests to the worker; then `shown` if its exit tail has the
+      `dense_plan.py:510:prefill` frame, `not shown` if all 8 were answered, `failed otherwise`; else
+      `precondition not met`. H5 (a joiner's failed prefill) is not read here."""
+    expected = ag5r_expected() if expected is None else expected
     blocks = report.get("blocks") or []
-    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag5r.analysis.v1", "blocks": [],
-                           "time_cut": report.get("time_cut"), "early_stop": report.get("early_stop"),
+    out: dict[str, Any] = {"schema": "ironmule.rl2_headroom.ag5r.analysis.v2", "protocol": report.get("protocol"),
+                           "blocks": [], "time_cut": report.get("time_cut"), "early_stop": report.get("early_stop"),
                            "skipped": report.get("skipped"), "hard_limit": report.get("hard_limit")}
     for block in blocks:
-        rows = block["requests"]
+        rows = block.get("requests") or []
         failed = [row for row in rows if row.get("outcome") != "ok"]
-        out["blocks"].append({"block": block["block"], "section": block.get("section"),
+        out["blocks"].append({"block": block.get("block"), "section": block.get("section"),
                               "ok": len(rows) - len(failed), "failed": len(failed),
                               "errors": sorted({row.get("error") or row.get("outcome") for row in failed}),
                               "latest_end_s": max([row.get("end_s") or 0.0 for row in rows] or [0.0]),
+                              "realised_width": max([row.get("realised_width") or 0 for row in rows] or [0]),
                               "worker": (block.get("shards") or [{}])[0].get("worker")})
-    if report.get("stopped") or report.get("failed") or not blocks:
-        return {**out, "verdict": f"not run: {report.get('stopped') or report.get('failed') or 'no block'}"}
-    failures = [row for block in blocks for row in block["requests"] if row.get("outcome") != "ok"]
-    timeouts = [row for row in failures if row.get("outcome") == "timeout"]
-    incomplete = out["time_cut"] or out["early_stop"] or out["skipped"] or out["hard_limit"]
-    out["verdict"] = ("accepted: every request of every block was answered" if not failures and not incomplete
-                      else "hung: a request waited out its deadline" if timeouts
-                      else "controlled: requests failed, each with an error inside its deadline")
+    incomplete: list[str] = []
+    if report.get("stopped") or report.get("failed"):
+        incomplete.append(f"not run: {report.get('stopped') or report.get('failed')}")
+    for key in ("time_cut", "early_stop", "hard_limit"):
+        if report.get(key):
+            incomplete.append(f"{key}: {report[key]}")
+    if report.get("skipped"):
+        incomplete.append(f"skipped: {report['skipped']}")
+    ran = [block.get("block") for block in blocks]
+    for name, ids in expected.items():
+        if ran.count(name) != 1:
+            incomplete.append(f"block {name} ran {ran.count(name)} times")
+            continue
+        rows = next(block for block in blocks if block.get("block") == name).get("requests") or []
+        if not rows:
+            incomplete.append(f"block {name} is empty")
+        seen = [row.get("request_id") for row in rows]
+        missing = sorted(set(ids) - set(seen))
+        twice = sorted({rid for rid in seen if seen.count(rid) > 1})
+        foreign = sorted({str(rid) for rid in seen if rid not in ids})
+        for label, values in (("missing", missing), ("twice", twice), ("unexpected", foreign)):
+            if values:
+                incomplete.append(f"block {name}: requests {label}: {values}")
+    for name in ran:
+        if name not in expected:
+            incomplete.append(f"block {name} is not in the protocol")
+    if {ag5r_section(name) for name in expected} != set(AG5R_SECTIONS):
+        incomplete.append(f"the expected blocks do not cover every section {list(AG5R_SECTIONS)}")
+    rows = [row for block in blocks for row in block.get("requests") or []]
+    timeouts = [row for row in rows if row.get("outcome") == "timeout"]
+    failures = [row for row in rows if row.get("outcome") != "ok"]
+    violated: list[str] = []
+    unmet: list[str] = []
+    preconditions: dict[str, Any] = {}
+    cause: dict[str, Any] = {"hypothesis": "A1: a group that starts with more rows than the engine's slots"}
+    if not log:
+        incomplete.append("the stability log is missing or empty")
+        cause["a1"] = "precondition not met: no stability log"
+    else:
+        checks = ag5r_log_checks(log)
+        out["log_checks"] = checks
+        admitted = [row.get("id") for row in log if row.get("event") == "admit"]
+        ended = [row.get("id") for row in log if row.get("event") == "end"]
+        for name, ids in expected.items():
+            lacking = sorted(rid for rid in ids if admitted.count(rid) != 1 or ended.count(rid) != 1)
+            if lacking:
+                incomplete.append(f"block {name}: not admitted and ended exactly once in the log: {lacking}")
+        if not checks["member_done_rows"]:
+            incomplete.append("the log has no member_done rows, so the width check cannot be read")
+        elif not checks["within_width"]:
+            violated.append(f"a group held {checks['widest_group']} open members, more than {AG5R_WIDTH}")
+        if checks["ended_twice"] or checks["never_ended"]:
+            violated.append(f"ended twice {checks['ended_twice']}, never ended {checks['never_ended']}")
+        if checks["worker_events"]:
+            violated.append(f"worker events: {[row.get('event') for row in checks['worker_events']]}")
+        if checks["joins"] < 1:
+            violated.append("no request joined a running group")
+        for name, ids in expected.items():
+            section = ag5r_section(name)
+            if section == "eight":
+                joined = [row.get("id") for row in log if row.get("event") == "join" and row.get("id") in ids]
+                preconditions[name] = {"joined": joined}
+                if not joined:
+                    unmet.append(f"{name}: no request joined a running group, so dynamic admission was not tested")
+            elif section == "start":
+                block = next((b for b in blocks if b.get("block") == name), {})
+                widths = block.get("engine_width") or report.get("engine_width") or [{}]
+                start = _ag5r_start(log, ids, widths[0].get("service_capacity"))
+                start["gather_ms"], start["gather_ms_after"] = block.get("gather_ms"), block.get("gather_ms_after")
+                start["engine_width"] = block.get("engine_width") or report.get("engine_width")
+                preconditions[name] = start
+                if not start["ready_at_start"]:
+                    unmet.append(f"{name}: its group started with {start['start_members']} at a service capacity of "
+                                 f"{start['service_capacity']}, not with as many of its {len(ids)} as it allows")
+                if block and (start["gather_ms_after"] is None or any(start["gather_ms_after"])):
+                    violated.append(f"{name}: the gather time was not reset ({start['gather_ms_after']})")
+                rows_here = block.get("requests") or []
+                if len(start["start_members"]) == len(ids) and start["ready_at_start"] and not start["foreign_members"]:
+                    if rows_here and all(row.get("outcome") == "ok" for row in rows_here):
+                        cause["a1"] = f"not shown: all {len(ids)} start members were answered on this product"
+                    elif any('"dense_plan.py:510:prefill"' in tail for tail in start["worker_exit_tails"]):
+                        cause["a1"] = "shown: the worker failed in dense_plan.py:510:prefill (no free slot)"
+                    else:
+                        cause["a1"] = "failed otherwise: see the start section's worker exit tails"
+                else:
+                    cause["a1"] = (f"precondition not met: the group started with {len(start['start_members'])} of "
+                                   f"{len(ids)} (ready at start: {start['ready_at_start']})")
+                cause["start"] = start
+        afters = [block for block in blocks if block.get("section") == "after"]
+        last = (afters[-1].get("shards") or [{}])[0] if afters else None
+        if last is not None and ((last.get("worker") or {}).get("state") != "ready" or last.get("queued")
+                                 or last.get("active") or afters[-1].get("idle_after") is False):
+            violated.append(f"after the load the service was not idle and ready: {last}")
+    cause.setdefault("a1", "precondition not met: the start section did not run")
+    out["preconditions"], out["cause"] = preconditions, cause
+    verdict, reasons = (("hung", [f"{len(timeouts)} requests waited out their deadline"]) if timeouts
+                        else ("controlled", [f"{len(failures)} requests failed inside their deadlines"]) if failures
+                        else ("rule violated", violated) if violated
+                        else ("incomplete", incomplete) if incomplete
+                        else ("precondition not met", unmet) if unmet
+                        else ("accepted", ["every expected request of every section was answered once, within the "
+                                           "width, with the diagnostics, every precondition met"]))
+    out["acceptance"] = {"verdict": verdict, "reasons": reasons, "incomplete": incomplete, "violated": violated,
+                         "unmet": unmet}
+    out["verdict"] = f"{verdict}: {'; '.join(map(str, reasons))[:600]}"
     return out
+
+
+def _ag5r_judge(report: dict[str, Any]) -> dict[str, Any]:
+    """The end-of-run analysis with the stability log the run just wrote (rev 2: the analysis needs it)."""
+    path = (DIAGNOSTICS / "ironmule-state" / "stability-log.jsonl") if DIAGNOSTICS is not None else None
+    return analyse_ag5r(report, _read_jsonl(path) if path is not None else None)
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]] | None:
+    """A JSON-lines log, or None if it is missing; a line that does not parse makes it unreadable (None)."""
+    try:
+        return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    except (OSError, ValueError):
+        return None
 
 
 def ag5r_log_checks(log: list[dict[str, Any]], width: int = AG5R_WIDTH) -> dict[str, Any]:
@@ -3553,13 +3799,10 @@ def _main(argv: Iterable[str] | None = None) -> int:
     if args.analyse is not None:
         report = json.loads(args.analyse.read_text())
         inner = report.get("rl2h", report)
-        if inner.get("plan") == "ag5r":  # STAB3: the stability log beside the report, when it was exported
-            log_path = args.analyse.parent / "diagnostics" / "ironmule-state" / "stability-log.jsonl"
-            if log_path.exists():
-                rows = [json.loads(line) for line in log_path.read_text().splitlines() if line.strip()]
-                print(json.dumps({"analysis": analyse_ag5r(inner), "log_checks": ag5r_log_checks(rows)}, indent=1,
-                                 sort_keys=True, default=str))
-                return 0
+        if inner.get("plan") == "ag5r":  # rev 2: the stability log beside the report is part of the evidence
+            rows = _read_jsonl(args.analyse.parent / "diagnostics" / "ironmule-state" / "stability-log.jsonl")
+            print(json.dumps({"analysis": analyse_ag5r(inner, rows)}, indent=1, sort_keys=True, default=str))
+            return 0
         judge = {"h8": analyse_h8, "kp1": analyse_kp1, "h9": analyse_h9, "h10": analyse_h10,
                  "h11": analyse_h11, "ag1": analyse_ag1, "ag4r": analyse_ag4r,
                  "ag4c": analyse_ag4c, "ag5g": analyse_ag5g, "ag6h": analyse_ag6h,
@@ -3640,7 +3883,7 @@ def _main(argv: Iterable[str] | None = None) -> int:
                       "ag1": (run_ag1, analyse_ag1), "ag4r": (run_ag4r, analyse_ag4r),
                       "ag4c": (run_ag4c, analyse_ag4c), "ag5g": (run_ag5g, analyse_ag5g),
                       "ag6h": (run_ag6h, analyse_ag6h), "ag6q": (run_ag6q, analyse_ag6q),
-                      "ag5r": (run_ag5r, analyse_ag5r)}[args.plan]
+                      "ag5r": (run_ag5r, _ag5r_judge)}[args.plan]
         extra = {"profile": args.profile} if args.plan == "ag1" else {}
         if args.plan == "ag1" and args.model is None and not args.smoke:
             model = AG1_PROFILES[args.profile]["model"]
