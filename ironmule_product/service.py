@@ -1347,6 +1347,9 @@ class ProductService:
             if event.get("type") in ("done", "rejected"):
                 queues[request_id].put(None)
                 finished.add(request_id)
+                # STAB4: when the group stops counting it as open, before any join that takes its place; its
+                # `end` is written only when the whole group ends.
+                self.note("member_done", id=request_id, group=live[0].group)
 
         queues.clear()
         for item in live:

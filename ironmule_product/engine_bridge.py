@@ -496,6 +496,21 @@ class CurrentEngineBridge:
             **({"dense_plan": dict(self._dense_plan)} if self._dense_plan is not None else {}),
         }
 
+    def fallback_kinds(self) -> list[dict[str, Any]]:
+        """STAB4: what the Runtime's fallbacks caught in the last run, as exception types, where they were caught
+        and memory flags; never a message, since a library message can quote input text. When the whole-executor
+        safety net catches an error and the run then fails on its result count, this is the only trace of it."""
+        kinds = []
+        for reason in list(getattr(getattr(self._runtime, "telemetry", None), "fallback_reasons", None) or [])[-8:]:
+            text = str(reason)
+            where = "executor" if text.startswith("executor: ") else "group"
+            kind, _, message = text.removeprefix("executor: ").partition(": ")
+            message = message.lower()
+            kinds.append({"where": where, "type": kind if kind.isidentifier() else "unknown",
+                          "out_of_memory": "out of memory" in message or "outofmemory" in message.replace(" ", ""),
+                          "illegal_memory_access": "illegal memory access" in message})
+        return kinds
+
     def counters(self) -> dict[str, Any]:
         """KP1: decode bodies this worker's engine built and evicted so far, and its card (no request data)."""
         return {"decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)

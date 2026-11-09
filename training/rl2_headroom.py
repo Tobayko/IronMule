@@ -3343,7 +3343,10 @@ def analyse_ag5r(report: dict[str, Any]) -> dict[str, Any]:
 def ag5r_log_checks(log: list[dict[str, Any]], width: int = AG5R_WIDTH) -> dict[str, Any]:
     """AG5-R's checks on the product's stability log (exported beside the report): each admitted request ended
     exactly once; no group ever held more open members than the engine's width; requests did join running groups;
-    no worker exited or restarted."""
+    no worker exited or restarted. A member stops being open at its `member_done` (STAB4: the moment its group
+    stops counting it, written before a join that takes its place); a log without those rows (the product before
+    STAB4) closes members only at their `end`, which the service writes when the whole group ends, so there the
+    widest group is the group's members over its life, not at once."""
     admitted = [row["id"] for row in log if row.get("event") == "admit"]
     ends: dict[str, int] = {}
     open_by_group: dict[Any, set[str]] = {}
@@ -3360,6 +3363,8 @@ def ag5r_log_checks(log: list[dict[str, Any]], width: int = AG5R_WIDTH) -> dict[
         elif event == "end":
             ends[row.get("id")] = ends.get(row.get("id"), 0) + 1
             open_by_group.get(row.get("group"), set()).discard(row.get("id"))
+        elif event == "member_done":
+            open_by_group.get(row.get("group"), set()).discard(row.get("id"))
         if event in ("group", "join"):
             widest = max([widest] + [len(members) for members in open_by_group.values()])
     restarts = [row for row in log if row.get("event") in ("worker_exit", "worker_restart", "worker_restart_start")]
@@ -3367,6 +3372,7 @@ def ag5r_log_checks(log: list[dict[str, Any]], width: int = AG5R_WIDTH) -> dict[
             "ended_twice": sorted(rid for rid, n in ends.items() if n > 1),
             "never_ended": sorted(set(admitted) - set(ends)), "widest_group": widest,
             "within_width": widest <= width, "joins": sum(1 for row in log if row.get("event") == "join"),
+            "member_done_rows": any(row.get("event") == "member_done" for row in log),
             "worker_events": [{k: row.get(k) for k in ("event", "reason", "outcome", "exit_status", "unix")}
                               for row in restarts],
             "errors": sorted({row.get("error") for row in log if row.get("event") == "end" and row.get("error")})}

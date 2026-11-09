@@ -1852,6 +1852,134 @@ session hours.
   - AG5-R checks this load case on the card;
   - a new AG5-G checks the whole comparison.
 
+### STAB4 — Slots, admission, joining and recovery checked on the product's own path, without CUDA (owner request 2026-11-09; local, shipped)
+
+**Why.** Kaggle's weekly GPU quota was used up before AG5-R could start (above). The owner asked to close the local
+gaps in slot handling, admission, joining and recovery with the CPU test infrastructure already in the repository,
+and to say which statements that supports and which still need the card.
+
+**The test world** (`tests/engine/dense_cpu_worker.py`, `tests/engine/test_dense_slot_flow.py`,
+`tests/engine/test_dense_slot_plans.py`):
+- *The product's own:* the service (`ProductService`), the client (`MLXWorkerClient`) and its JSON-lines transport,
+  the worker process (`ironmule_product.worker.main`, its command loop and `_run_engine_batch`'s admission), the
+  bridge, the Runtime and its executor, and the plan's slot pool (`DenseBackend`).
+- *Replaced, because they need CUDA or a checkpoint:* the model (a tiny random 4-bit Gemma 3, the shape of
+  `test_dense_gemma.py`, weights unscaled so answers vary token by token), the plan's kernels (KB2's
+  `GemmaDensePlan` with the CPU reference attention, `native=False`, in place of `install_dense`'s CUDA install and
+  probe) and the snapshot identity (a stand-in). The worker's ready event says `kernels: cpu_reference`; nothing
+  is written to any evidence store, so no CUDA path can be qualified from it.
+- *Observed:* a ledger the worker writes of every slot taken and freed (with the pool's own free count), every
+  stacked step, join received and done sent. Order comes from holds, never sleeps: the scheduler waits behind a
+  gate until the requests a test offers are queued, and the worker pauses before a named stacked step until the
+  test has acted.
+- *What it cannot show:* CUDA's kernels, card memory, timing or throughput. No time from these runs is a
+  measurement.
+
+**Checked (each request's answer is compared with the same request alone in a fresh pool):**
+- *Eight requests offered at once to six slots,* both with the service told the width (six start, two join as
+  members end) and with run 6's constellation (the service admits eight into one group; the worker starts six and
+  serves two after). Never a seventh slot, every answer its own, every slot back, no worker lost.
+- *Joining mid-run, a full pool, a cancelled joiner:* a long and a short member run; five arrive, four take the free
+  slots and the fifth waits; a joined request is cancelled and the waiting one takes exactly the slot it freed.
+- *A slot's context is a per-request limit, not the pool's width:* a request one token over is refused alone and
+  takes no slot; one exactly at the limit is served.
+- *A failed admission:* two requests join in one round and the second one's prefill fails. The members keep their
+  own answers (the Runtime replays them), the joiners end failed, each once, every slot comes back, the worker is
+  replaced and the next request is answered as alone.
+- *A failed stacked step:* once, it is replayed inside the plan with no answer changed; for good, the healthy
+  members end with their own answers, the poisoned one fails, each once, and the worker is replaced.
+- *Run 6's arrivals as event plans* (control logic only): phase 0's blocks 0 and 1 from `ag5r_blocks`, ordered
+  against the worker's stacked steps (one chained readback of the 256-token answers scaled to 32 tokens at run 6's
+  0.128 s a step at width 6), in run 6's order and in seeded variations of nearby events (an arrival moved by up to
+  one step, arrivals at one step shuffled, lengths 8-40). At each hold the service's open members and the worker's
+  free slots must agree. Four plans are kept; `IRONMULE_STAB4_SEEDS=1-20` adds 38 more, and all 42 passed once
+  (2026-11-09). The same plan twice gives the same slots taken and freed at the same steps.
+
+**Found and fixed (each test fails on the code before it):**
+- *A cancelled member's slot stayed empty until its run ended.* The engine stops a cancelled request at once and
+  frees its slot, but the worker sent its done only at the run's end, so the service counted it open and let no
+  waiting request take the slot (in the test, the fifth joiner waited for the long member's whole answer). The
+  worker now sends the done when the engine stops it (`_BatchStream.cancelled_now`).
+- *A failed prefill left the slots of requests prefilled before it in the same round taken* until the worker
+  process ended (`build_sessions` lost them). It now hands them back before it raises. With the worker retired
+  after such a failure this had no lasting effect, but the pool's count was wrong until then.
+- *The failure note hid a swallowed error.* When the Runtime's safety net catches an error and the run then fails
+  on its result count, the worker's stderr note named only that `RuntimeError` in `generate_many`, never what the
+  safety net caught. It now also lists each fallback's type, where it was caught and its memory flags (never a
+  message): `fallbacks` in the note.
+- *AG5-R's width check would have failed R2 on a correct product* (found by the CPU dry run below, before any AG5-R
+  data). `ag5r_log_checks` counted a member open until its `end` row, which the service writes when the whole
+  group ends, so a group of 6 slots that had served 12 requests read as 12 at once. The service now writes
+  `member_done` when a group stops counting a member, before any join that takes its place, and the check closes a
+  member there. A log without those rows (R1's product, `5f064c3`) still closes members at `end`, so there the
+  widest group is its members over its life; the check reports which (`member_done_rows`). The eight-at-once test
+  runs the check on the real log: within the width at width 6, 8 open in run 6's constellation.
+- *`test_a_crashed_worker_is_replaced…` was timing-dependent.* Its premise failed under load
+  (`[['r-0'], ['r-blocker', 'r-a'], ['r-b']]`). Cause: the caller of `r-0` has its answer before the scheduler
+  clears that group's in-flight state, so the old helper saw `r-0`'s group as the blocker and sent `r-a` before the
+  blocker was taken; widening that window reproduces it every time (the old premise check even accepted
+  `['r-blocker', 'r-a', 'r-b']`). Now the blocker waits at a gate (`gate:PATH` in the stand-in worker) until both
+  requests are queued; the test checks the blocker's own group number and its first token, the exact groups, that
+  the worker's exit follows `r-a`'s first token, and only then recovery. Under load (6 busy processes on 4 cores)
+  the old test failed none of 12 runs alone but did fail in the full suite; the new one ran 30 times alone and 20
+  times with its file.
+
+**Run 6's trigger, examined locally on run 6's product (`5f064c3`), control logic only:**
+- *Eight rows started into six slots* fail there with exactly the frame AG5-R's R1 looks for:
+  `RuntimeError` at `dense_plan.py:510:prefill`. On today's code they are served.
+- *H1, a stacked step failing once for request 0, so its fallback admits no joiner:* refuted. After the fallback
+  the executor admits again in the same run, up to the free slots; all twelve requests were answered.
+- *H5, a joiner's prefill failing inside request 0's run:* reproduces run 6's pattern. The Runtime replays request 0
+  alone (one row's speed), and every joiner of that run fails with `backend_unavailable` as request 0 ends; if the
+  first joiner is the one that fails, none of them gets a token, as in run 6. What failed is swallowed: at
+  `5f064c3` the worker's note names only `RuntimeError` at `engine_bridge.py:440:generate_many` (the result count).
+  On the card a prefill allocation failing under memory growth (STAB1) would be such a cause. Not shown for run 6.
+- *For R1 this means:* the `dense_plan.py:510:prefill` frame and the result-count frame tell the two apart; under
+  H5, R1 at `5f064c3` cannot name the swallowed error. R2's product can.
+
+**Existing hardware data, for open questions** (development data; nothing here changes a rule or a verdict):
+- *Does the dream model rank the modes wrongly?* In AG6-Q's offline prediction (startup prices) the order of the
+  modes matched the measured order in every phase, by tokens per second and by mean first token. It misjudged
+  the gaps: in the spike it predicted `route` at 0.81x the stacked engine, measured 0.58x, and the stacked engine
+  at 120.7 tokens per second, measured 181.9. The decision errors came from when the agent re-decided (every 16
+  requests) and, in repetition 0, from a learned price (131.7 ms a token stacked) that did rank `route` first.
+- *Why the gaps: the two paths share the card.* Derived from AG6-Q's per-request times (first and last token,
+  tokens, path, arrival) with no model output: on the stacked arm alone a token took 18.5 ms plus 2.3 ms for each
+  other row decoding beside it (480 requests). Stacked requests that decoded while the single path also decoded
+  took 71.8 ms a token, 39 ms above that line (route arm, 102 requests; agent arm 102, the same); without the
+  single path beside them, 0.2 ms below it (agent arm, 128). A single-path token took 15.2 ms alone and 32.1 ms
+  beside stacked rows (route arm, 40 of 378). The startup prices, measured on each path alone, have no term for
+  the other path.
+- *What is missing for a sound decision:* a price term for the other path's load on the same card, measured, not
+  fitted to the data above; the load each request met while it decoded (the report keeps only its own times); and
+  every dream's replayed values and prices (the report keeps only the last dream).
+- *Run 6's 11.28 session hours* (started to finished): 0.37 to the agent's setup decision; 0.71 in the 21 complete
+  blocks (from each block's first arrival to its last end); 3.01 in the agent's three blocks with failures, of
+  which the service's own work took about 12 s and the rest were 3,600 s deadlines. The remaining 7.19 hours have
+  no per-block times in the artifacts. Consistent with the harness at `5f064c3` (not shown): before each arm it
+  waited up to the 3,600 s deadline for the pool to be idle, and seven such waits after the failure would make
+  about 7 hours. AG5-R waits at most 600 s and records each block's start and end.
+- Run 6 stays invalid.
+
+**AG5-R's harness against the real product on the CPU (a dry run, 2026-11-09; checks the harness, measures
+nothing):** `measure_ag5r` with all of `ag5r_blocks` at their real arrival times, `analyse_ag5r`,
+`ag5r_log_checks` and the diagnostics export, through `start_paths` and the CPU worker above (slots of 1,024
+tokens here, so the harness's own prompts fit).
+- *Today's product:* "accepted", 83 requests in 8 blocks, each ended once, 72 joins, no worker event; the width
+  check read 12 before the fix above and reads within 6 after it.
+- *R1's product (`5f064c3`):* also "accepted", the eight-at-once block included, with no worker event.
+- *So R1's eight section, as written, does not test the overflow it is meant to.* The harness starts the 8 requests
+  on 8 threads at one offset; the scheduler takes the first as it arrives, so the group starts with 1 member and
+  the other 7 join over the next 14 ms. Joiners are admitted only up to the free slots, at `5f064c3` too, so no run
+  starts with more rows than slots. The overflow needs more than 6 requests queued before a group or a run starts:
+  in the tests above the scheduler is held until all 8 are queued, and then `5f064c3` fails with the
+  `dense_plan.py:510:prefill` frame. On the card the threads start the same way, so R1's eight section will most
+  likely pass whether A1 holds or not; "nothing fails" there would not tell against A1. The approved protocol is
+  unchanged; a change is the owner's (proposal in the AG5-R status below).
+
+**Validation:** the new tests, the runtime contract tests, `tests/engine` and `tests/agent` without the integration
+marker (results in the commit). The ledger entry is still owed.
+
 ### STAB2 — The agent never stops the server or fails a request (owner decision 2026-11-07, shipped)
 
 The owner asked that aborts stop and that nothing crash. Today's runs had shown how the agent could stop work.

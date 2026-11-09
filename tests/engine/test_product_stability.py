@@ -115,6 +115,42 @@ def _grouped(service: ProductService, requests: list[GenerationRequest], gap_s: 
     return results[1:]
 
 
+def _held_group(service: ProductService, requests: list[GenerationRequest], gate: Path) -> list:
+    """STAB4: `requests` form one group behind a blocker the test holds, with every step observed, not timed.
+
+    1. The blocker's own group (the next group number, not the group before it: the caller of an earlier
+       request sees its answer before that group's in-flight state is cleared) runs and has streamed a token.
+    2. Each request is queued, in order, before the next is sent; the blocker cannot end meanwhile.
+    3. Only then the gate opens, and the scheduler takes the queued requests together as its next group.
+    """
+    results: list = [None] * (len(requests) + 1)
+    blocker = _request("r-blocker", f"gate:{gate}", max_tokens=2)
+    group = service.health()["groups_started"] + 1
+
+    def run(index: int, request: GenerationRequest) -> None:
+        results[index] = _call(service, request)
+
+    threads = [threading.Thread(target=run, args=(0, blocker))]
+    threads[0].start()
+
+    def blocker_streams() -> bool:
+        flight = service.health()["in_flight"]
+        return flight is not None and flight["group"] == group and flight["last_progress_age_s"] is not None
+
+    assert _until(blocker_streams), service.health()
+    for index, request in enumerate(requests, 1):
+        threads.append(threading.Thread(target=run, args=(index, request)))
+        threads[-1].start()
+        assert _until(lambda index=index: service.health()["queued_requests"] == index), service.health()
+    assert blocker_streams() and service.health()["queued_requests"] == len(requests)  # still held, all queued
+    gate.write_text("open")
+    for thread in threads:
+        thread.join(timeout=30)
+    assert not any(thread.is_alive() for thread in threads)
+    assert not isinstance(results[0], ProductError) and results[0][-1]["type"] == "done"  # the blocker ends well
+    return results[1:]
+
+
 def _log(store: ProductStore) -> list[dict]:
     return [json.loads(line) for line in (store.root / STABILITY_LOG).read_text().splitlines()]
 
@@ -171,12 +207,25 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
     try:
         before = _call(service, _request("r-0", "steady"))
         pid = _pid(service)
-        # A three-second blocker: both must queue behind it to form one group, even on a loaded test machine.
-        crashed, neighbour = _grouped(service, [_request("r-a", "crash"), _request("r-b", "steady")],
-                                      blocker=("slow:1.0", 3))
-        groups = [row["ids"] for row in _log(store) if row["event"] == "group"]
-        # The premise: both ran in one group. If not, the scheduler grouped them otherwise, not a crash bug.
-        assert any({"r-a", "r-b"} <= set(ids) for ids in groups), groups
+        # STAB4: the blocker is held by a gate until both are queued, so they form one group by construction.
+        # A timed blocker let r-a start while r-0's group still showed as in flight, so r-a sometimes joined the
+        # blocker's group ([['r-0'], ['r-blocker', 'r-a'], ['r-b']]) under a loaded test run.
+        crashed, neighbour = _held_group(service, [_request("r-a", "crash"), _request("r-b", "steady")],
+                                         tmp_path / "gate")
+        # The callers see their errors before the scheduler records the worker's exit and their ends: wait for those.
+        assert _until(lambda: {"worker_exit"} <= {row["event"] for row in _log(store)}
+                      and {"r-a", "r-b"} <= {row.get("id") for row in _log(store) if row["event"] == "end"})
+        log = _log(store)
+        groups = [row["ids"] for row in log if row["event"] == "group"]
+        # The premise: both ran in one group, the blocker alone before it.
+        assert groups == [["r-0"], ["r-blocker"], ["r-a", "r-b"]], groups
+        # The fault where it was meant to be: r-a's first token, inside that group, then the worker's exit.
+        crash_group = next(row["group"] for row in log if row["event"] == "group" and row["ids"] == ["r-a", "r-b"])
+        exit_at = next(i for i, row in enumerate(log) if row["event"] == "worker_exit")
+        assert exit_at > next(i for i, row in enumerate(log) if row.get("group") == crash_group)
+        assert "fatal out of memory" in log[exit_at]["stderr_tail"]
+        assert [event["type"] for event in crashed.events] == ["token"]  # its one token, then the error
+        assert neighbour.events == []  # r-b's turn came after r-a's first token, so it streamed nothing
         for result in (crashed, neighbour):
             assert isinstance(result, ProductError) and result.code == "backend_unavailable"
             assert not any(event["type"] == "done" for event in result.events)
@@ -189,6 +238,7 @@ def test_a_crashed_worker_is_replaced_and_no_partial_answer_is_continued_or_repe
         assert [row["outcome"] for row in restart] == ["ready"] and "exited" in restart[0]["reason"]
         ends = {row["id"]: row for row in _log(store) if row["event"] == "end"}
         assert ends["r-a"]["error"] == ends["r-b"]["error"] == "backend_unavailable"  # served once, not retried
+        assert list(ends).count("r-a") == 1 and ends["r-blocker"]["outcome"] == "ok"
     finally:
         service.close()
 

@@ -160,10 +160,11 @@ def _safe_error(code: str, request_id: str | None = None) -> None:
     _emit(event)
 
 
-def _note_failure(where: str) -> None:
+def _note_failure(where: str, engine_bridge: Any = None) -> None:
     """STAB1: the handled exception's type, its frames and whether it reports exhausted memory, on
     stderr only (the parent keeps the tail when it retires this worker). Never its message: a library
-    message can quote input text."""
+    message can quote input text. STAB4: also what the engine's fallbacks caught in that run (`fallbacks`), since
+    an error the Runtime's safety net caught is otherwise hidden behind a later one."""
     import traceback
     error = sys.exc_info()[1]
     if error is None:
@@ -171,10 +172,15 @@ def _note_failure(where: str) -> None:
     frames = [f"{Path(f.filename).name}:{f.lineno}:{f.name}" for f in traceback.extract_tb(error.__traceback__)[-8:]]
     message = str(error).lower()
     try:
+        fallbacks = getattr(engine_bridge, "fallback_kinds", lambda: [])() if engine_bridge is not None else []
+    except Exception:  # noqa: BLE001 - a diagnostic never changes the protocol
+        fallbacks = []
+    try:
         sys.stderr.write(json.dumps({"worker_error": where, "type": type(error).__name__, "frames": frames,
                                      "out_of_memory": isinstance(error, MemoryError) or "out of memory" in message
                                      or "outofmemory" in message.replace(" ", ""),
-                                     "illegal_memory_access": "illegal memory access" in message}) + "\n")
+                                     "illegal_memory_access": "illegal memory access" in message,
+                                     **({"fallbacks": fallbacks} if fallbacks else {})}) + "\n")
         sys.stderr.flush()
     except Exception:  # noqa: BLE001 - a diagnostic never changes the protocol
         pass
@@ -588,7 +594,7 @@ def _generate(
                 raise ValueError("generation ended without a completion frame")
     except Exception:
         terminal = None
-        _note_failure("generate")
+        _note_failure("generate", engine_bridge)
         _safe_error("generation_error", request_id)
         error_emitted = True
     finally:
@@ -769,6 +775,19 @@ class _BatchStream:
         except BaseException as exc:  # noqa: BLE001 - raised by finish()
             self.error = exc
 
+    def cancelled_now(self) -> None:
+        """STAB4: the engine ends this request at its cancel (RSI3-LIVE-P2), so its done goes out now. The
+        client then counts its place in the group free while the group runs on, and a waiting request takes the
+        slot the engine freed; before, the done waited for the run's end and the freed slot stayed empty."""
+        self.stopped = True
+        if self.finished is None and self.terminal is not None and self.error is None:
+            try:
+                self._release()
+                _emit(self.terminal("cancelled", self.sent, len(self.tokens)))
+                self.finished = "cancelled"
+            except BaseException as exc:  # noqa: BLE001 - raised by finish(), never inside the executor
+                self.error = exc
+
     def _release(self) -> None:
         if self.detokenizer is not None:
             self.detokenizer.finalize()
@@ -932,9 +951,12 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
                 return fresh
 
             def cancelled_for(request_id: str):
-                def check() -> bool:
+                def check() -> bool:  # the engine asks this to stop a request; True ends it there
                     with lock:
-                        return cancellations[request_id].is_set()
+                        stop = cancellations[request_id].is_set()
+                    if stop and request_id in streams:
+                        streams[request_id].cancelled_now()
+                    return stop
                 return check
 
             with redirect_stdout(sys.stderr):
@@ -1017,10 +1039,10 @@ def _run_engine_batch(command: dict[str, Any], model_id: str, tokenizer: Any,
             leftovers = []
         _emit({"type": "batch_done", "batch_id": batch_id, "request_ids": all_ids, "memory": _memory_counters()})
     except ValueError:
-        _note_failure("batch")
+        _note_failure("batch", engine_bridge)
         _safe_batch_error("invalid_request", batch_id)
     except Exception:
-        _note_failure("batch")
+        _note_failure("batch", engine_bridge)
         _safe_batch_error("generation_error", batch_id)
     finally:
         with lock:

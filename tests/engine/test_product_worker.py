@@ -1271,3 +1271,34 @@ def test_the_stacked_engines_group_holds_no_more_members_than_its_width():
 
     assert width(6) == 6 and width(None) == STREAM_GROUP_REQUESTS == 8 and width(8) == 8
     assert MLXWorkerClient(spec, execution_variant="current_engine").batch_capacity == STREAM_GROUP_REQUESTS
+
+
+def test_the_failure_note_names_what_the_engines_fallbacks_caught_without_a_message():
+    """STAB4: when the Runtime's safety net catches an error and the run then fails on its result count, the worker's
+    stderr note also lists the caught errors' types, where they were caught and their memory flags (never a
+    message, which can quote input text)."""
+    import io
+    import sys
+    from types import SimpleNamespace
+
+    from ironmule_product import worker
+    from ironmule_product.engine_bridge import CurrentEngineBridge
+
+    reasons = ["executor: RuntimeError: CUDA error: out of memory while copying 'secret prompt'",
+               "ValueError: injected", "executor: weird thing without a colon"]
+    bridge = SimpleNamespace(_runtime=SimpleNamespace(telemetry=SimpleNamespace(fallback_reasons=reasons)))
+    kinds = CurrentEngineBridge.fallback_kinds(bridge)
+    assert kinds == [
+        {"where": "executor", "type": "RuntimeError", "out_of_memory": True, "illegal_memory_access": False},
+        {"where": "group", "type": "ValueError", "out_of_memory": False, "illegal_memory_access": False},
+        {"where": "executor", "type": "unknown", "out_of_memory": False, "illegal_memory_access": False}]
+    stderr, sys.stderr = sys.stderr, io.StringIO()
+    try:
+        try:
+            raise RuntimeError("IronMule returned an invalid result count")
+        except RuntimeError:
+            worker._note_failure("batch", SimpleNamespace(fallback_kinds=lambda: kinds))
+        note = sys.stderr.getvalue()
+    finally:
+        sys.stderr = stderr
+    assert json.loads(note)["fallbacks"] == kinds and "secret" not in note and "result count" not in note

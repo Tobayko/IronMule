@@ -1695,3 +1695,21 @@ def test_ag5r_log_checks_find_a_double_end_a_group_wider_than_the_engine_and_a_w
                     {"t": 8, "event": "worker_exit", "reason": "BackendUnavailable: x", "exit_status": 9}]
     checks = rl2.ag5r_log_checks(lost, width=2)
     assert not checks["ended_once"] and checks["ended_twice"] == ["b"] and checks["worker_events"][0]["exit_status"] == 9
+
+
+def test_ag5r_log_checks_count_open_members_by_member_done_since_the_service_ends_rows_with_its_group():
+    """STAB4, found by a CPU dry run of AG5-R before any AG5-R data: the service writes each member's `end` when
+    the whole group ends, so a group of 6 slots that served 12 requests read as 12 open at once and R2's width check
+    failed on a correct product. A member now leaves at its `member_done`, written when the group stops counting it
+    and before the join that takes its place."""
+    rows = [{"t": 0.1 * i, "event": "admit", "id": f"r{i}"} for i in range(8)]
+    rows += [{"t": 1.0, "event": "group", "group": 1, "ids": [f"r{i}" for i in range(6)]}]
+    for k, (done, joiner) in enumerate((("r0", "r6"), ("r1", "r7"))):
+        rows += [{"t": 2.0 + k, "event": "member_done", "group": 1, "id": done},
+                 {"t": 2.0 + k, "event": "join", "group": 1, "id": joiner}]  # a tie: the file's order decides
+    rows += [{"t": 9.0, "event": "end", "group": 1, "id": f"r{i}"} for i in range(8)]
+    checks = rl2.ag5r_log_checks(rows, width=6)
+    assert checks["widest_group"] == 6 and checks["within_width"] and checks["member_done_rows"]
+    assert checks["ended_once"] and checks["joins"] == 2
+    before = rl2.ag5r_log_checks([row for row in rows if row["event"] != "member_done"], width=6)
+    assert before["widest_group"] == 8 and not before["member_done_rows"]  # members over the group's life

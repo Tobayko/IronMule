@@ -204,9 +204,11 @@ engine run ends, so a short request grouped with a long one can wait for it.
 and `scheduler_alive`), `in_flight` (the running group's width, open members, age and time
 since the worker's last event), `groups_started` and `oldest_queued_s`. The state
 directory keeps a bounded `stability-log.jsonl` (4 MiB, older half dropped): admissions,
-rejections, groups, every request's end and error code, how each HTTP response ended,
-worker exits with the last 4 KiB of the worker's stderr (a failure's type and frames, never its
-message), and each restart's start and outcome. Every line carries a monotonic and a wall time,
+rejections, groups, joins, the moment a group stops counting a member (`member_done`; its `end` is
+written when the whole group ends), every request's end and error code, how each HTTP response ended,
+worker exits with the last 4 KiB of the worker's stderr (a failure's type and frames, and the types and
+memory flags of errors the engine's fallbacks caught in that run, never a message), and each restart's start
+and outcome. Every line carries a monotonic and a wall time,
 and, when several workers share the state directory, the shard it comes from. It holds ids, times
 and codes, no prompt or answer text; the stderr tail can hold library messages, so keep the
 file private like the rest of the state directory.

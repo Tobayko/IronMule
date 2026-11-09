@@ -127,7 +127,10 @@ out its 3,600 s deadline. With fresh workers on the swapped cards it served 4 bl
 is not known and the fault is not reproduced; the run gives no gain (invalid by its rule). STAB3 (BACKLOG) fixed on
 this branch what its pattern points to, with local fault tests only: the service let 8 requests into a group
 while that plan had 6 slots, a stuck worker held its group up to twice the request timeout, and recovery could
-restart for good. Until AG5-R passes on the card, that setup is not shown to be stable.
+restart for good. Until AG5-R passes on the card, that setup is not shown to be stable. STAB4 checked the slot pool,
+admission, joining, cancellation and failure handling through the product's own service, client, worker
+process and pool on MLX's CPU, with a tiny random Gemma 3 and the reference attention in place of the CUDA
+kernels; that covers the control logic, not the card's kernels, memory or speed.
 
 ### The serving mode it learns while serving (AG6)
 
