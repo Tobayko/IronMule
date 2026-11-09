@@ -1698,6 +1698,68 @@ and the forced modes.
 If either fails, AG7 goes to Tier 0 and the dreaming agent stays as LIMITS bounds it. *Cost:* about 3 session
 hours, to be stated again before a kernel is pushed.
 
+### AG8 — The agent learns and qualifies for tokens per second, the first token no worse (owner request 2026-11-09, item A2; fixed before its data)
+
+**Why.** The owner's measure of gain (2026-11-03, "The main goal") is tokens per second first, with the time to the
+first token no worse. The agent's planner, its replay qualification and its audit still minimise each request's
+time in the system plus its time to the first token (AG1's cost). That cost rewards ordering, which at a fixed
+capacity moves no tokens per second, and does not reward a width that finishes the same work sooner.
+
+**Change (objective `throughput`, the agent's default from this entry on; `latency`, AG1's cost, stays
+selectable).** Both scores are read from the same runs as before; the actions (order, width) are unchanged.
+- *A window's score:* seconds per token, `s` = the span from its first arrival to its last end over the tokens
+  made; lower is more tokens per second. Its first token, `f`, is the mean time from arrival to first token.
+- *Tolerance on the first token:* `tau` = 0.02, the 1.02x bound AG6-Q and AG7 use.
+- *Planner (simulation):* an episode's return is `-(s/s_g) - h * max(0, s/s_g - 1) - h * max(0, f/f_g - 1 - tau)`,
+  with the guard schedule `g` on the same traffic and the planner's harm weight `h` (5). A schedule's price over
+  windows is the pooled `s` (sum of spans over sum of tokens); a schedule whose pooled `f` exceeds `(1 + tau)`
+  times the reference's is not eligible as the guard or the best fixed schedule, nor the incumbent's for a
+  proposal. A candidate is proposed only if its pooled `s` is below the incumbent's and its pooled `f` at most
+  `(1 + tau)` times the incumbent's.
+- *Qualification (replay, A/B/AA):* each triplet carries `s` and `f` per arm. At a look, *pass* needs both: the gain
+  on `s` (`1 - sum(s_B) / sum(mean(s_A, s_AA))`) with its lower bound at the look's alpha above zero and above the
+  A/A floor on `s`, as now; and the change in `f` with its upper bound at the same alpha at most `max(tau, floor
+  on f)`. *Fail* at a look: the gain's upper 97.5 % bound cannot reach the floor, or the first token's lower bound
+  is above `max(tau, floor on f)` (clearly later), or the last look. Otherwise open.
+- *Audit (the serving schedule against the reference):* *harm* at a look when the gain on `s` has its corrected
+  upper bound below zero, or the first token's corrected lower bound is above `max(tau, floor on f)`.
+- *State:* the objective is part of the agent's binding, so a state learned or qualified under another objective
+  never serves under this one: learning starts fresh. Evidence names its objective.
+- *Not changed:* answers (every replay still compares them), the LD1 dispatch, RSI3's live learner, the router and
+  the dreaming modes (AG6).
+
+**Simulation gate, before any hardware (`training/ag1_online.py --objective`, fixed now):** the same 300 traces
+(seed 90,000, the T4 price), once under `latency` and once under `throughput`. Recorded per phase: the agent's and
+the reference's tokens per second and mean first token on the same windows. Read as:
+- the throughput agent's tokens per second, pooled over the windows where its learned schedule serves, at least
+  the reference's (no loss), and its mean first token there at most 1.02x the reference's;
+- and against the latency agent: whether it serves more tokens per second. That is recorded, not a gate, since at
+  this machine's price a wider group may make none.
+- *Kill:* if the throughput agent loses tokens per second to the reference, or its first token exceeds 1.02x, in
+  the windows its schedule serves, the default goes back to `latency` and AG8 goes to Tier 0.
+- A simulation is not a hardware gain. A hardware run needs its own protocol and the owner's approval.
+
+**Simulation result (2026-11-09; `training/ag1_online.py`, 300 traces, seed 90,000, the T4 price; a simulation, not
+a hardware result).**
+
+| Objective | What served | Tokens per second vs the reference | Mean first token vs the reference | AG1's cost |
+| --- | --- | --- | --- | --- |
+| `latency` | its learned shortest-first schedule from trace 50 (250 windows) | 1.0009x | 0.871x | 6.2 % lower |
+| `throughput` | the reference, all 300 windows | 0.9999x | 1.0002x | 0.07 % higher |
+
+- *By the rule fixed above:* the kill does not apply. The throughput agent lost nothing to the reference in the
+  windows its learned schedule served, because it served none. Its planner found no width that makes more tokens
+  per second at this price (learned, best fixed and reference all 0.1236 s a token): on grouped batch-1 a further
+  session costs 91 % of a step (AG3), so width 8 is already the most. It qualified the latency agent's
+  shortest-first schedule once and rejected it (tokens per second 0.6 %, 95 % -0.2 % to 1.5 %, not above the A/A
+  floor), as the rule says. The default stays `throughput`.
+- *Post hoc, it changes no verdict:* this objective leaves out part of the owner's measure, "waiting time counts
+  too, but less". On this price the throughput agent gives up the 13 % earlier first tokens the latency agent
+  served at the same tokens per second. A revision would be lexicographic: a candidate qualifies by more tokens per
+  second within the first-token bound, or by a lower AG1 cost at tokens per second no worse than the noise. That
+  is a new protocol with its own simulation, the owner's decision.
+- It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
+
 ### STAB3 — A worker lost under a spike ends in bounded recovery or a prompt 503 (owner request 2026-11-08; local part shipped, hardware gate pending)
 
 **Why.** AG5-G run 6 (AG5): the agent's Gemma stacked engine at width 6 failed under a spike, 8 joining requests got
@@ -2216,6 +2278,32 @@ GPU hours, and none of them has been used yet.
     per-call floor (dispatch and host sync), not the chip's streaming speed, and the probe cannot say what a
     decode step compiled as one program would reach. A reopening needs that changed implementation: a probe that
     times a whole jitted decode step, fixed before its data.
+- **TP0b, the reopening probe (owner request 2026-11-09, item C1; fixed before its data).** Reopens TP1 under the
+  rule "Rejected is not forbidden": the old entry is TP1 above, closed by TP0 in Tier 0; its kill criterion reads "TP1
+  is closed unless a JAX decode path for `Qwen3-1.7B` on one v5e chip makes more tokens per second than the T4's best
+  path measured so far (57.7 alone with float16, 290.9 at width 8 with the dense plan, AG4-Q run 2), at the agent's
+  quality gate". The changed implementation is the one TP0's post hoc reading names: a whole decode step compiled as
+  one program.
+  - *Tool:* `tools/tpu_step_probe.py`, kernel `tobayko/ironmule-tpu-step-probe` on one Kaggle TPU v5e-8 session,
+    the session's own JAX, no checkpoint (random bf16 weights of `Qwen3-1.7B`'s shapes).
+  - *What one step is:* embedding; per layer, inside one `lax.scan`: RMSNorm, q/k/v with Qwen 3's per-head q/k
+    norms, rotary positions (theta 1,000,000), the step's key and value written into a fixed KV cache, grouped
+    attention over the cache up to the position, o, RMSNorm and the SwiGLU MLP; then the final norm, the tied head
+    over 151,936 tokens and the argmax. A test checks its logits against a plain NumPy float32 step (within 5 %
+    of the largest logit; the test fails if the rotation is left out) and that a compiled chain of steps equals
+    the same steps run one by one.
+  - *Cases:* 1 and 8 rows at position 1,024 of a 2,048-token cache, and 64 rows at 256 of a 512-token cache.
+  - *Timings, each the median after warm-up:* `per_call`, one step per call synced on the host (20 calls); and
+    `chained`, 32 steps inside one compiled loop, each fed the previous tokens, divided by 32. Compile times are
+    recorded apart.
+  - *Decides (by `chained`, the cost a decode path that reads back every 32 steps pays):* TP1 reopens only if 1 row
+    makes more than 57.7 tokens per second and 8 rows more than 290.9. Then the next step is a JAX decode path for
+    `Qwen3-1.7B` with its real weights, fixed here before it is built, and the agent's quality gate still applies.
+    Otherwise TP1 stays closed with this probe as its evidence. A case that does not run is recorded; without the 1
+    and 8 row cases there is no decision.
+  - *Not shown by it either way:* real weights, sampling, prefill, a serving path, quality.
+  - *Cost:* about 0.1 TPU hours of the account's 20 a week (separate from the GPU quota): compiles of 3 cases twice,
+    then seconds of timing.
 
 ## PROD1 — Approved product implementation (2026-09-05)
 

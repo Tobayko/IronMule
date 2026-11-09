@@ -146,6 +146,13 @@ def cost(members: list[dict[str, Any]]) -> float:
     return statistics.fmean((m["end"] - m["arrive"]) + (m["first"] - m["arrive"]) for m in members)
 
 
+def window_rate(members: list[dict[str, Any]]) -> dict[str, float]:
+    """AG8: a window's span (first arrival to last end), tokens made and summed first tokens, to be pooled."""
+    return {"span": max(m["end"] for m in members) - min(m["arrive"] for m in members),
+            "tokens": sum(m["tokens"] for m in members), "first": sum(m["first"] - m["arrive"] for m in members),
+            "requests": len(members)}
+
+
 def live_traces(traces: int, seed: int, prompts: list[dict[str, Any]] | None = None,
                 limit: int = 512, requests: int = rl2.REQUESTS,
                 rate: float = CAPACITY_RPS) -> list[list[dict[str, Any]]]:
@@ -175,7 +182,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
         drift: str = "cpu", episodes: int = 1500, root: Path | None = None, log: Callable = print,
         prompts: list[dict[str, Any]] | None = None, limit: int = 512, capacity: int = 8,
         pause_s: float = PAUSE_S, requests: int = rl2.REQUESTS, rate: float = CAPACITY_RPS,
-        twin: bool = False) -> dict[str, Any]:
+        twin: bool = False, objective: str = ag.OBJECTIVE) -> dict[str, Any]:
     """`capacity`, `pause_s`, `requests` and `rate` size the server and its traffic. `twin` (AG2, two cards) has a
     second card's answers to the same traffic teach the shared length model after every trace, as
     `agent.share_lengths` does; that card's own agent, replays and qualification are not simulated."""
@@ -188,7 +195,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     clock = [0.0]
     agent = ag.Agent(root / "agent", {"simulated": machine, "seed": seed}, capacity=capacity,
                      reference={"width": 8, "sjf": False, "gather_ms": 0}, clock=lambda: clock[0],
-                     planner_settings={"episodes": episodes, "seeds": 2})
+                     planner_settings={"episodes": episodes, "seeds": 2}, objective=objective)
     reference_sjf, reference_width = (lambda w: False), (lambda w: 8)
 
     def replay(trace: list[tuple], choose: Callable, preempted: Callable) -> dict[str, Any] | None:
@@ -283,6 +290,7 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
         live = [m for g in groups for m in g]
         windows.append({"trace": k, "state": rl2.H2_STATES[trace[0]["state"]], "serving": serving,
                         "agent_cost": cost(live), "reference_cost": cost([m for g in base for m in g]),
+                        "agent_rate": window_rate(live), "reference_rate": window_rate([m for g in base for m in g]),
                         "t_s": jobs[0]["arrive"], **({"fixed_costs": fixed_costs} if fixed_costs else {})})
         t = end + pause_s
         if k % 30 == 0 or agent.counters != logged:
@@ -292,7 +300,8 @@ def run(traces: int = 300, seed: int = 90_000, machine: str = "t4", drift_at: in
     collect(traces)
     status = agent.status()
     agent.close()
-    return {"schema": "ironmule.ag1.online.v1", "machine": machine, "drift_at": drift_at, "drift": drift,
+    return {"schema": "ironmule.ag1.online.v1", "objective": objective, "machine": machine, "drift_at": drift_at,
+            "drift": drift,
             "capacity": capacity, "pause_s": pause_s, "requests": requests, "rate": rate, "twin": twin,
             "prompts": len(prompts) if prompts else None, "limit": limit if prompts else None,
             "traces": traces, "seed": seed, "episodes": episodes, "windows": windows,
@@ -314,6 +323,13 @@ def summarise(result: dict[str, Any]) -> dict[str, Any]:
     for name, rows in phases.items():
         a, r = sum(w["agent_cost"] for w in rows), sum(w["reference_cost"] for w in rows)
         out[name] = {"windows": len(rows), "agent": a / len(rows), "reference": r / len(rows), "gain": 1 - a / r}
+        if all("agent_rate" in w for w in rows):  # AG8: tokens per second and first token, pooled over the windows
+            for who in ("agent", "reference"):
+                pooled = {k: sum(w[f"{who}_rate"][k] for w in rows) for k in ("span", "tokens", "first", "requests")}
+                out[name][f"{who}_tokens_per_s"] = pooled["tokens"] / pooled["span"]
+                out[name][f"{who}_first_s"] = pooled["first"] / pooled["requests"]
+            out[name]["tokens_per_s_ratio"] = out[name]["agent_tokens_per_s"] / out[name]["reference_tokens_per_s"]
+            out[name]["first_ratio"] = out[name]["agent_first_s"] / out[name]["reference_first_s"]
         if all("fixed_costs" in w for w in rows):  # AG2: the best schedule ordered by the limit, in hindsight
             totals = {arm: sum(w["fixed_costs"][arm] for w in rows) for arm in rows[0]["fixed_costs"]}
             best = min(totals, key=totals.get)
@@ -334,6 +350,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=512, help="AG2: the one output limit every request sends")
     parser.add_argument("--profile", choices=sorted(PROFILES), default=None,
                         help="a hardware protocol's sizes (overrides --traces, --machine, --limit, --episodes)")
+    parser.add_argument("--objective", choices=ag.OBJECTIVES, default=ag.OBJECTIVE,
+                        help="AG8: what the agent learns and qualifies for")
     parser.add_argument("--out", required=True)
     args = parser.parse_args(argv)
     started = time.time()
@@ -342,7 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     sizes = dict(PROFILES[args.profile]) if args.profile else {
         "machine": args.machine, "traces": args.traces, "limit": args.limit, "episodes": args.episodes}
     result = run(sizes.pop("traces"), args.seed, sizes.pop("machine"), args.drift_at, args.drift,
-                 sizes.pop("episodes"), prompts=prompts, **sizes)
+                 sizes.pop("episodes"), prompts=prompts, objective=args.objective, **sizes)
     result["summary"] = summarise(result)
     result["wall_s"] = time.time() - started
     Path(args.out).write_text(json.dumps(result, indent=1))

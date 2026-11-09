@@ -91,6 +91,9 @@ MAX_ERRORS = 3
 SAVE_AFTER_S = 30.0
 MIN_PREDICTED = 32          # AG2: recorded arrivals with a prediction before "shortest predicted first" is planned
 LENGTH_CACHE = 4096         # AG2: requests whose features and prediction are kept until they finish
+OBJECTIVES = ("throughput", "latency")  # AG8: tokens per second first (the owner's), or AG1's request cost
+OBJECTIVE = "throughput"
+TTFT_TOLERANCE = 0.02       # AG8: how much later the mean first token may come (AG6-Q's and AG7's 1.02x)
 TABLE_QUEUE = 16            # queues up to this length are decided from a compiled table, longer ones by the policy
 PLANNER = {"episodes": 3000, "seeds": 2, "lr": 0.05, "harm_weight": 5.0, "validation": 40, "held_out": 80,
            "trace": TRACE, "scale": (0.8, 1.25)}  # gaps scaled log-symmetrically: 0.5-1.5 weighted heavy load
@@ -309,6 +312,31 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
     """One card that runs one group at a time, members prefilled one after another, decode rounds of at most
     `engine_width` sessions, each member ending at its own last token (member release, H9). Returns the mean
     request cost: time in system plus time to first token, the live learner's contract."""
+    _run(params, jobs, sjf, width, capacity, engine_width, key)
+    return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
+
+
+def scores(jobs: list[Job]) -> dict[str, float]:
+    """AG8: what a simulated or replayed window scores: AG1's request cost (`latency`), its span from first arrival
+    to last end and the tokens made (seconds per token is span over tokens), and the mean first token."""
+    if not jobs:
+        return {"latency": 0.0, "span": 0.0, "tokens": 0, "first": 0.0}
+    return {"latency": statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs),
+            "span": max(j.end for j in jobs) - min(j.arrive for j in jobs),
+            "tokens": sum(j.tokens for j in jobs), "first": statistics.fmean(j.first - j.arrive for j in jobs)}
+
+
+def simulate_scores(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
+                    width: Callable[[list[Job]], int], capacity: int, engine_width: int = ENGINE_WIDTH,
+                    key: str = "limit") -> dict[str, float]:
+    """`simulate`, scored by `scores`."""
+    _run(params, jobs, sjf, width, capacity, engine_width, key)
+    return scores(jobs)
+
+
+def _run(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]], bool],
+         width: Callable[[list[Job]], int], capacity: int, engine_width: int, key: str) -> None:
+    """The simulation itself: sets every job's `first` and `end`."""
     pending = sorted(jobs, key=lambda j: (j.arrive, j.index))
     waiting: list[Job] = []
     now, i = 0.0, 0
@@ -334,7 +362,6 @@ def simulate(params: dict[str, float], jobs: list[Job], sjf: Callable[[list[Job]
         active = [j for j in group if remaining[j.index] > 0]
         t = _decode(params, active, remaining, engine_width, t)
         now = t
-    return statistics.fmean((j.end - j.arrive) + (j.first - j.arrive) for j in jobs) if jobs else 0.0
 
 
 def _decode(params: dict[str, float], active: list[Job], remaining: dict[int, int], engine_width: int,
@@ -511,6 +538,32 @@ def _policy_cost(params: dict[str, float], windows: list[list[Job]], policy: Pol
     return _mean_cost(params, windows, _deciders(policy, capacity), capacity, engine_width, policy.key)
 
 
+def _pooled(params: dict[str, float], windows: list[list[Job]], deciders: tuple[Callable, Callable], capacity: int,
+            engine_width: int, key: str = "limit") -> tuple[float, float]:
+    """AG8: a schedule's price over windows: pooled seconds per token (sum of spans over sum of tokens) and the
+    pooled mean first token."""
+    sjf, width = deciders
+    span = tokens = first = 0.0
+    count = 0
+    for window in windows:
+        jobs = _fresh(window)
+        score = simulate_scores(params, jobs, sjf, width, capacity, engine_width, key)
+        span, tokens = span + score["span"], tokens + score["tokens"]
+        first, count = first + score["first"] * len(jobs), count + len(jobs)
+    return (span / tokens if tokens else 0.0), (first / count if count else 0.0)
+
+
+def _price(params: dict[str, float], windows: list[list[Job]], policy: Policy | None, capacity: int,
+           engine_width: int, objective: str, deciders: tuple[Callable, Callable] | None = None) -> tuple[float, float | None]:
+    """(cost, first token) under `objective`: `latency` is AG1's mean request cost and no first-token bound;
+    `throughput` is pooled seconds per token and the pooled first token (AG8)."""
+    deciders = deciders if deciders is not None else _deciders(policy, capacity)
+    key = policy.key if policy is not None else "limit"
+    if objective == "latency":
+        return _mean_cost(params, windows, deciders, capacity, engine_width, key), None
+    return _pooled(params, windows, deciders, capacity, engine_width, key)
+
+
 def plan(payload: dict[str, Any]) -> dict[str, Any]:
     """Step 2: train a candidate in the model of this server. Pure and deterministic for its payload, so it
     runs in a planner process and a test alike."""
@@ -531,39 +584,57 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
     arms = _arms(capacity, predictions_recorded(arrivals))
     allowed = [w for w in WIDTH_CHOICES if w <= max(1, capacity) and w in payload.get("widths", WIDTH_CHOICES)]
     arms = {name: arm for name, arm in arms.items() if int(name[1:].split("/")[0]) in allowed}
-    arm_costs = {name: _policy_cost(params, validation, Policy.from_json(arm), capacity, engine_width)
-                 for name, arm in arms.items()}
-    guard_name = min(arm_costs, key=lambda n: (arm_costs[n], n))
+    objective = payload.get("objective", "latency")  # a payload from before AG8 meant AG1's cost
+    if objective not in OBJECTIVES:
+        raise ValueError(f"unknown objective {objective!r}")
+    tolerance = 1 + TTFT_TOLERANCE
+    reference = payload["reference"]
+    ref_deciders = _fixed(min(capacity, int(reference["width"])), bool(reference["sjf"]))
+    arm_prices = {name: _price(params, validation, Policy.from_json(arm), capacity, engine_width, objective)
+                  for name, arm in arms.items()}
+    arm_costs = {name: price[0] for name, price in arm_prices.items()}
+    ref_first = None if objective == "latency" else _price(params, validation, None, capacity, engine_width,
+                                                           objective, ref_deciders)[1]
+
+    def in_bound(first: float | None, bound: float | None) -> bool:  # AG8: the first token no later than allowed
+        return first is None or bound is None or first <= tolerance * bound
+
+    bounded = [n for n in arm_costs if in_bound(arm_prices[n][1], ref_first)] or list(arm_costs)
+    guard_name = min(bounded, key=lambda n: (arm_costs[n], n))
     guard = Policy.from_json(arms[guard_name])
     excluded = set(payload.get("excluded") or ())  # behaviours rejected against this incumbent or withdrawn
-    open_arms = [n for n in arm_costs if behaviour(arms[n]) not in excluded]
+    open_arms = [n for n in bounded if behaviour(arms[n]) not in excluded]
     fixed_name = min(open_arms, key=lambda n: (arm_costs[n], n)) if open_arms else None
     runs = []
     for seed in range(int(settings["seeds"])):
         weights, curve = _train(params, arrivals, capacity, engine_width, guard, allowed, settings,
-                                random.Random(rng.randrange(1 << 30) + seed), busy)
+                                random.Random(rng.randrange(1 << 30) + seed), busy, objective)
         candidate = Policy.from_json(policy_json([0.0] * PLACEMENT_FEATURES, weights[0], weights[1]))
-        runs.append((_policy_cost(params, validation, candidate, capacity, engine_width), seed, weights, curve))
+        runs.append((_price(params, validation, candidate, capacity, engine_width, objective)[0], seed, weights,
+                     curve))
     best = min(runs, key=lambda r: (r[0], r[1]))
     learned = policy_json([0.0] * PLACEMENT_FEATURES, best[2][0], best[2][1])
-    reference = payload["reference"]
     rivals = {"learned": learned}
     if fixed_name is not None:
         rivals["best_fixed"] = arms[fixed_name]
     if payload.get("incumbent") is not None:
         rivals["incumbent"] = payload["incumbent"]
-    costs = {name: _policy_cost(params, held_out, Policy.from_json(p), capacity, engine_width)
-             for name, p in rivals.items()}
-    costs["reference"] = _mean_cost(params, held_out, _fixed(min(capacity, int(reference["width"])),
-                                                             bool(reference["sjf"])), capacity, engine_width)
-    eligible = [name for name in ("learned", "best_fixed") if name in rivals and behaviour(rivals[name]) not in excluded]
+    prices = {name: _price(params, held_out, Policy.from_json(p), capacity, engine_width, objective)
+              for name, p in rivals.items()}
+    prices["reference"] = _price(params, held_out, None, capacity, engine_width, objective, ref_deciders)
+    costs = {name: price[0] for name, price in prices.items()}
+    firsts = {name: price[1] for name, price in prices.items()}
+    incumbent_name = "incumbent" if "incumbent" in costs else "reference"
+    incumbent, incumbent_first = costs[incumbent_name], firsts[incumbent_name]
+    eligible = [name for name in ("learned", "best_fixed") if name in rivals and behaviour(rivals[name]) not in excluded
+                and in_bound(firsts[name], incumbent_first)]
     choice = min(eligible, key=lambda name: (costs[name], name)) if eligible else None
-    incumbent = costs.get("incumbent", costs["reference"])
     proposed = rivals[choice] if choice is not None and costs[choice] < incumbent else None
     step = max(1, len(best[3]) // 50)
     return {"schema": PLAN_SCHEMA, "candidate": proposed, "choice": choice if proposed else None,
             "best_fixed": fixed_name, "guard": guard_name, "excluded": sorted(excluded), "model_costs": costs,
-            "arm_costs": arm_costs,
+            "arm_costs": arm_costs, "objective": objective,
+            **({} if objective == "latency" else {"model_firsts": firsts}),
             "model_gain_vs_incumbent": 1 - costs[choice] / incumbent if choice is not None and incumbent else 0.0,
             "curve": [statistics.fmean(best[3][k:k + step]) for k in range(0, len(best[3]), step)],
             "episodes": int(settings["episodes"]) * int(settings["seeds"]), "widths": allowed,
@@ -572,9 +643,11 @@ def plan(payload: dict[str, Any]) -> dict[str, Any]:
 
 def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, engine_width: int, guard: Policy,
            allowed: list[int], settings: dict[str, Any], rng: random.Random,
-           busy: dict[str, Any] | None = None) -> tuple[tuple[list, list], list]:
+           busy: dict[str, Any] | None = None, objective: str = "latency") -> tuple[tuple[list, list], list]:
     """REINFORCE with a running-mean baseline (as `training/rl4_agent.train`), order and width heads only; each
-    episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8)."""
+    episode also pays the harm weight times what it lost to the guard schedule on the same traffic (RL8). AG8:
+    under `throughput` the return is the guard's seconds per token over the episode's (as a ratio), less the harm
+    weight times what it lost to the guard, and times how far its first token went past the tolerance."""
     order = [0.0] * ORDER_FEATURES
     width = [0.0] * (len(WIDTH_CHOICES) * ORDER_FEATURES)
     for r, choice in enumerate(WIDTH_CHOICES):
@@ -606,9 +679,16 @@ def _train(params: dict[str, float], arrivals: list[list[Any]], capacity: int, e
                     grad_w[c * ORDER_FEATURES + k] += ((1.0 if c == chosen else 0.0) - p[c]) * f[k]
             return WIDTH_CHOICES[chosen]
 
-        value = -simulate(params, _fresh(jobs), sjf, pick, capacity, engine_width)
-        rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
-        value -= harm * max(0.0, -value - rival)
+        if objective == "latency":
+            value = -simulate(params, _fresh(jobs), sjf, pick, capacity, engine_width)
+            rival = simulate(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
+            value -= harm * max(0.0, -value - rival)
+        else:
+            mine = simulate_scores(params, _fresh(jobs), sjf, pick, capacity, engine_width)
+            theirs = simulate_scores(params, jobs, guard_sjf, guard_width, capacity, engine_width, guard.key)
+            ratio = (mine["span"] / mine["tokens"]) / max(1e-12, theirs["span"] / theirs["tokens"])
+            late = mine["first"] / max(1e-12, theirs["first"])
+            value = -ratio - harm * max(0.0, ratio - 1.0) - harm * max(0.0, late - 1.0 - TTFT_TOLERANCE)
         if baseline is None:
             baseline = value
         advantage = (value - baseline) / max(1e-6, abs(baseline))
@@ -633,6 +713,17 @@ def window_cost(rows: list[dict[str, Any]], deadline_s: float) -> float:
     return statistics.fmean(costs) if costs else 0.0
 
 
+def window_rate(result: dict[str, Any]) -> dict[str, float]:
+    """AG8: a replayed window's seconds per token (its span over the tokens its requests made) and mean first token."""
+    rows = result.get("rows") or []
+    tokens = sum(int(row.get("tokens") or 0) for row in rows)
+    firsts = [row["ttft_s"] if row.get("ttft_s") is not None else row.get("e2e_s", 0.0) for row in rows]
+    span = result.get("span_s")
+    if span is None:
+        span = max((row.get("e2e_s") or 0.0 for row in rows), default=0.0)
+    return {"spt": span / tokens if tokens else float("inf"), "first": statistics.fmean(firsts) if firsts else 0.0}
+
+
 def _nearest_rank(values: list[float], q: float) -> float:
     ordered = sorted(values)
     return ordered[max(0, math.ceil(q * len(ordered)) - 1)] if ordered else 0.0
@@ -651,7 +742,7 @@ def _paired(pairs: list[tuple[float, float]], resamples: int,
             [boot[min(resamples - 1, max(0, int(q * resamples) - (1 if q > 0.5 else 0)))] for q in quantiles])
 
 
-def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
+def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES, objective: str = "latency") -> dict[str, Any]:
     """The candidate's gain over the incumbent (B against the mean of A and AA, paired by triplet), against
     the floor: the size of what the same estimator finds between the incumbent's two runs (AA against A).
     Judged only at the `LOOKS` (group-sequential): `pass` when the gain's lower bound at that look's share of
@@ -666,14 +757,26 @@ def judge(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[
                                        (alpha, 0.025, 0.975))
     control, _ = _paired([(t["aa"], t["a"]) for t in triplets], resamples)
     floor = max(0.0, abs(control))
+    first = _first_token(triplets, resamples, alpha) if objective == "throughput" else None
     verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:
-        if bound > floor:
+        later = first is not None and first["lower"] > first["allowed"]
+        if bound > floor and (first is None or first["upper"] <= first["allowed"]):
             verdict = "pass"
-        elif high <= floor or n >= MAX_TRIPLETS:
+        elif high <= floor or later or n >= MAX_TRIPLETS:
             verdict = "fail"
     return {"verdict": verdict, "triplets": n, "gain": gain, "gain_ci95": [low, high], "bound": bound,
-            "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95)}
+            "floor": floor, "noise": _nearest_rank([abs(1 - t["aa"] / t["a"]) for t in triplets], 0.95),
+            "objective": objective, **({"first_token": first} if first is not None else {})}
+
+
+def _first_token(triplets: list[dict[str, float]], resamples: int, alpha: float) -> dict[str, float]:
+    """AG8: how much later B's mean first token is than the incumbent's (`fb` against the mean of `fa`, `faa`), with
+    its bounds at `alpha` either side, and how much later it may be: the tolerance or the A/A floor on it."""
+    earlier, (low, high) = _paired([(t["fb"], (t["fa"] + t["faa"]) / 2) for t in triplets], resamples,
+                                   (alpha, 1 - alpha))
+    control, _ = _paired([(t["faa"], t["fa"]) for t in triplets], resamples)
+    return {"change": -earlier, "lower": -high, "upper": -low, "allowed": max(TTFT_TOLERANCE, abs(control))}
 
 
 def _alpha(n: int) -> float:
@@ -681,17 +784,20 @@ def _alpha(n: int) -> float:
     return ALPHAS[LOOKS.index(n)] if n in LOOKS else ALPHAS[-1]
 
 
-def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES) -> dict[str, Any]:
+def harm(triplets: list[dict[str, float]], resamples: int = RESAMPLES, objective: str = "latency") -> dict[str, Any]:
     """An audit of the serving schedule (B) against the reference (A, AA): `harm` when, at a look, the upper
     bound of its gain at 1 minus that look's alpha is below zero: it loses to the reference with the corrected
-    bound."""
+    bound. AG8: under `throughput` also when its first token is later than allowed with the corrected bound."""
     gain, (low, high) = _paired([(t["b"], (t["a"] + t["aa"]) / 2) for t in triplets], resamples,
                                 (0.025, 1 - _alpha(len(triplets))))
     n = len(triplets)
+    first = _first_token(triplets, resamples, _alpha(n)) if objective == "throughput" else None
     verdict = "open"
     if n in LOOKS or n >= MAX_TRIPLETS:
-        verdict = "harm" if high < 0 else ("confirmed" if n >= MAX_TRIPLETS else "open")
-    return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high}
+        later = first is not None and first["lower"] > first["allowed"]
+        verdict = "harm" if high < 0 or later else ("confirmed" if n >= MAX_TRIPLETS else "open")
+    return {"verdict": verdict, "triplets": n, "gain": gain, "low": low, "high": high, "objective": objective,
+            **({"first_token": first} if first is not None else {})}
 
 
 def compile_table(policy: Policy) -> dict[tuple[int, int], tuple[bool, int | None]]:
@@ -731,9 +837,15 @@ class Agent:
     def __init__(self, root: str | Path, binding: dict[str, Any], *, capacity: int, reference: dict[str, Any],
                  engine_width: int = ENGINE_WIDTH, deadline_s: float = 120.0, device: str | None = None,
                  clock: Callable[[], float] = time.monotonic, planner_command: list[str] | None = None,
-                 planner_settings: dict[str, Any] | None = None, hardware: dict[str, Any] | None = None):
+                 planner_settings: dict[str, Any] | None = None, hardware: dict[str, Any] | None = None,
+                 objective: str = OBJECTIVE):
+        if objective not in OBJECTIVES:
+            raise ValueError(f"unknown objective {objective!r}")
         self.root = Path(root)
-        self.binding = dict(binding)
+        self.objective = objective
+        # AG8: the objective is part of the binding, so what was learned and proven under another never serves here.
+        # Under AG1's `latency` the binding is as it was, so those states resume.
+        self.binding = dict(binding) if objective == "latency" else {**dict(binding), "objective": objective}
         self.binding_sha256 = hashlib.sha256(json.dumps(self.binding, sort_keys=True).encode()).hexdigest()
         self.path = self.root / f"state-{self.binding_sha256[:16]}.json"
         self.capacity, self.reference, self.engine_width = max(1, capacity), dict(reference), engine_width
@@ -1104,6 +1216,7 @@ class Agent:
                     self._dirty()
                     return None
                 done[arm] = {"cost": window_cost(result["rows"], self.deadline_s),
+                             **window_rate(result),
                              "failed": any(row.get("outcome") != "ok" for row in result["rows"]),
                              "answers": [hashlib.sha256(text.encode()).hexdigest()[:16] for text in result["texts"]]}
                 state["preempted"] = 0
@@ -1155,8 +1268,8 @@ class Agent:
                 candidate["triplets"], candidate["verdict"] = [], None
                 self._event("restarted", policy=candidate["policy"]["sha256"][:12], reason="the serving schedule changed")
             candidate["incumbent"] = incumbent
-            candidate["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
-            verdict = judge(candidate["triplets"])
+            candidate["triplets"].append(self._scored(done))
+            verdict = judge(candidate["triplets"], objective=self.objective)
             candidate["verdict"] = verdict
             if verdict["verdict"] == "pass":
                 self._promote(candidate, verdict)
@@ -1183,8 +1296,8 @@ class Agent:
             if any(done[arm]["failed"] for arm in ("a", "aa")) or \
                     not (done["a"]["answers"] == done["b"]["answers"] == done["aa"]["answers"]):
                 return  # not a valid audit triplet; a differing answer is the candidate check's business
-            audit["triplets"].append({k: done[k]["cost"] for k in ("a", "b", "aa")})
-            verdict = harm(audit["triplets"])
+            audit["triplets"].append(self._scored(done))
+            verdict = harm(audit["triplets"], objective=self.objective)
             audit["verdict"] = verdict["verdict"]
             self.counters["audits"] = self.counters.get("audits", 0) + 1
             if verdict["verdict"] == "harm":
@@ -1194,9 +1307,18 @@ class Agent:
                 self._event("audited", policy=audit["incumbent"][:12], gain=verdict["gain"], low=verdict["low"])
             self._dirty()
 
+    def _scored(self, done: dict[str, Any]) -> dict[str, float]:
+        """A triplet as the objective scores it: AG1's cost per arm, or (AG8) seconds per token per arm with each
+        arm's mean first token beside it."""
+        if self.objective == "latency":
+            return {k: done[k]["cost"] for k in ("a", "b", "aa")}
+        return {**{k: done[k]["spt"] for k in ("a", "b", "aa")}, **{f"f{k}": done[k]["first"] for k in ("a", "b", "aa")}}
+
     def _promote(self, candidate: dict[str, Any], verdict: dict[str, Any]) -> None:
         policy = Policy.from_json(candidate["policy"])
         body = {"schema": EVIDENCE_SCHEMA, "policy_sha256": policy.sha256, "binding_sha256": self.binding_sha256,
+                "objective": self.objective, **({"first_token": verdict["first_token"]}
+                                                if "first_token" in verdict else {}),
                 "incumbent_sha256": None if self.policy is None else self.policy.sha256, "verdict": "pass",
                 "gain": verdict["gain"], "gain_ci95": verdict["gain_ci95"], "floor": verdict["floor"],
                 "noise": verdict["noise"],
@@ -1289,7 +1411,7 @@ class Agent:
                    "engine_width": self.engine_width, "seed": self.counters["plans"],
                    "widths": [w for w in WIDTH_CHOICES if w <= self.capacity and self.world.supported(w)],
                    "reference": self.reference, "settings": self.planner_settings, "excluded": self._excluded(),
-                   "incumbent": None if self.policy is None else _policy_body(self.policy)}
+                   "incumbent": None if self.policy is None else _policy_body(self.policy), "objective": self.objective}
         self.root.mkdir(parents=True, exist_ok=True)
         source, target = self.root / "plan-in.json", self.root / "plan-out.json"
         target.unlink(missing_ok=True)
@@ -1440,6 +1562,7 @@ class Agent:
             candidate = self.candidate
             return {
                 "agent": "AG1", "active": self.active, "paused": self.paused, "reason": self.reason,
+                "objective": self.objective,
                 "serving": "reference" if self.policy is None else f"learned:{self.policy.sha256[:12]}",
                 "policy_sha256": None if self.policy is None else self.policy.sha256,
                 "gain": None if self.evidence is None else self.evidence["gain"],

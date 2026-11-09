@@ -188,6 +188,8 @@ def test_judge_needs_the_bound_above_zero_and_the_aa_floor_and_gives_up_at_the_l
 
 
 def _agent(tmp_path, **kwargs):
+    """An agent for AG1's mechanics, which these tests price by AG1's cost (AG8 has its own tests below)."""
+    kwargs.setdefault("objective", "latency")
     return Agent(tmp_path / "agent", BINDING, capacity=8, reference=REFERENCE, **kwargs)
 
 
@@ -1090,7 +1092,7 @@ def _review_result(trace, cost):
 def test_qualification_keeps_finding_windows_after_the_traffic_memory_drops_old_arrivals(tmp_path):
     """The cursor counted used arrivals, but the memory keeps only MAX_TRAFFIC of them: once 2,048 were used, no
     window was ever found again, and the open candidate blocked replanning for good. It is now a recorded time."""
-    agent = Agent(tmp_path, {"review": "sliding-window"}, capacity=8, reference=_REFERENCE)
+    agent = Agent(tmp_path, {"review": "sliding-window"}, capacity=8, reference=_REFERENCE, objective="latency")  # AG1's cost, as reviewed
     agent.traffic.extend([[1 + i * .001, 24, False, 64, 64, None] for i in range(ag.MAX_TRAFFIC)])
     agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {}, "since": 0., "triplets": [], "used": 0}
     calls = [0]
@@ -1114,7 +1116,7 @@ def test_qualification_keeps_finding_windows_after_the_traffic_memory_drops_old_
 def test_a_candidates_triplets_against_a_withdrawn_schedule_do_not_count_against_the_new_one(tmp_path):
     """Eleven triplets against a schedule that was then withdrawn, judged with one against the reference that
     serves now, promoted a candidate that costs 50 % more than that reference. Its evidence starts over."""
-    agent = Agent(tmp_path, {"review": "incumbent-change"}, capacity=8, reference=_REFERENCE)
+    agent = Agent(tmp_path, {"review": "incumbent-change"}, capacity=8, reference=_REFERENCE, objective="latency")  # AG1's cost, as reviewed
     agent.traffic.extend([[1 + i * 100, 24, False, 64, 64, None] for i in range(16 * 12)])
     incumbent = {"policy": ag.fixed_policy(8, True), "plan": {}, "since": 0., "triplets": [], "used": 0}
     agent._promote(incumbent, {"gain": .1, "gain_ci95": [.05, .15], "floor": 0., "noise": 0.})
@@ -1153,7 +1155,7 @@ def test_requests_that_fail_before_their_first_token_reach_the_live_monitor(tmp_
     from ironmule_product.service import _Session
 
     for before_first in (True, False):
-        agent = Agent(tmp_path / str(before_first), {}, capacity=8, reference=_REFERENCE)
+        agent = Agent(tmp_path / str(before_first), {}, capacity=8, reference=_REFERENCE, objective="latency")  # AG1's cost, as reviewed
         agent.policy = Policy.from_json(ag.fixed_policy(2, True))
         service = object.__new__(ProductService)
         service.agent = agent
@@ -1355,3 +1357,111 @@ def test_the_event_driven_simulator_equals_the_round_by_round_one_float_for_floa
         ag.simulate = original
     for key in ("candidate", "choice", "model_costs", "arm_costs", "curve"):
         assert fast[key] == slow[key], key
+
+
+# ---- AG8: tokens per second first, the first token no worse ----
+
+def _rate_triplets(n, b_spt=0.9, b_first=1.0, noise=0.01, seed=0):
+    rng = random.Random(seed)
+    out = []
+    for _ in range(n):
+        a, aa = 1.0 + rng.gauss(0, noise), 1.0 + rng.gauss(0, noise)
+        fa, faa = 1.0 + rng.gauss(0, noise), 1.0 + rng.gauss(0, noise)
+        out.append({"a": a, "aa": aa, "b": b_spt + rng.gauss(0, noise),
+                    "fa": fa, "faa": faa, "fb": b_first + rng.gauss(0, noise)})
+    return out
+
+
+def test_ag8_qualification_needs_more_tokens_per_second_and_a_first_token_no_later():
+    faster = judge(_rate_triplets(12), objective="throughput")
+    assert faster["verdict"] == "pass" and faster["gain"] > 0.08 and faster["first_token"]["upper"] <= 0.02
+    later = judge(_rate_triplets(12, b_first=1.1), objective="throughput")  # 10 % more tokens/s, 10 % later
+    assert later["verdict"] == "fail" and later["first_token"]["lower"] > later["first_token"]["allowed"]
+    slower = judge(_rate_triplets(12, b_spt=1.05), objective="throughput")
+    assert slower["verdict"] == "fail"
+    within = judge(_rate_triplets(12, b_first=1.005, noise=0.002), objective="throughput")
+    assert within["verdict"] == "pass", within["first_token"]  # inside the 2 % tolerance
+    latency = judge([{k: t[k] for k in ("a", "b", "aa")} for t in _rate_triplets(12, b_first=1.1)])
+    assert latency["verdict"] == "pass" and "first_token" not in latency, "AG1's judge sees no first token"
+
+
+def test_ag8_audit_withdraws_a_schedule_that_makes_the_first_token_later():
+    assert ag.harm(_rate_triplets(12, b_spt=0.95, b_first=1.15), objective="throughput")["verdict"] == "harm"
+    assert ag.harm(_rate_triplets(12, b_spt=1.1), objective="throughput")["verdict"] == "harm"
+    assert ag.harm(_rate_triplets(12, b_spt=0.95), objective="throughput")["verdict"] == "open"
+
+
+def _stacked_like(seed=0, n=160):
+    """A queue that a wider group serves sooner: a further session costs a tenth of a step (a stacked engine)."""
+    rng = random.Random(seed)
+    out, t = [], 0.0
+    while len(out) < n:
+        for _ in range(6):
+            out.append([t + rng.uniform(0, 0.3), 24, False, 64, rng.randint(32, 64)])
+        t += rng.expovariate(0.4)
+    return sorted(out)
+
+
+def test_ag8_planner_picks_the_width_that_makes_more_tokens_per_second_within_the_first_token_bound():
+    params = {"prefill_s": 0.02, "prefill_s_per_ktoken": 0.5, "step_s": 0.03, "step_s_per_session": 0.003}
+    payload = {"model": params, "arrivals": _stacked_like(), "capacity": 8, "engine_width": 8, "seed": 0,
+               "reference": {"width": 1, "sjf": False, "gather_ms": 0}, "incumbent": None,
+               "settings": {"episodes": 200, "seeds": 1, "validation": 10, "held_out": 20}, "objective": "throughput"}
+    out = plan(payload)
+    assert out["objective"] == "throughput" and out["candidate"] is not None, out["model_costs"]
+    assert out["model_costs"][out["choice"]] < out["model_costs"]["reference"], "fewer seconds per token"
+    assert out["model_firsts"][out["choice"]] <= (1 + ag.TTFT_TOLERANCE) * out["model_firsts"]["reference"]
+    policy = Policy.from_json(out["candidate"])
+    assert (policy.best_width([View(64, False)] * 8) or 8) > 1, "a wider group than the reference's one"
+    old = plan({k: v for k, v in payload.items() if k != "objective"})
+    assert old["objective"] == "latency" and "model_firsts" not in old, "a payload from before AG8 keeps AG1's cost"
+
+
+def test_ag8_the_objective_is_part_of_the_binding_and_reported(tmp_path):
+    binding = {"machine": "test"}
+    common = dict(capacity=8, reference=REFERENCE, planner_command=["true"])
+    rate = Agent(tmp_path / "a", binding, **common)
+    latency = Agent(tmp_path / "b", binding, objective="latency", **common)
+    try:
+        assert rate.objective == "throughput" and rate.status()["objective"] == "throughput"
+        assert latency.binding == binding, "AG1's states resume under the binding they were saved with"
+        assert rate.binding == {**binding, "objective": "throughput"} and rate.binding_sha256 != latency.binding_sha256
+        with pytest.raises(ValueError):
+            Agent(tmp_path / "c", binding, objective="speed", **common)
+    finally:
+        rate.close()
+        latency.close()
+
+
+def test_ag8_a_replayed_window_scores_its_seconds_per_token_and_first_token():
+    rows = [{"ttft_s": 0.1, "e2e_s": 1.0, "tokens": 30}, {"ttft_s": None, "e2e_s": 0.3, "tokens": 10}]
+    assert ag.window_rate({"rows": rows, "span_s": 2.0}) == {"spt": 2.0 / 40, "first": (0.1 + 0.3) / 2}
+
+
+def test_ag8_a_candidate_that_ends_the_same_window_sooner_qualifies_and_one_that_only_reorders_does_not(tmp_path):
+    """The replayed qualification under `throughput`: B makes the window's tokens 20 % sooner with the same first
+    tokens and serves; a B that only lowers AG1's request cost, with the same span, never does."""
+    def run(spans, firsts):
+        agent = _agent(tmp_path / f"run-{spans[True]}", objective="throughput")
+        _feed(agent, 32)
+        agent.candidate = {"policy": ag.fixed_policy(2, True), "plan": {"choice": "best_fixed"}, "since": 31.5,
+                           "triplets": [], "used": 0}
+        _feed(agent, 16 * ag.MIN_TRIPLETS, start=100.0, gap=10.0)
+
+        def replay(trace, choose, preempted):
+            sjf = choose(len(trace), [], 0.0, 0)[2]
+            rows = [{"ttft_s": firsts[sjf], "e2e_s": 2.0, "tokens": 4, "outcome": "ok"} for _ in trace]
+            return {"rows": rows, "texts": ["same"] * len(trace), "span_s": spans[sjf]}
+        for _ in range(ag.MIN_TRIPLETS):
+            agent._qualify(replay, lambda: False)
+        return agent
+
+    sooner = run({True: 8.0, False: 10.0}, {True: 0.5, False: 0.5})
+    assert sooner.active and sooner.evidence["gain"] == pytest.approx(0.2)
+    assert sooner.evidence["objective"] == "throughput" and sooner.evidence["first_token"]["upper"] <= 0.02
+    reordered = run({True: 10.0, False: 10.0}, {True: 0.3, False: 0.5})
+    assert not reordered.active and reordered.candidate is None and reordered.counters["rejected"] == 1
+    later = run({True: 8.0, False: 10.0}, {True: 0.6, False: 0.5})  # 20 % sooner, first tokens 20 % later
+    assert not later.active and later.counters["rejected"] == 1
+    for agent in (sooner, reordered, later):
+        agent.close()
