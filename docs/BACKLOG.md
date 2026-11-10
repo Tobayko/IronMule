@@ -1772,7 +1772,7 @@ a hardware result).**
   is a new protocol with its own simulation, the owner's decision.
 - It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
 
-### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed, CPU6-A2 and CPU6-A2-K passed)
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed, CPU6-A2, CPU6-A2-K and CPU6-Q passed)
 
 **Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
 bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
@@ -2005,6 +2005,27 @@ any of its own data).**
   0 scoped to it, with what the agent chose and why, and does not undo CPU6-A2.
 - *Cost:* about 3-4 hours of this container's CPU (the setup's gates about four times CPU6-A2's 20 minutes; A at
   roughly 1 token a second); no GPU hours. It runs after SP3-H, alone on the CPU.
+
+- **CPU6-Q result (2026-11-10, this container, at `20126ac`, about 1.9 hours, no GPU hours): valid; passes.** A first
+  start was stopped after seconds, before any arm ran, because the session's background limit would have cut it; the
+  run was started again from a fresh store and is the one reported.
+  - *The agent's own setup, on a fresh store with nothing named (2,303 s):* `dequantize` (logits within 1.45e-2 of the
+    float32 plan, 0.109 of stock time), OpenBLAS (logits within 2.0e-6 of the stock BLAS, same top token, 0.155 of its
+    time), and **not** the CPU stacked engine: it passed its probe (rows and verify windows bit-identical) and its gate
+    (ratio 0.99999998, 95 % up to 1.0000001) and made 29.9 tokens per second at width 8 against 6.82 on the base path
+    (4.39x), but one request alone ran at 5.01, 0.73x, below AG4's floor of 0.9. So S served `dequantize` on OpenBLAS
+    with the reference engine.
+  - *Through the product (5 repetitions, every request answered):* A 1.35 tokens per second, mean first token 177 s; S
+    5.90 and 42.0 s. S over A: **4.36x (95 % 4.25x to 4.50x)**, bound 3.0; mean first token 0.237x (95 % up to 0.244x),
+    A/A noise 1.6 %. All 40 of S's answers equal A's first run.
+  - *What it shows:* with a model about four times larger, the agent's own CPU choice still paid well beyond the bound,
+    every answer equal. Its gain is smaller than CPU6-A2's 12.7x because it refused the stacked engine.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the refusal is AG4's single-request floor, made for the
+    T4 where `route` serves single requests beside the stacked engine; on a CPU `route` is not offered, so a choice
+    for 8 requests at once is judged by one request alone. The stacked engine's own measurement (29.9 against 6.82
+    tokens per second at 8 rows) suggests it would have served this workload several times faster again; that is not
+    measured through the product. Whether a CPU should then serve both paths (`route`) or switch by load is an open
+    design question for the owner. The ledger entry is still owed.
 
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.

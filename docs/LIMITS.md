@@ -133,7 +133,9 @@ CPU6-A2 (plan version 2) it chose the CPU stacked engine on OpenBLAS by itself, 
 the product served 12.7x the tokens per second of AG4's earlier CPU choice (95 % 12.2x to 13.1x), first tokens about
 43x sooner, every answer equal on that workload; the same machine, model and traffic as CPU6-M. On a second
 machine, a Kaggle CPU session (CPU6-A2-K), it made the same choice by itself and served 9.34x (95 % 9.30x to
-9.38x), first tokens about 33x sooner, every answer equal; nothing beyond those two x86 CPUs, that model and that
+9.38x), first tokens about 33x sooner, every answer equal. With `mlx-community/Qwen3-0.6B-4bit` on this container
+(CPU6-Q) it chose `dequantize` on OpenBLAS but refused the stacked engine (one request alone at 0.73x), and served
+4.36x (95 % 4.25x to 4.50x), every answer equal; nothing beyond those two x86 CPUs, those two models and that
 traffic is covered. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
 this CPU it changed no answer and made one request at a time 1.40x the tokens per second on average (95 % from
 1.21x), short of its bound of 1.3, and 1.04x under load (SP2-H); the agent does not turn it on by itself. In
