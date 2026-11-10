@@ -1772,7 +1772,7 @@ a hardware result).**
   is a new protocol with its own simulation, the owner's decision.
 - It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
 
-### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; fixed before its data)
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed)
 
 **Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
 bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
@@ -1847,6 +1847,27 @@ answers each got alone.
   stays opt-in without a recommendation. Either way into Tier 0 with this entry. A passing arm becomes something
   the agent may choose on a CPU behind its own gate (step 3, not started).
 - *Expected:* about 0.5-1 hour of this container's CPU.
+
+- **Result (2026-11-10, this container, at `a407e81`, about 0.7 hours, no GPU hours): valid; B and C pass.**
+  - *Setup as fixed:* SmolLM2-135M-Instruct-8bit rev `0f0d9b8`, x86-64 with 4 CPUs, mlx 0.32.4; 5 repetitions
+    of 8 requests offered at once with a 64-token limit, every request answered in all 20 runs. C's probe found
+    every width bit-identical to one row (reference error 1.3e-6), slots of 8,192 tokens; `/health` reported
+    OpenBLAS serving in B and C.
+  - *Means per arm:* A 4.37 tokens per second, mean first token 54.4 s, span 109.9 s; B 12.81, 18.7 s, 37.5 s;
+    C 54.83, 1.34 s, 8.8 s. A/A noise: first token 2.9 %, tokens per second 2.7 %.
+  - *B over A:* tokens per second 2.93x (95 % 2.82x to 3.06x; bound 1.5), mean first token 0.343x (95 % 0.328x to
+    0.360x). Pass.
+  - *C over A:* tokens per second 12.5x (95 % 11.9x to 13.0x; bound 3.0), mean first token 0.0245x (95 % 0.0228x
+    to 0.0263x), about 40x sooner. Pass.
+  - *Quality gate:* the dequantized model on OpenBLAS against the stock BLAS, 16 chunks: perplexity ratio
+    1.0000004 (95 % 0.9999999 to 1.0000009; bound 1.005). Pass. The 16 chunks of 512 tokens took 1,115 s on the
+    stock BLAS and 67 s on OpenBLAS (prefill 16.7x, descriptive).
+  - *Descriptive:* every answer in B and C (40 each) was identical to A's first run, and A's 80 to each other.
+  - *What it shows:* on this CPU and this model, today's CPU path through the product is BLAS-bound: OpenBLAS
+    alone gives about 2.9x, and the stacked engine on it about 12.5x the tokens per second with the first token
+    about 40x sooner, at the same answers on this workload. Not shown: another CPU (a Kaggle CPU was about 2x
+    slower in V5-CPU), a larger model, mixed or spaced arrivals, longer prompts, or the agent choosing either
+    (step 3). The ledger entry is still owed.
 
 **Not covered yet:** step 3, the agent's own setup on a CPU measuring the stacked engine and the BLAS (AG4's
 `choose_setup` keeps the reference engine on a CPU today); several workers on one CPU, each with its share of the

@@ -120,6 +120,16 @@ favour. `dequantize` changes answers within its quality gate (logits within 0.28
 5 comparable answers bit-identical). Nothing here covers another CPU, another model, quiet traffic, a GPU, the
 stacked engine or the router (AG4-R run 1 was cut by Kaggle's time limit and is invalid).
 
+CPU6-M (BACKLOG CPU6) measured two opt-in CPU paths a caller names, not the agent's choice: on the same kind of
+cloud CPU (x86_64, 4 cores, mlx 0.32.4) with `mlx-community/SmolLM2-135M-Instruct-8bit`, 8 requests offered at
+once with 64-token answers, `--cpu-blas openblas` with `--compute-dtype dequantize` served 2.93x the tokens per
+second of `--compute-dtype dequantize` alone (95 % 2.82x to 3.06x), and `--engine dense` (the CPU stacked plan)
+with `--cpu-blas openblas` 12.5x (95 % 11.9x to 13.0x), first tokens about 3x and 40x sooner. OpenBLAS passed the
+perplexity gate (ratio 1.0000004) and every answer matched on that workload, but a different summation order can
+change answers, so both stay opt-in. Nothing here covers another CPU, a larger model, other traffic, macOS (whose
+MLX uses Accelerate, not this shim) or a machine without a C compiler (there the stock BLAS serves and `/health`
+says why). The agent does not choose either on a CPU yet.
+
 On two T4s with `mlx-community/gemma-3-12b-it-4bit` the agent chose the Gemma stacked engine at width 6 by itself
 (AG5-G run 6, at `5f064c3`, before the review fixes of 2026-11-08). Its worker then failed under a spike: 8
 requests got `backend_unavailable`, and its service answered no request for the next 3 hours, so each one waited
