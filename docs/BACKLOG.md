@@ -2262,6 +2262,31 @@ quiet from Dolly index 13,200 (3 blocks of 16), load from 13,300 (3 blocks of 8)
 speculation on where the agent chose the CPU stacked engine; a fail keeps it opt-in and goes to Tier 0. A smoke of the
 harness reads prompts from index 14,000 on. *Cost:* about 1 hour of this container's CPU; no GPU hours.
 
+### LC1 — IronMule against llama.cpp on the same CPU and model (owner request 2026-11-10; fixed before its data)
+
+**Why.** CPU6's gains are measured against IronMule's own earlier CPU path. The owner asked where that stands against
+common software: llama.cpp is the usual way to run a small model on a CPU.
+
+**Protocol (this container; descriptive, no pass or kill: it places IronMule, it qualifies nothing).**
+- *IronMule (arm I):* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, the agent's CPU6-A2 setup named
+  (`dequantize` weights in the CPU stacked plan at width 8, OpenBLAS), speculation off, through `ProductService` on a
+  fresh worker as `ironmule serve` starts it.
+- *llama.cpp (arm L):* `llama-server` built with CMake's Release defaults (its own CPU backend, this machine's
+  instruction set) from the llama.cpp vendored in `llama-cpp-python` 0.3.16's source package; the same model as
+  `bartowski/SmolLM2-135M-Instruct-GGUF` rev `09816ac`, `SmolLM2-135M-Instruct-Q8_0.gguf` (sha256 `5a139571`); 4
+  threads, 8 parallel slots of 2,048 tokens, continuous batching (its default), greedy (temperature 0); requests to
+  `/v1/chat/completions` on localhost with streaming, so the model's own chat template applies on both sides.
+- *Workloads:* load, CPU6's 8 fixed prompts offered at once, 64 tokens (as CPU6-A2); quiet, 16 Dolly prompts from index
+  13,400 one at a time, 128 tokens.
+- *Order:* 5 blocks of load and 1 block of quiet, each run I, L, I on fresh servers (I's two runs give the A/A noise).
+- *Scores:* load, a block's tokens per second (tokens over the span from offer to last end) and its mean first token,
+  L over the mean of I's two runs, the mean over blocks with a 95 % bootstrap over blocks (2,000 resamples, seed 0);
+  quiet, per prompt, tokens per second from first token to end and first token, L over I's mean, with a 95 % bootstrap
+  over prompts. Answers are compared and counted, not required equal: the two run different 8-bit formats and kernels.
+- *Not covered:* llama.cpp's other options (other quantisations, threads, batch sizes), other models and CPUs; HTTP
+  adds a little to L's times (localhost).
+- *Cost:* about 1 hour of this container's CPU, after CPU6-Q; the build about 10 minutes before it. No GPU hours.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
