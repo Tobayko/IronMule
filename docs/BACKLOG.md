@@ -2344,7 +2344,7 @@ common software: llama.cpp is the usual way to run a small model on a CPU.
     main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
     The ledger entry is still owed.
 
-### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG0 done, waits on the owner)
+### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG1 fixed before its data)
 
 **Why.** LC1: on this CPU and model llama.cpp is 5.1x IronMule's best CPU setup under load and 13.6x for one request.
 The owner's goal: IronMule 20 % above llama.cpp, that is at least 1.2x `llama-server` as LC1 ran it (same build, GGUF,
@@ -2402,6 +2402,40 @@ GG0 (pre-measurement, below), GG1 (the engine in the product), GG1-H (through th
     plans; then GG1 is built and GG1-H decides against 1.2x; or (2) require exact speculation: every decode padded to
     one fixed number of positions so the kernel path never changes, which costs single requests about 1.6x a step
     and very likely ends below 1.2x; or (3) stop GG.
+
+**Owner decision (2026-11-10): (1).** Speculation on ggml may change answers when the engine passes its quality gate on
+the machine, and `/health` says so, as AG4 allows gated numeric plans.
+
+**GG1, the engine in the product (fixed 2026-11-10, after GG0 and before any GG1 code or data).**
+- *`--engine ggml --gguf PATH`* (CPU only): the worker serves the GGUF through llama.cpp in process
+  (`ironmule/ggml_engine.py`), with up to 8 requests in flight, each in its own sequence of 2,048 tokens; a request
+  that arrives while others run takes a free sequence at the next step (as the dense plan's slot reuse). It refuses
+  to start if the GGUF's tokenizer gives other ids than the registered model's on a fixed text, or other end tokens.
+  The bindings come from an installed `llama-cpp-python` or a directory named in `IRONMULE_GGML_BINDINGS` (with the
+  library in `LLAMA_CPP_LIB_PATH`); nothing is installed for the user.
+- *Quality gate, at every start (fail-closed):* the GGUF's negative log-likelihood on the numeric gate's 16 chunks of
+  512 tokens (GATE2, with BOS), each chunk evaluated as one multi-position decode (the verify path), against the
+  registered model widened to float32 on MLX (`dequantize`), ratio of means with its 95 % interval; it serves only if
+  the interval's upper end is at most 1.005 (NUM1's bound). Otherwise it refuses and says why; it never falls back
+  silently. `/health` shows the gate and that answers can differ from the MLX plans.
+- *Speculation, policy version 3:* SP3's drafts (repeats of at least 2 tokens, up to 7 drafts); a step's price by its
+  total rows is the median of its last 16 measured steps of that size (plain and speculative alike: on ggml both are
+  one decode call), and a size with fewer than 3 measurements is priced from the nearest measured size by the prior
+  slope (exploration, the step SP3 lacked); greedy drafts while the step's expected tokens per second rises, and only
+  2 % above the plain step; at most 16 rows a step, so it can speculate under load too. On with `--speculate context`
+  or `auto` for this engine (the owner's decision); `off` serves one row per request.
+- *Not in GG1:* the agent choosing ggml by itself (GG2), building a GGUF from the registered model (named for now).
+
+**GG1-H, through the product against `llama-server` (fixed before any GG1 data).** LC1's arm L unchanged (same build,
+GGUF, 4 threads, 8 slots, greedy, HTTP), against arm G: `ProductService` with the ggml engine on the same GGUF,
+speculation on, 4 threads. Load: CPU6's 8 prompts at once, 64 tokens, 5 blocks L G L. Quiet: 16 Dolly prompts from
+index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1's, G over the mean of L's two runs.
+- *Goal reached (the owner's 20 %):* quiet tokens per second with its 95 % lower bound at least 1.2, and load tokens per
+  second with its 95 % lower bound at least 1.2; the gate passed; mean first token no later than L's (upper bound at most
+  1 plus L's A/A noise); every request answered. Each half is reported on its own, so a partial result is visible.
+- *Otherwise* the goal is not reached on this CPU and model; what reached what goes to the entry and Tier 0, and the
+  engine stays opt-in if its gate passed.
+- *Cost:* about 1 hour of this container's CPU; no GPU hours.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
