@@ -45,6 +45,29 @@ a hundred GPUs are there, everything is to be covered." Whatever the agent can d
 devices, and the product must neither refuse nor silently drop a setting because a machine has more than one.
 MG1 lists where that does not hold today.
 
+**Answer quality, not identical tokens (owner, 2026-11-10).** "We change the token-identical rule. What matters is that
+the answer is correct, factually correct; it need not be identical. If the answer is still right, that is fully
+enough. Change that for this project: we go for full performance optimisation with the same answer quality." What
+that means from now on, for the whole project and not only for `--agent on`:
+- A path, plan, kernel, batching or speculation may change tokens. Bit-identity is no longer a requirement and no
+  longer a reason to reject a lever.
+- It serves only after its answer quality was shown to be the same on the machine: the perplexity gate against the
+  reference (bound 1.005, as NUM1 and AG4), and, once built, a correctness check on questions with checkable answers
+  (QG1, below). It is never silent: `/health` names the path and its gate.
+- A gain still counts only when measured as before; a quality loss beyond the gate disqualifies it, as a correctness
+  failure did before.
+- Tier 0 entries rejected only because tokens changed may be reopened under this rule with a quality gate (for
+  example HW3's prompt-lookup speculation on CUDA and TB1's true tensor batching on the T4), under a new protocol.
+
+### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
+
+**Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
+stay factually correct. QG1 adds that check: a fixed set of questions with checkable answers (arithmetic, facts,
+extraction from a given context), each answered greedily by the reference path and by the candidate; the candidate
+passes when its share of correct answers is not lower than the reference's by more than the reference's own A/A
+noise. It joins the perplexity gate for every path that changes tokens; its protocol is fixed before it serves a
+decision.
+
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
 **Mechanism.** `ironmule_product/agent.py`, opt-in (`ironmule serve --agent on`), one decision owner (refused
@@ -2470,6 +2493,36 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
   precision (f32 against llama.cpp's default f16), so 8 settings; the engine serves the fastest setting (by the same
   score) whose gate passes, the gates tried in order of speed against one reference run, and every setting tried is
   recorded. If none passes, GG1-H does not run. GG1-H is otherwise unchanged.
+
+### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
+
+**The question.** IronMule is built on MLX. The owner asks whether MLX still makes sense on a server that runs on
+CUDA or a CPU, and to optimise for that, under the new rule that answer quality, not identical tokens, is what must
+hold.
+
+**What is measured so far.**
+- *CPU:* llama.cpp is 5.1x IronMule's best MLX CPU path with 8 requests at once and 13.6x for one request (LC1). MLX's
+  CPU wheel ships a reference BLAS, has no int8 or AMX kernels and no flash attention; CPU6 closed part of that and no
+  more. Through llama.cpp's kernels in process (GG1) IronMule reaches about llama.cpp's own speed (GG0, GG1-H).
+- *CUDA (T4):* MLX's CUDA backend needed IronMule's own kernels to serve well there (`native`, KB1, FA2, the Gemma
+  plan); against the CUDA servers in common use (vLLM, llama.cpp's CUDA build, TensorRT-LLM) nothing is measured.
+- *Apple Silicon:* MLX is Apple's own framework for its unified memory and Metal; IronMule's headline results (up to
+  1.82x with the same answers) are measured there.
+
+**Reading (descriptive, not a measured claim).** On a CUDA or CPU server MLX is not the fastest base: the engines
+built for those platforms have the kernels MLX lacks there (int8/AMX and flash attention on CPUs; paged attention,
+continuous batching, CUDA graphs and quantised kernels on GPUs). What IronMule adds is above the kernels: the agent
+that measures the machine, chooses, gates quality and learns while it serves. So the agent should sit on the fastest
+engine each platform has, chosen and gated on the machine, rather than on MLX everywhere:
+- *Apple Silicon:* MLX (as now).
+- *CPU:* llama.cpp's ggml (GG1, built); MLX stays as the fallback.
+- *CUDA:* to be measured: IronMule's best MLX-CUDA setup against llama.cpp's CUDA build and vLLM on the same T4 and
+  model (LC2, below); the agent then serves the fastest that passes the quality gate.
+
+**LC2 (proposed; needs the owner's approval for Kaggle GPU quota).** On a Kaggle T4, `Qwen/Qwen3-1.7B` (the model of
+AG4-Q, AG6-H): IronMule's agent setup on MLX against `llama-server` (CUDA build, a GGUF built from the same weights,
+8 slots) and vLLM (8 concurrent sequences), each with the perplexity gate against the bf16 reference; LC1's workloads
+and scores. About 2 GPU hours. Protocol to be fixed before its data.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 

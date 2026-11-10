@@ -9,12 +9,19 @@ using MLX. Correct output and an honest reference path come before performance.
 (`ironmule_product/agent.py`). It decides on its own how the model's requests run on the
 hardware, reaches a measured gain there, keeps learning by reinforcement learning while it
 serves, and decides in microseconds. Work that advances it comes first. It is held to every
-rule in this guide: it changes no answer, it serves only what it proved on the machine it runs
+rule in this guide: it keeps answer quality (see below), it serves only what it proved on the machine it runs
 on, and its gains need the evidence described under Performance and evidence. Its gain is measured first in
 tokens per second, with time to first token no worse (owner, 2026-11-03; BACKLOG, "The main goal").
 Under `--agent on` it may also choose an output-changing numeric plan or stacked engine by itself, but only one
 that passes its own on-machine quality gate, and never silently (owner, 2026-11-03; BACKLOG AG4). Outside agent
 mode the caller's plan is preserved as below.
+
+**Answer quality instead of identical tokens (owner decision, 2026-11-10; BACKLOG, "The main goal").** For this project
+answers need not be token-identical: what matters is that they stay correct with the same answer quality, and the
+project goes for full performance under that condition. A path that changes tokens may serve once its quality was
+shown on the machine (the perplexity gate, and QG1's correctness check once built), and never silently. Where this
+guide below asks to preserve tokens or exact output, read it as: preserve them for a path that claims exactness, and
+gate and name every path that does not. A correctness or quality failure still disqualifies a result.
 
 This is the shared engineering guide for Codex, Claude and Gemini. Providers may
 use different tools; correctness, evidence, testing, safety and completion standards
