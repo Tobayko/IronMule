@@ -2344,6 +2344,40 @@ common software: llama.cpp is the usual way to run a small model on a CPU.
     main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
     The ledger entry is still owed.
 
+### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG0 fixed before its data)
+
+**Why.** LC1: on this CPU and model llama.cpp is 5.1x IronMule's best CPU setup under load and 13.6x for one request.
+The owner's goal: IronMule 20 % above llama.cpp, that is at least 1.2x `llama-server` as LC1 ran it (same build, GGUF,
+4 threads, 8 parallel slots, defaults otherwise), on the same CPU and model, through the product.
+
+**Mechanism.** Same kernels, more on top. ggml's CPU kernels (here with AVX-512 VNNI and AMX-INT8, which MLX's CPU
+backend does not use) become an engine the agent can choose on a CPU, behind its quality gate (a Q8_0 model changes
+answers against the float32 plan). On those kernels alone IronMule can at best match llama.cpp; the 20 % has to come
+from what IronMule adds: speculation from the context (SP1-0 to SP3: 1.14x-1.48x for one request on MLX), batching
+and scheduling under load, and settings the agent measures on the machine. Stages, each with its protocol before data:
+GG0 (pre-measurement, below), GG1 (the engine in the product), GG1-H (through the product against `llama-server`).
+
+**GG0, pre-measurement (this container; development evidence for go or stop, no product claim).**
+- *Library:* llama.cpp 4227c9b (vendored in `llama-cpp-python` 0.3.16), the Release build LC1's server came from,
+  through that package's own ctypes bindings in process (not installed: the library and bindings from the unpacked
+  source); the GGUF of LC1 (sha256 `5a139571`); 4 threads, one context of 8 sequences of 2,048 tokens.
+- *Prompts:* 16 Dolly prompts from index 14,600 (no run used them), the MLX snapshot's chat template; greedy.
+- *(a) Parity:* one request at a time, 128 tokens, one token per decode call; its tokens per second (first token to
+  end) over `llama-server`'s on the same prompts in the same run (order server, probe, server).
+- *(b) Verify cost:* after one prompt's prefill, the time of one decode of `r` positions of that sequence, `r` = 1-8
+  (median of 20 each, the positions removed after each), and of 8 sequences one position each.
+- *(c) Exactness:* each prompt decoded one token at a time and with prompt-lookup drafts (repeats of at least 2 tokens,
+  as SP3) verified as windows of `k` = 2, 4, 7 positions; how many prompts' tokens differ, per `k`.
+- *(d) Speed with speculation:* the speculative decodes' tokens per second over the server's, per `k`.
+- *(e) Load:* CPU6's 8 prompts at once, 64 tokens, as one batch of 8 sequences per decode call, tokens per second over
+  the server's on the same prompts (order server, probe, server).
+- *Decision, fixed before the data:* GG1 is built if (a) is at least 0.95 and either (d)'s best `k` reaches 1.2 with
+  every prompt's tokens equal in (c) for that `k`, or (b) shows a verify window of 5 or more positions costing at most
+  1.5x one position (room for 1.2x under a learned window). If (c) finds differing tokens, speculation on ggml changes
+  answers: that goes to the owner before GG1 (it would need a gate of its own). Otherwise GG stops here, recorded in
+  Tier 0 with what was missing.
+- *Cost:* about 30 minutes of this container's CPU; no GPU hours.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
