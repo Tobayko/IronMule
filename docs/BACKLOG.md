@@ -2059,7 +2059,7 @@ what an online learner needs. This entry is its pre-measurement, before any prod
 **Reopening (AGENTS, "Performance and evidence").** Two Tier 0 entries reject prompt-lookup speculation:
 - *E0c* (Apple Silicon, the predecessor's engine): "`2.9x` slower, acceptance `0.17` per drafted token. The workload
   does not repeat itself enough." New here: another machine and engine (a CPU, where CPU6-A2 measured eight stacked
-  rows at 1.42x one row's step, 0.092 s against 0.065 s), and Dolly's prompts, about a third of which carry a context
+  rows at 1.42x one row's step, 0.092 s against 0.065 s), and Dolly's prompts, 30 % of which carry a context
   the answer may copy.
 - *HW3* (T4): every combination with `speculate_k` 3 changed tokens, because the verify rows took MLX's
   non-invariant multi-row path; "Re-open with a verify path whose logits are bit-identical to the sequential step
