@@ -2235,7 +2235,7 @@ reopening condition ("a changed mechanism"), and it is learning the agent does w
     made 1.475x (95 % from 1.23x) on other prompts one at a time in a probe loop; the learned window here, through the
     product, is not better than that on these numbers.
 
-### SP3 — SP2 with two changes to its window policy (owner request 2026-11-10; fixed after SP2-H's result and before any SP3 data)
+### SP3 — SP2 with two changes to its window policy (owner request 2026-11-10; SP3-H failed)
 
 **Reopening (AGENTS, "Performance and evidence").** Tier 0 holds SP2-H: speculation with a learned window made one
 request at a time 1.40x (95 % 1.21x to 1.63x) against the bound of 1.3; its kill: "otherwise SP2 does not serve by
@@ -2261,6 +2261,23 @@ with policy version 2), model, setup, workload shape, scores, pass rule and kill
 quiet from Dolly index 13,200 (3 blocks of 16), load from 13,300 (3 blocks of 8). A pass makes `--speculate auto` turn
 speculation on where the agent chose the CPU stacked engine; a fail keeps it opt-in and goes to Tier 0. A smoke of the
 harness reads prompts from index 14,000 on. *Cost:* about 1 hour of this container's CPU; no GPU hours.
+
+- **SP3-H result (2026-11-10, this container, at `5517512`, policy version 2, about 50 minutes, no GPU hours): valid;
+  fails.** OpenBLAS and plan version 3 served in every arm; a smoke read 4 prompts from index 14,000 on (not counted).
+  - *Answers:* all 72 of S's answers equal A's first run token for token.
+  - *Quiet (48 prompts):* tokens per second **1.14x (95 % 1.05x to 1.25x)**, below 1.3; first token 1.01x (up to
+    1.05x). A/A noise 20.6 % on tokens per second (block 0's first A took 181 s against 125 s for its second).
+  - *Load:* tokens per second 1.03x on average but one block at 0.936x, below the floor of 0.98; first token 1.07x
+    (up to 1.12x, within 1.02 plus its A/A noise of 10.5 %).
+  - *Verdict by the fixed rule: fail* (quiet tokens per second, and one load block). Speculation stays opt-in
+    (`--speculate context`, every answer equal) and `auto` leaves it off. Tier 0. The ledger entry is still owed.
+  - *Post hoc, descriptive only (no rule or verdict changes):* in quiet block 0 the policy speculated in 104 steps and
+    accepted 299 drafts (2-token matches right 0.58, 3-token 0.86 of the time); S took 107 s against A's 125-182 s.
+    In blocks 1 and 2 it speculated in only 2 and 3 steps: its line of speculative step prices was fitted from those
+    first 2-3 steps, whose times were noisy, and came out at 22-30 ms per added row (block 0's line, from 104 steps:
+    2.8 ms). With that slope no step was worth speculating, so no further step corrected the line. Strata probes a
+    size a few times before its guessed cost may veto it; SP3's policy has no such exploration. That, not the
+    acceptance, is where a further revision would start.
 
 ### LC1 — IronMule against llama.cpp on the same CPU and model (owner request 2026-11-10; fixed before its data)
 
@@ -5160,6 +5177,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **SP3's speculation policy (version 2) as the agent's default (2026-11-10).** Experiment SP3-H (this container,
+  commit `5517512`; see SP3 above): every answer equal, but one request at a time 1.14x (95 % 1.05x to 1.25x) against
+  1.3, and one load block at 0.936x against 0.98. Post hoc: the policy stopped speculating once a line fitted from 2-3
+  noisy steps priced added rows at 22-30 ms each, and it never explored again. Re-open with a policy that keeps
+  probing (a minimum number of speculative steps per row count before the line may veto them), under a new protocol
+  on prompts not used here.
 
 - **Speculation from the context with a learned window as the agent's default on the CPU plan (2026-11-10).**
   Experiment SP2-H (this container, commit `ee6f9d8`; see SP2 above): with SmolLM2-135M-Instruct-8bit, OpenBLAS and
