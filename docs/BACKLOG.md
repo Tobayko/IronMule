@@ -1991,6 +1991,21 @@ any of its own data).**
     CPU6-A2's 12.7x; why is not measured (OpenBLAS's share was 0.256 of stock time there against 0.206 here). Not
     shown: a larger model, other traffic, a CPU of another vendor or architecture. The ledger entry is still owed.
 
+**CPU6-Q, the same run with a larger model (owner request 2026-11-10; fixed before any of its data).**
+- *Question:* does the agent's own CPU choice, and its gain, carry from a 135M model to a model about four times
+  larger? CPU6-A2 and CPU6-A2-K both used SmolLM2-135M.
+- *Model:* `mlx-community/Qwen3-0.6B-4bit` rev `73e3e38` (Qwen 3, 4-bit, about 0.6B parameters; the CPU plan widens it
+  to float32 as it does the 8-bit SmolLM2). Chat template with thinking on, as the worker renders it by default.
+- *Everything else is CPU6-A2's:* `tools/cpu6_measure.py --plan agent --model mlx-community/Qwen3-0.6B-4bit`, this
+  container, a fresh store, nothing named; arms A (`dequantize` on the stock BLAS, AG4's earlier CPU choice) and S (the
+  agent's own setup), rotated A S A, 5 repetitions of 8 requests at once, 64 tokens; `analyse_agent`'s rule (pass
+  when the agent chose a setup other than A, S over A has its 95 % lower bound above 3.0, the mean first token's 95 %
+  upper bound is at most 1 plus the A/A noise, every request answered; fewer than 5 complete repetitions invalid).
+- *What a result means:* a pass widens CPU6-A2's validity domain to this larger model on this CPU; a fail goes to Tier
+  0 scoped to it, with what the agent chose and why, and does not undo CPU6-A2.
+- *Cost:* about 3-4 hours of this container's CPU (the setup's gates about four times CPU6-A2's 20 minutes; A at
+  roughly 1 token a second); no GPU hours. It runs after SP3-H, alone on the CPU.
+
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
