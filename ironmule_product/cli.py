@@ -230,7 +230,13 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--api-key-env", default="IRONMULE_API_KEY", help="environment variable holding the API token")
     parser.add_argument("--tls-cert", type=str)
     parser.add_argument("--tls-key", type=str)
-    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "stock", "ironmule"), default=None,
+    parser.add_argument("--gguf", default=None,
+                        help="GG1 (with --engine ggml, CPU only): the GGUF llama.cpp serves for the registered model; "
+                             "it must give the model's token ids and pass the quality gate on this machine (its "
+                             "perplexity within 0.5 %% of the model widened to float32), or the server refuses. "
+                             "`tools/gguf_from_mlx.py` builds one from the registered MLX model")
+    parser.add_argument("--engine", choices=("reference", "tuned", "rust2", "dense", "ggml", "stock", "ironmule"),
+                        default=None,
                         help="default reference; with --agent on and no --compute-dtype the agent chooses the plan and "
                              "engine itself on this machine (AG4). stock/ironmule are the earlier names of "
                              "reference/tuned. "
@@ -308,8 +314,12 @@ def serve(argv: list[str]) -> int:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
     if args.gpus is not None and args.no_model:
         parser.error("--gpus places model workers; --no-model starts none")
-    if args.speculate == "context" and args.engine != "dense" and not agent_chooses:
-        parser.error("--speculate context needs --engine dense or --agent on (SP2)")
+    if args.speculate == "context" and args.engine not in ("dense", "ggml") and not agent_chooses:
+        parser.error("--speculate context needs --engine dense, --engine ggml or --agent on (SP2)")
+    if (args.engine == "ggml") != (args.gguf is not None):
+        parser.error("--engine ggml and --gguf go together (GG1)")
+    if args.engine == "ggml" and args.gpus is not None:
+        parser.error("--engine ggml serves on the CPU; --gpus pins workers to GPUs")
     if args.cpu_blas != "stock" and args.gpus is not None:
         parser.error("--cpu-blas applies to CPU workers; --gpus pins workers to GPUs")
     if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
@@ -369,10 +379,29 @@ def serve(argv: list[str]) -> int:
             # AG5: the stacked engine serves at the width the agent measured best on this card (None keeps 8).
             stacked_width = (agent_setup or {}).get("width") if args.engine in ("dense", "route") else None
 
+            ggml_options: dict[str, Any] = {}
+            if args.engine == "ggml":  # GG1: llama.cpp's kernels, served only behind the gate (owner, 2026-11-10)
+                from ironmule.ggml_engine import available, gate as ggml_gate
+
+                reason = available()
+                if reason is not None:
+                    raise InvalidRequest(f"--engine ggml: {reason}")
+                checked = ggml_gate(spec.snapshot_path, args.gguf, cache=Path(store.root) / "ggml-gate")
+                print(json.dumps({"ggml_gate": {k: checked.get(k) for k in ("ratio", "interval", "passes", "reason")}}),
+                      flush=True)
+                if checked.get("passes") is not True:
+                    raise InvalidRequest("--engine ggml: the GGUF did not pass the quality gate on this machine "
+                                         f"({checked.get('reason') or checked.get('interval')})")
+                ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
+                                "ggml_gate": checked, **({"speculate": True} if args.speculate != "off" else {})}
+
             def make_backend(device=devices[0]):
                 # SP2: speculation on the stacked engine where asked. SP2-H (2026-11-10) did not pass its bound, so
                 # `auto` leaves it off, also where the agent chose that engine (BACKLOG SP2, Tier 0)
                 speculate = args.engine == "dense" and args.speculate == "context"
+                if args.engine == "ggml":
+                    return MLXWorkerClient(spec, thinking=not args.no_thinking, execution_variant="current_engine",
+                                           **ggml_options)
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,

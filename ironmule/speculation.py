@@ -183,4 +183,96 @@ class WindowPolicy:
                 "plain_step_ms_by_rows": plain, "speculative_step_ms_by_rows": line}
 
 
-__all__ = ["MARGIN", "MAX_DRAFT", "MIN_NGRAM", "POLICY_VERSION", "WindowPolicy", "accept", "draft"]
+class StepPolicy:
+    """GG1, policy version 3: drafts per request for an engine whose every step is one call priced by its rows alone
+    (ggml: plain and speculative steps are the same decode call). A row count's price is the median of its last
+    `WINDOW` measured steps once it has `PROBES` of them; before that it is priced from the nearest measured row count
+    by the prior slope, so a size is tried a few times before a guessed price may veto it (Strata's probing, which
+    SP3 lacked)."""
+
+    WINDOW, PROBES, VERSION = 16, 3, 3
+
+    def __init__(self, rows: int):
+        if rows < 1:
+            raise ValueError("a step needs at least one row")
+        self.rows = rows
+        self.times: dict[int, list[float]] = {}
+        self.tried: dict[int, float] = {}
+        self.taken: dict[int, float] = {}
+        self.steps = self.plain_steps = self.drafted = self.accepted = 0
+        self._lock = threading.Lock()
+
+    def price(self, rows: int) -> float:
+        with self._lock:
+            measured = {r: sorted(t)[len(t) // 2] for r, t in self.times.items() if len(t) >= self.PROBES}
+        if rows in measured:
+            return measured[rows]
+        if not measured:
+            return 1.0 + ROW_SLOPE * (rows - 1)
+        r0 = min(measured, key=lambda r: (abs(r - rows), r))
+        return measured[r0] * (1.0 + ROW_SLOPE * (rows - 1)) / (1.0 + ROW_SLOPE * (r0 - 1))
+
+    def acceptance(self, bucket: int) -> float:
+        with self._lock:
+            tried, taken = self.tried.get(bucket, 0.0), self.taken.get(bucket, 0.0)
+        return (taken + PRIOR_ACCEPT * PRIOR_WEIGHT) / (tried + PRIOR_WEIGHT)
+
+    def choose(self, offers: Sequence[tuple[Sequence[int], int]]) -> list[int]:
+        n = len(offers)
+        ks = [0] * n
+        budget = self.rows - n
+        if n == 0 or budget <= 0 or not any(tokens for tokens, _ in offers):
+            return ks
+        rates = [self.acceptance(bucket) for _, bucket in offers]
+        reach = [1.0] * n
+        tokens, rows = float(n), n
+        plain = n / self.price(n)
+        rate = plain
+        while budget > 0:
+            best, gain = None, 0.0
+            for i, (drafts, _) in enumerate(offers):
+                if ks[i] < len(drafts) and reach[i] * rates[i] > gain:
+                    best, gain = i, reach[i] * rates[i]
+            if best is None:
+                break
+            new_rate = (tokens + gain) / self.price(rows + 1)
+            if new_rate <= rate:
+                break
+            ks[best] += 1
+            reach[best] *= rates[best]
+            tokens, rows, rate, budget = tokens + gain, rows + 1, new_rate, budget - 1
+        return ks if any(ks) and rate >= MARGIN * plain else [0] * n
+
+    def observe_step(self, rows: int, seconds: float, speculative: bool) -> None:
+        if not (seconds > 0) or rows < 1:
+            return
+        with self._lock:
+            times = self.times.setdefault(rows, [])
+            times.append(seconds)
+            del times[:-self.WINDOW]
+            if speculative:
+                self.steps += 1
+            else:
+                self.plain_steps += 1
+
+    def observe_drafts(self, bucket: int, drafted: int, accepted: int) -> None:
+        if drafted < 1:
+            return
+        with self._lock:
+            self.tried[bucket] = self.tried.get(bucket, 0.0) + accepted + (1 if accepted < drafted else 0)
+            self.taken[bucket] = self.taken.get(bucket, 0.0) + accepted
+            self.drafted += drafted
+            self.accepted += accepted
+
+    def summary(self) -> dict[str, Any]:
+        with self._lock:
+            counts = (self.steps, self.plain_steps, self.drafted, self.accepted)
+            buckets = sorted(set(self.tried) | set(self.taken))
+            sizes = sorted(self.times)
+        return {"policy": "context", "policy_version": self.VERSION, "speculative_steps": counts[0],
+                "plain_steps": counts[1], "drafted": counts[2], "accepted": counts[3],
+                "acceptance": {str(b): round(self.acceptance(b), 4) for b in buckets},
+                "step_ms_by_rows": {str(r): round(self.price(r) * 1000, 3) for r in sizes}}
+
+
+__all__ = ["MARGIN", "MAX_DRAFT", "MIN_NGRAM", "POLICY_VERSION", "StepPolicy", "WindowPolicy", "accept", "draft"]

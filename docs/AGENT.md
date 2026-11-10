@@ -165,6 +165,16 @@ step, and not at all when the engine's rows are full. SP1-0 measured why it must
 window the same speculation made one prompt 5.7x faster and another 10 % slower. `/health` shows it under
 `speculation`. Its hardware test SP2-H (2026-11-10, this container's CPU, SmolLM2-135M) did not pass its bound: one request at a time it made 1.40x the tokens per second on average (95 % from 1.21x, bound 1.3), with every answer equal and no harm under load, so it is opt-in (`--speculate context`) and the agent does not turn it on by itself. Its policy version 2 (SP3) drafts only from repeats of at least 2 tokens and prices plain and speculative steps apart; its hardware test is SP3-H in the backlog.
 
+## llama.cpp's kernels on a CPU (GG1)
+
+LC1 found llama.cpp 5-14x faster than IronMule's own CPU path on the same model and CPU. With `--engine ggml --gguf
+PATH`, IronMule serves the model through llama.cpp's kernels in process (`ironmule/ggml_engine.py`) and adds its own
+scheduling and the speculation policy version 3, which learns per row count what a step costs (median of recent steps,
+each size probed a few times first) and per match length how often drafts are right. On ggml a step of several
+positions takes another kernel path than one position, so answers can differ slightly; the owner allowed that behind a
+quality gate (2026-11-10), which the engine passes at every start or it refuses. The agent does not choose this engine
+by itself yet (GG2); its hardware test against `llama-server` is GG1-H in the backlog.
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture

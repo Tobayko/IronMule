@@ -38,7 +38,7 @@ _DEFAULT_DEADLINE = object()
 STREAM_GROUP_REQUESTS = 8  # admitted together and prefilled at once; decode rotates at width 4
 WORKER_VARIANTS = frozenset(("reference", "bounded_prefetch", "prefix_reuse", "current_engine", "automatic"))
 ENGINE_CONFIGURATIONS = frozenset(("current_profile", "baseline_interactive", "core_interactive",
-                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
+                                   "baseline_throughput", "core_throughput", "rust2", "dense_stacked", "ggml"))
 CONTEXT_LIMIT = 8192
 # The worker rejects a grouped request alone when its prompt and output limit exceed the context limit or the
 # engine's own bound (KB1: the dense plan's slot).
@@ -73,16 +73,23 @@ class MLXWorkerClient:
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
                  cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
                  dense_width: int | None = None, cpu_blas: str | None = None,
-                 cpu_threads: int | None = None, speculate: bool = False) -> None:
+                 cpu_threads: int | None = None, speculate: bool = False, ggml_gguf: str | None = None,
+                 ggml_gate: dict[str, Any] | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
                                         or engine_configuration != "dense_stacked"):
             raise ValueError("dense_width must be 1-8 and needs the dense_stacked configuration (AG5)")
         self.dense_width = dense_width
-        if type(speculate) is not bool or (speculate and engine_configuration != "dense_stacked"):
-            raise ValueError("speculate is a bool and needs the dense_stacked configuration (SP2)")
+        if type(speculate) is not bool or (speculate and engine_configuration not in ("dense_stacked", "ggml")):
+            raise ValueError("speculate is a bool and needs the dense_stacked or ggml configuration (SP2, GG1)")
         self.speculate = speculate
+        # GG1: the ggml engine serves a named GGUF, after its quality gate passed (the owner's condition)
+        if (engine_configuration == "ggml") != (ggml_gguf is not None):
+            raise ValueError("the ggml configuration needs ggml_gguf, and ggml_gguf needs the ggml configuration")
+        if ggml_gguf is not None and (not isinstance(ggml_gate, dict) or ggml_gate.get("passes") is not True):
+            raise ValueError("the ggml engine serves only after its quality gate passed (GG1)")
+        self.ggml_gguf, self.ggml_gate = ggml_gguf, ggml_gate
         self.speculation_status: dict[str, Any] | None = None  # SP2: the policy's last summary a request reported
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
@@ -203,6 +210,8 @@ class MLXWorkerClient:
         if self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked":
             # STAB3 (AG5-G run 6): no more open members than the plan has slots; the agent's width may be below 8
             return min(STREAM_GROUP_REQUESTS, self.dense_width or STREAM_GROUP_REQUESTS)
+        if self.execution_variant == "current_engine" and self.engine_configuration == "ggml":
+            return STREAM_GROUP_REQUESTS  # GG1: the ggml engine's 8 sequences
         if self.execution_variant == "current_engine" and self.engine_configuration == "current_profile":
             return STREAM_GROUP_REQUESTS  # SERVE4: simultaneous streams share one grouped engine session
         if (self.execution_variant == "automatic" and self.ready and self._ready_payload is not None
@@ -214,13 +223,13 @@ class MLXWorkerClient:
     def reuses_slots(self) -> bool:
         """KB1: whether a member that ends frees room a newcomer may take while its group runs (the dense
         plan's slot pool); every other engine counts members over the group's life."""
-        return self.execution_variant == "current_engine" and self.engine_configuration == "dense_stacked"
+        return self.execution_variant == "current_engine" and self.engine_configuration in ("dense_stacked", "ggml")
 
     @property
     def streams_batches(self) -> bool:
         """Whether grouped requests may stream (the engine-stream worker path, SERVE4)."""
         return self.execution_variant == "current_engine" and self.engine_configuration in ("current_profile",
-                                                                                            "dense_stacked")
+                                                                                            "dense_stacked", "ggml")
 
     def can_batch_requests(self, requests: Any) -> bool:
         """Check metadata admission to the opt-in transport without model execution."""
@@ -490,6 +499,8 @@ class MLXWorkerClient:
                         arguments += ["--dense-width", str(self.dense_width)]
                     if self.speculate:
                         arguments += ["--speculate"]
+                    if self.ggml_gguf is not None:
+                        arguments += ["--ggml-gguf", self.ggml_gguf, "--ggml-gate", json.dumps(self.ggml_gate)]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
                     if self.engine_knobs is not None:

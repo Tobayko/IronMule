@@ -699,10 +699,10 @@ def _render_engine_request(command: dict[str, Any], model_id: str, tokenizer: An
 
 # Engine configurations whose worker accepts grouped requests: the historical throughput
 # candidates (buffered) and the current profile's streaming groups (SERVE4).
-BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked"})
+BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "current_profile", "dense_stacked", "ggml"})
 # The ones whose groups stream, take joins and stop on cancel (SERVE4, SERVE8): the client sends them lone
 # streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
-STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked"})
+STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked", "ggml"})
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -1272,11 +1272,13 @@ def main(argv: list[str] | None = None) -> int:
                         help="current_engine: reuse KV state across chat turns (ChatTurnsPlan, SERVE7)")
     parser.add_argument("--engine-configuration", default="current_profile",
                         choices=("current_profile", "baseline_interactive", "core_interactive",
-                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
+                                 "baseline_throughput", "core_throughput", "rust2", "dense_stacked", "ggml"))
     parser.add_argument("--dense-width", type=int, default=None,
                         help="dense_stacked: the stacked engine's width, 1-8 (AG5: the agent's measured best)")
     parser.add_argument("--speculate", action="store_true",
                         help="dense_stacked: speculation from the context with a learned window (SP2)")
+    parser.add_argument("--ggml-gguf", default=None, help="ggml: the GGUF this worker serves (GG1)")
+    parser.add_argument("--ggml-gate", default=None, help="ggml: its quality gate's record, which must pass (GG1)")
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
@@ -1304,7 +1306,9 @@ def main(argv: list[str] | None = None) -> int:
             from friday_evidence.identity import assert_model_unchanged, runtime_identity
             identity = runtime_identity(spec)
         rust2 = args.execution_variant == "current_engine" and args.engine_configuration == "rust2"
-        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2)
+        ggml = args.execution_variant == "current_engine" and args.engine_configuration == "ggml"
+        # GG1: llama.cpp holds the weights; MLX keeps only the tokenizer's model unloaded, as for rust2
+        model, tokenizer, stream_generate, device = _load(spec, lazy=rust2 or ggml)
         import mlx.core as mx
         cuda_cache_limit = _apply_cuda_cache_limit(mx)
         if args.compute_dtype is not None:
@@ -1328,6 +1332,12 @@ def main(argv: list[str] | None = None) -> int:
             prefix_session = WorkerPrefixSession(model, tokenizer,
                 binding_sha256=identity["identity_sha256"], scope_nonce=secrets.token_hex(16),
                 max_entries=args.prefix_cache_max_entries, max_bytes=args.prefix_cache_max_bytes)
+        elif ggml:
+            from ironmule_product.ggml_bridge import GgmlBridge
+            gate = json.loads(args.ggml_gate) if args.ggml_gate else None
+            if not args.ggml_gguf or not isinstance(gate, dict) or gate.get("passes") is not True:
+                raise ValueError("the ggml engine serves a named GGUF after its quality gate passed (GG1)")
+            engine_bridge = GgmlBridge(args.ggml_gguf, tokenizer, speculate=args.speculate, gate=gate)
         elif rust2:
             from ironmule_product.rust2_bridge import Rust2Bridge
             engine_bridge = Rust2Bridge(os.environ.get("IRONMULE_RUST2_BINARY", ""), spec["snapshot_path"],

@@ -193,6 +193,8 @@ class ProductService:
                                                  or (self.backend is not None and self.backend.ready))),
                     "mode": self.settings["mode"],
                     "execution": ("numeric@dense" if getattr(self.backend, "engine_configuration", None) == "dense_stacked"
+                                  # GG1: a gated Q8_0 GGUF on llama.cpp; its answers may differ from the MLX plans
+                                  else "numeric@ggml" if getattr(self.backend, "engine_configuration", None) == "ggml"
                                   else "exact" if getattr(self.backend, "compute_dtype", None) is None
                                   else f"exact@{self.backend.compute_dtype}"),
                     "backend": ("mlx_lm_reference" if getattr(self.backend, "execution_variant", "reference") == "reference"
@@ -210,8 +212,12 @@ class ProductService:
                 result["cpu_blas"] = {"requested": getattr(self.backend, "cpu_blas", None),
                                       "serving": (blas or {}).get("serving", "stock"),
                                       "reason": (getattr(self.backend, "cpu_blas_record", None) or {}).get("reason")}
+            if getattr(self.backend, "ggml_gate", None) is not None:  # GG1: the gate the engine passed at its start
+                result["ggml"] = {"gate": {k: self.backend.ggml_gate.get(k) for k in ("ratio", "interval", "passes")},
+                                  "answers": "may differ from the MLX plans, within the gate"}
             if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
-                dense = ((getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}).get("dense_plan") or {}
+                engine = (getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}
+                dense = engine.get("dense_plan") or engine.get("ggml") or {}  # GG1: the ggml engine says it there
                 learned = getattr(self.backend, "speculation_status", None)
                 result["speculation"] = {"requested": "context", "serving": dense.get("speculation", "off"),
                                          **({"reason": dense["speculation_refused"]}
