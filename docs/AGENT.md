@@ -152,6 +152,19 @@ agent to choose plans that change answers slightly, if they pass its gate. A nam
 is always kept. While a stacked engine serves, the online agent does not attach yet, because it does not model slot
 reuse (BACKLOG AG4, step 3).
 
+## How far ahead it checks: speculation (SP2)
+
+Where it serves the CPU stacked engine, the agent also learns, while it serves, how many tokens to check at once
+(`ironmule/speculation.py`). Each step it copies drafts from the request's own prompt and answer (the tokens that
+followed the last time its latest words appeared) and the plan checks them as further rows of the request's own slot
+in the same step. A request keeps the drafts up to the first one the model would not have written, plus the model's
+own next token, so no token changes. How many drafts each request gets is a decision made every step from what it has
+learned on this machine: the time of a step by its rows, and how often drafts of each match length were right
+(Strata's draft policy). It speculates only where that is expected to make more tokens per second than a plain
+step, and not at all when the engine's rows are full. SP1-0 measured why it must decide per request: at a fixed
+window the same speculation made one prompt 5.7x faster and another 10 % slower. `/health` shows it under
+`speculation`; the hardware test is SP2-H in the backlog.
+
 ## What it knows about the hardware (AG3)
 
 The world model learns what this machine's work costs. The agent also knows the machine's architecture

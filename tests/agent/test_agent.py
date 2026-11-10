@@ -1476,3 +1476,20 @@ def test_on_a_cpu_the_server_starts_the_blas_the_agent_chose(monkeypatch, tmp_pa
     assert seen["cpu_blas"] == "openblas" and seen["compute_dtype"] == setup["compute_dtype"]
     stock = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], {**setup, "cpu_blas": None})
     assert stock["cpu_blas"] is None
+
+
+def test_the_agents_stacked_engine_speculates_unless_told_not_to(monkeypatch, tmp_path):
+    """SP2: where the agent chose the stacked engine, its worker speculates (`--speculate auto`); `off` keeps it off,
+    `context` turns it on for a named `--engine dense`, and a reference engine never gets it."""
+    dense = {"engine": "dense", "compute_dtype": None, "cpu_blas": "openblas", "reason": "stacked", "width": 8}
+    assert _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], dense).get("speculate") is True
+    assert "speculate" not in _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on", "--speculate", "off"], dense)
+    reference = {"engine": "reference", "compute_dtype": "dequantize", "cpu_blas": None, "reason": "dequantize"}
+    assert "speculate" not in _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], reference)
+    named = _serve_until_backend(monkeypatch, tmp_path, ["--engine", "dense", "--speculate", "context"], dense)
+    assert named.get("speculate") is True
+    assert "speculate" not in _serve_until_backend(monkeypatch, tmp_path, ["--engine", "dense"], dense)
+    from ironmule_product import cli
+
+    with pytest.raises(SystemExit):
+        cli.serve(["--model", "m", "--engine", "reference", "--speculate", "context"])

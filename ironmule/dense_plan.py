@@ -482,6 +482,51 @@ class DenseBackend:
         self.readback = readback
         self._free = list(range(plan.slots))
         self._lock = threading.Lock()
+        self.policy = None  # SP2: a `speculation.WindowPolicy` when the plan verifies windows and speculation is on
+        self._timing: tuple[int, int, float] | None = None  # SP2: (rows, steps, start) of the plain steps in flight
+
+    def speculate_group(self, sessions: Sequence[Any]) -> list[list[Any]] | None:
+        """SP2: one forward verifying each session's drafts as rows of its own slot, as the policy chooses; a chain
+        of handles per session (its accepted drafts and the plan's next token), or None for a plain step."""
+        import time
+
+        import mlx.core as mx
+
+        from .speculation import MAX_DRAFT, accept, draft
+
+        policy = self.policy
+        if policy is None or len(sessions) >= self.plan.rows:
+            return None  # no free row to verify on: the plain stacked step serves
+        offers = []
+        for session in sessions:
+            room = min(MAX_DRAFT, session.max_tokens - len(session.tokens) - 1,
+                       self.plan.capacity - 1 - session.state.offset)
+            offers.append(draft(session.prompt_ids + session.tokens, room) if room > 0 else ([], 0))
+        ks = policy.choose(offers)
+        if not any(ks):
+            return None
+        tokens: list[int] = []
+        slots: list[int] = []
+        positions: list[int] = []
+        for session, (drafts, _), k in zip(sessions, offers, ks):
+            rows = [session.tokens[-1]] + list(drafts[:k])
+            tokens += rows
+            slots += [session.state.slot] * len(rows)
+            positions += [session.state.offset + j for j in range(len(rows))]
+        started = time.perf_counter()
+        picks = mx.argmax(self.plan.forward(mx.array(tokens, mx.uint32), mx.array(slots, mx.int32),
+                                            mx.array(positions, mx.int32)), axis=-1)
+        host = picks.tolist()
+        policy.observe_step(len(tokens), time.perf_counter() - started, True)
+        chains, at = [], 0
+        for session, (drafts, bucket), k in zip(sessions, offers, ks):
+            new = accept(list(drafts[:k]), host[at:at + k + 1])
+            at += k + 1
+            policy.observe_drafts(bucket, k, len(new) - 1)
+            slot, offset = session.state.slot, session.state.offset
+            chains.append([((None, DenseState(slot, offset + j + 1)), mx.array(token, mx.uint32))
+                           for j, token in enumerate(new)])
+        return chains
 
     def free_slots(self) -> int:
         with self._lock:
@@ -537,6 +582,9 @@ class DenseBackend:
         """`count` stacked steps, each fed the previous picks on the card; one chain of handles per state."""
         import mlx.core as mx
 
+        if self.policy is not None:  # SP2: the policy learns the plain step's price from its time
+            import time
+            self._timing = (len(states), count, time.perf_counter())
         current = mx.array(list(tokens), mx.uint32)
         slots = mx.array([s.slot for s in states], mx.int32)
         chains: list[list[Any]] = [[] for _ in states]
@@ -554,6 +602,11 @@ class DenseBackend:
         import mlx.core as mx
 
         mx.eval(*[pick for _, pick in handles])
+        timing, self._timing = self._timing, None
+        if timing is not None and self.policy is not None:
+            import time
+            rows, steps, started = timing
+            self.policy.observe_step(rows, (time.perf_counter() - started) / steps, False)
 
     def complete_chain(self, chain: Sequence[Any]) -> None:
         self.complete(chain)
@@ -602,7 +655,13 @@ class DenseStackedExecutor(_executor_base()):  # type: ignore[misc]
 
     def _chain_group(self, group: list[Any], capacity: int):
         """Chained readback for the whole stacked group (as the tuned engine's SERVE1 chains a session): as many
-        steps as every member still needs, at most `readback`, with one host read."""
+        steps as every member still needs, at most `readback`, with one host read. SP2: where the backend's window
+        policy speculates, one verifying step instead, its chains as long as each member's accepted tokens."""
+        speculate = getattr(self.backend, "speculate_group", None)
+        if speculate is not None and getattr(self.backend, "policy", None) is not None:
+            chains = speculate(group)
+            if chains is not None:
+                return chains
         every = getattr(self.backend, "readback", 1)
         count = min([every] + [s.max_tokens - len(s.tokens) for s in group])
         if count < 2:

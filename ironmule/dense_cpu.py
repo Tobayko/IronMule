@@ -27,7 +27,8 @@ import os
 from typing import Any, Sequence
 
 MAX_ROWS = 8
-PLAN_VERSION = 2  # 2 (CPU6-A2): the prefill's head at one row, in one graph with its cache
+PLAN_VERSION = 3  # 2 (CPU6-A2): the prefill's head at one row, in one graph with its cache; 3 (SP2): rows may
+#: share a slot at distinct positions, so one forward verifies a window of drafts (the probe checks it)
 #: slot sizes tried from the largest; the pool of `slots` of them and the weights take at most `MEMORY_SHARE` of
 #: the machine's memory
 SLOT_TIERS = (8192, 4096, 2048, 1024, 512)
@@ -117,6 +118,7 @@ class CpuDensePlan:
         self.dim = attn.k_proj.weight.shape[0] // self.kv_heads
         self.eps = getattr(self.args, "rms_norm_eps", 1e-6)
         self.slots, self.capacity, self.rows = slots, capacity, slots
+        self.verifies_windows = False  # SP2: set by `install` when the probe found a verify window bit-identical
         self.qk_norm = hasattr(attn, "q_norm") and hasattr(attn, "k_norm")
         head = getattr(model, "lm_head", None)
         self.head = (head.weight if head is not None and not getattr(self.args, "tie_word_embeddings", False)
@@ -190,8 +192,10 @@ class CpuDensePlan:
 
         rows = tokens.shape[0]
         host_slots, host_positions = slots.tolist(), positions.tolist()
-        if len(set(host_slots)) != rows:
-            raise ValueError("each stacked row needs its own slot")
+        if len(set(zip(host_slots, host_positions))) != rows:
+            # SP2: rows of one slot at consecutive positions verify a window of drafts; every row's keys are
+            # written before any row attends, so each sees exactly the positions before it
+            raise ValueError("each stacked row needs its own slot position")
         if max(host_positions) >= self.capacity:
             raise ValueError("a row's position is past its slot")
         h = self.trunk.embed_tokens(tokens.astype(mx.uint32)).astype(mx.float32)
@@ -253,6 +257,7 @@ def probe(plan: CpuDensePlan, steps: int = 3) -> dict[str, Any]:
         return out
 
     alone = {r: run([r])[r] for r in range(rows)}
+    windows = _windows_identical(plan, prompts, alone, steps)
     identical = True
     for width in range(2, rows + 1):
         stacked = run(list(range(width)))
@@ -267,7 +272,41 @@ def probe(plan: CpuDensePlan, steps: int = 3) -> dict[str, Any]:
     reference = plan.model(first.reshape(1, 1), cache=cache)[0, -1].astype(mx.float32)
     error = mx.max(mx.abs(mine - reference)) / mx.maximum(mx.max(mx.abs(reference)), 1e-6)
     return {"stacked_rows_identical": identical, "reference_rel_error": float(error.item()),
-            "top1_equal": bool((mx.argmax(mine) == mx.argmax(reference)).item())}
+            "top1_equal": bool((mx.argmax(mine) == mx.argmax(reference)).item()), "verify_windows_identical": windows}
+
+
+def _windows_identical(plan: CpuDensePlan, prompts: list[list[int]], alone: dict[int, list[Any]], steps: int) -> bool:
+    """SP2: a window of `steps` positions of one slot in one forward, alone and stacked with another slot's row, is
+    bit-identical to the same positions one step at a time (`alone`)."""
+    import mlx.core as mx
+    from mlx_lm.models.cache import make_prompt_cache
+
+    if steps < 2:
+        return False
+
+    def prefilled(r: int) -> int:
+        cache = make_prompt_cache(plan.model)
+        first = int(mx.argmax(plan.prefill(mx.array(prompts[r])[None], cache), axis=-1).item())
+        plan.write_prefill(r, [c.state for c in cache])
+        return first
+
+    def window(r: int, first: int) -> list[int]:
+        return [first] + [int(mx.argmax(logits).item()) for logits in alone[r][:steps - 1]]
+
+    first = prefilled(0)
+    tokens = window(0, first)
+    positions = [len(prompts[0]) + k for k in range(steps)]
+    out = plan.forward(mx.array(tokens, mx.uint32), mx.array([0] * steps, mx.int32), mx.array(positions, mx.int32))
+    mx.eval(out)
+    same = all(bool(mx.array_equal(out[k], alone[0][k]).item()) for k in range(steps))
+    if plan.slots < 2 or steps + 1 > plan.rows:
+        return same
+    first, other = prefilled(0), prefilled(1)
+    out = plan.forward(mx.array(window(0, first) + [other], mx.uint32), mx.array([0] * steps + [1], mx.int32),
+                       mx.array(positions + [len(prompts[1])], mx.int32))
+    mx.eval(out)
+    return same and all(bool(mx.array_equal(out[k], alone[0][k]).item()) for k in range(steps)) and bool(
+        mx.array_equal(out[steps], alone[1][0]).item())
 
 
 def install(model: Any, *, slots: int = MAX_ROWS, capacity: int | None = None) -> tuple[CpuDensePlan, dict[str, Any]]:
@@ -285,6 +324,7 @@ def install(model: Any, *, slots: int = MAX_ROWS, capacity: int | None = None) -
         raise ValueError("the CPU stacked plan's stacked rows differ from one row on this model")
     if not record["reference_rel_error"] <= REFERENCE_TOLERANCE:
         raise ValueError(f"the CPU stacked plan disagrees with mlx-lm's forward ({record['reference_rel_error']:.3g})")
+    plan.verifies_windows = bool(record.get("verify_windows_identical"))  # SP2 speculates only then
     return plan, {**record, "kernels": "cpu_float32", "source_sha256": SOURCE_SHA256, "plan_version": PLAN_VERSION,
                   "slots": slots, "capacity": capacity, "dequantized_layers": dequantized,
                   "model_family": model.args.model_type}

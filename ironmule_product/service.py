@@ -210,6 +210,13 @@ class ProductService:
                 result["cpu_blas"] = {"requested": getattr(self.backend, "cpu_blas", None),
                                       "serving": (blas or {}).get("serving", "stock"),
                                       "reason": (getattr(self.backend, "cpu_blas_record", None) or {}).get("reason")}
+            if getattr(self.backend, "speculate", False) is True:  # SP2: asked for; what serves and what it learned
+                dense = ((getattr(self.backend, "ready_payload", None) or {}).get("engine") or {}).get("dense_plan") or {}
+                learned = getattr(self.backend, "speculation_status", None)
+                result["speculation"] = {"requested": "context", "serving": dense.get("speculation", "off"),
+                                         **({"reason": dense["speculation_refused"]}
+                                            if dense.get("speculation_refused") else {}),
+                                         **({"learned": dict(learned)} if isinstance(learned, dict) else {})}
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()

@@ -1275,6 +1275,8 @@ def main(argv: list[str] | None = None) -> int:
                                  "baseline_throughput", "core_throughput", "rust2", "dense_stacked"))
     parser.add_argument("--dense-width", type=int, default=None,
                         help="dense_stacked: the stacked engine's width, 1-8 (AG5: the agent's measured best)")
+    parser.add_argument("--speculate", action="store_true",
+                        help="dense_stacked: speculation from the context with a learned window (SP2)")
     parser.add_argument("--prefix-cache-max-entries", type=int, default=4)
     parser.add_argument("--prefix-cache-max-bytes", type=int, default=1024**3)
     parser.add_argument("--selection-evidence", default="[]")
@@ -1336,7 +1338,7 @@ def main(argv: list[str] | None = None) -> int:
             engine_bridge = CurrentEngineBridge.from_loaded(
                 model, tokenizer, ModelSpec.from_dict(spec), configuration=args.engine_configuration,
                 class_a_knobs=json.loads(args.engine_knobs) if args.engine_knobs is not None else None,
-                width=args.dense_width)
+                width=args.dense_width, speculate=args.speculate)
         elif args.execution_variant == "automatic":
             from ironmule_product.automatic_runtime import AutomaticRuntime
             from ironmule_product.types import ModelSpec

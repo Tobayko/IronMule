@@ -276,7 +276,7 @@ class CurrentEngineBridge:
     def from_loaded(cls, model: Any, tokenizer: Any, spec: Any, *,
                     configuration: BridgeConfiguration = "current_profile",
                     class_a_knobs: dict[str, Any] | None = None,
-                    width: int | None = None) -> "CurrentEngineBridge":
+                    width: int | None = None, speculate: bool = False) -> "CurrentEngineBridge":
         """Construct from exactly the already loaded model and registered snapshot.
 
         Identity construction reads the supplied snapshot and fails closed; it does
@@ -291,6 +291,8 @@ class CurrentEngineBridge:
         width = dense_width(width)  # AG5: the stacked engine's width; refused before anything loads
         if width != DENSE_WIDTH and configuration != "dense_stacked":
             raise ValueError("a stacked width applies to the dense_stacked configuration only")
+        if speculate and configuration != "dense_stacked":
+            raise ValueError("speculation (SP2) applies to the dense_stacked configuration only")
         requested = None
         if class_a_knobs is not None:
             from .knob_profile import class_a_knobs as decode_class_a
@@ -329,9 +331,13 @@ class CurrentEngineBridge:
             from ironmule.service import DenseStackedMode
             plan, dense_record = install_dense(model, mx.device_info() if mx.cuda.is_available() else None,
                                                slots=width)
-            dense_record = {**dense_record, "width": width}
+            mode = DenseStackedMode(plan, max_width=width, speculate=speculate)
+            # SP2: what serves; a plan whose verify window was not found bit-identical never speculates
+            dense_record = {**dense_record, "width": width,
+                            "speculation": "context" if mode.speculate else "off",
+                            **({"speculation_refused": "the plan's verify window is not verified on this machine"}
+                               if speculate and not mode.speculate else {})}
             knobs, profile_available, profile_source = BASELINE, False, "dense_numeric_plan"
-            mode = DenseStackedMode(plan, max_width=width)
         elif historical_candidate is not None:
             # These values are an explicit, archived B39d candidate.  They are
             # neither a compatible tune profile nor an automatic selection.
@@ -526,9 +532,11 @@ class CurrentEngineBridge:
 
     def counters(self) -> dict[str, Any]:
         """KP1: decode bodies this worker's engine built and evicted so far, and its card (no request data)."""
+        policy = getattr(getattr(self._runtime, "backend", None), "policy", None)
         return {"decode_bodies": dict(getattr(getattr(self._runtime, "engine", None), "body_counts", None)
                                       or {"built": 0, "evicted": 0}),
-                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES")}
+                "cuda_device": os.environ.get("CUDA_VISIBLE_DEVICES"),
+                **({"speculation": policy.summary()} if policy is not None else {})}  # SP2: what it has learned
 
     def eos_ids(self) -> tuple[int, ...]:
         """The token ids the engine stops on, so a stream ends exactly where the engine does."""

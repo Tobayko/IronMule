@@ -53,6 +53,8 @@ def test_the_probe_finds_every_width_identical_to_one_row_and_agrees_with_mlx_lm
     assert record["top1_equal"] is True
     assert record["kernels"] == "cpu_float32" and record["slots"] == 8 and record["capacity"] == 64
     assert plan.head.dtype == mx.float32 and plan.keys[0].dtype == mx.float32
+    # SP2: a window of positions of one slot, alone and stacked, is bit-identical to one step at a time
+    assert record["verify_windows_identical"] is True and plan.verifies_windows is True
 
 
 def test_a_quantised_checkpoint_is_dequantized_to_float32_first():
@@ -104,8 +106,8 @@ def test_the_plan_refuses_what_it_was_not_built_for_and_more_rows_than_slots():
     plan = dense_cpu.CpuDensePlan(tiny(LLAMA), slots=2, capacity=16)
     with pytest.raises(ValueError, match="at most 2 rows"):
         plan.linear(mx.zeros((3, 192)), plan.head)
-    with pytest.raises(ValueError, match="own slot"):
-        plan.forward(mx.array([1, 2], mx.uint32), mx.array([0, 0], mx.int32), mx.array([1, 2], mx.int32))
+    with pytest.raises(ValueError, match="own slot position"):  # SP2: one slot, distinct positions is a window
+        plan.forward(mx.array([1, 2], mx.uint32), mx.array([0, 0], mx.int32), mx.array([2, 2], mx.int32))
     with pytest.raises(ValueError, match="past its slot"):
         plan.forward(mx.array([1], mx.uint32), mx.array([0], mx.int32), mx.array([16], mx.int32))
 
@@ -234,7 +236,7 @@ def test_the_prefill_head_runs_at_one_row_and_matches_mlx_lm_s_last_position():
 
     model = tiny(LLAMA, seed=4)
     plan, record = dense_cpu.install(model, slots=8, capacity=64)
-    assert record["plan_version"] == 2
+    assert record["plan_version"] >= 2
     ids = mx.array([[5, 9, 17, 33, 2]])
     mine = plan.prefill(ids, make_prompt_cache(model))
     theirs = model(ids, cache=make_prompt_cache(model))[0, -1:]

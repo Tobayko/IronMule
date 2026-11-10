@@ -73,13 +73,17 @@ class MLXWorkerClient:
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
                  cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
                  dense_width: int | None = None, cpu_blas: str | None = None,
-                 cpu_threads: int | None = None) -> None:
+                 cpu_threads: int | None = None, speculate: bool = False) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
                                         or engine_configuration != "dense_stacked"):
             raise ValueError("dense_width must be 1-8 and needs the dense_stacked configuration (AG5)")
         self.dense_width = dense_width
+        if type(speculate) is not bool or (speculate and engine_configuration != "dense_stacked"):
+            raise ValueError("speculate is a bool and needs the dense_stacked configuration (SP2)")
+        self.speculate = speculate
+        self.speculation_status: dict[str, Any] | None = None  # SP2: the policy's last summary a request reported
         # HW1: the one CUDA device this worker may see (an index or UUID as CUDA_VISIBLE_DEVICES takes
         # it); None leaves the inherited environment alone, as before.
         if cuda_device is not None and (not isinstance(cuda_device, str)
@@ -484,6 +488,8 @@ class MLXWorkerClient:
                     arguments += ["--engine-configuration", self.engine_configuration]
                     if self.dense_width is not None:
                         arguments += ["--dense-width", str(self.dense_width)]
+                    if self.speculate:
+                        arguments += ["--speculate"]
                     if self.chat_reuse:
                         arguments += ["--chat-reuse"]
                     if self.engine_knobs is not None:
@@ -851,6 +857,8 @@ class MLXWorkerClient:
                         finish, prompt, completion = (event.get("finish_reason"), event.get("prompt_tokens"),
                                                        event.get("completion_tokens"))
                         engine = event.get("engine")
+                        if isinstance(engine, dict) and isinstance(engine.get("speculation"), dict):
+                            self.speculation_status = engine["speculation"]  # SP2: shown under /health
                         digest = event.get("prompt_ids_sha256")
                         if (finish not in {"stop", "length", "cancelled"} or type(prompt) is not int or prompt < 0
                                 or type(completion) is not int or not token_counts[request_id] <= completion <= request.max_tokens
