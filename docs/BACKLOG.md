@@ -2462,6 +2462,14 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
   numerics), and both are cached per GGUF, model and machine. These are settings the agent measures on the machine, as
   the mechanism above names; arm L keeps `llama-server`'s defaults as LC1 ran them, as fixed. GG1-H is otherwise
   unchanged.
+- **Tuning and gate under the first amendment (2026-11-10, development):** the synthetic workload chose flash
+  attention without a unified KV cache (8 sequences 762 tokens per second against 532 without flash attention; one
+  sequence 319 against 207), and the gate on it failed: ratio 1.0047 (95 % 1.0021 to 1.0072). Without flash attention
+  the same GGUF had passed (1.0030, up to 1.0048).
+- **Second amendment of GG1 before any GG1-H data (2026-11-10, labelled):** the tuning also measures the KV cache in full
+  precision (f32 against llama.cpp's default f16), so 8 settings; the engine serves the fastest setting (by the same
+  score) whose gate passes, the gates tried in order of speed against one reference run, and every setting tried is
+  recorded. If none passes, GG1-H does not run. GG1-H is otherwise unchanged.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
