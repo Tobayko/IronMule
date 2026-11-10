@@ -2367,7 +2367,7 @@ common software: llama.cpp is the usual way to run a small model on a CPU.
     main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
     The ledger entry is still owed.
 
-### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG1 fixed before its data)
+### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG1-H: goal not reached)
 
 **Why.** LC1: on this CPU and model llama.cpp is 5.1x IronMule's best CPU setup under load and 13.6x for one request.
 The owner's goal: IronMule 20 % above llama.cpp, that is at least 1.2x `llama-server` as LC1 ran it (same build, GGUF,
@@ -2493,6 +2493,24 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
   precision (f32 against llama.cpp's default f16), so 8 settings; the engine serves the fastest setting (by the same
   score) whose gate passes, the gates tried in order of speed against one reference run, and every setting tried is
   recorded. If none passes, GG1-H does not run. GG1-H is otherwise unchanged.
+- **GG1-H result (2026-11-10, this container, at `2793352`, about 20 minutes, no GPU hours): valid; goal not reached.**
+  Both arms served the GGUF built from the registered model (sha256 `edc4a163`); the engine's tuning chose flash
+  attention first, its gate failed (1.0047, up to 1.0072) as did the next, and it served the default setting (no flash
+  attention, f16 KV), whose gate passed (1.0030, up to 1.0048). A smoke of the harness ran before on prompts from
+  index 14,900 (not counted). Every request answered.
+  - *Load (5 blocks of 8 at once, 64 tokens):* G over L **0.81x (95 % 0.74x to 0.89x)** the tokens per second; mean first
+    token 4.13x later (95 % 3.93x to 4.33x; L's A/A noise 16 %).
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* **1.05x (95 % 0.94x to 1.20x)**; first token 2.18x later (about
+    50 ms against 25 ms).
+  - *Verdict by the fixed rule: goal not reached* (both tokens-per-second halves below 1.2, first tokens later).
+    Recorded in Tier 0. The engine stays opt-in (`--engine ggml`), its gate having passed.
+  - *Post hoc, descriptive only:* with the same kernels and the setting the gate allows, the engine in process was at
+    about llama.cpp's speed (GG0, development data); through the product it lost under load, mostly at the start of a
+    block: every request's first token waited for one decode call that prefilled all 8 prompts together (about 0.55
+    s), while `llama-server` answered its first request after one prompt and the rest together. Speculation found
+    little to do on these prompts (13 of 1,551 steps drafted, acceptance 0.37). The lever that made the engine faster
+    than llama.cpp, flash attention, failed the quality gate on this model by 0.2 % of perplexity. 1 of 56 answers
+    equal to L's (different numeric paths, as expected under the owner's quality rule).
 
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
@@ -5397,6 +5415,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **The ggml engine at 1.2x `llama-server` on this CPU and model (2026-11-10).** Experiment GG1-H (this container,
+  commit `2793352`; see GG above): through the product, 0.81x under load (95 % 0.74x to 0.89x) and 1.05x one request
+  at a time (0.94x to 1.20x), first tokens later; the gate allowed only llama.cpp's default setting. Re-open with a
+  product path that streams a request's first token before the rest of its block is prefilled, a lever beyond
+  llama.cpp's kernels, a quality criterion that admits flash attention (the owner's to set, QG1), or another model or
+  machine, under a new protocol.
 
 - **SP3's speculation policy (version 2) as the agent's default (2026-11-10).** Experiment SP3-H (this container,
   commit `5517512`; see SP3 above): every answer equal, but one request at a time 1.14x (95 % 1.05x to 1.25x) against
