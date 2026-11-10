@@ -1960,6 +1960,22 @@ CPU6-A's data and before its own).**
     quiet or spaced traffic, longer prompts. CPU6-A stays failed; step 3 as revised passed. The ledger entry is still
     owed.
 
+**CPU6-A2-K, the same run on a second machine (owner approval 2026-11-10; fixed after CPU6-A2's result and before
+any of its own data).**
+- *Question:* does the agent's own choice on a CPU carry to a machine it was not developed on? CPU6-A2 is one CPU.
+- *Machine:* a private Kaggle CPU session (no accelerator; Kaggle CPUs were about 2x slower than this container in
+  V5-CPU), kernel `tobayko/ironmule-cpu6a2-kaggle`, pinned to the pushed full commit that carries this entry.
+- *Everything else is CPU6-A2's:* `tools/cpu6_measure.py --plan agent` unchanged, `mlx-community/SmolLM2-135M-
+  Instruct-8bit` at revision `0f0d9b8`, a fresh store, nothing named, arms A and S in rotated order A S A, 5
+  repetitions of 8 requests at once, and `analyse_agent`'s rule: pass when the agent chose a setup other than A, S
+  over A has its 95 % lower bound above 3.0, the mean first token's 95 % upper bound is at most 1 plus the A/A
+  noise, and every request is answered; fewer than 5 complete repetitions are invalid. Whatever BLAS and engine
+  the agent picks there is its choice; nothing is forced.
+- *What a result means:* a pass widens CPU6-A2's validity domain to a second x86 CPU; a fail is recorded in Tier 0
+  scoped to that machine, with what the agent chose and why, and does not undo CPU6-A2. An invalid run (Kaggle's
+  limit, a failed install) releases nothing and is said so.
+- *Cost:* about 2-3 hours of a Kaggle CPU session; no GPU or TPU quota.
+
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
