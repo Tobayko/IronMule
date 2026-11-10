@@ -2048,6 +2048,58 @@ at a time. The owner's goal is an agent that keeps learning on a CPU without end
     from the request's own context with a window learned online (HQ1's planned lever, Strata's), would be the next
     candidate, under its own entry and protocol.
 
+### SP1-0 — Speculation from the context on the CPU plan: is it exact, and how much could it gain? (owner request 2026-11-10; fixed before its data)
+
+**Why.** AG9 left the online agent nothing to learn inside the CPU stacked engine by order. SP1 (HQ1) is the planned
+lever that changes the work itself: drafts copied from the request's own prompt and answer, verified by the model,
+with the window learned online (Strata's draft policy). How much it pays depends on the request (a summary repeats
+its context, an open question does not) and on the engine's free rows (none when eight requests stream), which is
+what an online learner needs. This entry is its pre-measurement, before any product code.
+
+**Reopening (AGENTS, "Performance and evidence").** Two Tier 0 entries reject prompt-lookup speculation:
+- *E0c* (Apple Silicon, the predecessor's engine): "`2.9x` slower, acceptance `0.17` per drafted token. The workload
+  does not repeat itself enough." New here: another machine and engine (a CPU, where CPU6-A2 measured eight stacked
+  rows at 1.42x one row's step, 0.092 s against 0.065 s), and Dolly's prompts, about a third of which carry a context
+  the answer may copy.
+- *HW3* (T4): every combination with `speculate_k` 3 changed tokens, because the verify rows took MLX's
+  non-invariant multi-row path; "Re-open with a verify path whose logits are bit-identical to the sequential step
+  (KB1)." New here: the CPU plan pads every product to its fixed width, where its rows are invariant (CPU6), and its
+  attention runs per row over the slot after the step's keys are written, so a window of positions of one slot can
+  be verified causally in one step. Whether that is bit-identical is step (a) below.
+
+**Protocol (`tools/sp1_probe.py`, this container; development evidence for SP1's go or kill, no product claim).**
+- *Model and plan:* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, widened to float32 as `install` does,
+  on OpenBLAS through the shim, the CPU plan at width 8 (CPU6-A2's setup); one request alone in slot 0.
+- *Prompts:* 48 from Dolly 15k (`training/rl2_headroom.dolly_prompts`, digest checked, the shuffled pool from index
+  12,000 on), rendered with the model's chat template; answers greedy, at most 128 tokens or to EOS.
+- *Drafts (prompt lookup):* at each step the longest suffix of the context (prompt and answer so far), 3 tokens
+  down to 1, that occurred earlier; its most recent earlier occurrence; the up to `k` tokens after it. No match, no
+  draft: a plain one-row step.
+- *Verify:* the last accepted token and the `k` drafts as `k + 1` rows of slot 0 at consecutive positions, one
+  forward; the longest prefix of drafts equal to the plan's own argmax is accepted, plus the argmax after it.
+- *Arms per prompt, in this order:* sequential, `k` = 2, 4, 7, sequential again (the A/A pair). Each arm decodes
+  the whole answer from the same prefill; its time is the decode only (first token to last), tokens per second its
+  tokens after the first over that time.
+- *(a) Exactness:* every speculative answer's tokens equal the sequential answer's, on every prompt and `k`.
+- *(b) Gain:* for each `k`, the mean over prompts of its tokens per second over the mean of the two sequential
+  arms, with a 95 % bootstrap over prompts (2,000 resamples, seed 0); the A/A noise is the mean absolute relative
+  difference of the sequential pair. Acceptance (accepted drafts over drafted tokens) and its spread across prompts
+  are reported.
+- *(c) Request dependence:* the per-prompt best of the arms (sequential included) against the best single `k`,
+  mean ratio with the same bootstrap.
+- *Decision, fixed before the data:*
+  - (a) fails on any prompt: speculation does not ship on this plan; Tier 0, scoped to the CPU plan, with the first
+    differing position;
+  - (a) holds and the best `k`'s 95 % lower bound is at least 1.3 (SP1's own bound): SP1 goes on to the product
+    (the plan's verify window, the worker, a window policy) under its own protocol, with SP1's kill through the
+    product;
+  - (a) holds, the bound is below 1.3: SP1 on this plan and model is killed; Tier 0, scoped to them;
+  - (c)'s lower bound above 1.05 says a window learned per request is worth it beyond a fixed `k`; otherwise a fixed
+    `k` (or off) is enough, and the agent's learning there would be the costs, not the window.
+- *Limits:* one CPU, one small model, one request alone, the probe's loop and not the worker's. Under load the
+  engine has no free rows to verify on; that state is not measured here.
+- *Cost:* about 30-45 minutes of this container's CPU; no GPU hours.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
