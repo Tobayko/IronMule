@@ -2446,6 +2446,22 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
   Q8_0's own rounding. Arm L serves that GGUF too (same format and size as LC1's, so llama.cpp's speed is unchanged in
   kind); everything else in GG1-H stays as fixed. If this GGUF also fails the gate, GG1-H does not run and GG stops in
   Tier 0 with that result.
+- **Gate on the GGUF built from the registered model (2026-11-10, development):** ratio 1.0030 (95 % 1.0011 to 1.0048):
+  passes.
+- **Development before any GG1-H data (2026-11-10, Dolly prompts 14,900-14,907, which no protocol uses; no claim):**
+  in process, 8 requests at once, 64 tokens: the engine made 207-266 tokens per second against `llama-server`'s
+  283-295 on the same prompts and GGUF, with one decode call per step and new prompts batched into it; one request at a
+  time 190-207 (prompt to end) against the server's 160-167. The time is in llama.cpp's own decode calls. llama.cpp's
+  flash attention (off by default in this `llama-server` and context) raised the engine's load rate to 299-320, and
+  with one unified KV cache for the 8 sequences to 321-337; one request alone 190-206. Speculation did not help on these
+  prompts (acceptance 0.38-0.51).
+- **Amendment of GG1 before any GG1-H data (2026-11-10, labelled):** at its first start on a machine the engine measures
+  llama.cpp's flash attention (on, off) times one unified KV cache (on, off) on a fixed synthetic workload (8 sequences of
+  a fixed 64-token prompt, 24 steps each, and one sequence alone, 24 steps; median of 3) and serves the setting with the
+  highest geometric mean of the two rates; the quality gate runs on that setting (flash attention changes the
+  numerics), and both are cached per GGUF, model and machine. These are settings the agent measures on the machine, as
+  the mechanism above names; arm L keeps `llama-server`'s defaults as LC1 ran them, as fixed. GG1-H is otherwise
+  unchanged.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
