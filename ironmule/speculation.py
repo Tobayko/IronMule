@@ -9,12 +9,13 @@ that argmax, so its tokens are exactly those of one row at a time.
 How many drafts each request gets is `WindowPolicy`'s decision, Strata's draft policy
 (`src/spec/draft_policy.cpp`, BACKLOG HQ1) learned online on this machine:
 
-* the time of a step by its rows, an exponential average of measured steps (plain and speculative alike);
-  an unmeasured row count is priced by a line through the measured ones;
-* per draft bucket (its match length), the chance that a draft is accepted when the ones before it were, from every
-  verified draft, with a prior of 0.3 worth 4 drafts;
-* each step it hands out drafts greedily where they add the most expected tokens while the step's expected tokens
-  per second rises, and speculates only where that beats the plain step of the same requests by `MARGIN`.
+* a plain step's time by its rows, an exponential average of its chained steps; a speculative step's time by a line
+  through every speculative step measured so far (policy version 2, SP3: the two are priced apart, since a
+  speculative step reads the host every step and a plain one every fourth);
+* per draft bucket (its match length, at least `MIN_NGRAM`), the chance that a draft is accepted when the ones before
+  it were, from every verified draft, with a prior of 0.3 worth 4 drafts;
+* each step it hands out drafts greedily where they add the most expected tokens while the speculative step's expected
+  tokens per second rises, and speculates only where that beats the plain step of the same requests by `MARGIN`.
 
 The policy never changes a token: it only decides how many positions are checked at once.
 """
@@ -24,21 +25,25 @@ from __future__ import annotations
 import threading
 from typing import Any, Sequence
 
+POLICY_VERSION = 2  # 2 (SP3): no 1-token matches; plain and speculative steps priced apart
 MAX_DRAFT = 7
 MAX_NGRAM = 3
+MIN_NGRAM = 2  # SP3: in SP2-H, drafts from 1-token matches were right 0.07-0.35 of the time
+LINE_MEMORY = 50  # SP3: a new speculative step weighs as much as the last 50 together
 PRIOR_ACCEPT, PRIOR_WEIGHT = 0.3, 4.0
 COST_WEIGHT = 0.2
 ROW_SLOPE = 0.06  # CPU6-A2: eight stacked rows cost 1.42x one row on this container's CPU
 MARGIN = 1.02
 
 
-def draft(context: Sequence[int], k: int, max_ngram: int = MAX_NGRAM) -> tuple[list[int], int]:
-    """Up to `k` tokens after the most recent earlier occurrence of the context's longest repeated suffix, and that
-    suffix's length (0 when nothing repeats)."""
+def draft(context: Sequence[int], k: int, max_ngram: int = MAX_NGRAM,
+          min_ngram: int = MIN_NGRAM) -> tuple[list[int], int]:
+    """Up to `k` tokens after the most recent earlier occurrence of the context's longest repeated suffix of
+    `min_ngram` to `max_ngram` tokens, and that suffix's length (0 when nothing repeats)."""
     if k < 1:
         return [], 0
     n_ctx = len(context)
-    for n in range(min(max_ngram, n_ctx - 1), 0, -1):
+    for n in range(min(max_ngram, n_ctx - 1), min_ngram - 1, -1):
         suffix = list(context[n_ctx - n:])
         for start in range(n_ctx - n - 1, -1, -1):
             if list(context[start:start + n]) == suffix:
@@ -63,33 +68,42 @@ class WindowPolicy:
         if rows < 1:
             raise ValueError("a step needs at least one row")
         self.rows = rows
-        self.cost: dict[int, float] = {}
-        self.cost_samples: dict[int, int] = {}
+        self.plain: dict[int, float] = {}  # rows -> seconds, an exponential average of plain steps
+        self._line = [0.0] * 5  # decayed sums of w, w*r, w*r*r, w*t, w*r*t over speculative steps
+        self._line_rows: set[int] = set()
         self.tried: dict[int, float] = {}
         self.taken: dict[int, float] = {}
         self.steps = self.plain_steps = self.drafted = self.accepted = 0
         self._lock = threading.Lock()
 
     # --- prices -------------------------------------------------------------------------------------------------
-    def price(self, rows: int) -> float:
-        """Seconds for one step of `rows` rows: measured, else a line through the measured row counts, else the
-        prior slope (a relative price; only ratios between row counts matter)."""
+    def plain_price(self, rows: int) -> float:
+        """Seconds for a plain step of `rows` rows: measured, else scaled from the nearest measured row count by the
+        prior slope, else the prior slope alone (a relative price)."""
         with self._lock:
-            if rows in self.cost:
-                return self.cost[rows]
-            known = sorted(self.cost.items())
+            if rows in self.plain:
+                return self.plain[rows]
+            known = sorted(self.plain.items(), key=lambda item: abs(item[0] - rows))
         if not known:
             return 1.0 + ROW_SLOPE * (rows - 1)
-        if len(known) == 1:
-            r0, t0 = known[0]
-            return t0 * (1.0 + ROW_SLOPE * (rows - 1)) / (1.0 + ROW_SLOPE * (r0 - 1))
-        n = len(known)
-        mean_r = sum(r for r, _ in known) / n
-        mean_t = sum(t for _, t in known) / n
-        spread = sum((r - mean_r) ** 2 for r, _ in known)
-        slope = sum((r - mean_r) * (t - mean_t) for r, t in known) / spread if spread else 0.0
-        slope = max(slope, 0.0)  # a step of more rows never costs less than the line says of fewer
-        return max(1e-6, mean_t + slope * (rows - mean_r))
+        r0, t0 = known[0]
+        return t0 * (1.0 + ROW_SLOPE * (rows - 1)) / (1.0 + ROW_SLOPE * (r0 - 1))
+
+    def speculative_price(self, rows: int, requests: int) -> float:
+        """Seconds for a speculative step of `rows` rows serving `requests` requests: the line through measured
+        speculative steps once it has two row counts, else the plain price of the requests plus the prior slope."""
+        with self._lock:
+            w, wr, wrr, wt, wrt = self._line
+            fitted = len(self._line_rows) >= 2
+        if fitted:
+            spread = w * wrr - wr * wr
+            slope = max(0.0, (w * wrt - wr * wt) / spread) if spread > 0 else 0.0
+            return max(1e-6, (wt - slope * wr) / w + slope * rows)
+        return self.plain_price(requests) * (1.0 + ROW_SLOPE * (rows - requests))
+
+    def price(self, rows: int) -> float:
+        """A plain step's price (kept for callers of policy version 1)."""
+        return self.plain_price(rows)
 
     def acceptance(self, bucket: int) -> float:
         with self._lock:
@@ -108,8 +122,7 @@ class WindowPolicy:
         rates = [self.acceptance(bucket) for _, bucket in offers]
         reach = [1.0] * n  # the chance that request i's next draft is reached and accepted, before multiplying
         tokens, rows = float(n), n
-        plain = n / self.price(n)
-        rate = plain
+        rate = n / self.speculative_price(n, n)
         while budget > 0:
             best, gain = None, 0.0
             for i, (drafts, _) in enumerate(offers):
@@ -119,13 +132,13 @@ class WindowPolicy:
                         best, gain = i, add
             if best is None:
                 break
-            new_rate = (tokens + gain) / self.price(rows + 1)
+            new_rate = (tokens + gain) / self.speculative_price(rows + 1, n)
             if new_rate <= rate:
                 break
             ks[best] += 1
             reach[best] *= rates[best]
             tokens, rows, rate, budget = tokens + gain, rows + 1, new_rate, budget - 1
-        if rate < MARGIN * plain:
+        if not any(ks) or rate < MARGIN * n / self.plain_price(n):
             return [0] * n
         return ks
 
@@ -134,12 +147,16 @@ class WindowPolicy:
         if not (seconds > 0) or rows < 1:
             return
         with self._lock:
-            old = self.cost.get(rows)
-            self.cost[rows] = seconds if old is None else (1 - COST_WEIGHT) * old + COST_WEIGHT * seconds
-            self.cost_samples[rows] = self.cost_samples.get(rows, 0) + 1
             if speculative:
+                keep = 1.0 - 1.0 / LINE_MEMORY
+                self._line = [value * keep for value in self._line]
+                for i, add in enumerate((1.0, rows, rows * rows, seconds, rows * seconds)):
+                    self._line[i] += add
+                self._line_rows.add(rows)
                 self.steps += 1
             else:
+                old = self.plain.get(rows)
+                self.plain[rows] = seconds if old is None else (1 - COST_WEIGHT) * old + COST_WEIGHT * seconds
                 self.plain_steps += 1
 
     def observe_drafts(self, bucket: int, drafted: int, accepted: int) -> None:
@@ -154,13 +171,16 @@ class WindowPolicy:
 
     def summary(self) -> dict[str, Any]:
         with self._lock:
-            cost = {str(r): round(t * 1000, 3) for r, t in sorted(self.cost.items())}
+            plain = {str(r): round(t * 1000, 3) for r, t in sorted(self.plain.items())}
             buckets = sorted(set(self.tried) | set(self.taken))
             counts = (self.steps, self.plain_steps, self.drafted, self.accepted)
-        return {"policy": "context", "speculative_steps": counts[0], "plain_steps": counts[1],
-                "drafted": counts[2], "accepted": counts[3],
+            fitted = len(self._line_rows) >= 2
+        line = ({str(r): round(self.speculative_price(r, 1) * 1000, 3) for r in range(1, self.rows + 1)}
+                if fitted else {})
+        return {"policy": "context", "policy_version": POLICY_VERSION, "speculative_steps": counts[0],
+                "plain_steps": counts[1], "drafted": counts[2], "accepted": counts[3],
                 "acceptance": {str(b): round(self.acceptance(b), 4) for b in buckets},
-                "step_ms_by_rows": cost}
+                "plain_step_ms_by_rows": plain, "speculative_step_ms_by_rows": line}
 
 
-__all__ = ["MARGIN", "MAX_DRAFT", "WindowPolicy", "accept", "draft"]
+__all__ = ["MARGIN", "MAX_DRAFT", "MIN_NGRAM", "POLICY_VERSION", "WindowPolicy", "accept", "draft"]

@@ -10,6 +10,7 @@ Quiet: 3 blocks of 16 Dolly prompts, one request at a time, A S A per block. Loa
 at once, A S A. `--analyse REPORT` applies the rule fixed in BACKLOG SP2 before the data.
 
     python tools/sp2_measure.py --dolly DIR --out sp2h.json
+    python tools/sp2_measure.py --plan sp3 --dolly DIR --out sp3h.json   # SP3-H: policy version 2, fresh prompts
     python -I tools/sp2_measure.py --analyse sp2h.json
 """
 
@@ -34,6 +35,7 @@ MODEL, REVISION = "mlx-community/SmolLM2-135M-Instruct-8bit", "0f0d9b8218915bc34
 LIMIT = 128
 QUIET_BLOCKS, QUIET_SIZE, QUIET_FIRST = 3, 16, 13_000
 LOAD_BLOCKS, LOAD_SIZE, LOAD_FIRST = 3, 8, 13_100
+PLANS = {"sp2": (QUIET_FIRST, LOAD_FIRST), "sp3": (13_200, 13_300)}  # SP3-H: prompts no earlier run used
 ORDER = ("A", "S", "A")
 RESAMPLES = 2000
 QUIET_BOUND, LOAD_TOKENS_FLOOR, LOAD_FIRST_BOUND = 1.3, 0.98, 1.02
@@ -184,6 +186,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--analyse", type=Path)
     parser.add_argument("--smoke", action="store_true", help="one tiny block of each, not the protocol's run")
+    parser.add_argument("--plan", choices=tuple(PLANS), default="sp2")
     args = parser.parse_args(argv)
     if args.analyse:
         print(json.dumps(analyse(json.loads(args.analyse.read_text())), indent=1))
@@ -200,14 +203,18 @@ def main(argv: list[str] | None = None) -> int:
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     quiet_blocks, quiet_size, load_blocks, load_size, limit = (
         (1, 2, 1, 2, 16) if args.smoke else (QUIET_BLOCKS, QUIET_SIZE, LOAD_BLOCKS, LOAD_SIZE, LIMIT))
-    report: dict[str, Any] = {"protocol": "sp2-h" + ("-smoke" if args.smoke else ""), "model": MODEL,
+    from ironmule.speculation import POLICY_VERSION
+
+    quiet_first, load_first = PLANS[args.plan]
+    report: dict[str, Any] = {"protocol": f"{args.plan}-h" + ("-smoke" if args.smoke else ""), "model": MODEL,
+                              "policy_version": POLICY_VERSION,
                               "revision": REVISION, "commit": commit, "dolly_sha256": digest, "limit": limit,
                               "machine": {"machine": platform.machine(), "cpus": os.cpu_count(),
                                           "mlx": mx.__version__},
                               "quiet": [], "load": []}
     shift = 1_000 if args.smoke else 0  # a smoke reads prompts the protocol's run never uses
-    for kind, blocks, size, first_index, at_once in (("quiet", quiet_blocks, quiet_size, QUIET_FIRST + shift, False),
-                                                     ("load", load_blocks, load_size, LOAD_FIRST + shift, True)):
+    for kind, blocks, size, first_index, at_once in (("quiet", quiet_blocks, quiet_size, quiet_first + shift, False),
+                                                     ("load", load_blocks, load_size, load_first + shift, True)):
         for b in range(blocks):
             chunk = texts[first_index + b * size:first_index + (b + 1) * size]
             cells = []

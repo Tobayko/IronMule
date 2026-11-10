@@ -15,9 +15,10 @@ from ironmule import speculation as sp
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_a_draft_is_what_followed_the_most_recent_repeat_and_names_its_match_length():
+def test_a_draft_is_what_followed_the_most_recent_repeat_of_at_least_two_tokens():
     assert sp.draft([5, 6, 7, 8, 1, 5, 6, 7], 3) == ([8, 1, 5], 3)
-    assert sp.draft([1, 2, 9, 1, 2, 4, 2], 2) == ([4, 2], 1)
+    assert sp.draft([1, 2, 9, 1, 2, 4, 2], 2) == ([], 0)  # SP3: a 1-token match ("2") drafts nothing
+    assert sp.draft([1, 2, 9, 1, 2, 4, 2], 2, min_ngram=1) == ([4, 2], 1)  # SP2's rule, kept as an argument
     assert sp.draft([1, 2, 3], 4) == ([], 0) and sp.draft([4, 4], 0) == ([], 0)
     assert sp.accept([3, 4, 5], [3, 4, 9, 7]) == [3, 4, 9] and sp.accept([], [6]) == [6]
 
@@ -31,27 +32,40 @@ def test_nothing_to_draft_or_no_free_row_means_a_plain_step():
 
 def test_it_drafts_where_acceptance_pays_for_the_rows_and_stops_where_it_does_not():
     policy = sp.WindowPolicy(rows=8)
-    for _ in range(50):  # bucket 3 almost always right, bucket 1 almost never
+    for _ in range(50):  # bucket 3 almost always right, bucket 2 almost never
         policy.observe_drafts(3, 4, 4)
-        policy.observe_drafts(1, 4, 0)
-    ks = policy.choose([(list(range(7)), 3), (list(range(7)), 1)])
+        policy.observe_drafts(2, 4, 0)
+    ks = policy.choose([(list(range(7)), 3), (list(range(7)), 2)])
     assert ks[0] >= 4 and ks[1] == 0 and sum(ks) + 2 <= 8
     policy.observe_step(1, 0.010, False)
-    policy.observe_step(8, 0.080, True)  # rows cost as much as running them one by one: speculation never pays
+    policy.observe_step(2, 0.020, True)  # a speculative step costs a plain step per row: never worth it
+    policy.observe_step(8, 0.080, True)
     assert policy.choose([(list(range(7)), 3)]) == [0]
 
 
-def test_prices_are_learned_from_steps_and_unmeasured_rows_lie_on_their_line():
+def test_plain_and_speculative_steps_are_priced_apart():
     policy = sp.WindowPolicy(rows=8)
-    assert policy.price(8) == pytest.approx(1.42)
+    assert policy.plain_price(8) == pytest.approx(1.42)
     policy.observe_step(1, 0.050, False)
-    assert policy.price(8) == pytest.approx(0.050 * 1.42)
-    policy.observe_step(3, 0.070, True)
-    assert policy.price(5) == pytest.approx(0.090)
+    assert policy.plain_price(8) == pytest.approx(0.050 * 1.42)
+    assert policy.speculative_price(3, 1) == pytest.approx(0.050 * 1.12)  # before its line: plain plus the slope
     policy.observe_step(1, 0.100, False)
-    assert policy.price(1) == pytest.approx(0.8 * 0.050 + 0.2 * 0.100)
+    assert policy.plain_price(1) == pytest.approx(0.8 * 0.050 + 0.2 * 0.100)
+    for rows, seconds in ((2, 0.080), (4, 0.090), (2, 0.080), (4, 0.090)):
+        policy.observe_step(rows, seconds, True)
+    assert policy.speculative_price(3, 1) == pytest.approx(0.085)  # the line through 2 and 4 rows
+    assert policy.speculative_price(8, 1) == pytest.approx(0.110)
+    assert policy.plain_price(1) == pytest.approx(0.060)  # speculative steps never move the plain price
     out = policy.summary()
-    assert out["speculative_steps"] == 1 and out["plain_steps"] == 2 and out["step_ms_by_rows"]["3"] == 70.0
+    assert out["policy_version"] == 2 and out["speculative_steps"] == 4 and out["plain_steps"] == 2
+    assert out["plain_step_ms_by_rows"] == {"1": 60.0} and out["speculative_step_ms_by_rows"]["3"] == 85.0
+
+
+def test_the_line_never_lets_more_rows_cost_less():
+    policy = sp.WindowPolicy(rows=8)
+    for rows, seconds in ((2, 0.100), (6, 0.060)):
+        policy.observe_step(rows, seconds, True)
+    assert policy.speculative_price(8, 1) == pytest.approx(policy.speculative_price(2, 1))
 
 
 def test_acceptance_counts_the_first_refused_draft_and_starts_from_its_prior():
@@ -107,7 +121,7 @@ def test_speculation_changes_no_answer_alone_or_stacked_and_learns_while_it_serv
     assert [r.tokens for r in spec.serve([Request(prompt_ids=ids, max_tokens=24) for ids in prompts])] == want
     policy = spec.backend.policy
     assert policy is not None and plain.backend.policy is None
-    assert policy.steps > 0 and policy.drafted > 0 and policy.cost  # it drafted, verified and priced its steps
+    assert policy.steps > 0 and policy.drafted > 0 and policy.summary()["speculative_steps"] == policy.steps
     assert spec.backend.free_slots() == 8
 
 
@@ -162,7 +176,7 @@ def test_through_the_product_speculation_answers_as_without_it_and_health_shows_
         try:
             answers = []
             for i, text in enumerate(texts):
-                request = GenerationRequest("local/test", (("user", text),), max_tokens=24, request_id=f"r{i}",
+                request = GenerationRequest("local/test", (("user", text),), max_tokens=64, request_id=f"r{i}",
                                             stream=True)
                 answers.append("".join(e.get("text", "") for e in service.stream(request) if isinstance(e, dict)))
             return answers, service.health()
