@@ -1772,7 +1772,7 @@ a hardware result).**
   is a new protocol with its own simulation, the owner's decision.
 - It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
 
-### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed)
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed)
 
 **Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
 bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
@@ -1900,6 +1900,29 @@ also decides:
   3.0 and the mean first token's 95 % upper bound at most 1 plus the A/A noise; every request answered.
 - *Kill:* the agent's own choice is no faster than that, and step 3 is revised or removed, recorded in Tier 0.
 - *Expected:* about 1-1.5 hours of this container's CPU (the setup's measurements, about 30 minutes, then the arms).
+
+- **CPU6-A result (2026-11-10, this container, at `b71b1ce`, about 1 hour, no GPU hours): valid; fails.**
+  - *The agent's own setup, on a fresh store with nothing named (1,172 s):* NUM1 took `dequantize` (logits within
+    2.79e-3 of the float32 plan, 0.027 of stock time); the BLAS rule took OpenBLAS (logits within 2.13e-6 of the
+    stock BLAS, same top token, 0.218 of its time for a 16-token answer); the CPU stacked plan passed its probe and
+    its gate (ratio 0.99999993, 95 % up to 1.00000003) and made 68.1 tokens per second at width 8 against 14.7 on
+    the base path, 15.1 at one row (1.02x), but AG4's rule refused it: on the short prompt its first token took
+    0.0979 s against 0.0842 s, 1.16x, above 1.1 (the long prompt: 1.556 s against 1.608 s, 0.97x). So S served
+    `dequantize` on OpenBLAS with the reference engine.
+  - *Through the product (5 repetitions, every request answered):* A 4.41 tokens per second, mean first token
+    53.6 s; S 12.57 and 19.1 s. S over A: 2.85x (95 % 2.78x to 2.92x), below the bound of 3.0; first token 0.355x
+    (95 % up to 0.366x), A/A noise 2.1 %. All 40 of S's answers equal A's first run.
+  - *Verdict by the fixed rule: fail.* The agent chose a setup other than A by itself, and it is 2.85x faster, but the
+    bound was 3.0.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the stacked engine lost on 14 ms of one request's
+    first token on a 10-token prompt. Under 8 requests at once, CPU6-M measured the same engine at 12.5x A's tokens
+    per second with first tokens 40x sooner. AG4's first-token check judges one request alone, a rule made for the
+    T4, where `route` serves single requests beside the stacked engine; on a CPU `route` is not offered, so nothing
+    takes that role. Where the 14 ms come from is not measured (the plan's padded head at prefill, its float32
+    norms, or noise: the plan's short-prompt prefills ranged 0.078-0.213 s).
+  - By the kill rule step 3 is to be revised (or removed) and the result goes to Tier 0. Its code stays: what the
+    agent chose (OpenBLAS) is faster and gated, and it chooses nothing it has not measured. The ledger entry is
+    still owed.
 
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
@@ -4777,6 +4800,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **CPU6 step 3 as fixed: the agent's own CPU setup at 3x (2026-11-10).** Experiment CPU6-A (this container, commit
+  `b71b1ce`; see CPU6 above): with SmolLM2-135M-Instruct-8bit the agent chose `dequantize` on OpenBLAS by itself and
+  refused the CPU stacked engine on AG4's first-token check (1.16x later on a 10-token prompt, 14 ms). Through the
+  product that served 2.85x AG4's earlier CPU choice (95 % 2.78x to 2.92x), below the bound of 3.0. Re-open with a
+  changed mechanism (a stacked plan whose single-request first token is no later) or a first-token rule fixed for
+  machines without `route`, under a new protocol on fresh data.
 
 - **AG6 dreaming as the agent's only reaction to a load change (2026-11-08).** Experiment AG6-Q (kernel
   `tobayko/ironmule-rl2-headroom-ag6q` v1, commit `cc76d3f`; see AG6-Q above): on one T4 with Qwen 3 1.7B bf16 at
