@@ -2140,7 +2140,7 @@ what an online learner needs. This entry is its pre-measurement, before any prod
     spread is the request dependence an online window policy (Strata's) is for: speculating only where it pays. Any
     reopening needs a new protocol on fresh prompts. The ledger entry is still owed.
 
-### SP2 — Speculation from the context with a window the agent learns while it serves (owner request 2026-11-10; fixed before its data)
+### SP2 — Speculation from the context with a window the agent learns while it serves (owner request 2026-11-10; SP2-H failed its bound, opt-in)
 
 **Why.** SP1-0 (Tier 0) showed speculation from the context exact on the CPU plan and 1.48x on average at a fixed
 window, but killed by its bound because the gain depends on the request: 15 of 48 prompts lost, 6 more than doubled,
@@ -2198,6 +2198,27 @@ reopening condition ("a changed mechanism"), and it is learning the agent does w
 - *Cost:* about 1 hour of this container's CPU; no GPU hours.
 - *Not covered:* other CPUs, models, the GPU stacked plans (their attention is not checked for verify windows), and
   mixed traffic where requests arrive while others speculate.
+
+- **SP2-H result (2026-11-10, this container, at `ee6f9d8`, about 50 minutes, no GPU hours): valid; fails.** Every
+  arm reported OpenBLAS serving and plan version 3 with its verify window bit-identical; Dolly digest `2df90833`.
+  Before the run a smoke of the harness read 4 prompts the run never uses (indices 14,000 on); not counted.
+  - *Answers:* all 72 of S's answers (48 quiet, 24 under load) equal A's first run token for token.
+  - *Quiet (48 prompts, one at a time):* S over A **1.40x (95 % 1.21x to 1.63x)** the tokens per second, below the
+    bound of 1.3; first token 1.01x (95 % up to 1.05x; A/A noise 10.0 %). A/A noise on tokens per second 6.8 %.
+  - *Load (3 blocks of 8 at once):* tokens per second 1.04x (blocks 0.998x to 1.096x, floor 0.98), mean first token
+    0.99x (up to 1.016x): no harm.
+  - *Verdict by the fixed rule: fail* (quiet tokens per second only). So SP2 does not serve by default: `--speculate
+    auto` leaves it off, also where the agent chose the stacked engine; since every answer was equal,
+    `--speculate context` stays as an opt-in. Tier 0, scoped to this CPU and model. The ledger entry is still owed.
+  - *Post hoc, descriptive only (no rule or verdict changes):* per prompt the median was 1.095x, 13 of 48 lost (down to
+    0.83x) and 8 more than doubled (up to 3.87x); pooled over time, 15.97 against 13.63 tokens per second (1.17x).
+    What the policy learned (per quiet block's S worker): drafts of match length 3 were right 0.78-0.83 of the time,
+    length 2 0.39-0.49, length 1 0.07-0.35; its step prices by rows were noisy and not monotone (3 rows 91-109 ms, 8
+    rows 99-115 ms, 1 row 69-77 ms), so some steps it judged worth speculating cost more than they made. That, and the
+    acceptance of single-token matches, are where a reopening would start (a mechanism change under a new protocol):
+    no drafts from 1-token matches, step prices from more samples or a fitted line only. SP1-0's fixed window `k` = 7
+    made 1.475x (95 % from 1.23x) on other prompts one at a time in a probe loop; the learned window here, through the
+    product, is not better than that on these numbers.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
@@ -5072,6 +5093,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **Speculation from the context with a learned window as the agent's default on the CPU plan (2026-11-10).**
+  Experiment SP2-H (this container, commit `ee6f9d8`; see SP2 above): with SmolLM2-135M-Instruct-8bit, OpenBLAS and
+  the CPU stacked engine, every answer was equal and load was unharmed (1.04x), but one request at a time it made
+  1.40x the tokens per second (95 % 1.21x to 1.63x) against a bound of 1.3. `--speculate context` stays opt-in;
+  `auto` leaves it off. Re-open with a changed mechanism (for example no drafts from 1-token matches, step prices
+  from more samples), another model or CPU, under a new protocol on prompts not used here.
 
 - **Speculation from the context at a fixed window on the CPU plan (2026-11-10).** Experiment SP1-0 (this container,
   commit `59f26ff`; see SP1-0 above): with SmolLM2-135M-Instruct-8bit on OpenBLAS, prompt-lookup drafts verified as

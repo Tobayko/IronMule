@@ -163,7 +163,7 @@ learned on this machine: the time of a step by its rows, and how often drafts of
 (Strata's draft policy). It speculates only where that is expected to make more tokens per second than a plain
 step, and not at all when the engine's rows are full. SP1-0 measured why it must decide per request: at a fixed
 window the same speculation made one prompt 5.7x faster and another 10 % slower. `/health` shows it under
-`speculation`; the hardware test is SP2-H in the backlog.
+`speculation`. Its hardware test SP2-H (2026-11-10, this container's CPU, SmolLM2-135M) did not pass its bound: one request at a time it made 1.40x the tokens per second on average (95 % from 1.21x, bound 1.3), with every answer equal and no harm under load, so it is opt-in (`--speculate context`) and the agent does not turn it on by itself.
 
 ## What it knows about the hardware (AG3)
 

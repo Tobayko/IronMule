@@ -134,7 +134,9 @@ the product served 12.7x the tokens per second of AG4's earlier CPU choice (95 %
 43x sooner, every answer equal on that workload; the same machine, model and traffic as CPU6-M. On a second
 machine, a Kaggle CPU session (CPU6-A2-K), it made the same choice by itself and served 9.34x (95 % 9.30x to
 9.38x), first tokens about 33x sooner, every answer equal; nothing beyond those two x86 CPUs, that model and that
-traffic is covered. In
+traffic is covered. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
+this CPU it changed no answer and made one request at a time 1.40x the tokens per second on average (95 % from
+1.21x), short of its bound of 1.3, and 1.04x under load (SP2-H); the agent does not turn it on by itself. In
 CPU6-A, before that revision, it refused the stacked engine on 14 ms of one request's first token.
 
 On two T4s with `mlx-community/gemma-3-12b-it-4bit` the agent chose the Gemma stacked engine at width 6 by itself

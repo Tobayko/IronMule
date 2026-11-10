@@ -255,9 +255,10 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--speculate", choices=("auto", "context", "off"), default="auto",
                         help="SP2 (the CPU stacked engine): verify drafts copied from the request's own prompt and "
                              "answer, several positions in one step, with how many learned while it serves; every "
-                             "token stays the engine's own. `auto` turns it on where --agent on chose the stacked "
-                             "engine, `context` with any --engine dense, `off` never. A plan whose verify window is "
-                             "not bit-identical on this machine never speculates; /health says what serves")
+                             "token stays the engine's own. Opt-in: `context` with --engine dense (or the agent's "
+                             "stacked engine); `auto` and `off` leave it off, since its hardware test SP2-H did not "
+                             "pass its bound. A plan whose verify window is not bit-identical on this machine never "
+                             "speculates; /health says what serves")
     parser.add_argument("--cpu-blas", choices=("stock", "openblas"), default="stock",
                         help="CPU6 (Linux x86-64, no GPU): `openblas` runs MLX's float32 matrix products on an "
                              "OpenBLAS found on this machine (NumPy's bundled one first) instead of the reference BLAS "
@@ -307,8 +308,8 @@ def serve(argv: list[str]) -> int:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
     if args.gpus is not None and args.no_model:
         parser.error("--gpus places model workers; --no-model starts none")
-    if args.speculate == "context" and args.engine not in (None, "dense"):
-        parser.error("--speculate context needs --engine dense (SP2)")
+    if args.speculate == "context" and args.engine != "dense" and not agent_chooses:
+        parser.error("--speculate context needs --engine dense or --agent on (SP2)")
     if args.cpu_blas != "stock" and args.gpus is not None:
         parser.error("--cpu-blas applies to CPU workers; --gpus pins workers to GPUs")
     if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
@@ -369,9 +370,9 @@ def serve(argv: list[str]) -> int:
             stacked_width = (agent_setup or {}).get("width") if args.engine in ("dense", "route") else None
 
             def make_backend(device=devices[0]):
-                # SP2: speculation on the stacked engine where asked, or where the agent chose that engine
-                speculate = args.engine == "dense" and (
-                    args.speculate == "context" or (args.speculate == "auto" and agent_chooses))
+                # SP2: speculation on the stacked engine where asked. SP2-H (2026-11-10) did not pass its bound, so
+                # `auto` leaves it off, also where the agent chose that engine (BACKLOG SP2, Tier 0)
+                speculate = args.engine == "dense" and args.speculate == "context"
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,
