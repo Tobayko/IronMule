@@ -82,11 +82,12 @@ def install_dense(model: Any, device_info: dict[str, Any] | None,
     agent's measured best width); the pool holds that many requests, so no group or joiner exceeds it."""
     from ironmule import dense_gemma
 
-    if device_info is None and _on_cpu():  # CPU6: MLX's CPU device has its own stacked plan (float32, BLAS)
-        from ironmule import dense_cpu
+    from ironmule import dense_cpu
 
-        plan, record = dense_cpu.install(model, slots=slots)
-        return plan, record
+    if device_info is None and _on_cpu() and dense_cpu.refuse(model) is None:
+        # CPU6: MLX's CPU device has its own stacked plan (float32, BLAS) for the models it was built for; any other
+        # model goes on to the plans below, which refuse what they were not built for, as before
+        return dense_cpu.install(model, slots=slots)
     if dense_gemma.refuse(model, native=False) is None:
         if dense_gemma.refuse(model) is not None:
             from ironmule.cuda_native import install as install_native
