@@ -136,7 +136,9 @@ machine, a Kaggle CPU session (CPU6-A2-K), it made the same choice by itself and
 9.38x), first tokens about 33x sooner, every answer equal. With `mlx-community/Qwen3-0.6B-4bit` on this container
 (CPU6-Q) it chose `dequantize` on OpenBLAS but refused the stacked engine (one request alone at 0.73x), and served
 4.36x (95 % 4.25x to 4.50x), every answer equal; nothing beyond those two x86 CPUs, those two models and that
-traffic is covered. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
+traffic is covered. These gains are against IronMule's own earlier CPU path. Against llama.cpp on the same CPU and model
+(LC1, `llama-server` with the Q8_0 GGUF), IronMule's best CPU setup was about 5x slower with 8 requests at once
+(95 % 4.4x to 5.8x) and about 14x slower for one request (12.6x to 14.4x); on a CPU, llama.cpp is much faster. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
 this CPU it changed no answer and made one request at a time 1.40x the tokens per second on average (95 % from
 1.21x), short of its bound of 1.3, and 1.04x under load (SP2-H); the agent does not turn it on by itself. In
 CPU6-A, before that revision, it refused the stacked engine on 14 ms of one request's first token.

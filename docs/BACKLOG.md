@@ -2300,7 +2300,7 @@ harness reads prompts from index 14,000 on. *Cost:* about 1 hour of this contain
     size a few times before its guessed cost may veto it; SP3's policy has no such exploration. That, not the
     acceptance, is where a further revision would start.
 
-### LC1 — IronMule against llama.cpp on the same CPU and model (owner request 2026-11-10; fixed before its data)
+### LC1 — IronMule against llama.cpp on the same CPU and model (owner request 2026-11-10; done: llama.cpp far faster)
 
 **Why.** CPU6's gains are measured against IronMule's own earlier CPU path. The owner asked where that stands against
 common software: llama.cpp is the usual way to run a small model on a CPU.
@@ -2324,6 +2324,25 @@ common software: llama.cpp is the usual way to run a small model on a CPU.
 - *Not covered:* llama.cpp's other options (other quantisations, threads, batch sizes), other models and CPUs; HTTP
   adds a little to L's times (localhost).
 - *Cost:* about 1 hour of this container's CPU, after CPU6-Q; the build about 10 minutes before it. No GPU hours.
+
+- **LC1 result (2026-11-10, this container, at `008ed41`, about 20 minutes plus a 10-minute build, no GPU hours):
+  complete.** `llama-server` version 4227c9b, built with gcc 13.3 (Release); GGUF sha256 `5a139571`. A smoke of the
+  harness read 2 Dolly prompts from index 14,400 and ran CPU6's prompts at 16 tokens; not counted.
+  - *Load (5 blocks of CPU6's 8 prompts at once, 64 tokens):* IronMule 62.3 tokens per second, llama.cpp 319.5:
+    **llama.cpp 5.13x IronMule (95 % 4.42x to 5.85x)**, mean first token 0.139x (95 % 0.126x to 0.149x). IronMule's
+    A/A noise 3.2 %.
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* IronMule 14.4 tokens per second, llama.cpp 195.0: **13.6x
+    (95 % 12.6x to 14.4x)**, first token 0.169x.
+  - *Answers:* 0 of 56 equal; llama.cpp ended earlier under load (419 tokens against 480). Different 8-bit formats and
+    kernels give different greedy answers, as the protocol expected; it is not a quality judgement.
+  - *What it shows:* on this CPU and this model, IronMule's best CPU setup (CPU6-A2's) is far slower than llama.cpp:
+    about 5x under 8 requests at once and about 14x for one request. CPU6's gains are real against IronMule's own
+    earlier CPU path, whose MLX CPU wheel ships a reference BLAS, but they close little of the gap to common software.
+  - *Post hoc, descriptive only:* the gap is in the per-token work itself. IronMule's single-request step on this CPU
+    is about 65-70 ms (CPU6-A2, SP2-H); llama.cpp made 195 tokens per second alone, about 5 ms a token, with its Q8_0
+    integer kernels in place of IronMule's float32 matrices on OpenBLAS through MLX. A CPU route that matters for the
+    main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
+    The ledger entry is still owed.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
