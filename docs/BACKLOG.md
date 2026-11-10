@@ -2344,7 +2344,7 @@ common software: llama.cpp is the usual way to run a small model on a CPU.
     main goal would need such kernels (or llama.cpp's ggml as a CPU backend the agent can choose), under its own entry.
     The ledger entry is still owed.
 
-### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG0 fixed before its data)
+### GG — ggml as a CPU engine the agent chooses: 20 % above llama.cpp (owner goal 2026-11-10; GG0 done, waits on the owner)
 
 **Why.** LC1: on this CPU and model llama.cpp is 5.1x IronMule's best CPU setup under load and 13.6x for one request.
 The owner's goal: IronMule 20 % above llama.cpp, that is at least 1.2x `llama-server` as LC1 ran it (same build, GGUF,
@@ -2377,6 +2377,31 @@ GG0 (pre-measurement, below), GG1 (the engine in the product), GG1-H (through th
   answers: that goes to the owner before GG1 (it would need a gate of its own). Otherwise GG stops here, recorded in
   Tier 0 with what was missing.
 - *Cost:* about 30 minutes of this container's CPU; no GPU hours.
+
+- **GG0 result (2026-11-10, this container, at `5431766`, about 5 minutes, no GPU hours).** llama.cpp 4227c9b reported
+  AVX-512 VNNI and AMX-INT8 and repacked the Q8_0 weights for AMX. A smoke read 2 prompts from index 14,700 (16 tokens);
+  not counted.
+  - *(a) Parity:* in process, one request decoded one token per call made 182.8 tokens per second against the
+    server's 162.2 on the same prompts: **1.13x** (above 0.95). The server's HTTP and streaming cost is the
+    difference; LC1 had measured the server at 195 on other prompts.
+  - *(b) Verify cost:* one position 6.16 ms; 2 positions 9.88 ms (1.60x), 4 10.68 ms (1.73x), 5 10.53 ms (1.71x),
+    8 14.66 ms (2.38x); 8 sequences one position each 17.22 ms (2.80x). No window of 5 or more positions within 1.5x.
+  - *(c) Exactness:* 7 of 16 prompts' tokens differ from one token per call, at every `k` (2, 4 and 7), each first at
+    the same position (19-84) whatever `k`: any decode of more than one position takes another kernel path, so its
+    logits are not bit-identical to one position alone. Speculation on ggml as built changes answers.
+  - *(d) Speed:* over the server, `k` = 2 1.19x, `k` = 4 **1.30x**, `k` = 7 1.29x (over one token per call 1.08x,
+    1.18x, 1.16x); acceptance 0.61, 0.48, 0.35.
+  - *(e) Load:* 8 sequences batched one position each made 319.7 tokens per second against the server's 333.5 and
+    265.3 (its two runs): 1.07x their mean.
+  - *Verdict by the fixed rule:* GG1 is not built on this rule. (a) holds, but (d)'s 1.30x comes only with differing
+    tokens and (b) leaves no room for an exact learned window. The entry says differing tokens go to the owner before
+    GG1, and the probe's coded decision read "stop"; both mean nothing is built without the owner. Not yet Tier 0:
+    the owner decides first.
+  - *The owner's choice (asked 2026-11-10):* (1) allow speculation on ggml as an output-changing path behind its own
+    quality gate (the perplexity gate on the verify path against one position at a time), as AG4 allows gated numeric
+    plans; then GG1 is built and GG1-H decides against 1.2x; or (2) require exact speculation: every decode padded to
+    one fixed number of positions so the kernel path never changes, which costs single requests about 1.6x a step
+    and very likely ends below 1.2x; or (3) stop GG.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
