@@ -1772,7 +1772,7 @@ a hardware result).**
   is a new protocol with its own simulation, the owner's decision.
 - It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
 
-### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed, CPU6-A2 passed)
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; CPU6-M passed, CPU6-A failed, CPU6-A2 and CPU6-A2-K passed)
 
 **Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
 bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
@@ -1975,6 +1975,21 @@ any of its own data).**
   scoped to that machine, with what the agent chose and why, and does not undo CPU6-A2. An invalid run (Kaggle's
   limit, a failed install) releases nothing and is said so.
 - *Cost:* about 2-3 hours of a Kaggle CPU session; no GPU or TPU quota.
+
+- **CPU6-A2-K result (2026-11-10, kernel `tobayko/ironmule-cpu6a2-kaggle` v1 at `2fe4912`, a Kaggle CPU session of 4
+  x86-64 CPUs, MLX 0.32.4, about 1.2 hours, no GPU or TPU quota): valid; passes.**
+  - *The agent's own setup, on a fresh store with nothing named (2,412 s):* `dequantize` (logits within 2.79e-3, 0.042
+    of stock time), OpenBLAS (logits within 2.64e-6 of the stock BLAS, same top token, 0.256 of its time), and the CPU
+    stacked engine at width 8: gate ratio 1.00000005 (95 % 0.99999993 to 1.00000017); 34.7 tokens per second at width
+    8 against 6.28 on the base path, 5.53x; 6.49 at one row (1.03x); first token 0.93x on the short prompt (0.182 s
+    against 0.197 s) and 0.93x on the long one. The same choice as in CPU6-A2.
+  - *Through the product (5 repetitions, every request answered):* A 2.95 tokens per second, mean first token 80.7 s;
+    S 27.6 and 2.46 s. S over A: **9.34x (95 % 9.30x to 9.38x)**, bound 3.0; mean first token 0.0305x (95 % up to
+    0.0312x), A/A noise 0.4 %. All 40 of S's answers equal A's first run.
+  - *What it shows:* on a second x86 CPU, slower than this container (its base path 6.3 against 15.3 tokens per
+    second), the agent made the same choice by itself and it paid through the product. The gain is smaller than
+    CPU6-A2's 12.7x; why is not measured (OpenBLAS's share was 0.256 of stock time there against 0.206 here). Not
+    shown: a larger model, other traffic, a CPU of another vendor or architecture. The ledger entry is still owed.
 
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
