@@ -1979,6 +1979,52 @@ any of its own data).**
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
+### AG9 — The online agent inside the stacked engine: is there anything left to learn? (owner request 2026-11-10; fixed before its data)
+
+**Why.** Since CPU6-A2 the agent chooses the CPU stacked engine by itself, and there it learns nothing while it
+serves: `_agent` refuses an engine with slot reuse (AG4 step 3, `cli.py`), because its world model prices one group
+at a time. The owner's goal is an agent that keeps learning on a CPU without end ("The main goal").
+
+**What it could decide there.** Read from the code on 2026-11-10:
+- *Width:* fixed at setup. The CPU plan pads every step to its width, and OpenBLAS is row-invariant only at a fixed
+  width (CPU6), so a different width is a different plan; AG4 already chooses it.
+- *Order:* when a slot frees, the service takes the oldest waiting request (`_stream_batch.joins`, FIFO). Which one
+  takes it changes no answer: at a fixed width the plan's rows are invariant to slot and company (0 of 180
+  placements differed, CPU6). This is the only decision left inside the engine. At a fixed capacity order moves no
+  tokens per second while every slot is full, but it decides how full the tail of a busy period is (longest first
+  keeps it full) and how soon short requests see their first token (shortest first).
+
+**Step S, headroom in simulation (`training/ag9_stacked_order.py`; local, no GPU; development evidence, no claim).**
+- *Engine model:* 8 slots; a request that takes a slot is prefilled before the next decode step, which every
+  member waits for; one decode step with `n` members costs the agent's own CPU6-A2 measurement (`plan_step_s` at
+  n = 1..8, the short-prompt row; a member whose prompt is long uses the long row); a prefill costs the plan's
+  measured first token, linear in prompt tokens between the short (11) and the long (328) prompt.
+- *Traffic, RL2-H2's three states (equal weight):* `quiet` (16 Poisson arrivals at 0.2 of the FIFO capacity, short
+  prompts, limits 64 or 128); `bursts` (four bursts of four within 0.2 s, burst starts Poisson at 0.6 of capacity /
+  4); `spike` (16 within 1 s). In `bursts` and `spike` half the prompts are long (328 tokens) and the limit is 32 or
+  256. Answer lengths in two variants: each runs to its limit, or stops at a uniform 0.25-1 of it. 40 traces per
+  state and variant, seeds 0-39.
+- *Orders:* `fifo` (today's); `sjf` and `ljf` by the output limit (known at arrival); `sjf*` and `ljf*` by the true
+  answer length (the bound a perfect length model could reach). Ties by arrival.
+- *Scores per trace (AG8's):* tokens per second (tokens over the span from first arrival to last end) and the mean
+  first token, each order over `fifo` on the same trace; per state, the mean ratio and a 95 % paired bootstrap
+  (2,000 resamples, seed 0).
+- *Headroom, fixed before the data:* an order has throughput headroom in a state when its tokens-per-second
+  ratio's 2.5 % bound is above 1.03 and its mean first token's 97.5 % bound at most 1.02; it has first-token
+  headroom when its mean first token's 97.5 % bound is below 0.80 and its tokens-per-second ratio's 2.5 % bound at
+  least 0.98.
+- *Decision:*
+  - no order has headroom in any state and variant: the order decision gives the online agent nothing to learn
+    inside the stacked engine; recorded in Tier 0 with this entry, and the agent keeps serving there on its
+    setup alone (no learner is built for it);
+  - an order with headroom that is also not worse than `fifo` (tokens-per-second 2.5 % bound at least 0.98, mean
+    first token 97.5 % bound at most 1.02) in every other state: a fixed rule, proposed for a hardware test, no
+    learner;
+  - otherwise (states want different orders): step 2, the agent's world model with slot reuse and an order
+    learned online, with its own protocol before any code.
+- *Limits:* a simulation of one CPU's prices for one small model; the real engine's join timing, the length model's
+  errors and other traffic are not in it. A hardware test is still needed before anything serves.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
