@@ -59,6 +59,15 @@ that means from now on, for the whole project and not only for `--agent on`:
 - Tier 0 entries rejected only because tokens changed may be reopened under this rule with a quality gate (for
   example HW3's prompt-lookup speculation on CUDA and TB1's true tensor batching on the T4), under a new protocol.
 
+**The quality bar is llama.cpp's, speed is what counts, the model stays as it is (owner, 2026-11-10, later the same
+day).** "Continue with IronMule so that the hardware is used better without changing the model; only speed counts,
+and for quality take the same quality as llama or somewhat better." Read as: (1) the main line is hardware
+optimisation of a given model, no retraining and no changed weights; (2) the measure is speed; (3) a path's answer
+quality must be at least llama.cpp's on the same model: on the perplexity gate's text its perplexity must not be
+higher than that of llama.cpp's default setting on the same GGUF (ratio at most 1.000, both numbers deterministic).
+This replaces the float32-on-MLX reference for the ggml engine; a GGUF llama.cpp itself serves is by definition at
+llama.cpp's quality. The owner was told this reading and may correct it.
+
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
@@ -2541,6 +2550,26 @@ engine each platform has, chosen and gated on the machine, rather than on MLX ev
 AG4-Q, AG6-H): IronMule's agent setup on MLX against `llama-server` (CUDA build, a GGUF built from the same weights,
 8 slots) and vLLM (8 concurrent sequences), each with the perplexity gate against the bf16 reference; LC1's workloads
 and scores. About 2 GPU hours. Protocol to be fixed before its data.
+
+### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; noted, internal check only)
+
+**The idea (owner, from a text on DejaVu, MatFormer, Mixture of Depths and PowerInfer).** While it answers, the model
+computes only the part of its weight matrices the input needs. DejaVu needs trained predictors and was shown on ReLU
+models; MatFormer, Mixture of Depths and PowerInfer need models trained or retrained for them, which the owner's main
+line excludes (the model stays as it is). What fits without training is GRIFFIN's variant: the feed-forward neurons
+that respond most on the prompt are kept for the whole answer, the others are skipped (one mask per request, so the
+kernels run on smaller dense matrices). The owner asked to note it and check it internally; it is not the main line.
+
+**Internal check, fixed before its data (`tools/cs1_probe.py`; development evidence, no claim).** On
+`mlx-community/SmolLM2-135M-Instruct-8bit` widened to float32 (MLX, OpenBLAS), the numeric gate's 16 chunks of 512
+tokens: the first 256 tokens of a chunk are the prompt, computed in full; per layer the kept neurons are those with
+the largest norm over the prompt's positions of each position's unit-normalised feed-forward activation (GRIFFIN's
+statistic); the last 256 tokens are scored with only the kept neurons, at keep shares 0.9, 0.75 and 0.5, against the
+full model on the same positions (ratio of perplexities, 95 % bootstrap over chunks).
+- *Reading:* a keep share whose ratio's upper bound is at most 1.005 (NUM1's bound) is worth an entry of its own with
+  kernels and QG1; under the owner's bar (not worse than llama.cpp) any measurable loss rules it out for the main line.
+  If no share reaches 1.005, the idea stays noted here and is not pursued on this model.
+- *Cost:* a few minutes of this container's CPU.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
