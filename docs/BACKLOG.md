@@ -2436,6 +2436,16 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
 - *Otherwise* the goal is not reached on this CPU and model; what reached what goes to the entry and Tier 0, and the
   engine stays opt-in if its gate passed.
 - *Cost:* about 1 hour of this container's CPU; no GPU hours.
+- **Gate on LC1's GGUF (2026-11-10, this container, development; the engine's own first start):** bartowski's Q8_0
+  (made from the original bf16 weights) against the registered `mlx-community/SmolLM2-135M-Instruct-8bit` widened to
+  float32 on OpenBLAS: ratio 1.0033 (95 % 1.0006 to 1.0060), above 1.005: **refused**, fail-closed as fixed. Two
+  different 8-bit quantisations of one original, not a fault of the engine.
+- **Amendment before any GG1-H data (2026-11-10, labelled):** the GGUF both arms serve is built from the registered
+  model itself (`tools/gguf_from_mlx.py`: its MLX weights widened to float32 and quantised to Q8_0 into LC1's GGUF as a
+  template, with llama.cpp's own tensor names, metadata, tokenizer and query/key layout), so the gate measures only
+  Q8_0's own rounding. Arm L serves that GGUF too (same format and size as LC1's, so llama.cpp's speed is unchanged in
+  kind); everything else in GG1-H stays as fixed. If this GGUF also fails the gate, GG1-H does not run and GG stops in
+  Tier 0 with that result.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
