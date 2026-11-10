@@ -119,10 +119,14 @@ def test_a_model_without_a_stacked_engine_is_measured_as_ineligible(monkeypatch)
 
 
 def test_a_model_no_stacked_plan_serves_is_refused_before_anything_is_timed(monkeypatch):
-    """On a CPU, or for a model neither plan serves, the agent refuses the stacked engine without timing the base
-    path: on a slow CPU the base path's 32 timed steps alone can take minutes."""
+    """For a model no plan here serves, the agent refuses the stacked engine without timing the base path: on a
+    slow CPU the base path's 32 timed steps alone can take minutes."""
     timed = []
     monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None: timed.append(1) or (0.1, 0.05))
+    monkeypatch.setattr(pc, "on_cpu", lambda: True)  # CPU6: on a CPU the CPU plan's own refusal, nothing timed
+    out = pc.measure_stacked(object(), None, None)
+    assert out["eligible"] is False and "CPU stacked plan serves llama" in out["reason"] and timed == []
+    monkeypatch.setattr(pc, "on_cpu", lambda: False)  # elsewhere without a CUDA GPU below 8, as before
     out = pc.measure_stacked(object(), None, None)
     assert out["eligible"] is False and "CUDA GPUs below compute capability 8" in out["reason"] and timed == []
     t4 = {"compute_capability_major": 7, "device_name": "Tesla T4"}
@@ -493,3 +497,104 @@ def test_a_technical_measurement_failure_is_measured_again_and_a_refusal_is_kept
     for technical in (lambda *a, **k: {"eligible": False, "technical": True, "reason": "child exited with status 1"},):
         result = pc.choose_setup("m", "hw", "c" * 64, log=lambda _: None, numeric=numeric, measure=technical)
         assert result["measurement_failed"] is True and pc._stored("hw-" + "c" * 16) is None
+
+
+# -- CPU6 step 3: on a CPU the agent also chooses the BLAS and measures the CPU stacked plan -------------------------
+
+
+def _blas(choice="openblas", **extra):
+    def run(model_id, compute_dtype):
+        out = {"cpu_blas": choice, "env": {"LD_PRELOAD": "/x/shim.so"} if choice else {}, "reason": f"{choice}"}
+        return {**out, **extra}
+    return run
+
+
+def test_on_a_cpu_the_agent_chooses_the_blas_and_measures_the_stacked_plan_on_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+    seen = []
+
+    def measure(model_id, compute_dtype, base_only=False):
+        seen.append((compute_dtype, base_only))
+        return _measured()
+
+    setup = pc.choose_setup("m", "fp", "d" * 64, log=lambda _: None, cpu=True, blas=_blas(),
+                            numeric=lambda *a, **k: {"plan": "dequantize", "reason": "CPU check passed"},
+                            measure=measure)
+    assert setup["engine"] == "dense" and setup["cpu_blas"] == "openblas" and setup["compute_dtype"] == "dequantize"
+    assert seen == [("dequantize", False)], "measured on the plan that serves, not on the checkpoint's dtype"
+    assert setup["cpu_setup"] == pc.CPU_SETUP_VERSION and "env" not in setup["blas"]
+    assert {l["name"]: l["here"] for l in setup["levers"]}["cpu_blas"] == "used: OpenBLAS"
+
+
+def test_on_a_cpu_routing_is_not_offered_and_the_stock_blas_keeps_its_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+    loaded = _measured(plan_steps={"1": 0.07, "8": 0.17})  # wins under load, not alone
+    loaded["memory"] = {"two_paths_fit": True}
+    setup = pc.choose_setup("m", "fp", "e" * 64, log=lambda _: None, cpu=True,
+                            blas=_blas(None, reason="no C compiler"),
+                            numeric=lambda *a, **k: {"plan": "dequantize", "reason": "ok"},
+                            measure=lambda *a, **k: loaded)
+    assert setup["engine"] == "reference" and setup["cpu_blas"] is None
+    assert "routing is not offered on a CPU" in setup["reason"]
+    assert {l["name"]: l["here"] for l in setup["levers"]}["cpu_blas"].startswith("measured, not chosen")
+
+
+def test_a_cpu_setup_from_before_step_3_is_measured_again_once_and_a_gpu_s_is_kept(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+    pc._save("fp-" + "f" * 16, {"engine": "reference", "compute_dtype": "dequantize", "reason": "AG4-C"})
+    calls = []
+    numeric = lambda *a, **k: calls.append("numeric") or {"plan": "dequantize", "reason": "ok"}  # noqa: E731
+    gpu = pc.choose_setup("m", "fp", "f" * 64, log=lambda _: None, cpu=False, numeric=numeric,
+                          measure=lambda *a, **k: _measured())
+    assert gpu["reason"] == "AG4-C" and calls == []
+    cpu = pc.choose_setup("m", "fp", "f" * 64, log=lambda _: None, cpu=True, blas=_blas(), numeric=numeric,
+                          measure=lambda *a, **k: _measured())
+    again = pc.choose_setup("m", "fp", "f" * 64, log=lambda _: None, cpu=True, blas=_blas(), numeric=numeric,
+                            measure=lambda *a, **k: _measured())
+    assert cpu["engine"] == again["engine"] == "dense" and calls == ["numeric"]
+
+
+def test_a_blas_measurement_that_fails_keeps_the_stock_blas_and_is_measured_again(tmp_path, monkeypatch):
+    monkeypatch.setattr(pc, "_store", lambda: tmp_path / "plan_choice.json")
+
+    def broken(model_id, compute_dtype):
+        raise RuntimeError("child died")
+
+    setup = pc.choose_setup("m", "fp", "g" * 64, log=lambda _: None, cpu=True, blas=broken,
+                            numeric=lambda *a, **k: {"plan": "dequantize", "reason": "ok"},
+                            measure=lambda *a, **k: _measured())
+    assert setup["cpu_blas"] is None and setup["measurement_failed"] is True and "child died" in setup["blas"]["reason"]
+
+
+@pytest.mark.parametrize("stock, fast, chosen, why", [
+    ({"logits": [1.0, 3.0], "seconds": 10.0, "serving": "stock"},
+     {"logits": [1.0, 3.0001], "seconds": 3.0, "serving": "openblas"}, "openblas", "same top token"),
+    ({"logits": [1.0, 3.0], "seconds": 10.0, "serving": "stock"},
+     {"logits": [1.0, 3.0], "seconds": 9.8, "serving": "openblas"}, None, "0.980 of the stock"),
+    ({"logits": [1.0, 3.0], "seconds": 10.0, "serving": "stock"},
+     {"logits": [3.2, 3.0], "seconds": 3.0, "serving": "openblas"}, None, "top token differs"),
+    ({"logits": [1.0, 3.0], "seconds": 10.0, "serving": "stock"},
+     {"logits": [1.0, 3.0], "seconds": 3.0, "serving": "stock"}, None, "did not serve"),
+])
+def test_the_blas_rule_fixed_before_the_data(stock, fast, chosen, why):
+    env = {"LD_PRELOAD": "/x/shim.so"}
+    out = pc.choose_blas("m", "dequantize", environment=lambda: (env, {"available": True}),
+                         measure=lambda m, c, e: fast if e else stock)
+    assert out["cpu_blas"] == chosen and why in out["reason"] and out["env"] == (env if chosen else {})
+    off = pc.choose_blas("m", None, environment=lambda: ({}, {"reason": "no C compiler"}), measure=None)
+    assert off["cpu_blas"] is None and "no C compiler" in off["reason"]
+
+
+def test_measure_stacked_runs_the_cpu_plan_on_a_tiny_llama_and_the_rule_reads_it(monkeypatch):
+    """The real measurement on MLX's CPU: the CPU plan installed by `stacked_plan`, its gate against the base
+    path's own decode, every width timed."""
+    from tests.engine.test_dense_cpu import LLAMA, tiny
+    from tests.engine.test_dense_gemma import _Tok
+
+    monkeypatch.setattr(pc, "on_cpu", lambda: True)
+    model = tiny(LLAMA)
+    measured = pc.measure_stacked(model, _Tok(), None, chunks=8, size=12, steps=3, long_prompt="y" * 30)
+    assert measured["eligible"] and measured["install"]["kernels"] == "cpu_float32"
+    assert measured["gate"]["passes"], measured["gate"]
+    assert set(measured["speed"]["short"]["plan_step_s"]) == {str(w) for w in range(1, 9)}
+    assert "stacked" in pc.decide(measured)

@@ -1465,3 +1465,14 @@ def test_ag8_a_candidate_that_ends_the_same_window_sooner_qualifies_and_one_that
     assert not later.active and later.counters["rejected"] == 1
     for agent in (sooner, reordered, later):
         agent.close()
+
+
+@pytest.mark.parametrize("engine", ["dense", "reference"])
+def test_on_a_cpu_the_server_starts_the_blas_the_agent_chose(monkeypatch, tmp_path, engine):
+    """CPU6 step 3: the agent's own setup on a CPU names its BLAS; the worker is started with it."""
+    setup = {"engine": engine, "compute_dtype": None if engine == "dense" else "dequantize", "cpu_blas": "openblas",
+             "reason": "OpenBLAS and the CPU stacked plan", "width": 8 if engine == "dense" else None}
+    seen = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], setup)
+    assert seen["cpu_blas"] == "openblas" and seen["compute_dtype"] == setup["compute_dtype"]
+    stock = _serve_until_backend(monkeypatch, tmp_path, ["--agent", "on"], {**setup, "cpu_blas": None})
+    assert stock["cpu_blas"] is None

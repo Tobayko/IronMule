@@ -48,3 +48,29 @@ def test_a_short_or_incomplete_run_is_invalid():
     report = _report()
     report["repetitions"][2][1]["complete"] = False
     assert tool.analyse(report)["problems"] == ["a request failed or returned nothing"]
+
+
+def _agent_report(s=12.0, first=0.03, setup=None, reps=5):
+    setup = setup or {"engine": "dense", "compute_dtype": None, "cpu_blas": "openblas", "width": 8}
+    rows = [[_cell("A", 4.0, 50.0), _cell("S", 4.0 * s, 50.0 * first), _cell("A", 4.1, 51.0)] for _ in range(reps)]
+    return {"protocol": "cpu6-a", "setup": setup, "repetitions": rows}
+
+
+def test_cpu6a_passes_when_the_agent_chose_something_far_faster_by_itself():
+    out = tool.analyse_agent(_agent_report())
+    assert out["verdict"] == "pass" and out["chose_other_than_a"] and 11.5 < out["tokens_per_s"][0] < 12.5
+
+
+def test_cpu6a_fails_when_the_agent_kept_a_or_gained_too_little_or_was_incomplete():
+    kept = {"engine": "reference", "compute_dtype": "dequantize", "cpu_blas": None}
+    assert tool.analyse_agent(_agent_report(setup=kept))["verdict"] == "fail"
+    assert tool.analyse_agent(_agent_report(s=2.9))["verdict"] == "fail"
+    assert tool.analyse_agent(_agent_report(first=1.2))["verdict"] == "fail"
+    assert tool.analyse_agent(_agent_report(reps=3))["verdict"] == "invalid"
+    assert tool.rotation(3, tool.ORDER_AGENT) == [["A", "S", "A"], ["S", "A", "A"], ["A", "A", "S"]]
+
+
+def test_the_agents_setup_is_started_as_the_server_starts_it():
+    dense = tool.agent_options({"engine": "dense", "width": 6, "cpu_blas": "openblas"})
+    assert dense["engine_configuration"] == "dense_stacked" and dense["dense_width"] == 6 and dense["cpu_blas"] == "openblas"
+    assert tool.agent_options({"engine": "reference", "compute_dtype": "dequantize"}) == {"compute_dtype": "dequantize"}

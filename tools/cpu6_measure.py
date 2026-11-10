@@ -10,7 +10,11 @@ Each repetition offers the same 8 requests at once to each arm, in a rotated ord
 `--gate` adds the numeric plans' perplexity gate: the dequantized model on OpenBLAS against the same on the stock
 BLAS. `--analyse REPORT` applies the rule fixed in the entry before the data.
 
+`--plan agent` is CPU6-A (step 3): the agent's own setup, made by `ironmule serve --agent on`'s `_agent_setup` on a
+fresh store, is arm S, against A, in rotated order of A S A.
+
     python tools/cpu6_measure.py --model mlx-community/SmolLM2-135M-Instruct-8bit --out cpu6.json --gate
+    python tools/cpu6_measure.py --plan agent --out cpu6a.json
     python -I tools/cpu6_measure.py --analyse cpu6.json
 """
 
@@ -40,7 +44,10 @@ ORDER = ("A", "B", "C", "A")
 RESAMPLES = 2000
 SEED = 20261110
 PASS_B, PASS_C = 1.5, 3.0  # the 95 % lower bound on tokens per second over A
+ORDER_AGENT = ("A", "S", "A")
+PASS_S = 3.0  # CPU6-A: the agent's own setup over A
 QUALITY_BOUND = 1.005
+ARMS_EXTRA: dict[str, dict[str, Any]] = {}  # CPU6-A: "S", the agent's own setup, filled at run time
 ARMS = {"A": {"compute_dtype": "dequantize"},
         "B": {"compute_dtype": "dequantize", "cpu_blas": "openblas"},
         "C": {"execution_variant": "current_engine", "engine_configuration": "dense_stacked", "cpu_blas": "openblas"}}
@@ -53,8 +60,20 @@ def prompts() -> list[str]:
     return [f"List {3 + i % 3} {topic}, one short line each." for i, topic in enumerate(topics)]
 
 
-def rotation(repetitions: int = REPETITIONS) -> list[list[str]]:
-    return [list(ORDER[k % len(ORDER):] + ORDER[:k % len(ORDER)]) for k in range(repetitions)]
+def rotation(repetitions: int = REPETITIONS, order: tuple[str, ...] = ORDER) -> list[list[str]]:
+    return [list(order[k % len(order):] + order[:k % len(order)]) for k in range(repetitions)]
+
+
+def agent_options(setup: dict[str, Any]) -> dict[str, Any]:
+    """The worker options `ironmule serve` starts for the agent's setup (CPU6 step 3)."""
+    from ironmule_product.cli import _engine_options
+
+    blas = {"cpu_blas": setup["cpu_blas"]} if setup.get("cpu_blas") else {}
+    if setup.get("engine") == "dense":
+        return {"execution_variant": "current_engine", **_engine_options("dense", setup.get("width")), **blas}
+    if setup.get("engine") != "reference":
+        raise ValueError(f"CPU6-A serves the reference or the dense engine, not {setup.get('engine')!r}")
+    return {**({"compute_dtype": setup["compute_dtype"]} if setup.get("compute_dtype") else {}), **blas}
 
 
 def _spec(model_id: str):
@@ -77,7 +96,9 @@ def run_arm(spec: Any, arm: str, texts: list[str], limit: int) -> dict[str, Any]
     store.setup("server")
     store.set_request_timeout(7200)
     store.register_model(spec)
-    backend = MLXWorkerClient(spec, startup_timeout=3600, **ARMS[arm])
+    options = dict(ARMS[arm]) if arm in ARMS else dict(ARMS_EXTRA[arm])
+    options.pop("startup_timeout", None)
+    backend = MLXWorkerClient(spec, startup_timeout=3600, **options)
     started = time.perf_counter()
     ready = backend.start()
     startup = time.perf_counter() - started
@@ -215,6 +236,34 @@ def analyse(report: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def analyse_agent(report: dict[str, Any]) -> dict[str, Any]:
+    """CPU6-A's rule, fixed in BACKLOG CPU6 before the data."""
+    setup = report.get("setup") or {}
+    problems = []
+    reps = report.get("repetitions") or []
+    if len(reps) < REPETITIONS:
+        problems.append(f"{len(reps)} of {REPETITIONS} repetitions")
+    if any(not cell["complete"] for rep in reps for cell in rep):
+        problems.append("a request failed or returned nothing")
+    if problems:
+        return {"valid": False, "problems": problems, "verdict": "invalid"}
+    same_as_a = (setup.get("engine") == "reference" and setup.get("compute_dtype") == "dequantize"
+                 and not setup.get("cpu_blas"))
+    per = []
+    for rep in reps:
+        a = [c for c in rep if c["arm"] == "A"]
+        s_ = next(c for c in rep if c["arm"] == "S")
+        a_tps, a_first = (statistics.fmean(x[k] for x in a) for k in ("tokens_per_s", "mean_first_s"))
+        per.append({"tps": s_["tokens_per_s"] / a_tps, "first": s_["mean_first_s"] / a_first,
+                    "aa_first": abs(a[0]["mean_first_s"] - a[1]["mean_first_s"]) / a_first})
+    noise = statistics.fmean(p["aa_first"] for p in per)
+    tps, first = _bootstrap([p["tps"] for p in per], SEED), _bootstrap([p["first"] for p in per], SEED + 1)
+    passes = not same_as_a and tps[1] > PASS_S and first[2] <= 1 + noise
+    return {"valid": True, "setup": {k: setup.get(k) for k in ("engine", "compute_dtype", "cpu_blas", "width", "reason")},
+            "chose_other_than_a": not same_as_a, "aa_noise_first": noise, "tokens_per_s": tps, "first": first,
+            "verdict": "pass" if passes else "fail"}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--model", default="mlx-community/SmolLM2-135M-Instruct-8bit")
@@ -223,21 +272,37 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--limit", type=int, default=LIMIT)
     parser.add_argument("--gate", action="store_true")
     parser.add_argument("--analyse", type=Path)
+    parser.add_argument("--plan", choices=("blas", "agent"), default="blas")
     args = parser.parse_args(argv)
     if args.analyse:
-        print(json.dumps(analyse(json.loads(args.analyse.read_text())), indent=1))
+        report = json.loads(args.analyse.read_text())
+        print(json.dumps((analyse_agent if report.get("protocol") == "cpu6-a" else analyse)(report), indent=1))
         return 0
     sys.path.insert(0, str(ROOT))
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    setup, setup_s = None, None
+    if args.plan == "agent":
+        os.environ["IRONMULE_HOME"] = tempfile.mkdtemp(prefix="cpu6a-store-")  # a fresh store: nothing stored
     import mlx.core as mx
 
     spec = _spec(args.model)
+    if args.plan == "agent":
+        from ironmule_product.cli import _agent_setup
+
+        started = time.perf_counter()
+        setup = _agent_setup(spec)
+        setup_s = time.perf_counter() - started
+        ARMS_EXTRA["S"] = agent_options(setup)
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
-    report: dict[str, Any] = {"protocol": "cpu6-m", "model": args.model, "revision": spec.revision, "commit": commit,
+    report: dict[str, Any] = {"protocol": "cpu6-a" if setup else "cpu6-m", "model": args.model,
+                              "revision": spec.revision, "commit": commit,
                               "machine": {"machine": platform.machine(), "cpus": os.cpu_count(),
                                           "processor": platform.processor(), "mlx": mx.__version__},
-                              "requests": REQUESTS, "limit": args.limit, "order": rotation(args.repetitions),
+                              "requests": REQUESTS, "limit": args.limit,
+                              "order": rotation(args.repetitions, ORDER_AGENT if setup else ORDER),
                               "repetitions": []}
+    if setup:
+        report.update(setup=json.loads(json.dumps(setup, default=str)), setup_seconds=setup_s, arm_s=ARMS_EXTRA["S"])
     texts = prompts()
     for k, order in enumerate(report["order"]):
         cells = []
@@ -255,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
               flush=True)
     if args.out:
         args.out.write_text(json.dumps(report, indent=1))
-    print(json.dumps(analyse(report), indent=1))
+    print(json.dumps((analyse_agent if setup else analyse)(report), indent=1))
     return 0
 
 

@@ -38,6 +38,8 @@ LEVERS: tuple[dict[str, str], ...] = (
      "what": "compute the weights in another type (native, float16, float32, dequantize) where it is faster here"},
     {"name": "stacked_engine", "status": "built", "backlog": "KB1, KB2",
      "what": "up to eight requests in one decode step, each row's answer independent of the others"},
+    {"name": "cpu_blas", "status": "built", "backlog": "CPU6",
+     "what": "on a CPU, MLX's float32 products on an optimised BLAS (OpenBLAS) instead of the wheel's reference BLAS"},
     {"name": "routed_paths", "status": "built", "backlog": "AG4 step 2a",
      "what": "the single path and the stacked engine side by side, each request routed where it finishes first"},
     {"name": "tensor_core_rows", "status": "planned", "backlog": "HQ1 TC1",
@@ -67,6 +69,9 @@ SPEED_STEPS = 32
 FIRST_SAMPLES = 5  # base-path prefills behind each first-token time (their median); the plan's are its slots'
 MEASURE_TIMEOUT_S = 3600  # a stacked measurement past this is a failure: KB2's probe gated Gemma 3 12B in 26 min
 SHORT_PROMPT = "Explain in detail how rain forms, step by step."
+#: CPU6 step 3: a CPU setup stored without these decisions (the BLAS, the CPU stacked plan) is measured again once
+CPU_SETUP_VERSION = 1
+BLAS_SPEED_RATIO = 0.95  # OpenBLAS's served answer at most this share of the stock BLAS's time (CPU3's threshold)
 
 
 def _store() -> Path:
@@ -108,12 +113,23 @@ def _save(key: str, decision: dict[str, Any]) -> dict[str, Any]:
     return data[key]
 
 
+def on_cpu() -> bool:
+    """MLX computes on the CPU here: neither CUDA nor Metal is available."""
+    import mlx.core as mx
+
+    return not mx.cuda.is_available() and not mx.metal.is_available()
+
+
 def stacked_refusal(model: Any, device_info: dict[str, Any] | None) -> str | None:
     """Why no stacked plan can serve this model on this device, found before anything is allocated or timed; None
     where one may (its install still probes the weights and may refuse)."""
     from . import dense_gemma, dense_plan
     from .numeric_plans import CUDA_PRE_AMPERE, device_class
 
+    if device_info is None and on_cpu():  # CPU6: MLX's CPU device has its own stacked plan
+        from . import dense_cpu
+
+        return dense_cpu.refuse(model)
     if device_class(device_info) != CUDA_PRE_AMPERE:
         return "the stacked engines exist for CUDA GPUs below compute capability 8 only"
     if dense_gemma.refuse(model, native=False) is None:
@@ -127,6 +143,10 @@ def stacked_plan(model: Any, device_info: dict[str, Any] | None, *, slots: int =
     already be on the model: KB2's plan needs the native row kernel, which NUM1 installs as `native`."""
     from . import dense_gemma, dense_plan
 
+    if device_info is None and on_cpu():
+        from . import dense_cpu
+
+        return dense_cpu.install(model, slots=slots, capacity=capacity)
     if dense_gemma.refuse(model, native=False) is None:
         return dense_gemma.install(model, device_info, slots=slots, capacity=capacity)
     return dense_plan.install(model, device_info, slots=slots, capacity=capacity)
@@ -415,10 +435,13 @@ def measure_base(model: Any, tokenizer: Any, *, steps: int = SPEED_STEPS, long_p
     return out
 
 
-def stacked_base(numeric_plan: str | None) -> str | None:
+def stacked_base(numeric_plan: str | None, cpu: bool = False) -> str | None:
     """The plan a stacked engine runs on: KB2's Gemma plan on `native`, KB1's dense plan on the checkpoint's own
     bf16. A float plan NUM1 chose (float16, float32) is not what either was built on, so it is compared against,
-    not stacked on (AG4-Q run 1: the dense plan refused float16 weights)."""
+    not stacked on (AG4-Q run 1: the dense plan refused float16 weights). On a CPU (CPU6) the plan widens every
+    weight to float32 itself, so it is measured on the plan that serves (`dequantize`, `float32` or none)."""
+    if cpu:
+        return numeric_plan
     return "native" if numeric_plan == "native" else None
 
 
@@ -457,7 +480,10 @@ def measure_in_process(model_id: str, compute_dtype: str | None, base_only: bool
         _release_device_memory()
 
 
-def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool = False) -> dict[str, Any]:
+def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool = False,
+                      env: dict[str, str] | None = None) -> dict[str, Any]:
+    """`measure_in_process` in a child process; `env` adds variables (CPU6: the chosen BLAS's)."""
+    import os
     import subprocess
     import sys
 
@@ -466,7 +492,8 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
             "default=str), flush=True)")
     try:
         proc = subprocess.run([sys.executable, "-c", code, model_id, compute_dtype or "", "1" if base_only else "0"],
-                              stdout=subprocess.PIPE, text=True, timeout=MEASURE_TIMEOUT_S)
+                              stdout=subprocess.PIPE, text=True, timeout=MEASURE_TIMEOUT_S,
+                              env={**os.environ, **env} if env else None)
     except subprocess.TimeoutExpired:  # the child is killed; the agent keeps the base path and says why
         return {"eligible": False, "technical": True,
                 "reason": f"the measurement did not finish within {MEASURE_TIMEOUT_S} s"}
@@ -483,6 +510,75 @@ def _measure_in_child(model_id: str, compute_dtype: str | None, base_only: bool 
     return measured
 
 
+BLAS_CHILD = r"""
+import json, sys
+import mlx.core as mx
+from ironmule import cpu_blas
+from ironmule.numeric_choice import CPU_SPEED_TOKENS, SHORT_PROMPT, _served_seconds
+from ironmule.runtime import BASELINE
+from ironmule.tune import _close_engine, load_engine
+engine, tokenizer = load_engine(sys.argv[1], BASELINE, compute_dtype=sys.argv[2] or None)
+try:
+    ids = list(tokenizer.encode(SHORT_PROMPT))
+    logits = engine.model(mx.array([ids]))[0, -1].astype(mx.float32)
+    mx.eval(logits)
+    seconds = _served_seconds(engine, tokenizer, CPU_SPEED_TOKENS)
+    print("@@BLAS " + json.dumps({"serving": cpu_blas.active()["serving"], "logits": logits.tolist(),
+                                  "seconds": seconds}), flush=True)
+finally:
+    _close_engine(engine)
+"""
+
+
+def _blas_in_child(model_id: str, compute_dtype: str | None, env: dict[str, str]) -> dict[str, Any]:
+    """The base path's short-prompt logits and one served answer's seconds, on the BLAS `env` names."""
+    import os
+    import subprocess
+    import sys
+
+    proc = subprocess.run([sys.executable, "-c", BLAS_CHILD, model_id, compute_dtype or ""], stdout=subprocess.PIPE,
+                          text=True, timeout=MEASURE_TIMEOUT_S, env={**os.environ, **env})
+    lines = [line for line in proc.stdout.splitlines() if line.startswith("@@BLAS ")]
+    if proc.returncode or not lines:
+        raise RuntimeError(f"the BLAS measurement child exited with status {proc.returncode}")
+    return json.loads(lines[-1][len("@@BLAS "):])
+
+
+def choose_blas(model_id: str, compute_dtype: str | None, *, environment: Callable[[], tuple] | None = None,
+                measure: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
+    """CPU6 step 3: OpenBLAS or the stock BLAS for the base path, by the rule BACKLOG CPU6 fixed before its data.
+    {"cpu_blas": "openblas" | None, "reason", ...}; `env` holds the variables a child needs for the choice."""
+    from .numeric_choice import CPU_LOGIT_BOUND
+
+    if environment is None:
+        from .cpu_blas import environment
+    variables, record = environment()
+    if not variables:
+        return {"cpu_blas": None, "env": {}, "check": record,
+                "reason": f"the optimised BLAS is not available here: {record.get('reason')}"}
+    measure = measure or _blas_in_child
+    stock, fast = measure(model_id, compute_dtype, {}), measure(model_id, compute_dtype, variables)
+    import math
+
+    gap = max(abs(a - b) for a, b in zip(fast["logits"], stock["logits"]))
+    scale = max(abs(b) for b in stock["logits"]) or 1.0
+    error = gap / scale
+    top1 = max(range(len(fast["logits"])), key=fast["logits"].__getitem__) == max(
+        range(len(stock["logits"])), key=stock["logits"].__getitem__)
+    ratio = fast["seconds"] / stock["seconds"] if stock["seconds"] > 0 else math.inf
+    out = {"check": record, "stock_s": stock["seconds"], "openblas_s": fast["seconds"], "speed_ratio": ratio,
+           "logit_rel_error": error, "top1_equal": top1, "serving": [stock["serving"], fast["serving"]]}
+    if fast["serving"] != "openblas":
+        return {**out, "cpu_blas": None, "env": {}, "reason": "the optimised BLAS did not serve in its child"}
+    if not top1 or error >= CPU_LOGIT_BOUND or ratio > BLAS_SPEED_RATIO:
+        return {**out, "cpu_blas": None, "env": {},
+                "reason": f"OpenBLAS refused: logits {error:.2e} relative, top token {'equal' if top1 else 'differs'}, "
+                          f"{ratio:.3f} of the stock BLAS's time"}
+    return {**out, "cpu_blas": "openblas", "env": variables,
+            "reason": f"OpenBLAS: logits within {error:.2e} relative of the stock BLAS, same top token, {ratio:.3f} "
+                      f"of its time for a 16-token answer"}
+
+
 def levers(setup: dict[str, Any]) -> list[dict[str, str]]:
     """Each lever with what happened to it in this setup: used, measured and not chosen (and why), not eligible here,
     or not built yet."""
@@ -497,19 +593,27 @@ def levers(setup: dict[str, Any]) -> list[dict[str, str]]:
         stacked_here = (f"measured, not chosen: {decision.get('reason')}" if stacked.get("eligible")
                         else f"not eligible here: {stacked.get('reason')}")
         routed_here = f"not taken: {decision.get('reason')}"
+    blas = setup.get("blas")
+    blas_here = ("not a CPU here" if blas is None else "used: OpenBLAS" if setup.get("cpu_blas")
+                 else f"measured, not chosen: {blas.get('reason')}")
     state = {"numeric_plan": f"used: {plan}" if plan else f"measured, none chosen: {numeric_reason}",
-             "stacked_engine": stacked_here, "routed_paths": routed_here}
+             "stacked_engine": stacked_here, "routed_paths": routed_here, "cpu_blas": blas_here}
     return [{**lever, "here": state.get(lever["name"], "not built yet")} for lever in LEVERS]
 
 
 def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: Callable[[str], None] = print,
                  numeric: Callable[..., dict[str, Any]] | None = None,
-                 measure: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
-    """The agent's setup for this machine and model: {"compute_dtype", "engine": "dense" | "reference", "reason",
-    "numeric", "stacked", "decision"}; made once and stored."""
+                 measure: Callable[..., dict[str, Any]] | None = None, cpu: bool | None = None,
+                 blas: Callable[..., dict[str, Any]] | None = None) -> dict[str, Any]:
+    """The agent's setup for this machine and model: {"compute_dtype", "engine": "dense" | "route" | "reference",
+    "cpu_blas", "reason", "numeric", "stacked", "decision"}; made once and stored. On a CPU (`cpu`, found here when
+    None) it also chooses the BLAS and measures CPU6's stacked plan on the chosen BLAS."""
     key = f"{fingerprint}-{identity_sha256[:16]}"
-    if (stored := _stored(key)) is not None:
-        return stored
+    if cpu is None:  # found here for the real measurements; a caller injecting its own says so itself
+        cpu = on_cpu() if measure is None else False
+    stored = _stored(key)
+    if stored is not None and not (cpu and stored.get("cpu_setup") != CPU_SETUP_VERSION):
+        return stored  # a CPU setup from before CPU6 step 3 is measured again once
     if numeric is None:
         from .numeric_choice import choose_out_of_process as numeric
     try:
@@ -519,9 +623,20 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
                 "reason": f"the numeric gate failed ({type(exc).__name__}: {exc})"[:300]}
     compute_dtype = base.get("plan")
     log(f"agent: numeric plan {compute_dtype or 'none (checkpoint dtype)'}: {base.get('reason')}")
-    measure = measure or _measure_in_child
-    on = stacked_base(compute_dtype)
-    log(f"agent: measuring the stacked engine on this card (on {on or 'the checkpoint dtype'}) ...")
+    blas_choice, env = None, {}
+    if cpu:
+        log("agent: checking an optimised BLAS on this CPU ...")
+        try:
+            blas_choice = (blas or choose_blas)(model_id, compute_dtype)
+        except Exception as exc:  # noqa: BLE001 - the stock BLAS serves, with the reason
+            blas_choice = {"cpu_blas": None, "env": {}, "technical": True,
+                           "reason": f"the BLAS measurement failed ({type(exc).__name__}: {exc})"[:300]}
+        env = blas_choice.pop("env", {}) or {}
+        log(f"agent: BLAS {blas_choice.get('cpu_blas') or 'stock'}: {blas_choice.get('reason')}")
+    if measure is None:
+        measure = (lambda m, c, base_only=False: _measure_in_child(m, c, base_only, env=env)) if env else _measure_in_child
+    on = stacked_base(compute_dtype, cpu=cpu)
+    log(f"agent: measuring the stacked engine on this {'CPU' if cpu else 'card'} (on {on or 'the checkpoint dtype'}) ...")
     try:
         stacked = measure(model_id, on)
         if stacked.get("eligible") and on != compute_dtype:  # compare against the path that would serve instead
@@ -532,13 +647,18 @@ def choose_setup(model_id: str, fingerprint: str, identity_sha256: str, *, log: 
         stacked = {"eligible": False, "technical": True,
                    "reason": f"the stacked engine's measurement failed ({type(exc).__name__}: {exc})"[:300]}
         decision = decide(stacked)
+    if cpu and decision.get("route"):  # two workers would share the cores (MG1 item 5): not offered on a CPU
+        decision = {**decision, "route": False, "reason": decision["reason"].split("; both paths serve")[0]
+                    + "; routing is not offered on a CPU, where both paths would share the cores"}
     log(f"agent: {'stacked engine' if decision['stacked'] else 'no stacked engine'}: {decision['reason']}")
     engine = "dense" if decision["stacked"] else "route" if decision.get("route") else "reference"
     setup = {"compute_dtype": compute_dtype, "engine": engine,
              "reason": decision["reason"], "numeric": base, "stacked": stacked, "decision": decision,
              "width": decision.get("width") if engine in ("dense", "route") else None}  # AG5: serves at this width
+    if cpu:
+        setup.update(cpu_blas=(blas_choice or {}).get("cpu_blas"), blas=blas_choice, cpu_setup=CPU_SETUP_VERSION)
     setup["levers"] = levers(setup)
-    if base.get("technical") or stacked.get("technical"):
+    if base.get("technical") or stacked.get("technical") or (blas_choice or {}).get("technical"):
         # A measurement that failed for a technical reason (a child that crashed or timed out, a card out of
         # memory) serves the base path now and is measured again on the next start. Stored, it was reused for
         # good after the cause had gone (review of 2026-11-08). A refusal by a rule or a gate is stored.

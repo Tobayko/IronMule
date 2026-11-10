@@ -339,6 +339,8 @@ def serve(argv: list[str]) -> int:
                 agent_setup = _agent_setup(spec)
                 args.engine = agent_setup["engine"]
                 args.compute_dtype = agent_setup["compute_dtype"] if args.engine == "reference" else None
+                if agent_setup.get("cpu_blas") and args.gpus is None:  # CPU6 step 3: the BLAS it chose and gated
+                    args.cpu_blas = agent_setup["cpu_blas"]
             if args.engine != "reference" and args.compute_dtype is not None:
                 raise InvalidRequest(f"--engine {args.engine} and --compute-dtype cannot be combined yet")
             if args.chat_reuse and args.engine != "tuned":
@@ -372,11 +374,12 @@ def serve(argv: list[str]) -> int:
 
                     from .device_pool import start_paths
                     device = devices[0]
+                    blas = None if args.cpu_blas == "stock" else args.cpu_blas
                     single = lambda: MLXWorkerClient(spec, compute_dtype=agent_setup["compute_dtype"],  # noqa: E731
-                                                     thinking=not args.no_thinking, cuda_device=device)
+                                                     thinking=not args.no_thinking, cuda_device=device, cpu_blas=blas)
                     stacked = lambda: MLXWorkerClient(spec, thinking=not args.no_thinking,  # noqa: E731
                                                       cuda_device=device, execution_variant="current_engine",
-                                                      **_engine_options("dense", stacked_width))
+                                                      cpu_blas=blas, **_engine_options("dense", stacked_width))
                     label = device if device is not None else "0"
                     return start_paths(store, spec, [single, stacked], [f"{label}:single", f"{label}:stacked"],
                                        ProductService, PolicyRouter.from_setup(agent_setup)), None
@@ -421,7 +424,8 @@ def serve(argv: list[str]) -> int:
         if spec is not None and args.agent == "on" and agent_setup is not None:
             for each in [service, *getattr(service, "shards", [])]:
                 each.agent_setup = {k: agent_setup.get(k) for k in ("engine", "compute_dtype", "reason", "decision",
-                                                                    "numeric", "stacked", "levers", "fallback_from")}
+                                                                    "numeric", "stacked", "levers", "fallback_from",
+                                                                    "cpu_blas", "blas")}
         if spec is not None and args.agent == "on" and args.engine == "route":
             print(json.dumps({"agent": {"serving": "two paths on one card; the agent dreams whether to route, stack or "
                                                    "serve single", "reason": agent_setup["reason"]}}), flush=True)
@@ -564,7 +568,8 @@ def _agent_setup(spec: ModelSpec) -> dict[str, Any]:
         setup = {"engine": "reference", "compute_dtype": None, "width": None,
                  "reason": f"the agent's setup failed ({type(exc).__name__}: {exc})"[:300]
                            + "; the reference engine serves on the checkpoint's dtype"}
-    print(json.dumps({"agent_setup": {k: setup.get(k) for k in ("engine", "compute_dtype", "reason")}}), flush=True)
+    print(json.dumps({"agent_setup": {k: setup.get(k) for k in ("engine", "compute_dtype", "cpu_blas", "reason")}}),
+          flush=True)
     return setup
 
 

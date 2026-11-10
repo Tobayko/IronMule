@@ -1869,8 +1869,39 @@ answers each got alone.
     slower in V5-CPU), a larger model, mixed or spaced arrivals, longer prompts, or the agent choosing either
     (step 3). The ledger entry is still owed.
 
-**Not covered yet:** step 3, the agent's own setup on a CPU measuring the stacked engine and the BLAS (AG4's
-`choose_setup` keeps the reference engine on a CPU today); several workers on one CPU, each with its share of the
+**Step 3, the agent chooses both on a CPU (owner request 2026-11-10; fixed before its data).** AG4's `choose_setup`
+keeps the reference engine on a machine without a GPU (no stacked plan existed there). On such a machine it now
+also decides:
+- *The BLAS, after NUM1's plan:* where the shim is available and passes its check, the base path (NUM1's plan, for
+  example `dequantize`) runs once on each BLAS in its own child process: its short prompt's last-position logits
+  and one 16-token served answer, as NUM1's CPU check (CPU3) does for `dequantize`. OpenBLAS is chosen if the
+  logits are within NUM1's CPU bound of the stock BLAS's (5e-2 relative) with the same top token, and the answer
+  took at most 0.95 of the stock BLAS's time. Otherwise the stock BLAS, with the reason.
+- *The stacked engine:* CPU6's CPU plan, measured on the base path as it serves (NUM1's plan, on the chosen BLAS),
+  by AG4's rule unchanged (`decide`): the teacher-forced perplexity gate against the base path's own decode
+  (bound 1.005), the best width on the measured curve, at least 0.9 of the base path's single-request tokens per
+  second at one row, the first token at most 1.1x later. `route` is not offered on a CPU: its two workers would
+  share the cores (MG1 item 5).
+- A setup stored before step 3 on a CPU (none of these decisions) is measured again once; a GPU's is not.
+- The server then starts what was chosen: `--engine dense` and/or `--cpu-blas openblas`, shown in `/health` and
+  `agent_setup` with every number behind it.
+
+**CPU6-A, the agent's own CPU setup through the product (fixed 2026-11-10, before its data).**
+- *Machine and model:* as CPU6-M (this container, SmolLM2-135M-Instruct-8bit), a fresh state store, the commit
+  that ships step 3; no GPU hours.
+- *The decision:* `ironmule serve --agent on`'s own `_agent_setup` with nothing named; its choice, its numbers and
+  the seconds it took are recorded. If it keeps the stock BLAS and the reference engine, the run reports that and
+  fails.
+- *Arms through the product:* S, the setup the agent chose, started as the CLI starts it; A, AG4's earlier choice on
+  this machine (`--compute-dtype dequantize` on the stock BLAS, as CPU6-M's A).
+- *Workload and analysis:* CPU6-M's (8 requests at once, 64 tokens), 5 repetitions in rotated order of A S A, so A's
+  two runs give the A/A noise; 2,000 resamples.
+- *Pass:* the agent chose a setup other than A by itself; S over A, tokens per second with the 95 % lower bound above
+  3.0 and the mean first token's 95 % upper bound at most 1 plus the A/A noise; every request answered.
+- *Kill:* the agent's own choice is no faster than that, and step 3 is revised or removed, recorded in Tier 0.
+- *Expected:* about 1-1.5 hours of this container's CPU (the setup's measurements, about 30 minutes, then the arms).
+
+**Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
