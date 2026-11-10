@@ -67,6 +67,9 @@ QUIET_FLOOR = 0.9       # the stacked engine's single-request tokens per second 
 TTFT_SLACK = 1.1        # its time to the first token over the base path's, at most
 SPEED_STEPS = 32
 FIRST_SAMPLES = 5  # base-path prefills behind each first-token time (their median); the plan's are its slots'
+#: CPU6-A2: on a CPU a short prompt's prefill takes about 0.1 s and five of them spread 0.72x-1.20x between two
+#: equal paths, so each first-token time there is the median of this many prefills on each path (the rule is AG4's)
+CPU_FIRST_SAMPLES = 15
 MEASURE_TIMEOUT_S = 3600  # a stacked measurement past this is a failure: KB2's probe gated Gemma 3 12B in 26 min
 SHORT_PROMPT = "Explain in detail how rain forms, step by step."
 #: CPU6 step 3: a CPU setup stored without these decisions (the BLAS, the CPU stacked plan) is measured again once
@@ -241,7 +244,8 @@ def _again_if_out_of_memory(step: Callable[[], Any], retried: list[str], name: s
         return step()
 
 
-def _base_speed(model: Any, ids: list[int], steps: int, samples: list[float] | None = None) -> tuple[float, float]:
+def _base_speed(model: Any, ids: list[int], steps: int, samples: list[float] | None = None,
+                first_samples: int = FIRST_SAMPLES) -> tuple[float, float]:
     """(seconds to the first token, seconds per decode step) for one request on the base path. The first token is
     the median of `FIRST_SAMPLES` prefills, each from a fresh cache (`samples` gets them all): AG5-G runs 4 and 5
     timed it once, and the same prefill read 0.742 s in one session and 0.685 s in the next."""
@@ -250,7 +254,7 @@ def _base_speed(model: Any, ids: list[int], steps: int, samples: list[float] | N
 
     mx.eval(model(mx.array(ids)[None], cache=make_prompt_cache(model)))  # warm: compile outside the clock (AG4-Q 2)
     firsts = []
-    for _ in range(FIRST_SAMPLES):
+    for _ in range(first_samples):
         cache = make_prompt_cache(model)
         started = time.perf_counter()
         token = int(mx.argmax(model(mx.array(ids)[None], cache=cache)[0, -1]).item())
@@ -266,8 +270,8 @@ def _base_speed(model: Any, ids: list[int], steps: int, samples: list[float] | N
     return first, statistics.median(times[2:] or times)
 
 
-def _plan_speed(plan: Any, ids: list[int], steps: int, samples: list[float] | None = None
-                ) -> tuple[float, dict[int, float]]:
+def _plan_speed(plan: Any, ids: list[int], steps: int, samples: list[float] | None = None,
+                first_samples: int = 0) -> tuple[float, dict[int, float]]:
     """(seconds to the first token, {width: seconds per stacked step}) on the plan, every slot holding `ids`. The
     first token is the median of the slots' prefills (`samples` gets them all); AG5-G runs 4 and 5 kept the first
     slot's alone."""
@@ -280,7 +284,8 @@ def _plan_speed(plan: Any, ids: list[int], steps: int, samples: list[float] | No
         from mlx_lm.models.cache import make_prompt_cache
         warm = make_prompt_cache(plan.model)
     mx.eval(plan.prefill(mx.array(ids)[None], warm))  # warm: compile outside the clock
-    for slot in range(plan.slots):
+    for index in range(max(plan.slots, first_samples)):  # every slot once, then again up to `first_samples`
+        slot = index % plan.slots
         if new_cache is not None:
             cache = new_cache()
         else:
@@ -332,8 +337,9 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
     if make_plan is None and (reason := stacked_refusal(model, device_info)) is not None:
         return {"eligible": False, "reason": reason}  # nothing timed for a model no stacked plan serves
     prompts = (("short", SHORT_PROMPT), ("long", long_prompt or DEFAULT_PROMPT))
+    firsts = CPU_FIRST_SAMPLES if device_info is None and on_cpu() else FIRST_SAMPLES
     base_firsts: dict[str, list[float]] = {name: [] for name, _ in prompts}
-    base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps, base_firsts[name])
+    base = {name: _base_speed(model, list(tokenizer.encode(prompt)), steps, base_firsts[name], firsts)
             for name, prompt in prompts}
     note("base path timed")
     items = gate_chunks(tokenizer, chunks or CHUNKS, size or CHUNK_TOKENS)
@@ -358,10 +364,12 @@ def measure_stacked(model: Any, tokenizer: Any, device_info: dict[str, Any] | No
         _release_memory()
         plan_firsts: list[float] = []
         plan_first, plan_steps = _again_if_out_of_memory(
-            lambda: _plan_speed(plan, prompt_ids, steps, plan_firsts), retried, f"speed, {name} prompt")
+            lambda: _plan_speed(plan, prompt_ids, steps, plan_firsts, firsts if firsts != FIRST_SAMPLES else 0),
+            retried, f"speed, {name} prompt")
         speed[name] = {"base_first_s": base_first, "base_step_s": base_step, "plan_first_s": plan_first,
                        "plan_step_s": {str(w): s for w, s in plan_steps.items()},
-                       "base_first_samples_s": base_firsts[name], "plan_first_samples_s": plan_firsts[-plan.slots:]}
+                       "base_first_samples_s": base_firsts[name],
+                       "plan_first_samples_s": plan_firsts[-max(plan.slots, firsts if firsts != FIRST_SAMPLES else 0):]}
         note(f"stacked steps timed at every width, {name} prompt")
     out["speed"] = speed
     out["retried_out_of_memory"] = retried

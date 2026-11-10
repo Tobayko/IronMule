@@ -108,7 +108,7 @@ def test_measure_stacked_runs_on_a_cpu_stand_in():
 
 
 def test_a_model_without_a_stacked_engine_is_measured_as_ineligible(monkeypatch):
-    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None: (0.1, 0.05))
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None, first_samples=5: (0.1, 0.05))
 
     def refuse(model, info):
         raise ValueError("the dense plan serves Qwen 3 checkpoints only")
@@ -122,7 +122,7 @@ def test_a_model_no_stacked_plan_serves_is_refused_before_anything_is_timed(monk
     """For a model no plan here serves, the agent refuses the stacked engine without timing the base path: on a
     slow CPU the base path's 32 timed steps alone can take minutes."""
     timed = []
-    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None: timed.append(1) or (0.1, 0.05))
+    monkeypatch.setattr(pc, "_base_speed", lambda model, ids, steps, samples=None, first_samples=5: timed.append(1) or (0.1, 0.05))
     monkeypatch.setattr(pc, "on_cpu", lambda: True)  # CPU6: on a CPU the CPU plan's own refusal, nothing timed
     out = pc.measure_stacked(object(), None, None)
     assert out["eligible"] is False and "CPU stacked plan serves llama" in out["reason"] and timed == []
@@ -298,7 +298,7 @@ def test_the_base_path_runs_before_the_stacked_plan_takes_its_pool(monkeypatch):
     pool, did not finish in two hours. Its timing and the gate's reference now run first, the plan after."""
     calls = []
     monkeypatch.setattr(pc, "_base_speed",
-                        lambda model, ids, steps, samples=None: calls.append("base") or (0.1, 0.05))
+                        lambda model, ids, steps, samples=None, first_samples=5: calls.append("base") or (0.1, 0.05))
     monkeypatch.setattr(pc, "_decode_nll", lambda model, ids, lead=None: calls.append("reference") or 1.0)
     monkeypatch.setattr(pc, "_release_memory", lambda: calls.append("release"))
 
@@ -436,10 +436,13 @@ def test_the_stage_log_carries_the_allocator_and_the_record_its_retries():
     assert all("active" in line and "peak" in line for line in lines), lines
 
 
-def test_first_tokens_are_medians_of_several_prefills_and_their_samples_are_kept():
+def test_first_tokens_are_medians_of_several_prefills_and_their_samples_are_kept(monkeypatch):
     """AG5-G run 5 (post hoc): the rule's first-token ratio read 1.05 in run 4 and 1.18 in run 5 for the same
-    prefill code, each side timed once. Each side is now the median of several prefills, all of them recorded."""
+    prefill code, each side timed once. Each side is now the median of several prefills, all of them recorded.
+    (The Gemma stand-in plays a GPU's plan here; on a CPU, CPU6-A2 takes more samples.)"""
     import statistics
+
+    monkeypatch.setattr(pc, "on_cpu", lambda: False)
 
     from ironmule import dense_gemma
 
@@ -598,3 +601,17 @@ def test_measure_stacked_runs_the_cpu_plan_on_a_tiny_llama_and_the_rule_reads_it
     assert measured["gate"]["passes"], measured["gate"]
     assert set(measured["speed"]["short"]["plan_step_s"]) == {str(w) for w in range(1, 9)}
     assert "stacked" in pc.decide(measured)
+
+
+def test_on_a_cpu_each_first_token_time_is_the_median_of_more_prefills(monkeypatch):
+    """CPU6-A2: a CPU's 0.1 s prefill spread 0.72x-1.20x over five samples between equal paths; there both paths
+    take `CPU_FIRST_SAMPLES` prefills per first-token time. The rule is unchanged."""
+    from tests.engine.test_dense_cpu import LLAMA, tiny
+    from tests.engine.test_dense_gemma import _Tok
+
+    monkeypatch.setattr(pc, "on_cpu", lambda: True)
+    measured = pc.measure_stacked(tiny(LLAMA), _Tok(), None, chunks=8, size=12, steps=3, long_prompt="y" * 30)
+    for row in measured["speed"].values():
+        assert len(row["base_first_samples_s"]) == pc.CPU_FIRST_SAMPLES
+        assert len(row["plan_first_samples_s"]) == pc.CPU_FIRST_SAMPLES
+    assert pc.TTFT_SLACK == 1.1 and pc.FIRST_SAMPLES == 5  # AG4's rule and the GPU's sampling, unchanged

@@ -225,3 +225,18 @@ def test_through_the_product_eight_requests_at_once_get_their_own_answers(tmp_pa
     assert all(alone.values()) and health["failed_requests"] == 0 and health["execution"] == "numeric@dense"
     if blas:
         assert health["cpu_blas"] == {"requested": "openblas", "serving": "openblas", "reason": None}
+
+
+def test_the_prefill_head_runs_at_one_row_and_matches_mlx_lm_s_last_position():
+    """Plan version 2: the prefill's head is one unpadded row (a prefill never shares a step), close to mlx-lm's own
+    last-position logits on the same float32 weights, and the first token stacked is still the first token alone."""
+    from mlx_lm.models.cache import make_prompt_cache
+
+    model = tiny(LLAMA, seed=4)
+    plan, record = dense_cpu.install(model, slots=8, capacity=64)
+    assert record["plan_version"] == 2
+    ids = mx.array([[5, 9, 17, 33, 2]])
+    mine = plan.prefill(ids, make_prompt_cache(model))
+    theirs = model(ids, cache=make_prompt_cache(model))[0, -1:]
+    assert mine.shape == (1, 300)
+    assert float(mx.max(mx.abs(mine - theirs)) / mx.max(mx.abs(theirs))) < 1e-4

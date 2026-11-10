@@ -12,7 +12,8 @@ with a decode step built for MLX's CPU device instead of CUDA kernels:
 * attention row by row over the request's own slot, read only up to its position, in float32;
 * the model's own norms and rotary embedding, which act on each row alone.
 
-Prefill runs the model's own layers on the float32 weights, one request at a time. Llama-shaped models (Llama,
+Prefill runs the model's own layers on the float32 weights, one request at a time, its head at one row (a
+prefill never shares a step, so only the decode step needs the fixed width). Llama-shaped models (Llama,
 Qwen 2, Qwen 3, SmolLM2) are served. The plan changes answers against the reference engine (float32 weights and
 another summation), so it is opt-in like every numeric plan, and `install` probes the model's own weights first:
 every stacked width bit-identical to one row, and the step within tolerance of mlx-lm's own forward.
@@ -26,7 +27,7 @@ import os
 from typing import Any, Sequence
 
 MAX_ROWS = 8
-PLAN_VERSION = 1
+PLAN_VERSION = 2  # 2 (CPU6-A2): the prefill's head at one row, in one graph with its cache
 #: slot sizes tried from the largest; the pool of `slots` of them and the weights take at most `MEMORY_SHARE` of
 #: the machine's memory
 SLOT_TIERS = (8192, 4096, 2048, 1024, 512)
@@ -161,13 +162,15 @@ class CpuDensePlan:
         mx.eval(self.keys, self.values)
 
     def prefill(self, ids: Any, cache: list[Any]) -> Any:
-        """The model's own prefill of one prompt (1, L) into an mlx-lm `cache`; its last position through the
-        plan's head at the plan's width, as every decode step's. Float32 logits (1, V)."""
-        import mlx.core as mx
+        """The model's own prefill of one prompt (1, L) into an mlx-lm `cache`, its last position through the head
+        at one row, in one lazy graph with the cache (the caller evaluates). Float32 logits (1, V).
 
+        Since plan version 2 (CPU6-A2) the head is not padded here, and the cache is not evaluated on its own
+        first: a prefill always runs one request alone, so its first token is the same whatever else is stacked,
+        and the padding and the second evaluation only delayed it (CPU6-A refused version 1 on 14 ms of one
+        request's first token)."""
         hidden = self.trunk(ids, cache=cache)
-        mx.eval([c.state for c in cache])
-        return self.linear(hidden[0, -1:, :], self.head)
+        return hidden[0, -1:, :] @ self.head.T
 
     def _attend(self, q: Any, layer_index: int, slot: int, length: int, scale: float) -> Any:
         """One row's query (H, D) against its slot's first `length` positions."""

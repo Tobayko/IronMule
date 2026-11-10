@@ -1924,6 +1924,25 @@ also decides:
     agent chose (OpenBLAS) is faster and gated, and it chooses nothing it has not measured. The ledger entry is
     still owed.
 
+**CPU6-A2, the revision of step 3 (owner decision 2026-11-10: way 1, the mechanism and not the rule; fixed after
+CPU6-A's data and before its own).**
+- *Development data behind it (2026-11-10, this container, SmolLM2-135M on OpenBLAS; no claim):* 25 prefills of the
+  short prompt (11 tokens) each: the base path 99 ms (median), the plan's version-1 prefill 107 ms, of which the
+  trunk 82 ms and the head 7.9 ms at eight padded rows against 6.0 ms at one row; the cache was evaluated on its
+  own before the head, the base path evaluates both in one graph. After the change below, 90 prefills of each:
+  base 104.4 ms, plan 96.5 ms; the first-token ratio over 5 prefills per side spread 0.72x-1.20x (1 of 18 above
+  1.1), over 15 per side 0.82x-1.03x (0 of 6). On the long prompt (328 tokens) the plan was faster throughout
+  (0.93x).
+- *What changes:*
+  - the CPU plan, version 2: its prefill's head runs at one unpadded row, in one lazy graph with the cache. A prefill
+    always runs one request alone, so no answer depends on it; the decode step keeps the fixed width. Its probe and
+    tests are unchanged and pass;
+  - on a CPU each first-token time in the agent's measurement is the median of 15 prefills per path
+    (`CPU_FIRST_SAMPLES`), not 5 (and the plan's, which were its 8 slots' prefills, likewise 15).
+- *What stays:* AG4's rule (`decide`, the first token at most 1.1x later included), the BLAS rule, every gate, and
+  CPU6-A's arms, workload, analysis, pass and kill, on a fresh store at the commit that ships this revision.
+- *Expected:* about 1 hour of this container's CPU. CPU6-A stays failed; this is a new run, not a re-reading.
+
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
