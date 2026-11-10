@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
+POLL = 50  # llama-server's default busy-wait level
 ENGINE_VERSION = 1
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
@@ -80,7 +81,8 @@ class Job:
 
 class GgmlEngine:
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
-                 speculate: bool = True, max_rows: int = MAX_ROWS):
+                 speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
+                 kv_unified: bool = False, kv_f32: bool = False):
         import numpy as np
 
         from .speculation import StepPolicy
@@ -94,9 +96,14 @@ class GgmlEngine:
         params = L.llama_context_default_params()
         params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, 512
         params.n_seq_max, params.n_threads, params.n_threads_batch = seqs, threads, threads
+        params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
+        if kv_f32:  # GG1, second amendment: the KV cache in full precision (GGML_TYPE_F32) instead of f16
+            params.type_k = params.type_v = 0
+        self.settings = {"flash_attn": bool(flash_attn), "kv_unified": bool(kv_unified), "kv_f32": bool(kv_f32)}
         self.ctx = L.llama_init_from_model(self.model, params)
         if not self.ctx:
             raise ValueError("llama.cpp could not create a context")
+        self._threadpool = self._attach_threadpool(threads, POLL)
         self.vocab = L.llama_model_get_vocab(self.model)
         self.n_vocab = L.llama_vocab_n_tokens(self.vocab)
         self.memory = L.llama_get_memory(self.ctx)
@@ -106,6 +113,50 @@ class GgmlEngine:
         self._free = list(range(seqs))
         self._lock = threading.Lock()
         self.steps = 0
+        self._warm_up()
+
+    def _warm_up(self) -> None:
+        """As `llama-server` does at its start: one call of a prompt's size and one of a step's, so a request never pays
+        for llama.cpp's first graphs and weight repacking; the cache is cleared after."""
+        bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
+        self._decode([(bos, j, 0, j == 63) for j in range(64)])
+        self._decode([(bos, 64, seq, True) for seq in range(min(self.seqs, 8))])
+        self._decode([(bos, 65, 0, True)])
+        self.L.llama_memory_clear(self.memory, True)
+
+    def _attach_threadpool(self, threads: int, poll: int) -> Any:
+        """llama-server's own thread pool: `threads` threads that busy-wait up to `poll` (its default 50) between a
+        graph's operations instead of sleeping; without it a context uses a pool that does not poll. Returns the pool,
+        or None where the library does not offer it (the context's default pool then serves)."""
+        import ctypes
+
+        class Params(ctypes.Structure):
+            _fields_ = [("cpumask", ctypes.c_bool * 512), ("n_threads", ctypes.c_int), ("prio", ctypes.c_int),
+                        ("poll", ctypes.c_uint32), ("strict_cpu", ctypes.c_bool), ("paused", ctypes.c_bool)]
+
+        try:
+            folder = Path(self.L.llama_cpp._lib._name).parent if hasattr(self.L, "llama_cpp") else None
+            folder = folder or Path(os.environ.get("LLAMA_CPP_LIB_PATH", ""))
+            base = ctypes.CDLL(str(next(folder.glob("libggml-base.so*"))))
+            cpu = ctypes.CDLL(str(next(folder.glob("libggml-cpu.so*"))))
+            llama = ctypes.CDLL(str(next(folder.glob("libllama.so*"))))
+            base.ggml_threadpool_params_init.argtypes = [ctypes.POINTER(Params), ctypes.c_int]
+            cpu.ggml_threadpool_new.argtypes = [ctypes.POINTER(Params)]
+            cpu.ggml_threadpool_new.restype = ctypes.c_void_p
+            llama.llama_attach_threadpool.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
+            params = Params()
+            base.ggml_threadpool_params_init(ctypes.byref(params), threads)
+            params.poll = poll
+            pool = cpu.ggml_threadpool_new(ctypes.byref(params))
+            if not pool:
+                return None
+            llama.llama_attach_threadpool(ctypes.c_void_p(self.ctx), ctypes.c_void_p(pool), ctypes.c_void_p(pool))
+            self._free_pool = lambda: (llama.llama_detach_threadpool(ctypes.c_void_p(self.ctx)),
+                                       setattr(cpu.ggml_threadpool_free, "argtypes", [ctypes.c_void_p]),
+                                       cpu.ggml_threadpool_free(ctypes.c_void_p(pool)))
+            return pool
+        except Exception:  # noqa: BLE001 - the default pool still serves
+            return None
 
     # --- the model's vocabulary -------------------------------------------------------------------------------------
     def tokenize(self, text: str) -> list[int]:
@@ -195,6 +246,7 @@ class GgmlEngine:
             while True:
                 if admit is not None and self._free:
                     pending.extend(admit(len(self._free)))
+                fresh: list[tuple[int, Job]] = []
                 while pending and self._free:
                     job = pending.pop(0)
                     served.append(job)
@@ -205,17 +257,18 @@ class GgmlEngine:
                         continue
                     with self._lock:
                         seq = self._free.pop(0)
-                    active[seq] = job
-                    take(seq, job, self._prefill(job.ids, seq))
-                if not active:
+                    fresh.append((seq, job))
+                if not active and not fresh:
                     if pending:
                         continue
                     if admit is not None:
-                        fresh = admit(len(self._free))
-                        if fresh:
-                            pending.extend(fresh)
+                        more = admit(len(self._free))
+                        if more:
+                            pending.extend(more)
                             continue
                     break
+                # One call per step, as llama-server batches: every active request's last token and its drafts, and
+                # the prompts of the requests that start now (beyond one call's tokens, the rest go first on their own).
                 order = sorted(active)
                 offers = []
                 for seq in order:
@@ -224,16 +277,27 @@ class GgmlEngine:
                     room = min(MAX_DRAFT, job.limit - len(job.tokens) - 1, self.seq_ctx - 1 - pos)
                     offers.append(draft(job.ids + job.tokens, room) if self.policy is not None and room > 0
                                   else ([], 0))
-                ks = self.policy.choose(offers) if self.policy is not None else [0] * len(order)
+                ks = self.policy.choose(offers) if self.policy is not None and order else [0] * len(order)
                 rows: list[tuple[int, int, int, bool]] = []
                 for seq, (drafts, _), k in zip(order, offers, ks):
                     job = active[seq]
                     pos = len(job.ids) + len(job.tokens) - 1
                     rows += [(t, pos + j, seq, True) for j, t in enumerate([job.tokens[-1]] + list(drafts[:k]))]
+                decode_rows = len(rows)
+                budget = self.seq_ctx - decode_rows
+                batched: list[tuple[int, Job]] = []
+                for seq, job in fresh:
+                    if len(job.ids) <= budget:
+                        rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids)]
+                        budget -= len(job.ids)
+                        batched.append((seq, job))
+                    else:  # too long to share this call: its own prefill first
+                        active[seq] = job
+                        take(seq, job, self._prefill(job.ids, seq))
                 started = time.perf_counter()
-                picks = self._decode(rows)
-                if self.policy is not None:
-                    self.policy.observe_step(len(rows), time.perf_counter() - started, any(ks))
+                picks = self._decode(rows) if rows else []
+                if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
+                    self.policy.observe_step(decode_rows, time.perf_counter() - started, any(ks))
                 self.steps += 1
                 at = 0
                 for seq, (drafts, bucket), k in zip(order, offers, ks):
@@ -248,6 +312,10 @@ class GgmlEngine:
                     for token in new:
                         if take(seq, job, token):
                             break
+                for seq, job in batched:  # each prompt asked for logits at its last position only
+                    active[seq] = job
+                    take(seq, job, picks[at])
+                    at += 1
         finally:
             for seq in list(active):
                 finish(seq, active[seq], active[seq].reason or "cancelled")
@@ -277,7 +345,9 @@ class GgmlEngine:
         return total / (len(ids) - 1)
 
     def summary(self) -> dict[str, Any]:
-        return {"engine": "ggml", "engine_version": ENGINE_VERSION, "threads": self.threads, "sequences": self.seqs,
+        return {"engine": "ggml", "engine_version": ENGINE_VERSION, "settings": dict(self.settings),
+                "threadpool_poll": POLL if self._threadpool else None,
+                "threads": self.threads, "sequences": self.seqs,
                 "sequence_tokens": self.seq_ctx, "steps": self.steps,
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
@@ -285,6 +355,12 @@ class GgmlEngine:
         if getattr(self, "batch", None) is not None:
             self.L.llama_batch_free(self.batch)
             self.batch = None
+        if getattr(self, "_threadpool", None) and getattr(self, "ctx", None):
+            try:
+                self._free_pool()
+            except Exception:  # noqa: BLE001 - freeing the context frees what is left
+                pass
+            self._threadpool = None
         if getattr(self, "ctx", None):
             self.L.llama_free(self.ctx)
             self.ctx = None
@@ -292,6 +368,59 @@ class GgmlEngine:
             self.L.llama_model_free(self.model)
             self.model = None
 
+
+SETTINGS = tuple({"flash_attn": fa, "kv_unified": unified, "kv_f32": f32}
+                 for fa in (False, True) for unified in (False, True) for f32 in (False, True))
+
+
+def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
+    """GG1 (amendment of 2026-11-10): llama.cpp's flash attention and unified KV cache, each on and off, timed on a fixed
+    synthetic workload (8 sequences of a fixed 64-token prompt and one sequence alone, `steps` decode steps each,
+    median of `repeats`); the setting with the highest geometric mean of the two rates."""
+    rows = []
+    for setting in SETTINGS:
+        engine = GgmlEngine(gguf, speculate=False, **setting)
+        try:
+            prompt = (engine.tokenize(CHECK_TEXT) * 8)[:64]
+            rates = {}
+            for width in (8, 1):
+                times = []
+                for _ in range(repeats):
+                    engine.L.llama_memory_clear(engine.memory, True)
+                    engine._decode([(t, j, seq, j == len(prompt) - 1) for seq in range(width)
+                                    for j, t in enumerate(prompt)])
+                    started = time.perf_counter()
+                    for k in range(steps):
+                        engine._decode([(prompt[k % len(prompt)], len(prompt) + k, seq, True) for seq in range(width)])
+                    times.append(time.perf_counter() - started)
+                rates[str(width)] = width * steps / statistics.median(times)
+        finally:
+            engine.close()
+        rows.append({**setting, "tokens_per_s": rates, "score": math.sqrt(rates["8"] * rates["1"])})
+    rows.sort(key=lambda row: -row["score"])
+    return {"order": [{k: row[k] for k in ("flash_attn", "kv_unified", "kv_f32")} for row in rows], "measured": rows}
+
+
+def machine_key() -> str:
+    """What makes a measured setting this machine's: architecture, CPU count and the CPU's model name."""
+    import platform
+
+    model = ""
+    try:
+        for line in Path("/proc/cpuinfo").read_text().splitlines():
+            if line.startswith("model name"):
+                model = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    return f"{platform.machine()}|{os.cpu_count()}|{model}"
+
+
+TUNE_CHILD = r"""
+import json, sys
+from ironmule.ggml_engine import autotune
+print(json.dumps(autotune(sys.argv[1])))
+"""
 
 GATE_REFERENCE = r"""
 import json, sys
@@ -315,7 +444,7 @@ import json, sys
 from ironmule.ggml_engine import GgmlEngine
 from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, gate_lead
 data = json.loads(sys.stdin.read())
-engine = GgmlEngine(sys.argv[1], speculate=False)
+engine = GgmlEngine(sys.argv[1], speculate=False, **data["settings"])
 ids, bos, rows = data["ids"], data["bos"], []
 for index in range(CHUNKS):
     chunk = ids[index * CHUNK_TOKENS:(index + 1) * CHUNK_TOKENS + 1]
@@ -337,8 +466,8 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
-    key = hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION],
-                                    sort_keys=True).encode()).hexdigest()[:24]
+    key = hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
+                                     machine_key()], sort_keys=True).encode()).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
     if stored.exists():
@@ -350,20 +479,34 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     env = {**os.environ, **variables, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get(
         "PYTHONPATH")])), "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
+    plain_env = {**os.environ, "PYTHONPATH": env["PYTHONPATH"]}
+    tuned = subprocess.run([sys.executable, "-c", TUNE_CHILD, gguf], env=plain_env, capture_output=True, text=True,
+                           timeout=3600, check=False)
+    if tuned.returncode != 0:
+        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {tuned.stderr[-300:]}"}
+    tune = json.loads(tuned.stdout.strip().splitlines()[-1])
     reference = subprocess.run([sys.executable, "-c", GATE_REFERENCE, snapshot], env=env, capture_output=True,
                                text=True, timeout=7200, check=False)
     if reference.returncode != 0:
         return {"ran": False, "passes": False, "reason": f"the reference child failed: {reference.stderr[-300:]}"}
     ref = json.loads(reference.stdout.strip().splitlines()[-1])
-    candidate = subprocess.run([sys.executable, "-c", GATE_CANDIDATE, gguf], env={**os.environ, "PYTHONPATH": env[
-        "PYTHONPATH"]}, input=json.dumps({"ids": ref["ids"], "bos": ref["bos"]}), capture_output=True, text=True,
-                               timeout=7200, check=False)
-    if candidate.returncode != 0:
-        return {"ran": False, "passes": False, "reason": f"the ggml child failed: {candidate.stderr[-300:]}"}
-    cand = json.loads(candidate.stdout.strip().splitlines()[-1])
-    result = {"ran": True, **ratio_interval(ref["nll"], cand["nll"]), "reference": "dequantize float32 on MLX",
-              "reference_blas": ref["serving"], "seconds": round(time.perf_counter() - started, 1),
-              "gate_version": GATE_VERSION, "key": key}
+    tried = []
+    for settings in tune["order"]:  # the fastest setting whose gate passes serves (second amendment)
+        candidate = subprocess.run([sys.executable, "-c", GATE_CANDIDATE, gguf], env=plain_env,
+                                   input=json.dumps({"ids": ref["ids"], "bos": ref["bos"], "settings": settings}),
+                                   capture_output=True, text=True, timeout=7200, check=False)
+        if candidate.returncode != 0:
+            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {candidate.stderr[-300:]}",
+                    "tried": tried}
+        interval = ratio_interval(ref["nll"], json.loads(candidate.stdout.strip().splitlines()[-1])["nll"])
+        tried.append({"settings": settings, **interval})
+        if interval["passes"]:
+            break
+    chosen = next((row for row in tried if row["passes"]), tried[-1])
+    result = {"ran": True, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
+              "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
+              "reference": "dequantize float32 on MLX", "reference_blas": ref["serving"],
+              "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}
     try:
         cache.mkdir(parents=True, exist_ok=True)
         stored.write_text(json.dumps(result))
@@ -372,4 +515,5 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     return result
 
 
-__all__ = ["ENGINE_VERSION", "GgmlEngine", "Job", "available", "bindings", "file_sha256", "gate"]
+__all__ = ["ENGINE_VERSION", "GgmlEngine", "Job", "autotune", "available", "bindings", "file_sha256", "gate",
+           "machine_key"]

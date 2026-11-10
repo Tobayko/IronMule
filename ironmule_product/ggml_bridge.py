@@ -15,7 +15,9 @@ class GgmlBridge:
     def __init__(self, gguf: str, tokenizer: Any, *, speculate: bool, gate: dict[str, Any] | None = None):
         from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256
 
-        self._engine = GgmlEngine(gguf, speculate=speculate)
+        settings = {k: bool(v) for k, v in ((gate or {}).get("settings") or {}).items()
+                    if k in ("flash_attn", "kv_unified", "kv_f32")}  # GG1: what the first start measured, and the gate passed
+        self._engine = GgmlEngine(gguf, speculate=speculate, **settings)
         try:
             hf = getattr(tokenizer, "_tokenizer", tokenizer)
             if self._engine.tokenize(CHECK_TEXT) != list(hf.encode(CHECK_TEXT, add_special_tokens=False)):
@@ -35,7 +37,7 @@ class GgmlBridge:
     def metadata(self) -> dict[str, Any]:
         """Safe startup metadata; no request data."""
         return {"configuration": "ggml", "plan": "strict_one_shot",
-                "ggml": {"gguf_sha256": self._gguf_sha256, "gate": self._gate,
+                "ggml": {"gguf_sha256": self._gguf_sha256, "gate": self._gate, "settings": self._engine.settings,
                          "speculation": "context" if self._speculate else "off",
                          "answers": "may differ from the MLX plans (a Q8_0 GGUF, and speculation's multi-position "
                                     "decode), within the gate"}}

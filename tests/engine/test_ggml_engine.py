@@ -155,3 +155,11 @@ def test_the_engine_serves_joins_and_cancels_and_frees_every_sequence(engine):
     assert [len(job.tokens) <= job.limit for job in served] == [True, True, True]
     assert served[0].tokens == seen and served[0].reason in ("eos", "length") and served[2].reason == "cancelled"
     assert engine.free_slots() == engine.seqs
+
+
+def test_the_first_start_tunes_eight_settings_and_the_gate_tries_them_fastest_first():
+    from ironmule import ggml_engine
+
+    assert len(ggml_engine.SETTINGS) == 8 and len({tuple(sorted(s.items())) for s in ggml_engine.SETTINGS}) == 8
+    assert all(set(s) == {"flash_attn", "kv_unified", "kv_f32"} for s in ggml_engine.SETTINGS)
+    assert "|" in ggml_engine.machine_key()
