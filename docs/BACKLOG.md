@@ -1979,7 +1979,7 @@ any of its own data).**
 **Not covered yet:** several workers on one CPU, each with its share of the
 cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
 
-### AG9 — The online agent inside the stacked engine: is there anything left to learn? (owner request 2026-11-10; fixed before its data)
+### AG9 — The online agent inside the stacked engine: is there anything left to learn? (owner request 2026-11-10; step S: no headroom)
 
 **Why.** Since CPU6-A2 the agent chooses the CPU stacked engine by itself, and there it learns nothing while it
 serves: `_agent` refuses an engine with slot reuse (AG4 step 3, `cli.py`), because its world model prices one group
@@ -2024,6 +2024,29 @@ at a time. The owner's goal is an agent that keeps learning on a CPU without end
     learned online, with its own protocol before any code.
 - *Limits:* a simulation of one CPU's prices for one small model; the real engine's join timing, the length model's
   errors and other traffic are not in it. A hardware test is still needed before anything serves.
+
+- **Step S result (2026-11-10, this container, at `a655ac7`, 2 s of CPU; simulation, no claim): no headroom.**
+  - Capacity 0.843 requests per second. Each order over `fifo`, mean (95 %) over 40 traces:
+
+    | State / answers | `fifo` tokens/s | `sjf` tokens/s, first token | `ljf` tokens/s, first token |
+    | :-- | --: | :-- | :-- |
+    | quiet, either | 16.8 / 10.8 | 1.000, 1.000 | 1.000, 1.000 |
+    | bursts, to limit | 39.9 | 1.006 (0.999-1.013), 0.931 (0.888-0.970) | 1.026 (1.016-1.039), 1.187 (1.129-1.251) |
+    | bursts, early | 32.1 | 0.997 (0.992-1.001), 0.968 (0.939-0.996) | 1.011 (1.005-1.017), 1.124 (1.067-1.186) |
+    | spike, to limit | 45.3 | 1.020 (1.008-1.033), 0.890 (0.851-0.930) | 1.067 (1.051-1.084), 1.462 (1.366-1.565) |
+    | spike, early | 38.5 | 1.007 (0.997-1.019), 0.928 (0.903-0.953) | 1.049 (1.037-1.064), 1.347 (1.281-1.418) |
+
+    By the true length (`sjf*`, `ljf*`) the same picture: `ljf*` up to 1.085x tokens per second in `spike` with first
+    tokens 1.43x later, `sjf*` first tokens at best 0.93x.
+  - *Verdict by the fixed rule:* no order has headroom in any state. Longest first buys tokens per second only with
+    much later first tokens, beyond AG8's 1.02; shortest first brings first tokens at most 11 % sooner, short of
+    the 20 % the rule asks. So no learner is built for the order inside the stacked engine (Tier 0), and the agent
+    keeps serving there on its own setup.
+  - *Post hoc, descriptive only:* in `quiet` the eight slots never fill, so order never acts; under load, order only
+    trades the tail's fullness against short requests' wait. What an online agent could still learn on a CPU must
+    change the work itself, not its order: a lever whose best setting depends on the request, such as speculation
+    from the request's own context with a window learned online (HQ1's planned lever, Strata's), would be the next
+    candidate, under its own entry and protocol.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
@@ -4898,6 +4921,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **An online-learned join order inside the stacked engine (2026-11-10).** Experiment AG9 step S (simulation at
+  `a655ac7`, priced by the agent's CPU6-A2 measurement; see AG9 above): over `fifo`, no order had headroom in any of
+  RL2-H2's three states by the rule fixed before the data. Longest first made up to 1.067x the tokens per second in
+  `spike` with first tokens 1.46x later; shortest first brought first tokens at most 0.89x. Re-open with an engine
+  whose step cost depends on the order (a different width per state, a prefill that does not stall decode), a
+  different objective chosen by the owner, or hardware data contradicting the engine model, under a new protocol.
 
 - **CPU6 step 3 as fixed: the agent's own CPU setup at 3x (2026-11-10).** Experiment CPU6-A (this container, commit
   `b71b1ce`; see CPU6 above): with SmolLM2-135M-Instruct-8bit the agent chose `dequantize` on OpenBLAS by itself and
