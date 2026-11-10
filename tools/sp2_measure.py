@@ -205,8 +205,9 @@ def main(argv: list[str] | None = None) -> int:
                               "machine": {"machine": platform.machine(), "cpus": os.cpu_count(),
                                           "mlx": mx.__version__},
                               "quiet": [], "load": []}
-    for kind, blocks, size, first_index, at_once in (("quiet", quiet_blocks, quiet_size, QUIET_FIRST, False),
-                                                     ("load", load_blocks, load_size, LOAD_FIRST, True)):
+    shift = 1_000 if args.smoke else 0  # a smoke reads prompts the protocol's run never uses
+    for kind, blocks, size, first_index, at_once in (("quiet", quiet_blocks, quiet_size, QUIET_FIRST + shift, False),
+                                                     ("load", load_blocks, load_size, LOAD_FIRST + shift, True)):
         for b in range(blocks):
             chunk = texts[first_index + b * size:first_index + (b + 1) * size]
             cells = []
