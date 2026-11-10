@@ -2140,6 +2140,65 @@ what an online learner needs. This entry is its pre-measurement, before any prod
     spread is the request dependence an online window policy (Strata's) is for: speculating only where it pays. Any
     reopening needs a new protocol on fresh prompts. The ledger entry is still owed.
 
+### SP2 — Speculation from the context with a window the agent learns while it serves (owner request 2026-11-10; fixed before its data)
+
+**Why.** SP1-0 (Tier 0) showed speculation from the context exact on the CPU plan and 1.48x on average at a fixed
+window, but killed by its bound because the gain depends on the request: 15 of 48 prompts lost, 6 more than doubled,
+and the per-prompt best arm, off included, averaged 1.56x. A window chosen per request and per step is SP1-0's
+reopening condition ("a changed mechanism"), and it is learning the agent does while it serves, on any CPU.
+
+**Mechanism (`ironmule/speculation.py`, the CPU stacked plan, `DenseStackedExecutor`).**
+- *Drafts:* SP1-0's prompt lookup over the request's prompt and answer so far (the longest repeated suffix of 3 down
+  to 1 tokens, its most recent earlier occurrence, up to 7 tokens after it). Its match length is the draft's bucket.
+- *Verify:* each step, every active request's last token plus the drafts chosen for it are rows of its own slot at
+  consecutive positions in one forward of the plan, together with the other requests' rows, at most the plan's width
+  in all. A request takes its drafts up to the first one that differs from the plan's own argmax, plus that argmax.
+  The plan verifies only after its probe found a verify window bit-identical to one row at a time (plan version 3);
+  otherwise speculation stays off.
+- *The window policy, learned online per machine (Strata's draft policy):*
+  - the time of a step by its rows, `t(r)`, an exponential average (weight 0.2) of measured steps; an unmeasured `r`
+    is priced from the measured ones by a line through them (before any, `t(r) = t(1) (1 + 0.06 (r - 1))`, CPU6-A2's
+    eight rows at 1.42x one);
+  - per bucket, the chance that a draft is accepted given that the ones before it were, counted from every verified
+    draft, with a prior of 0.3 worth 4 drafts;
+  - each step it gives drafts to requests greedily, the next draft where it adds the most expected tokens, while the
+    expected tokens per second of the step rises; it speculates only where that beats a plain step of the same requests
+    (the plain path keeps its chained readback) by at least 2 %;
+  - under load (no free rows) it adds nothing, so the plain stacked step serves.
+- *Who turns it on:* `ironmule serve --agent on` when the agent's setup is the CPU stacked engine and the plan
+  verifies; `--speculate context` for any CPU stacked engine; `--speculate off` keeps it off. `/health` shows its
+  steps, drafts, accepted drafts and learned prices under `speculation`.
+- *Answers:* a request's tokens are the plan's own argmax at every position, as without speculation (the verify window
+  is bit-identical, checked by the probe at every start and in the tests, stacked and alone).
+
+**SP2-H, the hardware test through the product (this container; fixed before any SP2 data).**
+- *Model and setup:* `mlx-community/SmolLM2-135M-Instruct-8bit` rev `0f0d9b8`, the agent's CPU6-A2 setup
+  (`dequantize`, OpenBLAS, the CPU stacked engine at width 8), named so both arms start it the same way.
+- *Arms:* A, that setup with `--speculate off`; S, the same with `--speculate context` (the learned policy, starting
+  from its priors at each start). Each on a fresh worker started as `ironmule serve` starts it.
+- *Prompts:* Dolly 15k (digest `2df90833`), the shuffled pool from index 13,000 on (SP1-0 used 12,000-12,047), chat
+  template, answers greedy, at most 128 tokens.
+- *Quiet:* 3 blocks of 16 prompts each, one request at a time; each block runs A, S, A in that order on the same
+  prompts.
+- *Load:* 3 blocks of 8 prompts at once (from index 13,100 on), A, S, A.
+- *Scores:* quiet, per prompt, S's tokens per second (completion tokens over the request's time from its first token
+  to its end) over the mean of the two A runs; its mean over the 48 prompts with a 95 % bootstrap over prompts (2,000
+  resamples, seed 0); first token per prompt likewise. Load, per block, the block's tokens per second (tokens over the
+  span from first arrival to last end) and its mean first token, S over the mean of the two A runs, the mean over
+  blocks with the lowest and highest block as its range. A/A noise: the mean absolute relative difference of the two
+  A runs, per score.
+- *Pass (all of):*
+  - every answer of S equals A's first run token for token, quiet and load;
+  - quiet tokens per second: the 95 % lower bound at least 1.3 (SP1's bound);
+  - quiet first token: the 95 % upper bound at most 1 plus its A/A noise;
+  - load: every block's tokens-per-second ratio at least 0.98 and mean first token at most 1.02 plus the A/A noise;
+  - every request answered.
+- *Kill:* otherwise SP2 does not serve by default under `--agent on` (Tier 0, scoped to this CPU and model), and
+  `--speculate context` stays opt-in only if every answer was equal.
+- *Cost:* about 1 hour of this container's CPU; no GPU hours.
+- *Not covered:* other CPUs, models, the GPU stacked plans (their attention is not checked for verify windows), and
+  mixed traffic where requests arrive while others speculate.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
