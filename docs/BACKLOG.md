@@ -2220,6 +2220,33 @@ reopening condition ("a changed mechanism"), and it is learning the agent does w
     made 1.475x (95 % from 1.23x) on other prompts one at a time in a probe loop; the learned window here, through the
     product, is not better than that on these numbers.
 
+### SP3 — SP2 with two changes to its window policy (owner request 2026-11-10; fixed after SP2-H's result and before any SP3 data)
+
+**Reopening (AGENTS, "Performance and evidence").** Tier 0 holds SP2-H: speculation with a learned window made one
+request at a time 1.40x (95 % 1.21x to 1.63x) against the bound of 1.3; its kill: "otherwise SP2 does not serve by
+default under `--agent on` (Tier 0, scoped to this CPU and model), and `--speculate context` stays opt-in only if
+every answer was equal". The Tier 0 entry allows a reopening "with a changed mechanism (for example no drafts from
+1-token matches, step prices from more samples) ... under a new protocol on prompts not used here". SP2-H's post hoc
+reading, which designed these changes, is labelled there; the changes are fixed here before any SP3 data.
+
+**Mechanism changes (policy version 2, `ironmule/speculation.py`); everything else is SP2's.**
+- *No drafts from 1-token matches.* A draft needs a repeated suffix of at least 2 tokens. In SP2-H's S workers
+  1-token matches were right 0.07-0.35 of the time, 2- and 3-token matches 0.39-0.83.
+- *Plain and speculative steps priced apart.* A plain step's price is an exponential average per row count of its
+  chained steps (a host read every 4 steps), as before. A speculative step (a host read every step) is priced by a
+  line through all speculative steps measured so far (least squares of seconds on rows, each new step weighing as
+  much as the last 50 together, slope at least 0), not by an average per row count; before it has two row counts, by
+  the plain price of its requests times 1 + 0.06 per added row. In SP2-H both kinds shared one average per row count,
+  which was not monotone (3 rows 91-109 ms against 8 rows 99-115 ms), and a speculative step was compared with plain
+  steps that read the host 4 times less often.
+- The margin stays 2 %, the acceptance prior 0.3 worth 4 drafts.
+
+**SP3-H (this container; fixed before any SP3 data).** SP2-H's arms (A, `--speculate off`; S, `--speculate context`
+with policy version 2), model, setup, workload shape, scores, pass rule and kill, on prompts no earlier run used:
+quiet from Dolly index 13,200 (3 blocks of 16), load from 13,300 (3 blocks of 8). A pass makes `--speculate auto` turn
+speculation on where the agent chose the CPU stacked engine; a fail keeps it opt-in and goes to Tier 0. A smoke of the
+harness reads prompts from index 14,000 on. *Cost:* about 1 hour of this container's CPU; no GPU hours.
+
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
 **Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
