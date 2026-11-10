@@ -2048,7 +2048,7 @@ at a time. The owner's goal is an agent that keeps learning on a CPU without end
     from the request's own context with a window learned online (HQ1's planned lever, Strata's), would be the next
     candidate, under its own entry and protocol.
 
-### SP1-0 — Speculation from the context on the CPU plan: is it exact, and how much could it gain? (owner request 2026-11-10; fixed before its data)
+### SP1-0 — Speculation from the context on the CPU plan: is it exact, and how much could it gain? (owner request 2026-11-10; exact, killed at 1.23x)
 
 **Why.** AG9 left the online agent nothing to learn inside the CPU stacked engine by order. SP1 (HQ1) is the planned
 lever that changes the work itself: drafts copied from the request's own prompt and answer, verified by the model,
@@ -2099,6 +2099,31 @@ what an online learner needs. This entry is its pre-measurement, before any prod
 - *Limits:* one CPU, one small model, one request alone, the probe's loop and not the worker's. Under load the
   engine has no free rows to verify on; that state is not measured here.
 - *Cost:* about 30-45 minutes of this container's CPU; no GPU hours.
+
+- **SP1-0 result (2026-11-10, this container, at `59f26ff`, 28 minutes, no GPU hours): valid; exact; killed by its
+  bound.** OpenBLAS served (the shim, ILP64); Dolly digest `2df90833`; all 48 prompts timed, median answer 128
+  tokens, sequential median 14.2 tokens per second. Before the run a smoke of the tool decoded 2 of these 48 prompts
+  to 24 tokens; it is not counted and changed nothing.
+  - *(a) Exactness:* every speculative answer, at every `k`, equals the sequential one token for token on all 48
+    prompts. The verify window on the CPU plan is exact (HW3's reopening condition holds on this plan).
+  - *(b) Gain over the sequential pair (A/A noise 5.9 %):*
+
+    | `k` | Tokens/s ratio, mean (95 %) | Acceptance (spread over prompts) |
+    | --: | :-- | :-- |
+    | 2 | 1.315 (1.215-1.431) | 0.329 (0.05-1.00) |
+    | 4 | 1.381 (1.220-1.568) | 0.220 (0.03-0.94) |
+    | 7 | 1.475 (1.226-1.787) | 0.151 (0.02-0.99) |
+
+  - *(c) Request dependence:* the per-prompt best arm over `k` = 7 is 1.076x (95 % 1.056x to 1.098x), above 1.05.
+  - *Verdict by the fixed rule: kill.* The best `k`'s lower bound, 1.23, is below SP1's 1.3, so SP1 on this plan and
+    model goes to Tier 0, although every answer was exact and the mean gain is 1.48x. (c) says a window chosen per
+    request would be worth it beyond a fixed `k`.
+  - *Post hoc, descriptive only (no rule or verdict changes):* the gain is concentrated. At `k` = 7 the median prompt
+    gained 1.12x, 15 of 48 lost (down to 0.90x), 6 gained more than 2x (up to 5.67x). Prompts of at least 100 tokens
+    (16, mostly with a Dolly context) gained 2.14x on average, shorter ones 1.14x. The per-prompt best arm, off
+    included, averages 1.56x over the sequential pair. So the bound failed on the spread, not on the mean, and the
+    spread is the request dependence an online window policy (Strata's) is for: speculating only where it pays. Any
+    reopening needs a new protocol on fresh prompts. The ledger entry is still owed.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
@@ -4973,6 +4998,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **Speculation from the context at a fixed window on the CPU plan (2026-11-10).** Experiment SP1-0 (this container,
+  commit `59f26ff`; see SP1-0 above): with SmolLM2-135M-Instruct-8bit on OpenBLAS, prompt-lookup drafts verified as
+  rows of one slot were exact on all 48 Dolly prompts at `k` = 2, 4 and 7, and made 1.315x, 1.381x and 1.475x the
+  sequential tokens per second, but the best lower bound was 1.23x against SP1's 1.3. Re-open with a changed mechanism
+  (a window chosen per request, which (c) measured at 1.076x over the best fixed `k`, or drafts from another source),
+  another model or workload, under a new protocol on prompts not used here.
 
 - **An online-learned join order inside the stacked engine (2026-11-10).** Experiment AG9 step S (simulation at
   `a655ac7`, priced by the agent's CPU6-A2 measurement; see AG9 above): over `fifo`, no order had headroom in any of
