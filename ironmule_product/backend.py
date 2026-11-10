@@ -72,7 +72,8 @@ class MLXWorkerClient:
                  selection_evidence: list[Any] | tuple[Any, ...] | None = None,
                  compute_dtype: str | None = None, chat_reuse: bool = False, thinking: bool = True,
                  cuda_device: str | None = None, engine_knobs: dict[str, Any] | None = None,
-                 dense_width: int | None = None) -> None:
+                 dense_width: int | None = None, cpu_blas: str | None = None,
+                 cpu_threads: int | None = None) -> None:
         if not isinstance(spec, ModelSpec):
             raise TypeError("spec must be ModelSpec")
         if dense_width is not None and (type(dense_width) is not int or not 1 <= dense_width <= 8
@@ -85,6 +86,16 @@ class MLXWorkerClient:
                                         or re.fullmatch(r"[A-Za-z0-9-]{1,64}", cuda_device) is None):
             raise ValueError("cuda_device must be one CUDA device index or UUID")
         self.cuda_device = cuda_device
+        # CPU6: MLX's float32 products on an optimised BLAS in this worker (opt-in, changes output); a worker that
+        # cannot get it serves on the stock BLAS and says why (`cpu_blas_record`).
+        if cpu_blas not in (None, "openblas"):
+            raise ValueError("cpu_blas must be None or openblas")
+        if cpu_blas is not None and cuda_device is not None:
+            raise ValueError("cpu_blas applies to a CPU worker, not one pinned to a CUDA device")
+        if cpu_threads is not None and (type(cpu_threads) is not int or cpu_threads < 1 or cpu_blas is None):
+            raise ValueError("cpu_threads must be a positive int and needs cpu_blas")
+        self.cpu_blas, self.cpu_threads = cpu_blas, cpu_threads
+        self.cpu_blas_record: dict[str, Any] | None = None
         if compute_dtype not in (None, "float32", "float16", "native", "dequantize"):
             raise ValueError("compute_dtype must be None, float32, float16, native or dequantize")
         if compute_dtype is not None and execution_variant != "reference":
@@ -452,6 +463,11 @@ class MLXWorkerClient:
             })
             if self.cuda_device is not None:
                 environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device
+            if self.cpu_blas is not None:
+                from ironmule import cpu_blas
+
+                variables, self.cpu_blas_record = cpu_blas.environment(threads=self.cpu_threads)
+                environment.update(variables)
             try:
                 arguments = [sys.executable, "-I", "-u", str(worker), "--spec",
                              json.dumps(self.spec.as_dict(), separators=(",", ":"))]

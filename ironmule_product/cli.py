@@ -239,7 +239,8 @@ def serve(argv: list[str]) -> int:
                              "than reference everywhere, and its tokens follow IronMule's engine (SERVE6, EXACT1). "
                              "rust2 (CUDA, Qwen3 dense 4-bit): the rust2 binary named by IRONMULE_RUST2_BINARY, "
                              "with the DSpark draft in IRONMULE_RUST2_DRAFT if set (RUST2-SRV). "
-                             "dense (CUDA below compute capability 8, Qwen 3 bf16 or Gemma 3 at 4 bit): the opt-in dense "
+                             "dense (CUDA below compute capability 8, Qwen 3 bf16 or Gemma 3 at 4 bit; on a machine without a "
+                             "GPU, Llama and Qwen checkpoints on the CPU stacked plan, CPU6): the opt-in dense "
                              "numeric plan, up to eight requests in one decode step through IronMule's own kernels; "
                              "answers differ from the other engines' but never with the group (KB1, KB2)",)
     parser.add_argument("--no-thinking", action="store_true",
@@ -251,6 +252,12 @@ def serve(argv: list[str]) -> int:
     parser.add_argument("--compute-dtype", choices=("float32", "float16", "native", "dequantize"), default=None,
                         help="opt-in numeric plan for GPUs that emulate bf16 (NVIDIA below Ampere), or "
                              "dequantize on a machine without a GPU; changes output; see `ironmule plans`")
+    parser.add_argument("--cpu-blas", choices=("stock", "openblas"), default="stock",
+                        help="CPU6 (Linux x86-64, no GPU): `openblas` runs MLX's float32 matrix products on an "
+                             "OpenBLAS found on this machine (NumPy's bundled one first) instead of the reference BLAS "
+                             "the mlx-cpu wheel ships; several times faster with --compute-dtype dequantize or float32. "
+                             "Opt-in: a different summation order can change answers. /health says which BLAS serves "
+                             "and, if the optimised one could not, why")
     parser.add_argument("--learning", choices=("off", "active", "paused"), default="off",
                         help="RSI3-LIVE: learn group width and gather wait from this server's own traffic "
                              "(cost model, sequential RL, dreaming); only a qualified policy replaces the reference. "
@@ -294,6 +301,8 @@ def serve(argv: list[str]) -> int:
         parser.error("--compute-dtype runs on the stock engine only")  # stock = reference
     if args.gpus is not None and args.no_model:
         parser.error("--gpus places model workers; --no-model starts none")
+    if args.cpu_blas != "stock" and args.gpus is not None:
+        parser.error("--cpu-blas applies to CPU workers; --gpus pins workers to GPUs")
     if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
         parser.error("--dispatch-policy and --dispatch-evidence go together")
     if args.dispatch_policy is not None and args.learning != "off":
@@ -352,6 +361,7 @@ def serve(argv: list[str]) -> int:
             def make_backend(device=devices[0]):
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
+                                       cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,
                                        execution_variant="reference" if args.engine == "reference" else "current_engine",
                                        **_engine_options(args.engine, stacked_width), **knob_options)
             def start_serving() -> tuple[Any, Any]:
@@ -500,6 +510,13 @@ def _runtime_versions() -> dict[str, str | None]:
     return out
 
 
+def _blas_binding(backend: Any) -> dict[str, Any]:
+    """CPU6: a worker asked to run on the optimised BLAS binds learning and evidence to it (nothing otherwise, so
+    every other binding, and its digest, is unchanged)."""
+    asked = getattr(backend, "cpu_blas", None)
+    return {} if asked is None else {"cpu_blas": asked}
+
+
 def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any) -> Any:
     """RSI3-LIVE learner bound to this hardware, model, plan and schedule; see live_learning."""
     from .live_learning import LiveLearning
@@ -513,7 +530,7 @@ def _live_learning(store: ProductStore, service: Any, spec: ModelSpec, args: Any
                "plan": {"execution_variant": backend.execution_variant,
                         "engine_configuration": backend.engine_configuration, "engine": payload.get("engine"),
                         "compute_dtype": backend.compute_dtype, "chat_reuse": backend.chat_reuse,
-                        "thinking": backend.thinking},
+                        "thinking": backend.thinking, **_blas_binding(backend)},
                "streams_batches": backend.streams_batches, "runtime": _runtime_versions(),
                "worker_sources_sha256": payload.get("sources_sha256")}
     policy = service.policy
@@ -576,7 +593,7 @@ def _agent(store: ProductStore, service: Any, spec: ModelSpec, card: str | None 
                "device": backend.device, "model": {"id": spec.model_id, "revision": spec.revision},
                "plan": {"execution_variant": backend.execution_variant,
                         "engine_configuration": backend.engine_configuration, "compute_dtype": backend.compute_dtype,
-                        "chat_reuse": backend.chat_reuse, "thinking": backend.thinking},
+                        "chat_reuse": backend.chat_reuse, "thinking": backend.thinking, **_blas_binding(backend)},
                "runtime": _runtime_versions()}
     if card is not None:
         binding["card"] = card

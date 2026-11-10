@@ -205,6 +205,11 @@ class ProductService:
             if self._last_batch_size is not None:
                 result.update(last_batch_size=self._last_batch_size, batch_count=self._batch_count)
             result["device"] = getattr(self.backend, "device", None)  # OPS1: what the worker reported
+            blas = (getattr(self.backend, "ready_payload", None) or {}).get("cpu_blas")
+            if getattr(self.backend, "cpu_blas", None) is not None or blas is not None:  # CPU6: asked for, and serving
+                result["cpu_blas"] = {"requested": getattr(self.backend, "cpu_blas", None),
+                                      "serving": (blas or {}).get("serving", "stock"),
+                                      "reason": (getattr(self.backend, "cpu_blas_record", None) or {}).get("reason")}
             result.update(self._stability())
         if self.learning is not None:  # outside the service lock: admission never waits on the learner
             result["learning"] = self.learning.summary()

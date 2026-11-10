@@ -62,6 +62,18 @@ def _gpu_available(mx: Any) -> bool:
     return bool(mx.metal.is_available() or (cuda is not None and cuda.is_available()))
 
 
+def _cpu_blas_status() -> dict[str, Any]:
+    """CPU6: which BLAS serves MLX's float32 products here, only when the client preloaded the shim (else nothing,
+    so every other worker's ready event is unchanged)."""
+    if "IRONMULE_CPU_BLAS_LIBRARY" not in os.environ:
+        return {}
+    from ironmule import cpu_blas
+
+    status = cpu_blas.active()
+    return {"cpu_blas": {"serving": status["serving"], "integer_bits": status.get("integer_bits"),
+                         "library": status.get("library"), "threads": os.environ.get("OPENBLAS_NUM_THREADS")}}
+
+
 def _startup_telemetry(mx: Any, startup_started: float) -> dict[str, Any]:
     values: dict[str, Any] = {
         "startup_wall_seconds": time.monotonic() - startup_started,
@@ -1357,6 +1369,7 @@ def main(argv: list[str] | None = None) -> int:
         **telemetry,
         "sources_sha256": _sources_digest(),  # RSI3-LIVE (f): every loaded source file of this worker
         "cuda_cache_limit_bytes": cuda_cache_limit,  # MEM2: None = MLX's default
+        **_cpu_blas_status(),
     })
     commands: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=8)
     cancellations: dict[str, threading.Event] = {}

@@ -33,6 +33,18 @@ for plan choice inside agent mode (AG4). It is never silent: the chosen plan, it
 `/health` and the agent's status. The agent stays opt-in. Without `--agent on`, the caller's plan is kept as
 before.
 
+**The CPU is enough to build the agent (owner, 2026-11-10).** "The CPU is fully sufficient for this project to make
+an AI that optimises itself; so we can keep training without limit." What that means under the rules above: the
+agent's training (its simulator, planner, dreaming and replay) needs no accelerator, and a Kaggle CPU session or
+this container spends no GPU quota, so training and proving the agent may run entirely on CPUs. A serving gain
+still counts only on the machine it was measured on: a CPU result holds for that CPU and model, and says nothing
+about a T4 or a Mac. CPU6 makes the CPU fast enough for that.
+
+**Every number of devices (owner, 2026-11-10).** "Mind multi-GPU, the same as a single GPU: whether three, four or
+a hundred GPUs are there, everything is to be covered." Whatever the agent can do on one device it must do on N
+devices, and the product must neither refuse nor silently drop a setting because a machine has more than one.
+MG1 lists where that does not hold today.
+
 ### AG1 — The IronMule agent: one online learner that decides, learns and proves its gain where it runs (opened 2026-10-30, before data)
 
 **Mechanism.** `ironmule_product/agent.py`, opt-in (`ironmule serve --agent on`), one decision owner (refused
@@ -1759,6 +1771,108 @@ a hardware result).**
   second within the first-token bound, or by a lower AG1 cost at tokens per second no worse than the noise. That
   is a new protocol with its own simulation, the owner's decision.
 - It also took 2.5x the planner time (51 plans against 12): with no candidate, it plans again every 64 arrivals.
+
+### CPU6 — A fast BLAS under MLX and the stacked engine on a CPU (owner request 2026-11-10; fixed before its data)
+
+**Why.** The owner decided that the CPU suffices to build the agent ("The main goal"). Every CPU run so far was
+bounded by how slowly MLX computes there: AG4-C's default path took about 70 minutes to the first token of a
+1,034-token prompt, and V5-CPU was cut by Kaggle's 12-hour limit short of triplets, not of signal. At capacity 1
+the agent's only decision on a CPU was the order (0.5-1 %).
+
+**Development data (2026-11-10, this container; exploration before this protocol, no claim).** x86-64, 4 vCPUs
+(Xeon at 2.1 GHz, AVX-512), 15 GiB, mlx 0.32.4 with the `mlx-cpu` wheel, NumPy 2.5.3 (bundled OpenBLAS 0.3.34).
+- The `mlx-cpu` wheel links a reference BLAS (`mlx_cpu.libs/libblas-*.so`, netlib 3.10): one thread, no vector
+  kernels. A 2,048-cube float32 product ran at 3.4 GFLOP/s there, against about 300 on NumPy's OpenBLAS (0.056 s).
+- Decode-shaped products (1 and 8 rows; SmolLM2-135M's 576 x 1,536 MLP, Qwen 3 0.6B's 1,024 x 3,072 and 1.7B's
+  2,048 x 6,144) were 19-32x slower on MLX than on OpenBLAS, the 151,936-row head 11x.
+- With a forwarding library preloaded (MLX's `cblas_sgemm` to NumPy's OpenBLAS), SmolLM2-135M dequantized to
+  float32 took 58 ms a decode step at one row (147 stock) and 77 ms at eight rows (903 stock), 12 steps each. On
+  its checkpoint's float16 weights after mlx-lm's own `dequantize_model` it took 375 ms: the float16 product does
+  not use the BLAS.
+- *Bit-identity.* On OpenBLAS a row's product alone and the same row stacked among 2-8 rows differed for K=1,536
+  (35 of 36 placements); with every product at a fixed width of eight rows (zero padding), none of 180 placements
+  over five shapes differed. The reference BLAS was identical either way.
+- *The CPU plan as a tool, before the product path existed:* SmolLM2-135M, OpenBLAS, 16 tokens: 15.9 tokens per
+  second at one row, 86.9 at eight; each of eight requests stacked got the tokens it got alone.
+- *Through the product, a smoke (8 requests offered at once, 32 tokens; the stock arms ran while the test suite
+  also used the CPU, so they are slower than alone):* today's CPU path (`--compute-dtype dequantize`) 3.5 tokens
+  per second and a mean first token of 33.8 s; with OpenBLAS 11.5 and 10.3 s; the stacked engine on OpenBLAS 42.7
+  and 1.2 s; the stacked engine on the stock BLAS 3.5. Every arm returned the same token counts.
+
+**Step 1, the fast BLAS (`ironmule/cpu_blas.py`, `--cpu-blas openblas`).** A small C library, built with the
+machine's compiler into the user cache, preloaded into the worker process. Its `cblas_sgemm` forwards to an
+OpenBLAS found on the machine (NumPy's bundled one first; ILP64 or LP64 by its symbol); a target it cannot resolve
+sends every call to MLX's own BLAS, so it can only be not faster, never fail. Before a worker gets it, a child
+process checks it: the optimised BLAS must serve and agree with a float64 reference within 1e-5; otherwise the
+worker runs on the stock BLAS. `/health` names the BLAS that serves and, if it is not the one asked for, why. Only
+`cblas_sgemm` is forwarded. A different summation order can change answers, so it is opt-in; the agent's and the
+learner's evidence binds to it. Not with `--gpus`.
+
+**Step 2, the stacked engine on a CPU (`ironmule/dense_cpu.py`, `--engine dense` on a machine without a GPU).**
+The dense plan's slot pool and executor (`DenseBackend`, `DenseStackedExecutor`) with a decode step for MLX's CPU:
+every weight widened to float32 (a quantised checkpoint dequantized), every linear layer at the pool's width with
+zero padding, attention row by row over the request's own slot up to its position, the model's own norms and
+rotary embedding. Llama, Qwen 2 and Qwen 3 shapes. The slot size is the largest of 8,192-512 tokens whose pool fits
+beside the weights in half the memory. Installed only after a probe on the model's own weights: every width from
+two to the slot count bit-identical to one row over three decode steps, and a step within 1e-3 of mlx-lm's own
+forward with the same top token. Opt-in like every numeric plan.
+
+**Tests** (`tests/engine/test_cpu_blas.py`, `tests/engine/test_dense_cpu.py`): the shim's check, its fallback with a
+missing library or symbol, the build cache, the refusal without a compiler or off Linux x86-64, the client's
+option checks, health with and without it; tiny random Llama and Qwen 3 models (a 1,536-wide down projection,
+where OpenBLAS was not row-invariant): the probe, dequantization, the same tokens stacked and alone through
+`DenseBackend`, on the stock BLAS and on OpenBLAS in a child process; and through the product (service, client,
+worker process, the bridge's own `install_dense`) eight requests at once that share stacked steps and get the
+answers each got alone.
+
+**CPU6-M, the measurement (fixed 2026-11-10, after the development data above and before its own data).**
+- *Machine:* this container, as above, with nothing else running; no GPU hours. The commit is the one that ships
+  this entry's code.
+- *Model:* `mlx-community/SmolLM2-135M-Instruct-8bit` (V-CPU's and AG4-C's), the cached snapshot. Qwen 3 0.6B 4-bit
+  is descriptive only.
+- *Arms, through the product (`tools/cpu6_measure.py`, the service and worker as `ironmule serve` starts them):*
+  A, today's CPU path: the reference worker with `--compute-dtype dequantize` on the stock BLAS (what AG4's agent
+  chose on its own in AG4-C); B, A with `--cpu-blas openblas`; C, `--engine dense` with `--cpu-blas openblas`.
+- *Workload:* 8 requests offered at once (fixed synthetic prompts, 64-token limit), each arm on a fresh worker.
+  5 repetitions in rotated arm order (A B C A, B C A A, C A A B, ...); A runs twice in each repetition, so its two
+  runs give the A/A noise.
+- *Metrics:* tokens per second over the span from the first offer to the last done, and the mean first token,
+  paired by repetition, 2,000 bootstrap resamples. Descriptive: how many answers equal A's.
+- *Quality:* the numeric plans' perplexity gate (`nll_per_chunk`, the gate text and chunks) on the dequantized model
+  on OpenBLAS against the same on the stock BLAS. C's decode step is held to mlx-lm's forward by its probe.
+- *Pass, each fixed now:* B over A, tokens per second with the 95 % lower bound above 1.5; C over A, above 3.0;
+  for both, the mean first token's 95 % upper bound at most 1 plus the A/A noise; the gate's upper bound at most
+  1.005; every request answered in every arm.
+- *Kill:* B fails, and `--cpu-blas` stays an option without a recommendation; C fails, and the CPU stacked engine
+  stays opt-in without a recommendation. Either way into Tier 0 with this entry. A passing arm becomes something
+  the agent may choose on a CPU behind its own gate (step 3, not started).
+- *Expected:* about 0.5-1 hour of this container's CPU.
+
+**Not covered yet:** step 3, the agent's own setup on a CPU measuring the stacked engine and the BLAS (AG4's
+`choose_setup` keeps the reference engine on a CPU today); several workers on one CPU, each with its share of the
+cores (MG1); Gemma 3 on the CPU plan; macOS, whose MLX uses Accelerate and is not this shim's business.
+
+### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
+
+**Why.** The owner: "whether three, four or a hundred GPUs are there, everything is to be covered" ("The main
+goal"). HW1 serves one worker per GPU behind join-the-shortest-queue for any number of GPUs, but several settings
+are refused or dropped on more than one, read from the code on 2026-11-10:
+1. `--engine route` (AG4 step 2: the single path and the stacked engine on one card, chosen by the agent) falls back
+   to the reference engine when the server runs on several GPUs (`cli.py`, "its two paths share one card"). The
+   agent's best setup is lost exactly where there is most hardware. Fix: one pair of paths per card, a router per
+   card, join-the-shortest-queue across cards.
+2. `--learning` refuses more than one worker; idle tuning runs only with one GPU.
+3. The agent's setup (`_agent_setup`) is measured once, on one card, and applied to all; with mixed cards
+   (`gpu_name` joins their names with `+`) a plan measured on card 0 is unmeasured on the others. Fix: measure once
+   per distinct card model and bind each worker's evidence to its card.
+4. HW1's throughput against one worker is still unmeasured. The pool's control logic is now tested at 1, 3, 4 and
+   100 stand-in devices (placement, overflow, refusal, health) and started for real at 3 and 4 stand-in workers
+   (2026-11-10, `test_product_device_pool.py`); before, only at two.
+5. On a CPU there is one worker; several workers on one CPU, each with its share of the cores (CPU6's thread cap),
+   are the CPU's counterpart of the pool.
+
+**Test:** each item above with its own test, at more than two devices. **Kill:** none for the requirement itself (an owner
+decision); each fix carries its own.
 
 ### STAB3 — A worker lost under a spike ends in bounded recovery or a prompt 503 (owner request 2026-11-08; local part shipped, hardware gate pending)
 

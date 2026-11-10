@@ -75,12 +75,18 @@ DENSE_WIDTH = 8  # KB1: the dense plan stacks up to eight requests into one deco
 
 def install_dense(model: Any, device_info: dict[str, Any] | None,
                   slots: int = DENSE_WIDTH) -> tuple[Any, dict[str, Any]]:
-    """The stacked plan for `model`: KB2's Gemma plan for a 4-bit Gemma 3 (the native plan's row kernel installed
-    first, as `--compute-dtype native` installs it), else KB1's dense plan (Qwen 3 bf16). Each refuses what it was
+    """The stacked plan for `model`: on MLX's CPU device CPU6's plan (Llama-shaped models, float32); else KB2's
+    Gemma plan for a 4-bit Gemma 3 (the native plan's row kernel installed first, as `--compute-dtype native`
+    installs it), else KB1's dense plan (Qwen 3 bf16). Each refuses what it was
     not built for and probes the model's own weights before it serves. `slots` is the stacked width (AG5: the
     agent's measured best width); the pool holds that many requests, so no group or joiner exceeds it."""
     from ironmule import dense_gemma
 
+    if device_info is None and _on_cpu():  # CPU6: MLX's CPU device has its own stacked plan (float32, BLAS)
+        from ironmule import dense_cpu
+
+        plan, record = dense_cpu.install(model, slots=slots)
+        return plan, record
     if dense_gemma.refuse(model, native=False) is None:
         if dense_gemma.refuse(model) is not None:
             from ironmule.cuda_native import install as install_native
@@ -92,6 +98,12 @@ def install_dense(model: Any, device_info: dict[str, Any] | None,
     from ironmule.dense_plan import install
 
     return install(model, device_info, slots=slots)
+
+
+def _on_cpu() -> bool:
+    import mlx.core as mx
+
+    return not mx.cuda.is_available() and mx.default_device() == mx.cpu
 
 
 def dense_width(value: Any) -> int:

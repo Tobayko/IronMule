@@ -13,6 +13,8 @@ these, because they need CUDA or a downloaded checkpoint:
   the plan's record says `cpu_reference`, so no CUDA path can be qualified from this worker.
 
 Environment: `DENSE_CPU_LEDGER` names a JSON-lines file that gets every slot taken and freed;
+`DENSE_CPU_FAMILY=llama` serves a tiny random Llama with the
+product's own `install_dense` unchanged (it picks CPU6's plan, `ironmule/dense_cpu.py`) instead of the Gemma one;
 `DENSE_CPU_SLOTS` overrides the pool's slot count (a misconfiguration only a test makes: the client then
 believes in another width); `DENSE_CPU_CAPACITY` is a slot's context (default 96 tokens);
 `DENSE_CPU_FAULTS` is JSON: {"prefill_fail": "<text>"} fails the prefill of the request whose prompt is that
@@ -221,14 +223,20 @@ def main(argv: list[str]) -> int:
     from ironmule_product import engine_bridge, worker
 
     tokenizer = ChatTokenizer()
-    model = tiny_gemma()
     capacity = int(os.environ.get("DENSE_CPU_CAPACITY", "96"))
     forced = os.environ.get("DENSE_CPU_SLOTS")
+    if os.environ.get("DENSE_CPU_FAMILY") == "llama":  # CPU6: the product's own CPU plan, chosen by its bridge
+        from tests.engine.test_dense_cpu import LLAMA, tiny
 
-    def install_dense(loaded, device_info, slots=engine_bridge.DENSE_WIDTH):
-        slots = int(forced) if forced else slots
-        return cpu_plan(loaded, slots, capacity), {"capacity": capacity, "slots": slots, "model_family": "gemma3",
-                                                   "kernels": "cpu_reference", "native": None}
+        model = tiny(LLAMA)
+        install_dense = engine_bridge.install_dense  # unchanged: the bridge picks the CPU plan itself
+    else:
+        model = tiny_gemma()
+
+        def install_dense(loaded, device_info, slots=engine_bridge.DENSE_WIDTH):
+            slots = int(forced) if forced else slots
+            return cpu_plan(loaded, slots, capacity), {"capacity": capacity, "slots": slots, "model_family": "gemma3",
+                                                       "kernels": "cpu_reference", "native": None}
 
     stand_in = {"identity_sha256": "c" * 64, "model_id": "local/test", "revision": "revision"}
     identity_module.runtime_identity = lambda spec, host=None: dict(stand_in)
