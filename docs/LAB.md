@@ -181,3 +181,36 @@ cannot get there without a cheaper per-block scale step. The next experiment is 
 16-bit activations as two int8 rows) in this same hook, run through the answer check and a perplexity
 comparison against stock llama.cpp, plus attention for many rows (unified KV, only the filled cells).
 No ledger entry was written for ROW1 (lab work; the research repository was not used).
+
+### 2026-11-11 ROW1 round 2, part 1: B and B16 in the ggml hook
+
+`lab/row1/ggml_patch/` (header plus diff against `ggml-cpu/amx/mmq.cpp` of 4227c9b), `ROW1_GGML=0|A|B|B16`, read
+at load (which second packing is built) and at run time. B and B16 now serve every M including 1; rows above 48
+kernel rows run in chunks of 32 with the weight-pair outer loop, so a weight block is read from RAM once and then
+from L2 for every further chunk. Activation quantization for B/B16 is split over all threads (A still uses ggml's
+thread-0 quantization). B16 splits each activation row (scale amax/32639) into high = (v+128)>>8 and low = v-256*high,
+both int8; worst-case int32 sum per kernel row for K=6144 is 127*128*6144 = 1.0e8, far inside int32; high and low
+are combined in float after the accumulation. Resident: A's second copy is the Q8_0 size (1.83 GB for 1.7B,
+0.64 GB for 0.6B), B/B16's is 1 byte per weight plus a float per row (1.72 GB, 0.60 GB), beside ggml's own copy.
+
+### 2026-11-11 ROW1 round 2, part 2: answers
+
+Stock = the same patched build with `ROW1_GGML=0`. Perplexity: the project's fixed text, 16 chunks of 512 tokens,
+each one 512-row decode (`lab/row1/ppl.py`, GgmlEngine.chunk_nll; tokenized with the GGUF's tokenizer). Facts:
+`lab/row1/facts.py`, 50 questions, greedy, `/no_think`, at most 48 tokens, decoded 8 at a time.
+
+| Model | Variant | Perplexity | Ratio to stock | Facts correct | Right/wrong differs from stock | Answer text identical to stock | Time of the 16 x 512 scoring |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0.6B | stock | 32.156 | 1 | 48/50 | - | 50 | 33.3 s |
+| 0.6B | A | 32.151 | 0.9998 | 48/50 | 0 | 42 | 29.6 s |
+| 0.6B | B | 33.004 | 1.0264 | 47/50 | 1 | 18 | 22.2 s |
+| 0.6B | B16 | 32.348 | 1.0060 | 48/50 | 0 | 38 | 22.2 s |
+| 1.7B | stock | 21.619 | 1 | 47/50 | - | 50 | 65.2 s |
+| 1.7B | A | 21.639 | 1.0009 | 48/50 | 1 | 41 | 50.9 s |
+| 1.7B | B | 22.158 | 1.0249 | 48/50 | 1 | 16 | 25.1 s |
+| 1.7B | B16 | 21.523 | 0.9956 | 48/50 | 1 | 34 | 31.7 s |
+
+The fact differences: on 1.7B stock spent its 48 tokens writing out 2^10 as a product and never reached 1024; A, B
+and B16 answered 1024. On 0.6B, B's answer to 1000 - 357 was cut by the token limit. Stock misses on both models:
+capital of Japan (0.6B says Osaka), "hardest natural substance" (hedges). A and B16 keep the quality (perplexity
+within 0.1% / 0.6%); B costs 2.5% perplexity from its 8-bit per-row activations and is dropped from part 3.
