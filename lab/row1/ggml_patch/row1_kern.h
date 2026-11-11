@@ -15,17 +15,23 @@
 #include <vector>
 #include <algorithm>
 #include <cstdio>
+#include <atomic>
 
 namespace row1 {
 struct tcfg { uint8_t pal, start; uint8_t r[14]; uint16_t cb[16]; uint8_t rows[16]; } __attribute__((packed));
 static std::unordered_map<const void *, uint8_t *> g_packed;
 static std::mutex g_mu;
-enum { OFF = 0, VA = 1, VB = 2, VB16 = 3 };
+enum { OFF = 0, VA = 1, VB = 2, VB16 = 3, VB8S = 4 };
+static int seg() { static int g = -1; if (g < 0) { const char *v = getenv("ROW1_SEG"); g = v ? atoi(v) : 256; } return g; }
+static int dyn() { static int d = -1; if (d < 0) { const char *v = getenv("ROW1_DYN"); d = v ? atoi(v) : 1; } return d; }
+static std::atomic<int> g_next{0};
+static int rbkb() { static int r = -1; if (r < 0) { const char *v = getenv("ROW1_RBKB"); r = v ? atoi(v) : 768; } return r; }
 static int variant() {
     static int e = -1;
     if (e < 0) {
         const char *v = getenv("ROW1_GGML"); e = OFF;
         if (v && !strcmp(v, "A")) e = VA; else if (v && !strcmp(v, "B")) e = VB; else if (v && !strcmp(v, "B16")) e = VB16;
+        else if (v && !strcmp(v, "B8S")) e = VB8S;
     }
     return e;
 }
@@ -67,7 +73,7 @@ static void pack_b(const uint8_t *src, int N, int K, int8_t *dst, float *scale) 
 static size_t g_resident = 0;
 static void register_weight(const void *key, const void *src, int N, int K) {
     int v = variant();
-    if (v == OFF || N % 32 || K % 64) return;
+    if (v == OFF || N % 32 || K % 512) return;
     size_t n = v == VA ? (size_t)N * K / 32 * 34 : (size_t)N * K + (size_t)N * 4;
     void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED) return;
@@ -157,8 +163,8 @@ static void kern_a(const uint8_t *W, int K, int j0, int j1, const int8_t *X, con
 // Kernel rows: B -> one per activation row; B16 -> 2m (high), 2m+1 (low). Rows are cut into chunks of CH kernel rows
 // (CH = all rows when <= 48, else 32); X packed per chunk as [mt][K/64][16][64], padded rows zero.
 struct bplan { int Mk, CH, nch; };
-static bplan plan_b(int M, bool b16) { bplan p; p.Mk = b16 ? 2 * M : M; p.CH = p.Mk <= 48 ? std::max(p.Mk, 1) : 32; p.nch = (p.Mk + p.CH - 1) / p.CH; return p; }
-static size_t wsize_b(int M, int K, bool b16) { bplan p = plan_b(M, b16); int chp = (p.CH + 15) / 16 * 16; return (size_t)p.nch * chp * K + (size_t)p.nch * chp * 4 + 256; }
+static bplan plan_b(int M, bool b16, bool b8s = false) { bplan p; p.Mk = b16 ? 2 * M : M; p.CH = p.Mk <= (b8s ? 32 : 48) ? std::max(p.Mk, 1) : 32; p.nch = (p.Mk + p.CH - 1) / p.CH; return p; }
+static size_t wsize_b(int M, int K, bool b16) { bplan p = plan_b(M, b16); int chp = (p.CH + 15) / 16 * 16; return (size_t)p.nch * chp * K + (size_t)p.nch * chp * 4 * (K / 64) + 256; }
 static inline int8_t *xrow(int8_t *Xp, const bplan &p, int K, int r, int c) {
     int ch = r / p.CH, rr = r % p.CH, chp = (p.CH + 15) / 16 * 16;
     return Xp + (size_t)ch * chp * K + (((size_t)(rr >> 4) * (K / 64) + c) * 16 + (rr & 15)) * 64;
@@ -195,6 +201,63 @@ static void quant_rows_b(const float *x, int ldx, int m0, int m1, int K, bool b1
         }
     }
 }
+static void quant_rows_b8s(const float *x, int ldx, int m0, int m1, int K, int SEG, const bplan &p, int8_t *Xp, float *xs) {
+    int NS = K / SEG;
+    for (int m = m0; m < m1; m++) {
+        const float *v = x + (size_t)m * ldx;
+        for (int sg = 0; sg < NS; sg++) {
+            __m512 mx = _mm512_setzero_ps();
+            for (int k = sg * SEG; k < (sg + 1) * SEG; k += 16) mx = _mm512_max_ps(mx, _mm512_abs_ps(_mm512_loadu_ps(v + k)));
+            float d = _mm512_reduce_max_ps(mx) / 127.f, id = d ? 1.f / d : 0.f; xs[(size_t)m * NS + sg] = d;
+            __m512 vid = _mm512_set1_ps(id);
+            for (int c = sg * SEG / 64; c < (sg + 1) * SEG / 64; c++) {
+                int8_t *o = xrow(Xp, p, K, m, c);
+                for (int h = 0; h < 4; h++) {
+                    __m512i q = _mm512_cvtps_epi32(_mm512_mul_ps(_mm512_loadu_ps(v + c * 64 + h * 16), vid));
+                    _mm_storeu_si128((__m128i *)(o + h * 16), _mm512_cvtsepi32_epi8(q));
+                }
+            }
+        }
+    }
+}
+// B8s kernel: CH <= 32 (mt <= 2); every SEG/64 chunks the C tiles are scaled by the activation segment scale and
+// added to float accumulators.
+static void kern_b8s(const int8_t *W, const float *ws, int K, int jp0, int jp1, int8_t *Xp, const float *xs, const bplan &p, int SEG, float *Y, int ldc) {
+    int KC = K / 64, PF = pf(), CH = p.CH, mt = (CH + 15) / 16, chp = (CH + 15) / 16 * 16, NS = K / SEG, SC = SEG / 64;
+    alignas(64) int32_t buf[4][16 * 16];
+    __m512 acc[2][32];
+    for (int jp = jp0; jp < jp1; jp++) {
+        const int8_t *pw = W + (size_t)jp * KC * 2048;
+        __m512 sw0 = _mm512_loadu_ps(ws + jp * 32), sw1 = _mm512_loadu_ps(ws + jp * 32 + 16);
+        for (int ch = 0; ch < p.nch; ch++) {
+            const int8_t *X = Xp + (size_t)ch * chp * K, *X1 = X + (size_t)KC * 1024;
+            int rb = ch * CH, rows = std::min(CH, p.Mk - rb);
+            for (int i = 0; i < rows; i++) acc[0][i] = acc[1][i] = _mm512_setzero_ps();
+            const int8_t *q = pw;
+            for (int sg = 0; sg < NS; sg++) {
+                _tile_zero(0); _tile_zero(1); if (mt > 1) { _tile_zero(2); _tile_zero(3); }
+                for (int c = sg * SC; c < (sg + 1) * SC; c++, q += 2048) {
+                    if (PF && ch == 0) for (int l = 0; l < 2048; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                    _tile_loadd(6, q, 64); _tile_loadd(7, q + 1024, 64);
+                    _tile_loadd(4, X + (size_t)c * 1024, 64); _tile_dpbssd(0, 4, 6); _tile_dpbssd(1, 4, 7);
+                    if (mt > 1) { _tile_loadd(5, X1 + (size_t)c * 1024, 64); _tile_dpbssd(2, 5, 6); _tile_dpbssd(3, 5, 7); }
+                }
+                _tile_stored(0, buf[0], 64); _tile_stored(1, buf[1], 64);
+                if (mt > 1) { _tile_stored(2, buf[2], 64); _tile_stored(3, buf[3], 64); }
+                for (int i = 0; i < rows; i++) {
+                    const int32_t *b0 = buf[(i >> 4) * 2] + (i & 15) * 16, *b1 = buf[(i >> 4) * 2 + 1] + (i & 15) * 16;
+                    __m512 sa = _mm512_set1_ps(xs[(size_t)(rb + i) * NS + sg]);
+                    acc[0][i] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(_mm512_load_si512(b0)), sa, acc[0][i]);
+                    acc[1][i] = _mm512_fmadd_ps(_mm512_cvtepi32_ps(_mm512_load_si512(b1)), sa, acc[1][i]);
+                }
+            }
+            for (int i = 0; i < rows; i++) {
+                _mm512_storeu_ps(Y + (size_t)(rb + i) * ldc + jp * 32, _mm512_mul_ps(acc[0][i], sw0));
+                _mm512_storeu_ps(Y + (size_t)(rb + i) * ldc + jp * 32 + 16, _mm512_mul_ps(acc[1][i], sw1));
+            }
+        }
+    }
+}
 // post: tile buffer rows are kernel rows r0 .. r0+rows-1 (r0 even); write Y for output columns n0..n0+15
 static inline void post_b(const int32_t *buf, int r0, int rows, int Mk, bool b16, const float *xs, __m512 sw, float *Y, int ldc, int n0) {
     if (!b16) {
@@ -210,20 +273,21 @@ static inline void post_b(const int32_t *buf, int r0, int rows, int Mk, bool b16
         }
     }
 }
-static void kern_b(const int8_t *W, const float *ws, int K, int jp0, int jp1, int8_t *Xp, const float *xs, const bplan &p, bool b16, float *Y, int ldc) {
+static void kern_b(const int8_t *W, const float *ws, int K, int jp0, int jp1, int8_t *Xp, const float *xs, const bplan &p, bool b16, float *Y, int ldc, int ch0 = 0, int ch1 = -1) {
+    if (ch1 < 0) ch1 = p.nch;
     int KC = K / 64, PF = pf(), CH = p.CH, mt = (CH + 15) / 16, chp = (CH + 15) / 16 * 16;
     alignas(64) int32_t buf[16 * 16];
     for (int jp = jp0; jp < jp1; jp++) {
         const int8_t *pw = W + (size_t)jp * KC * 2048;
         __m512 sw0 = _mm512_loadu_ps(ws + jp * 32), sw1 = _mm512_loadu_ps(ws + jp * 32 + 16);
-        for (int ch = 0; ch < p.nch; ch++) {
+        for (int ch = ch0; ch < ch1; ch++) {
             const int8_t *X = Xp + (size_t)ch * chp * K, *X1 = X + (size_t)KC * 1024, *X2 = X + (size_t)2 * KC * 1024;
             int rb = ch * CH;  // first kernel row of this chunk
             if (mt <= 2) {
                 const int8_t *q = pw;
                 _tile_zero(0); _tile_zero(1); if (mt > 1) { _tile_zero(2); _tile_zero(3); }
                 for (int c = 0; c < KC; c++, q += 2048) {
-                    if (PF && ch == 0) for (int l = 0; l < 2048; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                    if (PF && ch == ch0) for (int l = 0; l < 2048; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
                     _tile_loadd(6, q, 64); _tile_loadd(7, q + 1024, 64);
                     _tile_loadd(4, X + (size_t)c * 1024, 64); _tile_dpbssd(0, 4, 6); _tile_dpbssd(1, 4, 7);
                     if (mt > 1) { _tile_loadd(5, X1 + (size_t)c * 1024, 64); _tile_dpbssd(2, 5, 6); _tile_dpbssd(3, 5, 7); }

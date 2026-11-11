@@ -4,33 +4,61 @@
 >     if (TYPE == GGML_TYPE_Q8_0) row1::register_weight(tensor->data, data, N, K);
 2357a2360
 >     if (TYPE == GGML_TYPE_Q8_0 && row1::variant() != row1::OFF) desired_wsize = (desired_wsize + 63) / 64 * 64 + row1::extra_wsize(M, K);
-2425a2429,2453
->     if (TYPE == GGML_TYPE_Q8_0 && (row1::variant() == row1::VB || row1::variant() == row1::VB16)) {
+2425a2429,2481
+>     if (TYPE == GGML_TYPE_Q8_0 && params->ith == 0 && N > 100000 && getenv("ROW1_DUMP")) {  // ROW1: capture the output matmul's input
+>         FILE * f = fopen(getenv("ROW1_DUMP"), "ab");
+>         for (int m = 0; m < M; m++) fwrite((const char *)src1->data + m * src1->nb[1], sizeof(float), K, f);
+>         fclose(f);
+>     }
+>     if (TYPE == GGML_TYPE_Q8_0 && (row1::variant() == row1::VB || row1::variant() == row1::VB16 || row1::variant() == row1::VB8S)) {
 >         const int8_t * W = (const int8_t *)row1::lookup(src0->data);
 >         if (W) {
->             const bool b16 = row1::variant() == row1::VB16;
->             row1::bplan p = row1::plan_b(M, b16);
+>             const bool b16 = row1::variant() == row1::VB16, b8s = row1::variant() == row1::VB8S;
+>             const int SEG = row1::seg();
+>             row1::bplan p = row1::plan_b(M, b16, b8s);
 >             int chp = (p.CH + 15) / 16 * 16;
 >             int8_t * Xp = (int8_t *)(((uintptr_t)wdata + 63) & ~(uintptr_t)63);
 >             float * xs = (float *)(Xp + (size_t)p.nch * chp * K);
 >             int mb, me;
 >             balance211(M, params->nth, params->ith, mb, me);
->             row1::quant_rows_b((const float *)src1->data, (int)(src1->nb[1] / sizeof(float)), mb, me, K, b16, p, Xp, xs);
+>             if (b8s) row1::quant_rows_b8s((const float *)src1->data, (int)(src1->nb[1] / sizeof(float)), mb, me, K, SEG, p, Xp, xs);
+>             else row1::quant_rows_b((const float *)src1->data, (int)(src1->nb[1] / sizeof(float)), mb, me, K, b16, p, Xp, xs);
+>             const int NP = N / 32;
+>             const bool dyn = row1::dyn();
+>             int G = std::max(1, NP / (params->nth * 8));
+>             // ROW1 round 3: rows above one chunk are cut into row blocks whose packed activations fit in L2
+>             // (ROW1_RBKB KiB, default 768); work units are (row block, pair group), row-block-major.
+>             int RBc = b8s ? p.nch : std::max(1, (int)((size_t)row1::rbkb() * 1024 / ((size_t)K * chp)));
+>             if (RBc > p.nch) RBc = p.nch;
+>             const int NRB = (p.nch + RBc - 1) / RBc, NG = (NP + G - 1) / G;
+>             if (dyn && params->ith == 0) row1::g_next.store(0, std::memory_order_relaxed);
 >             ggml_barrier(params->threadpool);
->             int jb, je;
->             balance211(N / 32, params->nth, params->ith, jb, je);
->             if (jb < je) {
->                 alignas(64) row1::tcfg saved;
->                 _tile_storeconfig(&saved);
->                 row1::config(p.CH, 64);
->                 row1::kern_b(W, (const float *)(W + (size_t)N * K), K, jb, je, Xp, xs, p, b16, (float *)dst->data, ldc);
->                 if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
+>             alignas(64) row1::tcfg saved;
+>             _tile_storeconfig(&saved);
+>             row1::config(p.CH, 64);
+>             const float * ws = (const float *)(W + (size_t)N * K);
+>             auto run = [&](int jb, int je, int c0 = 0, int c1 = -1) {
+>                 if (b8s) row1::kern_b8s(W, ws, K, jb, je, Xp, xs, p, SEG, (float *)dst->data, ldc);
+>                 else row1::kern_b(W, ws, K, jb, je, Xp, xs, p, b16, (float *)dst->data, ldc, c0, c1);
+>             };
+>             if (dyn) {
+>                 for (;;) {
+>                     int u = row1::g_next.fetch_add(1, std::memory_order_relaxed);
+>                     if (u >= NRB * NG) break;
+>                     int rb = u / NG, g = u % NG;
+>                     run(g * G, std::min(NP, g * G + G), rb * RBc, std::min(p.nch, rb * RBc + RBc));
+>                 }
+>             } else {
+>                 int jb, je;
+>                 balance211(NP, params->nth, params->ith, jb, je);
+>                 if (jb < je) run(jb, je);
 >             }
+>             if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
 >             return;
 >         }
 >     }
 > 
-2446a2475,2509
+2446a2503,2537
 > 
 >     if (TYPE == GGML_TYPE_Q8_0 && M >= 2 && row1::enabled()) {
 >         const uint8_t * W = row1::lookup(src0->data);
