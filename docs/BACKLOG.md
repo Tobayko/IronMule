@@ -68,6 +68,16 @@ higher than that of llama.cpp's default setting on the same GGUF (ratio at most 
 This replaces the float32-on-MLX reference for the ggml engine; a GGUF llama.cpp itself serves is by definition at
 llama.cpp's quality. The owner was told this reading and may correct it.
 
+**llama.cpp's own options count as llama.cpp's quality; the three ways are taken (owner, 2026-11-11).** After GG2-H
+the owner was offered three ways past parity: (1) let flash attention serve, an option of llama.cpp itself (`-fa`),
+0.17 % worse in perplexity than its default on SmolLM2's GGUF, with `llama-server` given the same option for a fair
+comparison; (2) a larger model on this CPU; (3) LC2 on a Kaggle T4, about 2 GPU hours. The owner's answer: "Setzt das
+um" (implement it), read as all three and as the approval of LC2's GPU hours. Read for (1): a setting of the ggml
+engine that is one of llama.cpp's own options (flash attention, one unified KV cache, an f32 KV cache) is at
+llama.cpp's quality when its perplexity on the gate's chunks is within NUM1's bound of llama.cpp's default on the same
+GGUF (the ratio's 95 % upper end at most 1.005); a comparison then gives `llama-server` the same options. GG3 and LC2
+below carry it out. The owner was told this reading and may correct it.
+
 ### QG1 — A correctness check for answer quality (opened 2026-11-10 with the owner's decision above; not built)
 
 **Why.** The perplexity gate measures how likely the model finds a fixed text; the owner's criterion is that answers
@@ -2582,6 +2592,47 @@ quiet prompts from Dolly index 14,500 (unused) and a harness smoke from 14,550.
     (HTTP, sampling chain). What is left for more is not in scheduling: both sides run the same kernels at the same
     setting. The ledger entry is still owed.
 
+### GG3 — llama.cpp's options in the engine's gate, a fair `llama-server`, and larger models on this CPU (owner, 2026-11-11; open)
+
+**Reopening.** Tier 0 holds GG2-H ("parity under load, 1.14x alone, goal not reached"); the owner's decision of
+2026-11-11 above is the change: the gate admits llama.cpp's own options within NUM1's bound of its default, and
+larger models are measured. Nothing of the engine's scheduling changes.
+
+**Mechanism (engine version 3).** `gate` keeps its timed order of the 8 settings and its reference (llama.cpp's
+default setting on the same GGUF, through the same multi-position decode); a setting now passes when the 95 % upper
+end of its perplexity ratio against that reference is at most 1.005, and the default passes by definition. The
+fastest passing setting serves, every setting tried is recorded and `/health` names it. Cached by GGUF, snapshot,
+gate rule, engine version and machine.
+
+**Arms (all runs below).** G: the product with the ggml engine (version 3), speculation on, 4 threads, the setting its
+gate chose. L0: `llama-server` as LC1 ran it (same build 4227c9b, 4 threads, 8 slots, 8 x 2,048 tokens of context,
+greedy, its defaults otherwise). Ls: the same server with the options of G's setting (`-fa`, `-kvu`, `-ctk f32 -ctv
+f32`, whichever G's setting has); when G serves the default, Ls is L0 and runs as such. Each cell on a fresh server
+or worker; per block the order L0 Ls G Ls L0.
+
+**Runs (fixed before any GG3 data).**
+- *GG3-F, SmolLM2-135M:* the GGUF of GG1-H and GG2-H (built from the registered model). Load: CPU6's 8 prompts at
+  once, 64 tokens, 5 blocks. Quiet: 16 Dolly prompts from index 14,100 (unused), one at a time, 128 tokens, one
+  block. A smoke reads index 14,150 on (not counted).
+- *GG3-Q, larger models:* `Qwen/Qwen3-0.6B` and `Qwen/Qwen3-1.7B` registered from their original bf16 snapshots
+  (used for the tokenizer and template), each served from Qwen's own Q8_0 GGUF (`Qwen/Qwen3-0.6B-GGUF`,
+  `Qwen/Qwen3-1.7B-GGUF`) by every arm. The engine refuses a GGUF whose token ids differ from the snapshot's, as
+  built. The same workloads; quiet prompts from Dolly index 13,600 (0.6B) and 13,700 (1.7B), unused; smokes from
+  13,650 and 13,750.
+- *Scores,* as GG2-H, per run: load tokens per second per block (total tokens over the block's wall time), quiet
+  tokens per second per prompt (first token to end), mean first token; each G over the mean of the two cells of a
+  reference arm in its block, 95 % bootstrap over blocks or prompts (2,000 resamples, seed 0).
+- *The goal as fixed in GG (against L0, `llama-server` as LC1 ran it):* reached when the quiet and the load tokens per
+  second each have a 95 % lower bound of at least 1.2 over L0, first tokens no later (upper bound at most 1 plus L0's
+  A/A noise), the gate passed and every request answered.
+- *The fair comparison (against Ls, llama.cpp with the same options):* the same rule against Ls, reported beside it.
+  Where the two disagree, the report leads with the fair one: a gain over L0 that Ls removes is llama.cpp's option,
+  not IronMule's.
+- *Expected, said before the data:* GG3-F: G above L0 by flash attention, about even with Ls. GG3-Q: a step on a larger
+  model takes longer, so the per-request overhead weighs less and G's quiet lead over L0 shrinks; speculation's share
+  depends on the prompts. 1.2 over Ls is not expected.
+- *Cost:* about 1.5 hours of this container's CPU in all; no GPU hours.
+
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
 **The question.** IronMule is built on MLX. The owner asks whether MLX still makes sense on a server that runs on
@@ -2607,10 +2658,40 @@ engine each platform has, chosen and gated on the machine, rather than on MLX ev
 - *CUDA:* to be measured: IronMule's best MLX-CUDA setup against llama.cpp's CUDA build and vLLM on the same T4 and
   model (LC2, below); the agent then serves the fastest that passes the quality gate.
 
-**LC2 (proposed; needs the owner's approval for Kaggle GPU quota).** On a Kaggle T4, `Qwen/Qwen3-1.7B` (the model of
-AG4-Q, AG6-H): IronMule's agent setup on MLX against `llama-server` (CUDA build, a GGUF built from the same weights,
-8 slots) and vLLM (8 concurrent sequences), each with the perplexity gate against the bf16 reference; LC1's workloads
-and scores. About 2 GPU hours. Protocol to be fixed before its data.
+**LC2, IronMule against `llama-server` and vLLM on one Kaggle T4 (approved by the owner 2026-11-11; fixed before any
+LC2 data; `tools/lc2_measure.py`).** One private Kaggle kernel on a T4 session, pinned to a pushed commit; every arm on
+GPU 0 only (`CUDA_VISIBLE_DEVICES=0`), one server at a time, each spoken to over HTTP at `/v1/chat/completions` with
+streaming, greedy (`temperature` 0), the same messages; the model is Qwen3-1.7B (AG4-Q, AG6-H), thinking as each
+server's template defaults.
+- *Arms:*
+  - I: `ironmule serve --agent on` on `mlx-community/Qwen3-1.7B-bf16` (the agent chooses plan, engine and mode
+    on the card, as AG6-H; installed from the pinned commit with its `cuda` extra).
+  - L: `llama-server` built on the session from llama.cpp 4227c9b (the source vendored in `llama-cpp-python`
+    0.3.16, as LC1) with CUDA for compute capability 7.5; `Qwen/Qwen3-1.7B-GGUF`'s Q8_0, every layer on the GPU,
+    8 slots of 2,048 tokens, its defaults otherwise.
+  - Lf: the same server with flash attention (`-fa`), llama.cpp's own option (the owner's decision above).
+  - V: vLLM 0.10.1.1 in its own virtual environment, `Qwen/Qwen3-1.7B` in float16 (the T4 has no bf16), at most 8
+    sequences of 2,048 tokens, 85 % of the card's memory, its defaults otherwise.
+- *Order:* I, L, Lf, V, then I again (its A/A: the agent's setup is cached, so the second I starts from it). After a
+  server is ready, 8 requests at once and one alone, unmeasured, on prompts no block uses.
+- *Workloads (LC1's):* load, CPU6's 8 prompts at once, 64 tokens, 5 blocks; quiet, 16 Dolly prompts from index
+  14,200 (unused), one at a time, 128 tokens. Before the push a local smoke runs the harness on this container's
+  CPU (`llama-server` and IronMule on SmolLM2, prompts from 14,250, not counted); there is no smoke kernel.
+- *Scores:* per arm as GG2-H (load tokens per second per block, quiet tokens per second per prompt from first token
+  to end, mean first token). I over each other arm: load paired by block, quiet by prompt; I's reference is the mean
+  of its two runs, whose difference is I's A/A noise; 95 % bootstrap (2,000, seed 0).
+- *Reading for PL1 (fixed before the data):* on this card and model, MLX under the agent "holds its own" against an
+  engine when I's load and quiet tokens per second both have a 95 % lower bound of at least 0.95 over it; the fastest
+  engine by the geometric mean of its load and quiet rates is named. If an engine other than I is the fastest by more
+  than I's A/A noise, PL1's next step on CUDA is the agent on that engine (as GG on the CPU), with its own entry; if I
+  is the fastest, MLX stays the CUDA base. The owner's 1.2 goal is reported for I against L.
+- *Quality:* not measured in LC2. By format, I and V serve 16-bit weights and L and Lf Q8_0; under the owner's bar
+  (at least llama.cpp's quality) that is assumed, not shown, until QG1 or a perplexity run covers it.
+- *Failure:* an arm that does not start or fails a request is recorded with its log's last lines, and the others run
+  on; no arm is retried with another version or setting within this protocol.
+- *Cost, said before the push:* about 2 GPU hours (building llama.cpp about 20 minutes, vLLM's install about 10, the
+  agent's setup about 15, each arm's blocks about 5-10); the kernel ends itself after 3 hours, its report saved after
+  every cell.
 
 ### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; internal check: not on this model)
 
