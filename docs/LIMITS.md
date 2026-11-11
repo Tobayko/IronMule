@@ -141,8 +141,11 @@ traffic is covered. These gains are against IronMule's own earlier CPU path. Aga
 (95 % 4.4x to 5.8x) and about 14x slower for one request (12.6x to 14.4x); on a CPU, llama.cpp is much faster. With
 `--engine ggml --gguf PATH` IronMule serves through llama.cpp's own kernels in process: on this CPU and model (GG2-H) as
 fast as `llama-server` with 8 requests at once (1.00x, 95 % 0.94x to 1.07x) and 1.14x for one request (1.09x to 1.20x),
-first tokens 10-20 ms later, answer quality gated against llama.cpp's default setting; nothing beyond that CPU, model
-and traffic is covered, and the agent does not choose this engine by itself yet. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
+first tokens 10-20 ms later, answer quality gated against llama.cpp's default setting. With llama.cpp's own options
+admitted (GG3, perplexity within 0.5 % of its default) and `llama-server` given the same options, it made 1.16x
+under load and 1.52x alone on Qwen3-0.6B and 1.11x and 1.04x on Qwen3-1.7B (Qwen's Q8_0 GGUFs), and 0.87x and 0.98x on
+SmolLM2-135M; against `llama-server`'s defaults Qwen3-0.6B reached 1.33x under load. Nothing beyond that CPU, those
+models and that traffic is covered, and the agent does not choose this engine by itself yet. Speculation from the context (`--speculate context`, SP2) is opt-in: through the product on
 this CPU it changed no answer and made one request at a time 1.40x the tokens per second on average (95 % from
 1.21x), short of its bound of 1.3, and 1.04x under load (SP2-H); the agent does not turn it on by itself. In
 CPU6-A, before that revision, it refused the stacked engine on 14 ms of one request's first token.

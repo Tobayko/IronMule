@@ -2592,7 +2592,7 @@ quiet prompts from Dolly index 14,500 (unused) and a harness smoke from 14,550.
     (HTTP, sampling chain). What is left for more is not in scheduling: both sides run the same kernels at the same
     setting. The ledger entry is still owed.
 
-### GG3 — llama.cpp's options in the engine's gate, a fair `llama-server`, and larger models on this CPU (owner, 2026-11-11; open)
+### GG3 — llama.cpp's options in the engine's gate, a fair `llama-server`, and larger models on this CPU (owner, 2026-11-11; goal not reached)
 
 **Reopening.** Tier 0 holds GG2-H ("parity under load, 1.14x alone, goal not reached"); the owner's decision of
 2026-11-11 above is the change: the gate admits llama.cpp's own options within NUM1's bound of its default, and
@@ -2666,6 +2666,26 @@ or worker; per block the order L0 Ls G Ls L0.
     load G 148-165 tokens per second, Ls 128-141, L0 103-129; alone G 48, L0 45-46. The engine's lead under load with
     the same options as Ls comes from serving every step as one decode call and starting requests as their prompts are
     ready (GG2), which weighs more on a model four times SmolLM2's size. The ledger entry is still owed.
+- **GG3-Q result, Qwen3-1.7B (2026-11-11, this container, at `d330998`, about 40 minutes, no GPU hours): valid; goal
+  not reached against either reference.** Qwen's own Q8_0 gave the snapshot's token ids; the gate (377 s) chose
+  flash attention (ratio 0.9999, 95 % 0.9981 to 1.0015), so Ls was `llama-server -fa`. A smoke read prompts from 13,750
+  (not counted). Every request answered.
+  - *Against L0:* load **1.21x (95 % 1.15x to 1.27x)**, quiet **1.11x (1.05x to 1.17x)**; first tokens earlier under
+    load (0.66x), the same alone (0.97x, 0.93x to 1.01x).
+  - *Against Ls:* load **1.11x (1.05x to 1.16x)**, quiet **1.04x (0.99x to 1.10x)**; first tokens earlier under load
+    (0.76x), 3 % later alone (1.03x, 1.00x to 1.07x).
+  - *Verdict by the fixed rule: goal not reached* (no lower bound reaches 1.2; against L0 the load mean does).
+  - *Post hoc, descriptive only:* in absolute terms under load G 67-78 tokens per second, Ls 61-70, L0 57-63; alone G
+    22.2, Ls 21.3-21.4, L0 19.6-20.6. On this CPU a step of the 1.7B model takes about 45 ms, so the per-request cost
+    weighs less and both halves sit near llama.cpp's own speed with flash attention: what is left over `llama-server
+    -fa` is about 10 % under load and 4 % alone.
+
+**GG3 together (descriptive).** Against `llama-server` with the same llama.cpp options, the engine's lead under load
+was 0.87x on SmolLM2-135M, 1.16x on Qwen3-0.6B and 1.11x on Qwen3-1.7B; alone 0.98x, 1.52x (against a setting that
+slows `llama-server` alone) and 1.04x. The owner's 1.2 is reached on no model; the closest is Qwen3-0.6B under load
+against `llama-server` as LC1 ran it (1.33x, lower bound 1.31x), which `llama-server`'s own options bring to 1.16x.
+Beyond this, scheduling around llama.cpp's kernels has little left; more needs a lever below them (kernels of our
+own) or speculation that finds more on real traffic. The ledger entries are still owed.
 
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
@@ -5632,6 +5652,14 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **The ggml engine at 1.2x `llama-server` with llama.cpp's options and on larger models (2026-11-11).** Experiments
+  GG3-F and GG3-Q (this container, commit `d330998`; see GG3 above): against `llama-server` with the same options,
+  SmolLM2-135M 0.87x under load (95 % 0.81x to 0.96x) and 0.98x alone, Qwen3-0.6B 1.16x (1.12x to 1.19x) and 1.52x
+  (against a setting that slows `llama-server` alone), Qwen3-1.7B 1.11x (1.05x to 1.16x) and 1.04x (0.99x to 1.10x);
+  against `llama-server`'s defaults Qwen3-0.6B reached 1.33x under load (1.31x to 1.35x) but 1.04x alone. No model
+  reaches 1.2 in both halves against either reference. Re-open with kernels of our own below llama.cpp's, speculation
+  that finds more on real traffic, or another machine, under a new protocol.
 
 - **The ggml engine at 1.2x `llama-server`, second attempt (2026-11-11).** Experiment GG2-H (this container, commit
   `115090b`; see GG2 above): with the path around the kernels fixed, 1.00x under load (95 % 0.94x to 1.07x) and 1.14x
