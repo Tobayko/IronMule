@@ -2649,6 +2649,23 @@ or worker; per block the order L0 Ls G Ls L0.
     about the same arm read near 300), so this container was noisier than in GG2-H; the paired ratios carry that.
     Speculation drafted in about a fifth of the quiet steps (acceptance 0.27-0.32 for 2-token, 0.66-0.68 for 3-token
     matches). The ledger entry is still owed.
+- **GG3-Q result, Qwen3-0.6B (2026-11-11, this container, at `d330998`, about 35 minutes, no GPU hours): valid; goal
+  not reached against either reference, but under load above 1.2 against L0.** Qwen's own Q8_0 gave the snapshot's
+  token ids; the gate chose its fastest setting, flash attention with one unified f32 KV cache (ratio 1.0003, 95 %
+  0.9988 to 1.0018), so Ls was `llama-server -fa -kvu -ctk f32 -ctv f32`. A smoke read prompts from 13,650 (not
+  counted). Every request answered.
+  - *Against L0:* load **1.33x (95 % 1.31x to 1.35x)**, quiet **1.04x (0.99x to 1.10x)**; first tokens earlier (load
+    0.50x, quiet 0.77x).
+  - *Against Ls:* load **1.16x (1.12x to 1.19x)**, quiet **1.52x (1.33x to 1.66x)**; first tokens earlier (0.57x, 0.78x).
+  - *Verdict by the fixed rule: goal not reached* (against L0 the quiet half misses; against Ls the load half misses
+    1.2 by its lower bound). The first time a half clears 1.2 by its lower bound: 8 requests at once against
+    `llama-server` as LC1 ran it, with first tokens at half its time.
+  - *Post hoc, descriptive only:* Ls is not `llama-server`'s best setting for one request: the unified f32 KV cache
+    slowed its quiet rate to 33 tokens per second against L0's 45-46, so Ls's quiet half flatters G. Against the
+    better `llama-server` arm per half, G made 1.16x under load (Ls) and 1.04x alone (L0). In absolute terms, under
+    load G 148-165 tokens per second, Ls 128-141, L0 103-129; alone G 48, L0 45-46. The engine's lead under load with
+    the same options as Ls comes from serving every step as one decode call and starting requests as their prompts are
+    ready (GG2), which weighs more on a model four times SmolLM2's size. The ledger entry is still owed.
 
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
