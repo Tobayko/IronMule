@@ -122,6 +122,20 @@ work, and record results where they belong (see Performance and evidence below).
 
 ## Performance and evidence
 
+**Fast mode (owner decision, 2026-11-11): the QA process is removed, development goes for speed.** The owner's words:
+"remove all QAs that are here, we now develop faster", and "test wildly". Until the owner says otherwise, experimental
+work needs no protocol before data, no fixed release rule, no confidence interval, no A/A control, no Tier 0
+reopening procedure and no ledger entry or "ledger still owed" note. Try things, keep what is faster. Experiments
+live in `lab/` (no tests, no documentation duty) and are noted in `docs/LAB.md` in a few lines each: date, what was
+tried, the numbers, machine and model, what follows. Two things remain: (1) answers must stay factually correct:
+before a path is called a result, its answers are compared with a reference engine's on the same model, and a path
+that gets facts wrong is out; (2) numbers are reported as measured, with machine, model and what they were compared
+against. The goal is speed clearly above llama.cpp and comparable engines on the same hardware and model. Code that
+ships in `ironmule/` and `ironmule_product/` keeps its tests green. Kaggle GPU quota and the Safety boundaries below
+still need the owner's approval.
+
+*Suspended for experimental work while fast mode holds:*
+
 Before proposing an optimisation, inspect [docs/BACKLOG.md](docs/BACKLOG.md)'s Tier 0
 and the cited ledger entries. Add unlisted optimisation work with its mechanism and
 kill criterion before starting. Reopening a rejected route requires naming the old
