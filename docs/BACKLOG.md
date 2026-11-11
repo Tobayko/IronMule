@@ -2692,6 +2692,10 @@ server's template defaults.
 - *Cost, said before the push:* about 2 GPU hours (building llama.cpp about 20 minutes, vLLM's install about 10, the
   agent's setup about 15, each arm's blocks about 5-10); the kernel ends itself after 3 hours, its report saved after
   every cell.
+- **Push refused (2026-11-11, at `d330998`):** a local smoke of the harness on this container's CPU passed (every arm
+  answered; the second I started from its cached setup in 17 s against 1,200 s); the kernel push was refused because
+  the owner's weekly Kaggle GPU quota (30 hours) is used up. No LC2 data exists; the kernel is pushed unchanged once
+  the quota renews.
 
 ### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; internal check: not on this model)
 
