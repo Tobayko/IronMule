@@ -284,6 +284,5 @@ Per-op timers (prof_llama.py, 1.7B, B16, huge pages), per call: R=1 50.2 ms (Q8_
 f16 attention 23.7, set_rows 6.6 + 2.6 wait, norms, rope, softmax, glu about 12). At 32 rows the matmul compute is
 46% of the call, the barrier waits around it 15%, attention 16%. Next: (1) the barrier waits (imbalance between
 threads of the matmul and its quantization phase; the KV-window attention also waits); (2) attention, where -fa
-alone already gives B16 +25% at 32 requests; (3) the 48-row kernel still runs well below AMX peak (68 ms for
-32 x 2 kernel rows = 3.2e12 MAC/s equivalent is not reached; 64 kernel rows x 1.72e9 / 68 ms = 1.6e12 MAC/s,
-16% of peak).
+alone already gives B16 +25% at 32 requests; (3) the kernel itself: 32 rows in B16 are 64 kernel rows,
+64 x 1.72e9 MACs in 68 ms = 1.6e12 MAC/s, 16% of the AMX peak, so a better large-M loop order still has room.
