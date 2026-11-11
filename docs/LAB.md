@@ -286,3 +286,99 @@ f16 attention 23.7, set_rows 6.6 + 2.6 wait, norms, rope, softmax, glu about 12)
 threads of the matmul and its quantization phase; the KV-window attention also waits); (2) attention, where -fa
 alone already gives B16 +25% at 32 requests; (3) the kernel itself: 32 rows in B16 are 64 kernel rows,
 64 x 1.72e9 MACs in 68 ms = 1.6e12 MAC/s, 16% of the AMX peak, so a better large-M loop order still has room.
+
+### 2026-11-11 ROW1 round 3, part 1: waits, large M, B8s
+
+Changes in the hook (B, B16, B8s paths): (1) work is handed out from one atomic counter in units of pair groups
+(about 8 units per thread) instead of a fixed split, after activation quantization on all threads
+(`ROW1_DYN=0` restores the fixed split); (2) rows above one chunk are cut into row blocks whose packed activations
+fit in 768 KiB of L2 (`ROW1_RBKB`), and work units are (row block, pair group) in row-block order, so the
+activation block stays in L2 while the weights stream over it; (3) new variant B8s (`ROW1_GGML=B8S`, `ROW1_SEG`):
+B's weights, int8 activations with one scale per row and K-segment, int32 accumulation within a segment.
+
+Barrier waits (per-op timers, 1.7B, B16, huge pages, ms per call, fixed split -> dynamic units):
+R=1 call 55.1 -> 49.0 (Q8_0 wait 8.2 -> 2.7); R=8 79.3 -> 63.3 (wait 12.1 -> 2.3); R=32 151.7 -> 124.2 (Q8_0
+compute 71.1 -> 66.4, wait 19.3 -> 3.3; f16 attention without -fa 26.5; total waits of the call 29.7 -> 10.8).
+The waits were imbalance inside the matmul, not ggml's per-op barrier; no fused q/k/v call was tried, since the
+remaining Q8_0 wait is 3 ms. The plain rows tables of the same two settings varied by up to 40% between runs.
+
+Row blocks for prefill (B16, 1.7B, llama-server default batch, prompt tokens/s, 3 runs): 512 tokens 359/364/337
+without -> 411/385/378 with; 2,000 tokens 241/233/249 -> 253/255/258. Profile of one 512-token decode (1.7B, ms):
+stock Q8_0 2,476 + 384 wait, f16 attention 444, softmax 104; B16 Q8_0 794 + 9 wait, f16 attention 470, softmax 109.
+B16's matmul runs 1,024 kernel rows x 1.72e9 MACs in 0.79 s = 2.2e12 MAC/s, 21% of AMX peak (from 16% at
+32 rows before). A further loop order (B tiles held across two row chunks, or K-sliced C accumulation) was not
+built; the f16 attention is now 60% of B16's matmul time in a 512-token prefill.
+
+B8s answers (perplexity ratio to stock, facts, answers whose right/wrong differs from stock):
+
+| Model | Segment | Ratio | Facts | Differs |
+| --- | --- | --- | --- | --- |
+| 0.6B | 128 | 1.0104 | 47/50 | 1 (1000 - 357) |
+| 0.6B | 256 | 1.0105 | 47/50 | 1 (1000 - 357) |
+| 0.6B | 512 | 1.0184 | 47/50 | 1 (1000 - 357) |
+| 1.7B | 128 | 0.9980 | 47/50 | 0 |
+| 1.7B | 256 | 1.0012 | 46/50 | 1 (insect legs) |
+| 1.7B | 512 | 1.0084 | 47/50 | 0 |
+
+B8s fails the 1.005 bound on 0.6B at every segment size (B16 was 1.006 there); on 1.7B segment 128 passes. Speed
+on 1.7B (segment 128) below: slower than B16 at every row count, because its per-segment float step costs more than
+B16's second kernel row. B16 stays the variant.
+
+Speed on 1.7B with dynamic units and row blocks, huge pages (`--no-mmap`, glibc hugetlb=1). Rows table, ms per call:
+
+| Variant | R=1 | 8 | 16 | 32 | 48 |
+| --- | --- | --- | --- | --- | --- |
+| stock | 49.1 | 100.3 | 134.0 | 247.9 | 410.3 |
+| B16 | 47.3 | 63.9 | 78.9 | 130.4 | 173.4 |
+| B8s (128) | 48.8 | 67.6 | 89.2 | 135.9 | 189.0 |
+
+Serving, llama-server with `-fa --no-mmap` and hugetlb, total tokens/s (mean first-token time), median of 3 blocks:
+
+| Variant | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- |
+| stock -fa | 65.5 (0.78 s) | 103.5 (0.98 s) | 108.9 (1.91 s) |
+| B16 -fa | 107.1 (0.31 s) | 163.0 (0.64 s) | 216.0 (0.81 s) |
+| B8s (128) -fa | 96.9 (0.36 s) | 146.2 (0.66 s) | 189.8 (0.99 s) |
+
+B16 is now 1.64x / 1.57x / 1.98x stock with -fa (round 2: 1.50x / 1.82x at N=16 / 32), first tokens 2.4x sooner.
+
+Prefill again (prompt tokens/s, median of 3; 512 / 2,000 tokens): B16 default 385 / 255; B8s 366 / 233; with -fa
+stock 138 / 59 and B16 318 / 76, i.e. llama.cpp's flash attention on this CPU makes long prompts much slower and
+should stay off for prefill.
+
+### 2026-11-11 ROW1 round 3, part 2: vocabulary shortlist (offline only)
+
+Hidden states: the output matmul's input, captured by the hook (`ROW1_DUMP`) while scoring the fixed text with the
+stock path (8,196 positions per model). Exact = float32 on the dequantized Q8_0 output matrix (151,936 rows).
+`lab/row1/shortlist.py` (all positions) and `lab/row1/shortlist2.py` (PCA fitted on the first half, tested on the
+other 4,098). Recall = share of positions whose exact argmax is in the sketch's top k. Full matrix: 330 MB (1.7B),
+165 MB (0.6B).
+
+| Model | Sketch | Size MB | k=16 | 64 | 256 | 1024 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1.7B | int4 per row | 155.9 | 0.9999 | 1.0 | 1.0 | 1.0 |
+| 1.7B | sign bits x row mean | 39.2 | 0.875 | 0.953 | 0.988 | 0.998 |
+| 1.7B | int2 per row | 78.1 | 0.402 | 0.527 | 0.634 | 0.732 |
+| 1.7B | rotation by W's top singular vectors, d=512 int8 | 78.4 | 0.159 | 0.213 | 0.273 | 0.337 |
+| 1.7B | PCA of hidden states, d=256 int8 | 39.5 | 0.904 | 0.966 | 0.991 | 0.998 |
+| 1.7B | PCA d=512 int4 | 39.5 | 0.956 | 0.990 | 0.997 | 1.0 |
+| 1.7B | PCA d=512 int8 | 78.4 | 0.965 | 0.992 | 0.9985 | 1.0 |
+| 0.6B | PCA d=256 int8 | 39.5 | 0.943 | 0.985 | 0.996 | 0.9995 |
+| 0.6B | PCA d=512 int4 | 39.5 | 0.988 | 0.998 | 0.9998 | 1.0 |
+| 0.6B | PCA d=512 int8 | 78.4 | 0.990 | 0.998 | 0.9998 | 1.0 |
+
+W's own singular directions are useless (top 512 of 2,048 hold 42% of its energy); the hidden states' principal
+directions work (top 512 hold 97% / 98% of their variance). Certified rate (Cauchy-Schwarz bound on the dropped
+dimensions plus rounding): 0 for every sketch and k except 0.005 (0.6B, d=512 int8, k=1024); the bound is far too
+loose to prove anything. No sketch reaches recall 1.0 at k <= 256, so by the round's rule the shortlist was not
+built into the hook. What it would give: PCA d=512 int4 + 1,024 exact rows reads about 42 MB instead of 330 MB,
+about 16% of a 1.7B pass (at most about +19% tokens/s for one request), uncertified (no miss in 4,098 positions).
+
+### 2026-11-11 ROW1 round 3, part 3: copy-from-context drafts
+
+`lab/row1/drafts.py`, `ironmule.speculation.draft` (2-3 token suffix match), share of all positions where the
+first 1 / 2 / 3 drafted tokens are right. Fixed text (truth = the text, 8,192 positions; same tokenizer for both
+models): draft available 7.8%, right 1.0% / 0.2% / 0.06%. Greedy fact answers (truth = the stock answers, context =
+prompt + answer so far): 1.7B (1,460 positions) available 17.3%, right 9.5% / 5.8% / 3.7%; 0.6B (1,057) available
+17.4%, right 8.9% / 4.4% / 2.1%. Copy drafts are rarely right on prose and short answers; a speculation step on this
+kernel would need a better drafter (n-gram tables from a corpus or a small model) to pay.
