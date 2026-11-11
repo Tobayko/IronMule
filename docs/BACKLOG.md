@@ -2633,6 +2633,23 @@ or worker; per block the order L0 Ls G Ls L0.
   depends on the prompts. 1.2 over Ls is not expected.
 - *Cost:* about 1.5 hours of this container's CPU in all; no GPU hours.
 
+- **GG3-F result (2026-11-11, this container, at `d330998`, about 25 minutes, no GPU hours): valid; goal not reached,
+  against either reference.** The engine's gate chose flash attention (ratio 1.0017, 95 % 1.0000 to 1.0033 against
+  llama.cpp's default on the same GGUF), so Ls was `llama-server -fa`. A smoke read prompts from index 14,150 (not
+  counted). Every request answered.
+  - *Against L0 (`llama-server` as LC1 ran it, the goal as fixed in GG):* load **0.98x (95 % 0.93x to 1.03x)**, quiet
+    **1.08x (1.00x to 1.14x)**; first tokens later (load 1.03x, quiet 1.53x).
+  - *Against Ls (the same server with `-fa`, the fair comparison):* load **0.87x (0.81x to 0.96x)**, quiet **0.98x
+    (0.92x to 1.04x)**; first tokens later (load 1.31x, quiet 1.97x).
+  - *Verdict by the fixed rule: goal not reached* against L0 and against Ls. Flash attention helped `llama-server` more
+    than the engine: under load Ls made 310-422 tokens per second against L0's 260-378 in the same blocks, and the
+    engine 262-341. As said before the data, 1.2 over Ls was not expected; G above L0 by flash attention was expected
+    and did not show beyond noise.
+  - *Post hoc, descriptive only:* L0's own load rate spread from 260 to 378 tokens per second across blocks (in GG2-H
+    about the same arm read near 300), so this container was noisier than in GG2-H; the paired ratios carry that.
+    Speculation drafted in about a fifth of the quiet steps (acceptance 0.27-0.32 for 2-token, 0.66-0.68 for 3-token
+    matches). The ledger entry is still owed.
+
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
 **The question.** IronMule is built on MLX. The owner asks whether MLX still makes sense on a server that runs on
