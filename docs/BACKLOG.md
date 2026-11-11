@@ -2521,6 +2521,42 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
     than llama.cpp, flash attention, failed the quality gate on this model by 0.2 % of perplexity. 1 of 56 answers
     equal to L's (different numeric paths, as expected under the owner's quality rule).
 
+### GG2 — The ggml engine's path around the kernels: warm-up, staggered prompts, llama.cpp as the quality bar (2026-11-11; fixed before its data)
+
+**Reopening.** Tier 0 holds GG1-H ("0.81x under load ... 1.05x one request at a time ... first tokens later"); its
+entry allows a reopening "with a product path that streams a request's first token before the rest of its block is
+prefilled ... under a new protocol". The owner's bar of 2026-11-10 (quality at least llama.cpp's; speed counts; the
+model unchanged) is the second change.
+
+**Development data behind it (2026-11-11, Dolly prompts 14,900-14,907 cut to 80 characters, no protocol uses them; no
+claim).** One request through the product: first token after 30-35 ms, then about 270 tokens per second; the worker
+client and the service add a few milliseconds. Eight at once on a fresh worker: first tokens after 531 ms and 213
+tokens per second in the first block, 236 ms and 298 in the second: the first call that carries eight prompts pays
+about 0.3 s once (GG1-H started a fresh worker for every block, so it paid that in every block), and every request's
+first token waits for one call that prefills all eight prompts.
+
+**Mechanism (engine version 2).**
+- *Warm-up at the start:* besides GG1's, one call of 8 sequences with 64 prompt tokens each, then one step of 8 rows,
+  so no request pays for the first multi-sequence prompt call.
+- *Staggered prompts, running requests first:* a step carries the running requests' rows and at most `PROMPT_BUDGET`
+  (96) prompt tokens of requests that start now, whole prompts, at least one; among the requests waiting, the shortest
+  prompt first, and one that was passed over 8 times goes first. So early requests stream while later prompts are
+  prefilled, instead of all waiting for one call.
+- *The quality gate against llama.cpp itself (the owner's bar):* the reference is llama.cpp's default setting on the
+  same GGUF, through the same multi-position decode; a setting passes when its perplexity on the gate's 16 chunks is
+  not higher (ratio of means at most 1.000; both numbers are deterministic). The default passes by definition; a
+  faster setting (flash attention, a unified or f32 KV cache) serves only if it is not worse. The float32-on-MLX
+  reference is no longer used for this engine, so any GGUF of the registered model that gives its token ids may serve.
+
+**GG2-H (fixed before any GG2 data).** GG1-H unchanged in arms (L: LC1's `llama-server`, its defaults; G: the product
+with the ggml engine, speculation on), GGUF (the one built from the registered model, as in GG1-H), workloads, scores
+and rule (goal reached when both tokens-per-second lower bounds are at least 1.2 and first tokens are no later), with
+quiet prompts from Dolly index 14,500 (unused) and a harness smoke from 14,550.
+- *Expected, said before the data:* about llama.cpp's tokens per second under load and alone, first tokens near its own.
+  The 1.2 is not expected from these changes: both sides run the same kernels at the same setting. The run places
+  the engine after its overheads are removed; what would be needed beyond that is in PL1.
+- *Cost:* about 20 minutes of this container's CPU; no GPU hours.
+
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
 **The question.** IronMule is built on MLX. The owner asks whether MLX still makes sense on a server that runs on
