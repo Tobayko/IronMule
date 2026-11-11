@@ -157,7 +157,7 @@ static void kern_a(const uint8_t *W, int K, int j0, int j1, const int8_t *X, con
 // Kernel rows: B -> one per activation row; B16 -> 2m (high), 2m+1 (low). Rows are cut into chunks of CH kernel rows
 // (CH = all rows when <= 48, else 32); X packed per chunk as [mt][K/64][16][64], padded rows zero.
 struct bplan { int Mk, CH, nch; };
-static bplan plan_b(int M, bool b16) { bplan p; p.Mk = b16 ? 2 * M : M; p.CH = p.Mk <= 48 ? p.Mk : 32; p.nch = (p.Mk + p.CH - 1) / p.CH; return p; }
+static bplan plan_b(int M, bool b16) { bplan p; p.Mk = b16 ? 2 * M : M; p.CH = p.Mk <= 48 ? std::max(p.Mk, 1) : 32; p.nch = (p.Mk + p.CH - 1) / p.CH; return p; }
 static size_t wsize_b(int M, int K, bool b16) { bplan p = plan_b(M, b16); int chp = (p.CH + 15) / 16 * 16; return (size_t)p.nch * chp * K + (size_t)p.nch * chp * 4 + 256; }
 static inline int8_t *xrow(int8_t *Xp, const bplan &p, int K, int r, int c) {
     int ch = r / p.CH, rr = r % p.CH, chp = (p.CH + 15) / 16 * 16;

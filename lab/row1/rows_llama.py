@@ -5,7 +5,7 @@ import ironmule.ggml_engine as ge
 
 gguf = sys.argv[1]
 mmap = os.environ.get("ROW1_MMAP", "1") == "1"
-RS = [int(x) for x in os.environ.get("ROW1_RS", "1,2,4,8,16,32").split(",")]
+RS = [int(x) for x in os.environ.get("ROW1_RS", "1,2,4,8,16,32,48").split(",")]
 REPS = int(os.environ.get("ROW1_REPS", "9"))
 ge.GgmlEngine._warm_up = lambda self: None
 if not mmap:
@@ -14,7 +14,7 @@ if not mmap:
     def p():
         q = orig(); q.use_mmap = False; return q
     L.llama_model_default_params = p
-eng = ge.GgmlEngine(gguf, speculate=False, seqs=32, seq_ctx=256, max_rows=64)
+eng = ge.GgmlEngine(gguf, speculate=False, seqs=48, seq_ctx=256, max_rows=64)
 L = eng.L
 prompt = eng.tokenize("The quick brown fox jumps over the lazy dog. " * 4)[:32]
 P = len(prompt)
@@ -29,7 +29,7 @@ def dec(rows):
     return time.perf_counter() - t0
 
 # prefill all 32 sequences with the same prompt
-for s in range(32):
+for s in range(48):
     dec([(t, j, s) for j, t in enumerate(prompt)])
 out = {"gguf": os.path.basename(gguf), "mmap": mmap, "seqs": {}, "window": {}}
 pos = P
@@ -40,20 +40,20 @@ for R in RS:  # warm each shape once, then REPS
         if k: ts.append(dt)
     out["seqs"][R] = statistics.median(ts) * 1e3
     # rows already decoded in sequences >= R stay behind; positions keep rising for all seqs we touched only
-    for s in range(R, 32):
+    for s in range(R, 48):
         pass
     # keep every sequence's positions in step: advance the untouched ones is not needed (each seq checks its own)
     print(f"seqs R={R}: {out['seqs'][R]:.1f} ms", flush=True)
     # after this R, sequences R..31 lag behind; next R uses them at `pos`, which llama.cpp rejects -> realign
-    for s in range(R, 32):
+    for s in range(R, 48):
         L.llama_memory_seq_rm(eng.memory, s, P, -1)
     if R != RS[-1]:
         # realign: clear all to the prompt and restart positions
-        for s in range(32):
+        for s in range(48):
             L.llama_memory_seq_rm(eng.memory, s, P, -1)
         pos = P
 mem = eng.memory
-for s in range(32):
+for s in range(48):
     L.llama_memory_seq_rm(mem, s, P, -1)
 for R in RS:
     ts = []
