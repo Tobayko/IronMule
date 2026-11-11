@@ -703,6 +703,7 @@ BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "cur
 # The ones whose groups stream, take joins and stop on cancel (SERVE4, SERVE8): the client sends them lone
 # streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
 STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked", "ggml"})
+STREAM_WIDTH = 8  # streams a grouped run holds at once (the client's STREAM_GROUP_REQUESTS)
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
@@ -725,6 +726,12 @@ class _DetokenizerPool:
 
     def release(self, detokenizer: Any) -> None:
         self._free.append(detokenizer)
+
+    def prepare(self, count: int) -> None:
+        """GG2: build `count` detokenizers now, at the worker's start. Built on demand, the first block of eight
+        streams paid for eight walks of the vocabulary before its first tokens (about 0.3 s for SmolLM2's 49k)."""
+        while len(self._free) < count:
+            self._free.append(self._build())
 
 
 def _detokenizer_pool(tokenizer: Any) -> _DetokenizerPool:
@@ -1365,6 +1372,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     import mlx.core as mx
     try:
+        if engine_bridge is not None and args.engine_configuration in STREAMED_BATCH_CONFIGURATIONS:
+            _detokenizer_pool(tokenizer).prepare(STREAM_WIDTH)  # GG2: before the first request, not during it
         telemetry = _startup_telemetry(mx, startup_started)
     except Exception:
         _safe_error("backend_unavailable")

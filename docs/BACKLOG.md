@@ -2547,6 +2547,13 @@ first token waits for one call that prefills all eight prompts.
   not higher (ratio of means at most 1.000; both numbers are deterministic). The default passes by definition; a
   faster setting (flash attention, a unified or f32 KV cache) serves only if it is not worse. The float32-on-MLX
   reference is no longer used for this engine, so any GGUF of the registered model that gives its token ids may serve.
+- *Amendment before any GG2-H data (2026-11-11, labelled; development on the same prompts as above):* with the engine's
+  warm-up the first block was still slow (first tokens 362-639 ms). The cause was the worker, not the engine: it built
+  a streaming detokenizer for each of the eight streams on demand, each a walk of the vocabulary. The worker now builds
+  eight at its start for every engine that streams grouped requests (`_DetokenizerPool.prepare`). After it, on the
+  development prompts: first block and second alike, first tokens 73-315 ms (staggered), about 293 tokens per second.
+  The gate against llama.cpp's default, on this GGUF: flash attention 1.0017 and an f32 KV cache 1.0004 are both
+  worse than the default, so the default serves.
 
 **GG2-H (fixed before any GG2 data).** GG1-H unchanged in arms (L: LC1's `llama-server`, its defaults; G: the product
 with the ggml engine, speculation on), GGUF (the one built from the registered model, as in GG1-H), workloads, scores

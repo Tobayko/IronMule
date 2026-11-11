@@ -163,3 +163,35 @@ def test_the_first_start_tunes_eight_settings_and_the_gate_tries_them_fastest_fi
     assert len(ggml_engine.SETTINGS) == 8 and len({tuple(sorted(s.items())) for s in ggml_engine.SETTINGS}) == 8
     assert all(set(s) == {"flash_attn", "kv_unified", "kv_f32"} for s in ggml_engine.SETTINGS)
     assert "|" in ggml_engine.machine_key()
+
+
+def test_the_detokenizer_pool_is_built_before_the_first_request():
+    """GG2: eight streams' detokenizers exist at the worker's start; a stream takes one without building it."""
+    from ironmule_product import worker
+
+    built = []
+
+    class Detokenizer:
+        def reset(self):
+            pass
+
+    class Tokenizer:
+        @property
+        def detokenizer(self):
+            built.append(1)
+            return Detokenizer()
+
+    pool = worker._DetokenizerPool(Tokenizer())
+    pool.prepare(worker.STREAM_WIDTH)
+    assert len(built) == 8
+    taken = [pool.acquire() for _ in range(8)]
+    assert len(built) == 8 and len({id(d) for d in taken}) == 8
+    pool.acquire()
+    assert len(built) == 9  # a ninth stream still builds its own
+
+
+def test_the_gate_s_reference_is_llama_cpp_s_default_setting():
+    from ironmule import ggml_engine
+
+    assert ggml_engine.DEFAULT_SETTINGS in ggml_engine.SETTINGS and ggml_engine.ENGINE_VERSION >= 2
+    assert not hasattr(ggml_engine, "GATE_REFERENCE")  # the float32-on-MLX reference is gone for this engine

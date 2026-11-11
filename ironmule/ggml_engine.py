@@ -30,7 +30,9 @@ from typing import Any, Callable, Sequence
 
 SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
 POLL = 50  # llama-server's default busy-wait level
-ENGINE_VERSION = 1
+ENGINE_VERSION = 2  # 2 (GG2): warm-up of 8 prompts, staggered prompts, the gate against llama.cpp's default
+PROMPT_BUDGET = 96  # prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one)
+PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts goes first
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -77,6 +79,7 @@ class Job:
     reason: str | None = None
     first_ns: int = 0
     finished_ns: int = 0
+    passed_over: int = 0
 
 
 class GgmlEngine:
@@ -120,7 +123,10 @@ class GgmlEngine:
         for llama.cpp's first graphs and weight repacking; the cache is cleared after."""
         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
         self._decode([(bos, j, 0, j == 63) for j in range(64)])
-        self._decode([(bos, 64, seq, True) for seq in range(min(self.seqs, 8))])
+        self.L.llama_memory_clear(self.memory, True)
+        # GG2: the first call that carries several sequences' prompts cost about 0.3 s once; pay it here
+        self._decode([(bos, j, seq, j == 63) for seq in range(self.seqs) for j in range(64)])
+        self._decode([(bos, 64, seq, True) for seq in range(self.seqs)])
         self._decode([(bos, 65, 0, True)])
         self.L.llama_memory_clear(self.memory, True)
 
@@ -212,7 +218,7 @@ class GgmlEngine:
         """Serve `jobs` and every job `admit(free sequences)` hands over while they run; returns all, in order."""
         from .speculation import MAX_DRAFT, accept, draft
 
-        served: list[Job] = []
+        served: list[Job] = list(jobs)
         pending = list(jobs)
         active: dict[int, Job] = {}
 
@@ -245,18 +251,27 @@ class GgmlEngine:
         try:
             while True:
                 if admit is not None and self._free:
-                    pending.extend(admit(len(self._free)))
+                    more = admit(len(self._free))
+                    served.extend(more)
+                    pending.extend(more)
+                # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
+                # budget (whole prompts, at least one), and one passed over too often first
                 fresh: list[tuple[int, Job]] = []
-                while pending and self._free:
-                    job = pending.pop(0)
-                    served.append(job)
-                    if len(job.ids) + job.limit > self.seq_ctx:
-                        raise ValueError(f"{len(job.ids) + job.limit} tokens do not fit a {self.seq_ctx}-token sequence")
+                budget = PROMPT_BUDGET
+                for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
+                        pending.remove(job)
                         continue
+                    if not self._free or (fresh and len(job.ids) > budget):
+                        job.passed_over += 1
+                        continue
+                    if len(job.ids) + job.limit > self.seq_ctx:
+                        raise ValueError(f"{len(job.ids) + job.limit} tokens do not fit a {self.seq_ctx}-token sequence")
                     with self._lock:
                         seq = self._free.pop(0)
+                    pending.remove(job)
+                    budget -= len(job.ids)
                     fresh.append((seq, job))
                 if not active and not fresh:
                     if pending:
@@ -264,6 +279,7 @@ class GgmlEngine:
                     if admit is not None:
                         more = admit(len(self._free))
                         if more:
+                            served.extend(more)
                             pending.extend(more)
                             continue
                     break
@@ -284,12 +300,12 @@ class GgmlEngine:
                     pos = len(job.ids) + len(job.tokens) - 1
                     rows += [(t, pos + j, seq, True) for j, t in enumerate([job.tokens[-1]] + list(drafts[:k]))]
                 decode_rows = len(rows)
-                budget = self.seq_ctx - decode_rows
+                room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
                 for seq, job in fresh:
-                    if len(job.ids) <= budget:
+                    if len(job.ids) <= room:
                         rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids)]
-                        budget -= len(job.ids)
+                        room -= len(job.ids)
                         batched.append((seq, job))
                     else:  # too long to share this call: its own prefill first
                         active[seq] = job
@@ -422,23 +438,6 @@ from ironmule.ggml_engine import autotune
 print(json.dumps(autotune(sys.argv[1])))
 """
 
-GATE_REFERENCE = r"""
-import json, sys
-from types import SimpleNamespace
-import mlx.core as mx
-mx.set_default_device(mx.cpu)
-from mlx_lm import load
-from ironmule import cpu_blas
-from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, _text_ids, gate_bos, nll_per_chunk
-from ironmule.numeric_plans import dequantize_model
-model, tokenizer = load(sys.argv[1])
-dequantize_model(model)
-ids = _text_ids(tokenizer)
-print(json.dumps({"serving": cpu_blas.active()["serving"], "ids": ids[:CHUNKS * CHUNK_TOKENS + 1],
-                  "bos": gate_bos(tokenizer), "nll": nll_per_chunk(SimpleNamespace(model=model), ids, CHUNKS,
-                                                                   CHUNK_TOKENS, gate_bos(tokenizer))}))
-"""
-
 GATE_CANDIDATE = r"""
 import json, sys
 from ironmule.ggml_engine import GgmlEngine
@@ -456,13 +455,24 @@ print(json.dumps({"nll": rows}))
 """
 
 
+GATE_IDS = r"""
+import json, sys
+from mlx_lm.tokenizer_utils import load
+from pathlib import Path
+from ironmule.numeric_choice import CHUNKS, CHUNK_TOKENS, _text_ids, gate_bos
+tokenizer = load(Path(sys.argv[1]))
+print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer)}))
+"""
+DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
+
+
 def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
-    """The owner's condition: the GGUF's perplexity on the numeric gate's chunks, through the verify path, against
-    the registered model widened to float32 on MLX (on OpenBLAS where this machine has it); passes when the ratio's
-    95 % interval ends below `numeric_choice.QUALITY_BOUND`. Cached by the GGUF, snapshot and gate version."""
+    """The owner's bar (2026-11-10): answer quality at least llama.cpp's. The engine's settings are timed
+    (`autotune`), and the fastest one whose perplexity on the numeric gate's chunks, through the multi-position
+    decode, is not higher than that of llama.cpp's default setting on the same GGUF serves; the default passes by
+    definition. Cached by the GGUF, snapshot, gate and engine version and machine."""
     import subprocess
 
-    from . import cpu_blas
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
@@ -475,37 +485,48 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
             return json.loads(stored.read_text())
         except (OSError, ValueError):
             pass
-    variables, _ = cpu_blas.environment()
-    env = {**os.environ, **variables, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get(
-        "PYTHONPATH")])), "HF_HUB_OFFLINE": "1"}
+    env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
+           "HF_HUB_OFFLINE": "1"}
     started = time.perf_counter()
-    plain_env = {**os.environ, "PYTHONPATH": env["PYTHONPATH"]}
-    tuned = subprocess.run([sys.executable, "-c", TUNE_CHILD, gguf], env=plain_env, capture_output=True, text=True,
-                           timeout=3600, check=False)
-    if tuned.returncode != 0:
-        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {tuned.stderr[-300:]}"}
-    tune = json.loads(tuned.stdout.strip().splitlines()[-1])
-    reference = subprocess.run([sys.executable, "-c", GATE_REFERENCE, snapshot], env=env, capture_output=True,
-                               text=True, timeout=7200, check=False)
-    if reference.returncode != 0:
-        return {"ran": False, "passes": False, "reason": f"the reference child failed: {reference.stderr[-300:]}"}
-    ref = json.loads(reference.stdout.strip().splitlines()[-1])
+
+    def child(code: str, argument: str, payload: str | None = None) -> tuple[dict[str, Any] | None, str]:
+        done = subprocess.run([sys.executable, "-c", code, argument], env=env, input=payload, capture_output=True,
+                              text=True, timeout=7200, check=False)
+        if done.returncode != 0:
+            return None, done.stderr[-300:]
+        return json.loads(done.stdout.strip().splitlines()[-1]), ""
+
+    tune, error = child(TUNE_CHILD, gguf)
+    if tune is None:
+        return {"ran": False, "passes": False, "reason": f"the tuning child failed: {error}"}
+    text, error = child(GATE_IDS, snapshot)
+    if text is None:
+        return {"ran": False, "passes": False, "reason": f"the gate's text could not be tokenized: {error}"}
+
+    def nll(settings: dict[str, bool]) -> tuple[list[float] | None, str]:
+        out, why = child(GATE_CANDIDATE, gguf, json.dumps({**text, "settings": settings}))
+        return (None, why) if out is None else (out["nll"], "")
+
+    reference, error = nll(DEFAULT_SETTINGS)
+    if reference is None:
+        return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}"}
     tried = []
-    for settings in tune["order"]:  # the fastest setting whose gate passes serves (second amendment)
-        candidate = subprocess.run([sys.executable, "-c", GATE_CANDIDATE, gguf], env=plain_env,
-                                   input=json.dumps({"ids": ref["ids"], "bos": ref["bos"], "settings": settings}),
-                                   capture_output=True, text=True, timeout=7200, check=False)
-        if candidate.returncode != 0:
-            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {candidate.stderr[-300:]}",
-                    "tried": tried}
-        interval = ratio_interval(ref["nll"], json.loads(candidate.stdout.strip().splitlines()[-1])["nll"])
-        tried.append({"settings": settings, **interval})
-        if interval["passes"]:
+    for settings in tune["order"]:  # the fastest setting that is not worse than llama.cpp's default serves
+        if settings == DEFAULT_SETTINGS:
+            tried.append({"settings": settings, "ratio": 1.0, "interval": [1.0, 1.0], "chunks": len(reference),
+                          "passes": True})
             break
-    chosen = next((row for row in tried if row["passes"]), tried[-1])
+        rows, error = nll(settings)
+        if rows is None:
+            return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}", "tried": tried}
+        interval = ratio_interval(reference, rows)
+        tried.append({"settings": settings, **interval, "passes": interval["ratio"] <= 1.0})
+        if tried[-1]["passes"]:
+            break
+    chosen = tried[-1]
     result = {"ran": True, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
-              "reference": "dequantize float32 on MLX", "reference_blas": ref["serving"],
+              "reference": "llama.cpp's default setting on the same GGUF",
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}
     try:
         cache.mkdir(parents=True, exist_ok=True)

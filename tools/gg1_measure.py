@@ -152,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path)
     parser.add_argument("--analyse", type=Path)
     parser.add_argument("--smoke", action="store_true", help="tiny blocks on prompts the protocol never uses")
+    parser.add_argument("--plan", choices=("gg1", "gg2"), default="gg1", help="gg2: GG2-H's quiet prompts (14,500)")
     args = parser.parse_args(argv)
     if args.analyse:
         print(json.dumps(analyse(json.loads(args.analyse.read_text())), indent=1))
@@ -170,11 +171,13 @@ def main(argv: list[str] | None = None) -> int:
     checked = gate(spec.snapshot_path, gguf, cache=args.gate_cache)
     print(json.dumps({"gate": {k: checked.get(k) for k in ("ratio", "interval", "passes")}}), flush=True)
     texts, digest = rl2_headroom.dolly_prompts(args.dolly)
+    quiet_first = {"gg1": QUIET_FIRST, "gg2": 14_500}[args.plan]
     blocks, quiet_size, load_limit, quiet_limit, first_index = (
-        (1, 2, 16, 16, QUIET_FIRST + 100) if args.smoke else (LOAD_BLOCKS, QUIET_SIZE, LOAD_LIMIT, QUIET_LIMIT, QUIET_FIRST))
+        (1, 2, 16, 16, quiet_first + (100 if args.plan == "gg1" else 50)) if args.smoke
+        else (LOAD_BLOCKS, QUIET_SIZE, LOAD_LIMIT, QUIET_LIMIT, quiet_first))
     commit = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True).stdout.strip()
     version = subprocess.run([args.server, "--version"], capture_output=True, text=True)
-    report: dict[str, Any] = {"protocol": "gg1-h" + ("-smoke" if args.smoke else ""), "commit": commit,
+    report: dict[str, Any] = {"protocol": f"{args.plan}-h" + ("-smoke" if args.smoke else ""), "commit": commit,
                               "gguf_sha256": file_sha256(gguf), "gate": checked, "dolly_sha256": digest,
                               "llama_server": (version.stdout + version.stderr).strip()[-200:],
                               "machine": {"machine": platform.machine(), "cpus": os.cpu_count()}, "load": [],
