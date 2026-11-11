@@ -214,3 +214,76 @@ The fact differences: on 1.7B stock spent its 48 tokens writing out 2^10 as a pr
 and B16 answered 1024. On 0.6B, B's answer to 1000 - 357 was cut by the token limit. Stock misses on both models:
 capital of Japan (0.6B says Osaka), "hardest natural substance" (hedges). A and B16 keep the quality (perplexity
 within 0.1% / 0.6%); B costs 2.5% perplexity from its 8-bit per-row activations and is dropped from part 3.
+
+### 2026-11-11 ROW1 round 2, part 3: speed end to end
+
+Stock = the patched build with `ROW1_GGML=0`. B is out (part 2). Drivers: `lab/row1/rows_llama.py` (now 48 sequences),
+`lab/row1/serve.py` (llama-server of the patched copy, `-t 4 -np N -c N*2048 --temp 0 --no-webui`, N streaming chat
+requests at once, 64 tokens each, different short story prompts; one warm-up block, median of 3 blocks), summary
+`lab/row1/summ3.py`. Raw files in the session scratchpad (`row1/p3`).
+
+ms per `llama_decode` call, R sequences one new position each (default load, single run of 9 calls, median):
+
+| Model | Variant | R=1 | 2 | 4 | 8 | 16 | 32 | 48 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1.7B | stock | 46.7 | 76.9 | 104.1 | 113.6 | 160.4 | 232.1 | 466.3 |
+| 1.7B | A | 46.2 | 82.1 | 88.0 | 96.7 | 106.9 | 164.5 | 258.0 |
+| 1.7B | B16 | 48.1 | 52.2 | 58.3 | 69.0 | 81.4 | 125.9 | 168.7 |
+| 0.6B | stock | 19.4 | 30.1 | 33.7 | 52.5 | 70.6 | 114.3 | 192.2 |
+| 0.6B | A | 20.6 | 26.3 | 30.7 | 56.8 | 81.4 | 115.4 | 144.1 |
+| 0.6B | B16 | 23.7 | 22.0 | 25.6 | 31.8 | 47.0 | 102.8 | 113.7 |
+
+Serving, total tokens/s over the block's wall time, mean time to first token in brackets:
+
+| Model | Setting | N=1 | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- | --- | --- |
+| 1.7B | original unpatched llama-server | | 56.2 (0.77 s) | | |
+| 1.7B | stock | 17.2 (0.06) | 59.9 (0.63) | 85.6 (0.77) | 89.4 (1.94) |
+| 1.7B | stock, --no-mmap + hugetlb | 18.6 (0.06) | 64.8 (0.65) | 88.5 (1.35) | 97.1 (2.02) |
+| 1.7B | A | 17.1 (0.08) | 71.0 (0.60) | 96.5 (1.16) | 125.5 (1.64) |
+| 1.7B | B16 | 18.2 (0.08) | 86.6 (0.44) | 124.2 (0.71) | 151.4 (1.00) |
+| 1.7B | B16, --no-mmap + hugetlb | 17.2 (0.06) | 91.7 (0.43) | 129.7 (0.78) | 162.7 (1.02) |
+| 1.7B | stock, -fa | | | 98.8 (1.25) | 104.1 (1.83) |
+| 1.7B | B16, -fa | | | 148.7 (0.57) | 189.3 (0.95) |
+| 0.6B | original unpatched llama-server | | 108.1 (0.40) | | |
+| 0.6B | stock | 38.2 (0.03) | 108.0 (0.38) | 145.9 (0.67) | 162.2 (0.95) |
+| 0.6B | A | 43.6 (0.03) | 117.9 (0.34) | 155.3 (0.58) | 175.3 (0.79) |
+| 0.6B | B16 | 38.1 (0.03) | 145.9 (0.18) | 183.8 (0.28) | 203.5 (0.65) |
+
+B16 against stock: 1.7B 1.45x at 8 requests, 1.45x at 16, 1.7x at 32 (1.8x with -fa on both, 2.1x for B16 -fa
+against stock default); first tokens 30-50% sooner. 0.6B 1.35x / 1.26x / 1.25x. The patched stock binary matches the
+original llama-server at N=8 (59.9 vs 56.2 and 108.0 vs 108.1).
+
+One request alone, 128 tokens, tokens/s (median of 3): 1.7B stock 18.1, stock + huge pages 20.0, B16 + huge pages
+19.5, A + huge pages 17.7; 0.6B stock 45.3, stock + huge pages 46.5, B16 + huge pages 41.2, A + huge pages 40.9. As
+expected one row gains nothing: it is bandwidth-bound already; B16 at one row costs two kernel rows and is level on
+1.7B, 11% behind on 0.6B.
+
+### 2026-11-11 ROW1 round 2, part 4: prefill
+
+One request, prompt cut from the fixed text, `n_predict` 1, prompt cache off; llama-server's reported prompt
+tokens/s, median of 3 (default batch: `-b 2048 -ub 512`; second figure with `-b 2048 -ub 2048`):
+
+| Model | Variant | 512 tokens | 2,000 tokens |
+| --- | --- | --- | --- |
+| 1.7B | stock | 145 / 159 | 127 / 109 |
+| 1.7B | A | 207 / 214 | 175 / 138 |
+| 1.7B | B16 | 350 / 342 | 243 / 173 |
+| 0.6B | stock | 310 / 308 | 219 / 175 |
+| 0.6B | A | 392 / 398 | 263 / 178 |
+| 0.6B | B16 | 544 / 515 | 317 / 216 |
+
+B16 prefills 2.4x (512) and 1.9x (2,000) faster on 1.7B, 1.75x / 1.45x on 0.6B. One 2,048-row ubatch is slower than
+four of 512 on every variant (the f16 attention over the long window grows). The longer prompt loses more because
+attention is untouched.
+
+### 2026-11-11 ROW1 round 2, part 5: what costs now
+
+Per-op timers (prof_llama.py, 1.7B, B16, huge pages), per call: R=1 50.2 ms (Q8_0 39.3 + 5.4 wait); R=8 76.5 ms
+(Q8_0 45.3 + 11.8 wait, f16 attention 6.6, set_rows 1.7, rest about 4); R=32 147.8 ms (Q8_0 68.0 + 22.7 wait,
+f16 attention 23.7, set_rows 6.6 + 2.6 wait, norms, rope, softmax, glu about 12). At 32 rows the matmul compute is
+46% of the call, the barrier waits around it 15%, attention 16%. Next: (1) the barrier waits (imbalance between
+threads of the matmul and its quantization phase; the KV-window attention also waits); (2) attention, where -fa
+alone already gives B16 +25% at 32 requests; (3) the 48-row kernel still runs well below AMX peak (68 ms for
+32 x 2 kernel rows = 3.2e12 MAC/s equivalent is not reached; 64 kernel rows x 1.72e9 / 68 ms = 1.6e12 MAC/s,
+16% of peak).
