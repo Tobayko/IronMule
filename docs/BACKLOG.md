@@ -2551,7 +2551,7 @@ AG4-Q, AG6-H): IronMule's agent setup on MLX against `llama-server` (CUDA build,
 8 slots) and vLLM (8 concurrent sequences), each with the perplexity gate against the bf16 reference; LC1's workloads
 and scores. About 2 GPU hours. Protocol to be fixed before its data.
 
-### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; noted, internal check only)
+### CS1 — Contextual sparsity: computing only part of the feed-forward neurons per request (owner idea 2026-11-10; internal check: not on this model)
 
 **The idea (owner, from a text on DejaVu, MatFormer, Mixture of Depths and PowerInfer).** While it answers, the model
 computes only the part of its weight matrices the input needs. DejaVu needs trained predictors and was shown on ReLU
@@ -2570,6 +2570,14 @@ full model on the same positions (ratio of perplexities, 95 % bootstrap over chu
   kernels and QG1; under the owner's bar (not worse than llama.cpp) any measurable loss rules it out for the main line.
   If no share reaches 1.005, the idea stays noted here and is not pursued on this model.
 - *Cost:* a few minutes of this container's CPU.
+
+- **Internal check result (2026-11-10, this container, at `a2044c1`, development evidence):** 16 chunks, the full
+  model's perplexity on the scored halves 18.96. Kept neurons against the full model: keep 0.9 **1.167x** the
+  perplexity (95 % 1.135x to 1.205x); keep 0.75 1.68x (1.58x to 1.78x); keep 0.5 3.74x (3.44x to 4.07x). No share
+  comes near 1.005, and under the owner's bar (not worse than llama.cpp) none is admissible. Skipping a tenth of the
+  feed-forward neurons already costs 17 % of perplexity on this 135M model, which has little slack; the papers'
+  results are on models a thousand times larger, and nothing here speaks for or against those. Not pursued on this
+  model; a later check on a model of several billion parameters would need its own entry.
 
 ### MG1 — Every setting the agent has on one device, on any number of devices (owner request 2026-11-10; open)
 
