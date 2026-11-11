@@ -1,6 +1,9 @@
 // ROW1 Step 4: the ROW1 variant-A AMX kernel (exact Q8_0 semantics) inside ggml's AMX mul_mat, for 2 <= M <= 48.
 // Included into ggml/src/ggml-cpu/amx/mmq.cpp. Weights are packed a second time at load (ggml's own AMX layout stays
-// for its M == 1 VNNI kernel). Disable at run time with ROW1_GGML=0.
+// for its M == 1 VNNI kernel). Variant chosen at load and run time by ROW1_GGML = 0 | A | B | B16 (default 0).
+// A: exact Q8_0 semantics, 2 <= M (chunks of 48 rows beyond 48). B: per-row int8 weights requantized from Q8_0,
+// int8 activations with one scale per row, int32 accumulation over K. B16: B weights, 16-bit activations split
+// into a high and a low int8 kernel row, combined after accumulation. B and B16 serve every M >= 1.
 #pragma once
 #include <immintrin.h>
 #include <sys/mman.h>
@@ -8,12 +11,25 @@
 #include <unordered_map>
 #include <cstring>
 #include <cstdlib>
+#include <cmath>
+#include <vector>
+#include <algorithm>
+#include <cstdio>
 
 namespace row1 {
 struct tcfg { uint8_t pal, start; uint8_t r[14]; uint16_t cb[16]; uint8_t rows[16]; } __attribute__((packed));
 static std::unordered_map<const void *, uint8_t *> g_packed;
 static std::mutex g_mu;
-static int enabled() { static int e = -1; if (e < 0) { const char *v = getenv("ROW1_GGML"); e = v ? atoi(v) : 1; } return e; }
+enum { OFF = 0, VA = 1, VB = 2, VB16 = 3 };
+static int variant() {
+    static int e = -1;
+    if (e < 0) {
+        const char *v = getenv("ROW1_GGML"); e = OFF;
+        if (v && !strcmp(v, "A")) e = VA; else if (v && !strcmp(v, "B")) e = VB; else if (v && !strcmp(v, "B16")) e = VB16;
+    }
+    return e;
+}
+static int enabled() { return variant() == VA; }
 static int pf() { static int p = -1; if (p < 0) { const char *v = getenv("ROW1_PF"); p = v ? atoi(v) : 16384; } return p; }
 
 static void pack_a(const uint8_t *src, int N, int K, uint8_t *dst) {  // per (pair, kb): [512 B0][512 B1][32 s0][32 s1]
@@ -29,35 +45,60 @@ static void pack_a(const uint8_t *src, int N, int K, uint8_t *dst) {  // per (pa
             }
         }
 }
+// B layout: per (pair, 64-chunk c): [1 KiB member 0][1 KiB member 1], B[r][n*4+q] = W[n][c*64+r*4+q]; then N floats
+static void pack_b(const uint8_t *src, int N, int K, int8_t *dst, float *scale) {
+    int KB = K / 32;
+    std::vector<float> w(K); std::vector<int8_t> qq(K);
+    for (int row = 0; row < N; row++) {
+        int j = row / 16, n = row % 16; float mx = 0;
+        for (int kb = 0; kb < KB; kb++) {
+            const uint8_t *blk = src + ((size_t)row * KB + kb) * 34;
+            float d = _cvtsh_ss(*(const uint16_t *)blk);
+            for (int i = 0; i < 32; i++) { w[kb * 32 + i] = d * (int8_t)blk[2 + i]; mx = std::max(mx, std::fabs(w[kb * 32 + i])); }
+        }
+        float s = mx / 127.f; if (s == 0) s = 1; scale[row] = s;
+        for (int k = 0; k < K; k++) qq[k] = (int8_t)lrintf(w[k] / s);
+        for (int c = 0; c < K / 64; c++) {
+            int8_t *o = dst + (((size_t)(j >> 1) * (K / 64) + c) * 2 + (j & 1)) * 1024;
+            for (int r = 0; r < 16; r++) for (int q = 0; q < 4; q++) o[r * 64 + n * 4 + q] = qq[c * 64 + r * 4 + q];
+        }
+    }
+}
+static size_t g_resident = 0;
 static void register_weight(const void *key, const void *src, int N, int K) {
-    if (N % 32 || K % 32) return;
-    size_t n = (size_t)N * K / 32 * 34;
+    int v = variant();
+    if (v == OFF || N % 32 || K % 64) return;
+    size_t n = v == VA ? (size_t)N * K / 32 * 34 : (size_t)N * K + (size_t)N * 4;
     void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED) return;
     madvise(p, n, MADV_HUGEPAGE);
-    pack_a((const uint8_t *)src, N, K, (uint8_t *)p);
+    if (v == VA) pack_a((const uint8_t *)src, N, K, (uint8_t *)p);
+    else pack_b((const uint8_t *)src, N, K, (int8_t *)p, (float *)((char *)p + (size_t)N * K));
     std::lock_guard<std::mutex> g(g_mu);
-    g_packed[key] = (uint8_t *)p;
+    g_packed[key] = (uint8_t *)p; g_resident += n;
+    static int said = 0;
+    if (N == 151936 || (++said % 50) == 0) fprintf(stderr, "row1: variant %d, %.0f MiB packed so far\n", v, g_resident / 1048576.0);
 }
 static const uint8_t *lookup(const void *key) {
     std::lock_guard<std::mutex> g(g_mu);
     auto it = g_packed.find(key);
     return it == g_packed.end() ? nullptr : it->second;
 }
-static void config(int R) {
+// tiles: mt <= 2 -> C 0..3, A 4,5, B 6,7; mt == 3 -> C 0..2, A 3..5, B 6. A cols 32 (variant A) or 64 (B).
+static void config(int R, int acb = 32) {
     tcfg c; memset(&c, 0, sizeof c); c.pal = 1;
-    int mt = (R + 15) / 16;
+    int mt = (R + 15) / 16, brows = acb / 4;
     if (mt <= 2) {
         int r0 = mt == 1 ? R : 16, r1 = R - 16;
-        c.rows[0] = c.rows[1] = c.rows[4] = r0; c.cb[0] = c.cb[1] = 64; c.cb[4] = 32;
-        if (mt > 1) { c.rows[2] = c.rows[3] = c.rows[5] = r1; c.cb[2] = c.cb[3] = 64; c.cb[5] = 32; }
-        c.rows[6] = c.rows[7] = 8; c.cb[6] = c.cb[7] = 64;
+        c.rows[0] = c.rows[1] = c.rows[4] = r0; c.cb[0] = c.cb[1] = 64; c.cb[4] = acb;
+        if (mt > 1) { c.rows[2] = c.rows[3] = c.rows[5] = r1; c.cb[2] = c.cb[3] = 64; c.cb[5] = acb; }
+        c.rows[6] = c.rows[7] = brows; c.cb[6] = c.cb[7] = 64;
     } else {
         for (int i = 0; i < mt; i++) {
             int rows = (i == mt - 1) ? R - 16 * i : 16;
-            c.rows[i] = rows; c.cb[i] = 64; c.rows[3 + i] = rows; c.cb[3 + i] = 32;
+            c.rows[i] = rows; c.cb[i] = 64; c.rows[3 + i] = rows; c.cb[3 + i] = acb;
         }
-        c.rows[6] = 8; c.cb[6] = 64;
+        c.rows[6] = brows; c.cb[6] = 64;
     }
     _tile_loadconfig(&c);
 }
@@ -112,6 +153,111 @@ static void kern_a(const uint8_t *W, int K, int j0, int j1, const int8_t *X, con
         }
     }
 }
+// ---- B / B16 ----
+// Kernel rows: B -> one per activation row; B16 -> 2m (high), 2m+1 (low). Rows are cut into chunks of CH kernel rows
+// (CH = all rows when <= 48, else 32); X packed per chunk as [mt][K/64][16][64], padded rows zero.
+struct bplan { int Mk, CH, nch; };
+static bplan plan_b(int M, bool b16) { bplan p; p.Mk = b16 ? 2 * M : M; p.CH = p.Mk <= 48 ? p.Mk : 32; p.nch = (p.Mk + p.CH - 1) / p.CH; return p; }
+static size_t wsize_b(int M, int K, bool b16) { bplan p = plan_b(M, b16); int chp = (p.CH + 15) / 16 * 16; return (size_t)p.nch * chp * K + (size_t)p.nch * chp * 4 + 256; }
+static inline int8_t *xrow(int8_t *Xp, const bplan &p, int K, int r, int c) {
+    int ch = r / p.CH, rr = r % p.CH, chp = (p.CH + 15) / 16 * 16;
+    return Xp + (size_t)ch * chp * K + (((size_t)(rr >> 4) * (K / 64) + c) * 16 + (rr & 15)) * 64;
+}
+static void quant_rows_b(const float *x, int ldx, int m0, int m1, int K, bool b16, const bplan &p, int8_t *Xp, float *xs) {
+    for (int m = m0; m < m1; m++) {
+        const float *v = x + (size_t)m * ldx;
+        __m512 mx = _mm512_setzero_ps();
+        for (int k = 0; k < K; k += 16) mx = _mm512_max_ps(mx, _mm512_abs_ps(_mm512_loadu_ps(v + k)));
+        float amax = _mm512_reduce_max_ps(mx);
+        float lim = b16 ? 32639.f : 127.f, d = amax / lim, id = d ? 1.f / d : 0.f;
+        __m512 vid = _mm512_set1_ps(id);
+        if (!b16) {
+            xs[m] = d;
+            for (int c = 0; c < K / 64; c++) {
+                int8_t *o = xrow(Xp, p, K, m, c);
+                for (int h = 0; h < 4; h++) {
+                    __m512i q = _mm512_cvtps_epi32(_mm512_mul_ps(_mm512_loadu_ps(v + c * 64 + h * 16), vid));
+                    _mm_storeu_si128((__m128i *)(o + h * 16), _mm512_cvtsepi32_epi8(q));
+                }
+            }
+        } else {
+            xs[2 * m] = xs[2 * m + 1] = d;
+            for (int c = 0; c < K / 64; c++) {
+                int8_t *oh = xrow(Xp, p, K, 2 * m, c), *ol = xrow(Xp, p, K, 2 * m + 1, c);
+                for (int h = 0; h < 4; h++) {
+                    __m512i q = _mm512_cvtps_epi32(_mm512_mul_ps(_mm512_loadu_ps(v + c * 64 + h * 16), vid));
+                    __m512i hi = _mm512_srai_epi32(_mm512_add_epi32(q, _mm512_set1_epi32(128)), 8);
+                    __m512i lo = _mm512_sub_epi32(q, _mm512_slli_epi32(hi, 8));
+                    _mm_storeu_si128((__m128i *)(oh + h * 16), _mm512_cvtsepi32_epi8(hi));
+                    _mm_storeu_si128((__m128i *)(ol + h * 16), _mm512_cvtsepi32_epi8(lo));
+                }
+            }
+        }
+    }
+}
+// post: tile buffer rows are kernel rows r0 .. r0+rows-1 (r0 even); write Y for output columns n0..n0+15
+static inline void post_b(const int32_t *buf, int r0, int rows, int Mk, bool b16, const float *xs, __m512 sw, float *Y, int ldc, int n0) {
+    if (!b16) {
+        for (int i = 0; i < rows && r0 + i < Mk; i++) {
+            __m512 v = _mm512_cvtepi32_ps(_mm512_load_si512(buf + i * 16));
+            _mm512_storeu_ps(Y + (size_t)(r0 + i) * ldc + n0, _mm512_mul_ps(v, _mm512_mul_ps(sw, _mm512_set1_ps(xs[r0 + i]))));
+        }
+    } else {
+        for (int i = 0; i + 1 < rows + 1 && r0 + i < Mk; i += 2) {
+            __m512 h = _mm512_cvtepi32_ps(_mm512_load_si512(buf + i * 16)), l = _mm512_cvtepi32_ps(_mm512_load_si512(buf + (i + 1) * 16));
+            __m512 v = _mm512_fmadd_ps(h, _mm512_set1_ps(256.f), l);
+            _mm512_storeu_ps(Y + (size_t)((r0 + i) / 2) * ldc + n0, _mm512_mul_ps(v, _mm512_mul_ps(sw, _mm512_set1_ps(xs[r0 + i]))));
+        }
+    }
+}
+static void kern_b(const int8_t *W, const float *ws, int K, int jp0, int jp1, int8_t *Xp, const float *xs, const bplan &p, bool b16, float *Y, int ldc) {
+    int KC = K / 64, PF = pf(), CH = p.CH, mt = (CH + 15) / 16, chp = (CH + 15) / 16 * 16;
+    alignas(64) int32_t buf[16 * 16];
+    for (int jp = jp0; jp < jp1; jp++) {
+        const int8_t *pw = W + (size_t)jp * KC * 2048;
+        __m512 sw0 = _mm512_loadu_ps(ws + jp * 32), sw1 = _mm512_loadu_ps(ws + jp * 32 + 16);
+        for (int ch = 0; ch < p.nch; ch++) {
+            const int8_t *X = Xp + (size_t)ch * chp * K, *X1 = X + (size_t)KC * 1024, *X2 = X + (size_t)2 * KC * 1024;
+            int rb = ch * CH;  // first kernel row of this chunk
+            if (mt <= 2) {
+                const int8_t *q = pw;
+                _tile_zero(0); _tile_zero(1); if (mt > 1) { _tile_zero(2); _tile_zero(3); }
+                for (int c = 0; c < KC; c++, q += 2048) {
+                    if (PF && ch == 0) for (int l = 0; l < 2048; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                    _tile_loadd(6, q, 64); _tile_loadd(7, q + 1024, 64);
+                    _tile_loadd(4, X + (size_t)c * 1024, 64); _tile_dpbssd(0, 4, 6); _tile_dpbssd(1, 4, 7);
+                    if (mt > 1) { _tile_loadd(5, X1 + (size_t)c * 1024, 64); _tile_dpbssd(2, 5, 6); _tile_dpbssd(3, 5, 7); }
+                }
+                int r0 = mt == 1 ? CH : 16;
+                _tile_stored(0, buf, 64); post_b(buf, rb, r0, p.Mk, b16, xs, sw0, Y, ldc, jp * 32);
+                _tile_stored(1, buf, 64); post_b(buf, rb, r0, p.Mk, b16, xs, sw1, Y, ldc, jp * 32 + 16);
+                if (mt > 1) {
+                    _tile_stored(2, buf, 64); post_b(buf, rb + 16, CH - 16, p.Mk, b16, xs, sw0, Y, ldc, jp * 32);
+                    _tile_stored(3, buf, 64); post_b(buf, rb + 16, CH - 16, p.Mk, b16, xs, sw1, Y, ldc, jp * 32 + 16);
+                }
+            } else {
+                for (int b = 0; b < 2; b++) {
+                    const int8_t *q = pw + b * 1024;
+                    _tile_zero(0); _tile_zero(1); _tile_zero(2);
+                    for (int c = 0; c < KC; c++, q += 2048) {
+                        if (PF && b == 0) for (int l = 0; l < 2048; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                        _tile_loadd(6, q, 64);
+                        _tile_loadd(3, X + (size_t)c * 1024, 64); _tile_dpbssd(0, 3, 6);
+                        _tile_loadd(4, X1 + (size_t)c * 1024, 64); _tile_dpbssd(1, 4, 6);
+                        _tile_loadd(5, X2 + (size_t)c * 1024, 64); _tile_dpbssd(2, 5, 6);
+                    }
+                    __m512 sw = b ? sw1 : sw0;
+                    _tile_stored(0, buf, 64); post_b(buf, rb, 16, p.Mk, b16, xs, sw, Y, ldc, jp * 32 + b * 16);
+                    _tile_stored(1, buf, 64); post_b(buf, rb + 16, 16, p.Mk, b16, xs, sw, Y, ldc, jp * 32 + b * 16);
+                    _tile_stored(2, buf, 64); post_b(buf, rb + 32, CH - 32, p.Mk, b16, xs, sw, Y, ldc, jp * 32 + b * 16);
+                }
+            }
+        }
+    }
+}
 // workspace beyond ggml's own (quantized A rows): packed X and float scales
-static size_t extra_wsize(int M, int K) { return (size_t)((M + 15) / 16) * 16 * K + (size_t)M * (K / 32) * 4 + 128; }
+static size_t extra_wsize(int M, int K) {  // A: chunks of 48 rows; B/B16 per plan
+    size_t a = (size_t)((M + 47) / 48) * 48 * K + (size_t)((M + 47) / 48) * 48 * (K / 32) * 4 + 256;
+    return std::max(a, wsize_b(M, K, true));
+}
 }  // namespace row1
