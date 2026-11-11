@@ -195,3 +195,48 @@ def test_the_gate_s_reference_is_llama_cpp_s_default_setting():
 
     assert ggml_engine.DEFAULT_SETTINGS in ggml_engine.SETTINGS and ggml_engine.ENGINE_VERSION >= 2
     assert not hasattr(ggml_engine, "GATE_REFERENCE")  # the float32-on-MLX reference is gone for this engine
+
+
+def _fake_gate_children(monkeypatch, option_nll):
+    """`gate`'s child processes, stubbed: the tuning puts flash attention first, the reference is 16 chunks of 2.0."""
+    import json as _json
+    import subprocess
+    import types as _types
+
+    from ironmule import ggml_engine
+
+    fast = {"flash_attn": True, "kv_unified": False, "kv_f32": False}
+    monkeypatch.setattr(ggml_engine, "file_sha256", lambda path: "0" * 64)
+
+    def run(command, input=None, **kwargs):
+        code = command[2]
+        if code == ggml_engine.TUNE_CHILD:
+            out = {"order": [fast, ggml_engine.DEFAULT_SETTINGS], "measured": []}
+        elif code == ggml_engine.GATE_IDS:
+            out = {"ids": [1, 2, 3], "bos": 1}
+        else:
+            settings = _json.loads(input)["settings"]
+            out = {"nll": [2.0] * 16 if settings == ggml_engine.DEFAULT_SETTINGS else option_nll}
+        return _types.SimpleNamespace(returncode=0, stdout=_json.dumps(out) + "\n", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return fast
+
+
+def test_gg3_a_llama_cpp_option_within_the_bound_of_its_default_serves(monkeypatch, tmp_path):
+    """GG3 (owner, 2026-11-11): flash attention 0.2 % worse than llama.cpp's default is llama.cpp's quality."""
+    from ironmule import ggml_engine
+
+    fast = _fake_gate_children(monkeypatch, [2.0 + 0.002 + 0.0001 * (k % 3) for k in range(16)])
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert ggml_engine.OPTION_BOUND == 1.005 and result["bound"] == 1.005
+    assert result["passes"] and result["settings"] == fast and 1.0 < result["ratio"] < 1.005
+
+
+def test_gg3_an_option_beyond_the_bound_does_not_serve_and_the_default_does(monkeypatch, tmp_path):
+    from ironmule import ggml_engine
+
+    _fake_gate_children(monkeypatch, [2.0 + 0.008] * 16)
+    result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
+    assert result["passes"] and result["settings"] == ggml_engine.DEFAULT_SETTINGS
+    assert [row["passes"] for row in result["tried"]] == [False, True] and result["tried"][0]["ratio"] > 1.005

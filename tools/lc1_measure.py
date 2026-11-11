@@ -68,11 +68,13 @@ def _ask_llama(port: int, text: str, limit: int, offered: float) -> dict[str, An
             "error": error}
 
 
-def run_llama(server: str, gguf: str, texts: list[str], at_once: bool, limit: int) -> dict[str, Any]:
-    """One arm on a fresh `llama-server`: the prompts one after another, or all offered at once."""
+def run_llama(server: str, gguf: str, texts: list[str], at_once: bool, limit: int,
+              options: tuple[str, ...] = ()) -> dict[str, Any]:
+    """One arm on a fresh `llama-server`: the prompts one after another, or all offered at once. `options` are
+    further `llama-server` flags (GG3's Ls: the options of the engine's setting)."""
     port = _free_port()
     process = subprocess.Popen([server, "-m", gguf, "--host", "127.0.0.1", "--port", str(port), "-t", "4",
-                                "-np", "8", "-c", str(8 * 2048), "--temp", "0", "--no-webui"],
+                                "-np", "8", "-c", str(8 * 2048), "--temp", "0", "--no-webui", *options],
                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     started = time.perf_counter()
     try:

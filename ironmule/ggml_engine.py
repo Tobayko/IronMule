@@ -30,7 +30,8 @@ from typing import Any, Callable, Sequence
 
 SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
 POLL = 50  # llama-server's default busy-wait level
-ENGINE_VERSION = 2  # 2 (GG2): warm-up of 8 prompts, staggered prompts, the gate against llama.cpp's default
+ENGINE_VERSION = 3  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
+OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
 PROMPT_BUDGET = 96  # prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one)
 PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts goes first
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
@@ -467,17 +468,18 @@ DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
 
 
 def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
-    """The owner's bar (2026-11-10): answer quality at least llama.cpp's. The engine's settings are timed
-    (`autotune`), and the fastest one whose perplexity on the numeric gate's chunks, through the multi-position
-    decode, is not higher than that of llama.cpp's default setting on the same GGUF serves; the default passes by
-    definition. Cached by the GGUF, snapshot, gate and engine version and machine."""
+    """The owner's bar (2026-11-10, 2026-11-11): answer quality at least llama.cpp's, its own options included. The
+    engine's settings (all llama.cpp options) are timed (`autotune`), and the fastest one whose perplexity on the
+    numeric gate's chunks, through the multi-position decode, is within `OPTION_BOUND` of llama.cpp's default setting
+    on the same GGUF (the ratio's 95 % upper end) serves; the default passes by definition. Cached by the GGUF,
+    snapshot, gate rule, engine version and machine."""
     import subprocess
 
     from .numeric_choice import GATE_VERSION, ratio_interval
 
     root = root or Path(__file__).resolve().parents[1]
     key = hashlib.sha256(json.dumps([file_sha256(gguf), str(Path(snapshot).resolve()), GATE_VERSION, ENGINE_VERSION,
-                                     machine_key()], sort_keys=True).encode()).hexdigest()[:24]
+                                     OPTION_BOUND, machine_key()], sort_keys=True).encode()).hexdigest()[:24]
     cache = cache or Path(os.path.expanduser("~/.cache/ironmule/ggml_gate"))
     stored = cache / f"{key}.json"
     if stored.exists():
@@ -520,13 +522,13 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
         if rows is None:
             return {"ran": False, "passes": False, "reason": f"the ggml child failed: {error}", "tried": tried}
         interval = ratio_interval(reference, rows)
-        tried.append({"settings": settings, **interval, "passes": interval["ratio"] <= 1.0})
+        tried.append({"settings": settings, **interval, "passes": interval["interval"][1] <= OPTION_BOUND})
         if tried[-1]["passes"]:
             break
     chosen = tried[-1]
     result = {"ran": True, **{k: chosen[k] for k in ("ratio", "interval", "chunks", "passes")},
               "settings": chosen["settings"], "tried": tried, "tuning": tune["measured"], "machine": machine_key(),
-              "reference": "llama.cpp's default setting on the same GGUF",
+              "reference": "llama.cpp's default setting on the same GGUF", "bound": OPTION_BOUND,
               "seconds": round(time.perf_counter() - started, 1), "gate_version": GATE_VERSION, "key": key}
     try:
         cache.mkdir(parents=True, exist_ok=True)
@@ -536,5 +538,5 @@ def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | No
     return result
 
 
-__all__ = ["ENGINE_VERSION", "GgmlEngine", "Job", "autotune", "available", "bindings", "file_sha256", "gate",
+__all__ = ["ENGINE_VERSION", "OPTION_BOUND", "GgmlEngine", "Job", "autotune", "available", "bindings", "file_sha256", "gate",
            "machine_key"]
