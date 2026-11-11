@@ -3,3 +3,4 @@ peak
 gemm
 *.so
 *.o
+micro
