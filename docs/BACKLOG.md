@@ -2521,7 +2521,7 @@ index 14,800 (unused), one at a time, 128 tokens, one block L G L. Scores as LC1
     than llama.cpp, flash attention, failed the quality gate on this model by 0.2 % of perplexity. 1 of 56 answers
     equal to L's (different numeric paths, as expected under the owner's quality rule).
 
-### GG2 — The ggml engine's path around the kernels: warm-up, staggered prompts, llama.cpp as the quality bar (2026-11-11; fixed before its data)
+### GG2 — The ggml engine's path around the kernels: warm-up, staggered prompts, llama.cpp as the quality bar (2026-11-11; GG2-H: parity under load, 1.14x alone, goal not reached)
 
 **Reopening.** Tier 0 holds GG1-H ("0.81x under load ... 1.05x one request at a time ... first tokens later"); its
 entry allows a reopening "with a product path that streams a request's first token before the rest of its block is
@@ -2563,6 +2563,24 @@ quiet prompts from Dolly index 14,500 (unused) and a harness smoke from 14,550.
   The 1.2 is not expected from these changes: both sides run the same kernels at the same setting. The run places
   the engine after its overheads are removed; what would be needed beyond that is in PL1.
 - *Cost:* about 20 minutes of this container's CPU; no GPU hours.
+
+- **GG2-H result (2026-11-11, this container, at `115090b`, about 15 minutes, no GPU hours): valid; goal not reached.**
+  Both arms served the GGUF built from the registered model; the engine served llama.cpp's default setting (flash
+  attention 1.0017 and an f32 KV cache 1.0004 against it, both refused). A smoke read prompts from index 14,550 (not
+  counted). Every request answered.
+  - *Load (5 blocks of 8 at once, 64 tokens):* G over L **1.00x (95 % 0.94x to 1.07x)** the tokens per second (GG1-H:
+    0.81x); mean first token 1.14x (95 % 1.12x to 1.15x; L's A/A noise 16 %), about 160 ms against 140 ms.
+  - *Quiet (16 Dolly prompts one at a time, 128 tokens):* **1.14x (95 % 1.09x to 1.20x)** (GG1-H: 1.05x), 284 against 249
+    tokens per second; first token 59 ms against 50 ms (per prompt 1.51x on average, 95 % 1.20x to 1.92x).
+  - *Verdict by the fixed rule: goal not reached* (both lower bounds below 1.2; the quiet first token later). As said
+    before the data. Tier 0 keeps the 1.2 goal as not reached; the engine stays opt-in.
+  - *What it shows:* through the product, on llama.cpp's own kernels and setting, IronMule now serves 8 requests at once
+    as fast as `llama-server` and one request 14 % faster, with first tokens about 10-20 ms later. GG1-H's loss was
+    the path around the kernels (detokenizers built on demand, every prompt of a block in one call), not the engine.
+  - *Post hoc, descriptive only:* in quiet the speculation policy drafted in 77 of 1,609 steps and 91 of 183 drafts
+    were right (0.49 for 2-token matches, 0.69 for 3-token); the rest of the 14 % is the server's own per-request cost
+    (HTTP, sampling chain). What is left for more is not in scheduling: both sides run the same kernels at the same
+    setting. The ledger entry is still owed.
 
 ### PL1 — Which runtime under the agent, per platform: does MLX still make sense on a CUDA or CPU server? (owner question 2026-11-10; open)
 
@@ -5495,6 +5513,13 @@ processes again.
 ---
 
 ## Tier 0 — measured and rejected. Re-open only under the rule below.
+
+- **The ggml engine at 1.2x `llama-server`, second attempt (2026-11-11).** Experiment GG2-H (this container, commit
+  `115090b`; see GG2 above): with the path around the kernels fixed, 1.00x under load (95 % 0.94x to 1.07x) and 1.14x
+  one request at a time (1.09x to 1.20x), first tokens 10-20 ms later; the 1.2 goal is not reached. Both sides run
+  llama.cpp's kernels at its default setting, which is the ceiling for scheduling. Re-open with a lever llama.cpp does
+  not have at the same quality (kernels of our own, or a quality criterion that admits flash attention with
+  `llama-server` given the same option), another model or machine, under a new protocol.
 
 - **The ggml engine at 1.2x `llama-server` on this CPU and model (2026-11-10).** Experiment GG1-H (this container,
   commit `2793352`; see GG above): through the product, 0.81x under load (95 % 0.74x to 0.89x) and 1.05x one request
