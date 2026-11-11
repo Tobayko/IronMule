@@ -1,0 +1,37 @@
+36a37
+> #include "row1_kern.h"
+2336a2338
+>     if (TYPE == GGML_TYPE_Q8_0) row1::register_weight(tensor->data, data, N, K);
+2357a2360
+>     if (TYPE == GGML_TYPE_Q8_0) desired_wsize = (desired_wsize + 63) / 64 * 64 + row1::extra_wsize(M, K);
+2446a2450,2479
+> 
+>     if (TYPE == GGML_TYPE_Q8_0 && M >= 2 && M <= 48 && row1::enabled()) {
+>         const uint8_t * W = row1::lookup(src0->data);
+>         if (W) {
+>             const int KB = K / 32;
+>             const size_t row_size_A = (size_t)KB * sizeof(block_q8_0);
+>             int8_t * Xp = (int8_t *)((char *)wdata + ((size_t)M * row_size_A + 63) / 64 * 64);
+>             float * xs = (float *)(Xp + (size_t)((M + 15) / 16) * 16 * K);
+>             if (params->ith == 0) {
+>                 for (int m = 0; m < M; m++) {
+>                     const block_q8_0 * a = (const block_q8_0 *)((const char *)wdata + m * row_size_A);
+>                     for (int kb = 0; kb < KB; kb++) {
+>                         memcpy(Xp + (((size_t)(m >> 4) * KB + kb) * 16 + (m & 15)) * 32, a[kb].qs, 32);
+>                         xs[m * KB + kb] = GGML_CPU_FP16_TO_FP32(a[kb].d);
+>                     }
+>                 }
+>             }
+>             ggml_barrier(params->threadpool);
+>             int jb, je;
+>             balance211(N / 32, params->nth, params->ith, jb, je);
+>             if (jb < je) {
+>                 alignas(64) row1::tcfg saved;
+>                 _tile_storeconfig(&saved);
+>                 row1::config(M);
+>                 row1::kern_a(W, K, jb, je, Xp, xs, M, (float *)dst->data, ldc);
+>                 if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
+>             }
+>             return;
+>         }
+>     }
