@@ -1,12 +1,40 @@
-36a37,38
+36a37,52
 > #include "row1_kern.h"
+> extern "C" bool row1_cpu_mul_mat(const struct ggml_compute_params * params, struct ggml_tensor * dst);
+> namespace row1 {
+> static std::vector<int8_t> g_obuf;
+> static void pack_b_f32(const float *w, int K, int8_t *dst, float *scale, int row, std::vector<int8_t> &qq) {
+>     int j = row / 16, n = row % 16; float mx = 0;
+>     for (int k = 0; k < K; k++) mx = std::max(mx, std::fabs(w[k]));
+>     float s = mx / 127.f; if (s == 0) s = 1; scale[row] = s;
+>     for (int k = 0; k < K; k++) qq[k] = (int8_t)lrintf(w[k] / s);
+>     for (int c = 0; c < K / 64; c++) {
+>         int8_t *o = dst + (((size_t)(j >> 1) * (K / 64) + c) * 2 + (j & 1)) * 1024;
+>         for (int r = 0; r < 16; r++) for (int q = 0; q < 4; q++) o[r * 64 + n * 4 + q] = qq[c * 64 + r * 4 + q];
+>     }
+> }
+> }
 > #include <string>
-2336a2339,2340
->     if (TYPE == GGML_TYPE_Q8_0) row1::register_weight(tensor->data, data, N, K);
+2333a2350,2361
+>     if (TYPE == GGML_TYPE_Q8_0 && row1::register_weight(tensor->data, data, N, K) && row1::skip_ggml_copy()) return;
+>     if (TYPE != GGML_TYPE_Q8_0 && N >= 100000 && getenv("ROW1_OUT") && atoi(getenv("ROW1_OUT")) && K % 512 == 0 && N % 32 == 0) {
+>         size_t n = (size_t)N * K + (size_t)N * 4;
+>         void * p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+>         madvise(p, n, MADV_HUGEPAGE);
+>         std::vector<float> w(K); std::vector<int8_t> qq(K);
+>         auto tf = ggml_get_type_traits(TYPE)->to_float; size_t rb = ggml_row_size(TYPE, K);
+>         for (int r = 0; r < N; r++) { tf((const char *)data + (size_t)r * rb, w.data(), K); row1::pack_b_f32(w.data(), K, (int8_t *)p, (float *)((char *)p + (size_t)N * K), r, qq); }
+>         { std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[tensor->data] = (uint8_t *)p; }
+>         fprintf(stderr, "row1: packed the %s matrix %s %dx%d for B16\n", ggml_type_name(TYPE), tensor->name, N, K);
+>         return;  // ggml's own AMX copy of it is never read then
+>     }
+2336a2365
 >     if (TYPE == GGML_TYPE_Q4_0) row1::register_weight_q4(tensor->data, data, N, K);
-2357a2362
+2357a2387
 >     if ((TYPE == GGML_TYPE_Q8_0 || TYPE == GGML_TYPE_Q4_0) && row1::variant() != row1::OFF) desired_wsize = (desired_wsize + 63) / 64 * 64 + row1::extra_wsize(M, K);
-2425a2431,2492
+2422a2453
+>     if (TYPE != GGML_TYPE_Q8_0 && N >= 100000 && row1_cpu_mul_mat(params, dst)) return;
+2425a2457,2518
 >     if (params->ith == 0 && getenv("ROW1_DUMPDIR") && getenv("ROW1_DUMPNAMES")) {  // ROW1: capture named matmul inputs
 >         std::string names = std::string(",") + getenv("ROW1_DUMPNAMES") + ",";
 >         if (names.find(std::string(",") + src0->name + ",") != std::string::npos) {
@@ -69,8 +97,7 @@
 >         }
 >     }
 > 
-2446a2514,2549
-> 
+2447a2541,2576
 >     if (((TYPE == GGML_TYPE_Q8_0 && M >= 2) || (TYPE == GGML_TYPE_Q4_0 && M >= 1 && (M >= 2 || row1::a4m1()))) && row1::enabled()) {
 >         const uint8_t * W = row1::lookup(src0->data);
 >         if (W) {
@@ -106,3 +133,64 @@
 >             return;
 >         }
 >     }
+> 
+2511a2641,2694
+> 
+> // ---- ROW1 round 4: B16 for a large non-AMX output matrix (the tied Q6_K token_embd of 4-bit GGUFs) ----
+> // ROW1_OUT=1: the first call dequantizes the matrix (ggml's to_float) and packs it per row as int8 (B layout);
+> // every call then runs the B16 kernel. Lives here because the AMX kernels and barrier helpers do.
+> extern "C" bool row1_cpu_mul_mat(const struct ggml_compute_params * params, struct ggml_tensor * dst) {
+>     static int on = -1;
+>     if (on < 0) { const char * v = getenv("ROW1_OUT"); on = v ? atoi(v) : 0; }
+>     const ggml_tensor * src0 = dst->src[0], * src1 = dst->src[1];
+>     if (!on || src0->type == GGML_TYPE_Q8_0 || src0->ne[1] < 100000 || src1->type != GGML_TYPE_F32 || src0->ne[2] != 1 || src1->ne[2] != 1 ||
+>         !ggml_is_contiguous(src0) || !ggml_is_contiguous(src1) || src0->ne[0] % 512 || src0->ne[1] % 32 || !ggml_get_type_traits(src0->type)->to_float)
+>         return false;
+>     const int N = src0->ne[1], K = src0->ne[0], M = src1->ne[1], ldc = dst->nb[1] / sizeof(float);
+>     const uint8_t * Wb = row1::lookup(src0->data);
+>     if (!Wb) {
+>         ggml_barrier(params->threadpool);
+>         if (params->ith == 0) {
+>             size_t n = (size_t)N * K + (size_t)N * 4;
+>             void * p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+>             madvise(p, n, MADV_HUGEPAGE);
+>             std::vector<float> w(K); std::vector<int8_t> qq(K);
+>             auto tf = ggml_get_type_traits(src0->type)->to_float;
+>             for (int r = 0; r < N; r++) {
+>                 tf((const char *)src0->data + (size_t)r * src0->nb[1], w.data(), K);
+>                 row1::pack_b_f32(w.data(), K, (int8_t *)p, (float *)((char *)p + (size_t)N * K), r, qq);
+>             }
+>             std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[src0->data] = (uint8_t *)p;
+>             fprintf(stderr, "row1: packed the %s output matrix %dx%d for B16\n", ggml_type_name(src0->type), N, K);
+>         }
+>         ggml_barrier(params->threadpool);
+>         Wb = row1::lookup(src0->data);
+>     }
+>     const int8_t * W = (const int8_t *)Wb;
+>     row1::bplan p = row1::plan_b(M, true);
+>     int chp = (p.CH + 15) / 16 * 16;
+>     size_t need = row1::wsize_b(M, K, true) + 64;
+>     if (params->ith == 0 && row1::g_obuf.size() < need) row1::g_obuf.resize(need);
+>     if (params->ith == 0) row1::g_next.store(0, std::memory_order_relaxed);
+>     ggml_barrier(params->threadpool);
+>     int8_t * Xp = (int8_t *)(((uintptr_t)row1::g_obuf.data() + 63) & ~(uintptr_t)63);
+>     float * xs = (float *)(Xp + (size_t)p.nch * chp * K);
+>     int mb, me; balance211(M, params->nth, params->ith, mb, me);
+>     row1::quant_rows_b((const float *)src1->data, (int)(src1->nb[1] / sizeof(float)), mb, me, K, true, p, Xp, xs);
+>     ggml_barrier(params->threadpool);
+>     alignas(64) row1::tcfg saved; _tile_storeconfig(&saved);
+>     row1::config(p.CH, 64);
+>     const int NP = N / 32, G = std::max(1, NP / (params->nth * 8)), NG = (NP + G - 1) / G;
+>     for (;;) {
+>         int u = row1::g_next.fetch_add(1, std::memory_order_relaxed);
+>         if (u >= NG) break;
+>         row1::kern_b(W, (const float *)(W + (size_t)N * K), K, u * G, std::min(NP, u * G + G), Xp, xs, p, true, (float *)dst->data, ldc);
+>     }
+>     if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
+>     return true;
+> }
+2512a2696,2699
+> 
+> #if !(defined(__AMX_INT8__) && defined(__AVX512VNNI__))
+> extern "C" bool row1_cpu_mul_mat(const struct ggml_compute_params *, struct ggml_tensor *) { return false; }
+> #endif

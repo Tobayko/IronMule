@@ -71,12 +71,12 @@ static void pack_b(const uint8_t *src, int N, int K, int8_t *dst, float *scale) 
     }
 }
 static size_t g_resident = 0;
-static void register_weight(const void *key, const void *src, int N, int K) {
+static bool register_weight(const void *key, const void *src, int N, int K) {
     int v = variant();
-    if (v == OFF || N % 32 || K % 512) return;
+    if (v == OFF || N % 32 || K % 512) return false;
     size_t n = v == VA ? (size_t)N * K / 32 * 34 : (size_t)N * K + (size_t)N * 4;
     void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (p == MAP_FAILED) return;
+    if (p == MAP_FAILED) return false;
     madvise(p, n, MADV_HUGEPAGE);
     if (v == VA) pack_a((const uint8_t *)src, N, K, (uint8_t *)p);
     else pack_b((const uint8_t *)src, N, K, (int8_t *)p, (float *)((char *)p + (size_t)N * K));
@@ -84,7 +84,11 @@ static void register_weight(const void *key, const void *src, int N, int K) {
     g_packed[key] = (uint8_t *)p; g_resident += n;
     static int said = 0;
     if (N == 151936 || (++said % 50) == 0) fprintf(stderr, "row1: variant %d, %.0f MiB packed so far\n", v, g_resident / 1048576.0);
+    return true;
 }
+// B, B16 and B8s serve every M of a registered weight, so ggml's own AMX copy of it is never read: skip writing it
+// (its pages are then never touched and take no memory). ROW1_KEEP=1 keeps it.
+static bool skip_ggml_copy() { const char *v = getenv("ROW1_KEEP"); int x = variant(); return !(v && atoi(v)) && (x == VB || x == VB16 || x == VB8S); }
 static const uint8_t *lookup(const void *key) {
     std::lock_guard<std::mutex> g(g_mu);
     auto it = g_packed.find(key);
