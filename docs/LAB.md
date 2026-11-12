@@ -556,3 +556,24 @@ through llama-server (round 4: 99 / 128 tok/s), probably the engine's per-step P
 speculation bookkeeping) at 4B's longer steps; not profiled. Facts through the product: 48/50 (1.7B), 49/50 (4B);
 the 4B run used the Qwen3-1.7B snapshot as the registered model for its tokenizer (Qwen3's tokenizer is the same;
 no 4B snapshot is on disk and the bridge's tokenizer and end-token checks passed).
+
+### 2026-11-12 ROW1 round 5, part 4: the lossy batched Q4_0 path in llama.cpp
+
+Cause, found by reading 4227c9b's `ggml/src/ggml-cpu/amx/mmq.cpp`: in `tinygemm_kernel_amx` (the non-K-quant
+template), the branch for a full 32-row block (`M == 2 * TILE_M`) unpacks the second 16-column weight tile from the
+first block: `unpack_B<TB>(Tile1, B_blk0);` where `B_blk1` is meant (the non-unpack branch right below loads
+`B_blk1` correctly). Only types that need unpacking go through it (`do_unpack`: the 4-bit Q4_0 and Q4_1); Q8_0 and
+the K-quants are unaffected. Effect: whenever a matmul has at least 32 activation rows (prompt processing, batched
+decode of 32+ rows), every second group of 16 output columns of each 32-row block is computed with the wrong
+weights. That matches round 4's numbers: perplexity 28.9 at M=512 against 24.6 one token per call on Qwen3-1.7B
+Q4_0, while Q4_K_M showed no such gap (25.32 / 25.29 this round).
+
+Current llama.cpp: the master branch's `mmq.cpp` (fetched from raw.githubusercontent.com on 2026-11-12; the GitHub
+API and history pages were not reachable from this session, so the fixing commit and its date are not known) reads
+`unpack_B<TB>(Tile1, B_blk1);`, i.e. it is fixed there. Master also quantizes the activations on all threads
+(`parallel_for_ggml` around `from_float`) and handles batched (3-D) matmuls. Note to pass on: "llama.cpp builds
+with GGML_NATIVE on AMX CPUs (Sapphire Rapids and later) up to at least commit 4227c9b (August 2025; also what
+llama-cpp-python 0.3.16 vendors) compute wrong results for Q4_0/Q4_1 weights whenever a matmul has 32 or more rows
+(prompt processing, large batches): `tinygemm_kernel_amx` unpacks `B_blk0` instead of `B_blk1` for the second
+tile. Fixed on current master. Symptom: worse perplexity at batch > 32 than one token per call (28.9 vs 24.6 on
+Qwen3-1.7B Q4_0)."
