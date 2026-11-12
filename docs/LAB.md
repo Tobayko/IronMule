@@ -512,3 +512,11 @@ sum_s m_s sum(x_s), i.e. variant A's per-32 step with integer sub-block scales p
 activation sums. Not built. A per-row 4-bit format of our own (B-style) would read 0.5 byte per weight but per-row
 4-bit weights carry about 8x the rounding error of per-row int8 (round 3's int4 sketch), so it is not promising
 without a rotation; not built.
+
+2026-11-12, Qwen3-4B again with ggml's unused AMX copy no longer written (B16 resident: our 4.0 GB copy only),
+same settings (`-fa --no-mmap`, hugetlb, context cap 32,768), B16 serving tokens/s (mean first-token time):
+N=1 11.9 / 12.6 / 11.2 (0.09-0.10 s); N=8 70.5 / 70.8 / 65.8 (0.60-0.66 s); N=16 93.5 / 98.9 / 104.9 (0.85-1.24 s);
+N=32 129.2 / 127.9 / 122.3 (1.55-1.99 s). Against stock -fa (above): 1.4x at N=1, 2.2x at N=8, 1.8x at N=16,
+2.4x at N=32, first tokens 2.5x sooner at N=8. On 1.7B the same comparison gave 1.0x / 1.64x / 1.57x / 1.98x, so
+the factor grows with model size, mostly because stock's batched Q8_0 path degrades more on the larger matrices.
+The N=1 gain is new; it was not re-checked against a stock run in the same session.
