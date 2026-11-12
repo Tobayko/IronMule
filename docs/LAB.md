@@ -595,3 +595,59 @@ speculation), 0.29 (N=8), 0.48 (N=16), 0.89 ms (N=32; argmax over 32 rows alone 
   32, but `draft()` still searches every request's context each step (about 0.1 ms per step at N=32, harmless).
 Not measured: the rest of the gap (KV layout `kv_unified`, the worker's per-token streaming). Next: the product at
 4B with `IRONMULE_GGML_PROMPT_BUDGET=1024` against round 5 part 1's numbers; needs this session's llama.cpp build.
+
+### 2026-11-12 ROW1 round 5, part 6: the prompt budget, measured (Qwen3-4B Q8_0, B16, this session's container)
+
+This session's container: 4 vCPU Sapphire-Rapids-class Xeon at 2.3 GHz (round 5 part 1 ran at 2.1 GHz), llama.cpp
+4227c9b rebuilt with the ROW1 patch, `-fa --no-mmap` and hugetlb on the server, 32 sequences x 1,024 tokens in the
+product, speculation on, gate (cached, B16): flash attention, ratio 0.99943. `lab/row1/part5_p6.sh`, `serve.py`'s
+prompts (about 22 tokens), 64 tokens, 3 blocks; tokens/s and mean first token:
+
+| Setting | N=1 | N=8 | N=16 | N=32 | facts |
+| --- | --- | --- | --- | --- | --- |
+| llama-server -fa, B16 | 10.4 / 10.0 / 10.1 (0.09-0.11 s) | 63.7 / 64.6 / 56.9 (0.67-0.76 s) | 90.2 / 97.7 / 98.7 (0.60-1.28 s) | 135.7 / 146.3 / 134.6 (1.21-1.74 s) | - |
+| product, budget 96 (GG2) | 9.6 / 9.7 / 9.6 (0.15-0.16 s) | 63.8 / 61.6 / 63.9 (0.62-0.66 s) | 93.0 / 98.4 / 97.2 (0.92-1.05 s) | 126.4 / 128.8 / 131.8 (1.86-2.02 s) | 49/50 |
+| product, budget 1,024 | 10.0 / 9.8 / 10.1 (0.16 s) | 62.9 / 64.4 / 64.1 (0.68-0.71 s) | 100.6 / 104.8 / 103.7 (1.17-1.18 s) | 137.6 / 140.3 / 145.7 (2.04-2.12 s) | 49/50 |
+
+Round 5 part 1's gap (0.75x of the server at N=16/32) did not reproduce here: with GG2's budget the product is at
+0.93x-1.01x of the server, and taking every waiting prompt into one call adds 7-9 % at N=16/32 (1.08x / 1.01x of the
+server) for first tokens 0.1-0.2 s later. The engine's budget now defaults to one call's size (`IRONMULE_GGML_PROMPT_BUDGET`
+still sets a number). First tokens stayed 0.06 s later than the server's even at N=1: part 7.
+
+Two setup faults found on the way, both in this image only: `friday_evidence/identity.py` rejected mlx_lm's files
+because `site-packages` is a symlink to `dist-packages` here (now resolved before the check), and the worker runs
+`python -I`, which does not see packages pip put in `~/.local` (jinja2, needed by the bindings).
+
+### 2026-11-12 ROW1 round 5, part 7: first tokens, and prefix reuse in the engine
+
+`lab/row1/ttft_probe.py`, one request (22-token prompt) at a time: the engine alone in process takes 0.14 s to its
+first token, through the product 0.13 s, so the service and worker add nothing; the server's 0.09-0.10 s comes from
+`cache_prompt` (its default): a slot keeps a finished request's KV and a new request computes only what follows the
+longest shared prefix, and `serve.py` repeats its prompts every block. The engine now does the same
+(`IRONMULE_GGML_PREFIX_REUSE`, on by default): a finished request's KV stays in its sequence (every token that went
+through the model), a new request takes the free sequence with the longest shared prefix, positions after it are
+removed, and at least the prompt's last token is computed; a cache that refuses a partial removal falls back to a full
+prompt. `lab/row1/prefix_check.py`, 8 chat prompts with a shared system prompt (93-94 tokens), one at a time, twice,
+48 tokens: first token **0.359 s without reuse, 0.143 s with it** (0.130 s in the second round), 1,296 of 2,235 prompt
+tokens reused, and **24 of 24 answers token-identical** with reuse on and off. Tests: three stub tests and one on the
+real GGUF in `tests/engine/test_ggml_engine.py`.
+
+### 2026-11-12 ROW1 round 5, part 8: the new defaults end to end against llama-server (same kernels)
+
+`lab/row1/part5_p8.sh`, same machine, model, kernels and settings as part 6; the product now with prefix reuse and the
+one-call budget (both defaults). Tokens/s per block and mean first token; the server's plain row is part 6's (same
+session). "System" adds one shared system prompt of about 90 tokens to every request, on both sides.
+
+| Workload | Setting | N=1 | N=8 | N=16 | N=32 | facts |
+| --- | --- | --- | --- | --- | --- | --- |
+| plain | llama-server -fa, B16 | 10.2 (0.10 s) | 61.7 (0.72 s) | 95.5 (0.93 s) | 138.9 (1.51 s) | - |
+| plain | product | 10.0 / 10.2 / 10.4 (0.11 s) | 66.8 / 64.8 / 64.2 (0.22-0.25 s) | 116.9 / 117.1 / 111.5 (0.24-0.34 s) | 156.2 / 159.0 / 160.3 (0.31-0.56 s) | 49/50 |
+| system | llama-server -fa, B16 | 9.1 / 9.5 / 9.7 (0.11-0.12 s) | 55.1 / 54.8 / 54.7 (0.29-0.37 s) | 82.0 / 80.0 / 82.5 (0.38-0.45 s) | 111.4 / 111.2 / 105.8 (0.53-0.66 s) | - |
+| system | product | 9.8 / 10.0 / 10.2 (0.11-0.12 s) | 58.6 / 57.9 / 56.1 (0.24-0.27 s) | 83.5 / 84.5 / 80.9 (0.26-0.36 s) | 113.3 / 114.2 / 112.4 (0.41-0.49 s) | 50/50 |
+
+Plain: **1.00x / 1.06x / 1.21x / 1.14x** the server's tokens/s, first tokens 3.1x / 3.3x / 3.3x sooner under load
+(equal alone). System prompt: 1.06x / 1.05x / 1.02x / 1.03x, first tokens 1.3x-1.4x sooner. Before today the
+product trailed the same kernels under the server at N=32 (0.93x, part 6). The engine picks the free sequence whose
+kept KV matches best; the server's first tokens under load suggest its slot choice reuses less (not examined).
+Answers: facts 49-50/50 as before. Next: the sequence count is the largest lever left (N=32 gives 2.4x N=8) and is
+still set by hand (`IRONMULE_GGML_SEQS`, default 8); the engine should measure and pick it within the machine's memory.
