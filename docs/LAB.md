@@ -577,3 +577,21 @@ llama-cpp-python 0.3.16 vendors) compute wrong results for Q4_0/Q4_1 weights whe
 (prompt processing, large batches): `tinygemm_kernel_amx` unpacks `B_blk0` instead of `B_blk1` for the second
 tile. Fixed on current master. Symptom: worse perplexity at batch > 32 than one token per call (28.9 vs 24.6 on
 Qwen3-1.7B Q4_0)."
+
+### 2026-11-12 ROW1 round 5, part 5: where the product loses to llama-server at 4B, N=16/32 (stub, no llama.cpp)
+
+Round 5 part 1 left a gap: at N=16/32 the product with B16 made 74 / 96 tok/s on Qwen3-4B, the same kernels under
+`llama-server` 99 / 128. Suspected: the engine's per-step Python work. `lab/row1/step_overhead.py` runs
+`GgmlEngine.run` unchanged with llama.cpp replaced by a no-op stub (random logits over 151,936 tokens, 40-token
+prompts, 64 tokens each, this session's container: same CPU family, 2.3 GHz). Python per step: 0.02 ms (N=1, no
+speculation), 0.29 (N=8), 0.48 (N=16), 0.89 ms (N=32; argmax over 32 rows alone 0.74 ms), against steps of roughly
+250-330 ms at 4B, N=32. So the Python loop is not the gap (under 0.5 %). Two things found instead:
+- *Staggered starts.* `PROMPT_BUDGET` = 96 (GG2, tuned on SmolLM2 with 8 sequences) lets only 2 of these 40-token
+  prompts (4 of the about 22-token prompts `serve.py` sends) start per step, so N=32 needs 79 (71) steps for 64 tokens
+  each instead of 64, and the early steps carry few decode rows. `llama-server` takes every waiting prompt into one
+  call up to its batch. Expected effect on the 4B gap at N=32: about 64/71 = 0.90 of the possible throughput, so
+  about a third of the measured 0.75; round 5 part 1 did not set `IRONMULE_GGML_PROMPT_BUDGET`.
+- *Speculation is off at N >= 16.* `StepPolicy(MAX_ROWS = 16)` gives a step `16 - N` draft rows, none at N = 16 or
+  32, but `draft()` still searches every request's context each step (about 0.1 ms per step at N=32, harmless).
+Not measured: the rest of the gap (KV layout `kv_unified`, the worker's per-token streaming). Next: the product at
+4B with `IRONMULE_GGML_PROMPT_BUDGET=1024` against round 5 part 1's numbers; needs this session's llama.cpp build.
