@@ -415,11 +415,118 @@ static void kern_a4(const uint8_t *W, int K, int j0, int j1, const int8_t *X, co
 }
 static void register_weight_q4(const void *key, const void *src, int N, int K) {
     if (variant() != VA || N % 32 || K % 512) return;
-    size_t n = (size_t)N * K / 32 * 18;
+    size_t n = (size_t)N * K / 32 * 18;  // = (N/32) * (K/32) * 576
     void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     if (p == MAP_FAILED) return;
     madvise(p, n, MADV_HUGEPAGE);
     pack_a4((const uint8_t *)src, N, K, (uint8_t *)p);
+    std::lock_guard<std::mutex> g(g_mu);
+    g_packed[key] = (uint8_t *)p; g_sizes[key] = n; g_resident += n;
+}
+// ---- A4K: exact Q4_K semantics (Q4_K weights x ggml's Q8_K activations) ----
+// Q4_K super-block (256): f16 d, f16 dmin, 12 bytes of 6-bit scales/mins for 8 sub-blocks of 32, 128 bytes of
+// nibbles (64 values per 32 bytes: low nibbles sub-block 2j, high nibbles 2j+1). Weight = d*sc*q - dmin*m.
+// Packed per (pair, sub-block kb): [256 B nibbles member 0][256 B member 1][16 f16 d*sc m0][16 m1][16 f16 dmin*m m0][16 m1]
+// = 640 B. Per row and sub-block: Y += dx * (a . C) - dx * S * b, S = sum of the 32 int8 activations.
+static inline void scale_min_k4(int j, const uint8_t *q, uint8_t &d, uint8_t &m) {
+    if (j < 4) { d = q[j] & 63; m = q[j + 4] & 63; }
+    else { d = (q[j + 4] & 0xF) | ((q[j - 4] >> 6) << 4); m = (q[j + 4] >> 4) | ((q[j] >> 6) << 4); }
+}
+static void pack_a4k(const uint8_t *src, int N, int K, uint8_t *dst) {
+    int NSB = K / 256, KB = K / 32;
+    for (int j = 0; j < N / 16; j++)
+        for (int kb = 0; kb < KB; kb++) {
+            uint8_t *o = dst + ((size_t)(j >> 1) * KB + kb) * 640;
+            uint8_t tile[8][64];
+            for (int n = 0; n < 16; n++) {
+                const uint8_t *blk = src + ((size_t)(j * 16 + n) * NSB + kb / 8) * 144;
+                float d = _cvtsh_ss(*(const uint16_t *)blk), dmin = _cvtsh_ss(*(const uint16_t *)(blk + 2));
+                int s = kb % 8; uint8_t sc, mn; scale_min_k4(s, blk + 4, sc, mn);
+                const uint8_t *qs = blk + 16 + (s / 2) * 32;
+                for (int e = 0; e < 32; e++) {
+                    uint8_t q = (s & 1) ? (qs[e] >> 4) : (qs[e] & 15);
+                    tile[e / 4][n * 4 + e % 4] = q;
+                }
+                uint16_t a = _cvtss_sh(d * sc, 0), b = _cvtss_sh(dmin * mn, 0);
+                memcpy(o + 512 + (j & 1) * 32 + n * 2, &a, 2);
+                memcpy(o + 576 + (j & 1) * 32 + n * 2, &b, 2);
+            }
+            for (int r = 0; r < 8; r++) for (int i = 0; i < 32; i++)
+                o[(j & 1) * 256 + r * 32 + i] = (uint8_t)(tile[r][i] | (tile[r][i + 32] << 4));
+        }
+}
+static inline void unpack4u(const uint8_t *p, int8_t *out) {  // like unpack4 but unsigned nibbles 0..15 (no -8)
+    const __m512i m = _mm512_set1_epi8(15);
+    for (int h = 0; h < 4; h++) {
+        __m512i v = _mm512_loadu_si512(p + h * 64);
+        __m512i lo = _mm512_and_si512(v, m), hi = _mm512_and_si512(_mm512_srli_epi16(v, 4), m);
+        _mm512_store_si512(out + h * 128, _mm512_shuffle_i64x2(lo, hi, 0x44));
+        _mm512_store_si512(out + h * 128 + 64, _mm512_shuffle_i64x2(lo, hi, 0xEE));
+    }
+}
+static inline void post_a4k(int rows, const int32_t *buf, __m512 a, __m512 b, const float *xs, const float *xsS, int KB, int kb, __m512 *acc) {
+    for (int m = 0; m < rows; m++) {
+        __m512 v = _mm512_mul_ps(_mm512_cvtepi32_ps(_mm512_load_si512(buf + m * 16)), a);
+        acc[m] = _mm512_fmadd_ps(v, _mm512_set1_ps(xs[m * KB + kb]), acc[m]);
+        acc[m] = _mm512_fnmadd_ps(b, _mm512_set1_ps(xsS[m * KB + kb]), acc[m]);
+    }
+}
+// xs[m*KB+kb] = activation scale of row m at sub-block kb; xsS = xs * (sum of that sub-block's int8 activations)
+static void kern_a4k(const uint8_t *W, int K, int j0, int j1, const int8_t *X, const float *xs, const float *xsS, int R, float *Y, int ldc) {
+    int mt = (R + 15) / 16, KB = K / 32, PF = pf();
+    alignas(64) int32_t buf[4][16 * 16];
+    alignas(64) int8_t bt[2][512];
+    __m512 acc[2][48];
+    const int8_t *X1 = X + (size_t)KB * 512, *X2 = X + (size_t)2 * KB * 512;
+    int r0 = mt == 1 ? R : 16, r1 = mt == 2 ? R - 16 : 16, r2 = R - 32;
+    for (int jp = j0; jp < j1; jp++) {
+        const uint8_t *p = W + (size_t)jp * KB * 640;
+        if (mt <= 2) {
+            for (int m = 0; m < R; m++) acc[0][m] = acc[1][m] = _mm512_setzero_ps();
+            for (int kb = 0; kb < KB; kb++, p += 640) {
+                if (PF) for (int l = 0; l < 640; l += 64) _mm_prefetch((const char *)p + PF + l, _MM_HINT_T1);
+                unpack4u(p, bt[0]); unpack4u(p + 256, bt[1]);
+                _tile_loadd(6, bt[0], 64); _tile_loadd(7, bt[1], 64);
+                _tile_zero(0); _tile_zero(1);
+                _tile_loadd(4, X + (size_t)kb * 512, 32); _tile_dpbssd(0, 4, 6); _tile_dpbssd(1, 4, 7);
+                if (mt > 1) { _tile_zero(2); _tile_zero(3); _tile_loadd(5, X1 + (size_t)kb * 512, 32); _tile_dpbssd(2, 5, 6); _tile_dpbssd(3, 5, 7); }
+                _tile_stored(0, buf[0], 64); _tile_stored(1, buf[1], 64);
+                if (mt > 1) { _tile_stored(2, buf[2], 64); _tile_stored(3, buf[3], 64); }
+                __m512 a0 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 512))), a1 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 544)));
+                __m512 b0 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 576))), b1 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 608)));
+                post_a4k(r0, buf[0], a0, b0, xs, xsS, KB, kb, acc[0]); post_a4k(r0, buf[1], a1, b1, xs, xsS, KB, kb, acc[1]);
+                if (mt > 1) { post_a4k(r1, buf[2], a0, b0, xs + 16 * KB, xsS + 16 * KB, KB, kb, acc[0] + 16); post_a4k(r1, buf[3], a1, b1, xs + 16 * KB, xsS + 16 * KB, KB, kb, acc[1] + 16); }
+            }
+            for (int m = 0; m < R; m++) { _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32, acc[0][m]); _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32 + 16, acc[1][m]); }
+        } else {
+            for (int b = 0; b < 2; b++) {
+                const uint8_t *q = p;
+                for (int m = 0; m < R; m++) acc[0][m] = _mm512_setzero_ps();
+                for (int kb = 0; kb < KB; kb++, q += 640) {
+                    if (PF && b == 0) for (int l = 0; l < 640; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                    unpack4u(q + b * 256, bt[0]);
+                    _tile_loadd(6, bt[0], 64);
+                    _tile_zero(0); _tile_loadd(3, X + (size_t)kb * 512, 32); _tile_dpbssd(0, 3, 6);
+                    _tile_zero(1); _tile_loadd(4, X1 + (size_t)kb * 512, 32); _tile_dpbssd(1, 4, 6);
+                    _tile_zero(2); _tile_loadd(5, X2 + (size_t)kb * 512, 32); _tile_dpbssd(2, 5, 6);
+                    _tile_stored(0, buf[0], 64); _tile_stored(1, buf[1], 64); _tile_stored(2, buf[2], 64);
+                    __m512 a = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(q + 512 + b * 32)));
+                    __m512 bb = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(q + 576 + b * 32)));
+                    post_a4k(16, buf[0], a, bb, xs, xsS, KB, kb, acc[0]); post_a4k(16, buf[1], a, bb, xs + 16 * KB, xsS + 16 * KB, KB, kb, acc[0] + 16);
+                    post_a4k(r2, buf[2], a, bb, xs + 32 * KB, xsS + 32 * KB, KB, kb, acc[0] + 32);
+                }
+                for (int m = 0; m < R; m++) _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32 + b * 16, acc[0][m]);
+            }
+        }
+    }
+}
+static void register_weight_q4k(const void *key, const void *src, int N, int K) {
+    if (variant() != VA || N % 32 || K % 512) return;
+    size_t n = (size_t)N * (K / 32) * 20;
+    void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return;
+    madvise(p, n, MADV_HUGEPAGE);
+    pack_a4k((const uint8_t *)src, N, K, (uint8_t *)p);
     std::lock_guard<std::mutex> g(g_mu);
     g_packed[key] = (uint8_t *)p; g_sizes[key] = n; g_resident += n;
 }

@@ -520,3 +520,39 @@ N=32 129.2 / 127.9 / 122.3 (1.55-1.99 s). Against stock -fa (above): 1.4x at N=1
 2.4x at N=32, first tokens 2.5x sooner at N=8. On 1.7B the same comparison gave 1.0x / 1.64x / 1.57x / 1.98x, so
 the factor grows with model size, mostly because stock's batched Q8_0 path degrades more on the larger matrices.
 The N=1 gain is new; it was not re-checked against a stock run in the same session.
+
+### 2026-11-12 ROW1 round 5, part 1: the kernels under IronMule's product
+
+The product's ggml engine loads libllama from `LLAMA_CPP_LIB_PATH`, so pointing it at the patched build with
+`ROW1_GGML=B16` puts the kernels under `ProductService` + worker + `GgmlEngine` unchanged. Product changes needed for
+more than 8 requests in one batch (defaults unchanged; engine tests and `tests/engine -m "not integration"` green):
+`IRONMULE_GGML_SEQS` / `IRONMULE_GGML_SEQ_CTX` / `IRONMULE_GGML_PROMPT_BUDGET` in `ironmule/ggml_engine.py` (its
+warm-up now decodes the many-sequence prompt in pieces of the batch size), and the worker's stream width and the
+client's batch capacity for the ggml engine follow `IRONMULE_GGML_SEQS` (`ironmule_product/worker.py`, `backend.py`;
+without that the service admitted requests in waves of 8: N=32 first tokens 6.4 s). Hook fix: the packed copies are
+unmapped when ggml frees the AMX buffer (`amx.cpp.diff`); before, the gate's tuning child, which loads the model
+once per setting, ran out of memory.
+
+Driver `lab/row1/product.py` (gate, then one worker; per N one warm-up block and 3 blocks of N streamed requests at
+once, 64 tokens, `serve.py`'s prompts; then the 50 facts through the service). Speculation on (product default),
+32 sequences. Reference: the original unpatched `llama-server` (4227c9b) with `-fa --no-mmap`, hugetlb, `-np N`.
+
+Gate (`ironmule.ggml_engine.gate`, run under B16, so it compares settings against B16's own default): passes on
+both models, chosen setting flash attention; ratio 0.99983 (1.7B), 0.99943 (4B). Against the hook off, B16's
+perplexity on the same text and chunks was 0.9956 (1.7B, round 2) and 0.9987 (4B, round 4) of stock's.
+
+Total tokens/s (mean first-token time), 3 blocks:
+
+| Model | Setting | N=1 | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- | --- | --- |
+| 1.7B | llama-server -fa | 21.9 / 21.8 / 21.7 (0.05 s) | 72.3 / 60.9 / 69.4 (0.45-0.71 s) | 102.3 / 99.7 / 106.2 (0.6-1.2 s) | 107.1 / 109.2 / 112.2 (2.0-2.4 s) |
+| 1.7B | IronMule + B16, 32 seqs | 23.4 / 23.6 / 23.3 (0.08 s) | 124.6 / 141.7 / 136.1 (0.29-0.42 s) | 172.8 / 184.4 / 202.8 (0.51-0.53 s) | 213.0 / 210.7 / 224.6 (1.0-1.1 s) |
+| 4B | llama-server -fa (ctx cap 32,768) | 9.6 / 9.9 / 9.7 (0.11 s) | 33.0 / 34.1 / 34.0 (1.2-2.2 s) | 52.5 / 58.0 / 58.6 (1.4-2.8 s) | 56.5 / 63.3 / 60.2 (2.2-5.1 s) |
+| 4B | IronMule + B16, 32 seqs x 1,024 | 10.9 / 11.0 / 11.0 (0.18-0.21 s) | 64.2 / 63.4 / 62.2 (0.75-0.89 s) | 69.2 / 74.9 / 77.4 (1.4-1.55 s) | 94.7 / 96.0 / 101.4 (2.5-2.8 s) |
+
+1.7B: 1.08x / 1.98x / 1.80x / 1.96x of llama-server's best setting, first tokens 1.6-2.2x sooner under load (one
+request 0.08 against 0.05 s). 4B: 1.13x / 1.88x / 1.31x / 1.60x; at N=16/32 the product falls behind what B16 gave
+through llama-server (round 4: 99 / 128 tok/s), probably the engine's per-step Python work (sampling, joins,
+speculation bookkeeping) at 4B's longer steps; not profiled. Facts through the product: 48/50 (1.7B), 49/50 (4B);
+the 4B run used the Qwen3-1.7B snapshot as the registered model for its tokenizer (Qwen3's tokenizer is the same;
+no 4B snapshot is on disk and the bridge's tokenizer and end-token checks passed).
