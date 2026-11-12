@@ -240,3 +240,95 @@ def test_gg3_an_option_beyond_the_bound_does_not_serve_and_the_default_does(monk
     result = ggml_engine.gate(str(tmp_path), str(tmp_path / "m.gguf"), cache=tmp_path / "cache")
     assert result["passes"] and result["settings"] == ggml_engine.DEFAULT_SETTINGS
     assert [row["passes"] for row in result["tried"]] == [False, True] and result["tried"][0]["ratio"] > 1.005
+
+
+def _stub_engine(seqs: int = 4, seq_rm_ok: bool = True):
+    """A GgmlEngine whose llama.cpp is a stub: every decode returns the same argmax (token 7), never end of text."""
+    import threading
+    import types
+
+    import numpy as np
+
+    from ironmule import ggml_engine as ge
+
+    fed: list[list[tuple[int, int, int]]] = []
+    removed: list[tuple[int, int, int]] = []
+    logits = np.zeros((64, 16), dtype=np.float32)
+    logits[:, 7] = 1.0
+
+    class Batch:
+        def __init__(self, n: int):
+            self.token, self.pos, self.n_seq_id, self.logits = [0] * n, [0] * n, [0] * n, [0] * n
+            self.seq_id, self.n_tokens = [[0] for _ in range(n)], 0
+
+    def decode(ctx, b):
+        fed.append([(b.token[i], b.pos[i], b.seq_id[i][0]) for i in range(b.n_tokens)])
+        return 0
+
+    def seq_rm(memory, seq, start, end):
+        removed.append((seq, start, end))
+        return seq_rm_ok or start < 0
+
+    engine = ge.GgmlEngine.__new__(ge.GgmlEngine)
+    engine.L = types.SimpleNamespace(
+        llama_decode=decode, llama_memory_seq_rm=seq_rm, llama_vocab_is_eog=lambda vocab, token: False,
+        llama_get_logits_ith=lambda ctx, i: np.ctypeslib.as_ctypes(logits[i]),
+        llama_memory_clear=lambda memory, data: None)
+    engine.np, engine.ctx, engine.vocab, engine.n_vocab, engine.memory = np, None, None, 16, None
+    engine.seqs, engine.seq_ctx, engine.threads, engine.batch, engine.policy = seqs, 256, 1, Batch(256), None
+    engine._free, engine._kept, engine.prefix_reuse = list(range(seqs)), {}, True
+    engine.prompt_tokens = engine.reused_tokens = engine.steps = 0
+    engine._lock = threading.Lock()
+    return engine, fed, removed
+
+
+def test_a_new_request_reuses_the_longest_kept_prefix_and_computes_the_rest():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, removed = _stub_engine()
+    shared = [1, 2, 3, 4, 5, 6]
+    first = engine.run([Job(shared + [8, 9], 3)])[0]
+    assert first.tokens == [7, 7, 7] and engine.free_slots() == 4
+    # the finished request keeps every token that went through the model: its prompt and all but its last answer token
+    assert engine._kept == {0: shared + [8, 9, 7, 7]} and removed[-1] == (0, 10, -1)
+    fed.clear()
+    second = engine.run([Job(shared + [10, 11], 2)])[0]
+    prompt_rows = fed[0]
+    assert [pos for _, pos, _ in prompt_rows] == [6, 7] and {seq for _, _, seq in prompt_rows} == {0}
+    assert engine.reused_tokens == 6 and engine.prompt_tokens == 16 and second.tokens == [7, 7]
+    fed.clear()
+    engine.run([Job(shared + [10, 11], 2)])  # the same prompt again: all but its last token are kept
+    assert [pos for _, pos, _ in fed[0]] == [7]
+
+
+def test_prefix_reuse_falls_back_to_a_full_prompt_when_the_cache_refuses_a_partial_removal():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, removed = _stub_engine(seq_rm_ok=False)
+    engine.run([Job([1, 2, 3, 4], 2)])
+    assert engine._kept == {}  # finish could not trim the sequence, so it was cleared and nothing is kept
+    fed.clear()
+    engine.run([Job([1, 2, 3, 5], 2)])
+    assert [pos for _, pos, _ in fed[0]] == [0, 1, 2, 3] and engine.reused_tokens == 0
+
+
+def test_prefix_reuse_off_computes_every_prompt():
+    from ironmule.ggml_engine import Job
+
+    engine, fed, _ = _stub_engine()
+    engine.prefix_reuse = False
+    engine.run([Job([1, 2, 3, 4], 2)])
+    fed.clear()
+    engine.run([Job([1, 2, 3, 4], 2)])
+    assert [pos for _, pos, _ in fed[0]] == [0, 1, 2, 3] and engine._kept == {}
+
+
+def test_reused_prompts_answer_as_fresh_ones_on_the_real_model(engine):
+    from ironmule.ggml_engine import Job
+
+    prompt = engine.tokenize("<|im_start|>user\nName three colours of the rainbow.<|im_end|>\n<|im_start|>assistant\n")
+    engine._clear()
+    fresh = engine.run([Job(list(prompt), 12)])[0].tokens
+    before = engine.reused_tokens
+    again = engine.run([Job(list(prompt), 12)])[0].tokens
+    assert engine.reused_tokens - before == len(prompt) - 1 and again == fresh

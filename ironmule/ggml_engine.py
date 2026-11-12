@@ -35,9 +35,17 @@ SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
 POLL = 50  # llama-server's default busy-wait level
 ENGINE_VERSION = 3  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
-PROMPT_BUDGET = 96  # prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one)
-PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", PROMPT_BUDGET))  # ROW1: raisable for a run
+# Prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one). GG2 used 96, so early
+# requests streamed while later prompts waited; ROW1 round 5 (2026-11-12, Qwen3-4B, 32 sequences) measured 7-9 % more
+# tokens per second at 16-32 requests when every waiting prompt that fits one call goes in, as llama-server does.
+# 0 (the default) means one call's size (the sequence length); a number sets the budget.
+PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", 0))
 PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts goes first
+# ROW1 round 5 (2026-11-12): a finished request's KV stays in its sequence, and a new request takes the free sequence
+# whose kept tokens share the longest prefix with its prompt and prefills only the rest, as llama-server's
+# `cache_prompt` (its default). The reused positions were computed in another batch, so tokens can differ as on
+# llama-server; "0" turns it off.
+PREFIX_REUSE = os.environ.get("IRONMULE_GGML_PREFIX_REUSE", "1") != "0"
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -119,6 +127,9 @@ class GgmlEngine:
         self.batch = L.llama_batch_init(max(seq_ctx, max_rows), 0, seqs)
         self.policy = StepPolicy(max_rows) if speculate else None
         self._free = list(range(seqs))
+        self._kept: dict[int, list[int]] = {}  # free sequence -> the tokens its KV still holds (prefix reuse)
+        self.prefix_reuse = PREFIX_REUSE
+        self.prompt_tokens = self.reused_tokens = 0
         self._lock = threading.Lock()
         self.steps = 0
         self._warm_up()
@@ -128,11 +139,12 @@ class GgmlEngine:
         for llama.cpp's first graphs and weight repacking; the cache is cleared after."""
         bos = max(0, int(self.L.llama_vocab_bos(self.vocab)))
         self._decode([(bos, j, 0, j == 63) for j in range(64)])
-        self.L.llama_memory_clear(self.memory, True)
+        self._clear()
         # GG2: the first call that carries several sequences' prompts cost about 0.3 s once; pay it here
         rows = [(bos, j, seq, j == 63) for seq in range(self.seqs) for j in range(64)]
         for start in range(0, len(rows), self.seq_ctx):  # in pieces of the batch size when many sequences
             self._decode(rows[start:start + self.seq_ctx])
+        self._clear()  # the warm-up's KV is not a prompt
         self._decode([(bos, 64, seq, True) for seq in range(self.seqs)])
         self._decode([(bos, 65, 0, True)])
         self.L.llama_memory_clear(self.memory, True)
@@ -207,9 +219,44 @@ class GgmlEngine:
                 out.append(int(self.np.ctypeslib.as_array(ptr, shape=(self.n_vocab,)).argmax()))
         return out
 
-    def _prefill(self, ids: list[int], seq: int) -> int:
+    def _clear(self) -> None:
+        self.L.llama_memory_clear(self.memory, True)
+        self._kept.clear()
+
+    @staticmethod
+    def _common(a: Sequence[int], b: Sequence[int]) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    def _take_sequence(self, ids: list[int]) -> tuple[int, int]:
+        """A free sequence for a prompt and how many of its first tokens the sequence's KV already holds (at least one
+        prompt token is always computed, for its logits). Call with the lock held."""
+        best, keep = self._free[0], 0
+        if self.prefix_reuse and self._kept:
+            for seq in self._free:
+                held = self._kept.get(seq)
+                if held:
+                    n = self._common(held, ids)
+                    if n > keep:
+                        best, keep = seq, n
+        return best, min(keep, len(ids) - 1)
+
+    def _claim(self, seq: int, keep: int) -> int:
+        """Take `seq` off the free list with its first `keep` positions; returns the positions really kept."""
+        self._free.remove(seq)
+        held = self._kept.pop(seq, None)
+        if held is not None and len(held) > keep:
+            if keep == 0 or not self.L.llama_memory_seq_rm(self.memory, seq, keep, -1):
+                self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
+                keep = 0
+        return keep
+
+    def _prefill(self, ids: list[int], seq: int, start: int = 0) -> int:
         first = None
-        for start in range(0, len(ids), self.seq_ctx):
+        for start in range(start, len(ids), self.seq_ctx):
             chunk = ids[start:start + self.seq_ctx]
             last = start + len(chunk) == len(ids)
             picks = self._decode([(t, start + j, seq, last and j == len(chunk) - 1) for j, t in enumerate(chunk)])
@@ -229,11 +276,19 @@ class GgmlEngine:
         pending = list(jobs)
         active: dict[int, Job] = {}
 
-        def finish(seq: int, job: Job, reason: str) -> None:
+        def finish(seq: int, job: Job, reason: str, keep: bool = True) -> None:
             job.reason, job.finished_ns = reason, time.monotonic_ns()
-            self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
+            held = len(job.ids) + len(job.tokens) - 1  # every token but the last went through the model
+            if (keep and self.prefix_reuse and held > 0
+                    and self.L.llama_memory_seq_rm(self.memory, seq, held, -1)):
+                kept = (job.ids + job.tokens)[:held]
+            else:
+                self.L.llama_memory_seq_rm(self.memory, seq, -1, -1)
+                kept = None
             active.pop(seq, None)
             with self._lock:
+                if kept is not None:
+                    self._kept[seq] = kept
                 self._free.append(seq)
                 self._free.sort()
 
@@ -263,23 +318,30 @@ class GgmlEngine:
                     pending.extend(more)
                 # GG2: the requests that start in this step: the shortest prompts first, within the step's prompt
                 # budget (whole prompts, at least one), and one passed over too often first
-                fresh: list[tuple[int, Job]] = []
-                budget = PROMPT_BUDGET
+                fresh: list[tuple[int, Job, int]] = []
+                budget = PROMPT_BUDGET or self.seq_ctx
                 for job in sorted(pending, key=lambda j: (j.passed_over < PASSED_OVER, len(j.ids))):
                     if job.cancelled is not None and job.cancelled():
                         job.reason, job.finished_ns = "cancelled", time.monotonic_ns()
                         pending.remove(job)
                         continue
-                    if not self._free or (fresh and len(job.ids) > budget):
+                    if not self._free:
+                        job.passed_over += 1
+                        continue
+                    with self._lock:
+                        seq, keep = self._take_sequence(job.ids)
+                    if fresh and len(job.ids) - keep > budget:
                         job.passed_over += 1
                         continue
                     if len(job.ids) + job.limit > self.seq_ctx:
                         raise ValueError(f"{len(job.ids) + job.limit} tokens do not fit a {self.seq_ctx}-token sequence")
                     with self._lock:
-                        seq = self._free.pop(0)
+                        keep = self._claim(seq, keep)
                     pending.remove(job)
-                    budget -= len(job.ids)
-                    fresh.append((seq, job))
+                    budget -= len(job.ids) - keep
+                    self.prompt_tokens += len(job.ids)
+                    self.reused_tokens += keep
+                    fresh.append((seq, job, keep))
                 if not active and not fresh:
                     if pending:
                         continue
@@ -309,14 +371,14 @@ class GgmlEngine:
                 decode_rows = len(rows)
                 room = self.seq_ctx - decode_rows  # one call's tokens
                 batched: list[tuple[int, Job]] = []
-                for seq, job in fresh:
-                    if len(job.ids) <= room:
-                        rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids)]
-                        room -= len(job.ids)
+                for seq, job, keep in fresh:
+                    if len(job.ids) - keep <= room:
+                        rows += [(t, j, seq, j == len(job.ids) - 1) for j, t in enumerate(job.ids) if j >= keep]
+                        room -= len(job.ids) - keep
                         batched.append((seq, job))
                     else:  # too long to share this call: its own prefill first
                         active[seq] = job
-                        take(seq, job, self._prefill(job.ids, seq))
+                        take(seq, job, self._prefill(job.ids, seq, keep))
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
@@ -340,8 +402,8 @@ class GgmlEngine:
                     take(seq, job, picks[at])
                     at += 1
         finally:
-            for seq in list(active):
-                finish(seq, active[seq], active[seq].reason or "cancelled")
+            for seq in list(active):  # a run that ends here leaves no KV it cannot vouch for
+                finish(seq, active[seq], active[seq].reason or "cancelled", keep=False)
         return served
 
     # --- the quality gate ---------------------------------------------------------------------------------------------
@@ -349,7 +411,7 @@ class GgmlEngine:
         """Mean next-token negative log-likelihood of `ids[1:]` after `lead + ids[:-1]`, in one multi-position decode
         (the verify path), as `numeric_choice.nll_per_chunk` scores a chunk."""
         np = self.np
-        self.L.llama_memory_clear(self.memory, True)
+        self._clear()
         tokens = lead + ids[:-1]
         b = self.batch
         b.n_tokens = len(tokens)
@@ -364,7 +426,7 @@ class GgmlEngine:
                                         shape=(self.n_vocab,)).astype(np.float64)
             top = row.max()
             total += float(top + math.log(np.exp(row - top).sum()) - row[target])
-        self.L.llama_memory_clear(self.memory, True)
+        self._clear()
         return total / (len(ids) - 1)
 
     def summary(self) -> dict[str, Any]:
@@ -372,6 +434,8 @@ class GgmlEngine:
                 "threadpool_poll": POLL if self._threadpool else None,
                 "threads": self.threads, "sequences": self.seqs,
                 "sequence_tokens": self.seq_ctx, "steps": self.steps,
+                "prefix_reuse": {"on": self.prefix_reuse, "prompt_tokens": self.prompt_tokens,
+                                 "reused_tokens": self.reused_tokens},
                 **({"speculation": self.policy.summary()} if self.policy is not None else {"speculation": "off"})}
 
     def close(self) -> None:

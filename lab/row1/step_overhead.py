@@ -26,6 +26,7 @@ def make(seqs, speculate=True):
     e.seqs, e.seq_ctx, e.threads = seqs, 1024, 4
     e.batch = Batch(1024); e.policy = StepPolicy(16) if speculate else None
     e._free = list(range(seqs)); import threading; e._lock = threading.Lock(); e.steps = 0
+    e._kept, e.prefix_reuse, e.prompt_tokens, e.reused_tokens = {}, True, 0, 0
     return e
 for n in (1, 8, 16, 32):
     for spec in (True, False):
@@ -35,6 +36,8 @@ for n in (1, 8, 16, 32):
         calls.update(decode=0, rows=0)
         t = time.perf_counter(); e.run(jobs); dt = time.perf_counter() - t
         print(f"N={n:2d} spec={spec!s:5} steps={e.steps:3d} rows={calls['rows']:5d} python ms/step={1000*dt/e.steps:6.2f}")
+        calls.update(decode=0, rows=0); again = [ge.Job(list(j.ids), 64, emit=lambda t: None) for j in jobs]; e.run(again)
+        print(f"      same prompts again: rows={calls['rows']:5d} reused={e.reused_tokens} of {e.prompt_tokens} prompt tokens, free={len(e._free)}")
 # argmax alone
 t = time.perf_counter()
 for i in range(32): int(LOG[i].argmax())

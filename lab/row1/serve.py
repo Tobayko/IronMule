@@ -33,7 +33,8 @@ def stop(proc):
     try: proc.wait(timeout=30)
     except subprocess.TimeoutExpired: proc.kill()
 def ask(port, text, limit, t0):
-    body = json.dumps({"messages": [{"role": "user", "content": text}], "max_tokens": limit, "temperature": 0,
+    sysm = [{"role": "system", "content": os.environ["ROW1_SYSTEM"]}] if os.environ.get("ROW1_SYSTEM") else []
+    body = json.dumps({"messages": sysm + [{"role": "user", "content": text}], "max_tokens": limit, "temperature": 0,
                        "stream": True, "stream_options": {"include_usage": True}})
     first, pieces, usage = None, [], None
     c = http.client.HTTPConnection("127.0.0.1", port, timeout=3600)

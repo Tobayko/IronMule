@@ -21,9 +21,9 @@ Q = eval(facts_src[facts_src.index("Q = [") + 4:facts_src.index("]\nge.") + 1])
 spec = gg1_measure.model_spec(model)
 t0 = time.perf_counter()
 saved = {k: os.environ.pop(k) for k in ("IRONMULE_GGML_SEQS", "IRONMULE_GGML_SEQ_CTX") if k in os.environ}
-checked = gate(spec.snapshot_path, gguf, cache=out_path.parent / f"gate_{out_path.stem}")  # gate at the default size
+checked = gate(spec.snapshot_path, gguf, cache=Path(os.environ.get("ROW1_GATE_CACHE") or out_path.parent / f"gate_{out_path.stem}"))  # gate at the default size
 os.environ.update(saved)
-res = {"gguf": os.path.basename(gguf), "env": {k: v for k, v in os.environ.items() if k.startswith(("ROW1_", "IRONMULE_GGML"))},
+res = {"gguf": os.path.basename(gguf), "env": {k: v[:60] for k, v in os.environ.items() if k.startswith(("ROW1_", "IRONMULE_GGML"))},
        "gate": {k: checked.get(k) for k in ("ran", "passes", "ratio", "interval", "settings", "reason", "seconds")},
        "gate_tried": checked.get("tried"), "gate_s": time.perf_counter() - t0}
 print(json.dumps(res["gate"]), flush=True)
@@ -33,7 +33,8 @@ backend = MLXWorkerClient(spec, execution_variant="current_engine", engine_confi
                           ggml_gate=checked, speculate=True, startup_timeout=1200)
 backend.start(); service = ProductService(store, backend=backend, spec=spec)
 def ask(text, limit, t0, out, i):
-    req = GenerationRequest(spec.model_id, (("user", text),), max_tokens=limit, request_id=f"r{time.monotonic_ns()}-{i}", stream=True)
+    sysm = (("system", os.environ["ROW1_SYSTEM"]),) if os.environ.get("ROW1_SYSTEM") else ()
+    req = GenerationRequest(spec.model_id, sysm + (("user", text),), max_tokens=limit, request_id=f"r{time.monotonic_ns()}-{i}", stream=True)
     first, pieces, tokens = None, [], None
     for ev in service.stream(req):
         if not isinstance(ev, dict): continue
