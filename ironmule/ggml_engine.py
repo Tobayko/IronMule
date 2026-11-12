@@ -29,10 +29,14 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 SEQS, SEQ_CTX, MAX_ROWS, THREADS = 8, 2048, 16, 4
+# ROW1 (2026-11-12): sequences and per-sequence context can be raised for a run, e.g. 32 requests in one batch
+SEQS = int(os.environ.get("IRONMULE_GGML_SEQS", SEQS))
+SEQ_CTX = int(os.environ.get("IRONMULE_GGML_SEQ_CTX", SEQ_CTX))
 POLL = 50  # llama-server's default busy-wait level
 ENGINE_VERSION = 3  # 2 (GG2): warm-up of 8 prompts, staggered prompts; 3 (GG3): llama.cpp's options within 1.005
 OPTION_BOUND = 1.005  # GG3 (owner, 2026-11-11): a llama.cpp option serves within NUM1's bound of its default
 PROMPT_BUDGET = 96  # prompt tokens a step may carry beside the running requests' rows (whole prompts, at least one)
+PROMPT_BUDGET = int(os.environ.get("IRONMULE_GGML_PROMPT_BUDGET", PROMPT_BUDGET))  # ROW1: raisable for a run
 PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts goes first
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
@@ -126,7 +130,9 @@ class GgmlEngine:
         self._decode([(bos, j, 0, j == 63) for j in range(64)])
         self.L.llama_memory_clear(self.memory, True)
         # GG2: the first call that carries several sequences' prompts cost about 0.3 s once; pay it here
-        self._decode([(bos, j, seq, j == 63) for seq in range(self.seqs) for j in range(64)])
+        rows = [(bos, j, seq, j == 63) for seq in range(self.seqs) for j in range(64)]
+        for start in range(0, len(rows), self.seq_ctx):  # in pieces of the batch size when many sequences
+            self._decode(rows[start:start + self.seq_ctx])
         self._decode([(bos, 64, seq, True) for seq in range(self.seqs)])
         self._decode([(bos, 65, 0, True)])
         self.L.llama_memory_clear(self.memory, True)

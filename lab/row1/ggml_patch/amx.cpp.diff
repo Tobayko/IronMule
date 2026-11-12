@@ -1,0 +1,4 @@
+44a45
+> extern "C" void row1_release_range(const void * base, size_t size);  // ROW1: our packed copies (mmq.cpp)
+45a47
+>     row1_release_range(buffer->context, buffer->size);

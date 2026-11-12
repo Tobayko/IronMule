@@ -20,6 +20,7 @@
 namespace row1 {
 struct tcfg { uint8_t pal, start; uint8_t r[14]; uint16_t cb[16]; uint8_t rows[16]; } __attribute__((packed));
 static std::unordered_map<const void *, uint8_t *> g_packed;
+static std::unordered_map<const void *, size_t> g_sizes;
 static std::mutex g_mu;
 enum { OFF = 0, VA = 1, VB = 2, VB16 = 3, VB8S = 4 };
 static int seg() { static int g = -1; if (g < 0) { const char *v = getenv("ROW1_SEG"); g = v ? atoi(v) : 256; } return g; }
@@ -81,7 +82,7 @@ static bool register_weight(const void *key, const void *src, int N, int K) {
     if (v == VA) pack_a((const uint8_t *)src, N, K, (uint8_t *)p);
     else pack_b((const uint8_t *)src, N, K, (int8_t *)p, (float *)((char *)p + (size_t)N * K));
     std::lock_guard<std::mutex> g(g_mu);
-    g_packed[key] = (uint8_t *)p; g_resident += n;
+    g_packed[key] = (uint8_t *)p; g_sizes[key] = n; g_resident += n;
     static int said = 0;
     if (N == 151936 || (++said % 50) == 0) fprintf(stderr, "row1: variant %d, %.0f MiB packed so far\n", v, g_resident / 1048576.0);
     return true;
@@ -89,6 +90,18 @@ static bool register_weight(const void *key, const void *src, int N, int K) {
 // B, B16 and B8s serve every M of a registered weight, so ggml's own AMX copy of it is never read: skip writing it
 // (its pages are then never touched and take no memory). ROW1_KEEP=1 keeps it.
 static bool skip_ggml_copy() { const char *v = getenv("ROW1_KEEP"); int x = variant(); return !(v && atoi(v)) && (x == VB || x == VB16 || x == VB8S); }
+// called when ggml frees an AMX buffer: unmap our copies of the weights that lived in it
+static void release_range(const void *base, size_t size) {
+    std::lock_guard<std::mutex> g(g_mu);
+    for (auto it = g_packed.begin(); it != g_packed.end();) {
+        const char *k = (const char *)it->first;
+        if (k >= (const char *)base && k < (const char *)base + size) {
+            auto sz = g_sizes.find(it->first);
+            if (sz != g_sizes.end()) { munmap(it->second, sz->second); g_resident -= sz->second; g_sizes.erase(sz); }
+            it = g_packed.erase(it);
+        } else ++it;
+    }
+}
 static const uint8_t *lookup(const void *key) {
     std::lock_guard<std::mutex> g(g_mu);
     auto it = g_packed.find(key);
@@ -408,7 +421,7 @@ static void register_weight_q4(const void *key, const void *src, int N, int K) {
     madvise(p, n, MADV_HUGEPAGE);
     pack_a4((const uint8_t *)src, N, K, (uint8_t *)p);
     std::lock_guard<std::mutex> g(g_mu);
-    g_packed[key] = (uint8_t *)p; g_resident += n;
+    g_packed[key] = (uint8_t *)p; g_sizes[key] = n; g_resident += n;
 }
 static int a4m1() { static int e = -1; if (e < 0) { const char *v = getenv("ROW1_A4M1"); e = v ? atoi(v) : 0; } return e; }
 // workspace beyond ggml's own (quantized A rows): packed X and float scales

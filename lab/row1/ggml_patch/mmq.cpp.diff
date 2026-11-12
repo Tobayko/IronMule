@@ -24,7 +24,7 @@
 >         std::vector<float> w(K); std::vector<int8_t> qq(K);
 >         auto tf = ggml_get_type_traits(TYPE)->to_float; size_t rb = ggml_row_size(TYPE, K);
 >         for (int r = 0; r < N; r++) { tf((const char *)data + (size_t)r * rb, w.data(), K); row1::pack_b_f32(w.data(), K, (int8_t *)p, (float *)((char *)p + (size_t)N * K), r, qq); }
->         { std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[tensor->data] = (uint8_t *)p; }
+>         { std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[tensor->data] = (uint8_t *)p; row1::g_sizes[tensor->data] = n; }
 >         fprintf(stderr, "row1: packed the %s matrix %s %dx%d for B16\n", ggml_type_name(TYPE), tensor->name, N, K);
 >         return;  // ggml's own AMX copy of it is never read then
 >     }
@@ -134,7 +134,7 @@
 >         }
 >     }
 > 
-2511a2641,2694
+2511a2641,2695
 > 
 > // ---- ROW1 round 4: B16 for a large non-AMX output matrix (the tied Q6_K token_embd of 4-bit GGUFs) ----
 > // ROW1_OUT=1: the first call dequantizes the matrix (ggml's to_float) and packs it per row as int8 (B layout);
@@ -160,7 +160,7 @@
 >                 tf((const char *)src0->data + (size_t)r * src0->nb[1], w.data(), K);
 >                 row1::pack_b_f32(w.data(), K, (int8_t *)p, (float *)((char *)p + (size_t)N * K), r, qq);
 >             }
->             std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[src0->data] = (uint8_t *)p;
+>             std::lock_guard<std::mutex> g(row1::g_mu); row1::g_packed[src0->data] = (uint8_t *)p; row1::g_sizes[src0->data] = n;
 >             fprintf(stderr, "row1: packed the %s output matrix %dx%d for B16\n", ggml_type_name(src0->type), N, K);
 >         }
 >         ggml_barrier(params->threadpool);
@@ -189,7 +189,8 @@
 >     if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
 >     return true;
 > }
-2512a2696,2699
+> extern "C" void row1_release_range(const void * base, size_t size) { row1::release_range(base, size); }
+2512a2697,2700
 > 
 > #if !(defined(__AMX_INT8__) && defined(__AVX512VNNI__))
 > extern "C" bool row1_cpu_mul_mat(const struct ggml_compute_params *, struct ggml_tensor *) { return false; }

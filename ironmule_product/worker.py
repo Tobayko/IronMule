@@ -704,6 +704,7 @@ BATCH_CONFIGURATIONS = frozenset({"baseline_throughput", "core_throughput", "cur
 # streamed batches too (`MLXWorkerClient.streams_batches`), so the two lists must agree.
 STREAMED_BATCH_CONFIGURATIONS = frozenset({"current_profile", "dense_stacked", "ggml"})
 STREAM_WIDTH = 8  # streams a grouped run holds at once (the client's STREAM_GROUP_REQUESTS)
+STREAM_WIDTH = max(STREAM_WIDTH, int(os.environ.get("IRONMULE_GGML_SEQS") or 0))  # ROW1: the ggml engine's sequences
 _DETOKENIZER_POOLS: dict[int, "_DetokenizerPool"] = {}
 JOINS: queue.Queue[dict[str, Any]] = queue.Queue()  # SERVE8: join_batch commands for the running batch
 
