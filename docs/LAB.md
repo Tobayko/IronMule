@@ -407,3 +407,67 @@ compute-bound (256 MB in 13.5 ms, 19 GB/s) and takes a third of the call. Q4_K_M
 (20 GB/s): one request is slower than with Q8_0 (13.5 vs 20 tok/s) although it reads 25% fewer bytes. At more rows
 both 4-bit formats are much worse than Q8_0 (R=8 Q4_0 132 ms against Q8_0 B16 64 ms). So there is room: for one
 request mainly on Q4_K_M and in the Q6_K output matrix, and for every format at R > 1.
+
+### 2026-11-11 ROW1 round 4, part 2: Qwen3-4B Q8_0 (`Qwen/Qwen3-4B-GGUF`)
+
+Stock `-fa` against B16 `-fa`, both `--no-mmap` with hugetlb; context capped at 32,768 tokens (KV for 32 x 2,048
+would not fit beside two weight copies in 15 GB). Quality: perplexity stock 17.619, B16 17.596 (ratio 0.9987);
+facts 49/50 both (both miss 1000 - 357), no answer differs in right/wrong.
+
+Serving, total tokens/s (mean first-token time), 3 blocks:
+
+| Variant | N=1 | N=8 | N=16 | N=32 |
+| --- | --- | --- | --- | --- |
+| stock -fa | 9.0 / 8.2 / 8.3 (0.13-0.15 s) | 30.6 / 32.5 / 32.0 (1.5-1.9 s) | 52.2 / 55.6 / 58.7 (1.0-2.7 s) | 52.7 / 52.9 / 56.9 (3.4-5.2 s) |
+| B16 -fa | 9.6 / 9.1 / 8.6 (0.10-0.12 s) | 54.3 / 57.1 / 55.7 (0.55-0.66 s) | 84.3 / 87.7 / 86.2 (0.72-1.29 s) | 65.9 / 57.0 / 9.9 (4-10 s) |
+
+B16 is 1.75x stock at N=8 and 1.55x at N=16 (1.7B: 1.64x and 1.57x). At N=32 B16 collapsed: ggml's own AMX copy
+(4.3 GB) plus our packed copy (4.0 GB) plus 4.8 GB of KV leave no room, and the machine reclaims pages. Prefill
+(prompt tokens/s, 3 runs, no -fa): 512 tokens stock 66 / 68 / 71, B16 152 / 164 / 167 (2.4x); 2,000 tokens stock
+58 / 55 / 52, B16 101 / 108 / 104 (1.9x).
+
+### 2026-11-11 ROW1 round 4, part 3: Hadamard rotation for one kernel row per row (offline)
+
+`lab/row1/capture.py` captures the real inputs of 9 matmuls per model (layers 2, 14, 26: attn_q, ffn_up, ffn_down;
+one 512-token chunk of the fixed text, stock path; last 256 rows used); `lab/row1/rotation.py` computes relative
+Frobenius error against float64 on the dequantized Q8_0 weights. Rotation R = random signs x block Hadamard (block
+2048 on 1.7B, 1024 on 0.6B), weights W R requantized per row to int8, activations x R quantized per row.
+
+| Tensor (1.7B) | llama Q8_0 | B | B16 | rotated B | rotated B16 | max/std of x, before / after |
+| --- | --- | --- | --- | --- | --- | --- |
+| blk.2.attn_q | 7.3e-3 | 3.9e-2 | 6.9e-3 | 8.3e-3 | 6.1e-3 | 22.5 / 3.4 |
+| blk.2.ffn_up | 2.1e-2 | 1.2e-1 | 1.6e-2 | 2.0e-2 | 1.5e-2 | 26.8 / 3.1 |
+| blk.2.ffn_down | 1.0e-2 | 7.9e-2 | 1.1e-2 | 1.3e-2 | 9.0e-3 | 30.1 / 3.8 |
+| blk.14.attn_q | 8.0e-3 | 4.1e-2 | 6.9e-3 | 8.7e-3 | 6.4e-3 | 22.8 / 3.4 |
+| blk.14.ffn_up | 8.8e-3 | 3.6e-2 | 9.1e-3 | 1.2e-2 | 8.4e-3 | 14.4 / 3.5 |
+| blk.14.ffn_down | 1.1e-2 | 5.7e-2 | 1.3e-2 | 1.4e-2 | 9.8e-3 | 18.9 / 3.9 |
+| blk.26.attn_q | 1.0e-2 | 3.7e-2 | 9.1e-3 | 1.1e-2 | 8.2e-3 | 15.7 / 3.5 |
+| blk.26.ffn_up | 1.1e-2 | 4.7e-2 | 8.9e-3 | 1.2e-2 | 8.6e-3 | 19.2 / 3.4 |
+| blk.26.ffn_down | 9.7e-3 | 5.5e-2 | 1.1e-2 | 1.3e-2 | 9.2e-3 | 33.1 / 3.8 |
+
+0.6B (same layers): llama 6.9e-3 to 1.6e-2, B 2.8e-2 to 8.4e-2, B16 6.9e-3 to 1.3e-2, rotated B 9.1e-3 to 1.6e-2,
+rotated B16 6.7e-3 to 1.2e-2 (`$SP/row1/p5/rotation_0.6B.txt`). The rotation flattens the activations (max/std
+from 13-33 to 3-5) and cuts B's error 3-6x, but rotated B stays 1.1-1.5x above B16 (and 1.0-1.7x above llama's
+own Q8_0 error). By the round's rule (build only at B16's error or better) it was not built. Rotated B16 is the
+most accurate of all (below llama's Q8_0 on every tensor of 1.7B) but costs B16's two kernel rows.
+
+### 2026-11-11 ROW1 round 4, part 4: attention
+
+Code path (llama.cpp 4227c9b, CPU): without -fa, KQ and KQV are `GGML_OP_MUL_MAT` with an f16 src0 (the K view and
+the transposed V cache); `ggml_compute_forward_mul_mat` first tries llamafile's `tinyBLAS` with the f32 activations
+(no kernel for f16 x f32), converts the activations to f16, and runs `tinyBLAS<16, __m512, __m512, ggml_fp16_t,
+ggml_fp16_t, float>`, which converts f16 to f32 and uses f32 FMAs, one call per head (16 heads x 28 layers). With
+-fa it runs `GGML_OP_FLASH_ATTN_EXT`, the CPU flash kernel, which walks one query row at a time over the KV.
+Measured (1.7B, B16 matmuls, huge pages, per-op timers):
+
+| Setting | 32-row decode call | attention part | 512-token prefill: attention, matmul |
+| --- | --- | --- | --- |
+| f16 KV, no -fa | 127.8 ms | f16 mul_mat 25.8 ms | 459 ms, 802 ms |
+| f32 KV (`kv_f32`), no -fa | 141.6 ms | f32 mul_mat 27.0 ms | 558 ms, 690 ms |
+| f16 KV, -fa | 119.6 ms | FLASH_ATTN_EXT 17.0 + 4.8 wait | 798 + 288 wait, 724 ms |
+
+f32 KV is no faster (the f32 sgemm path is not better than the f16 one here). Flash attention helps a decode call
+with many rows (attention 26 -> 22 ms incl. waits) and hurts prefill badly (459 -> 1,086 ms), and the KV layout
+(V transposed or not) is fixed per context, so llama.cpp cannot switch per batch. In prefill the non-flash path
+does 1.5e10 MACs in 0.46 s = 3.3e10 MAC/s, about 12% of the 4-core f32 FMA peak; AMX-BF16 or AVX512-FP16 would have
+room there, but that is a new attention kernel, not a small patch, so none was built in this round.
