@@ -471,3 +471,44 @@ with many rows (attention 26 -> 22 ms incl. waits) and hurts prefill badly (459 
 (V transposed or not) is fixed per context, so llama.cpp cannot switch per batch. In prefill the non-flash path
 does 1.5e10 MACs in 0.46 s = 3.3e10 MAC/s, about 12% of the 4-core f32 FMA peak; AMX-BF16 or AVX512-FP16 would have
 room there, but that is a new attention kernel, not a small patch, so none was built in this round.
+
+### 2026-11-12 ROW1 round 4, part 1b: our kernels on the 4-bit files
+
+Built in the hook: (1) A4, exact Q4_0 semantics (`ROW1_GGML=A` on a Q4_0 file): weights repacked at load to
+nibble rows that unpack with four AVX-512 ops per 128 B straight into the B tile layout in L1, Q8_0 activations from
+ggml's own quantization, variant A's per-32 float step; used for M >= 2 (at M = 1 it was slower than ggml's
+bandwidth-bound VNNI path: 47.6 against 41.6 ms per call). (2) `ROW1_OUT=1`: the big output matrix of a 4-bit GGUF
+(the tied Q6_K `token_embd`) is dequantized at load with ggml's `to_float`, requantized per row to int8 and served
+by the B16 kernel for every M; ggml's own AMX copy of it is then not written. (3) Under B/B16/B8s ggml's AMX copy
+of each Q8_0 weight is no longer written either (it is never read), which saves its full size: Qwen3-1.7B B16
+process RSS 3.62 GB against 3.93 GB stock with mmap on, i.e. our copy replaces ggml's.
+
+Qwen3-1.7B, `--no-mmap` + hugetlb. One request 128 tokens (tok/s, 3 runs), rows table (ms per call), perplexity
+ratio to stock (16 x 512 fixed text), facts:
+
+| File | Setting | 1 request | R=1 | R=8 | R=16 | R=32 | ppl ratio | facts |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Q4_0 | stock | 22.7 / 21.9 / 23.2 | 49.7 | 112.9 | 158.5 | 290.3 | 1 (25.419) | 48/50 |
+| Q4_0 | output B16 | 31.0 / 30.7 / 27.1 | 28.6 | 77.2 | 116.1 | 223.5 | 1.0000 | 48/50 |
+| Q4_0 | A4 + output B16 | 30.9 / 31.1 / 31.5 | 26.8 | 53.6 | 82.1 | 146.2 | 0.897 (see below) | 48/50 |
+| Q4_K_M | stock | 13.6 / 14.9 / 15.4 | 61.5 | 126.0 | 173.2 | 410.6 | 1 (21.969) | 48/50 |
+| Q4_K_M | output B16 | 17.3 / 17.4 / 17.7 | 51.9 | 111.7 | 135.9 | 250.8 | 0.9968 | 48/50 |
+
+No fact answer differs in right/wrong from stock in any setting. Profile of one call, Q4_0, A4 + output B16: R=1
+28.5 ms (q4_0 layers 17.8 + 1.9 wait, output 5.3, from 13.5-14.3 stock), R=8 55.6 ms (layers 31.7 + 3.9, output
+5.9), R=32 155.3 ms (layers 75.0 + 20.7 wait, output 11.4; A4 still uses the fixed per-thread split).
+
+A finding: stock llama.cpp's AMX Q4_0 kernel for M > 1 (`tinygemm_kernel_amx`, the path every prompt and every
+batched decode takes) loses quality. `lab/row1/nll_check.py` scores the first 3 chunks two ways: stock M=512
+perplexity 28.94, stock one token per call (M=1, VNNI) 24.56, our A4 at M=512 24.63. So the 0.897 ratio is stock's
+batched path being worse, not ours being better: A4 matches ggml's own M=1 arithmetic. On Q4_0, stock prefill and
+batched serving through ggml's AMX buffer give worse answers than its single-token path on this CPU.
+
+So on 4-bit files there was room for one request: 1.37x on Q4_0 (22.6 -> 31.2 tok/s, now 1.56x the Q8_0 file's
+20.0) and 1.17x on Q4_K_M, almost all from the output matrix; 2.1x at 8 rows on Q4_0. Q4_K_M's layers (q4_K,
+compute-bound at about 20 GB/s) would need their own kernel: super-blocks of 256 with 8 sub-blocks of 32, a 6-bit
+scale and a 6-bit min per sub-block, f16 d and dmin per super-block; dot = d * sum_s sc_s (x_s . q_s) - dmin *
+sum_s m_s sum(x_s), i.e. variant A's per-32 step with integer sub-block scales plus a correction from per-32
+activation sums. Not built. A per-row 4-bit format of our own (B-style) would read 0.5 byte per weight but per-row
+4-bit weights carry about 8x the rounding error of per-row int8 (round 3's int4 sketch), so it is not promising
+without a rotation; not built.
