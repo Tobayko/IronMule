@@ -382,3 +382,28 @@ models): draft available 7.8%, right 1.0% / 0.2% / 0.06%. Greedy fact answers (t
 prompt + answer so far): 1.7B (1,460 positions) available 17.3%, right 9.5% / 5.8% / 3.7%; 0.6B (1,057) available
 17.4%, right 8.9% / 4.4% / 2.1%. Copy drafts are rarely right on prose and short answers; a speculation step on this
 kernel would need a better drafter (n-gram tables from a corpus or a small model) to pay.
+
+### 2026-11-11 ROW1 round 4, part 1: one request at 4 bit (stock llama.cpp)
+
+Files: `unsloth/Qwen3-1.7B-GGUF` Q4_0 and Q4_K_M. In both the tied output matrix (`token_embd`) is Q6_K and stays in
+the plain CPU buffer (ggml's AMX buffer refuses it); everything else goes to ggml's AMX buffer (1,002 MiB for Q4_0,
+1,068 MiB for Q4_K_M, beside 244 MiB of CPU buffer). Patched build with the hook off (it touches only Q8_0 here),
+`--no-mmap` and hugetlb.
+
+| File | 1 request, 128 tokens (tok/s) | call at R=1 | R=8 | R=16 | R=32 | bytes per pass | overall GB/s at R=1 |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Q8_0 (round 2/3, for comparison) | 20.0 | 47-49 ms | 64-100 | 79-134 | 130-248 | 1.83 GB | 37-39 |
+| Q4_0 | 20.3 / 21.1 / 20.4 | 40.5 ms | 131.6 | 175.9 | 316.4 | about 1.31 GB | 32 |
+| Q4_K_M | 13.2 / 13.7 / 13.5 | 69.1 ms | 170.5 | 224.5 | 358.5 | about 1.38 GB | 20 |
+
+Per-op profile at R=1 (ms per call, compute + wait): Q4_0: q4_0 matmuls (193 nodes) 16.8 + 3.3, the Q6_K output
+matrix (1 node) 13.5, q4_1 (3 nodes) 0.5, f16 attention 1.0. Q4_K_M: q4_K (168 nodes) 32.0 + 8.0, q6_K (29 nodes:
+half the ffn_down/attn_v and the output) 24.4 + 2.3. Kernels: ggml's AMX extra buffer handles q4_0, q4_1, q4_K and
+q6_K in `ggml-cpu/amx/mmq.cpp` (M=1: `tinygemm_kernel_vnni`, M>1: `tinygemm_kernel_amx`); the output matrix in the CPU
+buffer runs ggml's generic Q6_K x Q8_K `vec_dot` loop.
+
+Reading: Q4_0's layers are bandwidth-bound already (about 1.0 GB in 20 ms, 50 GB/s), but its Q6_K output matrix is
+compute-bound (256 MB in 13.5 ms, 19 GB/s) and takes a third of the call. Q4_K_M is compute-bound throughout
+(20 GB/s): one request is slower than with Q8_0 (13.5 vs 20 tok/s) although it reads 25% fewer bytes. At more rows
+both 4-bit formats are much worse than Q8_0 (R=8 Q4_0 132 ms against Q8_0 B16 64 ms). So there is room: for one
+request mainly on Q4_K_M and in the Q6_K output matrix, and for every format at R > 1.

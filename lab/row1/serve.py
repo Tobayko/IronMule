@@ -59,7 +59,7 @@ def block(port, texts, limit):
 res = {"label": label, "mode": mode, "flags": extra, "env": {k: os.environ.get(k) for k in ("ROW1_GGML", "GLIBC_TUNABLES")}}
 if mode.startswith("load:"):
     for n in [int(x) for x in mode[5:].split(",")]:
-        proc, port = start(n, n * 2048)
+        proc, port = start(n, min(n * 2048, int(os.environ.get("ROW1_CTXCAP", "1000000000"))))
         try:
             texts = [f"Write a short story about {TOPICS[i % len(TOPICS)]}. /no_think" for i in range(n)]
             block(port, texts, 64)

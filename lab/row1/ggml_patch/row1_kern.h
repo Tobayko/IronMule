@@ -319,6 +319,94 @@ static void kern_b(const int8_t *W, const float *ws, int K, int jp0, int jp1, in
         }
     }
 }
+// ---- A4: exact Q4_0 semantics (Q4_0 weights x Q8_0 activations), variant-A arithmetic ----
+// packed per (pair, kb): [256 B member 0 nibbles][256 B member 1][32 B scales 0][32 B scales 1] = 576 B.
+// nibble byte (r, i), i < 32: low = B-tile byte (r, i), high = B-tile byte (r, i + 32), both as raw 0..15.
+static void pack_a4(const uint8_t *src, int N, int K, uint8_t *dst) {
+    int KB = K / 32;
+    for (int j = 0; j < N / 16; j++)
+        for (int kb = 0; kb < KB; kb++) {
+            uint8_t *o = dst + ((size_t)(j >> 1) * KB + kb) * 576;
+            uint8_t tile[8][64];
+            for (int n = 0; n < 16; n++) {
+                const uint8_t *blk = src + ((size_t)(j * 16 + n) * KB + kb) * 18;
+                for (int e = 0; e < 32; e++) {
+                    uint8_t q = e < 16 ? (blk[2 + e] & 15) : (blk[2 + e - 16] >> 4);
+                    tile[e / 4][n * 4 + e % 4] = q;
+                }
+                memcpy(o + 512 + (j & 1) * 32 + n * 2, blk, 2);
+            }
+            for (int r = 0; r < 8; r++) for (int i = 0; i < 32; i++)
+                o[(j & 1) * 256 + r * 32 + i] = (uint8_t)(tile[r][i] | (tile[r][i + 32] << 4));
+        }
+}
+static inline void unpack4(const uint8_t *p, int8_t *out) {  // 256 B nibbles -> 512 B B tile (8 x 64)
+    const __m512i m = _mm512_set1_epi8(15), e8 = _mm512_set1_epi8(8);
+    for (int h = 0; h < 4; h++) {
+        __m512i v = _mm512_loadu_si512(p + h * 64);
+        __m512i lo = _mm512_and_si512(v, m), hi = _mm512_and_si512(_mm512_srli_epi16(v, 4), m);
+        _mm512_store_si512(out + h * 128, _mm512_sub_epi8(_mm512_shuffle_i64x2(lo, hi, 0x44), e8));
+        _mm512_store_si512(out + h * 128 + 64, _mm512_sub_epi8(_mm512_shuffle_i64x2(lo, hi, 0xEE), e8));
+    }
+}
+static void kern_a4(const uint8_t *W, int K, int j0, int j1, const int8_t *X, const float *xs, int R, float *Y, int ldc) {
+    int mt = (R + 15) / 16, KB = K / 32, PF = pf();
+    alignas(64) int32_t buf[4][16 * 16];
+    alignas(64) int8_t bt[2][512];
+    __m512 acc[2][48];
+    const int8_t *X1 = X + (size_t)KB * 512, *X2 = X + (size_t)2 * KB * 512;
+    int r0 = mt == 1 ? R : 16, r1 = mt == 2 ? R - 16 : 16, r2 = R - 32;
+    for (int jp = j0; jp < j1; jp++) {
+        const uint8_t *p = W + (size_t)jp * KB * 576;
+        if (mt <= 2) {
+            for (int m = 0; m < R; m++) acc[0][m] = acc[1][m] = _mm512_setzero_ps();
+            for (int kb = 0; kb < KB; kb++, p += 576) {
+                if (PF) for (int l = 0; l < 576; l += 64) _mm_prefetch((const char *)p + PF + l, _MM_HINT_T1);
+                unpack4(p, bt[0]); unpack4(p + 256, bt[1]);
+                _tile_loadd(6, bt[0], 64); _tile_loadd(7, bt[1], 64);
+                _tile_zero(0); _tile_zero(1);
+                _tile_loadd(4, X + (size_t)kb * 512, 32); _tile_dpbssd(0, 4, 6); _tile_dpbssd(1, 4, 7);
+                if (mt > 1) { _tile_zero(2); _tile_zero(3); _tile_loadd(5, X1 + (size_t)kb * 512, 32); _tile_dpbssd(2, 5, 6); _tile_dpbssd(3, 5, 7); }
+                _tile_stored(0, buf[0], 64); _tile_stored(1, buf[1], 64);
+                if (mt > 1) { _tile_stored(2, buf[2], 64); _tile_stored(3, buf[3], 64); }
+                __m512 s0 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 512)));
+                __m512 s1 = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(p + 544)));
+                post_a(r0, buf[0], s0, xs, KB, kb, acc[0]); post_a(r0, buf[1], s1, xs, KB, kb, acc[1]);
+                if (mt > 1) { post_a(r1, buf[2], s0, xs + 16 * KB, KB, kb, acc[0] + 16); post_a(r1, buf[3], s1, xs + 16 * KB, KB, kb, acc[1] + 16); }
+            }
+            for (int m = 0; m < R; m++) { _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32, acc[0][m]); _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32 + 16, acc[1][m]); }
+        } else {
+            for (int b = 0; b < 2; b++) {
+                const uint8_t *q = p;
+                for (int m = 0; m < R; m++) acc[0][m] = _mm512_setzero_ps();
+                for (int kb = 0; kb < KB; kb++, q += 576) {
+                    if (PF && b == 0) for (int l = 0; l < 576; l += 64) _mm_prefetch((const char *)q + PF + l, _MM_HINT_T1);
+                    unpack4(q + b * 256, bt[0]);
+                    _tile_loadd(6, bt[0], 64);
+                    _tile_zero(0); _tile_loadd(3, X + (size_t)kb * 512, 32); _tile_dpbssd(0, 3, 6);
+                    _tile_zero(1); _tile_loadd(4, X1 + (size_t)kb * 512, 32); _tile_dpbssd(1, 4, 6);
+                    _tile_zero(2); _tile_loadd(5, X2 + (size_t)kb * 512, 32); _tile_dpbssd(2, 5, 6);
+                    _tile_stored(0, buf[0], 64); _tile_stored(1, buf[1], 64); _tile_stored(2, buf[2], 64);
+                    __m512 sw = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i *)(q + 512 + b * 32)));
+                    post_a(16, buf[0], sw, xs, KB, kb, acc[0]); post_a(16, buf[1], sw, xs + 16 * KB, KB, kb, acc[0] + 16);
+                    post_a(r2, buf[2], sw, xs + 32 * KB, KB, kb, acc[0] + 32);
+                }
+                for (int m = 0; m < R; m++) _mm512_storeu_ps(Y + (size_t)m * ldc + jp * 32 + b * 16, acc[0][m]);
+            }
+        }
+    }
+}
+static void register_weight_q4(const void *key, const void *src, int N, int K) {
+    if (variant() != VA || N % 32 || K % 512) return;
+    size_t n = (size_t)N * K / 32 * 18;
+    void *p = mmap(0, n, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    if (p == MAP_FAILED) return;
+    madvise(p, n, MADV_HUGEPAGE);
+    pack_a4((const uint8_t *)src, N, K, (uint8_t *)p);
+    std::lock_guard<std::mutex> g(g_mu);
+    g_packed[key] = (uint8_t *)p; g_resident += n;
+}
+static int a4m1() { static int e = -1; if (e < 0) { const char *v = getenv("ROW1_A4M1"); e = v ? atoi(v) : 0; } return e; }
 // workspace beyond ggml's own (quantized A rows): packed X and float scales
 static size_t extra_wsize(int M, int K) {  // A: chunks of 48 rows; B/B16 per plan
     size_t a = (size_t)((M + 47) / 48) * 48 * K + (size_t)((M + 47) / 48) * 48 * (K / 32) * 4 + 256;

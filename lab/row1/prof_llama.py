@@ -4,7 +4,7 @@ sys.path.insert(0, "/home/user/IronMule")
 import ironmule.ggml_engine as ge
 gguf = sys.argv[1]
 ge.GgmlEngine._warm_up = lambda self: None
-eng = ge.GgmlEngine(gguf, speculate=False, seqs=32, seq_ctx=256, max_rows=64)
+eng = ge.GgmlEngine(gguf, speculate=False, seqs=32, seq_ctx=256, max_rows=64, kv_f32=os.environ.get("ROW1_KVF32") == "1", flash_attn=os.environ.get("ROW1_FA") == "1")
 L = eng.L
 cpu = ctypes.CDLL(os.path.join(os.environ["LLAMA_CPP_LIB_PATH"], "libggml-cpu.so"))
 prompt = eng.tokenize("The quick brown fox jumps over the lazy dog. " * 4)[:32]

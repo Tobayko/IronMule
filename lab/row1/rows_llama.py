@@ -14,7 +14,7 @@ if not mmap:
     def p():
         q = orig(); q.use_mmap = False; return q
     L.llama_model_default_params = p
-eng = ge.GgmlEngine(gguf, speculate=False, seqs=48, seq_ctx=256, max_rows=64)
+eng = ge.GgmlEngine(gguf, speculate=False, seqs=48, seq_ctx=256, max_rows=64, kv_f32=os.environ.get("ROW1_KVF32") == "1", flash_attn=os.environ.get("ROW1_FA") == "1")
 L = eng.L
 prompt = eng.tokenize("The quick brown fox jumps over the lazy dog. " * 4)[:32]
 P = len(prompt)

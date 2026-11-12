@@ -1,10 +1,21 @@
-36a37
+36a37,38
 > #include "row1_kern.h"
-2336a2338
+> #include <string>
+2336a2339,2340
 >     if (TYPE == GGML_TYPE_Q8_0) row1::register_weight(tensor->data, data, N, K);
-2357a2360
->     if (TYPE == GGML_TYPE_Q8_0 && row1::variant() != row1::OFF) desired_wsize = (desired_wsize + 63) / 64 * 64 + row1::extra_wsize(M, K);
-2425a2429,2481
+>     if (TYPE == GGML_TYPE_Q4_0) row1::register_weight_q4(tensor->data, data, N, K);
+2357a2362
+>     if ((TYPE == GGML_TYPE_Q8_0 || TYPE == GGML_TYPE_Q4_0) && row1::variant() != row1::OFF) desired_wsize = (desired_wsize + 63) / 64 * 64 + row1::extra_wsize(M, K);
+2425a2431,2492
+>     if (params->ith == 0 && getenv("ROW1_DUMPDIR") && getenv("ROW1_DUMPNAMES")) {  // ROW1: capture named matmul inputs
+>         std::string names = std::string(",") + getenv("ROW1_DUMPNAMES") + ",";
+>         if (names.find(std::string(",") + src0->name + ",") != std::string::npos) {
+>             std::string path = std::string(getenv("ROW1_DUMPDIR")) + "/" + src0->name + ".f32";
+>             FILE * f = fopen(path.c_str(), "ab");
+>             for (int m = 0; m < M; m++) fwrite((const char *)src1->data + m * src1->nb[1], sizeof(float), K, f);
+>             fclose(f);
+>         }
+>     }
 >     if (TYPE == GGML_TYPE_Q8_0 && params->ith == 0 && N > 100000 && getenv("ROW1_DUMP")) {  // ROW1: capture the output matmul's input
 >         FILE * f = fopen(getenv("ROW1_DUMP"), "ab");
 >         for (int m = 0; m < M; m++) fwrite((const char *)src1->data + m * src1->nb[1], sizeof(float), K, f);
@@ -58,9 +69,9 @@
 >         }
 >     }
 > 
-2446a2503,2537
+2446a2514,2549
 > 
->     if (TYPE == GGML_TYPE_Q8_0 && M >= 2 && row1::enabled()) {
+>     if (((TYPE == GGML_TYPE_Q8_0 && M >= 2) || (TYPE == GGML_TYPE_Q4_0 && M >= 1 && (M >= 2 || row1::a4m1()))) && row1::enabled()) {
 >         const uint8_t * W = row1::lookup(src0->data);
 >         if (W) {
 >             const int KB = K / 32;
@@ -87,7 +98,8 @@
 >                 for (int ch = 0; ch < nch; ch++) {
 >                     int rows = std::min(48, M - ch * 48);
 >                     if (ch == 0 || rows != 48) row1::config(rows);
->                     row1::kern_a(W, K, jb, je, Xp + (size_t)ch * 48 * K, xs + (size_t)ch * 48 * KB, rows, (float *)dst->data + (size_t)ch * 48 * ldc, ldc);
+>                     if (TYPE == GGML_TYPE_Q4_0) row1::kern_a4(W, K, jb, je, Xp + (size_t)ch * 48 * K, xs + (size_t)ch * 48 * KB, rows, (float *)dst->data + (size_t)ch * 48 * ldc, ldc);
+>                     else row1::kern_a(W, K, jb, je, Xp + (size_t)ch * 48 * K, xs + (size_t)ch * 48 * KB, rows, (float *)dst->data + (size_t)ch * 48 * ldc, ldc);
 >                 }
 >                 if (saved.pal) _tile_loadconfig(&saved); else _tile_release();
 >             }
