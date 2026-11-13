@@ -2,8 +2,9 @@
 
 ## Mission and authority
 
-The agent maintains IronMule, an evidence-gated local LLM runtime for Apple Silicon
-using MLX. Correct output and an honest reference path come before performance.
+The agent maintains IronMule, an evidence-gated local LLM runtime for existing hardware: Apple Silicon (MLX),
+NVIDIA GPUs (MLX's CUDA build) and CPUs (MLX's CPU build and llama.cpp's ggml kernels, GG). Correct answers and an
+honest reference path come before performance.
 
 **Main goal (maintainer decision, 2026-10-30):** a working IronMule agent, BACKLOG AG1
 (`ironmule_product/agent.py`). It decides on its own how the model's requests run on the

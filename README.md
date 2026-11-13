@@ -111,15 +111,19 @@ print(result.text)
 ## The IronMule agent (the project's main goal)
 
 `ironmule serve --agent on` hands scheduling to the IronMule agent, a small decision model that runs inside the
-server. It is not a language model: the language model is only the work it schedules. It is opt-in and experimental. Its result on hardware is still to be measured (backlog AG1).
+server. It is not a language model: the language model is only the work it schedules. It is opt-in and experimental.
+First hardware result (AG6-H, one Kaggle T4, one run): dreaming over the traffic it served, it switched from routing
+to stacking and made 1.51x the tokens per second of the router it replaced. Answers may differ from the reference only
+on a path that passed its quality gate on the machine (owner decision of 2026-11-10: same answer quality, not
+identical tokens), and `/health` names that path.
 
 - **It decides.** At every group start it chooses the order (shortest answer first or arrival order) and how many
-  requests run together. Each decision is a few dot products and takes microseconds. Answers never change.
+  requests run together. Each decision is a few dot products and takes microseconds.
 - **It learns all the time.** Every finished group updates its model of what this machine's work costs. Every
   finished request goes into a memory of arrival times and lengths, with no text. While the server is idle, a
   separate planner process trains a new strategy by reinforcement learning in a simulation of this machine.
 - **It proves before it serves.** A new strategy serves only after it beats the current one in replays of recorded
-  traffic on the real model, with identical answers, by more than two identical runs differ. Errors, failed
+  traffic on the real model, with answers within its quality gate, by more than two identical runs differ. Errors, failed
   requests or `POST /v1/ironmule/dispatch {"action": "off"}` withdraw it for good. A real request always
   interrupts the agent's idle work.
 
@@ -165,7 +169,7 @@ Without the planner, tuning uses the fixed order; without the controller, `autop
 
 ## How it works
 
-A fresh install serves the reference path; IronMule promotes a faster path only after measuring that it is both faster and identical on your machine, and keeps watching for drift back to the reference. Anything that could change the output (precision, sampling, true tensor batching) is opt-in, never chosen automatically.
+A fresh install serves the reference path; IronMule promotes a faster path only after measuring that it is both faster and identical on your machine, and keeps watching for drift back to the reference. Anything that could change the output (precision, sampling, true tensor batching) is opt-in: you choose it, or `--agent on` chooses it after it passed the agent's quality gate on your machine, and `/health` says which path serves.
 
 - **Grouped execution** — several requests share the time the GPU would otherwise wait.
 - **Head skip** — the prompt is processed without computing output logits it never uses.

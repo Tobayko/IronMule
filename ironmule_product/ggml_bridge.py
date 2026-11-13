@@ -4,6 +4,9 @@ joins (`admit`) and cancellation, `free_slots`, `request_limit`, `eos_ids`, `met
 
 from __future__ import annotations
 
+import os
+import threading
+import time
 from typing import Any, Callable, Sequence
 
 from .engine_bridge import EngineBridgeResult
@@ -16,8 +19,14 @@ class GgmlBridge:
         from ironmule.ggml_engine import CHECK_TEXT, GgmlEngine, file_sha256
 
         settings = {k: bool(v) for k, v in ((gate or {}).get("settings") or {}).items()
-                    if k in ("flash_attn", "kv_unified", "kv_f32")}  # GG1: what the first start measured, and the gate passed
-        self._engine = GgmlEngine(gguf, speculate=speculate, **settings)
+                    if k in ("flash_attn", "kv_unified", "kv_f32", "kv_q8")}  # GG1: what the first start measured, and the gate passed
+        plan = (gate or {}).get("agent") or {}
+        start = (plan.get("configs") or {}).get(plan.get("incumbent")) if os.environ.get(
+            "IRONMULE_GGML_AGENT", "1") != "0" else None
+        # AG10: the service's capacity is the widest configuration the agent may switch to; the engine starts at the
+        # incumbent's width
+        self._engine = GgmlEngine(gguf, speculate=speculate, **settings,
+                                  **({"seqs": int(start["seqs"])} if start else {}))
         try:
             hf = getattr(tokenizer, "_tokenizer", tokenizer)
             if self._engine.tokenize(CHECK_TEXT) != list(hf.encode(CHECK_TEXT, add_special_tokens=False)):
@@ -33,6 +42,50 @@ class GgmlBridge:
         self._gguf_sha256 = file_sha256(gguf)
         self._gate = dict(gate) if gate else None
         self._speculate = speculate
+        self._run_lock = threading.Lock()  # one run or one reconfiguration at a time
+        self._last_run = time.monotonic()
+        self._agent = None
+        self._stop = threading.Event()
+        self._start_agent()
+
+    def _start_agent(self) -> None:
+        """AG10: the agent learns, dreams and switches the engine's configuration among those the cli measured and the
+        gate allowed (`gate["agent"]`); IRONMULE_GGML_AGENT=0 turns it off."""
+        plan = (self._gate or {}).get("agent")
+        if not plan or os.environ.get("IRONMULE_GGML_AGENT", "1") == "0" or len(plan.get("configs", {})) < 2:
+            return
+        from ironmule.ggml_agent import GgmlAgent
+        from ironmule.ggml_engine import ENGINE_VERSION, machine_key
+
+        configs, incumbent = plan["configs"], plan["incumbent"]
+        if incumbent not in configs:
+            return
+        binding = {"gguf": self._gguf_sha256, "machine": machine_key(), "engine": ENGINE_VERSION,
+                   "gpu_layers": self._engine.gpu_layers}
+        self._agent = GgmlAgent(plan.get("root"), binding, configs, incumbent)
+        serving = configs[self._agent.current]  # resumed: what this binding learned last time
+        wanted = {k: bool(v) for k, v in (serving.get("settings") or {}).items() if v}
+        if self._engine.seqs != int(serving["seqs"]) or wanted != {k: v for k, v in self._engine.settings.items() if v}:
+            self._switch(self._agent.current)
+        self._engine.observer = self._agent.observe_step
+        threading.Thread(target=self._idle_loop, name="ironmule-ggml-agent", daemon=True).start()
+
+    def _switch(self, name: str) -> None:
+        config = self._agent.configs[name]
+        with self._run_lock:
+            self._engine.reconfigure(int(config["seqs"]), config.get("settings") or {})
+        self._agent.switched(name)
+
+    def _idle_loop(self) -> None:
+        while not self._stop.wait(1.0):
+            if self._run_lock.locked() or time.monotonic() - self._last_run < 3.0:
+                continue
+            try:
+                target = self._agent.idle()
+                if target is not None and target != self._agent.current and not self._run_lock.locked():
+                    self._switch(target)
+            except Exception:  # noqa: BLE001 - the agent never stops the server; the incumbent keeps serving
+                self._agent.pending_switch = None
 
     def metadata(self) -> dict[str, Any]:
         """Safe startup metadata; no request data."""
@@ -45,7 +98,8 @@ class GgmlBridge:
     def counters(self) -> dict[str, Any]:
         summary = self._engine.summary()
         return {"ggml_steps": summary["steps"], **({"speculation": summary["speculation"]}
-                                                   if isinstance(summary["speculation"], dict) else {})}
+                                                   if isinstance(summary["speculation"], dict) else {}),
+                **({"ggml_agent": self._agent.status()} if self._agent is not None else {})}
 
     def eos_ids(self) -> tuple[int, ...]:
         return self._eos
@@ -73,6 +127,7 @@ class GgmlBridge:
         stops = list(cancelled) if cancelled is not None else [None] * len(prompt_ids)
         jobs = [Job(list(ids), int(limit), emit, stop)
                 for ids, limit, emit, stop in zip(prompt_ids, limits, emitters, stops)]
+        arrived = {id(job): time.monotonic() for job in jobs}
 
         def take(free: int) -> list[Job]:
             rows = admit(free) if admit is not None else []
@@ -82,9 +137,19 @@ class GgmlBridge:
                 if len(row) > 3 and row[3] is not None:
                     raise ValueError("the ggml engine serves one-shot prompts")
                 fresh.append(Job(list(ids), int(limit), emit, row[4] if len(row) > 4 else None))
+                arrived[id(fresh[-1])] = time.monotonic()
             return fresh
 
-        served = self._engine.run(jobs, admit=take if admit is not None else None)
+        with self._run_lock:
+            try:
+                served = self._engine.run(jobs, admit=take if admit is not None else None)
+            finally:
+                self._last_run = time.monotonic()
+        if self._agent is not None:  # the traffic memory: arrival, prompt and answer lengths, no text
+            for job in served:
+                if job.reason != "cancelled":
+                    self._agent.observe_request(arrived.get(id(job), time.monotonic()), len(job.ids),
+                                                max(1, len(job.tokens)))
         reasons = {"eos": "stop", "length": "length", "cancelled": "cancelled"}
         results = []
         for job in served:
@@ -96,4 +161,6 @@ class GgmlBridge:
         return results
 
     def close(self) -> None:
-        self._engine.close()
+        self._stop.set()
+        with self._run_lock:
+            self._engine.close()

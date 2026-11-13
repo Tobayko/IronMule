@@ -85,11 +85,10 @@ def test_the_worker_client_serves_ggml_only_with_a_gguf_whose_gate_passed():
     assert client.streams_batches and client.reuses_slots and client.batch_capacity == 8
 
 
-def test_serve_refuses_ggml_without_a_gguf_or_with_gpus(tmp_path, capsys):
+def test_serve_refuses_ggml_without_a_gguf(tmp_path, capsys):
     from ironmule_product import cli
 
-    for argv, message in ((["--engine", "ggml"], "--engine ggml and --gguf go together"),
-                          (["--engine", "ggml", "--gguf", "/x.gguf", "--gpus", "all"], "serves on the CPU")):
+    for argv, message in ((["--engine", "ggml"], "--engine ggml and --gguf go together"),):
         with pytest.raises(SystemExit):
             cli.serve(["--model", "local/test", "--state-dir", str(tmp_path / "state"), *argv])
         assert message in capsys.readouterr().err
@@ -372,7 +371,9 @@ def test_seq1_the_choice_is_measured_once_and_remembered(monkeypatch, tmp_path):
     monkeypatch.setattr(ggml_engine, "memory_bytes", lambda: (16 * 2**30, 16 * 2**30))
     first = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {"flash_attn": True}, cache=tmp_path / "c")
     again = ggml_engine.choose_sequences(str(tmp_path / "m.gguf"), {"flash_attn": True}, cache=tmp_path / "c")
-    assert first["sequences"] == 16 and first["fitting"] == [8, 16, 32, 64] and again == first and len(calls) == 2
+    # AG10: the widths are measured under the gated setting and under llama.cpp's default, for the agent's choice
+    assert first["sequences"] == 16 and first["fitting"] == [8, 16, 32, 64] and again == first and len(calls) == 3
+    assert len(first["measured"]) == 2
 
 
 def test_seq1_a_failed_measurement_keeps_eight_sequences(monkeypatch, tmp_path):

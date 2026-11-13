@@ -220,6 +220,24 @@ def _engine_options(engine: str, width: int | None = None) -> dict[str, Any]:
     return {}
 
 
+
+def _ggml_agent_plan(width: dict[str, Any], root: Any) -> dict[str, Any] | None:
+    """AG10: the configurations the ggml engine's agent may serve -- every width SEQ1 measured on this machine with the
+    settings the quality gate passed -- and the one SEQ1's rule chose as the incumbent. None with fewer than two."""
+    from ironmule.ggml_agent import configs_from_measurement
+
+    if not width.get("step_s") or os.environ.get("IRONMULE_GGML_AGENT", "1") == "0":
+        return None
+    measured = width.get("measured") or [{"settings": width.get("settings") or {}, "step_s": width["step_s"],
+                                          "step_one_s": width.get("step_one_s") or {}}]
+    configs = configs_from_measurement(measured, int(width["seq_ctx"]))
+    served = {k: True for k, v in (width.get("settings") or {}).items() if v}
+    incumbent = next((k for k, c in configs.items()
+                      if c["seqs"] == int(width["sequences"]) and c["settings"] == served), None)
+    if len(configs) < 2 or incumbent is None:
+        return None
+    return {"configs": configs, "incumbent": incumbent, "root": str(root)}
+
 def serve(argv: list[str]) -> int:
     parser = _parser("serve", "Serve a registered local model through the OpenAI-compatible API.")
     choice = parser.add_mutually_exclusive_group(required=True)
@@ -318,8 +336,6 @@ def serve(argv: list[str]) -> int:
         parser.error("--speculate context needs --engine dense, --engine ggml or --agent on (SP2)")
     if (args.engine == "ggml") != (args.gguf is not None):
         parser.error("--engine ggml and --gguf go together (GG1)")
-    if args.engine == "ggml" and args.gpus is not None:
-        parser.error("--engine ggml serves on the CPU; --gpus pins workers to GPUs")
     if args.cpu_blas != "stock" and args.gpus is not None:
         parser.error("--cpu-blas applies to CPU workers; --gpus pins workers to GPUs")
     if (args.dispatch_policy is None) != (args.dispatch_evidence is None):
@@ -395,9 +411,14 @@ def serve(argv: list[str]) -> int:
                 if not os.environ.get("IRONMULE_GGML_SEQS"):  # SEQ1: the engine chooses its width on this machine
                     from ironmule.ggml_engine import choose_sequences
 
-                    width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate")
+                    width = choose_sequences(args.gguf, checked.get("settings"), cache=Path(store.root) / "ggml-gate",
+                                             device=devices[0])
                     os.environ["IRONMULE_GGML_SEQS"] = str(width["sequences"])  # the worker and its client follow it
                     checked = {**checked, "sequences": width}
+                    plan = _ggml_agent_plan(width, store.root)
+                    if plan is not None:  # AG10: the agent may switch among the measured widths while it serves
+                        checked["agent"] = plan
+                        os.environ["IRONMULE_GGML_SEQS"] = str(max(c["seqs"] for c in plan["configs"].values()))
                     print(json.dumps({"ggml_sequences": {k: width.get(k) for k in ("sequences", "fitting", "rates",
                                                                                    "reason")}}), flush=True)
                 ggml_options = {"engine_configuration": "ggml", "ggml_gguf": str(Path(args.gguf).resolve()),
@@ -408,8 +429,9 @@ def serve(argv: list[str]) -> int:
                 # `auto` leaves it off, also where the agent chose that engine (BACKLOG SP2, Tier 0)
                 speculate = args.engine == "dense" and args.speculate == "context"
                 if args.engine == "ggml":
+                    # MG2: with --gpus each worker sees one GPU and offloads every layer to it (data parallel)
                     return MLXWorkerClient(spec, thinking=not args.no_thinking, execution_variant="current_engine",
-                                           **ggml_options)
+                                           cuda_device=device, **ggml_options)
                 return MLXWorkerClient(spec, compute_dtype=args.compute_dtype, chat_reuse=args.chat_reuse,
                                        thinking=not args.no_thinking, cuda_device=device,
                                        cpu_blas=None if args.cpu_blas == "stock" else args.cpu_blas,

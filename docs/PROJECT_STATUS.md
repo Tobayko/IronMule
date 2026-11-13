@@ -12,9 +12,11 @@ Alle Rohwerte, Hashes, Preflights und Audits stehen unverändert in
 Das Hauptziel des Projekts ist ein funktionierender IronMule-Agent (Backlog AG1,
 `ironmule serve --agent on`). Er entscheidet selbst, wie die Anfragen des Modells auf
 der Hardware laufen, erreicht dort eine gemessene Steigerung, lernt im Betrieb laufend
-per Reinforcement Learning weiter und entscheidet in Mikrosekunden. Er ändert keine
-Antwort und setzt nur ein, was er auf der eigenen Maschine bewiesen hat. Der Stand der
-Messungen steht in `docs/BACKLOG.md` unter AG1.
+per Reinforcement Learning weiter und entscheidet in Mikrosekunden. Er hält die
+Antwortqualität (seit 2026-11-10 gleiche Qualität statt identischer Tokens, Backlog
+"The main goal") und setzt nur ein, was er auf der eigenen Maschine bewiesen hat. Der
+Stand der Messungen steht in `docs/BACKLOG.md` unter AG1 und in `docs/LAB.md`; diese
+Datei ist ab dem 8. September 2026 nicht mehr fortgeschrieben.
 
 ## Aktuelle Produktprüfung — 2026-09-08
 

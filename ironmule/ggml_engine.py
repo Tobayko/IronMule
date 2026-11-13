@@ -46,6 +46,13 @@ PASSED_OVER = 8  # a waiting request passed over this often by shorter prompts g
 # `cache_prompt` (its default). The reused positions were computed in another batch, so tokens can differ as on
 # llama-server; "0" turns it off.
 PREFIX_REUSE = os.environ.get("IRONMULE_GGML_PREFIX_REUSE", "1") != "0"
+# MG2 (2026-11-13): a llama.cpp build with a GPU backend (CUDA, Metal, Vulkan, ...) gets every layer offloaded by default;
+# IRONMULE_GGML_GPU_LAYERS sets a number (0 keeps the CPU). Several visible GPUs share one model by layers (llama.cpp's
+# default); IRONMULE_GGML_SPLIT = layer | row | none chooses llama.cpp's split mode. Serving one model per GPU instead
+# (data parallel) is `ironmule serve --gpus all`: a worker per GPU, each seeing only its own.
+GPU_LAYERS = os.environ.get("IRONMULE_GGML_GPU_LAYERS")
+SPLIT_MODES = {"none": 0, "layer": 1, "row": 2}
+SPLIT = os.environ.get("IRONMULE_GGML_SPLIT", "layer")
 CHECK_TEXT = "IronMule checks that the GGUF's tokenizer gives the registered model's token ids: 0123 ÄÖÜ ß -> ok."
 
 
@@ -61,6 +68,22 @@ def bindings() -> Any:
     import llama_cpp
 
     return llama_cpp
+
+
+def gpu_offload(L: Any | None = None) -> bool:
+    """Whether the loaded llama.cpp library has a GPU backend to offload layers to."""
+    try:
+        L = L or bindings()
+        return bool(L.llama_supports_gpu_offload())
+    except Exception:  # noqa: BLE001 - no library, no GPU
+        return False
+
+
+def gpu_layers(L: Any | None = None) -> int:
+    """Layers to offload: IRONMULE_GGML_GPU_LAYERS, else all (-1 means every layer to llama.cpp) where a GPU backend is."""
+    if GPU_LAYERS is not None:
+        return int(GPU_LAYERS)
+    return 999 if gpu_offload(L) else 0
 
 
 def available() -> str | None:
@@ -96,27 +119,56 @@ class Job:
 
 
 class GgmlEngine:
+    observer: Callable[[int, int, int, float], None] | None = None  # AG10: (rows, prompt, kv, seconds) of each step
+    gpu_layers = 0
+
     def __init__(self, gguf: str, *, threads: int = THREADS, seqs: int = SEQS, seq_ctx: int = SEQ_CTX,
                  speculate: bool = True, max_rows: int = MAX_ROWS, flash_attn: bool = False,
-                 kv_unified: bool = False, kv_f32: bool = False, model: Any = None):
+                 kv_unified: bool = False, kv_f32: bool = False, kv_q8: bool = False, model: Any = None):
         import numpy as np
-
-        from .speculation import StepPolicy
 
         L = bindings()
         self.L, self.np = L, np
         L.llama_backend_init()
         self._owns_model = model is None  # SEQ1: a width measurement opens several contexts on one loaded model
-        self.model = model or L.llama_model_load_from_file(str(gguf).encode(), L.llama_model_default_params())
+        self.gpu_layers = gpu_layers(L)  # the same for a context opened on an already loaded model (SEQ1)
+        if model is None:
+            mparams = L.llama_model_default_params()
+            mparams.n_gpu_layers = self.gpu_layers
+            if self.gpu_layers:
+                mparams.split_mode = SPLIT_MODES.get(SPLIT, 1)
+        self.model = model or L.llama_model_load_from_file(str(gguf).encode(), mparams)
         if not self.model:
             raise ValueError(f"llama.cpp could not load {gguf}")
+        self.threads, self.max_rows, self.speculate = threads, max_rows, speculate
+        self.prefix_reuse = PREFIX_REUSE
+        self.prompt_tokens = self.reused_tokens = 0
+        self._lock = threading.Lock()
+        self._open(seqs, seq_ctx, flash_attn=flash_attn, kv_unified=kv_unified, kv_f32=kv_f32, kv_q8=kv_q8)
+        self.steps = 0
+        self._warm_up()
+
+    def _open(self, seqs: int, seq_ctx: int, *, flash_attn: bool = False, kv_unified: bool = False,
+              kv_f32: bool = False, kv_q8: bool = False) -> None:
+        """A context of `seqs` sequences of `seq_ctx` tokens on the loaded model, with its batch and thread pool."""
+        from .speculation import StepPolicy
+
+        L, threads = self.L, self.threads
         params = L.llama_context_default_params()
         params.n_ctx, params.n_batch, params.n_ubatch = seqs * seq_ctx, seq_ctx, 512
         params.n_seq_max, params.n_threads, params.n_threads_batch = seqs, threads, threads
         params.flash_attn, params.kv_unified = bool(flash_attn), bool(kv_unified)  # GG1: measured at the first start
         if kv_f32:  # GG1, second amendment: the KV cache in full precision (GGML_TYPE_F32) instead of f16
             params.type_k = params.type_v = 0
+        if kv_q8:  # KV1 (2026-11-13): llama.cpp's 8-bit KV cache (GGML_TYPE_Q8_0, `-ctk q8_0 -ctv q8_0`), half the bytes
+            if kv_f32 or not flash_attn:
+                raise ValueError("an 8-bit KV cache needs flash attention and excludes kv_f32 (llama.cpp's rule)")
+            params.type_k = params.type_v = 8
+        if self.gpu_layers:
+            params.offload_kqv = True  # the KV cache lives beside the offloaded layers
         self.settings = {"flash_attn": bool(flash_attn), "kv_unified": bool(kv_unified), "kv_f32": bool(kv_f32)}
+        if kv_q8:
+            self.settings["kv_q8"] = True
         self.ctx = L.llama_init_from_model(self.model, params)
         if not self.ctx:
             raise ValueError("llama.cpp could not create a context")
@@ -124,15 +176,17 @@ class GgmlEngine:
         self.vocab = L.llama_model_get_vocab(self.model)
         self.n_vocab = L.llama_vocab_n_tokens(self.vocab)
         self.memory = L.llama_get_memory(self.ctx)
-        self.seqs, self.seq_ctx, self.threads = seqs, seq_ctx, threads
-        self.batch = L.llama_batch_init(max(seq_ctx, max_rows), 0, seqs)
-        self.policy = StepPolicy(max_rows) if speculate else None
+        self.seqs, self.seq_ctx = seqs, seq_ctx
+        self.batch = L.llama_batch_init(max(seq_ctx, self.max_rows), 0, seqs)
+        self.policy = StepPolicy(self.max_rows) if self.speculate else None
         self._free = list(range(seqs))
         self._kept: dict[int, list[int]] = {}  # free sequence -> the tokens its KV still holds (prefix reuse)
-        self.prefix_reuse = PREFIX_REUSE
-        self.prompt_tokens = self.reused_tokens = 0
-        self._lock = threading.Lock()
-        self.steps = 0
+
+    def reconfigure(self, seqs: int, settings: dict[str, bool]) -> None:
+        """AG10: serve with another width or KV cache on the same loaded model; only between runs (the caller holds the
+        run lock). The old context and its KV go; the new one is warmed up as at the start."""
+        self.close_context()
+        self._open(seqs, self.seq_ctx, **{k: bool(v) for k, v in settings.items() if k in SETTING_KEYS})
         self._warm_up()
 
     def _warm_up(self) -> None:
@@ -382,8 +436,12 @@ class GgmlEngine:
                         take(seq, job, self._prefill(job.ids, seq, keep))
                 started = time.perf_counter()
                 picks = self._decode(rows) if rows else []
+                seconds = time.perf_counter() - started
                 if self.policy is not None and decode_rows and not batched:  # a prompt in the call is not a step's price
-                    self.policy.observe_step(decode_rows, time.perf_counter() - started, any(ks))
+                    self.policy.observe_step(decode_rows, seconds, any(ks))
+                if self.observer is not None and rows:  # AG10: the agent's world model learns every step's price
+                    self.observer(decode_rows, len(rows) - decode_rows,
+                                  sum(len(j.ids) + len(j.tokens) for j in active.values()), seconds)
                 self.steps += 1
                 at = 0
                 for seq, (drafts, bucket), k in zip(order, offers, ks):
@@ -432,6 +490,7 @@ class GgmlEngine:
 
     def summary(self) -> dict[str, Any]:
         return {"engine": "ggml", "engine_version": ENGINE_VERSION, "settings": dict(self.settings),
+                "gpu": {"layers": self.gpu_layers, "split": SPLIT} if self.gpu_layers else None,
                 "threadpool_poll": POLL if self._threadpool else None,
                 "threads": self.threads, "sequences": self.seqs,
                 "sequence_tokens": self.seq_ctx, "steps": self.steps,
@@ -473,6 +532,8 @@ class GgmlEngine:
         fallback = self.L.llama_model_n_embd(self.model) // max(1, self.L.llama_model_n_head(self.model))
         k_len = int(meta(f"{arch}.attention.key_length") or fallback)
         v_len = int(meta(f"{arch}.attention.value_length") or k_len)
+        if self.settings.get("kv_q8"):  # Q8_0: 34 bytes per 32 values
+            return layers * kv_heads * ((k_len + 31) // 32 + (v_len + 31) // 32) * 34
         return layers * kv_heads * (k_len + v_len) * (4 if self.settings.get("kv_f32") else 2)
 
 
@@ -511,7 +572,8 @@ def autotune(gguf: str, steps: int = 24, repeats: int = 3) -> dict[str, Any]:
 # --- SEQ1: the engine chooses how many sequences it serves at once (owner, 2026-11-13: "like an agent") ----------------
 WIDTHS = (8, 16, 32, 64)  # the sequence counts it may choose; fewer only where 8 does not fit the memory
 WIDTH_GAIN = 1.10  # a doubling must buy at least 10 % more tokens per second, else the memory is not spent
-WIDTH_VERSION = 1
+WIDTH_VERSION = 2  # 2 (AG10): also the default setting and a longer context, for the agent's world model
+AGENT_LONG_CTX = 512
 
 
 def _cgroup_memory() -> tuple[int, int] | None:
@@ -563,6 +625,29 @@ def memory_bytes() -> tuple[int, int]:
     return available, total
 
 
+def gpu_memory_bytes(devices: str | None = None) -> tuple[int, int] | None:
+    """(free, total) bytes of the GPUs a context will use, from `nvidia-smi` (MG2): the visible devices' sum when a model
+    is split over them, or the one device named in `devices`. None where no NVIDIA GPU answers."""
+    import subprocess
+
+    command = ["nvidia-smi", "--query-gpu=index,memory.free,memory.total", "--format=csv,noheader,nounits"]
+    try:
+        done = subprocess.run(command, capture_output=True, text=True, timeout=20, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    rows = {}
+    for line in done.stdout.strip().splitlines():
+        parts = [p.strip() for p in line.split(",")]
+        if len(parts) == 3 and all(p.isdigit() for p in parts):
+            rows[parts[0]] = (int(parts[1]) * 2**20, int(parts[2]) * 2**20)
+    visible = devices or os.environ.get("CUDA_VISIBLE_DEVICES")
+    if visible:
+        rows = {k: v for k, v in rows.items() if k in [d.strip() for d in visible.split(",")]}
+    if not rows:
+        return None
+    return sum(v[0] for v in rows.values()), sum(v[1] for v in rows.values())
+
+
 def fitting_widths(cell_bytes: int, seq_ctx: int, model_bytes: int, available: int, total: int) -> list[int]:
     """The widths whose KV cache (every sequence `seq_ctx` tokens long) fits beside the model and a reserve of a tenth of
     the machine's memory (at least 1.5 GiB); 8 or the largest of 4, 2, 1 that fits where none of WIDTHS does."""
@@ -587,11 +672,12 @@ def decide_width(rates: dict[int, float]) -> int:
 
 
 def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: Sequence[int], steps: int = 16,
-                   repeats: int = 3) -> dict[str, Any]:
+                   repeats: int = 3, long_ctx: int = 0) -> dict[str, Any]:
     """Tokens per second of every width at full load on this machine: per width one context on the same loaded model,
     each sequence a 64-token prompt, then `steps` decode steps of every sequence, median of `repeats`."""
     first = GgmlEngine(gguf, seqs=min(widths), seq_ctx=seq_ctx, speculate=False, **settings)
-    out: dict[str, Any] = {"cell_bytes": first.kv_cell_bytes(), "rates": {}, "step_s": {}}
+    out: dict[str, Any] = {"cell_bytes": first.kv_cell_bytes(), "rates": {}, "step_s": {}, "step_one_s": {},
+                           "settings": dict(settings)}
     model = first.model
     try:
         prompt = (first.tokenize(CHECK_TEXT) * 8)[:64]
@@ -612,6 +698,27 @@ def measure_widths(gguf: str, settings: dict[str, bool], seq_ctx: int, widths: S
                     times.append(time.perf_counter() - started)
                 out["rates"][str(width)] = width * steps / statistics.median(times)
                 out["step_s"][str(width)] = statistics.median(times) / steps
+                ones = []  # AG10: one row on the same context, the agent's world model's other end
+                for _ in range(repeats):
+                    engine.L.llama_memory_seq_rm(engine.memory, 0, len(prompt) + steps, -1)
+                    started = time.perf_counter()
+                    for k in range(steps):
+                        engine._decode([(prompt[k % len(prompt)], len(prompt) + steps + k, 0, True)])
+                    ones.append(time.perf_counter() - started)
+                out["step_one_s"][str(width)] = statistics.median(ones) / steps
+                # AG10: the same full-load step at a longer context, so the agent's world model knows what a step
+                # pays per attended KV token under these settings (flash attention or not differ most here)
+                if long_ctx and long_ctx + steps <= seq_ctx:
+                    engine._clear()
+                    longer = (prompt * (long_ctx // len(prompt) + 1))[:long_ctx]
+                    rows = [(t, j, seq, j == long_ctx - 1) for seq in range(width) for j, t in enumerate(longer)]
+                    for start in range(0, len(rows), seq_ctx):
+                        engine._decode(rows[start:start + seq_ctx])
+                    started = time.perf_counter()
+                    for k in range(steps):
+                        engine._decode([(longer[k % long_ctx], long_ctx + k, seq, True) for seq in range(width)])
+                    out.setdefault("step_long_s", {})[str(width)] = (time.perf_counter() - started) / steps
+                    out["long_ctx"], out["short_ctx"] = long_ctx, len(prompt)
             finally:
                 engine.close_context()
     finally:
@@ -624,7 +731,8 @@ WIDTH_CHILD = r"""
 import json, sys
 from ironmule.ggml_engine import measure_widths
 data = json.loads(sys.stdin.read())
-print(json.dumps(measure_widths(sys.argv[1], data["settings"], data["seq_ctx"], data["widths"])))
+print(json.dumps(measure_widths(sys.argv[1], data["settings"], data["seq_ctx"], data["widths"],
+                                long_ctx=data.get("long_ctx", 0))))
 """
 
 CELL_CHILD = r"""
@@ -638,16 +746,21 @@ engine.close()
 
 
 def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_ctx: int | None = None,
-                     cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:
+                     cache: Path | None = None, root: Path | None = None, device: str | None = None) -> dict[str, Any]:
     """SEQ1: how many sequences the engine serves, chosen on this machine. It sees the memory the KV cache may take at
     the request length it promises (`seq_ctx`), measures the widths that fit (`measure_widths`), and keeps doubling
     while a doubling buys `WIDTH_GAIN` (`decide_width`). Remembered per GGUF, settings, request length, engine and
     machine, so a changed machine or model is measured again. Never raises: a failed measurement keeps 8."""
     import subprocess
 
-    settings = {k: bool(v) for k, v in (settings or {}).items() if k in ("flash_attn", "kv_unified", "kv_f32")}
+    settings = {k: bool(v) for k, v in (settings or {}).items() if k in SETTING_KEYS}
     seq_ctx = seq_ctx or SEQ_CTX
     available, total = memory_bytes()
+    on_gpu = gpu_layers() > 0
+    if on_gpu:  # MG2: the KV cache and the weights live in the GPU's memory
+        found = gpu_memory_bytes(device)
+        if found is not None:
+            available, total = found
     key = hashlib.sha256(json.dumps([file_sha256(gguf), settings, seq_ctx, ENGINE_VERSION, WIDTH_VERSION, WIDTHS,
                                      WIDTH_GAIN, machine_key(), round(total / 2**30)], sort_keys=True).encode()
                          ).hexdigest()[:24]
@@ -662,6 +775,8 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [str(root), os.environ.get("PYTHONPATH")])),
            "HF_HUB_OFFLINE": "1"}
     env.pop("IRONMULE_GGML_SEQS", None)
+    if device is not None:  # MG2: a worker per GPU; measure on one of them
+        env["CUDA_VISIBLE_DEVICES"] = device
     started = time.perf_counter()
 
     def child(code: str, payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -675,6 +790,7 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     model_bytes = os.path.getsize(gguf)
     cell = child(CELL_CHILD, {"settings": settings})
     record: dict[str, Any] = {"seq_ctx": seq_ctx, "memory_available": available, "memory_total": total,
+                              "memory": "gpu" if on_gpu else "host",
                               "model_bytes": model_bytes, "gain_rule": WIDTH_GAIN, "machine": machine_key(),
                               "version": WIDTH_VERSION}
     if cell is None:
@@ -684,12 +800,24 @@ def choose_sequences(gguf: str, settings: dict[str, bool] | None = None, *, seq_
     if len(widths) == 1:
         record.update(sequences=widths[0], reason="only this width fits the memory")
     else:
-        measured = child(WIDTH_CHILD, {"settings": settings, "seq_ctx": seq_ctx, "widths": widths})
+        measured = child(WIDTH_CHILD, {"settings": settings, "seq_ctx": seq_ctx, "widths": widths,
+                                       "long_ctx": AGENT_LONG_CTX})
         if measured is None:
             return {**record, "sequences": SEQS, "reason": "the width measurement failed; 8 sequences as before"}
         rates = {int(w): r for w, r in measured["rates"].items()}
         record.update(sequences=decide_width(rates), rates=measured["rates"], step_s=measured["step_s"],
+                      step_one_s=measured.get("step_one_s", {}), settings=settings,
                       reason="the widest width whose doubling still bought the gain rule")
+        # AG10: the agent's alternatives -- the same widths under llama.cpp's default setting, which passes the gate
+        # by definition and differs from flash attention in what a step pays per attended token
+        alternatives = [measured]
+        default = {k: False for k in DEFAULT_SETTINGS}
+        if {k: v for k, v in settings.items() if v} and os.environ.get("IRONMULE_GGML_AGENT", "1") != "0":
+            other = child(WIDTH_CHILD, {"settings": default, "seq_ctx": seq_ctx, "widths": widths,
+                                        "long_ctx": AGENT_LONG_CTX})
+            if other is not None:
+                alternatives.append(other)
+        record["measured"] = alternatives
     record["seconds"] = round(time.perf_counter() - started, 1)
     try:
         cache.mkdir(parents=True, exist_ok=True)
@@ -746,6 +874,7 @@ tokenizer = load(Path(sys.argv[1]))
 print(json.dumps({"ids": _text_ids(tokenizer)[:CHUNKS * CHUNK_TOKENS + 1], "bos": gate_bos(tokenizer)}))
 """
 DEFAULT_SETTINGS = {"flash_attn": False, "kv_unified": False, "kv_f32": False}
+SETTING_KEYS = ("flash_attn", "kv_unified", "kv_f32", "kv_q8")
 
 
 def gate(snapshot: str, gguf: str, *, cache: Path | None = None, root: Path | None = None) -> dict[str, Any]:

@@ -13,8 +13,8 @@ costs nothing to keep and can be refuted by anyone.
 The owner made one entry the project's main goal: a working IronMule agent. It decides on its own how the
 model's requests run on the hardware, reaches a measured gain there, keeps learning by reinforcement learning
 while it serves, and decides as fast as a small decision model. Every rule below still applies to it: it
-changes no answer, a gain counts only when it is measured, and it serves nothing it has not proven on the
-machine it runs on.
+keeps answer quality (since 2026-11-10 the same answer quality, not identical tokens; see below), a gain counts only
+when it is measured, and it serves nothing it has not proven on the machine it runs on.
 
 **What "gain" means (owner, 2026-11-03).** Tokens per second come first. Waiting time counts too, but less, and
 the time to the first token must not get worse. AG1 and AG2 so far judge a schedule by each request's time in
