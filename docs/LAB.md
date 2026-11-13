@@ -932,3 +932,18 @@ makes their N=8/16 rows low; sized to the load (`-np N`, FA1 end-to-end entry ab
 tok/s at N=8/16 with the system prompt, still 0.54x / 0.57x of IronMule here. (2) One machine, one run per engine.
 vLLM: no CPU wheel on PyPI, triton-cpu behind a blocked host, the source build stopped for disk and memory at 194 of 416
 steps; vLLM and SGLang are measured on GPUs instead (MG2 harness, Kaggle T4, once the weekly quota is back).
+
+### 2026-11-13 CMP1, multi-turn chats: IronMule against llama-server
+
+Same setups as CMP1 (`bench.py --workloads multiturn`). Each of N users holds a 3-turn conversation: every turn sends the
+479-token system prompt, the earlier turns and a new question (64-token answers); a user's next turn starts when its
+answer is in, users run at once. Total tokens/s and mean first token per turn:
+
+| Users | IronMule | llama-server | first token, turns 1 / 2 / 3: IronMule | llama-server |
+| --- | --- | --- | --- | --- |
+| 8 | 38.6 tok/s | 8.7 tok/s (**4.4x**) | 2.67 / 0.79 / 0.71 s | 40.07 / 3.24 / 3.64 s |
+| 16 | 47.8 tok/s | 13.0 tok/s (**3.7x**) | 0.72 / 3.06 / 6.53 s | 43.09 / 4.77 / 6.91 s |
+
+No failed request on either. Open: at 16 users IronMule's later turns wait about as long for a first token as
+llama-server's (a returning turn's own new tokens queue behind running steps while 32 may run); a turn that continues
+its own kept sequence could be admitted ahead of fresh conversations.

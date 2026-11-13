@@ -156,6 +156,39 @@ def single(client, tok, limit: int = 256) -> dict:
             "ttft_s": statistics.median(x["ttft_s"] for x in runs[1:])}
 
 
+def multiturn(client, tok, users: int, turns: int = 3, limit: int = 64) -> dict:
+    """`users` conversations at once, each `turns` turns: every turn sends the system prompt, the earlier turns and a
+    new question, as a chat app does; a user's next turn starts when its last answer is in."""
+    out, t0 = {}, time.perf_counter()
+
+    def one(u):
+        history, rows = [], []
+        for turn in range(turns):
+            question = (f"Tell me about {TOPICS[(u + turn) % len(TOPICS)]} for user {u}." if turn == 0 else
+                        f"Now continue that with one more detail, turn {turn}.")
+            msgs = [{"role": "system", "content": SYSTEM}] + history + [{"role": "user", "content": f"{question} /no_think"}]
+            try:
+                r = client.chat(msgs, limit)
+            except Exception as exc:  # noqa: BLE001
+                rows.append({"error": str(exc)[:200]})
+                break
+            rows.append({"first": r["first"], "tokens": len(tok.encode(r["text"])), "turn": turn})
+            history += [{"role": "user", "content": f"{question} /no_think"}, {"role": "assistant", "content": r["text"]}]
+        out[u] = rows
+
+    threads = [threading.Thread(target=one, args=(u,)) for u in range(users)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    wall = time.perf_counter() - t0
+    rows = [r for v in out.values() for r in v if "error" not in r]
+    by_turn = {t: [r["first"] for r in rows if r["turn"] == t] for t in range(turns)}
+    return {"users": users, "tok_s": sum(r["tokens"] for r in rows) / wall, "wall_s": wall,
+            "ttft_by_turn": {str(t): statistics.mean(v) for t, v in by_turn.items() if v},
+            "failed": sum(1 for v in out.values() for r in v if "error" in r)}
+
+
 def facts(client) -> dict:
     src = (ROOT / "lab/row1/facts.py").read_text()
     questions = eval(src[src.index("Q = [") + 4:src.index("]\nge.") + 1])
@@ -202,6 +235,11 @@ def main(argv=None) -> int:
                 result.setdefault(workload, {})[str(n)] = blocks
                 print(args.label, workload, n, [round(b["tok_s"], 1) for b in blocks],
                       [round(b["ttft_mean_s"], 2) for b in blocks], flush=True)
+        elif workload == "multiturn":
+            for n in [int(x) for x in args.ns.split(",")]:
+                result.setdefault("multiturn", {})[str(n)] = r = multiturn(client, tok, n)
+                print(args.label, "multiturn", n, round(r["tok_s"], 1), {k: round(v, 2) for k, v in r["ttft_by_turn"].items()},
+                      "failed", r["failed"], flush=True)
         elif workload == "poisson":
             result.setdefault("poisson", {})[str(args.rate)] = r = poisson(client, tok, args.rate)
             print(args.label, "poisson", json.dumps({k: round(v, 2) for k, v in r.items()}), flush=True)
